@@ -19,18 +19,55 @@ public partial class App : Application
     public static event Action<string>? ThemeChanged;
     public static event Action<int>? FontScaleChanged;
 
+    private System.Threading.Mutex? _singleInstanceMutex;
+    private const string SingleInstanceMutexName = @"Global\DevezCode.SingleInstance";
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 단일 인스턴스: 이미 떠 있으면 기존 창을 앞으로 가져오고 종료한다.
+        // (여러 인스턴스가 동시에 떠 있으면 workspace.json 을 서로 덮어써 등록한 프로젝트/세션이 사라진다.)
+        _singleInstanceMutex = new System.Threading.Mutex(initiallyOwned: true, SingleInstanceMutexName, out bool isFirst);
+        if (!isFirst)
+        {
+            ActivateExistingInstance();
+            Shutdown();
+            return;
+        }
+
         // 원격 접속(RDP/터미널 세션, Chrome Remote Desktop)에서는 GPU 합성 화면이 원격 프로토콜로
         // 전달되지 않아 창이 검게/안 보인다. 이런 환경에서만 소프트웨어 렌더링으로 강제한다.
-        // ProcessRenderMode 는 첫 비주얼 생성 전에만 의미가 있으므로 반드시 여기서 가장 먼저 설정한다.
+        // ProcessRenderMode 는 첫 비주얼 생성 전에만 의미가 있으므로 반드시 여기서 설정한다.
         if (IsRemoteSession() || IsCrdSessionActive())
             RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
 
         base.OnStartup(e);
         SetFontScale(0);
         SetTheme(LoadSavedTheme());
+
+        new MainWindow().Show();
     }
+
+    /// <summary>이미 실행 중인 DevezCode 창을 복원·전경으로 가져온다.</summary>
+    private static void ActivateExistingInstance()
+    {
+        try
+        {
+            var me = System.Diagnostics.Process.GetCurrentProcess();
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName(me.ProcessName))
+            {
+                if (p.Id == me.Id) continue;
+                var h = p.MainWindowHandle;
+                if (h == IntPtr.Zero) continue;
+                ShowWindow(h, 9 /* SW_RESTORE */);
+                SetForegroundWindow(h);
+                break;
+            }
+        }
+        catch { /* best effort */ }
+    }
+
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int nCmdShow);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr h);
 
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
     private const int SM_REMOTESESSION = 0x1000;
@@ -53,6 +90,8 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         try { TerminalSessionManager.Instance.DisposeAll(); } catch { /* 종료 정리 best-effort */ }
+        try { _singleInstanceMutex?.ReleaseMutex(); } catch { /* 소유 안 한 경우 무시 */ }
+        _singleInstanceMutex?.Dispose();
         base.OnExit(e);
     }
 
