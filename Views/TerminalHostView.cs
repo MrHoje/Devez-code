@@ -19,6 +19,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>해당 방의 셸이 첫 출력을 내보내(=터미널이 그려질 준비) 발생. roomId 전달.</summary>
     public event Action<string>? TerminalReady;
+    /// <summary>방의 ConPTY 세션이 생성/배선되어 살아있음. roomId 전달.</summary>
+    public event Action<string>? SessionStarted;
+    /// <summary>방의 셸 프로세스가 종료됨(끊김/죽음). roomId 전달.</summary>
+    public event Action<string>? SessionExited;
 
     private WebView2? _webView;
     private bool _initStarted;
@@ -241,8 +245,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 roomId,
                 data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(err)),
             });
+            SessionExited?.Invoke(roomId); // 시작 실패 → 죽은 상태로 표시
             return;
         }
+        SessionStarted?.Invoke(roomId); // ConPTY 프로세스 살아있음
         if (_wired.TryGetValue(roomId, out var prev) && ReferenceEquals(prev, session))
             return; // 이미 배선됨
         _wired[roomId] = session;
@@ -267,7 +273,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         };
         session.Exited += () =>
         {
-            Dispatcher.BeginInvoke(() => PostJson(new { type = "exited", roomId }));
+            Dispatcher.BeginInvoke(() =>
+            {
+                PostJson(new { type = "exited", roomId });
+                SessionExited?.Invoke(roomId); // 끊김/죽음 → 회색 점
+            });
         };
     }
 

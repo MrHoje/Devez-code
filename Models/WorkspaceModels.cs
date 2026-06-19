@@ -27,6 +27,10 @@ public sealed class SessionItem : NotifyBase
 
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
+
+    /// <summary>터미널(ConPTY) 세션이 살아있는지. true=테마색 점, false=회색 점.</summary>
+    private bool _isAlive;
+    public bool IsAlive { get => _isAlive; set => Set(ref _isAlive, value); }
 }
 
 /// <summary>좌측 트리의 프로젝트(= 디렉터리). 하위에 세션 목록을 가진다.</summary>

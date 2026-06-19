@@ -32,6 +32,9 @@ public partial class MainWindow : Window
         Sidebar.SessionSelected        += OpenSession;
         Sidebar.SessionDeleteRequested += DeleteSession;
 
+        _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
+        _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) s.IsAlive = false; };
+
         UpdateEmptyState();
         UpdateStatus();
     }
@@ -94,6 +97,7 @@ public partial class MainWindow : Window
         // claude 가 항상 프로젝트 디렉터리에서 실행되도록 매핑 보장(설정 유실 대비)
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
 
+        session.IsAlive = true; // 낙관적 — 실패 시 SessionExited 이벤트로 회색 처리
         if (!_openTabs.Contains(session)) _openTabs.Add(session);
         SetActive(session);
         SelectProject(parent);
@@ -159,6 +163,9 @@ public partial class MainWindow : Window
 
     private ProjectItem? ParentOf(SessionItem session)
         => _projects.FirstOrDefault(p => p.Sessions.Contains(session));
+
+    private SessionItem? FindSession(string id)
+        => _projects.SelectMany(p => p.Sessions).FirstOrDefault(s => s.Id == id);
 
     // ── 탭 이벤트 ─────────────────────────────────────────────────
     private void Tab_Click(object sender, MouseButtonEventArgs e)

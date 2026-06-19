@@ -45,21 +45,32 @@
             </Setter>
         </Style>
 
-        <!-- 세션(하위 항목) 템플릿 -->
+        <!-- 세션 상태 점: 살아있으면 테마색, 끊기거나 죽으면 회색 -->
+        <Style x:Key="SessionDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Height" Value="8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Fill" Value="#6B7280"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsAlive}" Value="True">
+                    <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 세션(하위 항목) 템플릿 — 아이콘 없이 상태 점 + 이름 -->
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
             <Grid Margin="0,1">
                 <Border Style="{StaticResource TreeRow}" Padding="0"
                         MouseLeftButtonUp="Session_Click">
-                    <Grid Margin="30,6,8,6">
+                    <Grid Margin="12,6,8,6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="26"/>
                         </Grid.ColumnDefinitions>
-                        <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconTerminal}" Width="13" Height="13"
-                              Stroke="{DynamicResource SidebarSubTextBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="8,0,0,0"
+                        <Ellipse Grid.Column="0" Style="{StaticResource SessionDot}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="10,0,0,0"
                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                    FontSize="{DynamicResource Fs12}"
                                    Foreground="{DynamicResource SidebarSubTextBrush}"/>
@@ -110,9 +121,15 @@
                         </Button>
                     </StackPanel>
                 </Grid>
-                <ItemsControl ItemsSource="{Binding Sessions}"
-                              ItemTemplate="{StaticResource SessionTemplate}"
-                              Visibility="{Binding IsExpanded, Converter={x:Static models:BoolVisibilityConverter.Instance}}"/>
+                <!-- 들여쓰기 + 좌측 세로 가이드선 (devez 방식) -->
+                <Border Margin="20,1,0,4"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1,0,0,0"
+                        Visibility="{Binding IsExpanded, Converter={x:Static models:BoolVisibilityConverter.Instance}}">
+                    <ItemsControl ItemsSource="{Binding Sessions}"
+                                  ItemTemplate="{StaticResource SessionTemplate}"
+                                  Margin="4,0,0,0"/>
+                </Border>
             </StackPanel>
         </DataTemplate>
     </UserControl.Resources>
