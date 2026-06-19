@@ -20,31 +20,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- 행 위에 떠 있는 작은 액션 버튼(+ / x) -->
-        <Style x:Key="RowActionBtn" TargetType="Button">
-            <Setter Property="IsTabStop" Value="False"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Width" Value="26"/>
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <!-- 세션 상태 점: 살아있으면 테마색, 끊기거나 죽으면 회색 -->
         <Style x:Key="SessionDot" TargetType="Ellipse">
             <Setter Property="Width" Value="8"/>
@@ -58,67 +33,71 @@
             </Style.Triggers>
         </Style>
 
-        <!-- 세션(하위 항목) 템플릿 — 아이콘 없이 상태 점 + 이름 -->
+        <!-- 세션(하위 항목) 템플릿 — 상태 점 + 이름. 액션은 우클릭 메뉴 -->
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
-            <!-- 액션 버튼을 Border 내부에 둬 버튼 위에서도 호버 하이라이트가 유지되게 한다 (devez 방식) -->
             <Border Style="{StaticResource TreeRow}" Margin="0,1" MouseLeftButtonUp="Session_Click">
-                <Grid>
-                    <Grid Margin="12,6,32,6">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Ellipse Grid.Column="0" Style="{StaticResource SessionDot}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="10,0,0,0"
-                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                   FontSize="{DynamicResource Fs12}"
-                                   Foreground="{DynamicResource SidebarSubTextBrush}"/>
-                    </Grid>
-                    <Button Style="{StaticResource RowActionBtn}" HorizontalAlignment="Right"
-                            VerticalAlignment="Center" Margin="0,0,6,0"
-                            Click="SessionDelete_Click" ToolTip="세션 삭제">
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
-                              Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
-                    </Button>
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="세션 삭제" Tag="{Binding}" Click="SessionDelete_Click" Foreground="#ef4444">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
+                                      Width="13" Height="13" Stroke="#ef4444"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Grid Margin="12,6,12,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Grid.Column="0" Style="{StaticResource SessionDot}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="10,0,0,0"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource SidebarSubTextBrush}"/>
                 </Grid>
             </Border>
         </DataTemplate>
 
-        <!-- 프로젝트(상위 항목) 템플릿 -->
+        <!-- 프로젝트(상위 항목) 템플릿 — 박스·이름·접고펴기 chevron(오른쪽). 액션은 우클릭 메뉴 -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
             <StackPanel Margin="0,1">
-                <!-- 액션 버튼을 Border 내부에 둬 버튼 위에서도 호버 하이라이트가 유지되게 한다 (devez 방식) -->
                 <Border Style="{StaticResource TreeRow}" MouseLeftButtonUp="Project_Click">
-                    <Grid>
-                        <Grid Margin="8,9,56,9">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
-                                  Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
-                                  Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"
-                                  VerticalAlignment="Center"/>
-                            <Path Grid.Column="1" Style="{StaticResource LucideIcon}"
-                                  Data="{StaticResource IconBox}" Width="15" Height="15" Margin="7,0,0,0"
-                                  Stroke="{DynamicResource RailIconBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Text="{Binding Name}" Margin="9,0,0,0"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}"/>
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                    VerticalAlignment="Center" Margin="0,0,6,0">
-                            <Button Style="{StaticResource RowActionBtn}" Click="AddSession_Click" ToolTip="새 세션">
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
-                                      Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
-                            </Button>
-                            <Button Style="{StaticResource RowActionBtn}" Click="ProjectDelete_Click" ToolTip="프로젝트 제거">
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
-                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
-                            </Button>
-                        </StackPanel>
+                    <Border.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="새 세션" Tag="{Binding}" Click="AddSession_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator/>
+                            <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="#ef4444">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
+                                          Width="13" Height="13" Stroke="#ef4444"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </ContextMenu>
+                    </Border.ContextMenu>
+                    <Grid Margin="10,9,10,9">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconBox}" Width="15" Height="15"
+                              Stroke="{DynamicResource RailIconBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="9,0,0,0"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                        <Path Grid.Column="2" Style="{StaticResource LucideButtonIcon}"
+                              Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
+                              Width="9" Height="9" Margin="8,0,2,0"
+                              Stroke="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
                     </Grid>
                 </Border>
                 <!-- 들여쓰기 + 좌측 세로 가이드선 (devez 방식) -->

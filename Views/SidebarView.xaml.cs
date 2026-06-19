@@ -38,12 +38,12 @@ public partial class SidebarView : UserControl
 
     private void AddSession_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ProjectItem p }) AddSessionRequested?.Invoke(p);
+        if (ItemOf<ProjectItem>(sender) is { } p) AddSessionRequested?.Invoke(p);
     }
 
     private void ProjectDelete_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ProjectItem p }) ProjectDeleteRequested?.Invoke(p);
+        if (ItemOf<ProjectItem>(sender) is { } p) ProjectDeleteRequested?.Invoke(p);
     }
 
     private void Session_Click(object sender, MouseButtonEventArgs e)
@@ -53,6 +53,10 @@ public partial class SidebarView : UserControl
 
     private void SessionDelete_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: SessionItem s }) SessionDeleteRequested?.Invoke(s);
+        if (ItemOf<SessionItem>(sender) is { } s) SessionDeleteRequested?.Invoke(s);
     }
+
+    /// <summary>이벤트 소스에서 데이터 항목을 얻는다. 컨텍스트 메뉴 항목은 Tag, 행 요소는 DataContext.</summary>
+    private static T? ItemOf<T>(object sender) where T : class
+        => sender is FrameworkElement fe ? (fe.Tag ?? fe.DataContext) as T : null;
 }
