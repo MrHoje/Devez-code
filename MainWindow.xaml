@@ -7,12 +7,13 @@
         Title="DevezCode" Height="760" Width="1240"
         MinHeight="520" MinWidth="900"
         WindowStartupLocation="CenterScreen"
+        WindowStyle="None" ResizeMode="CanResize"
         Background="{DynamicResource BgBrush}"
         FontFamily="{StaticResource PretendardFont}">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="40" ResizeBorderThickness="6"
-                            CornerRadius="0" GlassFrameThickness="0" UseAeroCaptionButtons="False"/>
+        <shell:WindowChrome CaptionHeight="40" ResizeBorderThickness="5"
+                            CornerRadius="0" GlassFrameThickness="0,0,0,1" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">

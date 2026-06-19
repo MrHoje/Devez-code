@@ -1,5 +1,7 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using DevezCode.Services;
 using DevezCode.Services.Terminal;
@@ -19,9 +21,33 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 원격 접속(RDP/터미널 세션, Chrome Remote Desktop)에서는 GPU 합성 화면이 원격 프로토콜로
+        // 전달되지 않아 창이 검게/안 보인다. 이런 환경에서만 소프트웨어 렌더링으로 강제한다.
+        // ProcessRenderMode 는 첫 비주얼 생성 전에만 의미가 있으므로 반드시 여기서 가장 먼저 설정한다.
+        if (IsRemoteSession() || IsCrdSessionActive())
+            RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
+
         base.OnStartup(e);
         SetFontScale(0);
         SetTheme(LoadSavedTheme());
+    }
+
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
+    private const int SM_REMOTESESSION = 0x1000;
+
+    /// <summary>클래식 RDP/터미널 세션 여부.</summary>
+    private static bool IsRemoteSession()
+    {
+        try { return GetSystemMetrics(SM_REMOTESESSION) != 0; }
+        catch { return false; }
+    }
+
+    /// <summary>Chrome Remote Desktop "실제 접속 중" 여부. 접속 중에만 remoting_desktop 프로세스가 존재한다
+    /// (상시 실행되는 remoting_host 가 아니라 desktop 프로세스로 판별 — devez 실환경 검증).</summary>
+    private static bool IsCrdSessionActive()
+    {
+        try { return System.Diagnostics.Process.GetProcessesByName("remoting_desktop").Length > 0; }
+        catch { return false; }
     }
 
     protected override void OnExit(ExitEventArgs e)
