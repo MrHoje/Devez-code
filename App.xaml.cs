@@ -47,7 +47,8 @@ public partial class App : Application
         new MainWindow().Show();
     }
 
-    /// <summary>이미 실행 중인 DevezCode 창을 복원·전경으로 가져온다.</summary>
+    /// <summary>이미 실행 중인 DevezCode 창을 복원·전경으로 가져온다.
+    /// 전경 잠금(다른 앱이 포커스를 쥔 상태)을 우회하려고 잠깐 topmost 밴드로 끌어올렸다가 바로 푼다.</summary>
     private static void ActivateExistingInstance()
     {
         try
@@ -58,16 +59,33 @@ public partial class App : Application
                 if (p.Id == me.Id) continue;
                 var h = p.MainWindowHandle;
                 if (h == IntPtr.Zero) continue;
-                ShowWindow(h, 9 /* SW_RESTORE */);
-                SetForegroundWindow(h);
+                BringToFront(h);
                 break;
             }
         }
         catch { /* best effort */ }
     }
 
+    /// <summary>대상 창을 다른 앱 위로 한 번 끌어올린다(항상 위 고정 아님). 전경 잠금 우회.</summary>
+    public static void BringToFront(IntPtr h)
+    {
+        try
+        {
+            ShowWindow(h, 9 /* SW_RESTORE */);
+            SetWindowPos(h, HWND_TOPMOST,   0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            SetForegroundWindow(h);
+        }
+        catch { /* best effort */ }
+    }
+
+    private static readonly IntPtr HWND_TOPMOST   = new(-1);
+    private static readonly IntPtr HWND_NOTOPMOST = new(-2);
+    private const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_SHOWWINDOW = 0x0040;
+
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int nCmdShow);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
     private const int SM_REMOTESESSION = 0x1000;

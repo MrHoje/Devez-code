@@ -37,6 +37,18 @@ public partial class MainWindow : Window
 
         UpdateEmptyState();
         UpdateStatus();
+
+        // 실행 시 다른 앱(devez 등) 위로 확실히 올라오게 한다. topmost 토글로 전경 잠금 우회.
+        Loaded += (_, _) =>
+        {
+            try
+            {
+                Activate();
+                Topmost = true;
+                Topmost = false;
+            }
+            catch { /* best effort */ }
+        };
     }
 
     // ── 프로젝트 ──────────────────────────────────────────────────

@@ -123,7 +123,13 @@ public sealed class TerminalSessionManager
             SettingsService.MarkClaudeCodeRoomLaunched(roomId); // 기록이 있다 = 이미 실행된 적 있음
         }
 
-        bool resume = sessionId != null && SettingsService.IsClaudeCodeRoomLaunched(roomId);
+        // resume 은 추적된 세션의 대화 transcript 가 실제로 디스크에 있을 때만 한다.
+        // (빈 세션 등 conversation 이 저장 안 된 경우 --resume 하면 "No conversation found" 에러가
+        //  화면에 뜨므로, 없으면 --session-id 로 새로 시작해 에러를 원천 차단한다.)
+        var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+        bool resume = sessionId != null
+                      && SettingsService.IsClaudeCodeRoomLaunched(roomId)
+                      && ClaudeTranscriptExists(ccDir, sessionId);
         if (sessionId != null && !resume)
             SettingsService.MarkClaudeCodeRoomLaunched(roomId); // 첫 실행 — 다음부터 resume
 
@@ -235,6 +241,24 @@ public sealed class TerminalSessionManager
             return Guid.TryParse(id, out _) ? id.ToLowerInvariant() : null;
         }
         catch (Exception) { return null; }
+    }
+
+    /// <summary>해당 작업 디렉터리에 주어진 세션 ID의 claude 대화 transcript 가 실제로 존재하는지.
+    /// claude 는 대화를 %USERPROFILE%\.claude\projects\&lt;경로 인코딩&gt;\&lt;세션ID&gt;.jsonl 로 저장한다.
+    /// (경로 인코딩: 영숫자 외 문자를 모두 '-' 로 치환. Windows 경로는 대소문자 무시로 매칭됨)</summary>
+    private static bool ClaudeTranscriptExists(string? workingDir, string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(workingDir) || string.IsNullOrWhiteSpace(sessionId)) return false;
+        try
+        {
+            var full = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+            var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".claude", "projects", encoded);
+            return File.Exists(Path.Combine(dir, sessionId + ".jsonl"));
+        }
+        catch (Exception) { return false; }
     }
 
     /// <summary>채팅방 삭제 시 호출 — 해당 방의 셸 프로세스 정리.</summary>
