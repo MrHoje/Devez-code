@@ -1,0 +1,171 @@
+<Window x:Class="DevezCode.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:DevezCode.Views"
+        xmlns:models="clr-namespace:DevezCode.Models"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="DevezCode" Height="760" Width="1240"
+        MinHeight="520" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BgBrush}"
+        FontFamily="{StaticResource PretendardFont}">
+
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="40" ResizeBorderThickness="6"
+                            CornerRadius="0" GlassFrameThickness="0" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- ── Title bar ───────────────────────────────────────────── -->
+            <Grid Grid.Row="0" Background="{DynamicResource PanelBrush}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
+                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
+                          Width="16" Height="16" Stroke="{DynamicResource PrimaryBrush}"/>
+                    <TextBlock Text="DevezCode" Margin="9,0,0,0" VerticalAlignment="Center"
+                               FontFamily="{StaticResource BrunoAceSCFont}"
+                               FontSize="{DynamicResource Fs14}"
+                               Foreground="{DynamicResource TextBrush}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button x:Name="ThemeBtn" Style="{StaticResource WinCtrlBtn}" Click="ThemeBtn_Click"
+                            ToolTip="테마 전환">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPalette}"
+                              Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                    <Button Style="{StaticResource WinCtrlBtn}" Click="MinBtn_Click">
+                        <TextBlock Text="&#x2013;" FontSize="{DynamicResource Fs14}"/>
+                    </Button>
+                    <Button Style="{StaticResource WinCtrlBtn}" Click="MaxBtn_Click">
+                        <TextBlock Text="&#x25A1;" FontSize="{DynamicResource Fs12}"/>
+                    </Button>
+                    <Button Style="{StaticResource WinCloseBtn}" Click="CloseBtn_Click">
+                        <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- ── 3-pane body ─────────────────────────────────────────── -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="262" MinWidth="190"/>
+                    <ColumnDefinition Width="4"/>
+                    <ColumnDefinition Width="*" MinWidth="360"/>
+                    <ColumnDefinition Width="4"/>
+                    <ColumnDefinition Width="300" MinWidth="200"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: sidebar -->
+                <views:SidebarView x:Name="Sidebar" Grid.Column="0"
+                                   BorderBrush="{DynamicResource LineBrush}"/>
+                <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                              Background="{DynamicResource LineBrush}"/>
+
+                <!-- Center: tabs + terminal -->
+                <Grid Grid.Column="2" Background="{DynamicResource BgBrush}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Tab strip -->
+                    <Border Grid.Row="0" Height="40" Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+                        <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="TabsHost" Margin="6,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type models:SessionItem}">
+                                        <Border Margin="3,6,3,0" CornerRadius="8,8,0,0" MouseLeftButtonUp="Tab_Click"
+                                                Cursor="Hand" Padding="12,0" Height="34">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="Transparent"/>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                        </Trigger>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
+                                                      Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"
+                                                      VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" Margin="7,0,8,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs12}"
+                                                           Foreground="{DynamicResource TextBrush}"/>
+                                                <Button Width="20" Height="20" Click="TabClose_Click"
+                                                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                                        IsTabStop="False" FocusVisualStyle="{x:Null}" ToolTip="탭 닫기">
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5">
+                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
+                                                          Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
+                                                </Button>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Terminal host + empty-state -->
+                    <Grid Grid.Row="1">
+                        <ContentControl x:Name="TerminalHostContainer"/>
+                        <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
+                                  Width="40" Height="40" Stroke="{DynamicResource TextMutedBrush}"
+                                  HorizontalAlignment="Center" Opacity="0.5"/>
+                            <TextBlock Text="프로젝트를 추가하고 세션을 열어 Claude Code를 시작하세요."
+                                       Margin="0,16,0,0" FontSize="{DynamicResource Fs13}"
+                                       Foreground="{DynamicResource TextMutedBrush}" TextAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+
+                <GridSplitter Grid.Column="3" Width="4" HorizontalAlignment="Stretch"
+                              Background="{DynamicResource LineBrush}"/>
+
+                <!-- Right: file explorer -->
+                <views:FileExplorerView x:Name="FileExplorer" Grid.Column="4"/>
+            </Grid>
+
+            <!-- ── Status bar ──────────────────────────────────────────── -->
+            <Border Grid.Row="2" Height="26" Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                <TextBlock x:Name="StatusText" Margin="14,0" VerticalAlignment="Center"
+                           FontSize="{DynamicResource Fs11}"
+                           Foreground="{DynamicResource TextMutedBrush}"/>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

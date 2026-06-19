@@ -1,0 +1,351 @@
+using System.IO;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
+using DevezCode.Services.Terminal;
+
+namespace DevezCode.Views;
+
+/// <summary>
+/// 채팅방 메시지 영역을 덮는 임베디드 터미널 호스트.
+/// WebView2 1개 + 로컬 번들 xterm.js. 방 전환 시 JS 쪽 xterm 인스턴스만 스위칭하고
+/// ConPTY 세션(TerminalSessionManager)은 방마다 유지된다.
+/// </summary>
+public sealed class TerminalHostView : ContentControl, IDisposable
+{
+    private const string VirtualHost = "terminal.devezcode.local";
+
+    /// <summary>해당 방의 셸이 첫 출력을 내보내(=터미널이 그려질 준비) 발생. roomId 전달.</summary>
+    public event Action<string>? TerminalReady;
+
+    private WebView2? _webView;
+    private bool _initStarted;
+    private bool _pageReady;
+    private string? _pendingShowRoomId;
+    private string? _activeRoomId;
+    private double _fontSizePt = -1; // -1 = config에서 아직 읽지 않음
+
+    private const double PtToPx = 96.0 / 72.0;
+
+    /// <summary>roomId → 현재 JS와 배선된 세션 (재시작 시 교체 감지용).</summary>
+    private readonly Dictionary<string, TerminalSession> _wired = new();
+
+    /// <summary>claude 등 풀스크린 TUI가 떠서(alt-screen 진입) 준비된 방. UI 스레드에서만 접근.</summary>
+    private readonly HashSet<string> _ready = new();
+    /// <summary>alt-screen 시퀀스 감지용 방별 누적 버퍼 (청크 경계 분할 대비). UI 스레드에서만 접근.</summary>
+    private readonly Dictionary<string, string> _readyScan = new();
+
+    private static readonly JsonSerializerOptions CamelCase = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
+    public async void ShowTerminal(string roomId)
+    {
+        _activeRoomId = roomId;
+        if (!_initStarted)
+        {
+            _initStarted = true;
+            await InitWebViewAsync();
+        }
+        if (_pageReady) PostJson(new { type = "show", roomId });
+        else _pendingShowRoomId = roomId; // pageReady 때 처리
+
+        // 이미 떠 있는(살아있는) 방이면 즉시 준비 완료 통지 → 로딩 스킵
+        if (_ready.Contains(roomId))
+            Dispatcher.BeginInvoke(() => TerminalReady?.Invoke(roomId));
+    }
+
+    /// <summary>출력에서 alt-screen 진입 시퀀스를 찾아 준비 완료를 통지 (UI 스레드).</summary>
+    private void ScanForReady(string roomId, byte[] bytes)
+    {
+        if (_ready.Contains(roomId)) return;
+        // 찾는 시퀀스는 모두 ASCII 제어/문자라 ASCII 디코드로 충분
+        var text = (_readyScan.TryGetValue(roomId, out var prev) ? prev : string.Empty)
+                   + System.Text.Encoding.ASCII.GetString(bytes);
+        if (text.Contains("[?1049h") || text.Contains("[?47h")) // 풀스크린 TUI(claude 등) 시작
+        {
+            _ready.Add(roomId);
+            _readyScan.Remove(roomId);
+            TerminalReady?.Invoke(roomId);
+            return;
+        }
+        _readyScan[roomId] = text.Length > 512 ? text[^512..] : text; // 버퍼 과다 방지
+    }
+
+    /// <summary>pageReady 전에 들어온 포커스 요청 보류 플래그 (첫 init 중 호출 대비).</summary>
+    private bool _pendingFocus;
+
+    public void FocusTerminal()
+    {
+        if (_pageReady && _activeRoomId != null)
+        {
+            _webView?.Focus();
+            PostJson(new { type = "focus", roomId = _activeRoomId });
+        }
+        else
+        {
+            // 첫 생성 시 WebView2 초기화가 끝나기 전 — OnPageReady 에서 적용
+            _pendingFocus = true;
+        }
+    }
+
+    private async Task InitWebViewAsync()
+    {
+        try
+        {
+            _webView = new WebView2();
+            Content = _webView;
+
+            var userDataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DevezCode", "WebView2");
+            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
+            await _webView.EnsureCoreWebView2Async(env);
+            // 초기화 완료 시 호스트가 숨겨진 상태라면 WPF 렌더 큐를 비워
+            // 새로 생성된 HWND에 Collapsed 상태가 반영되기 전 한 프레임 튀는 현상을 방지한다.
+            if (!IsVisible)
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+
+            var core = _webView.CoreWebView2;
+            core.Settings.AreDefaultContextMenusEnabled = false;
+            core.Settings.AreBrowserAcceleratorKeysEnabled = false; // F5 새로고침 등 차단 (터미널 보호)
+            core.Settings.AreDevToolsEnabled = false;
+            core.Settings.IsZoomControlEnabled = false;
+            core.Settings.IsStatusBarEnabled = false;
+
+            var webRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "Terminal", "web");
+            core.SetVirtualHostNameToFolderMapping(
+                VirtualHost, webRoot, CoreWebView2HostResourceAccessKind.Allow);
+
+            core.WebMessageReceived += OnWebMessageReceived;
+            core.Navigate($"https://{VirtualHost}/terminal.html");
+        }
+        catch (Exception ex)
+        {
+            // WebView2 런타임 미설치 등 — 안내 문구로 대체
+            Content = new TextBlock
+            {
+                Text = "터미널을 시작할 수 없습니다.\nWebView2 런타임이 필요합니다.\n\n" + ex.Message,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(24),
+            };
+        }
+    }
+
+    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
+            var root = doc.RootElement;
+            var type = root.GetProperty("type").GetString();
+            switch (type)
+            {
+                case "pageReady":
+                    OnPageReady();
+                    break;
+                case "created":
+                    WireSession(
+                        root.GetProperty("roomId").GetString()!,
+                        root.GetProperty("cols").GetInt32(),
+                        root.GetProperty("rows").GetInt32());
+                    break;
+                case "input":
+                {
+                    var data = root.GetProperty("data").GetString() ?? "";
+                    if (Environment.GetEnvironmentVariable("DEVEZCODE_TERM_LOG") == "1")
+                    {
+                        try
+                        {
+                            var p = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "devezcode-input.log");
+                            System.IO.File.AppendAllText(p, data.Replace("\x1b", "<ESC>") + "\n");
+                        }
+                        catch (Exception) { }
+                    }
+                    // 포커스 리포팅(DEC 1004) 억제: IME 조합 시 helper-textarea blur 로
+                    // xterm 이 focus-out(ESC[O)을 보내면 claude 가 "포커스 잃음"으로 판단해
+                    // 커서를 입력 캐럿에서 치운다 → 조합 글자가 화면 끝으로 날아간다.
+                    // focus-in/out 을 claude 로 전달하지 않아 항상 포커스 상태로 유지한다.
+                    if (data is "\x1b[O" or "\x1b[I") break;
+                    TerminalSessionManager.Instance
+                        .Get(root.GetProperty("roomId").GetString()!)?.Write(data);
+                    break;
+                }
+                case "resize":
+                    TerminalSessionManager.Instance
+                        .Get(root.GetProperty("roomId").GetString()!)
+                        ?.Resize(root.GetProperty("cols").GetInt32(), root.GetProperty("rows").GetInt32());
+                    break;
+                case "restart":
+                {
+                    var roomId = root.GetProperty("roomId").GetString()!;
+                    WireSession(roomId, 120, 30); // restarted 후 JS가 실제 크기로 resize 보냄
+                    PostJson(new { type = "restarted", roomId });
+                    break;
+                }
+            }
+        }
+        catch (Exception) { /* 비정상 메시지 무시 */ }
+    }
+
+    private void OnPageReady()
+    {
+        _pageReady = true;
+        var cfg = TerminalSessionManager.Instance.Config;
+        var savedPt = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();
+        if (savedPt > 0) _fontSizePt = savedPt;
+        double fontSizePx = _fontSizePt > 0
+            ? Math.Round(_fontSizePt * PtToPx, 1)
+            : cfg.FontSizePx;
+        PostJson(new
+        {
+            type = "init",
+            theme = cfg.Scheme,
+            fontFamily = cfg.FontFamily,
+            fontSize = fontSizePx,
+            windowsBuild = Environment.OSVersion.Version.Build, // xterm windowsPty 휴리스틱 판정용
+        });
+        var pending = _pendingShowRoomId ?? _activeRoomId;
+        _pendingShowRoomId = null;
+        if (pending != null) PostJson(new { type = "show", roomId = pending });
+
+        // 보류된 포커스 적용 — 그 사이 다른 방(채팅 등)으로 전환했으면 훔치지 않음
+        if (_pendingFocus)
+        {
+            _pendingFocus = false;
+            if (IsVisible) _webView?.Focus(); // JS 쪽은 show()가 term.focus() 처리
+        }
+    }
+
+    /// <summary>세션을 가져오거나 만들고 출력·종료 이벤트를 JS로 배선.</summary>
+    private void WireSession(string roomId, int cols, int rows)
+    {
+        TerminalSession session;
+        try
+        {
+            session = TerminalSessionManager.Instance.GetOrCreate(roomId, cols, rows);
+        }
+        catch (Exception ex)
+        {
+            // 셸 실행 실패 등 — 빈 화면 대신 에러를 터미널에 표시
+            var err = $"\r\n\x1b[91m터미널 세션을 시작할 수 없습니다:\r\n{ex.Message}\x1b[0m\r\n";
+            PostJson(new
+            {
+                type = "output",
+                roomId,
+                data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(err)),
+            });
+            return;
+        }
+        if (_wired.TryGetValue(roomId, out var prev) && ReferenceEquals(prev, session))
+            return; // 이미 배선됨
+        _wired[roomId] = session;
+
+        // 셸 첫 출력(준비 완료 신호) 이후에 claude 커맨드 전송 — PSReadLine 초기화 완료 보장
+        var initialCmd = TerminalSessionManager.Instance.GetInitialCommand(roomId);
+        bool cmdSent = initialCmd == null; // 커맨드 없으면 전송 불필요
+
+        session.OutputReceived += bytes =>
+        {
+            if (!cmdSent)
+            {
+                cmdSent = true;
+                session.Write(initialCmd!);
+            }
+            var b64 = Convert.ToBase64String(bytes);
+            Dispatcher.BeginInvoke(() =>
+            {
+                ScanForReady(roomId, bytes); // claude 화면이 뜨면 로딩 스피너 종료
+                PostJson(new { type = "output", roomId, data = b64 });
+            });
+        };
+        session.Exited += () =>
+        {
+            Dispatcher.BeginInvoke(() => PostJson(new { type = "exited", roomId }));
+        };
+    }
+
+    /// <summary>현재 활성 방의 xterm.js 폰트 크기만 즉시 변경. Devez 설정에 영구 저장.</summary>
+    public void AdjustFontSize(int deltaPt)
+    {
+        if (_fontSizePt < 0)
+        {
+            var saved = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();
+            _fontSizePt = saved > 0
+                ? saved
+                : Math.Round(TerminalSessionManager.Instance.Config.FontSizePx / PtToPx);
+        }
+        _fontSizePt = Math.Max(6, Math.Min(72, _fontSizePt + deltaPt));
+        double px = Math.Round(_fontSizePt * PtToPx, 1);
+
+        PostJson(new { type = "adjustFontSize", size = px });
+        DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
+    }
+
+    /// <summary>현재 터미널 화면을 PNG 스냅샷으로 반환. airspace 우회용.</summary>
+    public async Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync()
+    {
+        if (_webView?.CoreWebView2 == null) return null;
+        try
+        {
+            using var ms = new MemoryStream();
+            await _webView.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+            ms.Position = 0;
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+            bitmap.BeginInit();
+            bitmap.StreamSource = ms;
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch { return null; }
+    }
+
+    private void PostJson(object message)
+    {
+        try
+        {
+            _webView?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message, CamelCase));
+        }
+        catch (Exception) { /* WebView2 해제 중 등 */ }
+    }
+
+    /// <summary>방 삭제 시 호출 — 방별 배선·준비 상태와 JS 쪽 xterm 인스턴스를 정리.
+    /// ConPTY 셸 세션은 TerminalSessionManager.DisposeRoom 이 별도로 정리한다.</summary>
+    public void CloseTerminal(string roomId)
+    {
+        _wired.Remove(roomId);
+        _ready.Remove(roomId);
+        _readyScan.Remove(roomId);
+        if (_activeRoomId == roomId) _activeRoomId = null;
+        if (_pendingShowRoomId == roomId) _pendingShowRoomId = null;
+        PostJson(new { type = "dispose", roomId }); // JS xterm 인스턴스·DOM 해제
+    }
+
+    private bool _disposed;
+
+    /// <summary>앱 종료 시 호출 — WebView2 + 이벤트 구독 해제 (Edge 렌더러 프로세스 잔류 방지).</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        try
+        {
+            if (_webView?.CoreWebView2 != null)
+                _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+        }
+        catch (Exception) { }
+        try { _webView?.Dispose(); } catch (Exception) { }
+        _webView = null;
+        _wired.Clear();
+        _ready.Clear();
+        _readyScan.Clear();
+    }
+}

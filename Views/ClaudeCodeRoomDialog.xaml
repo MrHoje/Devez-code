@@ -1,0 +1,155 @@
+<Window x:Class="DevezCode.Views.ClaudeCodeRoomDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Claude Code" Height="352" Width="460"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        TextOptions.TextHintingMode="Fixed"
+        RenderOptions.ClearTypeHint="Enabled"
+        FontFamily="{StaticResource PretendardFont}">
+
+    <Grid Margin="20">
+        <!-- Shadow layer -->
+        <Border Background="{DynamicResource BgBrush}" CornerRadius="14">
+            <Border.Effect>
+                <DropShadowEffect ShadowDepth="0" BlurRadius="40" Color="{DynamicResource ShadowColor}" Opacity="{DynamicResource ShadowOpacity}"/>
+            </Border.Effect>
+        </Border>
+        <!-- Content layer -->
+        <Border CornerRadius="14"
+                Background="{DynamicResource BgBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                ClipToBounds="True">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="48"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header -->
+                <Border Grid.Row="0"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="0,0,0,1"
+                        Background="Transparent"
+                        MouseLeftButtonDown="Header_DragMove">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    Margin="20,0,0,0">
+                            <TextBlock Text="Claude Code 채팅방"
+                                       VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
+
+                        <Button Click="CancelBtn_Click"
+                                HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Width="40" Height="32" Margin="0,0,8,0"
+                                Style="{StaticResource WinCloseBtn}">
+                            <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Body -->
+                <StackPanel Grid.Row="1" Margin="20,18,20,20">
+                    <TextBlock Text="채팅방 이름"
+                               FontSize="{DynamicResource Fs13}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Margin="2,0,0,8"/>
+                    <Border x:Name="NameFrame"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1.5"
+                            Background="{DynamicResource PanelBrush}"
+                            CornerRadius="10"
+                            Height="44"
+                            Padding="14,0">
+                        <TextBox x:Name="NameBox"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource TextBrush}"
+                                 FontSize="{DynamicResource Fs14}"
+                                 FontFamily="{StaticResource PretendardFont}"
+                                 VerticalContentAlignment="Center"
+                                 Padding="0"
+                                 GotFocus="Box_GotFocus"
+                                 LostFocus="Box_LostFocus"
+                                 KeyDown="Box_KeyDown"/>
+                    </Border>
+
+                    <TextBlock Text="작업 시작 디렉토리"
+                               FontSize="{DynamicResource Fs13}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Margin="2,16,0,8"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" x:Name="DirFrame"
+                                BorderBrush="{DynamicResource LineBrush}"
+                                BorderThickness="1.5"
+                                Background="{DynamicResource PanelBrush}"
+                                CornerRadius="10"
+                                Height="44"
+                                Padding="14,0">
+                            <TextBox x:Name="DirBox"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     CaretBrush="{DynamicResource TextBrush}"
+                                     FontSize="{DynamicResource Fs13}"
+                                     FontFamily="{StaticResource PretendardFont}"
+                                     VerticalContentAlignment="Center"
+                                     Padding="0"
+                                     GotFocus="Box_GotFocus"
+                                     LostFocus="Box_LostFocus"
+                                     KeyDown="Box_KeyDown"/>
+                        </Border>
+                        <Button Grid.Column="1" Width="44" Height="44" Margin="8,0,0,0"
+                                Style="{StaticResource SecondaryButton}"
+                                Padding="0"
+                                Click="BrowseBtn_Click"
+                                ToolTip="폴더 찾아보기">
+                            <Path Style="{StaticResource LucideButtonIcon}"
+                                  Data="{StaticResource IconFolder}"
+                                  Width="15" Height="15"/>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Footer -->
+                <Border Grid.Row="2"
+                        Background="{DynamicResource PanelSoftBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="0,1,0,0"
+                        CornerRadius="0,0,14,14">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                Margin="20,14,20,14">
+                        <Button x:Name="CancelBtn" Click="CancelBtn_Click"
+                                Width="100" Height="38"
+                                Style="{StaticResource SecondaryButton}"
+                                FontSize="{DynamicResource Fs13}" Margin="0,0,8,0">
+                            <TextBlock Text="취소"/>
+                        </Button>
+
+                        <Button x:Name="OkBtn" Click="OkBtn_Click"
+                                Width="100" Height="38"
+                                Style="{StaticResource PrimaryButton}"
+                                FontSize="{DynamicResource Fs13}">
+                            <TextBlock Text="저장" Foreground="White"/>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

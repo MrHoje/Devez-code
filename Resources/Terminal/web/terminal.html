@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="xterm.min.css">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0C0C0C; }
+  .term-container { position: absolute; inset: 0; padding: 6px 0 6px 8px; display: none; }
+  .term-container.active { display: block; }
+  .term-container .xterm { height: 100%; }
+  /* 스크롤바 숨김 (휠 스크롤은 동작) */
+  .xterm .xterm-viewport { scrollbar-width: none; }
+  .xterm .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+  /* IME 조합 미리보기 스타일 — Windows Terminal 과 동일하게 터미널 배경 위에
+     전경색 글자 + 밑줄. (배경을 불투명하게 둬야 아래 깔린 블록커서(반전 셀)가
+     비치지 않는다.)
+     주의: display:none 으로 숨기면 조합용 textarea 크기가 0이 되어
+     IME 조합 자체가 끊긴다(한글 입력 불가) — 절대 숨기지 말 것. */
+  .xterm .composition-view {
+    background: var(--term-bg, #0C0C0C);
+    color: var(--term-fg, #CCCCCC);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  /* IME 조합 위치 고정: claude 같은 TUI는 하드웨어 커서를 입력 캐럿이 아닌
+     화면 끝에 파킹해서 조합 글자가 엉뚱한 곳에 뜬다. 조합 중(ime-fixed)에는
+     조합 글자와 textarea(후보창 기준점)를 입력란 블록커서 위치로 강제한다.
+     xterm 은 0ms 루프로 인라인 left/top 을 계속 되돌리므로 — 인라인보다
+     우선하는 !important CSS 변수로 무력화한다. */
+  .term-container.ime-fixed .composition-view,
+  .term-container.ime-fixed .xterm-helper-textarea {
+    left: var(--ime-left) !important;
+    top: var(--ime-top) !important;
+  }
+</style>
+<script src="xterm.min.js"></script>
+<script src="addon-fit.min.js"></script>
+</head>
+<body>
+<script>
+(function () {
+  'use strict';
+
+  // roomId → { term, fit, el, dead }
+  const terms = {};
+  let cfg = { theme: {}, fontFamily: 'Cascadia Mono', fontSize: 16 };
+  let activeRoomId = null;
+
+  function post(msg) { window.chrome.webview.postMessage(msg); }
+
+  function b64ToBytes(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  // WT 스킴 → xterm ITheme (WT의 purple == ANSI magenta)
+  function toXtermTheme(s) {
+    const t = {
+      background: s.background, foreground: s.foreground,
+      cursor: s.cursorColor, cursorAccent: s.background,
+      black: s.black, red: s.red, green: s.green, yellow: s.yellow,
+      blue: s.blue, magenta: s.purple, cyan: s.cyan, white: s.white,
+      brightBlack: s.brightBlack, brightRed: s.brightRed,
+      brightGreen: s.brightGreen, brightYellow: s.brightYellow,
+      brightBlue: s.brightBlue, brightMagenta: s.brightPurple,
+      brightCyan: s.brightCyan, brightWhite: s.brightWhite,
+    };
+    if (s.selectionBackground) t.selectionBackground = s.selectionBackground;
+    return t;
+  }
+
+  // ── IME 조합 위치 고정 ──────────────────────────────────────────────
+  // claude 의 입력 캐럿 = 자체 블록 커서(반전 영상의 빈 셀, ESC[7m space).
+  // 조합 시작 시 버퍼에서 이를 찾아 CSS 변수로 위치를 고정한다 (.ime-fixed).
+  function setupImeCaretFix(term, el) {
+    const ta = el.querySelector('.xterm-helper-textarea');
+    if (!ta) return;
+
+    function findBlockCursor() {
+      const buf = term.buffer.active;
+      // 입력란은 화면 하단부 → 아래에서 위로 스캔 (맨 아래 1줄=상태바 제외)
+      for (let row = term.rows - 2; row >= 0; row--) {
+        const line = buf.getLine(buf.baseY + row);
+        if (!line) continue;
+        for (let x = 0; x < term.cols; x++) {
+          const cell = line.getCell(x);
+          if (!cell || !cell.isInverse()) continue;
+          const ch = cell.getChars();
+          if (ch === '' || ch === ' ') return { row: row, col: x };
+        }
+      }
+      return null;
+    }
+
+    function apply() {
+      const caret = findBlockCursor();
+      if (!caret) return;
+      const screen = el.querySelector('.xterm-screen');
+      if (!screen) return;
+      const cw = screen.clientWidth / term.cols;
+      const chh = screen.clientHeight / term.rows;
+      el.style.setProperty('--ime-left', Math.round(caret.col * cw) + 'px');
+      el.style.setProperty('--ime-top', Math.round(caret.row * chh) + 'px');
+      el.classList.add('ime-fixed');
+    }
+
+    ta.addEventListener('compositionstart', function () {
+      apply();
+      setTimeout(apply, 60); // 직전 확정 글자가 TUI에 반영된 뒤 위치 재계산
+    });
+    ta.addEventListener('compositionupdate', function () { setTimeout(apply, 0); });
+    ta.addEventListener('compositionend', function () {
+      el.classList.remove('ime-fixed'); // 조합 종료 → xterm 기본 동작 복귀
+    });
+  }
+
+  function createTerm(roomId) {
+    const el = document.createElement('div');
+    el.className = 'term-container';
+    document.body.appendChild(el);
+
+    const term = new Terminal({
+      theme: toXtermTheme(cfg.theme),
+      // 한글 폴백: 기본 모노스페이스 폰트에는 한글 글리프가 없어 IME 조합 표시가 깨진다
+      fontFamily: cfg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",
+      fontSize: cfg.fontSize,
+      cursorBlink: true,
+      allowProposedApi: true,
+      scrollback: 5000,
+      // ConPTY 백엔드 명시 → Windows 줄바꿈/와이드(CJK) 문자 휴리스틱 적용
+      windowsPty: { backend: 'conpty', buildNumber: cfg.windowsBuild || 0 },
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(el);
+
+    const entry = { term, fit, el, dead: false };
+    terms[roomId] = entry;
+
+    setupImeCaretFix(term, el);
+
+    term.onData(function (data) {
+      if (entry.dead) {
+        if (data === '\r') post({ type: 'restart', roomId: roomId }); // Enter로 재시작
+        return;
+      }
+      post({ type: 'input', roomId: roomId, data: data });
+    });
+    term.onResize(function (size) {
+      post({ type: 'resize', roomId: roomId, cols: size.cols, rows: size.rows });
+    });
+    return entry;
+  }
+
+  function show(roomId) {
+    let entry = terms[roomId];
+    const isNew = !entry;
+    if (isNew) entry = createTerm(roomId);
+
+    for (const id in terms) terms[id].el.classList.toggle('active', id === roomId);
+    activeRoomId = roomId;
+
+    entry.fit.fit();
+    entry.term.focus();
+    if (isNew) {
+      // C#이 이 크기로 ConPTY 세션을 만든다
+      post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
+    }
+  }
+
+  window.addEventListener('resize', function () {
+    if (activeRoomId && terms[activeRoomId]) terms[activeRoomId].fit.fit();
+  });
+
+  window.chrome.webview.addEventListener('message', function (e) {
+    const msg = e.data;
+    switch (msg.type) {
+      case 'init':
+        cfg = { theme: msg.theme, fontFamily: msg.fontFamily, fontSize: msg.fontSize, windowsBuild: msg.windowsBuild };
+        document.body.style.background = msg.theme.background || '#0C0C0C';
+        // IME 조합 중 글자(composition-view)는 body 폰트를 상속 → 터미널과 동일하게 맞춤
+        document.body.style.fontFamily = msg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace";
+        document.body.style.fontSize = msg.fontSize + 'px';
+        // 조합 글자 스타일이 터미널 테마를 따라가도록 CSS 변수 설정
+        document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
+        document.documentElement.style.setProperty('--term-fg', msg.theme.foreground || '#CCCCCC');
+        break;
+      case 'show':
+        show(msg.roomId);
+        break;
+      case 'output': {
+        const t = terms[msg.roomId];
+        if (t) t.term.write(b64ToBytes(msg.data));
+        break;
+      }
+      case 'exited': {
+        const t = terms[msg.roomId];
+        if (t && !t.dead) {
+          t.dead = true;
+          t.term.write('\r\n\x1b[90m[세션 종료됨 — Enter로 재시작]\x1b[0m\r\n');
+        }
+        break;
+      }
+      case 'restarted': {
+        const t = terms[msg.roomId];
+        if (t) {
+          t.dead = false;
+          t.term.reset();
+          t.fit.fit();
+          post({ type: 'resize', roomId: msg.roomId, cols: t.term.cols, rows: t.term.rows });
+        }
+        break;
+      }
+      case 'focus': {
+        const t = terms[msg.roomId || activeRoomId];
+        if (t) t.term.focus();
+        break;
+      }
+      case 'adjustFontSize': {
+        cfg.fontSize = msg.size;
+        const active = terms[activeRoomId];
+        if (active) {
+          active.term.options.fontSize = msg.size;
+          active.fit.fit();
+        }
+        break;
+      }
+      case 'dispose': {
+        // 방 삭제 시 — xterm 인스턴스·DOM·버퍼 해제 (메모리 회수)
+        const t = terms[msg.roomId];
+        if (t) {
+          try { t.term.dispose(); } catch (e) {}
+          try { t.el.remove(); } catch (e) {}
+          delete terms[msg.roomId];
+          if (activeRoomId === msg.roomId) activeRoomId = null;
+        }
+        break;
+      }
+    }
+  });
+
+  post({ type: 'pageReady' });
+})();
+</script>
+</body>
+</html>

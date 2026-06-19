@@ -1,0 +1,582 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Lucide icon geometries (24×24 viewBox, outline style).
+        Source: lucide-react v1.14.0 (ISC license).
+        Use with the LucideIcon style; consumer sets Stroke to follow theme/foreground.
+    -->
+
+    <PathGeometry x:Key="IconFolder"
+        Figures="M2 2 M22 22 M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+
+    <PathGeometry x:Key="IconFolderOpen"
+        Figures="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
+
+    <PathGeometry x:Key="IconAppWindow"
+        Figures="M4 4H20A2 2 0 0 1 22 6V18A2 2 0 0 1 20 20H4A2 2 0 0 1 2 18V6A2 2 0 0 1 4 4Z M10 4V8 M2 8H22 M6 4V8"/>
+
+    <PathGeometry x:Key="IconLink"
+        Figures="M2 2 M22 22 M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+
+    <PathGeometry x:Key="IconShare2"
+        Figures="M4 12V20A2 2 0 0 0 6 22H18A2 2 0 0 0 20 20V12 M16 6L12 2 8 6 M12 2V15"/>
+
+    <PathGeometry x:Key="IconGlobe"
+        Figures="M2 2 M22 22 M2 12A10 10 0 1 0 22 12A10 10 0 1 0 2 12Z M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20 M2 12h20"/>
+
+    <PathGeometry x:Key="IconMessageSquare"
+        Figures="M2 2 M22 22 M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/>
+
+    <!-- text-align-justify (햄버거 / 레일 펼치기 토글) -->
+    <PathGeometry x:Key="IconMenu"
+        Figures="M3 5 h18 M3 12 h18 M3 19 h18"/>
+
+    <!-- 메모장 툴바: 정렬 (Lucide, 24 정규화 마커 적용) -->
+    <PathGeometry x:Key="IconAlignLeft"
+        Figures="M2 2 M22 22 M21 6H3 M15 12H3 M17 18H3"/>
+    <PathGeometry x:Key="IconAlignCenter"
+        Figures="M2 2 M22 22 M21 6H3 M17 12H7 M19 18H5"/>
+    <PathGeometry x:Key="IconAlignRight"
+        Figures="M2 2 M22 22 M21 6H3 M21 12H9 M21 18H7"/>
+
+    <PathGeometry x:Key="IconStar"
+        Figures="M2 2 M22 22 M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>
+
+    <PathGeometry x:Key="IconSettings"
+        Figures="M2 2 M22 22 M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915 M9 12 a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0"/>
+
+    <PathGeometry x:Key="IconSearch"
+        Figures="m21 21-4.34-4.34 M3 11 a 8 8 0 1 0 16 0 a 8 8 0 1 0 -16 0"/>
+
+    <PathGeometry x:Key="IconMoreHorizontal"
+        Figures="M4 12 a 1 1 0 1 0 2 0 a 1 1 0 1 0 -2 0 M11 12 a 1 1 0 1 0 2 0 a 1 1 0 1 0 -2 0 M18 12 a 1 1 0 1 0 2 0 a 1 1 0 1 0 -2 0"/>
+
+    <PathGeometry x:Key="IconMoreVertical"
+        Figures="M12 4 a 1 1 0 1 0 0 2 a 1 1 0 1 0 0 -2 M12 11 a 1 1 0 1 0 0 2 a 1 1 0 1 0 0 -2 M12 18 a 1 1 0 1 0 0 2 a 1 1 0 1 0 0 -2"/>
+
+    <PathGeometry x:Key="IconPaperclip"
+        Figures="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>
+
+    <PathGeometry x:Key="IconImage"
+        Figures="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M9 11 a 2 2 0 1 0 0 -4 a 2 2 0 1 0 0 4 M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+
+    <PathGeometry x:Key="IconSmile"
+        Figures="M2 12 a 10 10 0 1 0 20 0 a 10 10 0 1 0 -20 0 M8 14s1.5 2 4 2 4-2 4-2 M9 9 L9.01 9 M15 9 L15.01 9"/>
+
+    <PathGeometry x:Key="IconSend"
+        Figures="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z M21.854 2.147 l-10.94 10.939"/>
+
+    <PathGeometry x:Key="IconArrowLeft"
+        Figures="M19 12H5 M12 19l-7-7 7-7"/>
+
+    <PathGeometry x:Key="IconArrowRight"
+        Figures="M5 12h14 M12 5l7 7-7 7"/>
+
+    <PathGeometry x:Key="IconCornerDownRight"
+        Figures="M15 10l5 5-5 5 M4 4v7a4 4 0 0 0 4 4h12"/>
+
+    <PathGeometry x:Key="IconCornerDownLeft"
+        Figures="M9 10l-5 5 5 5 M20 4v7a4 4 0 0 1-4 4H4"/>
+
+    <PathGeometry x:Key="IconArrowUp"
+        Figures="m5 12 7-7 7 7 M12 19V5"/>
+
+    <PathGeometry x:Key="IconArrowDown"
+        Figures="M12 5v14 M19 12l-7 7-7-7"/>
+
+    <PathGeometry x:Key="IconCheck"
+        Figures="M20 6 9 17l-5-5"/>
+
+    <PathGeometry x:Key="IconDownload"
+        Figures="M12 15V3 M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5"/>
+
+    <!-- lucide save (플로피디스크). 콘텐츠가 3~21이라 24 정규화 마커는 생략(이미 박스 채움). -->
+    <PathGeometry x:Key="IconSave"
+        Figures="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z M17 21 17 13 7 13 7 21 M7 3 7 8 15 8"/>
+
+    <!-- lucide git-compare (Diff용). 원 2개 + 연결선 2개 (모두 stroke). -->
+    <PathGeometry x:Key="IconGitCompare"
+        Figures="M15 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M3 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M13 6h3a2 2 0 0 1 2 2v7 M11 18H8a2 2 0 0 1-2-2V9"/>
+
+    <PathGeometry x:Key="IconPencil"
+        Figures="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z M15 5 l4 4"/>
+
+    <PathGeometry x:Key="IconX"
+        Figures="M18 6 6 18 M6 6 l12 12"/>
+
+    <PathGeometry x:Key="IconLogOut"
+        Figures="m16 17 5-5-5-5 M21 12H9 M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M2 2 M22 22"/>
+
+    <PathGeometry x:Key="IconPin"
+        Figures="M12 17v5 M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>
+
+    <PathGeometry x:Key="IconChevronDown"
+        Figures="m6 9 6 6 6-6"/>
+    <PathGeometry x:Key="IconChevronUp"
+        Figures="m18 15-6-6-6 6"/>
+
+    <PathGeometry x:Key="IconChevronRight"
+        Figures="m9 18 6-6-6-6"/>
+
+    <PathGeometry x:Key="IconChevronLeft"
+        Figures="m15 18-6-6 6-6"/>
+
+    <PathGeometry x:Key="IconArchive"
+        Figures="M2 2 M22 22 M3 3H21A1 1 0 0 1 22 4V7A1 1 0 0 1 21 8H3A1 1 0 0 1 2 7V4A1 1 0 0 1 3 3Z M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8 M10 12h4"/>
+
+    <PathGeometry x:Key="IconArchiveRestore"
+        Figures="M2 2 M22 22 M3 3H21A1 1 0 0 1 22 4V7A1 1 0 0 1 21 8H3A1 1 0 0 1 2 7V4A1 1 0 0 1 3 3Z M4 8v11a2 2 0 0 0 2 2h2 M20 8v11a2 2 0 0 1-2 2h-2 M9 15l3-3 3 3 M12 12v9"/>
+
+    <PathGeometry x:Key="IconCalendar"
+        Figures="M2 2 M22 22 M8 2v4 M16 2v4 M5 4 h14 a2 2 0 0 1 2 2 v14 a2 2 0 0 1 -2 2 h-14 a2 2 0 0 1 -2 -2 v-14 a2 2 0 0 1 2 -2 z M3 10 h18"/>
+
+    <PathGeometry x:Key="IconTerminal"
+        Figures="M2 2 M22 22 M 4,2 H 20 A 2,2 0 0 1 22,4 V 20 A 2,2 0 0 1 20,22 H 4 A 2,2 0 0 1 2,20 V 4 A 2,2 0 0 1 4,2 Z M 6,9 L 11,12 L 6,15 M 13,15 H 18"/>
+
+    <PathGeometry x:Key="IconPlay"
+        Figures="M8 5v14l11-7z"/>
+
+    <PathGeometry x:Key="IconChevronsLeft"
+        Figures="m11 17-5-5 5-5 M17 17l-5-5 5-5"/>
+
+    <PathGeometry x:Key="IconChevronsRight"
+        Figures="m7 17 5-5-5-5 M13 17l5-5-5-5"/>
+
+    <PathGeometry x:Key="IconPlus"
+        Figures="M5 12h14 M12 5v14"/>
+
+    <PathGeometry x:Key="IconMessageCirclePlus"
+        Figures="M2 2 M22 22 M7.9 20A9 9 0 1 0 4 16.1L2 22Z M8 12h8 M12 8v8"/>
+
+    <PathGeometry x:Key="IconCirclePlus"
+        Figures="M2 2 M22 22 M2 12A10 10 0 1 0 22 12A10 10 0 1 0 2 12Z M8 12h8 M12 8v8"/>
+
+    <PathGeometry x:Key="IconTrash2"
+        Figures="M2 2 M22 22 M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M10 11v6 M14 11v6"/>
+
+    <PathGeometry x:Key="IconRotateCcw"
+        Figures="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8 M3 3v5h5"/>
+
+    <PathGeometry x:Key="IconCopy"
+        Figures="M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+
+    <!-- Lucide pipette (스포이드) — subpath별 시작을 절대 좌표로 변환 -->
+    <PathGeometry x:Key="IconPipette"
+        Figures="M2 22 L3 21 H6 L15 12 M3 21 V18 L12 9 M15 6 l3.4-3.4 a2.1 2.1 0 1 1 3 3 L18 9 l.4.4 a2.1 2.1 0 1 1-3 3 l-3.8-3.8 a2.1 2.1 0 1 1 3-3 l.4.4 Z"/>
+
+    <PathGeometry x:Key="IconMaximize2"
+        Figures="M15 3 21 3 21 9 M9 21 3 21 3 15 M21 3 14 10 M3 21 10 14"/>
+
+    <!-- Lucide picture-in-picture-2 (미니 채팅방 모드 진입) -->
+    <PathGeometry x:Key="IconPictureInPicture2"
+        Figures="M2 2 M22 22 M21 9 V6 A2 2 0 0 0 19 4 H4 A2 2 0 0 0 2 6 V16 A2 2 0 0 0 4 18 H8 M14 13 H20 A2 2 0 0 1 22 15 V18 A2 2 0 0 1 20 20 H14 A2 2 0 0 1 12 18 V15 A2 2 0 0 1 14 13 Z"/>
+
+    <PathGeometry x:Key="IconCheckCheck"
+        Figures="M18 6 7 17l-5-5 M22 10l-7.5 7.5L13 16"/>
+
+    <PathGeometry x:Key="IconEye"
+        Figures="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z M9 12a3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0"/>
+
+    <PathGeometry x:Key="IconEyeOff"
+        Figures="M9.88 9.88a3 3 0 1 0 4.24 4.24 M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68 M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61 M2 2 22 22"/>
+
+    <PathGeometry x:Key="IconGripVertical"
+        Figures="M9 5L9 7 M9 11L9 13 M9 17L9 19 M14 5L14 7 M14 11L14 13 M14 17L14 19"/>
+
+    <PathGeometry x:Key="IconUser"
+        Figures="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2 M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"/>
+
+    <PathGeometry x:Key="IconUserRound"
+        Figures="M2 2 M22 22 M7 8a5 5 0 1 0 10 0a5 5 0 1 0-10 0 M20 21a8 8 0 0 0-16 0"/>
+
+    <PathGeometry x:Key="IconDollarSign"
+        Figures="M2 2 M22 22 M12 2L12 22 M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+
+    <PathGeometry x:Key="IconListTodo"
+        Figures="M2 2 M22 22 M13 5h8 M13 12h8 M13 19h8 M4 4h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M3 17l2 2 4-4"/>
+
+    <PathGeometry x:Key="IconSun"
+        Figures="M2 2 M22 22 M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M6.34 17.66l-1.41 1.41 M19.07 4.93l-1.41 1.41"/>
+
+    <PathGeometry x:Key="IconBug"
+        Figures="M2 2 M22 22 M12 20v-9 M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z M14.12 3.88L16 2 M21 21a4 4 0 0 0-3.81-4 M21 5a4 4 0 0 1-3.55 3.97 M22 13h-4 M3 21a4 4 0 0 1 3.81-4 M3 5a4 4 0 0 0 3.55 3.97 M6 13H2 M8 2l1.88 1.88 M9 7.13V6a3 3 0 1 1 6 0v1.13"/>
+
+    <PathGeometry x:Key="IconAlarmClock"
+        Figures="M2 2 M22 22 M4 13a8 8 0 1 0 16 0a8 8 0 1 0-16 0 M12 9v4l2 2 M5 3L2 6 M22 6l-3-3 M6.38 18.7L4 21 M17.64 18.67L20 21"/>
+
+    <!-- lucide timer — 스톱워치 모양 (상단 버튼 + 원형 본체) -->
+    <PathGeometry x:Key="IconTimer"
+        Figures="M2 2 M22 22 M10 2h4 M12 14l3-3 M4 14a8 8 0 1 0 16 0a8 8 0 1 0-16 0"/>
+
+    <!-- lucide hash — # 기호 -->
+    <PathGeometry x:Key="IconHash"
+        Figures="M2 2 M22 22 M4 9 H20 M4 15 H20 M10 3 L8 21 M16 3 L14 21"/>
+
+    <PathGeometry x:Key="IconCalculator"
+        Figures="M2 2 M22 22 M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z M8 6h8 M16 14v4 M16 10h.01 M12 10h.01 M8 10h.01 M12 14h.01 M8 14h.01 M12 18h.01 M8 18h.01"/>
+
+    <PathGeometry x:Key="IconSparkle"
+        Figures="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z M20 2v4 M22 4h-4 M4 18a2 2 0 1 0 0 4 2 2 0 1 0 0-4"/>
+
+    <PathGeometry x:Key="IconTriangleAlert"
+        Figures="M2 2 M22 22 M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3 M12 9v4 M12 17h.01"/>
+
+    <PathGeometry x:Key="IconCode"
+        Figures="M2 2 M22 22 M16 18l6-6-6-6 M8 6l-6 6 6 6"/>
+
+    <PathGeometry x:Key="IconAtSign"
+        Figures="M2 2 M22 22 M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>
+
+    <PathGeometry x:Key="IconSiren"
+        Figures="M2 2 M22 22 M7 18v-6a5 5 0 1 1 10 0v6 M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z M21 12h1 M18.5 4.5L18 5 M2 12h1 M12 2v1 M4.929 4.929l.707.707 M12 12v6"/>
+
+    <PathGeometry x:Key="IconBaby"
+        Figures="M2 2 M22 22 M10 16c.5.3 1.2.5 2 .5s1.5-.2 2-.5 M15 12h.01 M19.38 6.813A9 9 0 0 1 20.8 10.2a2 2 0 0 1 0 3.6 9 9 0 0 1-17.6 0 2 2 0 0 1 0-3.6A9 9 0 0 1 12 3c2 0 3.5 1.1 3.5 2.5s-.9 2.5-2 2.5c-.8 0-1.5-.4-1.5-1 M9 12h.01"/>
+
+    <PathGeometry x:Key="IconZap"
+        Figures="M2 2 M22 22 M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
+
+    <PathGeometry x:Key="IconShoppingCart"
+        Figures="M2 2 M22 22 M7 21a1 1 0 1 0 2 0a1 1 0 1 0-2 0 M18 21a1 1 0 1 0 2 0a1 1 0 1 0-2 0 M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>
+
+    <PathGeometry x:Key="IconRss"
+        Figures="M2 2 M22 22 M4 11a9 9 0 0 1 9 9 M4 4a16 16 0 0 1 16 16 M4 19a1 1 0 1 0 2 0a1 1 0 1 0-2 0"/>
+
+    <PathGeometry x:Key="IconPrinter"
+        Figures="M2 2 M22 22 M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6 M7 14h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/>
+
+    <PathGeometry x:Key="IconCloud"
+        Figures="M2 2 M22 22 M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>
+
+    <!-- lucide cloud-sun (구름 조금/많음) -->
+    <PathGeometry x:Key="IconCloudSun"
+        Figures="M2 2 M22 22 M12 2v2 M4.93 4.93l1.41 1.41 M20 12h2 M19.07 4.93l-1.41 1.41 M15.947 12.65a4 4 0 0 0-5.925-4.128 M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6z"/>
+
+    <!-- lucide cloud-rain (비) -->
+    <PathGeometry x:Key="IconCloudRain"
+        Figures="M2 2 M22 22 M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242 M16 14v6 M8 14v6 M12 16v6"/>
+
+    <!-- lucide cloud-snow (눈) -->
+    <PathGeometry x:Key="IconCloudSnow"
+        Figures="M2 2 M22 22 M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242 M8 15h.01 M8 19h.01 M12 17h.01 M12 21h.01 M16 15h.01 M16 19h.01"/>
+
+    <!-- lucide droplet (습도) -->
+    <PathGeometry x:Key="IconDroplet"
+        Figures="M2 2 M22 22 M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C8 11.1 7 13 7 15a7 7 0 0 0 7 7z"/>
+
+    <!-- lucide umbrella (강수) -->
+    <PathGeometry x:Key="IconUmbrella"
+        Figures="M2 2 M22 22 M22 12a10.06 10.06 0 0 0-20 0z M12 12v8a2 2 0 0 0 4 0 M12 2v1"/>
+
+    <!-- lucide thermometer (강수량 — 이미지 참고) -->
+    <PathGeometry x:Key="IconThermometer"
+        Figures="M2 2 M22 22 M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/>
+
+    <PathGeometry x:Key="IconBell"
+        Figures="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M13.73 21a2 2 0 0 1-3.46 0"/>
+
+    <PathGeometry x:Key="IconBellOff"
+        Figures="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M13.73 21a2 2 0 0 1-3.46 0 M2 2 22 22"/>
+
+    <PathGeometry x:Key="IconPalette"
+        Figures="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z M13.5 8a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z M17.5 11a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z M6.5 12a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z M8.5 7a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z"/>
+
+    <PathGeometry x:Key="IconSliders"
+        Figures="M4 21V14 M4 10V3 M12 21V12 M12 8V3 M20 21V16 M20 12V3 M1 14h6 M9 8h6 M17 16h6"/>
+
+    <PathGeometry x:Key="IconBox"
+        Figures="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z M3.29 7 12 12l8.71-5 M12 22V12"/>
+
+    <PathGeometry x:Key="IconLightbulb"
+        Figures="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5 M9 18h6 M10 22h4"/>
+
+    <PathGeometry x:Key="IconFlame"
+        Figures="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+
+    <PathGeometry x:Key="IconKey"
+        Figures="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z M16.5 7.5 a .5 .5 0 1 0 1 0 a .5 .5 0 1 0 -1 0"/>
+
+    <PathGeometry x:Key="IconLock"
+        Figures="M2 2 M22 22 M5 13a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z M8 11V7a4 4 0 0 1 8 0v4 M12 16 a 1 1 0 1 0 2 0 a 1 1 0 1 0 -2 0"/>
+
+    <PathGeometry x:Key="IconBookmark"
+        Figures="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+
+    <PathGeometry x:Key="IconHeart"
+        Figures="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+
+    <PathGeometry x:Key="IconClock"
+        Figures="M2 12 a 10 10 0 1 0 20 0 a 10 10 0 1 0 -20 0 M12 6v6l4 2"/>
+
+    <PathGeometry x:Key="IconDatabase"
+        Figures="M2 2 M22 22 M3 5 A9 3 0 1 0 21 5 A9 3 0 1 0 3 5 Z M3 5V19A9 3 0 0 0 21 19V5 M3 12A9 3 0 0 0 21 12"/>
+
+    <PathGeometry x:Key="IconStorage"
+        Figures="M2 2 M22 22 M3 3H21A1 1 0 0 1 22 4V7A1 1 0 0 1 21 8H3A1 1 0 0 1 2 7V4A1 1 0 0 1 3 3Z M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8 M10 12h4"/>
+
+    <!-- tool-case icon (Lucide, 24×24 viewBox, stroke-only) -->
+    <PathGeometry x:Key="IconBoxes"
+        Figures="M2 2 M22 22 M10 15h4 M14.817 10.995l-.971-1.45 1.034-1.232a2 2 0 0 0-2.025-3.238l-1.82.364L9.91 3.885a2 2 0 0 0-3.625.748L6.141 6.55l-1.725.426a2 2 0 0 0-.19 3.756l.657.27 M18.822 10.995l2.26-5.38a1 1 0 0 0-.557-1.318L16.954 2.9a1 1 0 0 0-1.281.533l-.924 2.122 M4 12.006A1 1 0 0 1 4.994 11H19a1 1 0 0 1 1 1v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>
+
+    <PathGeometry x:Key="IconServer"
+        Figures="M2 2 M22 22 M4 2H20A2 2 0 0 1 22 4V8A2 2 0 0 1 20 10H4A2 2 0 0 1 2 8V4A2 2 0 0 1 4 2Z M4 14H20A2 2 0 0 1 22 16V20A2 2 0 0 1 20 22H4A2 2 0 0 1 2 20V16A2 2 0 0 1 4 14Z M6 6H6.01 M6 18H6.01"/>
+
+    <PathGeometry x:Key="IconPlane"
+        Figures="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
+
+    <PathGeometry x:Key="IconCar"
+        Figures="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2 M9 17h6 M5 17 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0 M15 17 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+
+    <PathGeometry x:Key="IconClover"
+        Figures="M11 12 a 1 1 0 1 0 2 0 a 1 1 0 1 0 -2 0 M16.17 7.83 2 22 M4.02 12a2.827 2.827 0 1 1 3.81-4.17A2.827 2.827 0 1 1 12 4.02a2.827 2.827 0 1 1 4.17 3.81A2.827 2.827 0 1 1 19.98 12a2.827 2.827 0 1 1-3.81 4.17A2.827 2.827 0 1 1 12 19.98a2.827 2.827 0 1 1-4.17-3.81 M7.83 7.83l8.34 8.34"/>
+
+    <PathGeometry x:Key="IconBanknote"
+        Figures="M4 6 L20 6 Q22 6 22 8 L22 16 Q22 18 20 18 L4 18 Q2 18 2 16 L2 8 Q2 6 4 6 Z M10 12 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0 M6 12h.01 M18 12h.01"/>
+
+    <PathGeometry x:Key="IconPartyPopper"
+        Figures="M5.8 11.3 2 22l10.7-3.79 M4 3h.01 M22 8h.01 M15 2h.01 M22 20h.01 M22 2l-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10 M22 13l-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17 M11 2l.33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7 M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z"/>
+
+    <PathGeometry x:Key="IconSoup"
+        Figures="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2 M7 2v20 M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3z M21 15v7"/>
+
+    <PathGeometry x:Key="IconCoffee"
+        Figures="M10 2v2 M14 2v2 M6 2v2 M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/>
+
+    <PathGeometry x:Key="IconBookOpen"
+        Figures="M2 3h6a4 4 0 0 1 4 4v12H2z M22 3h-6a4 4 0 0 0-4 4v12H22z M12 7v12"/>
+
+    <PathGeometry x:Key="IconMusic"
+        Figures="M5 17 a4 3 0 1 0 8 0 a4 3 0 1 0-8 0 M13 17V5 M13 5 C18 6 20 10 16 14"/>
+
+    <PathGeometry x:Key="IconCamera"
+        Figures="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z M9 13 a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0"/>
+
+    <PathGeometry x:Key="IconLaptop"
+        Figures="M4 3h16a2 2 0 0 1 2 2v11H2V5a2 2 0 0 1 2-2z M2 16h20l-2 4H4z"/>
+
+    <PathGeometry x:Key="IconPawPrint"
+        Figures="M9 4 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0 M16 8 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0 M18 16 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0 M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"/>
+
+    <PathGeometry x:Key="IconBroom"
+        Figures="M17 3 L12 12 M11 12 L13 12 M11 12 L5 21 M13 12 L19 21 M5 21 L19 21 M8 17 L9 20 M12 16 L13 20 M16 17 L17 20"/>
+
+    <PathGeometry x:Key="IconEraser"
+        Figures="m7 21-4.3-4.3a2.4 2.4 0 0 1 0-3.4L12.6 3.4a2.4 2.4 0 0 1 3.4 0l5.6 5.6a2.4 2.4 0 0 1 0 3.4L13 21 M22 21H7 M5 11l9 9"/>
+
+    <!-- 청소솔: 손잡이(길게) + 가로 페룰 + 아래로 퍼지는 솔(바닥 V노치 2개로 갈래 3개). 사용처에서 45° 우회전 -->
+    <PathGeometry x:Key="IconBrushCleaning"
+        Figures="M10.5 9.5 V4 Q10.5 2.5 12 2.5 Q13.5 2.5 13.5 4 V9.5 M6 9.5 L4 19.5 L8.3 19.5 L9.3 15.5 L10.3 19.5 L13.7 19.5 L14.7 15.5 L15.7 19.5 L20 19.5 L18 9.5 Z"/>
+
+    <PathGeometry x:Key="IconCheckX"
+        Figures="M2 12 L7 17 L14 8 M16 8 L22 14 M22 8 L16 14"/>
+
+    <PathGeometry x:Key="IconList"
+        Figures="M3 6h.01 M3 12h.01 M3 18h.01 M8 6h13 M8 12h13 M8 18h13"/>
+
+    <PathGeometry x:Key="IconExternalLink"
+        Figures="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6 M15 3h6v6 M10 14 21 3"/>
+
+    <!-- external-link 의 화살표만 박스 안쪽으로 뒤집은 버전 (팝업 → 메인 창으로 되돌리기) -->
+    <PathGeometry x:Key="IconExternalLinkIn"
+        Figures="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6 M14 16h-6v-6 M19 5 8 16"/>
+
+    <PathGeometry x:Key="IconSprout"
+        Figures="M7 20h10 M10 20c5.5-2.5.8-6.4 3-9 M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-3.4 2.2-.7 4.4 0 5.5 2 M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4.9 1-4.9 2"/>
+
+    <PathGeometry x:Key="IconUtensils"
+        Figures="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2 M7 2v20 M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3z M21 15v7"/>
+
+    <PathGeometry x:Key="IconTrain"
+        Figures="M8 3.1V7a4 4 0 0 0 8 0V3.1 M10 3h4 M6 7h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z M6 19l-2 3 M18 19l2 3 M7 11h.01 M17 11h.01 M10 19v.01 M14 19v.01"/>
+
+    <PathGeometry x:Key="IconStore"
+        Figures="M2 3h20v5H2z M4 8v13h16V8 M15 8v13 M9 8v13 M9 14h6"/>
+
+    <PathGeometry x:Key="IconCircleCheck"
+        Figures="M22 11.08V12a10 10 0 1 1-5.93-9.14 M9 11l3 3L22 4"/>
+
+    <PathGeometry x:Key="IconMapPin"
+        Figures="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0 M15 10 a 3 3 0 1 0 -6 0 a 3 3 0 1 0 6 0"/>
+
+    <PathGeometry x:Key="IconHome"
+        Figures="M2 2 M22 22 M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8 M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+
+    <PathGeometry x:Key="IconHospital"
+        Figures="M12 6v4 M14 8h-4 M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 2h6v5H9z"/>
+
+    <PathGeometry x:Key="IconGift"
+        Figures="M20 12v10H4V12 M2 7h20v5H2z M12 22V7 M7.5 7C5 7 5 4 7.5 4S10 7 12 7 M16.5 7C19 7 19 4 16.5 4S14 7 12 7"/>
+
+    <PathGeometry x:Key="IconTrophy"
+        Figures="M6 9H4.5a2.5 2.5 0 0 1 0-5H6 M18 9h1.5a2.5 2.5 0 0 0 0-5H18 M4 22h16 M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 19.75 7 21.05 7 22 M14 14.66V17c0 .55.47.98.97 1.21C16.15 19.75 17 21.05 17 22 M18 2H6v7a6 6 0 0 0 12 0V2z"/>
+
+    <PathGeometry x:Key="IconBike"
+        Figures="M3 17 a 4 4 0 1 0 8 0 a 4 4 0 1 0 -8 0 M13 17 a 4 4 0 1 0 8 0 a 4 4 0 1 0 -8 0 M16 7 a 1 1 0 1 0 2 0 a 1 1 0 1 0 -2 0 M7 17 L12 11 17 17 M12 11 L15 11 M15 11 L17 7 M17 7 L15 6"/>
+
+    <PathGeometry x:Key="IconFlag"
+        Figures="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22V15"/>
+
+    <PathGeometry x:Key="IconListChecks"
+        Figures="m3 17 2 2 4-4 m-6-6 2 2 4-4 M13 6h8 M13 12h8 M13 18h8"/>
+
+    <PathGeometry x:Key="IconStocks"
+        Figures="M6 3v3 M6 14v7 M4 6h4v8H4z M12 4v4 M12 17v4 M10 8h4v9h-4z M18 5v3 M18 16v5 M16 8h4v8h-4z"/>
+
+    <PathGeometry x:Key="IconWallet"
+        Figures="M21 12V7H5a2 2 0 0 1 0-4h14v4 M3 5v14a2 2 0 0 0 2 2h16v-5 M18 12a2 2 0 0 0-2 2 2 2 0 0 0 2 2h4v-4z"/>
+
+    <PathGeometry x:Key="IconPiggyBank"
+        Figures="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-7.5-1-10 2-1 1-2 2-2 4 0 2 1.5 4 3 4l1 2v2h3v-2h3v2h3v-2c2-1 3-3 3-5 0-3 0-5-3-5z M16 8 a .5 .5 0 1 0 .01 0 M2 12h2"/>
+
+    <PathGeometry x:Key="IconCreditCard"
+        Figures="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M3 11h18"/>
+
+    <PathGeometry x:Key="IconReceipt"
+        Figures="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z M16 8H8 M16 12H8 M13 16H8"/>
+
+    <PathGeometry x:Key="IconFileText"
+        Figures="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z M14 2v4a2 2 0 0 0 2 2h4 M16 13H8 M16 17H8 M10 9H8"/>
+
+    <PathGeometry x:Key="IconPieChart"
+        Figures="M21.21 15.89A10 10 0 1 1 8 2.83 M22 12A10 10 0 0 0 12 2v10z"/>
+
+    <PathGeometry x:Key="IconMap"
+        Figures="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z M15 5.764v15 M9 3.236v15"/>
+
+    <PathGeometry x:Key="IconGhost"
+        Figures="M9 10h.01 M15 10h.01 M12 2a8 8 0 0 1 8 8v12l-4-4-4 4-4-4-4 4V10a8 8 0 0 1 8-8z"/>
+
+    <PathGeometry x:Key="IconPhone"
+        Figures="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+
+    <PathGeometry x:Key="IconCode2"
+        Figures="M4 17l6-6-6-6 M12 19h8"/>
+
+    <!-- Lucide smartphone (24×24) -->
+    <PathGeometry x:Key="IconSmartphone"
+        Figures="M2 2 M22 22 M7 2H17A2 2 0 0 1 19 4V20A2 2 0 0 1 17 22H7A2 2 0 0 1 5 20V4A2 2 0 0 1 7 2Z M12 18h.01"/>
+
+    <!-- Lucide clipboard icon (24×24) -->
+    <PathGeometry x:Key="IconClipboard"
+        Figures="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/>
+
+    <!-- Lucide clipboard-pen-line icon (24×24) -->
+    <PathGeometry x:Key="IconClipboardPenLine"
+        Figures="M2 2 M22 22 M9 2 H15 A1 1 0 0 1 16 3 V5 A1 1 0 0 1 15 6 H9 A1 1 0 0 1 8 5 V3 A1 1 0 0 1 9 2 Z M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-.5 M16 4h2a2 2 0 0 1 1.73 1 M8 18h1 M21.378 12.626a1 1 0 0 0-3.004-3.004l-4.01 4.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/>
+
+    <!-- Lucide braces {} icon (24×24) -->
+    <PathGeometry x:Key="IconBraces"
+        Figures="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1 M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>
+
+    <!-- Tools / wrench icon (Lucide, 24×24 viewBox, stroke-only) -->
+    <PathGeometry x:Key="IconWrench"
+        Figures="M2 2 M22 22 M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+
+    <!-- Redmine logo (256×256 viewBox, filled shapes) -->
+    <PathGeometry x:Key="IconRedmine"
+        Figures="M94 61 L103 78 L103 80 L105 82 L105 84 L110 94 L112 95 L113 94 L125 94 L126 93 L130 93 L131 94 L145 94 L161 62 L161 60 L160 59 L158 59 L157 58 L155 58 L154 57 L152 57 L148 55 L145 55 L144 54 L138 54 L137 53 L119 53 L118 54 L112 54 L111 55 L108 55 L107 56 L104 56 L103 57 L98 58 Z M74 68 L72 70 L68 72 L65 75 L64 75 L60 79 L59 79 L47 92 L47 93 L43 97 L43 99 L49 104 L50 104 L53 107 L54 107 L57 110 L58 110 L61 113 L62 113 L65 116 L66 116 L69 119 L70 119 L73 122 L75 123 L77 123 L77 122 L80 119 L80 118 L83 115 L83 114 L92 105 L93 105 L96 102 L99 101 L101 99 L101 98 L99 96 L99 95 L93 89 L93 88 L87 82 L87 81 L81 75 L81 74 L75 68 Z M181 68 L180 68 L178 70 L178 71 L172 77 L172 78 L166 84 L166 85 L155 97 L155 100 L161 103 L174 116 L174 117 L179 123 L181 123 L183 121 L184 121 L187 118 L188 118 L191 115 L192 115 L195 112 L196 112 L199 109 L200 109 L203 106 L204 106 L207 103 L208 103 L211 100 L212 100 L212 97 L211 95 L207 91 L207 90 L193 76 L192 76 L189 73 L188 73 L186 71 L185 71 Z M31 115 L26 125 L26 127 L23 132 L23 134 L21 137 L21 139 L19 142 L19 144 L17 147 L17 149 L16 150 L16 153 L22 156 L24 156 L29 159 L31 159 L38 163 L40 163 L45 166 L47 166 L52 169 L54 169 L57 171 L59 171 L60 170 L60 166 L61 165 L61 162 L62 161 L63 154 L64 153 L64 151 L65 150 L66 145 L68 142 L68 140 L70 137 L70 133 L46 121 L44 121 L33 115 Z M224 115 L222 115 L197 128 L195 128 L185 133 L186 138 L188 141 L188 143 L189 144 L189 146 L190 147 L190 149 L191 150 L191 152 L193 156 L193 159 L194 160 L194 163 L195 164 L195 168 L196 169 L196 171 L199 171 L204 168 L206 168 L213 164 L215 164 L220 161 L222 161 L227 158 L229 158 L236 154 L238 154 L240 152 L238 148 L237 143 L235 140 L235 138 L229 126 L229 124 Z M10 172 L10 174 L9 175 L9 178 L8 179 L8 182 L7 183 L7 186 L6 187 L6 191 L5 192 L4 201 L3 202 L3 207 L2 208 L2 215 L1 216 L1 225 L55 225 L55 208 L56 207 L56 193 L57 192 L57 183 L55 182 L52 182 L51 181 L48 181 L47 180 L44 180 L43 179 L40 179 L39 178 L35 178 L34 177 L31 177 L30 176 L27 176 L26 175 L23 175 L22 174 L15 173 L14 172 Z M245 172 L241 172 L240 173 L237 173 L236 174 L233 174 L232 175 L229 175 L228 176 L225 176 L224 177 L221 177 L220 178 L217 178 L216 179 L213 179 L212 180 L208 180 L207 181 L204 181 L203 182 L200 182 L198 183 L198 187 L199 188 L199 198 L200 199 L200 225 L254 225 L255 224 L255 220 L254 219 L254 212 L253 211 L253 205 L252 204 L252 199 L251 198 L251 194 L250 193 L250 190 L249 189 L249 185 L248 184 L248 181 L247 180 L247 177 L246 176 L246 173 Z"/>
+
+    <PathGeometry x:Key="IconGrid2x2"
+        Figures="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/>
+
+    <!-- Lucide: table (둥근 사각 + 세로 1·가로 2 구분선) — 표/시트 -->
+    <PathGeometry x:Key="IconTable"
+        Figures="M2 2 M22 22 M12 3 V21 M5 3 H19 A2 2 0 0 1 21 5 V19 A2 2 0 0 1 19 21 H5 A2 2 0 0 1 3 19 V5 A2 2 0 0 1 5 3 Z M3 9 H21 M3 15 H21"/>
+
+    <!-- Lucide: network — ERD/관계도 (상단 1 + 하단 2 노드 + 연결선) -->
+    <PathGeometry x:Key="IconNetwork"
+        Figures="M2 2 M22 22 M10 4 H14 A1 1 0 0 1 15 5 V8 A1 1 0 0 1 14 9 H10 A1 1 0 0 1 9 8 V5 A1 1 0 0 1 10 4 Z M4 15 H8 A1 1 0 0 1 9 16 V19 A1 1 0 0 1 8 20 H4 A1 1 0 0 1 3 19 V16 A1 1 0 0 1 4 15 Z M16 15 H20 A1 1 0 0 1 21 16 V19 A1 1 0 0 1 20 20 H16 A1 1 0 0 1 15 19 V16 A1 1 0 0 1 16 15 Z M12 9 V12 M6 15 V13 H18 V15"/>
+
+    <!-- Lucide: between-vertical-start — 위에 행 삽입 (위쪽 아래화살 + 두 칸) -->
+    <PathGeometry x:Key="IconBetweenVerticalStart"
+        Figures="M2 2 M22 22 M4 8 H9 A1 1 0 0 1 10 9 V20 A1 1 0 0 1 9 21 H4 A1 1 0 0 1 3 20 V9 A1 1 0 0 1 4 8 Z M15 8 H20 A1 1 0 0 1 21 9 V20 A1 1 0 0 1 20 21 H15 A1 1 0 0 1 14 20 V9 A1 1 0 0 1 15 8 Z M9 2 l3 3 3 -3"/>
+
+    <!-- Lucide: between-vertical-end — 아래에 행 삽입 (아래쪽 위화살 + 두 칸) -->
+    <PathGeometry x:Key="IconBetweenVerticalEnd"
+        Figures="M2 2 M22 22 M4 3 H9 A1 1 0 0 1 10 4 V15 A1 1 0 0 1 9 16 H4 A1 1 0 0 1 3 15 V4 A1 1 0 0 1 4 3 Z M15 3 H20 A1 1 0 0 1 21 4 V15 A1 1 0 0 1 20 16 H15 A1 1 0 0 1 14 15 V4 A1 1 0 0 1 15 3 Z M15 22 l-3 -3 -3 3"/>
+
+    <!-- Lucide: between-horizontal-start — 왼쪽에 열 삽입 (왼쪽 오른화살 + 두 칸) -->
+    <PathGeometry x:Key="IconBetweenHorizontalStart"
+        Figures="M2 2 M22 22 M9 3 H20 A1 1 0 0 1 21 4 V9 A1 1 0 0 1 20 10 H9 A1 1 0 0 1 8 9 V4 A1 1 0 0 1 9 3 Z M9 14 H20 A1 1 0 0 1 21 15 V20 A1 1 0 0 1 20 21 H9 A1 1 0 0 1 8 20 V15 A1 1 0 0 1 9 14 Z M2 9 l3 3 -3 3"/>
+
+    <!-- Lucide: between-horizontal-end — 오른쪽에 열 삽입 (오른쪽 왼화살 + 두 칸) -->
+    <PathGeometry x:Key="IconBetweenHorizontalEnd"
+        Figures="M2 2 M22 22 M4 3 H15 A1 1 0 0 1 16 4 V9 A1 1 0 0 1 15 10 H4 A1 1 0 0 1 3 9 V4 A1 1 0 0 1 4 3 Z M4 14 H15 A1 1 0 0 1 16 15 V20 A1 1 0 0 1 15 21 H4 A1 1 0 0 1 3 20 V15 A1 1 0 0 1 4 14 Z M22 15 l-3 -3 3 -3"/>
+
+    <!-- Lucide: panel-top — 첫 행 강조 (상단 칸 구분) -->
+    <PathGeometry x:Key="IconPanelTop"
+        Figures="M2 2 M22 22 M5 3 H19 A2 2 0 0 1 21 5 V19 A2 2 0 0 1 19 21 H5 A2 2 0 0 1 3 19 V5 A2 2 0 0 1 5 3 Z M3 9 H21"/>
+
+    <!-- Lucide: panel-left — 첫 열 강조 (좌측 칸 구분) -->
+    <PathGeometry x:Key="IconPanelLeft"
+        Figures="M2 2 M22 22 M5 3 H19 A2 2 0 0 1 21 5 V19 A2 2 0 0 1 19 21 H5 A2 2 0 0 1 3 19 V5 A2 2 0 0 1 5 3 Z M9 3 V21"/>
+
+    <!-- Lucide: scissors -->
+    <PathGeometry x:Key="IconScissors"
+        Figures="M6 9 A3 3 0 1 0 6 3 A3 3 0 1 0 6 9 Z M6 21 A3 3 0 1 0 6 15 A3 3 0 1 0 6 21 Z M20 4 L8.12 15.88 M14.47 14.48 L20 20 M8.12 8.12 L12 12"/>
+
+    <!-- Lucide: select-all (square with dashed border) -->
+    <PathGeometry x:Key="IconSelectAll"
+        Figures="M3 5 A2 2 0 0 1 5 3 H19 A2 2 0 0 1 21 5 V19 A2 2 0 0 1 19 21 H5 A2 2 0 0 1 3 19 Z M9 9 H15 V15 H9 Z"/>
+
+    <!-- Lucide: shield -->
+    <PathGeometry x:Key="IconShield"
+        Figures="M12 22 C12 22 4 18 4 12 V5 L12 2 L20 5 V12 C20 18 12 22 12 22 Z"/>
+
+    <PathGeometry x:Key="IconStickyNote"
+        Figures="M15.5,3 H5 a2,2 0 0 0-2,2 v14 c0,1.1 0.9,2 2,2 h14 a2,2 0 0 0 2,-2 V8.5 Z M15,3 v6 h6"/>
+
+    <!-- Filled icon style (for logos/solid icons): Fill follows TextBrush -->
+    <Style x:Key="FilledIcon" TargetType="Path">
+        <Setter Property="Stretch" Value="Uniform"/>
+        <Setter Property="Fill" Value="{DynamicResource TextBrush}"/>
+        <Setter Property="Stroke" Value="Transparent"/>
+        <Setter Property="StrokeThickness" Value="0"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+    </Style>
+
+    <!-- Inside a Button: Fill follows the button's current Foreground -->
+    <Style x:Key="FilledButtonIcon" TargetType="Path" BasedOn="{StaticResource FilledIcon}">
+        <Setter Property="Fill"
+                Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"/>
+    </Style>
+
+    <!-- Outline icon style: stretches inside its container, follows TextBrush by default -->
+    <Style x:Key="LucideIcon" TargetType="Path">
+        <Setter Property="Stretch" Value="Uniform"/>
+        <Setter Property="StrokeThickness" Value="1.25"/>
+        <Setter Property="StrokeStartLineCap" Value="Round"/>
+        <Setter Property="StrokeEndLineCap" Value="Round"/>
+        <Setter Property="StrokeLineJoin" Value="Round"/>
+        <Setter Property="Fill" Value="Transparent"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Stroke" Value="{DynamicResource TextBrush}"/>
+    </Style>
+
+    <!-- Star: Miter join for sharp points instead of the default Round join -->
+    <Style x:Key="LucideIconStar" TargetType="Path" BasedOn="{StaticResource LucideIcon}">
+        <Setter Property="StrokeLineJoin" Value="Miter"/>
+        <Setter Property="StrokeMiterLimit" Value="10"/>
+    </Style>
+
+    <!-- Inside a Button: stroke follows the button's current Foreground (so hover/disabled cascade naturally) -->
+    <Style x:Key="LucideButtonIcon" TargetType="Path" BasedOn="{StaticResource LucideIcon}">
+        <Setter Property="Stroke"
+                Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"/>
+    </Style>
+
+    <!-- Inside a MenuItem: fixed stroke using TextBrush -->
+    <Style x:Key="LucideMenuIcon" TargetType="Path" BasedOn="{StaticResource LucideIcon}">
+        <Setter Property="Stroke" Value="{DynamicResource TextBrush}"/>
+    </Style>
+
+    <!-- QR code icon (TabBtn4 + QrCodePanel) -->
+    <PathGeometry x:Key="IconQrCode"
+        Figures="M3 3h5v5H3z M16 3h5v5h-5z M3 16h5v5H3z M11 3h2v4h-2z M3 11h4v2H3z M16 11h5v2h-5z M11 16h2v5h-2z M18 14v5 M14 18h5 M7 7h2v2H7z M7 11h2v2H7z M11 7h2v2h-2z M11 11h2v2h-2z"/>
+
+</ResourceDictionary>
