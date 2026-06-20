@@ -94,17 +94,17 @@
                         <ColumnDefinition Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <!-- 인라인 메타: 아이콘 + 텍스트를 | 로 구분. debez FavoritesPanelView/ToolboxPanelView 의 · 구분 컨벤션 따르되
-                         사용자가 명시 요청한 | 사용. 비-git 저장소면 | + 브렌치 그룹 전체 숨김. -->
+                    <!-- 인라인 메타: 아이콘 + 텍스트를 | 로 구분. debez FavoritesPanelView/MainWindow 인라인 패턴 정합.
+                         아이콘 stroke / 텍스트 weight 는 LucideIcon(1.25)·Normal 컨벤션 적용(버블 잔재 SemiBold·1.6 제거). -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <!-- 프로젝트 명 -->
                         <Path Data="{StaticResource IconHash}" Width="14" Height="14" Stretch="Uniform"
-                              Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.6"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                              Fill="Transparent" SnapsToDevicePixels="True" VerticalAlignment="Center"/>
+                              Style="{StaticResource LucideIcon}"
+                              Stroke="{DynamicResource TextMutedBrush}"
+                              VerticalAlignment="Center"/>
                         <TextBlock x:Name="ProjectNameText" Margin="6,0,0,0" VerticalAlignment="Center"
                                    FontFamily="{StaticResource PretendardFont}"
-                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource Fs12}"
                                    Foreground="{DynamicResource TextBrush}"
                                    TextTrimming="CharacterEllipsis"/>
 
@@ -113,12 +113,12 @@
 
                         <!-- 프로젝트 경로 -->
                         <Path Data="{StaticResource IconFolder}" Width="14" Height="14" Stretch="Uniform"
-                              Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.6"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                              Fill="Transparent" SnapsToDevicePixels="True" VerticalAlignment="Center"/>
+                              Style="{StaticResource LucideIcon}"
+                              Stroke="{DynamicResource TextMutedBrush}"
+                              VerticalAlignment="Center"/>
                         <TextBlock x:Name="ProjectPathText" Margin="6,0,0,0" VerticalAlignment="Center"
                                    FontFamily="{StaticResource PretendardFont}"
-                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                   FontSize="{DynamicResource Fs12}"
                                    Foreground="{DynamicResource TextBrush}"
                                    TextTrimming="CharacterEllipsis"/>
 
@@ -130,12 +130,12 @@
                                     ToolTip="클릭하여 브렌치 새로고침" VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <Path Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
-                                          Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.6"
-                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                          Fill="Transparent" SnapsToDevicePixels="True" VerticalAlignment="Center"/>
+                                          Style="{StaticResource LucideIcon}"
+                                          Stroke="{DynamicResource TextMutedBrush}"
+                                          VerticalAlignment="Center"/>
                                     <TextBlock x:Name="ProjectBranchText" Margin="6,0,0,0" VerticalAlignment="Center"
                                                FontFamily="{StaticResource PretendardFont}"
-                                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                               FontSize="{DynamicResource Fs12}"
                                                Foreground="{DynamicResource TextBrush}"/>
                                 </StackPanel>
                             </Border>
