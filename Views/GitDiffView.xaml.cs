@@ -15,7 +15,23 @@ public partial class GitDiffView : UserControl
     public GitDiffView()
     {
         InitializeComponent();
+        _diffFontSize = BaseFontSizeFor(SettingsService.LoadFontScale());
         DiffList.FontSize = _diffFontSize;
+        // 전역 글꼴 단계(작게/크게)에 연동. 사용자가 Ctrl+휠로 따로 조절하면 그 값을 유지한다.
+        App.FontScaleChanged += OnFontScaleChanged;
+        Unloaded += (_, _) => App.FontScaleChanged -= OnFontScaleChanged;
+    }
+
+    /// <summary>전역 글꼴 단계별 diff 기본 크기. 작게(0)=11, 크게(1)=13 (+2 스텝).</summary>
+    private static double BaseFontSizeFor(int scale) => 11 + scale * 2;
+
+    private bool _userAdjusted;
+
+    private void OnFontScaleChanged(int scale)
+    {
+        if (_userAdjusted) return; // Ctrl+휠 수동 조절을 우선한다
+        _diffFontSize = BaseFontSizeFor(scale);
+        if (IsLoaded) DiffList.FontSize = _diffFontSize;
     }
 
     private string? _repo;
@@ -133,6 +149,7 @@ public partial class GitDiffView : UserControl
     private void DiffScroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+        _userAdjusted = true;
         _diffFontSize = Math.Clamp(_diffFontSize + (e.Delta > 0 ? 1 : -1), MinFontSize, MaxFontSize);
         DiffList.FontSize = _diffFontSize;
         e.Handled = true; // 폰트 조절 중에는 스크롤하지 않음
