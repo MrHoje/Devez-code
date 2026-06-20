@@ -188,10 +188,17 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}"/>
+                            <!-- 프로젝트 명 + 경로(작은 폰트, 잘리면 …). chevron/메뉴는 2줄 헤더에 대해 수직 중앙 정렬 -->
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" ToolTip="{Binding Path}">
+                                <TextBlock Text="{Binding Name}"
+                                           TextTrimming="CharacterEllipsis"
+                                           FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock Text="{Binding Path}" Margin="0,1,0,0"
+                                           TextTrimming="CharacterEllipsis"
+                                           FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                            </StackPanel>
                             <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용) -->
                             <Button Grid.Column="1" Margin="6,0,0,0" Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
