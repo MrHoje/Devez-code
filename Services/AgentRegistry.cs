@@ -44,9 +44,12 @@ public static class AgentRegistry
         },
         new()
         {
+            // Gajae Code (https://github.com/Yeachan-Heo/gajae-code):
+            // npm 패키지명 = gajae-code, 실행 바이너리 = gjc (Bun 런타임, %USERPROFILE%\.bun\bin).
+            // ID "gajaecode" 는 기존 워크스페이스 호환을 위해 유지.
             Id = "gajaecode", DisplayName = "Gajae Code",
-            ExeNames = new[] { "gajaecode.exe", "gajaecode.cmd", "gajaecode.bat", "gajaecode.ps1", "gajaecode" },
-            Command = "gajaecode",
+            ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
+            Command = "gjc",
         },
     };
 
