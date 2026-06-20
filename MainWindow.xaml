@@ -631,11 +631,11 @@
             <!-- 좁은 창용 우측 패널 오버레이 호스트 (body 행만 덮음).
                  좁아지면 FileExplorer 를 여기로 재부모화해 우측 드로어로 띄운다.
                  스크림 클릭 시 닫힘. ZIndex 는 설정 오버레이(200)보다 낮게. -->
-            <Grid x:Name="RightOverlayHost" Grid.Row="2" Panel.ZIndex="90" Visibility="Visible">
-                <Border x:Name="RightScrim" Background="#99FF0000"
+            <Grid x:Name="RightOverlayHost" Grid.Row="2" Panel.ZIndex="90" Visibility="Collapsed">
+                <Border x:Name="RightScrim" Background="#80000000"
                         MouseLeftButtonDown="RightScrim_Click"/>
-                <Border x:Name="RightOverlayPanel" HorizontalAlignment="Right" Width="400"
-                        Background="#0000FF"
+                <Border x:Name="RightOverlayPanel" HorizontalAlignment="Right"
+                        Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
                     <Border.Effect>
                         <DropShadowEffect BlurRadius="18" ShadowDepth="0" Opacity="0.4" Color="Black"/>

@@ -73,7 +73,7 @@ public sealed class TerminalSessionManager
             {
                 // 비-Claude 에이전트: cmd /k "<에이전트 커맨드>" 만 작성. 에러 시 프롬프트가 남아 진단 가능.
                 startDir = ccDir;
-                var simple = TryBuildSimpleLaunch(agent);
+                var simple = TryBuildSimpleLaunch(roomId, agent);
                 if (simple != null) commandLine = simple;
             }
 
@@ -97,17 +97,19 @@ public sealed class TerminalSessionManager
         }
     }
 
-    /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.</summary>
-    private static string? TryBuildSimpleLaunch(AgentDef agent)
+    /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.
+    /// 첫 실행 = plain 커맨드 (codex/opencode/gjc 가 새 세션 생성).
+    /// 이후 실행 = ResumeFlag (--last / -c) 추가해서 가장 최근 세션 이어가기.</summary>
+    private static string? TryBuildSimpleLaunch(string roomId, AgentDef agent)
     {
         if (string.IsNullOrWhiteSpace(agent.Command)) return null;
-        // ResumeFlag 가 있으면 항상 같이 넘겨 "기존 세션 이어가기" 로 동작
-        // (codex=--last / opencode=-c / gjc=-c). ResumeFlag 가 없으면 단순 실행 (첫 세션 생성).
-        // ── 주의 ── ResumeFlag 는 세션이 이미 있을 때만 안전. 첫 실행(아직 세션 없음)에서
-        // --last/-c 를 넘기면 codex/opencode 는 신세션 생성으로 폴백, gjc 는 동작이 환경별로 다를 수 있어
-        // 항상 같이 넘기되 별도 폴백은 두지 않는다 (사용자 세션 워크플로상 항상 직전 세션이 존재한다고 가정).
-        var body = string.IsNullOrEmpty(agent.ResumeFlag) ? agent.Command : $"{agent.Command} {agent.ResumeFlag}";
-        // 따옴표로 감싸 PATH/PATHEXT 해석은 cmd 에 맡긴다 (codex.cmd, hermes chat 등 변형 모두 호환).
+        // 첫 실행 감지: 저장소에 (roomId, agentId) 가 없으면 새 세션, 있으면 resume.
+        bool firstLaunch = !SettingsService.IsAgentRoomLaunched(roomId, agent.Id);
+        SettingsService.MarkAgentRoomLaunched(roomId, agent.Id);
+        var body = (!firstLaunch && !string.IsNullOrEmpty(agent.ResumeFlag))
+            ? $"{agent.Command} {agent.ResumeFlag}"
+            : agent.Command;
+        // 따옴표로 감싸 PATH/PATHEXT 해석은 cmd 에 맡긴다 (codex.cmd, gjc 등 변형 모두 호환).
         return $"cmd.exe /k \"{body}\"";
     }
 

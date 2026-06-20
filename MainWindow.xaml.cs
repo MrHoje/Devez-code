@@ -21,6 +21,8 @@ public partial class MainWindow : Window
     private readonly StatusLineService _statusLine = new();
     private readonly SessionBusyService _sessionBusy = new();
     private readonly SessionLastMessageService _sessionLastMsg = new();
+    // 비-Claude 에이전트(codex/opencode/gjc) 의 last prompt 추적. Claude 는 hook 으로 위 서비스가 처리.
+    private readonly AgentLastMessageService _agentLastMsg = new();
 
     /// <summary>현재 로딩 스피너를 띄운 세션. claude 화면이 뜨거나(=TerminalReady) 타임아웃에 해제.</summary>
     private string? _loadingRoomId;
@@ -73,6 +75,25 @@ public partial class MainWindow : Window
                 if (ReferenceEquals(s, _activeSession)) UpdateEmptyState(); // 활성 세션이면 헤더 즉시 갱신
             });
 
+        // 비-Claude 에이전트 — (workingDir, lastPrompt) 이벤트로 같은 디렉터리 세션 모두 갱신.
+        _agentLastMsg.LastPromptChanged += (workingDir, msg) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                bool anyActive = false;
+                var norm = System.IO.Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+                foreach (var p in _projects)
+                {
+                    var pNorm = System.IO.Path.GetFullPath(p.Path).TrimEnd('\\', '/');
+                    if (!string.Equals(pNorm, norm, StringComparison.OrdinalIgnoreCase)) continue;
+                    foreach (var s in p.Sessions)
+                    {
+                        s.LastMessage = msg;
+                        if (ReferenceEquals(s, _activeSession)) anyActive = true;
+                    }
+                }
+                if (anyActive) UpdateEmptyState();
+            });
+
         // 테마 변경 시 선택 탭 seam 색(PanelBrush)을 재계산(frozen brush라 자동 갱신 안 됨)
         App.ThemeChanged += OnThemeChanged_UpdateSeam;
 
@@ -101,6 +122,7 @@ public partial class MainWindow : Window
             StartStatusLine();
             _sessionBusy.Start();
             _sessionLastMsg.Start();
+            _agentLastMsg.Start();
             RestoreLastSession();
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
         };
@@ -118,6 +140,7 @@ public partial class MainWindow : Window
             _statusLine.Dispose();
             _sessionBusy.Dispose();
             _sessionLastMsg.Dispose();
+            _agentLastMsg.Dispose();
             FileExplorer.DisposeBrowser();
         };
     }
@@ -867,6 +890,10 @@ public partial class MainWindow : Window
         session.IsAlive = true; // 낙관적 — 실패 시 SessionExited 이벤트로 회색
         // 마지막 활성 세션 즉시 저장 → 강제 종료/크래시 후 재시작에도 이 세션으로 복원
         SettingsService.SaveLastActive(parent.Path, session.Id);
+        // 비-Claude 에이전트는 last prompt 추적 시작. Claude 는 hook 으로 별도 처리.
+        var sessionAgentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+        if (sessionAgentId != "claude")
+            _agentLastMsg.TrackSession(parent.Path, sessionAgentId);
         // 세션 실행은 훅 자산을 최신으로 재생성하므로(있던 배너는 더 이상 불필요) 배너를 닫는다.
         if (HookSetupBanner.Visibility == Visibility.Visible) HookSetupBanner.Visibility = Visibility.Collapsed;
         // 이미 claude 화면이 떠 있는 세션이면 로딩 없이, 아니면 스피너 표시 후 ShowTerminal.

@@ -23,6 +23,9 @@ public static class SettingsService
         public Dictionary<string, string> ClaudeCodeRoomDirs { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomSessions { get; set; } = new();
         public List<string> ClaudeCodeRoomLaunched { get; set; } = new();
+        // 범용 — "roomId|agentId" 키로 첫 실행 여부 추적. 비-Claude 에이전트도 같은 메커니즘으로
+        // 첫 실행=plain, 이후=ResumeFlag(--last / -c) 분기. (Claude 는 별도 IsClaudeCodeRoomLaunched 그대로 사용)
+        public List<string> AgentRoomsLaunched { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
         public Dictionary<string, string> RoomAgents { get; set; } = new();
         // 사용자가 활성화한 에이전트 ID 목록. 빈 값이면 모든 설치된 에이전트 활성화로 간주.
@@ -203,6 +206,20 @@ public static class SettingsService
         if (!Current.ClaudeCodeRoomLaunched.Contains(roomId))
         {
             Current.ClaudeCodeRoomLaunched.Add(roomId);
+            Save();
+        }
+    }
+
+    /// <summary>비-Claude 에이전트의 방별 "첫 실행 여부". roomId+agentId 조합으로 추적.</summary>
+    public static bool IsAgentRoomLaunched(string roomId, string agentId)
+        => Current.AgentRoomsLaunched.Contains($"{roomId}|{agentId}");
+
+    public static void MarkAgentRoomLaunched(string roomId, string agentId)
+    {
+        var key = $"{roomId}|{agentId}";
+        if (!Current.AgentRoomsLaunched.Contains(key))
+        {
+            Current.AgentRoomsLaunched.Add(key);
             Save();
         }
     }
