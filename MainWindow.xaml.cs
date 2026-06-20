@@ -709,13 +709,13 @@ public partial class MainWindow : Window
         UpdateProjectBranchBubble(proj); // 브렌치 버블 갱신
     }
 
-    /// <summary>타이틀 바 브렌치 버블 갱신 — 현재 git 브렌치.
-    /// 브렌치는 비동기로 조회(외부 프로세스라 UI 블로킹 방지). git 저장소가 아니면 버블 숨김.</summary>
+    /// <summary>타이틀 바 브렌치 그룹 갱신 — 현재 git 브렌치.
+    /// 브렌치는 비동기로 조회(외부 프로세스라 UI 블로킹 방지). git 저장소가 아니면 숨김.</summary>
     private void UpdateProjectBranchBubble(ProjectItem? proj)
     {
-        if (proj == null || string.IsNullOrEmpty(proj.Path) || BranchBubble == null)
+        if (proj == null || string.IsNullOrEmpty(proj.Path) || BranchGroup == null)
         {
-            BranchBubble.Visibility = Visibility.Collapsed;
+            BranchGroup.Visibility = Visibility.Collapsed;
             return;
         }
         // 비동기 조회. 이전 요청이 진행 중일 수 있으니 _projectCts 로 취소.
@@ -746,7 +746,7 @@ public partial class MainWindow : Window
         if (ct.IsCancellationRequested) return;
         await Dispatcher.InvokeAsync(() =>
         {
-            BranchBubble.Visibility = branch != null ? Visibility.Visible : Visibility.Collapsed;
+            BranchGroup.Visibility = branch != null ? Visibility.Visible : Visibility.Collapsed;
             if (branch != null) ProjectBranchText.Text = branch;
         });
     }
