@@ -12,8 +12,8 @@ namespace DevezCode;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<ProjectItem> _projects;
-    private readonly ObservableCollection<SessionItem> _openTabs = new();
     private readonly TerminalHostView _terminal = new();
+    private ProjectItem? _activeProject;   // 중앙 탭 = 이 프로젝트의 Sessions
     private SessionItem? _activeSession;
 
     public MainWindow()
@@ -22,7 +22,6 @@ public partial class MainWindow : Window
 
         _projects = WorkspaceStore.Load();
         Sidebar.Projects = _projects;
-        TabsHost.ItemsSource = _openTabs;
         TerminalHostContainer.Content = _terminal;
 
         Sidebar.AddProjectRequested    += AddProject;
@@ -71,16 +70,34 @@ public partial class MainWindow : Window
             return;
         }
         var proj = ProjectItem.FromPath(path);
+        // 프로젝트 연결 시 기본 세션 1개 자동 생성
+        var session = new SessionItem { Name = "세션 1" };
+        proj.Sessions.Add(session);
+        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
         _projects.Add(proj);
         WorkspaceStore.Save(_projects);
-        SelectProject(proj);
+        SelectProject(proj);   // 탭을 이 프로젝트 세션으로 교체 + 기본 세션 활성화
         UpdateStatus();
     }
 
+    /// <summary>활성 프로젝트 전환 — 중앙 탭을 그 프로젝트의 세션들로 교체(같은 컬렉션 바인딩). 세션 활성화는 안 함.</summary>
+    private void SetActiveProject(ProjectItem proj)
+    {
+        _activeProject = proj;
+        foreach (var p in _projects) p.IsSelected = ReferenceEquals(p, proj);
+        TabsHost.ItemsSource = proj.Sessions;
+        FileExplorer.ShowDirectory(proj.Path);
+    }
+
+    /// <summary>프로젝트 선택(행 클릭) — 탭 교체 후 세션 하나 활성화(이전 활성 or 첫 세션).</summary>
     private void SelectProject(ProjectItem proj)
     {
-        foreach (var p in _projects) p.IsSelected = ReferenceEquals(p, proj);
-        FileExplorer.ShowDirectory(proj.Path);
+        SetActiveProject(proj);
+        var target = (_activeSession != null && proj.Sessions.Contains(_activeSession))
+            ? _activeSession
+            : proj.Sessions.FirstOrDefault();
+        if (target != null) ActivateSession(target);
+        else ClearActiveSession();
     }
 
     private void ChangeProjectIcon(ProjectItem proj)
@@ -99,10 +116,18 @@ public partial class MainWindow : Window
                 okLabel: "제거", danger: true))
             return;
 
-        foreach (var s in proj.Sessions.ToList()) DisposeSession(s);
+        foreach (var s in proj.Sessions.ToList()) DisposeSessionProcess(s);
         _projects.Remove(proj);
         WorkspaceStore.Save(_projects);
-        if (_activeSession != null && !_openTabs.Contains(_activeSession)) ClearActive();
+
+        if (ReferenceEquals(_activeProject, proj))
+        {
+            _activeProject = null;
+            _activeSession = null;
+            var next = _projects.FirstOrDefault();
+            if (next != null) SelectProject(next);
+            else { TabsHost.ItemsSource = null; ClearActiveSession(); }
+        }
         UpdateStatus();
     }
 
@@ -114,37 +139,40 @@ public partial class MainWindow : Window
         proj.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
         WorkspaceStore.Save(_projects);
-        OpenSession(session);
+        OpenSession(session);   // 프로젝트 활성화 + 새 세션 활성화
         UpdateStatus();
     }
 
+    /// <summary>세션 클릭(사이드바/탭) — 필요하면 프로젝트 전환 후 해당 세션 활성화.</summary>
     private void OpenSession(SessionItem session)
     {
         var parent = ParentOf(session);
         if (parent == null) return;
+        if (!ReferenceEquals(_activeProject, parent)) SetActiveProject(parent);
+        ActivateSession(session);
+    }
 
-        // claude 가 항상 프로젝트 디렉터리에서 실행되도록 매핑 보장(설정 유실 대비)
+    /// <summary>세션 활성화 — 선택 표시 + 중앙 터미널 표시(claude 실행).</summary>
+    private void ActivateSession(SessionItem session)
+    {
+        var parent = ParentOf(session);
+        if (parent == null) return;
+
+        // claude 가 항상 프로젝트 디렉터리에서 실행되도록 매핑 보장
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
 
-        session.IsAlive = true; // 낙관적 — 실패 시 SessionExited 이벤트로 회색 처리
-        if (!_openTabs.Contains(session)) _openTabs.Add(session);
-        SetActive(session);
-        SelectProject(parent);
+        _activeSession = session;
+        foreach (var p in _projects)
+            foreach (var s in p.Sessions)
+                s.IsSelected = ReferenceEquals(s, session);
 
+        session.IsAlive = true; // 낙관적 — 실패 시 SessionExited 이벤트로 회색
         _terminal.ShowTerminal(session.Id);
         _terminal.FocusTerminal();
         UpdateEmptyState();
     }
 
-    private void SetActive(SessionItem session)
-    {
-        _activeSession = session;
-        foreach (var p in _projects)
-            foreach (var s in p.Sessions)
-                s.IsSelected = ReferenceEquals(s, session);
-    }
-
-    private void ClearActive()
+    private void ClearActiveSession()
     {
         _activeSession = null;
         foreach (var p in _projects)
@@ -153,41 +181,37 @@ public partial class MainWindow : Window
         UpdateEmptyState();
     }
 
-    /// <summary>탭 닫기 — xterm 인스턴스만 정리하고 ConPTY 세션은 살려둔다(재열기 시 복원).</summary>
-    private void CloseTab(SessionItem session)
-    {
-        _openTabs.Remove(session);
-        _terminal.CloseTerminal(session.Id);
-        if (ReferenceEquals(_activeSession, session))
-        {
-            var next = _openTabs.LastOrDefault();
-            if (next != null) OpenSession(next);
-            else ClearActive();
-        }
-    }
+    /// <summary>탭 닫기(X) = 세션 삭제 — 프로젝트 단위 탭 모델에선 탭이 곧 세션이므로 제거한다.</summary>
+    private void CloseTab(SessionItem session) => DeleteSession(session);
 
-    /// <summary>세션 영구 삭제 — ConPTY 프로세스·매핑까지 제거.</summary>
+    /// <summary>세션 영구 삭제 — ConPTY 프로세스·매핑 제거 + 컬렉션에서 제거.</summary>
     private void DeleteSession(SessionItem session)
     {
         var parent = ParentOf(session);
-        DisposeSession(session);
+        bool wasActive = ReferenceEquals(_activeSession, session);
+        int idx = parent?.Sessions.IndexOf(session) ?? -1;
+
+        DisposeSessionProcess(session);
         parent?.Sessions.Remove(session);
         WorkspaceStore.Save(_projects);
+
+        if (wasActive)
+        {
+            SessionItem? next = null;
+            if (parent != null && parent.Sessions.Count > 0)
+                next = parent.Sessions[Math.Min(idx, parent.Sessions.Count - 1)];
+            if (next != null) ActivateSession(next);
+            else ClearActiveSession();
+        }
         UpdateStatus();
     }
 
-    private void DisposeSession(SessionItem session)
+    /// <summary>세션의 터미널 프로세스·매핑만 정리(컬렉션은 건드리지 않음).</summary>
+    private void DisposeSessionProcess(SessionItem session)
     {
-        _openTabs.Remove(session);
         try { _terminal.CloseTerminal(session.Id); } catch { /* ignore */ }
         try { TerminalSessionManager.Instance.DisposeRoom(session.Id); } catch { /* ignore */ }
         SettingsService.RemoveClaudeCodeRoomDir(session.Id);
-        if (ReferenceEquals(_activeSession, session))
-        {
-            var next = _openTabs.LastOrDefault();
-            if (next != null) OpenSession(next);
-            else ClearActive();
-        }
     }
 
     private ProjectItem? ParentOf(SessionItem session)
@@ -242,8 +266,10 @@ public partial class MainWindow : Window
 
     private void TryStartTabDrag(SessionItem s)
     {
+        var coll = _activeProject?.Sessions;
+        if (coll == null) return;
         var rows = new List<(SessionItem, FrameworkElement)>();
-        foreach (var t in _openTabs)
+        foreach (var t in coll)
             if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe)
                 rows.Add((t, fe));
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item1, s));
@@ -252,15 +278,15 @@ public partial class MainWindow : Window
         _tabDrag = ReorderDrag<SessionItem>.TryStart(TabsHost, rows, s, src.Item2,
             (sess, hostTarget, _) =>
             {
-                int from = _openTabs.IndexOf(sess);
-                if (from >= 0)
+                // 탭 = 활성 프로젝트의 Sessions(동일 컬렉션) → 여기서 옮기면 좌측 리스트도 함께 바뀐다.
+                var c = _activeProject?.Sessions;
+                if (c != null)
                 {
-                    int to = Math.Clamp(hostTarget, 0, _openTabs.Count - 1);
-                    if (to != from)
+                    int from = c.IndexOf(sess);
+                    if (from >= 0)
                     {
-                        _openTabs.Move(from, to);
-                        SyncProjectSessionsFromTabs(sess); // 탭 순서 → 좌측 세션 순서 반영
-                        WorkspaceStore.Save(_projects);
+                        int to = Math.Clamp(hostTarget, 0, c.Count - 1);
+                        if (to != from) { c.Move(from, to); WorkspaceStore.Save(_projects); }
                     }
                 }
                 return Task.CompletedTask;
@@ -270,47 +296,8 @@ public partial class MainWindow : Window
         _pendingTab = null;
     }
 
-    /// <summary>사이드바에서 세션 순서가 바뀌면 중앙 탭 순서를 사이드바 순서(프로젝트→세션)에 맞춰 재정렬.</summary>
-    private void OnSidebarSessionsReordered(ProjectItem _)
-    {
-        ResortOpenTabsToSidebar();
-        WorkspaceStore.Save(_projects);
-    }
-
-    /// <summary>열린 탭들을 (프로젝트 순서, 프로젝트 내 세션 순서) 기준으로 재정렬.</summary>
-    private void ResortOpenTabsToSidebar()
-    {
-        var ordered = _openTabs
-            .OrderBy(s => { var p = ParentOf(s); return p == null ? int.MaxValue : _projects.IndexOf(p); })
-            .ThenBy(s => ParentOf(s)?.Sessions.IndexOf(s) ?? 0)
-            .ToList();
-        ApplyOrder(_openTabs, ordered);
-    }
-
-    /// <summary>탭 순서를 기준으로, 옮겨진 세션이 속한 프로젝트의 세션 순서를 맞춘다(닫힌 세션 위치는 보존).</summary>
-    private void SyncProjectSessionsFromTabs(SessionItem moved)
-    {
-        var p = ParentOf(moved);
-        if (p == null) return;
-        var openOrder = _openTabs.Where(s => p.Sessions.Contains(s)).ToList();
-        if (openOrder.Count == 0) return;
-
-        int oi = 0;
-        var result = new List<SessionItem>();
-        foreach (var s in p.Sessions)
-            result.Add(openOrder.Contains(s) ? openOrder[oi++] : s);
-        ApplyOrder(p.Sessions, result);
-    }
-
-    /// <summary>ObservableCollection 을 target 순서와 일치하도록 최소 Move 로 재배치.</summary>
-    private static void ApplyOrder<T>(ObservableCollection<T> coll, List<T> target)
-    {
-        for (int i = 0; i < target.Count; i++)
-        {
-            int cur = coll.IndexOf(target[i]);
-            if (cur >= 0 && cur != i) coll.Move(cur, i);
-        }
-    }
+    /// <summary>사이드바 세션 순서 변경 — 탭은 같은 컬렉션이라 자동 반영되므로 영속만 한다.</summary>
+    private void OnSidebarSessionsReordered(ProjectItem _) => WorkspaceStore.Save(_projects);
 
     // ── 상태/빈 화면 ─────────────────────────────────────────────
     private void UpdateEmptyState()
