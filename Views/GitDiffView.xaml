@@ -80,21 +80,26 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- diff 머리글: 좌/우 라벨 -->
+            <!-- diff 머리글: 좌/우 라벨. 콘텐츠(46,*,1,46,*) 와 동일 폭으로 맞추고 라벨도
+                 콘텐츠 텍스트의 시작 위치(줄번호 46px + 패딩 2px = 48px)에 정렬해
+                 세로 세퍼레이터와 라벨이 본문과 어긋나지 않게 한다. -->
             <Border x:Name="DiffHeader" Grid.Row="0" Visibility="Collapsed"
                     Background="{DynamicResource PanelBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="46"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="1"/>
+                        <ColumnDefinition Width="46"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="수정 전" Margin="10,5" VerticalAlignment="Center"
+                    <!-- 빈 46px 컬럼은 콘텐츠의 줄번호 칸과 폭 일치 (시각 정합) -->
+                    <TextBlock Grid.Column="1" Text="수정 전" Margin="2,5,0,5" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextMutedBrush}"/>
-                    <Border Grid.Column="1" Background="{DynamicResource LineBrush}"/>
-                    <TextBlock Grid.Column="2" Text="수정 후" Margin="10,5" VerticalAlignment="Center"
+                    <Border Grid.Column="2" Background="{DynamicResource LineBrush}"/>
+                    <TextBlock Grid.Column="4" Text="수정 후" Margin="2,5,0,5" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextMutedBrush}"/>
                 </Grid>
