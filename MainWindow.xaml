@@ -67,13 +67,13 @@
                          fill 32.7%) 과 동일하게 리사이즈했으므로 같은 Height=34 에서 동일한 시각 크기로
                          렌더됨 (visible 17.8x21.3). Translate(2,3) + 17pt Bold BrunoAceSC 도 정합. -->
                     <Image Source="pack://application:,,,/Resources/Logos/logo.png"
-                           Height="34" Stretch="Uniform"
+                           Height="38" Stretch="Uniform"
                            RenderOptions.BitmapScalingMode="HighQuality"
                            SnapsToDevicePixels="True"
                            VerticalAlignment="Center"
                            Margin="1,0,0,1">
                         <Image.RenderTransform>
-                            <TranslateTransform X="-2" Y="1"/>
+                            <TranslateTransform X="-2" Y="0"/>
                         </Image.RenderTransform>
                     </Image>
                     <TextBlock Text="DevezCode" FontSize="17" FontWeight="Bold"
