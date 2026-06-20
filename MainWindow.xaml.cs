@@ -1496,7 +1496,6 @@ public partial class MainWindow : Window
     /// 최대화 상태에서 패널을 넓힌 뒤 창모드로 복원하면 고정 px 폭이 남아 오른쪽이 잘리던 문제를 막는다.</summary>
     private void BodyGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        return; // [임시 디버그] 반응형 비활성화 — 오버레이 호스트 정적 확인용
         double avail = BodyGrid.ActualWidth;
         if (avail <= 0) return;
 
