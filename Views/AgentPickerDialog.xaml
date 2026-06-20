@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:svc="clr-namespace:DevezCode.Services"
         xmlns:models="clr-namespace:DevezCode.Models"
-        Title="새 세션 — 에이전트 선택"
-        Width="560" Height="Auto"
+        Title="에이전트 선택"
+        Width="380" Height="Auto"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="NoResize"
@@ -17,24 +17,18 @@
         FontFamily="{StaticResource PretendardFont}">
 
     <Window.Resources>
-        <!-- 에이전트 카드: 160 × 110, 아이콘 + 이름 + 설명 + 화살표 -->
+        <!-- 에이전트 카드: 110 × 50, 아이콘 + 이름만. 단순 호버 -->
         <Style x:Key="AgentCard" TargetType="Border">
-            <Setter Property="CornerRadius" Value="12"/>
-            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
-            <Setter Property="Width" Value="160"/>
-            <Setter Property="Height" Value="110"/>
-            <Setter Property="Margin" Value="0,0,12,12"/>
+            <Setter Property="Width" Value="110"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="True"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                </Trigger>
-                <Trigger Property="IsKeyboardFocused" Value="True">
                     <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                     <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
                 </Trigger>
@@ -43,7 +37,6 @@
     </Window.Resources>
 
     <Grid Margin="{DynamicResource WindowShadowOuterMargin}">
-        <!-- 그림자 레이어 -->
         <Border Background="{DynamicResource BgBrush}" CornerRadius="{DynamicResource WindowShadowCornerRadius}"
                 Margin="{DynamicResource WindowShadowInnerMargin}" SnapsToDevicePixels="True">
             <Border.Effect>
@@ -51,28 +44,25 @@
                                   Color="{DynamicResource ShadowColor}" Opacity="{DynamicResource ShadowOpacity}"/>
             </Border.Effect>
         </Border>
-        <!-- 콘텐츠 레이어 -->
-        <Border CornerRadius="14"
+        <Border CornerRadius="12"
                 Background="{DynamicResource BgBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                 ClipToBounds="True" SnapsToDevicePixels="True">
-            <StackPanel Margin="22,20,22,18">
-                <!-- 헤더: 아이콘 + 타이틀 + 기본 뱃지 -->
-                <StackPanel Orientation="Horizontal">
-                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
-                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
-                          Stroke="{DynamicResource TextBrush}"/>
-                    <TextBlock Text="새 세션" FontSize="{DynamicResource Fs15}" FontWeight="SemiBold"
+            <StackPanel Margin="20,16,20,14">
+                <!-- 타이틀 -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="에이전트 선택" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="CountText" FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"
+                               VerticalAlignment="Center"/>
                 </StackPanel>
-                <TextBlock x:Name="HintText" FontSize="{DynamicResource Fs12}"
-                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,6,0,16"
-                           TextWrapping="Wrap" MaxWidth="500"
-                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="HintText" FontSize="{DynamicResource Fs11}"
+                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,12"
+                           TextTrimming="CharacterEllipsis" MaxWidth="340"/>
 
-                <!-- 에이전트 카드 그리드 (3열 균등) -->
-                <ItemsControl x:Name="AgentList" Focusable="True"
-                              KeyboardNavigation.TabNavigation="Continue">
+                <!-- 카드 (가로, 한 줄) -->
+                <ItemsControl x:Name="AgentList">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal"/>
@@ -82,56 +72,20 @@
                         <DataTemplate DataType="{x:Type svc:AgentDef}">
                             <Border Style="{StaticResource AgentCard}"
                                     Tag="{Binding Id}"
-                                    MouseLeftButtonUp="Card_Click"
-                                    KeyDown="Card_KeyDown">
-                                <Border.ToolTip>
-                                    <ToolTip Content="{Binding Description}"/>
-                                </Border.ToolTip>
-                                <Grid Margin="14,12">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="32"/>
-                                        <RowDefinition Height="*"/>
-                                    </Grid.RowDefinitions>
-                                    <!-- 아이콘 + 이름 -->
-                                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Width="32" Height="32" CornerRadius="8"
-                                                Background="{DynamicResource PanelSoftBrush}" Padding="4" Margin="0,0,9,0">
-                                            <Image Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
-                                                   RenderOptions.BitmapScalingMode="HighQuality" Stretch="Uniform"/>
-                                        </Border>
-                                        <TextBlock Text="{Binding DisplayName}"
-                                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextBrush}"
-                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                    <!-- 설명 + 호버 시 ↵ -->
-                                    <Grid Grid.Row="1">
-                                        <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
-                                                   FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}"
-                                                   VerticalAlignment="Top" Margin="0,8,0,0"/>
-                                        <TextBlock Text="↵" FontSize="14"
-                                                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                                   Foreground="{DynamicResource PrimaryBrush}" Opacity="0.7"/>
-                                    </Grid>
-                                </Grid>
+                                    MouseLeftButtonUp="Card_Click">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Image Width="22" Height="22" Margin="0,0,7,0"
+                                           Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                           RenderOptions.BitmapScalingMode="HighQuality" Stretch="Uniform"/>
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-
-                <!-- 푸터: 안내 + 취소 -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-                    <TextBlock Text="Enter 선택 · ESC 취소"
-                               FontSize="{DynamicResource Fs11}"
-                               Foreground="{DynamicResource TextMutedBrush}"
-                               VerticalAlignment="Center" Margin="0,0,12,0"/>
-                    <Button x:Name="CancelBtn" Click="CancelBtn_Click"
-                            MinWidth="80" Height="34" Padding="14,0"
-                            Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs12}">
-                        <TextBlock Text="취소"/>
-                    </Button>
-                </StackPanel>
             </StackPanel>
         </Border>
     </Grid>

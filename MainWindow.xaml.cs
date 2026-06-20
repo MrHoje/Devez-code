@@ -134,6 +134,9 @@ public partial class MainWindow : Window
 
             InitUpdates();
             StartPerfMonitor();
+            // claude code 커스텀 statusline(~/.claude\statusline.js + settings.json statusLine) 보장.
+            // 다른 PC 첫 실행 시 자동 설치되며, 이미 있으면 사용자 수정 보존(스킵).
+            UserStatusLineInstaller.EnsureInstalled();
             StartStatusLine();
             _sessionBusy.Start();
             _sessionLastMsg.Start();
