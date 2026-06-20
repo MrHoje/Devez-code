@@ -7,6 +7,8 @@ public sealed class AgentDef
 {
     public string Id { get; init; } = "";
     public string DisplayName { get; init; } = "";
+    /// <summary>피커 다이얼로그에 표시할 1줄 설명. 빈 값이면 빈 문자열.</summary>
+    public string Description { get; init; } = "";
     /// <summary>PATH 스캔 시 검사할 실행 파일 이름 변형. (.exe/.cmd/.ps1/리눅스 등)</summary>
     public string[] ExeNames { get; init; } = Array.Empty<string>();
     /// <summary>프로젝트 디렉터리에서 띄울 기본 커맨드. (인자 없이; Claude 는 세션 ID·훅 등 별도 처리)</summary>
@@ -30,12 +32,14 @@ public static class AgentRegistry
         new()
         {
             Id = "claude", DisplayName = "Claude Code",
+            Description = "Anthropic 공식 · 훅으로 per-room 세션 추적",
             ExeNames = new[] { "claude.exe", "claude.cmd", "claude.bat", "claude.ps1", "claude" },
             Command = "claude", SupportsHooks = true,
         },
         new()
         {
             Id = "codex", DisplayName = "Codex",
+            Description = "OpenAI 공식 · hooks.json 으로 per-room 세션 추적",
             ExeNames = new[] { "codex.exe", "codex.cmd", "codex.bat", "codex.ps1", "codex" },
             Command = "codex",
             ResumeFlag = "--last",
@@ -44,6 +48,7 @@ public static class AgentRegistry
         new()
         {
             Id = "opencode", DisplayName = "OpenCode",
+            Description = "오픈소스 · 플러그인으로 per-room 세션 추적",
             ExeNames = new[] { "opencode.exe", "opencode.cmd", "opencode.bat", "opencode.ps1", "opencode" },
             Command = "opencode",
             ResumeFlag = "-c",
