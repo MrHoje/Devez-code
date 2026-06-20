@@ -289,11 +289,10 @@ public partial class MainWindow : Window
         return span.TotalHours >= 1 ? $"{(int)span.TotalHours}시간{span.Minutes}분" : $"{span.Minutes}분";
     }
 
-    /// <summary>설정(로컬, SettingsService)에 따라 성능 모니터 칩(푸터) 표시/숨김.</summary>
+    /// <summary>성능 모니터 칩(푸터) 표시. 토글이 제거되어 항상 표시.</summary>
     private void ApplyPerfMonitorVisibility()
     {
-        PerfChipGroup.Visibility =
-            SettingsService.LoadShowPerfMonitorBar() ? Visibility.Visible : Visibility.Collapsed;
+        PerfChipGroup.Visibility = Visibility.Visible;
         UpdateFooterDivider();
     }
 
@@ -1245,20 +1244,14 @@ public partial class MainWindow : Window
     private void UpdateStatus() { }
 
     // ── 설정창 ────────────────────────────────────────────────────
-    // 테마 전환은 타이틀바 버튼에서 설정창(SettingsDialog) 안으로 이동했다.
+    // 테마 전환은 타이틀바 버튼에서 설정창(SettingsWindow) 안으로 이동했다.
+    // (devez 이식) UserControl(SettingsDialog)을 Borderless Window(SettingsWindow)에 담아 띄운다.
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
         await SuspendTerminalWithSnapshotAsync(); // 오버레이가 WebView2 뒤로 묻히지 않게 가림
-        var dlg = new Views.SettingsDialog();
-        dlg.CloseRequested += (_, _) =>
-        {
-            OverlayHost.Children.Remove(dlg);
-            ResumeTerminal();
-        };
-        // 라이브 미리보기: 설정창 저장 전이라도 토글 값(on)대로 칩을 즉시 보였다/숨긴다.
-        dlg.PerfMonitorBarChanged += (_, on) =>
-            PerfChipGroup.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-        OverlayHost.Children.Add(dlg);
+        var dlg = new Views.SettingsWindow { Owner = this };
+        dlg.Closed += (_, _) => ResumeTerminal();
+        dlg.ShowDialog();
     }
 
     // ── 인앱 파일 편집기 (중앙 분할 패널) ──────────────────────────

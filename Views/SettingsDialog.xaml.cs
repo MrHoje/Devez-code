@@ -15,12 +15,8 @@ public partial class SettingsDialog : UserControl
     /// <summary>닫기 요청 시 발생.</summary>
     public event EventHandler? CloseRequested;
 
-    /// <summary>성능 모니터 표시 미리보기 변경 시 발생(MainWindow 가 칩을 즉시 켜고/끈다).</summary>
-    public event EventHandler<bool>? PerfMonitorBarChanged;
-
     // 열림 시점의 저장값(기준). 미저장 변경 판정 + 취소 시 복원에 사용. 저장하면 갱신된다.
     private string _originalTheme;
-    private bool   _originalPerfMonitor;
     private int    _originalFontScale;
 
     private string _selectedTheme;
@@ -31,10 +27,8 @@ public partial class SettingsDialog : UserControl
         InitializeComponent();
         _originalTheme       = App.CurrentTheme;
         _selectedTheme       = App.CurrentTheme;
-        _originalPerfMonitor = SettingsService.LoadShowPerfMonitorBar();
         _originalFontScale   = SettingsService.LoadFontScale();
         _selectedFontScale   = _originalFontScale;
-        PerfMonitorToggle.IsChecked = _originalPerfMonitor;
         UpdateThemeSelectionVisual();
         UpdateFontSelectionVisual();
         SetActiveCategory("theme");
@@ -53,13 +47,10 @@ public partial class SettingsDialog : UserControl
         var primary = (Brush)FindResource("PrimaryBrush");
         var text    = (Brush)FindResource("TextBrush");
 
-        CatThemeBtn.Background  = key == "theme"  ? active : Brushes.Transparent;
-        CatThemeBtn.Foreground  = key == "theme"  ? primary : text;
-        CatTopBarBtn.Background = key == "topbar" ? active : Brushes.Transparent;
-        CatTopBarBtn.Foreground = key == "topbar" ? primary : text;
+        CatThemeBtn.Background = key == "theme"  ? active : Brushes.Transparent;
+        CatThemeBtn.Foreground = key == "theme"  ? primary : text;
 
         ThemePanel.Visibility  = key == "theme"  ? Visibility.Visible : Visibility.Collapsed;
-        TopBarPanel.Visibility = key == "topbar" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── 미리보기(저장 없이 화면에만 반영) ──────────────────────────
@@ -72,9 +63,6 @@ public partial class SettingsDialog : UserControl
             UpdateThemeSelectionVisual();
         }
     }
-
-    private void PerfMonitorToggle_Click(object sender, RoutedEventArgs e)
-        => PerfMonitorBarChanged?.Invoke(this, PerfMonitorToggle.IsChecked == true); // 미리보기만
 
     private void FontSizeCard_Click(object sender, MouseButtonEventArgs e)
     {
@@ -103,10 +91,12 @@ public partial class SettingsDialog : UserControl
     /// <summary>헤더 X — devez 처럼 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     private void CancelBtn_Click(object sender, RoutedEventArgs e) => TryCloseWithConfirm();
 
-    /// <summary>딤 배경 클릭 — 헤더 X 와 동일.</summary>
-    private void Backdrop_Click(object sender, MouseButtonEventArgs e) => TryCloseWithConfirm();
+    /// <summary>헤더 드래그 → 부모 SettingsWindow 이동 (devez SettingsDialog 이식).</summary>
+    private void Header_DragMove(object sender, MouseButtonEventArgs e)
+        => Window.GetWindow(this)?.DragMove();
 
-    private void TryCloseWithConfirm()
+    /// <summary>ESC / 외부에서 호출하는 닫기 — 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
+    public void TryCloseWithConfirm()
     {
         if (HasUnsavedChanges())
         {
@@ -122,19 +112,15 @@ public partial class SettingsDialog : UserControl
 
     private bool HasUnsavedChanges()
         => _selectedTheme != _originalTheme
-        || (PerfMonitorToggle.IsChecked == true) != _originalPerfMonitor
         || _selectedFontScale != _originalFontScale;
 
     /// <summary>현재 UI 값을 디스크에 저장·확정하고 기준값을 갱신한다.</summary>
     private void ApplySettings()
     {
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
-        var perf = PerfMonitorToggle.IsChecked == true;
-        SettingsService.SaveShowPerfMonitorBar(perf);
         SettingsService.SaveFontScale(_selectedFontScale);
 
         _originalTheme       = _selectedTheme;
-        _originalPerfMonitor = perf;
         _originalFontScale   = _selectedFontScale;
     }
 
@@ -146,11 +132,6 @@ public partial class SettingsDialog : UserControl
             _selectedTheme = _originalTheme;
             (Application.Current as App)?.SetTheme(_originalTheme, persist: false);
             UpdateThemeSelectionVisual();
-        }
-        if ((PerfMonitorToggle.IsChecked == true) != _originalPerfMonitor)
-        {
-            PerfMonitorToggle.IsChecked = _originalPerfMonitor;
-            PerfMonitorBarChanged?.Invoke(this, _originalPerfMonitor);
         }
         if (_selectedFontScale != _originalFontScale)
         {

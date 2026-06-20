@@ -41,35 +41,22 @@
         </Style>
     </UserControl.Resources>
 
-    <!-- 설정창 (devez 이식): 딤 배경 + 중앙 카드(헤더 + [좌측 카테고리 | 우측 콘텐츠]). -->
+    <!-- 설정창 콘텐츠 (devez SettingsDialog 이식).
+         둥근 모서리/그림자/외곽선은 부모 SettingsWindow 가 담당하고, 이 컨트롤은 콘텐츠만 채운다.
+         라운드 클립이 부모 Border(ClipToBounds=True)에서 적용되므로 자식 영역은 직각이어도 된다. -->
     <Grid>
-        <!-- 딤 배경: 클릭 시 닫기 -->
-        <Border Background="#99000000" MouseLeftButtonDown="Backdrop_Click"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-        <!-- 카드 (devez SettingsWindow 콘텐츠 영역과 동일: 1010×775 창 − 그림자 마진) -->
-        <Border Width="966" Height="731"
-                HorizontalAlignment="Center" VerticalAlignment="Center"
-                CornerRadius="12"
-                Background="{DynamicResource BgBrush}"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-            <Border.Effect>
-                <DropShadowEffect Color="#000000" Opacity="0.45" BlurRadius="24" ShadowDepth="3"/>
-            </Border.Effect>
-
-            <!-- 라운드 안쪽으로 자식 클립 -->
-            <Border CornerRadius="11" ClipToBounds="True">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="48"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Header: 아이콘 + "설정" + 닫기 -->
+                    <!-- Header: 아이콘 + "설정" + 닫기. 좌상단 드래그 → 부모 SettingsWindow 이동 -->
                     <Border Grid.Row="0"
                             Background="{DynamicResource PanelBrush}"
                             BorderBrush="{DynamicResource LineBrush}"
-                            BorderThickness="0,0,0,1">
+                            BorderThickness="0,0,0,1"
+                            MouseLeftButtonDown="Header_DragMove">
                         <Grid>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                                 <Path Style="{StaticResource LucideIcon}"
@@ -112,15 +99,6 @@
                                         <TextBlock Text="테마/글꼴" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="CatTopBarBtn" Tag="topbar"
-                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconPanelTop}" Width="15" Height="15"
-                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="상단 바" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
                             </StackPanel>
                         </Border>
 
@@ -129,36 +107,6 @@
                                       HorizontalScrollBarVisibility="Disabled"
                                       Background="{DynamicResource PanelBrush}">
                           <Grid>
-                            <!-- 상단 바 패널 (헤더 위젯 표시 토글, devez 이식) -->
-                            <StackPanel x:Name="TopBarPanel" Margin="28,22,28,20" Visibility="Collapsed">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelTop}"
-                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
-                                          Stroke="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="상단 바" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                                </StackPanel>
-                                <TextBlock Text="제목 표시줄에 표시할 항목을 설정합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,18"/>
-
-                                <!-- 성능 모니터 표시 토글 -->
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="성능 모니터 표시" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="제목 표시줄에 CPU·메모리 사용량을 표시합니다." FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="PerfMonitorToggle" Grid.Column="1" VerticalAlignment="Center"
-                                              Style="{StaticResource ToggleSwitch}"
-                                              Click="PerfMonitorToggle_Click"/>
-                                </Grid>
-                            </StackPanel>
-
                             <!-- 테마 패널 -->
                             <StackPanel x:Name="ThemePanel" Margin="28,22,28,20">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -397,8 +345,5 @@
                             </Button>
                         </StackPanel>
                     </Border>
-                </Grid>
-            </Border>
-        </Border>
     </Grid>
 </UserControl>
