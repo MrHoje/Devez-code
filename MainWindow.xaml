@@ -63,20 +63,21 @@
                 <!-- 앱 이름(왼쪽 고정) -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0"
                             HorizontalAlignment="Left">
+                    <!-- 로고+타이틀 (devez 정합): Height=34, 17pt Bold BrunoAceSC -->
                     <Image Source="pack://application:,,,/Resources/Logos/logo.png"
-                           Height="22" Stretch="Uniform"
+                           Height="34" Stretch="Uniform"
                            RenderOptions.BitmapScalingMode="HighQuality"
                            SnapsToDevicePixels="True"
                            VerticalAlignment="Center"
                            Margin="1,0,0,1">
                         <Image.RenderTransform>
-                            <TranslateTransform X="1" Y="2"/>
+                            <TranslateTransform X="2" Y="3"/>
                         </Image.RenderTransform>
                     </Image>
-                    <TextBlock Text="DevezCode" FontSize="15" FontWeight="Bold"
+                    <TextBlock Text="DevezCode" FontSize="17" FontWeight="Bold"
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                Foreground="{DynamicResource TextBrush}"
-                               VerticalAlignment="Center" Margin="4,1,0,0"/>
+                               VerticalAlignment="Center" Margin="3,1,0,0"/>
                 </StackPanel>
 
                 <!-- 중앙패널 시작 x 에 고정되는 컨트롤(콤보박스 + 브렌치 버블).
