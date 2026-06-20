@@ -83,7 +83,7 @@ public partial class MainWindow : Window
         UpdateEmptyState();
         UpdateStatus();
         RestorePanelStates();
-        FileExplorer.RenderTransform = _rightT;   // 오버레이 슬라이드용
+        RightOverlayPanel.RenderTransform = _rightT;   // 오버레이 슬라이드용
 
         // 실행 시 다른 앱(devez 등) 위로 확실히 올라오게 한다. topmost 토글로 전경 잠금 우회.
         Loaded += (_, _) =>
@@ -1461,7 +1461,7 @@ public partial class MainWindow : Window
         if (narrow)
         {
             // 열려 있는 오버레이는 창 폭에 맞춰 폭을 갱신한다.
-            if (_rightOverlayOpen) FileExplorer.Width = OverlayWidth();
+            if (_rightOverlayOpen) RightOverlayPanel.Width = OverlayWidth();
             return;
         }
 
@@ -1476,38 +1476,51 @@ public partial class MainWindow : Window
     }
 
     /// <summary>오버레이 드로어 폭. 중앙이 일부 보이도록 창 폭에 따라 제한.</summary>
-    private double OverlayWidth() => Math.Min(580, Math.Max(280, BodyGrid.ActualWidth - 100));
+    private double OverlayWidth() => Math.Min(560, Math.Max(300, BodyGrid.ActualWidth - 120));
 
-    /// <summary>도킹 → 좁은 창: 우측 패널을 레이아웃에서 빼고(폭 0) 오버레이 닫힌 상태로 둔다.</summary>
+    /// <summary>FileExplorer 를 본문 그리드의 우측 컬럼(도킹 위치)으로 되돌린다.</summary>
+    private void DockFileExplorer()
+    {
+        if (ReferenceEquals(RightOverlayPanel.Child, FileExplorer)) RightOverlayPanel.Child = null;
+        if (!BodyGrid.Children.Contains(FileExplorer))
+        {
+            Grid.SetColumn(FileExplorer, 4);
+            Grid.SetColumnSpan(FileExplorer, 1);
+            BodyGrid.Children.Add(FileExplorer);
+        }
+    }
+
+    /// <summary>FileExplorer 를 오버레이 호스트(우측 드로어)로 재부모화한다.</summary>
+    private void ReparentToOverlay()
+    {
+        if (BodyGrid.Children.Contains(FileExplorer)) BodyGrid.Children.Remove(FileExplorer);
+        FileExplorer.Visibility = Visibility.Visible;
+        if (!ReferenceEquals(RightOverlayPanel.Child, FileExplorer)) RightOverlayPanel.Child = FileExplorer;
+    }
+
+    /// <summary>도킹 → 좁은 창: 우측 패널을 레이아웃에서 빼고 오버레이 닫힌 상태로 둔다.</summary>
     private void EnterNarrowMode()
     {
         _rightAnimCancel?.Invoke();
+        _overlayAnimCancel?.Invoke();
+        _rightOverlayOpen = false;
+        RightOverlayHost.Visibility = Visibility.Collapsed;
+        DockFileExplorer();                         // 본문 그리드 소속으로 두되
+        FileExplorer.Visibility = Visibility.Collapsed;  // 숨김(폭 0 컬럼)
         FileExpSplitterCol.Width = new GridLength(0);
         FileExpCol.MinWidth = 0;
         FileExpCol.Width = new GridLength(0);
-        _rightOverlayOpen = false;
-        FileExplorer.Visibility = Visibility.Collapsed;
-        RightScrim.Visibility = Visibility.Collapsed;
-        _rightT.X = 0;
         UpdatePanelToggleVisual();
     }
 
-    /// <summary>좁은 창 → 도킹: 오버레이 장식을 걷고 우측 컬럼으로 되돌린다.</summary>
+    /// <summary>좁은 창 → 도킹: 오버레이를 걷고 우측 컬럼으로 되돌린다.</summary>
     private void EnterWideMode()
     {
         _overlayAnimCancel?.Invoke();
         _rightOverlayOpen = false;
-        RightScrim.Visibility = Visibility.Collapsed;
-        // 오버레이용 속성 원복
+        RightOverlayHost.Visibility = Visibility.Collapsed;
         _rightT.X = 0;
-        FileExplorer.Effect = null;
-        FileExplorer.Width = double.NaN;
-        FileExplorer.HorizontalAlignment = HorizontalAlignment.Stretch;
-        FileExplorer.BorderThickness = new Thickness(1, 0, 0, 0);
-        Grid.SetColumn(FileExplorer, 4);
-        Grid.SetColumnSpan(FileExplorer, 1);
-        Panel.SetZIndex(FileExplorer, 0);
-        // 도킹 상태 복원(접힘 상태 존중)
+        DockFileExplorer();
         FileExplorer.Visibility = _rightCollapsed ? Visibility.Collapsed : Visibility.Visible;
         FileExpSplitterCol.Width = new GridLength(_rightCollapsed ? 0 : 4);
         FileExpCol.MinWidth = _rightCollapsed ? 0 : 200;
@@ -1520,33 +1533,26 @@ public partial class MainWindow : Window
     {
         _overlayAnimCancel?.Invoke();
         double w = OverlayWidth();
-        FileExplorer.Width = w;
-        FileExplorer.HorizontalAlignment = HorizontalAlignment.Right;
-        FileExplorer.BorderThickness = new Thickness(1, 0, 0, 0);
-        FileExplorer.Effect = new System.Windows.Media.Effects.DropShadowEffect
-        { BlurRadius = 18, ShadowDepth = 0, Opacity = 0.45, Color = System.Windows.Media.Colors.Black };
-        Grid.SetColumn(FileExplorer, 2);
-        Grid.SetColumnSpan(FileExplorer, 3);
-        Panel.SetZIndex(FileExplorer, 60);
-        FileExplorer.Visibility = Visibility.Visible;
-        RightScrim.Visibility = Visibility.Visible;
+        RightOverlayPanel.Width = w;
+        ReparentToOverlay();
+        RightOverlayHost.Visibility = Visibility.Visible;
         _rightOverlayOpen = true;
         _overlayAnimCancel = AnimateOverlayX(w, 0, 200, easeIn: false);
         UpdatePanelToggleVisual();
     }
 
-    /// <summary>오버레이를 닫는다(우측으로 슬라이드 아웃 후 숨김).</summary>
+    /// <summary>오버레이를 닫는다(우측으로 슬라이드 아웃 후 숨김 + 도킹 위치로 복귀).</summary>
     private void CloseRightOverlay()
     {
         _overlayAnimCancel?.Invoke();
-        double w = FileExplorer.ActualWidth > 0 ? FileExplorer.ActualWidth : OverlayWidth();
-        RightScrim.Visibility = Visibility.Collapsed;
+        double w = RightOverlayPanel.ActualWidth > 0 ? RightOverlayPanel.ActualWidth : OverlayWidth();
         _rightOverlayOpen = false;
         _overlayAnimCancel = AnimateOverlayX(0, w, 180, easeIn: true, onComplete: () =>
         {
-            FileExplorer.Visibility = Visibility.Collapsed;
-            FileExplorer.Effect = null;
+            RightOverlayHost.Visibility = Visibility.Collapsed;
             _rightT.X = 0;
+            DockFileExplorer();
+            FileExplorer.Visibility = Visibility.Collapsed; // 좁은 창에서는 닫힘=숨김
         });
         UpdatePanelToggleVisual();
     }

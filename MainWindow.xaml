@@ -557,14 +557,8 @@
                 <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
 
-                <!-- 좁은 창에서 우측 패널이 오버레이로 뜰 때 뒤 배경을 덮는 스크림(딤).
-                     클릭하면 오버레이를 닫는다. 평소 숨김. ZIndex 는 코드에서 패널보다 낮게 설정. -->
-                <Border x:Name="RightScrim" Grid.Column="0" Grid.ColumnSpan="5"
-                        Background="#80000000" Visibility="Collapsed"
-                        Panel.ZIndex="55" MouseLeftButtonDown="RightScrim_Click"/>
-
                 <!-- Right: file explorer (좌측 보더로 채널 형성).
-                     좁은 창에서는 코드에서 Column/Span/정렬을 바꿔 오버레이 드로어로 띄운다. -->
+                     좁은 창에서는 RightOverlayHost 로 재부모화되어 오버레이 드로어로 뜬다. -->
                 <views:FileExplorerView x:Name="FileExplorer" Grid.Column="4"
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
             </Grid>
@@ -633,6 +627,21 @@
                     </Button>
                 </Grid>
             </Border>
+
+            <!-- 좁은 창용 우측 패널 오버레이 호스트 (body 행만 덮음).
+                 좁아지면 FileExplorer 를 여기로 재부모화해 우측 드로어로 띄운다.
+                 스크림 클릭 시 닫힘. ZIndex 는 설정 오버레이(200)보다 낮게. -->
+            <Grid x:Name="RightOverlayHost" Grid.Row="2" Panel.ZIndex="90" Visibility="Collapsed">
+                <Border x:Name="RightScrim" Background="#80000000"
+                        MouseLeftButtonDown="RightScrim_Click"/>
+                <Border x:Name="RightOverlayPanel" HorizontalAlignment="Right"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="18" ShadowDepth="0" Opacity="0.4" Color="Black"/>
+                    </Border.Effect>
+                </Border>
+            </Grid>
 
             <!-- 설정창 오버레이 호스트 (전체 영역 덮음) -->
             <Grid x:Name="OverlayHost" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="200"/>

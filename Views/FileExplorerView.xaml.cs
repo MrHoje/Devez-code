@@ -20,7 +20,7 @@ public partial class FileExplorerView : UserControl
         Tree.ContextMenu = BuildEmptyAreaMenu(); // 빈 영역 우클릭 메뉴 (Tree 자체)
     }
 
-    /// <summary>빈 영역 우클릭 메뉴: 새 파일/폴더 + 붙여넣기. Tree 의 ContextMenu 로 부착.</summary>
+    /// <summary>빈 영역 우클릭 메뉴: 새 파일/폴더 + 붙여넣기 + 탐색기에서 열기. Tree 의 ContextMenu 로 부착.</summary>
     private ContextMenu BuildEmptyAreaMenu()
     {
         var cm = new ContextMenu();
@@ -36,10 +36,16 @@ public partial class FileExplorerView : UserControl
         paste.Icon = new System.Windows.Shapes.Path { Style = (Style)FindResource("LucideMenuIcon"), Data = (System.Windows.Media.Geometry)FindResource("IconClipboard") };
         paste.Click += RootPaste_Click;
 
+        var reveal = new MenuItem { Header = "탐색기에서 열기" };
+        reveal.Icon = new System.Windows.Shapes.Path { Style = (Style)FindResource("LucideMenuIcon"), Data = (System.Windows.Media.Geometry)FindResource("IconExternalLink") };
+        reveal.Click += RootRevealInExplorer_Click;
+
         cm.Items.Add(newFile);
         cm.Items.Add(newFolder);
         cm.Items.Add(new Separator());
         cm.Items.Add(paste);
+        cm.Items.Add(new Separator());
+        cm.Items.Add(reveal);
         cm.Opened += EmptyAreaMenu_Opened;
         return cm;
     }
@@ -475,6 +481,18 @@ public partial class FileExplorerView : UserControl
             try { Clipboard.SetText(node.FullPath); } catch { }
     }
 
+    /// <summary>파일 우클릭 메뉴 맨 위의 "실행" — OS 기본 앱으로 열기.
+    /// 더블클릭과 동일하지만 명시적 액션 + 키보드 Enter 단축키 제공.</summary>
+    private void Execute_Click(object sender, RoutedEventArgs e)
+    {
+        if (NodeOf(sender) is not { } node) return;
+        if (node.IsDirectory) return; // 폴더는 실행 불가
+        if (FileEditorView.IsEditable(node.FullPath))
+            FileOpenRequested?.Invoke(this, node.FullPath);
+        else
+            OpenWithShell(node);
+    }
+
     private void RevealInExplorer_Click(object sender, RoutedEventArgs e)
     {
         if (NodeOf(sender) is not { } node) return;
@@ -483,6 +501,16 @@ public partial class FileExplorerView : UserControl
         if (!File.Exists(full) && !Directory.Exists(full)) return;          // 실존 항목만
         // 경로엔 따옴표가 들어올 수 없으므로(Windows 파일명 제약) 인용 주입 불가.
         try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{full}\"") { UseShellExecute = false }); }
+        catch { /* 실패 무시 */ }
+    }
+
+    /// <summary>빈 영역 메뉴의 "탐색기에서 열기" — 루트 폴더를 Windows Explorer 에서 연다.</summary>
+    private void RootRevealInExplorer_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_rootPath) || !Directory.Exists(_rootPath)) return;
+        string full;
+        try { full = Path.GetFullPath(_rootPath); } catch { return; }
+        try { Process.Start(new ProcessStartInfo("explorer.exe", $"\"{full}\"") { UseShellExecute = false }); }
         catch { /* 실패 무시 */ }
     }
 }

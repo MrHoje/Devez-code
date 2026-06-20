@@ -180,6 +180,10 @@
                         <StackPanel.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
                                          Opened="NodeMenu_Opened">
+                                <MenuItem Header="실행" Click="Execute_Click" InputGestureText="Enter">
+                                    <MenuItem.Icon><Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconPlay}"/></MenuItem.Icon>
+                                </MenuItem>
+                                <Separator/>
                                 <MenuItem Header="잘라내기" Click="Cut_Click" InputGestureText="Ctrl+X">
                                     <MenuItem.Icon><Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconScissors}"/></MenuItem.Icon>
                                 </MenuItem>
@@ -199,9 +203,6 @@
                                 <Separator/>
                                 <MenuItem Header="경로 복사" Click="CopyPath_Click">
                                     <MenuItem.Icon><Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconLink}"/></MenuItem.Icon>
-                                </MenuItem>
-                                <MenuItem Header="탐색기에서 열기" Click="RevealInExplorer_Click">
-                                    <MenuItem.Icon><Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconExternalLink}"/></MenuItem.Icon>
                                 </MenuItem>
                             </ContextMenu>
                         </StackPanel.ContextMenu>
