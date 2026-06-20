@@ -127,7 +127,7 @@
                                 SnapsToDevicePixels="True">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Path Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
-                                      Stroke="#fb923c" StrokeThickness="1.6"
+                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.6"
                                       StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
                                       Fill="Transparent" SnapsToDevicePixels="True"
                                       VerticalAlignment="Center"/>

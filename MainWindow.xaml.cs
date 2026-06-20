@@ -405,7 +405,7 @@ public partial class MainWindow : Window
         if (_narrow == true)
         {
             if (_rightOverlayOpen) CloseRightOverlay();
-            else OpenRightOverlay();
+            else _ = OpenRightOverlay();
             return;
         }
 
@@ -1420,6 +1420,29 @@ public partial class MainWindow : Window
         TerminalSnapshot.Source = null;
     }
 
+    /// <summary>우측 오버레이 드로어용 터미널 전용 정지(스냅샷). FileExplorer 자체가 오버레이
+    /// 본문이므로 그 브라우저는 정지하지 않는다 — 터미널(중앙) WebView2 만 airspace 우회.</summary>
+    private async Task SuspendTerminalOnlyAsync()
+    {
+        if (_activeSession == null) return;
+        var snap = await _terminal.CaptureSnapshotAsync();
+        if (snap != null)
+        {
+            TerminalSnapshot.Source = snap;
+            TerminalSnapshot.Visibility = Visibility.Visible;
+        }
+        TerminalHostContainer.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>우측 오버레이가 닫힌 뒤 터미널만 복원.</summary>
+    private void ResumeTerminalOnly()
+    {
+        if (_activeSession != null)
+            TerminalHostContainer.Visibility = Visibility.Visible;
+        TerminalSnapshot.Visibility = Visibility.Collapsed;
+        TerminalSnapshot.Source = null;
+    }
+
     // ── 타이틀바 ──────────────────────────────────────────────────
     private void MinBtn_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
@@ -1551,6 +1574,7 @@ public partial class MainWindow : Window
         _overlayAnimCancel?.Invoke();
         _rightOverlayOpen = false;
         RightOverlayHost.Visibility = Visibility.Collapsed;
+        ResumeTerminalOnly();   // 오버레이가 열린 채 넓어졌다면 터미널 복원
         _rightT.X = 0;
         DockFileExplorer();
         // SharedSizeGroup 복원(상태바 컬럼과 정렬).
@@ -1563,10 +1587,12 @@ public partial class MainWindow : Window
         UpdatePanelToggleVisual();
     }
 
-    /// <summary>좁은 창에서 우측 패널을 오버레이로 연다(우측에서 슬라이드 인 + 스크림).</summary>
-    private void OpenRightOverlay()
+    /// <summary>좁은 창에서 우측 패널을 오버레이로 연다(우측에서 슬라이드 인 + 스크림).
+    /// 중앙 터미널 WebView2 는 native HWND 라 WPF 오버레이를 뚫고 올라오므로 스냅샷으로 정지한다.</summary>
+    private async Task OpenRightOverlay()
     {
         _overlayAnimCancel?.Invoke();
+        await SuspendTerminalOnlyAsync();   // airspace 우회: 터미널을 스냅샷으로 정지
         double w = OverlayWidth();
         RightOverlayPanel.Width = w;
         ReparentToOverlay();
@@ -1588,6 +1614,7 @@ public partial class MainWindow : Window
             _rightT.X = 0;
             DockFileExplorer();
             FileExplorer.Visibility = Visibility.Collapsed; // 좁은 창에서는 닫힘=숨김
+            ResumeTerminalOnly();                            // 터미널 복원
         });
         UpdatePanelToggleVisual();
     }
