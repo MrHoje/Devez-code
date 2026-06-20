@@ -47,6 +47,12 @@
     <Content Include="Resources\Plugins\opencode-room-tracker.js">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- claude code 커스텀 statusline (Resources\StatusLine\statusline.js).
+         UserStatusLineInstaller 가 매 시작 시 ~/.claude\statusline.js 로 복사 +
+         ~/.claude\settings.json 의 statusLine 키를 자동 등록. 다른 PC 첫 실행 시 자동 설치. -->
+    <Content Include="Resources\StatusLine\statusline.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
