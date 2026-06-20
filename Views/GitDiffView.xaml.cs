@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using DevezCode.Models;
 using DevezCode.Services;
 
@@ -51,6 +52,7 @@ public partial class GitDiffView : UserControl
         _selected = null;
         DiffHint.Visibility = Visibility.Visible;
         DiffHeader.Visibility = Visibility.Collapsed;
+        MarkerStrip.Children.Clear();
 
         if (string.IsNullOrEmpty(_repo) || !Directory.Exists(_repo))
         {
@@ -141,29 +143,33 @@ public partial class GitDiffView : UserControl
         DiffHeader.Visibility = Visibility.Visible;
         DiffScroller.ScrollToTop();
 
-        if (string.IsNullOrEmpty(_repo)) return;
+        try
+        {
+            if (string.IsNullOrEmpty(_repo)) return;
 
-        if (change.IsUntracked)
-        {
-            await LoadUntrackedAsync(change.Path);
-            return;
-        }
+            if (change.IsUntracked)
+            {
+                await LoadUntrackedAsync(change.Path);
+                return;
+            }
 
-        // FullContext: 파일 전체가 컨텍스트로 출력되어 변경 외 코드까지 모두 보인다.
-        var r = await GitService.RunAsync(_repo, "diff", FullContext, "HEAD", "--", change.Path);
-        var text = r.Output;
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            // HEAD 대비 차이가 없으면(예: 인덱스에만 추가) 워킹트리 diff 재시도.
-            r = await GitService.RunAsync(_repo, "diff", FullContext, "--", change.Path);
-            text = r.Output;
+            // FullContext: 파일 전체가 컨텍스트로 출력되어 변경 외 코드까지 모두 보인다.
+            var r = await GitService.RunAsync(_repo, "diff", FullContext, "HEAD", "--", change.Path);
+            var text = r.Output;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                // HEAD 대비 차이가 없으면(예: 인덱스에만 추가) 워킹트리 diff 재시도.
+                r = await GitService.RunAsync(_repo, "diff", FullContext, "--", change.Path);
+                text = r.Output;
+            }
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                AddHunkRow("(표시할 텍스트 diff 가 없습니다 — 바이너리이거나 변경 없음)");
+                return;
+            }
+            BuildSideBySide(text);
         }
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            AddHunkRow("(표시할 텍스트 diff 가 없습니다 — 바이너리이거나 변경 없음)");
-            return;
-        }
-        BuildSideBySide(text);
+        finally { RedrawMarkers(); }
     }
 
     private async Task LoadUntrackedAsync(string relPath)
@@ -281,5 +287,67 @@ public partial class GitDiffView : UserControl
             while (i < s.Length && char.IsDigit(s[i])) i++;
             return i > start ? int.Parse(s[start..i]) : 0;
         }
+    }
+
+    // ── 변경 위치 오버뷰 스트립 ─────────────────────────────────────
+    private static readonly Brush MarkAdd = Frozen("#3FB950"); // 추가
+    private static readonly Brush MarkDel = Frozen("#F85149"); // 삭제
+    private static readonly Brush MarkMod = Frozen("#D29922"); // 수정(좌 삭제 + 우 추가)
+
+    private static Brush Frozen(string hex)
+    {
+        var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        b.Freeze();
+        return b;
+    }
+
+    /// <summary>행의 변경 종류 마커 색. context/hunk 는 null(표시 안 함).</summary>
+    private static Brush? MarkerBrushOf(DiffRow row)
+    {
+        if (row.IsHunk) return null;
+        var del = row.LeftKind == DiffCellKind.Del;
+        var add = row.RightKind == DiffCellKind.Add;
+        if (del && add) return MarkMod;
+        if (del) return MarkDel;
+        if (add) return MarkAdd;
+        return null;
+    }
+
+    private void MarkerStrip_SizeChanged(object sender, SizeChangedEventArgs e) => RedrawMarkers();
+
+    /// <summary>전체 행 대비 변경 행 위치를 스트립에 색 막대로 그린다(연속 동색 구간은 병합).</summary>
+    private void RedrawMarkers()
+    {
+        MarkerStrip.Children.Clear();
+        var total = _diff.Count;
+        var h = MarkerStrip.ActualHeight;
+        var w = MarkerStrip.ActualWidth;
+        if (total == 0 || h <= 0 || w <= 0) return;
+
+        var i = 0;
+        while (i < total)
+        {
+            var brush = MarkerBrushOf(_diff[i]);
+            if (brush == null) { i++; continue; }
+            var start = i;
+            while (i < total && ReferenceEquals(MarkerBrushOf(_diff[i]), brush)) i++;
+            var len = i - start;
+
+            var y = (double)start / total * h;
+            var rh = Math.Max(2.0, (double)len / total * h);
+            var rect = new System.Windows.Shapes.Rectangle { Width = w, Height = rh, Fill = brush };
+            Canvas.SetLeft(rect, 0);
+            Canvas.SetTop(rect, y);
+            MarkerStrip.Children.Add(rect);
+        }
+    }
+
+    /// <summary>스트립 클릭 → 해당 비율 위치로 스크롤.</summary>
+    private void MarkerStrip_Click(object sender, MouseButtonEventArgs e)
+    {
+        var h = MarkerStrip.ActualHeight;
+        if (h <= 0) return;
+        var frac = Math.Clamp(e.GetPosition(MarkerStrip).Y / h, 0, 1);
+        DiffScroller.ScrollToVerticalOffset(frac * DiffScroller.ScrollableHeight);
     }
 }
