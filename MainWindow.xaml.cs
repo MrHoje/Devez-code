@@ -618,6 +618,58 @@ public partial class MainWindow : Window
         foreach (var s in proj.Sessions) s.Hidden = false;
         TabsHost.ItemsSource = proj.Sessions;
         FileExplorer.ShowDirectory(proj.Path);
+        UpdateProjectControlBox(proj); // 컨트롤 박스(경로 + git 브렌치) 갱신
+    }
+
+    /// <summary>타이틀 바 컨트롤 박스 갱신 — 프로젝트 경로 + 현재 git 브렌치.
+    /// 브렌치는 비동기로 조회(외부 프로세스라 UI 블로킹 방지). git 저장소가 아니면 브렌치 섹션 숨김.</summary>
+    private void UpdateProjectControlBox(ProjectItem? proj)
+    {
+        if (proj == null || string.IsNullOrEmpty(proj.Path))
+        {
+            ProjectControlBox.Visibility = Visibility.Collapsed;
+            return;
+        }
+        ProjectPathText.Text = proj.Path;
+        ProjectPathText.ToolTip = proj.Path;
+        ProjectControlBox.Visibility = Visibility.Visible;
+        // 브렌치는 비동기로 가져온 뒤 표시. 이전 요청이 진행 중일 수 있으니 _projectCts 로 취소.
+        _projectCts?.Cancel();
+        _projectCts = new System.Threading.CancellationTokenSource();
+        _ = LoadBranchAsync(proj.Path, _projectCts.Token);
+    }
+
+    private System.Threading.CancellationTokenSource? _projectCts;
+
+    /// <summary>git 브렌치 조회 — UI 스레드에서 결과 반영. 실패/비저장소면 브렌치 섹션 숨김.</summary>
+    private async Task LoadBranchAsync(string repoDir, System.Threading.CancellationToken ct)
+    {
+        string? branch = null;
+        try
+        {
+            if (await GitService.IsRepoAsync(repoDir))
+            {
+                var r = await GitService.RunAsync(repoDir, "rev-parse", "--abbrev-ref", "HEAD");
+                if (r.Ok)
+                {
+                    var name = r.Output.Trim();
+                    if (!string.IsNullOrEmpty(name) && name != "HEAD") branch = name;
+                }
+            }
+        }
+        catch { /* git 미설치 등 */ }
+        if (ct.IsCancellationRequested) return;
+        await Dispatcher.InvokeAsync(() =>
+        {
+            BranchRow.Visibility = branch != null ? Visibility.Visible : Visibility.Collapsed;
+            if (branch != null) ProjectBranchText.Text = branch;
+        });
+    }
+
+    /// <summary>컨트롤 박스 클릭 — 현재 프로젝트의 브렌치를 새로 조회(외부에서 체크아웃했을 수 있음).</summary>
+    private void ProjectControlBox_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (_activeProject != null) UpdateProjectControlBox(_activeProject);
     }
 
     /// <summary>프로젝트 선택(행 클릭) — 탭 교체 후 세션 하나 활성화(이전 활성 or 첫 세션).</summary>

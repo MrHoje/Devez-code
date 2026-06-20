@@ -69,6 +69,46 @@
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                FontSize="{DynamicResource Fs14}"
                                Foreground="{DynamicResource TextBrush}"/>
+
+                    <!-- 컨트롤 박스: 선택된 프로젝트 경로 + git 브렌치. 활성 프로젝트가 없으면 숨김.
+                         클릭 시 git 브렌치 새로고침(체크아웃 등 외부 변경 반영). -->
+                    <Border x:Name="ProjectControlBox" Margin="16,0,0,0" Padding="0,3" CornerRadius="8"
+                            Background="{DynamicResource PanelSoftBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                            Cursor="Hand" MouseLeftButtonUp="ProjectControlBox_Click"
+                            ToolTip="클릭하여 브렌치 새로고침"
+                            Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- 프로젝트 경로 (폴더 아이콘 + 경로) -->
+                            <StackPanel Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolder}"
+                                      Width="12" Height="12" Stretch="Uniform"
+                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.5"
+                                      Fill="Transparent" SnapsToDevicePixels="True"/>
+                                <TextBlock x:Name="ProjectPathText" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="360"/>
+                            </StackPanel>
+                            <!-- chevron + git 브렌치 묶음. 비-git 저장소면 둘 다 숨김. -->
+                            <StackPanel x:Name="BranchRow" Orientation="Horizontal" VerticalAlignment="Center"
+                                        Visibility="Collapsed">
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronRight}"
+                                      Width="11" Height="11" Margin="8,0,8,0" Stretch="Uniform"
+                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.5"
+                                      Fill="Transparent" SnapsToDevicePixels="True"
+                                      VerticalAlignment="Center"/>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconGitBranch}"
+                                      Width="12" Height="12" Stretch="Uniform"
+                                      Stroke="#fb923c" StrokeThickness="1.5"
+                                      Fill="Transparent" SnapsToDevicePixels="True"
+                                      VerticalAlignment="Center"/>
+                                <TextBlock x:Name="ProjectBranchText" Margin="6,0,10,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,4,0"
