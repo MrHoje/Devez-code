@@ -46,8 +46,8 @@
         <!-- 딤 배경: 클릭 시 닫기 -->
         <Border Background="#99000000" MouseLeftButtonDown="Backdrop_Click"/>
 
-        <!-- 카드 -->
-        <Border Width="720" Height="560"
+        <!-- 카드 (devez SettingsWindow 콘텐츠 영역과 동일: 1010×775 창 − 그림자 마진) -->
+        <Border Width="966" Height="731"
                 HorizontalAlignment="Center" VerticalAlignment="Center"
                 CornerRadius="12"
                 Background="{DynamicResource BgBrush}"
@@ -336,23 +336,15 @@
 
                                 </StackPanel>
 
-                                <!-- 글꼴 크기 (devez 이식: 작게=0 / 크게=1, 앱 전체 적용) -->
-                                <StackPanel Orientation="Horizontal" Margin="0,30,0,8">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconType}"
-                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
-                                          Stroke="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="글꼴 크기" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                                </StackPanel>
-                                <TextBlock Text="앱 전체의 글꼴과 컨트롤 크기를 조절합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,16"/>
+                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
 
+                                <!-- 글꼴 크기 (devez 이식: 작게=0 / 크게=1, 앱 전체 적용) -->
+                                <TextBlock Text="글꼴 크기" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,22,0,12"/>
                                 <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="FontCard_Small" Tag="0"
-                                            Width="130" Height="64"
+                                    <Border x:Name="FontCard_Small" Tag="0" Width="120" Height="56"
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
-                                            Background="{DynamicResource PanelBrush}"
-                                            CornerRadius="10" Margin="0,0,12,0"
+                                            Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0,0,10,0"
                                             Cursor="Hand" MouseLeftButtonDown="FontSizeCard_Click">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Grid Width="14" Height="14" Margin="0,0,8,0">
@@ -360,16 +352,13 @@
                                                 <Ellipse x:Name="FontRadioDot_Small" Width="7" Height="7"
                                                          Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
                                             </Grid>
-                                            <TextBlock Text="작게" FontSize="{DynamicResource Fs13}"
+                                            <TextBlock Text="작게" FontSize="13"
                                                        Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
-
-                                    <Border x:Name="FontCard_Large" Tag="1"
-                                            Width="130" Height="64"
+                                    <Border x:Name="FontCard_Large" Tag="1" Width="120" Height="56"
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
-                                            Background="{DynamicResource PanelBrush}"
-                                            CornerRadius="10" Margin="0"
+                                            Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0,0,10,0"
                                             Cursor="Hand" MouseLeftButtonDown="FontSizeCard_Click">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Grid Width="14" Height="14" Margin="0,0,8,0">
@@ -377,7 +366,7 @@
                                                 <Ellipse x:Name="FontRadioDot_Large" Width="7" Height="7"
                                                          Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
                                             </Grid>
-                                            <TextBlock Text="크게" FontSize="{DynamicResource Fs15}"
+                                            <TextBlock Text="크게" FontSize="15"
                                                        Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
