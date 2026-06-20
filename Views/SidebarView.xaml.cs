@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using DevezCode.Models;
@@ -29,6 +30,8 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? SessionsReordered;
     public event Action<SessionItem>? SessionSelected;
     public event Action<SessionItem>? SessionDeleteRequested;
+    public event Action<SessionItem>? SessionRenameRequested;
+    public event Action<SessionItem>? SessionStopTrackingRequested;
 
     private ObservableCollection<ProjectItem>? _projects;
     public ObservableCollection<ProjectItem> Projects
@@ -39,14 +42,70 @@ public partial class SidebarView : UserControl
 
     private void AddProject_Click(object sender, RoutedEventArgs e) => AddProjectRequested?.Invoke();
 
+    // ── 모두 펼치기 / 접기 (devez 정합) ──────────────────────────
+    private void ToggleExpandAll_Click(object sender, RoutedEventArgs e)
+    {
+        bool target = !AreAllExpanded();
+        foreach (var p in Projects) p.IsExpanded = target;
+        UpdateExpandAllVisual();
+    }
+
+    private bool AreAllExpanded() => Projects.Count > 0 && Projects.All(p => p.IsExpanded);
+
+    /// <summary>일괄 버튼 아이콘/툴팁 갱신. 외부(프로젝트 로드 후)에서도 호출.</summary>
+    public void UpdateExpandAllVisual()
+    {
+        if (ToggleExpandAllBtn == null || ToggleExpandAllIcon?.RenderTransform is not RotateTransform rt) return;
+        bool all = AreAllExpanded();
+        ToggleExpandAllBtn.ToolTip = all ? "모두 접기" : "모두 펼치기";
+        rt.Angle = all ? -90 : 90;
+    }
+
+    // ── 검색 (프로젝트/세션 이름 필터) — devez 정합 ──────────────
+    private void SidebarSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var q = SidebarSearchBox.Text?.Trim() ?? "";
+        if (q.Length == 0) { ProjectsHost.ItemsSource = Projects; return; }
+
+        var filtered = Projects.Where(p =>
+            p.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+            p.Sessions.Any(s => s.Name.Contains(q, StringComparison.OrdinalIgnoreCase))).ToList();
+        // 세션만 매칭된 프로젝트는 펼쳐서 해당 세션이 보이게 한다.
+        foreach (var p in filtered)
+            if (!p.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
+                p.IsExpanded = true;
+        ProjectsHost.ItemsSource = filtered;
+    }
+
     private void Project_Click(object sender, MouseButtonEventArgs e)
     {
         if (_didDrag) { _didDrag = false; return; } // 드래그 직후의 클릭은 무시
+        // 행 클릭은 '선택'만 — 접고/펴기는 우측 chevron 버튼 전용
         if (sender is FrameworkElement { DataContext: ProjectItem p })
-        {
-            p.IsExpanded = !p.IsExpanded;
             ProjectSelected?.Invoke(p);
-        }
+    }
+
+    private void ProjectChevron_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) p.IsExpanded = !p.IsExpanded;
+        UpdateExpandAllVisual(); // 개별 토글도 일괄 버튼 상태에 반영
+        e.Handled = true; // 행 선택으로 버블링 방지
+    }
+
+    /// <summary>세로형 ... 버튼 — 행에 정의된 우클릭 메뉴를 버튼 위치에 띄운다.</summary>
+    private void ProjectMenu_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true; // 행 선택으로 버블링 방지
+        if (sender is not Button btn) return;
+        // 조상 Border(트리 행)의 ContextMenu를 찾아 버튼 기준으로 표시
+        for (DependencyObject? d = btn; d != null; d = VisualTreeHelper.GetParent(d))
+            if (d is Border { ContextMenu: { } cm })
+            {
+                cm.PlacementTarget = btn;
+                cm.Placement = PlacementMode.Bottom;
+                cm.IsOpen = true;
+                return;
+            }
     }
 
     private void Session_Click(object sender, MouseButtonEventArgs e)
@@ -75,6 +134,16 @@ public partial class SidebarView : UserControl
         if (ItemOf<SessionItem>(sender) is { } s) SessionDeleteRequested?.Invoke(s);
     }
 
+    private void SessionRename_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is { } s) SessionRenameRequested?.Invoke(s);
+    }
+
+    private void SessionStopTracking_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is { } s) SessionStopTrackingRequested?.Invoke(s);
+    }
+
     /// <summary>이벤트 소스에서 데이터 항목을 얻는다. 컨텍스트 메뉴 항목은 Tag, 행 요소는 DataContext.</summary>
     private static T? ItemOf<T>(object sender) where T : class
         => sender is FrameworkElement fe ? (fe.Tag ?? fe.DataContext) as T : null;
@@ -90,9 +159,18 @@ public partial class SidebarView : UserControl
     private void ProjectRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _pressOrigin = e.GetPosition(this);
-        _pendingProject = (sender as FrameworkElement)?.DataContext as ProjectItem;
+        // chevron 등 버튼 위에서 누른 경우 드래그를 무장하지 않는다(버튼 동작 보존).
+        _pendingProject = IsWithinButton(e.OriginalSource as DependencyObject)
+            ? null : (sender as FrameworkElement)?.DataContext as ProjectItem;
         _pendingSession = null;
         _didDrag = false;
+    }
+
+    private static bool IsWithinButton(DependencyObject? d)
+    {
+        for (; d != null; d = VisualTreeHelper.GetParent(d))
+            if (d is ButtonBase) return true;
+        return false;
     }
 
     private void SessionRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

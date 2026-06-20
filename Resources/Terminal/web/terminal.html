@@ -34,11 +34,46 @@
     left: var(--ime-left) !important;
     top: var(--ime-top) !important;
   }
+
+  /* ── 터미널 내 검색창 (Ctrl+Shift+F) — Windows Terminal 검색바 정합 ── */
+  #search-bar {
+    position: absolute; top: 8px; right: 12px; z-index: 10;
+    display: none; align-items: center; gap: 6px;
+    padding: 6px 8px; border-radius: 8px;
+    background: var(--term-bg, #1b1b1b);
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+    font-family: 'Malgun Gothic', sans-serif; font-size: 12px;
+    color: var(--term-fg, #CCCCCC);
+  }
+  #search-bar.open { display: flex; }
+  #search-input {
+    width: 200px; padding: 4px 6px; border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(0,0,0,0.25); color: var(--term-fg, #CCCCCC);
+    font-size: 12px; outline: none;
+  }
+  #search-input:focus { border-color: rgba(120,170,255,0.8); }
+  #search-count { min-width: 54px; text-align: center; opacity: 0.7; font-variant-numeric: tabular-nums; }
+  #search-bar button {
+    width: 24px; height: 24px; padding: 0; cursor: pointer;
+    border: none; border-radius: 5px; background: transparent;
+    color: var(--term-fg, #CCCCCC); font-size: 13px; line-height: 1;
+  }
+  #search-bar button:hover { background: rgba(255,255,255,0.12); }
 </style>
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
+<script src="addon-search.min.js"></script>
 </head>
 <body>
+<div id="search-bar">
+  <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
+  <span id="search-count"></span>
+  <button id="search-prev" title="이전 (Shift+Enter)">&#8593;</button>
+  <button id="search-next" title="다음 (Enter)">&#8595;</button>
+  <button id="search-close" title="닫기 (Esc)">&#10005;</button>
+</div>
 <script>
 (function () {
   'use strict';
@@ -118,6 +153,153 @@
     });
   }
 
+  // ── 키보드 단축키 (Windows Terminal 정합) ─────────────────────────────
+  // attachCustomKeyEventHandler 규약: false 반환 = xterm 이 처리하지 않음(PTY 전송 차단),
+  // true 반환 = 평소대로 셸/claude 로 키 전달. 우리가 가로채는 키만 false.
+  function handleKey(e, entry, roomId) {
+    if (e.type !== 'keydown') return true;
+    if (e.isComposing || e.keyCode === 229) return true; // IME 조합 중엔 개입 금지
+    if (e.getModifierState && e.getModifierState('AltGraph')) return true; // AltGr = 문자 입력, 가로채지 않음
+
+    const term = entry.term;
+    const ctrl = e.ctrlKey, shift = e.shiftKey, alt = e.altKey;
+    const key = e.key;
+    const hasSel = term.hasSelection();
+
+    // ── 복사 / 붙여넣기 ──
+    // Ctrl+C: 선택이 있으면 복사(+선택 해제), 없으면 그대로 SIGINT 전달 (WT 동작)
+    if (ctrl && !shift && !alt && (key === 'c' || key === 'C')) {
+      if (hasSel) { e.preventDefault(); doCopy(term); return false; }
+      return true; // 선택 없음 → \x03(인터럽트) 통과
+    }
+    // Ctrl+Shift+C / Ctrl+Insert: 복사 (선택이 없으면 가로채지 않고 PTY 로 통과)
+    if ((ctrl && shift && !alt && (key === 'c' || key === 'C')) ||
+        (ctrl && !shift && !alt && key === 'Insert')) {
+      if (hasSel) { e.preventDefault(); doCopy(term); return false; }
+      return true;
+    }
+    // Ctrl+V / Ctrl+Shift+V / Shift+Insert: 붙여넣기 (WT 기본 = Ctrl+V 도 붙여넣기)
+    if ((ctrl && !alt && (key === 'v' || key === 'V')) ||
+        (shift && !ctrl && !alt && key === 'Insert')) {
+      e.preventDefault(); post({ type: 'requestPaste', roomId: roomId }); return false;
+    }
+
+    // ── 검색 (Ctrl+Shift+F) ──
+    if (ctrl && shift && !alt && (key === 'f' || key === 'F')) {
+      e.preventDefault(); openSearch(); return false;
+    }
+    // ── 전체 선택 (Ctrl+Shift+A) ──
+    if (ctrl && shift && !alt && (key === 'a' || key === 'A')) {
+      e.preventDefault(); term.selectAll(); return false;
+    }
+
+    // ── 폰트 크기 (Ctrl +/-/0) ──
+    if (ctrl && !alt) {
+      if (key === '=' || key === '+' || key === 'Add')      { e.preventDefault(); post({ type:'action', name:'fontInc' });   return false; }
+      if (key === '-' || key === '_' || key === 'Subtract') { e.preventDefault(); post({ type:'action', name:'fontDec' });   return false; }
+      if (key === '0')                                       { e.preventDefault(); post({ type:'action', name:'fontReset' }); return false; }
+    }
+
+    // ── 스크롤 ──
+    if (ctrl && shift && !alt && key === 'ArrowUp')   { e.preventDefault(); term.scrollLines(-1); return false; }
+    if (ctrl && shift && !alt && key === 'ArrowDown') { e.preventDefault(); term.scrollLines(1);  return false; }
+    if (shift && !alt && key === 'PageUp')   { e.preventDefault(); term.scrollPages(-1); return false; }
+    if (shift && !alt && key === 'PageDown') { e.preventDefault(); term.scrollPages(1);  return false; }
+    if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); term.scrollToTop();    return false; }
+    if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); term.scrollToBottom(); return false; }
+
+    // ── 세션(탭) 관리 — C# 으로 위임 ──
+    if (ctrl && shift && !alt && (key === 't' || key === 'T' || key === 'd' || key === 'D')) {
+      e.preventDefault(); post({ type:'action', name:'newSession' }); return false;
+    }
+    if (ctrl && shift && !alt && (key === 'w' || key === 'W')) {
+      e.preventDefault(); post({ type:'action', name:'closeSession' }); return false;
+    }
+    if (ctrl && !alt && key === 'Tab') {
+      e.preventDefault(); post({ type:'action', name: shift ? 'prevSession' : 'nextSession' }); return false;
+    }
+    // Ctrl+Alt+1..9: N번째 세션 직접 이동 (9 = 마지막) — WT switchToTab 정합.
+    // 레이아웃 비의존을 위해 물리 키(e.code=Digit1..9) 기준. (AltGr 입력은 위에서 이미 통과)
+    if (ctrl && alt && !shift && /^Digit[1-9]$/.test(e.code)) {
+      const n = +e.code.slice(5);
+      e.preventDefault();
+      post({ type:'action', name:'gotoSession', index: n === 9 ? -1 : (n - 1) });
+      return false;
+    }
+
+    return true;
+  }
+
+  function doCopy(term) {
+    const sel = term.getSelection();
+    if (sel) post({ type: 'copy', data: sel });
+    term.clearSelection();
+  }
+
+  // ── 검색바 ──────────────────────────────────────────────────────────
+  const searchBar   = document.getElementById('search-bar');
+  const searchInput = document.getElementById('search-input');
+  const searchCount = document.getElementById('search-count');
+  const SEARCH_OPTS = {
+    decorations: {
+      matchOverviewRuler: '#7a7a32', activeMatchColorOverviewRuler: '#d8b400',
+      matchBackground: '#5a4a00', activeMatchBackground: '#c8a000',
+    },
+  };
+
+  function openSearch() {
+    searchBar.classList.add('open');
+    searchInput.focus();
+    searchInput.select();
+    if (searchInput.value) runSearch('next');
+  }
+  function closeSearch() {
+    searchBar.classList.remove('open');
+    const a = terms[activeRoomId];
+    if (a) { try { a.search.clearDecorations(); } catch (e) {} a.term.focus(); }
+  }
+  function runSearch(dir) {
+    const a = terms[activeRoomId];
+    if (!a) return;
+    const q = searchInput.value;
+    if (!q) { a.search.clearDecorations(); searchCount.textContent = ''; return; }
+    if (dir === 'prev') a.search.findPrevious(q, SEARCH_OPTS);
+    else                a.search.findNext(q, SEARCH_OPTS);
+  }
+  function updateSearchCount(r) {
+    if (!r || r.resultCount === undefined) { searchCount.textContent = ''; return; }
+    if (r.resultCount < 0) { searchCount.textContent = '많음'; return; }
+    if (r.resultCount === 0) { searchCount.textContent = '0/0'; return; }
+    searchCount.textContent = (r.resultIndex >= 0 ? r.resultIndex + 1 : 0) + '/' + r.resultCount;
+  }
+
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter')       { e.preventDefault(); runSearch(e.shiftKey ? 'prev' : 'next'); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+  });
+  searchInput.addEventListener('input', function () { runSearch('next'); });
+  document.getElementById('search-next').addEventListener('click', function () { runSearch('next'); searchInput.focus(); });
+  document.getElementById('search-prev').addEventListener('click', function () { runSearch('prev'); searchInput.focus(); });
+  document.getElementById('search-close').addEventListener('click', closeSearch);
+
+  // ── Ctrl+휠: 폰트 확대/축소 (WT 정합). capture+passive:false 로 xterm 스크롤보다 먼저 가로챔 ──
+  document.addEventListener('wheel', function (e) {
+    if (!e.ctrlKey || e.altKey || e.shiftKey || e.deltaY === 0) return; // 키보드 분기(ctrl && !alt)와 일관
+    if (e.getModifierState && e.getModifierState('AltGraph')) return;
+    if (!e.target || !e.target.closest || !e.target.closest('.term-container')) return; // 터미널 위에서만(검색창 제외)
+    e.preventDefault();
+    post({ type: 'action', name: e.deltaY < 0 ? 'fontInc' : 'fontDec' });
+  }, { passive: false, capture: true });
+
+  // ── 우클릭: 선택이 있으면 복사, 없으면 붙여넣기 (Windows 콘솔 QuickEdit 정합) ──
+  document.addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+    const t = activeRoomId ? terms[activeRoomId] : null;
+    if (!t || t.dead) return;
+    if (t.term.hasSelection()) doCopy(t.term);
+    else post({ type: 'requestPaste', roomId: activeRoomId });
+  });
+
   function createTerm(roomId) {
     const el = document.createElement('div');
     el.className = 'term-container';
@@ -136,12 +318,21 @@
     });
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
+    const search = new SearchAddon.SearchAddon();
+    term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, dead: false };
+    const entry = { term, fit, el, search, dead: false };
     terms[roomId] = entry;
 
     setupImeCaretFix(term, el);
+    term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
+    // 검색 결과 카운트 갱신 — 활성 방일 때만 검색바에 반영
+    try {
+      search.onDidChangeResults(function (r) {
+        if (roomId === activeRoomId && searchBar.classList.contains('open')) updateSearchCount(r);
+      });
+    } catch (e) {}
 
     term.onData(function (data) {
       if (entry.dead) {
@@ -161,6 +352,7 @@
     const isNew = !entry;
     if (isNew) entry = createTerm(roomId);
 
+    if (searchBar.classList.contains('open')) closeSearch(); // 방 전환 시 검색바 닫기
     for (const id in terms) terms[id].el.classList.toggle('active', id === roomId);
     activeRoomId = roomId;
 
@@ -170,6 +362,15 @@
       // C#이 이 크기로 ConPTY 세션을 만든다
       post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
     }
+  }
+
+  // 화면에 표시하지 않고 xterm 인스턴스+ConPTY 세션만 미리 생성(백그라운드 로드).
+  // 컨테이너는 display:none(.active 없음) 상태라 xterm 기본 크기(80x24)로 만들고,
+  // 실제 크기 보정(fit→resize)은 나중에 show 될 때 일어난다.
+  function preload(roomId) {
+    if (terms[roomId]) return; // 이미 생성됨
+    const entry = createTerm(roomId);
+    post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
   }
 
   window.addEventListener('resize', function () {
@@ -191,6 +392,9 @@
         break;
       case 'show':
         show(msg.roomId);
+        break;
+      case 'preload':
+        preload(msg.roomId);
         break;
       case 'output': {
         const t = terms[msg.roomId];
@@ -220,6 +424,11 @@
         if (t) t.term.focus();
         break;
       }
+      case 'paste': {
+        const t = terms[msg.roomId || activeRoomId];
+        if (t && !t.dead) t.term.paste(msg.data || '');
+        break;
+      }
       case 'adjustFontSize': {
         cfg.fontSize = msg.size;
         const active = terms[activeRoomId];
@@ -236,7 +445,10 @@
           try { t.term.dispose(); } catch (e) {}
           try { t.el.remove(); } catch (e) {}
           delete terms[msg.roomId];
-          if (activeRoomId === msg.roomId) activeRoomId = null;
+          if (activeRoomId === msg.roomId) {
+            if (searchBar.classList.contains('open')) { searchBar.classList.remove('open'); searchCount.textContent = ''; }
+            activeRoomId = null;
+          }
         }
         break;
       }

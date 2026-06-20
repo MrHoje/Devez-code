@@ -20,9 +20,39 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="40"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
+
+            <!-- ── 훅 연동 설정 배너 (없을 때만 표시) ───────────────────────
+                 세션 요청중 스피너용 claude 훅이 미설치/구버전이면 상단에 원클릭 설정을 띄운다. -->
+            <Border x:Name="HookSetupBanner" Grid.Row="1" Visibility="Collapsed"
+                    Background="{DynamicResource PanelSoftBrush}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+                <Grid Margin="14,8,8,8">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTriangleAlert}"
+                              Width="15" Height="15" VerticalAlignment="Center"
+                              Stroke="{DynamicResource PrimaryBrush}"/>
+                        <TextBlock Margin="9,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"
+                                   Text="세션 상태(요청 중 스피너) 연동이 설정되지 않았습니다. 원클릭으로 설정할 수 있어요."/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Click="HookSetupBtn_Click" Height="28" Padding="14,0" Cursor="Hand"
+                                Style="{StaticResource PrimaryButton}" FontSize="{DynamicResource Fs12}">
+                            <TextBlock Text="설정" Foreground="White"/>
+                        </Button>
+                        <Button x:Name="HookBannerDismiss" Click="HookBannerDismiss_Click"
+                                Width="30" Height="28" Margin="6,0,0,0" Cursor="Hand"
+                                Style="{StaticResource WinCtrlBtn}" ToolTip="닫기">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
+                                  Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
 
             <!-- ── Title bar ───────────────────────────────────────────── -->
             <Grid Grid.Row="0" Background="{DynamicResource PanelBrush}">
@@ -31,8 +61,9 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
-                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
-                          Width="16" Height="16" Stroke="{DynamicResource PrimaryBrush}"/>
+                    <Image Width="16" Height="16" VerticalAlignment="Center"
+                           Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
                     <TextBlock Text="DevezCode" Margin="9,0,0,0" VerticalAlignment="Center"
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                FontSize="{DynamicResource Fs14}"
@@ -41,11 +72,24 @@
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button x:Name="ThemeBtn" Style="{StaticResource WinCtrlBtn}" Click="ThemeBtn_Click"
-                            ToolTip="테마 전환">
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPalette}"
-                              Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                    <!-- 성능 모니터 칩(CPU/RAM)은 하단 푸터로 이동했다. -->
+
+                    <!-- ── 좌·우 패널 접기/펼치기 (devez 아이콘 규칙: panel-left / panel-right) ──── -->
+                    <Button x:Name="LeftPanelBtn" Click="LeftPanelBtn_Click"
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="왼쪽 패널 접기/펼치기">
+                        <Path x:Name="LeftPanelIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
+                    <Button x:Name="RightPanelBtn" Click="RightPanelBtn_Click"
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="오른쪽 패널 접기/펼치기">
+                        <Path x:Name="RightPanelIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconPanelRight}" Width="16" Height="16"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                    <Border Width="1" Height="16" Margin="6,0,8,0" VerticalAlignment="Center"
+                            Background="{DynamicResource LineBrush}" Opacity="0.5"/>
+
                     <Button Style="{StaticResource WinCtrlBtn}" Click="MinBtn_Click">
                         <TextBlock Text="&#x2013;" FontSize="{DynamicResource Fs14}"/>
                     </Button>
@@ -59,17 +103,17 @@
             </Grid>
 
             <!-- 상단바 ↔ 콘텐츠 가로 구분선 (devez 방식, 전체폭 1px) -->
-            <Border Grid.Row="1" VerticalAlignment="Top" Height="1"
+            <Border Grid.Row="2" VerticalAlignment="Top" Height="1"
                     Background="{DynamicResource LineBrush}" Panel.ZIndex="100"/>
 
             <!-- ── 3-pane body ─────────────────────────────────────────── -->
-            <Grid Grid.Row="1">
+            <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="262" MinWidth="190"/>
-                    <ColumnDefinition Width="4"/>
+                    <ColumnDefinition x:Name="SidebarCol" Width="262" MinWidth="190"/>
+                    <ColumnDefinition x:Name="SidebarSplitterCol" Width="4"/>
                     <ColumnDefinition Width="*" MinWidth="360"/>
-                    <ColumnDefinition Width="4"/>
-                    <ColumnDefinition Width="300" MinWidth="200"/>
+                    <ColumnDefinition x:Name="FileExpSplitterCol" Width="4"/>
+                    <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="200"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- 패널 경계(devez 방식): 좌·우 패널이 각자 1px LineBrush 보더를 그리고,
@@ -83,42 +127,80 @@
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
 
                 <!-- Center: tabs + terminal (좌·우 보더로 채널 형성) -->
-                <Border Grid.Column="2" Background="{DynamicResource BgBrush}"
+                <Border x:Name="CenterArea" Grid.Column="2" Background="{DynamicResource BgBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,1,0">
+                  <!-- 중앙 영역을 좌(세션/터미널)·우(인앱 편집기)로 분할. 편집기는 평소 0폭이며
+                       파일 더블클릭 시 우측에서 펼쳐진다(코드 영역을 덮지 않고 공간을 나눠 가짐). -->
                   <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="280"/>
+                        <ColumnDefinition x:Name="EditorSplitterCol" Width="0"/>
+                        <ColumnDefinition x:Name="EditorCol" Width="0"/>
+                    </Grid.ColumnDefinitions>
+
+                  <Grid Grid.Column="0">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Tab strip (devez 브라우저식 탭: 둥근 상단 + 선택 탭이 본문색으로 이어짐) -->
-                    <Border Grid.Row="0" Height="44" Background="{DynamicResource BgBrush}"
+                    <!-- Tab strip (devez 브라우저식 탭: 둥근 상단 + 선택 탭이 헤더와 이어짐) -->
+                    <Border x:Name="TabBar" Grid.Row="0" Height="44" Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
-                            Padding="11,7,12,0">
-                        <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
-                                      CanContentScroll="False">
-                            <ItemsControl x:Name="TabsHost">
+                            Padding="0,7,12,0">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 탭 빈 영역 드래그(window move) + 더블클릭 최대화 (devez: 탭 바가 캡션 역할).
+                             ScrollViewer 가 위에 있지만 Background=null 이라 탭 사이/뒤 빈 곳은 이 레이어로 떨어진다. -->
+                        <Border Grid.Column="0" Background="Transparent"
+                                MouseLeftButtonDown="TabStrip_DragMove"/>
+
+                        <ScrollViewer x:Name="TabScroller" Grid.Column="0"
+                                      HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                      CanContentScroll="False" Background="{x:Null}"
+                                      ScrollChanged="TabScroller_ScrollChanged"
+                                      PreviewMouseWheel="TabScroller_PreviewMouseWheel">
+                            <!-- 첫 탭 앞 좌측 패딩(받침 10px+여유): 가장 왼쪽 탭 선택 시 좌측 받침이 스크롤뷰어에 잘리지 않게 (devez 정합) -->
+                            <ItemsControl x:Name="TabsHost" Padding="11,0,0,0">
+                                <!-- 선택 탭의 받침이 인접 탭에 가려지지 않게 컨테이너를 위로 올린다 (devez 방식). -->
+                                <ItemsControl.ItemContainerStyle>
+                                    <Style TargetType="ContentPresenter">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="Panel.ZIndex" Value="10"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ItemsControl.ItemContainerStyle>
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type models:SessionItem}">
-                                        <Border x:Name="TabBd" Margin="0,0,3,-1"
+                                      <Grid x:Name="TabRoot" Margin="0,0,3,0">
+                                        <Border x:Name="TabBd" Margin="0,0,0,-1"
                                                 VerticalAlignment="Bottom" Padding="0,9"
-                                                MinWidth="120" MaxWidth="240"
+                                                MinWidth="131" MaxWidth="248"
                                                 CornerRadius="14,14,0,0"
                                                 BorderThickness="1,1,1,0"
                                                 BorderBrush="{DynamicResource LineBrush}"
-                                                Background="{DynamicResource PanelSoftBrush}"
                                                 Cursor="Hand"
                                                 PreviewMouseLeftButtonDown="Tab_PreviewMouseLeftButtonDown"
                                                 MouseLeftButtonUp="Tab_Click">
+                                            <!-- 기본 배경은 Style Setter 로 준다(로컬 값으로 주면 WPF 우선순위상
+                                                 IsSelected 트리거의 PanelBrush 를 로컬 PanelSoftBrush 가 이겨 선택색이 안 먹는다). -->
                                             <Border.Style>
                                                 <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                                                     <Style.Triggers>
-                                                        <!-- 선택 탭: 본문(BgBrush)과 같은 색으로 이어붙임 -->
+                                                        <!-- 선택 탭: 헤더바(PanelBrush)와 같은 색으로 칠해 하단 라인을 덮고 헤더와 이어붙임 (devez 정합) -->
                                                         <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                            <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
+                                                            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
@@ -129,9 +211,10 @@
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <Path Grid.Column="0" Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
-                                                      Width="13" Height="13" Margin="0,0,7,0"
-                                                      Stroke="{DynamicResource PrimaryBrush}" VerticalAlignment="Center"/>
+                                                <Image Grid.Column="0" Width="14" Height="14" Margin="0,0,7,0"
+                                                       VerticalAlignment="Center"
+                                                       Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
                                                 <TextBlock x:Name="TabTitle" Grid.Column="1" Text="{Binding Name}"
                                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
@@ -156,21 +239,103 @@
                                                 </Button>
                                             </Grid>
                                         </Border>
+
+                                        <!-- 선택 탭 하단 받침(브라우저 탭 형태, devez 이식): 좌우 모서리가 바깥으로
+                                             오목하게 휘어 헤더바와 자연스럽게 이어진다. Fill 은 선택 탭 배경과
+                                             같은 PanelBrush 라 하단 라인/이음매(seam)를 덮는다. 평소엔 숨김. -->
+                                        <Path x:Name="TabFootLeftFill"
+                                              HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                              Margin="-10,0,0,-1"
+                                              Fill="{DynamicResource PanelBrush}"
+                                              Data="M11,0 L10,0 A10,13 0 0 1 0,13 L11,13 Z"
+                                              Visibility="Collapsed"/>
+                                        <Path x:Name="TabFootLeftLine"
+                                              HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                              Margin="-10,0,0,-1"
+                                              Stroke="{DynamicResource LineBrush}" StrokeThickness="1"
+                                              Data="M10,-3 L10,0 A10,13 0 0 1 0,13"
+                                              Visibility="Collapsed"/>
+                                        <Path x:Name="TabFootRightFill"
+                                              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                              Margin="0,0,-10,-1"
+                                              Fill="{DynamicResource PanelBrush}"
+                                              Data="M0,0 L1,0 A10,13 0 0 0 11,13 L0,13 Z"
+                                              Visibility="Collapsed"/>
+                                        <Path x:Name="TabFootRightLine"
+                                              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                              Margin="0,0,-10,-1"
+                                              Stroke="{DynamicResource LineBrush}" StrokeThickness="1"
+                                              Data="M1,-3 L1,0 A10,13 0 0 0 11,13"
+                                              Visibility="Collapsed"/>
+                                      </Grid>
                                         <DataTemplate.Triggers>
-                                            <!-- 선택 시 제목을 또렷하게 -->
-                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                            <!-- 호버 시 제목을 또렷하게 (devez 정합) -->
+                                            <Trigger SourceName="TabBd" Property="IsMouseOver" Value="True">
                                                 <Setter TargetName="TabTitle" Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            </Trigger>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <!-- 선택 시 제목을 또렷하게 (devez 정합) -->
+                                                <Setter TargetName="TabTitle" Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                                <!-- 선택 탭만 하단 받침 노출 (인접 탭 위로 올리는 건 ItemContainerStyle ZIndex가 담당) -->
+                                                <Setter TargetName="TabFootLeftFill" Property="Visibility" Value="Visible"/>
+                                                <Setter TargetName="TabFootLeftLine" Property="Visibility" Value="Visible"/>
+                                                <Setter TargetName="TabFootRightFill" Property="Visibility" Value="Visible"/>
+                                                <Setter TargetName="TabFootRightLine" Property="Visibility" Value="Visible"/>
                                             </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
+
+                        <!-- 탭 오버플로우 시 좌·우 스크롤 버튼 (devez TabNavGroup) — 평소 숨김 -->
+                        <StackPanel x:Name="TabNavGroup" Grid.Column="1" Orientation="Horizontal"
+                                    VerticalAlignment="Center" Margin="8,0,0,3" Visibility="Collapsed">
+                            <Button x:Name="TabScrollLeftBtn" Style="{StaticResource TabNavButton}"
+                                    Click="TabScrollLeft_Click" ToolTip="이전 탭">
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronLeft}"
+                                      Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                            </Button>
+                            <Button x:Name="TabScrollRightBtn" Style="{StaticResource TabNavButton}"
+                                    Click="TabScrollRight_Click" Margin="2,0,0,0" ToolTip="다음 탭">
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronRight}"
+                                      Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                            </Button>
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+
+                    <!-- 선택 탭 하단 보더 커버(devez SelectedTabSeam): 스크롤뷰어 밖 정적 오버레이라
+                         탭처럼 클립되지 않는다. 선택 탭 폭만큼 탭 스트립 하단 라인(LineBrush)을 PanelBrush 로
+                         덮어, 선택 탭이 세션 헤더와 경계선 없이 매끄럽게 이어지게 한다. 위치/너비는 코드에서 설정. -->
+                    <Border x:Name="SelectedTabSeam" Grid.Row="0" Height="1"
+                            VerticalAlignment="Bottom" HorizontalAlignment="Left"
+                            Background="{DynamicResource PanelBrush}"
+                            Visibility="Collapsed" IsHitTestVisible="False" Panel.ZIndex="100"/>
+
+                    <!-- 세션 타이틀 영역 (devez HeaderBar 정합): 탭 아래·터미널 위. PanelBrush 라
+                         선택 탭과 매끄럽게 이어진다. 좌측 아이콘 + 세션 제목 + 프로젝트 경로. -->
+                    <Border x:Name="SessionHeaderBar" Grid.Row="1" Height="45"
+                            Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                            Visibility="Collapsed">
+                        <!-- 마지막 보낸 메시지(폭 넘치면 …로 잘림, 호버 시 전체 툴팁) -->
+                        <TextBlock x:Name="SessionHeaderTitle"
+                                   VerticalAlignment="Center" Margin="16,0,12,0"
+                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
                     </Border>
 
                     <!-- Terminal host + empty-state -->
-                    <Grid Grid.Row="1">
+                    <Grid Grid.Row="2">
                         <ContentControl x:Name="TerminalHostContainer"/>
+                        <!-- airspace 우회: 오버레이(설정창 등)가 뜰 때 WebView2를 가리지 못하므로
+                             터미널을 스냅샷 이미지로 대체하고 WebView2는 Collapse 한다. -->
+                        <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
                         <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
                                   Width="40" Height="40" Stroke="{DynamicResource TextMutedBrush}"
@@ -180,6 +345,16 @@
                                        Foreground="{DynamicResource TextMutedBrush}" TextAlignment="Center"/>
                         </StackPanel>
                     </Grid>
+                  </Grid>
+
+                    <!-- 터미널 ↔ 편집기 분할 스플리터(평소 0폭, 편집기 열릴 때 4px 채널). -->
+                    <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"
+                                  ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
+
+                    <!-- 인앱 파일 편집기: 중앙을 분할한 우측 패널. 평소 0폭(Collapsed)이며
+                         파일 더블클릭 시 우측에서 펼쳐진다(터미널/코드 영역과 나란히, 덮지 않음). -->
+                    <views:FileEditorView x:Name="FileEditor" Grid.Column="2"
+                                          Visibility="Collapsed"/>
                   </Grid>
                 </Border>
 
@@ -191,13 +366,67 @@
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
             </Grid>
 
-            <!-- ── Status bar ──────────────────────────────────────────── -->
-            <Border Grid.Row="2" Height="26" Background="{DynamicResource PanelBrush}"
+            <!-- ── Status bar (헤더와 동일 높이 40, 우측 설정 버튼) ──────────── -->
+            <Border Grid.Row="3" Height="40" Background="{DynamicResource PanelBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
-                <TextBlock x:Name="StatusText" Margin="14,0" VerticalAlignment="Center"
-                           FontSize="{DynamicResource Fs11}"
-                           Foreground="{DynamicResource TextMutedBrush}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                    <!-- CPU/RAM 칩(상단에서 이동) — 클릭 시 작업 관리자. 설정으로 표시 토글.
+                         값에 따라 색 변화(PerfBrush: ≥80 빨강 · ≥50 주황 · 그 외 기본) — devez 규칙. -->
+                    <StackPanel x:Name="PerfChipGroup" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
+                                Style="{StaticResource TitleBarChipButton}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="CPU  " FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="PerfCpuText" Text="--" Width="46" TextAlignment="Left"
+                                           FontSize="{DynamicResource Fs13}" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock Text="RAM  " FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="PerfRamText" Text="--" FontSize="{DynamicResource Fs13}"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <Border x:Name="FooterDivider" Width="1" Height="14" Margin="10,0" VerticalAlignment="Center"
+                            Background="{DynamicResource LineBrush}" Opacity="0.6" Visibility="Collapsed"/>
+                    <!-- 계정 rate limit 사용량 (statusLine 훅이 떨군 값). 프로그래스바 + %.
+                         데이터 없으면 숨김. 막대 색은 사용률 구간(기본/노랑/주황/빨강). -->
+                    <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="Collapsed" ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
+                        <TextBlock x:Name="RlFiveLabel" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                        <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                            <Border x:Name="RlFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                        </Border>
+                        <TextBlock x:Name="RlFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                        <TextBlock x:Name="RlSevenLabel" Text="주간" Margin="12,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                        <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                            <Border x:Name="RlSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                        </Border>
+                        <TextBlock x:Name="RlSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                    </StackPanel>
+                    </StackPanel>
+                    <Button Grid.Column="1" Style="{StaticResource WinCtrlBtn}" Click="SettingsBtn_Click"
+                            ToolTip="설정">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"
+                              Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                </Grid>
             </Border>
+
+            <!-- 설정창 오버레이 호스트 (전체 영역 덮음) -->
+            <Grid x:Name="OverlayHost" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="200"/>
         </Grid>
     </Border>
 </Window>

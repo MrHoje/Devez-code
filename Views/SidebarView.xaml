@@ -2,25 +2,40 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:DevezCode.Models"
+             xmlns:b="clr-namespace:DevezCode.Behaviors"
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
-        <!-- 트리 행(프로젝트/세션) 공통: 호버·선택 배경 -->
+        <!-- 세션 행: 호버·선택 배경. 단, 부모 프로젝트가 활성(선택)일 때만 반응 -->
         <Style x:Key="TreeRow" TargetType="Border">
             <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
+                <!-- 호버: 부모 프로젝트가 활성일 때만 -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource Self}, Path=IsMouseOver}" Value="True"/>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ItemsControl}, Path=DataContext.IsSelected}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
                     <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                </Trigger>
-                <!-- 우클릭 메뉴가 열려 있는 동안에도 호버 배경 유지 (devez 방식) -->
-                <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=ContextMenu.IsOpen}" Value="True">
+                </MultiDataTrigger>
+                <!-- 우클릭 메뉴가 열려 있는 동안에도 호버 배경 유지 (부모 활성 시에만) -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource Self}, Path=ContextMenu.IsOpen}" Value="True"/>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ItemsControl}, Path=DataContext.IsSelected}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
                     <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                </MultiDataTrigger>
+                <!-- 선택: 부모 프로젝트가 활성일 때만 -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsSelected}" Value="True"/>
+                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ItemsControl}, Path=DataContext.IsSelected}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
                     <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
-                </DataTrigger>
+                </MultiDataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -39,10 +54,23 @@
 
         <!-- 세션(하위 항목) 템플릿 — 상태 점 + 이름. 액션은 우클릭 메뉴 -->
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
-            <Border Style="{StaticResource TreeRow}" Margin="0,1" MouseLeftButtonUp="Session_Click"
+            <Border Style="{StaticResource TreeRow}" Margin="0,1,4,1" MouseLeftButtonUp="Session_Click"
                     PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown">
                 <Border.ContextMenu>
                     <ContextMenu>
+                        <MenuItem Header="이름 변경" Tag="{Binding}" Click="SessionRename_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPencil}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <Separator/>
+                        <MenuItem Header="세션 추적 중단" Tag="{Binding}" Click="SessionStopTracking_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEyeOff}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <MenuItem Header="세션 삭제" Tag="{Binding}" Click="SessionDelete_Click" Foreground="#ef4444">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
@@ -51,24 +79,77 @@
                         </MenuItem>
                     </ContextMenu>
                 </Border.ContextMenu>
-                <Grid Margin="12,6,12,6">
+                <Grid Margin="12,4,12,4">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Ellipse Grid.Column="0" Style="{StaticResource SessionDot}"/>
-                    <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="10,0,0,0"
+                    <!-- 클로드 아이콘 (상태 점 왼쪽) -->
+                    <Image Grid.Column="0" Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
+                           Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <Grid Grid.Column="1" Width="12" Height="12" VerticalAlignment="Center">
+                        <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중) -->
+                        <Ellipse x:Name="StatusDot" Style="{StaticResource SessionDot}"/>
+                        <Ellipse x:Name="BusySpinner" Width="12" Height="12" Visibility="Collapsed"
+                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                 StrokeDashArray="15 100" StrokeDashCap="Round"
+                                 RenderTransformOrigin="0.5,0.5">
+                            <Ellipse.RenderTransform>
+                                <RotateTransform x:Name="SpinRot"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                    </Grid>
+                    <TextBlock Grid.Column="2" Text="{Binding Name}" Margin="10,0,0,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                FontSize="{DynamicResource Fs12}"
                                Foreground="{DynamicResource SidebarSubTextBrush}"/>
                 </Grid>
             </Border>
+            <DataTemplate.Triggers>
+                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                        <Setter TargetName="StatusDot" Property="Visibility" Value="Collapsed"/>
+                        <Setter TargetName="BusySpinner" Property="Visibility" Value="Visible"/>
+                        <DataTrigger.EnterActions>
+                            <BeginStoryboard x:Name="SpinBs">
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="SpinRot"
+                                                     Storyboard.TargetProperty="Angle"
+                                                     From="0" To="360" Duration="0:0:0.8"
+                                                     RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </DataTrigger.EnterActions>
+                        <DataTrigger.ExitActions>
+                            <StopStoryboard BeginStoryboardName="SpinBs"/>
+                        </DataTrigger.ExitActions>
+                    </DataTrigger>
+                </DataTemplate.Triggers>
         </DataTemplate>
+
+        <!-- 프로젝트+세션 그룹 컨테이너: 호버 시 전체를 감싸는 테두리, 선택 시 테마색 고정 -->
+        <Style x:Key="ProjectGroup" TargetType="Border">
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                </Trigger>
+                <!-- 선택된(활성) 프로젝트: 테마색 보더로 고정. 호버보다 우선 -->
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
 
         <!-- 프로젝트(상위 항목) 템플릿 — 박스·이름·접고펴기 chevron(오른쪽). 액션은 우클릭 메뉴 -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
-            <StackPanel Margin="0,1">
-                <Border Style="{StaticResource TreeRow}" MouseLeftButtonUp="Project_Click"
+            <Border Style="{StaticResource ProjectGroup}" Margin="0,1,0,4">
+            <StackPanel>
+                <Border Background="Transparent" Cursor="Hand" CornerRadius="8"
+                        MouseLeftButtonUp="Project_Click"
                         PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
                     <Border.ContextMenu>
                         <ContextMenu>
@@ -93,10 +174,11 @@
                             </MenuItem>
                         </ContextMenu>
                     </Border.ContextMenu>
-                    <Grid Margin="10,9,10,9">
+                    <Grid Margin="10,5,10,5">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
@@ -108,52 +190,176 @@
                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                    FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextBrush}"/>
-                        <Path Grid.Column="2" Style="{StaticResource LucideButtonIcon}"
-                              Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
-                              Width="9" Height="9" Margin="8,0,2,0"
-                              Stroke="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                        <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용) -->
+                        <Button Grid.Column="2" Margin="6,0,0,0" Tag="{Binding}"
+                                Click="ProjectChevron_Click" Cursor="Hand"
+                                Background="Transparent" BorderThickness="0"
+                                IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                ToolTip="펼치기 / 접기">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd" Width="22" Height="22" CornerRadius="6"
+                                            Background="{TemplateBinding Background}">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
+                                              Width="9" Height="9"
+                                              Stroke="{DynamicResource TextMutedBrush}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움 -->
+                        <Button Grid.Column="3" Margin="2,0,0,0" Tag="{Binding}"
+                                Click="ProjectMenu_Click" Cursor="Hand"
+                                Background="Transparent" BorderThickness="0"
+                                IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                ToolTip="메뉴">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd" Width="22" Height="22" CornerRadius="6"
+                                            Background="{TemplateBinding Background}">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconMoreVertical}"
+                                              Width="13" Height="13"
+                                              Stroke="{DynamicResource TextMutedBrush}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
                     </Grid>
                 </Border>
                 <!-- 들여쓰기 + 좌측 세로 가이드선. 세로선 x를 프로젝트 아이콘 x중심(17.5px)에 맞춤 (devez 방식) -->
-                <Border Margin="17,1,0,4"
+                <!-- 세로선 끝을 마지막 세션 하이라이트 하단(-1로 세션margin 상쇄)에 일치, 하단 패딩 5 유지 -->
+                <Border Margin="17,0,0,5" ClipToBounds="True"
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="1,0,0,0"
-                        Visibility="{Binding IsExpanded, Converter={x:Static models:BoolVisibilityConverter.Instance}}">
+                        Visibility="Collapsed"
+                        b:TreeExpander.IsExpanded="{Binding IsExpanded}">
                     <ItemsControl ItemsSource="{Binding Sessions}"
                                   ItemTemplate="{StaticResource SessionTemplate}"
-                                  Margin="4,0,0,0"/>
+                                  Margin="4,0,0,-1"/>
                 </Border>
             </StackPanel>
+            </Border>
         </DataTemplate>
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Border Grid.Row="0" Height="44"
+        <!-- Header (라벨 + 모두 펼치기/접기) — devez 정합 -->
+        <Border Grid.Row="0" Height="45"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <TextBlock Text="디렉터리 &amp; 세션" Margin="16,0" VerticalAlignment="Center"
-                       FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextMutedBrush}"/>
+            <Grid Margin="16,0,12,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="프로젝트" VerticalAlignment="Center"
+                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}"/>
+                <Button x:Name="ToggleExpandAllBtn" Grid.Column="1"
+                        Width="28" Height="28"
+                        Style="{StaticResource IconButton}"
+                        Click="ToggleExpandAll_Click"
+                        ToolTip="모두 펼치기">
+                    <Grid Width="14" Height="14">
+                        <Path x:Name="ToggleExpandAllIcon"
+                              Style="{StaticResource LucideButtonIcon}"
+                              Data="{StaticResource IconChevronRight}"
+                              Width="12" Height="12"
+                              RenderTransformOrigin="0.5,0.5">
+                            <Path.RenderTransform>
+                                <RotateTransform Angle="90"/>
+                            </Path.RenderTransform>
+                        </Path>
+                    </Grid>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Search row — devez 정합 -->
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+            <Border Margin="6,8,6,8" Height="36"
+                    Background="{DynamicResource PanelSoftBrush}"
+                    BorderBrush="{DynamicResource LineBrush}"
+                    BorderThickness="1" CornerRadius="8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconSearch}"
+                          Stroke="{DynamicResource TextMutedBrush}"
+                          Width="13" Height="13"
+                          Margin="10,0,0,0" VerticalAlignment="Center"/>
+                    <Grid Grid.Column="1">
+                        <TextBox x:Name="SidebarSearchBox"
+                                 Margin="6,0,0,0" Padding="0,0,10,0" VerticalContentAlignment="Center"
+                                 Background="Transparent" BorderThickness="0"
+                                 FocusVisualStyle="{x:Null}"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource TextBrush}"
+                                 FontSize="{DynamicResource Fs13}"
+                                 FontFamily="{StaticResource PretendardFont}"
+                                 TextChanged="SidebarSearchBox_TextChanged">
+                            <TextBox.Resources>
+                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                            </TextBox.Resources>
+                        </TextBox>
+                        <TextBlock Text="프로젝트 / 세션 검색"
+                                   IsHitTestVisible="False"
+                                   Margin="8,0,10,0" Padding="0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="{DynamicResource Fs13}"
+                                   FontFamily="{StaticResource PretendardFont}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=SidebarSearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Grid>
+            </Border>
         </Border>
 
         <!-- Project tree + floating FAB -->
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="2">
             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8">
                 <ItemsControl x:Name="ProjectsHost" ItemTemplate="{StaticResource ProjectTemplate}"/>
             </ScrollViewer>
 
             <!-- 새 프로젝트 FAB (devez 방식: 우하단 떠 있는 원형 버튼) -->
             <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
-                    Margin="0,0,12,12" Panel.ZIndex="10">
-                <Button Width="44" Height="44" Click="AddProject_Click" ToolTip="새 프로젝트">
+                    Margin="0,0,10,10" Panel.ZIndex="10">
+                <Button Width="32" Height="32" Click="AddProject_Click" ToolTip="새 프로젝트">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
-                            <Border x:Name="Bd" CornerRadius="22" Background="{DynamicResource PrimaryBrush}">
+                            <Border x:Name="Bd" CornerRadius="16" Background="{DynamicResource PrimaryBrush}">
                                 <Border.Effect>
                                     <DropShadowEffect Color="{DynamicResource ShadowColor}" Opacity="0.3"
                                                       BlurRadius="12" ShadowDepth="2" Direction="270"/>
@@ -161,7 +367,7 @@
                                 <Path Data="{StaticResource IconPlus}"
                                       Stroke="White" StrokeThickness="2"
                                       StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                      Width="18" Height="18" Stretch="Uniform"
+                                      Width="14" Height="14" Stretch="Uniform"
                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <ControlTemplate.Triggers>

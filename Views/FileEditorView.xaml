@@ -1,0 +1,120 @@
+<UserControl x:Class="DevezCode.Views.FileEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource BgBrush}"
+             Visibility="Collapsed"
+             ClipToBounds="True"
+             UseLayoutRounding="True"
+             FontFamily="{StaticResource PretendardFont}">
+
+    <UserControl.Resources>
+        <!-- 헤더 아이콘 버튼(되돌리기·저장·닫기 공용, devez HeaderActionBtn 정합):
+             고정 크기 없이 내용에 맞춤, 호버 시 LineBrush, 비활성 시 흐리게 -->
+        <Style x:Key="HdrIconBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.45"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- 좌측 1px 보더로 터미널 영역과 채널(분할선) 형성 (devez 디자인 정합) -->
+    <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
+      <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="44"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header: 파일 아이콘 + 이름 + 경로 + 변경표시 + 저장 + 닫기 -->
+        <Border Grid.Row="0" Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+            <Grid Margin="14,0,8,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 파일명/경로: 버튼 영역(우측)을 침범하지 않도록 *컬럼 안에서 '...' 로 잘린다 -->
+                <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Grid.Column="0" Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
+                          Width="15" Height="15" VerticalAlignment="Center"
+                          Stroke="{DynamicResource TextMutedBrush}"/>
+                    <TextBlock x:Name="FileNameText" Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}"
+                               TextTrimming="CharacterEllipsis"/>
+                    <!-- 미저장 변경 표시 점 -->
+                    <Ellipse x:Name="DirtyDot" Grid.Column="2" Width="7" Height="7" Margin="8,1,0,0"
+                             VerticalAlignment="Center" Visibility="Collapsed"
+                             Fill="{DynamicResource PrimaryBrush}"/>
+                    <TextBlock x:Name="FilePathText" Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs11}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               TextTrimming="CharacterEllipsis"/>
+                </Grid>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <Button x:Name="UndoBtn" Click="UndoBtn_Click" IsEnabled="False"
+                            Style="{StaticResource HdrIconBtn}" ToolTip="되돌리기 (Ctrl+Z)">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconRotateCcw}"
+                              Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                    <Button x:Name="SaveBtn" Click="SaveBtn_Click" Margin="2,0,0,0" IsEnabled="False"
+                            Style="{StaticResource HdrIconBtn}" ToolTip="저장 (Ctrl+S)">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSave}"
+                              Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                    <Button x:Name="CloseBtn" Click="CloseBtn_Click" Margin="2,0,0,0"
+                            Style="{StaticResource HdrIconBtn}" ToolTip="닫기 (Esc)">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
+                              Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Body: 모노스페이스 텍스트 편집 -->
+        <TextBox x:Name="Editor" Grid.Row="1"
+                 Background="{DynamicResource BgBrush}"
+                 Foreground="{DynamicResource TextBrush}"
+                 CaretBrush="{DynamicResource TextBrush}"
+                 BorderThickness="0" Padding="14,10"
+                 FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                 FontSize="13"
+                 AcceptsReturn="True" AcceptsTab="True"
+                 TextWrapping="NoWrap"
+                 HorizontalScrollBarVisibility="Auto"
+                 VerticalScrollBarVisibility="Auto"
+                 TextChanged="Editor_TextChanged"/>
+      </Grid>
+    </Border>
+</UserControl>

@@ -18,10 +18,16 @@ Start-Process "bin\Release\DevezCode.exe"
 빌드가 실패하면 앱을 재시작하지 마십시오. 먼저 빌드 오류를 수정하십시오.
 오류의 원인이 직접 수정하지 않은 파일이라면 병행 세션이 수정 중일 수 있으니 빌드를 멈추고 대기.
 
+**코드 수정이 끝나면(devez 참고 여부와 무관하게) 커밋 후 푸시한다.** (빌드 성공 확인 후 commit → push)
+
 ## 참고 대상 (devez)
 
 - "devez를 참고해서"라고 하면 프로젝트 상위 폴더의 `devez`를 참고한다.
   `devez`가 없으면 `talkremind_wpf`를 참고한다.
+- devez를 참고해 기능을 이식할 때, devez에서 **DB 동기화(Supabase 등)** 로 저장하던 부분은
+  DevezCode 에서는 모두 **로컬 저장**으로 대체한다
+  (`SettingsService` → `%AppData%\DevezCode\settings.json`, 테마는 `theme.txt`).
+  DevezCode 는 서버/DB 인프라가 없으므로 클라우드 동기화 코드를 만들지 말 것.
 
 ## 참고
 

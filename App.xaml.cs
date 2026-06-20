@@ -144,7 +144,9 @@ public partial class App : Application
         FontScaleChanged?.Invoke(scale);
     }
 
-    public void SetTheme(string theme)
+    /// <summary>테마를 적용한다. <paramref name="persist"/> 가 false 면 디스크 저장 없이
+    /// 화면에만 반영(설정창 라이브 미리보기용 — 저장/취소로 확정).</summary>
+    public void SetTheme(string theme, bool persist = true)
     {
         var res = Application.Current.Resources;
 
@@ -355,14 +357,34 @@ public partial class App : Application
         res["CodeActiveTextBrush"]  = new SolidColorBrush(codeActiveText);
         res["CodeHoverBrush"]       = new SolidColorBrush(codeHover);
 
-        // Persist
+        // ── 터미널 WebView 색 ───────────────────────────────────────────────
+        // 선택 탭을 터미널 실제 배경색으로 칠해 strip 하단 라인을 덮고 본문(터미널)과
+        // 매끄럽게 이어붙인다. 색은 WT settings 스킴 기준(테마와 독립). 로드 전이면 테마색 폴백.
+        Color terminalBg = bg, terminalFg = text;
         try
         {
-            var dir = Path.GetDirectoryName(ThemeFile)!;
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(ThemeFile, theme);
+            var scheme = Services.Terminal.TerminalSessionManager.Instance.Config.Scheme;
+            if (!string.IsNullOrWhiteSpace(scheme.Background))
+                terminalBg = (Color)ColorConverter.ConvertFromString(scheme.Background);
+            if (!string.IsNullOrWhiteSpace(scheme.Foreground))
+                terminalFg = (Color)ColorConverter.ConvertFromString(scheme.Foreground);
         }
-        catch { /* non-critical */ }
+        catch { /* 설정 로드 전 — 테마 본문색으로 폴백 */ }
+        res["TerminalBgColor"] = terminalBg;
+        res["TerminalBgBrush"] = new SolidColorBrush(terminalBg);
+        res["TerminalFgBrush"] = new SolidColorBrush(terminalFg);
+
+        // Persist (미리보기 모드면 디스크 저장 생략)
+        if (persist)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(ThemeFile)!;
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(ThemeFile, theme);
+            }
+            catch { /* non-critical */ }
+        }
 
         CurrentTheme = theme;
         ThemeChanged?.Invoke(theme);

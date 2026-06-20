@@ -31,6 +31,14 @@ public sealed class SessionItem : NotifyBase
     /// <summary>터미널(ConPTY) 세션이 살아있는지. true=테마색 점, false=회색 점.</summary>
     private bool _isAlive;
     public bool IsAlive { get => _isAlive; set => Set(ref _isAlive, value); }
+
+    /// <summary>claude 가 요청 처리 중인지(응답 대기). true=좌측 트리에 스피너 표시.</summary>
+    private bool _isBusy;
+    public bool IsBusy { get => _isBusy; set => Set(ref _isBusy, value); }
+
+    /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
+    private string _lastMessage = "";
+    public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
 }
 
 /// <summary>좌측 트리의 프로젝트(= 디렉터리). 하위에 세션 목록을 가진다.</summary>

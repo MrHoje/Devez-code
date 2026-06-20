@@ -23,11 +23,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string>? SessionStarted;
     /// <summary>방의 셸 프로세스가 종료됨(끊김/죽음). roomId 전달.</summary>
     public event Action<string>? SessionExited;
+    /// <summary>터미널에서 세션(탭) 단축키 발생 — name: newSession/closeSession/nextSession/prevSession/gotoSession.
+    /// gotoSession 일 때 index = 0-기준 세션 번호(-1 = 마지막), 그 외엔 의미 없음.</summary>
+    public event Action<string, int>? SessionActionRequested;
 
     private WebView2? _webView;
     private bool _initStarted;
     private bool _pageReady;
     private string? _pendingShowRoomId;
+    private readonly List<string> _pendingPreload = new(); // pageReady 전에 들어온 백그라운드 로드 요청
     private string? _activeRoomId;
     private double _fontSizePt = -1; // -1 = config에서 아직 읽지 않음
 
@@ -61,6 +65,19 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 이미 떠 있는(살아있는) 방이면 즉시 준비 완료 통지 → 로딩 스킵
         if (_ready.Contains(roomId))
             Dispatcher.BeginInvoke(() => TerminalReady?.Invoke(roomId));
+    }
+
+    /// <summary>화면에 표시하지 않고 방의 xterm 인스턴스+ConPTY 세션만 미리 생성(백그라운드 로드).
+    /// 프로젝트 선택 시 비활성 세션들을 함께 띄워두는 용도. show 가 아니라 활성 방을 바꾸지 않는다.</summary>
+    public async void PreloadTerminal(string roomId)
+    {
+        if (!_initStarted)
+        {
+            _initStarted = true;
+            await InitWebViewAsync();
+        }
+        if (_pageReady) PostJson(new { type = "preload", roomId });
+        else if (!_pendingPreload.Contains(roomId)) _pendingPreload.Add(roomId);
     }
 
     /// <summary>출력에서 alt-screen 진입 시퀀스를 찾아 준비 완료를 통지 (UI 스레드).</summary>
@@ -126,7 +143,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 VirtualHost, webRoot, CoreWebView2HostResourceAccessKind.Allow);
 
             core.WebMessageReceived += OnWebMessageReceived;
-            core.Navigate($"https://{VirtualHost}/terminal.html");
+            // terminal.html 이 바뀔 때마다 새로 로드되도록 캐시 무력화(WebView2 가상호스트 응답 캐시 회피)
+            long ver = 0;
+            try { ver = File.GetLastWriteTimeUtc(Path.Combine(webRoot, "terminal.html")).Ticks; } catch { }
+            core.Navigate($"https://{VirtualHost}/terminal.html?v={ver}");
         }
         catch (Exception ex)
         {
@@ -193,6 +213,35 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     PostJson(new { type = "restarted", roomId });
                     break;
                 }
+                case "copy":
+                {
+                    var data = root.GetProperty("data").GetString() ?? "";
+                    if (data.Length > 0) SetClipboardText(data);
+                    break;
+                }
+                case "requestPaste":
+                {
+                    var roomId = root.GetProperty("roomId").GetString()!;
+                    var text = GetClipboardText();
+                    if (!string.IsNullOrEmpty(text))
+                        PostJson(new { type = "paste", roomId, data = text });
+                    break;
+                }
+                case "action":
+                {
+                    var name = root.GetProperty("name").GetString() ?? "";
+                    switch (name)
+                    {
+                        case "fontInc":   AdjustFontSize(+1); break;
+                        case "fontDec":   AdjustFontSize(-1); break;
+                        case "fontReset": ResetFontSize();    break;
+                        default:
+                            int index = root.TryGetProperty("index", out var ie) ? ie.GetInt32() : 0;
+                            SessionActionRequested?.Invoke(name, index);
+                            break;
+                    }
+                    break;
+                }
             }
         }
         catch (Exception) { /* 비정상 메시지 무시 */ }
@@ -218,6 +267,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         var pending = _pendingShowRoomId ?? _activeRoomId;
         _pendingShowRoomId = null;
         if (pending != null) PostJson(new { type = "show", roomId = pending });
+
+        // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
+        foreach (var r in _pendingPreload)
+            if (r != pending) PostJson(new { type = "preload", roomId = r });
+        _pendingPreload.Clear();
 
         // 보류된 포커스 적용 — 그 사이 다른 방(채팅 등)으로 전환했으면 훔치지 않음
         if (_pendingFocus)
@@ -301,6 +355,36 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
     }
 
+    /// <summary>폰트 크기를 WT 설정 기본값으로 초기화 (Ctrl+0). 영구 저장.</summary>
+    public void ResetFontSize()
+    {
+        _fontSizePt = Math.Round(TerminalSessionManager.Instance.Config.FontSizePx / PtToPx);
+        _fontSizePt = Math.Max(6, Math.Min(72, _fontSizePt));
+        double px = Math.Round(_fontSizePt * PtToPx, 1);
+        PostJson(new { type = "adjustFontSize", size = px });
+        DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
+    }
+
+    /// <summary>클립보드에 텍스트 기록 (WinForms STA, 잠금 충돌 대비 재시도).</summary>
+    private static void SetClipboardText(string text)
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            try { System.Windows.Clipboard.SetText(text); return; }
+            catch { System.Threading.Thread.Sleep(20); }
+        }
+    }
+
+    private static string GetClipboardText()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            try { return System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : ""; }
+            catch { System.Threading.Thread.Sleep(20); }
+        }
+        return "";
+    }
+
     /// <summary>현재 터미널 화면을 PNG 스냅샷으로 반환. airspace 우회용.</summary>
     public async Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync()
     {
@@ -337,6 +421,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _wired.Remove(roomId);
         _ready.Remove(roomId);
         _readyScan.Remove(roomId);
+        _pendingPreload.Remove(roomId);
         if (_activeRoomId == roomId) _activeRoomId = null;
         if (_pendingShowRoomId == roomId) _pendingShowRoomId = null;
         PostJson(new { type = "dispose", roomId }); // JS xterm 인스턴스·DOM 해제

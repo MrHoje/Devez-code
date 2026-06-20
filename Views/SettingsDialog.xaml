@@ -1,0 +1,368 @@
+<UserControl x:Class="DevezCode.Views.SettingsDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextRenderingMode="ClearType"
+             FontFamily="{StaticResource PretendardFont}">
+
+    <UserControl.Resources>
+        <!-- 좌측 카테고리 항목 (devez 이식) -->
+        <Style x:Key="CategoryItem" TargetType="Button">
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              TextElement.FontWeight="{TemplateBinding FontWeight}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- 설정창 (devez 이식): 딤 배경 + 중앙 카드(헤더 + [좌측 카테고리 | 우측 콘텐츠]). -->
+    <Grid>
+        <!-- 딤 배경: 클릭 시 닫기 -->
+        <Border Background="#99000000" MouseLeftButtonDown="Backdrop_Click"/>
+
+        <!-- 카드 -->
+        <Border Width="720" Height="560"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                CornerRadius="12"
+                Background="{DynamicResource BgBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" Opacity="0.45" BlurRadius="24" ShadowDepth="3"/>
+            </Border.Effect>
+
+            <!-- 라운드 안쪽으로 자식 클립 -->
+            <Border CornerRadius="11" ClipToBounds="True">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="48"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header: 아이콘 + "설정" + 닫기 -->
+                    <Border Grid.Row="0"
+                            Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="0,0,0,1">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                                <Path Style="{StaticResource LucideIcon}"
+                                      Data="{StaticResource IconSettings}"
+                                      Width="16" Height="16" VerticalAlignment="Center"
+                                      Stroke="{DynamicResource TextBrush}"
+                                      Margin="0,-1,11,0"/>
+                                <TextBlock Text="설정" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <Button Click="CancelBtn_Click"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Width="40" Height="32" Margin="0,0,8,0"
+                                    Style="{StaticResource WinCloseBtn}">
+                                <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Body: 좌측 카테고리 | 우측 콘텐츠 -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 좌측 카테고리 -->
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource PanelSoftBrush}"
+                                BorderBrush="{DynamicResource LineBrush}"
+                                BorderThickness="0,0,1,0">
+                            <StackPanel Margin="10,16,10,16">
+                                <Button x:Name="CatThemeBtn" Tag="theme"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconPalette}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="테마" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CatTopBarBtn" Tag="topbar"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconPanelTop}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="상단 바" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 우측 콘텐츠 -->
+                        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Background="{DynamicResource PanelBrush}">
+                          <Grid>
+                            <!-- 상단 바 패널 (헤더 위젯 표시 토글, devez 이식) -->
+                            <StackPanel x:Name="TopBarPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelTop}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="상단 바" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="제목 표시줄에 표시할 항목을 설정합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,18"/>
+
+                                <!-- 성능 모니터 표시 토글 -->
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="성능 모니터 표시" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="제목 표시줄에 CPU·메모리 사용량을 표시합니다." FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="PerfMonitorToggle" Grid.Column="1" VerticalAlignment="Center"
+                                              Style="{StaticResource ToggleSwitch}"
+                                              Click="PerfMonitorToggle_Click"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- 테마 패널 -->
+                            <StackPanel x:Name="ThemePanel" Margin="28,22,28,20">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPalette}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="테마" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                                <TextBlock Text="앱 전체에 적용되는 색 테마를 선택합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,16"/>
+
+                                <!-- 테마 카드 3종 (클릭 시 즉시 적용·저장) -->
+                                <StackPanel Orientation="Horizontal">
+
+                                    <!-- ── 심플 (minimal) ─────────────────────────── -->
+                                    <Border x:Name="ThemeCard_Minimal" Tag="minimal"
+                                            Width="150" Height="150"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}"
+                                            CornerRadius="10" Margin="0,0,12,0"
+                                            Cursor="Hand" MouseLeftButtonDown="ThemeCard_Click">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*"/>
+                                                <RowDefinition Height="38"/>
+                                            </Grid.RowDefinitions>
+                                            <Border Grid.Row="0" CornerRadius="8,8,0,0" Margin="1"
+                                                    Background="#F8FAFC" ClipToBounds="True">
+                                                <Grid Margin="6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="32"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Grid.Column="0" Background="White" CornerRadius="3"
+                                                            BorderBrush="#E2E8F0" BorderThickness="0.5">
+                                                        <StackPanel Margin="3,4">
+                                                            <Border Background="#2563EB" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#E2E8F0" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#E2E8F0" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#E2E8F0" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Grid.Column="1" Background="White" CornerRadius="3" Margin="4,0,0,0"
+                                                            BorderBrush="#E2E8F0" BorderThickness="0.5">
+                                                        <StackPanel Margin="5,5">
+                                                            <Border Background="#0F172A" Height="4" Width="40" CornerRadius="1.5"
+                                                                    HorizontalAlignment="Left" Margin="0,0,0,5"/>
+                                                            <Border Background="#DBEAFE" Height="9" CornerRadius="3" Margin="0,2,8,2"/>
+                                                            <Border Background="#F1F5F9" Height="9" CornerRadius="3" Margin="6,2,0,2"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                            <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Grid Width="14" Height="14" Margin="0,0,6,0">
+                                                        <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                        <Ellipse x:Name="ThemeRadioDot_Minimal" Width="7" Height="7"
+                                                                 Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                                    </Grid>
+                                                    <TextBlock Text="심플" FontSize="{DynamicResource Fs12}"
+                                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- ── 소프트 (soft) ──────────────────────────── -->
+                                    <Border x:Name="ThemeCard_Soft" Tag="soft"
+                                            Width="150" Height="150"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}"
+                                            CornerRadius="10" Margin="0,0,12,0"
+                                            Cursor="Hand" MouseLeftButtonDown="ThemeCard_Click">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*"/>
+                                                <RowDefinition Height="38"/>
+                                            </Grid.RowDefinitions>
+                                            <Border Grid.Row="0" CornerRadius="8,8,0,0" Margin="1"
+                                                    Background="#F2EDE6" ClipToBounds="True">
+                                                <Grid Margin="6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="32"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Grid.Column="0" Background="#FAF7F2" CornerRadius="3"
+                                                            BorderBrush="#D8D2C6" BorderThickness="0.5">
+                                                        <StackPanel Margin="3,4">
+                                                            <Border Background="#5C8C4A" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#D8D2C6" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#D8D2C6" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#D8D2C6" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Grid.Column="1" Background="#FAF7F2" CornerRadius="3" Margin="4,0,0,0"
+                                                            BorderBrush="#D8D2C6" BorderThickness="0.5">
+                                                        <StackPanel Margin="5,5">
+                                                            <Border Background="#2A2620" Height="4" Width="40" CornerRadius="1.5"
+                                                                    HorizontalAlignment="Left" Margin="0,0,0,5"/>
+                                                            <Border Background="#DEECD6" Height="9" CornerRadius="3" Margin="0,2,8,2"/>
+                                                            <Border Background="#ECE7DE" Height="9" CornerRadius="3" Margin="6,2,0,2"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                            <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Grid Width="14" Height="14" Margin="0,0,6,0">
+                                                        <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                        <Ellipse x:Name="ThemeRadioDot_Soft" Width="7" Height="7"
+                                                                 Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                                    </Grid>
+                                                    <TextBlock Text="소프트" FontSize="{DynamicResource Fs12}"
+                                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- ── 다크 (dark) ────────────────────────────── -->
+                                    <Border x:Name="ThemeCard_Dark" Tag="dark"
+                                            Width="150" Height="150"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}"
+                                            CornerRadius="10" Margin="0"
+                                            Cursor="Hand" MouseLeftButtonDown="ThemeCard_Click">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*"/>
+                                                <RowDefinition Height="38"/>
+                                            </Grid.RowDefinitions>
+                                            <Border Grid.Row="0" CornerRadius="8,8,0,0" Margin="1"
+                                                    Background="#1F1F1E" ClipToBounds="True">
+                                                <Grid Margin="6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="32"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Grid.Column="0" Background="#272727" CornerRadius="3"
+                                                            BorderBrush="#383838" BorderThickness="0.5">
+                                                        <StackPanel Margin="3,4">
+                                                            <Border Background="#C2622A" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#383838" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#383838" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#383838" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Grid.Column="1" Background="#272727" CornerRadius="3" Margin="4,0,0,0"
+                                                            BorderBrush="#383838" BorderThickness="0.5">
+                                                        <StackPanel Margin="5,5">
+                                                            <Border Background="#E8E8E8" Height="4" Width="40" CornerRadius="1.5"
+                                                                    HorizontalAlignment="Left" Margin="0,0,0,5"/>
+                                                            <Border Background="#4A2810" Height="9" CornerRadius="3" Margin="0,2,8,2"/>
+                                                            <Border Background="#363636" Height="9" CornerRadius="3" Margin="6,2,0,2"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                            <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Grid Width="14" Height="14" Margin="0,0,6,0">
+                                                        <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                        <Ellipse x:Name="ThemeRadioDot_Dark" Width="7" Height="7"
+                                                                 Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                                    </Grid>
+                                                    <TextBlock Text="다크" FontSize="{DynamicResource Fs12}"
+                                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                </StackPanel>
+                            </StackPanel>
+                          </Grid>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- Footer: 취소 / 저장 (devez 이식) -->
+                    <Border Grid.Row="2"
+                            Background="{DynamicResource PanelSoftBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="0,1,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                    Margin="20,14,20,14">
+                            <Button Click="ForceCancelBtn_Click"
+                                    Width="100" Height="38" Margin="0,0,8,0"
+                                    Style="{StaticResource SecondaryButton}"
+                                    FontSize="{DynamicResource Fs13}">
+                                <TextBlock Text="취소"/>
+                            </Button>
+                            <Button x:Name="SaveBtn" Click="SaveBtn_Click"
+                                    Width="100" Height="38"
+                                    Style="{StaticResource PrimaryButton}"
+                                    FontSize="{DynamicResource Fs13}">
+                                <TextBlock Text="저장" Foreground="White"/>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

@@ -122,6 +122,9 @@ public sealed class TerminalSessionManager
         if (File.Exists(HookSettingsPath)) flags += $" --settings \"{HookSettingsPath}\"";
 
         var sessionId = SettingsService.LoadClaudeCodeRoomSession(roomId);
+        // 불변식: 세션 ID는 항상 GUID 여야 한다. 비정상 값(설정 파일 변조 등)은 무시 →
+        // 배치에 그대로 보간되어 cmd 명령이 주입되는 것을 원천 차단(새 세션처럼 시작).
+        if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
 
         // 훅이 기록한 마지막 세션 ID가 저장값과 다르면 그쪽이 최신 대화 — 교체 후 resume
         var tracked = LoadTrackedSessionId(roomId);
@@ -190,6 +193,10 @@ public sealed class TerminalSessionManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude");
     private static string HookScriptPath => Path.Combine(ClaudeTrackDir, "room-hook.ps1");
     private static string HookSettingsPath => Path.Combine(ClaudeTrackDir, "room-settings.json");
+    // statusLine 훅: stdin 으로 받은 statusLine JSON 을 그대로 파일에 떨군다(계정 rate_limits 추출용).
+    private static string StatusLineScriptPath => Path.Combine(ClaudeTrackDir, "statusline-hook.ps1");
+    // busy 훅: UserPromptSubmit(running)/Stop(idle) 시 방별 상태 파일을 써 좌측 트리 스피너를 켜고 끈다.
+    private static string BusyHookScriptPath => Path.Combine(ClaudeTrackDir, "busy-hook.ps1");
 
     // 방별 claude 직접 실행 배치(cmd /k 로 띄움). 매 실행 시 최신 커맨드로 덮어쓴다.
     private static string LaunchDir => Path.Combine(ClaudeTrackDir, "launch");
@@ -198,6 +205,26 @@ public sealed class TerminalSessionManager
     /// <summary>roomId를 파일명으로 안전하게 (훅 ps1의 -replace 와 동일 규칙).</summary>
     private static string SafeRoomFileName(string roomId)
         => System.Text.RegularExpressions.Regex.Replace(roomId, @"[^\w\-]", "");
+
+    /// <summary>훅 자산(스크립트·설정)이 모두 있고 busy 연동을 포함하는 최신본인지.
+    /// 시작 시 배너 표시 판단용 — 하나라도 누락/구버전이면 false.</summary>
+    public static bool HookAssetsHealthy()
+    {
+        try
+        {
+            if (!File.Exists(HookSettingsPath)) return false;
+            if (!File.Exists(BusyHookScriptPath)) return false;
+            if (!File.Exists(HookScriptPath)) return false;
+            if (!File.Exists(StatusLineScriptPath)) return false;
+            var json = File.ReadAllText(HookSettingsPath);
+            // busy 연동(요청중 스피너) 훅이 들어있는 최신 설정인지 확인
+            return json.Contains("UserPromptSubmit") && json.Contains("busy-hook");
+        }
+        catch { return false; }
+    }
+
+    /// <summary>훅 자산을 (재)생성한다. 배너의 원클릭 설정에서 호출.</summary>
+    public static void EnsureHookAssets() => EnsureSessionHookAssets();
 
     /// <summary>SessionStart 훅 스크립트·설정 파일 생성 (항상 덮어써 최신 유지).</summary>
     private static void EnsureSessionHookAssets()
@@ -223,15 +250,100 @@ public sealed class TerminalSessionManager
                 """;
             File.WriteAllText(HookScriptPath, script);
 
+            // statusLine 훅: 받은 JSON 을 ratelimit.json 에 저장(앱 푸터용)한 뒤, 사용자의 원래
+            // statusLine(~/.claude/settings.json)에 같은 JSON 을 넘겨 그 출력을 그대로 통과시킨다.
+            // → CLI 에 원래 뜨던 statusLine 이 그대로 유지되면서 앱도 계정 rate_limits 를 캡처한다.
+            // 여러 세션이 같은 파일에 써도 rate_limits 는 계정 전역값이라 마지막으로 쓴 것이 곧 최신.
+            const string statusScript = """
+                # DevezCode statusLine: capture account rate_limits, then pass through to the
+                # user's own statusLine so the original CLI status line keeps rendering.
+                [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+                $raw = [Console]::In.ReadToEnd()
+                try {
+                  $dir = Join-Path $env:APPDATA 'DevezCode\claude'
+                  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                  Set-Content -LiteralPath (Join-Path $dir 'ratelimit.json') -Value $raw -Encoding utf8 -Force
+                } catch { }
+                try {
+                  $sp = Join-Path $env:USERPROFILE '.claude\settings.json'
+                  if (Test-Path $sp) {
+                    $cmd = (Get-Content -Raw -LiteralPath $sp | ConvertFrom-Json).statusLine.command
+                    if ($cmd) {
+                      # 사용자 statusLine 패스스루는 매 호출마다 cmd 프로세스를 새로 띄워 비싸다.
+                      # 3초 캐시: 직전 출력을 파일로 두고 만료 전이면 재실행 없이 그대로 통과시킨다.
+                      $cache = Join-Path $dir 'statusline-cache.txt'
+                      $fresh = (Test-Path $cache) -and (((Get-Date) - (Get-Item $cache).LastWriteTime).TotalSeconds -lt 3)
+                      if ($fresh) {
+                        [Console]::Out.Write((Get-Content -Raw -LiteralPath $cache))
+                      } else {
+                        $out = $raw | & $env:ComSpec /c $cmd 2>$null
+                        if ($out) {
+                          $text = ($out -join "`n")
+                          Set-Content -LiteralPath $cache -Value $text -Encoding utf8 -Force
+                          [Console]::Out.Write($text)
+                        }
+                      }
+                    }
+                  }
+                } catch { }
+                exit 0
+                """;
+            File.WriteAllText(StatusLineScriptPath, statusScript);
+
+            // busy 훅(clude-blinker 방식): claude 가 한 턴을 처리하는 동안만 좌측 스피너를 켠다.
+            // UserPromptSubmit 에서 running, Stop(턴 종료)에서 idle 을 방별 파일로 기록한다.
+            // 방 ID는 SessionStart 훅과 동일하게 $env:DEVEZCODE_ROOM_ID (claude 자식이 상속)로 구분.
+            const string busyScript = """
+                # DevezCode busy-state hook. Arg1 = running|idle. Writes per-room state for the sidebar spinner.
+                # On 'running' (UserPromptSubmit) also records the last submitted prompt for the header title.
+                param([string]$status = 'idle')
+                try {
+                  $room = $env:DEVEZCODE_ROOM_ID
+                  if ($room) {
+                    $room = $room -replace '[^\w\-]', ''
+                    $dir = Join-Path $env:APPDATA 'DevezCode\claude\busy'
+                    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                    Set-Content -LiteralPath (Join-Path $dir ($room + '.txt')) -Value $status -Encoding Ascii -Force
+                    if ($status -eq 'running') {
+                      # UserPromptSubmit 은 stdin 으로 {"prompt":"..."} 를 넘긴다. 1줄로 요약해 별도 파일에 기록.
+                      $raw = ''
+                      try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
+                      $prompt = ''
+                      try { $prompt = ($raw | ConvertFrom-Json).prompt } catch { }
+                      if ($prompt) {
+                        $prompt = ($prompt -replace '\s+', ' ').Trim()
+                        if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
+                        $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
+                        New-Item -ItemType Directory -Force -Path $mdir | Out-Null
+                        Set-Content -LiteralPath (Join-Path $mdir ($room + '.txt')) -Value $prompt -Encoding UTF8 -Force
+                      }
+                    }
+                  }
+                } catch { }
+                exit 0
+                """;
+            File.WriteAllText(BusyHookScriptPath, busyScript);
+
             var command = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{HookScriptPath}\"";
+            var statusCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{StatusLineScriptPath}\"";
+            var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running";
+            var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle";
+            // refreshInterval 을 의도적으로 넣지 않는다 — 사용자 ~/.claude/settings.json 값과 무관하게 항상 생략.
+            // statusLine 은 rate_limits 푸터 캡처가 목적이고 event-driven(메시지마다) 갱신으로 충분하므로,
+            // 주기 갱신을 주입하면 idle 중에도 매초 statusLine 프로세스가 떠 CPU 가 튄다. 이를 원천 차단한다.
+            var statusLine = new { type = "command", command = statusCommand };
             var settings = new
             {
                 // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를
                 // 자동 삭제한다(그 세션은 resume 불가). 30일 보존.
                 cleanupPeriodDays = 30,
+                statusLine,
                 hooks = new
                 {
-                    SessionStart = new[] { new { hooks = new[] { new { type = "command", command } } } }
+                    SessionStart     = new[] { new { hooks = new[] { new { type = "command", command } } } },
+                    UserPromptSubmit = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
+                    Stop             = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
+                    SessionEnd       = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
                 }
             };
             File.WriteAllText(HookSettingsPath, System.Text.Json.JsonSerializer.Serialize(settings));
@@ -287,6 +399,32 @@ public sealed class TerminalSessionManager
         try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt")); }
         catch (Exception) { }
         try { File.Delete(LaunchBatchPath(roomId)); } catch (Exception) { }
+    }
+
+    /// <summary>세션 영구 삭제 — 셸 종료(DisposeRoom) + claude 대화 기록(.jsonl)을 디스크에서 제거.
+    /// 추적 파일은 DisposeRoom 이 지우므로 세션 ID 후보를 먼저 수집한 뒤 삭제한다.</summary>
+    public void PurgeRoom(string roomId, string? workingDir)
+    {
+        var ids = new List<string?>
+        {
+            LoadTrackedSessionId(roomId),
+            SettingsService.LoadClaudeCodeRoomSession(roomId),
+        };
+        DisposeRoom(roomId);
+
+        if (string.IsNullOrWhiteSpace(workingDir)) return;
+        try
+        {
+            var full = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+            var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".claude", "projects", encoded);
+            foreach (var id in ids)
+                if (!string.IsNullOrWhiteSpace(id) && Guid.TryParse(id, out _))
+                    try { File.Delete(Path.Combine(dir, id + ".jsonl")); } catch (Exception) { }
+        }
+        catch (Exception) { }
     }
 
     /// <summary>앱 종료 시 호출 — 모든 셸 프로세스 정리 (좀비 방지).</summary>

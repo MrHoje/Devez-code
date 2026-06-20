@@ -43,6 +43,8 @@
     <Resource Include="Fonts\Pretendard-SemiBold.ttf" />
     <Resource Include="Fonts\Pretendard-Bold.ttf" />
     <Resource Include="Fonts\BrunoAceSC-Regular.ttf" />
+    <!-- Claude Code 아이콘 이미지 (탭 헤더·타이틀바, devez 이식) -->
+    <Resource Include="Resources\Images\ShellPresets\claude_code.png" />
   </ItemGroup>
 
 </Project>

@@ -21,6 +21,15 @@ public static class UpdateService
     // devez-publish R2 버킷을 공유하되 객체 키만 DevezCode 전용으로 분리 (devez 객체와 충돌 없음).
     private const string VersionUrl = "https://pub-37da98a9e72d4514aed3533375fb7368.r2.dev/DevezCode_version.json";
 
+    /// <summary>업데이트 다운로드를 허용할 신뢰 호스트(R2 버킷). 이 외 호스트·비 https URL 은 거부 → MITM/리다이렉트 강등 차단.</summary>
+    private const string TrustedHost = "pub-37da98a9e72d4514aed3533375fb7368.r2.dev";
+
+    /// <summary>https 이고 호스트가 신뢰 버킷인 URL만 허용. version.json 이 url/patchUrl 을 임의 도메인·http 로 바꿔치기하는 것을 막는다.</summary>
+    public static bool IsTrustedUrl(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var u)
+           && u.Scheme == Uri.UriSchemeHttps
+           && string.Equals(u.Host, TrustedHost, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>자동 교체 실패 시 수동 재설치용 최신 인스톨러 URL. (R2에 이 키로 인스톨러를 올려둬야 함)</summary>
     public const string InstallerUrl = "https://pub-37da98a9e72d4514aed3533375fb7368.r2.dev/DevezCode_Setup.zip";
 
@@ -54,6 +63,8 @@ public static class UpdateService
             var json = await http.GetStringAsync($"{VersionUrl}?t={Environment.TickCount64}");
             var info = ParseVersionJson(json);
             if (info is null) return null;
+            // 통짜 url 이 신뢰 호스트·https 가 아니면 업데이트를 제시하지 않는다(다운로드 단계에서도 재차 거부됨).
+            if (!IsTrustedUrl(info.Url)) return null;
             if (Version.Parse(info.Version) <= Version.Parse(CurrentVersion)) return null;
             return info;
         }
@@ -83,6 +94,8 @@ public static class UpdateService
     private static async Task DownloadFileAsync(
         string url, string dest, IProgress<double> progress, double from, double to)
     {
+        if (!IsTrustedUrl(url))
+            throw new InvalidOperationException($"신뢰할 수 없는 업데이트 URL 입니다: {url}");
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
@@ -171,17 +184,38 @@ public static class UpdateService
         // 2) 통짜 폴백 (델타 불가·다운로드 실패·복원 실패·해시 불일치)
         if (!ready)
         {
+            // 무결성 정보 필수: sha256 가 없으면(미서명 빌드에선 서명검증도 생략되므로) 무검증 실행이 되어
+            // 적용을 중단한다 → 호출부가 수동 재설치를 안내. 배포 시 version.json 에 sha256 을 반드시 포함할 것.
+            if (string.IsNullOrEmpty(info.Sha256))
+                throw new InvalidOperationException("업데이트 무결성 정보(sha256)가 없어 적용을 중단합니다.");
             await DownloadFileAsync(info.Url, tempExe, progress, 0.0, 1.0);
+            // 통짜 결과물은 델타 복원 결과와 동일 exe → 같은 sha256. 불일치면 전송 변조/오류이므로 중단.
+            if (!HashMatches(tempExe, info.Sha256))
+            {
+                try { File.Delete(tempExe); } catch { }
+                throw new InvalidOperationException("업데이트 파일 해시가 일치하지 않습니다.");
+            }
+        }
+
+        // 3) 진위: 코드서명 검증. version.json 채널과 독립된 신뢰 앵커(MS 루트 CA + 게시자).
+        //    서명된 빌드에서는 강제, 미서명 개발 빌드에서는 자동 생략(VerifyMatchesCurrent 참조).
+        if (!Authenticode.VerifyMatchesCurrent(tempExe, out var sigReason))
+        {
+            try { File.Delete(tempExe); } catch { }
+            throw new InvalidOperationException($"업데이트 서명 검증 실패: {sigReason}");
         }
 
         // ── 이하 PowerShell 교체/재실행 스크립트 ──
         var newSize = new FileInfo(tempExe).Length;
         var script = Path.Combine(Path.GetTempPath(), "devezcode_update.ps1");
+        // 경로의 작은따옴표를 PowerShell 리터럴 규칙('' → ')으로 이스케이프 (경로 보간 깨짐·명령 주입 방지).
+        var srcLit = tempExe.Replace("'", "''");
+        var dstLit = currentExe.Replace("'", "''");
         // copy 성공(크기 일치)을 확인한 뒤에만 새 exe 재실행.
         // 실패 시 옛 exe를 재실행하지 않고, 받아둔 새 exe를 직접 실행해 사용자가 최소한 최신 버전을 쓰게 한다.
         File.WriteAllText(script,
-            $"$src = '{tempExe}'\n" +
-            $"$dst = '{currentExe}'\n" +
+            $"$src = '{srcLit}'\n" +
+            $"$dst = '{dstLit}'\n" +
             $"$expected = {newSize}\n" +
             $"$ok = $false\n" +
             $"for ($i = 0; $i -lt 20; $i++) {{\n" +
