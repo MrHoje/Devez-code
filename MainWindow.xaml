@@ -81,41 +81,53 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Tab strip -->
-                    <Border Grid.Row="0" Height="40" Background="{DynamicResource PanelBrush}"
-                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                        <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
-                            <ItemsControl x:Name="TabsHost" Margin="6,0">
+                    <!-- Tab strip (devez 브라우저식 탭: 둥근 상단 + 선택 탭이 본문색으로 이어짐) -->
+                    <Border Grid.Row="0" Height="44" Background="{DynamicResource BgBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                            Padding="11,7,12,0">
+                        <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                      CanContentScroll="False">
+                            <ItemsControl x:Name="TabsHost">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type models:SessionItem}">
-                                        <Border Margin="3,6,3,0" CornerRadius="8,8,0,0" MouseLeftButtonUp="Tab_Click"
-                                                Cursor="Hand" Padding="12,0" Height="34">
+                                        <Border x:Name="TabBd" Margin="0,0,3,-1"
+                                                VerticalAlignment="Bottom" Padding="0,9"
+                                                MinWidth="120" MaxWidth="240"
+                                                CornerRadius="14,14,0,0"
+                                                BorderThickness="1,1,1,0"
+                                                BorderBrush="{DynamicResource LineBrush}"
+                                                Background="{DynamicResource PanelSoftBrush}"
+                                                Cursor="Hand"
+                                                MouseLeftButtonUp="Tab_Click">
                                             <Border.Style>
                                                 <Style TargetType="Border">
-                                                    <Setter Property="Background" Value="Transparent"/>
                                                     <Style.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                                        </Trigger>
+                                                        <!-- 선택 탭: 본문(BgBrush)과 같은 색으로 이어붙임 -->
                                                         <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                             <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
-                                                      Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"
-                                                      VerticalAlignment="Center"/>
-                                                <TextBlock Text="{Binding Name}" Margin="7,0,8,0" VerticalAlignment="Center"
-                                                           FontSize="{DynamicResource Fs12}"
-                                                           Foreground="{DynamicResource TextBrush}"/>
-                                                <Button Width="20" Height="20" Click="TabClose_Click"
-                                                        Background="Transparent" BorderThickness="0" Cursor="Hand"
-                                                        IsTabStop="False" FocusVisualStyle="{x:Null}" ToolTip="탭 닫기">
+                                            <Grid Margin="12,0,8,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Path Grid.Column="0" Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
+                                                      Width="13" Height="13" Margin="0,0,7,0"
+                                                      Stroke="{DynamicResource PrimaryBrush}" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="TabTitle" Grid.Column="1" Text="{Binding Name}"
+                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                           FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                                                <Button Grid.Column="2" Width="16" Height="16" Margin="8,0,0,0"
+                                                        Click="TabClose_Click" Background="Transparent" BorderThickness="0"
+                                                        Cursor="Hand" IsTabStop="False" FocusVisualStyle="{x:Null}" ToolTip="탭 닫기">
                                                     <Button.Template>
                                                         <ControlTemplate TargetType="Button">
                                                             <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5">
@@ -129,10 +141,16 @@
                                                         </ControlTemplate>
                                                     </Button.Template>
                                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
-                                                          Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
+                                                          Width="9" Height="9" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
-                                            </StackPanel>
+                                            </Grid>
                                         </Border>
+                                        <DataTemplate.Triggers>
+                                            <!-- 선택 시 제목을 또렷하게 -->
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter TargetName="TabTitle" Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

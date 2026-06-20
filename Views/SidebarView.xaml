@@ -67,7 +67,13 @@
         <!-- 프로젝트(상위 항목) 템플릿 — 박스·이름·접고펴기 chevron(오른쪽). 액션은 우클릭 메뉴 -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
             <StackPanel Margin="0,1">
-                <Border Style="{StaticResource TreeRow}" MouseLeftButtonUp="Project_Click">
+                <Border Style="{StaticResource TreeRow}" MouseLeftButtonUp="Project_Click"
+                        AllowDrop="True"
+                        PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown"
+                        PreviewMouseMove="ProjectRow_PreviewMouseMove"
+                        DragOver="ProjectRow_DragOver"
+                        DragLeave="ProjectRow_DragLeave"
+                        Drop="ProjectRow_Drop">
                     <Border.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="새 세션" Tag="{Binding}" Click="AddSession_Click">
@@ -129,7 +135,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -140,21 +145,41 @@
                        Foreground="{DynamicResource TextMutedBrush}"/>
         </Border>
 
-        <!-- Project tree -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="8,8">
-            <ItemsControl x:Name="ProjectsHost" ItemTemplate="{StaticResource ProjectTemplate}"/>
-        </ScrollViewer>
+        <!-- Project tree + floating FAB -->
+        <Grid Grid.Row="1">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8">
+                <ItemsControl x:Name="ProjectsHost" ItemTemplate="{StaticResource ProjectTemplate}"/>
+            </ScrollViewer>
 
-        <!-- Footer: 새 프로젝트 -->
-        <Border Grid.Row="2" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
-                Padding="12">
-            <Button Height="40" Style="{StaticResource PrimaryButton}" Click="AddProject_Click">
-                <StackPanel Orientation="Horizontal">
-                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
-                          Width="15" Height="15" Stroke="White"/>
-                    <TextBlock Text="새 프로젝트" Margin="8,0,0,0" Foreground="White"/>
-                </StackPanel>
-            </Button>
-        </Border>
+            <!-- 새 프로젝트 FAB (devez 방식: 우하단 떠 있는 원형 버튼) -->
+            <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                    Margin="0,0,12,12" Panel.ZIndex="10">
+                <Button Width="44" Height="44" Click="AddProject_Click" ToolTip="새 프로젝트">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" CornerRadius="22" Background="{DynamicResource PrimaryBrush}">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="{DynamicResource ShadowColor}" Opacity="0.3"
+                                                      BlurRadius="12" ShadowDepth="2" Direction="270"/>
+                                </Border.Effect>
+                                <Path Data="{StaticResource IconPlus}"
+                                      Stroke="White" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      Width="18" Height="18" Stretch="Uniform"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryPressedBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

@@ -30,6 +30,7 @@ public partial class MainWindow : Window
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
         Sidebar.ProjectIconChangeRequested += ChangeProjectIcon;
+        Sidebar.ProjectsReordered += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionSelected        += OpenSession;
         Sidebar.SessionDeleteRequested += DeleteSession;
 
