@@ -19,16 +19,19 @@
             </Style.Triggers>
         </Style>
 
-        <!-- ── 프로젝트 카드: 둥근 테두리, 호버/활성 시 보더 색 변경 (기존 ProjectGroup 동작 유지) ── -->
+        <!-- ── 프로젝트 카드: doit ShellShortcut 카드 디자인. 보더 항상 표시(LineBrush), 호버는 배경만, 활성은 primary 보더 ── -->
         <Style x:Key="ProjectCard" TargetType="Border">
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="Margin" Value="0,3,0,3"/>
             <Style.Triggers>
+                <!-- 호버: 배경만 살짝 밝아짐, 보더는 LineBrush 유지 -->
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                 </Trigger>
-                <!-- 선택된(활성) 프로젝트: 테마 primary 보더로 고정. 호버보다 우선 -->
+                <!-- 선택된(활성) 프로젝트: primary 보더로 고정. 호버보다 우선 -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
                 </DataTrigger>
@@ -183,10 +186,10 @@
 
         <!-- ── 프로젝트(상위 항목) 템플릿 — 카드 헤더(아이콘·이름·chevron·⋯) + 세션 row 리스트 ── -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
-            <Border Style="{StaticResource ProjectCard}" Margin="0,2,4,4">
+            <Border Style="{StaticResource ProjectCard}">
                 <StackPanel>
                     <!-- 프로젝트 헤더 행 -->
-                    <Border Background="Transparent" Cursor="Arrow" CornerRadius="8"
+                    <Border Background="Transparent" Cursor="Arrow"
                             MouseLeftButtonUp="Project_Click"
                             PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
                         <Border.ContextMenu>
@@ -212,7 +215,7 @@
                                 </MenuItem>
                             </ContextMenu>
                         </Border.ContextMenu>
-                        <Grid Margin="10,8,6,8">
+                        <Grid Margin="12,9,8,9">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
@@ -283,7 +286,7 @@
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
                         <ItemsControl ItemsSource="{Binding Sessions}"
                                       ItemTemplate="{StaticResource SessionTemplate}"
-                                      Margin="6,0,6,6"/>
+                                      Margin="8,2,8,8"/>
                     </Border>
                 </StackPanel>
             </Border>

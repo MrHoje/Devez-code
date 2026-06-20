@@ -73,7 +73,7 @@
                            VerticalAlignment="Center"
                            Margin="1,0,0,1">
                         <Image.RenderTransform>
-                            <TranslateTransform X="-2" Y="0"/>
+                            <TranslateTransform X="-2" Y="1"/>
                         </Image.RenderTransform>
                     </Image>
                     <TextBlock Text="DevezCode" FontSize="17" FontWeight="Bold"
