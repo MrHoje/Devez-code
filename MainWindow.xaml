@@ -62,13 +62,21 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
-                    <Image Width="16" Height="16" VerticalAlignment="Center"
-                           Source="pack://application:,,,/Resources/Logos/logo.png"
-                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                    <TextBlock Text="DevezCode" Margin="9,0,0,0" VerticalAlignment="Center"
+                    <!-- 로고+타이틀 (devez 정합): Height=34 Stretch=Uniform, 17pt Bold BrunoAceSC -->
+                    <Image Source="pack://application:,,,/Resources/Logos/logo.png"
+                           Height="34" Stretch="Uniform"
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           SnapsToDevicePixels="True"
+                           VerticalAlignment="Center"
+                           Margin="1,0,0,1">
+                        <Image.RenderTransform>
+                            <TranslateTransform X="2" Y="3"/>
+                        </Image.RenderTransform>
+                    </Image>
+                    <TextBlock Text="DevezCode" FontSize="17" FontWeight="Bold"
                                FontFamily="{StaticResource BrunoAceSCFont}"
-                               FontSize="{DynamicResource Fs14}"
-                               Foreground="{DynamicResource TextBrush}"/>
+                               Foreground="{DynamicResource TextBrush}"
+                               VerticalAlignment="Center" Margin="3,1,0,0"/>
 
                     <!-- 컨트롤 박스: 선택된 프로젝트 경로 + git 브렌치. 활성 프로젝트가 없으면 숨김.
                          클릭 시 git 브렌치 새로고침(체크아웃 등 외부 변경 반영). -->
