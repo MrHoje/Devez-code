@@ -39,7 +39,7 @@
             </Style.Triggers>
         </Style>
 
-        <!-- 세션 상태 점: 살아있으면 테마색, 끊기거나 죽으면 회색 -->
+        <!-- 세션 상태 점: 살아있으면 초록색(고정), 끊기거나 죽으면 회색 -->
         <Style x:Key="SessionDot" TargetType="Ellipse">
             <Setter Property="Width" Value="8"/>
             <Setter Property="Height" Value="8"/>
@@ -47,7 +47,7 @@
             <Setter Property="Fill" Value="#6B7280"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsAlive}" Value="True">
-                    <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter Property="Fill" Value="#22c55e"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -79,7 +79,7 @@
                         </MenuItem>
                     </ContextMenu>
                 </Border.ContextMenu>
-                <Grid Margin="12,5,12,5">
+                <Grid Margin="12,6,12,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
@@ -93,7 +93,7 @@
                         <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중). 탭 X 로 숨긴 세션은 추적중지 아이콘. -->
                         <Ellipse x:Name="StatusDot" Style="{StaticResource SessionDot}"/>
                         <Ellipse x:Name="BusySpinner" Width="12" Height="12" Visibility="Collapsed"
-                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                 Stroke="#3b82f6" StrokeThickness="1.6"
                                  StrokeDashArray="15 100" StrokeDashCap="Round"
                                  RenderTransformOrigin="0.5,0.5">
                             <Ellipse.RenderTransform>
