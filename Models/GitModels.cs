@@ -21,11 +21,21 @@ public sealed class GitChange
     };
 }
 
-/// <summary>diff 본문 한 줄과 그 종류.</summary>
-public enum DiffLineKind { Context, Add, Del, Hunk, Header }
+/// <summary>side-by-side diff 한쪽(좌=수정 전 / 우=수정 후) 셀의 종류.</summary>
+public enum DiffCellKind { Empty, Context, Del, Add }
 
-public sealed class DiffLine
+/// <summary>side-by-side diff 한 행 — 좌(수정 전)·우(수정 후) 셀을 함께 담는다.
+/// IsHunk 면 hunk 머리글(@@ …) 한 줄을 양쪽에 걸쳐 표시.</summary>
+public sealed class DiffRow
 {
-    public string Text { get; init; } = "";
-    public DiffLineKind Kind { get; init; }
+    public bool IsHunk { get; init; }
+    public string HunkText { get; init; } = "";
+
+    public string LeftNum { get; init; } = "";
+    public string LeftText { get; init; } = "";
+    public DiffCellKind LeftKind { get; init; }
+
+    public string RightNum { get; init; } = "";
+    public string RightText { get; init; } = "";
+    public DiffCellKind RightKind { get; init; }
 }

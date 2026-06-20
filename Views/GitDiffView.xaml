@@ -61,41 +61,112 @@
                       Background="{DynamicResource LineBrush}"
                       ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"/>
 
-        <!-- 선택 파일 diff -->
+        <!-- 선택 파일 diff (side-by-side: 좌=수정 전 / 우=수정 후) -->
         <Grid Grid.Row="2" Background="{DynamicResource BgBrush}">
-            <ScrollViewer x:Name="DiffScroller"
-                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                          Padding="8,6">
-                <ItemsControl x:Name="DiffHost"
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- diff 머리글: 파일명 + 좌/우 라벨 -->
+            <Border x:Name="DiffHeader" Grid.Row="0" Visibility="Collapsed"
+                    Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="1"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="수정 전" Margin="10,5" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                    <Border Grid.Column="1" Background="{DynamicResource LineBrush}"/>
+                    <TextBlock Grid.Column="2" Text="수정 후" Margin="10,5" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                </Grid>
+            </Border>
+
+            <ScrollViewer x:Name="DiffScroller" Grid.Row="1"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="DiffHost" Grid.IsSharedSizeScope="True"
                               VirtualizingStackPanel.IsVirtualizing="True"
                               VirtualizingStackPanel.VirtualizationMode="Recycling">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type models:DiffLine}">
-                            <Border x:Name="LineBd" Background="Transparent">
-                                <TextBlock x:Name="LineTxt" Text="{Binding Text}"
-                                           FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
-                                           FontSize="{DynamicResource Fs12}"
-                                           TextWrapping="NoWrap"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                            </Border>
+                        <DataTemplate DataType="{x:Type models:DiffRow}">
+                            <Grid>
+                                <!-- hunk 머리글 (@@ …) — 양쪽에 걸쳐 한 줄 -->
+                                <Border x:Name="HunkBd" Visibility="Collapsed"
+                                        Background="{DynamicResource PanelSoftBrush}" Padding="8,2">
+                                    <TextBlock Text="{Binding HunkText}"
+                                               FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                                               FontSize="{DynamicResource Fs11}" Foreground="#58A6FF"/>
+                                </Border>
+
+                                <!-- 좌/우 코드 셀 -->
+                                <Grid x:Name="ColsGrid">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="LNum"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="1"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="RNum"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 좌(수정 전) 배경: 번호+코드 두 칼럼 덮기 -->
+                                    <Border x:Name="LeftBg" Grid.Column="0" Grid.ColumnSpan="2" Background="Transparent"/>
+                                    <!-- 우(수정 후) 배경 -->
+                                    <Border x:Name="RightBg" Grid.Column="3" Grid.ColumnSpan="2" Background="Transparent"/>
+
+                                    <TextBlock Grid.Column="0" Text="{Binding LeftNum}"
+                                               MinWidth="28" Padding="6,1,8,1" TextAlignment="Right"
+                                               FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                                               FontSize="{DynamicResource Fs11}"
+                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                    <TextBlock x:Name="LeftTxt" Grid.Column="1" Text="{Binding LeftText}"
+                                               Padding="2,1,8,1" TextWrapping="Wrap"
+                                               FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                                               FontSize="{DynamicResource Fs12}"
+                                               Foreground="{DynamicResource TextBrush}"/>
+
+                                    <Border Grid.Column="2" Background="{DynamicResource LineBrush}"/>
+
+                                    <TextBlock Grid.Column="3" Text="{Binding RightNum}"
+                                               MinWidth="28" Padding="6,1,8,1" TextAlignment="Right"
+                                               FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                                               FontSize="{DynamicResource Fs11}"
+                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                    <TextBlock x:Name="RightTxt" Grid.Column="4" Text="{Binding RightText}"
+                                               Padding="2,1,8,1" TextWrapping="Wrap"
+                                               FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                                               FontSize="{DynamicResource Fs12}"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                </Grid>
+                            </Grid>
                             <DataTemplate.Triggers>
-                                <DataTrigger Binding="{Binding Kind}" Value="Add">
-                                    <Setter TargetName="LineBd" Property="Background" Value="#203FB950"/>
-                                    <Setter TargetName="LineTxt" Property="Foreground" Value="#3FB950"/>
+                                <DataTrigger Binding="{Binding IsHunk}" Value="True">
+                                    <Setter TargetName="HunkBd" Property="Visibility" Value="Visible"/>
+                                    <Setter TargetName="ColsGrid" Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding Kind}" Value="Del">
-                                    <Setter TargetName="LineBd" Property="Background" Value="#20F85149"/>
-                                    <Setter TargetName="LineTxt" Property="Foreground" Value="#F85149"/>
+                                <!-- 좌측 셀 상태 -->
+                                <DataTrigger Binding="{Binding LeftKind}" Value="Del">
+                                    <Setter TargetName="LeftBg" Property="Background" Value="#26F85149"/>
+                                    <Setter TargetName="LeftTxt" Property="Foreground" Value="#F85149"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding Kind}" Value="Hunk">
-                                    <Setter TargetName="LineTxt" Property="Foreground" Value="#58A6FF"/>
+                                <DataTrigger Binding="{Binding LeftKind}" Value="Empty">
+                                    <Setter TargetName="LeftBg" Property="Background" Value="#14808080"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding Kind}" Value="Header">
-                                    <Setter TargetName="LineTxt" Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                    <Setter TargetName="LineTxt" Property="FontWeight" Value="SemiBold"/>
+                                <!-- 우측 셀 상태 -->
+                                <DataTrigger Binding="{Binding RightKind}" Value="Add">
+                                    <Setter TargetName="RightBg" Property="Background" Value="#263FB950"/>
+                                    <Setter TargetName="RightTxt" Property="Foreground" Value="#3FB950"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding RightKind}" Value="Empty">
+                                    <Setter TargetName="RightBg" Property="Background" Value="#14808080"/>
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>
@@ -103,7 +174,7 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <TextBlock x:Name="DiffHint" Visibility="Collapsed"
+            <TextBlock x:Name="DiffHint" Grid.Row="1" Visibility="Collapsed"
                        VerticalAlignment="Center" HorizontalAlignment="Center"
                        Text="변경 파일을 선택하면 diff 가 표시됩니다."
                        FontSize="{DynamicResource Fs12}"

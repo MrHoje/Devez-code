@@ -12,14 +12,14 @@
         FontFamily="{StaticResource PretendardFont}">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="40" ResizeBorderThickness="5"
+        <shell:WindowChrome CaptionHeight="44" ResizeBorderThickness="5"
                             CornerRadius="0" GlassFrameThickness="0,0,0,1" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="40"/>
+                <RowDefinition Height="44"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -366,8 +366,8 @@
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
             </Grid>
 
-            <!-- ── Status bar (헤더와 동일 높이 40, 우측 설정 버튼) ──────────── -->
-            <Border Grid.Row="3" Height="40" Background="{DynamicResource PanelBrush}"
+            <!-- ── Status bar (헤더와 동일 높이 44, 우측 설정 버튼) ──────────── -->
+            <Border Grid.Row="3" Height="44" Background="{DynamicResource PanelBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
