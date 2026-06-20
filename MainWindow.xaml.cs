@@ -675,6 +675,11 @@ public partial class MainWindow : Window
             ProjectPathText.Text = proj.Path;
             ProjectPathText.ToolTip = proj.Path;
         }
+        if (ProjectNameText != null)
+        {
+            ProjectNameText.Text = proj.Name;
+            ProjectNameText.ToolTip = proj.Name;
+        }
         UpdateProjectBranchBubble(proj); // 브렌치 버블 갱신
     }
 

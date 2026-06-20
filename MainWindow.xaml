@@ -95,8 +95,29 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,6">
+                        <!-- 프로젝트 명 버블 — 활성 프로젝트의 이름. -->
+                        <Border x:Name="ProjectNameBubble" CornerRadius="8"
+                                Background="{DynamicResource PanelBrush}"
+                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                Height="32" Padding="12,0" MaxWidth="220"
+                                SnapsToDevicePixels="True">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Path Data="{StaticResource IconHash}" Width="14" Height="14" Stretch="Uniform"
+                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.6"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      Fill="Transparent" SnapsToDevicePixels="True"
+                                      VerticalAlignment="Center"/>
+                                <TextBlock x:Name="ProjectNameText" Margin="7,0,0,0" VerticalAlignment="Center"
+                                           FontFamily="{StaticResource PretendardFont}"
+                                           FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </Border>
+
                         <!-- 프로젝트 경로 버블 — 콤보 제거, 단순 표시만. 브렌치 버블과 동일 스타일/사이즈로 통일. -->
                         <Border x:Name="DirectoryBubble" CornerRadius="8"
+                                Margin="8,0,0,0"
                                 Background="{DynamicResource PanelBrush}"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                 Height="32" Padding="12,0" MaxWidth="420"
