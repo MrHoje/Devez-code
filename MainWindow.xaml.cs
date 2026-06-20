@@ -31,8 +31,14 @@ public partial class MainWindow : Window
         Sidebar.ProjectDeleteRequested += DeleteProject;
         Sidebar.ProjectIconChangeRequested += ChangeProjectIcon;
         Sidebar.ProjectsReordered += () => WorkspaceStore.Save(_projects);
+        Sidebar.SessionsReordered += OnSidebarSessionsReordered;
         Sidebar.SessionSelected        += OpenSession;
         Sidebar.SessionDeleteRequested += DeleteSession;
+
+        // 중앙 탭 드래그 순서변경(가로) — devez ReorderDrag
+        TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
+        TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();
+        TabsHost.LostMouseCapture += async (_, _) => await EndTabDragAsync();
 
         _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
         _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) s.IsAlive = false; };
@@ -193,12 +199,117 @@ public partial class MainWindow : Window
     // ── 탭 이벤트 ─────────────────────────────────────────────────
     private void Tab_Click(object sender, MouseButtonEventArgs e)
     {
+        if (_tabDidDrag) { _tabDidDrag = false; return; } // 드래그 직후 클릭 무시
         if (sender is FrameworkElement { DataContext: SessionItem s }) OpenSession(s);
     }
 
     private void TabClose_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: SessionItem s }) CloseTab(s);
+    }
+
+    // ── 탭 드래그 순서변경 (가로) + 사이드바 세션 순서 양방향 동기화 ──────────
+    private Point _tabPressOrigin;
+    private SessionItem? _pendingTab;
+    private ReorderDrag<SessionItem>? _tabDrag;
+    private bool _tabDidDrag;
+
+    private void Tab_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _tabPressOrigin = e.GetPosition(TabsHost);
+        _pendingTab = (sender as FrameworkElement)?.DataContext as SessionItem;
+        _tabDidDrag = false;
+    }
+
+    private void TabsHost_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_tabDrag != null) { _tabDrag.Update(e); return; }
+        if (e.LeftButton != MouseButtonState.Pressed || _pendingTab == null) return;
+        var diff = _tabPressOrigin - e.GetPosition(TabsHost);
+        if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        TryStartTabDrag(_pendingTab);
+    }
+
+    private async Task EndTabDragAsync()
+    {
+        var td = _tabDrag;
+        _tabDrag = null;
+        _pendingTab = null;
+        if (Mouse.Captured == TabsHost) TabsHost.ReleaseMouseCapture();
+        if (td != null) await td.FinishAsync(commit: true);
+    }
+
+    private void TryStartTabDrag(SessionItem s)
+    {
+        var rows = new List<(SessionItem, FrameworkElement)>();
+        foreach (var t in _openTabs)
+            if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe)
+                rows.Add((t, fe));
+        var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item1, s));
+        if (src.Item2 == null) return;
+
+        _tabDrag = ReorderDrag<SessionItem>.TryStart(TabsHost, rows, s, src.Item2,
+            (sess, hostTarget, _) =>
+            {
+                int from = _openTabs.IndexOf(sess);
+                if (from >= 0)
+                {
+                    int to = Math.Clamp(hostTarget, 0, _openTabs.Count - 1);
+                    if (to != from)
+                    {
+                        _openTabs.Move(from, to);
+                        SyncProjectSessionsFromTabs(sess); // 탭 순서 → 좌측 세션 순서 반영
+                        WorkspaceStore.Save(_projects);
+                    }
+                }
+                return Task.CompletedTask;
+            },
+            exactFollow: true, horizontal: true);
+        if (_tabDrag != null) { _tabDidDrag = true; TabsHost.CaptureMouse(); }
+        _pendingTab = null;
+    }
+
+    /// <summary>사이드바에서 세션 순서가 바뀌면 중앙 탭 순서를 사이드바 순서(프로젝트→세션)에 맞춰 재정렬.</summary>
+    private void OnSidebarSessionsReordered(ProjectItem _)
+    {
+        ResortOpenTabsToSidebar();
+        WorkspaceStore.Save(_projects);
+    }
+
+    /// <summary>열린 탭들을 (프로젝트 순서, 프로젝트 내 세션 순서) 기준으로 재정렬.</summary>
+    private void ResortOpenTabsToSidebar()
+    {
+        var ordered = _openTabs
+            .OrderBy(s => { var p = ParentOf(s); return p == null ? int.MaxValue : _projects.IndexOf(p); })
+            .ThenBy(s => ParentOf(s)?.Sessions.IndexOf(s) ?? 0)
+            .ToList();
+        ApplyOrder(_openTabs, ordered);
+    }
+
+    /// <summary>탭 순서를 기준으로, 옮겨진 세션이 속한 프로젝트의 세션 순서를 맞춘다(닫힌 세션 위치는 보존).</summary>
+    private void SyncProjectSessionsFromTabs(SessionItem moved)
+    {
+        var p = ParentOf(moved);
+        if (p == null) return;
+        var openOrder = _openTabs.Where(s => p.Sessions.Contains(s)).ToList();
+        if (openOrder.Count == 0) return;
+
+        int oi = 0;
+        var result = new List<SessionItem>();
+        foreach (var s in p.Sessions)
+            result.Add(openOrder.Contains(s) ? openOrder[oi++] : s);
+        ApplyOrder(p.Sessions, result);
+    }
+
+    /// <summary>ObservableCollection 을 target 순서와 일치하도록 최소 Move 로 재배치.</summary>
+    private static void ApplyOrder<T>(ObservableCollection<T> coll, List<T> target)
+    {
+        for (int i = 0; i < target.Count; i++)
+        {
+            int cur = coll.IndexOf(target[i]);
+            if (cur >= 0 && cur != i) coll.Move(cur, i);
+        }
     }
 
     // ── 상태/빈 화면 ─────────────────────────────────────────────

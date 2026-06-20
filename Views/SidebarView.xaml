@@ -39,7 +39,8 @@
 
         <!-- 세션(하위 항목) 템플릿 — 상태 점 + 이름. 액션은 우클릭 메뉴 -->
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
-            <Border Style="{StaticResource TreeRow}" Margin="0,1" MouseLeftButtonUp="Session_Click">
+            <Border Style="{StaticResource TreeRow}" Margin="0,1" MouseLeftButtonUp="Session_Click"
+                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown">
                 <Border.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="세션 삭제" Tag="{Binding}" Click="SessionDelete_Click" Foreground="#ef4444">
@@ -68,12 +69,7 @@
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
             <StackPanel Margin="0,1">
                 <Border Style="{StaticResource TreeRow}" MouseLeftButtonUp="Project_Click"
-                        AllowDrop="True"
-                        PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown"
-                        PreviewMouseMove="ProjectRow_PreviewMouseMove"
-                        DragOver="ProjectRow_DragOver"
-                        DragLeave="ProjectRow_DragLeave"
-                        Drop="ProjectRow_Drop">
+                        PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
                     <Border.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="새 세션" Tag="{Binding}" Click="AddSession_Click">

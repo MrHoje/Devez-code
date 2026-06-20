@@ -101,6 +101,7 @@
                                                 BorderBrush="{DynamicResource LineBrush}"
                                                 Background="{DynamicResource PanelSoftBrush}"
                                                 Cursor="Hand"
+                                                PreviewMouseLeftButtonDown="Tab_PreviewMouseLeftButtonDown"
                                                 MouseLeftButtonUp="Tab_Click">
                                             <Border.Style>
                                                 <Style TargetType="Border">
