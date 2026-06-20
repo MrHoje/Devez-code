@@ -67,7 +67,7 @@
                         <Separator/>
                         <MenuItem Header="세션 추적 중단" Tag="{Binding}" Click="SessionStopTracking_Click">
                             <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEyeOff}"
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
@@ -90,7 +90,7 @@
                            Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
                     <Grid Grid.Column="1" Width="12" Height="12" VerticalAlignment="Center">
-                        <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중) -->
+                        <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중). 탭 X 로 숨긴 세션은 추적중지 아이콘. -->
                         <Ellipse x:Name="StatusDot" Style="{StaticResource SessionDot}"/>
                         <Ellipse x:Name="BusySpinner" Width="12" Height="12" Visibility="Collapsed"
                                  Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
@@ -100,6 +100,13 @@
                                 <RotateTransform x:Name="SpinRot"/>
                             </Ellipse.RenderTransform>
                         </Ellipse>
+                        <!-- 숨김 세션(탭 X) — 추적중지 아이콘. 프로젝트 재선택 시 Hidden=false 가 되면
+                             DataTrigger 가 점/스피너를 다시 보여주고 이 아이콘은 숨김. -->
+                        <Path x:Name="HiddenIcon" Visibility="Collapsed"
+                              Data="{StaticResource IconEyeOff}"
+                              Width="12" Height="12" Stretch="Uniform"
+                              Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.4"
+                              Fill="Transparent" SnapsToDevicePixels="True"/>
                     </Grid>
                     <TextBlock Grid.Column="2" Text="{Binding Name}" Margin="10,0,0,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
@@ -108,10 +115,25 @@
                 </Grid>
             </Border>
             <DataTemplate.Triggers>
-                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                    <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
+                    <DataTrigger Binding="{Binding Hidden}" Value="True">
+                        <Setter TargetName="StatusDot" Property="Visibility" Value="Collapsed"/>
+                        <Setter TargetName="BusySpinner" Property="Visibility" Value="Collapsed"/>
+                        <Setter TargetName="HiddenIcon" Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                    <!-- 요청 처리중 스피너: 숨김 세션(!Hidden)일 때만 동작. MultiDataTrigger 로
+                         Hidden=true + IsBusy=true 가 동시에 참이면 위 DataTrigger(Hidden) 의 Setter 가
+                         나중에 적용되지 않으므로, 명시적으로 HiddenIcon=Collapsed, BusySpinner=Collapsed 를
+                         함께 설정해 IsBusy 가 Hidden 상태를 덮지 못하게 한다. -->
+                    <MultiDataTrigger>
+                        <MultiDataTrigger.Conditions>
+                            <Condition Binding="{Binding Hidden}" Value="False"/>
+                            <Condition Binding="{Binding IsBusy}" Value="True"/>
+                        </MultiDataTrigger.Conditions>
                         <Setter TargetName="StatusDot" Property="Visibility" Value="Collapsed"/>
                         <Setter TargetName="BusySpinner" Property="Visibility" Value="Visible"/>
-                        <DataTrigger.EnterActions>
+                        <Setter TargetName="HiddenIcon" Property="Visibility" Value="Collapsed"/>
+                        <MultiDataTrigger.EnterActions>
                             <BeginStoryboard x:Name="SpinBs">
                                 <Storyboard>
                                     <DoubleAnimation Storyboard.TargetName="SpinRot"
@@ -120,11 +142,11 @@
                                                      RepeatBehavior="Forever"/>
                                 </Storyboard>
                             </BeginStoryboard>
-                        </DataTrigger.EnterActions>
-                        <DataTrigger.ExitActions>
+                        </MultiDataTrigger.EnterActions>
+                        <MultiDataTrigger.ExitActions>
                             <StopStoryboard BeginStoryboardName="SpinBs"/>
-                        </DataTrigger.ExitActions>
-                    </DataTrigger>
+                        </MultiDataTrigger.ExitActions>
+                    </MultiDataTrigger>
                 </DataTemplate.Triggers>
         </DataTemplate>
 
