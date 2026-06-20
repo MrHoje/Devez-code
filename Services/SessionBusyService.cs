@@ -20,6 +20,12 @@ public sealed class SessionBusyService : IDisposable
         try
         {
             Directory.CreateDirectory(Dir);
+            // 앱 시작 시 기존 busy 파일 모두 삭제. 프로그램을 닫으면 ConPTY/claude 프로세스는 죽지만
+            // busy 상태 파일은 디스크에 남아있어, 재시작 후 세션을 다시 열면 이전 세션의 stale 한
+            // "running" 상태가 그대로 emit 되어 스피너가 영원히 도는 문제가 생긴다(앱 재시작 후 세션
+            // 재오픈 시 스피너 안 멈춤). 새 세션은 hook 이 fresh 상태를 다시 쓸 때까지는 IsBusy=false 유지.
+            foreach (var f in Directory.EnumerateFiles(Dir, "*.txt"))
+                try { File.Delete(f); } catch { /* hook write 와 경합 가능, 무시 */ }
             _watcher?.Dispose();
             _watcher = new FileSystemWatcher(Dir, "*.txt")
             {
@@ -28,8 +34,6 @@ public sealed class SessionBusyService : IDisposable
             };
             _watcher.Changed += (_, e) => Emit(e.FullPath);
             _watcher.Created += (_, e) => Emit(e.FullPath);
-            // 시작 시 기존 상태 1회 반영(앱 재시작 중 진행되던 세션 등)
-            foreach (var f in Directory.EnumerateFiles(Dir, "*.txt")) Emit(f);
         }
         catch { /* 감시 실패해도 앱은 계속 — 스피너만 안 뜸 */ }
     }

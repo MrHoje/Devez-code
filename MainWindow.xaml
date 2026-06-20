@@ -94,111 +94,26 @@
                         <ColumnDefinition Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,6"
-                                shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                        <!-- 프로젝트 경로 콤보박스 — devez DialogCombo 스타일. ToggleButton 이 전체 영역을 덮어
-                             빈 곳 클릭해도 드롭다운 열림. ContentPresenter/Path 는 IsHitTestVisible=False 로 표시 전용. -->
-                        <ComboBox x:Name="ProjectPathCombo" MinWidth="200" Height="32"
-                                  FontFamily="{StaticResource PretendardFont}"
-                                  FontSize="{DynamicResource Fs13}"
-                                  Foreground="{DynamicResource TextBrush}"
-                                  FocusVisualStyle="{x:Null}"
-                                  SelectionChanged="ProjectPathCombo_SelectionChanged"
-                                  ToolTip="프로젝트 전환"
-                                  VerticalAlignment="Bottom"
-                                  IsTabStop="False">
-                            <ComboBox.Template>
-                                <ControlTemplate TargetType="ComboBox">
-                                    <Grid>
-                                        <!-- 전체 영역 토글 — 빈 곳 클릭해도 열림 (devez 정합) -->
-                                        <ToggleButton Focusable="False" ClickMode="Press"
-                                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
-                                            <ToggleButton.Template>
-                                                <ControlTemplate TargetType="ToggleButton">
-                                                    <Border CornerRadius="10" BorderThickness="1"
-                                                            BorderBrush="{DynamicResource LineBrush}"
-                                                            Background="{DynamicResource PanelBrush}"
-                                                            SnapsToDevicePixels="True"/>
-                                                </ControlTemplate>
-                                            </ToggleButton.Template>
-                                        </ToggleButton>
-                                        <!-- 폴더 아이콘 + 선택된 경로 (표시 전용, 클릭은 ToggleButton 이 받음) -->
-                                        <Grid Margin="14,0,36,0" IsHitTestVisible="False">
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Path Data="{StaticResource IconFolder}" Width="14" Height="14" Stretch="Uniform"
-                                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.6"
-                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                                      Fill="Transparent" SnapsToDevicePixels="True"
-                                                      VerticalAlignment="Center"/>
-                                                <TextBlock Margin="7,0,0,0" VerticalAlignment="Center"
-                                                           Text="{Binding SelectedItem.Path, RelativeSource={RelativeSource AncestorType=ComboBox}}"
-                                                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                                           FontFamily="{StaticResource PretendardFont}"
-                                                           Foreground="{DynamicResource TextBrush}"
-                                                           TextTrimming="CharacterEllipsis" MaxWidth="360"/>
-                                            </StackPanel>
-                                        </Grid>
-                                        <!-- chevron (오른쪽 고정) -->
-                                        <Path HorizontalAlignment="Right" VerticalAlignment="Center"
-                                              Margin="0,0,14,0" IsHitTestVisible="False"
-                                              Data="{StaticResource IconChevronDown}"
-                                              Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="2"
-                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                              Width="12" Height="12" Stretch="Uniform" Fill="Transparent"
-                                              SnapsToDevicePixels="True"/>
-                                        <!-- 드롭다운 팝업 (devez 정합: MinWidth = 콤보박스 폭, VerticalOffset=3, MaxHeight=240) -->
-                                        <Popup x:Name="PART_Popup" Placement="Bottom" VerticalOffset="3"
-                                               IsOpen="{TemplateBinding IsDropDownOpen}"
-                                               AllowsTransparency="True" Focusable="False">
-                                            <Border Background="{DynamicResource PanelBrush}"
-                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                                    CornerRadius="8" SnapsToDevicePixels="True"
-                                                    MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ComboBox}}">
-                                                <ScrollViewer MaxHeight="240" Background="Transparent" Margin="3">
-                                                    <ItemsPresenter/>
-                                                </ScrollViewer>
-                                            </Border>
-                                        </Popup>
-                                    </Grid>
-                                </ControlTemplate>
-                            </ComboBox.Template>
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Path}" Padding="12,8"
-                                               FontFamily="{StaticResource PretendardFont}"
-                                               FontSize="{DynamicResource Fs13}"
-                                               Foreground="{DynamicResource TextBrush}"
-                                               TextTrimming="CharacterEllipsis"/>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                            <ComboBox.ItemContainerStyle>
-                                <Style TargetType="ComboBoxItem">
-                                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-                                    <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
-                                    <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-                                    <Setter Property="Padding" Value="0"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="ComboBoxItem">
-                                                <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
-                                                        Padding="12,8" Margin="3,1">
-                                                    <ContentPresenter/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsHighlighted" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsSelected" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ComboBox.ItemContainerStyle>
-                        </ComboBox>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,6">
+                        <!-- 프로젝트 경로 버블 — 콤보 제거, 단순 표시만. 브렌치 버블과 동일 스타일/사이즈로 통일. -->
+                        <Border x:Name="DirectoryBubble" CornerRadius="10"
+                                Background="{DynamicResource PanelBrush}"
+                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                Height="32" Padding="12,0" MaxWidth="420"
+                                SnapsToDevicePixels="True">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Path Data="{StaticResource IconFolder}" Width="14" Height="14" Stretch="Uniform"
+                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.6"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      Fill="Transparent" SnapsToDevicePixels="True"
+                                      VerticalAlignment="Center"/>
+                                <TextBlock x:Name="ProjectPathText" Margin="7,0,0,0" VerticalAlignment="Center"
+                                           FontFamily="{StaticResource PretendardFont}"
+                                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </Border>
 
                         <!-- git 브렌치 단일 버블 — 비-git 저장소면 숨김. 클릭 시 새로고침. -->
                         <Border x:Name="BranchBubble" CornerRadius="10"

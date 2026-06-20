@@ -32,7 +32,6 @@ public partial class MainWindow : Window
 
         _projects = WorkspaceStore.Load();
         Sidebar.Projects = _projects;
-        ProjectPathCombo.ItemsSource = _projects; // 콤보박스 데이터 소스
         TerminalHostContainer.Content = _terminal;
 
         Sidebar.AddProjectRequested    += AddProject;
@@ -618,9 +617,12 @@ public partial class MainWindow : Window
         foreach (var p in _projects) p.IsSelected = ReferenceEquals(p, proj);
         TabsHost.ItemsSource = proj.Sessions;
         FileExplorer.ShowDirectory(proj.Path);
-        // 콤보박스 선택을 활성 프로젝트로 동기화 (외부에서 변경된 경우)
-        if (ProjectPathCombo != null && ProjectPathCombo.SelectedItem != proj)
-            ProjectPathCombo.SelectedItem = proj;
+        // 디렉토리 버블 갱신
+        if (ProjectPathText != null)
+        {
+            ProjectPathText.Text = proj.Path;
+            ProjectPathText.ToolTip = proj.Path;
+        }
         UpdateProjectBranchBubble(proj); // 브렌치 버블 갱신
     }
 
@@ -670,13 +672,6 @@ public partial class MainWindow : Window
     private void BranchBubble_Click(object sender, MouseButtonEventArgs e)
     {
         if (_activeProject != null) UpdateProjectBranchBubble(_activeProject);
-    }
-
-    /// <summary>콤보박스로 프로젝트 전환 — 사이드바에서 선택하는 것과 동일한 흐름.</summary>
-    private void ProjectPathCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (ProjectPathCombo.SelectedItem is ProjectItem p && !ReferenceEquals(p, _activeProject))
-            SelectProject(p);
     }
 
     /// <summary>프로젝트 선택(행 클릭) — 탭 교체 후 세션 하나 활성화(이전 활성 or 첫 세션).</summary>
