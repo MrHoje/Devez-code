@@ -182,14 +182,13 @@ public sealed class TerminalSessionManager
     /// 첫 실행은 <c>opencode</c> (시작 디렉터리에서 새 세션), 재진입은 <c>opencode --session &lt;id&gt;</c> 로
     /// 같은 대화 복원. 플러그인(opencode-room-tracker.js) 이 <c>session.created</c>/<c>session.updated</c>
     /// 이벤트에서 session_id 를 %APPDATA%\DevezCode\opencode\sessions\&lt;room&gt;.txt 에 기록.
-    /// $env:DEVEZCODE_ROOM_ID 로 어느 방의 opencode 인지 식별 → 같은 폴더의 여러 방이 있어도 완전 분리.</summary>
+    /// $env:DEVEXCODE_ROOM_ID 로 어느 방의 opencode 인지 식별 → 같은 폴더의 여러 방이 있어도 완전 분리.
+    /// (배치 시작에 <c>set</c> 으로 env 를 명시 — ConPTY 의 env 상속에 의존하지 않음)</summary>
     private string? TryBuildOpenCodeDirectLaunch(string roomId, out string? injectFallback)
     {
         injectFallback = null;
         OpenCodePluginInstaller.EnsureInstalled();
 
-        // 플러그인이 방금 기록한 ID (가장 최신) 가 있으면 그걸 사용, 없으면 저장된 값 사용.
-        // → /clear·새 대화 등으로 ID 바뀌어도 다음 실행 때 자동 갱신.
         var tracked = OpenCodePluginInstaller.LoadTrackedSessionId(roomId);
         var sessionId = SettingsService.LoadOpenCodeRoomSession(roomId);
         if (tracked != null && tracked != sessionId)
@@ -198,21 +197,25 @@ public sealed class TerminalSessionManager
             SettingsService.SaveOpenCodeRoomSession(roomId, tracked);
         }
 
-        // 세션 ID 가 있으면 정확히 그 방의 세션을 복원. 없으면(첫 실행) 새 세션 — 플러그인이 ID 를 기록.
-        // 외부 삭제 등으로 --session 이 실패하면 새 세션으로 폴백.
-        string body = sessionId != null
+        // body: opencode 실행 라인. 실패 시 fresh 폴백.
+        string opencodeCmd = sessionId != null
             ? $"opencode --session {sessionId} || opencode"
             : "opencode";
 
+        // 배치: env 명시 set → opencode 실행. cmd 의 env 상속이 불안정해도 set 으로 확실히 전달.
+        // roomId 에 공백/특수문자 가능 — set "VAR=value" 형식으로 안전하게.
+        string body = $"@echo off\r\n" +
+                      $"set \"DEVEXCODE_ROOM_ID={roomId}\"\r\n" +
+                      $"{opencodeCmd}\r\n";
+
         try
         {
-            // opencode-launch\<room>.cmd (codex/Claude 와 별도 경로)
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "DevezCode", "opencode", "launch");
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
-            File.WriteAllText(batchPath, "@echo off\r\n" + body + "\r\n");
+            File.WriteAllText(batchPath, body);
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
