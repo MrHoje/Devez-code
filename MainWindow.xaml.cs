@@ -1505,12 +1505,15 @@ public partial class MainWindow : Window
         if (avail <= 0) return;
 
         // 폭이 임계값을 넘나들면 도킹 ↔ 오버레이 모드를 전환한다.
+        // 이때 우측 패널의 "표시 여부"는 그대로 이어받는다(도킹 표시 ↔ 오버레이 열림,
+        // 도킹 접힘 ↔ 오버레이 닫힘) — 리사이즈만으로 표시 상태가 바뀌지 않게.
         bool narrow = avail < NarrowThreshold;
         if (_narrow != narrow)
         {
+            bool wasShown = _narrow == true ? _rightOverlayOpen : !_rightCollapsed;
             _narrow = narrow;
-            if (narrow) EnterNarrowMode();
-            else        EnterWideMode();
+            if (narrow) EnterNarrowMode(wasShown);
+            else        EnterWideMode(wasShown);
         }
 
         if (narrow)
@@ -1554,26 +1557,35 @@ public partial class MainWindow : Window
         if (!ReferenceEquals(RightOverlayPanel.Child, FileExplorer)) RightOverlayPanel.Child = FileExplorer;
     }
 
-    /// <summary>도킹 → 좁은 창: 우측 패널을 레이아웃에서 빼고 오버레이 닫힌 상태로 둔다.</summary>
-    private void EnterNarrowMode()
+    /// <summary>도킹 → 좁은 창: 우측 컬럼을 빼고, 직전 표시 상태를 이어받는다
+    /// (표시 중이었으면 오버레이로 계속 표시, 접혀 있었으면 오버레이도 닫힘).</summary>
+    private void EnterNarrowMode(bool shown)
     {
         _rightAnimCancel?.Invoke();
         _overlayAnimCancel?.Invoke();
-        _rightOverlayOpen = false;
-        RightOverlayHost.Visibility = Visibility.Collapsed;
-        DockFileExplorer();                         // 본문 그리드 소속으로 두되
-        FileExplorer.Visibility = Visibility.Collapsed;  // 숨김(폭 0 컬럼)
-        // SharedSizeGroup 을 풀어야 폭 0 이 실제로 먹는다(상태바의 같은 그룹 컬럼이 폭을 강제하던 문제).
+        // 우측 컬럼 제거(폭 0). SharedSizeGroup 을 풀어야 폭 0 이 실제로 먹는다.
         FileExpSplitterCol.SharedSizeGroup = null;
         FileExpCol.SharedSizeGroup = null;
         FileExpSplitterCol.Width = new GridLength(0);
         FileExpCol.MinWidth = 0;
         FileExpCol.Width = new GridLength(0);
-        UpdatePanelToggleVisual();
+
+        if (shown)
+        {
+            _ = OpenRightOverlay();   // 표시 중이었으면 오버레이로 이어서 표시
+        }
+        else
+        {
+            _rightOverlayOpen = false;
+            RightOverlayHost.Visibility = Visibility.Collapsed;
+            DockFileExplorer();
+            FileExplorer.Visibility = Visibility.Collapsed;
+            UpdatePanelToggleVisual();
+        }
     }
 
-    /// <summary>좁은 창 → 도킹: 오버레이를 걷고 우측 컬럼으로 되돌린다.</summary>
-    private void EnterWideMode()
+    /// <summary>좁은 창 → 도킹: 오버레이를 걷고 우측 컬럼으로 되돌리며 표시 상태를 이어받는다.</summary>
+    private void EnterWideMode(bool shown)
     {
         _overlayAnimCancel?.Invoke();
         _rightOverlayOpen = false;
@@ -1584,10 +1596,12 @@ public partial class MainWindow : Window
         // SharedSizeGroup 복원(상태바 컬럼과 정렬).
         FileExpSplitterCol.SharedSizeGroup = "MainFileExpSplitter";
         FileExpCol.SharedSizeGroup = "MainFileExp";
+        _rightCollapsed = !shown;   // 표시 상태 보존
         FileExplorer.Visibility = _rightCollapsed ? Visibility.Collapsed : Visibility.Visible;
         FileExpSplitterCol.Width = new GridLength(_rightCollapsed ? 0 : 4);
         FileExpCol.MinWidth = _rightCollapsed ? 0 : 200;
         FileExpCol.Width = new GridLength(_rightCollapsed ? 0 : _fileExpWidth);
+        SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
     }
 
