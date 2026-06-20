@@ -44,14 +44,20 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly HashSet<string> _ready = new();
     /// <summary>alt-screen 시퀀스 감지용 방별 누적 버퍼 (청크 경계 분할 대비). UI 스레드에서만 접근.</summary>
     private readonly Dictionary<string, string> _readyScan = new();
+    /// <summary>alt-screen 진입 후 출력이 잠잠해지길 기다리는 방별 타이머(=실제 프롬프트 렌더 완료 근사). UI 스레드.</summary>
+    private readonly Dictionary<string, System.Windows.Threading.DispatcherTimer> _settleTimers = new();
+    /// <summary>TerminalReady 를 이미 통지한 방(중복 통지 방지). UI 스레드.</summary>
+    private readonly HashSet<string> _readyNotified = new();
+    /// <summary>alt-screen 진입 후 이만큼 추가 출력이 없으면 "준비 완료"로 본다.</summary>
+    private static readonly TimeSpan SettleQuiet = TimeSpan.FromMilliseconds(600);
 
     private static readonly JsonSerializerOptions CamelCase = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    /// <summary>해당 방의 claude 화면이 이미 떠 있어(준비 완료) 로딩이 필요 없는지.</summary>
-    public bool IsReady(string roomId) => _ready.Contains(roomId);
+    /// <summary>해당 방의 claude 화면이 이미 떠서 안정화까지 끝났는지(로딩 불필요).</summary>
+    public bool IsReady(string roomId) => _readyNotified.Contains(roomId);
 
     /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
     public async void ShowTerminal(string roomId)
@@ -65,8 +71,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (_pageReady) PostJson(new { type = "show", roomId });
         else _pendingShowRoomId = roomId; // pageReady 때 처리
 
-        // 이미 떠 있는(살아있는) 방이면 즉시 준비 완료 통지 → 로딩 스킵
-        if (_ready.Contains(roomId))
+        // 이미 안정화까지 끝난 방이면 즉시 준비 완료 통지 → 로딩 스킵
+        if (_readyNotified.Contains(roomId))
             Dispatcher.BeginInvoke(() => TerminalReady?.Invoke(roomId));
     }
 
@@ -83,10 +89,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         else if (!_pendingPreload.Contains(roomId)) _pendingPreload.Add(roomId);
     }
 
-    /// <summary>출력에서 alt-screen 진입 시퀀스를 찾아 준비 완료를 통지 (UI 스레드).</summary>
+    /// <summary>출력에서 alt-screen 진입 시퀀스를 찾고, 이후 출력이 잠잠해지면 준비 완료를 통지 (UI 스레드).</summary>
     private void ScanForReady(string roomId, byte[] bytes)
     {
-        if (_ready.Contains(roomId)) return;
+        if (_ready.Contains(roomId))
+        {
+            // alt-screen 은 봤지만 아직 통지 전 — 출력이 계속되는 동안 안정화 타이머를 미룬다.
+            BumpSettle(roomId);
+            return;
+        }
         // 찾는 시퀀스는 모두 ASCII 제어/문자라 ASCII 디코드로 충분
         var text = (_readyScan.TryGetValue(roomId, out var prev) ? prev : string.Empty)
                    + System.Text.Encoding.ASCII.GetString(bytes);
@@ -94,10 +105,29 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         {
             _ready.Add(roomId);
             _readyScan.Remove(roomId);
-            TerminalReady?.Invoke(roomId);
+            BumpSettle(roomId); // 즉시 통지하지 않고, 출력이 멎을 때까지 대기
             return;
         }
         _readyScan[roomId] = text.Length > 512 ? text[^512..] : text; // 버퍼 과다 방지
+    }
+
+    /// <summary>alt-screen 진입 후 출력이 올 때마다 안정화 타이머를 리셋. 만료되면(출력이 멎으면) TerminalReady 통지.</summary>
+    private void BumpSettle(string roomId)
+    {
+        if (_readyNotified.Contains(roomId)) return; // 이미 통지함
+        if (!_settleTimers.TryGetValue(roomId, out var t))
+        {
+            t = new System.Windows.Threading.DispatcherTimer { Interval = SettleQuiet };
+            t.Tick += (_, _) =>
+            {
+                t.Stop();
+                _settleTimers.Remove(roomId);
+                if (_readyNotified.Add(roomId)) TerminalReady?.Invoke(roomId);
+            };
+            _settleTimers[roomId] = t;
+        }
+        t.Stop();
+        t.Start();
     }
 
     /// <summary>pageReady 전에 들어온 포커스 요청 보류 플래그 (첫 init 중 호출 대비).</summary>
@@ -424,6 +454,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _wired.Remove(roomId);
         _ready.Remove(roomId);
         _readyScan.Remove(roomId);
+        _readyNotified.Remove(roomId);
+        if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         _pendingPreload.Remove(roomId);
         if (_activeRoomId == roomId) _activeRoomId = null;
         if (_pendingShowRoomId == roomId) _pendingShowRoomId = null;
@@ -448,5 +480,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _wired.Clear();
         _ready.Clear();
         _readyScan.Clear();
+        _readyNotified.Clear();
+        foreach (var t in _settleTimers.Values) t.Stop();
+        _settleTimers.Clear();
     }
 }
