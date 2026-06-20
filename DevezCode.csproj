@@ -46,6 +46,9 @@
     <Resource Include="Fonts\BrunoAceSC-Regular.ttf" />
     <!-- Claude Code 아이콘 이미지 (탭 헤더·타이틀바, devez 이식) -->
     <Resource Include="Resources\Logos\logo.png" />
+    <!-- 창 아이콘(Window.Icon pack URI). ApplicationIcon(EXE 아이콘)과 별개로
+         WPF Resource 로도 포함해야 pack://.../app.ico 로딩이 가능하다. -->
+    <Resource Include="Resources\Logos\app.ico" />
   </ItemGroup>
 
 </Project>
