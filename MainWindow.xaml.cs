@@ -1446,6 +1446,7 @@ public partial class MainWindow : Window
     /// 최대화 상태에서 패널을 넓힌 뒤 창모드로 복원하면 고정 px 폭이 남아 오른쪽이 잘리던 문제를 막는다.</summary>
     private void BodyGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
+        return; // [임시 디버그] 반응형 비활성화 — 오버레이 호스트 정적 확인용
         double avail = BodyGrid.ActualWidth;
         if (avail <= 0) return;
 
@@ -1475,8 +1476,9 @@ public partial class MainWindow : Window
             FileExpCol.Width = new GridLength(maxFileExp);
     }
 
-    /// <summary>오버레이 드로어 폭. 중앙이 일부 보이도록 창 폭에 따라 제한.</summary>
-    private double OverlayWidth() => Math.Min(560, Math.Max(300, BodyGrid.ActualWidth - 120));
+    /// <summary>오버레이 드로어 폭. 중앙이 일부 보이도록 창 폭에 따라 제한.
+    /// 컬럼 분배에 영향받지 않도록 창(Window) 실제 폭을 기준으로 계산한다.</summary>
+    private double OverlayWidth() => Math.Min(560, Math.Max(320, ActualWidth - 440));
 
     /// <summary>FileExplorer 를 본문 그리드의 우측 컬럼(도킹 위치)으로 되돌린다.</summary>
     private void DockFileExplorer()
@@ -1507,6 +1509,9 @@ public partial class MainWindow : Window
         RightOverlayHost.Visibility = Visibility.Collapsed;
         DockFileExplorer();                         // 본문 그리드 소속으로 두되
         FileExplorer.Visibility = Visibility.Collapsed;  // 숨김(폭 0 컬럼)
+        // SharedSizeGroup 을 풀어야 폭 0 이 실제로 먹는다(상태바의 같은 그룹 컬럼이 폭을 강제하던 문제).
+        FileExpSplitterCol.SharedSizeGroup = null;
+        FileExpCol.SharedSizeGroup = null;
         FileExpSplitterCol.Width = new GridLength(0);
         FileExpCol.MinWidth = 0;
         FileExpCol.Width = new GridLength(0);
@@ -1521,6 +1526,9 @@ public partial class MainWindow : Window
         RightOverlayHost.Visibility = Visibility.Collapsed;
         _rightT.X = 0;
         DockFileExplorer();
+        // SharedSizeGroup 복원(상태바 컬럼과 정렬).
+        FileExpSplitterCol.SharedSizeGroup = "MainFileExpSplitter";
+        FileExpCol.SharedSizeGroup = "MainFileExp";
         FileExplorer.Visibility = _rightCollapsed ? Visibility.Collapsed : Visibility.Visible;
         FileExpSplitterCol.Width = new GridLength(_rightCollapsed ? 0 : 4);
         FileExpCol.MinWidth = _rightCollapsed ? 0 : 200;

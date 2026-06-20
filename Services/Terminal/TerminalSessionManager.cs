@@ -101,8 +101,14 @@ public sealed class TerminalSessionManager
     private static string? TryBuildSimpleLaunch(AgentDef agent)
     {
         if (string.IsNullOrWhiteSpace(agent.Command)) return null;
+        // ResumeFlag 가 있으면 항상 같이 넘겨 "기존 세션 이어가기" 로 동작
+        // (codex=--last / opencode=-c / gjc=-c). ResumeFlag 가 없으면 단순 실행 (첫 세션 생성).
+        // ── 주의 ── ResumeFlag 는 세션이 이미 있을 때만 안전. 첫 실행(아직 세션 없음)에서
+        // --last/-c 를 넘기면 codex/opencode 는 신세션 생성으로 폴백, gjc 는 동작이 환경별로 다를 수 있어
+        // 항상 같이 넘기되 별도 폴백은 두지 않는다 (사용자 세션 워크플로상 항상 직전 세션이 존재한다고 가정).
+        var body = string.IsNullOrEmpty(agent.ResumeFlag) ? agent.Command : $"{agent.Command} {agent.ResumeFlag}";
         // 따옴표로 감싸 PATH/PATHEXT 해석은 cmd 에 맡긴다 (codex.cmd, hermes chat 등 변형 모두 호환).
-        return $"cmd.exe /k \"{agent.Command}\"";
+        return $"cmd.exe /k \"{body}\"";
     }
 
     /// <summary>"셸 준비 후 주입" 커맨드. 직접 실행(cmd /k) 방·일반 방은 null.

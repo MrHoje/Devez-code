@@ -13,6 +13,9 @@ public sealed class AgentDef
     public string Command { get; init; } = "";
     /// <summary>Claude 만 — SessionStart/UserPromptSubmit 훅으로 busy 스피너·lastmsg 헤더 지원.</summary>
     public bool SupportsHooks { get; init; }
+    /// <summary>기존 세션 재오픈 시 같이 넘기는 플래그. codex="--last", opencode="-c", gjc="-c".
+    /// Claude 는 resume/session-id 를 별도 처리하므로 null. null 이면 첫 실행/재실행 모두 Command 만 사용.</summary>
+    public string? ResumeFlag { get; init; }
 
     public override string ToString() => DisplayName;
 }
@@ -35,12 +38,14 @@ public static class AgentRegistry
             Id = "codex", DisplayName = "Codex",
             ExeNames = new[] { "codex.exe", "codex.cmd", "codex.bat", "codex.ps1", "codex" },
             Command = "codex",
+            ResumeFlag = "--last",
         },
         new()
         {
             Id = "opencode", DisplayName = "OpenCode",
             ExeNames = new[] { "opencode.exe", "opencode.cmd", "opencode.bat", "opencode.ps1", "opencode" },
             Command = "opencode",
+            ResumeFlag = "-c",
         },
         new()
         {
@@ -50,6 +55,7 @@ public static class AgentRegistry
             Id = "gajaecode", DisplayName = "Gajae Code",
             ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
             Command = "gjc",
+            ResumeFlag = "-c",
         },
     };
 
