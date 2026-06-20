@@ -108,6 +108,22 @@ public partial class SidebarView : UserControl
             }
     }
 
+    /// <summary>세션 row의 ⋯ 버튼 — 호버 시에만 노출되며, 행의 우클릭 메뉴를 버튼 위치에 띄운다.</summary>
+    private void SessionMenu_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true; // 세션 선택으로 버블링 방지
+        if (sender is not Button btn) return;
+        // 조상 Border(세션 row)의 ContextMenu를 찾아 버튼 기준으로 표시
+        for (DependencyObject? d = btn; d != null; d = VisualTreeHelper.GetParent(d))
+            if (d is Border { ContextMenu: { } cm })
+            {
+                cm.PlacementTarget = btn;
+                cm.Placement = PlacementMode.Bottom;
+                cm.IsOpen = true;
+                return;
+            }
+    }
+
     private void Session_Click(object sender, MouseButtonEventArgs e)
     {
         if (_didDrag) { _didDrag = false; return; }
