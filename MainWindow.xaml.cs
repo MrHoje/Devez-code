@@ -801,6 +801,11 @@ public partial class MainWindow : Window
         var parent = ParentOf(session);
         if (parent == null) return;
 
+        // 탭 X 로 숨겨둔 세션을 사이드바에서 다시 선택하면 탭도 복귀. WorkspaceModels.cs 의
+        // "프로젝트가 다시 선택되면 자동으로 false 로 리셋" 디자인을 사이드바 클릭에도 동일 적용 —
+        // 사이드바 HiddenIcon→StatusDot 트리거도 이 플래그 하나에 연동된다.
+        session.Hidden = false;
+
         // claude 가 항상 프로젝트 디렉터리에서 실행되도록 매핑 보장
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
 
