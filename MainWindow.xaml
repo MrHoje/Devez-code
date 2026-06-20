@@ -332,7 +332,7 @@
 
                     <!-- 세션 타이틀 영역 (devez HeaderBar 정합): 탭 아래·터미널 위. PanelBrush 라
                          선택 탭과 매끄럽게 이어진다. 좌측 제목 + 우측 액션 버튼(추적 중지 / 세션 종료). -->
-                    <Border x:Name="SessionHeaderBar" Grid.Row="1" Height="45"
+                    <Border x:Name="SessionHeaderBar" Grid.Row="1" Height="52"
                             Background="{DynamicResource PanelBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                             Visibility="Collapsed">
