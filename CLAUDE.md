@@ -18,6 +18,11 @@ Start-Process "bin\Release\DevezCode.exe"
 빌드가 실패하면 앱을 재시작하지 마십시오. 먼저 빌드 오류를 수정하십시오.
 오류의 원인이 직접 수정하지 않은 파일이라면 병행 세션이 수정 중일 수 있으니 빌드를 멈추고 대기.
 
+## 참고 대상 (devez)
+
+- "devez를 참고해서"라고 하면 프로젝트 상위 폴더의 `devez`를 참고한다.
+  `devez`가 없으면 `talkremind_wpf`를 참고한다.
+
 ## 참고
 
 - 원격 접속(RDP/Chrome Remote Desktop)에서는 GPU 합성 화면이 전달되지 않아 창이 안 보일 수 있다.

@@ -55,7 +55,104 @@ public partial class MainWindow : Window
                 Topmost = false;
             }
             catch { /* best effort */ }
+
+            InitUpdates();
         };
+    }
+
+    // ── 자동 업데이트 ──────────────────────────────────────────────
+    // DevezCode 는 Supabase 가 없어 실시간 푸시 대신 폴링으로 근실시간 알림을 낸다:
+    //   시작 직후 1회 + 30분 주기 + 창 활성화 시(10분 스로틀).
+    private UpdateInfo? _pendingUpdate;
+    private bool _updateInProgress;
+    private DateTime _lastUpdateCheckUtc = DateTime.MinValue;
+    private System.Windows.Threading.DispatcherTimer? _updateTimer;
+
+    private void InitUpdates()
+    {
+        // 자동 교체 실패로 임시 exe 가 재실행된 경우: 수동 재설치 안내 후 종료 유도.
+        if (App.UpdateFailedRelaunch)
+        {
+            ShowUpdateFailedNotice();
+            return;
+        }
+
+        _ = CheckUpdateAsync();
+
+        _updateTimer = new System.Windows.Threading.DispatcherTimer
+        { Interval = TimeSpan.FromMinutes(30) };
+        _updateTimer.Tick += (_, _) => _ = CheckUpdateAsync();
+        _updateTimer.Start();
+    }
+
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        // 창에 다시 포커스가 올 때마다 확인하되 10분 스로틀(R2 과다 조회 방지).
+        if ((DateTime.UtcNow - _lastUpdateCheckUtc) > TimeSpan.FromMinutes(10))
+            _ = CheckUpdateAsync();
+    }
+
+    private async Task CheckUpdateAsync()
+    {
+        if (_updateInProgress) return;
+        _lastUpdateCheckUtc = DateTime.UtcNow;
+
+        var info = await UpdateService.CheckAsync();
+        if (info is null || _updateInProgress) return;
+        _pendingUpdate = info;
+
+        var noteLines = string.IsNullOrWhiteSpace(info.Notes)
+            ? ""
+            : "\n\n" + string.Join("\n",
+                info.Notes.Split(['\n', ','], StringSplitOptions.RemoveEmptyEntries)
+                          .Select(l => "· " + l.Trim().TrimStart('•', ' ', '\t').Trim())
+                          .Where(l => l.Length > 2));
+
+        var prefix = info.IsUrgent ? "[긴급] " : "";
+        if (!ConfirmDialog.Show(
+                $"{prefix}새 버전 {info.Version}",
+                $"새 버전이 있습니다. 지금 업데이트할까요?{noteLines}",
+                okLabel: "업데이트",
+                iconKey: "IconDownload"))
+            return;
+
+        await ApplyUpdateAsync(info);
+    }
+
+    private async Task ApplyUpdateAsync(UpdateInfo info)
+    {
+        _updateInProgress = true;
+        var progress = new Progress<double>(v =>
+            StatusText.Text = $"업데이트 다운로드 중… {v:P0}");
+        try
+        {
+            await UpdateService.DownloadAndRelaunchAsync(info, progress);
+            // 성공 시 앱이 종료/재실행되므로 이 아래로는 도달하지 않는다.
+        }
+        catch
+        {
+            _updateInProgress = false;
+            UpdateStatus();
+            // 자동 업데이트 실패 → 브라우저로 직접 다운로드 유도.
+            if (ConfirmDialog.Show(
+                    "업데이트 오류",
+                    "자동 업데이트에 실패했습니다.\n브라우저에서 직접 다운로드하시겠습니까?",
+                    okLabel: "다운로드", iconKey: "IconDownload"))
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(info.Url) { UseShellExecute = true });
+        }
+    }
+
+    private void ShowUpdateFailedNotice()
+    {
+        if (ConfirmDialog.Show(
+                "업데이트 미적용",
+                "자동 업데이트가 보안 프로그램·권한 문제로 적용되지 않았습니다.\n" +
+                "설치 파일을 받아 수동으로 다시 설치해 주세요.",
+                okLabel: "설치 파일 받기", iconKey: "IconDownload"))
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(UpdateService.InstallerUrl) { UseShellExecute = true });
     }
 
     // ── 프로젝트 ──────────────────────────────────────────────────

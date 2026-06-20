@@ -19,11 +19,18 @@ public partial class App : Application
     public static event Action<string>? ThemeChanged;
     public static event Action<int>? FontScaleChanged;
 
+    /// <summary>자동 업데이트 파일 교체 실패로 임시 exe 가 재실행됐는지 여부(--update-failed).
+    /// MainWindow 로드 후 수동 재설치 안내를 띄우는 데 사용.</summary>
+    public static bool UpdateFailedRelaunch { get; private set; }
+
     private System.Threading.Mutex? _singleInstanceMutex;
     private const string SingleInstanceMutexName = @"Global\DevezCode.SingleInstance";
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 자동 업데이트 재실행 플래그(단일 인스턴스 분기보다 먼저 읽어 둔다).
+        UpdateFailedRelaunch = e.Args.Contains("--update-failed");
+
         // 단일 인스턴스: 이미 떠 있으면 기존 창을 앞으로 가져오고 종료한다.
         // (여러 인스턴스가 동시에 떠 있으면 workspace.json 을 서로 덮어써 등록한 프로젝트/세션이 사라진다.)
         _singleInstanceMutex = new System.Threading.Mutex(initiallyOwned: true, SingleInstanceMutexName, out bool isFirst);
