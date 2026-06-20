@@ -230,6 +230,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>세션을 가져오거나 만들고 출력·종료 이벤트를 JS로 배선.</summary>
     private void WireSession(string roomId, int cols, int rows)
     {
+        // 삭제된 방이면 뒤늦게 도착한 생성 요청을 무시한다(삭제 후 claude 가 다시 떠 고아가 되는 것 방지)
+        if (TerminalSessionManager.Instance.IsRoomDisposed(roomId)) return;
+
         TerminalSession session;
         try
         {

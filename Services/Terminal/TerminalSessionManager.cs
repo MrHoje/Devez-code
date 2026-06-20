@@ -14,6 +14,15 @@ public sealed class TerminalSessionManager
     private readonly object _lock = new();
     private WtTerminalConfig? _config;
 
+    /// <summary>삭제된 방 ID. 삭제 직후 뒤늦게 도착한 생성 요청으로 claude 가 다시 떠 고아가 되는 것을 막는다.</summary>
+    private readonly HashSet<string> _disposedRooms = new();
+
+    /// <summary>방이 삭제되었는지(다시 세션을 만들면 안 됨).</summary>
+    public bool IsRoomDisposed(string roomId)
+    {
+        lock (_lock) return _disposedRooms.Contains(roomId);
+    }
+
     /// <summary>방별 "셸 준비 후 주입" 초기 커맨드. 직접 실행(cmd /k) 방·일반 방은 null.
     /// GetOrCreate 가 결정해 채우고 GetInitialCommand 가 1회 소비한다.</summary>
     private readonly Dictionary<string, string?> _pendingInitial = new();
@@ -272,6 +281,7 @@ public sealed class TerminalSessionManager
                 _sessions.Remove(roomId);
             }
             _pendingInitial.Remove(roomId);
+            _disposedRooms.Add(roomId); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
         }
         // 추적 파일도 정리 (남아있으면 같은 roomId 재사용 시 엉뚱한 세션으로 이어붙음)
         try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt")); }
