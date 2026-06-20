@@ -226,9 +226,9 @@ public sealed class TerminalSessionManager
             var command = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{HookScriptPath}\"";
             var settings = new
             {
-                // 세션 기록 보존 기간 연장 — 기본 30일이 지나면 claude가 트랜스크립트를
-                // 자동 삭제해 resume 이 실패(대화 소실)하므로 사실상 무제한으로 늘린다.
-                cleanupPeriodDays = 36500,
+                // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를
+                // 자동 삭제한다(그 세션은 resume 불가). 30일 보존.
+                cleanupPeriodDays = 30,
                 hooks = new
                 {
                     SessionStart = new[] { new { hooks = new[] { new { type = "command", command } } } }
