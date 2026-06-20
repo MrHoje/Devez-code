@@ -1,0 +1,113 @@
+<UserControl x:Class="DevezCode.Views.GitDiffView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="clr-namespace:DevezCode.Models"
+             Background="{DynamicResource PanelBrush}"
+             FontFamily="{StaticResource PretendardFont}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- 변경 파일 목록 -->
+            <RowDefinition Height="2*" MinHeight="80"/>
+            <RowDefinition Height="Auto"/>
+            <!-- 선택 파일 diff -->
+            <RowDefinition Height="3*" MinHeight="80"/>
+        </Grid.RowDefinitions>
+
+        <!-- 변경 파일 목록 -->
+        <Grid Grid.Row="0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,4">
+                <ItemsControl x:Name="ChangesHost">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:GitChange}">
+                            <Border x:Name="Row" CornerRadius="6" Background="Transparent"
+                                    Padding="8,5" Margin="0,1" Cursor="Hand"
+                                    MouseLeftButtonUp="Change_Click">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Status}" Width="16"
+                                               TextAlignment="Center" FontWeight="Bold"
+                                               FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                                               FontSize="{DynamicResource Fs12}"
+                                               Foreground="{Binding StatusColor}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Path}" Margin="8,0,0,0"
+                                               TextTrimming="CharacterEllipsis"
+                                               FontSize="{DynamicResource Fs12}"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                </Grid>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                </Trigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- 변경 없음 / 안내 -->
+            <TextBlock x:Name="EmptyText" Visibility="Collapsed"
+                       VerticalAlignment="Center" HorizontalAlignment="Center"
+                       TextAlignment="Center" Margin="20"
+                       FontSize="{DynamicResource Fs12}"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+        </Grid>
+
+        <!-- 목록 ↔ diff 분할 -->
+        <GridSplitter Grid.Row="1" Height="4" HorizontalAlignment="Stretch"
+                      Background="{DynamicResource LineBrush}"
+                      ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"/>
+
+        <!-- 선택 파일 diff -->
+        <Grid Grid.Row="2" Background="{DynamicResource BgBrush}">
+            <ScrollViewer x:Name="DiffScroller"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                          Padding="8,6">
+                <ItemsControl x:Name="DiffHost"
+                              VirtualizingStackPanel.IsVirtualizing="True"
+                              VirtualizingStackPanel.VirtualizationMode="Recycling">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type models:DiffLine}">
+                            <Border x:Name="LineBd" Background="Transparent">
+                                <TextBlock x:Name="LineTxt" Text="{Binding Text}"
+                                           FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                                           FontSize="{DynamicResource Fs12}"
+                                           TextWrapping="NoWrap"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Kind}" Value="Add">
+                                    <Setter TargetName="LineBd" Property="Background" Value="#203FB950"/>
+                                    <Setter TargetName="LineTxt" Property="Foreground" Value="#3FB950"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="Del">
+                                    <Setter TargetName="LineBd" Property="Background" Value="#20F85149"/>
+                                    <Setter TargetName="LineTxt" Property="Foreground" Value="#F85149"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="Hunk">
+                                    <Setter TargetName="LineTxt" Property="Foreground" Value="#58A6FF"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="Header">
+                                    <Setter TargetName="LineTxt" Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                    <Setter TargetName="LineTxt" Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock x:Name="DiffHint" Visibility="Collapsed"
+                       VerticalAlignment="Center" HorizontalAlignment="Center"
+                       Text="변경 파일을 선택하면 diff 가 표시됩니다."
+                       FontSize="{DynamicResource Fs12}"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+        </Grid>
+    </Grid>
+</UserControl>

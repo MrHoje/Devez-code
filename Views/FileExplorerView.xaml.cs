@@ -41,6 +41,7 @@ public partial class FileExplorerView : UserControl
         Browser.Visibility = mode == ViewMode.Browser   ? Visibility.Visible : Visibility.Collapsed;
         DiffView.Visibility = mode == ViewMode.Diff      ? Visibility.Visible : Visibility.Collapsed;
         if (mode == ViewMode.Browser) Browser.EnsureStarted(); // 최초 진입 시 WebView2 초기화
+        if (mode == ViewMode.Diff) _ = DiffView.RefreshAsync(); // 진입할 때마다 최신 변경 내역 로드
 
         var (icon, title) = mode switch
         {
@@ -83,11 +84,13 @@ public partial class FileExplorerView : UserControl
             _rootPath = null;
             if (_mode == ViewMode.Directory) PathText.Text = "파일 탐색기";
             Tree.ItemsSource = null;
+            DiffView.SetRepo(null);
             return;
         }
         if (_rootPath == path) return;
         _rootPath = path;
         if (_mode == ViewMode.Directory) PathText.Text = path;
+        DiffView.SetRepo(path);
 
         var roots = new ObservableCollection<FileNode>();
         try

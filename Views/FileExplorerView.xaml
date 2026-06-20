@@ -224,15 +224,7 @@
         <!-- 브라우저 뷰 (브라우저 모드일 때만 표시) -->
         <v:BrowserHostView x:Name="Browser" Grid.Row="2" Visibility="Collapsed"/>
 
-        <!-- DIFF 뷰 (DIFF 모드일 때만 표시) — 현재 플레이스홀더 -->
-        <StackPanel x:Name="DiffView" Grid.Row="2" Visibility="Collapsed"
-                    VerticalAlignment="Center" HorizontalAlignment="Center">
-            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconGitCompare}"
-                  Width="40" Height="40" Stroke="{DynamicResource TextMutedBrush}"
-                  HorizontalAlignment="Center" Opacity="0.5"/>
-            <TextBlock Text="DIFF 뷰는 준비 중입니다."
-                       Margin="0,16,0,0" FontSize="{DynamicResource Fs13}"
-                       Foreground="{DynamicResource TextMutedBrush}" TextAlignment="Center"/>
-        </StackPanel>
+        <!-- DIFF 뷰 (DIFF 모드일 때만 표시) — git 변경 내역 + diff -->
+        <v:GitDiffView x:Name="DiffView" Grid.Row="2" Visibility="Collapsed"/>
     </Grid>
 </UserControl>

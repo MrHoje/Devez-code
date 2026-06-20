@@ -381,14 +381,14 @@
                         <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
                                 Style="{StaticResource TitleBarChipButton}">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="CPU  " FontSize="{DynamicResource Fs11}"
+                                <TextBlock Text="CPU  " FontSize="{DynamicResource PerfChipLblFs}"
                                            Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="PerfCpuText" Text="--" Width="46" TextAlignment="Left"
-                                           FontSize="{DynamicResource Fs13}" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
                                            Foreground="{DynamicResource TextBrush}"/>
-                                <TextBlock Text="RAM  " FontSize="{DynamicResource Fs11}"
+                                <TextBlock Text="RAM  " FontSize="{DynamicResource PerfChipLblFs}"
                                            Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="PerfRamText" Text="--" FontSize="{DynamicResource Fs13}"
+                                <TextBlock x:Name="PerfRamText" Text="--" FontSize="{DynamicResource PerfChipValFs}"
                                            VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
                             </StackPanel>
                         </Button>

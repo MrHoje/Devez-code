@@ -137,6 +137,11 @@ public partial class App : Application
         foreach (var b in FontSizeBases)
             res[$"Fs{b}"] = (double)(b + d);
 
+        // 성능 칩(CPU/RAM) 폰트: devez의 Weather 칩과 동일 증가폭(+1, 상한 14/12)을 따른다.
+        // 일반 Fs* 는 큰 배율에서 +2 라 칩만 더 커지던 문제를 막아 devez와 크기를 맞춘다.
+        res["PerfChipValFs"] = scale == 0 ? 13.0 : 14.0;
+        res["PerfChipLblFs"] = scale == 0 ? 11.0 : 12.0;
+
         res["HdrBtnSize"] = (double)(28 + d);
         res["RailWidth"]    = scale == 0 ? 44.0 : 46.0;
         res["RailBtnSize"]  = scale == 0 ? 32.0 : 34.0;
