@@ -21,7 +21,6 @@ public sealed class AgentImageConverter : IValueConverter
             "opencode"  => isDark ? "opencode_icon_white_50.png" : "opencode_icon_black_50.png",
             "claude"    => "claude_code.png",
             "codex"     => "codex.png",
-            "gajaecode" => "gajae_code.png",
             _           => "claude_code.png",
         };
         return new System.Uri($"pack://application:,,,/Resources/Images/ShellPresets/{fileName}", System.UriKind.Absolute);

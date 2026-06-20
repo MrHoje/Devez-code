@@ -423,7 +423,7 @@
                             Visibility="Collapsed" IsHitTestVisible="False" Panel.ZIndex="100"/>
 
                     <!-- 세션 타이틀 영역 (devez HeaderBar 정합): 탭 아래·터미널 위. PanelBrush 라
-                         선택 탭과 매끄럽게 이어진다. 좌측 제목 + 우측 액션 버튼(추적 중지 / 세션 종료). -->
+                         선택 탭과 매끄럽게 이어진다. 좌측 제목 + 우측 액션 버튼(세션 닫기 / 세션 삭제). -->
                     <Border x:Name="SessionHeaderBar" Grid.Row="1" Height="52"
                             Background="{DynamicResource PanelBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
@@ -439,20 +439,20 @@
                                        FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"
                                        TextTrimming="CharacterEllipsis"/>
-                            <!-- 헤더 액션: 세션 추적 중지 / 세션 종료. 우클릭 메뉴와 동일한 동작.
+                            <!-- 헤더 액션: 세션 닫기 / 세션 삭제. 우클릭 메뉴와 동일한 동작.
                                  보더 있는 텍스트 버튼(devez 정합). 텍스트만 — 아이콘 제거로 글자 wobble 차단.
                                  danger 표시는 Border 의 BorderBrush(빨강)로만 전달. -->
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
                                 <Button Click="SessionHeaderStopTracking_Click" Cursor="Arrow"
                                         IsTabStop="False" FocusVisualStyle="{x:Null}"
-                                        ToolTip="세션 추적 중지 (대화 기록은 디스크에 보존)"
+                                        ToolTip="세션 닫기 (대화 기록은 디스크에 보존)"
                                         Height="28" MinWidth="80">
                                     <Button.Template>
                                         <ControlTemplate TargetType="Button">
                                             <Border x:Name="Bd" Background="Transparent" CornerRadius="8"
                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                                     UseLayoutRounding="True" SnapsToDevicePixels="True">
-                                                <TextBlock Text="추적 중지" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                <TextBlock Text="세션 닫기" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                            Padding="14,0"
                                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                                            Foreground="{DynamicResource TextBrush}"
@@ -471,14 +471,14 @@
                                 </Button>
                                 <Button Click="SessionHeaderDelete_Click" Cursor="Arrow"
                                         IsTabStop="False" FocusVisualStyle="{x:Null}"
-                                        ToolTip="세션 종료 (대화 기록까지 영구 삭제)"
+                                        ToolTip="세션 삭제 (대화 기록까지 영구 삭제)"
                                         Height="28" MinWidth="80" Margin="6,0,0,0">
                                     <Button.Template>
                                         <ControlTemplate TargetType="Button">
                                             <Border x:Name="Bd" Background="Transparent" CornerRadius="8"
                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                                     UseLayoutRounding="True" SnapsToDevicePixels="True">
-                                                <TextBlock Text="세션 종료" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                <TextBlock Text="세션 삭제" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                            Padding="14,0"
                                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                                            Foreground="{DynamicResource TextBrush}"

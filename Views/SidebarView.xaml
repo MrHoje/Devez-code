@@ -76,7 +76,7 @@
                             </MenuItem.Icon>
                         </MenuItem>
                         <Separator/>
-                        <MenuItem Header="세션 추적 중지" Tag="{Binding}" Click="SessionStopTracking_Click">
+                        <MenuItem Header="세션 닫기" Tag="{Binding}" Click="SessionStopTracking_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
