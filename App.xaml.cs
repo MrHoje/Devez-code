@@ -48,7 +48,7 @@ public partial class App : Application
             RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
 
         base.OnStartup(e);
-        SetFontScale(0);
+        SetFontScale(SettingsService.LoadFontScale());
         SetTheme(LoadSavedTheme());
 
         new MainWindow().Show();

@@ -21,8 +21,10 @@ public partial class SettingsDialog : UserControl
     // 열림 시점의 저장값(기준). 미저장 변경 판정 + 취소 시 복원에 사용. 저장하면 갱신된다.
     private string _originalTheme;
     private bool   _originalPerfMonitor;
+    private int    _originalFontScale;
 
     private string _selectedTheme;
+    private int    _selectedFontScale;
 
     public SettingsDialog()
     {
@@ -30,8 +32,11 @@ public partial class SettingsDialog : UserControl
         _originalTheme       = App.CurrentTheme;
         _selectedTheme       = App.CurrentTheme;
         _originalPerfMonitor = SettingsService.LoadShowPerfMonitorBar();
+        _originalFontScale   = SettingsService.LoadFontScale();
+        _selectedFontScale   = _originalFontScale;
         PerfMonitorToggle.IsChecked = _originalPerfMonitor;
         UpdateThemeSelectionVisual();
+        UpdateFontSelectionVisual();
         SetActiveCategory("theme");
     }
 
@@ -71,6 +76,16 @@ public partial class SettingsDialog : UserControl
     private void PerfMonitorToggle_Click(object sender, RoutedEventArgs e)
         => PerfMonitorBarChanged?.Invoke(this, PerfMonitorToggle.IsChecked == true); // 미리보기만
 
+    private void FontSizeCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Border b && b.Tag is string tag && int.TryParse(tag, out var scale))
+        {
+            _selectedFontScale = scale;
+            (Application.Current as App)?.SetFontScale(scale); // 미리보기만(즉시 반영)
+            UpdateFontSelectionVisual();
+        }
+    }
+
     // ── 저장 / 취소 / 닫기 ────────────────────────────────────────
     private void SaveBtn_Click(object sender, RoutedEventArgs e)
     {
@@ -107,7 +122,8 @@ public partial class SettingsDialog : UserControl
 
     private bool HasUnsavedChanges()
         => _selectedTheme != _originalTheme
-        || (PerfMonitorToggle.IsChecked == true) != _originalPerfMonitor;
+        || (PerfMonitorToggle.IsChecked == true) != _originalPerfMonitor
+        || _selectedFontScale != _originalFontScale;
 
     /// <summary>현재 UI 값을 디스크에 저장·확정하고 기준값을 갱신한다.</summary>
     private void ApplySettings()
@@ -115,9 +131,11 @@ public partial class SettingsDialog : UserControl
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         var perf = PerfMonitorToggle.IsChecked == true;
         SettingsService.SaveShowPerfMonitorBar(perf);
+        SettingsService.SaveFontScale(_selectedFontScale);
 
         _originalTheme       = _selectedTheme;
         _originalPerfMonitor = perf;
+        _originalFontScale   = _selectedFontScale;
     }
 
     /// <summary>미리보기를 열림 시점(저장값)으로 되돌린다.</summary>
@@ -134,6 +152,12 @@ public partial class SettingsDialog : UserControl
             PerfMonitorToggle.IsChecked = _originalPerfMonitor;
             PerfMonitorBarChanged?.Invoke(this, _originalPerfMonitor);
         }
+        if (_selectedFontScale != _originalFontScale)
+        {
+            _selectedFontScale = _originalFontScale;
+            (Application.Current as App)?.SetFontScale(_originalFontScale);
+            UpdateFontSelectionVisual();
+        }
     }
 
     private void UpdateThemeSelectionVisual()
@@ -149,6 +173,23 @@ public partial class SettingsDialog : UserControl
         })
         {
             var selected = _selectedTheme == key;
+            card.BorderBrush = selected ? primary : line;
+            dot.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void UpdateFontSelectionVisual()
+    {
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var line    = (Brush)FindResource("LineBrush");
+
+        foreach (var (card, dot, scale) in new (Border, Ellipse, int)[]
+        {
+            (FontCard_Small, FontRadioDot_Small, 0),
+            (FontCard_Large, FontRadioDot_Large, 1),
+        })
+        {
+            var selected = _selectedFontScale == scale;
             card.BorderBrush = selected ? primary : line;
             dot.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
         }
