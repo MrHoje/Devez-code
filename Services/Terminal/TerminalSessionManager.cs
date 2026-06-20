@@ -122,35 +122,35 @@ public sealed class TerminalSessionManager
     }
 
     /// <summary>codex 방의 codex 를 cmd /k 배치로 직접 실행 (Claude 의 TryBuildDirectLaunch 와 동일 패턴).
-    /// 세션 ID 를 발급해 첫 실행은 --session-id, 재진입은 --resume 로 같은 대화 복원. SessionStart 훅이
-    /// 실제 codex session_id 를 <see cref="CodexRoomSessions"/> 에 갱신 — /clear·수동 재실행으로 ID가
-    /// 어긋나도 다음 실행 때 최신 ID 로 resume.</summary>
+    /// 첫 실행은 <c>codex</c> (codex 가 새 session_id 발급), 그 후엔 <c>codex resume &lt;sessionId&gt;</c> 로
+    /// 같은 대화 복원. SessionStart 훅이 실제 codex session_id 를 <see cref="CodexRoomSessions"/> 에
+    /// 갱신 — /clear·수동 재실행으로 ID가 어긋나도 다음 실행 때 최신 ID 로 resume.
+    /// (참고: codex CLI 는 <c>--session-id</c> 플래그가 없음 — <c>codex resume &lt;id&gt;</c> 만 가능.)</summary>
     private string? TryBuildCodexDirectLaunch(string roomId, out string? injectFallback)
     {
         injectFallback = null;
         CodexHookInstaller.EnsureScriptInstalled();
         CodexHookInstaller.InstallHooksJson();
 
-        // 세션 ID 확보: 없으면 새로 발급, 그 외는 저장된 것.
         var sessionId = SettingsService.LoadCodexRoomSession(roomId);
         if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
-        if (sessionId == null) sessionId = Guid.NewGuid().ToString();
+        bool hasLaunched = SettingsService.IsAgentRoomLaunched(roomId, "codex");
+        SettingsService.MarkAgentRoomLaunched(roomId, "codex");
 
-        // ResumeFlag 와 동일하게 "한 번이라도 실행됐는지" 사용. 첫 실행은 --session-id 로
-        // 새 세션 시작, 그 후엔 --resume 로 같은 대화 복원. resume 실패 시 fresh 폴백.
-        bool resume = sessionId != null
-                      && SettingsService.IsAgentRoomLaunched(roomId, "codex")
-                      && CodexTranscriptExists(SettingsService.LoadClaudeCodeRoomDir(roomId), sessionId);
-        if (sessionId != null && !resume)
-            SettingsService.MarkAgentRoomLaunched(roomId, "codex");
-
-        // 배치 본문. codex 가 정상 시작하면 인터랙티브로 유지되어 뒤 폴백 줄은 실행되지 않음.
+        // 배치 본문. 첫 실행: codex (신세션). 이후: codex resume <id> (resume 실패 시 fresh 폴백).
+        // codex 가 정상 시작하면 인터랙티브로 유지되어 뒤 폴백 줄은 실행되지 않음.
         string body;
-        if (!resume)
-            body = $"codex --session-id {sessionId}";
+        if (!hasLaunched || string.IsNullOrEmpty(sessionId))
+        {
+            // 첫 실행 — session_id 가 없으면 codex 가 새 세션 생성. 훅이 session_id 를 저장.
+            body = "codex";
+        }
         else
-            body = $"codex --resume {sessionId}\r\n"
-                 + $"if errorlevel 1 codex --session-id {sessionId}";
+        {
+            // 재실행 — 저장된 session_id 로 resume. resume 실패(세션 삭제 등) 시 fresh 폴백.
+            body = $"codex resume {sessionId}\r\n"
+                 + $"if errorlevel 1 codex";
+        }
 
         try
         {
@@ -168,27 +168,6 @@ public sealed class TerminalSessionManager
             injectFallback = body + "\r";
             return null;
         }
-    }
-
-    /// <summary>codex 대화 transcript 가 디스크에 실제로 존재하는지 (--resume 시 필요).
-    /// codex 0.139+ 는 ~/.codex/sessions/YYYY/MM/DD/rollout-&lt;ts&gt;-&lt;session_id&gt;.jsonl.
-    /// 이전 버전은 ~/.codex/archived_sessions/ 였으나 v0.137 부터 default 위치 변경.</summary>
-    private static bool CodexTranscriptExists(string? workingDir, string? sessionId)
-    {
-        if (string.IsNullOrWhiteSpace(workingDir) || string.IsNullOrWhiteSpace(sessionId)) return false;
-        try
-        {
-            // codex 는 cwd 와 무관하게 sessions 를 1 곳에 저장 (사용자별 글로벌 저장소).
-            // session_id 로 직접 매칭되는 파일을 찾으면 됨.
-            var codexSessions = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".codex", "sessions");
-            if (!Directory.Exists(codexSessions)) return false;
-            foreach (var f in Directory.EnumerateFiles(codexSessions, "*" + sessionId + "*.jsonl", SearchOption.AllDirectories))
-                return true;
-            return false;
-        }
-        catch { return false; }
     }
 
     /// <summary>"셸 준비 후 주입" 커맨드. 직접 실행(cmd /k) 방·일반 방은 null.
