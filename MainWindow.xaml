@@ -84,14 +84,15 @@
 
                 <!-- 중앙패널 시작 x 에 고정되는 컨트롤(콤보박스 + 브렌치 버블).
                      Grid 가 메인 영역과 동일 폭 컬럼(SharedSizeGroup)을 가지므로
-                     사이드바/파일탐색기 폭이 변해도 column 2 의 시작 x 가 곧 중앙패널 시작 x. -->
+                     사이드바 폭이 변해도 column 2 의 시작 x 가 곧 중앙패널 시작 x.
+                     column 2 는 컨트롤이 차지하는 만큼 Auto 로 잡아야 컨트롤이 보임
+                     (이전 Width=0 + 존재하지 않는 SharedSizeGroup="MainCenter" 때문에 0px 로
+                     고정되어 컨트롤이 숨겨졌던 버그 수정). -->
                 <Grid x:Name="TitleBarControls" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="262" SharedSizeGroup="MainSidebar" MinWidth="190"/>
                         <ColumnDefinition Width="4" SharedSizeGroup="MainSidebarSplitter"/>
-                        <ColumnDefinition Width="0" SharedSizeGroup="MainCenter"/>
-                        <ColumnDefinition Width="4" SharedSizeGroup="MainFileExpSplitter"/>
-                        <ColumnDefinition Width="300" SharedSizeGroup="MainFileExp" MinWidth="200"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,6">
                         <!-- 프로젝트 경로 콤보박스 — 다른 프로젝트로 즉시 전환. devez 정합 커스텀 템플릿. -->
