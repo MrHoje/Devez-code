@@ -11,15 +11,26 @@ namespace DevezCode.Views;
 /// <summary>우측 패널 DIFF 뷰 — 선택된 프로젝트의 git 변경 파일 목록 + 선택 파일 diff.</summary>
 public partial class GitDiffView : UserControl
 {
-    public GitDiffView() => InitializeComponent();
+    public GitDiffView()
+    {
+        InitializeComponent();
+        DiffHost.FontSize = _diffFontSize;
+    }
 
     private string? _repo;
+    private GitChange? _selected;
     private readonly ObservableCollection<GitChange> _changes = new();
     private readonly ObservableCollection<DiffRow> _diff = new();
 
-    /// <summary>대용량 파일/diff 보호용 상한.</summary>
-    private const int MaxDiffLines = 8000;
-    private const long MaxUntrackedBytes = 2 * 1024 * 1024;
+    /// <summary>diff 코드 글꼴 크기(Ctrl+휠로 조절). 라인 텍스트는 DiffHost 에서 상속.</summary>
+    private double _diffFontSize = 12;
+    private const double MinFontSize = 8, MaxFontSize = 28;
+
+    /// <summary>대용량 파일/diff 보호용 상한. 전체 코드를 보여주려 컨텍스트를 넓게 가져오므로 넉넉히.</summary>
+    private const int MaxDiffLines = 20000;
+    private const long MaxUntrackedBytes = 4 * 1024 * 1024;
+    /// <summary>전체 코드를 표시하기 위한 diff 컨텍스트 줄 수(파일 전체를 덮을 만큼 크게).</summary>
+    private const string FullContext = "-U100000";
 
     /// <summary>대상 저장소(프로젝트 루트) 설정. 경로가 바뀌면 다음 Refresh 때 새로 읽는다.</summary>
     public void SetRepo(string? path)
@@ -37,6 +48,7 @@ public partial class GitDiffView : UserControl
         DiffHost.ItemsSource = _diff;
         _changes.Clear();
         _diff.Clear();
+        _selected = null;
         DiffHint.Visibility = Visibility.Visible;
         DiffHeader.Visibility = Visibility.Collapsed;
 
@@ -107,7 +119,19 @@ public partial class GitDiffView : UserControl
     private async void Change_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: GitChange change }) return;
+        if (_selected != null) _selected.IsSelected = false;
+        _selected = change;
+        change.IsSelected = true;
         await LoadDiffAsync(change);
+    }
+
+    /// <summary>Ctrl+휠: diff 코드 글꼴 크기 조절(편집기 줌 관례).</summary>
+    private void DiffScroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+        _diffFontSize = Math.Clamp(_diffFontSize + (e.Delta > 0 ? 1 : -1), MinFontSize, MaxFontSize);
+        DiffHost.FontSize = _diffFontSize;
+        e.Handled = true; // 폰트 조절 중에는 스크롤하지 않음
     }
 
     private async Task LoadDiffAsync(GitChange change)
@@ -125,12 +149,13 @@ public partial class GitDiffView : UserControl
             return;
         }
 
-        var r = await GitService.RunAsync(_repo, "diff", "HEAD", "--", change.Path);
+        // FullContext: 파일 전체가 컨텍스트로 출력되어 변경 외 코드까지 모두 보인다.
+        var r = await GitService.RunAsync(_repo, "diff", FullContext, "HEAD", "--", change.Path);
         var text = r.Output;
         if (string.IsNullOrWhiteSpace(text))
         {
             // HEAD 대비 차이가 없으면(예: 인덱스에만 추가) 워킹트리 diff 재시도.
-            r = await GitService.RunAsync(_repo, "diff", "--", change.Path);
+            r = await GitService.RunAsync(_repo, "diff", FullContext, "--", change.Path);
             text = r.Output;
         }
         if (string.IsNullOrWhiteSpace(text))

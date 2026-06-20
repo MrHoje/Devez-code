@@ -1,7 +1,9 @@
+using System.ComponentModel;
+
 namespace DevezCode.Models;
 
 /// <summary>git status 한 줄 — 변경된 파일 하나.</summary>
-public sealed class GitChange
+public sealed class GitChange : INotifyPropertyChanged
 {
     /// <summary>표시용 상태 글자(M/A/D/R/?/!).</summary>
     public string Status { get; init; } = "";
@@ -9,6 +11,16 @@ public sealed class GitChange
     public string Path { get; init; } = "";
     /// <summary>추적되지 않은(신규) 파일 여부 — diff 대신 파일 내용을 추가로 표시.</summary>
     public bool IsUntracked { get; init; }
+
+    private bool _isSelected;
+    /// <summary>목록에서 현재 선택된 파일인지(행 강조용).</summary>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected == value) return; _isSelected = value; PropertyChanged?.Invoke(this, new(nameof(IsSelected))); }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
     /// <summary>상태 글자 색(추가 녹색·삭제 빨강·수정 노랑·신규 회색).</summary>
     public string StatusColor => Status switch
     {
