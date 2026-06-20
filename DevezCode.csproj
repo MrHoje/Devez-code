@@ -36,6 +36,12 @@
     <Content Include="Resources\Tools\zstd.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- codex 훅 스크립트 (Resources\Hooks\codex-hook.ps1).
+         Resources 패턴으로 실행 폴더에 복사되며, CodexHookInstaller 가 매 시작 시
+         %LOCALAPPDATA%\DevezCode\codex\hook.ps1 로 재기록. -->
+    <Content Include="Resources\Hooks\codex-hook.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

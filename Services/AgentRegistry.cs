@@ -39,6 +39,7 @@ public static class AgentRegistry
             ExeNames = new[] { "codex.exe", "codex.cmd", "codex.bat", "codex.ps1", "codex" },
             Command = "codex",
             ResumeFlag = "--last",
+            SupportsHooks = true, // ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적 (Claude 정합)
         },
         new()
         {

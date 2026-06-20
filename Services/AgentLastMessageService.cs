@@ -13,9 +13,9 @@ using DevezCode.Services;
 
 namespace DevezCode.Services;
 
-/// <summary>비-Claude 에이전트(codex/opencode/gjc)의 마지막 보낸 프롬프트를 추적.
-/// Claude 는 SessionLastMessageService + hook 으로 이미 처리 중. 이 서비스는 다른 에이전트가
-/// 자기 저장소(JSONL for codex/gjc, SQLite for opencode)에 직접 쓴 세션 파일/DB 를 읽어
+/// <summary>codex/opencode/gjc 등 비-Claude 에이전트 중 codex 를 제외한 것들의 마지막 프롬프트 추적.
+/// codex 는 CodexHookService (Claude 와 동일하게 ~/.codex/hooks.json 훅) 가 처리.
+/// 이 서비스는 opencode(SQLite) / gjc(JSONL) 가 자기 저장소에 직접 쓴 세션 파일/DB 를 읽어
 /// 가장 최근 user message 를 추출한다. (workingDir, agentId) 단위로 추적하며
 /// 활성화된 세션에 대해서만 폴링한다 (성능).</summary>
 public sealed class AgentLastMessageService : IDisposable
@@ -52,24 +52,7 @@ public sealed class AgentLastMessageService : IDisposable
 
     public void Start()
     {
-        try
-        {
-            var codexDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "sessions");
-            if (Directory.Exists(codexDir))
-            {
-                _codexWatcher = new FileSystemWatcher(codexDir, "*.jsonl")
-                {
-                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
-                    IncludeSubdirectories = true,
-                    EnableRaisingEvents = true,
-                };
-                _codexWatcher.Changed += (_, e) => ScanCodexFile(e.FullPath);
-                _codexWatcher.Created += (_, e) => ScanCodexFile(e.FullPath);
-            }
-        }
-        catch { /* 감시 실패해도 앱은 계속 */ }
-
+        // codex 는 CodexHookService (Claude 정합 훅 패턴) 가 처리 — JSONL 폴링은 더 이상 사용 X.
         try
         {
             var gjcDir = Path.Combine(
@@ -399,7 +382,8 @@ public sealed class AgentLastMessageService : IDisposable
     {
         switch (key.AgentId)
         {
-            case "codex": ScanCodexForKey(key); break;
+            // codex 는 CodexHookService 가 처리. 이 경로는 호출되지 않지만 호환성 위해 보존.
+            case "codex": break;
             case "opencode": ScanOpenCodeForKey(key); break;
             case "gajaecode": ScanGjcForKey(key); break;
         }

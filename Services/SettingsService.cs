@@ -26,6 +26,8 @@ public static class SettingsService
         // 범용 — "roomId|agentId" 키로 첫 실행 여부 추적. 비-Claude 에이전트도 같은 메커니즘으로
         // 첫 실행=plain, 이후=ResumeFlag(--last / -c) 분기. (Claude 는 별도 IsClaudeCodeRoomLaunched 그대로 사용)
         public List<string> AgentRoomsLaunched { get; set; } = new();
+        // codex 방별 세션 ID (ClaudeCodeRoomSessions 와 동일 패턴). --session-id 첫 실행 → SessionStart 훅이 실제 ID 기록 → --resume 로 이어가기.
+        public Dictionary<string, string> CodexRoomSessions { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
         public Dictionary<string, string> RoomAgents { get; set; } = new();
         // 사용자가 활성화한 에이전트 ID 목록. 빈 값이면 모든 설치된 에이전트 활성화로 간주.
@@ -222,5 +224,17 @@ public static class SettingsService
             Current.AgentRoomsLaunched.Add(key);
             Save();
         }
+    }
+
+    // ── codex 세션 ID (ClaudeCodeRoomSessions 와 동일 패턴, hooks 로 채워짐) ─────
+    public static string? LoadCodexRoomSession(string roomId)
+        => Current.CodexRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+
+    public static void SaveCodexRoomSession(string roomId, string sessionId)
+    {
+        // 불변식: 비정상 값(빈 문자열 등) 은 무시 — 코드 안전성.
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        Current.CodexRoomSessions[roomId] = sessionId;
+        Save();
     }
 }

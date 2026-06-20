@@ -21,7 +21,9 @@ public partial class MainWindow : Window
     private readonly StatusLineService _statusLine = new();
     private readonly SessionBusyService _sessionBusy = new();
     private readonly SessionLastMessageService _sessionLastMsg = new();
-    // 비-Claude 에이전트(codex/opencode/gjc) 의 last prompt 추적. Claude 는 hook 으로 위 서비스가 처리.
+    // codex — Claude 와 동일하게 ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적.
+    private readonly CodexHookService _codexHook = new();
+    // 비-Claude 비-codex (opencode/gjc) 의 last prompt 추적. codex 는 위 훅 서비스가 처리.
     private readonly AgentLastMessageService _agentLastMsg = new();
 
     /// <summary>현재 로딩 스피너를 띄운 세션. claude 화면이 뜨거나(=TerminalReady) 타임아웃에 해제.</summary>
@@ -41,7 +43,6 @@ public partial class MainWindow : Window
         Sidebar.ProjectSelected        += SelectProject;
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
-        Sidebar.ProjectIconChangeRequested += ChangeProjectIcon;
         Sidebar.ProjectsReordered += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
         Sidebar.SessionSelected        += OpenSession;
@@ -75,7 +76,7 @@ public partial class MainWindow : Window
                 if (ReferenceEquals(s, _activeSession)) UpdateEmptyState(); // 활성 세션이면 헤더 즉시 갱신
             });
 
-        // 비-Claude 에이전트 — (workingDir, lastPrompt) 이벤트로 같은 디렉터리 세션 모두 갱신.
+        // 비-Claude 비-codex 에이전트(opencode/gjc) — (workingDir, lastPrompt) 이벤트로 같은 디렉터리 세션 모두 갱신.
         _agentLastMsg.LastPromptChanged += (workingDir, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -93,6 +94,20 @@ public partial class MainWindow : Window
                 }
                 if (anyActive) UpdateEmptyState();
             });
+
+        // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
+        _codexHook.MessageChanged += (roomId, msg) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s == null) return;
+                s.LastMessage = msg;
+                if (ReferenceEquals(s, _activeSession)) UpdateEmptyState();
+            });
+        _codexHook.BusyChanged += (roomId, busy) =>
+            Dispatcher.InvokeAsync(() => { var s = FindSession(roomId); if (s != null) s.IsBusy = busy; });
+        _codexHook.CodexSessionChanged += (roomId, sid) =>
+            Dispatcher.InvokeAsync(() => SettingsService.SaveCodexRoomSession(roomId, sid));
 
         // 테마 변경 시 선택 탭 seam 색(PanelBrush)을 재계산(frozen brush라 자동 갱신 안 됨)
         App.ThemeChanged += OnThemeChanged_UpdateSeam;
@@ -122,6 +137,10 @@ public partial class MainWindow : Window
             StartStatusLine();
             _sessionBusy.Start();
             _sessionLastMsg.Start();
+            // codex 훅 — 시작 시 스크립트/hooks.json 자동 설치. 사용자가 codex 첫 실행 시 trust 필요.
+            CodexHookInstaller.EnsureScriptInstalled();
+            CodexHookInstaller.InstallHooksJson();
+            _codexHook.Start();
             _agentLastMsg.Start();
             RestoreLastSession();
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
@@ -140,6 +159,7 @@ public partial class MainWindow : Window
             _statusLine.Dispose();
             _sessionBusy.Dispose();
             _sessionLastMsg.Dispose();
+            _codexHook.Dispose();
             _agentLastMsg.Dispose();
             FileExplorer.DisposeBrowser();
         };
@@ -747,15 +767,6 @@ public partial class MainWindow : Window
         else ClearActiveSession();
         // 나머지 세션은 미리 띄우지 않는다(과거엔 모두 백그라운드 spawn → 프로젝트 선택 시 CPU 폭증).
         // 마지막 보던 세션 하나만 활성화하고, 다른 세션은 사용자가 탭/사이드바에서 클릭할 때 lazy 생성된다.
-    }
-
-    private void ChangeProjectIcon(ProjectItem proj)
-    {
-        var result = IconPickerDialog.Show(proj.IconKey, proj.IconColor, proj.Name);
-        if (result is not { } r) return;
-        proj.IconKey = r.Icon ?? "IconBox";
-        proj.IconColor = r.Color;
-        WorkspaceStore.Save(_projects);
     }
 
     private void DeleteProject(ProjectItem proj)
