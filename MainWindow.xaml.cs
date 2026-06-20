@@ -684,10 +684,13 @@ public partial class MainWindow : Window
     {
         SetActiveProject(proj);
         // 프로젝트 헤더 클릭 진입 — Hidden 플래그를 보존한다 (unHide=false).
-        // 같은 활성 세션이 이 프로젝트에 있으면 그대로, 없으면 첫 세션을 타겟으로.
-        var target = (_activeSession != null && proj.Sessions.Contains(_activeSession))
-            ? _activeSession
-            : proj.Sessions.FirstOrDefault();
+        // 활성 세션 후보는 항상 비숨김으로만 — 숨겨진 세션을 ActivateSession 으로 보내면
+        // 터미널에는 활성화되지만 탭 스트립에는 보이지 않는 어색한 상태가 된다.
+        SessionItem? target = null;
+        if (_activeSession != null && proj.Sessions.Contains(_activeSession) && !_activeSession.Hidden)
+            target = _activeSession;
+        else
+            target = proj.Sessions.FirstOrDefault(s => !s.Hidden);
         if (target != null) ActivateSession(target, unHide: false);
         else ClearActiveSession();
         // 나머지 세션은 미리 띄우지 않는다(과거엔 모두 백그라운드 spawn → 프로젝트 선택 시 CPU 폭증).

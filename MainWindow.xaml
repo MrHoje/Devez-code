@@ -18,7 +18,7 @@
     </shell:WindowChrome.WindowChrome>
 
     <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-        <Grid x:Name="RootGrid">
+        <Grid x:Name="RootGrid" Grid.IsSharedSizeScope="True">
             <Grid.RowDefinitions>
                 <RowDefinition Height="44"/>
                 <RowDefinition Height="Auto"/>
@@ -62,21 +62,21 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
-                    <!-- 로고+타이틀 (deit 정합): Height=22(콘텐츠 fill율 보정), 15pt Bold BrunoAceSC -->
+                    <!-- 로고+타이틀 (devez 정합): Height=34, 17pt Bold BrunoAceSC -->
                     <Image Source="pack://application:,,,/Resources/Logos/logo.png"
-                           Height="22" Stretch="Uniform"
+                           Height="34" Stretch="Uniform"
                            RenderOptions.BitmapScalingMode="HighQuality"
                            SnapsToDevicePixels="True"
                            VerticalAlignment="Center"
                            Margin="1,0,0,1">
                         <Image.RenderTransform>
-                            <TranslateTransform X="1" Y="2"/>
+                            <TranslateTransform X="2" Y="3"/>
                         </Image.RenderTransform>
                     </Image>
-                    <TextBlock Text="DevezCode" FontSize="15" FontWeight="Bold"
+                    <TextBlock Text="DevezCode" FontSize="17" FontWeight="Bold"
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                Foreground="{DynamicResource TextBrush}"
-                               VerticalAlignment="Center" Margin="4,1,0,0"/>
+                               VerticalAlignment="Center" Margin="3,1,0,0"/>
 
                     <!-- 프로젝트 경로 콤보박스 — 다른 프로젝트로 즉시 전환. devez 정합 커스텀 템플릿. -->
                     <ComboBox x:Name="ProjectPathCombo" MinWidth="200" MinHeight="32" Margin="16,6,0,6"
@@ -240,11 +240,11 @@
             <!-- ── 3-pane body ─────────────────────────────────────────── -->
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="SidebarCol" Width="262" MinWidth="190"/>
-                    <ColumnDefinition x:Name="SidebarSplitterCol" Width="4"/>
+                    <ColumnDefinition x:Name="SidebarCol" Width="262" MinWidth="190" SharedSizeGroup="MainSidebar"/>
+                    <ColumnDefinition x:Name="SidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                     <ColumnDefinition Width="*" MinWidth="360"/>
-                    <ColumnDefinition x:Name="FileExpSplitterCol" Width="4"/>
-                    <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="200"/>
+                    <ColumnDefinition x:Name="FileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
+                    <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="200" SharedSizeGroup="MainFileExp"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- 패널 경계(devez 방식): 좌·우 패널이 각자 1px LineBrush 보더를 그리고,
