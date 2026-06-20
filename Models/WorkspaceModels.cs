@@ -39,6 +39,11 @@ public sealed class SessionItem : NotifyBase
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";
     public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
+
+    /// <summary>탭에서만 숨김. true 면 탭 스트립에서 Collapse, 세션 자체(터미널/기록)는 보존.
+    /// 프로젝트가 다시 선택되면 자동으로 false 로 리셋(임시 뷰 상태).</summary>
+    private bool _hidden;
+    public bool Hidden { get => _hidden; set => Set(ref _hidden, value); }
 }
 
 /// <summary>좌측 트리의 프로젝트(= 디렉터리). 하위에 세션 목록을 가진다.</summary>

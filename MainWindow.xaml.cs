@@ -609,11 +609,13 @@ public partial class MainWindow : Window
         UpdateStatus();
     }
 
-    /// <summary>활성 프로젝트 전환 — 중앙 탭을 그 프로젝트의 세션들로 교체(같은 컬렉션 바인딩). 세션 활성화는 안 함.</summary>
+    /// <summary>활성 프로젝트 전환 — 중앙 탭을 그 프로젝트의 세션들로 교체(같은 컬렉션 바인딩). 세션 활성화는 안 함.
+    /// 프로젝트 재선택 시 탭 X 로 숨겼던 세션들을 모두 다시 보이게 한다(임시 뷰 상태 리셋).</summary>
     private void SetActiveProject(ProjectItem proj)
     {
         _activeProject = proj;
         foreach (var p in _projects) p.IsSelected = ReferenceEquals(p, proj);
+        foreach (var s in proj.Sessions) s.Hidden = false;
         TabsHost.ItemsSource = proj.Sessions;
         FileExplorer.ShowDirectory(proj.Path);
     }
@@ -880,6 +882,22 @@ public partial class MainWindow : Window
     {
         if (_tabDidDrag) { _tabDidDrag = false; return; } // 드래그 직후 클릭 무시
         if (sender is FrameworkElement { DataContext: SessionItem s }) OpenSession(s);
+    }
+
+    /// <summary>탭 X = 탭에서만 숨김(세션·터미널·기록은 그대로). 프로젝트 재선택 시 자동 복귀.
+    /// 활성 세션 탭을 숨기면 다음 세션으로 포커스를 옮겨 헤더가 비지 않게 한다.</summary>
+    private void TabHide_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SessionItem s }) return;
+        s.Hidden = true;
+        // 숨긴 탭이 활성 세션이면 다른 세션으로 포커스 이동 (없으면 헤더만 비움)
+        if (ReferenceEquals(_activeSession, s))
+        {
+            var parent = ParentOf(s);
+            var next = parent?.Sessions.FirstOrDefault(x => x != s && !x.Hidden);
+            if (next != null) ActivateSession(next);
+            else ClearActiveSession();
+        }
     }
 
     // ── 세션 헤더 액션 버튼: 우클릭 메뉴와 동일 동작 (추적 중지 / 종료) ──

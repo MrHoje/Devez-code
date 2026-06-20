@@ -183,6 +183,18 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type models:SessionItem}">
                                       <Grid x:Name="TabRoot" Margin="0,0,3,0">
+                                        <Grid.Style>
+                                            <!-- Hidden=true 면 탭 스트립에서 완전히 제거. StackPanel 의 자식
+                                                 Visibility=Collapsed 는 레이아웃에서 빠지므로 옆 탭이 자연스럽게 당겨진다. -->
+                                            <Style TargetType="Grid">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Hidden}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Grid.Style>
                                         <Border x:Name="TabBd" Margin="0,0,0,-1"
                                                 VerticalAlignment="Bottom" Padding="0,9"
                                                 MinWidth="131" MaxWidth="248"
@@ -205,10 +217,11 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <Grid Margin="12,0,12,0">
+                                            <Grid Margin="12,0,8,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
                                                 <Image Grid.Column="0" Width="14" Height="14" Margin="0,0,7,0"
                                                        VerticalAlignment="Center"
@@ -218,6 +231,27 @@
                                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                                            Foreground="{DynamicResource TextMutedBrush}"/>
+                                                <!-- X 는 단순히 탭에서만 숨김(프로젝트 재선택 시 복귀). 삭제·추적중단 아님. -->
+                                                <Button Grid.Column="2" Width="16" Height="16" Margin="8,0,0,0"
+                                                        Click="TabHide_Click" Tag="{Binding}"
+                                                        Background="Transparent" BorderThickness="0"
+                                                        Cursor="Hand" IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                                        ToolTip="탭에서 숨기기 (프로젝트를 다시 선택하면 돌아옵니다)">
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5">
+                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
+                                                          Width="9" Height="9" Stroke="{DynamicResource TextMutedBrush}"/>
+                                                </Button>
                                             </Grid>
                                         </Border>
 
@@ -314,9 +348,9 @@
                                        Foreground="{DynamicResource TextBrush}"
                                        TextTrimming="CharacterEllipsis"/>
                             <!-- 헤더 액션: 세션 추적 중지 / 세션 종료. 우클릭 메뉴와 동일한 동작.
-                                 보더 있는 텍스트 버튼(devez 정합). 색 전환은 ColorAnimation 으로 부드럽게 —
-                                 트리거 Setter 가 한 프레임에 Stroke/Foreground 를 동시에 바꾸면
-                                 글자 메트릭 재계산으로 텍스트가 미세하게 흔들리는(wobble) 현상을 막는다. -->
+                                 보더 있는 텍스트 버튼(devez 정합). 텍스트/아이콘은 절대 재렌더하지 않음 —
+                                 danger 표시는 Border 의 BorderBrush(빨강)로만 전달해 텍스트가 위로
+                                 떠오르거나 꿈틀거리는(wobble) 현상을 차단한다. -->
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
                                 <Button Click="SessionHeaderStopTracking_Click" Cursor="Hand"
                                         IsTabStop="False" FocusVisualStyle="{x:Null}"
@@ -361,13 +395,13 @@
                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                                     UseLayoutRounding="True" SnapsToDevicePixels="True">
                                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="11,0">
-                                                    <Path x:Name="Icon" Data="{StaticResource IconTrash2}"
+                                                    <Path Data="{StaticResource IconTrash2}"
                                                           Width="12" Height="12" Stretch="Uniform"
                                                           StrokeThickness="1.25" StrokeStartLineCap="Round"
                                                           StrokeEndLineCap="Round" StrokeLineJoin="Round"
                                                           Fill="Transparent" SnapsToDevicePixels="True"
                                                           Stroke="{DynamicResource TextMutedBrush}"/>
-                                                    <TextBlock x:Name="Lbl" Text="세션 종료" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                    <TextBlock Text="세션 종료" Margin="6,0,0,0" VerticalAlignment="Center"
                                                                FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                                                Foreground="{DynamicResource TextBrush}"
                                                                SnapsToDevicePixels="True" UseLayoutRounding="True"/>
@@ -375,31 +409,8 @@
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                    <Trigger.EnterActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <ColorAnimation Storyboard.TargetName="Icon"
-                                                                                Storyboard.TargetProperty="(Shape.Stroke).(SolidColorBrush.Color)"
-                                                                                To="#ef4444" Duration="0:0:0.12"/>
-                                                                <ColorAnimation Storyboard.TargetName="Lbl"
-                                                                                Storyboard.TargetProperty="(TextBlock.Foreground).(SolidColorBrush.Color)"
-                                                                                To="#ef4444" Duration="0:0:0.12"/>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </Trigger.EnterActions>
-                                                    <Trigger.ExitActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <ColorAnimation Storyboard.TargetName="Icon"
-                                                                                Storyboard.TargetProperty="(Shape.Stroke).(SolidColorBrush.Color)"
-                                                                                Duration="0:0:0.18"/>
-                                                                <ColorAnimation Storyboard.TargetName="Lbl"
-                                                                                Storyboard.TargetProperty="(TextBlock.Foreground).(SolidColorBrush.Color)"
-                                                                                Duration="0:0:0.18"/>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </Trigger.ExitActions>
                                                     <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#ef4444"/>
                                                 </Trigger>
                                                 <Trigger Property="IsPressed" Value="True">
                                                     <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
