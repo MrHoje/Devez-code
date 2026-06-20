@@ -20,10 +20,15 @@ public partial class MainWindow : Window
     private readonly SessionBusyService _sessionBusy = new();
     private readonly SessionLastMessageService _sessionLastMsg = new();
 
+    /// <summary>현재 로딩 스피너를 띄운 세션. claude 화면이 뜨거나(=TerminalReady) 타임아웃에 해제.</summary>
+    private string? _loadingRoomId;
+    private System.Windows.Threading.DispatcherTimer? _loadingTimeout;
+
     public MainWindow()
     {
         InitializeComponent();
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
+        StateChanged += (_, _) => UpdateMaximizeMargin();
 
         _projects = WorkspaceStore.Load();
         Sidebar.Projects = _projects;
@@ -47,7 +52,9 @@ public partial class MainWindow : Window
         TabsHost.LostMouseCapture += async (_, _) => await EndTabDragAsync();
 
         _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
-        _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } };
+        _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } HideSessionLoadingIf(id); };
+        // claude 화면이 완전히 뜨면(alt-screen) 로딩 스피너 종료
+        _terminal.TerminalReady  += id => HideSessionLoadingIf(id);
         // 터미널 단축키(Ctrl+Shift+T/W, Ctrl+Tab) → 세션 추가/닫기/전환
         _terminal.SessionActionRequested += OnTerminalSessionAction;
 
@@ -745,15 +752,49 @@ public partial class MainWindow : Window
         SettingsService.SaveLastActive(parent.Path, session.Id);
         // 세션 실행은 훅 자산을 최신으로 재생성하므로(있던 배너는 더 이상 불필요) 배너를 닫는다.
         if (HookSetupBanner.Visibility == Visibility.Visible) HookSetupBanner.Visibility = Visibility.Collapsed;
+        // 이미 claude 화면이 떠 있는 세션이면 로딩 없이, 아니면 스피너 표시 후 ShowTerminal.
+        if (_terminal.IsReady(session.Id)) HideSessionLoading();
+        else ShowSessionLoading(session.Id);
         _terminal.ShowTerminal(session.Id);
         _terminal.FocusTerminal();
         UpdateEmptyState();
         EnsureSelectedTabVisible(session); // 선택 탭이 가려져 있으면 보이게 스크롤
     }
 
+    /// <summary>세션 로딩 스피너 표시 — claude 화면이 뜰 때까지. 안전장치로 일정 시간 후 자동 해제.</summary>
+    private void ShowSessionLoading(string roomId)
+    {
+        _loadingRoomId = roomId;
+        TerminalLoadingOverlay.Visibility = Visibility.Visible;
+
+        _loadingTimeout?.Stop();
+        _loadingTimeout ??= new System.Windows.Threading.DispatcherTimer();
+        _loadingTimeout.Interval = TimeSpan.FromSeconds(20); // alt-screen 미진입(일반 셸 등) 대비 폴백
+        _loadingTimeout.Tick -= LoadingTimeout_Tick;
+        _loadingTimeout.Tick += LoadingTimeout_Tick;
+        _loadingTimeout.Start();
+    }
+
+    private void LoadingTimeout_Tick(object? sender, EventArgs e) => HideSessionLoading();
+
+    /// <summary>로딩 스피너 숨김.</summary>
+    private void HideSessionLoading()
+    {
+        _loadingTimeout?.Stop();
+        _loadingRoomId = null;
+        TerminalLoadingOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>해당 방이 현재 로딩 중이던 세션이면 스피너 숨김.</summary>
+    private void HideSessionLoadingIf(string roomId)
+    {
+        if (_loadingRoomId == roomId) HideSessionLoading();
+    }
+
     private void ClearActiveSession()
     {
         _activeSession = null;
+        HideSessionLoading();
         foreach (var p in _projects)
             foreach (var s in p.Sessions)
                 s.IsSelected = false;
@@ -1224,6 +1265,11 @@ public partial class MainWindow : Window
 
     // ── 타이틀바 ──────────────────────────────────────────────────
     private void MinBtn_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    // 최대화 시 7px 여백 (WPF 최대화 오버플로 보정 — devez ImageViewerDialog 정합)
+    private void UpdateMaximizeMargin()
+        => RootGrid.Margin = WindowState == WindowState.Maximized
+            ? new Thickness(7) : new Thickness(0);
 
     private void MaxBtn_Click(object sender, RoutedEventArgs e)
         => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;

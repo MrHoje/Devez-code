@@ -50,6 +50,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    /// <summary>해당 방의 claude 화면이 이미 떠 있어(준비 완료) 로딩이 필요 없는지.</summary>
+    public bool IsReady(string roomId) => _ready.Contains(roomId);
+
     /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
     public async void ShowTerminal(string roomId)
     {
