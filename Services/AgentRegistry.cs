@@ -44,12 +44,6 @@ public static class AgentRegistry
         },
         new()
         {
-            Id = "hermes", DisplayName = "Hermes",
-            ExeNames = new[] { "hermes.exe", "hermes.cmd", "hermes.bat", "hermes.ps1", "hermes" },
-            Command = "hermes chat",
-        },
-        new()
-        {
             Id = "gajaecode", DisplayName = "Gajae Code",
             ExeNames = new[] { "gajaecode.exe", "gajaecode.cmd", "gajaecode.bat", "gajaecode.ps1", "gajaecode" },
             Command = "gajaecode",

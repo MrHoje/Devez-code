@@ -296,7 +296,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <Image Grid.Column="0" Width="14" Height="14" Margin="0,0,7,0"
                                                        VerticalAlignment="Center"
-                                                       Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
+                                                       Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
                                                        RenderOptions.BitmapScalingMode="HighQuality"/>
                                                 <TextBlock x:Name="TabTitle" Grid.Column="1" Text="{Binding Name}"
                                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
@@ -605,6 +605,9 @@
                     <StackPanel Grid.Column="2" x:Name="RateLimitPanel" Orientation="Horizontal"
                                 VerticalAlignment="Center" HorizontalAlignment="Left"
                                 Visibility="Collapsed" ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
+                        <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                               Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
                         <TextBlock x:Name="RlFiveLabel" VerticalAlignment="Center"
                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
                         <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"

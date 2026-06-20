@@ -46,6 +46,11 @@
     <Resource Include="Fonts\BrunoAceSC-Regular.ttf" />
     <!-- Claude Code 아이콘 이미지 (탭 헤더·세션 행) -->
     <Resource Include="Resources\Images\ShellPresets\claude_code.png" />
+    <!-- 에이전트 아이콘 (devez 이식) — 세션 행에 에이전트별 로고 표시 -->
+    <Resource Include="Resources\Images\ShellPresets\codex.png" />
+    <Resource Include="Resources\Images\ShellPresets\gajae_code.png" />
+    <Resource Include="Resources\Images\ShellPresets\opencode_icon_black_50.png" />
+    <Resource Include="Resources\Images\ShellPresets\opencode_icon_white_50.png" />
     <!-- 앱 로고 이미지 (좌상단 타이틀바, 데스크탑 image.png 기반) -->
     <Resource Include="Resources\Logos\logo.png" />
     <!-- 창 아이콘(Window.Icon pack URI). ApplicationIcon(EXE 아이콘)과 별개로
