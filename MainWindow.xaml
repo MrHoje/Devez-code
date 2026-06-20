@@ -62,59 +62,141 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
-                    <!-- 로고+타이틀 (devez 정합): Height=34 Stretch=Uniform, 17pt Bold BrunoAceSC -->
+                    <!-- 로고+타이틀 (deit 정합): Height=22(콘텐츠 fill율 보정), 15pt Bold BrunoAceSC -->
                     <Image Source="pack://application:,,,/Resources/Logos/logo.png"
-                           Height="34" Stretch="Uniform"
+                           Height="22" Stretch="Uniform"
                            RenderOptions.BitmapScalingMode="HighQuality"
                            SnapsToDevicePixels="True"
                            VerticalAlignment="Center"
                            Margin="1,0,0,1">
                         <Image.RenderTransform>
-                            <TranslateTransform X="2" Y="3"/>
+                            <TranslateTransform X="1" Y="2"/>
                         </Image.RenderTransform>
                     </Image>
-                    <TextBlock Text="DevezCode" FontSize="17" FontWeight="Bold"
+                    <TextBlock Text="DevezCode" FontSize="15" FontWeight="Bold"
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                Foreground="{DynamicResource TextBrush}"
-                               VerticalAlignment="Center" Margin="3,1,0,0"/>
+                               VerticalAlignment="Center" Margin="4,1,0,0"/>
 
-                    <!-- 컨트롤 박스: 선택된 프로젝트 경로 + git 브렌치. 활성 프로젝트가 없으면 숨김.
-                         클릭 시 git 브렌치 새로고침(체크아웃 등 외부 변경 반영). -->
-                    <Border x:Name="ProjectControlBox" Margin="16,0,0,0" Padding="0,3" CornerRadius="8"
+                    <!-- 프로젝트 경로 콤보박스 — 다른 프로젝트로 즉시 전환. devez 정합 커스텀 템플릿. -->
+                    <ComboBox x:Name="ProjectPathCombo" MinWidth="200" MinHeight="32" Margin="16,0,0,4"
+                              SelectionChanged="ProjectPathCombo_SelectionChanged"
+                              ToolTip="프로젝트 전환"
+                              VerticalAlignment="Bottom"
+                              IsHitTestVisible="True" IsTabStop="False">
+                        <ComboBox.Template>
+                            <ControlTemplate TargetType="ComboBox">
+                                <Grid>
+                                    <Border x:Name="Bd" Background="{DynamicResource PanelSoftBrush}"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="8"
+                                            Padding="0,5"
+                                            UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <!-- 폴더 아이콘 + 선택된 경로 -->
+                                            <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <Path Data="{StaticResource IconFolder}" Width="12" Height="12" Stretch="Uniform"
+                                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.5"
+                                                      Fill="Transparent" SnapsToDevicePixels="True"
+                                                      VerticalAlignment="Center"/>
+                                                <ContentPresenter Margin="6,0,0,0" VerticalAlignment="Center"
+                                                                  Content="{TemplateBinding SelectionBoxItem}"
+                                                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                                  ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                                  ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                                                  HorizontalAlignment="Left"/>
+                                            </StackPanel>
+                                            <!-- 드롭다운 토글 -->
+                                            <ToggleButton Grid.Column="1" Margin="4,0,6,0" Width="20" Height="20"
+                                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                          ClickMode="Press" Background="Transparent" BorderThickness="0"
+                                                          Cursor="Hand" FocusVisualStyle="{x:Null}">
+                                                <ToggleButton.Template>
+                                                    <ControlTemplate TargetType="ToggleButton">
+                                                        <Border x:Name="Bd2" Background="Transparent" CornerRadius="4">
+                                                            <Path Data="{StaticResource IconChevronDown}" Width="12" Height="12"
+                                                                  Stretch="Uniform" Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.5"
+                                                                  Fill="Transparent" SnapsToDevicePixels="True"
+                                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Bd2" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </ToggleButton.Template>
+                                            </ToggleButton>
+                                        </Grid>
+                                    </Border>
+                                    <!-- 드롭다운 팝업 -->
+                                    <Popup x:Name="PART_Popup" AllowsTransparency="True"
+                                           IsOpen="{TemplateBinding IsDropDownOpen}"
+                                           Placement="Bottom" PlacementTarget="{Binding ElementName=Bd}"
+                                           StaysOpen="False">
+                                        <Border Margin="0,4,0,0" Background="{DynamicResource PanelBrush}"
+                                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="8"
+                                                Padding="4">
+                                            <ItemsPresenter/>
+                                        </Border>
+                                    </Popup>
+                                </Grid>
+                            </ControlTemplate>
+                        </ComboBox.Template>
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Path}" Padding="8,6"
+                                           FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                        <ComboBox.ItemContainerStyle>
+                            <Style TargetType="ComboBoxItem">
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ComboBoxItem">
+                                            <Border x:Name="Bd3" Background="Transparent" CornerRadius="6" Padding="2">
+                                                <ContentPresenter/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd3" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd3" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ComboBox.ItemContainerStyle>
+                    </ComboBox>
+
+                    <!-- git 브렌치 단일 버블 — 비-git 저장소면 숨김. 클릭 시 새로고침. -->
+                    <Border x:Name="BranchBubble" CornerRadius="8"
                             Background="{DynamicResource PanelSoftBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                            Cursor="Hand" MouseLeftButtonUp="ProjectControlBox_Click"
+                            MinHeight="32" Padding="12,5" Margin="8,0,0,4"
+                            Cursor="Hand" MouseLeftButtonUp="BranchBubble_Click"
                             ToolTip="클릭하여 브렌치 새로고침"
-                            Visibility="Collapsed">
+                            VerticalAlignment="Bottom"
+                            Visibility="Collapsed"
+                            UseLayoutRounding="True" SnapsToDevicePixels="True">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <!-- 프로젝트 경로 (폴더 아이콘 + 경로) -->
-                            <StackPanel Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolder}"
-                                      Width="12" Height="12" Stretch="Uniform"
-                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.5"
-                                      Fill="Transparent" SnapsToDevicePixels="True"/>
-                                <TextBlock x:Name="ProjectPathText" Margin="6,0,0,0" VerticalAlignment="Center"
-                                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"
-                                           TextTrimming="CharacterEllipsis" MaxWidth="360"/>
-                            </StackPanel>
-                            <!-- chevron + git 브렌치 묶음. 비-git 저장소면 둘 다 숨김. -->
-                            <StackPanel x:Name="BranchRow" Orientation="Horizontal" VerticalAlignment="Center"
-                                        Visibility="Collapsed">
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronRight}"
-                                      Width="11" Height="11" Margin="8,0,8,0" Stretch="Uniform"
-                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.5"
-                                      Fill="Transparent" SnapsToDevicePixels="True"
-                                      VerticalAlignment="Center"/>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconGitBranch}"
-                                      Width="12" Height="12" Stretch="Uniform"
-                                      Stroke="#fb923c" StrokeThickness="1.5"
-                                      Fill="Transparent" SnapsToDevicePixels="True"
-                                      VerticalAlignment="Center"/>
-                                <TextBlock x:Name="ProjectBranchText" Margin="6,0,10,0" VerticalAlignment="Center"
-                                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                            </StackPanel>
+                            <Path Data="{StaticResource IconGitBranch}" Width="12" Height="12" Stretch="Uniform"
+                                  Stroke="#fb923c" StrokeThickness="1.5"
+                                  Fill="Transparent" SnapsToDevicePixels="True"
+                                  VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ProjectBranchText" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
