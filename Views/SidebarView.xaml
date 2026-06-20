@@ -316,10 +316,10 @@
             </Grid>
         </Border>
 
-        <!-- Search row — devez 정합 (pill 36 + 행 총높이 45 → 둘째 줄 세퍼레이터가 세션헤더·경로헤더와 일치) -->
-        <Border Grid.Row="1" Height="45"
+        <!-- Search row — devez 정합 (pill 36 + 상하 8px 여백 = 행 52. 둘째 줄 세퍼레이터는 세션헤더·경로헤더(52)와 일치) -->
+        <Border Grid.Row="1"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <Border Margin="6,0,6,0" Height="36" VerticalAlignment="Center"
+            <Border Margin="6,8,6,8" Height="36"
                     Background="{DynamicResource PanelSoftBrush}"
                     BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="1" CornerRadius="8">

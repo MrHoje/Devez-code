@@ -73,8 +73,8 @@
             </StackPanel>
         </Border>
 
-        <!-- Header: 현재 뷰의 경로/제목 -->
-        <Border Grid.Row="1" Height="45"
+        <!-- Header: 현재 뷰의 경로/제목 (검색행·세션헤더와 둘째 줄 세퍼레이터 정렬: 52) -->
+        <Border Grid.Row="1" Height="52"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
             <Grid Margin="14,0,8,0">
