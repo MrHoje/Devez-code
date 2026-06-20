@@ -182,8 +182,11 @@ public sealed class TerminalSessionManager
     /// 첫 실행은 <c>opencode</c> (시작 디렉터리에서 새 세션), 재진입은 <c>opencode --session &lt;id&gt;</c> 로
     /// 같은 대화 복원. 플러그인(opencode-room-tracker.js) 이 <c>session.created</c>/<c>session.updated</c>
     /// 이벤트에서 session_id 를 %APPDATA%\DevezCode\opencode\sessions\&lt;room&gt;.txt 에 기록.
-    /// $env:DEVEXCODE_ROOM_ID 로 어느 방의 opencode 인지 식별 → 같은 폴더의 여러 방이 있어도 완전 분리.
-    /// (배치 시작에 <c>set</c> 으로 env 를 명시 — ConPTY 의 env 상속에 의존하지 않음)</summary>
+    /// $env:DEVEZCODE_ROOM_ID 로 어느 방의 opencode 인지 식별 → 같은 폴더의 여러 방이 있어도 완전 분리.
+    /// (배치 시작에 <c>set</c> 으로 env 를 명시 — ConPTY 의 env 상속에 의존하지 않음)
+    /// <para>세션 ID 는 3단 폴백으로 결정: (1) 플러그인이 기록한 최신 ID (2) settings 의 저장값
+    /// (3) <c>opencode session list</c> 에서 workingDir 매칭 ID. 플러그인 콜백이 어떤 이유로
+    /// 호출되지 않는 환경에서도 (3) 이 마지막 대화 를 복원한다.</para></summary>
     private string? TryBuildOpenCodeDirectLaunch(string roomId, out string? injectFallback)
     {
         injectFallback = null;
@@ -197,6 +200,20 @@ public sealed class TerminalSessionManager
             SettingsService.SaveOpenCodeRoomSession(roomId, tracked);
         }
 
+        // (3) 플러그인도 settings 도 비어있으면 opencode session list 에서 workingDir 매칭 ID 찾기.
+        // 플러그인 콜백 미작동·환경변수 누락 등 어떤 이유로든 (1)(2) 가 비어도 같은 폴더의
+        // 마지막 대화를 정확히 복원 — 새 세션이 매번 만들어지는 현상 방지.
+        if (sessionId == null)
+        {
+            var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+            var byCwd = OpenCodePluginInstaller.FindSessionIdByCwd(ccDir);
+            if (byCwd != null)
+            {
+                sessionId = byCwd;
+                SettingsService.SaveOpenCodeRoomSession(roomId, byCwd);
+            }
+        }
+
         // body: opencode 실행 라인. 실패 시 fresh 폴백.
         string opencodeCmd = sessionId != null
             ? $"opencode --session {sessionId} || opencode"
@@ -205,7 +222,7 @@ public sealed class TerminalSessionManager
         // 배치: env 명시 set → opencode 실행. cmd 의 env 상속이 불안정해도 set 으로 확실히 전달.
         // roomId 에 공백/특수문자 가능 — set "VAR=value" 형식으로 안전하게.
         string body = $"@echo off\r\n" +
-                      $"set \"DEVEXCODE_ROOM_ID={roomId}\"\r\n" +
+                      $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                       $"{opencodeCmd}\r\n";
 
         try

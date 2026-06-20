@@ -2,7 +2,7 @@
 // 채팅방(roomId)별 현재 세션 ID 를 기록해 앱이 방마다 정확한 세션을 복원하게 한다.
 // DEVEZCODE_ROOM_ID 가 없으면(사용자가 직접 쓰는 opencode) 아무 동작도 하지 않는다.
 export const DevezCodeRoomTracker = async () => {
-  const room = process.env.DEVEXCODE_ROOM_ID;
+  const room = process.env.DEVEZCODE_ROOM_ID;
   const write = (id) => {
     try {
       if (!room || !id) return;

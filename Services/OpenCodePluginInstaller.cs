@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -7,7 +8,10 @@ namespace DevezCode.Services;
 
 /// <summary>opencode room-tracker 플러그인 (Resources\Plugins\opencode-room-tracker.js) 을
 /// 사용자 머신에 설치. ~/.config\opencode\plugin\devezcode-room-tracker.js (XDG_CONFIG_HOME 우선).
-/// 매 시작 시 항상 최신본으로 덮어써 자동 업데이트.</summary>
+/// 매 시작 시 항상 최신본으로 덮어써 자동 업데이트.
+/// <para>플러그인 추적 외에 <c>opencode session list</c> + <c>opencode export &lt;id&gt;</c> 로
+/// workingDir 매칭 세션 ID 를 찾는 백업 경로도 제공 — 플러그인 콜백이 어떤 이유로든
+/// 호출되지 않는 경우(버전 비호환 등)에도 같은 디렉터리의 마지막 세션을 복원한다.</para></summary>
 public static class OpenCodePluginInstaller
 {
     public static string PluginInstallPath
@@ -69,6 +73,64 @@ public static class OpenCodePluginInstaller
             if (!File.Exists(path)) return null;
             var id = File.ReadAllText(path).Trim();
             return id.StartsWith("ses_", StringComparison.Ordinal) && id.Length > 4 ? id : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>백업 경로 — <c>opencode session list</c> + <c>opencode export &lt;id&gt;</c> 로
+    /// workingDir 매칭 세션 ID 를 찾는다. 플러그인이 어떤 이유로 기록에 실패한 경우
+    /// (콜백 시그니처 변경·환경변수 누락 등) 여기서 같은 디렉터리의 마지막 세션을 복원.
+    /// opencode 미설치 / list 비었으면 null.</summary>
+    public static string? FindSessionIdByCwd(string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(workingDir)) return null;
+        try
+        {
+            var norm = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+            var listOutput = RunOpenCode("session list");
+            if (string.IsNullOrEmpty(listOutput)) return null;
+            foreach (var line in listOutput.Split('\n'))
+            {
+                var trimmed = line.TrimStart();
+                if (!trimmed.StartsWith("ses_")) continue;
+                var idEnd = trimmed.IndexOfAny(new[] { ' ', '\t' });
+                if (idEnd <= 0) continue;
+                var sid = trimmed.Substring(0, idEnd);
+                var exported = RunOpenCode($"export {sid}");
+                if (string.IsNullOrEmpty(exported)) continue;
+                // JSON 내 "directory": "..." 매칭 — 백슬래시·따옴표 변형 모두 허용.
+                if (exported.Contains($"\"directory\":\"{norm}\"", StringComparison.OrdinalIgnoreCase) ||
+                    exported.Contains($"\"directory\": \"{norm}\"", StringComparison.OrdinalIgnoreCase) ||
+                    exported.Contains($"\"directory\":\"{norm.Replace("\\", "\\\\")}\"", StringComparison.OrdinalIgnoreCase))
+                    return sid;
+            }
+        }
+        catch { /* 어떤 단계든 실패 시 null — 세션 복원만 스킵, 앱은 계속 */ }
+        return null;
+    }
+
+    private static string? RunOpenCode(string args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "opencode",
+                Arguments = args,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return null;
+            if (!p.WaitForExit(3000))
+            {
+                try { p.Kill(); } catch { }
+                return null;
+            }
+            return p.StandardOutput.ReadToEnd();
         }
         catch { return null; }
     }
