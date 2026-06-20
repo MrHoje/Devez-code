@@ -313,24 +313,33 @@
                                        FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"
                                        TextTrimming="CharacterEllipsis"/>
-                            <!-- 헤더 액션: 세션 추적 중지 / 세션 종료. 우클릭 메뉴와 동일한 동작. -->
+                            <!-- 헤더 액션: 세션 추적 중지 / 세션 종료. 우클릭 메뉴와 동일한 동작.
+                                 보더 있는 텍스트 버튼(devez 정합). -->
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
                                 <Button Click="SessionHeaderStopTracking_Click" Cursor="Hand"
                                         IsTabStop="False" FocusVisualStyle="{x:Null}"
                                         ToolTip="세션 추적 중지 (대화 기록은 디스크에 보존)"
-                                        Width="28" Height="28">
+                                        Height="28" Padding="11,0">
                                     <Button.Template>
                                         <ControlTemplate TargetType="Button">
-                                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
-                                                <Path Style="{StaticResource LucideButtonIcon}"
-                                                      Data="{StaticResource IconEyeOff}"
-                                                      Width="14" Height="14"
-                                                      Stroke="{DynamicResource TextMutedBrush}"
-                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <Border x:Name="Bd" Background="Transparent" CornerRadius="8"
+                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="{TemplateBinding Padding}">
+                                                    <Path Style="{StaticResource LucideButtonIcon}"
+                                                          Data="{StaticResource IconEyeOff}"
+                                                          Width="12" Height="12"
+                                                          Stroke="{DynamicResource TextMutedBrush}"/>
+                                                    <TextBlock Text="추적 중지" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource TextBrush}"/>
+                                                </StackPanel>
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -339,20 +348,29 @@
                                 <Button Click="SessionHeaderDelete_Click" Cursor="Hand"
                                         IsTabStop="False" FocusVisualStyle="{x:Null}"
                                         ToolTip="세션 종료 (대화 기록까지 영구 삭제)"
-                                        Width="28" Height="28" Margin="4,0,0,0">
+                                        Height="28" Padding="11,0" Margin="6,0,0,0">
                                     <Button.Template>
                                         <ControlTemplate TargetType="Button">
-                                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
-                                                <Path x:Name="Icon" Style="{StaticResource LucideButtonIcon}"
-                                                      Data="{StaticResource IconTrash2}"
-                                                      Width="14" Height="14"
-                                                      Stroke="{DynamicResource TextMutedBrush}"
-                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <Border x:Name="Bd" Background="Transparent" CornerRadius="8"
+                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="{TemplateBinding Padding}">
+                                                    <Path x:Name="Icon" Style="{StaticResource LucideButtonIcon}"
+                                                          Data="{StaticResource IconTrash2}"
+                                                          Width="12" Height="12"
+                                                          Stroke="{DynamicResource TextMutedBrush}"/>
+                                                    <TextBlock x:Name="Lbl" Text="세션 종료" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource TextBrush}"/>
+                                                </StackPanel>
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                                                     <Setter TargetName="Icon" Property="Stroke" Value="#ef4444"/>
+                                                    <Setter TargetName="Lbl" Property="Foreground" Value="#ef4444"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
