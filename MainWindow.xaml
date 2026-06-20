@@ -79,7 +79,7 @@
                                VerticalAlignment="Center" Margin="4,1,0,0"/>
 
                     <!-- 프로젝트 경로 콤보박스 — 다른 프로젝트로 즉시 전환. devez 정합 커스텀 템플릿. -->
-                    <ComboBox x:Name="ProjectPathCombo" MinWidth="200" MinHeight="32" Margin="16,0,0,4"
+                    <ComboBox x:Name="ProjectPathCombo" MinWidth="200" MinHeight="32" Margin="16,6,0,6"
                               SelectionChanged="ProjectPathCombo_SelectionChanged"
                               ToolTip="프로젝트 전환"
                               VerticalAlignment="Bottom"
@@ -183,7 +183,7 @@
                     <Border x:Name="BranchBubble" CornerRadius="8"
                             Background="{DynamicResource PanelSoftBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                            MinHeight="32" Padding="12,5" Margin="8,0,0,4"
+                            MinHeight="32" Padding="12,5" Margin="8,6,0,6"
                             Cursor="Hand" MouseLeftButtonUp="BranchBubble_Click"
                             ToolTip="클릭하여 브렌치 새로고침"
                             VerticalAlignment="Bottom"
@@ -362,7 +362,7 @@
                                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                                            Foreground="{DynamicResource TextMutedBrush}"/>
-                                                <!-- X 는 단순히 탭에서만 숨김(프로젝트 재선택 시 복귀). 삭제·추적중단 아님. -->
+                                                <!-- X 는 단순히 탭에서만 숨김. 사이드바에서 세션 클릭 시 복귀. 삭제·추적중단 아님. -->
                                                 <Button Grid.Column="2" Width="16" Height="16" Margin="8,0,0,0"
                                                         Click="TabHide_Click" Tag="{Binding}"
                                                         Background="Transparent" BorderThickness="0"

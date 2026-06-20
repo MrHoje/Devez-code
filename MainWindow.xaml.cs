@@ -611,12 +611,11 @@ public partial class MainWindow : Window
     }
 
     /// <summary>활성 프로젝트 전환 — 중앙 탭을 그 프로젝트의 세션들로 교체(같은 컬렉션 바인딩). 세션 활성화는 안 함.
-    /// 프로젝트 재선택 시 탭 X 로 숨겼던 세션들을 모두 다시 보이게 한다(임시 뷰 상태 리셋).</summary>
+    /// Hidden 플래그는 보존 — 탭 X 로 숨긴 세션은 프로젝트 재진입 시에도 그대로 숨김 상태 유지.</summary>
     private void SetActiveProject(ProjectItem proj)
     {
         _activeProject = proj;
         foreach (var p in _projects) p.IsSelected = ReferenceEquals(p, proj);
-        foreach (var s in proj.Sessions) s.Hidden = false;
         TabsHost.ItemsSource = proj.Sessions;
         FileExplorer.ShowDirectory(proj.Path);
         // 콤보박스 선택을 활성 프로젝트로 동기화 (외부에서 변경된 경우)
@@ -949,7 +948,7 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement { DataContext: SessionItem s }) OpenSession(s);
     }
 
-    /// <summary>탭 X = 탭에서만 숨김(세션·터미널·기록은 그대로). 프로젝트 재선택 시 자동 복귀.
+    /// <summary>탭 X = 탭에서만 숨김(세션·터미널·기록은 그대로). 사이드바에서 다시 선택하면 복귀.
     /// 활성 세션 탭을 숨기면 다음 세션으로 포커스를 옮겨 헤더가 비지 않게 한다.</summary>
     private void TabHide_Click(object sender, RoutedEventArgs e)
     {

@@ -41,7 +41,7 @@ public sealed class SessionItem : NotifyBase
     public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
 
     /// <summary>탭에서만 숨김. true 면 탭 스트립에서 Collapse, 세션 자체(터미널/기록)는 보존.
-    /// 프로젝트가 다시 선택되면 자동으로 false 로 리셋(임시 뷰 상태).</summary>
+    /// 사이드바에서 해당 세션을 클릭하면 다시 false 로 풀려 탭이 복귀한다.</summary>
     private bool _hidden;
     public bool Hidden { get => _hidden; set => Set(ref _hidden, value); }
 }

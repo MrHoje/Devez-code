@@ -100,8 +100,8 @@
                                 <RotateTransform x:Name="SpinRot"/>
                             </Ellipse.RenderTransform>
                         </Ellipse>
-                        <!-- 숨김 세션(탭 X) — 추적중지 아이콘. 프로젝트 재선택 시 Hidden=false 가 되면
-                             DataTrigger 가 점/스피너를 다시 보여주고 이 아이콘은 숨김. -->
+                        <!-- 숨김 세션(탭 X) — 추적중지 아이콘. 사이드바에서 세션 클릭해 Hidden=false 가
+                             되면 DataTrigger 가 점/스피너를 다시 보여주고 이 아이콘은 숨김. -->
                         <Path x:Name="HiddenIcon" Visibility="Collapsed"
                               Data="{StaticResource IconEyeOff}"
                               Width="12" Height="12" Stretch="Uniform"
