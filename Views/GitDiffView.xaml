@@ -100,18 +100,36 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-            <!-- Ctrl+휠 로 폰트 크기 조절(PreviewMouseWheel). 라인 텍스트는 DiffHost.FontSize 를 상속. -->
-            <ScrollViewer x:Name="DiffScroller" Grid.Column="0"
-                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                          PreviewMouseWheel="DiffScroller_PreviewMouseWheel">
-                <ItemsControl x:Name="DiffHost" Grid.IsSharedSizeScope="True"
-                              TextOptions.TextFormattingMode="Ideal"
-                              VirtualizingStackPanel.IsVirtualizing="True"
-                              VirtualizingStackPanel.VirtualizationMode="Recycling">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
+            <!-- Ctrl+휠 로 폰트 크기 조절. 라인 텍스트는 DiffList.FontSize 를 상속.
+                 ListBox 는 가상화를 기본 지원(픽셀 단위)하므로 큰 파일도 화면 분량만 렌더한다. -->
+            <ListBox x:Name="DiffList" Grid.Column="0"
+                     Background="Transparent" BorderThickness="0"
+                     Padding="0" HorizontalContentAlignment="Stretch"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     VirtualizingPanel.ScrollUnit="Pixel"
+                     TextOptions.TextFormattingMode="Ideal"
+                     PreviewMouseWheel="DiffScroller_PreviewMouseWheel">
+                <ListBox.ItemContainerStyle>
+                    <!-- 컨테이너 장식 제거(선택/호버/패딩) — diff 행은 자체 배경만 사용 -->
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="Focusable" Value="False"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <ContentPresenter/>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type models:DiffRow}">
                             <Grid>
                                 <!-- hunk 머리글 (@@ …) — 양쪽에 걸쳐 한 줄 -->
@@ -122,13 +140,13 @@
                                                Foreground="#58A6FF"/>
                                 </Border>
 
-                                <!-- 좌/우 코드 셀 -->
+                                <!-- 좌/우 코드 셀 (줄 번호는 고정 폭 — SharedSize 제거로 가상화 유지) -->
                                 <Grid x:Name="ColsGrid">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="LNum"/>
+                                        <ColumnDefinition Width="46"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="1"/>
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="RNum"/>
+                                        <ColumnDefinition Width="46"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
 
@@ -138,7 +156,7 @@
                                     <Border x:Name="RightBg" Grid.Column="3" Grid.ColumnSpan="2" Background="Transparent"/>
 
                                     <TextBlock Grid.Column="0" Text="{Binding LeftNum}"
-                                               MinWidth="28" Padding="6,1,8,1" TextAlignment="Right"
+                                               Padding="6,1,8,1" TextAlignment="Right"
                                                FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                     <TextBlock x:Name="LeftTxt" Grid.Column="1" Text="{Binding LeftText}"
@@ -149,7 +167,7 @@
                                     <Border Grid.Column="2" Background="{DynamicResource LineBrush}"/>
 
                                     <TextBlock Grid.Column="3" Text="{Binding RightNum}"
-                                               MinWidth="28" Padding="6,1,8,1" TextAlignment="Right"
+                                               Padding="6,1,8,1" TextAlignment="Right"
                                                FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                     <TextBlock x:Name="RightTxt" Grid.Column="4" Text="{Binding RightText}"
@@ -181,9 +199,8 @@
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+                </ListBox.ItemTemplate>
+            </ListBox>
 
             <!-- 변경 위치 오버뷰 스트립(스크롤바 옆): 추가=녹색·삭제=빨강·수정=노랑.
                  클릭 시 해당 위치로 스크롤. 마커는 코드에서 그린다. -->

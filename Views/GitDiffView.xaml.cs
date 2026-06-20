@@ -15,15 +15,16 @@ public partial class GitDiffView : UserControl
     public GitDiffView()
     {
         InitializeComponent();
-        DiffHost.FontSize = _diffFontSize;
+        DiffList.FontSize = _diffFontSize;
     }
 
     private string? _repo;
     private GitChange? _selected;
     private readonly ObservableCollection<GitChange> _changes = new();
-    private readonly ObservableCollection<DiffRow> _diff = new();
+    // diff 행은 한 번에 만들어 ItemsSource 로 통째 할당(행마다 알림 없음 → 큰 파일도 빠름).
+    private List<DiffRow> _diff = new();
 
-    /// <summary>diff 코드 글꼴 크기(Ctrl+휠로 조절). 라인 텍스트는 DiffHost 에서 상속.</summary>
+    /// <summary>diff 코드 글꼴 크기(Ctrl+휠로 조절). 라인 텍스트는 DiffList 에서 상속.</summary>
     private double _diffFontSize = 12;
     private const double MinFontSize = 8, MaxFontSize = 28;
 
@@ -39,16 +40,17 @@ public partial class GitDiffView : UserControl
         if (_repo == path) return;
         _repo = path;
         _changes.Clear();
-        _diff.Clear();
+        _diff = new List<DiffRow>();
+        if (IsLoaded) DiffList.ItemsSource = null;
     }
 
     /// <summary>git 상태를 다시 읽어 변경 파일 목록을 채운다.</summary>
     public async Task RefreshAsync()
     {
         ChangesHost.ItemsSource = _changes;
-        DiffHost.ItemsSource = _diff;
         _changes.Clear();
-        _diff.Clear();
+        _diff = new List<DiffRow>();
+        DiffList.ItemsSource = null;
         _selected = null;
         DiffHint.Visibility = Visibility.Visible;
         DiffHeader.Visibility = Visibility.Collapsed;
@@ -132,16 +134,16 @@ public partial class GitDiffView : UserControl
     {
         if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
         _diffFontSize = Math.Clamp(_diffFontSize + (e.Delta > 0 ? 1 : -1), MinFontSize, MaxFontSize);
-        DiffHost.FontSize = _diffFontSize;
+        DiffList.FontSize = _diffFontSize;
         e.Handled = true; // 폰트 조절 중에는 스크롤하지 않음
     }
 
     private async Task LoadDiffAsync(GitChange change)
     {
-        _diff.Clear();
+        _diff = new List<DiffRow>();
+        DiffList.ItemsSource = null;
         DiffHint.Visibility = Visibility.Collapsed;
         DiffHeader.Visibility = Visibility.Visible;
-        DiffScroller.ScrollToTop();
 
         try
         {
@@ -169,7 +171,11 @@ public partial class GitDiffView : UserControl
             }
             BuildSideBySide(text);
         }
-        finally { RedrawMarkers(); }
+        finally
+        {
+            DiffList.ItemsSource = _diff; // 통째 할당 — 새 소스라 스크롤은 자동으로 맨 위
+            RedrawMarkers();
+        }
     }
 
     private async Task LoadUntrackedAsync(string relPath)
@@ -342,12 +348,13 @@ public partial class GitDiffView : UserControl
         }
     }
 
-    /// <summary>스트립 클릭 → 해당 비율 위치로 스크롤.</summary>
+    /// <summary>스트립 클릭 → 해당 비율 위치의 행으로 스크롤.</summary>
     private void MarkerStrip_Click(object sender, MouseButtonEventArgs e)
     {
         var h = MarkerStrip.ActualHeight;
-        if (h <= 0) return;
+        if (h <= 0 || _diff.Count == 0) return;
         var frac = Math.Clamp(e.GetPosition(MarkerStrip).Y / h, 0, 1);
-        DiffScroller.ScrollToVerticalOffset(frac * DiffScroller.ScrollableHeight);
+        var idx = Math.Clamp((int)Math.Round(frac * (_diff.Count - 1)), 0, _diff.Count - 1);
+        DiffList.ScrollIntoView(_diff[idx]);
     }
 }
