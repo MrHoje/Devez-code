@@ -76,6 +76,12 @@
                                           Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem Header="아이콘 바꾸기" Tag="{Binding}" Click="ChangeProjectIcon_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPalette}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
                             <Separator/>
                             <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="#ef4444">
                                 <MenuItem.Icon>
@@ -92,8 +98,10 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconBox}" Width="15" Height="15"
-                              Stroke="{DynamicResource RailIconBrush}" VerticalAlignment="Center"/>
+                              Data="{Binding IconKey, Converter={x:Static models:ProjectIconConverter.Instance}}"
+                              Width="15" Height="15"
+                              Stroke="{Binding IconColor, Converter={x:Static models:ProjectIconColorConverter.Instance}}"
+                              VerticalAlignment="Center"/>
                         <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="9,0,0,0"
                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                    FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
@@ -104,8 +112,8 @@
                               Stroke="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
                     </Grid>
                 </Border>
-                <!-- 들여쓰기 + 좌측 세로 가이드선 (devez 방식) -->
-                <Border Margin="20,1,0,4"
+                <!-- 들여쓰기 + 좌측 세로 가이드선. 세로선 x를 프로젝트 아이콘 x중심(17.5px)에 맞춤 (devez 방식) -->
+                <Border Margin="17,1,0,4"
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="1,0,0,0"
                         Visibility="{Binding IsExpanded, Converter={x:Static models:BoolVisibilityConverter.Instance}}">

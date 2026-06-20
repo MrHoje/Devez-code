@@ -29,6 +29,7 @@ public partial class MainWindow : Window
         Sidebar.ProjectSelected        += SelectProject;
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
+        Sidebar.ProjectIconChangeRequested += ChangeProjectIcon;
         Sidebar.SessionSelected        += OpenSession;
         Sidebar.SessionDeleteRequested += DeleteSession;
 
@@ -73,6 +74,15 @@ public partial class MainWindow : Window
     {
         foreach (var p in _projects) p.IsSelected = ReferenceEquals(p, proj);
         FileExplorer.ShowDirectory(proj.Path);
+    }
+
+    private void ChangeProjectIcon(ProjectItem proj)
+    {
+        var result = IconPickerDialog.Show(proj.IconKey, proj.IconColor, proj.Name);
+        if (result is not { } r) return;
+        proj.IconKey = r.Icon ?? "IconBox";
+        proj.IconColor = r.Color;
+        WorkspaceStore.Save(_projects);
     }
 
     private void DeleteProject(ProjectItem proj)

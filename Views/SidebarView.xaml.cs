@@ -15,6 +15,7 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectSelected;
     public event Action<ProjectItem>? AddSessionRequested;
     public event Action<ProjectItem>? ProjectDeleteRequested;
+    public event Action<ProjectItem>? ProjectIconChangeRequested;
     public event Action<SessionItem>? SessionSelected;
     public event Action<SessionItem>? SessionDeleteRequested;
 
@@ -44,6 +45,11 @@ public partial class SidebarView : UserControl
     private void ProjectDelete_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectItem>(sender) is { } p) ProjectDeleteRequested?.Invoke(p);
+    }
+
+    private void ChangeProjectIcon_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) ProjectIconChangeRequested?.Invoke(p);
     }
 
     private void Session_Click(object sender, MouseButtonEventArgs e)

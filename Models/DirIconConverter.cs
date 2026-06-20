@@ -20,6 +20,43 @@ public sealed class DirIconConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>프로젝트 아이콘 키(string) → PathGeometry. 없으면 IconBox 폴백.</summary>
+public sealed class ProjectIconConverter : IValueConverter
+{
+    public static readonly ProjectIconConverter Instance = new();
+
+    public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var key = value as string;
+        if (string.IsNullOrEmpty(key)) key = "IconBox";
+        return (Application.Current?.TryFindResource(key)
+                ?? Application.Current?.TryFindResource("IconBox")) as Geometry;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>프로젝트 아이콘 색상 hex(string?) → Brush. null/빈값이면 테마 RailIconBrush.</summary>
+public sealed class ProjectIconColorConverter : IValueConverter
+{
+    public static readonly ProjectIconColorConverter Instance = new();
+
+    public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is string hex && !string.IsNullOrEmpty(hex))
+        {
+            try { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
+            catch { /* 잘못된 hex → 기본색 */ }
+        }
+        return Application.Current?.TryFindResource("RailIconBrush") as Brush
+               ?? System.Windows.Media.Brushes.Gray;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>bool → Visibility (true=Visible, false=Collapsed).</summary>
 public sealed class BoolVisibilityConverter : IValueConverter
 {
