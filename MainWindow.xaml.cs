@@ -683,10 +683,12 @@ public partial class MainWindow : Window
     private void SelectProject(ProjectItem proj)
     {
         SetActiveProject(proj);
+        // 프로젝트 헤더 클릭 진입 — Hidden 플래그를 보존한다 (unHide=false).
+        // 같은 활성 세션이 이 프로젝트에 있으면 그대로, 없으면 첫 세션을 타겟으로.
         var target = (_activeSession != null && proj.Sessions.Contains(_activeSession))
             ? _activeSession
             : proj.Sessions.FirstOrDefault();
-        if (target != null) ActivateSession(target);
+        if (target != null) ActivateSession(target, unHide: false);
         else ClearActiveSession();
         // 나머지 세션은 미리 띄우지 않는다(과거엔 모두 백그라운드 spawn → 프로젝트 선택 시 CPU 폭증).
         // 마지막 보던 세션 하나만 활성화하고, 다른 세션은 사용자가 탭/사이드바에서 클릭할 때 lazy 생성된다.
@@ -794,16 +796,17 @@ public partial class MainWindow : Window
         ActivateSession(session);
     }
 
-    /// <summary>세션 활성화 — 선택 표시 + 중앙 터미널 표시(claude 실행).</summary>
-    private void ActivateSession(SessionItem session)
+    /// <summary>세션 활성화 — 선택 표시 + 중앙 터미널 표시(claude 실행).
+    /// unHide=false 이면 탭 X 로 숨겨둔 세션이라도 Hidden 플래그를 건드리지 않는다
+    /// (프로젝트 헤더 클릭으로 진입할 때 — 마지막 활성 세션이 숨겨져 있어도 그대로 유지).</summary>
+    private void ActivateSession(SessionItem session, bool unHide = true)
     {
         var parent = ParentOf(session);
         if (parent == null) return;
 
-        // 탭 X 로 숨겨둔 세션을 사이드바에서 다시 선택하면 탭도 복귀. WorkspaceModels.cs 의
-        // "프로젝트가 다시 선택되면 자동으로 false 로 리셋" 디자인을 사이드바 클릭에도 동일 적용 —
-        // 사이드바 HiddenIcon→StatusDot 트리거도 이 플래그 하나에 연동된다.
-        session.Hidden = false;
+        // 사이드바 세션 클릭 (unHide=true): 탭 X 로 숨겨둔 세션을 다시 선택하면 탭도 복귀.
+        // WorkspaceModels.cs 의 HiddenIcon→StatusDot 트리거도 이 플래그 하나에 연동된다.
+        if (unHide) session.Hidden = false;
 
         // claude 가 항상 프로젝트 디렉터리에서 실행되도록 매핑 보장
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
