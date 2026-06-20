@@ -12,8 +12,6 @@ public static class WorkspaceStore
     private sealed class ProjectDto
     {
         public string Path { get; set; } = "";
-        public string? Icon { get; set; }
-        public string? Color { get; set; }
         public List<SessionDto> Sessions { get; set; } = new();
     }
     private sealed class WorkspaceDto { public List<ProjectDto> Projects { get; set; } = new(); }
@@ -32,8 +30,6 @@ public static class WorkspaceStore
             foreach (var p in dto.Projects)
             {
                 var proj = ProjectItem.FromPath(p.Path);
-                if (!string.IsNullOrEmpty(p.Icon)) proj.IconKey = p.Icon;
-                proj.IconColor = p.Color;
                 foreach (var s in p.Sessions)
                     proj.Sessions.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "" });
                 result.Add(proj);
@@ -52,8 +48,6 @@ public static class WorkspaceStore
                 Projects = projects.Select(p => new ProjectDto
                 {
                     Path = p.Path,
-                    Icon = p.IconKey,
-                    Color = p.IconColor,
                     Sessions = p.Sessions.Select(s => new SessionDto
                     {
                         Id = s.Id, Name = s.Name,

@@ -23,7 +23,6 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectSelected;
     public event Action<ProjectItem>? AddSessionRequested;
     public event Action<ProjectItem>? ProjectDeleteRequested;
-    public event Action<ProjectItem>? ProjectIconChangeRequested;
     /// <summary>드래그로 프로젝트 순서가 바뀐 뒤 발생(영속 저장용).</summary>
     public event Action? ProjectsReordered;
     /// <summary>드래그로 특정 프로젝트의 세션 순서가 바뀐 뒤 발생(탭 동기화 + 영속용).</summary>
@@ -122,11 +121,6 @@ public partial class SidebarView : UserControl
     private void ProjectDelete_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectItem>(sender) is { } p) ProjectDeleteRequested?.Invoke(p);
-    }
-
-    private void ChangeProjectIcon_Click(object sender, RoutedEventArgs e)
-    {
-        if (ItemOf<ProjectItem>(sender) is { } p) ProjectIconChangeRequested?.Invoke(p);
     }
 
     private void SessionDelete_Click(object sender, RoutedEventArgs e)

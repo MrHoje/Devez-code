@@ -63,14 +63,6 @@ public sealed class ProjectItem : NotifyBase
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 
-    /// <summary>프로젝트 아이콘 리소스 키(Icons.xaml의 IconXxx). 기본값 IconBox.</summary>
-    private string _iconKey = "IconBox";
-    public string IconKey { get => _iconKey; set => Set(ref _iconKey, string.IsNullOrEmpty(value) ? "IconBox" : value); }
-
-    /// <summary>아이콘 색상 hex(#rrggbb). null/빈값이면 테마 기본색.</summary>
-    private string? _iconColor;
-    public string? IconColor { get => _iconColor; set => Set(ref _iconColor, string.IsNullOrEmpty(value) ? null : value); }
-
     public ObservableCollection<SessionItem> Sessions { get; } = new();
 
     public static ProjectItem FromPath(string path)

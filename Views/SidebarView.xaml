@@ -173,12 +173,6 @@
                                               Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
-                                <MenuItem Header="아이콘 바꾸기" Tag="{Binding}" Click="ChangeProjectIcon_Click">
-                                    <MenuItem.Icon>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPalette}"
-                                              Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
-                                    </MenuItem.Icon>
-                                </MenuItem>
                                 <Separator/>
                                 <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="{DynamicResource DangerBrush}">
                                     <MenuItem.Icon>
@@ -190,22 +184,16 @@
                         </Border.ContextMenu>
                         <Grid Margin="12,9,8,9">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
-                                  Data="{Binding IconKey, Converter={x:Static models:ProjectIconConverter.Instance}}"
-                                  Width="15" Height="15"
-                                  Stroke="{Binding IconColor, Converter={x:Static models:ProjectIconColorConverter.Instance}}"
-                                  VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="9,0,0,0"
+                            <TextBlock Grid.Column="0" Text="{Binding Name}"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                        FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
                             <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용) -->
-                            <Button Grid.Column="2" Margin="6,0,0,0" Tag="{Binding}"
+                            <Button Grid.Column="1" Margin="6,0,0,0" Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
@@ -229,7 +217,7 @@
                                 </Button.Template>
                             </Button>
                             <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움 -->
-                            <Button Grid.Column="3" Margin="2,0,0,0" Tag="{Binding}"
+                            <Button Grid.Column="2" Margin="2,0,0,0" Tag="{Binding}"
                                     Click="ProjectMenu_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
