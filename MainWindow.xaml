@@ -63,9 +63,11 @@
                 <!-- 앱 이름(왼쪽 고정) -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0"
                             HorizontalAlignment="Left">
-                    <!-- 로고+타이틀 (devez 정합): Height=34, 17pt Bold BrunoAceSC -->
+                    <!-- 로고+타이틀 (devez 정합): 보이는 그림 크기를 devez(≈21px)에 맞춤.
+                         DevezCode logo.png 는 캔버스 채움률(77%)이 devez(62%)보다 커서
+                         같은 Height 면 더 크게 보이므로 Height=27 로 보정. 17pt Bold BrunoAceSC -->
                     <Image Source="pack://application:,,,/Resources/Logos/logo.png"
-                           Height="34" Stretch="Uniform"
+                           Height="27" Stretch="Uniform"
                            RenderOptions.BitmapScalingMode="HighQuality"
                            SnapsToDevicePixels="True"
                            VerticalAlignment="Center"

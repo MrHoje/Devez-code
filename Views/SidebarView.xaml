@@ -79,7 +79,7 @@
                         </MenuItem>
                     </ContextMenu>
                 </Border.ContextMenu>
-                <Grid Margin="12,4,12,4">
+                <Grid Margin="12,5,12,5">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
