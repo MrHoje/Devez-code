@@ -802,9 +802,6 @@ public partial class MainWindow : Window
         UpdateSelectedTabSeam(); // 활성 세션 없음 → seam 숨김
     }
 
-    /// <summary>탭 닫기(X) = 세션 삭제 — 프로젝트 단위 탭 모델에선 탭이 곧 세션이므로 제거한다.</summary>
-    private void CloseTab(SessionItem session) => DeleteSession(session);
-
     /// <summary>세션 이름 변경 — 우클릭 메뉴. devez PromptDialog 정합.</summary>
     private void RenameSession(SessionItem session)
     {
@@ -885,9 +882,15 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement { DataContext: SessionItem s }) OpenSession(s);
     }
 
-    private void TabClose_Click(object sender, RoutedEventArgs e)
+    // ── 세션 헤더 액션 버튼: 우클릭 메뉴와 동일 동작 (추적 중지 / 종료) ──
+    private void SessionHeaderStopTracking_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: SessionItem s }) CloseTab(s);
+        if (_activeSession != null) StopTrackingSession(_activeSession);
+    }
+
+    private void SessionHeaderDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeSession != null) DeleteSession(_activeSession);
     }
 
     // ── 탭 드래그 순서변경 (가로) + 사이드바 세션 순서 양방향 동기화 ──────────

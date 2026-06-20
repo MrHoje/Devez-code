@@ -205,11 +205,10 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <Grid Margin="12,0,8,0">
+                                            <Grid Margin="12,0,12,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
                                                 <Image Grid.Column="0" Width="14" Height="14" Margin="0,0,7,0"
                                                        VerticalAlignment="Center"
@@ -219,24 +218,6 @@
                                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                                            Foreground="{DynamicResource TextMutedBrush}"/>
-                                                <Button Grid.Column="2" Width="16" Height="16" Margin="8,0,0,0"
-                                                        Click="TabClose_Click" Background="Transparent" BorderThickness="0"
-                                                        Cursor="Hand" IsTabStop="False" FocusVisualStyle="{x:Null}" ToolTip="탭 닫기">
-                                                    <Button.Template>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5">
-                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Button.Template>
-                                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
-                                                          Width="9" Height="9" Stroke="{DynamicResource TextMutedBrush}"/>
-                                                </Button>
                                             </Grid>
                                         </Border>
 
@@ -316,17 +297,69 @@
                             Visibility="Collapsed" IsHitTestVisible="False" Panel.ZIndex="100"/>
 
                     <!-- 세션 타이틀 영역 (devez HeaderBar 정합): 탭 아래·터미널 위. PanelBrush 라
-                         선택 탭과 매끄럽게 이어진다. 좌측 아이콘 + 세션 제목 + 프로젝트 경로. -->
+                         선택 탭과 매끄럽게 이어진다. 좌측 제목 + 우측 액션 버튼(추적 중지 / 세션 종료). -->
                     <Border x:Name="SessionHeaderBar" Grid.Row="1" Height="45"
                             Background="{DynamicResource PanelBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                             Visibility="Collapsed">
-                        <!-- 마지막 보낸 메시지(폭 넘치면 …로 잘림, 호버 시 전체 툴팁) -->
-                        <TextBlock x:Name="SessionHeaderTitle"
-                                   VerticalAlignment="Center" Margin="16,0,12,0"
-                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   TextTrimming="CharacterEllipsis"/>
+                        <Grid Margin="16,0,8,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <!-- 마지막 보낸 메시지(폭 넘치면 …로 잘림, 호버 시 전체 툴팁) -->
+                            <TextBlock x:Name="SessionHeaderTitle" Grid.Column="0"
+                                       VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <!-- 헤더 액션: 세션 추적 중지 / 세션 종료. 우클릭 메뉴와 동일한 동작. -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                                <Button Click="SessionHeaderStopTracking_Click" Cursor="Hand"
+                                        IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                        ToolTip="세션 추적 중지 (대화 기록은 디스크에 보존)"
+                                        Width="28" Height="28">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                                                <Path Style="{StaticResource LucideButtonIcon}"
+                                                      Data="{StaticResource IconEyeOff}"
+                                                      Width="14" Height="14"
+                                                      Stroke="{DynamicResource TextMutedBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                                <Button Click="SessionHeaderDelete_Click" Cursor="Hand"
+                                        IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                        ToolTip="세션 종료 (대화 기록까지 영구 삭제)"
+                                        Width="28" Height="28" Margin="4,0,0,0">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                                                <Path x:Name="Icon" Style="{StaticResource LucideButtonIcon}"
+                                                      Data="{StaticResource IconTrash2}"
+                                                      Width="14" Height="14"
+                                                      Stroke="{DynamicResource TextMutedBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                    <Setter TargetName="Icon" Property="Stroke" Value="#ef4444"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- Terminal host + empty-state -->
