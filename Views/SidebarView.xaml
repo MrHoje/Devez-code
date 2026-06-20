@@ -10,7 +10,7 @@
         <Style x:Key="TreeRow" TargetType="Border">
             <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Cursor" Value="Arrow"/>
             <Style.Triggers>
                 <!-- 호버: 부모 프로젝트가 활성일 때만 -->
                 <MultiDataTrigger>
@@ -170,7 +170,7 @@
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
             <Border Style="{StaticResource ProjectGroup}" Margin="0,1,0,4">
             <StackPanel>
-                <Border Background="Transparent" Cursor="Hand" CornerRadius="8"
+                <Border Background="Transparent" Cursor="Arrow" CornerRadius="8"
                         MouseLeftButtonUp="Project_Click"
                         PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
                     <Border.ContextMenu>
@@ -214,7 +214,7 @@
                                    Foreground="{DynamicResource TextBrush}"/>
                         <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용) -->
                         <Button Grid.Column="2" Margin="6,0,0,0" Tag="{Binding}"
-                                Click="ProjectChevron_Click" Cursor="Hand"
+                                Click="ProjectChevron_Click" Cursor="Arrow"
                                 Background="Transparent" BorderThickness="0"
                                 IsTabStop="False" FocusVisualStyle="{x:Null}"
                                 ToolTip="펼치기 / 접기">
@@ -238,7 +238,7 @@
                         </Button>
                         <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움 -->
                         <Button Grid.Column="3" Margin="2,0,0,0" Tag="{Binding}"
-                                Click="ProjectMenu_Click" Cursor="Hand"
+                                Click="ProjectMenu_Click" Cursor="Arrow"
                                 Background="Transparent" BorderThickness="0"
                                 IsTabStop="False" FocusVisualStyle="{x:Null}"
                                 ToolTip="메뉴">

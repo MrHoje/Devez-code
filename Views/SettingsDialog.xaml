@@ -20,7 +20,7 @@
             <Setter Property="Padding" Value="12,10"/>
             <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
             <Setter Property="Margin" Value="0,2"/>
-            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -181,7 +181,7 @@
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
                                             Background="{DynamicResource PanelBrush}"
                                             CornerRadius="10" Margin="0,0,12,0"
-                                            Cursor="Hand" MouseLeftButtonDown="ThemeCard_Click">
+                                            Cursor="Arrow" MouseLeftButtonDown="ThemeCard_Click">
                                         <Grid>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="*"/>
@@ -234,7 +234,7 @@
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
                                             Background="{DynamicResource PanelBrush}"
                                             CornerRadius="10" Margin="0,0,12,0"
-                                            Cursor="Hand" MouseLeftButtonDown="ThemeCard_Click">
+                                            Cursor="Arrow" MouseLeftButtonDown="ThemeCard_Click">
                                         <Grid>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="*"/>
@@ -287,7 +287,7 @@
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
                                             Background="{DynamicResource PanelBrush}"
                                             CornerRadius="10" Margin="0"
-                                            Cursor="Hand" MouseLeftButtonDown="ThemeCard_Click">
+                                            Cursor="Arrow" MouseLeftButtonDown="ThemeCard_Click">
                                         <Grid>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="*"/>
@@ -345,7 +345,7 @@
                                     <Border x:Name="FontCard_Small" Tag="0" Width="120" Height="56"
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
                                             Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0,0,10,0"
-                                            Cursor="Hand" MouseLeftButtonDown="FontSizeCard_Click">
+                                            Cursor="Arrow" MouseLeftButtonDown="FontSizeCard_Click">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Grid Width="14" Height="14" Margin="0,0,8,0">
                                                 <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
@@ -359,7 +359,7 @@
                                     <Border x:Name="FontCard_Large" Tag="1" Width="120" Height="56"
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
                                             Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0,0,10,0"
-                                            Cursor="Hand" MouseLeftButtonDown="FontSizeCard_Click">
+                                            Cursor="Arrow" MouseLeftButtonDown="FontSizeCard_Click">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Grid Width="14" Height="14" Margin="0,0,8,0">
                                                 <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>

@@ -739,7 +739,7 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
         <Setter Property="Padding" Value="9,4"/>
-        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Cursor" Value="Arrow"/>
         <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
         <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
         <Setter Property="FontSize" Value="{DynamicResource Fs12}"/>
@@ -1383,7 +1383,7 @@
         <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Cursor" Value="Arrow"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -1445,7 +1445,7 @@
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Width" Value="22"/>
         <Setter Property="Height" Value="22"/>
-        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Cursor" Value="Arrow"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>

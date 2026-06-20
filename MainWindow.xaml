@@ -41,12 +41,12 @@
                                    Text="세션 상태(요청 중 스피너) 연동이 설정되지 않았습니다. 원클릭으로 설정할 수 있어요."/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Button Click="HookSetupBtn_Click" Height="28" Padding="14,0" Cursor="Hand"
+                        <Button Click="HookSetupBtn_Click" Height="28" Padding="14,0" Cursor="Arrow"
                                 Style="{StaticResource PrimaryButton}" FontSize="{DynamicResource Fs12}">
                             <TextBlock Text="설정" Foreground="White"/>
                         </Button>
                         <Button x:Name="HookBannerDismiss" Click="HookBannerDismiss_Click"
-                                Width="30" Height="28" Margin="6,0,0,0" Cursor="Hand"
+                                Width="30" Height="28" Margin="6,0,0,0" Cursor="Arrow"
                                 Style="{StaticResource WinCtrlBtn}" ToolTip="닫기">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
                                   Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
@@ -131,7 +131,7 @@
                                                 <ToggleButton Grid.Column="1" Margin="4,0,6,0" Width="20" Height="20"
                                                               IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
                                                               ClickMode="Press" Background="Transparent" BorderThickness="0"
-                                                              Cursor="Hand" FocusVisualStyle="{x:Null}">
+                                                              Cursor="Arrow" FocusVisualStyle="{x:Null}">
                                                     <ToggleButton.Template>
                                                         <ControlTemplate TargetType="ToggleButton">
                                                             <Border x:Name="Bd2" Background="Transparent" CornerRadius="4">
@@ -202,7 +202,7 @@
                                 Background="{DynamicResource PanelSoftBrush}"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                 MinHeight="32" Padding="12,5" Margin="8,0,0,0"
-                                Cursor="Hand" MouseLeftButtonUp="BranchBubble_Click"
+                                Cursor="Arrow" MouseLeftButtonUp="BranchBubble_Click"
                                 ToolTip="클릭하여 브렌치 새로고침"
                                 VerticalAlignment="Bottom"
                                 Visibility="Collapsed"
@@ -352,7 +352,7 @@
                                                 CornerRadius="14,14,0,0"
                                                 BorderThickness="1,1,1,0"
                                                 BorderBrush="{DynamicResource LineBrush}"
-                                                Cursor="Hand"
+                                                Cursor="Arrow"
                                                 PreviewMouseLeftButtonDown="Tab_PreviewMouseLeftButtonDown"
                                                 MouseLeftButtonUp="Tab_Click">
                                             <!-- 기본 배경은 Style Setter 로 준다(로컬 값으로 주면 WPF 우선순위상
@@ -386,7 +386,7 @@
                                                 <Button Grid.Column="2" Width="16" Height="16" Margin="8,0,0,0"
                                                         Click="TabHide_Click" Tag="{Binding}"
                                                         Background="Transparent" BorderThickness="0"
-                                                        Cursor="Hand" IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                                        Cursor="Arrow" IsTabStop="False" FocusVisualStyle="{x:Null}"
                                                         ToolTip="탭에서 숨기기 (프로젝트를 다시 선택하면 돌아옵니다)">
                                                     <Button.Template>
                                                         <ControlTemplate TargetType="Button">
@@ -502,7 +502,7 @@
                                  보더 있는 텍스트 버튼(devez 정합). 텍스트만 — 아이콘 제거로 글자 wobble 차단.
                                  danger 표시는 Border 의 BorderBrush(빨강)로만 전달. -->
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                                <Button Click="SessionHeaderStopTracking_Click" Cursor="Hand"
+                                <Button Click="SessionHeaderStopTracking_Click" Cursor="Arrow"
                                         IsTabStop="False" FocusVisualStyle="{x:Null}"
                                         ToolTip="세션 추적 중지 (대화 기록은 디스크에 보존)"
                                         Height="28" MinWidth="80">
@@ -528,7 +528,7 @@
                                         </ControlTemplate>
                                     </Button.Template>
                                 </Button>
-                                <Button Click="SessionHeaderDelete_Click" Cursor="Hand"
+                                <Button Click="SessionHeaderDelete_Click" Cursor="Arrow"
                                         IsTabStop="False" FocusVisualStyle="{x:Null}"
                                         ToolTip="세션 종료 (대화 기록까지 영구 삭제)"
                                         Height="28" MinWidth="80" Margin="6,0,0,0">

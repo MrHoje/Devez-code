@@ -24,7 +24,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type models:GitChange}">
                                 <Border x:Name="Row" CornerRadius="6" Background="Transparent"
-                                        Padding="8,5" Margin="0,1" Cursor="Hand"
+                                        Padding="8,5" Margin="0,1" Cursor="Arrow"
                                         MouseLeftButtonUp="Change_Click">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -217,7 +217,7 @@
             <!-- 변경 위치 오버뷰 스트립(스크롤바 옆): 추가=녹색·삭제=빨강·수정=노랑.
                  클릭 시 해당 위치로 스크롤. 마커는 코드에서 그린다. -->
             <Canvas x:Name="MarkerStrip" Grid.Column="1" Width="12"
-                    Background="{DynamicResource PanelBrush}" ClipToBounds="True" Cursor="Hand"
+                    Background="{DynamicResource PanelBrush}" ClipToBounds="True" Cursor="Arrow"
                     ToolTip="변경 위치 — 클릭하면 해당 지점으로 이동"
                     MouseLeftButtonDown="MarkerStrip_Click"
                     SizeChanged="MarkerStrip_SizeChanged"/>
