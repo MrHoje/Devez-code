@@ -297,7 +297,7 @@
         <!-- Search row — devez 정합 -->
         <Border Grid.Row="1"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <Border Margin="6,0,6,0" Height="44" Padding="0,6"
+            <Border Margin="6,0,6,0" Height="43" Padding="0,6"
                     Background="{DynamicResource PanelSoftBrush}"
                     BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="1" CornerRadius="8">
@@ -311,9 +311,9 @@
                           Stroke="{DynamicResource TextMutedBrush}"
                           Width="13" Height="13"
                           Margin="10,0,0,0" VerticalAlignment="Center"/>
-                    <Grid Grid.Column="1">
+                    <Grid Grid.Column="1" VerticalAlignment="Stretch">
                         <TextBox x:Name="SidebarSearchBox"
-                                 Height="22" VerticalAlignment="Center"
+                                 Height="20" MinHeight="0" VerticalAlignment="Center"
                                  Margin="6,0,0,0" Padding="0,0,10,0" VerticalContentAlignment="Center"
                                  Background="Transparent" BorderThickness="0"
                                  FocusVisualStyle="{x:Null}"
