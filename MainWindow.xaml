@@ -396,7 +396,6 @@
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#ef4444"/>
                                                 </Trigger>
                                                 <Trigger Property="IsPressed" Value="True">
                                                     <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
