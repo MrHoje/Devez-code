@@ -119,7 +119,8 @@
                             ToolTip="메뉴">
                         <Button.Style>
                             <Style TargetType="Button">
-                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <!-- Hidden 으로 공간만 예약(Collapsed 아님) → 호버 시 row 사이즈가 변하지 않는다 -->
+                                <Setter Property="Visibility" Value="Hidden"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsMouseOver, ElementName=SessionRow}" Value="True">
                                         <Setter Property="Visibility" Value="Visible"/>
