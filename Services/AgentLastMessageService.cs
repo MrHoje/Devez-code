@@ -84,25 +84,40 @@ public sealed class AgentLastMessageService : IDisposable
         {
             // 1) 세션 목록에서 cwd 매칭 세션 ID 찾기
             var listOutput = RunCommand("opencode", "session list");
-            if (string.IsNullOrEmpty(listOutput)) return;
+            DebugLog($"[scan] key={key.WorkingDir}");
+            if (string.IsNullOrEmpty(listOutput))
+            {
+                DebugLog("[scan] session list empty");
+                return;
+            }
+            // 첫 줄 + 잘린 본문만 로깅 (긴 출력 노이즈 방지)
+            var firstLines = string.Join("\\n", listOutput.Split('\n').Take(3));
+            DebugLog($"[scan] session list (first 3 lines): {firstLines}");
+
             string? matchedSessionId = null;
             string? matchedTitle = null;
+            string? matchedDirField = null;
             foreach (var line in listOutput.Split('\n'))
             {
                 // 기본 포맷: "ses_xxx  Title text  updated"
                 // session ID 는 ses_ 접두사 (24자 hex-ish)
                 var trimmed = line.TrimStart();
                 if (!trimmed.StartsWith("ses_")) continue;
+                // 공백/탭이 없으면(ID만 있는 줄) 줄 끝까지가 ID. 이전엔 idEnd<0 로 continue → 매칭 실패.
                 var idEnd = trimmed.IndexOfAny(new[] { ' ', '\t' });
-                if (idEnd < 0) continue;
-                var sid = trimmed.Substring(0, idEnd);
+                var sid = idEnd < 0 ? trimmed : trimmed.Substring(0, idEnd);
                 // 해당 세션 export 해서 cwd 확인
                 var exported = RunCommand("opencode", $"export {sid}");
-                if (string.IsNullOrEmpty(exported)) continue;
-                if (exported.Contains($"\"directory\": \"{key.WorkingDir.Replace("\\", "\\\\")}\"", StringComparison.OrdinalIgnoreCase) ||
-                    exported.Contains($"\"directory\":\"{key.WorkingDir.Replace("\\", "\\\\")}\"", StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(exported)) { DebugLog($"[scan] export empty for {sid}"); continue; }
+                // directory 위치가 opencode 버전에 따라 다름:
+                //   - "directory": "..."
+                //   - info.directory / info.worktree.directory
+                //   - 인라인 객체의 다른 필드명
+                // JSON 트리에서 가능한 모든 위치를 순회해 매칭.
+                if (TryMatchWorkingDir(exported, key.WorkingDir, out var dirField))
                 {
                     matchedSessionId = sid;
+                    matchedDirField = dirField;
                     // title 추출 (export JSON 의 info.title)
                     try
                     {
@@ -115,7 +130,12 @@ public sealed class AgentLastMessageService : IDisposable
                     break;
                 }
             }
-            if (matchedSessionId == null) return;
+            if (matchedSessionId == null)
+            {
+                DebugLog($"[scan] no match for {key.WorkingDir}");
+                return;
+            }
+            DebugLog($"[scan] matched {matchedSessionId} via {matchedDirField}");
 
             // 2) 가장 최근 user message 를 export 의 messages 배열에서 추출
             // export 포맷은 messages: [{ info: { role: "user" }, parts: [{ type: "text", text: "..." }] }, ...]
@@ -131,18 +151,9 @@ public sealed class AgentLastMessageService : IDisposable
                     if (msg.TryGetProperty("info", out var info) &&
                         info.TryGetProperty("role", out var r) && r.GetString() == "user")
                     {
-                        if (msg.TryGetProperty("parts", out var parts))
-                        {
-                            foreach (var part in parts.EnumerateArray())
-                            {
-                                if (part.TryGetProperty("type", out var pt) && pt.GetString() == "text" &&
-                                    part.TryGetProperty("text", out var text))
-                                {
-                                    lastUser = text.GetString();
-                                    break;
-                                }
-                            }
-                        }
+                        // parts[].text 또는 content 배열[].text 모두 시도.
+                        lastUser = TryExtractUserText(msg);
+                        if (lastUser == null) lastUser = TryExtractUserText(info);
                         break;
                     }
                 }
@@ -151,6 +162,88 @@ public sealed class AgentLastMessageService : IDisposable
                 _lastSeen[key] = DateTime.UtcNow;
             }
             catch { }
+        }
+        catch (Exception ex) { DebugLog($"[scan] error: {ex.Message}"); }
+    }
+
+    /// <summary>opencode export JSON 에서 workingDir 이 매칭되는 필드 경로를 찾는다.
+    /// 다양한 opencode 버전의 directory 위치(directory, info.directory, info.worktree.directory 등) 호환.</summary>
+    private static bool TryMatchWorkingDir(string json, string workingDir, out string fieldPath)
+    {
+        fieldPath = "";
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return VisitForDir(doc.RootElement, workingDir, "", out fieldPath);
+        }
+        catch { return false; }
+    }
+
+    private static bool VisitForDir(JsonElement el, string target, string path, out string foundPath)
+    {
+        foundPath = "";
+        if (el.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var p in el.EnumerateObject())
+            {
+                // 값이 문자열이고 매칭
+                if (p.Value.ValueKind == JsonValueKind.String &&
+                    string.Equals(p.Value.GetString(), target, StringComparison.OrdinalIgnoreCase) &&
+                    (p.NameEquals("directory") || p.NameEquals("cwd") || p.NameEquals("path") || p.NameEquals("worktree")))
+                {
+                    foundPath = $"{path}.{p.Name}";
+                    return true;
+                }
+                // 객체 재귀
+                if (p.Value.ValueKind == JsonValueKind.Object)
+                {
+                    if (VisitForDir(p.Value, target, $"{path}.{p.Name}", out foundPath)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// <summary>user 메시지 객체에서 텍스트 추출. parts[].text 또는 content 배열[].text 모두 시도.</summary>
+    private static string? TryExtractUserText(JsonElement msgOrInfo)
+    {
+        // parts[].type==="text".text
+        if (msgOrInfo.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var part in parts.EnumerateArray())
+            {
+                if (part.TryGetProperty("type", out var pt) && pt.GetString() == "text" &&
+                    part.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+                    return text.GetString();
+            }
+        }
+        // content[].type==="text"|"input_text".text
+        if (msgOrInfo.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var c in content.EnumerateArray())
+            {
+                if (c.TryGetProperty("type", out var ct) &&
+                    (ct.GetString() is "text" or "input_text") &&
+                    c.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
+                    return t.GetString();
+            }
+        }
+        // content 가 문자열인 경우
+        if (msgOrInfo.TryGetProperty("content", out var cs) && cs.ValueKind == JsonValueKind.String)
+            return cs.GetString();
+        return null;
+    }
+
+    private static void DebugLog(string msg)
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "opencode");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "agent-debug.log"),
+                $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\n");
         }
         catch { }
     }
