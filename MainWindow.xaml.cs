@@ -25,6 +25,8 @@ public partial class MainWindow : Window
     private readonly CodexHookService _codexHook = new();
     // 비-Claude 비-codex (opencode/gjc) 의 last prompt 추적. codex 는 위 훅 서비스가 처리.
     private readonly AgentLastMessageService _agentLastMsg = new();
+    // opencode — 플러그인이 lastmsg\<room>.txt 에 저장한 user prompt 를 FileSystemWatcher 로 즉시 반영 (claude 와 동일 패턴).
+    private readonly OpenCodeLastMessageService _opencodeLastMsg = new();
 
     /// <summary>현재 로딩 스피너를 띄운 세션. claude 화면이 뜨거나(=TerminalReady) 타임아웃에 해제.</summary>
     private string? _loadingRoomId;
@@ -95,6 +97,16 @@ public partial class MainWindow : Window
                 if (anyActive) UpdateEmptyState();
             });
 
+        // opencode — 플러그인이 떨군 lastmsg 파일을 즉시 반영(claude 와 동일 패턴, 3초 폴링 대기 X).
+        _opencodeLastMsg.MessageChanged += (roomId, msg) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s == null) return;
+                s.LastMessage = msg;
+                if (ReferenceEquals(s, _activeSession)) UpdateEmptyState();
+            });
+
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
         _codexHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
@@ -145,8 +157,10 @@ public partial class MainWindow : Window
             CodexHookInstaller.InstallHooksJson();
             _codexHook.Start();
             // opencode 플러그인 — 매 시작 시 ~/.config\opencode\plugin\devezcode-room-tracker.js 갱신.
-            // session.created/updated 이벤트에서 roomId 별 session_id 를 파일에 기록 → 다음 실행 때 --session <id> 로 복원.
+            // session.created/updated → sessions\<room>.txt (세션 ID 복원용)
+            // message.updated( role=user ) → lastmsg\<room>.txt (헤더 타이틀 즉시 표시)
             OpenCodePluginInstaller.EnsureInstalled();
+            _opencodeLastMsg.Start();
             _agentLastMsg.Start();
             RestoreLastSession();
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
@@ -166,6 +180,7 @@ public partial class MainWindow : Window
             _sessionBusy.Dispose();
             _sessionLastMsg.Dispose();
             _codexHook.Dispose();
+            _opencodeLastMsg.Dispose();
             _agentLastMsg.Dispose();
             FileExplorer.DisposeBrowser();
         };
