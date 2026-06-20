@@ -13,6 +13,8 @@ public static class SettingsService
     private sealed class SettingsData
     {
         public int TerminalFontSizePt { get; set; } = 0;
+        // 앱 전체 글꼴 크기 단계(devez 이식). 0=작게(기본), 1=크게(+2px). App.SetFontScale 에 전달.
+        public int FontScale { get; set; } = 0;
         // 헤더 성능 모니터(CPU/RAM) 칩 표시 여부. 로컬 전용(DB 동기화 없음).
         public bool ShowPerfMonitorBar { get; set; } = true;
         // 좌·우 패널 접힘 상태 + 펼침 시 복원 폭. 로컬 전용.
@@ -78,6 +80,10 @@ public static class SettingsService
     // ── 터미널 폰트 크기 ──────────────────────────────────────────
     public static int LoadTerminalFontSizePt() => Current.TerminalFontSizePt;
     public static void SaveTerminalFontSizePt(int pt) { Current.TerminalFontSizePt = pt; Save(); }
+
+    // ── 앱 전체 글꼴 크기 단계 (devez 이식: 0=작게, 1=크게) ───────
+    public static int LoadFontScale() => Current.FontScale;
+    public static void SaveFontScale(int v) { Current.FontScale = v; Save(); }
 
     // ── 헤더 성능 모니터 칩 표시 ─────────────────────────────────
     public static bool LoadShowPerfMonitorBar() => Current.ShowPerfMonitorBar;

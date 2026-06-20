@@ -282,6 +282,9 @@
     <PathGeometry x:Key="IconPalette"
         Figures="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z M13.5 8a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z M17.5 11a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z M6.5 12a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z M8.5 7a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z"/>
 
+    <PathGeometry x:Key="IconType"
+        Figures="M4 7V4h16v3 M9 20h6 M12 4v16"/>
+
     <PathGeometry x:Key="IconSliders"
         Figures="M4 21V14 M4 10V3 M12 21V12 M12 8V3 M20 21V16 M20 12V3 M1 14h6 M9 8h6 M17 16h6"/>
 
