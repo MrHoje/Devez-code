@@ -15,6 +15,9 @@ public partial class GitDiffView : UserControl
     public GitDiffView()
     {
         InitializeComponent();
+        // 헤더는 본문과 같은 컬럼을 쓰되, 본문 우측의 세로 스크롤바 폭만큼 안쪽 여백을 줘서
+        // 헤더 세퍼레이터(수정 전|수정 후)가 본문 세퍼레이터와 정확히 정렬되게 한다.
+        DiffHeaderInner.Margin = new Thickness(0, 0, SystemParameters.VerticalScrollBarWidth, 0);
         _diffFontSize = BaseFontSizeFor(SettingsService.LoadFontScale());
         DiffList.FontSize = _diffFontSize;
         // 전역 글꼴 단계(작게/크게)에 연동. 사용자가 Ctrl+휠로 따로 조절하면 그 값을 유지한다.
@@ -258,9 +261,10 @@ public partial class GitDiffView : UserControl
 
             if (line.StartsWith("@@", StringComparison.Ordinal))
             {
+                // @@ -a,b +c,d @@ 머리글은 줄번호만 파싱하고 화면에는 표시하지 않는다
+                // (FullContext 로 파일 전체가 한 hunk 라 라인 수 표시가 불필요).
                 Flush();
                 (oldLn, newLn) = ParseHunkHeader(line);
-                AddHunkRow(line); total++;
                 continue;
             }
             // 파일 머리글(diff/index/--- /+++ /new file …)은 side-by-side 본문에서 생략.

@@ -75,18 +75,24 @@
                 Background="{DynamicResource BgBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
             <Grid>
+            <Grid.ColumnDefinitions>
+                <!-- 본문(ListBox)·헤더가 함께 차지하는 영역 -->
+                <ColumnDefinition Width="*"/>
+                <!-- 변경 위치 오버뷰 스트립(12px) -->
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- diff 머리글: 좌/우 라벨. 콘텐츠(46,*,1,46,*) 와 동일 폭으로 맞추고 라벨도
-                 콘텐츠 텍스트의 시작 위치(줄번호 46px + 패딩 2px = 48px)에 정렬해
-                 세로 세퍼레이터와 라벨이 본문과 어긋나지 않게 한다. -->
-            <Border x:Name="DiffHeader" Grid.Row="0" Visibility="Collapsed"
+            <!-- diff 머리글: 좌/우 라벨. 본문 ListBox 와 같은 컬럼(0)에 두고, 내부 Grid 우측에
+                 스크롤바 폭만큼 여백(코드에서 설정)을 줘서 헤더 세퍼레이터가 본문 세퍼레이터와
+                 정확히 정렬되게 한다. 라벨도 콘텐츠 텍스트 시작 위치(줄번호 46px)에 맞춘다. -->
+            <Border x:Name="DiffHeader" Grid.Row="0" Grid.Column="0" Visibility="Collapsed"
                     Background="{DynamicResource PanelBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                <Grid>
+                <Grid x:Name="DiffHeaderInner">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="46"/>
                         <ColumnDefinition Width="*"/>
@@ -105,20 +111,16 @@
                 </Grid>
             </Border>
 
-            <!-- diff 본문 + 변경 위치 오버뷰 스트립 -->
-            <Grid Grid.Row="1">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
+            <!-- diff 본문. 헤더와 같은 컬럼(0)에 둬서 폭이 정확히 일치한다.
+                 세로 스크롤바는 항상 표시(Visible)해, 헤더 우측 여백(스크롤바 폭)과 맞물려
+                 헤더·본문 세퍼레이터가 늘 정렬되도록 한다. -->
             <!-- Ctrl+휠 로 폰트 크기 조절. 라인 텍스트는 DiffList.FontSize 를 상속.
                  ListBox 는 가상화를 기본 지원(픽셀 단위)하므로 큰 파일도 화면 분량만 렌더한다. -->
-            <ListBox x:Name="DiffList" Grid.Column="0"
+            <ListBox x:Name="DiffList" Grid.Row="1" Grid.Column="0"
                      Background="Transparent" BorderThickness="0"
                      Padding="0" HorizontalContentAlignment="Stretch"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Visible"
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.VirtualizationMode="Recycling"
                      VirtualizingPanel.ScrollUnit="Pixel"
@@ -216,14 +218,13 @@
 
             <!-- 변경 위치 오버뷰 스트립(스크롤바 옆): 추가=녹색·삭제=빨강·수정=노랑.
                  클릭 시 해당 위치로 스크롤. 마커는 코드에서 그린다. -->
-            <Canvas x:Name="MarkerStrip" Grid.Column="1" Width="12"
+            <Canvas x:Name="MarkerStrip" Grid.Row="1" Grid.Column="1" Width="12"
                     Background="{DynamicResource PanelBrush}" ClipToBounds="True" Cursor="Arrow"
                     ToolTip="변경 위치 — 클릭하면 해당 지점으로 이동"
                     MouseLeftButtonDown="MarkerStrip_Click"
                     SizeChanged="MarkerStrip_SizeChanged"/>
-            </Grid>
 
-            <TextBlock x:Name="DiffHint" Grid.Row="1" Visibility="Collapsed"
+            <TextBlock x:Name="DiffHint" Grid.Row="1" Grid.Column="0" Visibility="Collapsed"
                        VerticalAlignment="Center" HorizontalAlignment="Center"
                        Text="변경 파일을 선택하면 전체 코드 비교가 표시됩니다."
                        FontSize="{DynamicResource Fs12}"

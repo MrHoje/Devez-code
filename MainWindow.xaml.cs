@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using DevezCode.Models;
 using DevezCode.Services;
 using DevezCode.Services.Terminal;
@@ -28,7 +30,6 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
-        StateChanged += (_, _) => UpdateMaximizeMargin();
 
         _projects = WorkspaceStore.Load();
         Sidebar.Projects = _projects;
@@ -1343,10 +1344,65 @@ public partial class MainWindow : Window
     // ── 타이틀바 ──────────────────────────────────────────────────
     private void MinBtn_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
-    // 최대화 시 7px 여백 (WPF 최대화 오버플로 보정 — devez ImageViewerDialog 정합)
-    private void UpdateMaximizeMargin()
-        => RootGrid.Margin = WindowState == WindowState.Maximized
-            ? new Thickness(7) : new Thickness(0);
+    // ── 최대화 처리 (WM_GETMINMAXINFO) ───────────────────────────────
+    // WindowStyle=None 창은 기본 최대화 시 작업영역을 넘쳐 가장자리가 잘린다.
+    // 마진으로 보정하던 방식(복원 시 우측 클리핑 발생)을 버리고, 최대화 크기/위치를
+    // 모니터 작업영역에 정확히 맞춰 오버플로 자체를 없앤다(표준 해법). 마진 불필요.
+    private const int WM_GETMINMAXINFO = 0x0024;
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        if (PresentationSource.FromVisual(this) is HwndSource src) src.AddHook(WndProc);
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(hwnd, lParam); handled = true; }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>최대화 시 창이 모니터 작업영역에 정확히 맞도록 위치/크기 상한을 설정.</summary>
+    private static void WmGetMinMaxInfo(IntPtr hwnd, IntPtr lParam)
+    {
+        var monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero) return;
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(monitor, ref info)) return;
+
+        var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+        var work = info.rcWork; var mon = info.rcMonitor;
+        mmi.ptMaxPosition.X = work.Left - mon.Left;
+        mmi.ptMaxPosition.Y = work.Top - mon.Top;
+        mmi.ptMaxSize.X = work.Right - work.Left;
+        mmi.ptMaxSize.Y = work.Bottom - work.Top;
+        Marshal.StructureToPtr(mmi, lParam, true);
+    }
+
+    private const int MONITOR_DEFAULTTONEAREST = 0x2;
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr hwnd, int flags);
+    [DllImport("user32.dll")] private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO mi);
+
+    [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MINMAXINFO { public POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public int dwFlags; }
+
+    /// <summary>창이 좁아질 때 우측 패널(탐색기/DIFF)이 화면 밖으로 잘리지 않게 폭을 가용 범위로 클램프.
+    /// 최대화 상태에서 패널을 넓힌 뒤 창모드로 복원하면 고정 px 폭이 남아 오른쪽이 잘리던 문제를 막는다.</summary>
+    private void BodyGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        double avail = BodyGrid.ActualWidth;
+        if (avail <= 0) return;
+        const double centerMin = 360; // 중앙 패널 최소 폭(ColumnDefinition MinWidth 와 일치)
+        double splitters = SidebarSplitterCol.ActualWidth + FileExpSplitterCol.ActualWidth;
+        double maxFileExp = avail - SidebarCol.ActualWidth - splitters - centerMin;
+        if (maxFileExp < FileExpCol.MinWidth) maxFileExp = FileExpCol.MinWidth;
+        if (FileExpCol.ActualWidth > maxFileExp + 0.5)
+            FileExpCol.Width = new GridLength(maxFileExp);
+    }
 
     private void MaxBtn_Click(object sender, RoutedEventArgs e)
         => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
