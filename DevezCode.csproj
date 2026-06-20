@@ -9,6 +9,7 @@
     <RootNamespace>DevezCode</RootNamespace>
     <AssemblyName>DevezCode</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\Logos\app.ico</ApplicationIcon>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <!-- 단일 버전 소스: UpdateService.CurrentVersion 이 이 값을 읽는다. 릴리스 때 여기만 올린다.
          (csproj <Version> → 어셈블리 버전 → FileVersion → version.json 이 자동 일치) -->
@@ -44,7 +45,7 @@
     <Resource Include="Fonts\Pretendard-Bold.ttf" />
     <Resource Include="Fonts\BrunoAceSC-Regular.ttf" />
     <!-- Claude Code 아이콘 이미지 (탭 헤더·타이틀바, devez 이식) -->
-    <Resource Include="Resources\Images\ShellPresets\claude_code.png" />
+    <Resource Include="Resources\Logos\logo.png" />
   </ItemGroup>
 
 </Project>

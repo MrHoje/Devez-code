@@ -13,9 +13,7 @@ DefaultDirName={localappdata}\{#AppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
 OutputBaseFilename=DevezCode_Setup_{#AppVersion}
-; 아이콘 미정 — DevezCode 전용 app.ico 가 생기면 아래 줄의 주석을 풀고 경로를 지정한다.
-;   SetupIconFile=..\Resources\Logos\app.ico   (설치 마법사/인스톨러 exe 아이콘)
-;   + csproj <ApplicationIcon>Resources\Logos\app.ico</ApplicationIcon> 도 함께 추가 (앱 실행 파일 아이콘)
+SetupIconFile=..\Resources\Logos\app.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
