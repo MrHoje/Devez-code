@@ -96,7 +96,8 @@
                   Padding="6,8"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
                   VirtualizingStackPanel.IsVirtualizing="True"
-                  VirtualizingStackPanel.VirtualizationMode="Recycling">
+                  VirtualizingStackPanel.VirtualizationMode="Recycling"
+                  ContextMenuOpening="Tree_ContextMenuOpening">
             <TreeView.Resources>
                 <!-- TreeView 펼침 토글(삼각형). 기본 시스템 화살표 대신 테마색 -->
                 <Style x:Key="FileTreeExpander" TargetType="ToggleButton">
@@ -173,17 +174,12 @@
                     </Setter>
                 </Style>
                 <HierarchicalDataTemplate DataType="{x:Type models:FileNode}" ItemsSource="{Binding Children}">
-                    <StackPanel Orientation="Horizontal" Margin="0,2" MouseLeftButtonDown="Node_DoubleClick">
+                    <StackPanel Orientation="Horizontal" Margin="0,2"
+                                MouseLeftButtonDown="Node_DoubleClick"
+                                MouseRightButtonDown="Node_RightClick">
                         <StackPanel.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
                                          Opened="NodeMenu_Opened">
-                                <MenuItem Header="새 파일" Click="NewFile_Click">
-                                    <MenuItem.Icon><Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconFilePlus}"/></MenuItem.Icon>
-                                </MenuItem>
-                                <MenuItem Header="새 폴더" Click="NewFolder_Click">
-                                    <MenuItem.Icon><Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconFolderPlus}"/></MenuItem.Icon>
-                                </MenuItem>
-                                <Separator/>
                                 <MenuItem Header="잘라내기" Click="Cut_Click" InputGestureText="Ctrl+X">
                                     <MenuItem.Icon><Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconScissors}"/></MenuItem.Icon>
                                 </MenuItem>

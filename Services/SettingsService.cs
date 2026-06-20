@@ -23,6 +23,10 @@ public static class SettingsService
         public Dictionary<string, string> ClaudeCodeRoomDirs { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomSessions { get; set; } = new();
         public List<string> ClaudeCodeRoomLaunched { get; set; } = new();
+        // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
+        public Dictionary<string, string> RoomAgents { get; set; } = new();
+        // 사용자가 활성화한 에이전트 ID 목록. 빈 값이면 모든 설치된 에이전트 활성화로 간주.
+        public List<string> EnabledAgents { get; set; } = new();
         // 마지막으로 활성이던 프로젝트/세션. 정상 종료(CleanShutdown=true) 때만 복원한다.
         public string? LastActiveProjectPath { get; set; }
         public string? LastActiveSessionId { get; set; }
@@ -118,7 +122,33 @@ public static class SettingsService
         bool changed = Current.ClaudeCodeRoomDirs.Remove(roomId);
         changed |= Current.ClaudeCodeRoomSessions.Remove(roomId);
         changed |= Current.ClaudeCodeRoomLaunched.Remove(roomId);
+        changed |= Current.RoomAgents.Remove(roomId);
         if (changed) Save();
+    }
+
+    // ── 방별 에이전트 ID (미설정 시 기본값 claude) ────────────────
+    public static string LoadAgentForRoom(string roomId)
+        => Current.RoomAgents.TryGetValue(roomId, out var a) ? a : AgentRegistry.DefaultAgentId;
+
+    public static void SaveAgentForRoom(string roomId, string agentId)
+    {
+        Current.RoomAgents[roomId] = agentId;
+        Save();
+    }
+
+    // ── 사용자가 활성화한 에이전트 목록 ────────────────────────────
+    /// <summary>빈 값이면 모든 알려진 에이전트를 활성화한 것으로 간주(첫 실행 기본값).</summary>
+    public static IReadOnlyList<string> LoadEnabledAgents()
+    {
+        var list = Current.EnabledAgents;
+        if (list.Count == 0) return AgentRegistry.All.Select(a => a.Id).ToList();
+        return list;
+    }
+
+    public static void SaveEnabledAgents(IEnumerable<string> agents)
+    {
+        Current.EnabledAgents = agents.ToList();
+        Save();
     }
 
     // ── Claude 세션 ID ────────────────────────────────────────────

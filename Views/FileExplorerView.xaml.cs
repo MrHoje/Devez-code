@@ -17,6 +17,52 @@ public partial class FileExplorerView : UserControl
     {
         InitializeComponent();
         UpdateViewToggle(); // 초기: 디렉터리 모드 활성 표시
+        Tree.ContextMenu = BuildEmptyAreaMenu(); // 빈 영역 우클릭 메뉴 (Tree 자체)
+    }
+
+    /// <summary>빈 영역 우클릭 메뉴: 새 파일/폴더 + 붙여넣기. Tree 의 ContextMenu 로 부착.</summary>
+    private ContextMenu BuildEmptyAreaMenu()
+    {
+        var cm = new ContextMenu();
+        var newFile = new MenuItem { Header = "새 파일" };
+        newFile.Icon = new System.Windows.Shapes.Path { Style = (Style)FindResource("LucideMenuIcon"), Data = (System.Windows.Media.Geometry)FindResource("IconFilePlus") };
+        newFile.Click += RootNewFile_Click;
+
+        var newFolder = new MenuItem { Header = "새 폴더" };
+        newFolder.Icon = new System.Windows.Shapes.Path { Style = (Style)FindResource("LucideMenuIcon"), Data = (System.Windows.Media.Geometry)FindResource("IconFolderPlus") };
+        newFolder.Click += RootNewFolder_Click;
+
+        var paste = new MenuItem { Header = "붙여넣기", InputGestureText = "Ctrl+V", Name = "RootPasteMenuItem" };
+        paste.Icon = new System.Windows.Shapes.Path { Style = (Style)FindResource("LucideMenuIcon"), Data = (System.Windows.Media.Geometry)FindResource("IconClipboard") };
+        paste.Click += RootPaste_Click;
+
+        cm.Items.Add(newFile);
+        cm.Items.Add(newFolder);
+        cm.Items.Add(new Separator());
+        cm.Items.Add(paste);
+        cm.Opened += EmptyAreaMenu_Opened;
+        return cm;
+    }
+
+    /// <summary>Tree 우클릭 시: 항목 위면 Tree.ContextMenu 를 숨겨 항목 메뉴만 뜨게 한다.
+    /// 빈 영역이면 Tree.ContextMenu 가 정상 표시된다.</summary>
+    private void Tree_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        // 우클릭 위치의 원본 요소가 TreeViewItem (또는 그 자식) 이면 → 항목 메뉴만 표시, Tree.ContextMenu 는 막음
+        if (e.OriginalSource is DependencyObject d)
+        {
+            for (DependencyObject? cur = d; cur != null; cur = System.Windows.Media.VisualTreeHelper.GetParent(cur))
+            {
+                if (cur is System.Windows.Controls.TreeViewItem)
+                {
+                    Tree.ContextMenu = null; // 항목 메뉴만 표시
+                    // 다음 빈 영역 우클릭을 위해 복원 (Dispatcher 로 지연)
+                    Dispatcher.BeginInvoke(new System.Action(() => Tree.ContextMenu = BuildEmptyAreaMenu()));
+                    return;
+                }
+                if (cur == Tree) break; // TreeViewItem 가 아닌 Tree 영역에 도달
+            }
+        }
     }
 
     /// <summary>편집 가능한 파일을 더블클릭했을 때 발생(인앱 편집기로 열도록 호스트에 위임).</summary>
@@ -133,6 +179,18 @@ public partial class FileExplorerView : UserControl
         }
     }
 
+    /// <summary>파일 우클릭 → 선택 변경 (좌클릭과 동일하게 해당 파일 선택).
+    /// 컨텍스트 메뉴는 별도로 항목의 ContextMenu 가 떠서 마우스 위치 기준 노드를 사용한다.</summary>
+    private void Node_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: FileNode node })
+        {
+            // TreeView.SelectedItem 은 읽기 전용 — 해당 컨테이너의 IsSelected 를 직접 세팅.
+            if (Tree.ItemContainerGenerator.ContainerFromItem(node) is TreeViewItem tvi)
+                tvi.IsSelected = true;
+        }
+    }
+
     // ── 컨텍스트 메뉴 ───────────────────────────────────────────────
     private static FileNode? NodeOf(object sender) => (sender as MenuItem)?.DataContext as FileNode;
 
@@ -178,6 +236,15 @@ public partial class FileExplorerView : UserControl
             if (item is MenuItem { Name: "PasteMenuItem" } mi) mi.IsEnabled = hasFiles;
     }
 
+    /// <summary>빈 영역(TreeView 자체) 메뉴 열릴 때 붙여넣기 활성/비활성.</summary>
+    private void EmptyAreaMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu cm) return;
+        var hasFiles = Clipboard.ContainsFileDropList();
+        foreach (var item in cm.Items)
+            if (item is MenuItem { Name: "RootPasteMenuItem" } mi) mi.IsEnabled = hasFiles;
+    }
+
     /// <summary>대상 노드가 들어있는 폴더 경로. 폴더면 자기 자신, 파일이면 부모 폴더.</summary>
     private static string ContainerDir(FileNode node)
         => node.IsDirectory ? node.FullPath : Path.GetDirectoryName(node.FullPath) ?? node.FullPath;
@@ -220,6 +287,55 @@ public partial class FileExplorerView : UserControl
         try { Directory.CreateDirectory(dest); }
         catch (Exception ex) { ConfirmDialog.Alert("새 폴더 실패", ex.Message); return; }
         RefreshContainer(node);
+    }
+
+    /// <summary>빈 영역 메뉴의 "새 파일" — 루트 디렉터리에 생성.</summary>
+    private void RootNewFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_rootPath) || !Directory.Exists(_rootPath)) return;
+        var name = PromptDialog.Show("새 파일", "파일 이름을 입력하세요.");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        if (!IsValidLeafName(name)) { ConfirmDialog.Alert("새 파일", "사용할 수 없는 이름입니다."); return; }
+        var dest = Path.Combine(_rootPath, name);
+        if (File.Exists(dest) || Directory.Exists(dest)) { ConfirmDialog.Alert("새 파일", "같은 이름이 이미 있습니다."); return; }
+        try { File.Create(dest).Dispose(); }
+        catch (Exception ex) { ConfirmDialog.Alert("새 파일 실패", ex.Message); return; }
+        ReloadRoot();
+    }
+
+    /// <summary>빈 영역 메뉴의 "새 폴더" — 루트 디렉터리에 생성.</summary>
+    private void RootNewFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_rootPath) || !Directory.Exists(_rootPath)) return;
+        var name = PromptDialog.Show("새 폴더", "폴더 이름을 입력하세요.");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        if (!IsValidLeafName(name)) { ConfirmDialog.Alert("새 폴더", "사용할 수 없는 이름입니다."); return; }
+        var dest = Path.Combine(_rootPath, name);
+        if (File.Exists(dest) || Directory.Exists(dest)) { ConfirmDialog.Alert("새 폴더", "같은 이름이 이미 있습니다."); return; }
+        try { Directory.CreateDirectory(dest); }
+        catch (Exception ex) { ConfirmDialog.Alert("새 폴더 실패", ex.Message); return; }
+        ReloadRoot();
+    }
+
+    /// <summary>빈 영역 메뉴의 "붙여넣기" — 클립보드 파일을 루트에 복사/이동.</summary>
+    private void RootPaste_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_rootPath) || !Directory.Exists(_rootPath)) return;
+        var files = Clipboard.GetFileDropList();
+        if (files.Count == 0) return;
+        var move = ClipboardIsMove();
+        try
+        {
+            foreach (string? src in files)
+            {
+                if (string.IsNullOrEmpty(src)) continue;
+                if (!File.Exists(src) && !Directory.Exists(src)) continue;
+                CopyInto(src, _rootPath, move);
+            }
+        }
+        catch (Exception ex) { ConfirmDialog.Alert("붙여넣기 실패", ex.Message); }
+        if (move) try { Clipboard.Clear(); } catch { }
+        ReloadRoot();
     }
 
     private void Rename_Click(object sender, RoutedEventArgs e)

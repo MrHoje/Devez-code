@@ -557,7 +557,14 @@
                 <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
 
-                <!-- Right: file explorer (좌측 보더로 채널 형성) -->
+                <!-- 좁은 창에서 우측 패널이 오버레이로 뜰 때 뒤 배경을 덮는 스크림(딤).
+                     클릭하면 오버레이를 닫는다. 평소 숨김. ZIndex 는 코드에서 패널보다 낮게 설정. -->
+                <Border x:Name="RightScrim" Grid.Column="0" Grid.ColumnSpan="5"
+                        Background="#80000000" Visibility="Collapsed"
+                        Panel.ZIndex="55" MouseLeftButtonDown="RightScrim_Click"/>
+
+                <!-- Right: file explorer (좌측 보더로 채널 형성).
+                     좁은 창에서는 코드에서 Column/Span/정렬을 바꿔 오버레이 드로어로 띄운다. -->
                 <views:FileExplorerView x:Name="FileExplorer" Grid.Column="4"
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
             </Grid>

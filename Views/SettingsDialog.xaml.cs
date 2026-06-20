@@ -1,3 +1,8 @@
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -18,9 +23,11 @@ public partial class SettingsDialog : UserControl
     // 열림 시점의 저장값(기준). 미저장 변경 판정 + 취소 시 복원에 사용. 저장하면 갱신된다.
     private string _originalTheme;
     private int    _originalFontScale;
+    private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
 
     private string _selectedTheme;
     private int    _selectedFontScale;
+    private readonly ObservableCollection<AgentItem> _agentItems = new();
 
     public SettingsDialog()
     {
@@ -29,6 +36,7 @@ public partial class SettingsDialog : UserControl
         _selectedTheme       = App.CurrentTheme;
         _originalFontScale   = SettingsService.LoadFontScale();
         _selectedFontScale   = _originalFontScale;
+        BuildAgentList();
         UpdateThemeSelectionVisual();
         UpdateFontSelectionVisual();
         SetActiveCategory("theme");
@@ -49,8 +57,11 @@ public partial class SettingsDialog : UserControl
 
         CatThemeBtn.Background = key == "theme"  ? active : Brushes.Transparent;
         CatThemeBtn.Foreground = key == "theme"  ? primary : text;
+        CatAgentBtn.Background = key == "agent"  ? active : Brushes.Transparent;
+        CatAgentBtn.Foreground = key == "agent"  ? primary : text;
 
         ThemePanel.Visibility  = key == "theme"  ? Visibility.Visible : Visibility.Collapsed;
+        AgentPanel.Visibility = key == "agent"  ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── 미리보기(저장 없이 화면에만 반영) ──────────────────────────
@@ -111,17 +122,25 @@ public partial class SettingsDialog : UserControl
     }
 
     private bool HasUnsavedChanges()
-        => _selectedTheme != _originalTheme
-        || _selectedFontScale != _originalFontScale;
+    {
+        if (_selectedTheme != _originalTheme) return true;
+        if (_selectedFontScale != _originalFontScale) return true;
+        var current = new HashSet<string>(
+            _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
+        return !current.SetEquals(_originalEnabledAgents);
+    }
 
     /// <summary>현재 UI 값을 디스크에 저장·확정하고 기준값을 갱신한다.</summary>
     private void ApplySettings()
     {
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);
+        UpdateAgentEnabledInSettings();
 
         _originalTheme       = _selectedTheme;
         _originalFontScale   = _selectedFontScale;
+        _originalEnabledAgents = new HashSet<string>(
+            _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>미리보기를 열림 시점(저장값)으로 되돌린다.</summary>
@@ -139,6 +158,9 @@ public partial class SettingsDialog : UserControl
             (Application.Current as App)?.SetFontScale(_originalFontScale);
             UpdateFontSelectionVisual();
         }
+        // 에이전트 활성화 상태 되돌리기
+        foreach (var item in _agentItems)
+            item.Enabled = _originalEnabledAgents.Contains(item.Id);
     }
 
     private void UpdateThemeSelectionVisual()
@@ -175,4 +197,65 @@ public partial class SettingsDialog : UserControl
             dot.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
         }
     }
+
+    // ── 에이전트 패널 ──────────────────────────────────────────────
+    private void BuildAgentList()
+    {
+        // 경로 재스캔 (Settings 가 늦게 열릴 수 있으므로 매번 새로).
+        AgentRegistry.InvalidateCache();
+        var muted = (Brush)FindResource("TextMutedBrush");
+
+        _agentItems.Clear();
+        var enabledSet = new HashSet<string>(SettingsService.LoadEnabledAgents(), StringComparer.OrdinalIgnoreCase);
+        foreach (var agent in AgentRegistry.All)
+        {
+            bool installed = AgentRegistry.IsInstalled(agent);
+            _agentItems.Add(new AgentItem
+            {
+                Id = agent.Id,
+                DisplayName = agent.DisplayName,
+                CommandHint = $"실행 명령: {agent.Command}",
+                Installed = installed,
+                InstalledLabel = installed ? "설치됨" : "미설치",
+                InstalledBrush = installed
+                    ? (Brush)FindResource("PrimaryBrush")
+                    : muted,
+                Enabled = installed && enabledSet.Contains(agent.Id),
+            });
+        }
+        _originalEnabledAgents = new HashSet<string>(
+            _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
+        AgentList.ItemsSource = _agentItems;
+    }
+
+    private void UpdateAgentEnabledInSettings()
+    {
+        var enabled = _agentItems.Where(a => a.Enabled).Select(a => a.Id).ToList();
+        SettingsService.SaveEnabledAgents(enabled);
+        AgentRegistry.InvalidateCache();
+    }
+
+    /// <summary>토글 변경 시 저장 (UI 토글은 즉시 반영되지만, 디스크 저장은 [저장] 버튼에서만 — 다른 설정과 동일).</summary>
+    private void AgentItem_EnabledChanged(object? sender, System.Windows.RoutedPropertyChangedEventArgs<bool> e)
+    {
+        // [저장] 버튼을 눌러야 디스크에 기록되므로 여기선 _selectedEnabledAgents 만 갱신하면 됨.
+        // (BuildAgentList 가 기준값을 잡았고, ApplySettings 가 enabled 목록을 디스크에 쓴다.)
+    }
+}
+
+/// <summary>설정 → 에이전트 패널의 한 줄 (이름·설치 상태·활성화 토글).</summary>
+public sealed class AgentItem : INotifyPropertyChanged
+{
+    public string Id { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string CommandHint { get; set; } = "";
+    public bool Installed { get; set; }
+    public string InstalledLabel { get; set; } = "";
+    public Brush InstalledBrush { get; set; } = Brushes.Gray;
+
+    private bool _enabled;
+    public bool Enabled { get => _enabled; set { if (_enabled != value) { _enabled = value; OnPropertyChanged(); } } }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }

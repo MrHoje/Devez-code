@@ -83,6 +83,7 @@ public partial class MainWindow : Window
         UpdateEmptyState();
         UpdateStatus();
         RestorePanelStates();
+        FileExplorer.RenderTransform = _rightT;   // 오버레이 슬라이드용
 
         // 실행 시 다른 앱(devez 등) 위로 확실히 올라오게 한다. topmost 토글로 전경 잠금 우회.
         Loaded += (_, _) =>
@@ -341,6 +342,15 @@ public partial class MainWindow : Window
     private Action? _leftAnimCancel;
     private Action? _rightAnimCancel;
 
+    // ── 반응형: 좁은 창에서 우측 패널을 오버레이 드로어로 ───────────────
+    // 창 폭이 이 값 미만이면 우측 패널(탐색기/DIFF)을 레이아웃에서 빼고, 토글 시
+    // 중앙 위로 떠오르는 오버레이로 띄운다(devez 즐겨찾기 패널 패턴). 이상이면 도킹.
+    private const double NarrowThreshold = 1100;
+    private bool? _narrow;                 // null=미초기화. 폭 변화로 모드 전환 감지
+    private bool _rightOverlayOpen;        // 좁은 창에서 오버레이가 열려 있는지
+    private readonly System.Windows.Media.TranslateTransform _rightT = new();
+    private Action? _overlayAnimCancel;
+
     private void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
     {
         _leftAnimCancel?.Invoke();
@@ -368,6 +378,14 @@ public partial class MainWindow : Window
 
     private void RightPanelBtn_Click(object sender, RoutedEventArgs e)
     {
+        // 좁은 창: 도킹 대신 오버레이 드로어를 토글한다.
+        if (_narrow == true)
+        {
+            if (_rightOverlayOpen) CloseRightOverlay();
+            else OpenRightOverlay();
+            return;
+        }
+
         _rightAnimCancel?.Invoke();
         if (_rightCollapsed)
         {
@@ -432,7 +450,9 @@ public partial class MainWindow : Window
         var muted   = (System.Windows.Media.Brush)FindResource("TextMutedBrush");
         var primary = (System.Windows.Media.Brush)FindResource("PrimaryBrush");
         LeftPanelIcon.Stroke  = _leftCollapsed  ? primary : muted;
-        RightPanelIcon.Stroke = _rightCollapsed ? primary : muted;
+        // 좁은 창에서는 오버레이가 닫혀 있으면(=숨김) 강조 표시.
+        bool rightHidden = _narrow == true ? !_rightOverlayOpen : _rightCollapsed;
+        RightPanelIcon.Stroke = rightHidden ? primary : muted;
     }
 
     // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는
@@ -597,10 +617,21 @@ public partial class MainWindow : Window
             return;
         }
         var proj = ProjectItem.FromPath(path);
-        // 프로젝트 연결 시 기본 세션 1개 자동 생성
-        var session = new SessionItem { Name = "세션 1" };
+        // 프로젝트 연결 시 기본 세션 1개 자동 생성. 사용 가능한 에이전트가 1개면 그걸로, 아니면(2개+) 피커 표시.
+        var available = AgentRegistry.GetEnabledAndInstalled();
+        if (available.Count == 0)
+        {
+            ConfirmDialog.Alert("에이전트 없음",
+                "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
+            return;
+        }
+        string defaultAgentId = available.Count == 1
+            ? available[0].Id
+            : (AgentPickerDialog.Pick(this, available, proj.Path) ?? AgentRegistry.DefaultAgentId);
+        var session = new SessionItem { Name = "세션 1", AgentId = defaultAgentId };
         proj.Sessions.Add(session);
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
+        SettingsService.SaveAgentForRoom(session.Id, defaultAgentId);
         _projects.Add(proj);
         WorkspaceStore.Save(_projects);
         SelectProject(proj);   // 탭을 이 프로젝트 세션으로 교체 + 기본 세션 활성화
@@ -773,10 +804,31 @@ public partial class MainWindow : Window
 
     private void AddSession(ProjectItem proj)
     {
-        var session = new SessionItem { Name = NextSessionName(proj) };
+        // 사용 가능한 에이전트(설치 + 활성화) 선택. 0개면 추가 불가, 1개면 피커 생략.
+        var available = AgentRegistry.GetEnabledAndInstalled();
+        if (available.Count == 0)
+        {
+            ConfirmDialog.Alert("에이전트 없음",
+                "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
+            return;
+        }
+        string agentId;
+        if (available.Count == 1)
+        {
+            agentId = available[0].Id;
+        }
+        else
+        {
+            var picked = AgentPickerDialog.Pick(this, available, proj.Path);
+            if (picked == null) return; // 취소
+            agentId = picked;
+        }
+
+        var session = new SessionItem { Name = NextSessionName(proj), AgentId = agentId };
         proj.Sessions.Add(session);
         proj.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
+        SettingsService.SaveAgentForRoom(session.Id, agentId);
         WorkspaceStore.Save(_projects);
         // 선택된(활성) 프로젝트의 세션만 화면에 띄운다. 다른 프로젝트엔 트리에 추가만.
         if (ReferenceEquals(_activeProject, proj)) OpenSession(session);
@@ -1396,12 +1448,133 @@ public partial class MainWindow : Window
     {
         double avail = BodyGrid.ActualWidth;
         if (avail <= 0) return;
-        const double centerMin = 360; // 중앙 패널 최소 폭(ColumnDefinition MinWidth 와 일치)
+
+        // 폭이 임계값을 넘나들면 도킹 ↔ 오버레이 모드를 전환한다.
+        bool narrow = avail < NarrowThreshold;
+        if (_narrow != narrow)
+        {
+            _narrow = narrow;
+            if (narrow) EnterNarrowMode();
+            else        EnterWideMode();
+        }
+
+        if (narrow)
+        {
+            // 열려 있는 오버레이는 창 폭에 맞춰 폭을 갱신한다.
+            if (_rightOverlayOpen) FileExplorer.Width = OverlayWidth();
+            return;
+        }
+
+        // 도킹 모드: 우측 패널이 창 밖으로 잘리지 않게 폭을 클램프(중앙 최소 폭 보장).
+        const double centerMin = 360;
         double splitters = SidebarSplitterCol.ActualWidth + FileExpSplitterCol.ActualWidth;
         double maxFileExp = avail - SidebarCol.ActualWidth - splitters - centerMin;
         if (maxFileExp < FileExpCol.MinWidth) maxFileExp = FileExpCol.MinWidth;
-        if (FileExpCol.ActualWidth > maxFileExp + 0.5)
+        double current = FileExpCol.Width.IsAbsolute ? FileExpCol.Width.Value : FileExpCol.ActualWidth;
+        if (current > maxFileExp + 0.5)
             FileExpCol.Width = new GridLength(maxFileExp);
+    }
+
+    /// <summary>오버레이 드로어 폭. 중앙이 일부 보이도록 창 폭에 따라 제한.</summary>
+    private double OverlayWidth() => Math.Min(580, Math.Max(280, BodyGrid.ActualWidth - 100));
+
+    /// <summary>도킹 → 좁은 창: 우측 패널을 레이아웃에서 빼고(폭 0) 오버레이 닫힌 상태로 둔다.</summary>
+    private void EnterNarrowMode()
+    {
+        _rightAnimCancel?.Invoke();
+        FileExpSplitterCol.Width = new GridLength(0);
+        FileExpCol.MinWidth = 0;
+        FileExpCol.Width = new GridLength(0);
+        _rightOverlayOpen = false;
+        FileExplorer.Visibility = Visibility.Collapsed;
+        RightScrim.Visibility = Visibility.Collapsed;
+        _rightT.X = 0;
+        UpdatePanelToggleVisual();
+    }
+
+    /// <summary>좁은 창 → 도킹: 오버레이 장식을 걷고 우측 컬럼으로 되돌린다.</summary>
+    private void EnterWideMode()
+    {
+        _overlayAnimCancel?.Invoke();
+        _rightOverlayOpen = false;
+        RightScrim.Visibility = Visibility.Collapsed;
+        // 오버레이용 속성 원복
+        _rightT.X = 0;
+        FileExplorer.Effect = null;
+        FileExplorer.Width = double.NaN;
+        FileExplorer.HorizontalAlignment = HorizontalAlignment.Stretch;
+        FileExplorer.BorderThickness = new Thickness(1, 0, 0, 0);
+        Grid.SetColumn(FileExplorer, 4);
+        Grid.SetColumnSpan(FileExplorer, 1);
+        Panel.SetZIndex(FileExplorer, 0);
+        // 도킹 상태 복원(접힘 상태 존중)
+        FileExplorer.Visibility = _rightCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        FileExpSplitterCol.Width = new GridLength(_rightCollapsed ? 0 : 4);
+        FileExpCol.MinWidth = _rightCollapsed ? 0 : 200;
+        FileExpCol.Width = new GridLength(_rightCollapsed ? 0 : _fileExpWidth);
+        UpdatePanelToggleVisual();
+    }
+
+    /// <summary>좁은 창에서 우측 패널을 오버레이로 연다(우측에서 슬라이드 인 + 스크림).</summary>
+    private void OpenRightOverlay()
+    {
+        _overlayAnimCancel?.Invoke();
+        double w = OverlayWidth();
+        FileExplorer.Width = w;
+        FileExplorer.HorizontalAlignment = HorizontalAlignment.Right;
+        FileExplorer.BorderThickness = new Thickness(1, 0, 0, 0);
+        FileExplorer.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        { BlurRadius = 18, ShadowDepth = 0, Opacity = 0.45, Color = System.Windows.Media.Colors.Black };
+        Grid.SetColumn(FileExplorer, 2);
+        Grid.SetColumnSpan(FileExplorer, 3);
+        Panel.SetZIndex(FileExplorer, 60);
+        FileExplorer.Visibility = Visibility.Visible;
+        RightScrim.Visibility = Visibility.Visible;
+        _rightOverlayOpen = true;
+        _overlayAnimCancel = AnimateOverlayX(w, 0, 200, easeIn: false);
+        UpdatePanelToggleVisual();
+    }
+
+    /// <summary>오버레이를 닫는다(우측으로 슬라이드 아웃 후 숨김).</summary>
+    private void CloseRightOverlay()
+    {
+        _overlayAnimCancel?.Invoke();
+        double w = FileExplorer.ActualWidth > 0 ? FileExplorer.ActualWidth : OverlayWidth();
+        RightScrim.Visibility = Visibility.Collapsed;
+        _rightOverlayOpen = false;
+        _overlayAnimCancel = AnimateOverlayX(0, w, 180, easeIn: true, onComplete: () =>
+        {
+            FileExplorer.Visibility = Visibility.Collapsed;
+            FileExplorer.Effect = null;
+            _rightT.X = 0;
+        });
+        UpdatePanelToggleVisual();
+    }
+
+    private void RightScrim_Click(object sender, MouseButtonEventArgs e) => CloseRightOverlay();
+
+    /// <summary>오버레이 슬라이드 애니메이션(TranslateTransform.X) — 렌더 펄스 동기.</summary>
+    private Action AnimateOverlayX(double from, double to, int durationMs, bool easeIn, Action? onComplete = null)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool cancelled = false;
+        _rightT.X = from;
+        EventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            if (cancelled) { System.Windows.Media.CompositionTarget.Rendering -= handler!; return; }
+            var t = Math.Min(1.0, sw.ElapsedMilliseconds / (double)durationMs);
+            var eased = easeIn ? EaseIn(t) : EaseInOut(t);
+            _rightT.X = from + (to - from) * eased;
+            if (t >= 1.0)
+            {
+                System.Windows.Media.CompositionTarget.Rendering -= handler!;
+                _rightT.X = to;
+                onComplete?.Invoke();
+            }
+        };
+        System.Windows.Media.CompositionTarget.Rendering += handler;
+        return () => { if (!cancelled) { cancelled = true; System.Windows.Media.CompositionTarget.Rendering -= handler; } };
     }
 
     private void MaxBtn_Click(object sender, RoutedEventArgs e)

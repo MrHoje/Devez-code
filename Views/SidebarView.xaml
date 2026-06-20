@@ -19,21 +19,32 @@
             </Style.Triggers>
         </Style>
 
-        <!-- ── 프로젝트 카드: doit ShellShortcut 카드 디자인. 보더 항상 표시(LineBrush), 호버는 배경만, 활성은 primary 보더 ── -->
+        <!-- ── 프로젝트 카드: doit ShellShortcut 카드 디자인. 보더 항상 표시(LineBrush), 호버는 보더/그림자만(배경 유지 → 세션 안 묻힘), 활성은 primary 보더 + 글로우 ── -->
         <Style x:Key="ProjectCard" TargetType="Border">
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
             <Setter Property="Margin" Value="0,3,0,3"/>
+            <Setter Property="Effect" Value="{x:Null}"/>
             <Style.Triggers>
-                <!-- 호버: 배경만 살짝 밝아짐, 보더는 LineBrush 유지 -->
+                <!-- 호버: 보더만 살짝 더 진하게 + 미세한 그림자 ('떠오름'감). 배경은 유지 → 세션 row가 묻히지 않음 -->
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                    <Setter Property="BorderBrush" Value="#5a5a5a"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="Black" Opacity="0.4" BlurRadius="10" ShadowDepth="2" Direction="270"/>
+                        </Setter.Value>
+                    </Setter>
                 </Trigger>
-                <!-- 선택된(활성) 프로젝트: primary 보더로 고정. 호버보다 우선 -->
+                <!-- 선택된(활성) 프로젝트: primary 보더 + primary 글로우. 호버보다 우선 -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="{DynamicResource PrimaryColor}" Opacity="0.35" BlurRadius="14" ShadowDepth="0"/>
+                        </Setter.Value>
+                    </Setter>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -65,7 +76,7 @@
                             </MenuItem.Icon>
                         </MenuItem>
                         <Separator/>
-                        <MenuItem Header="세션 추적 중단" Tag="{Binding}" Click="SessionStopTracking_Click">
+                        <MenuItem Header="세션 추적 중지" Tag="{Binding}" Click="SessionStopTracking_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>

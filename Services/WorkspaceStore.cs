@@ -8,7 +8,7 @@ namespace DevezCode.Services;
 /// <summary>프로젝트/세션 트리를 %AppData%\DevezCode\workspace.json 에 저장·복원.</summary>
 public static class WorkspaceStore
 {
-    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; }
+    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } }
     private sealed class ProjectDto
     {
         public string Path { get; set; } = "";
@@ -35,7 +35,7 @@ public static class WorkspaceStore
                 if (!string.IsNullOrEmpty(p.Icon)) proj.IconKey = p.Icon;
                 proj.IconColor = p.Color;
                 foreach (var s in p.Sessions)
-                    proj.Sessions.Add(new SessionItem { Id = s.Id, Name = s.Name });
+                    proj.Sessions.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "" });
                 result.Add(proj);
             }
         }
@@ -54,7 +54,11 @@ public static class WorkspaceStore
                     Path = p.Path,
                     Icon = p.IconKey,
                     Color = p.IconColor,
-                    Sessions = p.Sessions.Select(s => new SessionDto { Id = s.Id, Name = s.Name }).ToList()
+                    Sessions = p.Sessions.Select(s => new SessionDto
+                    {
+                        Id = s.Id, Name = s.Name,
+                        Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
+                    }).ToList()
                 }).ToList()
             };
             Directory.CreateDirectory(Path.GetDirectoryName(WorkspacePath)!);

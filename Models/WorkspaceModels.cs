@@ -25,6 +25,9 @@ public sealed class SessionItem : NotifyBase
     private string _name = "세션";
     public string Name { get => _name; set => Set(ref _name, value); }
 
+    /// <summary>이 세션이 사용할 에이전트 ID. 빈 값/누락이면 SettingsService.LoadAgentForRoom 으로 폴백.</summary>
+    public string AgentId { get; set; } = "";
+
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 

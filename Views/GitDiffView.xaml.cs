@@ -15,9 +15,6 @@ public partial class GitDiffView : UserControl
     public GitDiffView()
     {
         InitializeComponent();
-        // 헤더는 본문과 같은 컬럼을 쓰되, 본문 우측의 세로 스크롤바 폭만큼 안쪽 여백을 줘서
-        // 헤더 세퍼레이터(수정 전|수정 후)가 본문 세퍼레이터와 정확히 정렬되게 한다.
-        DiffHeaderInner.Margin = new Thickness(0, 0, SystemParameters.VerticalScrollBarWidth, 0);
         _diffFontSize = BaseFontSizeFor(SettingsService.LoadFontScale());
         DiffList.FontSize = _diffFontSize;
         // 전역 글꼴 단계(작게/크게)에 연동. 사용자가 Ctrl+휠로 따로 조절하면 그 값을 유지한다.
@@ -146,6 +143,14 @@ public partial class GitDiffView : UserControl
         _selected = change;
         change.IsSelected = true;
         await LoadDiffAsync(change);
+    }
+
+    /// <summary>본문(ListBox) 뷰포트 폭에 헤더 폭을 정확히 맞춘다.
+    /// 스크롤바 폭을 추정하지 않고 실제 콘텐츠 영역 폭(ViewportWidth)을 그대로 써서
+    /// 헤더 세퍼레이터(수정 전|수정 후)가 본문 세퍼레이터와 항상 정확히 정렬된다.</summary>
+    private void DiffList_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (e.ViewportWidth > 0) DiffHeaderInner.Width = e.ViewportWidth;
     }
 
     /// <summary>Ctrl+휠: diff 코드 글꼴 크기 조절(편집기 줌 관례).</summary>

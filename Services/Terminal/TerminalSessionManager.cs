@@ -58,11 +58,23 @@ public sealed class TerminalSessionManager
             string commandLine = cfg.CommandLine;
             string? startDir = cfg.StartingDirectory;
             string? inject = null;
-            if (ccDir != null)
+
+            // 방별 에이전트 조회. Claude 만 풀 통합(훅/resume/세션ID 추적), 그 외는 단순 cmd /k <command> 실행.
+            var agentId = SettingsService.LoadAgentForRoom(roomId);
+            var agent = AgentRegistry.Find(agentId) ?? AgentRegistry.GetDefault();
+
+            if (ccDir != null && agent.SupportsHooks)
             {
                 startDir = ccDir;
                 var direct = TryBuildDirectLaunch(roomId, cfg.CommandLine, out inject);
                 if (direct != null) commandLine = direct; // 성공 시 inject == null
+            }
+            else if (ccDir != null)
+            {
+                // 비-Claude 에이전트: cmd /k "<에이전트 커맨드>" 만 작성. 에러 시 프롬프트가 남아 진단 가능.
+                startDir = ccDir;
+                var simple = TryBuildSimpleLaunch(agent);
+                if (simple != null) commandLine = simple;
             }
 
             TerminalSession session;
@@ -70,6 +82,7 @@ public sealed class TerminalSessionManager
             {
                 // SessionStart 훅(room-hook.ps1)이 어느 방의 claude 세션인지 알 수 있게
                 // 방 ID를 자식(cmd→claude→훅)에 상속시킨다. 생성 직후 해제해 다른 자식 프로세스로 새지 않게 한다.
+                // (Claude 외 에이전트는 훅이 없으므로 무해.)
                 Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", roomId);
                 session = new TerminalSession(commandLine, startDir, cols, rows);
             }
@@ -82,6 +95,14 @@ public sealed class TerminalSessionManager
             _sessions[roomId] = session;
             return session;
         }
+    }
+
+    /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.</summary>
+    private static string? TryBuildSimpleLaunch(AgentDef agent)
+    {
+        if (string.IsNullOrWhiteSpace(agent.Command)) return null;
+        // 따옴표로 감싸 PATH/PATHEXT 해석은 cmd 에 맡긴다 (codex.cmd, hermes chat 등 변형 모두 호환).
+        return $"cmd.exe /k \"{agent.Command}\"";
     }
 
     /// <summary>"셸 준비 후 주입" 커맨드. 직접 실행(cmd /k) 방·일반 방은 null.

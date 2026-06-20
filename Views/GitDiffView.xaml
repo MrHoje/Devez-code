@@ -92,7 +92,7 @@
             <Border x:Name="DiffHeader" Grid.Row="0" Grid.Column="0" Visibility="Collapsed"
                     Background="{DynamicResource PanelBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                <Grid x:Name="DiffHeaderInner">
+                <Grid x:Name="DiffHeaderInner" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="46"/>
                         <ColumnDefinition Width="*"/>
@@ -121,6 +121,7 @@
                      Padding="0" HorizontalContentAlignment="Stretch"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Visible"
+                     ScrollViewer.ScrollChanged="DiffList_ScrollChanged"
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.VirtualizationMode="Recycling"
                      VirtualizingPanel.ScrollUnit="Pixel"
