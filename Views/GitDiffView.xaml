@@ -6,68 +6,75 @@
              FontFamily="{StaticResource PretendardFont}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <!-- 변경 파일 목록 -->
+            <!-- 변경 파일 목록 (우측 보더 1px 가 채널의 좌측 선) -->
             <ColumnDefinition x:Name="ListCol" Width="200" MinWidth="130"/>
+            <!-- 4px 채널: BgBrush 간격. 사이의 GridSplitter 는 평소 투명, 호버 시 핸들 노출 (devez 정합) -->
             <ColumnDefinition Width="4"/>
-            <!-- 선택 파일 diff (수정 전 / 수정 후) -->
+            <!-- 선택 파일 diff (좌측 보더 1px 가 채널의 우측 선) -->
             <ColumnDefinition Width="*" MinWidth="200"/>
         </Grid.ColumnDefinitions>
 
-        <!-- 변경 파일 목록 (전체 높이) -->
-        <Grid Grid.Column="0">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,4">
-                <ItemsControl x:Name="ChangesHost">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type models:GitChange}">
-                            <Border x:Name="Row" CornerRadius="6" Background="Transparent"
-                                    Padding="8,5" Margin="0,1" Cursor="Hand"
-                                    MouseLeftButtonUp="Change_Click">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Status}" Width="16"
-                                               TextAlignment="Center" FontWeight="Bold"
-                                               FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
-                                               FontSize="{DynamicResource Fs12}"
-                                               Foreground="{Binding StatusColor}"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Path}" Margin="8,0,0,0"
-                                               TextTrimming="CharacterEllipsis"
-                                               ToolTip="{Binding Path}"
-                                               FontSize="{DynamicResource Fs12}"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                </Grid>
-                            </Border>
-                            <DataTemplate.Triggers>
-                                <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                </Trigger>
-                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
-                                </DataTrigger>
-                            </DataTemplate.Triggers>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+        <!-- 변경 파일 목록 (전체 높이). Border 로 감싸 우측 1px 보더를 채널 좌측 선으로 사용 -->
+        <Border Grid.Column="0"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
+            <Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,4">
+                    <ItemsControl x:Name="ChangesHost">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:GitChange}">
+                                <Border x:Name="Row" CornerRadius="6" Background="Transparent"
+                                        Padding="8,5" Margin="0,1" Cursor="Hand"
+                                        MouseLeftButtonUp="Change_Click">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Status}" Width="16"
+                                                   TextAlignment="Center" FontWeight="Bold"
+                                                   FontFamily="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"
+                                                   FontSize="{DynamicResource Fs12}"
+                                                   Foreground="{Binding StatusColor}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Path}" Margin="8,0,0,0"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Path}"
+                                                   FontSize="{DynamicResource Fs12}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                    </Grid>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Row" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                    </Trigger>
+                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                        <Setter TargetName="Row" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
 
-            <!-- 변경 없음 / 안내 -->
-            <TextBlock x:Name="EmptyText" Visibility="Collapsed"
-                       VerticalAlignment="Center" HorizontalAlignment="Center"
-                       TextAlignment="Center" Margin="14"
-                       TextWrapping="Wrap"
-                       FontSize="{DynamicResource Fs12}"
-                       Foreground="{DynamicResource TextMutedBrush}"/>
-        </Grid>
+                <!-- 변경 없음 / 안내 -->
+                <TextBlock x:Name="EmptyText" Visibility="Collapsed"
+                           VerticalAlignment="Center" HorizontalAlignment="Center"
+                           TextAlignment="Center" Margin="14"
+                           TextWrapping="Wrap"
+                           FontSize="{DynamicResource Fs12}"
+                           Foreground="{DynamicResource TextMutedBrush}"/>
+            </Grid>
+        </Border>
 
-        <!-- 목록 ↔ diff 분할 -->
+        <!-- 목록 ↔ diff 분할 (devez 정합: 4px 채널 위 투명 오버레이, 호버 시 PrimaryBrush 핸들) -->
         <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
-                      Background="{DynamicResource LineBrush}"
                       ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
 
-        <!-- 선택 파일 diff (side-by-side: 좌=수정 전 / 우=수정 후) -->
-        <Grid Grid.Column="2" Background="{DynamicResource BgBrush}">
+        <!-- 선택 파일 diff (side-by-side: 좌=수정 전 / 우=수정 후). 좌측 1px 보더가 채널 우측 선 -->
+        <Border Grid.Column="2"
+                Background="{DynamicResource BgBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
+            <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -216,6 +223,7 @@
                        Text="변경 파일을 선택하면 전체 코드 비교가 표시됩니다."
                        FontSize="{DynamicResource Fs12}"
                        Foreground="{DynamicResource TextMutedBrush}"/>
-        </Grid>
+            </Grid>
+        </Border>
     </Grid>
 </UserControl>
