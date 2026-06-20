@@ -22,8 +22,8 @@ public partial class GitDiffView : UserControl
         Unloaded += (_, _) => App.FontScaleChanged -= OnFontScaleChanged;
     }
 
-    /// <summary>전역 글꼴 단계별 diff 기본 크기. 작게(0)=11, 크게(1)=13 (+2 스텝).</summary>
-    private static double BaseFontSizeFor(int scale) => 11 + scale * 2;
+    /// <summary>전역 글꼴 단계별 diff 기본 크기. 작게(0)=13, 크게(1)=15 (+2 스텝).</summary>
+    private static double BaseFontSizeFor(int scale) => 13 + scale * 2;
 
     private bool _userAdjusted;
 
