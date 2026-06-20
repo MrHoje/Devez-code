@@ -297,11 +297,9 @@ public partial class MainWindow : Window
         UpdateFooterDivider();
     }
 
-    /// <summary>푸터 구분선(|)은 CPU/RAM 칩과 한도 표시가 둘 다 보일 때만 노출.</summary>
-    private void UpdateFooterDivider()
-        => FooterDivider.Visibility =
-            (PerfChipGroup.Visibility == Visibility.Visible && RateLimitPanel.Visibility == Visibility.Visible)
-            ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>푸터 구분선 — PerfChipGroup 과 RateLimitPanel 이 다른 컬럼으로 분리되어 더 이상 필요 없음.
+    /// 호출부 호환을 위해 no-op 로 남겨둔다.</summary>
+    private void UpdateFooterDivider() { }
 
     private void ApplyPerfSnapshot(Models.PerfSnapshot snap)
     {

@@ -96,7 +96,7 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,6">
                         <!-- 프로젝트 경로 버블 — 콤보 제거, 단순 표시만. 브렌치 버블과 동일 스타일/사이즈로 통일. -->
-                        <Border x:Name="DirectoryBubble" CornerRadius="10"
+                        <Border x:Name="DirectoryBubble" CornerRadius="8"
                                 Background="{DynamicResource PanelBrush}"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                 Height="32" Padding="12,0" MaxWidth="420"
@@ -109,14 +109,14 @@
                                       VerticalAlignment="Center"/>
                                 <TextBlock x:Name="ProjectPathText" Margin="7,0,0,0" VerticalAlignment="Center"
                                            FontFamily="{StaticResource PretendardFont}"
-                                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextBrush}"
                                            TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- git 브렌치 단일 버블 — 비-git 저장소면 숨김. 클릭 시 새로고침. -->
-                        <Border x:Name="BranchBubble" CornerRadius="10"
+                        <Border x:Name="BranchBubble" CornerRadius="8"
                                 Background="{DynamicResource PanelBrush}"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                 Height="32" Padding="12,0" Margin="8,0,0,0"
@@ -133,7 +133,7 @@
                                       VerticalAlignment="Center"/>
                                 <TextBlock x:Name="ProjectBranchText" Margin="7,0,0,0" VerticalAlignment="Center"
                                            FontFamily="{StaticResource PretendardFont}"
-                                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextBrush}"/>
                             </StackPanel>
                         </Border>
@@ -561,60 +561,63 @@
                 <views:FileExplorerView x:Name="FileExplorer" Grid.Column="4"
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
             </Grid>
-
-            <!-- ── Status bar (헤더와 동일 높이 44, 우측 설정 버튼) ──────────── -->
+            <!-- ── Status bar (헤더와 동일 높이 44, 우측 설정 버튼) ────────────
+                 타이틀 바와 동일하게 SharedSizeGroup 으로 컬럼 묶음. RateLimitPanel 을
+                 column 2(중앙패널 시작 x)에 배치 — 사이드바 폭이 변해도 항상 중앙패널과 정렬. -->
             <Border Grid.Row="3" Height="44" Background="{DynamicResource BgBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="262" SharedSizeGroup="MainSidebar" MinWidth="190"/>
+                        <ColumnDefinition Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="4" SharedSizeGroup="MainFileExpSplitter"/>
+                        <ColumnDefinition Width="300" SharedSizeGroup="MainFileExp" MinWidth="200"/>
                     </Grid.ColumnDefinitions>
+                    <!-- 좌측: CPU/RAM 칩 -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
-                    <!-- CPU/RAM 칩(상단에서 이동) — 클릭 시 작업 관리자. 설정으로 표시 토글.
-                         값에 따라 색 변화(PerfBrush: ≥80 빨강 · ≥50 주황 · 그 외 기본) — devez 규칙. -->
-                    <StackPanel x:Name="PerfChipGroup" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
-                                Style="{StaticResource TitleBarChipButton}">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="CPU  " FontSize="{DynamicResource PerfChipLblFs}"
-                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="PerfCpuText" Text="--" Width="46" TextAlignment="Left"
-                                           FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                                <TextBlock Text="RAM  " FontSize="{DynamicResource PerfChipLblFs}"
-                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="PerfRamText" Text="--" FontSize="{DynamicResource PerfChipValFs}"
-                                           VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
-                            </StackPanel>
-                        </Button>
+                        <StackPanel x:Name="PerfChipGroup" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
+                                    Style="{StaticResource TitleBarChipButton}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="CPU  " FontSize="{DynamicResource PerfChipLblFs}"
+                                               Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="PerfCpuText" Text="--" Width="46" TextAlignment="Left"
+                                               FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="RAM  " FontSize="{DynamicResource PerfChipLblFs}"
+                                               Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="PerfRamText" Text="--" FontSize="{DynamicResource PerfChipValFs}"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
                     </StackPanel>
-                    <Border x:Name="FooterDivider" Width="1" Height="14" Margin="10,0" VerticalAlignment="Center"
-                            Background="{DynamicResource LineBrush}" Opacity="0.6" Visibility="Collapsed"/>
-                    <!-- 계정 rate limit 사용량 (statusLine 훅이 떨군 값). 프로그래스바 + %.
-                         데이터 없으면 숨김. 막대 색은 사용률 구간(기본/노랑/주황/빨강). -->
-                    <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal" VerticalAlignment="Center"
+                    <!-- 중앙(중앙패널 시작 x 에 고정): 계정 사용량 (5시간/주간) -->
+                    <StackPanel Grid.Column="2" x:Name="RateLimitPanel" Orientation="Horizontal"
+                                VerticalAlignment="Center" HorizontalAlignment="Left"
                                 Visibility="Collapsed" ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
                         <TextBlock x:Name="RlFiveLabel" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
                         <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
                                 Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
                             <Border x:Name="RlFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
                         </Border>
                         <TextBlock x:Name="RlFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
-                        <TextBlock x:Name="RlSevenLabel" Text="주간" Margin="12,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                        <TextBlock x:Name="RlSevenLabel" Text="주간" Margin="14,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
                         <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
                                 Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
                             <Border x:Name="RlSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
                         </Border>
                         <TextBlock x:Name="RlSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
-                    </StackPanel>
-                    <Button Grid.Column="1" Style="{StaticResource WinCtrlBtn}" Click="SettingsBtn_Click"
-                            ToolTip="설정">
+                    <!-- 우측: 설정 버튼 -->
+                    <Button Grid.Column="4" Style="{StaticResource WinCtrlBtn}" Click="SettingsBtn_Click"
+                            ToolTip="설정" HorizontalAlignment="Right" Margin="0,0,4,0">
                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"
                               Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
