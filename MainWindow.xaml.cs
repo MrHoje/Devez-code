@@ -141,6 +141,9 @@ public partial class MainWindow : Window
             CodexHookInstaller.EnsureScriptInstalled();
             CodexHookInstaller.InstallHooksJson();
             _codexHook.Start();
+            // opencode 플러그인 — 매 시작 시 ~/.config\opencode\plugin\devezcode-room-tracker.js 갱신.
+            // session.created/updated 이벤트에서 roomId 별 session_id 를 파일에 기록 → 다음 실행 때 --session <id> 로 복원.
+            OpenCodePluginInstaller.EnsureInstalled();
             _agentLastMsg.Start();
             RestoreLastSession();
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내

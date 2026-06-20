@@ -28,6 +28,9 @@ public static class SettingsService
         public List<string> AgentRoomsLaunched { get; set; } = new();
         // codex 방별 세션 ID (ClaudeCodeRoomSessions 와 동일 패턴). --session-id 첫 실행 → SessionStart 훅이 실제 ID 기록 → --resume 로 이어가기.
         public Dictionary<string, string> CodexRoomSessions { get; set; } = new();
+        // opencode 방별 세션 ID (Devez 패턴 이식). 플러그인이 sessions\<room>.txt 에 기록한 최신 ID 를 영속.
+        // 재오픈 시 `opencode --session <id>` 로 같은 대화 정확히 복원(같은 폴더의 여러 방도 분리).
+        public Dictionary<string, string> OpenCodeRoomSessions { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
         public Dictionary<string, string> RoomAgents { get; set; } = new();
         // 사용자가 활성화한 에이전트 ID 목록. 빈 값이면 모든 설치된 에이전트 활성화로 간주.
@@ -235,6 +238,17 @@ public static class SettingsService
         // 불변식: 비정상 값(빈 문자열 등) 은 무시 — 코드 안전성.
         if (string.IsNullOrWhiteSpace(sessionId)) return;
         Current.CodexRoomSessions[roomId] = sessionId;
+        Save();
+    }
+
+    // ── opencode 세션 ID (Devez 패턴 이식, 플러그인이 채움) ─────────────
+    public static string? LoadOpenCodeRoomSession(string roomId)
+        => Current.OpenCodeRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+
+    public static void SaveOpenCodeRoomSession(string roomId, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        Current.OpenCodeRoomSessions[roomId] = sessionId;
         Save();
     }
 }

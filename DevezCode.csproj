@@ -42,6 +42,11 @@
     <Content Include="Resources\Hooks\codex-hook.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- opencode 플러그인 (Resources\Plugins\opencode-room-tracker.js).
+         OpenCodePluginInstaller 가 매 시작 시 ~/.config\opencode\plugin\ 으로 복사. -->
+    <Content Include="Resources\Plugins\opencode-room-tracker.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

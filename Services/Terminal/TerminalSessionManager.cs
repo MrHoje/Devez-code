@@ -71,6 +71,14 @@ public sealed class TerminalSessionManager
                 var direct = TryBuildCodexDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
             }
+            else if (ccDir != null && agent.Id == "opencode")
+            {
+                // opencode: Devez 패턴 — 플러그인이 sessions\<room>.txt 에 기록한 session_id 로 --session <id> 로 정확히 복원.
+                // 같은 폴더의 여러 방이 있어도 플러그인 $env:DEVEZCODE_ROOM_ID 로 분리됨.
+                startDir = ccDir;
+                var direct = TryBuildOpenCodeDirectLaunch(roomId, out inject);
+                if (direct != null) commandLine = direct;
+            }
             else if (ccDir != null && agent.SupportsHooks)
             {
                 startDir = ccDir;
@@ -166,6 +174,50 @@ public sealed class TerminalSessionManager
         catch
         {
             injectFallback = body + "\r";
+            return null;
+        }
+    }
+
+    /// <summary>opencode 방의 opencode 를 cmd /k 배치로 직접 실행 (Devez 패턴 이식).
+    /// 첫 실행은 <c>opencode</c> (시작 디렉터리에서 새 세션), 재진입은 <c>opencode --session &lt;id&gt;</c> 로
+    /// 같은 대화 복원. 플러그인(opencode-room-tracker.js) 이 <c>session.created</c>/<c>session.updated</c>
+    /// 이벤트에서 session_id 를 %APPDATA%\DevezCode\opencode\sessions\&lt;room&gt;.txt 에 기록.
+    /// $env:DEVEZCODE_ROOM_ID 로 어느 방의 opencode 인지 식별 → 같은 폴더의 여러 방이 있어도 완전 분리.</summary>
+    private string? TryBuildOpenCodeDirectLaunch(string roomId, out string? injectFallback)
+    {
+        injectFallback = null;
+        OpenCodePluginInstaller.EnsureInstalled();
+
+        // 플러그인이 방금 기록한 ID (가장 최신) 가 있으면 그걸 사용, 없으면 저장된 값 사용.
+        // → /clear·새 대화 등으로 ID 바뀌어도 다음 실행 때 자동 갱신.
+        var tracked = OpenCodePluginInstaller.LoadTrackedSessionId(roomId);
+        var sessionId = SettingsService.LoadOpenCodeRoomSession(roomId);
+        if (tracked != null && tracked != sessionId)
+        {
+            sessionId = tracked;
+            SettingsService.SaveOpenCodeRoomSession(roomId, tracked);
+        }
+
+        // 세션 ID 가 있으면 정확히 그 방의 세션을 복원. 없으면(첫 실행) 새 세션 — 플러그인이 ID 를 기록.
+        // 외부 삭제 등으로 --session 이 실패하면 새 세션으로 폴백.
+        string body = sessionId != null
+            ? $"opencode --session {sessionId} || opencode"
+            : "opencode";
+
+        try
+        {
+            // opencode-launch\<room>.cmd (codex/Claude 와 별도 경로)
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "opencode", "launch");
+            Directory.CreateDirectory(dir);
+            var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
+            File.WriteAllText(batchPath, "@echo off\r\n" + body + "\r\n");
+            return $"cmd.exe /k \"{batchPath}\"";
+        }
+        catch
+        {
+            injectFallback = (sessionId != null ? $"opencode --session {sessionId}" : "opencode") + "\r";
             return null;
         }
     }
