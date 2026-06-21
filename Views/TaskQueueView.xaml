@@ -3,15 +3,16 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:DevezCode.Models"
              Background="{DynamicResource PanelBrush}"
-             FontFamily="{StaticResource PretendardFont}">
+             FontFamily="{StaticResource PretendardFont}"
+             PreviewMouseLeftButtonDown="Root_PreviewMouseLeftButtonDown"
+             PreviewMouseLeftButtonUp="Root_PreviewMouseLeftButtonUp"
+             PreviewMouseMove="Root_PreviewMouseMove"
+             PreviewKeyDown="Root_PreviewKeyDown"
+             DataContextChanged="TaskQueueView_DataContextChanged">
     <UserControl.Resources>
-        <!-- 동적 MaxWidth: ListBox 폭에서 padding(20) 빼기. 패널 폭에 맞춰 자동 조정. -->
         <models:SubtractConverter x:Key="Subtract"/>
 
-        <!-- ── 버블 우클릭 컨텍스트 메뉴 (doit 정합: 복사 / 삭제).
-              주의: Setter.Value 내부에 인라인으로 두면 WPF 컴파일러가 자식 요소들을
-              부모 ListBoxItem 에 매핑하면서 connectionId 가 충돌해 런타임에
-              InvalidCastException 이 발생한다. 그래서 리소스로 분리해 StaticResource 로 참조. -->
+        <!-- ── 컨텍스트 메뉴 (Setter.Value 인라인 X → 리소스로 분리) ── -->
         <ContextMenu x:Key="BubbleContextMenu" Opened="BubbleContextMenu_Opened">
             <MenuItem Click="BubbleCopy_Click">
                 <MenuItem.Icon>
@@ -25,63 +26,50 @@
                 </MenuItem.Icon>
             </MenuItem>
         </ContextMenu>
-
-        <!-- ── 버블 한 줄: doit/devez 정합 — BubbleWrapper Grid 안에
-              (a) BubbleBorder(BubbleBorderBrush 1px 외곽) + (b) SelectionRing(선택 시 Primary 1.5px 외곽)을 sibling 으로 배치.
-              둘 다 BubbleWrapper 사이즈를 채우므로 SelectionRing 이 자동으로 버블 외곽에 정렬됨.
-              CornerRadius: BubbleBorder 14,14,4,14 / SelectionRing 15,15,5,15 (= outer+0.75 × 2) / BubbleInner 13,13,3,13. -->
-        <DataTemplate x:Key="TaskBubbleTemplate" DataType="{x:Type models:TaskQueueItem}">
-            <Grid Margin="0,3" Background="Transparent" HorizontalAlignment="Stretch">
-                <Grid x:Name="BubbleWrapper"
-                      HorizontalAlignment="Right"
-                      MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource Subtract}, ConverterParameter=20}">
-                    <!-- (a) 본체: 이중 border -->
-                    <Border x:Name="BubbleBorder"
-                            Background="{DynamicResource BubbleBorderBrush}"
-                            CornerRadius="14,14,4,14"
-                            Padding="1"
-                            UseLayoutRounding="True"
-                            SnapsToDevicePixels="True"
-                            Focusable="False">
-                        <Border x:Name="BubbleInner"
-                                Background="{DynamicResource BubbleBrush}"
-                                CornerRadius="13,13,3,13"
-                                Padding="14,10">
-                            <TextBlock Text="{Binding Text}"
-                                       TextWrapping="Wrap"
-                                       FontSize="{DynamicResource Fs14}"
-                                       Foreground="{DynamicResource TextBrush}"/>
-                        </Border>
-                    </Border>
-                    <!-- (b) 선택 링: IsHitTestVisible=False 로 클릭이 ListBoxItem 으로 전달됨.
-                          Visibility 는 DataTrigger 로 ListBoxItem.IsSelected 에 연동. -->
-                    <Border x:Name="SelectionRing"
-                            IsHitTestVisible="False"
-                            CornerRadius="15,15,5,15"
-                            BorderBrush="{DynamicResource PrimaryBrush}"
-                            BorderThickness="1.5"
-                            SnapsToDevicePixels="False"
-                            UseLayoutRounding="False"
-                            Visibility="Collapsed"/>
-                </Grid>
-            </Grid>
-            <DataTemplate.Triggers>
-                <!-- 선택 시 링 노출 (ListBoxItem.IsSelected → DataTemplate) -->
-                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                    <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-            </DataTemplate.Triggers>
-        </DataTemplate>
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 버블 리스트 + 빈 안내 (탭 자체가 '작업 큐' 제목 역할 → 내부 헤더 생략, 바로 메시지 콘텐츠) -->
-        <Grid Grid.Row="0">
+        <!-- ── 선택 모드 액션바 (debit 정합: IsSelectionMode=true 일 때만 노출, N개 삭제) ── -->
+        <Border x:Name="SelectionActionBar" Grid.Row="0" Height="44"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                Visibility="Collapsed">
+            <Grid Margin="14,0,12,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Click="CancelSelection_Click"
+                        Style="{StaticResource IconButton}" Width="28" Height="28"
+                        ToolTip="선택 취소 (Esc)" VerticalAlignment="Center">
+                    <Path Style="{StaticResource LucideButtonIcon}"
+                          Data="{StaticResource IconX}" Width="14" Height="14"/>
+                </Button>
+                <TextBlock Grid.Column="1" x:Name="SelectionCountText"
+                           VerticalAlignment="Center" Margin="10,0,0,0"
+                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}"
+                           Text="0개 선택"/>
+                <Button Grid.Column="2" x:Name="DeleteSelectedBtn" Click="DeleteSelected_Click"
+                        Height="28" Padding="12,0" Cursor="Arrow"
+                        Style="{StaticResource PrimaryButton}"
+                        VerticalAlignment="Center"
+                        FontSize="{DynamicResource Fs12}">
+                    <TextBlock Text="삭제" Foreground="White"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- ── 버블 리스트 (debit MemoList 정합) ── -->
+        <Grid Grid.Row="1">
+            <!-- 비어있을 때 안내 -->
             <StackPanel x:Name="EmptyHint" VerticalAlignment="Center" HorizontalAlignment="Center"
                         Visibility="Collapsed">
                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconListTodo}"
@@ -95,50 +83,146 @@
                            Foreground="{DynamicResource TextMutedBrush}" TextAlignment="Center" Opacity="0.7"/>
             </StackPanel>
 
-            <Border Padding="10,10">
-                <ListBox x:Name="BubblesList"
-                         ItemsSource="{Binding Items}"
-                         ItemTemplate="{StaticResource TaskBubbleTemplate}"
-                         SelectionMode="Extended"
-                         Background="Transparent" BorderThickness="0"
-                         Foreground="{DynamicResource TextBrush}"
-                         HorizontalContentAlignment="Stretch"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         KeyDown="BubblesList_KeyDown"
-                         PreviewMouseDown="BubblesList_PreviewMouseDown">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="Background" Value="Transparent"/>
-                            <Setter Property="Padding" Value="0"/>
-                            <Setter Property="Margin" Value="0"/>
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-                            <Setter Property="Cursor" Value="Arrow"/>
-                            <!-- 우클릭 시: 미선택이면 이 항목만 선택 / 이미 선택(다중)이면 선택 유지 -->
-                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="BubbleItem_PreviewRightButtonDown"/>
-                            <!-- 컨텍스트 메뉴: UserControl.Resources 에서 정의한 것을 참조.
-                                 Setter.Value 인라인에 두면 WPF 컴파일러 connectionId 충돌 발생 → InvalidCastException -->
-                            <Setter Property="ContextMenu" Value="{StaticResource BubbleContextMenu}"/>
-                            <!-- 커스텀 템플릿: WPF 기본 ListBoxItem 템플릿은 IsSelected 트리거로
-                                  파란색 선택 배경을 칠해 행 전체가 색이 들어간 것처럼 보인다.
-                                  ContentPresenter 만 두는 미니멀 템플릿으로 기본 트리거를 완전히 제거 →
-                                  선택 표시는 DataTemplate 내부의 SelectionRing 으로만 표현.
-                                  (doit 정합: 버블 자체에만 외곽선, 행 배경은 항상 투명) -->
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <ContentPresenter/>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                </ListBox>
-            </Border>
+            <ListBox x:Name="BubblesList"
+                     ItemsSource="{Binding Items}"
+                     Background="Transparent" BorderThickness="0" Padding="0"
+                     Focusable="False"
+                     HorizontalContentAlignment="Stretch"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.CanContentScroll="True"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     VirtualizingPanel.ScrollUnit="Pixel"
+                     KeyDown="BubblesList_KeyDown">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="Focusable" Value="False"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Cursor" Value="Arrow"/>
+                        <!-- 커스텀 템플릿 (ContentPresenter 만): WPF 기본 ListBoxItem 템플릿의
+                              IsSelected 트리거가 행 전체에 색을 칠하는 함정 회피. -->
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <ContentPresenter/>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="ContextMenu" Value="{StaticResource BubbleContextMenu}"/>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.Resources>
+                    <!-- ── 버블 한 줄: doit MemoMessage 템플릿의 task queue 슬림 버전 ──
+                          BubbleRow(Grid) + SelectCheck(CheckBox) + BubbleDock(DockPanel) + BubbleWrapper(Grid) + SelectionRing/BubbleBorder/BubbleInner/TextBlock.
+                          코드블럭/태그/핀/별/시트/할일/타이머/첨부/URL/링크프리뷰/댓글/공유/일정등록/편집/AI채팅 모두 제외. -->
+                    <DataTemplate DataType="{x:Type models:TaskQueueItem}">
+                        <Grid Margin="0,3" x:Name="BubbleRow" Background="Transparent">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- SelectCheck: 버블 우측(절대 좌표) 오버레이. IsSelectionMode ON 일 때만 표시.
+                                  Opacity 트리거로 노출/숨김 → 레이아웃 영향 없음, 가상화 ListBox 우루루 차단. -->
+                            <CheckBox x:Name="SelectCheck"
+                                      IsChecked="{Binding IsSelected}"
+                                      HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                      Margin="0,0,11,6"
+                                      Opacity="0" IsHitTestVisible="False"
+                                      Style="{StaticResource ModernCheckBox}"/>
+
+                            <DockPanel x:Name="BubbleDock"
+                                       HorizontalAlignment="Right"
+                                       LastChildFill="False"
+                                       Margin="0,0,22,0">
+                                <DockPanel.RenderTransform>
+                                    <TranslateTransform X="0"/>
+                                </DockPanel.RenderTransform>
+                                <Grid DockPanel.Dock="Right"
+                                      x:Name="BubbleWrapper"
+                                      MaxWidth="{Binding ActualWidth, ElementName=BubblesList,
+                                                 Converter={StaticResource Subtract}, ConverterParameter=20}">
+                                    <!-- SelectionRing: BubbleWrapper 내부 sibling. BubbleBorder 와 독립.
+                                          IsHighlighted(IsSelected || IsRightClickHighlighted) → Visible.
+                                          BubbleBorder 의 테두리/배경과 같게 따라가도록 CornerRadius 바인딩. -->
+                                    <Border x:Name="SelectionRing"
+                                            Panel.ZIndex="10"
+                                            CornerRadius="{Binding CornerRadius, ElementName=BubbleBorder}"
+                                            BorderBrush="{DynamicResource PrimaryBrush}"
+                                            BorderThickness="1.5"
+                                            Background="Transparent"
+                                            IsHitTestVisible="False"
+                                            SnapsToDevicePixels="False"
+                                            UseLayoutRounding="False"
+                                            Visibility="Collapsed"/>
+                                    <Border x:Name="BubbleBorder"
+                                            Background="{DynamicResource BubbleBorderBrush}"
+                                            CornerRadius="14,14,4,14"
+                                            Padding="1"
+                                            UseLayoutRounding="True"
+                                            SnapsToDevicePixels="True"
+                                            Focusable="False"
+                                            PreviewMouseLeftButtonDown="Bubble_PreviewMouseLeftButtonDown"
+                                            MouseLeftButtonDown="Bubble_LeftClick"
+                                            MouseRightButtonDown="Bubble_RightClick">
+                                        <Border x:Name="BubbleInner"
+                                                Background="{DynamicResource BubbleBrush}"
+                                                CornerRadius="13,13,3,13"
+                                                Padding="14,10">
+                                            <TextBlock Text="{Binding Text}"
+                                                       TextWrapping="Wrap"
+                                                       FontSize="{DynamicResource Fs14}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                        </Border>
+                                    </Border>
+                                </Grid>
+                            </DockPanel>
+                        </Grid>
+                        <DataTemplate.Triggers>
+                            <!-- 하이라이트(선택 OR 우클릭) → SelectionRing 노출 -->
+                            <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                            <!-- IsSelectionMode ON → SelectCheck 표시 + 버블 좌측으로 16 이동(체크박스 자리 확보) -->
+                            <DataTrigger Binding="{Binding DataContext.IsSelectionMode,
+                                                    RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                         Value="True">
+                                <Setter TargetName="SelectCheck" Property="Opacity"         Value="1"/>
+                                <Setter TargetName="SelectCheck" Property="IsHitTestVisible" Value="True"/>
+                                <Setter TargetName="BubbleDock" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <TranslateTransform X="-16"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ListBox.Resources>
+            </ListBox>
+
+            <!-- ── 러버밴드 오버레이: 빈 영역 드래그로 다중선택 ── -->
+            <Canvas x:Name="RubberBandCanvas"
+                    Panel.ZIndex="23"
+                    IsHitTestVisible="False"
+                    ClipToBounds="True"
+                    Visibility="Collapsed">
+                <Rectangle x:Name="RubberBandRect"
+                           Stroke="{DynamicResource PrimaryBrush}"
+                           StrokeThickness="1"
+                           RadiusX="2" RadiusY="2">
+                    <Rectangle.Fill>
+                        <SolidColorBrush Color="{DynamicResource PrimaryColor}" Opacity="0.12"/>
+                    </Rectangle.Fill>
+                </Rectangle>
+            </Canvas>
         </Grid>
 
-        <!-- 입력 바: doit 정합 — 둥근 배경, 전송 아이콘 없음, Enter 로 추가 -->
-        <Border Grid.Row="1"
+        <!-- ── 입력 바: doit 정합 (단일 라인, 둥근 배경, Enter=추가) ── -->
+        <Border Grid.Row="2"
                 Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
                 Padding="10,8,10,10">
@@ -157,7 +241,6 @@
                              TextWrapping="Wrap" AcceptsReturn="True"
                              PreviewKeyDown="InputBox_PreviewKeyDown"
                              TextChanged="InputBox_TextChanged"/>
-                    <!-- placeholder (TextBox 가 비었을 때만 노출) -->
                     <TextBlock Text="작업을 입력하고 Enter"
                                IsHitTestVisible="False"
                                Margin="1,0,0,0" VerticalAlignment="Center"
