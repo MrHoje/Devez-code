@@ -45,8 +45,21 @@ public sealed class McpServer : INotifyPropertyChanged
     public int TimeoutMs { get; set; }
 
     // ── 라이브 상태(설정 파일에 저장되지 않음, opencode mcp list 로 채움) ──
-    [JsonIgnore] public McpLiveStatus Status { get; set; } = McpLiveStatus.Unknown;
-    [JsonIgnore] public string StatusMessage { get; set; } = "";
+    private McpLiveStatus _status = McpLiveStatus.Unknown;
+    [JsonIgnore]
+    public McpLiveStatus Status
+    {
+        get => _status;
+        set { if (_status != value) { _status = value; OnPropertyChanged(); } }
+    }
+
+    private string _statusMessage = "";
+    [JsonIgnore]
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        set { if (_statusMessage != value) { _statusMessage = value; OnPropertyChanged(); } }
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null)

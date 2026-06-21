@@ -190,14 +190,8 @@ public partial class McpManagerDialog : UserControl
         try
         {
             await OpenCodeConfigService.RefreshStatusAsync(_servers);
-            // UI 갱신: ListBox 가 SelectedItem 의 Status 변경을 감지하도록 강제 새로고침
-            // (단순 ObservableCollection.Add/Remove 가 아니라 속성 변경이므로 CollectionViewSource 리셋)
-            var saved = ServerList.SelectedItem;
-            _isLoading = true;
-            ServerList.ItemsSource = null;
-            ServerList.ItemsSource = _servers;
-            ServerList.SelectedItem = saved;
-            _isLoading = false;
+            // McpServer 가 INotifyPropertyChanged 를 구현하므로 ListBox 행의 상태 점/라벨은
+            // 자동으로 갱신된다. 우측 상세 패널의 StatusMessage 도 PropertyChanged 로 따라온다.
         }
         finally
         {

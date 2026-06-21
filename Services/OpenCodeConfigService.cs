@@ -269,38 +269,75 @@ public static class OpenCodeConfigService
     private static readonly Regex Ansi = new(@"\x1B\[[0-9;]*[A-Za-z]", RegexOptions.Compiled);
     private static readonly Regex Box = new(@"[\u2500-\u257F\u2580-\u259F]", RegexOptions.Compiled);
 
-    /// <summary><c>opencode mcp list</c> 출력에서 서버별 상태를 추출한다. 대략적인 패턴 매칭이지만
-    /// "Name: foo" + "Status: connected|disabled|failed|needs_auth|needs_client_registration" 행을 찾는다.</summary>
+    /// <summary><c>opencode mcp list</c> 출력에서 서버별 상태를 추출한다. 실제 포맷 (CLI 1.17.9 기준):
+    /// <code>
+    ///   MCP Servers
+    ///
+    ///   test-server failed
+    ///       MCP error -32000: Connection closed
+    ///       echo hello
+    ///
+    ///   second-one disabled
+    ///       echo world
+    ///
+    ///   2 server(s)
+    /// </code>
+    /// 각 서버 블록의 첫 줄이 "이름 상태" 형식이고, 그 아래 들여쓴 줄이 에러/커맨드.
+    /// 빈 줄로 블록 구분. CLI 포맷이 바뀌면 이 파서를 갱신해야 한다.</summary>
+    private static readonly Regex StatusLineRx = new(
+        @"^\s*(?<name>\S+)\s+(?<status>connected|disabled|failed|needs_auth|needs_client_registration)\s*$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static void ParseStatusInto(IEnumerable<McpServer> servers, string rawOutput, string rawError)
     {
+        // ANSI 색코드와 박스문자를 벗겨낸다.
         var text = Ansi.Replace(rawOutput, "");
         text = Box.Replace(text, "");
-        // opencode 출력은 한 서버에 여러 줄( Name / Status / Command|URL / Error )
-        // 서버 블록은 "Name: <name>" 으로 시작한다고 가정. CLI 버전이 바뀌면 패턴도 조정.
+
         var byName = servers.ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
-        var blocks = Regex.Split(text, @"(?=Name:\s+\S+)");
-        foreach (var block in blocks)
+
+        // 빈 줄로 블록 분리. 빈 블록/헤더( "MCP Servers", "N server(s)" )는 매칭에서 자연스럽게 걸러진다.
+        var blocks = Regex.Split(text, @"\r?\n\s*\r?\n");
+        foreach (var raw in blocks)
         {
-            var nameMatch = Regex.Match(block, @"Name:\s+(\S+)");
-            if (!nameMatch.Success) continue;
-            var name = nameMatch.Groups[1].Value.Trim();
+            var block = raw.Trim();
+            if (block.Length == 0) continue;
+            // 블록의 첫 줄에서 name + status 추출
+            var firstLineEnd = block.IndexOf('\n');
+            var firstLine = (firstLineEnd < 0 ? block : block.Substring(0, firstLineEnd)).TrimEnd();
+            var rest = firstLineEnd < 0 ? "" : block.Substring(firstLineEnd + 1);
+
+            var m = StatusLineRx.Match(firstLine);
+            if (!m.Success) continue;
+
+            var name = m.Groups["name"].Value;
             if (!byName.TryGetValue(name, out var srv)) continue;
 
-            var statusMatch = Regex.Match(block, @"Status:\s+(\w+)");
-            if (statusMatch.Success)
+            srv.Status = m.Groups["status"].Value.ToLowerInvariant() switch
             {
-                srv.Status = statusMatch.Groups[1].Value.ToLowerInvariant() switch
+                "connected" => McpLiveStatus.Connected,
+                "disabled" => McpLiveStatus.Disabled,
+                "needs_auth" => McpLiveStatus.NeedsAuth,
+                "failed" => McpLiveStatus.Failed,
+                "needs_client_registration" => McpLiveStatus.NeedsClientRegistration,
+                _ => McpLiveStatus.Unknown,
+            };
+
+            // 에러 메시지: 들여쓴 첫 줄이 "MCP error ..." 또는 다른 텍스트면 그대로 노출
+            var errSb = new System.Text.StringBuilder();
+            foreach (var line in rest.Split('\n'))
+            {
+                var t = line.Trim();
+                if (t.Length == 0) continue;
+                // 커맨드/url(흰색·파랑 등 컬러 제거된 평문) 라인은 에러가 아니면 무시.
+                // 단순 휴리스틱: "MCP" 또는 "error" 또는 "EACCES" 같은 일반 에러 키워드가 있으면 수집.
+                if (Regex.IsMatch(t, @"MCP|error|Error|failed|denied|refused|ENOENT|EACCES|timeout", RegexOptions.IgnoreCase))
                 {
-                    "connected" => McpLiveStatus.Connected,
-                    "disabled" => McpLiveStatus.Disabled,
-                    "needs_auth" or "needsauth" => McpLiveStatus.NeedsAuth,
-                    "failed" => McpLiveStatus.Failed,
-                    "needs_client_registration" or "needsclientregistration" => McpLiveStatus.NeedsClientRegistration,
-                    _ => McpLiveStatus.Unknown,
-                };
+                    if (errSb.Length > 0) errSb.Append(' ');
+                    errSb.Append(t);
+                }
             }
-            var errMatch = Regex.Match(block, @"Error:\s*(.+)");
-            srv.StatusMessage = errMatch.Success ? errMatch.Groups[1].Value.Trim() : "";
+            srv.StatusMessage = errSb.ToString();
         }
     }
 }
