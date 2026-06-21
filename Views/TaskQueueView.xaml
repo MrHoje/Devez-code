@@ -134,23 +134,23 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <!-- SelectCheck: 버블 우측(절대 좌표) 오버레이. IsSelectionMode ON 일 때만 표시.
+                            <!-- SelectCheck: 버블 좌측(절대 좌표) 오버레이. IsSelectionMode ON 일 때만 표시.
                                   Opacity 트리거로 노출/숨김 → 레이아웃 영향 없음, 가상화 ListBox 우루루 차단. -->
                             <CheckBox x:Name="SelectCheck"
                                       IsChecked="{Binding IsSelected}"
-                                      HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                      Margin="0,0,11,6"
+                                      HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                      Margin="11,0,0,6"
                                       Opacity="0" IsHitTestVisible="False"
                                       Style="{StaticResource ModernCheckBox}"/>
 
                             <DockPanel x:Name="BubbleDock"
-                                       HorizontalAlignment="Right"
+                                       HorizontalAlignment="Left"
                                        LastChildFill="False"
-                                       Margin="0,0,11,0">
+                                       Margin="11,0,0,0">
                                 <DockPanel.RenderTransform>
                                     <TranslateTransform X="0"/>
                                 </DockPanel.RenderTransform>
-                                <Grid DockPanel.Dock="Right"
+                                <Grid DockPanel.Dock="Left"
                                       x:Name="BubbleWrapper"
                                       MaxWidth="{Binding ActualWidth, ElementName=BubblesList,
                                                  Converter={StaticResource Subtract}, ConverterParameter=20}">
@@ -169,7 +169,7 @@
                                             Visibility="Collapsed"/>
                                     <Border x:Name="BubbleBorder"
                                             Background="{DynamicResource BubbleBorderBrush}"
-                                            CornerRadius="14,14,4,14"
+                                            CornerRadius="14,14,14,4"
                                             Padding="1"
                                             UseLayoutRounding="True"
                                             SnapsToDevicePixels="True"
@@ -179,7 +179,7 @@
                                             MouseRightButtonDown="Bubble_RightClick">
                                         <Border x:Name="BubbleInner"
                                                 Background="{DynamicResource BubbleBrush}"
-                                                CornerRadius="13,13,3,13"
+                                                CornerRadius="13,13,13,3"
                                                 Padding="14,10">
                                             <TextBlock Text="{Binding Text}"
                                                        TextWrapping="Wrap"
@@ -190,12 +190,12 @@
                                 </Grid>
                             </DockPanel>
 
-                            <!-- 작업지시 버튼: 단일 클릭(비선택모드) 시 버블 아래 우측에 노출.
+                            <!-- 작업지시 버튼: 단일 클릭(비선택모드) 시 버블 아래 좌측(버블 시작점)에 노출.
                                   클릭 → 현재 활성 탭 세션에 이 버블 텍스트 입력+전송. -->
                             <Button x:Name="ActionButton" Grid.Row="1"
                                     Visibility="Collapsed"
-                                    HorizontalAlignment="Right"
-                                    Margin="0,5,22,2" Padding="11,5"
+                                    HorizontalAlignment="Left"
+                                    Margin="11,5,0,2" Padding="11,5"
                                     Cursor="Hand"
                                     Click="ActionButton_Click"
                                     Tag="{Binding}">
@@ -244,10 +244,10 @@
                                          Value="True">
                                 <Setter TargetName="SelectCheck" Property="Opacity"         Value="1"/>
                                 <Setter TargetName="SelectCheck" Property="IsHitTestVisible" Value="True"/>
-                                <!-- 체크박스 노출 시 버블 위치는 기존 그대로 유지(빈 영역 축소분 11px 보정: 16→27). -->
+                                <!-- 체크박스(좌측) 노출 시 버블을 오른쪽으로 이동해 체크박스 자리 확보. -->
                                 <Setter TargetName="BubbleDock" Property="RenderTransform">
                                     <Setter.Value>
-                                        <TranslateTransform X="-27"/>
+                                        <TranslateTransform X="27"/>
                                     </Setter.Value>
                                 </Setter>
                             </DataTrigger>
@@ -281,7 +281,7 @@
                         Opacity="0.75"
                         Background="{DynamicResource BubbleBrush}"
                         BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="1"
-                        CornerRadius="13,13,3,13" Padding="12,8" MaxWidth="240">
+                        CornerRadius="13,13,13,3" Padding="12,8" MaxWidth="240">
                     <Grid>
                         <TextBlock x:Name="DragGhostText"
                                    TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
