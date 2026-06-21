@@ -403,6 +403,7 @@ public partial class MainWindow : Window
     private bool   _rightCollapsed;
     private double _sidebarWidth = 262;
     private double _fileExpWidth = 300;
+    private Action? _leftAnimCancel;
     private Action? _rightAnimCancel;
 
     // ── 반응형: 좁은 창에서 우측 패널을 오버레이 드로어로 ───────────────
@@ -420,29 +421,43 @@ public partial class MainWindow : Window
         if (_leftCollapsed) return;
     }
 
-    // 패널 토글은 즉시(레이아웃 1회) 처리한다. 애니메이션으로 컬럼 폭을 매 프레임 바꾸면
-    // 중앙 WebView2(터미널) HWND 가 60fps 로 연속 리사이즈되며 글자가 깜빡인다 — 윈도우
-    // 터미널처럼 한 번에 리사이즈하면 깔끔하다. (수동 스플리터 드래그도 사용자 속도라 OK.)
+    // 패널 토글은 AnimatePanelAndSplitter 로 부드럽게 0/원래 폭을 보간한다(200ms, EaseIn).
+    // 자식 컨트롤(Sidebar/FileExplorer)을 cacheTarget 으로 잡아 매 프레임 폭이 바뀌어도
+    // 내부 트리·WebView2 가 다시 그려지는 깜빡임을 BitmapCache 로 차단한다 — HideEditorColumn 과 동일 패턴.
     private void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
     {
+        _leftAnimCancel?.Invoke();
         if (_leftCollapsed)
         {
             _leftCollapsed = false;
             Sidebar.Visibility = Visibility.Visible;
             SetMinWidth(190, SidebarCol, FooterSidebarCol);
-            SetSplitterWidth(SidebarSplitterCol, FooterSidebarSplitterCol, null, 4);
-            SidebarCol.Width = new GridLength(_sidebarWidth);
-            FooterSidebarCol.Width = new GridLength(_sidebarWidth);
+            _leftAnimCancel = AnimatePanelAndSplitter(
+                SidebarCol, _sidebarWidth,
+                SidebarSplitterCol, 4,
+                durationMs: 200, easeIn: false,
+                colMirrors: new[] { FooterSidebarCol },
+                splitterMirrors: new[] { FooterSidebarSplitterCol },
+                cacheTarget: Sidebar,
+                onComplete: () => _leftAnimCancel = null);
         }
         else
         {
             _leftCollapsed = true;
             _sidebarWidth = SidebarCol.Width.IsAbsolute ? SidebarCol.Width.Value : SidebarCol.ActualWidth;
             SetMinWidth(0, SidebarCol, FooterSidebarCol);
-            SetSplitterWidth(SidebarSplitterCol, FooterSidebarSplitterCol, null, 0);
-            SidebarCol.Width = new GridLength(0);
-            FooterSidebarCol.Width = new GridLength(0);
-            Sidebar.Visibility = Visibility.Collapsed;
+            _leftAnimCancel = AnimatePanelAndSplitter(
+                SidebarCol, 0,
+                SidebarSplitterCol, 0,
+                durationMs: 200, easeIn: true,
+                colMirrors: new[] { FooterSidebarCol },
+                splitterMirrors: new[] { FooterSidebarSplitterCol },
+                cacheTarget: Sidebar,
+                onComplete: () =>
+                {
+                    Sidebar.Visibility = Visibility.Collapsed;
+                    _leftAnimCancel = null;
+                });
         }
         SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
         UpdatePanelToggleVisual();
@@ -458,34 +473,50 @@ public partial class MainWindow : Window
             return;
         }
 
+        _rightAnimCancel?.Invoke();
         if (_rightCollapsed)
         {
             _rightCollapsed = false;
             FileExplorer.Visibility = Visibility.Visible;
             SetMinWidth(200, FileExpCol, FooterFileExpCol);
-            SetSplitterWidth(FileExpSplitterCol, FooterFileExpSplitterCol, null, 4);
-            FileExpCol.Width = new GridLength(_fileExpWidth);
-            FooterFileExpCol.Width = new GridLength(_fileExpWidth);
-
-            // 접기 전 열려 있던 파일 뷰도 함께 복원(폭 확장)
-            if (_editorOpenBeforeCollapse)
-            {
-                _editorOpenBeforeCollapse = false;
-                RestoreEditorColumn();
-            }
+            _rightAnimCancel = AnimatePanelAndSplitter(
+                FileExpCol, _fileExpWidth,
+                FileExpSplitterCol, 4,
+                durationMs: 200, easeIn: false,
+                colMirrors: new[] { FooterFileExpCol },
+                splitterMirrors: new[] { FooterFileExpSplitterCol },
+                cacheTarget: FileExplorer,
+                onComplete: () =>
+                {
+                    _rightAnimCancel = null;
+                    // 접기 전 열려 있던 파일 뷰도 함께 복원(폭 확장)
+                    if (_editorOpenBeforeCollapse)
+                    {
+                        _editorOpenBeforeCollapse = false;
+                        RestoreEditorColumn();
+                    }
+                });
         }
         else
         {
             _rightCollapsed = true;
             _fileExpWidth = FileExpCol.Width.IsAbsolute ? FileExpCol.Width.Value : FileExpCol.ActualWidth;
             SetMinWidth(0, FileExpCol, FooterFileExpCol);
-            SetSplitterWidth(FileExpSplitterCol, FooterFileExpSplitterCol, null, 0);
-            FileExpCol.Width = new GridLength(0);
-            FooterFileExpCol.Width = new GridLength(0);
-
             // 파일 뷰가 열려 있으면 같이 숨김(내용 보존 — 펼칠 때 복원)
             _editorOpenBeforeCollapse = FileEditor.IsOpen && EditorColIsOpen();
             if (_editorOpenBeforeCollapse) HideEditorColumn();
+            _rightAnimCancel = AnimatePanelAndSplitter(
+                FileExpCol, 0,
+                FileExpSplitterCol, 0,
+                durationMs: 200, easeIn: true,
+                colMirrors: new[] { FooterFileExpCol },
+                splitterMirrors: new[] { FooterFileExpSplitterCol },
+                cacheTarget: FileExplorer,
+                onComplete: () =>
+                {
+                    FileExplorer.Visibility = Visibility.Collapsed;
+                    _rightAnimCancel = null;
+                });
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
@@ -603,6 +634,64 @@ public partial class MainWindow : Window
         t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
 
     private static double EaseIn(double t) => t * t * t;
+
+    // 좌·우 패널 토글 전용: 패널 + 미러(헤더/푸터) + 스플리터 + 스플리터 미러를 한 트윈으로 묶어
+    // 완벽히 동기화된 애니메이션을 준다. HideEditorColumn 처럼 cacheTarget 으로 자식 컨트롤을
+    // BitmapCache 로 잡아 WebView2/탐색기가 폭 변화에 따라 글자나 트리를 다시 그리는 깜빡임을
+    // 차단한다. duration·easeIn 은 토글 방향에 따라 호출부에서 결정.
+    private static Action AnimatePanelAndSplitter(
+        ColumnDefinition col, double toCol,
+        ColumnDefinition splitter, double toSplitter,
+        int durationMs, bool easeIn,
+        ColumnDefinition[] colMirrors, ColumnDefinition[] splitterMirrors,
+        UIElement? cacheTarget, Action? onComplete = null)
+    {
+        double fromCol = col.Width.IsAbsolute ? col.Width.Value : col.ActualWidth;
+        double fromSpl = splitter.Width.IsAbsolute ? splitter.Width.Value : splitter.ActualWidth;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool cancelled = false;
+        if (cacheTarget != null) cacheTarget.CacheMode = new System.Windows.Media.BitmapCache();
+
+        void SetAll(double cw, double spw)
+        {
+            var cgl = new GridLength(cw);
+            var sgl = new GridLength(spw);
+            col.Width = cgl;
+            foreach (var m in colMirrors) m.Width = cgl;
+            splitter.Width = sgl;
+            foreach (var m in splitterMirrors) m.Width = sgl;
+        }
+
+        EventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            if (cancelled)
+            {
+                System.Windows.Media.CompositionTarget.Rendering -= handler!;
+                return;
+            }
+            var t = Math.Min(1.0, sw.ElapsedMilliseconds / (double)durationMs);
+            var easedT = easeIn ? EaseIn(t) : EaseInOut(t);
+            SetAll(fromCol + (toCol - fromCol) * easedT,
+                   fromSpl + (toSplitter - fromSpl) * easedT);
+            if (t >= 1.0)
+            {
+                System.Windows.Media.CompositionTarget.Rendering -= handler!;
+                SetAll(toCol, toSplitter);
+                if (cacheTarget != null) cacheTarget.CacheMode = null;
+                onComplete?.Invoke();
+            }
+        };
+        System.Windows.Media.CompositionTarget.Rendering += handler;
+
+        return () =>
+        {
+            if (cancelled) return;
+            cancelled = true;
+            if (cacheTarget != null) cacheTarget.CacheMode = null;
+            System.Windows.Media.CompositionTarget.Rendering -= handler;
+        };
+    }
 
     // ── 자동 업데이트 ──────────────────────────────────────────────
     // DevezCode 는 Supabase 가 없어 실시간 푸시 대신 폴링으로 근실시간 알림을 낸다:
