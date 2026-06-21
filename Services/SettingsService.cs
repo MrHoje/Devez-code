@@ -39,8 +39,9 @@ public static class SettingsService
         public string? LastActiveProjectPath { get; set; }
         public string? LastActiveSessionId { get; set; }
         public bool CleanShutdown { get; set; }
-        // 우측 패널 브라우저 뷰의 마지막 방문 URL(재시작 시 복원).
-        public string? BrowserLastUrl { get; set; }
+        // 우측 패널 브라우저 — 프로젝트별 마지막 방문 URL(재시작 시 복원).
+        // 키 = 프로젝트 절대경로. 프로젝트가 없거나 저장된 적 없으면 HomeUrl 로 폴백.
+        public Dictionary<string, string> BrowserLastUrlByProject { get; set; } = new();
         // 우측 패널 작업 큐 — 프로젝트 경로별로 저장. 키 = 프로젝트 절대경로, 값 = 큐 항목 목록.
         // 로컬 전용 — 재시작 시 그대로 복원. 프로젝트 경로가 null/empty 면 "전역" 큐 (실제론 잘 안 씀).
         public Dictionary<string, List<TaskQueueEntry>> TaskQueueItemsByProject { get; set; } = new();
@@ -187,9 +188,29 @@ public static class SettingsService
     public static bool LoadCleanShutdown() => Current.CleanShutdown;
     public static void SaveCleanShutdown(bool v) { Current.CleanShutdown = v; Save(); }
 
-    // ── 우측 패널 브라우저 마지막 URL ────────────────────────────
-    public static string? LoadBrowserLastUrl() => Current.BrowserLastUrl;
-    public static void SaveBrowserLastUrl(string url) { Current.BrowserLastUrl = url; Save(); }
+    // ── 우측 패널 브라우저 마지막 URL (프로젝트별) ───────────────────
+    /// <summary>지정 프로젝트의 저장된 마지막 URL. 없거나 프로젝트가 비었으면 null.</summary>
+    public static string? LoadBrowserLastUrl(string? projectPath)
+    {
+        if (string.IsNullOrEmpty(projectPath)) return null;
+        return Current.BrowserLastUrlByProject.TryGetValue(projectPath, out var u) ? u : null;
+    }
+
+    /// <summary>지정 프로젝트의 마지막 URL 저장. 빈 문자열/공백은 무시.</summary>
+    public static void SaveBrowserLastUrl(string? projectPath, string url)
+    {
+        if (string.IsNullOrEmpty(projectPath)) return;
+        if (string.IsNullOrWhiteSpace(url)) return;
+        Current.BrowserLastUrlByProject[projectPath] = url;
+        Save();
+    }
+
+    /// <summary>프로젝트 삭제 시 해당 프로젝트의 저장된 URL 도 정리.</summary>
+    public static void RemoveBrowserLastUrl(string? projectPath)
+    {
+        if (string.IsNullOrEmpty(projectPath)) return;
+        if (Current.BrowserLastUrlByProject.Remove(projectPath)) Save();
+    }
 
     // ── 우측 패널 작업 큐 (버블 항목, 프로젝트별) ────────────────────
     /// <summary>저장된 작업 큐 항목을 (text, sortOrder) 튜플 목록으로 반환. 정렬 순서대로.

@@ -179,6 +179,8 @@ public partial class FileExplorerView : UserControl
             DiffView.SetRepo(null);
             // 큐도 null 로 전환 → 전역 큐 (해당 프로젝트 큐가 닫히면 사라지지 않게 빈도 모드)
             QueueView.ProjectPath = null;
+            // 브라우저: 활성 프로젝트가 없으면 전역 상태(null) — 어떤 프로젝트 URL 도 표시하지 않음.
+            Browser.ProjectPath = null;
             return;
         }
         if (_rootPath == path) return;
@@ -192,6 +194,10 @@ public partial class FileExplorerView : UserControl
         // 작업 큐에 프로젝트 경로 통보 → 해당 프로젝트의 저장된 큐를 자동 로드.
         // (탭이 Queue 가 아니어도 즉시 로드해둠 — 사용자가 큐 탭으로 전환할 때 이미 준비됨)
         QueueView.ProjectPath = path;
+
+        // 브라우저: 프로젝트 경로 통보. 이미 초기화돼 있으면 그 프로젝트의 마지막 URL 로 즉시 이동.
+        // 초기화 전이면 EnsureStarted 가 이 ProjectPath 를 사용해 첫 URL 을 결정.
+        Browser.ProjectPath = path;
 
         var roots = new ObservableCollection<FileNode>();
         try

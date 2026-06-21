@@ -935,6 +935,7 @@ public partial class MainWindow : Window
 
         foreach (var s in proj.Tabs.OfType<SessionItem>().ToList()) DisposeSessionProcess(s, purge: false);
         _projects.Remove(proj);
+        SettingsService.RemoveBrowserLastUrl(proj.Path);
         WorkspaceStore.Save(_projects);
 
         if (ReferenceEquals(_activeProject, proj))

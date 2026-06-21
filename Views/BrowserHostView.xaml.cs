@@ -20,11 +20,34 @@ public partial class BrowserHostView : UserControl
 
     private readonly Action<string> _themeChangedHandler;
 
+    /// <summary>현재 브라우저가 속한 프로젝트 절대경로. null/empty 면 전역(미배정).
+    /// 값이 바뀌면 해당 프로젝트의 저장된 URL 로 즉시 이동. 프로젝트별 독립 상태 유지의 핵심.</summary>
+    public string? ProjectPath
+    {
+        get => _projectPath;
+        set
+        {
+            if (_projectPath == value) return;
+            _projectPath = value;
+            OnProjectPathChanged();
+        }
+    }
+    private string? _projectPath;
+
     public BrowserHostView()
     {
         InitializeComponent();
         _themeChangedHandler = _ => ApplyColorScheme();
         App.ThemeChanged += _themeChangedHandler;
+    }
+
+    /// <summary>프로젝트 전환 시 — 이미 초기화된 경우 해당 프로젝트의 마지막 URL 로 이동.
+    /// 초기화 전이면 EnsureStarted 가 현재 ProjectPath 를 사용한다.</summary>
+    private void OnProjectPathChanged()
+    {
+        if (!_initStarted || _view?.CoreWebView2 == null) return;
+        var target = SettingsService.LoadBrowserLastUrl(_projectPath) ?? HomeUrl;
+        try { _view.CoreWebView2.Navigate(target); } catch { }
     }
 
     private static CoreWebView2PreferredColorScheme PreferredScheme =>
@@ -62,13 +85,13 @@ public partial class BrowserHostView : UserControl
                 SyncToolbar();
                 var src = core.Source;
                 if (!string.IsNullOrEmpty(src) && src != "about:blank")
-                    SettingsService.SaveBrowserLastUrl(src);
+                    SettingsService.SaveBrowserLastUrl(_projectPath, src);
             };
             core.HistoryChanged += (_, _) => SyncToolbar();
             // 새 창 요청은 같은 뷰에서 열기(팝업 차단 대신 인라인 이동)
             core.NewWindowRequested += (_, e) => { e.Handled = true; core.Navigate(e.Uri); };
 
-            var start = SettingsService.LoadBrowserLastUrl() ?? HomeUrl;
+            var start = SettingsService.LoadBrowserLastUrl(_projectPath) ?? HomeUrl;
             core.Navigate(start);
             SyncToolbar();
         }
