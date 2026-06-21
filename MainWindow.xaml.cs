@@ -1291,17 +1291,45 @@ public partial class MainWindow : Window
     public bool TryRestartActiveClaudeSession()
     {
         if (_activeSession == null) return false;
-        var agentId = string.IsNullOrEmpty(_activeSession.AgentId)
-            ? AgentRegistry.DefaultAgentId : _activeSession.AgentId;
-        if (agentId != "claude") return false;
-        var roomId = _activeSession.Id;
-        // 세션의 터미널·ConPTY 만 정리 (대화 기록은 보존 — 다음 시작 시 --resume 로 이어짐)
-        DisposeSessionProcess(_activeSession, purge: false);
-        // 재시작 경로이므로 삭제 플래그 해제 → 다음 WireSession 가드 통과
-        TerminalSessionManager.Instance.ClearDisposedRoom(roomId);
-        // 동일 roomId 로 다시 활성화 → 새 ConPTY + WebView2 가 떠고 claude 가 mcpServers 를 다시 읽음
-        ActivateSession(_activeSession);
+        RestartAllClaudeSessions();
         return true;
+    }
+
+    /// <summary>모든 Claude 세션의 ConPTY 를 재시작. 활성 세션은 즉시 다시 띄우고,
+    /// 비활성 세션은 ConPTY 만 정리(다음 활성화 시 resume 으로 복원).
+    /// 테마 변경 시 모든 세션이 새 테마를 적용하도록 보장.</summary>
+    private void RestartAllClaudeSessions()
+    {
+        var allClaudeSessions = _projects
+            .SelectMany(p => p.Tabs)
+            .OfType<SessionItem>()
+            .Where(s =>
+            {
+                var aid = string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
+                return aid == "claude";
+            })
+            .ToList();
+
+        SessionItem? activeRestarted = null;
+        foreach (var s in allClaudeSessions)
+        {
+            try
+            {
+                DisposeSessionProcess(s, purge: false);
+                TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
+            }
+            catch { /* ignore */ }
+        }
+
+        // 활성 세션은 즉시 다시 띄움
+        if (_activeSession != null && allClaudeSessions.Contains(_activeSession))
+        {
+            ActivateSession(_activeSession);
+            activeRestarted = _activeSession;
+        }
+
+        // 비활성 세션은 ConPTY 만 정리된 상태 — 다음 탭 클릭 시 ActivateSession → GetOrCreate →
+        // 새 ConPTY + resume 으로 복원. 여기서 미리 띄우지 않음 (리소스 낭비 + 사용자가 안 보는 세션).
     }
 
     private ProjectItem? ParentOf(SessionItem session)
