@@ -346,6 +346,16 @@
 
     setupImeCaretFix(term, el);
     term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
+
+    // 드래그하여 선택하면 떼는 즉시 자동 복사 (Windows Terminal copyOnSelect 정합).
+    // 선택은 그대로 유지(하이라이트 남김) — Ctrl+C/우클릭 복사와 달리 clearSelection 안 함.
+    el.addEventListener('mouseup', function (e) {
+      if (e.button !== 0) return;                 // 좌클릭 드래그만
+      if (entry.dead) return;
+      if (!term.hasSelection()) return;
+      const sel = term.getSelection();
+      if (sel) post({ type: 'copy', data: sel });
+    });
     // 검색 결과 카운트 갱신 — 활성 방일 때만 검색바에 반영
     try {
       search.onDidChangeResults(function (r) {

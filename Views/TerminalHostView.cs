@@ -422,10 +422,20 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// SetDataObject(text, true) 로 기록한다(OleFlushClipboard).</summary>
     private static void SetClipboardText(string text)
     {
-        for (int i = 0; i < 5; i++)
+        Exception? last = null;
+        for (int i = 0; i < 10; i++)
         {
             try { System.Windows.Clipboard.SetDataObject(text, true); return; }
-            catch { System.Threading.Thread.Sleep(20); }
+            catch (Exception ex) { last = ex; System.Threading.Thread.Sleep(40); }
+        }
+        if (Environment.GetEnvironmentVariable("DEVEZCODE_TERM_LOG") == "1" && last != null)
+        {
+            try
+            {
+                var p = Path.Combine(Path.GetTempPath(), "devezcode-input.log");
+                File.AppendAllText(p, "[clipboard-fail] " + last.Message + "\n");
+            }
+            catch { }
         }
     }
 
