@@ -14,7 +14,7 @@
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="IsTabStop" Value="False"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Height" Value="48"/>
+            <Setter Property="Height" Value="44"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -41,7 +41,7 @@
 
         <!-- 뷰 전환 메뉴 패널 (최상단): 파일 탐색기 / 브라우저 / DIFF
              (devez ToolboxPanelView 정합: 하단 슬라이딩 언더라인 인디케이터) -->
-        <Border Grid.Row="0" Height="48"
+        <Border Grid.Row="0" Height="44"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
             <Grid x:Name="TabBarGrid" SizeChanged="TabBarGrid_SizeChanged">
