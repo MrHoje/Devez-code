@@ -343,15 +343,42 @@ public partial class McpManagerDialog : UserControl
             if (_currentBackend.Id == "claude")
             {
                 var win = Window.GetWindow(this) as MainWindow;
-                if (win?.TryRestartActiveClaudeSession() == true)
+                bool restartedInternal = win?.TryRestartActiveClaudeSession() == true;
+                int externalCount = CountExternalClaudeProcesses();
+
+                if (restartedInternal && externalCount == 0)
                 {
                     ConfirmDialog.Alert("저장 + 재시작 완료",
                         $"{_currentBackend.ConfigPathHint} 에 저장하고 활성 Claude 세션을 재시작했습니다.\n(약 5~10초 후 새 MCP 서버 목록이 반영됩니다)");
                 }
+                else if (restartedInternal && externalCount > 0)
+                {
+                    // DevezCode 내 세션은 재시작했지만, 외부 터미널의 claude.exe 는 별도 프로세스라 직접 못 건드림.
+                    // taskkill 옵션 제공.
+                    var kill = ConfirmDialog.Show("저장 + 부분 재시작",
+                        $"{_currentBackend.ConfigPathHint} 에 저장했습니다.\n\n" +
+                        "• DevezCode 내 활성 Claude 세션: 재시작됨 (5~10초)\n" +
+                        $"• 외부 터미널 Claude 세션: {externalCount}개 — 새 설정이 적용되려면 직접 재시작 필요\n\n" +
+                        "외부 Claude 세션을 모두 종료할까요? (대화 기록은 디스크에 보존됩니다)",
+                        okLabel: "외부 Claude 종료", iconKey: "IconServer");
+                    if (kill) KillExternalClaudeProcesses();
+                }
                 else
                 {
-                    ConfirmDialog.Alert("저장 완료",
-                        $"{_currentBackend.ConfigPathHint} 에 저장했습니다.\n활성 Claude 세션이 없어 새 세션부터 적용됩니다.");
+                    // DevezCode 내 Claude 세션도 없고 외부도 ?
+                    if (externalCount > 0)
+                    {
+                        var kill = ConfirmDialog.Show("저장 완료",
+                            $"{_currentBackend.ConfigPathHint} 에 저장했습니다.\n" +
+                            $"외부 터미널의 Claude 세션 {externalCount}개가 새 설정 적용을 위해 재시작이 필요합니다.\n모두 종료할까요?",
+                            okLabel: "외부 Claude 종료", iconKey: "IconServer");
+                        if (kill) KillExternalClaudeProcesses();
+                    }
+                    else
+                    {
+                        ConfirmDialog.Alert("저장 완료",
+                            $"{_currentBackend.ConfigPathHint} 에 저장했습니다.\n다음 Claude 세션부터 적용됩니다.");
+                    }
                 }
             }
             else
@@ -413,4 +440,38 @@ public partial class McpManagerDialog : UserControl
 
     private void Header_DragMove(object sender, MouseButtonEventArgs e)
         => Window.GetWindow(this)?.DragMove();
+
+    // ── 외부 Claude 프로세스 (DevezCode 의 WebView2/ConPTY 안에 띄운 것 제외) ──
+    // 외부 터미널에서 실행한 `claude` 는 DevezCode 의 터미널 호스트와 별도 프로세스라
+    // 직접 재시작할 수 없다. 다만 taskkill 로 닫고 사용자가 직접 새 터미널을 열면
+    // 다음 `claude` 실행 시 mcpServers 가 다시 로드된다.
+
+    private static int CountExternalClaudeProcesses()
+    {
+        try
+        {
+            return System.Diagnostics.Process.GetProcessesByName("claude").Length;
+        }
+        catch { return 0; }
+    }
+
+    private static void KillExternalClaudeProcesses()
+    {
+        try
+        {
+            // 우선 graceful (저장 기회 제공). 안 죽으면 /F.
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "taskkill",
+                Arguments = "/IM claude.exe",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            };
+            using (var p = System.Diagnostics.Process.Start(psi))
+            {
+                p?.WaitForExit(3000);
+            }
+        }
+        catch { /* 무시 */ }
+    }
 }
