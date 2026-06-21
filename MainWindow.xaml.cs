@@ -1079,17 +1079,6 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── 세션 헤더 액션 버튼: 우클릭 메뉴와 동일 동작 (추적 중지 / 종료) ──
-    private void SessionHeaderStopTracking_Click(object sender, RoutedEventArgs e)
-    {
-        if (_activeSession != null) StopTrackingSession(_activeSession);
-    }
-
-    private void SessionHeaderDelete_Click(object sender, RoutedEventArgs e)
-    {
-        if (_activeSession != null) DeleteSession(_activeSession);
-    }
-
     // ── 탭 드래그 순서변경 (가로) + 사이드바 세션 순서 양방향 동기화 ──────────
     private Point _tabPressOrigin;
     private SessionItem? _pendingTab;
