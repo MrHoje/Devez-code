@@ -81,9 +81,6 @@ public partial class FileExplorerView : UserControl
     private ViewMode _mode = ViewMode.Directory;
     private bool _browserMode => _mode == ViewMode.Browser;
 
-    // ── 큐 카운트 구독 추적 (이전 모드 핸들러 해제용) ──
-    private Action? _queueCountHandler;
-
     // ── 디렉터리 / 브라우저 / DIFF 뷰 전환 ──────────────────────────────
     // (단일 클릭 핸들러 — 텍스트 색상으로만 활성/비활성 구분)
 
@@ -107,23 +104,6 @@ public partial class FileExplorerView : UserControl
         // (탭 자체가 '작업 큐' 제목 역할 → 중복 헤더 불필요)
         HeaderBar.Visibility = idx == 3 ? Visibility.Collapsed : Visibility.Visible;
 
-        // 큐 모드 진입/이탈 시 카운트 구독 갱신
-        if (idx == 3)
-        {
-            if (_queueCountHandler is null)
-            {
-                _queueCountHandler = () => UpdateQueueCount(QueueView.Count);
-                QueueView.CountChanged += _queueCountHandler;
-            }
-            UpdateQueueCount(QueueView.Count);
-        }
-        else if (_queueCountHandler is not null)
-        {
-            QueueView.CountChanged -= _queueCountHandler;
-            _queueCountHandler = null;
-            QueueCountBadge.Visibility = Visibility.Collapsed;
-        }
-
         var (icon, title) = idx switch
         {
             1 => ("IconGlobe", "브라우저"),
@@ -134,13 +114,6 @@ public partial class FileExplorerView : UserControl
         PathText.Text = title;
 
         UpdateTabTextColors();
-    }
-
-    /// <summary>큐 모드 탭의 카운트 배지 갱신. 0 이면 배지 자체를 숨긴다.</summary>
-    private void UpdateQueueCount(int n)
-    {
-        QueueCountText.Text = n.ToString();
-        QueueCountBadge.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateTabTextColors()
