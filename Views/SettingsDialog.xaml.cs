@@ -136,6 +136,18 @@ public partial class SettingsDialog : UserControl
     // ── 저장 / 취소 / 닫기 ────────────────────────────────────────
     private void SaveBtn_Click(object sender, RoutedEventArgs e)
     {
+        if (_selectedTheme != _originalTheme)
+        {
+            var proceed = ConfirmDialog.Show(
+                "테마 변경 적용",
+                "테마 변경을 적용하려면 열려 있는 Claude Code 세션을 다시 시작해야 할 수 있습니다.\n" +
+                "응답 생성 중인 세션은 중단될 수 있으며, 필요한 경우 요청을 다시 보내야 합니다.\n\n" +
+                "변경사항을 저장하시겠습니까?",
+                okLabel: "저장",
+                iconKey: "IconPalette");
+            if (!proceed) return;
+        }
+
         ApplySettings();
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
