@@ -4,13 +4,13 @@ using System.Text;
 
 namespace DevezCode.Services.Terminal;
 
-/// <summary>opencode 커스텀 테마 — DevezCode soft/minimal 팔레트를 opencode TUI에 적용.
-/// <c>~/.config/opencode/themes/devezcode-soft.json</c>, <c>devezcode-minimal.json</c> 으로 1회 설치.
-/// Per-project 로 <c>tui.json</c> 에 <c>"theme": "devezcode-soft"</c> 형태로 주입해서 사용.
-/// (dark 는 opencode 내장 "opencode" 테마로 충분하므로 별도 커스텀 불필요.)</summary>
+/// <summary>opencode 커스텀 테마 — DevezCode dark/soft/minimal 팔레트를 opencode TUI에 적용.
+/// <c>~/.config/opencode/themes/devezcode-{dark,soft,minimal}.json</c> 으로 1회 설치.
+/// Per-project 로 <c>tui.json</c> 에 <c>"theme": "devezcode-dark"</c> 형태로 주입해서 사용.</summary>
 public static class OpenCodeCustomThemes
 {
     private const string ThemesDirName = "themes";
+    private const string DarkSlug     = "devezcode-dark";
     private const string SoftSlug     = "devezcode-soft";
     private const string MinimalSlug  = "devezcode-minimal";
 
@@ -34,7 +34,8 @@ public static class OpenCodeCustomThemes
             var dir = ThemesDir;
             Directory.CreateDirectory(dir);
 
-            WriteIfMissing(Path.Combine(dir, SoftSlug + ".json"), SoftThemeJson);
+            WriteIfMissing(Path.Combine(dir, DarkSlug + ".json"),    DarkThemeJson);
+            WriteIfMissing(Path.Combine(dir, SoftSlug + ".json"),    SoftThemeJson);
             WriteIfMissing(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson);
         }
         catch { /* best-effort — 실패해도 per-project 주입이 안 될 뿐 */ }
@@ -49,11 +50,90 @@ public static class OpenCodeCustomThemes
     /// <summary>DevezCode 테마 → opencode theme 슬러그. per-project 주입에서 사용.</summary>
     public static string MapToOpenCodeTheme(string devezCodeTheme) => devezCodeTheme switch
     {
-        "dark"    => "opencode",
+        "dark"    => DarkSlug,
         "soft"    => SoftSlug,
         "minimal" => MinimalSlug,
-        _         => "opencode",
+        _         => DarkSlug,
     };
+
+    private const string DarkThemeJson = """
+    {
+      "$schema": "https://opencode.ai/theme.json",
+      "name": "DevezCode Dark",
+      "defs": {
+        "bg":         "#1F1F1E",
+        "panel":      "#272727",
+        "element":    "#2F2F2F",
+        "line":       "#404040",
+        "text":       "#E8E8E8",
+        "muted":      "#AAAAAA",
+        "primary":    "#C2622A",
+        "primaryLt":  "#D47A42",
+        "accent":     "#C2622A",
+        "error":      "#EF4444",
+        "warning":    "#F59E0B",
+        "success":    "#22C55E",
+        "diffAddBg":  "#1A2E1A",
+        "diffRemBg":  "#2E1A1A",
+        "codeBg":     "#272727",
+        "codeBorder": "#404040",
+        "hlAdd":      "#22C55E",
+        "hlRem":      "#EF4444"
+      },
+      "theme": {
+        "primary":           { "dark": "primary",  "light": "primary" },
+        "secondary":         { "dark": "primaryLt","light": "primaryLt" },
+        "accent":            { "dark": "accent",   "light": "accent" },
+        "error":             { "dark": "error",    "light": "error" },
+        "warning":           { "dark": "warning",  "light": "warning" },
+        "success":           { "dark": "success",  "light": "success" },
+        "info":              { "dark": "primary",  "light": "primary" },
+        "text":              { "dark": "text",     "light": "text" },
+        "textMuted":         { "dark": "muted",    "light": "muted" },
+        "background":        { "dark": "bg",       "light": "bg" },
+        "backgroundPanel":   { "dark": "panel",    "light": "panel" },
+        "backgroundElement": { "dark": "element",  "light": "element" },
+        "border":            { "dark": "line",     "light": "line" },
+        "borderActive":      { "dark": "primary",  "light": "primary" },
+        "borderSubtle":      { "dark": "line",     "light": "line" },
+        "diffAdded":         { "dark": "hlAdd",    "light": "hlAdd" },
+        "diffRemoved":       { "dark": "hlRem",    "light": "hlRem" },
+        "diffContext":       { "dark": "muted",    "light": "muted" },
+        "diffHunkHeader":    { "dark": "muted",    "light": "muted" },
+        "diffHighlightAdded":   { "dark": "hlAdd", "light": "hlAdd" },
+        "diffHighlightRemoved": { "dark": "hlRem", "light": "hlRem" },
+        "diffAddedBg":          { "dark": "diffAddBg", "light": "diffAddBg" },
+        "diffRemovedBg":        { "dark": "diffRemBg", "light": "diffRemBg" },
+        "diffContextBg":        { "dark": "panel", "light": "panel" },
+        "diffLineNumber":       { "dark": "muted", "light": "muted" },
+        "diffAddedLineNumberBg":   { "dark": "diffAddBg", "light": "diffAddBg" },
+        "diffRemovedLineNumberBg": { "dark": "diffRemBg", "light": "diffRemBg" },
+        "markdownText":         { "dark": "text",  "light": "text" },
+        "markdownHeading":      { "dark": "primary", "light": "primary" },
+        "markdownLink":         { "dark": "primary","light": "primary" },
+        "markdownLinkText":     { "dark": "primaryLt","light": "primaryLt" },
+        "markdownCode":         { "dark": "primary","light": "primary" },
+        "markdownBlockQuote":   { "dark": "muted", "light": "muted" },
+        "markdownEmph":         { "dark": "warning","light": "warning" },
+        "markdownStrong":       { "dark": "text",  "light": "text" },
+        "markdownHorizontalRule": { "dark": "line","light": "line" },
+        "markdownListItem":     { "dark": "primary","light": "primary" },
+        "markdownListEnumeration": { "dark": "primaryLt","light": "primaryLt" },
+        "markdownImage":        { "dark": "primary","light": "primary" },
+        "markdownImageText":    { "dark": "primaryLt","light": "primaryLt" },
+        "markdownCodeBlock":    { "dark": "text",  "light": "text" },
+        "syntaxComment":        { "dark": "muted", "light": "muted" },
+        "syntaxKeyword":        { "dark": "primary","light": "primary" },
+        "syntaxFunction":       { "dark": "primary","light": "primary" },
+        "syntaxVariable":       { "dark": "accent", "light": "accent" },
+        "syntaxString":         { "dark": "success","light": "success" },
+        "syntaxNumber":         { "dark": "warning","light": "warning" },
+        "syntaxType":           { "dark": "accent", "light": "accent" },
+        "syntaxOperator":       { "dark": "primary","light": "primary" },
+        "syntaxPunctuation":    { "dark": "text",  "light": "text" }
+      }
+    }
+    """;
 
     private const string SoftThemeJson = """
     {

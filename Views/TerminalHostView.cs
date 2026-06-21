@@ -510,16 +510,32 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 매니저가 tui.json 을 새 테마로 기록한 뒤, 여기서 세션을 종료→재생성하고 JS 를 리셋해
     /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄운다.
     /// 종료(ConPTY/job 트리)와 재생성이 겹치면 새 opencode 가 빈 화면으로 뜨므로 짧게 대기한다.</summary>
+    private static void DiagLog(string msg)
+    {
+        try
+        {
+            var p = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "devezcode-ocrestart.log");
+            System.IO.File.AppendAllText(p, $"{DateTime.Now:HH:mm:ss.fff} {msg}\n");
+        }
+        catch (Exception) { }
+    }
+
     private async void RestartOpenCodeSessions()
     {
+        var rooms = TerminalSessionManager.Instance.GetOpenCodeRoomIds();
+        DiagLog($"RestartOpenCodeSessions pageReady={_pageReady} rooms=[{string.Join(",", rooms)}]");
         if (!_pageReady) return;
-        foreach (var roomId in TerminalSessionManager.Instance.GetOpenCodeRoomIds())
+        foreach (var roomId in rooms)
         {
-            if (!_wired.TryGetValue(roomId, out var s) || !s.IsAlive) continue;
+            var have = _wired.TryGetValue(roomId, out var s);
+            DiagLog($"  room={roomId} wired={have} alive={(have ? s!.IsAlive : false)}");
+            if (!have || !s!.IsAlive) continue;
             TerminalSessionManager.Instance.KillSession(roomId); // 기존 세션 종료·제거
             _wired.Remove(roomId);                               // 오래된 세션 참조 정리(재배선 보장)
             await Task.Delay(250);                               // ConPTY/job 트리 정리 대기
             WireSession(roomId, 120, 30);                        // 새 세션(새 tui.json 테마) 생성·배선
+            var nowWired = _wired.TryGetValue(roomId, out var ns);
+            DiagLog($"  room={roomId} rewired={nowWired} newAlive={(nowWired ? ns!.IsAlive : false)}");
             PostJson(new { type = "restarted", roomId });        // JS xterm 리셋(dead 해제) + resize 유도
         }
     }
