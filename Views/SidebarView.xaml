@@ -57,7 +57,7 @@
                     <Setter Property="Background" Value="{DynamicResource LineBrush}"/>
                 </Trigger>
                 <!-- 부모 프로젝트가 비선택이면 호버 색상 덮어쓰기 → 호버 비주얼 제거 -->
-                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="False">
+                <DataTrigger Binding="{Binding DataContext.IsSelected, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="False">
                     <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                 </DataTrigger>
             </Style.Triggers>

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using DevezCode.Models;
@@ -28,4 +29,8 @@ public interface IMcpBackend
 
     /// <summary><c>&lt;agent&gt; mcp list</c> 같은 CLI 호출로 각 서버의 라이브 상태를 채운다.</summary>
     Task RefreshStatusAsync(IEnumerable<McpServer> servers);
+
+    /// <summary>이 백엔드의 설정 파일 변경을 감시해 콜백을 호출한다. (File → DevezCode 동기화용)
+    /// 백엔드가 자체 변경을 자동 감지할 수 없는 경우 null 반환.</summary>
+    IDisposable? WatchConfig(Action onChanged);
 }

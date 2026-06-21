@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -26,6 +27,10 @@ public partial class McpManagerDialog : UserControl
     private bool _isLoading;
     private bool _suppressTabDirtyCheck;
     private IMcpBackend? _currentBackend;
+    private IDisposable? _configWatcher;
+    // 자기 자신이 Save 한 직후의 파일 tick. watcher 콜백에서 이 tick 보다 같거나
+    // 작으면 무시 (외부 변경이 아님). + 1초 슬랙으로 약간의 mtime 오차 흡수.
+    private DateTime _lastSelfWriteUtc = DateTime.MinValue;
 
     public McpManagerDialog()
     {
@@ -127,9 +132,54 @@ public partial class McpManagerDialog : UserControl
         // OAuth 섹션은 opencode 에서만 의미 있음
         OAuthSection.Visibility = backend.Id == "opencode" ? Visibility.Visible : Visibility.Collapsed;
 
+        // 설정 파일 변경 감시 시작 (외부에서 ~/.claude.json 등을 바꾸면 자동 재로드)
+        _configWatcher?.Dispose();
+        _configWatcher = backend.WatchConfig(OnExternalConfigChanged);
+
         LoadFromDisk();
         _ = RefreshStatusAsync();
     }
+
+    /// <summary>외부에서 설정 파일이 바뀜 — 디스크에서 다시 읽어 UI 갱신.
+    /// 자기 자신이 방금 쓴 경우는 무시( Save 직후 _lastSelfWriteUtc 마커로 판별 ).</summary>
+    private void OnExternalConfigChanged()
+    {
+        if (_currentBackend == null) return;
+        Dispatcher.Invoke(() =>
+        {
+            // 자기 자신의 직전 쓰기면 무시
+            try
+            {
+                var fullPath = ResolveFullPath(_currentBackend);
+                if (fullPath != null && File.Exists(fullPath))
+                {
+                    var mtime = File.GetLastWriteTimeUtc(fullPath);
+                    if (mtime <= _lastSelfWriteUtc.AddSeconds(1)) return;
+                }
+            }
+            catch { /* 파일이 잠시 없을 수 있음 — 그냥 진행 */ }
+
+            if (HasUnsavedChanges())
+            {
+                var reload = ConfirmDialog.Show("외부 설정 변경 감지",
+                    $"{_currentBackend.ConfigPathHint} 파일이 외부에서 변경되었습니다.\n" +
+                    "현재 매니저의 미저장 변경사항을 버리고 다시 로드할까요?",
+                    okLabel: "다시 로드", iconKey: "IconRefresh");
+                if (!reload) return;
+            }
+            LoadFromDisk();
+            _ = RefreshStatusAsync();
+        });
+    }
+
+    /// <summary>백엔드의 실제 설정 파일 경로. (백엔드마다 다른 위치)</summary>
+    private static string? ResolveFullPath(IMcpBackend b) => b.Id switch
+    {
+        "opencode" => OpenCodeMcpBackend.ConfigPath,
+        "claude"   => ClaudeMcpBackend.ConfigPath,
+        "codex"    => CodexMcpBackend.ConfigPath,
+        _          => null,
+    };
 
     // ── 디스크 ↔ 메모리 ──────────────────────────────────────────
     private void LoadFromDisk()
@@ -336,6 +386,8 @@ public partial class McpManagerDialog : UserControl
         try
         {
             _currentBackend.Save(_servers);
+            // 방금 쓴 파일 변경은 watcher 가 다시 불러오지 않도록 마커 갱신
+            _lastSelfWriteUtc = DateTime.UtcNow;
             _original.Clear();
             foreach (var s in _servers) _original.Add(s.Clone());
 

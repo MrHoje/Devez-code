@@ -110,7 +110,17 @@ public partial class SidebarView : UserControl
     private void Session_Click(object sender, MouseButtonEventArgs e)
     {
         if (_didDrag) { _didDrag = false; return; }
-        if (sender is FrameworkElement { DataContext: SessionItem s }) SessionSelected?.Invoke(s);
+        if (sender is FrameworkElement { DataContext: SessionItem s })
+        {
+            // 비선택 프로젝트 내부의 세션 클릭: 세션 선택 대신 프로젝트 선택으로 라우팅
+            var project = Projects.FirstOrDefault(p => p.Sessions.Contains(s));
+            if (project != null && !project.IsSelected)
+            {
+                ProjectSelected?.Invoke(project);
+                return;
+            }
+            SessionSelected?.Invoke(s);
+        }
     }
 
     private void AddSession_Click(object sender, RoutedEventArgs e)

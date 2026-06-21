@@ -181,7 +181,7 @@ public sealed class ClaudeMcpBackend : IMcpBackend
     {
         // read-only(first-party/plugin) 서버는 디스크에 다시 쓰지 않는다.
         // 사용자가 편집·삭제할 수 있는 영역은 user-level mcpServers 뿐.
-        var editable = servers.Where(s => !s.IsReadOnly);
+        var editable = servers.Where(s => !s.IsReadOnly).ToList();
 
         var (root, _) = LoadRaw();
         using var final = new MemoryStream();
@@ -193,14 +193,18 @@ public sealed class ClaudeMcpBackend : IMcpBackend
                 foreach (var prop in root.Value.EnumerateObject())
                 {
                     if (prop.NameEquals("mcpServers")) continue;
+                    if (prop.NameEquals("projects")) continue;  // 따로 처리
                     prop.WriteTo(writer);  // 이름+값을 한 번에. 콤마/개행은 writer 의 Indented 옵션이 자동 처리.
                 }
                 WriteMcpObject(writer, editable);
+                SyncProjectsDisabled(writer, root.Value, editable);
                 writer.WriteEndObject();
             }
             else
             {
+                writer.WriteStartObject();
                 WriteMcpObject(writer, editable);
+                writer.WriteEndObject();
             }
         }
         var dir = Path.GetDirectoryName(ConfigPath);
@@ -209,6 +213,65 @@ public sealed class ClaudeMcpBackend : IMcpBackend
         File.WriteAllText(tmp, Encoding.UTF8.GetString(final.ToArray()));
         if (File.Exists(ConfigPath)) File.Replace(tmp, ConfigPath, null);
         else File.Move(tmp, ConfigPath);
+    }
+
+    /// <summary>projects[*].disabledMcpServers 와 enabled 상태를 동기화.
+    /// Claude Code 의 mcpServers.X.enabled 는 무시되고 disabledMcpServers (서버 이름 배열) 만
+    /// 존중되므로, 모든 프로젝트의 disabledMcpServers 를 editable 서버들의 Enabled 플래그에 맞춰
+    /// 일괄 갱신한다. 프로젝트마다 따로 비활성화/활성화 토글 UI 가 없으므로 "전역 비활성화" 로
+    /// 동작 ( 모든 프로젝트에서 숨김 ).</summary>
+    private static void SyncProjectsDisabled(Utf8JsonWriter w, JsonElement root, IEnumerable<McpServer> editable)
+    {
+        // editable 에서 Enabled=false 인 이름들
+        var disabledNames = editable
+            .Where(s => !s.Enabled && !s.IsReadOnly)
+            .Select(s => s.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // 기존 projects
+        JsonElement projectsEl = default;
+        bool hasProjects = root.TryGetProperty("projects", out projectsEl)
+            && projectsEl.ValueKind == JsonValueKind.Object;
+
+        w.WritePropertyName("projects");
+        w.WriteStartObject();
+        if (hasProjects)
+        {
+            foreach (var proj in projectsEl.EnumerateObject())
+            {
+                // 기존 disabledMcpServers 보존 + 새 disabledNames 가 있으면 추가
+                var existing = new List<string>();
+                if (proj.Value.TryGetProperty("disabledMcpServers", out var d) && d.ValueKind == JsonValueKind.Array)
+                    foreach (var item in d.EnumerateArray())
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            var n = item.GetString();
+                            if (!string.IsNullOrEmpty(n)) existing.Add(n!);
+                        }
+                // editable 활성 서버 중 disabledMcpServers 에 있으면 제거
+                var newDisabled = existing
+                    .Where(n => !editable.Any(s => s.Enabled && s.Name == n))
+                    .Concat(disabledNames.Where(n => !existing.Contains(n)))
+                    .Distinct()
+                    .ToList();
+
+                // 프로젝트 객체 통째로 복사 ( 다른 필드 보존 ) 후 disabledMcpServers 만 갱신
+                w.WritePropertyName(proj.Name);
+                w.WriteStartObject();
+                bool hasDisabled = false;
+                foreach (var p in proj.Value.EnumerateObject())
+                {
+                    if (p.NameEquals("disabledMcpServers")) { hasDisabled = true; continue; }
+                    p.WriteTo(w);
+                }
+                w.WritePropertyName("disabledMcpServers");
+                w.WriteStartArray();
+                foreach (var n in newDisabled) w.WriteStringValue(n);
+                w.WriteEndArray();
+                w.WriteEndObject();
+            }
+        }
+        w.WriteEndObject();
     }
 
     /// <inheritdoc />
@@ -237,6 +300,9 @@ public sealed class ClaudeMcpBackend : IMcpBackend
         }
         catch { /* 실패 시 조용히 Unknown 유지 */ }
     }
+
+    /// <inheritdoc />
+    public IDisposable? WatchConfig(Action onChanged) => ConfigFileWatcher.Watch(ConfigPath, onChanged);
 
     // ── JSON 직렬화 ──────────────────────────────────────────────
     private static void WriteMcpObject(Utf8JsonWriter w, IEnumerable<McpServer> servers)

@@ -114,6 +114,9 @@ public sealed class OpenCodeMcpBackend : IMcpBackend
     /// <inheritdoc />
     public Task RefreshStatusAsync(IEnumerable<McpServer> servers) => RefreshStatusAsyncCore(servers);
 
+    /// <inheritdoc />
+    public IDisposable? WatchConfig(Action onChanged) => ConfigFileWatcher.Watch(ConfigPath, onChanged);
+
     private static async Task RefreshStatusAsyncCore(IEnumerable<McpServer> servers)
     {
         try

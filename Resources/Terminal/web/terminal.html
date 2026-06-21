@@ -329,18 +329,17 @@
     // WebView2 HWND 크기는 그대로인데 CSS 박스만 변하는 경우(시작 시 레이아웃이
     // 최종 폭에 닿기 전 fit, 폰트 로드 후 셀 폭 재계산, 패널 토글 등)를 놓쳐
     // 그리드가 컨테이너보다 좁게 굳는다 → 오른쪽에 빈 띠가 남는다.
-    // 패널 접기/펴기 애니메이션은 컨테이너 폭을 매 프레임 바꿔 ResizeObserver 를
-    // 연속 발화시킨다. 매번 fit 하면 xterm 이 프레임마다 그리드를 재배치해 글자가
-    // 심하게 깜빡인다. 디바운스로 리사이즈가 멎은 뒤(=애니메이션 종료) 한 번만 fit.
-    let roTimer = null;
+    // 컨테이너 픽셀 박스가 바뀔 때마다 다음 프레임에 재-fit (스플리터 드래그 시 실시간 추종).
+    let roPending = false;
     const ro = new ResizeObserver(function () {
       if (roomId !== activeRoomId) return;          // 비활성 방은 0폭 → fit 금지
       if (el.clientWidth < 2 || el.clientHeight < 2) return;
-      if (roTimer) clearTimeout(roTimer);
-      roTimer = setTimeout(function () {
-        roTimer = null;
+      if (roPending) return;
+      roPending = true;
+      requestAnimationFrame(function () {
+        roPending = false;
         if (roomId === activeRoomId) { try { entry.fit.fit(); } catch (e) {} }
-      }, 90);
+      });
     });
     ro.observe(el);
     entry.ro = ro;

@@ -136,6 +136,9 @@ public sealed class CodexMcpBackend : IMcpBackend
         catch { /* 실패 시 조용히 Unknown */ }
     }
 
+    /// <inheritdoc />
+    public IDisposable? WatchConfig(Action onChanged) => ConfigFileWatcher.Watch(ConfigPath, onChanged);
+
     // ── 파서/직렬화 ──────────────────────────────────────────────
     private static McpServer? ParseServer(string name, TomlTable sect)
     {
