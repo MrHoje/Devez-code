@@ -302,10 +302,10 @@
             </Grid>
         </Border>
 
-        <!-- Search row — devez 정합. pill 35 + 상하좌우 8px 균일 여백 = 행 51 -->
+        <!-- Search row — 세션 탭 헤더(44)와 정합. pill 28 + 상하좌우 8px 균일 여백 = 행 44 -->
         <Border Grid.Row="1"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <Border Margin="8" Height="35"
+            <Border Margin="8" Height="28"
                     Background="{DynamicResource PanelSoftBrush}"
                     BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="1" CornerRadius="8">
