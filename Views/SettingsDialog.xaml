@@ -108,7 +108,8 @@
                                         <TextBlock Text="에이전트" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="CatMcpBtn" Tag="mcp"
+                                <!-- MCP 카테고리 보류 (2026-06): Visibility="Collapsed" — 재활성 시 제거 -->
+                                <Button x:Name="CatMcpBtn" Tag="mcp" Visibility="Collapsed"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource LucideButtonIcon}"
