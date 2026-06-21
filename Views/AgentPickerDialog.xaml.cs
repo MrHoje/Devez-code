@@ -41,10 +41,20 @@ public partial class AgentPickerDialog : Window
     private void Card_Click(object sender, RoutedEventArgs e)
     {
         if (sender is RadioButton rb && rb.Tag is string id)
-        {
             SelectedAgentId = id;
-            DialogResult = true;
-            Close();
-        }
+    }
+
+    private void OkBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedAgentId == null) return;
+        DialogResult = true;
+        Close();
+    }
+
+    private void CancelBtn_Click(object sender, RoutedEventArgs e)
+    {
+        SelectedAgentId = null;
+        DialogResult = false;
+        Close();
     }
 }

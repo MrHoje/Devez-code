@@ -17,6 +17,7 @@
         FontFamily="{StaticResource PretendardFont}">
 
     <Grid Margin="{DynamicResource WindowShadowOuterMargin}">
+        <!-- Shadow layer -->
         <Border Background="{DynamicResource BgBrush}" CornerRadius="{DynamicResource WindowShadowCornerRadius}"
                 Margin="{DynamicResource WindowShadowInnerMargin}" SnapsToDevicePixels="True">
             <Border.Effect>
@@ -24,97 +25,128 @@
                                   Color="{DynamicResource ShadowColor}" Opacity="{DynamicResource ShadowOpacity}"/>
             </Border.Effect>
         </Border>
-        <Border CornerRadius="12"
+        <!-- Content layer (설정창과 동일한 일반 보더) -->
+        <Border CornerRadius="14"
                 Background="{DynamicResource BgBrush}"
-                BorderBrush="{DynamicResource TodayBrush}" BorderThickness="1.5"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                 ClipToBounds="True" SnapsToDevicePixels="True">
-            <StackPanel Margin="18,16,18,14">
-                <!-- 타이틀 + 프로젝트 경로 -->
-                <TextBlock Text="에이전트 선택" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                           Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
-                <TextBlock x:Name="HintText" FontSize="{DynamicResource Fs11}"
-                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,14"
-                           TextTrimming="CharacterEllipsis" MaxWidth="340"/>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                <!-- 세로 풀폭 카드 목록. RadioButton 으로 단일 선택 + 호버/체크 상태 표시 -->
-                <ItemsControl x:Name="AgentList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type svc:AgentDef}">
-                            <RadioButton GroupName="AgentPicker"
-                                         Click="Card_Click"
-                                         Tag="{Binding Id}"
-                                         Cursor="Hand"
-                                         Focusable="False"
-                                         HorizontalContentAlignment="Stretch"
-                                         VerticalContentAlignment="Stretch">
-                                <RadioButton.Template>
-                                    <ControlTemplate TargetType="RadioButton">
-                                        <Border x:Name="Card"
-                                                CornerRadius="10" BorderThickness="1"
-                                                BorderBrush="{DynamicResource LineBrush}"
-                                                Background="{DynamicResource PanelBrush}"
-                                                Padding="12,10" Margin="0,0,0,8"
-                                                SnapsToDevicePixels="True">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
+                <!-- 본문 -->
+                <StackPanel Grid.Row="0" Margin="18,16,18,14">
+                    <!-- 타이틀 + 프로젝트 경로 -->
+                    <TextBlock Text="에이전트 선택" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
+                    <TextBlock x:Name="HintText" FontSize="{DynamicResource Fs11}"
+                               Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,14"
+                               TextTrimming="CharacterEllipsis" MaxWidth="340"/>
 
-                                                <Image Grid.Column="0" Width="40" Height="40" Margin="0,0,14,0"
-                                                       Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
-                                                       RenderOptions.BitmapScalingMode="HighQuality" Stretch="Uniform"
-                                                       VerticalAlignment="Center"/>
+                    <!-- 세로 풀폭 카드 목록. RadioButton 으로 단일 선택 + 호버/체크 상태 표시 -->
+                    <ItemsControl x:Name="AgentList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type svc:AgentDef}">
+                                <RadioButton GroupName="AgentPicker"
+                                             Click="Card_Click"
+                                             Tag="{Binding Id}"
+                                             Cursor="Hand"
+                                             Focusable="False"
+                                             HorizontalContentAlignment="Stretch"
+                                             VerticalContentAlignment="Stretch">
+                                    <RadioButton.Template>
+                                        <ControlTemplate TargetType="RadioButton">
+                                            <Border x:Name="Card"
+                                                    CornerRadius="10" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource LineBrush}"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    Padding="12,10" Margin="0,0,0,8"
+                                                    SnapsToDevicePixels="True">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
 
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding DisplayName}"
-                                                               FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                                               Foreground="{DynamicResource TextBrush}"/>
-                                                    <TextBlock Text="{Binding Provider}"
-                                                               FontSize="{DynamicResource Fs11}"
-                                                               Foreground="{DynamicResource TextMutedBrush}"
-                                                               Margin="0,2,0,0"/>
-                                                </StackPanel>
+                                                    <Image Grid.Column="0" Width="40" Height="40" Margin="0,0,14,0"
+                                                           Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                           RenderOptions.BitmapScalingMode="HighQuality" Stretch="Uniform"
+                                                           VerticalAlignment="Center"/>
 
-                                                <!-- 라디오: 평소 빈 원, 호버/체크 시 TodayBrush 채움 + 흰 체크 -->
-                                                <Grid Grid.Column="2" Width="22" Height="22" VerticalAlignment="Center">
-                                                    <Ellipse x:Name="Ring" Width="22" Height="22"
-                                                             Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"
-                                                             Fill="Transparent"/>
-                                                    <Ellipse x:Name="Dot" Width="22" Height="22"
-                                                             Fill="{DynamicResource TodayBrush}" Visibility="Collapsed"/>
-                                                    <Path x:Name="Check" Data="M 0,5 L 4.5,9.5 L 12,1.5"
-                                                          Stretch="None"
-                                                          Stroke="White" StrokeThickness="2"
-                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                                          StrokeLineJoin="Round"
-                                                          HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                          Visibility="Collapsed"/>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding DisplayName}"
+                                                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                        <TextBlock Text="{Binding Provider}"
+                                                                   FontSize="{DynamicResource Fs11}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   Margin="0,2,0,0"/>
+                                                    </StackPanel>
+
+                                                    <!-- 라디오: 평소 빈 원, 호버/체크 시 PrimaryBrush 채움 + 흰 체크 -->
+                                                    <Grid Grid.Column="2" Width="22" Height="22" VerticalAlignment="Center">
+                                                        <Ellipse x:Name="Ring" Width="22" Height="22"
+                                                                 Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"
+                                                                 Fill="Transparent"/>
+                                                        <Ellipse x:Name="Dot" Width="22" Height="22"
+                                                                 Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                                        <Path x:Name="Check" Data="M 0,5 L 4.5,9.5 L 12,1.5"
+                                                              Stretch="None"
+                                                              Stroke="White" StrokeThickness="2"
+                                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                              StrokeLineJoin="Round"
+                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                              Visibility="Collapsed"/>
+                                                    </Grid>
                                                 </Grid>
-                                            </Grid>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Card" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource TodayBrush}"/>
-                                                <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
-                                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
-                                                <Setter TargetName="Ring" Property="Visibility" Value="Collapsed"/>
-                                            </Trigger>
-                                            <Trigger Property="IsChecked" Value="True">
-                                                <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
-                                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
-                                                <Setter TargetName="Ring" Property="Visibility" Value="Collapsed"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </RadioButton.Template>
-                            </RadioButton>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Card" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                    <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+                                                    <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                                                    <Setter TargetName="Ring" Property="Visibility" Value="Collapsed"/>
+                                                </Trigger>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter TargetName="Card" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                    <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+                                                    <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                                                    <Setter TargetName="Ring" Property="Visibility" Value="Collapsed"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </RadioButton.Template>
+                                </RadioButton>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Footer: 취소 / 확인 (설정창과 동일) -->
+                <Border Grid.Row="1"
+                        Background="{DynamicResource PanelSoftBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="0,1,0,0">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                Margin="20,14,20,14">
+                        <Button Click="CancelBtn_Click"
+                                Width="100" Height="38" Margin="0,0,8,0"
+                                Style="{StaticResource SecondaryButton}"
+                                FontSize="{DynamicResource Fs13}">
+                            <TextBlock Text="취소"/>
+                        </Button>
+                        <Button x:Name="OkBtn" Click="OkBtn_Click" IsDefault="True"
+                                Width="100" Height="38"
+                                Style="{StaticResource PrimaryButton}"
+                                FontSize="{DynamicResource Fs13}">
+                            <TextBlock Text="확인" Foreground="White"/>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Border>
     </Grid>
 </Window>
