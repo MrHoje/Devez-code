@@ -188,8 +188,7 @@
                             <StackPanel x:Name="BranchGroup" Orientation="Horizontal" Visibility="Collapsed">
                                 <Border Width="1" Height="12" Margin="12,0,12,0" VerticalAlignment="Center"
                                         Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-                                <Border Cursor="Hand" Background="Transparent" MouseLeftButtonUp="BranchBubble_Click"
-                                        ToolTip="클릭하여 브렌치 새로고침" VerticalAlignment="Center">
+                                <Border Background="Transparent" VerticalAlignment="Center">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <Path Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
                                               Style="{StaticResource LucideIcon}"

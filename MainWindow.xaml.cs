@@ -918,12 +918,6 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>브렌치 버블 클릭 — 현재 프로젝트의 브렌치를 새로 조회(외부에서 체크아웃했을 수 있음).</summary>
-    private void BranchBubble_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (_activeProject != null) UpdateProjectBranchBubble(_activeProject);
-    }
-
     /// <summary>프로젝트 선택(행 클릭) — 탭 교체 후 세션 하나 활성화(이전 활성 or 첫 세션).</summary>
     private void SelectProject(ProjectItem proj)
     {
