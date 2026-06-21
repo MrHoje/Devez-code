@@ -272,6 +272,8 @@ public partial class SettingsDialog : UserControl
         var enabledSet = new HashSet<string>(SettingsService.LoadEnabledAgents(), StringComparer.OrdinalIgnoreCase);
         foreach (var agent in AgentRegistry.All)
         {
+            // UI 노출 제외 (codex 등) — 세션 생성 피커와 동일한 정책 유지
+            if (AgentRegistry.HiddenFromUI.Contains(agent.Id)) continue;
             bool installed = AgentRegistry.IsInstalled(agent);
             _agentItems.Add(new AgentItem
             {

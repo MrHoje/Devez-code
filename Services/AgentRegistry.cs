@@ -94,11 +94,11 @@ public static class AgentRegistry
     /// <summary>에이전트가 PATH 어딘가에 설치되어 있는지.</summary>
     public static bool IsInstalled(AgentDef agent) => ResolvePath(agent) != null;
 
-    /// <summary>설정에서 활성화 + 실제 설치된 에이전트 (세션 추가 피커용).</summary>
+    /// <summary>설정에서 활성화 + 실제 설치된 + UI 노출 대상 에이전트 (세션 추가 피커용).</summary>
     public static IReadOnlyList<AgentDef> GetEnabledAndInstalled()
     {
         var enabled = new HashSet<string>(SettingsService.LoadEnabledAgents(), StringComparer.OrdinalIgnoreCase);
-        return All.Where(a => IsInstalled(a) && enabled.Contains(a.Id)).ToList();
+        return All.Where(a => !HiddenFromUI.Contains(a.Id) && IsInstalled(a) && enabled.Contains(a.Id)).ToList();
     }
 
     /// <summary>설정이 바뀐 뒤 캐시 무효화 (설치 감지 재실행).</summary>
@@ -106,4 +106,12 @@ public static class AgentRegistry
     {
         lock (_lock) _resolvedPath.Clear();
     }
+
+    /// <summary>UI 에서 숨길 에이전트 ID. 세션 생성 피커·설정 다이얼로그에서 제외.
+    /// 백엔드 코드(codex 훅·MCP 등)는 그대로 유지 — 기존 codex 세션이 있어도 동작은 계속.</summary>
+    public static readonly HashSet<string> HiddenFromUI = new(StringComparer.OrdinalIgnoreCase) { "codex" };
+
+    /// <summary>UI 노출 대상에서 제외한 에이전트만 반환.</summary>
+    public static IReadOnlyList<AgentDef> GetVisibleAgents()
+        => All.Where(a => !HiddenFromUI.Contains(a.Id)).ToList();
 }
