@@ -110,8 +110,12 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         Reload();
         CountChanged?.Invoke();
 
-        Loaded += (_, _) => Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
-            System.Windows.Threading.DispatcherPriority.Input);
+        Loaded += (_, _) =>
+        {
+            RestoreInputMinHeight();
+            Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
+                System.Windows.Threading.DispatcherPriority.Input);
+        };
         IsVisibleChanged += (_, _) =>
         {
             if (IsVisible)
@@ -195,6 +199,33 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     // ── 입력 ──
     private void InputBox_TextChanged(object sender, TextChangedEventArgs e) { }
+
+    private const double InputNaturalHeight = 28;
+    private const double InputMaxHeight = 180;
+
+    /// <summary>입력창 상단 핸들 드래그 → 높이 조절(자연 높이~180), 로컬 저장. (devez InputResizeThumb 정합)</summary>
+    private void InputResizeThumb_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        var current = InputBox.MinHeight > 0 ? InputBox.MinHeight : InputNaturalHeight;
+        var newMin = Math.Clamp(current - e.VerticalChange, InputNaturalHeight, InputMaxHeight);
+        if (Math.Abs(newMin - InputNaturalHeight) < 0.5)
+        {
+            InputBox.ClearValue(MinHeightProperty);
+            SettingsService.SaveTaskQueueInputMinHeight(0);
+        }
+        else
+        {
+            InputBox.MinHeight = newMin;
+            SettingsService.SaveTaskQueueInputMinHeight(newMin);
+        }
+    }
+
+    private void RestoreInputMinHeight()
+    {
+        var saved = SettingsService.LoadTaskQueueInputMinHeight();
+        if (saved <= 0) { InputBox.ClearValue(MinHeightProperty); return; }
+        InputBox.MinHeight = Math.Clamp(saved, InputNaturalHeight, InputMaxHeight);
+    }
 
     private void InputBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {

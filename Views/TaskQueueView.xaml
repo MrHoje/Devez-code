@@ -300,45 +300,72 @@
             </Canvas>
         </Grid>
 
-        <!-- ── 입력 바: doit 정합 (단일 라인, 둥근 배경, Enter=추가) ── -->
+        <!-- ── 입력 바: devez 정합 — 상단 구분선 없이 BgBrush 로 영역과 동화,
+                  상단 리사이즈 Thumb 로 높이 조절, 둥근 카드 입력칸. (code/snippet 툴바 제외) ── -->
         <Border Grid.Row="2"
-                Background="{DynamicResource PanelBrush}"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
-                Padding="10,8,10,10">
-            <Border Background="{DynamicResource BgBrush}"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                    CornerRadius="12" Padding="10,6,10,6">
-                <Grid>
-                    <TextBox x:Name="InputBox"
-                             BorderThickness="0" Background="Transparent"
-                             Foreground="{DynamicResource TextBrush}"
-                             CaretBrush="{DynamicResource TextBrush}"
-                             FontSize="{DynamicResource Fs13}"
-                             FontFamily="{StaticResource PretendardFont}"
-                             VerticalContentAlignment="Center"
-                             MinHeight="28" MaxHeight="100"
-                             TextWrapping="Wrap" AcceptsReturn="True"
-                             PreviewKeyDown="InputBox_PreviewKeyDown"
-                             TextChanged="InputBox_TextChanged"/>
-                    <TextBlock Text="작업을 입력하고 Enter"
-                               IsHitTestVisible="False"
-                               Margin="1,0,0,0" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextMutedBrush}"
-                               FontSize="{DynamicResource Fs13}"
-                               FontFamily="{StaticResource PretendardFont}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Text, ElementName=InputBox}" Value="">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </Grid>
-            </Border>
+                Background="{DynamicResource BgBrush}"
+                Padding="10,0,10,10">
+            <DockPanel LastChildFill="True">
+                <!-- 리사이즈 핸들(점 3개, SizeNS) — devez InputResizeThumb 정합 -->
+                <Thumb DockPanel.Dock="Top" x:Name="InputResizeThumb"
+                       Height="10" Cursor="SizeNS" Margin="0,0,0,2"
+                       DragDelta="InputResizeThumb_DragDelta">
+                    <Thumb.Template>
+                        <ControlTemplate TargetType="Thumb">
+                            <Grid Background="Transparent">
+                                <Path x:Name="InputResizeDots"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Fill="{DynamicResource TextMutedBrush}"
+                                      RenderOptions.EdgeMode="Aliased"
+                                      UseLayoutRounding="True" SnapsToDevicePixels="True"
+                                      Data="M0,0 H2 V2 H0 Z M4,0 H6 V2 H4 Z M8,0 H10 V2 H8 Z"/>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="InputResizeDots" Property="Fill"
+                                            Value="{DynamicResource PrimaryBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Thumb.Template>
+                </Thumb>
+
+                <Border Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                        CornerRadius="14" Padding="12,8" VerticalAlignment="Bottom">
+                    <Grid>
+                        <TextBox x:Name="InputBox"
+                                 BorderThickness="0" Background="Transparent"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource TextBrush}"
+                                 FontSize="{DynamicResource Fs13}"
+                                 FontFamily="{StaticResource PretendardFont}"
+                                 VerticalContentAlignment="Top"
+                                 MinHeight="28" MaxHeight="180"
+                                 TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 PreviewKeyDown="InputBox_PreviewKeyDown"
+                                 TextChanged="InputBox_TextChanged"/>
+                        <TextBlock Text="작업을 입력하고 Enter"
+                                   IsHitTestVisible="False"
+                                   Margin="1,0,0,0" VerticalAlignment="Top"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="{DynamicResource Fs13}"
+                                   FontFamily="{StaticResource PretendardFont}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=InputBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+            </DockPanel>
         </Border>
     </Grid>
 </UserControl>

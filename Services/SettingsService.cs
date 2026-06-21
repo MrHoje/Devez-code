@@ -45,6 +45,8 @@ public static class SettingsService
         // 우측 패널 작업 큐 — 프로젝트 경로별로 저장. 키 = 프로젝트 절대경로, 값 = 큐 항목 목록.
         // 로컬 전용 — 재시작 시 그대로 복원. 프로젝트 경로가 null/empty 면 "전역" 큐 (실제론 잘 안 씀).
         public Dictionary<string, List<TaskQueueEntry>> TaskQueueItemsByProject { get; set; } = new();
+        // 작업 큐 입력창 사용자 지정 높이(MinHeight). 0/미설정이면 기본(자연 높이). 로컬 전용.
+        public double TaskQueueInputMinHeight { get; set; }
         // 메인 창 위치/크기 + 최대화 상태(재시작 시 복원). 화면 밖이면 복원 안 함. 로컬 전용.
         public double? WindowLeft   { get; set; }
         public double? WindowTop    { get; set; }
@@ -237,6 +239,14 @@ public static class SettingsService
             Current.TaskQueueItemsByProject.Remove(key);
         else
             Current.TaskQueueItemsByProject[key] = snapshot;
+        Save();
+    }
+
+    // ── 작업 큐 입력창 높이 ───────────────────────────────────────
+    public static double LoadTaskQueueInputMinHeight() => Current.TaskQueueInputMinHeight;
+    public static void SaveTaskQueueInputMinHeight(double h)
+    {
+        Current.TaskQueueInputMinHeight = h;
         Save();
     }
 
