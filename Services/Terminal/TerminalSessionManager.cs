@@ -11,6 +11,7 @@ public sealed class TerminalSessionManager
     public static TerminalSessionManager Instance { get; } = new();
 
     private readonly Dictionary<string, TerminalSession> _sessions = new();
+    private readonly Dictionary<string, string> _claudeRoomDirs = new();
     private readonly object _lock = new();
     private WtTerminalConfig? _config;
 
@@ -133,11 +134,17 @@ public sealed class TerminalSessionManager
             _pendingInitial[roomId] = inject;
             _sessions[roomId] = session;
 
-            // claude 세션이면 DevezCode 테마에 맞춰 /config theme=X 1회 전송 (글로벌 settings.json 안 건드림).
-            // 2.5초 딜레이 — claude TUI 가 준비될 시간을 주고, 사용자가 키를 누르기 전 시점.
-            // 에이전트가 claude 가 아니면 무시 (codex/opencode 는 자체 theme 시스템 없음).
+            // claude 세션이면 room → working directory 를 기억하고, 프로젝트 local settings 로 테마를 반영한다.
+            // ~/.claude/settings.json 은 건드리지 않으므로 DevezCode 밖의 claude 실행에는 영향 없음.
             if (agent.Id == "claude" && agent.SupportsHooks)
+            {
+                if (!string.IsNullOrWhiteSpace(ccDir))
+                {
+                    _claudeRoomDirs[roomId] = ccDir;
+                    ApplyClaudeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
+                }
                 _ = InjectClaudeThemeAsync(session, DevezCode.App.CurrentTheme);
+            }
 
             return session;
         }
@@ -164,14 +171,60 @@ public sealed class TerminalSessionManager
     private void OnAppThemeChanged_Broadcast(string theme)
     {
         List<TerminalSession> live;
+        List<string> dirs;
         lock (_lock)
         {
             live = new List<TerminalSession>(_sessions.Values.Count);
             foreach (var s in _sessions.Values)
                 if (s.IsAlive) live.Add(s);
+            dirs = new List<string>(_claudeRoomDirs.Values);
         }
+        foreach (var dir in dirs)
+            ApplyClaudeProjectTheme(dir, theme);
         if (live.Count == 0) return;
         _ = BroadcastClaudeThemeAsync(live, theme);
+    }
+
+    /// <summary>프로젝트 local settings 에 claude theme 을 기록한다.
+    /// claude 는 settings 파일 변경을 감시하므로 이미 떠 있는 TUI 도 이 경로로 갱신된다.
+    /// 파일: &lt;workingDir&gt;/.claude/settings.local.json. 기존 설정은 보존.</summary>
+    private static void ApplyClaudeProjectTheme(string workingDir, string devezCodeTheme)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(workingDir) || !Directory.Exists(workingDir)) return;
+            var dir = Path.Combine(workingDir, ".claude");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "settings.local.json");
+            var theme = ClaudeCustomThemes.MapToClaudeTheme(devezCodeTheme);
+
+            System.Text.Json.Nodes.JsonObject root;
+            if (File.Exists(path))
+            {
+                try
+                {
+                    root = System.Text.Json.Nodes.JsonNode.Parse(
+                        File.ReadAllText(path),
+                        documentOptions: new System.Text.Json.JsonDocumentOptions
+                        {
+                            CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                            AllowTrailingCommas = true,
+                        }) as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
+                }
+                catch
+                {
+                    return; // 깨진 사용자 설정 파일은 덮어쓰지 않음
+                }
+            }
+            else
+            {
+                root = new System.Text.Json.Nodes.JsonObject();
+            }
+
+            root["theme"] = theme;
+            File.WriteAllText(path, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { /* local settings 갱신 실패 — best-effort */ }
     }
 
     private static async Task BroadcastClaudeThemeAsync(List<TerminalSession> sessions, string theme)
@@ -625,6 +678,7 @@ public sealed class TerminalSessionManager
                 try { s.Dispose(); } catch (Exception) { }
                 _sessions.Remove(roomId);
             }
+            _claudeRoomDirs.Remove(roomId);
             _pendingInitial.Remove(roomId);
             _disposedRooms.Add(roomId); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
         }
@@ -670,6 +724,7 @@ public sealed class TerminalSessionManager
                 try { s.Dispose(); } catch (Exception) { }
             }
             _sessions.Clear();
+            _claudeRoomDirs.Clear();
         }
     }
 }
