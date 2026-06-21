@@ -6,3 +6,6 @@ obj/
 
 # opencode 가 루트에서 실행될 때 생기는 테스트 잔여물
 /tui.json
+
+# Inno Setup 인스톨러 산출물(바이너리 — 배포는 R2)
+installer/Output/
