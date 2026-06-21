@@ -516,6 +516,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         while (src != null && !ReferenceEquals(src, BubblesList))
         {
             if (src is FrameworkElement fe && (fe.Name == "BubbleBorder" || fe.Name == "BubbleInner")) return false;
+            if (src is System.Windows.Controls.Button) return false; // '작업지시' 버튼 등은 빈 영역 아님
             if (src is System.Windows.Controls.Primitives.ScrollBar) return false;
             src = VisualTreeHelper.GetParent(src);
         }
