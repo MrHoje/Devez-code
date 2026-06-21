@@ -4,7 +4,7 @@
         xmlns:svc="clr-namespace:DevezCode.Services"
         xmlns:models="clr-namespace:DevezCode.Models"
         Title="에이전트 선택"
-        Width="340" Height="Auto"
+        Width="340" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="NoResize"
@@ -32,17 +32,17 @@
                 ClipToBounds="True" SnapsToDevicePixels="True">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- 본문 -->
-                <StackPanel Grid.Row="0" Margin="16,14,16,10">
+                <StackPanel Grid.Row="0" Margin="16,12,16,8">
                     <!-- 타이틀 + 프로젝트 경로 -->
                     <TextBlock Text="에이전트 선택" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}" Margin="0,0,0,3"/>
                     <TextBlock x:Name="HintText" FontSize="{DynamicResource Fs11}"
-                               Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"
+                               Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,8"
                                TextTrimming="CharacterEllipsis" MaxWidth="300"/>
 
                     <!-- 세로 풀폭 카드 목록. RadioButton 으로 단일 선택 + 호버/체크 상태 표시 -->
@@ -131,7 +131,7 @@
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="0,1,0,0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                Margin="16,11,16,11">
+                                Margin="16,9,16,9">
                         <Button Click="CancelBtn_Click"
                                 Width="92" Height="34" Margin="0,0,6,0"
                                 Style="{StaticResource SecondaryButton}"
