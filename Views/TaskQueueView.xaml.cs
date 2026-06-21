@@ -122,23 +122,34 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     }
 
     // ── 영속화 ──
+    /// <summary>로드 중 플래그. Reload 의 Clear/Add 가 CollectionChanged→Save 를 유발해
+    /// "빈 컬렉션 저장 → 프로젝트 큐 키 삭제 → 직후 로드 시 빈 데이터"로 저장본을 지우던 버그 차단.</summary>
+    private bool _loading;
+
     private void Reload()
     {
+        _loading = true;
         Items.Clear();
         var saved = SettingsService.LoadTaskQueueItems(_projectPath);
         foreach (var (text, sortOrder) in saved)
             Items.Add(new TaskQueueItem { Text = text, SortOrder = sortOrder });
+        _loading = false;
+
         IsSelectionMode = false;
+        UpdateEmptyHint();
         UpdateSelectionActionBar();
+        CountChanged?.Invoke();
     }
 
     private void Save()
     {
+        if (_loading) return;
         SettingsService.SaveTaskQueueItems(_projectPath, Items.Select(i => (i.Text, i.SortOrder)));
     }
 
     private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (_loading) return;
         UpdateEmptyHint();
         Save();
         ScrollToBottom();
@@ -559,9 +570,12 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     // ── 키보드 (debit Root_PreviewKeyDown 슬림) ──
     private void Root_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        // 선택 모드에서 선택 항목이 있으면 입력창 포커스와 무관하게 Delete/Esc/Ctrl+C 를 선처리.
+        // 선택/하이라이트된 버블이 있으면 입력창 포커스와 무관하게 Delete/Esc/Ctrl+C 를 선처리.
         // (작업 큐는 입력창이 항상 포커스를 유지하므로, 포커스 가드로 막으면 Delete 가 영영 안 먹는다.)
+        // 단, 입력창에 글자가 있으면(=텍스트 편집 중) Delete 는 가로채지 않는다.
         bool selActive = _isSelectionMode && CountSelected() > 0;
+        bool inputBusy = InputBox.IsKeyboardFocusWithin && InputBox.Text.Length > 0;
+        var delTargets = CurrentDeleteTargets();
 
         if (e.Key == Key.Escape && _isSelectionMode)
         {
@@ -569,9 +583,9 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             e.Handled = true;
             return;
         }
-        if (e.Key == Key.Delete && selActive)
+        if (e.Key == Key.Delete && delTargets.Count > 0 && !inputBusy)
         {
-            DeleteSelectedInternal();
+            DeleteItemsWithConfirm(delTargets);
             e.Handled = true;
             return;
         }
@@ -634,23 +648,44 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         DeleteSelectedInternal();
     }
 
-    private void DeleteSelectedInternal()
+    /// <summary>Delete 키/액션바용: 선택 항목(없으면 하이라이트된 단일 버블)을 확인 후 삭제.</summary>
+    private void DeleteSelectedInternal() => DeleteItemsWithConfirm(CurrentDeleteTargets());
+
+    /// <summary>삭제 대상: 선택된 항목들. 없으면 좌/우클릭으로 강조된 단일 버블.</summary>
+    private List<TaskQueueItem> CurrentDeleteTargets()
     {
-        var toRemove = Items.Where(i => i.IsSelected).ToList();
-        foreach (var it in toRemove) Items.Remove(it);
+        var sel = Items.Where(i => i.IsSelected).ToList();
+        if (sel.Count > 0) return sel;
+        if (_rightClickHighlightedItem != null && Items.Contains(_rightClickHighlightedItem))
+            return new List<TaskQueueItem> { _rightClickHighlightedItem };
+        return new List<TaskQueueItem>();
+    }
+
+    /// <summary>확인 다이얼로그(devez ConfirmDialog 정합) 후 대상 버블 삭제.</summary>
+    private void DeleteItemsWithConfirm(IReadOnlyList<TaskQueueItem> targets)
+    {
+        if (targets.Count == 0) return;
+        var msg = targets.Count == 1
+            ? "이 작업을 삭제하시겠습니까?"
+            : $"선택한 작업 {targets.Count}개를 삭제하시겠습니까?";
+        if (!ConfirmDialog.Show("삭제 확인", msg, okLabel: "삭제", iconKey: "IconTrash2", danger: true))
+            return;
+
+        foreach (var it in targets) Items.Remove(it);
+        if (_rightClickHighlightedItem != null && targets.Contains(_rightClickHighlightedItem))
+            _rightClickHighlightedItem = null;
         IsSelectionMode = false;
     }
 
     private void BubbleDelete_Click(object sender, RoutedEventArgs e)
     {
-        if (CountSelected() > 0)
-        {
-            DeleteSelectedInternal();
-        }
-        else if (sender is MenuItem { DataContext: TaskQueueItem item })
-        {
-            Items.Remove(item);
-        }
+        // 선택 항목이 있으면 그것들, 없으면 우클릭한 단일 버블.
+        var targets = CountSelected() > 0
+            ? Items.Where(i => i.IsSelected).ToList()
+            : (sender is MenuItem { DataContext: TaskQueueItem item }
+                ? new List<TaskQueueItem> { item }
+                : new List<TaskQueueItem>());
+        DeleteItemsWithConfirm(targets);
     }
 
     private void BubbleCopy_Click(object sender, RoutedEventArgs e)
