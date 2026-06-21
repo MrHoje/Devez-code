@@ -336,10 +336,29 @@ public partial class McpManagerDialog : UserControl
         try
         {
             _currentBackend.Save(_servers);
-            ConfirmDialog.Alert("저장 완료",
-                $"{_currentBackend.ConfigPathHint} 에 저장했습니다.\n({_currentBackend.DisplayName} 세션은 다음 시작부터 새 설정을 사용합니다)");
             _original.Clear();
             foreach (var s in _servers) _original.Add(s.Clone());
+
+            // Claude 백엔드 + 활성 세션이 Claude면 즉시 재시작으로 새 mcpServers 적용
+            if (_currentBackend.Id == "claude")
+            {
+                var win = Window.GetWindow(this) as MainWindow;
+                if (win?.TryRestartActiveClaudeSession() == true)
+                {
+                    ConfirmDialog.Alert("저장 + 재시작 완료",
+                        $"{_currentBackend.ConfigPathHint} 에 저장하고 활성 Claude 세션을 재시작했습니다.\n(약 5~10초 후 새 MCP 서버 목록이 반영됩니다)");
+                }
+                else
+                {
+                    ConfirmDialog.Alert("저장 완료",
+                        $"{_currentBackend.ConfigPathHint} 에 저장했습니다.\n활성 Claude 세션이 없어 새 세션부터 적용됩니다.");
+                }
+            }
+            else
+            {
+                ConfirmDialog.Alert("저장 완료",
+                    $"{_currentBackend.ConfigPathHint} 에 저장했습니다.\n({_currentBackend.DisplayName} 세션은 다음 시작부터 새 설정을 사용합니다)");
+            }
         }
         catch (Exception ex)
         {

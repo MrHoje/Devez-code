@@ -1111,6 +1111,21 @@ public partial class MainWindow : Window
         SettingsService.RemoveClaudeCodeRoomDir(session.Id);
     }
 
+    /// <summary>활성 Claude 세션을 재시작 — 디스크에 저장된 mcpServers 가 다시 로드된다.
+    /// MCP 매니저의 저장 후 호출용. 비활성이거나 비-Claude 세션이면 false.</summary>
+    public bool TryRestartActiveClaudeSession()
+    {
+        if (_activeSession == null) return false;
+        var agentId = string.IsNullOrEmpty(_activeSession.AgentId)
+            ? AgentRegistry.DefaultAgentId : _activeSession.AgentId;
+        if (agentId != "claude") return false;
+        // 세션의 터미널·ConPTY 만 정리 (대화 기록은 보존 — 다음 시작 시 --resume 로 이어짐)
+        DisposeSessionProcess(_activeSession, purge: false);
+        // 동일 roomId 로 다시 활성화 → 새 ConPTY + WebView2 가 떠고 claude 가 mcpServers 를 다시 읽음
+        ActivateSession(_activeSession);
+        return true;
+    }
+
     private ProjectItem? ParentOf(SessionItem session)
         => _projects.FirstOrDefault(p => p.Sessions.Contains(session));
 
