@@ -16,7 +16,7 @@ public partial class FileExplorerView : UserControl
     public FileExplorerView()
     {
         InitializeComponent();
-        SwitchTab(0, animate: false); // 초기: 디렉터리 탭 활성 표시
+        SwitchTab(0); // 초기: 디렉터리 탭 활성 표시
         Tree.ContextMenu = BuildEmptyAreaMenu(); // 빈 영역 우클릭 메뉴 (Tree 자체)
     }
 
@@ -79,24 +79,19 @@ public partial class FileExplorerView : UserControl
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
     private enum ViewMode { Directory, Browser, Diff }
     private ViewMode _mode = ViewMode.Directory;
-    private int _activeTabIndex = 0; // 0=Directory, 1=Browser, 2=Diff (슬라이딩 인디케이터용)
     private bool _browserMode => _mode == ViewMode.Browser;
 
     // ── 디렉터리 / 브라우저 / DIFF 뷰 전환 ──────────────────────────────
-    // (devez ToolboxPanelView 정합: 단일 클릭 핸들러 + 슬라이딩 인디케이터)
+    // (단일 클릭 핸들러 — 텍스트 색상으로만 활성/비활성 구분)
 
     private void TabBtn_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && int.TryParse(btn.Tag?.ToString(), out var idx))
-            SwitchTab(idx, animate: true);
+            SwitchTab(idx);
     }
 
-    private void TabBarGrid_SizeChanged(object sender, SizeChangedEventArgs e)
-        => UpdateTabIndicator(animate: false);
-
-    private void SwitchTab(int idx, bool animate)
+    private void SwitchTab(int idx)
     {
-        _activeTabIndex = idx;
         _mode = (ViewMode)idx;
         Tree.Visibility    = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         Browser.Visibility = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
@@ -113,48 +108,18 @@ public partial class FileExplorerView : UserControl
         HeaderIcon.Data = (System.Windows.Media.Geometry)FindResource(icon);
         PathText.Text = title;
 
-        UpdateTabIndicator(animate);
         UpdateTabTextColors();
-    }
-
-    private void UpdateTabIndicator(bool animate)
-    {
-        Button[] btns = [DirViewBtn, BrowserViewBtn, DiffViewBtn];
-        var btn = btns[_activeTabIndex];
-        if (btn.ActualWidth <= 0) return;
-
-        var pos     = btn.TransformToAncestor(TabBarGrid).Transform(new System.Windows.Point(0, 0));
-        var targetX = pos.X;
-        var targetW = btn.ActualWidth;
-        var dur  = new Duration(TimeSpan.FromMilliseconds(260));
-        var ease = new System.Windows.Media.Animation.QuinticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
-
-        if (animate)
-        {
-            TabSlidingIndicator.BeginAnimation(FrameworkElement.WidthProperty,
-                new System.Windows.Media.Animation.DoubleAnimation(targetW, dur) { EasingFunction = ease });
-            TabIndicatorTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty,
-                new System.Windows.Media.Animation.DoubleAnimation(targetX, dur) { EasingFunction = ease });
-        }
-        else
-        {
-            TabSlidingIndicator.BeginAnimation(FrameworkElement.WidthProperty, null);
-            TabSlidingIndicator.Width = targetW;
-            TabIndicatorTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, null);
-            TabIndicatorTranslate.X = targetX;
-        }
     }
 
     private void UpdateTabTextColors()
     {
-        SetTabColor(DirViewIcon,     DirViewLabel,     _activeTabIndex == 0);
-        SetTabColor(BrowserViewIcon, BrowserViewLabel, _activeTabIndex == 1);
-        SetTabColor(DiffViewIcon,    DiffViewLabel,    _activeTabIndex == 2);
+        SetTabColor(DirViewIcon,     DirViewLabel,     _mode == ViewMode.Directory);
+        SetTabColor(BrowserViewIcon, BrowserViewLabel, _mode == ViewMode.Browser);
+        SetTabColor(DiffViewIcon,    DiffViewLabel,    _mode == ViewMode.Diff);
     }
 
     /// <summary>탭 아이콘·라벨 색상: 활성=PrimaryBrush, 비활성=TextMutedBrush.
-    /// 아이콘은 Path(Stroke), 라벨은 TextBlock(Foreground)이라 분기. 굵기는 항상 SemiBold로 고정
-    /// (활성/비활성 전환 시 글자 폭이 바뀌어 텍스트가 움직이는 현상 방지).</summary>
+    /// 굵기는 항상 SemiBold로 고정 (활성/비활성 전환 시 글자 폭이 바뀌어 텍스트가 움직이는 현상 방지).</summary>
     private void SetTabColor(System.Windows.Shapes.Path icon, TextBlock label, bool active)
     {
         icon.Stroke = (System.Windows.Media.Brush)FindResource(active ? "PrimaryBrush" : "TextMutedBrush");

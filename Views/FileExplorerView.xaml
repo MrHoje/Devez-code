@@ -7,7 +7,7 @@
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
         <!-- 상단 뷰 전환 탭 버튼: 아이콘 + 라벨. 활성은 PrimaryBrush, 비활성은 Muted.
-             (devez ToolboxPanelView TabBtn 정합 — 호버 시 컨텐츠 0.5 투명도, 슬라이딩 인디케이터 별도) -->
+             (호버 시 컨텐츠 0.5 투명도 — 배경 박스 없이 텍스트만 하이라이트) -->
         <Style x:Key="ViewTabButton" TargetType="Button">
             <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="Background" Value="Transparent"/>
@@ -40,50 +40,39 @@
         </Grid.RowDefinitions>
 
         <!-- 뷰 전환 메뉴 패널 (최상단): 파일 탐색기 / 브라우저 / DIFF
-             (devez ToolboxPanelView 정합: 하단 슬라이딩 언더라인 인디케이터) -->
+             (배경 박스 없이 텍스트만 하이라이트) -->
         <Border Grid.Row="0" Height="44"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
-            <Grid x:Name="TabBarGrid" SizeChanged="TabBarGrid_SizeChanged">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch" HorizontalAlignment="Left">
-                    <Button x:Name="DirViewBtn" Click="TabBtn_Click" Tag="0"
-                            Style="{StaticResource ViewTabButton}" ToolTip="파일 탐색기">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Path x:Name="DirViewIcon" Style="{StaticResource LucideIcon}"
-                                  Data="{StaticResource IconFolderOpen}" Width="14" Height="14" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="DirViewLabel" Text="탐색기" Margin="6,0,0,0" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="BrowserViewBtn" Click="TabBtn_Click" Tag="1"
-                            Style="{StaticResource ViewTabButton}" ToolTip="브라우저">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Path x:Name="BrowserViewIcon" Style="{StaticResource LucideIcon}"
-                                  Data="{StaticResource IconGlobe}" Width="14" Height="14" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="BrowserViewLabel" Text="브라우저" Margin="6,0,0,0" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="DiffViewBtn" Click="TabBtn_Click" Tag="2"
-                            Style="{StaticResource ViewTabButton}" ToolTip="DIFF">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
-                                  Data="{StaticResource IconGitCompare}" Width="14" Height="14" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="DiffViewLabel" Text="DIFF" Margin="6,0,0,0" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-
-                <!-- 슬라이딩 언더라인 인디케이터 (devez TabSlidingIndicator 정합) -->
-                <Rectangle x:Name="TabSlidingIndicator" Height="2"
-                           Fill="{DynamicResource PrimaryBrush}"
-                           VerticalAlignment="Bottom" HorizontalAlignment="Left">
-                    <Rectangle.RenderTransform>
-                        <TranslateTransform x:Name="TabIndicatorTranslate"/>
-                    </Rectangle.RenderTransform>
-                </Rectangle>
-            </Grid>
+            <StackPanel x:Name="TabBarGrid" Orientation="Horizontal" VerticalAlignment="Stretch" HorizontalAlignment="Left">
+                <Button x:Name="DirViewBtn" Click="TabBtn_Click" Tag="0"
+                        Style="{StaticResource ViewTabButton}" ToolTip="파일 탐색기">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Path x:Name="DirViewIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconFolderOpen}" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="DirViewLabel" Text="탐색기" Margin="6,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="BrowserViewBtn" Click="TabBtn_Click" Tag="1"
+                        Style="{StaticResource ViewTabButton}" ToolTip="브라우저">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Path x:Name="BrowserViewIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconGlobe}" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="BrowserViewLabel" Text="브라우저" Margin="6,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="DiffViewBtn" Click="TabBtn_Click" Tag="2"
+                        Style="{StaticResource ViewTabButton}" ToolTip="DIFF">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconGitCompare}" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="DiffViewLabel" Text="DIFF" Margin="6,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Border>
 
         <!-- Header: 현재 뷰의 경로/제목 (검색행·세션헤더와 둘째 줄 세퍼레이터 정렬: 52) -->

@@ -47,35 +47,30 @@ export const DevezCodeRoomTracker = async () => {
     } catch (e) { debug(`writeLastmsg failed: ${e.message}`); }
   };
 
-  // user message 에서 text 추출 — opencode export JSON 과 동일 구조 가정.
-  // (info.parts[].type==="text".text) 또는 (info.content 문자열) 모두 지원.
-  const extractUserText = (info) => {
-    if (!info) return "";
-    if (typeof info.content === "string" && info.content) return info.content;
-    if (Array.isArray(info.content)) {
-      for (const c of info.content) {
-        if (c && (c.type === "text" || c.type === "input_text") && c.text) return c.text;
-      }
-    }
-    if (Array.isArray(info.parts)) {
-      for (const p of info.parts) {
-        if (p && p.type === "text" && p.text) return p.text;
-      }
+  // message.updated 에서 본 messageID → "user"/"assistant" 매핑. message.part.updated 가
+  // user prompt 텍스트를 따로 떨어뜨릴 때 부모가 user 인지 빠르게 판별하는 데 쓴다.
+  // (opencode 1.17.x 는 message.updated 의 info 에 role 이 있고 텍스트는 별도 part 이벤트로 흐름)
+  const messageRole = {};
+
+  // user message 의 parts 들에서 text 추출. opencode export JSON 의 part 구조와 동일.
+  const extractTextFromParts = (parts) => {
+    if (!Array.isArray(parts)) return "";
+    for (const p of parts) {
+      if (p && p.type === "text" && p.text) return p.text;
     }
     return "";
   };
 
   // 어떤 event 가 오는지 + role 필드 위치를 파악하기 위한 카운터
   let eventCount = 0;
-  const roleHit = { user: 0, assistant: 0, other: 0, missing: 0 };
 
   return {
     event: async ({ event }) => {
       try {
         if (!event || !event.type) return;
+        const props = event.properties || {};
         // 처음 20개 event 만 구조 로깅 (이후 노이즈 방지)
         if (eventCount < 20) {
-          const props = event.properties || {};
           const info = props.info || {};
           const roleInfo = info.role ?? info.roleName ?? info.roleType ?? "<no-role>";
           const keys = Object.keys(props).slice(0, 8).join(",");
@@ -87,26 +82,29 @@ export const DevezCodeRoomTracker = async () => {
 
         // 세션 생성/갱신 이벤트 — 최신 ID 덮어씀 (--clear·새 대화 시작 시 자동 갱신).
         if (event.type === "session.created" || event.type === "session.updated") {
-          const info = event.properties && event.properties.info;
+          const info = props.info;
           if (info && info.id) writeId(info.id);
         }
-        // 메시지 이벤트 — sessionID 백업 채널 + user prompt 추출.
-        else if (event.type === "message.updated" || event.type === "message.part.updated") {
-          const props = event.properties || {};
-          if (props.sessionID) writeId(props.sessionID);
+        // message.updated — 메시지 메타( role, id ) 캐시. 텍스트 본문은 여기에 없음.
+        else if (event.type === "message.updated") {
           const info = props.info;
-          // role 위치 추정: info.role, info.roleName, info.type, 또는 최상위 role
-          const role = (info && (info.role || info.roleName || info.type)) || props.role || "<none>";
-          if (role === "user" || role === "human") {
-            roleHit.user++;
-            const text = extractUserText(info);
-            if (text) writeLastmsg(text);
-            else debug(`role=user but text empty; info keys=${info ? Object.keys(info).join(",") : "null"}`);
-          } else if (role === "assistant") {
-            roleHit.assistant++;
-          } else {
-            roleHit.other++;
+          if (info && info.id) {
+            if (info.sessionID) writeId(info.sessionID);
+            if (info.role) messageRole[info.id] = info.role;
           }
+        }
+        // message.part.updated — 실제 텍스트 본문이 여기 도착.
+        //   type="text" + 부모 메시지가 user 일 때만 lastmsg 로 저장.
+        else if (event.type === "message.part.updated") {
+          const part = props.part;
+          if (!part) return;
+          // sessionID 백업 채널 — part.sessionID 가 항상 옴.
+          if (part.sessionID) writeId(part.sessionID);
+          if (part.type !== "text" || !part.text) return;
+          // synthetic/ignored part (자동 주입된 메타 텍스트) 는 헤더에 뜨면 노이즈라 무시.
+          if (part.synthetic || part.ignored) return;
+          const role = messageRole[part.messageID];
+          if (role === "user") writeLastmsg(part.text);
         }
       } catch (e) { debug(`event handler error: ${e.message}`); }
     },
@@ -114,7 +112,9 @@ export const DevezCodeRoomTracker = async () => {
       try {
         if (input && input.sessionID) writeId(input.sessionID);
         if (input && input.message && input.message.role === "user") {
-          const text = extractUserText(input.message);
+          // chat.message 는 message.updated 와 동시 또는 직전에 옴 → role 캐시도 함께 갱신.
+          if (input.message.id) messageRole[input.message.id] = "user";
+          const text = extractTextFromParts(input.message.parts);
           if (text) writeLastmsg(text);
         }
       } catch (e) { debug(`chat.message error: ${e.message}`); }
