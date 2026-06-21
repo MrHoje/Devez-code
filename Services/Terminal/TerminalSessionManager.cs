@@ -12,6 +12,7 @@ public sealed class TerminalSessionManager
 
     private readonly Dictionary<string, TerminalSession> _sessions = new();
     private readonly Dictionary<string, string> _claudeRoomDirs = new();
+    private readonly Dictionary<string, string> _opencodeRoomDirs = new();
     private readonly object _lock = new();
     private WtTerminalConfig? _config;
 
@@ -130,6 +131,11 @@ public sealed class TerminalSessionManager
             if (isClaude && !string.IsNullOrWhiteSpace(ccDir))
                 ApplyClaudeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
 
+            // opencode 세션이면 시작 전에 프로젝트 tui.json 에 theme 을 기록한다.
+            var isOpenCode = agent.Id == "opencode";
+            if (isOpenCode && !string.IsNullOrWhiteSpace(ccDir))
+                ApplyOpenCodeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
+
             TerminalSession session;
             try
             {
@@ -155,25 +161,32 @@ public sealed class TerminalSessionManager
                     _claudeRoomDirs[roomId] = ccDir;
             }
 
+            // opencode 세션이면 room → working directory 기억.
+            if (isOpenCode)
+            {
+                if (!string.IsNullOrWhiteSpace(ccDir))
+                    _opencodeRoomDirs[roomId] = ccDir;
+            }
+
             return session;
         }
     }
 
-    /// <summary>App.ThemeChanged → 살아있는 모든 claude 세션에 라이브 갱신. 짧은 딜레이로
+    /// <summary>App.ThemeChanged → 살아있는 모든 claude/opencode 세션에 라이브 갱신. 짧은 딜레이로
     /// 사용자가 입력 중이던 키가 끼어들어 깨지는 걸 완화.</summary>
     private void OnAppThemeChanged_Broadcast(string theme)
     {
-        List<TerminalSession> live;
-        List<string> dirs;
+        List<string> claudeDirs;
+        List<string> opencodeDirs;
         lock (_lock)
         {
-            live = new List<TerminalSession>(_sessions.Values.Count);
-            foreach (var s in _sessions.Values)
-                if (s.IsAlive) live.Add(s);
-            dirs = new List<string>(_claudeRoomDirs.Values);
+            claudeDirs   = new List<string>(_claudeRoomDirs.Values);
+            opencodeDirs = new List<string>(_opencodeRoomDirs.Values);
         }
-        foreach (var dir in dirs)
+        foreach (var dir in claudeDirs)
             ApplyClaudeProjectTheme(dir, theme);
+        foreach (var dir in opencodeDirs)
+            ApplyOpenCodeProjectTheme(dir, theme);
     }
 
     /// <summary>프로젝트 local settings 에 claude theme 을 기록한다.
@@ -216,6 +229,46 @@ public sealed class TerminalSessionManager
             File.WriteAllText(path, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* local settings 갱신 실패 — best-effort */ }
+    }
+
+    /// <summary>프로젝트 루트 tui.json 에 opencode theme 을 기록한다.
+    /// opencode 가 시작 시 또는 파일 변경을 감지해 반영한다.
+    /// 파일: &lt;workingDir&gt;/tui.json. 기존 설정은 보존.</summary>
+    private static void ApplyOpenCodeProjectTheme(string workingDir, string devezCodeTheme)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(workingDir) || !Directory.Exists(workingDir)) return;
+            var path = Path.Combine(workingDir, "tui.json");
+            var theme = OpenCodeCustomThemes.MapToOpenCodeTheme(devezCodeTheme);
+
+            System.Text.Json.Nodes.JsonObject root;
+            if (File.Exists(path))
+            {
+                try
+                {
+                    root = System.Text.Json.Nodes.JsonNode.Parse(
+                        File.ReadAllText(path),
+                        documentOptions: new System.Text.Json.JsonDocumentOptions
+                        {
+                            CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                            AllowTrailingCommas = true,
+                        }) as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
+                }
+                catch
+                {
+                    return;
+                }
+            }
+            else
+            {
+                root = new System.Text.Json.Nodes.JsonObject();
+            }
+
+            root["theme"] = theme;
+            File.WriteAllText(path, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { /* tui.json 갱신 실패 — best-effort */ }
     }
 
     /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.
@@ -658,6 +711,7 @@ public sealed class TerminalSessionManager
                 _sessions.Remove(roomId);
             }
             _claudeRoomDirs.Remove(roomId);
+            _opencodeRoomDirs.Remove(roomId);
             _pendingInitial.Remove(roomId);
             _disposedRooms.Add(roomId); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
         }
