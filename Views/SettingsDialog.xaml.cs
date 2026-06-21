@@ -59,9 +59,23 @@ public partial class SettingsDialog : UserControl
         CatThemeBtn.Foreground = key == "theme"  ? primary : text;
         CatAgentBtn.Background = key == "agent"  ? active : Brushes.Transparent;
         CatAgentBtn.Foreground = key == "agent"  ? primary : text;
+        CatMcpBtn.Background   = key == "mcp"    ? active : Brushes.Transparent;
+        CatMcpBtn.Foreground   = key == "mcp"    ? primary : text;
 
         ThemePanel.Visibility  = key == "theme"  ? Visibility.Visible : Visibility.Collapsed;
-        AgentPanel.Visibility = key == "agent"  ? Visibility.Visible : Visibility.Collapsed;
+        AgentPanel.Visibility  = key == "agent"  ? Visibility.Visible : Visibility.Collapsed;
+        McpPanel.Visibility    = key == "mcp"    ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>MCP 서버 관리 — 별도 오버레이 창으로 열기. 설정창은 닫지 않는다(독립 편집).</summary>
+    private void OpenMcpManager_Click(object sender, RoutedEventArgs e)
+    {
+        // 변경 중인 다른 설정이 있을 수 있으니 미리보기는 원복 후 떠준다.
+        RevertPreview();
+        var dlg = new McpManagerWindow { Owner = Window.GetWindow(this) };
+        dlg.ShowDialog();
+        // 다시 돌아왔을 때 카테고리는 mcp 그대로 유지
+        SetActiveCategory("mcp");
     }
 
     // ── 미리보기(저장 없이 화면에만 반영) ──────────────────────────

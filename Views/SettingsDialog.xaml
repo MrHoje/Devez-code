@@ -108,6 +108,15 @@
                                         <TextBlock Text="에이전트" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
+                                <Button x:Name="CatMcpBtn" Tag="mcp"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconServer}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="MCP 서버" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </Border>
 
@@ -162,6 +171,29 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                            </StackPanel>
+
+                            <!-- MCP 서버 패널 (별도 오버레이로 열기 — Theme/Agent 와 성격이 다름) -->
+                            <StackPanel x:Name="McpPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="MCP 서버" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="opencode 의 MCP(Model Context Protocol) 서버를 추가·편집·삭제합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
+                                <TextBlock Text="저장 시 ~/.config/opencode/opencode.json 의 mcp 섹션만 갱신합니다. 다른 필드는 보존됩니다."
+                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,16"/>
+                                <Button Style="{StaticResource PrimaryButton}" Click="OpenMcpManager_Click"
+                                        Height="40" HorizontalAlignment="Left" Padding="18,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconServer}"
+                                              Width="13" Height="13" Margin="0,0,8,0" Stroke="White"/>
+                                        <TextBlock Text="MCP 서버 관리 열기" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
 
                             <!-- 테마 패널 -->

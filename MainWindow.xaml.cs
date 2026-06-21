@@ -1371,6 +1371,16 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
+    // ── MCP 서버 관리 (오버레이) ──────────────────────────────────
+    // 설정창의 MCP 카테고리에서도 같은 창을 띄울 수 있다 — 직접 진입 단축.
+    private async void McpBtn_Click(object sender, RoutedEventArgs e)
+    {
+        await SuspendTerminalWithSnapshotAsync();
+        var dlg = new Views.McpManagerWindow { Owner = this };
+        dlg.Closed += (_, _) => ResumeTerminal();
+        dlg.ShowDialog();
+    }
+
     // ── 인앱 파일 편집기 (중앙 분할 패널) ──────────────────────────
     // 편집기는 터미널과 나란히 별도 열(EditorCol)에 위치하므로 WebView2 airspace 문제는 없다.
     // 펼침/접힘은 좌·우 패널과 동일하게 AnimateColumn 으로 컬럼 폭을 애니메이트한다.

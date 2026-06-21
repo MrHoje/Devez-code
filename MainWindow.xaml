@@ -623,12 +623,19 @@
                         <TextBlock x:Name="RlSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
-                    <!-- 우측: 설정 버튼 -->
-                    <Button Grid.Column="4" Style="{StaticResource WinCtrlBtn}" Click="SettingsBtn_Click"
-                            ToolTip="설정" HorizontalAlignment="Right" Margin="0,0,4,0">
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"
-                              Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
-                    </Button>
+                    <!-- 우측: MCP 서버 / 설정 버튼 -->
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Style="{StaticResource WinCtrlBtn}" Click="McpBtn_Click"
+                                ToolTip="MCP 서버" Margin="0,0,2,0">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
+                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
+                        <Button Style="{StaticResource WinCtrlBtn}" Click="SettingsBtn_Click"
+                                ToolTip="설정" Margin="0,0,4,0">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"
+                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </Border>
 
