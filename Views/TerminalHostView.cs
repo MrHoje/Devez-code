@@ -23,6 +23,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string>? SessionStarted;
     /// <summary>방의 셸 프로세스가 종료됨(끊김/죽음). roomId 전달.</summary>
     public event Action<string>? SessionExited;
+    /// <summary>테마 변경으로 세션을 재시작하기 시작함(opencode). roomId 전달 — 호출자가 로딩 스피너 표시용.</summary>
+    public event Action<string>? SessionRestarting;
     /// <summary>터미널에서 세션(탭) 단축키 발생 — name: newSession/closeSession/nextSession/prevSession/gotoSession.
     /// gotoSession 일 때 index = 0-기준 세션 번호(-1 = 마지막), 그 외엔 의미 없음.</summary>
     public event Action<string, int>? SessionActionRequested;
@@ -510,32 +512,24 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 매니저가 tui.json 을 새 테마로 기록한 뒤, 여기서 세션을 종료→재생성하고 JS 를 리셋해
     /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄운다.
     /// 종료(ConPTY/job 트리)와 재생성이 겹치면 새 opencode 가 빈 화면으로 뜨므로 짧게 대기한다.</summary>
-    private static void DiagLog(string msg)
-    {
-        try
-        {
-            var p = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "devezcode-ocrestart.log");
-            System.IO.File.AppendAllText(p, $"{DateTime.Now:HH:mm:ss.fff} {msg}\n");
-        }
-        catch (Exception) { }
-    }
-
     private async void RestartOpenCodeSessions()
     {
-        var rooms = TerminalSessionManager.Instance.GetOpenCodeRoomIds();
-        DiagLog($"RestartOpenCodeSessions pageReady={_pageReady} rooms=[{string.Join(",", rooms)}]");
         if (!_pageReady) return;
-        foreach (var roomId in rooms)
+        foreach (var roomId in TerminalSessionManager.Instance.GetOpenCodeRoomIds())
         {
-            var have = _wired.TryGetValue(roomId, out var s);
-            DiagLog($"  room={roomId} wired={have} alive={(have ? s!.IsAlive : false)}");
-            if (!have || !s!.IsAlive) continue;
+            if (!_wired.TryGetValue(roomId, out var s) || !s.IsAlive) continue;
+
+            // 재시작 동안 로딩 스피너가 다시 뜨도록 준비 상태를 리셋한다(새 화면이 떠야 다시 ready 통지).
+            _ready.Remove(roomId);
+            _readyScan.Remove(roomId);
+            _readyNotified.Remove(roomId);
+            if (_settleTimers.Remove(roomId, out var st)) st.Stop();
+            SessionRestarting?.Invoke(roomId);                   // 호스트(MainWindow) → 스피너 표시
+
             TerminalSessionManager.Instance.KillSession(roomId); // 기존 세션 종료·제거
             _wired.Remove(roomId);                               // 오래된 세션 참조 정리(재배선 보장)
             await Task.Delay(250);                               // ConPTY/job 트리 정리 대기
             WireSession(roomId, 120, 30);                        // 새 세션(새 tui.json 테마) 생성·배선
-            var nowWired = _wired.TryGetValue(roomId, out var ns);
-            DiagLog($"  room={roomId} rewired={nowWired} newAlive={(nowWired ? ns!.IsAlive : false)}");
             PostJson(new { type = "restarted", roomId });        // JS xterm 리셋(dead 해제) + resize 유도
         }
     }

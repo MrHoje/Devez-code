@@ -1809,7 +1809,7 @@ public partial class MainWindow : Window
     // (devez 이식) UserControl(SettingsDialog)을 Borderless Window(SettingsWindow)에 담아 띄운다.
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
-        await SuspendTerminalWithSnapshotAsync(); // 오버레이가 WebView2 뒤로 묻히지 않게 가림
+        await SuspendTerminalWithSnapshotAsync(blankCurtain: true); // 스냅샷 대신 테마색 빈 배경(테마 변경 시 색 추종)
         var dlg = new Views.SettingsWindow { Owner = this };
         dlg.Closed += (_, _) => ResumeTerminal();
         dlg.ShowDialog();

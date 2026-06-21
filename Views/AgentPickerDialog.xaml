@@ -125,7 +125,7 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <!-- Footer: 취소 / 확인 (설정창과 동일) -->
+                <!-- Footer: 취소 (확인은 카드 클릭 시 바로 처리) -->
                 <Border Grid.Row="1"
                         Background="{DynamicResource PanelSoftBrush}"
                         BorderBrush="{DynamicResource LineBrush}"
@@ -133,16 +133,10 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                                 Margin="16,9,16,9">
                         <Button Click="CancelBtn_Click"
-                                Width="92" Height="34" Margin="0,0,6,0"
+                                Width="92" Height="34"
                                 Style="{StaticResource SecondaryButton}"
                                 FontSize="{DynamicResource Fs12}">
                             <TextBlock Text="취소"/>
-                        </Button>
-                        <Button x:Name="OkBtn" Click="OkBtn_Click" IsDefault="True"
-                                Width="92" Height="34"
-                                Style="{StaticResource PrimaryButton}"
-                                FontSize="{DynamicResource Fs12}">
-                            <TextBlock Text="확인" Foreground="White"/>
                         </Button>
                     </StackPanel>
                 </Border>

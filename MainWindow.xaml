@@ -449,6 +449,10 @@
                              터미널을 스냅샷 이미지로 대체하고 WebView2는 Collapse 한다. -->
                         <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"
                                RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <!-- 설정창이 열릴 때 터미널 대신 보여주는 테마색 빈 배경(스냅샷 대체).
+                             BgBrush(DynamicResource)라 테마 변경 시 배경색이 함께 바뀐다. -->
+                        <Border x:Name="TerminalCurtain" Background="{DynamicResource BgBrush}"
+                                Visibility="Collapsed"/>
                         <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
                                   Width="40" Height="40" Stroke="{DynamicResource TextMutedBrush}"
