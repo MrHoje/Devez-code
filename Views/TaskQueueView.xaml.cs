@@ -559,8 +559,9 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     // ── 키보드 (debit Root_PreviewKeyDown 슬림) ──
     private void Root_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        // InputBox 에 포커스 있으면 거기서 처리. 중복 발화 방지.
-        if (InputBox.IsKeyboardFocusWithin) return;
+        // 선택 모드에서 선택 항목이 있으면 입력창 포커스와 무관하게 Delete/Esc/Ctrl+C 를 선처리.
+        // (작업 큐는 입력창이 항상 포커스를 유지하므로, 포커스 가드로 막으면 Delete 가 영영 안 먹는다.)
+        bool selActive = _isSelectionMode && CountSelected() > 0;
 
         if (e.Key == Key.Escape && _isSelectionMode)
         {
@@ -568,24 +569,28 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             e.Handled = true;
             return;
         }
+        if (e.Key == Key.Delete && selActive)
+        {
+            DeleteSelectedInternal();
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control && selActive)
+        {
+            CopySelected();
+            e.Handled = true;
+            return;
+        }
+
+        // 그 외 키는 입력창에 포커스가 있으면 거기서 처리(텍스트 편집 우선).
+        if (InputBox.IsKeyboardFocusWithin) return;
+
         if (e.Key == Key.A && Keyboard.Modifiers == ModifierKeys.Control)
         {
             if (Items.Count == 0) return;
             foreach (var it in Items) it.IsSelected = true;
             IsSelectionMode = true;
             UpdateSelectionActionBar();
-            e.Handled = true;
-            return;
-        }
-        if (e.Key == Key.Delete && _isSelectionMode && CountSelected() > 0)
-        {
-            DeleteSelectedInternal();
-            e.Handled = true;
-            return;
-        }
-        if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control && _isSelectionMode)
-        {
-            CopySelected();
             e.Handled = true;
             return;
         }
