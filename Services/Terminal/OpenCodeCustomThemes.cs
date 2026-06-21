@@ -60,8 +60,8 @@ public static class OpenCodeCustomThemes
       "$schema": "https://opencode.ai/theme.json",
       "name": "DevezCode Soft",
       "defs": {
-        "bg":         "#FAF7F2",
-        "panel":      "#F2EDE6",
+        "bg":         "#F2EDE6",
+        "panel":      "#FAF7F2",
         "element":    "#ECE7DE",
         "line":       "#D8D2C6",
         "text":       "#2A2620",
@@ -139,8 +139,8 @@ public static class OpenCodeCustomThemes
       "$schema": "https://opencode.ai/theme.json",
       "name": "DevezCode Minimal",
       "defs": {
-        "bg":         "#FFFFFF",
-        "panel":      "#F8FAFC",
+        "bg":         "#F8FAFC",
+        "panel":      "#FFFFFF",
         "element":    "#F1F5F9",
         "line":       "#E2E8F0",
         "text":       "#0F172A",
