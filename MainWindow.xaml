@@ -80,84 +80,22 @@
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                Foreground="{DynamicResource TextBrush}"
                                VerticalAlignment="Center" Margin="3,1,0,0"/>
+                    <!-- 왼쪽 패널 접기/펼치기 — 타이틀 바로 옆에 배치 -->
+                    <Button x:Name="LeftPanelBtn" Click="LeftPanelBtn_Click" Margin="8,0,0,0"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="왼쪽 패널 접기/펼치기">
+                        <Path x:Name="LeftPanelIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
                 </StackPanel>
-
-                <!-- 중앙패널 시작 x 에 고정되는 컨트롤(콤보박스 + 브렌치 버블).
-                     Grid 가 메인 영역과 동일 폭 컬럼(SharedSizeGroup)을 가지므로
-                     사이드바 폭이 변해도 column 2 의 시작 x 가 곧 중앙패널 시작 x.
-                     column 2 는 컨트롤이 차지하는 만큼 Auto 로 잡아야 컨트롤이 보임
-                     (이전 Width=0 + 존재하지 않는 SharedSizeGroup="MainCenter" 때문에 0px 로
-                     고정되어 컨트롤이 숨겨졌던 버그 수정). -->
-                <Grid x:Name="TitleBarControls" HorizontalAlignment="Left">
-                    <Grid.ColumnDefinitions>
-                        <!-- 공유 그룹에서 분리: 사이드바가 좁아져도 헤더 메타가 로고를 침범하지 않도록
-                             코드에서 clamp(사이드바폭, 최소폭)으로 직접 폭을 구동한다. -->
-                        <ColumnDefinition x:Name="HeaderSidebarCol" Width="262"/>
-                        <ColumnDefinition x:Name="HeaderSidebarSplitterCol" Width="4"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <!-- 인라인 메타: 아이콘 + 텍스트를 얇은 세로선으로 구분. devez FavoritesPanelView/MainWindow 인라인 패턴 정합.
-                         아이콘 stroke(LucideIcon 1.25) / 텍스트 Normal weight 컨벤션 유지.
-                         구분선은 텍스트 | 글리프 대신 1px Border — 폰트 글리프 두께에 의존하지 않고 아이콘 stroke 와 어울리는 얇은 획. -->
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- 프로젝트 명 -->
-                        <Path Data="{StaticResource IconHash}" Width="14" Height="14" Stretch="Uniform"
-                              Style="{StaticResource LucideIcon}"
-                              Stroke="{DynamicResource TextMutedBrush}"
-                              VerticalAlignment="Center"/>
-                        <TextBlock x:Name="ProjectNameText" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontFamily="{StaticResource PretendardFont}"
-                                   FontSize="{DynamicResource Fs12}"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   TextTrimming="CharacterEllipsis"/>
-
-                        <Border Width="1" Height="12" Margin="9,0,9,0" VerticalAlignment="Center"
-                                Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-
-                        <!-- 프로젝트 경로 -->
-                        <Path Data="{StaticResource IconFolder}" Width="14" Height="14" Stretch="Uniform"
-                              Style="{StaticResource LucideIcon}"
-                              Stroke="{DynamicResource TextMutedBrush}"
-                              VerticalAlignment="Center"/>
-                        <TextBlock x:Name="ProjectPathText" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontFamily="{StaticResource PretendardFont}"
-                                   FontSize="{DynamicResource Fs12}"
-                                   Foreground="{DynamicResource TextBrush}"
-                                   TextTrimming="CharacterEllipsis"/>
-
-                        <!-- 얇은 세로선 + 브렌치(클릭 새로고침) — 비-git 저장소면 그룹 전체 숨김 -->
-                        <StackPanel x:Name="BranchGroup" Orientation="Horizontal" Visibility="Collapsed">
-                            <Border Width="1" Height="12" Margin="9,0,9,0" VerticalAlignment="Center"
-                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-                            <Border Cursor="Hand" Background="Transparent" MouseLeftButtonUp="BranchBubble_Click"
-                                    ToolTip="클릭하여 브렌치 새로고침" VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Path Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
-                                          Style="{StaticResource LucideIcon}"
-                                          Stroke="{DynamicResource TextMutedBrush}"
-                                          VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="ProjectBranchText" Margin="6,0,0,0" VerticalAlignment="Center"
-                                               FontFamily="{StaticResource PretendardFont}"
-                                               FontSize="{DynamicResource Fs12}"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </StackPanel>
-                </Grid>
 
                 <!-- 윈도우 컨트롤(오른쪽 고정) -->
                 <StackPanel Orientation="Horizontal" Margin="0,0,4,0" HorizontalAlignment="Right"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <!-- 성능 모니터 칩(CPU/RAM)은 하단 푸터로 이동했다. -->
 
-                    <!-- ── 좌·우 패널 접기/펼치기 (devez 아이콘 규칙: panel-left / panel-right) ──── -->
-                    <Button x:Name="LeftPanelBtn" Click="LeftPanelBtn_Click"
-                            Style="{StaticResource TitleBarChipButton}" ToolTip="왼쪽 패널 접기/펼치기">
-                        <Path x:Name="LeftPanelIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
-                              Stroke="{DynamicResource TextMutedBrush}"/>
-                    </Button>
+                    <!-- ── 우 패널 접기/펼치기 (좌측 패널 버튼은 타이틀 로고 블록으로 이동) ──── -->
                     <Button x:Name="RightPanelBtn" Click="RightPanelBtn_Click"
                             Style="{StaticResource TitleBarChipButton}" ToolTip="오른쪽 패널 접기/펼치기">
                         <Path x:Name="RightPanelIcon" Style="{StaticResource LucideIcon}"
@@ -230,6 +168,7 @@
                       <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
@@ -396,6 +335,54 @@
                                       Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                             </Button>
+                        </StackPanel>
+
+                        <!-- 프로젝트 메타(타이틀바에서 이동): 탭 바 우측에 부착. 아이콘 + 텍스트 + 얇은 세로선 구분. -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                                    Margin="12,0,0,0">
+                            <!-- 프로젝트 명 -->
+                            <Path Data="{StaticResource IconHash}" Width="14" Height="14" Stretch="Uniform"
+                                  Style="{StaticResource LucideIcon}"
+                                  Stroke="{DynamicResource TextMutedBrush}"
+                                  VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ProjectNameText" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontFamily="{StaticResource PretendardFont}"
+                                       FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       TextTrimming="CharacterEllipsis"/>
+
+                            <Border Width="1" Height="12" Margin="9,0,9,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+
+                            <!-- 프로젝트 경로 -->
+                            <Path Data="{StaticResource IconFolder}" Width="14" Height="14" Stretch="Uniform"
+                                  Style="{StaticResource LucideIcon}"
+                                  Stroke="{DynamicResource TextMutedBrush}"
+                                  VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ProjectPathText" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontFamily="{StaticResource PretendardFont}"
+                                       FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       TextTrimming="CharacterEllipsis"/>
+
+                            <!-- 얇은 세로선 + 브렌치(클릭 새로고침) — 비-git 저장소면 그룹 전체 숨김 -->
+                            <StackPanel x:Name="BranchGroup" Orientation="Horizontal" Visibility="Collapsed">
+                                <Border Width="1" Height="12" Margin="9,0,9,0" VerticalAlignment="Center"
+                                        Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                                <Border Cursor="Hand" Background="Transparent" MouseLeftButtonUp="BranchBubble_Click"
+                                        ToolTip="클릭하여 브렌치 새로고침" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Path Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
+                                              Style="{StaticResource LucideIcon}"
+                                              Stroke="{DynamicResource TextMutedBrush}"
+                                              VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="ProjectBranchText" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                   FontFamily="{StaticResource PretendardFont}"
+                                                   FontSize="{DynamicResource Fs12}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
                         </StackPanel>
                       </Grid>
                     </Border>
@@ -568,13 +555,15 @@
                         <TextBlock x:Name="RlSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
-                    <!-- 우측: MCP 서버 / 설정 버튼 -->
+                    <!-- 우측: 설정 버튼 (MCP 서버 버튼은 보류 — 2026-06 보류, 재활성 시 Visibility 제거 + Uncomment) -->
                     <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <!--
                         <Button Style="{StaticResource WinCtrlBtn}" Click="McpBtn_Click"
                                 ToolTip="MCP 서버" Margin="0,0,2,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
+                        -->
                         <Button Style="{StaticResource WinCtrlBtn}" Click="SettingsBtn_Click"
                                 ToolTip="설정" Margin="0,0,4,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"
