@@ -191,7 +191,7 @@
                             <!-- 프로젝트 명 + 경로(작은 폰트, 잘리면 …). chevron/메뉴는 2줄 헤더에 대해 수직 중앙 정렬 -->
                             <StackPanel x:Name="ProjectText" Grid.Column="0" VerticalAlignment="Center" ToolTip="{Binding Path}">
                                 <StackPanel.RenderTransform>
-                                    <TranslateTransform Y="0"/>
+                                    <TranslateTransform X="0"/>
                                 </StackPanel.RenderTransform>
                                 <TextBlock Text="{Binding Name}"
                                            TextTrimming="CharacterEllipsis"
@@ -268,8 +268,8 @@
                         <BeginStoryboard>
                             <Storyboard>
                                 <DoubleAnimation Storyboard.TargetName="ProjectText"
-                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                                 To="-3" Duration="0:0:0.18">
+                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                 To="3" Duration="0:0:0.18">
                                     <DoubleAnimation.EasingFunction>
                                         <BackEase EasingMode="EaseOut" Amplitude="0.5"/>
                                     </DoubleAnimation.EasingFunction>
@@ -281,7 +281,7 @@
                         <BeginStoryboard>
                             <Storyboard>
                                 <DoubleAnimation Storyboard.TargetName="ProjectText"
-                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
                                                  To="0" Duration="0:0:0.15"/>
                             </Storyboard>
                         </BeginStoryboard>
