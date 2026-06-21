@@ -425,14 +425,14 @@ public partial class MainWindow : Window
             SetSplitterWidth(SidebarSplitterCol, HeaderSidebarSplitterCol, FooterSidebarSplitterCol, 4);
             SidebarCol.Width = new GridLength(0);
             _leftAnimCancel = AnimateColumn(SidebarCol, _sidebarWidth, 260, easeIn: false,
-                onComplete: () => SidebarCol.MinWidth = 190, cacheTarget: Sidebar,
-                mirrors: new[] { HeaderSidebarCol, FooterSidebarCol });
+                onComplete: () => SetMinWidth(190, SidebarCol, HeaderSidebarCol, FooterSidebarCol),
+                cacheTarget: Sidebar, mirrors: new[] { HeaderSidebarCol, FooterSidebarCol });
         }
         else
         {
             _leftCollapsed = true;
             _sidebarWidth = SidebarCol.Width.IsAbsolute ? SidebarCol.Width.Value : SidebarCol.ActualWidth;
-            SidebarCol.MinWidth = 0;
+            SetMinWidth(0, SidebarCol, HeaderSidebarCol, FooterSidebarCol);
             SetSplitterWidth(SidebarSplitterCol, HeaderSidebarSplitterCol, FooterSidebarSplitterCol, 0);
             _leftAnimCancel = AnimateColumn(SidebarCol, 0, 220, easeIn: true,
                 onComplete: () => Sidebar.Visibility = Visibility.Collapsed, cacheTarget: Sidebar,
@@ -460,8 +460,8 @@ public partial class MainWindow : Window
             SetSplitterWidth(FileExpSplitterCol, FooterFileExpSplitterCol, null, 4);
             FileExpCol.Width = new GridLength(0);
             _rightAnimCancel = AnimateColumn(FileExpCol, _fileExpWidth, 260, easeIn: false,
-                onComplete: () => FileExpCol.MinWidth = 200, cacheTarget: FileExplorer,
-                mirrors: new[] { FooterFileExpCol });
+                onComplete: () => SetMinWidth(200, FileExpCol, FooterFileExpCol),
+                cacheTarget: FileExplorer, mirrors: new[] { FooterFileExpCol });
 
             // 접기 전 열려 있던 파일 뷰도 함께 복원(폭 확장)
             if (_editorOpenBeforeCollapse)
@@ -474,7 +474,7 @@ public partial class MainWindow : Window
         {
             _rightCollapsed = true;
             _fileExpWidth = FileExpCol.Width.IsAbsolute ? FileExpCol.Width.Value : FileExpCol.ActualWidth;
-            FileExpCol.MinWidth = 0;
+            SetMinWidth(0, FileExpCol, FooterFileExpCol);
             SetSplitterWidth(FileExpSplitterCol, FooterFileExpSplitterCol, null, 0);
             _rightAnimCancel = AnimateColumn(FileExpCol, 0, 220, easeIn: true,
                 onComplete: () => FileExplorer.Visibility = Visibility.Collapsed, cacheTarget: FileExplorer,
@@ -486,6 +486,13 @@ public partial class MainWindow : Window
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
+    }
+
+    // 공유 그룹 멤버들의 MinWidth 를 한꺼번에 설정. 미러 컬럼에 MinWidth(190/200)가
+    // 남아 있으면 폭을 0 으로 줘도 공유 그룹이 최소폭으로 버텨 완전히 안 접힌다.
+    private static void SetMinWidth(double min, params ColumnDefinition[] cols)
+    {
+        foreach (var c in cols) c.MinWidth = min;
     }
 
     // 공유 그룹(MainSidebarSplitter/MainFileExpSplitter) 멤버 스플리터 폭을 한꺼번에 설정.
@@ -507,7 +514,7 @@ public partial class MainWindow : Window
         if (SettingsService.LoadLeftPanelCollapsed())
         {
             _leftCollapsed = true;
-            SidebarCol.MinWidth = 0;
+            SetMinWidth(0, SidebarCol, HeaderSidebarCol, FooterSidebarCol);
             SidebarCol.Width = new GridLength(0);
             HeaderSidebarCol.Width = new GridLength(0);
             FooterSidebarCol.Width = new GridLength(0);
@@ -517,7 +524,7 @@ public partial class MainWindow : Window
         if (SettingsService.LoadRightPanelCollapsed())
         {
             _rightCollapsed = true;
-            FileExpCol.MinWidth = 0;
+            SetMinWidth(0, FileExpCol, FooterFileExpCol);
             FileExpCol.Width = new GridLength(0);
             FooterFileExpCol.Width = new GridLength(0);
             SetSplitterWidth(FileExpSplitterCol, FooterFileExpSplitterCol, null, 0);
