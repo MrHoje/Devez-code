@@ -232,9 +232,20 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         _bubbleDragOrigin = e.GetPosition(this);
     }
 
+    /// <summary>버블 클릭 시 입력창에서 키보드 포커스를 빼 루트로 옮긴다.
+    /// → 입력창에 텍스트가 있어도 Delete 가 (텍스트 편집이 아니라) 버블 삭제로 동작.
+    /// 키 이벤트는 PreviewKeyDown(루트 터널링)으로 계속 Root_PreviewKeyDown 에 도달.</summary>
+    private void DropInputFocus()
+    {
+        if (!InputBox.IsKeyboardFocusWithin) return;
+        Focusable = true;
+        Keyboard.Focus(this);
+    }
+
     private void Bubble_LeftClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.DataContext is not TaskQueueItem item) return;
+        DropInputFocus();
 
         // 직전 우클릭 하이라이트 정리
         ClearPreviousRightClickHighlight(item);
@@ -297,6 +308,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private void Bubble_RightClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.DataContext is not TaskQueueItem item) return;
+        DropInputFocus();
         _contextMenuItem = item;
         // 우클릭은 드래그 후보가 아님(메뉴와 충돌 방지).
         _pendingBubbleDragItem = null;

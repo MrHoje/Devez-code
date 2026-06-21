@@ -4,6 +4,7 @@
              xmlns:models="clr-namespace:DevezCode.Models"
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}"
+             Focusable="True" FocusVisualStyle="{x:Null}"
              PreviewMouseLeftButtonDown="Root_PreviewMouseLeftButtonDown"
              PreviewMouseLeftButtonUp="Root_PreviewMouseLeftButtonUp"
              PreviewMouseMove="Root_PreviewMouseMove"
