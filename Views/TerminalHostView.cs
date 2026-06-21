@@ -508,14 +508,17 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>OpenCode 는 tui.json 을 시작 시에만 읽으므로 테마 변경 시 살아있는 세션을 재시작한다.
     /// 매니저가 tui.json 을 새 테마로 기록한 뒤, 여기서 세션을 종료→재생성하고 JS 를 리셋해
-    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄운다.</summary>
-    private void RestartOpenCodeSessions()
+    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄운다.
+    /// 종료(ConPTY/job 트리)와 재생성이 겹치면 새 opencode 가 빈 화면으로 뜨므로 짧게 대기한다.</summary>
+    private async void RestartOpenCodeSessions()
     {
         if (!_pageReady) return;
         foreach (var roomId in TerminalSessionManager.Instance.GetOpenCodeRoomIds())
         {
             if (!_wired.TryGetValue(roomId, out var s) || !s.IsAlive) continue;
             TerminalSessionManager.Instance.KillSession(roomId); // 기존 세션 종료·제거
+            _wired.Remove(roomId);                               // 오래된 세션 참조 정리(재배선 보장)
+            await Task.Delay(250);                               // ConPTY/job 트리 정리 대기
             WireSession(roomId, 120, 30);                        // 새 세션(새 tui.json 테마) 생성·배선
             PostJson(new { type = "restarted", roomId });        // JS xterm 리셋(dead 해제) + resize 유도
         }
