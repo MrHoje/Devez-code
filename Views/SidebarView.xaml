@@ -32,9 +32,10 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="BorderBrush" Value="#5a5a5a"/>
                 </Trigger>
-                <!-- 선택된(활성) 프로젝트: primary 보더 + primary 글로우. 호버보다 우선 -->
+                <!-- 선택된(활성) 프로젝트: primary 보더(1.5px) + primary 글로우. 호버보다 우선 -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter Property="BorderThickness" Value="1.5"/>
                     <Setter Property="Effect">
                         <Setter.Value>
                             <DropShadowEffect Color="{DynamicResource PrimaryColor}" Opacity="0.35" BlurRadius="14" ShadowDepth="0"/>
@@ -44,7 +45,8 @@
             </Style.Triggers>
         </Style>
 
-        <!-- ── 세션 row 카드: 둥근 배경, 호버 시 살짝 진해짐. '선택' 배경은 없음(파란색 미사용) ── -->
+        <!-- ── 세션 row 카드: 둥근 배경, 호버 시 살짝 진해짐. '선택' 배경은 없음(파란색 미사용) ──
+             부모 프로젝트가 선택되지 않은 경우: 호버 강조 비활성 (마지막 DataTrigger가 IsMouseOver Trigger를 덮어씀) -->
         <Style x:Key="SessionCard" TargetType="Border">
             <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
@@ -54,6 +56,10 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource LineBrush}"/>
                 </Trigger>
+                <!-- 부모 프로젝트가 비선택이면 호버 색상 덮어쓰기 → 호버 비주얼 제거 -->
+                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="False">
+                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -61,7 +67,8 @@
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
             <Border x:Name="SessionRow" Style="{StaticResource SessionCard}"
                     MouseLeftButtonUp="Session_Click"
-                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown">
+                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
+                    PreviewMouseRightButtonDown="SessionRow_PreviewMouseRightButtonDown">
                 <Border.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="이름 변경" Tag="{Binding}" Click="SessionRename_Click">
@@ -178,23 +185,6 @@
                     <Border Background="Transparent" Cursor="Arrow"
                             MouseLeftButtonUp="Project_Click"
                             PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
-                        <Border.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="새 세션" Tag="{Binding}" Click="AddSession_Click">
-                                    <MenuItem.Icon>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
-                                              Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
-                                    </MenuItem.Icon>
-                                </MenuItem>
-                                <Separator/>
-                                <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="{DynamicResource DangerBrush}">
-                                    <MenuItem.Icon>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
-                                              Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
-                                    </MenuItem.Icon>
-                                </MenuItem>
-                            </ContextMenu>
-                        </Border.ContextMenu>
                         <Grid Margin="12,9,8,9">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>

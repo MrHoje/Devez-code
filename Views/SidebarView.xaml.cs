@@ -175,6 +175,28 @@ public partial class SidebarView : UserControl
         _didDrag = false;
     }
 
+    /// <summary>비선택 프로젝트 내부의 세션 우클릭 → 세션 메뉴를 막고 프로젝트 메뉴로 라우팅.
+    /// (선택된 프로젝트면 세션 메뉴가 정상 노출되도록 그대로 통과.)</summary>
+    private void SessionRow_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SessionItem s } fe) return;
+        var project = Projects.FirstOrDefault(p => p.Sessions.Contains(s));
+        if (project == null || project.IsSelected) return; // 선택된 프로젝트: 기본 동작(세션 메뉴) 유지
+
+        // 비선택 프로젝트: 세션 메뉴를 막고 프로젝트 카드의 ContextMenu 를 마우스 위치에 띄움
+        e.Handled = true;
+        for (DependencyObject? d = fe; d != null; d = VisualTreeHelper.GetParent(d))
+        {
+            if (d is Border { Name: "ProjectCardRoot" } card && card.ContextMenu != null)
+            {
+                card.ContextMenu.PlacementTarget = fe;
+                card.ContextMenu.Placement = PlacementMode.MousePoint;
+                card.ContextMenu.IsOpen = true;
+                return;
+            }
+        }
+    }
+
     private void Sidebar_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (_projectDrag != null) { _projectDrag.Update(e); return; }
