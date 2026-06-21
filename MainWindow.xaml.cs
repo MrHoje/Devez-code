@@ -1756,13 +1756,13 @@ public partial class MainWindow : Window
                 var hasMsg = !string.IsNullOrEmpty(msg);
                 SessionHeaderTitle.Text = hasMsg ? msg : sess.Name;
                 SessionHeaderTitle.ToolTip = hasMsg ? msg : null;
-                LastMessageArrow.Visibility = hasMsg ? Visibility.Visible : Visibility.Collapsed;
+                LastMessageSep.Visibility = hasMsg ? Visibility.Visible : Visibility.Collapsed;
             }
             else if (_activeTab is FileTabItem file)
             {
                 SessionHeaderTitle.Text = file.Title;
                 SessionHeaderTitle.ToolTip = file.FilePath;
-                LastMessageArrow.Visibility = Visibility.Collapsed;
+                LastMessageSep.Visibility = Visibility.Collapsed;
             }
         }
     }
