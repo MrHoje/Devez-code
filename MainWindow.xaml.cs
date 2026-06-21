@@ -1292,8 +1292,11 @@ public partial class MainWindow : Window
         var agentId = string.IsNullOrEmpty(_activeSession.AgentId)
             ? AgentRegistry.DefaultAgentId : _activeSession.AgentId;
         if (agentId != "claude") return false;
+        var roomId = _activeSession.Id;
         // 세션의 터미널·ConPTY 만 정리 (대화 기록은 보존 — 다음 시작 시 --resume 로 이어짐)
         DisposeSessionProcess(_activeSession, purge: false);
+        // 재시작 경로이므로 삭제 플래그 해제 → 다음 WireSession 가드 통과
+        TerminalSessionManager.Instance.ClearDisposedRoom(roomId);
         // 동일 roomId 로 다시 활성화 → 새 ConPTY + WebView2 가 떠고 claude 가 mcpServers 를 다시 읽음
         ActivateSession(_activeSession);
         return true;
