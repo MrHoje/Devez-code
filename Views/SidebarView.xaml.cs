@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using DevezCode.Models;
 
 namespace DevezCode.Views;
@@ -40,6 +41,32 @@ public partial class SidebarView : UserControl
     }
 
     private void AddProject_Click(object sender, RoutedEventArgs e) => AddProjectRequested?.Invoke();
+
+    // ── 검색 행 토글 (돋보기 버튼) — Height 0↔43 애니메이션으로 프로젝트 카드를 아래로 밀어냄 ──
+    private bool _searchOpen;
+    private const double SearchRowHeight = 51; // 8(margin-top) + 35(pill) + 8(margin-bottom)
+
+    private void SearchToggleBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _searchOpen = !_searchOpen;
+        var anim = new DoubleAnimation
+        {
+            To = _searchOpen ? SearchRowHeight : 0,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+        };
+        SearchRow.BeginAnimation(FrameworkElement.HeightProperty, anim);
+
+        if (_searchOpen)
+        {
+            // 펼친 직후 포커스 + 기존 텍스트 전체 선택 (연속 재검색 편의)
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                SidebarSearchBox.Focus();
+                SidebarSearchBox.SelectAll();
+            }), System.Windows.Threading.DispatcherPriority.Input);
+        }
+    }
 
     // ── 모두 펼치기 / 접기 (devez 정합) ──────────────────────────
     private void ToggleExpandAll_Click(object sender, RoutedEventArgs e)

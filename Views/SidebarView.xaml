@@ -271,18 +271,30 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header (라벨 + 모두 펼치기/접기) — devez 정합. 높이 44: 중앙 TabBar·우측 뷰토글과 상단 세퍼레이터 일치 -->
+        <!-- Header (라벨 + 돋보기 + 모두 펼치기/접기) — devez 정합. 높이 44: 중앙 TabBar·우측 뷰토글과 상단 세퍼레이터 일치 -->
         <Border Grid.Row="0" Height="44"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
             <Grid Margin="16,0,12,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="프로젝트" VerticalAlignment="Center"
                            FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextBrush}"/>
-                <Button x:Name="ToggleExpandAllBtn" Grid.Column="1"
+                <!-- 돋보기: 클릭 시 아래 행(SearchRow) 의 Height 를 0→43 으로 애니메이션하며 펼침 -->
+                <Button x:Name="SearchToggleBtn" Grid.Column="1"
+                        Width="28" Height="28" Margin="0,0,4,0"
+                        Style="{StaticResource IconButton}"
+                        Click="SearchToggleBtn_Click"
+                        ToolTip="검색">
+                    <Path x:Name="SearchToggleIcon"
+                          Style="{StaticResource LucideButtonIcon}"
+                          Data="{StaticResource IconSearch}"
+                          Width="14" Height="14"/>
+                </Button>
+                <Button x:Name="ToggleExpandAllBtn" Grid.Column="2"
                         Width="28" Height="28"
                         Style="{StaticResource IconButton}"
                         Click="ToggleExpandAll_Click"
@@ -302,10 +314,11 @@
             </Grid>
         </Border>
 
-        <!-- Search row — 세션 탭 헤더(44)와 정합. pill 28 + 상하좌우 8px 균일 여백 = 행 44 -->
-        <Border Grid.Row="1"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <Border Margin="8" Height="27"
+        <!-- Search row — 기본 숨김(Height=0). SearchToggleBtn 클릭 시 Height 0→51 으로 애니메이션하며
+             프로젝트 카드를 아래로 밀어냄. ClipToBounds 로 닫힐 때 내부 pill 이 넘쳐 보이지 않게 클립. -->
+        <Border x:Name="SearchRow" Grid.Row="1" Height="0"
+                ClipToBounds="True">
+            <Border Margin="8" Height="35"
                     Background="{DynamicResource PanelSoftBrush}"
                     BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="1" CornerRadius="8">
