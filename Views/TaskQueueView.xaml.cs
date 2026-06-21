@@ -172,18 +172,16 @@ public partial class TaskQueueView : UserControl
         try { Clipboard.SetText(string.Join(Environment.NewLine, texts)); } catch { /* 점유 무시 */ }
     }
 
-    /// <summary>컨텍스트 메뉴 열릴 때: 선택 수에 따라 메뉴 헤더를 '삭제' ↔ '선택 N개 삭제' 로 갱신.</summary>
+    /// <summary>컨텍스트 메뉴 열릴 때: 선택 수에 따라 메뉴 헤더를 '복사/삭제' ↔ '선택 N개 복사/삭제' 로 갱신.
+    /// XAML 의 ContextMenu 자식 순서: [0]=복사, [1]=Separator, [2]=삭제. (Setter 내부 x:Name 사용 불가 회피)</summary>
     private void BubbleContextMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu cm) return;
         var count = BubblesList.SelectedItems.Count;
-        foreach (var item in cm.Items)
-        {
-            if (item is MenuItem mi && mi.Name == "DeleteMenuItem")
-                mi.Header = count > 1 ? $"선택 {count}개 삭제" : "삭제";
-            else if (item is MenuItem mi2 && mi2.Name == "CopyMenuItem")
-                mi2.Header = count > 1 ? $"선택 {count}개 복사" : "복사";
-        }
+        if (cm.Items.Count > 0 && cm.Items[0] is MenuItem copy)  // [0] 복사
+            copy.Header = count > 1 ? $"선택 {count}개 복사" : "복사";
+        if (cm.Items.Count > 2 && cm.Items[2] is MenuItem del)   // [1] Separator, [2] 삭제
+            del.Header = count > 1 ? $"선택 {count}개 삭제" : "삭제";
     }
 
     /// <summary>키보드 단축키: Delete=선택삭제, Esc=선택해제. Ctrl+A 는 ListBox SelectionMode=Extended 기본 처리.</summary>

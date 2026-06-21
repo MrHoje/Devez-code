@@ -8,6 +8,24 @@
         <!-- 동적 MaxWidth: ListBox 폭에서 padding(20) 빼기. 패널 폭에 맞춰 자동 조정. -->
         <models:SubtractConverter x:Key="Subtract"/>
 
+        <!-- ── 버블 우클릭 컨텍스트 메뉴 (doit 정합: 복사 / 삭제).
+              주의: Setter.Value 내부에 인라인으로 두면 WPF 컴파일러가 자식 요소들을
+              부모 ListBoxItem 에 매핑하면서 connectionId 가 충돌해 런타임에
+              InvalidCastException 이 발생한다. 그래서 리소스로 분리해 StaticResource 로 참조. -->
+        <ContextMenu x:Key="BubbleContextMenu" Opened="BubbleContextMenu_Opened">
+            <MenuItem Click="BubbleCopy_Click">
+                <MenuItem.Icon>
+                    <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconCopy}"/>
+                </MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Click="BubbleDelete_Click">
+                <MenuItem.Icon>
+                    <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconTrash2}"/>
+                </MenuItem.Icon>
+            </MenuItem>
+        </ContextMenu>
+
         <!-- ── 버블 한 줄: doit/devez 정합 — BubbleWrapper Grid 안에
               (a) BubbleBorder(BubbleBorderBrush 1px 외곽) + (b) SelectionRing(선택 시 Primary 1.5px 외곽)을 sibling 으로 배치.
               둘 다 BubbleWrapper 사이즈를 채우므로 SelectionRing 이 자동으로 버블 외곽에 정렬됨.
@@ -120,24 +138,9 @@
                             <Setter Property="Cursor" Value="Arrow"/>
                             <!-- 우클릭 시: 미선택이면 이 항목만 선택 / 이미 선택(다중)이면 선택 유지 -->
                             <EventSetter Event="PreviewMouseRightButtonDown" Handler="BubbleItem_PreviewRightButtonDown"/>
-                            <!-- 컨텍스트 메뉴: 선택 수에 따라 '삭제/복사' ↔ '선택 N개 삭제/복사' 헤더 -->
-                            <Setter Property="ContextMenu">
-                                <Setter.Value>
-                                    <ContextMenu Opened="BubbleContextMenu_Opened">
-                                        <MenuItem x:Name="CopyMenuItem" Click="BubbleCopy_Click">
-                                            <MenuItem.Icon>
-                                                <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconCopy}"/>
-                                            </MenuItem.Icon>
-                                        </MenuItem>
-                                        <Separator/>
-                                        <MenuItem x:Name="DeleteMenuItem" Click="BubbleDelete_Click">
-                                            <MenuItem.Icon>
-                                                <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconTrash2}"/>
-                                            </MenuItem.Icon>
-                                        </MenuItem>
-                                    </ContextMenu>
-                                </Setter.Value>
-                            </Setter>
+                            <!-- 컨텍스트 메뉴: UserControl.Resources 에서 정의한 것을 참조.
+                                 Setter.Value 인라인에 두면 WPF 컴파일러 connectionId 충돌 발생 → InvalidCastException -->
+                            <Setter Property="ContextMenu" Value="{StaticResource BubbleContextMenu}"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
                 </ListBox>
