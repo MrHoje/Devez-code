@@ -1292,7 +1292,7 @@ public partial class MainWindow : Window
     /// <summary>모든 Claude 세션의 ConPTY 를 재시작. 활성 세션은 즉시 다시 띄우고,
     /// 비활성 세션은 ConPTY 만 정리(다음 활성화 시 resume 으로 복원).
     /// 테마 변경 시 모든 세션이 새 테마를 적용하도록 보장.</summary>
-    private void RestartAllClaudeSessions()
+    private async void RestartAllClaudeSessions()
     {
         var allClaudeSessions = _projects
             .SelectMany(p => p.Tabs)
@@ -1309,11 +1309,23 @@ public partial class MainWindow : Window
         {
             try
             {
+                // JS xterm 인스턴스 + ConPTY 모두 정리.
+                // xterm 인스턴스를 재사용하면 composition-view 의 IME 조합 상태가
+                // 새 ConPTY 와 동기화되지 않아 한글이 한 글자씩 깨져 보이는 문제가 발생.
+                // 매번 새 xterm 인스턴스를 만들어 IME 상태를 완전히 초기화.
+                _terminal.CloseTerminal(s.Id);
                 DisposeSessionProcess(s, purge: false);
                 TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
+                // 새 세션을 미리 만들어둔다 — 사용자가 키를 누를 때
+                // Get(roomId) 가 null 을 반환해 input 이 유실되는 race 방지.
+                TerminalSessionManager.Instance.GetOrCreate(s.Id, 120, 30);
             }
             catch { /* ignore */ }
         }
+
+        // JS 가 dispose 메시지를 완전히 처리할 시간 확보.
+        // createTerm 이 dispose 중인 인스턴스와 충돌하지 않도록.
+        await Task.Delay(150);
 
         // 활성 세션은 즉시 다시 띄움
         if (_activeSession != null && allClaudeSessions.Contains(_activeSession))
