@@ -421,7 +421,7 @@
                             Background="{DynamicResource PanelBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                             Visibility="Collapsed">
-                        <Grid Margin="16,0,8,0">
+                        <Grid Margin="11,0,8,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
@@ -429,8 +429,8 @@
                                 <!-- 마지막 보낸 메시지가 있을 때만 표시되는 구분자 (:), 세션 이름만 떨 땐 숨김 -->
                                 <TextBlock x:Name="LastMessageSep" Text="❯"
                                            Margin="0,0,8,0" VerticalAlignment="Center"
-                                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextMutedBrush}"
+                                            FontSize="{DynamicResource Fs13}"
+                                            Foreground="{DynamicResource TextMutedBrush}"
                                            Visibility="Collapsed"/>
                                 <!-- 마지막 보낸 메시지(폭 넘치면 …로 잘림, 호버 시 전체 툴팁) -->
                                 <TextBlock x:Name="SessionHeaderTitle"

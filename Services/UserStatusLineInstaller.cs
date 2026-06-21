@@ -21,6 +21,10 @@ public static class UserStatusLineInstaller
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
     private static string StatusLineJsPath => Path.Combine(ClaudeDir, "statusline.js");
     private static string SettingsJsonPath => Path.Combine(ClaudeDir, "settings.json");
+    private static string ConfigJsonPath => Path.Combine(ClaudeDir, "statusline-config.json");
+
+    /// <summary>우리 관리 스크립트 식별 마커. 이 문자열을 포함하면 동기화 대상(사용자 수제 스크립트는 미포함).</summary>
+    private const string ManagedMarker = "DEVEZCODE-STATUSLINE";
 
     private static string BundledScriptPath => Path.Combine(
         AppContext.BaseDirectory, "Resources", "StatusLine", "statusline.js");
@@ -43,21 +47,60 @@ public static class UserStatusLineInstaller
         catch { return false; }
     }
 
-    /// <summary>statusline 스크립트와 settings.json 의 statusLine 등록을 보장. 없으면 설치.</summary>
+    /// <summary>statusline 스크립트와 settings.json 의 statusLine 등록을 보장.
+    /// 스크립트는 항상 번들과 동기화(우리 관리 파일이라 갱신 누락 방지), settings 는 없을 때만 머지.</summary>
     public static void EnsureInstalled()
     {
-        if (IsInstalled()) return;
         try { InstallScript(); } catch { /* best effort */ }
-        try { InstallSettingsEntry(); } catch { /* best effort */ }
+        if (!IsInstalled()) { try { InstallSettingsEntry(); } catch { /* best effort */ } }
     }
 
-    /// <summary>번들 statusline.js 를 ~/.claude\statusline.js 로 복사. 이미 있으면 스킵(사용자 수정 보존).</summary>
+    /// <summary>번들 statusline.js 를 ~/.claude\statusline.js 로 동기화.
+    /// 미설치거나, 우리 관리 마커를 포함한 기존 파일이 번들과 다르면 덮어쓴다.
+    /// 마커 없는(사용자 수제) 스크립트는 보존.</summary>
     private static void InstallScript()
     {
-        if (File.Exists(StatusLineJsPath)) return;
         if (!File.Exists(BundledScriptPath)) return;
         Directory.CreateDirectory(ClaudeDir);
-        File.Copy(BundledScriptPath, StatusLineJsPath);
+
+        var bundled = File.ReadAllText(BundledScriptPath);
+        if (File.Exists(StatusLineJsPath))
+        {
+            var existing = File.ReadAllText(StatusLineJsPath);
+            // 마커 없는 기존 파일은 사용자 수제일 수 있으므로, 우리 v1(마커 없던 구버전)만 1회 마이그레이션.
+            bool ours = existing.Contains(ManagedMarker) || IsLegacyManaged(existing);
+            if (!ours || existing == bundled) return;
+        }
+        File.WriteAllText(StatusLineJsPath, bundled, new UTF8Encoding(false));
+    }
+
+    /// <summary>마커가 없던 v1 관리 스크립트 식별 — 우리 고유 시그니처(모델 색 상수)로 추정.</summary>
+    private static bool IsLegacyManaged(string content)
+        => content.Contains("claude-token-counter-") && content.Contains("38;2;229;231;235");
+
+    /// <summary>statusline-config.json 에 현재 DevezCode 테마를 기록(다른 토글 키는 보존).
+    /// statusline.js 가 이 값으로 라이트 테마에서 색감을 살짝 보정한다.</summary>
+    public static void WriteTheme(string devezCodeTheme)
+    {
+        try
+        {
+            Directory.CreateDirectory(ClaudeDir);
+            JsonObject obj;
+            try
+            {
+                obj = (File.Exists(ConfigJsonPath)
+                    ? JsonNode.Parse(File.ReadAllText(ConfigJsonPath)) : null) as JsonObject
+                    ?? new JsonObject();
+            }
+            catch { obj = new JsonObject(); }
+
+            if (obj["theme"]?.GetValue<string>() == devezCodeTheme) return; // 변경 없음 — 쓰기 생략
+            obj["theme"] = devezCodeTheme;
+
+            var opts = new JsonSerializerOptions { WriteIndented = true };
+            File.WriteAllText(ConfigJsonPath, obj.ToJsonString(opts), new UTF8Encoding(false));
+        }
+        catch { /* best effort — 실패해도 statusline 은 dark 기본값 사용 */ }
     }
 
     /// <summary>~/.claude\settings.json 에 statusLine 키를 머지(나머지 설정은 보존).
