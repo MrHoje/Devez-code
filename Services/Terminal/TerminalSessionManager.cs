@@ -139,14 +139,16 @@ public sealed class TerminalSessionManager
     }
 
     /// <summary>claude TUI 가 준비될 시간을 잠시 기다린 뒤 <c>/config theme=&lt;X&gt;</c> 를 한 번 전송한다.
-    /// DevezCode 외에서 띄운 claude 세션에는 영향 없음 (per-session). 실패는 조용히 무시.</summary>
+    /// DevezCode 외에서 띄운 claude 세션에는 영향 없음 (per-session). 실패는 조용히 무시.
+    /// 매핑: dark → "dark" (claude 내장), soft → "custom:devezcode-soft", minimal → "custom:devezcode-minimal".
+    /// 커스텀 테마 파일은 <see cref="ClaudeCustomThemes.EnsureInstalled"/> 가 앱 시작 시 1회 설치.</summary>
     private static async Task InjectClaudeThemeAsync(TerminalSession session, string devezCodeTheme)
     {
         try
         {
             await Task.Delay(2500);
             if (!session.IsAlive) return;
-            var claudeTheme = devezCodeTheme == "dark" ? "dark" : "light";
+            var claudeTheme = ClaudeCustomThemes.MapToClaudeTheme(devezCodeTheme);
             session.Write($"/config theme={claudeTheme}\r");
         }
         catch { /* 세션 종료/쓰기 실패 — best-effort */ }

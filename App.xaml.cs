@@ -51,6 +51,10 @@ public partial class App : Application
         SetFontScale(SettingsService.LoadFontScale());
         SetTheme(LoadSavedTheme());
 
+        // claude code 커스텀 테마 (devezcode-soft / devezcode-minimal) 1회 설치.
+        // per-session /config theme=custom:<slug> 주입의 기반 — 파일 없으면 claude 가 못 찾음.
+        Services.Terminal.ClaudeCustomThemes.EnsureInstalled();
+
         new MainWindow().Show();
     }
 
