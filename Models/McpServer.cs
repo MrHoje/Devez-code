@@ -61,6 +61,14 @@ public sealed class McpServer : INotifyPropertyChanged
         set { if (_statusMessage != value) { _statusMessage = value; OnPropertyChanged(); } }
     }
 
+    /// <summary>first-party / plugin 제공 서버는 편집·삭제 불가. UI 에서 뱌지로 표시 + Add/Delete 차단.</summary>
+    [JsonIgnore]
+    public bool IsReadOnly { get; set; }
+
+    /// <summary>읽기 전용인 이유(예: "Anthropic 제공", "플러그인: cloudflare").</summary>
+    [JsonIgnore]
+    public string ReadOnlyReason { get; set; } = "";
+
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
@@ -205,6 +213,8 @@ public sealed class McpServer : INotifyPropertyChanged
         TimeoutMs = TimeoutMs,
         Status = Status,
         StatusMessage = StatusMessage,
+        IsReadOnly = IsReadOnly,
+        ReadOnlyReason = ReadOnlyReason,
     };
 }
 

@@ -165,9 +165,27 @@ public partial class McpManagerDialog : UserControl
     private void UpdateEditorVisibility()
     {
         var has = ServerList.SelectedItem is McpServer;
+        var isReadOnly = (ServerList.SelectedItem as McpServer)?.IsReadOnly == true;
+
         EmptyState.Visibility   = has ? Visibility.Collapsed : Visibility.Visible;
         EditorScroll.Visibility = has ? Visibility.Visible  : Visibility.Collapsed;
-        DeleteBtn.Visibility    = has ? Visibility.Visible  : Visibility.Collapsed;
+        DeleteBtn.Visibility    = (has && !isReadOnly) ? Visibility.Visible : Visibility.Collapsed;
+
+        // 읽기 전용 서버: 이름·명령·URL·헤더 + 타입 토글 + 활성 토글 비활성
+        NameBox.IsReadOnly   = isReadOnly;
+        CommandBox.IsReadOnly = isReadOnly;
+        EnvBox.IsReadOnly    = isReadOnly;
+        UrlBox.IsReadOnly    = isReadOnly;
+        HeaderBox.IsReadOnly = isReadOnly;
+        TypeLocalBtn.IsHitTestVisible  = !isReadOnly;
+        TypeRemoteBtn.IsHitTestVisible = !isReadOnly;
+        EnabledBox.IsHitTestVisible    = !isReadOnly;
+
+        ReadOnlyHint.Visibility = isReadOnly ? Visibility.Visible : Visibility.Collapsed;
+        if (isReadOnly && ServerList.SelectedItem is McpServer ro)
+            ReadOnlyHintText.Text = string.IsNullOrEmpty(ro.ReadOnlyReason)
+                ? "이 서버는 외부에서 제공되어 편집할 수 없습니다."
+                : ro.ReadOnlyReason;
     }
 
     // ── 왼쪽 목록 선택 ──────────────────────────────────────────
@@ -239,6 +257,7 @@ public partial class McpManagerDialog : UserControl
     private void DeleteBtn_Click(object sender, RoutedEventArgs e)
     {
         if (ServerList.SelectedItem is not McpServer srv) return;
+        if (srv.IsReadOnly) return; // first-party/plugin 서버는 삭제 차단
         if (!ConfirmDialog.Show("MCP 서버 삭제", $"'{srv.Name}' 서버를 삭제할까요?", "삭제", danger: true))
             return;
         _original.RemoveAll(s => ReferenceEquals(s, srv) || s.Name == srv.Name);

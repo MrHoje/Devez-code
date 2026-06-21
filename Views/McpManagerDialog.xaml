@@ -188,6 +188,14 @@
                                                        Foreground="{DynamicResource TextMutedBrush}"
                                                        VerticalAlignment="Center" Margin="6,0,0,0"
                                                        Visibility="{Binding Enabled, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
+                                            <Border Margin="6,0,0,0" Padding="5,1" CornerRadius="4"
+                                                    Background="{DynamicResource PanelSoftBrush}"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip="{Binding ReadOnlyReason}"
+                                                    Visibility="{Binding IsReadOnly, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                                <TextBlock Text="읽기 전용" FontSize="{DynamicResource Fs10}"
+                                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                                            </Border>
                                         </StackPanel>
                                     </StackPanel>
                                 </Grid>
@@ -259,6 +267,18 @@
                                       Style="{StaticResource ToggleSwitch}"
                                       VerticalAlignment="Center" Margin="10,0,0,0"/>
                         </Grid>
+
+                        <!-- 읽기 전용 안내 -->
+                        <Border x:Name="ReadOnlyHint" Margin="0,0,0,14" Padding="10,8" CornerRadius="8"
+                                Background="{DynamicResource PanelSoftBrush}" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLock}"
+                                      Width="13" Height="13" VerticalAlignment="Center" Margin="0,0,8,0"
+                                      Stroke="{DynamicResource TextMutedBrush}"/>
+                                <TextBlock x:Name="ReadOnlyHintText" FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
 
                         <!-- 타입 토글 -->
                         <Grid Margin="0,0,0,14">

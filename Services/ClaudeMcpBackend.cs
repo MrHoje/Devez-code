@@ -51,20 +51,138 @@ public sealed class ClaudeMcpBackend : IMcpBackend
         if (root == null) return result;
         var r = root.Value;
 
-        if (!r.TryGetProperty("mcpServers", out var ms) || ms.ValueKind != JsonValueKind.Object)
-            return result;
-
-        foreach (var prop in ms.EnumerateObject())
+        // 1) 사용자 추가 서버 (편집 가능)
+        if (r.TryGetProperty("mcpServers", out var ms) && ms.ValueKind == JsonValueKind.Object)
         {
-            var srv = ParseServer(prop.Name, prop.Value);
-            if (srv != null) result.Add(srv);
+            foreach (var prop in ms.EnumerateObject())
+            {
+                var srv = ParseServer(prop.Name, prop.Value);
+                if (srv != null) result.Add(srv);
+            }
+        }
+
+        // 2) Anthropic 제공 first-party 서버 (claude.ai Figma, Notion …) — 바이너리에 하드코딩.
+        //    URL 은 Claude Code 내부 카탈로그에 있고, OAuth 자격증명은
+        //    ~/.claude/.credentials.json 의 mcpOAuth 섹션에 있다.
+        var oauthTokens = LoadOAuthTokens();
+        foreach (var fs in FirstPartyCatalog)
+        {
+            if (result.Any(s => s.Name == fs.Name)) continue;
+            result.Add(new McpServer
+            {
+                Name = fs.Name,
+                Type = McpServerType.Remote,
+                Url = fs.Url,
+                Enabled = true,
+                IsReadOnly = true,
+                ReadOnlyReason = "Anthropic 제공 (편집 불가)",
+                Status = oauthTokens.Contains(fs.Name) ? McpLiveStatus.Connected : McpLiveStatus.NeedsAuth,
+            });
+        }
+
+        // 3) 플러그인 제공 서버 (plugin:cloudflare:*, …) — ~/.claude/plugins/cache/<plugin>/<ver>/.mcp.json
+        foreach (var srv in LoadPluginServers())
+        {
+            if (result.Any(s => s.Name == srv.Name)) continue;
+            result.Add(srv);
         }
         return result;
+    }
+
+    // ── First-party 카탈로그 (Claude Code 가 기본 노출하는 서버) ─────────
+    // 추후 새 서버 추가 시 Claude Code changelog / source 참고해 갱신.
+    private record struct FirstPartyEntry(string Name, string Url)
+    {
+        public override string ToString() => $"{Name} ({Url})";
+    }
+    private static readonly FirstPartyEntry[] FirstPartyCatalog = new[]
+    {
+        new FirstPartyEntry("claude.ai Figma",                  "https://mcp.figma.com/mcp"),
+        new FirstPartyEntry("claude.ai Notion",                 "https://mcp.notion.com/mcp"),
+        new FirstPartyEntry("claude.ai Supabase",               "https://mcp.supabase.com/mcp"),
+        new FirstPartyEntry("claude.ai Cloudflare Developer Platform", "https://mcp.cloudflare.com/mcp"),
+        new FirstPartyEntry("claude.ai cloudflare-api",         "https://mcp.cloudflare.com/mcp"),
+        new FirstPartyEntry("claude.ai cloudflare-builds",      "https://mcp.cloudflare.com/mcp"),
+    };
+
+    /// <summary>~/.claude/.credentials.json 의 mcpOAuth 섹션에서 first-party 서버의 인증 토큰 존재 여부.</summary>
+    private static HashSet<string> LoadOAuthTokens()
+    {
+        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var credPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
+        if (!File.Exists(credPath)) return tokens;
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(credPath));
+            // mcpOAuth: { "name|clientId": { "serverName": "...", ... }, ... }
+            if (doc.RootElement.TryGetProperty("mcpOAuth", out var oauth) &&
+                oauth.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in oauth.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Object &&
+                        prop.Value.TryGetProperty("serverName", out var sn) &&
+                        sn.ValueKind == JsonValueKind.String)
+                    {
+                        tokens.Add(sn.GetString()!);
+                    }
+                }
+            }
+        }
+        catch { /* 손상돼도 빈 집합 — Unknown 으로 표시 */ }
+        return tokens;
+    }
+
+    /// <summary>~/.claude/plugins/cache/&lt;plugin&gt;/&lt;ver&gt;/.mcp.json 을 모두 읽어 합친다.
+    /// 각 파일은 { "mcpServers": { "name": {...} } } 형식.</summary>
+    private static IEnumerable<McpServer> LoadPluginServers()
+    {
+        var cacheDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "plugins", "cache");
+        if (!Directory.Exists(cacheDir)) yield break;
+
+        foreach (var pluginDir in Directory.EnumerateDirectories(cacheDir))
+        {
+            var pluginName = Path.GetFileName(pluginDir);
+            // 각 plugin 폴더 안의 버전별 디렉터리를 훑는다.
+            foreach (var verDir in Directory.EnumerateDirectories(pluginDir))
+            {
+                var mcpJson = Path.Combine(verDir, ".mcp.json");
+                if (!File.Exists(mcpJson)) continue;
+                List<McpServer>? list = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(mcpJson));
+                    if (!doc.RootElement.TryGetProperty("mcpServers", out var ms) ||
+                        ms.ValueKind != JsonValueKind.Object) continue;
+                    list = new List<McpServer>();
+                    foreach (var prop in ms.EnumerateObject())
+                    {
+                        var srv = ParseServer(prop.Name, prop.Value);
+                        if (srv == null) continue;
+                        srv.IsReadOnly = true;
+                        srv.ReadOnlyReason = $"플러그인: {pluginName}";
+                        // plugin: 접두사가 없으면 붙여서 표시 ( claude mcp list 출력과 일치)
+                        if (!srv.Name.StartsWith("plugin:", StringComparison.Ordinal))
+                            srv.Name = $"plugin:{pluginName}:{srv.Name}";
+                        list.Add(srv);
+                    }
+                }
+                catch { /* 손상 파일 무시 */ }
+                if (list != null)
+                    foreach (var s in list) yield return s;
+            }
+        }
     }
 
     /// <inheritdoc />
     public void Save(IEnumerable<McpServer> servers)
     {
+        // read-only(first-party/plugin) 서버는 디스크에 다시 쓰지 않는다.
+        // 사용자가 편집·삭제할 수 있는 영역은 user-level mcpServers 뿐.
+        var editable = servers.Where(s => !s.IsReadOnly);
+
         var (root, _) = LoadRaw();
         using var final = new MemoryStream();
         using (var writer = new Utf8JsonWriter(final, new JsonWriterOptions { Indented = true, IndentSize = 2 }))
@@ -81,12 +199,12 @@ public sealed class ClaudeMcpBackend : IMcpBackend
                     prop.WriteTo(writer);
                 }
                 if (!first) writer.WriteRawValue(",\n", false);
-                WriteMcpObject(writer, servers);
+                WriteMcpObject(writer, editable);
                 writer.WriteEndObject();
             }
             else
             {
-                WriteMcpObject(writer, servers);
+                WriteMcpObject(writer, editable);
             }
         }
         var dir = Path.GetDirectoryName(ConfigPath);
