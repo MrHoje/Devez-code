@@ -401,9 +401,49 @@ public partial class App : Application
                 File.WriteAllText(ThemeFile, theme);
             }
             catch { /* non-critical */ }
+
+            // claude code 의 theme 도 동기화 — claude 는 자체 theme (default=dark) 으로 TUI 를 그려서
+            // DevezCode 가 light 라도 claude 입력 박스가 dark bar 로 떠 대비가 어색해진다.
+            // dark → "dark", soft/minimal → "light". 새 claude 세션부터 적용.
+            SyncClaudeTheme(theme);
         }
 
         CurrentTheme = theme;
         ThemeChanged?.Invoke(theme);
+    }
+
+    /// <summary>~/.claude/settings.json 의 theme 키를 DevezCode 테마에 맞춰 갱신.
+    /// 다른 설정(hooks, permissions 등)은 그대로 보존. 실패는 조용히 무시 (claude 설정은 비핵심).</summary>
+    private static void SyncClaudeTheme(string devezCodeTheme)
+    {
+        try
+        {
+            var claudeSettingsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "settings.json");
+            if (!File.Exists(claudeSettingsPath)) return;
+
+            var claudeTheme = devezCodeTheme == "dark" ? "dark" : "light";
+            var json = File.ReadAllText(claudeSettingsPath);
+            using var doc = System.Text.Json.JsonDocument.Parse(json,
+                new System.Text.Json.JsonDocumentOptions { CommentHandling = System.Text.Json.JsonCommentHandling.Skip });
+            var dict = new Dictionary<string, System.Text.Json.JsonElement>();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+                dict[prop.Name] = prop.Value.Clone();
+            dict["theme"] = System.Text.Json.JsonSerializer.SerializeToElement(claudeTheme);
+
+            using var ms = new MemoryStream();
+            using (var writer = new System.Text.Json.Utf8JsonWriter(ms, new System.Text.Json.JsonWriterOptions { Indented = true }))
+            {
+                writer.WriteStartObject();
+                foreach (var kv in dict)
+                {
+                    writer.WritePropertyName(kv.Key);
+                    kv.Value.WriteTo(writer);
+                }
+                writer.WriteEndObject();
+            }
+            File.WriteAllText(claudeSettingsPath, System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+        }
+        catch { /* claude 설정 동기화는 best-effort */ }
     }
 }
