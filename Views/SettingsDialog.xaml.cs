@@ -136,6 +136,7 @@ public partial class SettingsDialog : UserControl
     // ── 저장 / 취소 / 닫기 ────────────────────────────────────────
     private void SaveBtn_Click(object sender, RoutedEventArgs e)
     {
+        var themeChanged = _selectedTheme != _originalTheme;
         if (_selectedTheme != _originalTheme)
         {
             var proceed = ConfirmDialog.Show(
@@ -149,6 +150,8 @@ public partial class SettingsDialog : UserControl
         }
 
         ApplySettings();
+        if (themeChanged)
+            (Application.Current.MainWindow as MainWindow)?.TryRestartActiveClaudeSession();
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
