@@ -117,6 +117,12 @@ public sealed class TerminalSessionManager
                 if (simple != null) commandLine = simple;
             }
 
+            // claude 세션이면 프로세스 시작 전에 프로젝트 local settings 에 theme 을 먼저 기록한다.
+            // claude 가 시작 시 바로 맞는 테마를 읽도록 하기 위함. ~/.claude/settings.json 은 건드리지 않음.
+            var isClaude = agent.Id == "claude" && agent.SupportsHooks;
+            if (isClaude && !string.IsNullOrWhiteSpace(ccDir))
+                ApplyClaudeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
+
             TerminalSession session;
             try
             {
@@ -134,36 +140,16 @@ public sealed class TerminalSessionManager
             _pendingInitial[roomId] = inject;
             _sessions[roomId] = session;
 
-            // claude 세션이면 room → working directory 를 기억하고, 프로젝트 local settings 로 테마를 반영한다.
-            // ~/.claude/settings.json 은 건드리지 않으므로 DevezCode 밖의 claude 실행에는 영향 없음.
-            if (agent.Id == "claude" && agent.SupportsHooks)
+            // claude 세션이면 room → working directory 를 기억한다.
+            // 테마 변경 시 settings.local.json 을 다시 갱신하기 위해 사용.
+            if (isClaude)
             {
                 if (!string.IsNullOrWhiteSpace(ccDir))
-                {
                     _claudeRoomDirs[roomId] = ccDir;
-                    ApplyClaudeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
-                }
-                _ = InjectClaudeThemeAsync(session, DevezCode.App.CurrentTheme);
             }
 
             return session;
         }
-    }
-
-    /// <summary>claude TUI 가 준비될 시간을 잠시 기다린 뒤 <c>/config theme=&lt;X&gt;</c> 를 한 번 전송한다.
-    /// DevezCode 외에서 띄운 claude 세션에는 영향 없음 (per-session). 실패는 조용히 무시.
-    /// 매핑: dark → "dark" (claude 내장), soft → "custom:devezcode-soft", minimal → "custom:devezcode-minimal".
-    /// 커스텀 테마 파일은 <see cref="ClaudeCustomThemes.EnsureInstalled"/> 가 앱 시작 시 1회 설치.</summary>
-    private static async Task InjectClaudeThemeAsync(TerminalSession session, string devezCodeTheme)
-    {
-        try
-        {
-            await Task.Delay(2500);
-            if (!session.IsAlive) return;
-            var claudeTheme = ClaudeCustomThemes.MapToClaudeTheme(devezCodeTheme);
-            session.Write($"/config theme={claudeTheme}\r");
-        }
-        catch { /* 세션 종료/쓰기 실패 — best-effort */ }
     }
 
     /// <summary>App.ThemeChanged → 살아있는 모든 claude 세션에 라이브 갱신. 짧은 딜레이로
@@ -181,8 +167,6 @@ public sealed class TerminalSessionManager
         }
         foreach (var dir in dirs)
             ApplyClaudeProjectTheme(dir, theme);
-        if (live.Count == 0) return;
-        _ = BroadcastClaudeThemeAsync(live, theme);
     }
 
     /// <summary>프로젝트 local settings 에 claude theme 을 기록한다.
@@ -225,20 +209,6 @@ public sealed class TerminalSessionManager
             File.WriteAllText(path, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* local settings 갱신 실패 — best-effort */ }
-    }
-
-    private static async Task BroadcastClaudeThemeAsync(List<TerminalSession> sessions, string theme)
-    {
-        try { await Task.Delay(800); } catch { return; }
-        var claudeTheme = ClaudeCustomThemes.MapToClaudeTheme(theme);
-        foreach (var s in sessions)
-        {
-            try
-            {
-                if (s.IsAlive) s.Write($"/config theme={claudeTheme}\r");
-            }
-            catch { /* 세션 종료 — best-effort */ }
-        }
     }
 
     /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.
