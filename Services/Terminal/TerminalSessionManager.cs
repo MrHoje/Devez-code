@@ -27,7 +27,12 @@ public sealed class TerminalSessionManager
     /// GetOrCreate 가 결정해 채우고 GetInitialCommand 가 1회 소비한다.</summary>
     private readonly Dictionary<string, string?> _pendingInitial = new();
 
-    private TerminalSessionManager() { }
+    private TerminalSessionManager()
+    {
+        // 테마 변경 시 살아있는 모든 claude 세션에 /config theme=X 1회 전송 — 이미 떠 있는 TUI 도 즉시 갱신.
+        // per-session 주입(InjectClaudeThemeAsync) 은 새 세션만 커버하므로, 기존 세션 갱신은 이 경로로.
+        App.ThemeChanged += OnAppThemeChanged_Broadcast;
+    }
 
     /// <summary>WT settings.json 기반 구성 (최초 1회 로드 후 캐시).</summary>
     public WtTerminalConfig Config
@@ -152,6 +157,35 @@ public sealed class TerminalSessionManager
             session.Write($"/config theme={claudeTheme}\r");
         }
         catch { /* 세션 종료/쓰기 실패 — best-effort */ }
+    }
+
+    /// <summary>App.ThemeChanged → 살아있는 모든 claude 세션에 라이브 갱신. 짧은 딜레이로
+    /// 사용자가 입력 중이던 키가 끼어들어 깨지는 걸 완화.</summary>
+    private void OnAppThemeChanged_Broadcast(string theme)
+    {
+        List<TerminalSession> live;
+        lock (_lock)
+        {
+            live = new List<TerminalSession>(_sessions.Values.Count);
+            foreach (var s in _sessions.Values)
+                if (s.IsAlive) live.Add(s);
+        }
+        if (live.Count == 0) return;
+        _ = BroadcastClaudeThemeAsync(live, theme);
+    }
+
+    private static async Task BroadcastClaudeThemeAsync(List<TerminalSession> sessions, string theme)
+    {
+        try { await Task.Delay(800); } catch { return; }
+        var claudeTheme = ClaudeCustomThemes.MapToClaudeTheme(theme);
+        foreach (var s in sessions)
+        {
+            try
+            {
+                if (s.IsAlive) s.Write($"/config theme={claudeTheme}\r");
+            }
+            catch { /* 세션 종료 — best-effort */ }
+        }
     }
 
     /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.
