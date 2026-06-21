@@ -76,34 +76,12 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="44"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 헤더: 우측 패널 탭 헤더 정합(44px). 아이콘 + 제목 + 카운트 배지 -->
-        <Border Grid.Row="0"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
-                Background="{DynamicResource PanelBrush}">
-            <Grid Margin="14,0,12,0">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconListTodo}"
-                          Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                    <TextBlock Text="작업 큐" Margin="8,0,0,0" VerticalAlignment="Center"
-                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}"/>
-                    <Border Background="{DynamicResource LineBrush}" CornerRadius="8"
-                            Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="CountText" Text="0"
-                                   FontSize="{DynamicResource Fs11}"
-                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                    </Border>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- 버블 리스트 + 빈 안내 -->
-        <Grid Grid.Row="1">
+        <!-- 버블 리스트 + 빈 안내 (탭 자체가 '작업 큐' 제목 역할 → 내부 헤더 생략, 바로 메시지 콘텐츠) -->
+        <Grid Grid.Row="0">
             <StackPanel x:Name="EmptyHint" VerticalAlignment="Center" HorizontalAlignment="Center"
                         Visibility="Collapsed">
                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconListTodo}"
@@ -148,7 +126,7 @@
         </Grid>
 
         <!-- 입력 바: doit 정합 — 둥근 배경, 전송 아이콘 없음, Enter 로 추가 -->
-        <Border Grid.Row="2"
+        <Border Grid.Row="1"
                 Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
                 Padding="10,8,10,10">

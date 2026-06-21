@@ -13,6 +13,12 @@ public partial class TaskQueueView : UserControl
 {
     public ObservableCollection<TaskQueueItem> Items { get; } = new();
 
+    /// <summary>현재 큐 항목 수. FileExplorerView 탭의 카운트 배지에서 사용.</summary>
+    public int Count => Items.Count;
+
+    /// <summary>Items 변경 시 발화. FileExplorerView 가 구독해 탭의 카운트 배지를 갱신.</summary>
+    public event Action? CountChanged;
+
     public TaskQueueView()
     {
         InitializeComponent();
@@ -22,8 +28,8 @@ public partial class TaskQueueView : UserControl
         // (인스턴스 수명 동안 1회만 등록 — FileExplorerView 안에서 재사용되므로 Unloaded 시 해제하지 않음)
         Items.CollectionChanged += Items_CollectionChanged;
         Load();
-        UpdateCount();
         UpdateEmptyHint();
+        CountChanged?.Invoke();
 
         // 뷰가 처음 화면에 표시될 때 입력창 자동 포커스 (doit 정합: 입력 대기 상태로 시작)
         Loaded += (_, _) => Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
@@ -51,11 +57,6 @@ public partial class TaskQueueView : UserControl
     private void Save()
     {
         SettingsService.SaveTaskQueueItems(Items.Select(i => (i.Text, i.SortOrder)));
-    }
-
-    private void UpdateCount()
-    {
-        CountText.Text = Items.Count.ToString();
     }
 
     private void UpdateEmptyHint()
@@ -95,10 +96,10 @@ public partial class TaskQueueView : UserControl
 
     private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        UpdateCount();
         UpdateEmptyHint();
         Save();
         ScrollToBottom();
+        CountChanged?.Invoke();
     }
 
     // ── 입력 처리 ────────────────────────────────────────────────
