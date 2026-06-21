@@ -5,32 +5,54 @@
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
-        <!-- ── 버블 한 줄: doit/devez 정합 — 이중 border (outer=BubbleBorderBrush, inner=BubbleBrush),
-              Padding=1 로 inset 되어 외곽선+배경이 1px 라인처럼 보임.
-              CornerRadius: outer 14,14,4,14 / inner 13,13,3,13 (outer-1).
-              우측 정렬 + content-hugging + 우클릭 메뉴(삭제)만 지원. 호버 X 없음. -->
+        <!-- 동적 MaxWidth: ListBox 폭에서 padding(20) 빼기. 패널 폭에 맞춰 자동 조정. -->
+        <models:SubtractConverter x:Key="Subtract"/>
+
+        <!-- ── 버블 한 줄: doit/devez 정합 — BubbleWrapper Grid 안에
+              (a) BubbleBorder(BubbleBorderBrush 1px 외곽) + (b) SelectionRing(선택 시 Primary 1.5px 외곽)을 sibling 으로 배치.
+              둘 다 BubbleWrapper 사이즈를 채우므로 SelectionRing 이 자동으로 버블 외곽에 정렬됨.
+              CornerRadius: BubbleBorder 14,14,4,14 / SelectionRing 15,15,5,15 (= outer+0.75 × 2) / BubbleInner 13,13,3,13. -->
         <DataTemplate x:Key="TaskBubbleTemplate" DataType="{x:Type models:TaskQueueItem}">
             <Grid Margin="0,3" Background="Transparent" HorizontalAlignment="Stretch">
-                <Border x:Name="BubbleBorder"
-                        HorizontalAlignment="Right"
-                        MaxWidth="260"
-                        Background="{DynamicResource BubbleBorderBrush}"
-                        CornerRadius="14,14,4,14"
-                        Padding="1"
-                        UseLayoutRounding="True"
-                        SnapsToDevicePixels="True"
-                        Focusable="False">
-                    <Border x:Name="BubbleInner"
-                            Background="{DynamicResource BubbleBrush}"
-                            CornerRadius="13,13,3,13"
-                            Padding="14,10">
-                        <TextBlock Text="{Binding Text}"
-                                   TextWrapping="Wrap"
-                                   FontSize="{DynamicResource Fs14}"
-                                   Foreground="{DynamicResource TextBrush}"/>
+                <Grid x:Name="BubbleWrapper"
+                      HorizontalAlignment="Right"
+                      MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource Subtract}, ConverterParameter=20}">
+                    <!-- (a) 본체: 이중 border -->
+                    <Border x:Name="BubbleBorder"
+                            Background="{DynamicResource BubbleBorderBrush}"
+                            CornerRadius="14,14,4,14"
+                            Padding="1"
+                            UseLayoutRounding="True"
+                            SnapsToDevicePixels="True"
+                            Focusable="False">
+                        <Border x:Name="BubbleInner"
+                                Background="{DynamicResource BubbleBrush}"
+                                CornerRadius="13,13,3,13"
+                                Padding="14,10">
+                            <TextBlock Text="{Binding Text}"
+                                       TextWrapping="Wrap"
+                                       FontSize="{DynamicResource Fs14}"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </Border>
                     </Border>
-                </Border>
+                    <!-- (b) 선택 링: IsHitTestVisible=False 로 클릭이 ListBoxItem 으로 전달됨.
+                          Visibility 는 DataTrigger 로 ListBoxItem.IsSelected 에 연동. -->
+                    <Border x:Name="SelectionRing"
+                            IsHitTestVisible="False"
+                            CornerRadius="15,15,5,15"
+                            BorderBrush="{DynamicResource PrimaryBrush}"
+                            BorderThickness="1.5"
+                            SnapsToDevicePixels="False"
+                            UseLayoutRounding="False"
+                            Visibility="Collapsed"/>
+                </Grid>
             </Grid>
+            <DataTemplate.Triggers>
+                <!-- 선택 시 링 노출 (ListBoxItem.IsSelected → DataTemplate) -->
+                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                    <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
     </UserControl.Resources>
 
@@ -41,7 +63,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 헤더: 기존 우측 패널 탭 헤더와 정합(44px). 아이콘 + 카운트 -->
+        <!-- 헤더: 우측 패널 탭 헤더 정합(44px). 아이콘 + 제목 + 카운트 배지 -->
         <Border Grid.Row="0"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
@@ -62,9 +84,8 @@
             </Grid>
         </Border>
 
-        <!-- 버블 리스트 -->
+        <!-- 버블 리스트 + 빈 안내 -->
         <Grid Grid.Row="1">
-            <!-- 비어 있을 때 안내 (ItemsSource가 null 또는 비어있으면 노출) -->
             <StackPanel x:Name="EmptyHint" VerticalAlignment="Center" HorizontalAlignment="Center"
                         Visibility="Collapsed">
                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconListTodo}"
@@ -78,9 +99,7 @@
                            Foreground="{DynamicResource TextMutedBrush}" TextAlignment="Center" Opacity="0.7"/>
             </StackPanel>
 
-            <ScrollViewer x:Name="BubbleScroller" VerticalScrollBarVisibility="Auto" Padding="10,10">
-                <!-- ListBox: 다중선택(SelectionMode=Extended) + 선택 링(컨테이너 템플릿).
-                     기본 선택 배경/포커스 시각효과 제거(컨테이너 템플릿으로 덮어씀). -->
+            <Border Padding="10,10">
                 <ListBox x:Name="BubblesList"
                          ItemsSource="{Binding Items}"
                          ItemTemplate="{StaticResource TaskBubbleTemplate}"
@@ -89,7 +108,8 @@
                          Foreground="{DynamicResource TextBrush}"
                          HorizontalContentAlignment="Stretch"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         KeyDown="BubblesList_KeyDown">
+                         KeyDown="BubblesList_KeyDown"
+                         PreviewMouseDown="BubblesList_PreviewMouseDown">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Background" Value="Transparent"/>
@@ -100,10 +120,10 @@
                             <Setter Property="Cursor" Value="Arrow"/>
                             <!-- 우클릭 시: 미선택이면 이 항목만 선택 / 이미 선택(다중)이면 선택 유지 -->
                             <EventSetter Event="PreviewMouseRightButtonDown" Handler="BubbleItem_PreviewRightButtonDown"/>
-                            <!-- 컨텍스트 메뉴: 선택 수에 따라 헤더가 '삭제' ↔ '선택 N개 삭제' 로 바뀜 (Opened 핸들러) -->
+                            <!-- 컨텍스트 메뉴: 선택 수에 따라 '삭제' ↔ '선택 N개 삭제' 헤더 -->
                             <Setter Property="ContextMenu">
                                 <Setter.Value>
-                                    <ContextMenu x:Name="BubbleContextMenu" Opened="BubbleContextMenu_Opened">
+                                    <ContextMenu Opened="BubbleContextMenu_Opened">
                                         <MenuItem x:Name="DeleteMenuItem" Click="BubbleDelete_Click">
                                             <MenuItem.Icon>
                                                 <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconTrash2}"/>
@@ -112,65 +132,38 @@
                                     </ContextMenu>
                                 </Setter.Value>
                             </Setter>
-                            <!-- 선택 링: 버블 외곽(14,14,4,14 + 1.5px 두께 + 1.5px 마진 = 15,15,5,15)에 primary 보더 -->
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <Grid>
-                                            <ContentPresenter/>
-                                            <Border x:Name="SelectionRing"
-                                                    IsHitTestVisible="False"
-                                                    CornerRadius="15,15,5,15"
-                                                    BorderBrush="{DynamicResource PrimaryBrush}"
-                                                    BorderThickness="1.5"
-                                                    Margin="-1.5"
-                                                    Visibility="Collapsed"/>
-                                        </Grid>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
                         </Style>
                     </ListBox.ItemContainerStyle>
                 </ListBox>
-            </ScrollViewer>
+            </Border>
         </Grid>
 
-        <!-- 입력 바: AiChatHostView 정합 — 둥근 배경 + Enter로 추가 -->
+        <!-- 입력 바: doit 정합 — 둥근 배경, 전송 아이콘 없음, Enter 로 추가 -->
         <Border Grid.Row="2"
                 Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
                 Padding="10,8,10,10">
             <Border Background="{DynamicResource BgBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                    CornerRadius="12" Padding="10,4,10,4">
+                    CornerRadius="12" Padding="10,6,10,6">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="InputBox" Grid.Column="0"
+                    <TextBox x:Name="InputBox"
                              BorderThickness="0" Background="Transparent"
                              Foreground="{DynamicResource TextBrush}"
                              CaretBrush="{DynamicResource TextBrush}"
-                             FontSize="{DynamicResource Fs12}"
+                             FontSize="{DynamicResource Fs13}"
                              FontFamily="{StaticResource PretendardFont}"
                              VerticalContentAlignment="Center"
-                             MinHeight="28" MaxHeight="80"
-                             TextWrapping="Wrap" AcceptsReturn="False"
+                             MinHeight="28" MaxHeight="100"
+                             TextWrapping="Wrap" AcceptsReturn="True"
                              PreviewKeyDown="InputBox_PreviewKeyDown"
                              TextChanged="InputBox_TextChanged"/>
                     <!-- placeholder (TextBox 가 비었을 때만 노출) -->
-                    <TextBlock Grid.Column="0"
-                               Text="작업을 입력하고 Enter"
+                    <TextBlock Text="작업을 입력하고 Enter"
                                IsHitTestVisible="False"
                                Margin="1,0,0,0" VerticalAlignment="Center"
                                Foreground="{DynamicResource TextMutedBrush}"
-                               FontSize="{DynamicResource Fs12}"
+                               FontSize="{DynamicResource Fs13}"
                                FontFamily="{StaticResource PretendardFont}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
@@ -183,14 +176,6 @@
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                    <!-- Enter 활성화 표시(텍스트가 있을 때만) — 보내기 아이콘 -->
-                    <Path x:Name="SendHint" Grid.Column="1"
-                          Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconArrowRight}"
-                          Width="13" Height="13"
-                          Stroke="{DynamicResource TextMutedBrush}"
-                          VerticalAlignment="Center" Margin="6,0,0,0"
-                          Opacity="0.4"/>
                 </Grid>
             </Border>
         </Border>
