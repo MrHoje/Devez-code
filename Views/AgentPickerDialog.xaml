@@ -4,7 +4,7 @@
         xmlns:svc="clr-namespace:DevezCode.Services"
         xmlns:models="clr-namespace:DevezCode.Models"
         Title="에이전트 선택"
-        Width="380" Height="Auto"
+        Width="340" Height="Auto"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="NoResize"
@@ -37,13 +37,13 @@
                 </Grid.RowDefinitions>
 
                 <!-- 본문 -->
-                <StackPanel Grid.Row="0" Margin="18,16,18,14">
+                <StackPanel Grid.Row="0" Margin="16,14,16,10">
                     <!-- 타이틀 + 프로젝트 경로 -->
                     <TextBlock Text="에이전트 선택" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,4"/>
+                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,3"/>
                     <TextBlock x:Name="HintText" FontSize="{DynamicResource Fs11}"
-                               Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,14"
-                               TextTrimming="CharacterEllipsis" MaxWidth="340"/>
+                               Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"
+                               TextTrimming="CharacterEllipsis" MaxWidth="300"/>
 
                     <!-- 세로 풀폭 카드 목록. RadioButton 으로 단일 선택 + 호버/체크 상태 표시 -->
                     <ItemsControl x:Name="AgentList">
@@ -59,10 +59,10 @@
                                     <RadioButton.Template>
                                         <ControlTemplate TargetType="RadioButton">
                                             <Border x:Name="Card"
-                                                    CornerRadius="10" BorderThickness="1"
+                                                    CornerRadius="8" BorderThickness="1"
                                                     BorderBrush="{DynamicResource LineBrush}"
                                                     Background="{DynamicResource PanelBrush}"
-                                                    Padding="12,10" Margin="0,0,0,8"
+                                                    Padding="10,7" Margin="0,0,0,5"
                                                     SnapsToDevicePixels="True">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
@@ -71,7 +71,7 @@
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
 
-                                                    <Image Grid.Column="0" Width="40" Height="40" Margin="0,0,14,0"
+                                                    <Image Grid.Column="0" Width="26" Height="26" Margin="0,0,11,0"
                                                            Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
                                                            RenderOptions.BitmapScalingMode="HighQuality" Stretch="Uniform"
                                                            VerticalAlignment="Center"/>
@@ -83,17 +83,17 @@
                                                         <TextBlock Text="{Binding Provider}"
                                                                    FontSize="{DynamicResource Fs11}"
                                                                    Foreground="{DynamicResource TextMutedBrush}"
-                                                                   Margin="0,2,0,0"/>
+                                                                   Margin="0,1,0,0"/>
                                                     </StackPanel>
 
-                                                    <!-- 라디오: 평소 빈 원, 호버/체크 시 PrimaryBrush 채움 + 흰 체크 -->
-                                                    <Grid Grid.Column="2" Width="22" Height="22" VerticalAlignment="Center">
-                                                        <Ellipse x:Name="Ring" Width="22" Height="22"
+                                                    <!-- 라디오: 평소 빈 원, 체크 시 PrimaryBrush 채움 + 흰 체크 -->
+                                                    <Grid Grid.Column="2" Width="18" Height="18" VerticalAlignment="Center">
+                                                        <Ellipse x:Name="Ring" Width="18" Height="18"
                                                                  Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"
                                                                  Fill="Transparent"/>
-                                                        <Ellipse x:Name="Dot" Width="22" Height="22"
+                                                        <Ellipse x:Name="Dot" Width="18" Height="18"
                                                                  Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
-                                                        <Path x:Name="Check" Data="M 0,5 L 4.5,9.5 L 12,1.5"
+                                                        <Path x:Name="Check" Data="M 0,4 L 3.5,7.5 L 10,1"
                                                               Stretch="None"
                                                               Stroke="White" StrokeThickness="2"
                                                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
@@ -104,14 +104,14 @@
                                                 </Grid>
                                             </Border>
                                             <ControlTemplate.Triggers>
+                                                <!-- 호버: 부드러운 배경 변화만 (devez 패턴) -->
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="Card" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                                    <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
-                                                    <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
-                                                    <Setter TargetName="Ring" Property="Visibility" Value="Collapsed"/>
                                                 </Trigger>
+                                                <!-- 체크(선택): 강조 보더 + 체크 마크 -->
                                                 <Trigger Property="IsChecked" Value="True">
                                                     <Setter TargetName="Card" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                    <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
                                                     <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
                                                     <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
                                                     <Setter TargetName="Ring" Property="Visibility" Value="Collapsed"/>
@@ -131,17 +131,17 @@
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="0,1,0,0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                Margin="20,14,20,14">
+                                Margin="16,11,16,11">
                         <Button Click="CancelBtn_Click"
-                                Width="100" Height="38" Margin="0,0,8,0"
+                                Width="92" Height="34" Margin="0,0,6,0"
                                 Style="{StaticResource SecondaryButton}"
-                                FontSize="{DynamicResource Fs13}">
+                                FontSize="{DynamicResource Fs12}">
                             <TextBlock Text="취소"/>
                         </Button>
                         <Button x:Name="OkBtn" Click="OkBtn_Click" IsDefault="True"
-                                Width="100" Height="38"
+                                Width="92" Height="34"
                                 Style="{StaticResource PrimaryButton}"
-                                FontSize="{DynamicResource Fs13}">
+                                FontSize="{DynamicResource Fs12}">
                             <TextBlock Text="확인" Foreground="White"/>
                         </Button>
                     </StackPanel>
