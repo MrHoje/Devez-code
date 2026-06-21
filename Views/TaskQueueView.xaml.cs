@@ -381,7 +381,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private void ClearActionTarget() => SetActionTarget(null);
 
-    /// <summary>'작업지시' 클릭 → 현재 활성 탭 세션에 이 버블 텍스트 입력+전송.</summary>
+    /// <summary>'작업지시' 클릭 → 현재 활성 탭 세션에 이 버블 텍스트 입력+전송 후 큐에서 제거.</summary>
     private void ActionButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.Tag is not TaskQueueItem item) return;
@@ -392,7 +392,10 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         if (!ok)
             ConfirmDialog.Alert("세션 없음", "현재 활성화된 세션이 없습니다.\n세션 탭을 먼저 선택하세요.");
         else
+        {
             ClearActionTarget();
+            Items.Remove(item);
+        }
     }
 
     private void Bubble_RightClick(object sender, MouseButtonEventArgs e)

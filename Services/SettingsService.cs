@@ -55,6 +55,8 @@ public static class SettingsService
         public double? WindowWidth  { get; set; }
         public double? WindowHeight { get; set; }
         public bool    WindowMaximized { get; set; }
+        // 우측 패널 마지막 활성 탭 (0=탐색기, 1=브라우저, 2=DIFF, 3=작업 큐). 기본=3.
+        public int FileExpActiveTab { get; set; } = 3;
     }
 
     private static readonly object _lock = new();
@@ -122,6 +124,10 @@ public static class SettingsService
         Current.FileExpWidth = width;
         Save();
     }
+
+    // ── 우측 패널 활성 탭 ─────────────────────────────────────────
+    public static int LoadFileExpActiveTab() => Current.FileExpActiveTab;
+    public static void SaveFileExpActiveTab(int idx) { Current.FileExpActiveTab = idx; Save(); }
 
     // ── Claude Code 방 작업 디렉터리 ──────────────────────────────
     public static string? LoadClaudeCodeRoomDir(string roomId)

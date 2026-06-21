@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using DevezCode.Models;
+using DevezCode.Services;
 using Microsoft.VisualBasic.FileIO;
 
 namespace DevezCode.Views;
@@ -20,7 +21,7 @@ public partial class FileExplorerView : UserControl
     public FileExplorerView()
     {
         InitializeComponent();
-        SwitchTab(3); // 초기: 작업 큐 탭 활성
+        SwitchTab(SettingsService.LoadFileExpActiveTab());
         Tree.ContextMenu = BuildEmptyAreaMenu(); // 빈 영역 우클릭 메뉴 (Tree 자체)
         _themeChangedHandler = _ => Dispatcher.BeginInvoke(new Action(UpdateTabTextColors));
         App.ThemeChanged += _themeChangedHandler;
@@ -118,6 +119,7 @@ public partial class FileExplorerView : UserControl
     private void SwitchTab(int idx)
     {
         _mode = (ViewMode)idx;
+        SettingsService.SaveFileExpActiveTab(idx);
         Tree.Visibility    = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         Browser.Visibility = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
         DiffView.Visibility = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
