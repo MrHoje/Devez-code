@@ -77,7 +77,7 @@ public partial class FileExplorerView : UserControl
     private string? _rootPath;
 
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
-    private enum ViewMode { Directory, Browser, Diff }
+    private enum ViewMode { Directory, Browser, Diff, Queue }
     private ViewMode _mode = ViewMode.Directory;
     private bool _browserMode => _mode == ViewMode.Browser;
 
@@ -96,6 +96,7 @@ public partial class FileExplorerView : UserControl
         Tree.Visibility    = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         Browser.Visibility = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
         DiffView.Visibility = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
+        QueueView.Visibility = idx == 3 ? Visibility.Visible : Visibility.Collapsed;
         if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
         if (idx == 2) _ = DiffView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
 
@@ -103,6 +104,7 @@ public partial class FileExplorerView : UserControl
         {
             1 => ("IconGlobe", "브라우저"),
             2 => ("IconGitCompare", "DIFF"),
+            3 => ("IconListTodo", "작업 큐"),
             _ => ("IconFolderOpen", _rootPath ?? "파일 탐색기"),
         };
         HeaderIcon.Data = (System.Windows.Media.Geometry)FindResource(icon);
@@ -116,6 +118,7 @@ public partial class FileExplorerView : UserControl
         SetTabColor(DirViewIcon,     DirViewLabel,     _mode == ViewMode.Directory);
         SetTabColor(BrowserViewIcon, BrowserViewLabel, _mode == ViewMode.Browser);
         SetTabColor(DiffViewIcon,    DiffViewLabel,    _mode == ViewMode.Diff);
+        SetTabColor(QueueViewIcon,   QueueViewLabel,   _mode == ViewMode.Queue);
     }
 
     /// <summary>탭 아이콘·라벨 색상: 활성=PrimaryBrush, 비활성=TextMutedBrush.
@@ -150,6 +153,9 @@ public partial class FileExplorerView : UserControl
         _rootPath = path;
         if (_mode == ViewMode.Directory) PathText.Text = path;
         DiffView.SetRepo(path);
+        // diff 탭이 현재 켜져 있으면 SetRepo 가 비워버리므로 즉시 새로 읽어 동기화.
+        // (다른 탭이면 사용자가 diff 탭으로 진입할 때 SwitchTab 에서 RefreshAsync 가 호출됨.)
+        if (_mode == ViewMode.Diff) _ = DiffView.RefreshAsync();
 
         var roots = new ObservableCollection<FileNode>();
         try

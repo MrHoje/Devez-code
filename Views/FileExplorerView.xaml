@@ -72,6 +72,16 @@
                                    FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
                     </StackPanel>
                 </Button>
+                <!-- 작업 큐 (devez 채팅방 풍 버블 입력) — 한 줄 텍스트 → Enter로 버블 추가 -->
+                <Button x:Name="QueueViewBtn" Click="TabBtn_Click" Tag="3"
+                        Style="{StaticResource ViewTabButton}" ToolTip="작업 큐">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconListTodo}" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="QueueViewLabel" Text="큐" Margin="6,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Border>
 
@@ -225,5 +235,8 @@
 
         <!-- DIFF 뷰 (DIFF 모드일 때만 표시) — git 변경 내역 + diff -->
         <v:GitDiffView x:Name="DiffView" Grid.Row="2" Visibility="Collapsed"/>
+
+        <!-- 작업 큐 뷰 (큐 모드일 때만 표시) — 버블 입력 + 영속화 -->
+        <v:TaskQueueView x:Name="QueueView" Grid.Row="2" Visibility="Collapsed"/>
     </Grid>
 </UserControl>

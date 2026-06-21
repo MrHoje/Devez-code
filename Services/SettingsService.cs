@@ -41,6 +41,8 @@ public static class SettingsService
         public bool CleanShutdown { get; set; }
         // 우측 패널 브라우저 뷰의 마지막 방문 URL(재시작 시 복원).
         public string? BrowserLastUrl { get; set; }
+        // 우측 패널 작업 큐 항목(텍스트 + 정렬 순서). 로컬 전용 — 재시작 시 그대로 복원.
+        public List<TaskQueueEntry> TaskQueueItems { get; set; } = new();
         // 메인 창 위치/크기 + 최대화 상태(재시작 시 복원). 화면 밖이면 복원 안 함. 로컬 전용.
         public double? WindowLeft   { get; set; }
         public double? WindowTop    { get; set; }
@@ -188,6 +190,25 @@ public static class SettingsService
     public static string? LoadBrowserLastUrl() => Current.BrowserLastUrl;
     public static void SaveBrowserLastUrl(string url) { Current.BrowserLastUrl = url; Save(); }
 
+    // ── 우측 패널 작업 큐 (버블 항목) ────────────────────────────
+    /// <summary>저장된 작업 큐 항목을 (text, sortOrder) 튜플 목록으로 반환. 정렬 순서대로.</summary>
+    public static IReadOnlyList<(string Text, long SortOrder)> LoadTaskQueueItems()
+    {
+        var list = Current.TaskQueueItems
+            .OrderBy(e => e.SortOrder)
+            .Select(e => (e.Text ?? "", e.SortOrder))
+            .ToList();
+        return list;
+    }
+
+    public static void SaveTaskQueueItems(IEnumerable<(string Text, long SortOrder)> items)
+    {
+        Current.TaskQueueItems = items
+            .Select(e => new TaskQueueEntry { Text = e.Text, SortOrder = e.SortOrder })
+            .ToList();
+        Save();
+    }
+
     // ── 메인 창 위치/크기 (재시작 복원) ──────────────────────────
     public static (double? left, double? top, double? width, double? height, bool maximized) LoadWindowPlacement()
         => (Current.WindowLeft, Current.WindowTop, Current.WindowWidth, Current.WindowHeight, Current.WindowMaximized);
@@ -251,4 +272,11 @@ public static class SettingsService
         Current.OpenCodeRoomSessions[roomId] = sessionId;
         Save();
     }
+}
+
+/// <summary>작업 큐에 저장되는 단일 항목. JSON 직렬화용.</summary>
+public sealed class TaskQueueEntry
+{
+    public string Text { get; set; } = "";
+    public long SortOrder { get; set; }
 }
