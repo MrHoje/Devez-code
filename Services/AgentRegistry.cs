@@ -2,11 +2,13 @@ using System.IO;
 
 namespace DevezCode.Services;
 
-/// <summary>에이전트 정의. id·표시명·PATH 감지 이름·실행 명령·훅 지원 여부.</summary>
+/// <summary>에이전트 정의. id·표시명·제공자·PATH 감지 이름·실행 명령·훅 지원 여부.</summary>
 public sealed class AgentDef
 {
     public string Id { get; init; } = "";
     public string DisplayName { get; init; } = "";
+    /// <summary>제공자(Anthropic / OpenAI / OpenCode 등). 피커 다이얼로그의 부제목으로 표시.</summary>
+    public string Provider { get; init; } = "";
     /// <summary>PATH 스캔 시 검사할 실행 파일 이름 변형. (.exe/.cmd/.ps1/리눅스 등)</summary>
     public string[] ExeNames { get; init; } = Array.Empty<string>();
     /// <summary>프로젝트 디렉터리에서 띄울 기본 커맨드. (인자 없이; Claude 는 세션 ID·훅 등 별도 처리)</summary>
@@ -29,13 +31,13 @@ public static class AgentRegistry
     {
         new()
         {
-            Id = "claude", DisplayName = "Claude Code",
+            Id = "claude", DisplayName = "Claude Code", Provider = "Anthropic",
             ExeNames = new[] { "claude.exe", "claude.cmd", "claude.bat", "claude.ps1", "claude" },
             Command = "claude", SupportsHooks = true,
         },
         new()
         {
-            Id = "codex", DisplayName = "Codex",
+            Id = "codex", DisplayName = "Codex", Provider = "OpenAI",
             ExeNames = new[] { "codex.exe", "codex.cmd", "codex.bat", "codex.ps1", "codex" },
             Command = "codex",
             ResumeFlag = "--last",
@@ -43,7 +45,7 @@ public static class AgentRegistry
         },
         new()
         {
-            Id = "opencode", DisplayName = "OpenCode",
+            Id = "opencode", DisplayName = "OpenCode", Provider = "OpenCode",
             ExeNames = new[] { "opencode.exe", "opencode.cmd", "opencode.bat", "opencode.ps1", "opencode" },
             Command = "opencode",
             ResumeFlag = "-c",

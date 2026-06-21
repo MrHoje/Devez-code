@@ -16,7 +16,6 @@ public partial class AgentPickerDialog : Window
     private AgentPickerDialog(IReadOnlyList<AgentDef> agents, string? projectPath)
     {
         InitializeComponent();
-        CountText.Text = $"({agents.Count})";
         HintText.Text = projectPath ?? "";
         if (string.IsNullOrEmpty(HintText.Text)) HintText.Visibility = Visibility.Collapsed;
         AgentList.ItemsSource = agents;
@@ -39,9 +38,9 @@ public partial class AgentPickerDialog : Window
         return dlg.ShowDialog() == true ? dlg.SelectedAgentId : null;
     }
 
-    private void Card_Click(object sender, MouseButtonEventArgs e)
+    private void Card_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Border b && b.Tag is string id)
+        if (sender is RadioButton rb && rb.Tag is string id)
         {
             SelectedAgentId = id;
             DialogResult = true;
