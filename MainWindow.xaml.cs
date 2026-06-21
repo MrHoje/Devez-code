@@ -63,6 +63,8 @@ public partial class MainWindow : Window
         _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } HideSessionLoadingIf(id); };
         // claude 화면이 완전히 뜨면(alt-screen) 로딩 스피너 종료
         _terminal.TerminalReady  += id => HideSessionLoadingIf(id);
+        // 테마 변경으로 세션 재시작 시작(opencode) → 활성 세션이면 새 화면이 뜰 때까지 스피너 표시
+        _terminal.SessionRestarting += id => { if (_activeSession?.Id == id) ShowSessionLoading(id); };
         // 터미널 단축키(Ctrl+Shift+T/W, Ctrl+Tab) → 세션 추가/닫기/전환
         _terminal.SessionActionRequested += OnTerminalSessionAction;
 
@@ -1856,20 +1858,28 @@ public partial class MainWindow : Window
 
     /// <summary>airspace 우회: 터미널 WebView2를 PNG 스냅샷으로 대체하고 Collapse.
     /// 오버레이(설정창 등)가 항상 맨 앞에 그려지는 WebView2 뒤로 묻히는 것을 막는다.</summary>
-    private async Task SuspendTerminalWithSnapshotAsync()
+    private async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
         await FileExplorer.SuspendBrowserAsync(); // 우측 브라우저(WebView2)도 오버레이 뒤로 묻히지 않게 숨김
         if (_activeSession == null) return; // 터미널이 안 떠 있으면 불필요
-        var snap = await _terminal.CaptureSnapshotAsync();
-        if (snap != null)
+        if (blankCurtain)
         {
-            TerminalSnapshot.Source = snap;
-            TerminalSnapshot.Visibility = Visibility.Visible;
+            // 설정창: 스냅샷 대신 테마색 빈 배경. 테마를 바꾸면 BgBrush 가 갱신돼 색이 함께 바뀐다.
+            TerminalCurtain.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            var snap = await _terminal.CaptureSnapshotAsync();
+            if (snap != null)
+            {
+                TerminalSnapshot.Source = snap;
+                TerminalSnapshot.Visibility = Visibility.Visible;
+            }
         }
         TerminalHostContainer.Visibility = Visibility.Collapsed;
     }
 
-    /// <summary>오버레이가 닫힌 뒤 WebView2 터미널을 다시 표시하고 스냅샷을 제거.</summary>
+    /// <summary>오버레이가 닫힌 뒤 WebView2 터미널을 다시 표시하고 스냅샷/커튼을 제거.</summary>
     private void ResumeTerminal()
     {
         FileExplorer.ResumeBrowser();
@@ -1877,6 +1887,7 @@ public partial class MainWindow : Window
             TerminalHostContainer.Visibility = Visibility.Visible;
         TerminalSnapshot.Visibility = Visibility.Collapsed;
         TerminalSnapshot.Source = null;
+        TerminalCurtain.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>우측 오버레이 드로어용 터미널 전용 정지(스냅샷). FileExplorer 자체가 오버레이

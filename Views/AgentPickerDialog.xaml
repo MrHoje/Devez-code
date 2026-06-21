@@ -86,35 +86,17 @@
                                                                    Margin="0,1,0,0"/>
                                                     </StackPanel>
 
-                                                    <!-- 라디오: 평소 빈 원, 체크 시 PrimaryBrush 채움 + 흰 체크 -->
-                                                    <Grid Grid.Column="2" Width="18" Height="18" VerticalAlignment="Center">
-                                                        <Ellipse x:Name="Ring" Width="18" Height="18"
-                                                                 Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"
-                                                                 Fill="Transparent"/>
-                                                        <Ellipse x:Name="Dot" Width="18" Height="18"
-                                                                 Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
-                                                        <Path x:Name="Check" Data="M 0,4 L 3.5,7.5 L 10,1"
-                                                              Stretch="None"
-                                                              Stroke="White" StrokeThickness="2"
-                                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                                              StrokeLineJoin="Round"
-                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                              Visibility="Collapsed"/>
-                                                    </Grid>
+                                                    <!-- 라디오 체크 불필요 — 클릭 즉시 생성 -->
+                                                    <Grid Grid.Column="2" Width="18" Height="18" VerticalAlignment="Center"/>
                                                 </Grid>
                                             </Border>
                                             <ControlTemplate.Triggers>
-                                                <!-- 호버: 부드러운 배경 변화만 (devez 패턴) -->
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="Card" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                                                 </Trigger>
-                                                <!-- 체크(선택): 강조 보더 + 체크 마크 -->
                                                 <Trigger Property="IsChecked" Value="True">
                                                     <Setter TargetName="Card" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                                                     <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                                                    <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
-                                                    <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
-                                                    <Setter TargetName="Ring" Property="Visibility" Value="Collapsed"/>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
