@@ -422,6 +422,25 @@ public partial class MainWindow : Window
         if (_leftCollapsed) return;
     }
 
+    /// <summary>좌측 스플리터 드래그 끝 → 새 폭을 즉시 저장 (재실행 시 복원).</summary>
+    private void SidebarSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (_leftCollapsed) return;
+        if (e.Canceled) return;                       // Esc 등으로 드래그 취소 시 무시
+        _sidebarWidth = SidebarCol.ActualWidth;
+        SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
+    }
+
+    /// <summary>우측 스플리터 드래그 끝 → 새 폭을 즉시 저장 (재실행 시 복원).
+    /// DragDelta 핸들러는 비어있어도 WPF 가 ActualWidth 를 갱신하므로 DragCompleted 에서 한 번만 읽으면 충분.</summary>
+    private void FileExpSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (_rightCollapsed) return;
+        if (e.Canceled) return;
+        _fileExpWidth = FileExpCol.ActualWidth;
+        SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
+    }
+
     // 패널 토글은 AnimatePanelAndSplitter 로 부드럽게 0/원래 폭을 보간한다(200ms, EaseIn).
     // 자식 컨트롤(Sidebar/FileExplorer)을 cacheTarget 으로 잡아 매 프레임 폭이 바뀌어도
     // 내부 트리·WebView2 가 다시 그려지는 깜빡임을 BitmapCache 로 차단한다 — HideEditorColumn 과 동일 패턴.

@@ -41,8 +41,9 @@ public static class SettingsService
         public bool CleanShutdown { get; set; }
         // 우측 패널 브라우저 뷰의 마지막 방문 URL(재시작 시 복원).
         public string? BrowserLastUrl { get; set; }
-        // 우측 패널 작업 큐 항목(텍스트 + 정렬 순서). 로컬 전용 — 재시작 시 그대로 복원.
-        public List<TaskQueueEntry> TaskQueueItems { get; set; } = new();
+        // 우측 패널 작업 큐 — 프로젝트 경로별로 저장. 키 = 프로젝트 절대경로, 값 = 큐 항목 목록.
+        // 로컬 전용 — 재시작 시 그대로 복원. 프로젝트 경로가 null/empty 면 "전역" 큐 (실제론 잘 안 씀).
+        public Dictionary<string, List<TaskQueueEntry>> TaskQueueItemsByProject { get; set; } = new();
         // 메인 창 위치/크기 + 최대화 상태(재시작 시 복원). 화면 밖이면 복원 안 함. 로컬 전용.
         public double? WindowLeft   { get; set; }
         public double? WindowTop    { get; set; }
@@ -190,22 +191,31 @@ public static class SettingsService
     public static string? LoadBrowserLastUrl() => Current.BrowserLastUrl;
     public static void SaveBrowserLastUrl(string url) { Current.BrowserLastUrl = url; Save(); }
 
-    // ── 우측 패널 작업 큐 (버블 항목) ────────────────────────────
-    /// <summary>저장된 작업 큐 항목을 (text, sortOrder) 튜플 목록으로 반환. 정렬 순서대로.</summary>
-    public static IReadOnlyList<(string Text, long SortOrder)> LoadTaskQueueItems()
+    // ── 우측 패널 작업 큐 (버블 항목, 프로젝트별) ────────────────────
+    /// <summary>저장된 작업 큐 항목을 (text, sortOrder) 튜플 목록으로 반환. 정렬 순서대로.
+    /// projectPath 가 null/empty 면 전역 큐 (별도 "__global__" 키). 저장된 게 없으면 빈 목록.</summary>
+    public static IReadOnlyList<(string Text, long SortOrder)> LoadTaskQueueItems(string? projectPath)
     {
-        var list = Current.TaskQueueItems
+        var key = string.IsNullOrEmpty(projectPath) ? "__global__" : projectPath;
+        if (!Current.TaskQueueItemsByProject.TryGetValue(key, out var list))
+            return Array.Empty<(string, long)>();
+        return list
             .OrderBy(e => e.SortOrder)
             .Select(e => (e.Text ?? "", e.SortOrder))
             .ToList();
-        return list;
     }
 
-    public static void SaveTaskQueueItems(IEnumerable<(string Text, long SortOrder)> items)
+    public static void SaveTaskQueueItems(string? projectPath, IEnumerable<(string Text, long SortOrder)> items)
     {
-        Current.TaskQueueItems = items
+        var key = string.IsNullOrEmpty(projectPath) ? "__global__" : projectPath;
+        var snapshot = items
             .Select(e => new TaskQueueEntry { Text = e.Text, SortOrder = e.SortOrder })
             .ToList();
+        // 빈 큐는 키 자체를 제거해 settings.json 크기 축소.
+        if (snapshot.Count == 0)
+            Current.TaskQueueItemsByProject.Remove(key);
+        else
+            Current.TaskQueueItemsByProject[key] = snapshot;
         Save();
     }
 

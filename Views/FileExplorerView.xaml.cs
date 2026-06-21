@@ -177,6 +177,8 @@ public partial class FileExplorerView : UserControl
             if (_mode == ViewMode.Directory) PathText.Text = "파일 탐색기";
             Tree.ItemsSource = null;
             DiffView.SetRepo(null);
+            // 큐도 null 로 전환 → 전역 큐 (해당 프로젝트 큐가 닫히면 사라지지 않게 빈도 모드)
+            QueueView.ProjectPath = null;
             return;
         }
         if (_rootPath == path) return;
@@ -186,6 +188,10 @@ public partial class FileExplorerView : UserControl
         // diff 탭이 현재 켜져 있으면 SetRepo 가 비워버리므로 즉시 새로 읽어 동기화.
         // (다른 탭이면 사용자가 diff 탭으로 진입할 때 SwitchTab 에서 RefreshAsync 가 호출됨.)
         if (_mode == ViewMode.Diff) _ = DiffView.RefreshAsync();
+
+        // 작업 큐에 프로젝트 경로 통보 → 해당 프로젝트의 저장된 큐를 자동 로드.
+        // (탭이 Queue 가 아니어도 즉시 로드해둠 — 사용자가 큐 탭으로 전환할 때 이미 준비됨)
+        QueueView.ProjectPath = path;
 
         var roots = new ObservableCollection<FileNode>();
         try

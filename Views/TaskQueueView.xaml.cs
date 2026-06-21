@@ -8,7 +8,7 @@ using DevezCode.Services;
 
 namespace DevezCode.Views;
 
-/// <summary>우측 패널 작업 큐 — 버블 입력(Enter) / 다중선택 / 선택삭제 / 영속화.</summary>
+/// <summary>우측 패널 작업 큐 — 버블 입력(Enter) / 다중선택 / 선택삭제 / 프로젝트별 영속화.</summary>
 public partial class TaskQueueView : UserControl
 {
     public ObservableCollection<TaskQueueItem> Items { get; } = new();
@@ -19,6 +19,20 @@ public partial class TaskQueueView : UserControl
     /// <summary>Items 변경 시 발화. FileExplorerView 가 구독해 탭의 카운트 배지를 갱신.</summary>
     public event Action? CountChanged;
 
+    /// <summary>현재 바인딩된 프로젝트 경로. FileExplorerView.ShowDirectory 에서 갱신.
+    /// null/empty 면 전역 큐 (모든 프로젝트 공통). 프로젝트 변경 시 자동 load.</summary>
+    private string? _projectPath;
+    public string? ProjectPath
+    {
+        get => _projectPath;
+        set
+        {
+            if (_projectPath == value) return;
+            _projectPath = value;
+            Reload();
+        }
+    }
+
     public TaskQueueView()
     {
         InitializeComponent();
@@ -27,8 +41,7 @@ public partial class TaskQueueView : UserControl
         // 컬렉션 변경 → 카운트/빈안내/저장/스크롤
         // (인스턴스 수명 동안 1회만 등록 — FileExplorerView 안에서 재사용되므로 Unloaded 시 해제하지 않음)
         Items.CollectionChanged += Items_CollectionChanged;
-        Load();
-        UpdateEmptyHint();
+        Reload();
         CountChanged?.Invoke();
 
         // 뷰가 처음 화면에 표시될 때 입력창 자동 포커스 (doit 정합: 입력 대기 상태로 시작)
@@ -46,17 +59,19 @@ public partial class TaskQueueView : UserControl
     }
 
     // ── 영속화 ───────────────────────────────────────────────────
-    private void Load()
+    /// <summary>현재 ProjectPath 의 저장된 큐를 다시 읽어 Items 를 교체.
+    /// 프로젝트 전환 시 또는 초기 로드 시 호출. UI 갱신은 Items.CollectionChanged 가 처리.</summary>
+    private void Reload()
     {
         Items.Clear();
-        var saved = SettingsService.LoadTaskQueueItems();
+        var saved = SettingsService.LoadTaskQueueItems(_projectPath);
         foreach (var (text, sortOrder) in saved)
             Items.Add(new TaskQueueItem { Text = text, SortOrder = sortOrder });
     }
 
     private void Save()
     {
-        SettingsService.SaveTaskQueueItems(Items.Select(i => (i.Text, i.SortOrder)));
+        SettingsService.SaveTaskQueueItems(_projectPath, Items.Select(i => (i.Text, i.SortOrder)));
     }
 
     private void UpdateEmptyHint()

@@ -140,7 +140,8 @@
                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0"/>
                 <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
-                              DragDelta="SidebarSplitter_DragDelta"/>
+                              DragDelta="SidebarSplitter_DragDelta"
+                              DragCompleted="SidebarSplitter_DragCompleted"/>
 
                 <!-- Center: tabs + content (좌·우 보더로 채널 형성) -->
                 <Border x:Name="CenterArea" Grid.Column="2" Background="{DynamicResource BgBrush}"
@@ -510,7 +511,8 @@
                 </Border>
 
                 <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch"
-                              ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
+                              ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                              DragCompleted="FileExpSplitter_DragCompleted"/>
 
                 <!-- Right: file explorer (좌측 보더로 채널 형성).
                      좁은 창에서는 RightOverlayHost 로 재부모화되어 오버레이 드로어로 뜬다. -->
