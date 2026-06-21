@@ -1,35 +1,132 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using DevezCode.Models;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
 
 /// <summary>MCP 서버 관리 오버레이. <see cref="CloseRequested"/> 로 닫기 요청.
-/// 동작: 디스크에 저장된 opencode config 의 mcp 섹션을 로드해 편집·추가·삭제,
-/// [저장] 시 다른 필드(plugin, model, ...) 는 보존하고 mcp 만 다시 쓴다.
-/// 실시간 상태는 opencode mcp list 로 별도 조회 (저장 트리거 X).</summary>
+/// opencode / Claude Code / Codex 세 에이전트의 MCP 설정을 탭으로 묶어 한 창에서 관리.
+/// 각 백엔드(IMcpBackend) 는 자기 설정 파일을 직접 다루고, 탭 전환 시 디스크에서 새로 읽는다.
+/// [저장] 시 현재 활성 백엔드에 다른 필드는 보존하고 mcp 섹션만 갱신.</summary>
 public partial class McpManagerDialog : UserControl
 {
     public event EventHandler? CloseRequested;
 
     private readonly ObservableCollection<McpServer> _servers = new();
-    private readonly List<McpServer> _original = new();  // 취소 시 복원용
+    private readonly List<McpServer> _original = new();  // 현재 백엔드의 디스크 스냅샷
+    private readonly Dictionary<string, Button> _tabButtons = new();
     private bool _isLoading;
+    private bool _suppressTabDirtyCheck;
+    private IMcpBackend? _currentBackend;
 
     public McpManagerDialog()
     {
         InitializeComponent();
-        ConfigPathHint.Text = $"…\\{System.IO.Path.GetFileName(OpenCodeConfigService.ConfigPath)}";
         ServerList.ItemsSource = _servers;
+        BuildAgentTabs();
+        // 첫 사용 가능 백엔드를 자동 선택
+        var firstAvailable = McpBackendRegistry.All.FirstOrDefault(b => b.IsAvailable) ?? McpBackendRegistry.All[0];
+        SwitchBackend(firstAvailable);
+    }
+
+    // ── 에이전트 탭 생성 ─────────────────────────────────────────
+    private void BuildAgentTabs()
+    {
+        AgentTabsPanel.Children.Clear();
+        _tabButtons.Clear();
+        foreach (var b in McpBackendRegistry.All)
+        {
+            var btn = new Button
+            {
+                Content = MakeTabContent(b),
+                Margin = new Thickness(0, 0, 4, 0),
+                Padding = new Thickness(12, 5, 12, 5),
+                Cursor = Cursors.Hand,
+                IsEnabled = b.IsAvailable,
+                ToolTip = b.IsAvailable ? b.ConfigPathHint : $"{b.DisplayName} CLI 가 설치되어 있지 않습니다",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+            };
+            btn.SetResourceReference(Button.StyleProperty, "TitleBarChipButton");
+            btn.Tag = b.Id;
+            btn.Click += AgentTab_Click;
+            AgentTabsPanel.Children.Add(btn);
+            _tabButtons[b.Id] = btn;
+        }
+    }
+
+    private static object MakeTabContent(IMcpBackend b)
+    {
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        sp.Children.Add(new TextBlock
+        {
+            Text = b.DisplayName,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        if (!b.IsAvailable)
+        {
+            sp.Children.Add(new TextBlock
+            {
+                Text = " (미설치)",
+                FontSize = 10,
+                Foreground = (Brush)Application.Current.Resources["TextMutedBrush"],
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+        return sp;
+    }
+
+    private void AgentTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string id) return;
+        var backend = McpBackendRegistry.Get(id);
+        if (backend == null || backend == _currentBackend) return;
+
+        if (!_suppressTabDirtyCheck && HasUnsavedChanges())
+        {
+            var save = ConfirmDialog.Show("저장되지 않은 변경사항",
+                $"'{_currentBackend?.DisplayName}' 탭에 저장되지 않은 변경이 있습니다.\n저장하고 '{backend.DisplayName}' 탭으로 이동할까요?",
+                okLabel: "저장 후 이동", iconKey: "IconServer");
+            if (save)
+            {
+                SaveBtn_Click(this, new RoutedEventArgs());
+                // 저장 실패 시 사용자가 폼을 닫지 않았다면 그냥 머문다
+                if (HasUnsavedChanges()) return;
+            }
+            else
+            {
+                // 그냥 폐기하고 이동
+            }
+        }
+        SwitchBackend(backend);
+    }
+
+    private void SwitchBackend(IMcpBackend backend)
+    {
+        _currentBackend = backend;
+        ConfigPathHint.Text = "…\\" + backend.ConfigPathHint;
+        // 탭 외형 갱신: 활성은 Primary 텍스트, 비활성은 Muted
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var muted   = (Brush)FindResource("TextMutedBrush");
+        foreach (var (id, btn) in _tabButtons)
+        {
+            var isActive = id == backend.Id;
+            // 활성일 땐 밑줄 + Primary, 비활성은 muted
+            btn.Foreground = isActive ? primary : muted;
+            btn.FontWeight = isActive ? FontWeights.Bold : FontWeights.SemiBold;
+        }
+
+        // OAuth 섹션은 opencode 에서만 의미 있음
+        OAuthSection.Visibility = backend.Id == "opencode" ? Visibility.Visible : Visibility.Collapsed;
+
         LoadFromDisk();
         _ = RefreshStatusAsync();
     }
@@ -42,7 +139,8 @@ public partial class McpManagerDialog : UserControl
         {
             _servers.Clear();
             _original.Clear();
-            foreach (var s in OpenCodeConfigService.Load())
+            if (_currentBackend == null) return;
+            foreach (var s in _currentBackend.Load())
             {
                 _servers.Add(s);
                 _original.Add(s.Clone());
@@ -85,10 +183,10 @@ public partial class McpManagerDialog : UserControl
     {
         var srv = ServerList.SelectedItem as McpServer;
         var isRemote = srv?.Type == McpServerType.Remote;
-        var primary = (System.Windows.Media.Brush)FindResource("PrimaryBrush");
-        var line    = (System.Windows.Media.Brush)FindResource("LineBrush");
-        var soft    = (System.Windows.Media.Brush)FindResource("PrimarySoftBrush");
-        var panel   = (System.Windows.Media.Brush)FindResource("PanelBrush");
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var line    = (Brush)FindResource("LineBrush");
+        var soft    = (Brush)FindResource("PrimarySoftBrush");
+        var panel   = (Brush)FindResource("PanelBrush");
 
         TypeLocalBtn.Background  = isRemote ? panel  : soft;
         TypeLocalBtn.BorderBrush = isRemote ? line   : primary;
@@ -109,7 +207,6 @@ public partial class McpManagerDialog : UserControl
         OAuthExplicitBtn.IsChecked = mode == McpOAuthMode.Explicit;
         OAuthExplicitPanel.Visibility = mode == McpOAuthMode.Explicit
             ? Visibility.Visible : Visibility.Collapsed;
-        // PasswordBox 는 바인딩이 까다로워서 한 번만 채워 넣고 사용자가 변경하면 다시 덮어쓰지 않는다.
         if (OAuthExplicitPanel.Visibility == Visibility.Visible &&
             string.IsNullOrEmpty(OAuthSecretBox.Password) &&
             !string.IsNullOrEmpty(srv.OAuthClientSecret))
@@ -121,7 +218,6 @@ public partial class McpManagerDialog : UserControl
     // ── 액션 핸들러 ────────────────────────────────────────────
     private void AddBtn_Click(object sender, RoutedEventArgs e)
     {
-        // 중복되지 않는 기본 이름 생성
         var baseName = "server";
         var name = baseName;
         for (int i = 2; _servers.Any(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase)); i++)
@@ -185,13 +281,11 @@ public partial class McpManagerDialog : UserControl
 
     private async Task RefreshStatusAsync()
     {
-        if (_servers.Count == 0) return;
+        if (_servers.Count == 0 || _currentBackend == null) return;
         RefreshStatusBtn.IsEnabled = false;
         try
         {
-            await OpenCodeConfigService.RefreshStatusAsync(_servers);
-            // McpServer 가 INotifyPropertyChanged 를 구현하므로 ListBox 행의 상태 점/라벨은
-            // 자동으로 갱신된다. 우측 상세 패널의 StatusMessage 도 PropertyChanged 로 따라온다.
+            await _currentBackend.RefreshStatusAsync(_servers);
         }
         finally
         {
@@ -202,48 +296,31 @@ public partial class McpManagerDialog : UserControl
     // ── 저장 / 취소 ────────────────────────────────────────────
     private void SaveBtn_Click(object sender, RoutedEventArgs e)
     {
-        // 입력 검증: 빈 이름, 중복 이름, 로컬인데 Command 비었는지
+        if (_currentBackend == null) return;
+
         var empty = _servers.Where(s => string.IsNullOrWhiteSpace(s.Name)).ToList();
-        if (empty.Count > 0)
-        {
-            ConfirmDialog.Alert("저장 실패", "서버 이름이 비어 있습니다.");
-            return;
-        }
+        if (empty.Count > 0) { ConfirmDialog.Alert("저장 실패", "서버 이름이 비어 있습니다."); return; }
         var dups = _servers.GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
                            .Where(g => g.Count() > 1).Select(g => g.Key).ToList();
-        if (dups.Count > 0)
-        {
-            ConfirmDialog.Alert("저장 실패", $"중복된 서버 이름이 있습니다: {string.Join(", ", dups)}");
-            return;
-        }
+        if (dups.Count > 0) { ConfirmDialog.Alert("저장 실패", $"중복된 서버 이름이 있습니다: {string.Join(", ", dups)}"); return; }
         var missingCmd = _servers
             .Where(s => s.Type == McpServerType.Local && s.Command.Count == 0)
             .Select(s => s.Name).ToList();
-        if (missingCmd.Count > 0)
-        {
-            ConfirmDialog.Alert("저장 실패", $"로컬 서버는 실행 커맨드가 필요합니다: {string.Join(", ", missingCmd)}");
-            return;
-        }
+        if (missingCmd.Count > 0) { ConfirmDialog.Alert("저장 실패", $"로컬 서버는 실행 커맨드가 필요합니다: {string.Join(", ", missingCmd)}"); return; }
         var missingUrl = _servers
             .Where(s => s.Type == McpServerType.Remote && string.IsNullOrWhiteSpace(s.Url))
             .Select(s => s.Name).ToList();
-        if (missingUrl.Count > 0)
-        {
-            ConfirmDialog.Alert("저장 실패", $"원격 서버는 URL이 필요합니다: {string.Join(", ", missingUrl)}");
-            return;
-        }
+        if (missingUrl.Count > 0) { ConfirmDialog.Alert("저장 실패", $"원격 서버는 URL이 필요합니다: {string.Join(", ", missingUrl)}"); return; }
 
         foreach (var s in _servers) s.Sanitize();
 
         try
         {
-            OpenCodeConfigService.Save(_servers);
+            _currentBackend.Save(_servers);
             ConfirmDialog.Alert("저장 완료",
-                "opencode.json 에 저장했습니다.\n(opencode 세션은 다음 시작부터 새 설정을 사용합니다)");
-            // 저장 후 원본 갱신(다음 취소 대비)
+                $"{_currentBackend.ConfigPathHint} 에 저장했습니다.\n({_currentBackend.DisplayName} 세션은 다음 시작부터 새 설정을 사용합니다)");
             _original.Clear();
             foreach (var s in _servers) _original.Add(s.Clone());
-            CloseRequested?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {
@@ -256,15 +333,11 @@ public partial class McpManagerDialog : UserControl
         if (HasUnsavedChanges())
         {
             var save = ConfirmDialog.Show("저장되지 않은 변경사항",
-                "저장되지 않은 변경사항이 있습니다.\n저장하시겠습니까?",
+                "저장되지 않은 변경사항이 있습니다.\n저장하시겠습니까? (취소 시 변경사항이 사라집니다)",
                 okLabel: "저장", iconKey: "IconServer");
             if (save) SaveBtn_Click(sender, e);
-            else { Revert(); CloseRequested?.Invoke(this, EventArgs.Empty); }
         }
-        else
-        {
-            CloseRequested?.Invoke(this, EventArgs.Empty);
-        }
+        CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private bool HasUnsavedChanges()
@@ -297,17 +370,8 @@ public partial class McpManagerDialog : UserControl
         return true;
     }
 
-    private void Revert()
-    {
-        _servers.Clear();
-        foreach (var s in _original) _servers.Add(s.Clone());
-    }
-
     /// <summary>ESC / 외부 호출용 닫기.</summary>
-    public void TryClose()
-    {
-        CancelBtn_Click(this, new RoutedEventArgs());
-    }
+    public void TryClose() => CancelBtn_Click(this, new RoutedEventArgs());
 
     private void Header_DragMove(object sender, MouseButtonEventArgs e)
         => Window.GetWindow(this)?.DragMove();

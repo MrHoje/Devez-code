@@ -82,6 +82,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="48"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -118,8 +119,15 @@
             </Grid>
         </Border>
 
+        <!-- 에이전트 탭 (opencode / Claude / Codex) -->
+        <Border Grid.Row="1" Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                Padding="8,0">
+            <StackPanel x:Name="AgentTabsPanel" Orientation="Horizontal" Margin="8,6,8,6"/>
+        </Border>
+
         <!-- 본문: 좌(목록) | 우(상세) -->
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="280"/>
                 <ColumnDefinition Width="*"/>
@@ -322,28 +330,29 @@
                                          Text="{Binding HeadersText, UpdateSourceTrigger=PropertyChanged}"/>
                             </Border>
 
-                            <TextBlock Text="OAuth" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <RadioButton x:Name="OAuthAutoBtn" Content="자동" GroupName="oauth"
-                                             Checked="OAuthMode_Changed"
-                                             Style="{StaticResource McpRadioLeft}" Margin="0,0,6,0"/>
-                                <RadioButton x:Name="OAuthDisabledBtn" Content="사용 안 함" GroupName="oauth"
-                                             Checked="OAuthMode_Changed"
-                                             Style="{StaticResource McpRadioMid}" Margin="0,0,6,0"/>
-                                <RadioButton x:Name="OAuthExplicitBtn" Content="명시 설정" GroupName="oauth"
-                                             Checked="OAuthMode_Changed"
-                                             Style="{StaticResource McpRadioRight}"/>
-                            </StackPanel>
-                            <StackPanel x:Name="OAuthExplicitPanel" Visibility="Collapsed">
-                                <TextBlock Text="clientId" Style="{StaticResource FieldLabel}"/>
-                                <Border Style="{StaticResource FieldBox}" Margin="0,0,0,8">
-                                    <TextBox Style="{StaticResource FieldInput}" BorderThickness="0" Background="Transparent"
-                                             Text="{Binding OAuthClientId, UpdateSourceTrigger=PropertyChanged}"/>
-                                </Border>
-                                <TextBlock Text="clientSecret" Style="{StaticResource FieldLabel}"/>
-                                <Border Style="{StaticResource FieldBox}" Margin="0,0,0,8">
-                                    <PasswordBox x:Name="OAuthSecretBox" Height="34" Padding="10,0"
-                                                 BorderThickness="0" Background="Transparent"
+                            <StackPanel x:Name="OAuthSection">
+                                <TextBlock Text="OAuth" Style="{StaticResource FieldLabel}" Margin="0,12,0,6"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <RadioButton x:Name="OAuthAutoBtn" Content="자동" GroupName="oauth"
+                                                 Checked="OAuthMode_Changed"
+                                                 Style="{StaticResource McpRadioLeft}" Margin="0,0,6,0"/>
+                                    <RadioButton x:Name="OAuthDisabledBtn" Content="사용 안 함" GroupName="oauth"
+                                                 Checked="OAuthMode_Changed"
+                                                 Style="{StaticResource McpRadioMid}" Margin="0,0,6,0"/>
+                                    <RadioButton x:Name="OAuthExplicitBtn" Content="명시 설정" GroupName="oauth"
+                                                 Checked="OAuthMode_Changed"
+                                                 Style="{StaticResource McpRadioRight}"/>
+                                </StackPanel>
+                                <StackPanel x:Name="OAuthExplicitPanel" Visibility="Collapsed">
+                                    <TextBlock Text="clientId" Style="{StaticResource FieldLabel}"/>
+                                    <Border Style="{StaticResource FieldBox}" Margin="0,0,0,8">
+                                        <TextBox Style="{StaticResource FieldInput}" BorderThickness="0" Background="Transparent"
+                                                 Text="{Binding OAuthClientId, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </Border>
+                                    <TextBlock Text="clientSecret" Style="{StaticResource FieldLabel}"/>
+                                    <Border Style="{StaticResource FieldBox}" Margin="0,0,0,8">
+                                        <PasswordBox x:Name="OAuthSecretBox" Height="34" Padding="10,0"
+                                                     BorderThickness="0" Background="Transparent"
                                                  PasswordChanged="OAuthSecretBox_Changed"
                                                  Style="{StaticResource PasswordStyle}"
                                                  ToolTip="비밀번호 — 화면에 그대로 보이지 않습니다."/>
@@ -354,6 +363,7 @@
                                              Text="{Binding OAuthScope, UpdateSourceTrigger=PropertyChanged}"/>
                                 </Border>
                             </StackPanel>
+                        </StackPanel>
                         </StackPanel>
 
                         <!-- 타임아웃 + 상태 메시지 -->
@@ -382,7 +392,7 @@
         </Grid>
 
         <!-- 하단 액션 바 -->
-        <Border Grid.Row="2" Background="{DynamicResource PanelBrush}"
+        <Border Grid.Row="3" Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
                 Padding="16,10">
             <Grid>

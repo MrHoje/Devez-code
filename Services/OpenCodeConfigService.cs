@@ -14,9 +14,32 @@ namespace DevezCode.Services;
 /// <summary>opencode 글로벌 설정(~/.config/opencode/opencode.json) 의 <c>mcp</c> 섹션
 /// 읽기/쓰기 + <c>opencode mcp list</c> 로 라이브 상태 조회.
 /// 다른 필드( plugin, model, permission …) 는 건드리지 않고 보존한다.</summary>
-public static class OpenCodeConfigService
+public sealed class OpenCodeMcpBackend : IMcpBackend
 {
-    /// <summary>XDG_CONFIG_HOME 우선, 없으면 %USERPROFILE%\.config. opencode 1.17.x 가 그대로 쓴다.</summary>
+    public string Id => "opencode";
+    public string DisplayName => "opencode";
+    public string ConfigPathHint => "opencode.json";
+
+    public bool IsAvailable
+    {
+        get
+        {
+            try
+            {
+                using var p = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "opencode",
+                    Arguments = "--version",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+                return p != null && p.WaitForExit(3000) && p.ExitCode == 0;
+            }
+            catch { return false; }
+        }
+    }
+
     public static string ConfigPath
     {
         get
@@ -29,8 +52,10 @@ public static class OpenCodeConfigService
         }
     }
 
-    /// <summary>파싱 + mcp 항목 추출. 파일이 없거나 mcp 섹션이 없으면 빈 목록 반환.</summary>
-    public static List<McpServer> Load()
+    /// <inheritdoc />
+    public List<McpServer> Load() => LoadCore();
+
+    private static List<McpServer> LoadCore()
     {
         var (root, _) = LoadRaw();
         var result = new List<McpServer>();
@@ -48,9 +73,10 @@ public static class OpenCodeConfigService
         return result;
     }
 
-    /// <summary>저장 — 기존 JSON 의 다른 필드( plugin, model, …) 를 그대로 두고 mcp 만 교체한다.
-    /// 파일이 없으면 최소 JSON 으로 새로 만든다.</summary>
-    public static void Save(IEnumerable<McpServer> servers)
+    /// <inheritdoc />
+    public void Save(IEnumerable<McpServer> servers) => SaveCore(servers);
+
+    private static void SaveCore(IEnumerable<McpServer> servers)
     {
         var (root, rawBytes) = LoadRaw();
 
@@ -87,6 +113,40 @@ public static class OpenCodeConfigService
         File.WriteAllText(tmp, Encoding.UTF8.GetString(final.ToArray()));
         if (File.Exists(ConfigPath)) File.Replace(tmp, ConfigPath, null);
         else File.Move(tmp, ConfigPath);
+    }
+
+    /// <inheritdoc />
+    public Task RefreshStatusAsync(IEnumerable<McpServer> servers) => RefreshStatusAsyncCore(servers);
+
+    private static async Task RefreshStatusAsyncCore(IEnumerable<McpServer> servers)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "opencode",
+                Arguments = "mcp list",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+
+            using var p = Process.Start(psi);
+            if (p == null) return;
+            // mcp list 가 연결 시도를 하느라 10초 가까이 걸릴 수 있다.
+            var outputTask = p.StandardOutput.ReadToEndAsync();
+            var errTask    = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(15000)) { try { p.Kill(); } catch { } return; }
+            var raw = await outputTask;
+            var err = await errTask;
+            ParseStatusInto(servers, raw, err);
+        }
+        catch
+        {
+            // opencode 가 PATH 에 없거나 실행 실패 — 조용히 Unknown 유지.
+        }
     }
 
     /// <summary>기존에 없던 키를 추가할 때 (mcp 가 처음 생기는 경우) 호출.</summary>
@@ -234,37 +294,6 @@ public static class OpenCodeConfigService
 
     /// <summary>현재 디렉터리 컨텍스트로 <c>opencode mcp list</c> 를 돌려 각 서버의 라이브 상태를 채운다.
     /// ANSI 색코드와 박스문자는 정규식으로 벗겨낸다. 실패 시 Unknown 유지.</summary>
-    public static async Task RefreshStatusAsync(IEnumerable<McpServer> servers, string? workingDir = null)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "opencode",
-                Arguments = "mcp list",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-            };
-            if (!string.IsNullOrEmpty(workingDir)) psi.WorkingDirectory = workingDir;
-
-            using var p = Process.Start(psi);
-            if (p == null) return;
-            // mcp list 가 연결 시도를 하느라 10초 가까이 걸릴 수 있다.
-            var outputTask = p.StandardOutput.ReadToEndAsync();
-            var errTask    = p.StandardError.ReadToEndAsync();
-            if (!p.WaitForExit(15000)) { try { p.Kill(); } catch { } return; }
-            var raw = await outputTask;
-            var err = await errTask;
-            ParseStatusInto(servers, raw, err);
-        }
-        catch
-        {
-            // opencode 가 PATH 에 없거나 실행 실패 — 조용히 Unknown 유지.
-        }
-    }
 
     private static readonly Regex Ansi = new(@"\x1B\[[0-9;]*[A-Za-z]", RegexOptions.Compiled);
     private static readonly Regex Box = new(@"[\u2500-\u257F\u2580-\u259F]", RegexOptions.Compiled);
