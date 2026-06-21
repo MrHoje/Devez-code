@@ -427,7 +427,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <!-- 마지막 보낸 메시지가 있을 때만 표시되는 구분자 (:), 세션 이름만 떨 땐 숨김 -->
-                                <TextBlock x:Name="LastMessageSep" Text=":"
+                                <TextBlock x:Name="LastMessageSep" Text="❯"
                                            Margin="0,0,8,0" VerticalAlignment="Center"
                                            FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextMutedBrush}"
