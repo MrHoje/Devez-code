@@ -31,7 +31,9 @@ public partial class ConfirmDialog : Window
         else
         {
             var lines = message.Count(c => c == '\n') + 1;
-            Height = lines <= 2 ? 240 : lines <= 4 ? 300 : 340;
+            var maxLineLength = message.Split('\n').DefaultIfEmpty("").Max(s => s.Length);
+            Width = maxLineLength >= 36 || lines >= 4 ? 560 : 520;
+            Height = lines <= 2 ? 250 : lines <= 4 ? 320 : 370;
         }
 
         KeyDown += OnKeyDown;
