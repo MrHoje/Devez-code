@@ -63,9 +63,8 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private void UpdateSelectionActionBar()
     {
-        var n = CountSelected();
-        SelectionActionBar.Visibility = _isSelectionMode ? Visibility.Visible : Visibility.Collapsed;
-        SelectionCountText.Text = $"{n}개 선택";
+        // 선택 액션바('N개 선택' + 삭제)는 항상 숨김. 삭제는 컨텍스트 메뉴/Delete 키로만.
+        SelectionActionBar.Visibility = Visibility.Collapsed;
     }
 
     private int CountSelected() => Items.Count(i => i.IsSelected);

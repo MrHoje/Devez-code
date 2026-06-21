@@ -85,7 +85,7 @@
 
             <ListBox x:Name="BubblesList"
                      ItemsSource="{Binding Items}"
-                     Background="Transparent" BorderThickness="0" Padding="0"
+                     Background="Transparent" BorderThickness="0" Padding="0,12,0,0"
                      Focusable="False"
                      HorizontalContentAlignment="Stretch"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
