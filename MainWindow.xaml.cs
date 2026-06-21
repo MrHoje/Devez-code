@@ -1278,10 +1278,12 @@ public partial class MainWindow : Window
         try
         {
             if (purge) TerminalSessionManager.Instance.PurgeRoom(session.Id, workingDir);
-            else       TerminalSessionManager.Instance.DisposeRoom(session.Id);
+            else       TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
         }
         catch { /* ignore */ }
-        SettingsService.RemoveClaudeCodeRoomDir(session.Id);
+        // purge=false(재시작) 경로에서는 room dir 매핑을 보존 — ActivateSession 이 다시 저장하긴 하지만,
+        // GetOrCreate 가 먼저 읽어야 resume 경로가 작동하므로 삭제하지 않는다.
+        if (purge) SettingsService.RemoveClaudeCodeRoomDir(session.Id);
     }
 
     /// <summary>활성 Claude 세션을 재시작 — 디스크에 저장된 mcpServers 가 다시 로드된다.

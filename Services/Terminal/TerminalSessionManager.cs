@@ -645,8 +645,10 @@ public sealed class TerminalSessionManager
         catch (Exception) { return false; }
     }
 
-    /// <summary>채팅방 삭제 시 호출 — 해당 방의 셸 프로세스 정리.</summary>
-    public void DisposeRoom(string roomId)
+    /// <summary>채팅방 삭제 시 호출 — 해당 방의 셸 프로세스 정리.
+    /// <paramref name="purgeTracking"/> 이 false 면 추적 파일(sessions/*.txt, launch batch)을 보존한다.
+    /// 재시작 경로에서 resume 에 필요한 session id 추적 파일이 지워지면 대화가 날아가므로 보존.</summary>
+    public void DisposeRoom(string roomId, bool purgeTracking = true)
     {
         lock (_lock)
         {
@@ -659,10 +661,13 @@ public sealed class TerminalSessionManager
             _pendingInitial.Remove(roomId);
             _disposedRooms.Add(roomId); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
         }
-        // 추적 파일도 정리 (남아있으면 같은 roomId 재사용 시 엉뚱한 세션으로 이어붙음)
-        try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt")); }
-        catch (Exception) { }
-        try { File.Delete(LaunchBatchPath(roomId)); } catch (Exception) { }
+        if (purgeTracking)
+        {
+            // 추적 파일도 정리 (남아있으면 같은 roomId 재사용 시 엉뚱한 세션으로 이어붙음)
+            try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt")); }
+            catch (Exception) { }
+            try { File.Delete(LaunchBatchPath(roomId)); } catch (Exception) { }
+        }
     }
 
     /// <summary>세션 영구 삭제 — 셸 종료(DisposeRoom) + claude 대화 기록(.jsonl)을 디스크에서 제거.
