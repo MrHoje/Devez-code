@@ -435,9 +435,42 @@ public partial class MainWindow : Window
         SyncHeaderCol(SidebarCol.ActualWidth);
     }
 
-    private void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
+    // 패널 접기/펴기 애니메이션은 중앙 컬럼 폭을 매 프레임 바꿔 WebView2(터미널) HWND 를
+    // 연속 리사이즈시킨다 → 글자가 다시 래스터되며 깜빡인다. 애니메이션 동안 터미널을
+    // 정적 스냅샷 이미지로 대체(WebView2 숨김)하고, 끝난 뒤 한 번만 복원해 깜빡임을 없앤다.
+    private System.Windows.Threading.DispatcherTimer? _termResumeTimer;
+    private bool _termSuspendedForPanel;
+
+    private async Task FreezeTerminalForPanelAsync()
+    {
+        _termResumeTimer?.Stop();           // 진행 중이던 복원 예약 취소
+        if (_termSuspendedForPanel) return; // 이미 스냅샷으로 교체됨
+        _termSuspendedForPanel = true;
+        await SuspendTerminalOnlyAsync();    // 스냅샷 캡처 + WebView2 숨김 (터미널 없으면 no-op)
+    }
+
+    private void ScheduleTerminalResume(int durationMs)
+    {
+        if (!_termSuspendedForPanel) return;
+        _termResumeTimer ??= new System.Windows.Threading.DispatcherTimer();
+        _termResumeTimer.Stop();
+        _termResumeTimer.Interval = TimeSpan.FromMilliseconds(durationMs + 80);
+        _termResumeTimer.Tick -= TermResumeTick;
+        _termResumeTimer.Tick += TermResumeTick;
+        _termResumeTimer.Start();
+    }
+
+    private void TermResumeTick(object? sender, EventArgs e)
+    {
+        _termResumeTimer?.Stop();
+        _termSuspendedForPanel = false;
+        ResumeTerminalOnly();                // WebView2 복원 → 1회 리사이즈 + 디바운스 fit
+    }
+
+    private async void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
     {
         _leftAnimCancel?.Invoke();
+        await FreezeTerminalForPanelAsync();
         if (_leftCollapsed)
         {
             _leftCollapsed = false;
@@ -464,9 +497,10 @@ public partial class MainWindow : Window
         }
         SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
         UpdatePanelToggleVisual();
+        ScheduleTerminalResume(260);
     }
 
-    private void RightPanelBtn_Click(object sender, RoutedEventArgs e)
+    private async void RightPanelBtn_Click(object sender, RoutedEventArgs e)
     {
         // 좁은 창: 도킹 대신 오버레이 드로어를 토글한다.
         if (_narrow == true)
@@ -477,6 +511,7 @@ public partial class MainWindow : Window
         }
 
         _rightAnimCancel?.Invoke();
+        await FreezeTerminalForPanelAsync();
         if (_rightCollapsed)
         {
             _rightCollapsed = false;
@@ -510,6 +545,7 @@ public partial class MainWindow : Window
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
+        ScheduleTerminalResume(260);
     }
 
     // 공유 그룹 멤버들의 MinWidth 를 한꺼번에 설정. 미러 컬럼에 MinWidth(190/200)가
