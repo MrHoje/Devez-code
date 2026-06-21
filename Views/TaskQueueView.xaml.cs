@@ -218,9 +218,9 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private const double InputMaxHeight = 180;
 
-    /// <summary>기본(최소) 입력 높이 = 글꼴 기준 2줄 + 입력 패딩(상14·하4). devez 줄 단위(fs*1.45) 정합.
+    /// <summary>기본(최소) 입력 높이 = 1줄(devez "min" 공식 fs*1.45+8, fs14 → 28).
     /// Ctrl+휠로 글꼴이 바뀌면 함께 변한다.</summary>
-    private double TwoLineInputHeight() => Math.Round(_bubbleFontSize * 1.45 * 2 + 18);
+    private double NaturalInputHeight() => Math.Round(_bubbleFontSize * 1.45 + 8);
 
     /// <summary>Ctrl+휠 → 버블/입력 글꼴 크기 조절(10~28). devez MsgScroll_PreviewMouseWheel 정합.</summary>
     private void Root_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -230,10 +230,10 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         BubbleFontSize += e.Delta > 0 ? 1 : -1;
     }
 
-    /// <summary>입력창 상단 핸들 드래그 → 높이 조절(2줄~180), 로컬 저장. (devez InputResizeThumb 정합)</summary>
+    /// <summary>입력창 상단 핸들 드래그 → 높이 조절(1줄~180), 로컬 저장. (devez InputResizeThumb 정합)</summary>
     private void InputResizeThumb_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
-        var floor = TwoLineInputHeight();
+        var floor = NaturalInputHeight();
         var current = InputBox.MinHeight > 0 ? InputBox.MinHeight : floor;
         var newMin = Math.Clamp(current - e.VerticalChange, floor, InputMaxHeight);
         InputBox.MinHeight = newMin;
@@ -243,7 +243,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private void RestoreInputMinHeight()
     {
-        var floor = TwoLineInputHeight();
+        var floor = NaturalInputHeight();
         var saved = SettingsService.LoadTaskQueueInputMinHeight();
         InputBox.MinHeight = saved <= 0 ? floor : Math.Clamp(saved, floor, InputMaxHeight);
     }
@@ -252,7 +252,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     {
         if (InputBox == null) return;
         if (SettingsService.LoadTaskQueueInputMinHeight() <= 0)
-            InputBox.MinHeight = TwoLineInputHeight();
+            InputBox.MinHeight = NaturalInputHeight();
     }
 
     private void InputBox_PreviewKeyDown(object sender, KeyEventArgs e)

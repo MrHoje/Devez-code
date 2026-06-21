@@ -146,7 +146,7 @@
                             <DockPanel x:Name="BubbleDock"
                                        HorizontalAlignment="Right"
                                        LastChildFill="False"
-                                       Margin="0,0,22,0">
+                                       Margin="0,0,11,0">
                                 <DockPanel.RenderTransform>
                                     <TranslateTransform X="0"/>
                                 </DockPanel.RenderTransform>
@@ -244,9 +244,10 @@
                                          Value="True">
                                 <Setter TargetName="SelectCheck" Property="Opacity"         Value="1"/>
                                 <Setter TargetName="SelectCheck" Property="IsHitTestVisible" Value="True"/>
+                                <!-- 체크박스 노출 시 버블 위치는 기존 그대로 유지(빈 영역 축소분 11px 보정: 16→27). -->
                                 <Setter TargetName="BubbleDock" Property="RenderTransform">
                                     <Setter.Value>
-                                        <TranslateTransform X="-16"/>
+                                        <TranslateTransform X="-27"/>
                                     </Setter.Value>
                                 </Setter>
                             </DataTrigger>
@@ -333,7 +334,7 @@
 
                 <Border Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                        CornerRadius="14" Padding="4" VerticalAlignment="Bottom">
+                        CornerRadius="14" Padding="12,8" VerticalAlignment="Bottom">
                     <Grid>
                         <TextBox x:Name="InputBox"
                                  BorderThickness="0" Background="Transparent"
@@ -342,7 +343,6 @@
                                  FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                  FontFamily="{StaticResource PretendardFont}"
                                  VerticalContentAlignment="Top"
-                                 Padding="3,14,8,4"
                                  MaxHeight="180"
                                  TextWrapping="Wrap" AcceptsReturn="True"
                                  VerticalScrollBarVisibility="Auto"
@@ -350,7 +350,7 @@
                                  TextChanged="InputBox_TextChanged"/>
                         <TextBlock Text="작업을 입력하고 Enter"
                                    IsHitTestVisible="False"
-                                   Margin="4,14,0,0" VerticalAlignment="Top"
+                                   Margin="1,0,0,0" VerticalAlignment="Top"
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                    FontFamily="{StaticResource PretendardFont}">
