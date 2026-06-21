@@ -415,6 +415,26 @@ public partial class MainWindow : Window
     private readonly System.Windows.Media.TranslateTransform _rightT = new();
     private Action? _overlayAnimCancel;
 
+    // 헤더 메타(프로젝트명/경로/브랜치)가 로고 블록에서 최소 100px 간격을 유지하도록
+    // 헤더 사이드바 컬럼 폭의 하한. 사이드바가 그보다 좁아져도 헤더는 여기서 멈춘다.
+    private double MinHeaderColWidth()
+    {
+        double logoEnd = TitleLogoBlock.ActualWidth + 6; // Margin.Left
+        if (logoEnd < 50) logoEnd = 150;                 // 레이아웃 미초기화 fallback
+        return logoEnd + 100 - 4;                         // +100 간격, -스플리터(4)
+    }
+
+    // 헤더 사이드바 컬럼을 사이드바 폭에 맞추되 하한으로 clamp.
+    private void SyncHeaderCol(double sidebarWidth)
+        => HeaderSidebarCol.Width = new GridLength(Math.Max(sidebarWidth, MinHeaderColWidth()));
+
+    // GridSplitter 수동 드래그 시 헤더 컬럼도 따라오게(공유 그룹 분리로 자동 동기화 안 됨).
+    private void SidebarSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        if (_leftCollapsed) return;
+        SyncHeaderCol(SidebarCol.ActualWidth);
+    }
+
     private void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
     {
         _leftAnimCancel?.Invoke();
@@ -422,21 +442,25 @@ public partial class MainWindow : Window
         {
             _leftCollapsed = false;
             Sidebar.Visibility = Visibility.Visible;
-            SetSplitterWidth(SidebarSplitterCol, HeaderSidebarSplitterCol, FooterSidebarSplitterCol, 4);
+            SetSplitterWidth(SidebarSplitterCol, FooterSidebarSplitterCol, null, 4);
+            HeaderSidebarSplitterCol.Width = new GridLength(4);
             SidebarCol.Width = new GridLength(0);
             _leftAnimCancel = AnimateColumn(SidebarCol, _sidebarWidth, 260, easeIn: false,
-                onComplete: () => SetMinWidth(190, SidebarCol, HeaderSidebarCol, FooterSidebarCol),
-                cacheTarget: Sidebar, mirrors: new[] { HeaderSidebarCol, FooterSidebarCol });
+                onComplete: () => SetMinWidth(190, SidebarCol, FooterSidebarCol),
+                cacheTarget: Sidebar, mirrors: new[] { FooterSidebarCol },
+                clampCol: HeaderSidebarCol, clampMin: MinHeaderColWidth());
         }
         else
         {
             _leftCollapsed = true;
             _sidebarWidth = SidebarCol.Width.IsAbsolute ? SidebarCol.Width.Value : SidebarCol.ActualWidth;
-            SetMinWidth(0, SidebarCol, HeaderSidebarCol, FooterSidebarCol);
-            SetSplitterWidth(SidebarSplitterCol, HeaderSidebarSplitterCol, FooterSidebarSplitterCol, 0);
+            SetMinWidth(0, SidebarCol, FooterSidebarCol);
+            SetSplitterWidth(SidebarSplitterCol, FooterSidebarSplitterCol, null, 0);
+            HeaderSidebarSplitterCol.Width = new GridLength(0);
             _leftAnimCancel = AnimateColumn(SidebarCol, 0, 220, easeIn: true,
                 onComplete: () => Sidebar.Visibility = Visibility.Collapsed, cacheTarget: Sidebar,
-                mirrors: new[] { HeaderSidebarCol, FooterSidebarCol });
+                mirrors: new[] { FooterSidebarCol },
+                clampCol: HeaderSidebarCol, clampMin: MinHeaderColWidth());
         }
         SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
         UpdatePanelToggleVisual();
@@ -514,11 +538,12 @@ public partial class MainWindow : Window
         if (SettingsService.LoadLeftPanelCollapsed())
         {
             _leftCollapsed = true;
-            SetMinWidth(0, SidebarCol, HeaderSidebarCol, FooterSidebarCol);
+            SetMinWidth(0, SidebarCol, FooterSidebarCol);
             SidebarCol.Width = new GridLength(0);
-            HeaderSidebarCol.Width = new GridLength(0);
             FooterSidebarCol.Width = new GridLength(0);
-            SetSplitterWidth(SidebarSplitterCol, HeaderSidebarSplitterCol, FooterSidebarSplitterCol, 0);
+            SyncHeaderCol(0); // 접힘 → 헤더는 최소폭(메타가 로고 침범 안 함)
+            HeaderSidebarSplitterCol.Width = new GridLength(0);
+            SetSplitterWidth(SidebarSplitterCol, FooterSidebarSplitterCol, null, 0);
             Sidebar.Visibility = Visibility.Collapsed;
         }
         if (SettingsService.LoadRightPanelCollapsed())
@@ -548,9 +573,10 @@ public partial class MainWindow : Window
     // mirrors: col 과 SharedSizeGroup 으로 폭을 공유하는 헤더/푸터 컬럼들. 공유 그룹은
     // 멤버 중 최대 폭을 채택하므로, col 만 0 으로 줄여도 헤더/푸터의 고정 폭(262/300)이
     // 남아 영역이 안 줄어든다. 같은 폭을 미러 컬럼에도 매 프레임 써 줘야 실제로 접힌다.
+    // clampCol: 폭을 col 과 함께 움직이되 clampMin 아래로는 안 내려가는 컬럼(헤더 메타용).
     private static Action AnimateColumn(ColumnDefinition col, double toWidth, int durationMs,
         bool easeIn, Action? onComplete = null, UIElement? cacheTarget = null,
-        ColumnDefinition[]? mirrors = null)
+        ColumnDefinition[]? mirrors = null, ColumnDefinition? clampCol = null, double clampMin = 0)
     {
         var from = col.Width.IsAbsolute ? col.Width.Value : col.ActualWidth;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -563,6 +589,7 @@ public partial class MainWindow : Window
         {
             col.Width = gl;
             if (mirrors != null) foreach (var m in mirrors) m.Width = gl;
+            if (clampCol != null) clampCol.Width = new GridLength(Math.Max(gl.Value, clampMin));
         }
 
         EventHandler? handler = null;

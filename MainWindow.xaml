@@ -61,7 +61,7 @@
                  별도 컨테이너(고정 위치) — 사이드바 폭에 따라 끌려가지 않음. -->
             <Grid Grid.Row="0" Background="{DynamicResource BgBrush}">
                 <!-- 앱 이름(왼쪽 고정) -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0"
+                <StackPanel x:Name="TitleLogoBlock" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0"
                             HorizontalAlignment="Left">
                     <!-- 로고+타이틀 (deit 완전 정합): logo.png 를 deit(1024x1024, 콘텐츠 535x640,
                          fill 32.7%) 과 동일하게 리사이즈했으므로 같은 Height=34 에서 동일한 시각 크기로
@@ -90,8 +90,10 @@
                      고정되어 컨트롤이 숨겨졌던 버그 수정). -->
                 <Grid x:Name="TitleBarControls" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition x:Name="HeaderSidebarCol" Width="262" SharedSizeGroup="MainSidebar" MinWidth="190"/>
-                        <ColumnDefinition x:Name="HeaderSidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
+                        <!-- 공유 그룹에서 분리: 사이드바가 좁아져도 헤더 메타가 로고를 침범하지 않도록
+                             코드에서 clamp(사이드바폭, 최소폭)으로 직접 폭을 구동한다. -->
+                        <ColumnDefinition x:Name="HeaderSidebarCol" Width="262"/>
+                        <ColumnDefinition x:Name="HeaderSidebarSplitterCol" Width="4"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <!-- 인라인 메타: 아이콘 + 텍스트를 얇은 세로선으로 구분. devez FavoritesPanelView/MainWindow 인라인 패턴 정합.
@@ -199,7 +201,8 @@
                 <views:SidebarView x:Name="Sidebar" Grid.Column="0"
                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0"/>
                 <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"
-                              ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
+                              ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                              DragDelta="SidebarSplitter_DragDelta"/>
 
                 <!-- Center: tabs + terminal (좌·우 보더로 채널 형성) -->
                 <Border x:Name="CenterArea" Grid.Column="2" Background="{DynamicResource BgBrush}"

@@ -159,6 +159,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 "DevezCode", "WebView2");
             var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
             await _webView.EnsureCoreWebView2Async(env);
+            // 리사이즈(패널 접기/펴기) 중 WebView2 가 흰색으로 클리어했다 다시 그리며
+            // 깜빡이는 것을 막는다 — 페인트 전 기본 배경을 터미널 배경(#0C0C0C)에 맞춤.
+            _webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, 0x0C, 0x0C, 0x0C);
             // 초기화 완료 시 호스트가 숨겨진 상태라면 WPF 렌더 큐를 비워
             // 새로 생성된 HWND에 Collapsed 상태가 반영되기 전 한 프레임 튀는 현상을 방지한다.
             if (!IsVisible)
