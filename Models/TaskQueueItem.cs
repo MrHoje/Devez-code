@@ -34,4 +34,12 @@ public sealed class TaskQueueItem : NotifyBase
     /// <summary>선택 또는 우클릭 하이라이트 중 하나라도 활성화되어 있으면 true.
     /// DataTemplate 의 SelectionRing/HoverRing 가시화에 사용.</summary>
     public bool IsHighlighted => IsSelected || IsRightClickHighlighted;
+
+    // ── 드래그 병합 도착지 표시 (devez IsMergeHoverIndicatorVisible 패턴) ──
+    private bool _isMergeTarget;
+    public bool IsMergeTarget
+    {
+        get => _isMergeTarget;
+        set => Set(ref _isMergeTarget, value);
+    }
 }

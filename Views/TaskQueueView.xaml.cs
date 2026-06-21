@@ -75,6 +75,18 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     // ── Shift 범위 선택용 anchor ──
     private string? _selectionAnchorItemId;
 
+    // ── 선택 토글/우클릭 메뉴 (devez _pendingSelectionToggle / _lastContextMenuCloseTime) ──
+    private TaskQueueItem? _pendingSelectionToggle;   // 마우스 업에서 적용할 토글(드래그와 충돌 방지)
+    private TaskQueueItem? _contextMenuItem;           // 우클릭한 버블(메뉴 동작 대상)
+    private DateTime _lastContextMenuCloseTime;        // 메뉴 닫은 직후 가짜 드래그/해제 차단(300ms)
+
+    // ── 버블 드래그 병합 (devez 크로스윈도우 고스트의 패널 내 경량 버전) ──
+    private TaskQueueItem? _pendingBubbleDragItem;     // 드래그 후보(임계 초과 시 시작)
+    private Point _bubbleDragOrigin;                   // this 기준 시작 좌표
+    private TaskQueueItem? _draggingBubbleItem;        // 드래그 중인 버블
+    private bool _bubbleDragging;
+    private TaskQueueItem? _mergeTargetItem;           // 현재 호버 중인 병합 도착지
+
     // ── 러버밴드 드래그 상태 ──
     private bool _rubberActive;
     private Point? _rubberPendingOrigin;
@@ -198,12 +210,15 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     }
 
     // ── 버블 클릭 (debit Bubble_LeftClick / Bubble_RightClick 슬림) ──
-    /// <summary>버블 좌클릭 Preview: 드래그(러버밴드 후보) 준비. 좌표만 저장, 토글은 MouseDown 에서.</summary>
+    /// <summary>버블 좌클릭 Preview: 드래그(병합) 후보 준비. (devez DragHandle_PreviewMouseDown)
+    /// Ctrl/Shift 는 선택 전용이라 드래그 안 함. 메뉴 닫은 직후 300ms 도 가짜 드래그 차단.</summary>
     private void Bubble_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.DataContext is not TaskQueueItem item) return;
         if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0) return;
-        // 마우스 다운 시점에 좌표만 저장. MouseDown 으로 가서 토글 처리.
+        if ((DateTime.Now - _lastContextMenuCloseTime).TotalMilliseconds < 300) return;
+        _pendingBubbleDragItem = item;
+        _bubbleDragOrigin = e.GetPosition(this);
     }
 
     private void Bubble_LeftClick(object sender, MouseButtonEventArgs e)
@@ -257,10 +272,9 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         }
         if (_isSelectionMode)
         {
-            // 선택 모드: 클릭으로 토글
-            item.IsSelected = !item.IsSelected;
+            // 선택 모드: 토글은 마우스 업으로 지연(드래그 시작 시 무효화 → 드래그/토글 충돌 방지).
+            _pendingSelectionToggle = item;
             _selectionAnchorItemId = item.Id;
-            UpdateSelectionActionBar();
             e.Handled = true;
             return;
         }
@@ -272,6 +286,9 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private void Bubble_RightClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.DataContext is not TaskQueueItem item) return;
+        _contextMenuItem = item;
+        // 우클릭은 드래그 후보가 아님(메뉴와 충돌 방지).
+        _pendingBubbleDragItem = null;
         ClearPreviousRightClickHighlight(item);
 
         // 선택 모드 + 미선택 버블 우클릭 → 기존 선택 전체 해제, 이 버블만 선택
@@ -280,6 +297,12 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             foreach (var it in Items) { it.IsSelected = false; it.IsRightClickHighlighted = false; }
             _rightClickHighlightedItem = null;
             item.IsSelected = true;
+        }
+        else if (!item.IsSelected)
+        {
+            // 일반 모드: 우클릭 버블만 잠깐 강조(메뉴 닫힐 때 해제). devez Bubble_RightClick 동일.
+            item.IsRightClickHighlighted = true;
+            _rightClickHighlightedItem = item;
         }
         UpdateSelectionActionBar();
         // ContextMenu 는 Setter 로 자동 부착됨
@@ -333,6 +356,14 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         // 러버밴드 시작: 클릭이 버블 위가 아니라면(=빈 영역)
         if (e.OriginalSource is DependencyObject src && IsRubberBandableHit(src))
         {
+            // devez 정합: 선택 모드에서 빈 영역 클릭(Ctrl X) → 선택 모드 해제(전체 체크 해제).
+            // 단, 컨텍스트 메뉴를 닫는 클릭(직후 300ms)은 해제하지 않는다.
+            if (_isSelectionMode
+                && (Keyboard.Modifiers & ModifierKeys.Control) == 0
+                && (DateTime.Now - _lastContextMenuCloseTime).TotalMilliseconds >= 300)
+            {
+                IsSelectionMode = false;
+            }
             _rubberPendingOrigin = e.GetPosition(BubblesList);
             var sv = FindScrollViewer(BubblesList);
             _rubberOriginVOffset = sv?.VerticalOffset ?? 0;
@@ -348,6 +379,26 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private void Root_PreviewMouseMove(object sender, MouseEventArgs e)
     {
+        // ── 버블 드래그(병합) 우선 처리 ──
+        if (_bubbleDragging)
+        {
+            UpdateBubbleDrag(e.GetPosition(this));
+            e.Handled = true;
+            return;
+        }
+        if (_pendingBubbleDragItem != null && e.LeftButton == MouseButtonState.Pressed)
+        {
+            var cur = e.GetPosition(this);
+            double thX = SystemParameters.MinimumHorizontalDragDistance * 2;
+            double thY = SystemParameters.MinimumVerticalDragDistance * 2;
+            if (Math.Abs(cur.X - _bubbleDragOrigin.X) > thX || Math.Abs(cur.Y - _bubbleDragOrigin.Y) > thY)
+            {
+                StartBubbleDrag(cur);
+                e.Handled = true;
+            }
+            return;
+        }
+
         if (_rubberActive)
         {
             UpdateRubberBand(e.GetPosition(BubblesList));
@@ -372,6 +423,24 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private void Root_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        // ── 버블 드래그 종료(병합 시도) ──
+        if (_bubbleDragging)
+        {
+            EndBubbleDrag();
+            e.Handled = true;
+            return;
+        }
+        // 드래그 없이 버블에서 손 뗌 → 보류 토글 적용(선택 모드 클릭).
+        _pendingBubbleDragItem = null;
+        if (_pendingSelectionToggle is TaskQueueItem toggle)
+        {
+            _pendingSelectionToggle = null;
+            toggle.IsSelected = !toggle.IsSelected;
+            UpdateSelectionActionBar();
+            e.Handled = true;
+            return;
+        }
+
         if (_rubberActive)
         {
             EndRubberBand();
@@ -379,17 +448,10 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         }
         else if (_rubberPendingOrigin is Point origin)
         {
-            // 드래그 없이 마우스 업 = 진짜 빈 영역 클릭. 선택 모드면 해제, 아니면 입력 포커스.
+            // 드래그 없이 마우스 업 = 진짜 빈 영역 클릭(선택 해제는 이미 다운에서 처리). 입력 포커스.
             _rubberPendingOrigin = null;
-            if (_isSelectionMode && CountSelected() == 0)
-            {
-                IsSelectionMode = false;
-            }
-            else
-            {
-                Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
-                    System.Windows.Threading.DispatcherPriority.Input);
-            }
+            Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
+                System.Windows.Threading.DispatcherPriority.Input);
         }
     }
 
@@ -602,15 +664,184 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         try { Clipboard.SetText(text); } catch { }
     }
 
-    /// <summary>컨텍스트 메뉴 열릴 때: 선택 수에 따라 메뉴 헤더를 '복사/삭제' ↔ '선택 N개 복사/삭제' 로 갱신.</summary>
+    /// <summary>컨텍스트 메뉴 열릴 때: 선택 수에 따라 헤더 갱신 + '줄별로 분리' 노출 결정.
+    /// 메뉴 항목 순서: [0]복사 [1]줄별로분리 [2]구분선 [3]삭제.</summary>
     private void BubbleContextMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu cm) return;
         var count = CountSelected();
+        bool bulk = count > 1;
         if (cm.Items.Count > 0 && cm.Items[0] is MenuItem copy)
-            copy.Header = count > 1 ? $"선택 {count}개 복사" : "복사";
-        if (cm.Items.Count > 2 && cm.Items[2] is MenuItem del)
-            del.Header = count > 1 ? $"선택 {count}개 삭제" : "삭제";
+            copy.Header = bulk ? $"선택 {count}개 복사" : "복사";
+        if (cm.Items.Count > 3 && cm.Items[3] is MenuItem del)
+            del.Header = bulk ? $"선택 {count}개 삭제" : "삭제";
+        // 줄별로 분리: 단일 대상이고 빈 줄 제외 2줄 이상일 때만(devez CanSplitMemo).
+        if (cm.Items.Count > 1 && cm.Items[1] is MenuItem split)
+        {
+            bool showSplit = !bulk && _contextMenuItem != null && CanSplit(_contextMenuItem);
+            split.Visibility = showSplit ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>메뉴 닫힘: 가짜 드래그 차단 타임스탬프 기록 + 우클릭 하이라이트 해제.</summary>
+    private void BubbleContextMenu_Closed(object sender, RoutedEventArgs e)
+    {
+        _lastContextMenuCloseTime = DateTime.Now;
+        if (_rightClickHighlightedItem != null)
+        {
+            _rightClickHighlightedItem.IsRightClickHighlighted = false;
+            _rightClickHighlightedItem = null;
+        }
+    }
+
+    private void BubbleSplit_Click(object sender, RoutedEventArgs e)
+    {
+        if (_contextMenuItem is TaskQueueItem item) SplitItemByLines(item);
+    }
+
+    // ── 버블 드래그 → 병합 (devez 크로스윈도우 고스트의 패널 내 경량 버전) ──
+    private void StartBubbleDrag(Point cursorInThis)
+    {
+        var item = _pendingBubbleDragItem;
+        _pendingBubbleDragItem = null;
+        if (item == null) return;
+        _draggingBubbleItem = item;
+        _bubbleDragging = true;
+        _pendingSelectionToggle = null; // 드래그 시작 → 클릭 토글 무효화
+
+        DragGhostText.Text = item.Text;
+        int badge = (_isSelectionMode && item.IsSelected) ? CountSelected() : 0;
+        if (badge >= 2)
+        {
+            DragGhostBadgeText.Text = badge.ToString();
+            DragGhostBadge.Visibility = Visibility.Visible;
+        }
+        else DragGhostBadge.Visibility = Visibility.Collapsed;
+
+        DragGhostLayer.Visibility = Visibility.Visible;
+        Mouse.Capture(this, CaptureMode.SubTree);
+        UpdateBubbleDrag(cursorInThis);
+    }
+
+    private void UpdateBubbleDrag(Point cursorInThis)
+    {
+        Canvas.SetLeft(DragGhost, cursorInThis.X + 12);
+        Canvas.SetTop(DragGhost, cursorInThis.Y + 12);
+
+        var target = FindBubbleItemUnderCursor(cursorInThis);
+        if (ReferenceEquals(target, _mergeTargetItem)) return;
+        if (_mergeTargetItem != null) _mergeTargetItem.IsMergeTarget = false;
+        _mergeTargetItem = target;
+        if (_mergeTargetItem != null) _mergeTargetItem.IsMergeTarget = true;
+    }
+
+    private void EndBubbleDrag()
+    {
+        var dragged = _draggingBubbleItem;
+        var target = _mergeTargetItem;
+        _bubbleDragging = false;
+        _draggingBubbleItem = null;
+        if (_mergeTargetItem != null) { _mergeTargetItem.IsMergeTarget = false; _mergeTargetItem = null; }
+        _pendingBubbleDragItem = null;
+        DragGhostLayer.Visibility = Visibility.Collapsed;
+        if (ReferenceEquals(Mouse.Captured, this)) Mouse.Capture(null);
+
+        if (dragged != null && target != null) MergeInto(target, dragged);
+    }
+
+    /// <summary>커서 아래 버블 항목을 찾아 병합 도착지로 유효한지 검증.
+    /// 다중 드래그(선택모드+드래그버블 선택)면 선택 집합(소스)은 도착지 불가, 단일이면 자기 자신 불가.</summary>
+    private TaskQueueItem? FindBubbleItemUnderCursor(Point cursorInThis)
+    {
+        var dragged = _draggingBubbleItem;
+        if (dragged == null) return null;
+        if (cursorInThis.X < 0 || cursorInThis.Y < 0
+            || cursorInThis.X > ActualWidth || cursorInThis.Y > ActualHeight) return null;
+
+        DependencyObject? hit;
+        try { hit = InputHitTest(cursorInThis) as DependencyObject; }
+        catch { return null; }
+        var border = FindAncestorBubbleBorder(hit);
+        if (border?.DataContext is not TaskQueueItem dest) return null;
+
+        bool multi = _isSelectionMode && dragged.IsSelected;
+        if (multi) { if (dest.IsSelected) return null; }
+        else if (ReferenceEquals(dest, dragged)) return null;
+        return dest;
+    }
+
+    private static Border? FindAncestorBubbleBorder(DependencyObject? node)
+    {
+        while (node != null)
+        {
+            if (node is Border b && b.Name == "BubbleBorder") return b;
+            node = node is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(node) : null;
+        }
+        return null;
+    }
+
+    /// <summary>도착지에 출발지 버블들을 합침. devez BuildMergedContent/SelectMergeSourceIds 정합.</summary>
+    private void MergeInto(TaskQueueItem dest, TaskQueueItem dragged)
+    {
+        // 출발지: 선택 모드 + 드래그 버블이 선택됐으면 선택 전체, 아니면 드래그 1개. 도착지 제외.
+        var sources = (_isSelectionMode && dragged.IsSelected)
+            ? Items.Where(i => i.IsSelected && !ReferenceEquals(i, dest)).ToList()
+            : new List<TaskQueueItem> { dragged };
+        sources = sources.Where(s => !ReferenceEquals(s, dest))
+                         .OrderBy(s => Items.IndexOf(s))   // messages 순서대로
+                         .ToList();
+        if (sources.Count == 0) return;
+
+        var merged = BuildMergedContent(dest.Text, sources.Select(s => s.Text));
+        if (merged == dest.Text) return;
+
+        dest.Text = merged;
+        foreach (var s in sources) Items.Remove(s);
+        if (_isSelectionMode) IsSelectionMode = false;
+        ResequenceSortOrders();
+        Save();
+    }
+
+    /// <summary>도착지 내용 + 출발지 내용들을 줄바꿈 하나로 결합(trim·빈 줄 skip). devez 동일 규칙.</summary>
+    private static string BuildMergedContent(string destContent, IEnumerable<string> sourceContents)
+    {
+        var result = destContent ?? "";
+        foreach (var raw in sourceContents)
+        {
+            var text = (raw ?? "").Trim();
+            if (text.Length == 0) continue;
+            result = result.Length == 0 ? text : result + "\n" + text;
+        }
+        return result;
+    }
+
+    // ── 버블 줄별 분리 (devez SplitMemoByLinesAsync 의 로컬 동기 버전) ──
+    /// <summary>content 를 줄바꿈으로 나눠 각 줄 trim·빈 줄 제외.</summary>
+    private static List<string> SplitIntoLines(string? content) =>
+        (content ?? "").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+
+    /// <summary>빈 줄 제외 2줄 이상이면 분리 가능.</summary>
+    private static bool CanSplit(TaskQueueItem item) => SplitIntoLines(item.Text).Count >= 2;
+
+    /// <summary>버블을 줄별로 분리. 첫 줄은 원본 재사용, 나머지는 바로 뒤에 새 버블로 삽입.</summary>
+    private void SplitItemByLines(TaskQueueItem item)
+    {
+        var lines = SplitIntoLines(item.Text);
+        if (lines.Count < 2) return;
+        int idx = Items.IndexOf(item);
+        if (idx < 0) return;
+        item.Text = lines[0];
+        for (int k = 1; k < lines.Count; k++)
+            Items.Insert(idx + k, new TaskQueueItem { Text = lines[k] });
+        ResequenceSortOrders();
+        Save();
+    }
+
+    /// <summary>현재 표시 순서대로 SortOrder 를 0,1,2… 재배열(저장/재로드 순서 보장).</summary>
+    private void ResequenceSortOrders()
+    {
+        for (int i = 0; i < Items.Count; i++) Items[i].SortOrder = i;
     }
 
     /// <summary>외부 초기화 (필요 시).</summary>
