@@ -35,6 +35,16 @@ public partial class FileExplorerView : UserControl
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
     }
 
+    /// <summary>상단 뷰 전환 탭(버튼 4개)을 모두 표시하는 데 필요한 폭. 패널 최소 폭 산출용.</summary>
+    public double TabBarDesiredWidth
+    {
+        get
+        {
+            TabBarGrid.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            return TabBarGrid.DesiredSize.Width;
+        }
+    }
+
     /// <summary>빈 영역 우클릭 메뉴: 새 파일/폴더 + 붙여넣기 + 탐색기에서 열기. Tree 의 ContextMenu 로 부착.</summary>
     private ContextMenu BuildEmptyAreaMenu()
     {

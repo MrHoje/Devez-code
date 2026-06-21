@@ -45,6 +45,16 @@
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
             <StackPanel x:Name="TabBarGrid" Orientation="Horizontal" VerticalAlignment="Stretch" HorizontalAlignment="Left">
+                <!-- 작업 큐 (devez 채팅방 풍 버블 입력) — 탐색기 왼쪽(맨 앞)에 배치. -->
+                <Button x:Name="QueueViewBtn" Click="TabBtn_Click" Tag="3"
+                        Style="{StaticResource ViewTabButton}" ToolTip="작업 큐">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconListTodo}" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="QueueViewLabel" Text="작업 큐" Margin="6,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
                 <Button x:Name="DirViewBtn" Click="TabBtn_Click" Tag="0"
                         Style="{StaticResource ViewTabButton}" ToolTip="파일 탐색기">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -69,17 +79,6 @@
                         <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconGitCompare}" Width="14" Height="14" VerticalAlignment="Center"/>
                         <TextBlock x:Name="DiffViewLabel" Text="DIFF" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
-                    </StackPanel>
-                </Button>
-                <!-- 작업 큐 (devez 채팅방 풍 버블 입력) — 한 줄 텍스트 → Enter로 버블 추가.
-                     탭 자체가 제목 역할이라 작업 큐 뷰에는 내부 헤더 없음 (중복 방지). -->
-                <Button x:Name="QueueViewBtn" Click="TabBtn_Click" Tag="3"
-                        Style="{StaticResource ViewTabButton}" ToolTip="작업 큐">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconListTodo}" Width="14" Height="14" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="QueueViewLabel" Text="작업 큐" Margin="6,0,0,0" VerticalAlignment="Center"
                                    FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
                     </StackPanel>
                 </Button>

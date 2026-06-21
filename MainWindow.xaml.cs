@@ -165,6 +165,7 @@ public partial class MainWindow : Window
             _agentLastMsg.Start();
             RestoreLastSession();
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
+            ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
         };
 
         // 창 위치/크기는 닫히기 직전(Closing)에 저장한다 — RestoreBounds 가 유효한 시점.
@@ -404,6 +405,7 @@ public partial class MainWindow : Window
     private bool   _rightCollapsed;
     private double _sidebarWidth = 262;
     private double _fileExpWidth = 300;
+    private double _fileExpMinWidth;       // 탭 버튼 4개가 온전히 보이는 최소 폭(런타임 측정)
     private Action? _leftAnimCancel;
     private Action? _rightAnimCancel;
 
@@ -506,7 +508,12 @@ public partial class MainWindow : Window
                 colMirrors: new[] { FooterFileExpCol },
                 splitterMirrors: new[] { FooterFileExpSplitterCol },
                 cacheTarget: FileExplorer,
-                onComplete: () => _rightAnimCancel = null);
+                onComplete: () =>
+                {
+                    // 확장 완료 → 탭 버튼 폭을 최소 폭으로 복원(접힘 직전 0 으로 내렸던 것).
+                    if (_fileExpMinWidth > 0) SetMinWidth(_fileExpMinWidth, FileExpCol, FooterFileExpCol);
+                    _rightAnimCancel = null;
+                });
         }
         else
         {
@@ -528,6 +535,15 @@ public partial class MainWindow : Window
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
+    }
+
+    /// <summary>탭 버튼 4개가 온전히 보이는 폭을 측정해 우측 패널(확장 상태)의 최소 폭으로 적용.
+    /// 접힘/오버레이(좁은 창) 상태에서는 적용하지 않는다(접기 애니메이션은 MinWidth 0 필요).</summary>
+    private void ApplyFileExpMinWidth()
+    {
+        _fileExpMinWidth = Math.Ceiling(FileExplorer.TabBarDesiredWidth) + 8; // 약간의 여유
+        if (!_rightCollapsed && _narrow != true)
+            SetMinWidth(_fileExpMinWidth, FileExpCol, FooterFileExpCol);
     }
 
     // 공유 그룹 멤버들의 MinWidth 를 한꺼번에 설정. 미러 컬럼에 MinWidth 가 남아 있으면
@@ -1998,7 +2014,7 @@ public partial class MainWindow : Window
         _rightCollapsed = !shown;   // 표시 상태 보존
         FileExplorer.Visibility = _rightCollapsed ? Visibility.Collapsed : Visibility.Visible;
         FileExpSplitterCol.Width = new GridLength(_rightCollapsed ? 0 : 4);
-        FileExpCol.MinWidth = _rightCollapsed ? 0 : 0;
+        SetMinWidth(_rightCollapsed ? 0 : _fileExpMinWidth, FileExpCol, FooterFileExpCol);
         FileExpCol.Width = new GridLength(_rightCollapsed ? 0 : _fileExpWidth);
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
