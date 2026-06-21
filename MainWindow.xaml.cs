@@ -422,19 +422,21 @@ public partial class MainWindow : Window
         {
             _leftCollapsed = false;
             Sidebar.Visibility = Visibility.Visible;
-            SidebarSplitterCol.Width = new GridLength(4);
+            SetSplitterWidth(SidebarSplitterCol, HeaderSidebarSplitterCol, FooterSidebarSplitterCol, 4);
             SidebarCol.Width = new GridLength(0);
             _leftAnimCancel = AnimateColumn(SidebarCol, _sidebarWidth, 260, easeIn: false,
-                onComplete: () => SidebarCol.MinWidth = 190, cacheTarget: Sidebar);
+                onComplete: () => SidebarCol.MinWidth = 190, cacheTarget: Sidebar,
+                mirrors: new[] { HeaderSidebarCol, FooterSidebarCol });
         }
         else
         {
             _leftCollapsed = true;
             _sidebarWidth = SidebarCol.Width.IsAbsolute ? SidebarCol.Width.Value : SidebarCol.ActualWidth;
             SidebarCol.MinWidth = 0;
-            SidebarSplitterCol.Width = new GridLength(0);
+            SetSplitterWidth(SidebarSplitterCol, HeaderSidebarSplitterCol, FooterSidebarSplitterCol, 0);
             _leftAnimCancel = AnimateColumn(SidebarCol, 0, 220, easeIn: true,
-                onComplete: () => Sidebar.Visibility = Visibility.Collapsed, cacheTarget: Sidebar);
+                onComplete: () => Sidebar.Visibility = Visibility.Collapsed, cacheTarget: Sidebar,
+                mirrors: new[] { HeaderSidebarCol, FooterSidebarCol });
         }
         SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
         UpdatePanelToggleVisual();
@@ -455,10 +457,11 @@ public partial class MainWindow : Window
         {
             _rightCollapsed = false;
             FileExplorer.Visibility = Visibility.Visible;
-            FileExpSplitterCol.Width = new GridLength(4);
+            SetSplitterWidth(FileExpSplitterCol, FooterFileExpSplitterCol, null, 4);
             FileExpCol.Width = new GridLength(0);
             _rightAnimCancel = AnimateColumn(FileExpCol, _fileExpWidth, 260, easeIn: false,
-                onComplete: () => FileExpCol.MinWidth = 200, cacheTarget: FileExplorer);
+                onComplete: () => FileExpCol.MinWidth = 200, cacheTarget: FileExplorer,
+                mirrors: new[] { FooterFileExpCol });
 
             // 접기 전 열려 있던 파일 뷰도 함께 복원(폭 확장)
             if (_editorOpenBeforeCollapse)
@@ -472,9 +475,10 @@ public partial class MainWindow : Window
             _rightCollapsed = true;
             _fileExpWidth = FileExpCol.Width.IsAbsolute ? FileExpCol.Width.Value : FileExpCol.ActualWidth;
             FileExpCol.MinWidth = 0;
-            FileExpSplitterCol.Width = new GridLength(0);
+            SetSplitterWidth(FileExpSplitterCol, FooterFileExpSplitterCol, null, 0);
             _rightAnimCancel = AnimateColumn(FileExpCol, 0, 220, easeIn: true,
-                onComplete: () => FileExplorer.Visibility = Visibility.Collapsed, cacheTarget: FileExplorer);
+                onComplete: () => FileExplorer.Visibility = Visibility.Collapsed, cacheTarget: FileExplorer,
+                mirrors: new[] { FooterFileExpCol });
 
             // 파일 뷰가 열려 있으면 같이 숨김(내용 보존 — 펼칠 때 복원)
             _editorOpenBeforeCollapse = FileEditor.IsOpen && EditorColIsOpen();
@@ -482,6 +486,16 @@ public partial class MainWindow : Window
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
+    }
+
+    // 공유 그룹(MainSidebarSplitter/MainFileExpSplitter) 멤버 스플리터 폭을 한꺼번에 설정.
+    private static void SetSplitterWidth(ColumnDefinition col, ColumnDefinition mirror1,
+        ColumnDefinition? mirror2, double w)
+    {
+        var gl = new GridLength(w);
+        col.Width = gl;
+        mirror1.Width = gl;
+        if (mirror2 != null) mirror2.Width = gl;
     }
 
     /// <summary>저장된 패널 접힘 상태를 시작 시 즉시(애니메이션 없이) 복원한다.</summary>
@@ -495,7 +509,9 @@ public partial class MainWindow : Window
             _leftCollapsed = true;
             SidebarCol.MinWidth = 0;
             SidebarCol.Width = new GridLength(0);
-            SidebarSplitterCol.Width = new GridLength(0);
+            HeaderSidebarCol.Width = new GridLength(0);
+            FooterSidebarCol.Width = new GridLength(0);
+            SetSplitterWidth(SidebarSplitterCol, HeaderSidebarSplitterCol, FooterSidebarSplitterCol, 0);
             Sidebar.Visibility = Visibility.Collapsed;
         }
         if (SettingsService.LoadRightPanelCollapsed())
@@ -503,7 +519,8 @@ public partial class MainWindow : Window
             _rightCollapsed = true;
             FileExpCol.MinWidth = 0;
             FileExpCol.Width = new GridLength(0);
-            FileExpSplitterCol.Width = new GridLength(0);
+            FooterFileExpCol.Width = new GridLength(0);
+            SetSplitterWidth(FileExpSplitterCol, FooterFileExpSplitterCol, null, 0);
             FileExplorer.Visibility = Visibility.Collapsed;
         }
         UpdatePanelToggleVisual();
@@ -521,8 +538,12 @@ public partial class MainWindow : Window
 
     // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는
     // 프레임 클럭과 어긋나 끊김이 생겨, devez 처럼 렌더 펄스에 맞춰 갱신한다.
+    // mirrors: col 과 SharedSizeGroup 으로 폭을 공유하는 헤더/푸터 컬럼들. 공유 그룹은
+    // 멤버 중 최대 폭을 채택하므로, col 만 0 으로 줄여도 헤더/푸터의 고정 폭(262/300)이
+    // 남아 영역이 안 줄어든다. 같은 폭을 미러 컬럼에도 매 프레임 써 줘야 실제로 접힌다.
     private static Action AnimateColumn(ColumnDefinition col, double toWidth, int durationMs,
-        bool easeIn, Action? onComplete = null, UIElement? cacheTarget = null)
+        bool easeIn, Action? onComplete = null, UIElement? cacheTarget = null,
+        ColumnDefinition[]? mirrors = null)
     {
         var from = col.Width.IsAbsolute ? col.Width.Value : col.ActualWidth;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -530,6 +551,12 @@ public partial class MainWindow : Window
 
         if (cacheTarget != null)
             cacheTarget.CacheMode = new System.Windows.Media.BitmapCache();
+
+        void SetWidth(GridLength gl)
+        {
+            col.Width = gl;
+            if (mirrors != null) foreach (var m in mirrors) m.Width = gl;
+        }
 
         EventHandler? handler = null;
         handler = (_, _) =>
@@ -541,11 +568,11 @@ public partial class MainWindow : Window
             }
             var t = Math.Min(1.0, sw.ElapsedMilliseconds / (double)durationMs);
             var easedT = easeIn ? EaseIn(t) : EaseInOut(t);
-            col.Width = new GridLength(from + (toWidth - from) * easedT);
+            SetWidth(new GridLength(from + (toWidth - from) * easedT));
             if (t >= 1.0)
             {
                 System.Windows.Media.CompositionTarget.Rendering -= handler!;
-                col.Width = new GridLength(toWidth);
+                SetWidth(new GridLength(toWidth));
                 if (cacheTarget != null) cacheTarget.CacheMode = null;
                 onComplete?.Invoke();
             }

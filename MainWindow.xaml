@@ -90,8 +90,8 @@
                      고정되어 컨트롤이 숨겨졌던 버그 수정). -->
                 <Grid x:Name="TitleBarControls" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="262" SharedSizeGroup="MainSidebar" MinWidth="190"/>
-                        <ColumnDefinition Width="4" SharedSizeGroup="MainSidebarSplitter"/>
+                        <ColumnDefinition x:Name="HeaderSidebarCol" Width="262" SharedSizeGroup="MainSidebar" MinWidth="190"/>
+                        <ColumnDefinition x:Name="HeaderSidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <!-- 인라인 메타: 아이콘 + 텍스트를 얇은 세로선으로 구분. devez FavoritesPanelView/MainWindow 인라인 패턴 정합.
@@ -515,11 +515,11 @@
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="262" SharedSizeGroup="MainSidebar" MinWidth="190"/>
-                        <ColumnDefinition Width="4" SharedSizeGroup="MainSidebarSplitter"/>
+                        <ColumnDefinition x:Name="FooterSidebarCol" Width="262" SharedSizeGroup="MainSidebar" MinWidth="190"/>
+                        <ColumnDefinition x:Name="FooterSidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="4" SharedSizeGroup="MainFileExpSplitter"/>
-                        <ColumnDefinition Width="300" SharedSizeGroup="MainFileExp" MinWidth="200"/>
+                        <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
+                        <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="200"/>
                     </Grid.ColumnDefinitions>
                     <!-- 좌측: CPU/RAM 칩 -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">

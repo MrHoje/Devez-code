@@ -189,16 +189,12 @@ public sealed class ClaudeMcpBackend : IMcpBackend
         {
             if (root.HasValue && root.Value.ValueKind == JsonValueKind.Object)
             {
-                bool first = true;
                 writer.WriteStartObject();
                 foreach (var prop in root.Value.EnumerateObject())
                 {
                     if (prop.NameEquals("mcpServers")) continue;
-                    if (!first) writer.WriteRawValue(",\n", false);
-                    first = false;
-                    prop.WriteTo(writer);
+                    prop.WriteTo(writer);  // 이름+값을 한 번에. 콤마/개행은 writer 의 Indented 옵션이 자동 처리.
                 }
-                if (!first) writer.WriteRawValue(",\n", false);
                 WriteMcpObject(writer, editable);
                 writer.WriteEndObject();
             }
@@ -247,12 +243,9 @@ public sealed class ClaudeMcpBackend : IMcpBackend
     {
         w.WritePropertyName("mcpServers");
         w.WriteStartObject();
-        var first = true;
         foreach (var s in servers)
         {
             if (string.IsNullOrWhiteSpace(s.Name)) continue;
-            if (!first) w.WriteRawValue(",\n", false);
-            first = false;
             w.WritePropertyName(s.Name);
             WriteServer(w, s);
         }
