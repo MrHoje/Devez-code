@@ -130,6 +130,7 @@
                         <Grid Margin="0,3" x:Name="BubbleRow" Background="Transparent">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <!-- SelectCheck: 버블 우측(절대 좌표) 오버레이. IsSelectionMode ON 일 때만 표시.
@@ -187,6 +188,40 @@
                                     </Border>
                                 </Grid>
                             </DockPanel>
+
+                            <!-- 작업지시 버튼: 단일 클릭(비선택모드) 시 버블 아래 우측에 노출.
+                                  클릭 → 현재 활성 탭 세션에 이 버블 텍스트 입력+전송. -->
+                            <Button x:Name="ActionButton" Grid.Row="1"
+                                    Visibility="Collapsed"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,5,22,2" Padding="11,5"
+                                    Cursor="Hand"
+                                    Click="ActionButton_Click"
+                                    Tag="{Binding}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="ActBorder"
+                                                Background="{DynamicResource PrimaryBrush}"
+                                                CornerRadius="9" Padding="{TemplateBinding Padding}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Style="{StaticResource LucideIcon}"
+                                                      Data="{StaticResource IconSend}"
+                                                      Width="13" Height="13" Stroke="White"
+                                                      VerticalAlignment="Center"/>
+                                                <TextBlock Text="작업지시" Margin="6,0,0,0"
+                                                           Foreground="White" FontWeight="SemiBold"
+                                                           FontSize="{DynamicResource Fs12}"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ActBorder" Property="Opacity" Value="0.88"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
                         </Grid>
                         <DataTemplate.Triggers>
                             <!-- 하이라이트(선택 OR 우클릭) → SelectionRing 노출 -->
@@ -197,6 +232,10 @@
                             <DataTrigger Binding="{Binding IsMergeTarget}" Value="True">
                                 <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>
                                 <Setter TargetName="SelectionRing" Property="BorderThickness" Value="2.5"/>
+                            </DataTrigger>
+                            <!-- 단일 클릭 대상 → '작업지시' 버튼 노출 -->
+                            <DataTrigger Binding="{Binding IsActionTarget}" Value="True">
+                                <Setter TargetName="ActionButton" Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                             <!-- IsSelectionMode ON → SelectCheck 표시 + 버블 좌측으로 16 이동(체크박스 자리 확보) -->
                             <DataTrigger Binding="{Binding DataContext.IsSelectionMode,

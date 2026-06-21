@@ -42,4 +42,12 @@ public sealed class TaskQueueItem : NotifyBase
         get => _isMergeTarget;
         set => Set(ref _isMergeTarget, value);
     }
+
+    // ── 단일 클릭(비선택모드) 시 버블 아래 '작업지시' 버튼 노출 대상 ──
+    private bool _isActionTarget;
+    public bool IsActionTarget
+    {
+        get => _isActionTarget;
+        set => Set(ref _isActionTarget, value);
+    }
 }

@@ -53,6 +53,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     /// <summary>선택 모드 해제 시 모든 선택 초기화. (debit MainViewModel.OnIsSelectionModeChanged 동일)</summary>
     private void OnIsSelectionModeChanged(bool value)
     {
+        ClearActionTarget(); // 선택 모드 진입/해제 시 '작업지시' 버튼 숨김
         if (!value)
         {
             foreach (var it in Items) it.IsSelected = false;
@@ -86,6 +87,9 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private TaskQueueItem? _draggingBubbleItem;        // 드래그 중인 버블
     private bool _bubbleDragging;
     private TaskQueueItem? _mergeTargetItem;           // 현재 호버 중인 병합 도착지
+
+    // ── '작업지시' 버튼 노출 대상(단일 클릭, 비선택모드) ──
+    private TaskQueueItem? _actionTargetItem;
 
     // ── 러버밴드 드래그 상태 ──
     private bool _rubberActive;
@@ -128,6 +132,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private void Reload()
     {
+        _actionTargetItem = null; // 프로젝트 전환 시 '작업지시' 버튼 대상 초기화
         _loading = true;
         Items.Clear();
         var saved = SettingsService.LoadTaskQueueItems(_projectPath);
@@ -300,15 +305,42 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             e.Handled = true;
             return;
         }
-        // 일반 모드: 그냥 하이라이트만 (debit 우클릭 전 단계와 동일)
+        // 일반 모드: 하이라이트 + '작업지시' 버튼 토글(같은 버블 재클릭 → 숨김)
         _selectionAnchorItemId = item.Id;
+        SetActionTarget(ReferenceEquals(_actionTargetItem, item) ? null : item);
         e.Handled = true;
+    }
+
+    /// <summary>'작업지시' 버튼 노출 대상 지정(이전 대상 해제). null 이면 모두 숨김.</summary>
+    private void SetActionTarget(TaskQueueItem? item)
+    {
+        if (ReferenceEquals(_actionTargetItem, item)) return;
+        if (_actionTargetItem != null) _actionTargetItem.IsActionTarget = false;
+        _actionTargetItem = item;
+        if (_actionTargetItem != null) _actionTargetItem.IsActionTarget = true;
+    }
+
+    private void ClearActionTarget() => SetActionTarget(null);
+
+    /// <summary>'작업지시' 클릭 → 현재 활성 탭 세션에 이 버블 텍스트 입력+전송.</summary>
+    private void ActionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Tag is not TaskQueueItem item) return;
+        var text = item.Text?.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+
+        var ok = (Application.Current.MainWindow as DevezCode.MainWindow)?.SendTextToActiveSession(text) ?? false;
+        if (!ok)
+            ConfirmDialog.Alert("세션 없음", "현재 활성화된 세션이 없습니다.\n세션 탭을 먼저 선택하세요.");
+        else
+            ClearActionTarget();
     }
 
     private void Bubble_RightClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.DataContext is not TaskQueueItem item) return;
         DropInputFocus();
+        ClearActionTarget();
         _contextMenuItem = item;
         // 우클릭은 드래그 후보가 아님(메뉴와 충돌 방지).
         _pendingBubbleDragItem = null;
@@ -379,6 +411,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         // 러버밴드 시작: 클릭이 버블 위가 아니라면(=빈 영역)
         if (e.OriginalSource is DependencyObject src && IsRubberBandableHit(src))
         {
+            ClearActionTarget(); // 빈 영역 클릭 → '작업지시' 버튼 숨김
             // devez 정합: 선택 모드에서 빈 영역 클릭(Ctrl X) → 선택 모드 해제(전체 체크 해제).
             // 단, 컨텍스트 메뉴를 닫는 클릭(직후 300ms)은 해제하지 않는다.
             if (_isSelectionMode
@@ -686,6 +719,8 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         foreach (var it in targets) Items.Remove(it);
         if (_rightClickHighlightedItem != null && targets.Contains(_rightClickHighlightedItem))
             _rightClickHighlightedItem = null;
+        if (_actionTargetItem != null && targets.Contains(_actionTargetItem))
+            _actionTargetItem = null;
         IsSelectionMode = false;
     }
 
@@ -760,6 +795,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         _draggingBubbleItem = item;
         _bubbleDragging = true;
         _pendingSelectionToggle = null; // 드래그 시작 → 클릭 토글 무효화
+        ClearActionTarget();
 
         DragGhostText.Text = item.Text;
         int badge = (_isSelectionMode && item.IsSelected) ? CountSelected() : 0;

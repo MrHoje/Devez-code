@@ -1083,6 +1083,22 @@ public partial class MainWindow : Window
         EnsureSelectedTabVisible(session); // 선택 탭이 가려져 있으면 보이게 스크롤
     }
 
+    /// <summary>작업 큐 → 현재 활성 세션 터미널에 텍스트를 입력하고 Enter 로 전송.
+    /// 활성 탭이 세션이 아니거나 세션이 죽어 있으면 false.</summary>
+    public bool SendTextToActiveSession(string text)
+    {
+        var id = _activeSession?.Id;
+        if (string.IsNullOrEmpty(id)) return false;
+        var session = TerminalSessionManager.Instance.Get(id);
+        if (session is not { IsAlive: true }) return false;
+
+        session.Write(text);
+        session.Write("\r"); // Enter (ConPTY)
+        _terminal.ShowTerminal(id);
+        _terminal.FocusTerminal();
+        return true;
+    }
+
     /// <summary>파일 탭 활성화 — FileEditorHostContainer 에 해당 탭의 에디터를 붙이고 표시.
     /// 이미 같은 에디터가 붙어 있으면 그냥 표시만 갱신한다.</summary>
     private void ActivateFileTab(FileTabItem tab)
