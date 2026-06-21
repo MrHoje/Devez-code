@@ -13,11 +13,26 @@ namespace DevezCode.Views;
 /// <summary>우측 파일 탐색기 — 선택된 프로젝트 디렉터리의 파일/폴더를 트리로 나열.</summary>
 public partial class FileExplorerView : UserControl
 {
+    // 테마 변경 시 활성 탭 아이콘/라벨 brush 재계산. 캡처된 brush instance 가 stale 되는 문제 보정.
+    private readonly Action<string> _themeChangedHandler;
+    private bool _subscribed;
+
     public FileExplorerView()
     {
         InitializeComponent();
         SwitchTab(0); // 초기: 디렉터리 탭 활성 표시
         Tree.ContextMenu = BuildEmptyAreaMenu(); // 빈 영역 우클릭 메뉴 (Tree 자체)
+        _themeChangedHandler = _ => Dispatcher.BeginInvoke(new Action(UpdateTabTextColors));
+        App.ThemeChanged += _themeChangedHandler;
+        _subscribed = true;
+        Unloaded += (_, _) => Unsubscribe();
+    }
+
+    private void Unsubscribe()
+    {
+        if (!_subscribed) return;
+        _subscribed = false;
+        try { App.ThemeChanged -= _themeChangedHandler; } catch { }
     }
 
     /// <summary>빈 영역 우클릭 메뉴: 새 파일/폴더 + 붙여넣기 + 탐색기에서 열기. Tree 의 ContextMenu 로 부착.</summary>

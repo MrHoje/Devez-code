@@ -1525,7 +1525,12 @@ public partial class MainWindow : Window
         UpdateSelectedTabSeam();
     }
 
-    private void OnThemeChanged_UpdateSeam(string _) => Dispatcher.BeginInvoke(new Action(UpdateSelectedTabSeam));
+    private void OnThemeChanged_UpdateSeam(string _) => Dispatcher.BeginInvoke(new Action(() =>
+    {
+        UpdateSelectedTabSeam();
+        // 좌/우 패널 토글 아이콘 brush 재계산 (캡처된 instance 가 stale 되므로)
+        UpdatePanelToggleVisual();
+    }));
 
     /// <summary>선택 탭 하단 보더를 PanelBrush 로 덮어 세션 헤더와 경계선 없이 매끄럽게 잇는다
     /// (devez SelectedTabSeam — 스크롤뷰어 밖 정적 오버레이라 탭처럼 클립되지 않음).</summary>
