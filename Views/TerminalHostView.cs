@@ -59,7 +59,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     public TerminalHostView()
     {
-        _themeChangedHandler = _ => PushCurrentTheme();
+        _themeChangedHandler = _ => { PushCurrentTheme(); RestartOpenCodeSessions(); };
         App.ThemeChanged += _themeChangedHandler;
     }
 
@@ -383,6 +383,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         {
             Dispatcher.BeginInvoke(() =>
             {
+                // 이 세션이 이미 새 세션으로 교체되었으면(테마 재시작 등) 종료 프롬프트를 띄우지 않는다.
+                // Exited 는 WaitForExit 스레드에서 뒤늦게 와서 "restarted" 이후 도착할 수 있다.
+                if (!_wired.TryGetValue(roomId, out var cur) || !ReferenceEquals(cur, session)) return;
                 PostJson(new { type = "exited", roomId });
                 SessionExited?.Invoke(roomId); // 끊김/죽음 → 회색 점
             });
@@ -501,6 +504,21 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (!_pageReady) return; // pageReady 시 OnPageReady 가 init 으로 보내줌
         var scheme = TerminalSessionManager.Instance.Config.Scheme;
         PostJson(new { type = "theme", theme = scheme });
+    }
+
+    /// <summary>OpenCode 는 tui.json 을 시작 시에만 읽으므로 테마 변경 시 살아있는 세션을 재시작한다.
+    /// 매니저가 tui.json 을 새 테마로 기록한 뒤, 여기서 세션을 종료→재생성하고 JS 를 리셋해
+    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄운다.</summary>
+    private void RestartOpenCodeSessions()
+    {
+        if (!_pageReady) return;
+        foreach (var roomId in TerminalSessionManager.Instance.GetOpenCodeRoomIds())
+        {
+            if (!_wired.TryGetValue(roomId, out var s) || !s.IsAlive) continue;
+            TerminalSessionManager.Instance.KillSession(roomId); // 기존 세션 종료·제거
+            WireSession(roomId, 120, 30);                        // 새 세션(새 tui.json 테마) 생성·배선
+            PostJson(new { type = "restarted", roomId });        // JS xterm 리셋(dead 해제) + resize 유도
+        }
     }
 
     /// <summary>방 삭제 시 호출 — 방별 배선·준비 상태와 JS 쪽 xterm 인스턴스를 정리.

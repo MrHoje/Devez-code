@@ -172,34 +172,44 @@ public sealed class TerminalSessionManager
         }
     }
 
-    /// <summary>App.ThemeChanged → 살아있는 모든 claude/opencode 세션에 라이브 갱신. 짧은 딜레이로
-    /// 사용자가 입력 중이던 키가 끼어들어 깨지는 걸 완화.
+    /// <summary>App.ThemeChanged → 살아있는 모든 claude/opencode 세션에 라이브 갱신.
     /// claude 는 settings.local.json 파일 감시로 즉시 반영.
-    /// opencode 는 tui.json 을 시작 시에만 읽으므로 세션을 재시작해 새 테마를 적용한다.</summary>
+    /// opencode 는 tui.json 을 시작 시에만 읽으므로 세션 재시작이 필요한데,
+    /// 그 재시작은 JS 브리지를 가진 TerminalHostView 가 담당한다(rewire + "restarted" 통지로
+    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄움). 여기서는 tui.json 만 기록.</summary>
     private void OnAppThemeChanged_Broadcast(string theme)
     {
         List<string> claudeDirs;
-        List<KeyValuePair<string, string>> opencodeEntries;
+        List<string> opencodeDirs;
         lock (_lock)
         {
-            claudeDirs      = new List<string>(_claudeRoomDirs.Values);
-            opencodeEntries = new List<KeyValuePair<string, string>>(_opencodeRoomDirs);
+            claudeDirs   = new List<string>(_claudeRoomDirs.Values);
+            opencodeDirs = new List<string>(_opencodeRoomDirs.Values);
         }
         foreach (var dir in claudeDirs)
             ApplyClaudeProjectTheme(dir, theme);
+        foreach (var dir in opencodeDirs)
+            ApplyOpenCodeProjectTheme(dir, theme);
+    }
 
-        foreach (var kv in opencodeEntries)
+    /// <summary>테마 변경 시 뷰가 재시작할 대상 — 현재 추적 중인 opencode 방 ID 목록.</summary>
+    public List<string> GetOpenCodeRoomIds()
+    {
+        lock (_lock) return new List<string>(_opencodeRoomDirs.Keys);
+    }
+
+    /// <summary>지정 방의 세션을 즉시 종료·제거한다. 다음 <see cref="GetOrCreate"/> 가
+    /// 새 tui.json 테마로 새 세션을 만든다(opencode 테마 재시작용).</summary>
+    public void KillSession(string roomId)
+    {
+        TerminalSession? session;
+        lock (_lock)
         {
-            ApplyOpenCodeProjectTheme(kv.Value, theme);
-            // 세션 종료 — 다음 접속 시 tui.json 을 읽어 새 테마로 재시작된다.
-            TerminalSession? session;
-            lock (_lock)
-            {
-                if (_sessions.TryGetValue(kv.Key, out session))
-                    _sessions.Remove(kv.Key);
-            }
-            session?.Dispose();
+            if (!_sessions.TryGetValue(roomId, out session)) return;
+            _sessions.Remove(roomId);
+            _pendingInitial.Remove(roomId);
         }
+        session?.Dispose();
     }
 
     /// <summary>프로젝트 local settings 에 claude theme 을 기록한다.
