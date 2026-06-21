@@ -1482,9 +1482,12 @@ public partial class MainWindow : Window
         {
             // 헤더엔 마지막 보낸 메시지만 표시(메시지 없으면 세션 이름). 폭 넘치면 …로 잘리고 호버 시 전체 툴팁.
             var msg = _activeSession!.LastMessage;
-            var text = string.IsNullOrEmpty(msg) ? _activeSession.Name : msg;
+            var hasMsg = !string.IsNullOrEmpty(msg);
+            var text = hasMsg ? msg : _activeSession.Name;
             SessionHeaderTitle.Text = text;
-            SessionHeaderTitle.ToolTip = string.IsNullOrEmpty(msg) ? null : msg;
+            SessionHeaderTitle.ToolTip = hasMsg ? msg : null;
+            // 메시지가 있을 때만 우측 화살표 노출(세션 이름만 떠 있을 땐 숨김)
+            LastMessageArrow.Visibility = hasMsg ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 

@@ -166,7 +166,7 @@
                     <Border x:Name="MetaBar" Grid.Row="0" Height="44" Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                             Padding="16,0,12,0">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
                             <!-- 프로젝트 명 -->
                             <Path Data="{StaticResource IconHash}" Width="14" Height="14" Stretch="Uniform"
                                   Style="{StaticResource LucideIcon}"
@@ -408,12 +408,21 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <!-- 마지막 보낸 메시지(폭 넘치면 …로 잘림, 호버 시 전체 툴팁) -->
-                            <TextBlock x:Name="SessionHeaderTitle" Grid.Column="0"
-                                       VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       TextTrimming="CharacterEllipsis"/>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- 마지막 보낸 메시지가 있을 때만 표시되는 우측 화살표 (세션 이름만 떨 땐 숨김) -->
+                                <Path x:Name="LastMessageArrow" Style="{StaticResource LucideIcon}"
+                                      Data="{StaticResource IconArrowRight}"
+                                      Width="13" Height="13" Stretch="Uniform"
+                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.6"
+                                      Margin="0,0,8,0" VerticalAlignment="Center"
+                                      Visibility="Collapsed"/>
+                                <!-- 마지막 보낸 메시지(폭 넘치면 …로 잘림, 호버 시 전체 툴팁) -->
+                                <TextBlock x:Name="SessionHeaderTitle"
+                                           VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
                         </Grid>
                     </Border>
 
