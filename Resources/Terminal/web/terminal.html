@@ -92,6 +92,24 @@
     return bytes;
   }
 
+  // ── 마우스 트래킹 모드 제거 ──────────────────────────────────────────
+  // claude 등 TUI 가 마우스 트래킹(DECSET ?1000/1002/1003/1006 등)을 켜면 드래그가
+  // PTY 마우스 좌표로 전달돼 텍스트 선택/복사가 안 된다. 출력에서 해당 활성/해제
+  // 시퀀스를 제거해 xterm 이 마우스 모드로 들어가지 않게 한다 → 평소 드래그로 선택.
+  // (트레이드오프: claude 내 마우스 클릭/스크롤은 동작하지 않음 — 키보드로 대체)
+  // 바이트→문자 변환은 entry 별 streaming TextDecoder 로 CJK 멀티바이트 경계 안전.
+  // ESC[?…h/l 가 청크 경계에서 잘리면 꼬리를 다음 청크로 이월(_mmCarry).
+  const MOUSE_DECSET = /\x1b\[\?(1000|1001|1002|1003|1004|1005|1006|1015|1016)(;(1000|1001|1002|1003|1004|1005|1006|1015|1016))*[hl]/g;
+  const MOUSE_TAIL = /\x1b(\[\??[\d;]*)?$/; // 끝에 미완성 ESC / ESC[ / ESC[?123;
+  function stripMouseModes(entry, bytes) {
+    if (!entry._dec) entry._dec = new TextDecoder('utf-8');
+    let s = (entry._mmCarry || '') + entry._dec.decode(bytes, { stream: true });
+    entry._mmCarry = '';
+    const m = MOUSE_TAIL.exec(s);
+    if (m && m[0]) { entry._mmCarry = m[0]; s = s.slice(0, m.index); }
+    return s.replace(MOUSE_DECSET, '');
+  }
+
   // WT 스킴 → xterm ITheme (WT의 purple == ANSI magenta)
   function toXtermTheme(s) {
     const t = {
@@ -347,15 +365,6 @@
     setupImeCaretFix(term, el);
     term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
 
-    // 드래그하여 선택하면 떼는 즉시 자동 복사 (Windows Terminal copyOnSelect 정합).
-    // 선택은 그대로 유지(하이라이트 남김) — Ctrl+C/우클릭 복사와 달리 clearSelection 안 함.
-    el.addEventListener('mouseup', function (e) {
-      if (e.button !== 0) return;                 // 좌클릭 드래그만
-      if (entry.dead) return;
-      if (!term.hasSelection()) return;
-      const sel = term.getSelection();
-      if (sel) post({ type: 'copy', data: sel });
-    });
     // 검색 결과 카운트 갱신 — 활성 방일 때만 검색바에 반영
     try {
       search.onDidChangeResults(function (r) {
@@ -451,7 +460,7 @@
         break;
       case 'output': {
         const t = terms[msg.roomId];
-        if (t) t.term.write(b64ToBytes(msg.data));
+        if (t) t.term.write(stripMouseModes(t, b64ToBytes(msg.data)));
         break;
       }
       case 'exited': {
@@ -466,6 +475,7 @@
         const t = terms[msg.roomId];
         if (t) {
           t.dead = false;
+          t._mmCarry = ''; t._dec = null; // 마우스모드 스트리퍼 상태 초기화
           t.term.reset();
           t.fit.fit();
           post({ type: 'resize', roomId: msg.roomId, cols: t.term.cols, rows: t.term.rows });
