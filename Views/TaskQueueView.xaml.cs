@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -13,8 +15,14 @@ namespace DevezCode.Views;
 /// 원본 차용: 우클릭 → 선택모드 진입 / 러버밴드 다중선택 / SelectCheck + SelectionRing / 상단 액션바.
 /// 원본 제외: 태그/핀/별/코드/시트/할일/타이머/첨부/URL/링크프리뷰/댓글/공유/일정등록/편집/AI채팅.
 /// 영속화: 프로젝트 경로별(settings.json Dictionary).</summary>
-public partial class TaskQueueView : UserControl
+public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 {
+    // ── INotifyPropertyChanged: DataContext=this 이므로 XAML DataTrigger(IsSelectionMode)가
+    //    갱신되려면 UserControl 자신이 INPC 를 구현해 알림을 쏴줘야 한다. (devez 는 ViewModel) ──
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
     public ObservableCollection<TaskQueueItem> Items { get; } = new();
 
     public int Count => Items.Count;
@@ -37,6 +45,7 @@ public partial class TaskQueueView : UserControl
         {
             if (_isSelectionMode == value) return;
             _isSelectionMode = value;
+            OnPropertyChanged();   // XAML DataTrigger(체크박스 노출 + 버블 좌측 이동) 발화
             OnIsSelectionModeChanged(value);
         }
     }
@@ -351,7 +360,12 @@ public partial class TaskQueueView : UserControl
             var cur = e.GetPosition(BubblesList);
             if (Math.Abs(cur.X - origin.X) > 4 || Math.Abs(cur.Y - origin.Y) > 4)
             {
+                // devez StartRubberBand 정합: 캔버스 노출 + 인덱스 리셋 + 마우스 캡처 후 갱신.
                 _rubberActive = true;
+                _rubberTopIdx = -1;
+                _rubberBottomIdx = -1;
+                RubberBandCanvas.Visibility = Visibility.Visible;
+                Mouse.Capture(this, CaptureMode.SubTree);
                 UpdateRubberBand(cur);
             }
         }
@@ -462,6 +476,7 @@ public partial class TaskQueueView : UserControl
         _rubberActive = false;
         _rubberPendingOrigin = null;
         _rubberSelectionBase = null;
+        if (ReferenceEquals(Mouse.Captured, this)) Mouse.Capture(null);
         RubberBandCanvas.Visibility = Visibility.Collapsed;
         RubberBandRect.Width = 0;
         RubberBandRect.Height = 0;
