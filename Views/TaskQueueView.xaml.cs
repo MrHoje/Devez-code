@@ -67,9 +67,28 @@ public partial class TaskQueueView : UserControl
     {
         Dispatcher.BeginInvoke(new Action(() =>
         {
+            // 사용자가 이미 하단에 있을 때만 자동 스크롤 (위로 스크롤해서 보고 있을 때는 방해 금지)
+            var sv = FindScrollViewer(BubblesList);
+            if (sv != null)
+            {
+                var atBottom = sv.VerticalOffset + sv.ViewportHeight >= sv.ExtentHeight - 1.0;
+                if (!atBottom) return;
+            }
             var last = LastItem();
             if (last != null) BubblesList.ScrollIntoView(last);
         }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private static ScrollViewer? FindScrollViewer(DependencyObject root)
+    {
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollViewer sv) return sv;
+            var result = FindScrollViewer(child);
+            if (result != null) return result;
+        }
+        return null;
     }
 
     private object? LastItem() => Items.Count == 0 ? null : Items[^1];
