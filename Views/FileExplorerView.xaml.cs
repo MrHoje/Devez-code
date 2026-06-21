@@ -20,7 +20,7 @@ public partial class FileExplorerView : UserControl
     public FileExplorerView()
     {
         InitializeComponent();
-        SwitchTab(0); // 초기: 디렉터리 탭 활성 표시
+        SwitchTab(3); // 초기: 작업 큐 탭 활성
         Tree.ContextMenu = BuildEmptyAreaMenu(); // 빈 영역 우클릭 메뉴 (Tree 자체)
         _themeChangedHandler = _ => Dispatcher.BeginInvoke(new Action(UpdateTabTextColors));
         App.ThemeChanged += _themeChangedHandler;
@@ -103,7 +103,7 @@ public partial class FileExplorerView : UserControl
 
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
     private enum ViewMode { Directory, Browser, Diff, Queue }
-    private ViewMode _mode = ViewMode.Directory;
+    private ViewMode _mode = ViewMode.Queue;
     private bool _browserMode => _mode == ViewMode.Browser;
 
     // ── 디렉터리 / 브라우저 / DIFF 뷰 전환 ──────────────────────────────
