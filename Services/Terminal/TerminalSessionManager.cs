@@ -173,20 +173,30 @@ public sealed class TerminalSessionManager
     }
 
     /// <summary>App.ThemeChanged → 살아있는 모든 claude/opencode 세션에 라이브 갱신. 짧은 딜레이로
-    /// 사용자가 입력 중이던 키가 끼어들어 깨지는 걸 완화.</summary>
+    /// 사용자가 입력 중이던 키가 끼어들어 깨지는 걸 완화.
+    /// claude 는 settings.local.json 파일 감시로, opencode 는 stdin 으로 /theme 명령을 전송.</summary>
     private void OnAppThemeChanged_Broadcast(string theme)
     {
         List<string> claudeDirs;
-        List<string> opencodeDirs;
+        List<KeyValuePair<string, string>> opencodeEntries;
         lock (_lock)
         {
-            claudeDirs   = new List<string>(_claudeRoomDirs.Values);
-            opencodeDirs = new List<string>(_opencodeRoomDirs.Values);
+            claudeDirs      = new List<string>(_claudeRoomDirs.Values);
+            opencodeEntries = new List<KeyValuePair<string, string>>(_opencodeRoomDirs);
         }
         foreach (var dir in claudeDirs)
             ApplyClaudeProjectTheme(dir, theme);
-        foreach (var dir in opencodeDirs)
-            ApplyOpenCodeProjectTheme(dir, theme);
+
+        var opencodeTheme = OpenCodeCustomThemes.MapToOpenCodeTheme(theme);
+        foreach (var kv in opencodeEntries)
+        {
+            ApplyOpenCodeProjectTheme(kv.Value, theme);
+            // 라이브 세션에 /theme 명령 전송 — OpenCode TUI는 stdin 으로 받아 즉시 반영
+            TerminalSession? session;
+            lock (_lock) { _sessions.TryGetValue(kv.Key, out session); }
+            if (session?.IsAlive == true)
+                session.Write($"/theme {opencodeTheme}\r");
+        }
     }
 
     /// <summary>프로젝트 local settings 에 claude theme 을 기록한다.
