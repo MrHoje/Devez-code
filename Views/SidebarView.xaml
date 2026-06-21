@@ -296,6 +296,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Header (라벨 + 돋보기 + 모두 펼치기/접기) — devez 정합. 높이 44: 중앙 TabBar·우측 뷰토글과 상단 세퍼레이터 일치 -->
@@ -431,5 +432,34 @@
                 </Button>
             </Border>
         </Grid>
+
+        <!-- 업데이트 알림 버튼 — 좌측 패널 하단(devez 정합). HasUpdate 일 때만 표시. -->
+        <Button x:Name="UpdateButton" Grid.Row="3"
+                Margin="12,0,12,10" Height="34" Visibility="Collapsed"
+                Click="UpdateButton_Click" Cursor="Hand"
+                ToolTip="새 버전을 설치합니다">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" CornerRadius="8" Background="{DynamicResource PrimaryBrush}">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
+                                  Width="13" Height="13" Margin="0,0,7,0" Stroke="White" VerticalAlignment="Center"/>
+                            <TextBlock VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" Foreground="White">
+                                <Run Text="업데이트 v"/><Run Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryPressedBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Button.Template>
+        </Button>
     </Grid>
 </UserControl>

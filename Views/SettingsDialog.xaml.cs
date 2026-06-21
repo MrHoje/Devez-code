@@ -30,6 +30,19 @@ public partial class SettingsDialog : UserControl
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
+
+    // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
+    private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
+    {
+        ("v1.0.0", "2026-06-22", true, new[]
+        {
+            "DevezCode 정식 출시 — Claude Code·OpenCode·Codex 등 코딩 에이전트를 한 창에서 사용합니다.",
+            "테마 변경 시 모든 세션이 새 테마로 자동 재시작되며, 재시작 동안 로딩 스피너가 표시됩니다.",
+            "프로젝트를 선택하면 그 프로젝트의 모든 세션을 미리 불러오고, 프로젝트 카드에 세션 실행 상태가 표시됩니다.",
+        }),
+    };
+    private const int ChangelogPageSize = 5;
+    private int _changelogPage = 0;
     private readonly Action<string> _themeChangedHandler;
     private readonly Action<int> _fontScaleChangedHandler;
     private bool _subscribed;
@@ -84,10 +97,91 @@ public partial class SettingsDialog : UserControl
         CatAgentBtn.Foreground = key == "agent"  ? primary : text;
         CatMcpBtn.Background   = key == "mcp"    ? active : Brushes.Transparent;
         CatMcpBtn.Foreground   = key == "mcp"    ? primary : text;
+        CatChangelogBtn.Background = key == "changelog" ? active : Brushes.Transparent;
+        CatChangelogBtn.Foreground = key == "changelog" ? primary : text;
 
-        ThemePanel.Visibility  = key == "theme"  ? Visibility.Visible : Visibility.Collapsed;
-        AgentPanel.Visibility  = key == "agent"  ? Visibility.Visible : Visibility.Collapsed;
-        McpPanel.Visibility    = key == "mcp"    ? Visibility.Visible : Visibility.Collapsed;
+        ThemePanel.Visibility     = key == "theme"     ? Visibility.Visible : Visibility.Collapsed;
+        AgentPanel.Visibility     = key == "agent"     ? Visibility.Visible : Visibility.Collapsed;
+        McpPanel.Visibility       = key == "mcp"       ? Visibility.Visible : Visibility.Collapsed;
+        ChangelogPanel.Visibility = key == "changelog" ? Visibility.Visible : Visibility.Collapsed;
+
+        if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
+    }
+
+    // ── 업데이트 내역 렌더링/페이지네이션 (devez 정합) ──
+    private void RenderChangelogPage()
+    {
+        ChangelogItemsHost.Children.Clear();
+        var totalPages = (int)System.Math.Ceiling(_changelog.Length / (double)ChangelogPageSize);
+        var items = _changelog.Skip(_changelogPage * ChangelogPageSize).Take(ChangelogPageSize);
+        foreach (var (version, date, isLatest, notes) in items)
+            ChangelogItemsHost.Children.Add(MakeVersionCard(version, date, isLatest, notes));
+
+        if (totalPages > 1)
+        {
+            ChangelogPager.Visibility = Visibility.Visible;
+            PageIndicator.Text = $"{_changelogPage + 1} / {totalPages}";
+            PrevPageBtn.IsEnabled = _changelogPage > 0;
+            NextPageBtn.IsEnabled = _changelogPage < totalPages - 1;
+        }
+        else ChangelogPager.Visibility = Visibility.Collapsed;
+    }
+
+    private Border MakeVersionCard(string version, string date, bool isLatest, string[] notes)
+    {
+        var badgeBg = isLatest ? (Brush)FindResource("PrimarySoftBrush") : (Brush)FindResource("PanelSoftBrush");
+        var badgeFg = isLatest ? (Brush)FindResource("PrimaryBrush")     : (Brush)FindResource("TextMutedBrush");
+
+        var badge = new Border
+        {
+            Background   = badgeBg,
+            CornerRadius = new CornerRadius(6),
+            Padding      = new Thickness(8, 3, 8, 3),
+            Child        = new TextBlock { Text = version, FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = badgeFg },
+        };
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+        header.Children.Add(badge);
+        header.Children.Add(new TextBlock
+        {
+            Text = date, FontSize = 12, Foreground = (Brush)FindResource("TextMutedBrush"),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0),
+        });
+
+        var tb = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, FontSize = 13,
+            Foreground = (Brush)FindResource("TextBrush"), LineHeight = 22,
+        };
+        foreach (var note in notes)
+        {
+            if (tb.Inlines.Count > 0) tb.Inlines.Add(new System.Windows.Documents.LineBreak());
+            tb.Inlines.Add(new System.Windows.Documents.Run($"• {note}"));
+        }
+
+        var body = new StackPanel();
+        body.Children.Add(header);
+        body.Children.Add(tb);
+        return new Border
+        {
+            Background = (Brush)FindResource("PanelBrush"),
+            CornerRadius = new CornerRadius(10),
+            BorderBrush = (Brush)FindResource("LineBrush"),
+            BorderThickness = new Thickness(1),
+            Margin = new Thickness(0, 0, 0, 12),
+            Padding = new Thickness(16, 14, 16, 14),
+            Child = body,
+        };
+    }
+
+    private void PrevPageBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_changelogPage > 0) { _changelogPage--; RenderChangelogPage(); }
+    }
+
+    private void NextPageBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var totalPages = (int)System.Math.Ceiling(_changelog.Length / (double)ChangelogPageSize);
+        if (_changelogPage < totalPages - 1) { _changelogPage++; RenderChangelogPage(); }
     }
 
     /// <summary>테마 변경 시 — brush instance 가 stale 된 좌측 활성 배경·테마/글꼴 카드 보더를 모두 재계산.</summary>
@@ -145,7 +239,8 @@ public partial class SettingsDialog : UserControl
                 "응답 생성 중인 세션은 중단될 수 있으며, 필요한 경우 요청을 다시 보내야 합니다.\n\n" +
                 "변경사항을 저장하시겠습니까?",
                 okLabel: "저장",
-                iconKey: "IconPalette");
+                iconKey: "IconPalette",
+                wideLayout: true); // 세션 재시작 안내 — 긴 본문이라 넓게 유지
             if (!proceed) return;
         }
 

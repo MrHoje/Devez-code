@@ -40,6 +40,20 @@ public partial class SidebarView : UserControl
         set { _projects = value; ProjectsHost.ItemsSource = value; }
     }
 
+    /// <summary>하단 업데이트 버튼 클릭 — 설치 흐름은 MainWindow 에 위임.</summary>
+    public event Action? UpdateClicked;
+    private void UpdateButton_Click(object sender, RoutedEventArgs e) => UpdateClicked?.Invoke();
+
+    /// <summary>좌측 패널 하단에 "업데이트 v{version}" 버튼 표시(devez 정합).</summary>
+    public void ShowUpdateButton(string version)
+    {
+        UpdateButton.Tag = version;
+        UpdateButton.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>업데이트 버튼 숨김(설치 진행 중 등).</summary>
+    public void HideUpdateButton() => UpdateButton.Visibility = Visibility.Collapsed;
+
     private void AddProject_Click(object sender, RoutedEventArgs e) => AddProjectRequested?.Invoke();
 
     // ── 검색 행 토글 (돋보기 버튼) — Height 0↔43 애니메이션으로 프로젝트 카드를 아래로 밀어냄 ──

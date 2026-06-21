@@ -12,7 +12,7 @@ public partial class ConfirmDialog : Window
     private string? _confirmText;
     private ConfirmChoice _choice = ConfirmChoice.Cancel;
 
-    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText)
+    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout)
     {
         InitializeComponent();
         Title = title;
@@ -28,12 +28,19 @@ public partial class ConfirmDialog : Window
             OkBtn.IsEnabled = false;
             Loaded += (_, _) => ConfirmInputBox.Focus();
         }
-        else
+        else if (wideLayout)
         {
+            // 세션 재시작 안내처럼 긴 본문 전용 — 넓게(현 상태 유지).
             var lines = message.Count(c => c == '\n') + 1;
             var maxLineLength = message.Split('\n').DefaultIfEmpty("").Max(s => s.Length);
             Width = maxLineLength >= 36 || lines >= 4 ? 640 : 600;
             Height = lines <= 2 ? 250 : lines <= 4 ? 320 : 370;
+        }
+        else
+        {
+            // 기본(devez 정합) — Width 는 XAML 기본(460), Height 만 줄 수에 맞춰 조정.
+            var lines = message.Count(c => c == '\n') + 1;
+            Height = lines <= 2 ? 240 : lines <= 4 ? 300 : 340;
         }
 
         KeyDown += OnKeyDown;
@@ -56,9 +63,10 @@ public partial class ConfirmDialog : Window
         string iconKey = "IconLogOut",
         bool danger = false,
         string? confirmText = null,
-        bool topMost = false)
+        bool topMost = false,
+        bool wideLayout = false)
     {
-        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger, confirmText);
+        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger, confirmText, wideLayout);
 
         if (Application.Current.MainWindow != null
             && Application.Current.MainWindow.IsLoaded
@@ -84,7 +92,7 @@ public partial class ConfirmDialog : Window
         bool topMost = false,
         bool hideCancel = false)
     {
-        var dialog = new ConfirmDialog(title, message, primaryLabel, iconKey, danger, null);
+        var dialog = new ConfirmDialog(title, message, primaryLabel, iconKey, danger, null, wideLayout: false);
         dialog.MiddleText.Text = secondaryLabel;
         dialog.MiddleBtn.Visibility = Visibility.Visible;
         if (hideCancel) dialog.CancelBtn.Visibility = Visibility.Collapsed; // 취소 버튼 숨김(두 선택지만)
@@ -113,7 +121,7 @@ public partial class ConfirmDialog : Window
         string okLabel = "확인",
         string iconKey = "IconMessageSquare")
     {
-        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, false, null);
+        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, false, null, wideLayout: false);
         dialog.CancelBtn.Visibility = Visibility.Collapsed;
 
         if (Application.Current.MainWindow != null

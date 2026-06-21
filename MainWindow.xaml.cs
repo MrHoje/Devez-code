@@ -53,6 +53,7 @@ public partial class MainWindow : Window
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
+        Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
 
         // 중앙 탭 드래그 순서변경(가로) — devez ReorderDrag
         TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
@@ -760,6 +761,18 @@ public partial class MainWindow : Window
         if (info is null || _updateInProgress) return;
         _pendingUpdate = info;
 
+        // devez 정합: 강제 팝업 대신 좌측 패널 하단에 업데이트 버튼을 띄운다(비강제).
+        Sidebar.ShowUpdateButton(info.Version);
+        // 긴급 업데이트는 즉시 팝업까지 띄워 주의를 끈다.
+        if (info.IsUrgent) OpenUpdatePopup();
+    }
+
+    /// <summary>업데이트 노트 팝업 → "업데이트" 선택 시 설치. 사이드바 버튼/긴급 감지에서 호출.</summary>
+    private void OpenUpdatePopup()
+    {
+        var info = _pendingUpdate;
+        if (info is null || _updateInProgress) return;
+
         var noteLines = string.IsNullOrWhiteSpace(info.Notes)
             ? ""
             : "\n\n" + string.Join("\n",
@@ -775,12 +788,13 @@ public partial class MainWindow : Window
                 iconKey: "IconDownload"))
             return;
 
-        await ApplyUpdateAsync(info);
+        _ = ApplyUpdateAsync(info);
     }
 
     private async Task ApplyUpdateAsync(UpdateInfo info)
     {
         _updateInProgress = true;
+        Sidebar.HideUpdateButton(); // 설치 진행 중에는 버튼 숨김
         var progress = new Progress<double>(v =>
         {
             RateLimitPanel.Visibility = Visibility.Visible;
@@ -800,6 +814,7 @@ public partial class MainWindow : Window
         {
             _updateInProgress = false;
             RateLimitPanel.Visibility = Visibility.Collapsed; // 진행률 제거 — 다음 한도 스냅샷에 복원
+            if (_pendingUpdate != null) Sidebar.ShowUpdateButton(_pendingUpdate.Version); // 실패 → 버튼 복원
             // 자동 업데이트 실패 → 브라우저로 직접 다운로드 유도.
             if (ConfirmDialog.Show(
                     "업데이트 오류",
