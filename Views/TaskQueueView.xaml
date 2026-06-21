@@ -119,6 +119,18 @@
                             <!-- 컨텍스트 메뉴: UserControl.Resources 에서 정의한 것을 참조.
                                  Setter.Value 인라인에 두면 WPF 컴파일러 connectionId 충돌 발생 → InvalidCastException -->
                             <Setter Property="ContextMenu" Value="{StaticResource BubbleContextMenu}"/>
+                            <!-- 커스텀 템플릿: WPF 기본 ListBoxItem 템플릿은 IsSelected 트리거로
+                                  파란색 선택 배경을 칠해 행 전체가 색이 들어간 것처럼 보인다.
+                                  ContentPresenter 만 두는 미니멀 템플릿으로 기본 트리거를 완전히 제거 →
+                                  선택 표시는 DataTemplate 내부의 SelectionRing 으로만 표현.
+                                  (doit 정합: 버블 자체에만 외곽선, 행 배경은 항상 투명) -->
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <ContentPresenter/>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                         </Style>
                     </ListBox.ItemContainerStyle>
                 </ListBox>
