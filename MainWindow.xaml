@@ -158,17 +158,68 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
+                    <!-- 프로젝트 메타 바 (탭 헤더와 같은 44px). 탭 바 위에 별도 행으로 부착. -->
+                    <Border x:Name="MetaBar" Grid.Row="0" Height="44" Background="{DynamicResource BgBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                            Padding="16,0,12,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                            <!-- 프로젝트 명 -->
+                            <Path Data="{StaticResource IconHash}" Width="14" Height="14" Stretch="Uniform"
+                                  Style="{StaticResource LucideIcon}"
+                                  Stroke="{DynamicResource TextMutedBrush}"
+                                  VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ProjectNameText" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontFamily="{StaticResource PretendardFont}"
+                                       FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       TextTrimming="CharacterEllipsis"/>
+
+                            <Border Width="1" Height="12" Margin="9,0,9,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+
+                            <!-- 프로젝트 경로 -->
+                            <Path Data="{StaticResource IconFolder}" Width="14" Height="14" Stretch="Uniform"
+                                  Style="{StaticResource LucideIcon}"
+                                  Stroke="{DynamicResource TextMutedBrush}"
+                                  VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ProjectPathText" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontFamily="{StaticResource PretendardFont}"
+                                       FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       TextTrimming="CharacterEllipsis"/>
+
+                            <!-- 얇은 세로선 + 브렌치(클릭 새로고침) — 비-git 저장소면 그룹 전체 숨김 -->
+                            <StackPanel x:Name="BranchGroup" Orientation="Horizontal" Visibility="Collapsed">
+                                <Border Width="1" Height="12" Margin="9,0,9,0" VerticalAlignment="Center"
+                                        Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                                <Border Cursor="Hand" Background="Transparent" MouseLeftButtonUp="BranchBubble_Click"
+                                        ToolTip="클릭하여 브렌치 새로고침" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Path Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
+                                              Style="{StaticResource LucideIcon}"
+                                              Stroke="{DynamicResource TextMutedBrush}"
+                                              VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="ProjectBranchText" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                   FontFamily="{StaticResource PretendardFont}"
+                                                   FontSize="{DynamicResource Fs12}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Tab strip (devez 브라우저식 탭: 둥근 상단 + 선택 탭이 헤더와 이어짐) -->
-                    <Border x:Name="TabBar" Grid.Row="0" Height="44" Background="{DynamicResource BgBrush}"
+                    <Border x:Name="TabBar" Grid.Row="1" Height="44" Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                             Padding="0,7,12,0">
                       <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
@@ -336,68 +387,20 @@
                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                             </Button>
                         </StackPanel>
-
-                        <!-- 프로젝트 메타(타이틀바에서 이동): 탭 바 우측에 부착. 아이콘 + 텍스트 + 얇은 세로선 구분. -->
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
-                                    Margin="12,0,0,0">
-                            <!-- 프로젝트 명 -->
-                            <Path Data="{StaticResource IconHash}" Width="14" Height="14" Stretch="Uniform"
-                                  Style="{StaticResource LucideIcon}"
-                                  Stroke="{DynamicResource TextMutedBrush}"
-                                  VerticalAlignment="Center"/>
-                            <TextBlock x:Name="ProjectNameText" Margin="6,0,0,0" VerticalAlignment="Center"
-                                       FontFamily="{StaticResource PretendardFont}"
-                                       FontSize="{DynamicResource Fs12}"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       TextTrimming="CharacterEllipsis"/>
-
-                            <Border Width="1" Height="12" Margin="9,0,9,0" VerticalAlignment="Center"
-                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-
-                            <!-- 프로젝트 경로 -->
-                            <Path Data="{StaticResource IconFolder}" Width="14" Height="14" Stretch="Uniform"
-                                  Style="{StaticResource LucideIcon}"
-                                  Stroke="{DynamicResource TextMutedBrush}"
-                                  VerticalAlignment="Center"/>
-                            <TextBlock x:Name="ProjectPathText" Margin="6,0,0,0" VerticalAlignment="Center"
-                                       FontFamily="{StaticResource PretendardFont}"
-                                       FontSize="{DynamicResource Fs12}"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       TextTrimming="CharacterEllipsis"/>
-
-                            <!-- 얇은 세로선 + 브렌치(클릭 새로고침) — 비-git 저장소면 그룹 전체 숨김 -->
-                            <StackPanel x:Name="BranchGroup" Orientation="Horizontal" Visibility="Collapsed">
-                                <Border Width="1" Height="12" Margin="9,0,9,0" VerticalAlignment="Center"
-                                        Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-                                <Border Cursor="Hand" Background="Transparent" MouseLeftButtonUp="BranchBubble_Click"
-                                        ToolTip="클릭하여 브렌치 새로고침" VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Path Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
-                                              Style="{StaticResource LucideIcon}"
-                                              Stroke="{DynamicResource TextMutedBrush}"
-                                              VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="ProjectBranchText" Margin="6,0,0,0" VerticalAlignment="Center"
-                                                   FontFamily="{StaticResource PretendardFont}"
-                                                   FontSize="{DynamicResource Fs12}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
-                        </StackPanel>
                       </Grid>
                     </Border>
 
                     <!-- 선택 탭 하단 보더 커버(devez SelectedTabSeam): 스크롤뷰어 밖 정적 오버레이라
                          탭처럼 클립되지 않는다. 선택 탭 폭만큼 탭 스트립 하단 라인(LineBrush)을 PanelBrush 로
                          덮어, 선택 탭이 세션 헤더와 경계선 없이 매끄럽게 이어지게 한다. 위치/너비는 코드에서 설정. -->
-                    <Border x:Name="SelectedTabSeam" Grid.Row="0" Height="1"
+                    <Border x:Name="SelectedTabSeam" Grid.Row="1" Height="1"
                             VerticalAlignment="Bottom" HorizontalAlignment="Left"
                             Background="{DynamicResource PanelBrush}"
                             Visibility="Collapsed" IsHitTestVisible="False" Panel.ZIndex="100"/>
 
                     <!-- 세션 타이틀 영역 (devez HeaderBar 정합): 탭 아래·터미널 위. PanelBrush 라
                          선택 탭과 매끄럽게 이어진다. 좌측 제목 + 우측 액션 버튼(세션 닫기 / 세션 삭제). -->
-                    <Border x:Name="SessionHeaderBar" Grid.Row="1" Height="52"
+                    <Border x:Name="SessionHeaderBar" Grid.Row="2" Height="52"
                             Background="{DynamicResource PanelBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                             Visibility="Collapsed">
@@ -415,7 +418,7 @@
                     </Border>
 
                     <!-- Terminal host + empty-state -->
-                    <Grid Grid.Row="2">
+                    <Grid Grid.Row="3">
                         <ContentControl x:Name="TerminalHostContainer"/>
                         <!-- airspace 우회: 오버레이(설정창 등)가 뜰 때 WebView2를 가리지 못하므로
                              터미널을 스냅샷 이미지로 대체하고 WebView2는 Collapse 한다. -->
