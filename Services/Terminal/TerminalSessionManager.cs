@@ -127,8 +127,29 @@ public sealed class TerminalSessionManager
             // 직접 실행이면 inject==null → 주입 없음. 폴백 셸이면 첫 출력 후 WireSession 에서 inject 전송.
             _pendingInitial[roomId] = inject;
             _sessions[roomId] = session;
+
+            // claude 세션이면 DevezCode 테마에 맞춰 /config theme=X 1회 전송 (글로벌 settings.json 안 건드림).
+            // 2.5초 딜레이 — claude TUI 가 준비될 시간을 주고, 사용자가 키를 누르기 전 시점.
+            // 에이전트가 claude 가 아니면 무시 (codex/opencode 는 자체 theme 시스템 없음).
+            if (agent.Id == "claude" && agent.SupportsHooks)
+                _ = InjectClaudeThemeAsync(session, DevezCode.App.CurrentTheme);
+
             return session;
         }
+    }
+
+    /// <summary>claude TUI 가 준비될 시간을 잠시 기다린 뒤 <c>/config theme=&lt;X&gt;</c> 를 한 번 전송한다.
+    /// DevezCode 외에서 띄운 claude 세션에는 영향 없음 (per-session). 실패는 조용히 무시.</summary>
+    private static async Task InjectClaudeThemeAsync(TerminalSession session, string devezCodeTheme)
+    {
+        try
+        {
+            await Task.Delay(2500);
+            if (!session.IsAlive) return;
+            var claudeTheme = devezCodeTheme == "dark" ? "dark" : "light";
+            session.Write($"/config theme={claudeTheme}\r");
+        }
+        catch { /* 세션 종료/쓰기 실패 — best-effort */ }
     }
 
     /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.

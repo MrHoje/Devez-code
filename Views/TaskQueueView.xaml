@@ -333,7 +333,7 @@
 
                 <Border Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                        CornerRadius="14" Padding="12,8" VerticalAlignment="Bottom">
+                        CornerRadius="14" Padding="4" VerticalAlignment="Bottom">
                     <Grid>
                         <TextBox x:Name="InputBox"
                                  BorderThickness="0" Background="Transparent"
@@ -342,6 +342,7 @@
                                  FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                  FontFamily="{StaticResource PretendardFont}"
                                  VerticalContentAlignment="Top"
+                                 Padding="3,14,8,4"
                                  MaxHeight="180"
                                  TextWrapping="Wrap" AcceptsReturn="True"
                                  VerticalScrollBarVisibility="Auto"
@@ -349,7 +350,7 @@
                                  TextChanged="InputBox_TextChanged"/>
                         <TextBlock Text="작업을 입력하고 Enter"
                                    IsHitTestVisible="False"
-                                   Margin="1,0,0,0" VerticalAlignment="Top"
+                                   Margin="4,14,0,0" VerticalAlignment="Top"
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                    FontFamily="{StaticResource PretendardFont}">

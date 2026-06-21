@@ -218,8 +218,9 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private const double InputMaxHeight = 180;
 
-    /// <summary>기본(최소) 입력 높이 = 글꼴 기준 2줄. Ctrl+휠로 글꼴이 바뀌면 함께 변한다.</summary>
-    private double TwoLineInputHeight() => Math.Round(_bubbleFontSize * 1.5 * 2);
+    /// <summary>기본(최소) 입력 높이 = 글꼴 기준 2줄 + 입력 패딩(상14·하4). devez 줄 단위(fs*1.45) 정합.
+    /// Ctrl+휠로 글꼴이 바뀌면 함께 변한다.</summary>
+    private double TwoLineInputHeight() => Math.Round(_bubbleFontSize * 1.45 * 2 + 18);
 
     /// <summary>Ctrl+휠 → 버블/입력 글꼴 크기 조절(10~28). devez MsgScroll_PreviewMouseWheel 정합.</summary>
     private void Root_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
