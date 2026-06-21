@@ -16,7 +16,7 @@ public partial class FileExplorerView : UserControl
     public FileExplorerView()
     {
         InitializeComponent();
-        UpdateViewToggle(); // 초기: 디렉터리 모드 활성 표시
+        SwitchTab(0, animate: false); // 초기: 디렉터리 탭 활성 표시
         Tree.ContextMenu = BuildEmptyAreaMenu(); // 빈 영역 우클릭 메뉴 (Tree 자체)
     }
 
@@ -79,45 +79,87 @@ public partial class FileExplorerView : UserControl
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
     private enum ViewMode { Directory, Browser, Diff }
     private ViewMode _mode = ViewMode.Directory;
+    private int _activeTabIndex = 0; // 0=Directory, 1=Browser, 2=Diff (슬라이딩 인디케이터용)
     private bool _browserMode => _mode == ViewMode.Browser;
 
     // ── 디렉터리 / 브라우저 / DIFF 뷰 전환 ──────────────────────────────
-    private void DirViewBtn_Click(object sender, RoutedEventArgs e) => SetMode(ViewMode.Directory);
-    private void BrowserViewBtn_Click(object sender, RoutedEventArgs e) => SetMode(ViewMode.Browser);
-    private void DiffViewBtn_Click(object sender, RoutedEventArgs e) => SetMode(ViewMode.Diff);
+    // (devez ToolboxPanelView 정합: 단일 클릭 핸들러 + 슬라이딩 인디케이터)
 
-    private void SetMode(ViewMode mode)
+    private void TabBtn_Click(object sender, RoutedEventArgs e)
     {
-        _mode = mode;
-        Tree.Visibility    = mode == ViewMode.Directory ? Visibility.Visible : Visibility.Collapsed;
-        Browser.Visibility = mode == ViewMode.Browser   ? Visibility.Visible : Visibility.Collapsed;
-        DiffView.Visibility = mode == ViewMode.Diff      ? Visibility.Visible : Visibility.Collapsed;
-        if (mode == ViewMode.Browser) Browser.EnsureStarted(); // 최초 진입 시 WebView2 초기화
-        if (mode == ViewMode.Diff) _ = DiffView.RefreshAsync(); // 진입할 때마다 최신 변경 내역 로드
+        if (sender is Button btn && int.TryParse(btn.Tag?.ToString(), out var idx))
+            SwitchTab(idx, animate: true);
+    }
 
-        var (icon, title) = mode switch
+    private void TabBarGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+        => UpdateTabIndicator(animate: false);
+
+    private void SwitchTab(int idx, bool animate)
+    {
+        _activeTabIndex = idx;
+        _mode = (ViewMode)idx;
+        Tree.Visibility    = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
+        Browser.Visibility = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
+        DiffView.Visibility = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
+        if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
+        if (idx == 2) _ = DiffView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
+
+        var (icon, title) = idx switch
         {
-            ViewMode.Browser => ("IconGlobe", "브라우저"),
-            ViewMode.Diff    => ("IconGitCompare", "DIFF"),
-            _                => ("IconFolderOpen", _rootPath ?? "파일 탐색기"),
+            1 => ("IconGlobe", "브라우저"),
+            2 => ("IconGitCompare", "DIFF"),
+            _ => ("IconFolderOpen", _rootPath ?? "파일 탐색기"),
         };
         HeaderIcon.Data = (System.Windows.Media.Geometry)FindResource(icon);
         PathText.Text = title;
-        UpdateViewToggle();
+
+        UpdateTabIndicator(animate);
+        UpdateTabTextColors();
     }
 
-    private void UpdateViewToggle()
+    private void UpdateTabIndicator(bool animate)
     {
-        var muted   = (System.Windows.Media.Brush)FindResource("TextMutedBrush");
-        var primary = (System.Windows.Media.Brush)FindResource("PrimaryBrush");
-        var text    = (System.Windows.Media.Brush)FindResource("TextBrush");
+        Button[] btns = [DirViewBtn, BrowserViewBtn, DiffViewBtn];
+        var btn = btns[_activeTabIndex];
+        if (btn.ActualWidth <= 0) return;
 
-        DirViewIcon.Stroke     = _mode == ViewMode.Directory ? primary : muted;
-        BrowserViewIcon.Stroke = _mode == ViewMode.Browser   ? primary : muted;
-        DiffViewIcon.Stroke    = _mode == ViewMode.Diff       ? primary : muted;
-        DirViewLabel.Foreground     = _mode == ViewMode.Directory ? primary : text;
-        BrowserViewLabel.Foreground = _mode == ViewMode.Browser   ? primary : text;
-        DiffViewLabel.Foreground    = _mode == ViewMode.Diff       ? primary : text;
+        var pos     = btn.TransformToAncestor(TabBarGrid).Transform(new System.Windows.Point(0, 0));
+        var targetX = pos.X;
+        var targetW = btn.ActualWidth;
+        var dur  = new Duration(TimeSpan.FromMilliseconds(260));
+        var ease = new System.Windows.Media.Animation.QuinticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
+
+        if (animate)
+        {
+            TabSlidingIndicator.BeginAnimation(FrameworkElement.WidthProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(targetW, dur) { EasingFunction = ease });
+            TabIndicatorTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(targetX, dur) { EasingFunction = ease });
+        }
+        else
+        {
+            TabSlidingIndicator.BeginAnimation(FrameworkElement.WidthProperty, null);
+            TabSlidingIndicator.Width = targetW;
+            TabIndicatorTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, null);
+            TabIndicatorTranslate.X = targetX;
+        }
+    }
+
+    private void UpdateTabTextColors()
+    {
+        SetTabColor(DirViewIcon,     DirViewLabel,     _activeTabIndex == 0);
+        SetTabColor(BrowserViewIcon, BrowserViewLabel, _activeTabIndex == 1);
+        SetTabColor(DiffViewIcon,    DiffViewLabel,    _activeTabIndex == 2);
+    }
+
+    /// <summary>탭 아이콘·라벨 색상: 활성=PrimaryBrush, 비활성=TextMutedBrush.
+    /// 아이콘은 Path(Stroke), 라벨은 TextBlock(Foreground)이라 분기. 굵기는 항상 SemiBold로 고정
+    /// (활성/비활성 전환 시 글자 폭이 바뀌어 텍스트가 움직이는 현상 방지).</summary>
+    private void SetTabColor(System.Windows.Shapes.Path icon, TextBlock label, bool active)
+    {
+        icon.Stroke = (System.Windows.Media.Brush)FindResource(active ? "PrimaryBrush" : "TextMutedBrush");
+        label.Foreground = (System.Windows.Media.Brush)FindResource(active ? "PrimaryBrush" : "TextMutedBrush");
+        label.FontWeight = FontWeights.SemiBold;
     }
 
     /// <summary>airspace: 오버레이가 뜰 때 브라우저 WebView2 를 스냅샷으로 숨김.</summary>
