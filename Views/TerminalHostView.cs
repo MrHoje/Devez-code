@@ -416,12 +416,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
     }
 
-    /// <summary>클립보드에 텍스트 기록 (WinForms STA, 잠금 충돌 대비 재시도).</summary>
+    /// <summary>클립보드에 텍스트 기록 (잠금 충돌 대비 재시도).
+    /// SetText 는 지연 렌더링(copy=false)이라 WebView2(별도 Edge 프로세스) 환경에서
+    /// 실제 데이터가 클립보드에 안 올라오는 경우가 있어, 즉시 flush 하는
+    /// SetDataObject(text, true) 로 기록한다(OleFlushClipboard).</summary>
     private static void SetClipboardText(string text)
     {
         for (int i = 0; i < 5; i++)
         {
-            try { System.Windows.Clipboard.SetText(text); return; }
+            try { System.Windows.Clipboard.SetDataObject(text, true); return; }
             catch { System.Threading.Thread.Sleep(20); }
         }
     }
