@@ -45,7 +45,8 @@ internal sealed class ReorderDrag<T> where T : class
         FrameworkElement sourceElement,
         Func<T, int, int, Task> onCommit,
         bool exactFollow = false,
-        bool horizontal = false)
+        bool horizontal = false,
+        FrameworkElement? ghostSource = null)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -65,7 +66,10 @@ internal sealed class ReorderDrag<T> where T : class
         var srcIdx = captured.FindIndex(s => ReferenceEquals(s.Item, source));
         if (srcIdx < 0 || captured.Count < 2) return null;
 
-        var ghost = DragHelper.BeginManualDrag(sourceElement, sourceElement);
+        // ghostSource: ghost 이미지로 캡처할 visual (null이면 sourceElement 사용).
+        // 슬롯에는 받침(Path) 자식이 포함되어 sourceElement(row) 자체로는 bitmap에 받침까지
+        // 잡혀버리는 경우, 받침 없는 Border를 따로 지정해 ghost에서 받침을 제외한다 (devez 정합).
+        var ghost = DragHelper.BeginManualDrag(ghostSource ?? sourceElement, sourceElement);
         if (ghost == null) return null;
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal);
