@@ -61,12 +61,41 @@
     color: var(--term-fg, #CCCCCC); font-size: 13px; line-height: 1;
   }
   #search-bar button:hover { background: rgba(255,255,255,0.12); }
+
+  /* ── 세션 로딩 스피너 (테마 변경 재시작·세션 진입 중) ──────────────
+     WebView2 는 HwndHost 라 항상 WPF 위에 그려진다 → WPF 오버레이로는 터미널을
+     덮을 수 없으므로 스피너를 웹 레이어 안에 둔다. 배경은 --term-bg 라 테마를 따라간다. */
+  #loading-overlay {
+    position: absolute; inset: 0; z-index: 50;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: var(--term-bg, #0C0C0C);
+  }
+  #loading-overlay.on { display: flex; }
+  /* devez 최초 실행 스피너와 동일: PrimaryBrush 점선 링(28 10) 회전, 0.85s, 두께 3. */
+  #loading-overlay .ring {
+    width: 36px; height: 36px;
+    animation: dz-spin 0.85s linear infinite;
+  }
+  #loading-overlay .ring circle {
+    fill: none;
+    stroke: var(--term-accent, #2563eb);
+    stroke-width: 3;
+    stroke-dasharray: 74 30;
+  }
+  #loading-overlay .label {
+    margin-top: 14px; font-size: 13px; opacity: 0.85;
+    color: var(--term-fg, #CCCCCC);
+    font-family: 'Malgun Gothic', sans-serif;
+  }
+  @keyframes dz-spin { to { transform: rotate(360deg); } }
 </style>
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
 <script src="addon-search.min.js"></script>
 </head>
 <body>
+<div id="loading-overlay"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div>
 <div id="search-bar">
   <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
   <span id="search-count"></span>
@@ -435,6 +464,7 @@
         // 조합 글자 위치가 입력 박스를 따라가지 않도록 CSS 변수 설정
         document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
         document.documentElement.style.setProperty('--term-fg', msg.theme.foreground || '#CCCCCC');
+        if (msg.accent) document.documentElement.style.setProperty('--term-accent', msg.accent);
         break;
       case 'theme':
         // 라이브 테마 전환 — 열린 모든 xterm 의 색을 갱신하고 CSS 변수·body 배경도 맞춘다
@@ -451,6 +481,7 @@
         document.body.style.background = msg.theme.background || '#0C0C0C';
         document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
         document.documentElement.style.setProperty('--term-fg', msg.theme.foreground || '#CCCCCC');
+        if (msg.accent) document.documentElement.style.setProperty('--term-accent', msg.accent);
         break;
       case 'show':
         show(msg.roomId);
@@ -480,6 +511,11 @@
           t.fit.fit();
           post({ type: 'resize', roomId: msg.roomId, cols: t.term.cols, rows: t.term.rows });
         }
+        break;
+      }
+      case 'loading': {
+        // 세션 로딩 스피너 토글(테마 재시작·세션 진입 중). 웹 레이어라 터미널 위에 항상 보인다.
+        document.getElementById('loading-overlay').classList.toggle('on', !!msg.on);
         break;
       }
       case 'focus': {

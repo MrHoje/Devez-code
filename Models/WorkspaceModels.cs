@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Linq;
 using System.IO;
 using System.Runtime.CompilerServices;
 using DevezCode.Views;
@@ -109,6 +110,18 @@ public sealed class ProjectItem : NotifyBase
     /// Tabs.CollectionChanged 에서 SessionItem 만 추려 추가/제거한다 → 사이드바 바인딩이 즉시 갱신.</summary>
     public ObservableCollection<SessionItem> Sessions { get; } = new();
 
+    // ── 프로젝트 카드 헤더의 집계 세션 상태 (펼치지 않아도 한눈에) ──
+    /// <summary>이 프로젝트의 총 세션 수.</summary>
+    public int SessionCount => Sessions.Count;
+    /// <summary>살아있는(ConPTY 실행 중) 세션 수.</summary>
+    public int AliveSessionCount => Sessions.Count(s => s.IsAlive);
+    /// <summary>하나라도 살아있으면 true → 헤더 점을 테마색으로.</summary>
+    public bool HasAliveSession => AliveSessionCount > 0;
+    /// <summary>요청 처리 중인 세션이 하나라도 있으면 true.</summary>
+    public bool HasBusySession => Sessions.Any(s => s.IsBusy);
+    /// <summary>헤더 표시용 "살아있음/전체" (세션 없으면 빈 문자열).</summary>
+    public string SessionStatusText => Sessions.Count == 0 ? "" : $"{AliveSessionCount}/{Sessions.Count}";
+
     public ProjectItem()
     {
         // Tabs → Sessions 단방향 동기. 역방향은 코드가 항상 Tabs 에만 추가/제거하도록 강제.
@@ -126,6 +139,31 @@ public sealed class ProjectItem : NotifyBase
                 foreach (var s in Tabs.OfType<SessionItem>()) Sessions.Add(s);
             }
         };
+
+        // 세션 추가/제거 및 각 세션의 IsAlive/IsBusy 변화 → 헤더 집계 상태 갱신.
+        Sessions.CollectionChanged += (_, e) =>
+        {
+            if (e.OldItems != null)
+                foreach (SessionItem s in e.OldItems) s.PropertyChanged -= OnSessionPropChanged;
+            if (e.NewItems != null)
+                foreach (SessionItem s in e.NewItems) s.PropertyChanged += OnSessionPropChanged;
+            RaiseSessionStatus();
+        };
+    }
+
+    private void OnSessionPropChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SessionItem.IsAlive) or nameof(SessionItem.IsBusy))
+            RaiseSessionStatus();
+    }
+
+    private void RaiseSessionStatus()
+    {
+        OnPropertyChanged(nameof(SessionCount));
+        OnPropertyChanged(nameof(AliveSessionCount));
+        OnPropertyChanged(nameof(HasAliveSession));
+        OnPropertyChanged(nameof(HasBusySession));
+        OnPropertyChanged(nameof(SessionStatusText));
     }
 
     public static ProjectItem FromPath(string path)

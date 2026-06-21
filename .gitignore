@@ -3,3 +3,6 @@ obj/
 .vs/
 *.user
 .claude/
+
+# opencode 가 루트에서 실행될 때 생기는 테스트 잔여물
+/tui.json

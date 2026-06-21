@@ -23,8 +23,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string>? SessionStarted;
     /// <summary>방의 셸 프로세스가 종료됨(끊김/죽음). roomId 전달.</summary>
     public event Action<string>? SessionExited;
-    /// <summary>테마 변경으로 세션을 재시작하기 시작함(opencode). roomId 전달 — 호출자가 로딩 스피너 표시용.</summary>
-    public event Action<string>? SessionRestarting;
     /// <summary>터미널에서 세션(탭) 단축키 발생 — name: newSession/closeSession/nextSession/prevSession/gotoSession.
     /// gotoSession 일 때 index = 0-기준 세션 번호(-1 = 마지막), 그 외엔 의미 없음.</summary>
     public event Action<string, int>? SessionActionRequested;
@@ -61,7 +59,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     public TerminalHostView()
     {
-        _themeChangedHandler = _ => { PushCurrentTheme(); RestartOpenCodeSessions(); };
+        // 테마 변경 시 xterm 색만 라이브 갱신. 세션 재시작(claude/opencode 모두 시작 시 테마 로드)은
+        // MainWindow.ReloadAllSessionsForTheme 가 커밋 시점에 일괄 처리한다.
+        _themeChangedHandler = _ => PushCurrentTheme();
         App.ThemeChanged += _themeChangedHandler;
     }
 
@@ -313,6 +313,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         {
             type = "init",
             theme = cfg.Scheme,
+            accent = CurrentAccentHex(), // 로딩 스피너 색 = 앱 PrimaryBrush (devez 스타일)
             fontFamily = cfg.FontFamily,
             fontSize = fontSizePx,
             windowsBuild = Environment.OSVersion.Version.Build, // xterm windowsPty 휴리스틱 판정용
@@ -505,34 +506,20 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         if (!_pageReady) return; // pageReady 시 OnPageReady 가 init 으로 보내줌
         var scheme = TerminalSessionManager.Instance.Config.Scheme;
-        PostJson(new { type = "theme", theme = scheme });
+        PostJson(new { type = "theme", theme = scheme, accent = CurrentAccentHex() });
     }
 
-    /// <summary>OpenCode 는 tui.json 을 시작 시에만 읽으므로 테마 변경 시 살아있는 세션을 재시작한다.
-    /// 매니저가 tui.json 을 새 테마로 기록한 뒤, 여기서 세션을 종료→재생성하고 JS 를 리셋해
-    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄운다.
-    /// 종료(ConPTY/job 트리)와 재생성이 겹치면 새 opencode 가 빈 화면으로 뜨므로 짧게 대기한다.</summary>
-    private async void RestartOpenCodeSessions()
+    /// <summary>현재 테마의 PrimaryColor 를 #RRGGBB 로. 로딩 스피너 색(devez 스타일)에 사용.</summary>
+    private static string CurrentAccentHex()
     {
-        if (!_pageReady) return;
-        foreach (var roomId in TerminalSessionManager.Instance.GetOpenCodeRoomIds())
-        {
-            if (!_wired.TryGetValue(roomId, out var s) || !s.IsAlive) continue;
-
-            // 재시작 동안 로딩 스피너가 다시 뜨도록 준비 상태를 리셋한다(새 화면이 떠야 다시 ready 통지).
-            _ready.Remove(roomId);
-            _readyScan.Remove(roomId);
-            _readyNotified.Remove(roomId);
-            if (_settleTimers.Remove(roomId, out var st)) st.Stop();
-            SessionRestarting?.Invoke(roomId);                   // 호스트(MainWindow) → 스피너 표시
-
-            TerminalSessionManager.Instance.KillSession(roomId); // 기존 세션 종료·제거
-            _wired.Remove(roomId);                               // 오래된 세션 참조 정리(재배선 보장)
-            await Task.Delay(250);                               // ConPTY/job 트리 정리 대기
-            WireSession(roomId, 120, 30);                        // 새 세션(새 tui.json 테마) 생성·배선
-            PostJson(new { type = "restarted", roomId });        // JS xterm 리셋(dead 해제) + resize 유도
-        }
+        if (System.Windows.Application.Current?.TryFindResource("PrimaryColor") is System.Windows.Media.Color c)
+            return $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+        return "#2563eb";
     }
+
+    /// <summary>세션 로딩 스피너(웹 레이어) 표시/숨김. WebView2 는 HwndHost 라 WPF 오버레이로는
+    /// 터미널을 못 덮으므로 스피너를 웹 안에서 띄운다(터미널 위에 항상 보임).</summary>
+    public void SetLoading(bool on) => PostJson(new { type = "loading", on });
 
     /// <summary>방 삭제 시 호출 — 방별 배선·준비 상태와 JS 쪽 xterm 인스턴스를 정리.
     /// ConPTY 셸 세션은 TerminalSessionManager.DisposeRoom 이 별도로 정리한다.</summary>

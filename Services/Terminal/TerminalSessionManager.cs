@@ -192,26 +192,6 @@ public sealed class TerminalSessionManager
             ApplyOpenCodeProjectTheme(dir, theme);
     }
 
-    /// <summary>테마 변경 시 뷰가 재시작할 대상 — 현재 추적 중인 opencode 방 ID 목록.</summary>
-    public List<string> GetOpenCodeRoomIds()
-    {
-        lock (_lock) return new List<string>(_opencodeRoomDirs.Keys);
-    }
-
-    /// <summary>지정 방의 세션을 즉시 종료·제거한다. 다음 <see cref="GetOrCreate"/> 가
-    /// 새 tui.json 테마로 새 세션을 만든다(opencode 테마 재시작용).</summary>
-    public void KillSession(string roomId)
-    {
-        TerminalSession? session;
-        lock (_lock)
-        {
-            if (!_sessions.TryGetValue(roomId, out session)) return;
-            _sessions.Remove(roomId);
-            _pendingInitial.Remove(roomId);
-        }
-        session?.Dispose();
-    }
-
     /// <summary>프로젝트 local settings 에 claude theme 을 기록한다.
     /// claude 는 settings 파일 변경을 감시하므로 이미 떠 있는 TUI 도 이 경로로 갱신된다.
     /// 파일: &lt;workingDir&gt;/.claude/settings.local.json. 기존 설정은 보존.</summary>

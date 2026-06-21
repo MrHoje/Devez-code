@@ -467,43 +467,39 @@
                         <Grid x:Name="TerminalLoadingOverlay" Visibility="Collapsed"
                               Background="{DynamicResource BgBrush}">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                <Grid Width="40" Height="40" HorizontalAlignment="Center">
-                                    <!-- 트랙(흐린 원) -->
-                                    <Ellipse Width="40" Height="40" StrokeThickness="3"
-                                             Stroke="{DynamicResource LineBrush}"/>
-                                    <!-- 회전 호 — 오버레이가 보일 때만 회전 -->
-                                    <Ellipse x:Name="TermSpinner" Width="40" Height="40" StrokeThickness="3"
-                                             Stroke="{DynamicResource PrimaryBrush}"
-                                             StrokeDashArray="22 100" StrokeDashCap="Round"
-                                             RenderTransformOrigin="0.5,0.5">
-                                        <Ellipse.RenderTransform>
-                                            <RotateTransform x:Name="TermSpinRot"/>
-                                        </Ellipse.RenderTransform>
-                                        <Ellipse.Style>
-                                            <Style TargetType="Ellipse">
-                                                <Style.Triggers>
-                                                    <Trigger Property="IsVisible" Value="True">
-                                                        <Trigger.EnterActions>
-                                                            <BeginStoryboard x:Name="TermSpinBs">
-                                                                <Storyboard>
-                                                                    <!-- Style 트리거라 TargetName 사용 불가 — 스타일이 적용된 Ellipse 자신의 RenderTransform 을 직접 타깃 -->
-                                                                    <DoubleAnimation
-                                                                        Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                        From="0" To="360" Duration="0:0:0.9"
-                                                                        RepeatBehavior="Forever"/>
-                                                                </Storyboard>
-                                                            </BeginStoryboard>
-                                                        </Trigger.EnterActions>
-                                                        <Trigger.ExitActions>
-                                                            <StopStoryboard BeginStoryboardName="TermSpinBs"/>
-                                                        </Trigger.ExitActions>
-                                                    </Trigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Ellipse.Style>
-                                    </Ellipse>
-                                </Grid>
-                                <TextBlock Text="세션 여는 중…" Margin="0,16,0,0"
+                                <!-- devez 최초 실행 스피너와 동일: PrimaryBrush 점선 링(28 10) 회전, 0.85s. -->
+                                <Ellipse x:Name="TermSpinner" Width="36" Height="36" StrokeThickness="3"
+                                         Fill="Transparent"
+                                         Stroke="{DynamicResource PrimaryBrush}"
+                                         StrokeDashArray="28 10"
+                                         HorizontalAlignment="Center"
+                                         RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <RotateTransform x:Name="TermSpinRot"/>
+                                    </Ellipse.RenderTransform>
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsVisible" Value="True">
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard x:Name="TermSpinBs">
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <!-- Style 트리거라 TargetName 사용 불가 — 스타일이 적용된 Ellipse 자신의 RenderTransform 을 직접 타깃 -->
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                    From="0" To="360" Duration="0:0:0.85"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                    <Trigger.ExitActions>
+                                                        <StopStoryboard BeginStoryboardName="TermSpinBs"/>
+                                                    </Trigger.ExitActions>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <TextBlock Text="세션 여는 중…" Margin="0,14,0,0"
                                            FontSize="{DynamicResource Fs13}" TextAlignment="Center"
                                            Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>

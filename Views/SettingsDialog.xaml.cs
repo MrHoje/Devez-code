@@ -151,7 +151,7 @@ public partial class SettingsDialog : UserControl
 
         ApplySettings();
         if (themeChanged)
-            (Application.Current.MainWindow as MainWindow)?.TryRestartActiveClaudeSession();
+            (Application.Current.MainWindow as MainWindow)?.ReloadAllSessionsForTheme();
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 

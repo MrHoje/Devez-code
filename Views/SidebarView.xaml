@@ -191,6 +191,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <!-- 프로젝트 명 + 경로(작은 폰트, 잘리면 …). chevron/메뉴는 2줄 헤더에 대해 수직 중앙 정렬 -->
                             <StackPanel Grid.Column="0" VerticalAlignment="Center" ToolTip="{Binding Path}">
@@ -203,8 +204,33 @@
                                            FontSize="{DynamicResource Fs11}"
                                            Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
+                            <!-- 집계 세션 상태: 살아있는 세션 있으면 테마색 점, 아니면 회색. 옆에 살아있음/전체 수. -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                                        Margin="6,0,2,0" ToolTip="실행 중 / 전체 세션">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SessionCount}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <Ellipse Width="7" Height="7" VerticalAlignment="Center">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{DynamicResource TextMutedBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasAliveSession}" Value="True">
+                                                    <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                            </StackPanel>
                             <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용) -->
-                            <Button Grid.Column="1" Margin="6,0,0,0" Tag="{Binding}"
+                            <Button Grid.Column="2" Margin="6,0,0,0" Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
@@ -228,7 +254,7 @@
                                 </Button.Template>
                             </Button>
                             <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움 -->
-                            <Button Grid.Column="2" Margin="2,0,0,0" Tag="{Binding}"
+                            <Button Grid.Column="3" Margin="2,0,0,0" Tag="{Binding}"
                                     Click="ProjectMenu_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"

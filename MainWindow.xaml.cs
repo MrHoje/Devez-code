@@ -63,8 +63,6 @@ public partial class MainWindow : Window
         _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } HideSessionLoadingIf(id); };
         // claude 화면이 완전히 뜨면(alt-screen) 로딩 스피너 종료
         _terminal.TerminalReady  += id => HideSessionLoadingIf(id);
-        // 테마 변경으로 세션 재시작 시작(opencode) → 활성 세션이면 새 화면이 뜰 때까지 스피너 표시
-        _terminal.SessionRestarting += id => { if (_activeSession?.Id == id) ShowSessionLoading(id); };
         // 터미널 단축키(Ctrl+Shift+T/W, Ctrl+Tab) → 세션 추가/닫기/전환
         _terminal.SessionActionRequested += OnTerminalSessionAction;
 
@@ -876,6 +874,8 @@ public partial class MainWindow : Window
             ProjectNameText.ToolTip = proj.Name;
         }
         UpdateProjectBranchBubble(proj); // 브렌치 버블 갱신
+        // 프로젝트가 활성화되면 그 프로젝트의 모든 세션을 백그라운드로 미리 띄운다(시작 복원·전환 공통).
+        PreloadProjectSessions(proj, except: null);
     }
 
     /// <summary>타이틀 바 브렌치 그룹 갱신 — 현재 git 브렌치.
@@ -934,8 +934,18 @@ public partial class MainWindow : Window
             target = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden);
         if (target != null) ActivateSession(target, unHide: false);
         else ClearActiveSession();
-        // 나머지 세션은 미리 띄우지 않는다(과거엔 모두 백그라운드 spawn → 프로젝트 선택 시 CPU 폭증).
-        // 마지막 보던 세션 하나만 활성화하고, 다른 세션은 사용자가 탭/사이드바에서 클릭할 때 lazy 생성된다.
+        // 나머지 세션 preload 는 SetActiveProject 가 이미 처리했다(시작 복원·전환 공통).
+    }
+
+    /// <summary>프로젝트의 모든 세션을 백그라운드로 미리 생성(preload). 활성 세션(except)은 제외.</summary>
+    private void PreloadProjectSessions(ProjectItem proj, SessionItem? except)
+    {
+        foreach (var s in proj.Tabs.OfType<SessionItem>())
+        {
+            if (ReferenceEquals(s, except) || s.Hidden) continue;
+            SettingsService.SaveClaudeCodeRoomDir(s.Id, proj.Path); // 항상 프로젝트 폴더에서 실행되도록 보장
+            _terminal.PreloadTerminal(s.Id);
+        }
     }
 
     private void DeleteProject(ProjectItem proj)
@@ -1150,7 +1160,8 @@ public partial class MainWindow : Window
     private void ShowSessionLoading(string roomId)
     {
         _loadingRoomId = roomId;
-        TerminalLoadingOverlay.Visibility = Visibility.Visible;
+        TerminalLoadingOverlay.Visibility = Visibility.Visible; // 콜드스타트(WebView2 미렌더) 폴백
+        _terminal.SetLoading(true);                             // 웹 레이어 스피너(터미널 위에 보임)
 
         _loadingTimeout?.Stop();
         _loadingTimeout ??= new System.Windows.Threading.DispatcherTimer();
@@ -1168,6 +1179,7 @@ public partial class MainWindow : Window
         _loadingTimeout?.Stop();
         _loadingRoomId = null;
         TerminalLoadingOverlay.Visibility = Visibility.Collapsed;
+        _terminal.SetLoading(false);
     }
 
     /// <summary>해당 방이 현재 로딩 중이던 세션이면 스피너 숨김.</summary>
@@ -1338,6 +1350,38 @@ public partial class MainWindow : Window
 
         // 비활성 세션은 ConPTY 만 정리된 상태 — 다음 탭 클릭 시 ActivateSession → GetOrCreate →
         // 새 ConPTY + resume 으로 복원. 여기서 미리 띄우지 않음 (리소스 낭비 + 사용자가 안 보는 세션).
+    }
+
+    /// <summary>테마 변경 적용 — 모든 세션의 ConPTY 를 종료한 뒤 현재 프로젝트의 모든 세션을 다시 불러온다.
+    /// claude(settings.local.json)·opencode(tui.json) 모두 시작 시점에 새 테마를 읽으므로 재시작이 필요.
+    /// 활성 세션은 즉시 띄우고(스피너), 같은 프로젝트의 나머지는 백그라운드 preload, 다른 프로젝트는 lazy.</summary>
+    public async void ReloadAllSessionsForTheme()
+    {
+        var active = _activeSession;
+        var proj   = _activeProject;
+
+        // 1) 모든 프로젝트의 세션 종료 — JS xterm 인스턴스 + ConPTY 모두 정리(IME 상태까지 초기화).
+        foreach (var s in _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList())
+        {
+            try
+            {
+                DisposeSessionProcess(s, purge: false); // CloseTerminal + DisposeRoom(매핑 보존)
+                TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
+            }
+            catch { /* ignore */ }
+        }
+
+        // JS 가 dispose 메시지를 처리할 시간 확보 (createTerm 이 dispose 중 인스턴스와 충돌 방지).
+        await Task.Delay(150);
+
+        // 2) 현재 프로젝트의 모든 세션 재로드. 활성 세션은 즉시 표시(스피너), 나머지는 백그라운드 preload.
+        if (proj != null)
+        {
+            if (active != null && proj.Tabs.Contains(active))
+                ActivateSession(active);
+            PreloadProjectSessions(proj, except: active);
+        }
+        // 다른 프로젝트 세션은 정리만 된 상태 — 해당 프로젝트 선택 시 새 테마로 재생성된다.
     }
 
     private ProjectItem? ParentOf(SessionItem session)
