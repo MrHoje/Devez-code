@@ -32,11 +32,21 @@ public partial class ConfirmDialog : Window
         {
             var lines = message.Count(c => c == '\n') + 1;
             var maxLineLength = message.Split('\n').DefaultIfEmpty("").Max(s => s.Length);
-            Width = maxLineLength >= 36 || lines >= 4 ? 560 : 520;
+            Width = maxLineLength >= 36 || lines >= 4 ? 640 : 600;
             Height = lines <= 2 ? 250 : lines <= 4 ? 320 : 370;
         }
 
         KeyDown += OnKeyDown;
+        PreviewKeyDown += OnPreviewKeyDown;
+        // 창이 뜨면 OK 버튼에 포커스를 둬서 Enter 가 곧바로 Primary 동작이 되게 한다.
+        Loaded += (_, _) =>
+        {
+            try
+            {
+                if (OkBtn.IsVisible) OkBtn.Focus();
+            }
+            catch { }
+        };
     }
 
     public static bool Show(
@@ -126,6 +136,25 @@ public partial class ConfirmDialog : Window
                 DialogResult = true;
                 e.Handled = true;
             }
+        }
+        else if (e.Key == Key.Escape)
+        {
+            DialogResult = false;
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Preview 단계에서 Enter/Esc 를 가로채 항상 동작하게 한다.
+    /// 자식 컨트롤이 KeyDown 을 먼저 먹어도(예: TextBox) PreviewKeyDown 은 라우팅 최상위에서 먼저 도달.</summary>
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            // 확인 텍스트 입력이 있고 아직 일치하지 않으면 Primary 로 넘기지 않음.
+            if (_confirmText != null && ConfirmInputBox.Text != _confirmText) return;
+            _choice = ConfirmChoice.Primary;
+            DialogResult = true;
+            e.Handled = true;
         }
         else if (e.Key == Key.Escape)
         {
