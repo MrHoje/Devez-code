@@ -478,7 +478,7 @@ public partial class MainWindow : Window
         {
             _rightCollapsed = false;
             FileExplorer.Visibility = Visibility.Visible;
-            SetMinWidth(200, FileExpCol, FooterFileExpCol);
+            SetMinWidth(0, FileExpCol, FooterFileExpCol);
             _rightAnimCancel = AnimatePanelAndSplitter(
                 FileExpCol, _fileExpWidth,
                 FileExpSplitterCol, 4,
@@ -522,8 +522,8 @@ public partial class MainWindow : Window
         UpdatePanelToggleVisual();
     }
 
-    // 공유 그룹 멤버들의 MinWidth 를 한꺼번에 설정. 미러 컬럼에 MinWidth(190/200)가
-    // 남아 있으면 폭을 0 으로 줘도 공유 그룹이 최소폭으로 버텨 완전히 안 접힌다.
+    // 공유 그룹 멤버들의 MinWidth 를 한꺼번에 설정. 미러 컬럼에 MinWidth 가 남아 있으면
+    // 폭을 0 으로 줘도 공유 그룹이 최소폭으로 버텨 완전히 안 접힌다.
     private static void SetMinWidth(double min, params ColumnDefinition[] cols)
     {
         foreach (var c in cols) c.MinWidth = min;
@@ -1775,7 +1775,7 @@ public partial class MainWindow : Window
         _rightCollapsed = !shown;   // 표시 상태 보존
         FileExplorer.Visibility = _rightCollapsed ? Visibility.Collapsed : Visibility.Visible;
         FileExpSplitterCol.Width = new GridLength(_rightCollapsed ? 0 : 4);
-        FileExpCol.MinWidth = _rightCollapsed ? 0 : 200;
+        FileExpCol.MinWidth = _rightCollapsed ? 0 : 0;
         FileExpCol.Width = new GridLength(_rightCollapsed ? 0 : _fileExpWidth);
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();

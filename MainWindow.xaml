@@ -128,7 +128,7 @@
                     <ColumnDefinition x:Name="SidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                     <ColumnDefinition Width="*" MinWidth="360"/>
                     <ColumnDefinition x:Name="FileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
-                    <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="200" SharedSizeGroup="MainFileExp"/>
+                    <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="0" SharedSizeGroup="MainFileExp"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- 패널 경계(devez 방식): 좌·우 패널이 각자 1px LineBrush 보더를 그리고,
@@ -521,7 +521,7 @@
                         <ColumnDefinition x:Name="FooterSidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
-                        <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="200"/>
+                        <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="0"/>
                     </Grid.ColumnDefinitions>
                     <!-- 좌측: CPU/RAM 칩 -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
