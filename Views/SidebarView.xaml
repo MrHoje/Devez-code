@@ -161,7 +161,8 @@
 
         <!-- ── 프로젝트(상위 항목) 템플릿 — 카드 헤더(아이콘·이름·chevron·⋯) + 세션 row 리스트 ── -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
-            <Border x:Name="ProjectCardRoot" Style="{StaticResource ProjectCard}">
+            <Border x:Name="ProjectCardRoot" Style="{StaticResource ProjectCard}"
+                    b:CornerRadiusClip.Radius="10">
                 <Border.ContextMenu>
                     <!-- 카드 어디서든 우클릭하면 프로젝트 메뉴가 뜨도록 outer Border로 이동 -->
                     <ContextMenu>
