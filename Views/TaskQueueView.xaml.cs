@@ -23,6 +23,22 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
+    // ── 버블/입력 글꼴 크기 (Ctrl+휠, devez BubbleFontSize 정합 10~28) ──
+    private double _bubbleFontSize = SettingsService.LoadTaskQueueBubbleFontSize();
+    public double BubbleFontSize
+    {
+        get => _bubbleFontSize;
+        set
+        {
+            var v = Math.Clamp(value, 10, 28);
+            if (Math.Abs(_bubbleFontSize - v) < 0.01) return;
+            _bubbleFontSize = v;
+            OnPropertyChanged();
+            SettingsService.SaveTaskQueueBubbleFontSize(v);
+            ApplyDefaultInputHeightIfNotCustom(); // 사용자 지정 높이 없으면 2줄 기본 재계산
+        }
+    }
+
     public ObservableCollection<TaskQueueItem> Items { get; } = new();
 
     public int Count => Items.Count;
@@ -200,31 +216,42 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     // ── 입력 ──
     private void InputBox_TextChanged(object sender, TextChangedEventArgs e) { }
 
-    private const double InputNaturalHeight = 28;
     private const double InputMaxHeight = 180;
 
-    /// <summary>입력창 상단 핸들 드래그 → 높이 조절(자연 높이~180), 로컬 저장. (devez InputResizeThumb 정합)</summary>
+    /// <summary>기본(최소) 입력 높이 = 글꼴 기준 2줄. Ctrl+휠로 글꼴이 바뀌면 함께 변한다.</summary>
+    private double TwoLineInputHeight() => Math.Round(_bubbleFontSize * 1.5 * 2);
+
+    /// <summary>Ctrl+휠 → 버블/입력 글꼴 크기 조절(10~28). devez MsgScroll_PreviewMouseWheel 정합.</summary>
+    private void Root_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+        e.Handled = true;
+        BubbleFontSize += e.Delta > 0 ? 1 : -1;
+    }
+
+    /// <summary>입력창 상단 핸들 드래그 → 높이 조절(2줄~180), 로컬 저장. (devez InputResizeThumb 정합)</summary>
     private void InputResizeThumb_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
-        var current = InputBox.MinHeight > 0 ? InputBox.MinHeight : InputNaturalHeight;
-        var newMin = Math.Clamp(current - e.VerticalChange, InputNaturalHeight, InputMaxHeight);
-        if (Math.Abs(newMin - InputNaturalHeight) < 0.5)
-        {
-            InputBox.ClearValue(MinHeightProperty);
-            SettingsService.SaveTaskQueueInputMinHeight(0);
-        }
-        else
-        {
-            InputBox.MinHeight = newMin;
-            SettingsService.SaveTaskQueueInputMinHeight(newMin);
-        }
+        var floor = TwoLineInputHeight();
+        var current = InputBox.MinHeight > 0 ? InputBox.MinHeight : floor;
+        var newMin = Math.Clamp(current - e.VerticalChange, floor, InputMaxHeight);
+        InputBox.MinHeight = newMin;
+        // 기본(2줄)까지 줄이면 사용자 지정 해제(0 저장).
+        SettingsService.SaveTaskQueueInputMinHeight(Math.Abs(newMin - floor) < 0.5 ? 0 : newMin);
     }
 
     private void RestoreInputMinHeight()
     {
+        var floor = TwoLineInputHeight();
         var saved = SettingsService.LoadTaskQueueInputMinHeight();
-        if (saved <= 0) { InputBox.ClearValue(MinHeightProperty); return; }
-        InputBox.MinHeight = Math.Clamp(saved, InputNaturalHeight, InputMaxHeight);
+        InputBox.MinHeight = saved <= 0 ? floor : Math.Clamp(saved, floor, InputMaxHeight);
+    }
+
+    private void ApplyDefaultInputHeightIfNotCustom()
+    {
+        if (InputBox == null) return;
+        if (SettingsService.LoadTaskQueueInputMinHeight() <= 0)
+            InputBox.MinHeight = TwoLineInputHeight();
     }
 
     private void InputBox_PreviewKeyDown(object sender, KeyEventArgs e)

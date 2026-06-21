@@ -5,6 +5,7 @@
              Background="{DynamicResource BgBrush}"
              FontFamily="{StaticResource PretendardFont}"
              Focusable="True" FocusVisualStyle="{x:Null}"
+             PreviewMouseWheel="Root_PreviewMouseWheel"
              PreviewMouseLeftButtonDown="Root_PreviewMouseLeftButtonDown"
              PreviewMouseLeftButtonUp="Root_PreviewMouseLeftButtonUp"
              PreviewMouseMove="Root_PreviewMouseMove"
@@ -182,7 +183,7 @@
                                                 Padding="14,10">
                                             <TextBlock Text="{Binding Text}"
                                                        TextWrapping="Wrap"
-                                                       FontSize="{DynamicResource Fs14}"
+                                                       FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                         </Border>
                                     </Border>
@@ -338,10 +339,10 @@
                                  BorderThickness="0" Background="Transparent"
                                  Foreground="{DynamicResource TextBrush}"
                                  CaretBrush="{DynamicResource TextBrush}"
-                                 FontSize="{DynamicResource Fs13}"
+                                 FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                  FontFamily="{StaticResource PretendardFont}"
                                  VerticalContentAlignment="Top"
-                                 MinHeight="28" MaxHeight="180"
+                                 MaxHeight="180"
                                  TextWrapping="Wrap" AcceptsReturn="True"
                                  VerticalScrollBarVisibility="Auto"
                                  PreviewKeyDown="InputBox_PreviewKeyDown"
@@ -350,7 +351,7 @@
                                    IsHitTestVisible="False"
                                    Margin="1,0,0,0" VerticalAlignment="Top"
                                    Foreground="{DynamicResource TextMutedBrush}"
-                                   FontSize="{DynamicResource Fs13}"
+                                   FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                    FontFamily="{StaticResource PretendardFont}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
