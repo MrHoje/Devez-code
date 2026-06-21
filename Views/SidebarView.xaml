@@ -192,10 +192,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <!-- 프로젝트 명 + 경로(작은 폰트, 잘리면 …). chevron/메뉴는 2줄 헤더에 대해 수직 중앙 정렬 -->
-                            <StackPanel x:Name="ProjectText" Grid.Column="0" VerticalAlignment="Center" ToolTip="{Binding Path}">
-                                <StackPanel.RenderTransform>
-                                    <TranslateTransform X="0"/>
-                                </StackPanel.RenderTransform>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" ToolTip="{Binding Path}">
                                 <TextBlock Text="{Binding Name}"
                                            TextTrimming="CharacterEllipsis"
                                            FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
@@ -264,33 +261,6 @@
                     </Border>
                 </StackPanel>
             </Border>
-            <DataTemplate.Triggers>
-                <!-- 카드 호버 시 이름+경로 텍스트가 오른쪽으로 살짝 슬라이드(순수 X축, 오버슛 없음) -->
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Trigger.EnterActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetName="ProjectText"
-                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
-                                                 To="3" Duration="0:0:0.15">
-                                    <DoubleAnimation.EasingFunction>
-                                        <CubicEase EasingMode="EaseOut"/>
-                                    </DoubleAnimation.EasingFunction>
-                                </DoubleAnimation>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </Trigger.EnterActions>
-                    <Trigger.ExitActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetName="ProjectText"
-                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
-                                                 To="0" Duration="0:0:0.15"/>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </Trigger.ExitActions>
-                </Trigger>
-            </DataTemplate.Triggers>
         </DataTemplate>
     </UserControl.Resources>
 
