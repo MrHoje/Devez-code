@@ -1,3 +1,4 @@
+// DEVEZCODE-STATUSLINE v3 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
 const _fs = require("fs"), _path = require("path"), _os = require("os");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
 const _cfgDefaults = { branch: true, model: true, eff: true, ctx: true, time: true, week: true, tokens: true };
@@ -76,22 +77,30 @@ process.stdin.on("end", () => {
     const totalTokens = counter.displayTotal || 0;
     const elapsedSec  = counter.displayTime  || 0;
 
+    // DevezCode 기본 색감: 베이스 색을 따뜻한 다크(#2A2620) 쪽으로 16% 블렌드.
+    // 다크 배경에서도 충분히 또렷하고, 라이트 테마에서도 가독성을 챙기는 톤다운 값.
+    const TINT = [42, 38, 32], K = 0.16;
+    const fg = (r, g, b) =>
+      "\x1b[38;2;" + Math.round(r + (TINT[0] - r) * K)
+            + ";" + Math.round(g + (TINT[1] - g) * K)
+            + ";" + Math.round(b + (TINT[2] - b) * K) + "m";
+
     const R = "\x1b[0m";
-    const MAIN   = "\x1b[38;2;229;231;235m";
-    const SEP    = "\x1b[38;2;147;164;184m";
-    const SOFT   = "\x1b[38;2;203;213;225m";
-    const HAIKU  = "\x1b[38;2;0;255;255m";
-    const OPUS   = "\x1b[38;2;248;113;113m";
-    const SONNET = "\x1b[38;2;250;204;21m";
-    const CTX    = "\x1b[38;2;52;211;153m";
-    const TIME   = "\x1b[38;2;96;165;250m";
-    const WEEK   = "\x1b[38;2;167;139;250m";
-    const TOK    = "\x1b[38;2;226;232;240m";
-    const E_LOW  = "\x1b[38;2;220;172;18m";
-    const E_MED  = "\x1b[38;2;63;157;99m";
-    const E_HIGH = "\x1b[38;2;177;185;249m";
-    const E_XH   = "\x1b[38;2;175;135;255m";
-    const E_MAX  = "\x1b[38;2;248;113;113m";
+    const MAIN   = fg(229, 231, 235);
+    const SEP    = fg(147, 164, 184);
+    const SOFT   = fg(203, 213, 225);
+    const HAIKU  = fg(0, 255, 255);
+    const OPUS   = fg(248, 113, 113);
+    const SONNET = fg(250, 204, 21);
+    const CTX    = fg(52, 211, 153);
+    const TIME   = fg(96, 165, 250);
+    const WEEK   = fg(167, 139, 250);
+    const TOK    = fg(226, 232, 240);
+    const E_LOW  = fg(220, 172, 18);
+    const E_MED  = fg(63, 157, 99);
+    const E_HIGH = fg(177, 185, 249);
+    const E_XH   = fg(175, 135, 255);
+    const E_MAX  = fg(248, 113, 113);
     const PIPE   = SEP + " | " + R;
 
     let mc, ml;
@@ -101,7 +110,7 @@ process.stdin.on("end", () => {
     else                            { mc = MAIN;   ml = id || "unknown"; }
 
     const parts = [];
-    if (CFG.branch && gitBranch) parts.push("\x1b[38;2;147;197;253m" + gitBranch + R);
+    if (CFG.branch && gitBranch) parts.push(fg(147, 197, 253) + gitBranch + R);
     if (CFG.model) parts.push(mc + ml + R);
     if (CFG.eff && effortLevel) {
       let ec = SOFT;

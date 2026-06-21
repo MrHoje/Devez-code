@@ -25,6 +25,9 @@ public static class UserStatusLineInstaller
     private static string BundledScriptPath => Path.Combine(
         AppContext.BaseDirectory, "Resources", "StatusLine", "statusline.js");
 
+    /// <summary>우리 관리 스크립트 식별 마커. 포함하면 동기화 대상(사용자 수제 스크립트는 미포함).</summary>
+    private const string ManagedMarker = "DEVEZCODE-STATUSLINE";
+
     /// <summary>statusline.js 가 설치돼 있고 settings.json 의 statusLine 이 그 스크립트를 가리키는지.</summary>
     public static bool IsInstalled()
     {
@@ -43,22 +46,35 @@ public static class UserStatusLineInstaller
         catch { return false; }
     }
 
-    /// <summary>statusline 스크립트와 settings.json 의 statusLine 등록을 보장. 없으면 설치.</summary>
+    /// <summary>statusline 스크립트와 settings.json 의 statusLine 등록을 보장.
+    /// 스크립트는 항상 번들과 동기화(우리 관리 파일이라 색감/로직 갱신 누락 방지), settings 는 없을 때만 머지.</summary>
     public static void EnsureInstalled()
     {
-        if (IsInstalled()) return;
         try { InstallScript(); } catch { /* best effort */ }
-        try { InstallSettingsEntry(); } catch { /* best effort */ }
+        if (!IsInstalled()) { try { InstallSettingsEntry(); } catch { /* best effort */ } }
     }
 
-    /// <summary>번들 statusline.js 를 ~/.claude\statusline.js 로 복사. 이미 있으면 스킵(사용자 수정 보존).</summary>
+    /// <summary>번들 statusline.js 를 ~/.claude\statusline.js 로 동기화.
+    /// 미설치거나, 우리 관리 스크립트(마커/구버전 시그니처)인 기존 파일이 번들과 다르면 덮어쓴다.
+    /// 마커 없는 사용자 수제 스크립트는 보존.</summary>
     private static void InstallScript()
     {
-        if (File.Exists(StatusLineJsPath)) return;
         if (!File.Exists(BundledScriptPath)) return;
         Directory.CreateDirectory(ClaudeDir);
-        File.Copy(BundledScriptPath, StatusLineJsPath);
+
+        var bundled = File.ReadAllText(BundledScriptPath);
+        if (File.Exists(StatusLineJsPath))
+        {
+            var existing = File.ReadAllText(StatusLineJsPath);
+            bool ours = existing.Contains(ManagedMarker) || IsLegacyManaged(existing);
+            if (!ours || existing == bundled) return;
+        }
+        File.WriteAllText(StatusLineJsPath, bundled, new UTF8Encoding(false));
     }
+
+    /// <summary>마커가 없던 구버전 관리 스크립트 식별 — 우리 고유 시그니처로 추정.</summary>
+    private static bool IsLegacyManaged(string content)
+        => content.Contains("claude-token-counter-") && content.Contains("38;2;229;231;235");
 
     /// <summary>~/.claude\settings.json 에 statusLine 키를 머지(나머지 설정은 보존).
     /// 스크립트/command 가 우리 statusline.js 를 가리키도록 강제. node.exe 경로는 시스템에서 자동 탐지.</summary>
