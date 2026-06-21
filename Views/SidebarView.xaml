@@ -262,16 +262,16 @@
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
-                <!-- 카드 호버 시 이름+경로 텍스트가 살짝 위로 튀어오르는(pop) 효과 -->
+                <!-- 카드 호버 시 이름+경로 텍스트가 오른쪽으로 살짝 슬라이드(순수 X축, 오버슛 없음) -->
                 <Trigger Property="IsMouseOver" Value="True">
                     <Trigger.EnterActions>
                         <BeginStoryboard>
                             <Storyboard>
                                 <DoubleAnimation Storyboard.TargetName="ProjectText"
                                                  Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
-                                                 To="3" Duration="0:0:0.18">
+                                                 To="3" Duration="0:0:0.15">
                                     <DoubleAnimation.EasingFunction>
-                                        <BackEase EasingMode="EaseOut" Amplitude="0.5"/>
+                                        <CubicEase EasingMode="EaseOut"/>
                                     </DoubleAnimation.EasingFunction>
                                 </DoubleAnimation>
                             </Storyboard>
