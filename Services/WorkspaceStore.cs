@@ -31,7 +31,7 @@ public static class WorkspaceStore
             {
                 var proj = ProjectItem.FromPath(p.Path);
                 foreach (var s in p.Sessions)
-                    proj.Sessions.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "" });
+                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "" });
                 result.Add(proj);
             }
         }
@@ -48,7 +48,8 @@ public static class WorkspaceStore
                 Projects = projects.Select(p => new ProjectDto
                 {
                     Path = p.Path,
-                    Sessions = p.Sessions.Select(s => new SessionDto
+                    // 파일 탭은 비영속: 세션만 저장 → 재시작 시 사라진다.
+                    Sessions = p.Tabs.OfType<SessionItem>().Select(s => new SessionDto
                     {
                         Id = s.Id, Name = s.Name,
                         Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,

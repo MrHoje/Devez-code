@@ -258,9 +258,17 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "requestPaste":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;
-                    var text = GetClipboardText();
-                    if (!string.IsNullOrEmpty(text))
-                        PostJson(new { type = "paste", roomId, data = text });
+                    var imagePath = SaveClipboardImage();
+                    if (imagePath != null)
+                    {
+                        PostJson(new { type = "paste", roomId, data = imagePath });
+                    }
+                    else
+                    {
+                        var text = GetClipboardText();
+                        if (!string.IsNullOrEmpty(text))
+                            PostJson(new { type = "paste", roomId, data = text });
+                    }
                     break;
                 }
                 case "action":
@@ -419,6 +427,33 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             catch { System.Threading.Thread.Sleep(20); }
         }
         return "";
+    }
+
+    /// <summary>클립보드에 이미지가 있으면 %TEMP%\DevezCode\clipboard\ 에 저장 후 파일 경로 반환.
+    /// 이미지가 없거나 저장 실패 시 null.</summary>
+    private static string? SaveClipboardImage()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            try
+            {
+                if (!System.Windows.Clipboard.ContainsImage()) return null;
+                using var ms = new System.IO.MemoryStream();
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(
+                    System.Windows.Clipboard.GetImage()));
+                encoder.Save(ms);
+                var dir = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), "DevezCode", "clipboard");
+                System.IO.Directory.CreateDirectory(dir);
+                var path = System.IO.Path.Combine(dir,
+                    $"clip_{DateTime.Now:yyyyMMddHHmmssfff}.png");
+                System.IO.File.WriteAllBytes(path, ms.ToArray());
+                return path;
+            }
+            catch { System.Threading.Thread.Sleep(20); }
+        }
+        return null;
     }
 
     /// <summary>현재 터미널 화면을 PNG 스냅샷으로 반환. airspace 우회용.</summary>

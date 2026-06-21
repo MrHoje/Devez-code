@@ -1439,6 +1439,38 @@
     </Style>
 
     <!-- ── Window control buttons (light theme: AuthWindow) ─────────────── -->
+    <!-- 탭 스트립의 새 탭 + 버튼 (스택 아이콘). 비활성(IsEnabled=False) 시 흐려짐.
+         일반 탭과 같은 높이로 배치되되 배경은 투명 → 호버 시 PanelSoftBrush 로 살짝 떠오르는 느낌. -->
+    <Style x:Key="NewTabButton" TargetType="Button">
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Cursor" Value="Arrow"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.3"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- 탭 오버플로우 좌·우 스크롤 버튼 (devez TabNavButton). 비활성(끝 도달) 시 흐려짐. -->
     <Style x:Key="TabNavButton" TargetType="Button">
         <Setter Property="IsTabStop" Value="False"/>

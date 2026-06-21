@@ -36,7 +36,7 @@ public partial class GitDiffView : UserControl
 
     private string? _repo;
     private GitChange? _selected;
-    private readonly ObservableCollection<GitChange> _changes = new();
+    private ObservableCollection<GitChange> _changes = new();
     // diff 행은 한 번에 만들어 ItemsSource 로 통째 할당(행마다 알림 없음 → 큰 파일도 빠름).
     private List<DiffRow> _diff = new();
 
@@ -60,44 +60,80 @@ public partial class GitDiffView : UserControl
         if (IsLoaded) DiffList.ItemsSource = null;
     }
 
-    /// <summary>git 상태를 다시 읽어 변경 파일 목록을 채운다.</summary>
+    /// <summary>git 상태를 다시 읽어 변경 파일 목록을 채운다.
+    /// 깜빡임 방지: 시작 시 보이는 데이터(리스트/본문/헤더/힌트/마커)를 비우지 않고,
+    /// 새 데이터를 모은 뒤 끝에서 새 ObservableCollection 으로 ItemsSource 를 한 번에 교체한다.
+    /// 빈 결과·에러는 진짜 상태 변화이므로 정리한다(ApplyEmpty).</summary>
     public async Task RefreshAsync()
     {
-        ChangesHost.ItemsSource = _changes;
-        _changes.Clear();
-        _diff = new List<DiffRow>();
-        DiffList.ItemsSource = null;
-        _selected = null;
-        DiffHint.Visibility = Visibility.Visible;
-        DiffHeader.Visibility = Visibility.Collapsed;
-        MarkerStrip.Children.Clear();
-
         if (string.IsNullOrEmpty(_repo) || !Directory.Exists(_repo))
         {
-            ShowEmpty("프로젝트를 선택하면 git 변경 내역이 표시됩니다.");
+            ApplyEmpty("프로젝트를 선택하면 git 변경 내역이 표시됩니다.");
             return;
         }
         if (!await GitService.IsRepoAsync(_repo))
         {
-            ShowEmpty("git 저장소가 아니거나 git 이 설치되어 있지 않습니다.");
+            ApplyEmpty("git 저장소가 아니거나 git 이 설치되어 있지 않습니다.");
             return;
         }
 
         var r = await GitService.RunAsync(_repo, "status", "--porcelain=v1", "-u");
         if (!r.Ok)
         {
-            ShowEmpty(string.IsNullOrWhiteSpace(r.Error) ? "git 상태를 읽지 못했습니다." : r.Error.Trim());
+            ApplyEmpty(string.IsNullOrWhiteSpace(r.Error) ? "git 상태를 읽지 못했습니다." : r.Error.Trim());
             return;
         }
 
+        // 새 데이터를 별도 컬렉션에 모은다. 기존 _changes / ItemsSource 는 건드리지 않음.
+        var newChanges = new ObservableCollection<GitChange>();
         foreach (var line in r.Output.Split('\n'))
         {
             var change = ParseStatusLine(line);
-            if (change != null) _changes.Add(change);
+            if (change != null) newChanges.Add(change);
         }
 
-        if (_changes.Count == 0) ShowEmpty("변경된 파일이 없습니다.");
-        else EmptyText.Visibility = Visibility.Collapsed;
+        // 선택 항목 보존: 같은 경로면 새 인스턴스로 이양. 없으면 선택 해제.
+        string? selectedPath = _selected?.Path;
+        if (selectedPath != null)
+        {
+            var match = newChanges.FirstOrDefault(c => c.Path == selectedPath);
+            if (match != null) { match.IsSelected = true; _selected = match; }
+            else _selected = null;
+        }
+
+        if (newChanges.Count == 0)
+        {
+            // 진짜 빈 상태: 보이는 데이터 정리. (이전과 다른 결과이므로 깜빡임 아닌 정당한 상태 변화)
+            ApplyEmpty("변경된 파일이 없습니다.");
+            return;
+        }
+
+        // 결과 있음: 새 컬렉션으로 통째 교체 → ListBox 가 한 번만 다시 그려 깜빡임 없음.
+        _changes = newChanges;
+        ChangesHost.ItemsSource = _changes;
+        EmptyText.Visibility = Visibility.Collapsed;
+
+        if (_selected == null)
+        {
+            // 선택 없음(=이전에 보던 파일이 새 목록에서 빠짐): 본문/마커도 정리하고 안내만 표시
+            _diff = new List<DiffRow>();
+            if (IsLoaded) DiffList.ItemsSource = null;
+            MarkerStrip.Children.Clear();
+            DiffHint.Visibility = Visibility.Visible;
+            DiffHeader.Visibility = Visibility.Collapsed;
+        }
+        // _selected != null 이면 본문(_diff) 그대로 유지 — LoadDiffAsync 가 ItemsSource 를 설정함.
+    }
+
+    /// <summary>결과 없음 / 에러: 리스트·본문·마커를 한 번에 정리하고 안내 문구 표시.</summary>
+    private void ApplyEmpty(string message)
+    {
+        _changes.Clear();
+        _diff = new List<DiffRow>();
+        if (IsLoaded) DiffList.ItemsSource = null;
+        _selected = null;
+        MarkerStrip.Children.Clear();
+        ShowEmpty(message);
     }
 
     private void ShowEmpty(string message)
