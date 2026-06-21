@@ -99,9 +99,9 @@
     <PathGeometry x:Key="IconGitCompare"
         Figures="M15 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M3 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M13 6h3a2 2 0 0 1 2 2v7 M11 18H8a2 2 0 0 1-2-2V9"/>
 
-    <!-- lucide git-branch (현재 브렌치 칩용). 세로선 + 원 2개 + 분기 호. -->
+    <!-- lucide git-branch (프로젝트 브렌치 칩용, 표준 Lucide 24x24). -->
     <PathGeometry x:Key="IconGitBranch"
-        Figures="M6 3v12 M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M18 9a9 9 0 0 1-9 9"/>
+        Figures="M15 6a9 9 0 0 0-9 9V3 M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
 
     <PathGeometry x:Key="IconPencil"
         Figures="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z M15 5 l4 4"/>
