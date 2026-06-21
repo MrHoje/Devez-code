@@ -408,8 +408,6 @@ public partial class App : Application
         }
 
         CurrentTheme = theme;
-        // statusline.js 가 읽는 config 에 테마 기록 — 라이트 테마 색감 보정용(베이스 유지, 살짝만).
-        Services.UserStatusLineInstaller.WriteTheme(theme);
         ThemeChanged?.Invoke(theme);
     }
 }
