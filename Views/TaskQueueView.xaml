@@ -5,69 +5,32 @@
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
-        <!-- ── 버블 한 줄: 우측 정렬 + content-hugging + 호버 시 X 노출 (devez BubbleBorder 정합) ── -->
+        <!-- ── 버블 한 줄: doit/devez 정합 — 이중 border (outer=BubbleBorderBrush, inner=BubbleBrush),
+              Padding=1 로 inset 되어 외곽선+배경이 1px 라인처럼 보임.
+              CornerRadius: outer 14,14,4,14 / inner 13,13,3,13 (outer-1).
+              우측 정렬 + content-hugging + 우클릭 메뉴(삭제)만 지원. 호버 X 없음. -->
         <DataTemplate x:Key="TaskBubbleTemplate" DataType="{x:Type models:TaskQueueItem}">
-            <Grid Margin="0,4,0,4" HorizontalAlignment="Stretch">
-                <Border HorizontalAlignment="Right"
+            <Grid Margin="0,3" Background="Transparent" HorizontalAlignment="Stretch">
+                <Border x:Name="BubbleBorder"
+                        HorizontalAlignment="Right"
                         MaxWidth="260"
+                        Background="{DynamicResource BubbleBorderBrush}"
                         CornerRadius="14,14,4,14"
-                        Background="{DynamicResource BubbleBrush}"
-                        BorderBrush="{DynamicResource BubbleBorderBrush}"
-                        BorderThickness="1"
-                        Padding="12,8,12,8"
-                        SnapsToDevicePixels="True">
-                    <Border.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="삭제" Click="BubbleDelete_Click" Tag="{Binding}">
-                                <MenuItem.Icon>
-                                    <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconTrash2}"/>
-                                </MenuItem.Icon>
-                            </MenuItem>
-                        </ContextMenu>
-                    </Border.ContextMenu>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0"
-                                   Text="{Binding Text}"
+                        Padding="1"
+                        UseLayoutRounding="True"
+                        SnapsToDevicePixels="True"
+                        Focusable="False">
+                    <Border x:Name="BubbleInner"
+                            Background="{DynamicResource BubbleBrush}"
+                            CornerRadius="13,13,3,13"
+                            Padding="14,10">
+                        <TextBlock Text="{Binding Text}"
                                    TextWrapping="Wrap"
-                                   VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs12}"
+                                   FontSize="{DynamicResource Fs14}"
                                    Foreground="{DynamicResource TextBrush}"/>
-                        <!-- 호버 시 노출되는 X — WPF의 IsMouseOver는 Border 자체로 옮겨 트리거. -->
-                        <Button Grid.Column="1" x:Name="DelBtn"
-                                Width="16" Height="16" Margin="6,0,0,0"
-                                Click="BubbleDelete_Click" Tag="{Binding}"
-                                Background="Transparent" BorderThickness="0"
-                                Cursor="Arrow" IsTabStop="False" FocusVisualStyle="{x:Null}"
-                                ToolTip="삭제"
-                                Visibility="Collapsed"
-                                VerticalAlignment="Top">
-                            <Button.Template>
-                                <ControlTemplate TargetType="Button">
-                                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4">
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
-                                              Width="9" Height="9" Stroke="{DynamicResource TextMutedBrush}"/>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Button.Template>
-                        </Button>
-                    </Grid>
+                    </Border>
                 </Border>
             </Grid>
-            <DataTemplate.Triggers>
-                <!-- 호버 시 X 노출. DataTemplate.Triggers는 DataTemplate 자체의 DataContext(MemoMessage) 기준 -->
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter TargetName="DelBtn" Property="Visibility" Value="Visible"/>
-                </Trigger>
-            </DataTemplate.Triggers>
         </DataTemplate>
     </UserControl.Resources>
 
@@ -116,7 +79,64 @@
             </StackPanel>
 
             <ScrollViewer x:Name="BubbleScroller" VerticalScrollBarVisibility="Auto" Padding="10,10">
-                <ItemsControl x:Name="BubblesHost" ItemTemplate="{StaticResource TaskBubbleTemplate}"/>
+                <!-- ListBox: 다중선택(SelectionMode=Extended) + 선택 링(컨테이너 템플릿).
+                     기본 선택 배경/포커스 시각효과 제거(컨테이너 템플릿으로 덮어씀). -->
+                <ListBox x:Name="BubblesList"
+                         ItemsSource="{Binding Items}"
+                         ItemTemplate="{StaticResource TaskBubbleTemplate}"
+                         SelectionMode="Extended"
+                         Background="Transparent" BorderThickness="0"
+                         Foreground="{DynamicResource TextBrush}"
+                         HorizontalContentAlignment="Stretch"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         KeyDown="BubblesList_KeyDown">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                            <!-- 우클릭 시: 미선택이면 이 항목만 선택 / 이미 선택(다중)이면 선택 유지 -->
+                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="BubbleItem_PreviewRightButtonDown"/>
+                            <!-- 컨텍스트 메뉴: 선택 수에 따라 헤더가 '삭제' ↔ '선택 N개 삭제' 로 바뀜 (Opened 핸들러) -->
+                            <Setter Property="ContextMenu">
+                                <Setter.Value>
+                                    <ContextMenu x:Name="BubbleContextMenu" Opened="BubbleContextMenu_Opened">
+                                        <MenuItem x:Name="DeleteMenuItem" Click="BubbleDelete_Click">
+                                            <MenuItem.Icon>
+                                                <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconTrash2}"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                    </ContextMenu>
+                                </Setter.Value>
+                            </Setter>
+                            <!-- 선택 링: 버블 외곽(14,14,4,14 + 1.5px 두께 + 1.5px 마진 = 15,15,5,15)에 primary 보더 -->
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Grid>
+                                            <ContentPresenter/>
+                                            <Border x:Name="SelectionRing"
+                                                    IsHitTestVisible="False"
+                                                    CornerRadius="15,15,5,15"
+                                                    BorderBrush="{DynamicResource PrimaryBrush}"
+                                                    BorderThickness="1.5"
+                                                    Margin="-1.5"
+                                                    Visibility="Collapsed"/>
+                                        </Grid>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
             </ScrollViewer>
         </Grid>
 

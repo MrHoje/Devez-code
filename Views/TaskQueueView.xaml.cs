@@ -7,7 +7,7 @@ using DevezCode.Services;
 
 namespace DevezCode.Views;
 
-/// <summary>우측 패널 작업 큐 — 버블 입력(Enter) / 호버 X 삭제 / 영속화.</summary>
+/// <summary>우측 패널 작업 큐 — 버블 입력(Enter) / 다중선택 / 선택삭제 / 영속화.</summary>
 public partial class TaskQueueView : UserControl
 {
     public ObservableCollection<TaskQueueItem> Items { get; } = new();
@@ -15,7 +15,7 @@ public partial class TaskQueueView : UserControl
     public TaskQueueView()
     {
         InitializeComponent();
-        BubblesHost.ItemsSource = Items;
+        DataContext = this;
         Items.CollectionChanged += (_, _) =>
         {
             UpdateCount();
@@ -71,8 +71,6 @@ public partial class TaskQueueView : UserControl
     {
         if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
         {
-            // Enter: 버블 추가 (단일 라인 모드 — Shift+Enter는 줄바꿈으로 둘 수도 있지만
-            // 한 줄 작업 위주이므로 Shift+Enter도 그냥 추가 처리).
             AddBubble();
             e.Handled = true;
         }
@@ -97,12 +95,62 @@ public partial class TaskQueueView : UserControl
         InputBox.Clear();
     }
 
-    // ── 버블 삭제 ────────────────────────────────────────────────
+    // ── 다중선택 / 삭제 ─────────────────────────────────────────
+    /// <summary>우클릭 시: 미선택이면 이 항목만 선택 / 이미 선택(다중) 상태면 선택 유지.
+     /// WPF ListBox 기본은 우클릭이 선택을 바꾸지 않아 ContextMenu 가 '선택 N개 삭제'처럼 오해 소지가 있어
+     /// 이 핸들러에서 '우클릭한 항목이 선택되도록' 정규화한다. (doit 정합)</summary>
+    private void BubbleItem_PreviewRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListBoxItem item && !item.IsSelected)
+        {
+            BubblesList.UnselectAll();
+            item.IsSelected = true;
+        }
+    }
+
+    /// <summary>컨텍스트 메뉴 열릴 때: 선택 수에 따라 메뉴 헤더를 '삭제' ↔ '선택 N개 삭제' 로 갱신.</summary>
+    private void BubbleContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu cm && cm.Items[0] is MenuItem mi)
+        {
+            var count = BubblesList.SelectedItems.Count;
+            mi.Header = count > 1 ? $"선택 {count}개 삭제" : "삭제";
+        }
+    }
+
+    /// <summary>컨텍스트 메뉴의 '삭제' 클릭 — 현재 ListBox 선택 항목을 모두 제거.
+     /// 선택이 비어있으면(예외 상황) 클릭한 항목 Tag 로 폴백.</summary>
     private void BubbleDelete_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: TaskQueueItem item })
+        if (BubblesList.SelectedItems.Count > 0)
+        {
+            // 스냅샷 후 제거 — Remove 가 SelectedItems 컬렉션을 변경하면 enumeration 오류 가능
+            var toRemove = BubblesList.SelectedItems.Cast<TaskQueueItem>().ToList();
+            foreach (var item in toRemove)
+                Items.Remove(item);
+        }
+        else if (sender is MenuItem { DataContext: TaskQueueItem item })
         {
             Items.Remove(item);
+        }
+    }
+
+    /// <summary>키보드 단축키:
+     /// Delete = 선택 항목 삭제 / Escape = 선택 해제.
+     /// Ctrl+A 는 ListBox SelectionMode=Extended 의 기본 구현(select all)이 자동 처리.</summary>
+    private void BubblesList_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Delete && BubblesList.SelectedItems.Count > 0)
+        {
+            var toRemove = BubblesList.SelectedItems.Cast<TaskQueueItem>().ToList();
+            foreach (var item in toRemove)
+                Items.Remove(item);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && BubblesList.SelectedItems.Count > 0)
+        {
+            BubblesList.UnselectAll();
+            e.Handled = true;
         }
     }
 
