@@ -19,17 +19,24 @@ public partial class TaskQueueView : UserControl
         DataContext = this;
 
         // 컬렉션 변경 → 카운트/빈안내/저장/스크롤
+        // (인스턴스 수명 동안 1회만 등록 — FileExplorerView 안에서 재사용되므로 Unloaded 시 해제하지 않음)
         Items.CollectionChanged += Items_CollectionChanged;
         Load();
         UpdateCount();
         UpdateEmptyHint();
 
-        // 뷰가 화면에 표시될 때 입력창 자동 포커스 (doit 정합: 입력 대기 상태로 시작)
+        // 뷰가 처음 화면에 표시될 때 입력창 자동 포커스 (doit 정합: 입력 대기 상태로 시작)
         Loaded += (_, _) => Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
             System.Windows.Threading.DispatcherPriority.Input);
 
-        // 뷰가 언로드될 때 핸들러 정리 (메모리 누수 방지)
-        Unloaded += (_, _) => Items.CollectionChanged -= Items_CollectionChanged;
+        // 탭 전환(Collapsed↔Visible)으로 다시 나타날 때도 입력 포커스 복원.
+        // 우측 패널 안에서 FileExplorerView 의 SwitchTab 으로 보였다 숨었다 하는 경우 대응.
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible)
+                Dispatcher.BeginInvoke(new Action(() => InputBox.Focus()),
+                    System.Windows.Threading.DispatcherPriority.Input);
+        };
     }
 
     // ── 영속화 ───────────────────────────────────────────────────
@@ -119,16 +126,6 @@ public partial class TaskQueueView : UserControl
         }
     }
 
-    /// <summary>컨텍스트 메뉴 열릴 때: 선택 수에 따라 메뉴 헤더를 '삭제' ↔ '선택 N개 삭제' 로 갱신.</summary>
-    private void BubbleContextMenu_Opened(object sender, RoutedEventArgs e)
-    {
-        if (sender is ContextMenu cm && cm.Items[0] is MenuItem mi)
-        {
-            var count = BubblesList.SelectedItems.Count;
-            mi.Header = count > 1 ? $"선택 {count}개 삭제" : "삭제";
-        }
-    }
-
     /// <summary>컨텍스트 메뉴의 '삭제' 클릭 — 현재 ListBox 선택 항목을 모두 제거.
     /// 선택이 비어있으면(예외 상황) 클릭한 항목의 DataContext 로 폴백.</summary>
     private void BubbleDelete_Click(object sender, RoutedEventArgs e)
@@ -142,6 +139,31 @@ public partial class TaskQueueView : UserControl
         else if (sender is MenuItem { DataContext: TaskQueueItem item })
         {
             Items.Remove(item);
+        }
+    }
+
+    /// <summary>컨텍스트 메뉴의 '복사' 클릭 — 선택 항목(또는 우클릭 항목)의 텍스트를 클립보드로 복사.</summary>
+    private void BubbleCopy_Click(object sender, RoutedEventArgs e)
+    {
+        var texts = (BubblesList.SelectedItems.Count > 0
+            ? BubblesList.SelectedItems.Cast<TaskQueueItem>()
+            : (sender is MenuItem { DataContext: TaskQueueItem single } ? new[] { single } : Array.Empty<TaskQueueItem>())
+          ).Select(i => i.Text).ToList();
+        if (texts.Count == 0) return;
+        try { Clipboard.SetText(string.Join(Environment.NewLine, texts)); } catch { /* 점유 무시 */ }
+    }
+
+    /// <summary>컨텍스트 메뉴 열릴 때: 선택 수에 따라 메뉴 헤더를 '삭제' ↔ '선택 N개 삭제' 로 갱신.</summary>
+    private void BubbleContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu cm) return;
+        var count = BubblesList.SelectedItems.Count;
+        foreach (var item in cm.Items)
+        {
+            if (item is MenuItem mi && mi.Name == "DeleteMenuItem")
+                mi.Header = count > 1 ? $"선택 {count}개 삭제" : "삭제";
+            else if (item is MenuItem mi2 && mi2.Name == "CopyMenuItem")
+                mi2.Header = count > 1 ? $"선택 {count}개 복사" : "복사";
         }
     }
 
