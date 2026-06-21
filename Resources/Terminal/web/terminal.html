@@ -410,10 +410,22 @@
       case 'init':
         cfg = { theme: msg.theme, fontFamily: msg.fontFamily, fontSize: msg.fontSize, windowsBuild: msg.windowsBuild };
         document.body.style.background = msg.theme.background || '#0C0C0C';
-        // IME 조합 중 글자(composition-view)는 body 폰트를 상속 → 터미널과 동일하게 맞춤
+        // IME 조합 글자(composition-view)가 body 폰트를 상속 — 명시적으로 일치시킴
         document.body.style.fontFamily = msg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace";
         document.body.style.fontSize = msg.fontSize + 'px';
-        // 조합 글자 스타일이 터미널 테마를 따라가도록 CSS 변수 설정
+        // 조합 글자 위치가 입력 박스를 따라가지 않도록 CSS 변수 설정
+        document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
+        document.documentElement.style.setProperty('--term-fg', msg.theme.foreground || '#CCCCCC');
+        break;
+      case 'theme':
+        // 라이브 테마 전환 — 열린 모든 xterm 의 색을 갱신하고 CSS 변수·body 배경도 맞춘다
+        cfg.theme = msg.theme;
+        const tObj = toXtermTheme(msg.theme);
+        for (const id in terms) {
+          const ent = terms[id];
+          if (ent && ent.term) ent.term.options.theme = tObj;
+        }
+        document.body.style.background = msg.theme.background || '#0C0C0C';
         document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
         document.documentElement.style.setProperty('--term-fg', msg.theme.foreground || '#CCCCCC');
         break;

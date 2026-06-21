@@ -38,6 +38,24 @@ public sealed class TerminalSessionManager
         }
     }
 
+    /// <summary>현재 활성 스킴을 교체한다. <see cref="Config"/> 는 다른 필드는 그대로 두고 Scheme 만 바뀐 새 인스턴스를 반환.
+    /// 기존 세션들의 xterm 테마는 호출자가 ThemeChanged → 브로드캐스트 처리.</summary>
+    public WtTerminalConfig WithScheme(WtColorScheme scheme)
+    {
+        var current = Config;
+        if (ReferenceEquals(current.Scheme, scheme)) return current;
+        var next = new WtTerminalConfig
+        {
+            CommandLine = current.CommandLine,
+            StartingDirectory = current.StartingDirectory,
+            FontFamily = current.FontFamily,
+            FontSizePx = current.FontSizePx,
+            Scheme = scheme,
+        };
+        lock (_lock) _config = next;
+        return next;
+    }
+
     /// <summary>방 세션을 가져오거나 새로 만든다. 죽은 세션은 교체.</summary>
     public TerminalSession GetOrCreate(string roomId, int cols, int rows)
     {

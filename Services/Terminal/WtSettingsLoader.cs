@@ -105,6 +105,35 @@ public sealed class WtColorScheme
             BrightBlack = "#808080", BrightRed = "#FF0000", BrightGreen = "#00FF00", BrightYellow = "#FFFF00",
             BrightBlue = "#0000FF", BrightPurple = "#FF00FF", BrightCyan = "#00FFFF", BrightWhite = "#FFFFFF",
         },
+
+        // ── DevezCode 전용 스킴 (앱 UI 3개 테마와 1:1 매핑) ──────────────
+        ["DevezCode Dark"] = new()
+        {
+            Name = "DevezCode Dark", Background = "#1F1F1E", Foreground = "#E8E8E8",
+            CursorColor = "#C2622A", SelectionBackground = "#C2622A",
+            Black = "#1F1F1E", Red = "#EF4444", Green = "#22C55E", Yellow = "#FBBF24",
+            Blue = "#60A5FA", Purple = "#C084FC", Cyan = "#14B8A6", White = "#E8E8E8",
+            BrightBlack = "#767676", BrightRed = "#F87171", BrightGreen = "#4ADE80", BrightYellow = "#FDE047",
+            BrightBlue = "#93C5FD", BrightPurple = "#D8B4FE", BrightCyan = "#5EEAD4", BrightWhite = "#FFFFFF",
+        },
+        ["DevezCode Soft"] = new()
+        {
+            Name = "DevezCode Soft", Background = "#F2EDE6", Foreground = "#2A2620",
+            CursorColor = "#5C8C4A", SelectionBackground = "#C2D8B0",
+            Black = "#2A2620", Red = "#D95F5F", Green = "#5C8C4A", Yellow = "#C97C1A",
+            Blue = "#2563EB", Purple = "#7C3AED", Cyan = "#0891B2", White = "#F2EDE6",
+            BrightBlack = "#5A5448", BrightRed = "#C84A4A", BrightGreen = "#4E7A3E", BrightYellow = "#B86A15",
+            BrightBlue = "#1D4ED8", BrightPurple = "#8B5CF6", BrightCyan = "#0E7490", BrightWhite = "#FAF7F2",
+        },
+        ["DevezCode Minimal"] = new()
+        {
+            Name = "DevezCode Minimal", Background = "#F8FAFC", Foreground = "#0F172A",
+            CursorColor = "#2563EB", SelectionBackground = "#DBEAFE",
+            Black = "#0F172A", Red = "#DC2626", Green = "#15803D", Yellow = "#CA8A04",
+            Blue = "#2563EB", Purple = "#7C3AED", Cyan = "#0891B2", White = "#F8FAFC",
+            BrightBlack = "#475569", BrightRed = "#EF4444", BrightGreen = "#22C55E", BrightYellow = "#EAB308",
+            BrightBlue = "#3B82F6", BrightPurple = "#8B5CF6", BrightCyan = "#06B6D4", BrightWhite = "#FFFFFF",
+        },
     };
 }
 

@@ -34,6 +34,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly List<string> _pendingPreload = new(); // pageReady 전에 들어온 백그라운드 로드 요청
     private string? _activeRoomId;
     private double _fontSizePt = -1; // -1 = config에서 아직 읽지 않음
+    private readonly Action<string> _themeChangedHandler;
 
     private const double PtToPx = 96.0 / 72.0;
 
@@ -55,6 +56,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
+
+    public TerminalHostView()
+    {
+        _themeChangedHandler = _ => PushCurrentTheme();
+        App.ThemeChanged += _themeChangedHandler;
+    }
 
     /// <summary>해당 방의 claude 화면이 이미 떠서 안정화까지 끝났는지(로딩 불필요).</summary>
     public bool IsReady(string roomId) => _readyNotified.Contains(roomId);
@@ -485,6 +492,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         catch (Exception) { /* WebView2 해제 중 등 */ }
     }
 
+    /// <summary>현재 활성 스킴을 모든 xterm 인스턴스에 즉시 반영. 테마 변경 시 호출.</summary>
+    private void PushCurrentTheme()
+    {
+        if (!_pageReady) return; // pageReady 시 OnPageReady 가 init 으로 보내줌
+        var scheme = TerminalSessionManager.Instance.Config.Scheme;
+        PostJson(new { type = "theme", theme = scheme });
+    }
+
     /// <summary>방 삭제 시 호출 — 방별 배선·준비 상태와 JS 쪽 xterm 인스턴스를 정리.
     /// ConPTY 셸 세션은 TerminalSessionManager.DisposeRoom 이 별도로 정리한다.</summary>
     public void CloseTerminal(string roomId)
@@ -507,6 +522,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        try { App.ThemeChanged -= _themeChangedHandler; } catch { }
         try
         {
             if (_webView?.CoreWebView2 != null)

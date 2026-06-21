@@ -365,9 +365,21 @@ public partial class App : Application
         // ── 터미널 WebView 색 ───────────────────────────────────────────────
         // 선택 탭을 터미널 실제 배경색으로 칠해 strip 하단 라인을 덮고 본문(터미널)과
         // 매끄럽게 이어붙인다. 색은 WT settings 스킴 기준(테마와 독립). 로드 전이면 테마색 폴백.
+        // 테마 변경 시 DevezCode 전용 스킴으로 자동 전환해 임베디드 터미널 색을 UI와 일치시킨다.
         Color terminalBg = bg, terminalFg = text;
         try
         {
+            var schemeName = theme switch
+            {
+                "dark" => "DevezCode Dark",
+                "soft" => "DevezCode Soft",
+                _      => "DevezCode Minimal",
+            };
+            WtColorScheme? newScheme = null;
+            if (Services.Terminal.WtColorScheme.BuiltIns.TryGetValue(schemeName, out var builtIn))
+                newScheme = builtIn;
+            if (newScheme != null)
+                Services.Terminal.TerminalSessionManager.Instance.WithScheme(newScheme);
             var scheme = Services.Terminal.TerminalSessionManager.Instance.Config.Scheme;
             if (!string.IsNullOrWhiteSpace(scheme.Background))
                 terminalBg = (Color)ColorConverter.ConvertFromString(scheme.Background);
