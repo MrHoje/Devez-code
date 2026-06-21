@@ -28,6 +28,11 @@ public partial class SettingsDialog : UserControl
     private string _selectedTheme;
     private int    _selectedFontScale;
     private readonly ObservableCollection<AgentItem> _agentItems = new();
+    // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
+    private string _activeCategoryKey = "theme";
+    private readonly Action<string> _themeChangedHandler;
+    private readonly Action<int> _fontScaleChangedHandler;
+    private bool _subscribed;
 
     public SettingsDialog()
     {
@@ -40,6 +45,23 @@ public partial class SettingsDialog : UserControl
         UpdateThemeSelectionVisual();
         UpdateFontSelectionVisual();
         SetActiveCategory("theme");
+
+        // 라이브 미리보기: 테마/글꼴 변경 시 좌측 탭 활성 배경·테마 카드 보더·글꼴 카드 보더를
+        // 즉시 재계산. 캡처된 brush instance 라 DynamicResource 가 자동 갱신되지 않는 케이스 보정.
+        _themeChangedHandler    = _ => RefreshAfterThemeChange();
+        _fontScaleChangedHandler = _ => UpdateFontSelectionVisual();
+        App.ThemeChanged     += _themeChangedHandler;
+        App.FontScaleChanged  += _fontScaleChangedHandler;
+        _subscribed = true;
+        Unloaded += (_, _) => Unsubscribe();
+    }
+
+    private void Unsubscribe()
+    {
+        if (!_subscribed) return;
+        _subscribed = false;
+        try { App.ThemeChanged    -= _themeChangedHandler;    } catch { }
+        try { App.FontScaleChanged -= _fontScaleChangedHandler; } catch { }
     }
 
     // ── 카테고리 전환 ─────────────────────────────────────────────
@@ -51,6 +73,7 @@ public partial class SettingsDialog : UserControl
     /// <summary>좌측 카테고리 활성 표시 + 우측 패널 전환.</summary>
     private void SetActiveCategory(string key)
     {
+        _activeCategoryKey = key;
         var active  = (Brush)FindResource("PanelBrush");
         var primary = (Brush)FindResource("PrimaryBrush");
         var text    = (Brush)FindResource("TextBrush");
@@ -65,6 +88,17 @@ public partial class SettingsDialog : UserControl
         ThemePanel.Visibility  = key == "theme"  ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility  = key == "agent"  ? Visibility.Visible : Visibility.Collapsed;
         McpPanel.Visibility    = key == "mcp"    ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>테마 변경 시 — brush instance 가 stale 된 좌측 활성 배경·테마/글꼴 카드 보더를 모두 재계산.</summary>
+    private void RefreshAfterThemeChange()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            SetActiveCategory(_activeCategoryKey);
+            UpdateThemeSelectionVisual();
+            UpdateFontSelectionVisual();
+        }));
     }
 
     /// <summary>MCP 서버 관리 — 별도 오버레이 창으로 열기. 설정창은 닫지 않는다(독립 편집).</summary>

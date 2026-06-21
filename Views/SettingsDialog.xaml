@@ -390,7 +390,7 @@
                                                 <Ellipse x:Name="FontRadioDot_Small" Width="7" Height="7"
                                                          Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
                                             </Grid>
-                                            <TextBlock Text="작게" FontSize="13"
+                                            <TextBlock Text="작게" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
@@ -404,7 +404,7 @@
                                                 <Ellipse x:Name="FontRadioDot_Large" Width="7" Height="7"
                                                          Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
                                             </Grid>
-                                            <TextBlock Text="크게" FontSize="15"
+                                            <TextBlock Text="크게" FontSize="{DynamicResource Fs15}"
                                                        Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>

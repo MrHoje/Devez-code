@@ -423,7 +423,11 @@
         const tObj = toXtermTheme(msg.theme);
         for (const id in terms) {
           const ent = terms[id];
-          if (ent && ent.term) ent.term.options.theme = tObj;
+          if (ent && ent.term) {
+            try { ent.term.setOption('theme', tObj); } catch (e) { ent.term.options.theme = tObj; }
+            // 기존 셀까지 새 색으로 다시 칠하도록 강제 리프레시
+            try { ent.term.refresh(0, ent.term.rows - 1); } catch (e) {}
+          }
         }
         document.body.style.background = msg.theme.background || '#0C0C0C';
         document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
