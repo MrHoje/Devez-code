@@ -10,7 +10,11 @@
     <AssemblyName>DevezCode</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Resources\Logos\app.ico</ApplicationIcon>
+    <!-- devez 방식: 일반 빌드 산출물을 bin\Release(\rid) 가 아니라 bin\ 에 바로 떨군다.
+         (publish 는 build_installer.ps1 의 -o 로 bin\win-x64\publish 로 따로 나간다) -->
+    <OutputPath>bin\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <!-- 단일 버전 소스: UpdateService.CurrentVersion 이 이 값을 읽는다. 릴리스 때 여기만 올린다.
          (csproj <Version> → 어셈블리 버전 → FileVersion → version.json 이 자동 일치) -->
     <Version>1.2.0</Version>

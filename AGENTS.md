@@ -12,7 +12,7 @@ taskkill /IM DevezCode.exe /F 2>$null
 dotnet build -c Release --nologo -v quiet
 
 # 3. 빌드가 성공한 경우에만 앱 재시작.
-Start-Process "bin\Release\DevezCode.exe"
+Start-Process "bin\DevezCode.exe"
 ```
 
 빌드가 실패하면 앱을 재시작하지 마십시오. 먼저 빌드 오류를 수정하십시오.
