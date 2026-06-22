@@ -88,10 +88,45 @@ public sealed class FileTabItem : TabItemBase
     internal void RaiseCloseRequested() => CloseRequested?.Invoke(this, EventArgs.Empty);
 }
 
+/// <summary>프로젝트에 등록한 바로가기. 대상 파일 경로 + 표시 이름 + 관리자 실행 여부를 보관하고
+/// 프로젝트 메뉴의 "바로가기" 자식으로 노출 → 클릭 시 외부 실행(관리자면 runas). workspace.json 에 영속.</summary>
+public sealed class ProjectFile : NotifyBase
+{
+    public string FilePath { get; set; } = "";
+    public string Name { get; set; } = "";
+    public bool RunAsAdmin { get; set; }
+
+    /// <summary>메뉴 표시 이름 — 사용자 지정 이름이 비면 파일명으로 폴백.</summary>
+    public string DisplayName => !string.IsNullOrWhiteSpace(Name) ? Name
+        : (string.IsNullOrEmpty(FilePath) ? "" : Path.GetFileName(FilePath));
+}
+
 /// <summary>좌측 트리의 프로젝트(= 디렉터리). 하위에 탭(세션/파일) 목록을 가진다.</summary>
 public sealed class ProjectItem : NotifyBase
 {
     public string Path { get; init; } = "";
+
+    /// <summary>프로젝트에 등록한 파일 목록(메뉴 고정). 하나라도 있으면 메뉴가 "파일" 서브메뉴로 바뀐다.</summary>
+    public ObservableCollection<ProjectFile> Files { get; } = new();
+
+    /// <summary>등록된 파일이 하나라도 있는지 — 메뉴 표시 분기(파일 추가 ↔ 파일 서브메뉴).</summary>
+    public bool HasFiles => Files.Count > 0;
+
+    /// <summary>바로가기 추가/갱신. 같은 경로가 이미 있으면 이름·관리자 플래그만 갱신(중복 추가 안 함).
+    /// 새로 추가됐으면 true, 기존 갱신/무효면 false.</summary>
+    public bool AddShortcut(string path, string name, bool runAsAdmin)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        var existing = Files.FirstOrDefault(f => string.Equals(f.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            existing.Name = name;
+            existing.RunAsAdmin = runAsAdmin;
+            return false;
+        }
+        Files.Add(new ProjectFile { FilePath = path, Name = name, RunAsAdmin = runAsAdmin });
+        return true;
+    }
 
     private string _name = "";
     public string Name { get => _name; set => Set(ref _name, value); }
@@ -149,6 +184,8 @@ public sealed class ProjectItem : NotifyBase
                 foreach (SessionItem s in e.NewItems) s.PropertyChanged += OnSessionPropChanged;
             RaiseSessionStatus();
         };
+
+        Files.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFiles));
     }
 
     private void OnSessionPropChanged(object? sender, PropertyChangedEventArgs e)

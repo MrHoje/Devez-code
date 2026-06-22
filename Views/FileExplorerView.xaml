@@ -41,7 +41,7 @@
 
         <!-- 뷰 전환 메뉴 패널 (최상단): 파일 탐색기 / 브라우저 / DIFF / 작업 큐
              (배경 박스 없이 텍스트만 하이라이트) -->
-        <Border Grid.Row="0" Height="44"
+        <Border Grid.Row="0" Height="29"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
           <Grid>

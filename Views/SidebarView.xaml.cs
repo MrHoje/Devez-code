@@ -24,6 +24,10 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectSelected;
     public event Action<ProjectItem>? AddSessionRequested;
     public event Action<ProjectItem>? ProjectDeleteRequested;
+    /// <summary>프로젝트 메뉴 "파일 추가" — 파일 다이얼로그로 등록할 파일을 고른다(MainWindow 위임).</summary>
+    public event Action<ProjectItem>? AddProjectFileRequested;
+    /// <summary>등록된 파일 클릭 — 편집 탭으로 연다(MainWindow 위임).</summary>
+    public event Action<ProjectFile>? ProjectFileSelected;
     /// <summary>드래그로 프로젝트 순서가 바뀐 뒤 발생(영속 저장용).</summary>
     public event Action? ProjectsReordered;
     // 카드 접힘/펼침 변경 → 영속 저장 트리거 (검색 자동 펼침은 제외, 명시 토글만).
@@ -176,6 +180,38 @@ public partial class SidebarView : UserControl
     private void ProjectDelete_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectItem>(sender) is { } p) ProjectDeleteRequested?.Invoke(p);
+    }
+
+    private void AddProjectFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) AddProjectFileRequested?.Invoke(p);
+    }
+
+    private void ProjectFileOpen_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFile>(sender) is { } f) ProjectFileSelected?.Invoke(f);
+    }
+
+    /// <summary>프로젝트 메뉴가 열릴 때 "바로가기" 서브메뉴를 등록 목록 + 맨 아래 "바로가기 추가" 로 선(先)채운다.
+    /// 서브메뉴가 펼쳐지기 전(메뉴 오픈 시점)에 항목을 넣어, 열리는 도중 Clear 로 인한 팝업 미표시 버그를 피한다.</summary>
+    private void ProjectMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu cm) return;
+        var parent = cm.Items.OfType<MenuItem>().FirstOrDefault(m => (m.Header as string) == "바로가기");
+        if (parent is null || parent.Tag is not ProjectItem p) return;
+
+        parent.Items.Clear();
+        foreach (var f in p.Files)
+        {
+            var header = f.RunAsAdmin ? $"{f.DisplayName}  (관리자)" : f.DisplayName;
+            var item = new MenuItem { Header = header, Tag = f, ToolTip = f.FilePath };
+            item.Click += ProjectFileOpen_Click;
+            parent.Items.Add(item);
+        }
+        parent.Items.Add(new Separator());
+        var add = new MenuItem { Header = "바로가기 추가", Tag = p };
+        add.Click += AddProjectFile_Click;
+        parent.Items.Add(add);
     }
 
     private void SessionDelete_Click(object sender, RoutedEventArgs e)

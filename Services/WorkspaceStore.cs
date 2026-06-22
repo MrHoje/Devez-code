@@ -9,12 +9,15 @@ namespace DevezCode.Services;
 public static class WorkspaceStore
 {
     private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } }
+    private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
     private sealed class ProjectDto
     {
         public string Path { get; set; } = "";
         // 좌측 카드 접힘/펼침 상태 (기본 펼침). 재시작 시 복원.
         public bool IsExpanded { get; set; } = true;
         public List<SessionDto> Sessions { get; set; } = new();
+        // 프로젝트 메뉴에 등록한 바로가기 목록. 재시작 시 복원.
+        public List<ShortcutDto> Files { get; set; } = new();
     }
     private sealed class WorkspaceDto { public List<ProjectDto> Projects { get; set; } = new(); }
 
@@ -35,6 +38,8 @@ public static class WorkspaceStore
                 proj.IsExpanded = p.IsExpanded;
                 foreach (var s in p.Sessions)
                     proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "" });
+                foreach (var f in p.Files)
+                    proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 result.Add(proj);
             }
         }
@@ -57,7 +62,8 @@ public static class WorkspaceStore
                     {
                         Id = s.Id, Name = s.Name,
                         Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
-                    }).ToList()
+                    }).ToList(),
+                    Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
                 }).ToList()
             };
             Directory.CreateDirectory(Path.GetDirectoryName(WorkspacePath)!);

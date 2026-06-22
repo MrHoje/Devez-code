@@ -163,12 +163,30 @@
                     b:CornerRadiusClip.Radius="10">
                 <Border.ContextMenu>
                     <!-- 카드 어디서든 우클릭하면 프로젝트 메뉴가 뜨도록 outer Border로 이동 -->
-                    <ContextMenu>
-                        <MenuItem Header="새 세션" Tag="{Binding}" Click="AddSession_Click">
+                    <ContextMenu Opened="ProjectMenu_Opened">
+                        <MenuItem Header="세션 추가" Tag="{Binding}" Click="AddSession_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
+                        </MenuItem>
+                        <!-- 등록된 바로가기가 없으면 '바로가기 추가', 하나라도 있으면 '바로가기' 서브메뉴(자식=등록 항목 + 맨 아래 바로가기 추가). -->
+                        <MenuItem Header="바로가기 추가" Tag="{Binding}" Click="AddProjectFile_Click"
+                                  Visibility="{Binding HasFiles, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFilePlus}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="바로가기" Tag="{Binding}" Style="{StaticResource SubMenuHeaderItem}"
+                                  Visibility="{Binding HasFiles, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                            <!-- 화살표 표시용 placeholder — ContextMenu.Opened 에서 실제 항목으로 교체된다.
+                                 (SubmenuOpened 에서 Clear 하면 열리는 도중 팝업이 항목을 못 잡는 타이밍 버그가 있어 Opened 로 선채움) -->
+                            <MenuItem Header="…"/>
                         </MenuItem>
                         <Separator/>
                         <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="{DynamicResource DangerBrush}">
@@ -272,8 +290,8 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header (라벨 + 돋보기 + 모두 펼치기/접기) — devez 정합. 높이 44: 중앙 TabBar·우측 뷰토글과 상단 세퍼레이터 일치 -->
-        <Border Grid.Row="0" Height="44"
+        <!-- Header (라벨 + 돋보기 + 모두 펼치기/접기) — devez 정합. 높이 29: 중앙 MetaBar·우측 뷰토글과 상단 세퍼레이터 일치 -->
+        <Border Grid.Row="0" Height="29"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
             <Grid Margin="16,0,12,0">
                 <Grid.ColumnDefinitions>

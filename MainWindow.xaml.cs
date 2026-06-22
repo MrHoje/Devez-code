@@ -55,6 +55,8 @@ public partial class MainWindow : Window
         Sidebar.ProjectSelected        += SelectProject;
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
+        Sidebar.AddProjectFileRequested += AddProjectFile;
+        Sidebar.ProjectFileSelected    += OpenProjectFile;
         Sidebar.ProjectsReordered += () => WorkspaceStore.Save(_projects);
         Sidebar.ProjectExpandChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
@@ -915,6 +917,40 @@ public partial class MainWindow : Window
         WorkspaceStore.Save(_projects);
         SelectProject(proj);   // 탭을 이 프로젝트 세션으로 교체 + 기본 세션 활성화
         UpdateStatus();
+    }
+
+    /// <summary>프로젝트 메뉴 "바로가기 추가" — devez 스타일 팝업(이름/파일/관리자 실행)으로 등록(영속).</summary>
+    private void AddProjectFile(ProjectItem proj)
+    {
+        var initialDir = !string.IsNullOrEmpty(proj.Path) && System.IO.Directory.Exists(proj.Path) ? proj.Path : null;
+        var r = ShortcutDialog.ShowCreate(this, initialDir);
+        if (r == null) return;
+        proj.AddShortcut(r.Path, r.Name, r.RunAsAdmin);
+        WorkspaceStore.Save(_projects);
+    }
+
+    /// <summary>등록된 바로가기 클릭 — 대상 파일을 외부 실행(관리자 플래그면 runas 로 UAC 승격).</summary>
+    private void OpenProjectFile(ProjectFile file)
+    {
+        if (string.IsNullOrEmpty(file.FilePath) || !System.IO.File.Exists(file.FilePath))
+        {
+            ConfirmDialog.Alert("바로가기", "대상 파일을 찾을 수 없습니다.\n경로가 이동/삭제됐는지 확인해 주세요.");
+            return;
+        }
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(file.FilePath) { UseShellExecute = true };
+            if (file.RunAsAdmin) psi.Verb = "runas";
+            System.Diagnostics.Process.Start(psi);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // 사용자가 UAC 를 취소(1223)하거나 실행 실패 — 조용히 무시.
+        }
+        catch (Exception ex)
+        {
+            ConfirmDialog.Alert("바로가기", $"실행에 실패했습니다.\n{ex.Message}");
+        }
     }
 
     /// <summary>활성 프로젝트 전환 — 중앙 탭을 그 프로젝트의 탭들로 교체(같은 컬렉션 바인딩). 세션 활성화는 안 함.
