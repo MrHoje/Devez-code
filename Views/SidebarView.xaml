@@ -243,7 +243,6 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <!-- 프로젝트 명 (1행, 좌측). 우상단 버튼과 같은 줄에 떠 잘리지 않음. -->
                             <TextBlock Grid.Row="0" Grid.Column="0"
@@ -278,35 +277,8 @@
                                     </ControlTemplate>
                                 </Button.Template>
                             </Button>
-                            <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움. 항상 노출, 타이틀과 같은 줄 우상단. -->
-                            <Button Grid.Row="0" Grid.Column="2" Margin="2,0,0,0" Tag="{Binding}"
-                                    Click="ProjectMenu_Click" Cursor="Arrow"
-                                    Background="Transparent" BorderThickness="0"
-                                    IsTabStop="False" FocusVisualStyle="{x:Null}"
-                                    VerticalAlignment="Center"
-                                    ToolTip="메뉴">
-                                <Button.Template>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="16" Height="16" CornerRadius="4" Padding="2"
-                                                Background="{TemplateBinding Background}">
-                                            <Path Style="{StaticResource LucideButtonIcon}"
-                                                  Data="{StaticResource IconMoreVertical}"
-                                                  Width="11" Height="11"
-                                                  Stretch="Uniform"
-                                                  StrokeThickness="1"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  Stroke="{DynamicResource TextMutedBrush}"/>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Button.Template>
-                            </Button>
                             <!-- 경로 (2행, 전체 폭). 버튼이 1행으로 빠졌으므로 잘림 없이 표시. -->
-                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                        Text="{Binding Path}" Margin="0,1,0,0"
                                        TextTrimming="CharacterEllipsis"
                                        FontSize="{DynamicResource Fs11}"
