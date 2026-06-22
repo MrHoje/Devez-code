@@ -18,7 +18,16 @@ public partial class SettingsWindow : Window
         SettingsView.CloseRequested += (_, _) => Close();
         Opacity = 0;
         SettingsView.SizeChanged += (_, _) => ApplyRoundedClip();
-        Loaded += (_, _) => ApplyRoundedClip();
+        Loaded += (_, _) =>
+        {
+            // 메인창의 70% 크기로 — WPF 디폴트(전체화면) 대비 컴팩트하게
+            if (Owner is { } o && o.WindowState != WindowState.Maximized)
+            {
+                Width  = System.Math.Max(560, o.ActualWidth  * 0.7);
+                Height = System.Math.Max(420, o.ActualHeight * 0.7);
+            }
+            ApplyRoundedClip();
+        };
         ContentRendered += async (_, _) => await AnimateOpenAsync();
     }
 
