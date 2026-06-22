@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using DevezCode.Models;
 using DevezCode.Services;
 using Microsoft.VisualBasic.FileIO;
@@ -17,11 +18,27 @@ public partial class FileExplorerView : UserControl
 {
     // 테마 변경 시 활성 탭 아이콘/라벨 brush 재계산. 캡처된 brush instance 가 stale 되는 문제 보정.
     private readonly Action<string> _themeChangedHandler;
+    private readonly DispatcherTimer _fileSearchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
+    private readonly DispatcherTimer _fileRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool _subscribed;
 
     public FileExplorerView()
     {
         InitializeComponent();
+        _fileSearchDebounceTimer.Tick += (_, _) =>
+        {
+            _fileSearchDebounceTimer.Stop();
+            ApplyFileSearchFilter();
+        };
+        _fileRefreshDebounceTimer.Tick += (_, _) =>
+        {
+            _fileRefreshDebounceTimer.Stop();
+            ReloadRootFromWatcher();
+        };
+        FileSearchBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) { FileSearchBox.Clear(); e.Handled = true; }
+        };
         SwitchTab(SettingsService.LoadFileExpActiveTab());
         Tree.ContextMenu = BuildEmptyAreaMenu(); // 빈 영역 우클릭 메뉴 (Tree 자체)
         _themeChangedHandler = _ => Dispatcher.BeginInvoke(new Action(UpdateTabTextColors));
@@ -34,6 +51,9 @@ public partial class FileExplorerView : UserControl
     {
         if (!_subscribed) return;
         _subscribed = false;
+        _fileSearchDebounceTimer.Stop();
+        _fileRefreshDebounceTimer.Stop();
+        DisposeFileWatcher();
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
     }
 
@@ -161,6 +181,7 @@ public partial class FileExplorerView : UserControl
 
     private string? _rootPath;
     private ObservableCollection<FileNode>? _rootNodes;
+    private FileSystemWatcher? _fileWatcher;
     private bool _fileSearchOpen;
     private const double FileSearchRowHeight = 51;
     private const int MaxSearchResults = 500;
@@ -261,6 +282,7 @@ public partial class FileExplorerView : UserControl
         {
             _rootPath = null;
             _rootNodes = null;
+            DisposeFileWatcher();
             if (_mode == ViewMode.Directory) PathText.Text = "파일 탐색기";
             Tree.ItemsSource = null;
             DiffView.SetRepo(null);
@@ -272,6 +294,7 @@ public partial class FileExplorerView : UserControl
         }
         if (_rootPath == path) return;
         _rootPath = path;
+        SetupFileWatcher(path);
         if (_mode == ViewMode.Directory) PathText.Text = path;
         DiffView.SetRepo(path);
         // diff 탭이 현재 켜져 있으면 SetRepo 가 비워버리므로 즉시 새로 읽어 동기화.
@@ -344,7 +367,16 @@ public partial class FileExplorerView : UserControl
         FileSearchRow.BeginAnimation(FrameworkElement.HeightProperty, anim);
     }
 
-    private void FileSearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFileSearchFilter();
+    private void FileSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _fileSearchDebounceTimer.Stop();
+        if (string.IsNullOrEmpty(FileSearchBox.Text))
+        {
+            ApplyFileSearchFilter();
+            return;
+        }
+        _fileSearchDebounceTimer.Start();
+    }
 
     private void ApplyFileSearchFilter()
     {
@@ -405,6 +437,64 @@ public partial class FileExplorerView : UserControl
                 if (Directory.Exists(entry)) pending.Push(entry);
             }
         }
+    }
+
+    private void SetupFileWatcher(string path)
+    {
+        DisposeFileWatcher();
+        try
+        {
+            _fileWatcher = new FileSystemWatcher(path)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
+                EnableRaisingEvents = true,
+            };
+            _fileWatcher.Created += FileWatcher_Changed;
+            _fileWatcher.Deleted += FileWatcher_Changed;
+            _fileWatcher.Changed += FileWatcher_Changed;
+            _fileWatcher.Renamed += FileWatcher_Changed;
+        }
+        catch { _fileWatcher = null; }
+    }
+
+    private void DisposeFileWatcher()
+    {
+        if (_fileWatcher == null) return;
+        try
+        {
+            _fileWatcher.EnableRaisingEvents = false;
+            _fileWatcher.Created -= FileWatcher_Changed;
+            _fileWatcher.Deleted -= FileWatcher_Changed;
+            _fileWatcher.Changed -= FileWatcher_Changed;
+            _fileWatcher.Renamed -= FileWatcher_Changed;
+            _fileWatcher.Dispose();
+        }
+        catch { }
+        _fileWatcher = null;
+    }
+
+    private void FileWatcher_Changed(object sender, FileSystemEventArgs e)
+    {
+        if (IsHidden(e.FullPath)) return;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _fileRefreshDebounceTimer.Stop();
+            _fileRefreshDebounceTimer.Start();
+        }), DispatcherPriority.Background);
+    }
+
+    private void ReloadRootFromWatcher()
+    {
+        if (string.IsNullOrEmpty(_rootPath) || !Directory.Exists(_rootPath))
+        {
+            ShowDirectory(null);
+            return;
+        }
+
+        var path = _rootPath;
+        _rootPath = null;
+        ShowDirectory(path);
     }
 
     /// <summary>루트 목록을 디스크 상태로 다시 읽는다(루트 레벨 항목 변경 후).</summary>
