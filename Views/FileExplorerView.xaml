@@ -14,12 +14,13 @@
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="IsTabStop" Value="False"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Height" Value="44"/>
+            <Setter Property="Height" Value="35"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="Transparent" Padding="14,0" CornerRadius="6">
-                            <ContentPresenter x:Name="Cp" Margin="0,3,0,0"
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                Margin="3,5" Padding="9,0" CornerRadius="7">
+                            <ContentPresenter x:Name="Cp"
                                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>

@@ -222,17 +222,21 @@ public partial class FileExplorerView : UserControl
 
     private void UpdateTabTextColors()
     {
-        SetTabColor(DirViewIcon,     _mode == ViewMode.Directory);
-        SetTabColor(BrowserViewIcon, _mode == ViewMode.Browser);
-        SetTabColor(DiffViewIcon,    _mode == ViewMode.Diff);
-        SetTabColor(QueueViewIcon,   _mode == ViewMode.Queue);
+        SetTabColor(DirViewBtn,     DirViewIcon,     _mode == ViewMode.Directory);
+        SetTabColor(BrowserViewBtn, BrowserViewIcon, _mode == ViewMode.Browser);
+        SetTabColor(DiffViewBtn,    DiffViewIcon,    _mode == ViewMode.Diff);
+        SetTabColor(QueueViewBtn,   QueueViewIcon,   _mode == ViewMode.Queue);
     }
 
     /// <summary>탭 아이콘·라벨 색상: 활성=PrimaryBrush, 비활성=TextMutedBrush.
     /// 굵기는 항상 SemiBold로 고정 (활성/비활성 전환 시 글자 폭이 바뀌어 텍스트가 움직이는 현상 방지).</summary>
-    private void SetTabColor(System.Windows.Shapes.Path icon, bool active)
+    private void SetTabColor(Button btn, System.Windows.Shapes.Path icon, bool active)
     {
-        icon.Stroke = (System.Windows.Media.Brush)FindResource(active ? "PrimaryBrush" : "TextMutedBrush");
+        // devez 정합: 선택 탭 = 테마색 배경 알약 + 흰 아이콘.
+        btn.Background = active ? (System.Windows.Media.Brush)FindResource("PrimaryBrush")
+                                : System.Windows.Media.Brushes.Transparent;
+        icon.Stroke = active ? System.Windows.Media.Brushes.White
+                             : (System.Windows.Media.Brush)FindResource("TextMutedBrush");
     }
 
     /// <summary>airspace: 오버레이가 뜰 때 브라우저 WebView2 를 스냅샷으로 숨김.</summary>
