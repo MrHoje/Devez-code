@@ -161,19 +161,19 @@
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition x:Name="FooterSidebarCol" Width="Auto" MinWidth="190"/>
-                        <!-- 성능 모니터: 사이드바 폭과 무관한 고정 Auto 컬럼. CPU/RAM 숫자 폭이 변해도 이 컬럼 안에서 흡수. -->
-                        <ColumnDefinition x:Name="FooterPerfCol" Width="Auto" MinWidth="170"/>
-                        <!-- claude 사용량: 별도 * 컬럼(좌측 정렬). PerfCol 폭 변동에 끌려다니지 않음. -->
+                        <ColumnDefinition x:Name="FooterSidebarCol" Width="Auto" MinWidth="190" SharedSizeGroup="MainSidebar"/>
                         <ColumnDefinition Width="*"/>
+                        <!-- claude 사용량: 별도 Auto 컬럼(좌측 정렬). PerfChipGroup 의 자식 폭(CPU/RAM 텍스트)이 변해도 이 컬럼의 시작점은 흔들리지 않음. -->
+                        <ColumnDefinition x:Name="FooterRateCol" Width="Auto"/>
                     <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
                     <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="0"/>
                     <!-- 우측 패널 접힘과 무관하게 항상 보이는 설정 버튼용 고정폭 컬럼 -->
                     <ColumnDefinition x:Name="FooterActionsCol" Width="Auto" MinWidth="48"/>
                 </Grid.ColumnDefinitions>
-                    <!-- 성능 모니터: FooterPerfCol 안에 고정. PerfRamText 에도 고정 폭(60)을 줘서 "1.2GB" ↔ "12.3GB" 등 단위 표기 변동이 RateLimit 위치를 흔들지 않게 한다. -->
-                    <StackPanel x:Name="PerfChipGroup" Grid.Column="1" Orientation="Horizontal"
-                                Margin="14,0,12,0" VerticalAlignment="Center">
+                    <!-- 성능 모니터: 푸터 좌측 14px 고정. ColumnSpan="2" 로 빈 * 영역까지 차지하되
+                         내용물(Auto) 은 좌측에 그려져 항상 푸터 시작점에서 14px 떨어진 자리에 위치. -->
+                    <StackPanel x:Name="PerfChipGroup" Grid.Column="0" Grid.ColumnSpan="2"
+                                Orientation="Horizontal" Margin="14,0,12,0" VerticalAlignment="Center">
                         <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
                                 Style="{StaticResource PerfChipButton}">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -190,7 +190,7 @@
                             </StackPanel>
                         </Button>
                     </StackPanel>
-                    <!-- 클로드 사용량: col2(*), 좌측 정렬. PerfCol 과 별도 컬럼이라 성능 모니터 폭 변동의 영향권에서 벗어남. -->
+                    <!-- 클로드 사용량: 별도 FooterRateCol 에서 좌측 정렬. PerfChipGroup 의 텍스트 폭이 "1.2GB" ↔ "12.3GB" 로 변해도 이 컬럼은 영향권 밖. -->
                     <StackPanel x:Name="RateLimitPanel" Grid.Column="2" Orientation="Horizontal"
                                 HorizontalAlignment="Left" VerticalAlignment="Center"
                                 Visibility="Collapsed" ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
