@@ -462,12 +462,6 @@
                                           Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
                                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                                 </Button>
-                                <Button x:Name="FileCloseBtn" Margin="4,0,0,0"
-                                        Style="{StaticResource TabNavButton}" Click="FileCloseBtn_Click" ToolTip="닫기 (Esc)">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
-                                          Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
-                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                                </Button>
                             </StackPanel>
                         </Grid>
                     </Border>

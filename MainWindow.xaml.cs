@@ -248,18 +248,35 @@ public partial class MainWindow : Window
     }
 
     // ── 훅 연동 설정 배너 ─────────────────────────────────────────
-    /// <summary>세션 상태(스피너)용 claude 훅이 미설치/구버전이면 상단 배너를 띄운다.</summary>
+    /// <summary>세션 상태(스피너)용 훅 또는 하단 statusLine 이 미설치/구버전이면 상단 배너를 띄운다.
+    /// statusLine 미설치 원인이 node 부재면 원클릭으로 해결 불가 → 버튼 숨기고 안내만 표시.</summary>
     private void CheckHookSetup()
     {
-        if (!TerminalSessionManager.HookAssetsHealthy())
-            HookSetupBanner.Visibility = Visibility.Visible;
+        bool hookBad = !TerminalSessionManager.HookAssetsHealthy();
+        bool statusLineBad = !UserStatusLineInstaller.IsInstalled();
+        if (!hookBad && !statusLineBad) { HookSetupBanner.Visibility = Visibility.Collapsed; return; }
+
+        // statusLine 만 문제이고 그 원인이 node 부재면 설정 버튼으로 못 고친다.
+        if (!hookBad && statusLineBad && !UserStatusLineInstaller.HasNode())
+        {
+            HookBannerText.Text = "하단 상태줄(statusline) 표시에 Node.js 가 필요합니다. Node.js 설치 후 앱을 다시 시작하세요.";
+            HookSetupBtn.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            HookBannerText.Text = "세션 상태·하단 상태줄 연동이 설정되지 않았습니다. 원클릭으로 설정할 수 있어요.";
+            HookSetupBtn.Visibility = Visibility.Visible;
+        }
+        HookSetupBanner.Visibility = Visibility.Visible;
     }
 
     private void HookSetupBtn_Click(object sender, RoutedEventArgs e)
     {
         TerminalSessionManager.EnsureHookAssets();
-        HookSetupBanner.Visibility = Visibility.Collapsed;
+        UserStatusLineInstaller.EnsureInstalled();
+        // 재검사 — 모두 정상이면 배너 숨김, node 부재 등 미해결이면 문구 갱신 후 유지.
         // 이미 떠 있는 세션은 다음 실행부터 적용된다(새 세션·재시작 시 자동 반영).
+        CheckHookSetup();
     }
 
     private void HookBannerDismiss_Click(object sender, RoutedEventArgs e)
@@ -2099,12 +2116,6 @@ public partial class MainWindow : Window
     {
         if (_activeTab is FileTabItem file && file.Editor.Save())
             RefreshFileHeaderState(file);
-    }
-
-    private void FileCloseBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (_activeTab is FileTabItem file)
-            file.Editor.RequestClose();
     }
 
     // 푸터 좌측 상태 텍스트는 제거됨(한도 표시로 대체). 호출부 유지를 위해 no-op 로 남긴다.
