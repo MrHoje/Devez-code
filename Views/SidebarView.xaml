@@ -261,13 +261,12 @@
                                     ToolTip="펼치기 / 접기">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="5"
+                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="5" Padding="3"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
-                                                  Width="8" Height="8"
-                                                  Stroke="{DynamicResource TextMutedBrush}"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                  Stretch="Uniform"
+                                                  Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
@@ -286,13 +285,12 @@
                                     ToolTip="메뉴">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="5"
+                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="5" Padding="3"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{StaticResource IconMoreVertical}"
-                                                  Width="10" Height="10"
-                                                  Stroke="{DynamicResource TextMutedBrush}"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                  Stretch="Uniform"
+                                                  Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
