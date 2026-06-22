@@ -37,7 +37,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.1.0", "2026-06-22", true, new[]
+        ("v1.2.0", "2026-06-23", true, new[]
+        {
+            "중앙 패널을 분할해 두 프로젝트를 동시에 열 수 있습니다.",
+            "마크다운 파일을 에디터 탭에서 열고 구문 강조를 지원합니다.",
+            "파일 탐색기에 검색과 파일 타입 아이콘을 추가했습니다.",
+            "터미널에 외부 파일을 드래그하면 @경로가 자동 입력됩니다.",
+        }),
+        ("v1.1.0", "2026-06-22", false, new[]
         {
             "사이드바에 새로운 메뉴를 추가했습니다.",
             "프로젝트에 실행파일 바로가기 추가 기능을 도입했습니다.",
