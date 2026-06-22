@@ -201,6 +201,25 @@ public partial class FileExplorerView : UserControl
         UpdateTabTextColors();
     }
 
+    /// <summary>설정에 저장된 표시 여부를 뷰 전환 탭 버튼(탐색기/작업 큐/브라우저/DIFF)에 반영.
+    /// 현재 활성 탭이 숨겨지면 보이는 첫 탭으로 전환한다.</summary>
+    public void ApplyTabButtonVisibility()
+    {
+        DirViewBtn.Visibility     = SettingsService.LoadShowDirViewBtn()     ? Visibility.Visible : Visibility.Collapsed;
+        QueueViewBtn.Visibility   = SettingsService.LoadShowQueueViewBtn()   ? Visibility.Visible : Visibility.Collapsed;
+        BrowserViewBtn.Visibility = SettingsService.LoadShowBrowserViewBtn() ? Visibility.Visible : Visibility.Collapsed;
+        DiffViewBtn.Visibility    = SettingsService.LoadShowDiffViewBtn()    ? Visibility.Visible : Visibility.Collapsed;
+
+        // 활성 탭 버튼이 숨겨졌으면 보이는 첫 탭으로 전환 (idx: 0=탐색기,1=브라우저,2=DIFF,3=작업 큐)
+        var visible = new System.Collections.Generic.List<int>();
+        if (DirViewBtn.Visibility     == Visibility.Visible) visible.Add(0);
+        if (BrowserViewBtn.Visibility == Visibility.Visible) visible.Add(1);
+        if (DiffViewBtn.Visibility    == Visibility.Visible) visible.Add(2);
+        if (QueueViewBtn.Visibility   == Visibility.Visible) visible.Add(3);
+        if (visible.Count > 0 && !visible.Contains((int)_mode))
+            SwitchTab(visible[0]);
+    }
+
     private void UpdateTabTextColors()
     {
         SetTabColor(DirViewIcon,     DirViewLabel,     _mode == ViewMode.Directory);

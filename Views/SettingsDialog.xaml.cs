@@ -211,17 +211,25 @@ public partial class SettingsDialog : UserControl
         SetActiveCategory("mcp");
     }
 
-    // ── 사이드 패널 버튼 표시 설정 ──────────────────────────────────
+    // ── 사이드 패널 뷰 전환 버튼 표시 설정 ──────────────────────────
+    private bool _loadingSidePanel;
     private void LoadSidePanelSettings()
     {
-        ShowLeftPanelToggle.IsChecked  = SettingsService.LoadShowLeftPanelButton();
-        ShowRightPanelToggle.IsChecked = SettingsService.LoadShowRightPanelButton();
+        _loadingSidePanel = true;
+        ShowDirViewToggle.IsChecked     = SettingsService.LoadShowDirViewBtn();
+        ShowQueueViewToggle.IsChecked   = SettingsService.LoadShowQueueViewBtn();
+        ShowBrowserViewToggle.IsChecked = SettingsService.LoadShowBrowserViewBtn();
+        ShowDiffViewToggle.IsChecked    = SettingsService.LoadShowDiffViewBtn();
+        _loadingSidePanel = false;
     }
 
     private void SidePanelToggle_Changed(object sender, RoutedEventArgs e)
     {
-        SettingsService.SaveShowLeftPanelButton(ShowLeftPanelToggle.IsChecked == true);
-        SettingsService.SaveShowRightPanelButton(ShowRightPanelToggle.IsChecked == true);
+        if (_loadingSidePanel) return;
+        SettingsService.SaveShowDirViewBtn(ShowDirViewToggle.IsChecked == true);
+        SettingsService.SaveShowQueueViewBtn(ShowQueueViewToggle.IsChecked == true);
+        SettingsService.SaveShowBrowserViewBtn(ShowBrowserViewToggle.IsChecked == true);
+        SettingsService.SaveShowDiffViewBtn(ShowDiffViewToggle.IsChecked == true);
         (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
     }
 

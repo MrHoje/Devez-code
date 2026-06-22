@@ -570,11 +570,10 @@ public partial class MainWindow : Window
         UpdatePanelToggleVisual();
     }
 
-    /// <summary>설정에 저장된 사이드 패널 버튼 표시 여부를 타이틀 바 버튼에 반영한다.</summary>
+    /// <summary>설정에 저장된 사이드 패널 뷰 전환 버튼 표시 여부를 우측 패널에 반영한다.</summary>
     public void ApplySidePanelButtonVisibility()
     {
-        LeftPanelBtn.Visibility  = SettingsService.LoadShowLeftPanelButton()  ? Visibility.Visible : Visibility.Collapsed;
-        RightPanelBtn.Visibility = SettingsService.LoadShowRightPanelButton() ? Visibility.Visible : Visibility.Collapsed;
+        FileExplorer.ApplyTabButtonVisibility();
     }
 
     /// <summary>탭 버튼 4개가 온전히 보이는 폭을 측정해 우측 패널(확장 상태)의 최소 폭으로 적용.

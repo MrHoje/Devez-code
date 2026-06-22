@@ -293,7 +293,7 @@
                                     <TextBlock Text="사이드 패널" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="타이틀 바에 표시할 사이드 패널 버튼을 선택합니다." FontSize="{DynamicResource Fs12}"
+                                <TextBlock Text="우측 패널 상단의 뷰 전환 버튼 표시 여부를 선택합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <Border Padding="14,12" CornerRadius="10"
@@ -305,12 +305,12 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="왼쪽 패널 버튼" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                            <TextBlock Text="탐색기" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="타이틀 바 왼쪽에 있는 사이드바 접기/펼치기 버튼" FontSize="{DynamicResource Fs11}"
+                                            <TextBlock Text="파일 탐색기 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                         </StackPanel>
-                                        <CheckBox x:Name="ShowLeftPanelToggle" Grid.Column="1"
+                                        <CheckBox x:Name="ShowDirViewToggle" Grid.Column="1"
                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                                   Checked="SidePanelToggle_Changed" Unchecked="SidePanelToggle_Changed"/>
                                     </Grid>
@@ -325,12 +325,52 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="오른쪽 패널 버튼" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                            <TextBlock Text="작업 큐" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="타이틀 바 오른쪽에 있는 파일 탐색기 접기/펼치기 버튼" FontSize="{DynamicResource Fs11}"
+                                            <TextBlock Text="작업 큐 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                         </StackPanel>
-                                        <CheckBox x:Name="ShowRightPanelToggle" Grid.Column="1"
+                                        <CheckBox x:Name="ShowQueueViewToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="SidePanelToggle_Changed" Unchecked="SidePanelToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Padding="14,12" CornerRadius="10"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                        Background="{DynamicResource PanelSoftBrush}" Margin="0,0,0,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="웹 브라우저" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="브라우저 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ShowBrowserViewToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="SidePanelToggle_Changed" Unchecked="SidePanelToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Padding="14,12" CornerRadius="10"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                        Background="{DynamicResource PanelSoftBrush}" Margin="0,0,0,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="DIFF" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="변경 내역(diff) 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ShowDiffViewToggle" Grid.Column="1"
                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                                   Checked="SidePanelToggle_Changed" Unchecked="SidePanelToggle_Changed"/>
                                     </Grid>
@@ -481,7 +521,7 @@
                                                     <Border Grid.Column="0" Background="#272727" CornerRadius="3"
                                                             BorderBrush="#383838" BorderThickness="0.5">
                                                         <StackPanel Margin="3,4">
-                                                            <Border Background="#C2622A" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
+                                                            <Border Background="#E8E8E8" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
                                                             <Border Background="#383838" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
                                                             <Border Background="#383838" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
                                                             <Border Background="#383838" Height="3" CornerRadius="1.5" Margin="0,1.5"/>
