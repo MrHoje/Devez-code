@@ -238,11 +238,6 @@ public partial class App : Application
         res["PanelColor"]          = panel;
         res["PanelSoftColor"]      = panelSoft;
         res["LineColor"]           = line;
-        // 비선택 카드 보더 강화용: line 을 alpha/명도 한 단계 진하게 → 미니멀/소프트 라이트 배경에서도 또렷, 다크는 충분히 밝게.
-        res["LineStrongColor"] = Color.FromArgb(0xFF,
-            (byte)Math.Min(0xFF, line.R + (line.R < 0x80 ? 0x1E : 0x12)),
-            (byte)Math.Min(0xFF, line.G + (line.G < 0x80 ? 0x1E : 0x12)),
-            (byte)Math.Min(0xFF, line.B + (line.B < 0x80 ? 0x1E : 0x12)));
         res["TextColor"]           = text;
         res["TextMutedColor"]      = textMuted;
         res["PrimaryColor"]        = primary;
@@ -256,7 +251,6 @@ public partial class App : Application
         res["PanelBrush"]             = new SolidColorBrush(panel);
         res["PanelSoftBrush"]         = new SolidColorBrush(panelSoft);
         res["LineBrush"]              = new SolidColorBrush(line);
-        res["LineStrongBrush"]        = new SolidColorBrush((Color)res["LineStrongColor"]);
         res["TextBrush"]              = new SolidColorBrush(text);
         res["TextMutedBrush"]         = new SolidColorBrush(textMuted);
         res["PrimaryBrush"]           = new SolidColorBrush(primary);
