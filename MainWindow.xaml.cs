@@ -189,6 +189,7 @@ public partial class MainWindow : Window
             RestoreLastSession();
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
+            ApplySidePanelButtonVisibility();
         };
 
         // 창 위치/크기는 닫히기 직전(Closing)에 저장한다 — RestoreBounds 가 유효한 시점.
@@ -567,6 +568,13 @@ public partial class MainWindow : Window
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
+    }
+
+    /// <summary>설정에 저장된 사이드 패널 버튼 표시 여부를 타이틀 바 버튼에 반영한다.</summary>
+    public void ApplySidePanelButtonVisibility()
+    {
+        LeftPanelBtn.Visibility  = SettingsService.LoadShowLeftPanelButton()  ? Visibility.Visible : Visibility.Collapsed;
+        RightPanelBtn.Visibility = SettingsService.LoadShowRightPanelButton() ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>탭 버튼 4개가 온전히 보이는 폭을 측정해 우측 패널(확장 상태)의 최소 폭으로 적용.
