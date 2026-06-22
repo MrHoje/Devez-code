@@ -54,10 +54,6 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource LineBrush}"/>
                 </Trigger>
-                <!-- 부모 프로젝트가 비선택이면 호버 색상 덮어쓰기 → 호버 비주얼 제거 -->
-                <DataTrigger Binding="{Binding DataContext.IsSelected, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Value="False">
-                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -65,8 +61,7 @@
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
             <Border x:Name="SessionRow" Style="{StaticResource SessionCard}"
                     MouseLeftButtonUp="Session_Click"
-                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
-                    PreviewMouseRightButtonDown="SessionRow_PreviewMouseRightButtonDown">
+                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown">
                 <Border.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="이름 변경" Tag="{Binding}" Click="SessionRename_Click">
