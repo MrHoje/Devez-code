@@ -146,7 +146,7 @@ process.stdin.on("end", () => {
       if (elapsedSec > 0) {
         disp = (elapsedSec >= 60 ? Math.floor(elapsedSec / 60) + "m " + (elapsedSec % 60) + "s" : elapsedSec + "s") + " · ";
       }
-      parts.push(TOK + disp + "??" + ts + " tokens" + R);
+      parts.push(TOK + disp + ts + " tokens" + R);
     }
     process.stdout.write(" " + parts.join(PIPE) + "\n");
   } catch (e) { process.exit(0); }

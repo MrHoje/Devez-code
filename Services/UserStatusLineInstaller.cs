@@ -28,6 +28,10 @@ public static class UserStatusLineInstaller
     /// <summary>우리 관리 스크립트 식별 마커. 포함하면 동기화 대상(사용자 수제 스크립트는 미포함).</summary>
     private const string ManagedMarker = "DEVEZCODE-STATUSLINE";
 
+    /// <summary>statusLine 실행에 필요한 node.exe 를 시스템에서 찾을 수 있는지.
+    /// false 면 node 미설치/PATH 부재로 원클릭 설정이 불가(사용자가 직접 Node.js 설치 필요).</summary>
+    public static bool HasNode() => FindNodePath() != null;
+
     /// <summary>statusline.js 가 설치돼 있고 settings.json 의 statusLine 이 그 스크립트를 가리키는지.</summary>
     public static bool IsInstalled()
     {

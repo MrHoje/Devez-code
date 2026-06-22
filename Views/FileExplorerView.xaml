@@ -59,23 +59,23 @@
                 <Button x:Name="DirViewBtn" Click="TabBtn_Click" Tag="0"
                         Style="{StaticResource ViewTabButton}" ToolTip="파일 탐색기">
                     <Path x:Name="DirViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconFolderOpen}" Width="12" Height="12" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconFolderOpen}" Width="13" Height="13" VerticalAlignment="Center"/>
                 </Button>
                 <!-- 작업 큐 (devez 채팅방 풍 버블 입력) — 탐색기 오른쪽에 배치. -->
                 <Button x:Name="QueueViewBtn" Click="TabBtn_Click" Tag="3"
                         Style="{StaticResource ViewTabButton}" ToolTip="작업 큐">
                     <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconListTodo}" Width="12" Height="12" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconListTodo}" Width="13" Height="13" VerticalAlignment="Center"/>
                 </Button>
                 <Button x:Name="BrowserViewBtn" Click="TabBtn_Click" Tag="1"
                         Style="{StaticResource ViewTabButton}" ToolTip="브라우저">
                     <Path x:Name="BrowserViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconGlobe}" Width="12" Height="12" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconGlobe}" Width="13" Height="13" VerticalAlignment="Center"/>
                 </Button>
                 <Button x:Name="DiffViewBtn" Click="TabBtn_Click" Tag="2"
                         Style="{StaticResource ViewTabButton}" ToolTip="DIFF">
                     <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconGitCompare}" Width="12" Height="12" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconGitCompare}" Width="13" Height="13" VerticalAlignment="Center"/>
                 </Button>
             </StackPanel>
             </ScrollViewer>
