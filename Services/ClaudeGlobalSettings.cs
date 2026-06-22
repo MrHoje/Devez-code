@@ -30,7 +30,8 @@ public static class ClaudeGlobalSettings
             using var doc = JsonDocument.Parse(File.ReadAllText(SettingsJsonPath));
             if (doc.RootElement.TryGetProperty("cleanupPeriodDays", out var v) &&
                 v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var days) && days > 0)
-                return days;
+                // 프리셋에 없는 대형 값(과거 36500 등)은 영구 보관으로 매핑 → 콤보 빈칸 방지
+                return days >= 999 ? PermanentDays : days;
         }
         catch { /* 손상 파일 → 기본값 */ }
         return DefaultCleanupPeriodDays;
