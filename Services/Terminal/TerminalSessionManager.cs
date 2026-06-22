@@ -14,6 +14,7 @@ public sealed class TerminalSessionManager
     private readonly Dictionary<string, string> _claudeRoomDirs = new();
     private readonly Dictionary<string, string> _opencodeRoomDirs = new();
     private readonly object _lock = new();
+    private FileSystemWatcher? _claudeSessionWatcher;
     private WtTerminalConfig? _config;
 
     /// <summary>삭제된 방 ID. 삭제 직후 뒤늦게 도착한 생성 요청으로 claude 가 다시 떠 고아가 되는 것을 막는다.</summary>
@@ -114,6 +115,7 @@ public sealed class TerminalSessionManager
             else if (ccDir != null && agent.SupportsHooks)
             {
                 startDir = ccDir;
+                EnsureClaudeSessionWatcher();
                 var direct = TryBuildDirectLaunch(roomId, cfg.CommandLine, out inject);
                 if (direct != null) commandLine = direct; // 성공 시 inject == null
             }
@@ -452,13 +454,7 @@ public sealed class TerminalSessionManager
         if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
 
         // 훅이 기록한 마지막 세션 ID가 저장값과 다르면 그쪽이 최신 대화 — 교체 후 resume
-        var tracked = LoadTrackedSessionId(roomId);
-        if (tracked != null && tracked != sessionId)
-        {
-            sessionId = tracked;
-            SettingsService.SaveClaudeCodeRoomSession(roomId, tracked);
-            SettingsService.MarkClaudeCodeRoomLaunched(roomId); // 기록이 있다 = 이미 실행된 적 있음
-        }
+        sessionId = SyncTrackedClaudeSessionId(roomId) ?? sessionId;
 
         // resume 은 추적된 세션의 대화 transcript 가 실제로 디스크에 있을 때만 한다.
         // (빈 세션 등 conversation 이 저장 안 된 경우 --resume 하면 "No conversation found" 에러가
@@ -554,6 +550,60 @@ public sealed class TerminalSessionManager
 
     /// <summary>훅 자산을 (재)생성한다. 배너의 원클릭 설정에서 호출.</summary>
     public static void EnsureHookAssets() => EnsureSessionHookAssets();
+
+    /// <summary>Claude SessionStart 훅이 남긴 room별 id 파일을 감시해 실행 중 /resume 등도 즉시 영속화한다.</summary>
+    private void EnsureClaudeSessionWatcher()
+    {
+        lock (_lock)
+        {
+            if (_claudeSessionWatcher != null) return;
+            try
+            {
+                var dir = Path.Combine(ClaudeTrackDir, "sessions");
+                Directory.CreateDirectory(dir);
+                var watcher = new FileSystemWatcher(dir, "*.txt")
+                {
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                    IncludeSubdirectories = false,
+                    EnableRaisingEvents = true,
+                };
+                watcher.Created += OnClaudeSessionFileChanged;
+                watcher.Changed += OnClaudeSessionFileChanged;
+                watcher.Renamed += OnClaudeSessionFileRenamed;
+                _claudeSessionWatcher = watcher;
+            }
+            catch (Exception) { /* 추적 실패해도 claude 실행은 계속 */ }
+        }
+    }
+
+    private static void OnClaudeSessionFileChanged(object sender, FileSystemEventArgs e)
+        => SyncTrackedClaudeSessionFile(e.FullPath);
+
+    private static void OnClaudeSessionFileRenamed(object sender, RenamedEventArgs e)
+        => SyncTrackedClaudeSessionFile(e.FullPath);
+
+    private static void SyncTrackedClaudeSessionFile(string path)
+    {
+        try
+        {
+            var roomId = Path.GetFileNameWithoutExtension(path);
+            if (string.IsNullOrWhiteSpace(roomId)) return;
+            // 삭제된 방의 남은 파일이 settings 에 다시 들어오지 않도록 현재 등록된 room 만 반영한다.
+            if (SettingsService.LoadClaudeCodeRoomDir(roomId) == null) return;
+            SyncTrackedClaudeSessionId(roomId);
+        }
+        catch (Exception) { }
+    }
+
+    private static string? SyncTrackedClaudeSessionId(string roomId)
+    {
+        var tracked = LoadTrackedSessionId(roomId);
+        if (tracked == null) return null;
+        if (SettingsService.LoadClaudeCodeRoomSession(roomId) != tracked)
+            SettingsService.SaveClaudeCodeRoomSession(roomId, tracked);
+        SettingsService.MarkClaudeCodeRoomLaunched(roomId); // 기록이 있다 = 이미 실행된 적 있음
+        return tracked;
+    }
 
     /// <summary>SessionStart 훅 스크립트·설정 파일 생성 (항상 덮어써 최신 유지).</summary>
     private static void EnsureSessionHookAssets()
@@ -792,6 +842,8 @@ public sealed class TerminalSessionManager
             }
             _sessions.Clear();
             _claudeRoomDirs.Clear();
+            _claudeSessionWatcher?.Dispose();
+            _claudeSessionWatcher = null;
         }
     }
 }
