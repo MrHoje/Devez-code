@@ -464,21 +464,6 @@ public sealed class TerminalSessionManager
         // (빈 세션 등 conversation 이 저장 안 된 경우 --resume 하면 "No conversation found" 에러가
         //  화면에 뜨므로, 없으면 --session-id 로 새로 시작해 에러를 원천 차단한다.)
         var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-
-        // 추적 ID의 transcript 가 사라졌으면(/clear·수동 resume 으로 claude 가 세션 ID를 바꿔
-        // 원본 .jsonl 이 없어진 경우 등) 같은 작업 폴더의 가장 최근 대화로 폴백 → 콜드스타트 내역 유실 방지.
-        // 같은 폴더의 다른 방이 추적 중인 ID는 제외해 멀티세션이 한 대화로 뭉치지 않게 한다.
-        if (!ClaudeTranscriptExists(ccDir, sessionId))
-        {
-            var recovered = FindLatestClaudeSessionId(ccDir, roomId);
-            if (recovered != null)
-            {
-                sessionId = recovered;
-                SettingsService.SaveClaudeCodeRoomSession(roomId, recovered);
-                SettingsService.MarkClaudeCodeRoomLaunched(roomId);
-            }
-        }
-
         bool resume = sessionId != null
                       && SettingsService.IsClaudeCodeRoomLaunched(roomId)
                       && ClaudeTranscriptExists(ccDir, sessionId);
@@ -742,56 +727,6 @@ public sealed class TerminalSessionManager
             return File.Exists(Path.Combine(dir, sessionId + ".jsonl"));
         }
         catch (Exception) { return false; }
-    }
-
-    /// <summary>작업 폴더의 claude 대화 중 가장 최근 것의 세션 ID. 추적 ID가 유실됐을 때 복구용.
-    /// 같은 폴더의 다른 방이 추적 중인 ID는 제외(멀티세션이 한 대화로 뭉치는 것 방지).
-    /// 후보 없으면 null.</summary>
-    private static string? FindLatestClaudeSessionId(string? workingDir, string roomId)
-    {
-        if (string.IsNullOrWhiteSpace(workingDir)) return null;
-        try
-        {
-            var full = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
-            var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".claude", "projects", encoded);
-            if (!Directory.Exists(dir)) return null;
-
-            // 이 방을 제외한 다른 방들이 추적 중인 세션 ID(다른 대화 점유) — 후보에서 뺀다.
-            var claimed = OtherRoomsTrackedSessionIds(roomId);
-
-            return new DirectoryInfo(dir).GetFiles("*.jsonl")
-                .OrderByDescending(f => f.LastWriteTimeUtc)
-                .Select(f => Path.GetFileNameWithoutExtension(f.Name))
-                .FirstOrDefault(id => Guid.TryParse(id, out _) && !claimed.Contains(id.ToLowerInvariant()));
-        }
-        catch (Exception) { return null; }
-    }
-
-    /// <summary>roomId 를 제외한 모든 방의 추적 세션 ID 집합(소문자).</summary>
-    private static HashSet<string> OtherRoomsTrackedSessionIds(string roomId)
-    {
-        var set = new HashSet<string>();
-        try
-        {
-            var dir = Path.Combine(ClaudeTrackDir, "sessions");
-            if (!Directory.Exists(dir)) return set;
-            var self = SafeRoomFileName(roomId);
-            foreach (var f in Directory.GetFiles(dir, "*.txt"))
-            {
-                if (string.Equals(Path.GetFileNameWithoutExtension(f), self, StringComparison.OrdinalIgnoreCase)) continue;
-                try
-                {
-                    var id = File.ReadAllText(f).Trim();
-                    if (Guid.TryParse(id, out _)) set.Add(id.ToLowerInvariant());
-                }
-                catch (Exception) { }
-            }
-        }
-        catch (Exception) { }
-        return set;
     }
 
     /// <summary>채팅방 삭제 시 호출 — 해당 방의 셸 프로세스 정리.
