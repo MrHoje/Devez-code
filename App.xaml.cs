@@ -238,11 +238,11 @@ public partial class App : Application
         res["PanelColor"]          = panel;
         res["PanelSoftColor"]      = panelSoft;
         res["LineColor"]           = line;
-        // 비선택 카드 보더 강화용: 라이트/소프트(line 이 밝은 회색)는 한 단계 어둡게, 다크(line 이 어두운 회색)는 한 단계 밝게.
-        // 색이 0x80 미만(=다크 톤)이면 +, 0x80 이상(=라이트 톤)이면 - 로 가서 모두 또렷한 보더로.
-        byte step = 0x20;
-        byte adj(byte c) => c < 0x80 ? (byte)Math.Min(0xFF, c + step) : (byte)Math.Max(0x00, c - step);
-        res["LineStrongColor"] = Color.FromArgb(0xFF, adj(line.R), adj(line.G), adj(line.B));
+        // 비선택 카드 보더 강화용: line 을 alpha/명도 한 단계 진하게 → 미니멀/소프트 라이트 배경에서도 또렷, 다크는 충분히 밝게.
+        res["LineStrongColor"] = Color.FromArgb(0xFF,
+            (byte)Math.Min(0xFF, line.R + (line.R < 0x80 ? 0x1E : 0x12)),
+            (byte)Math.Min(0xFF, line.G + (line.G < 0x80 ? 0x1E : 0x12)),
+            (byte)Math.Min(0xFF, line.B + (line.B < 0x80 ? 0x1E : 0x12)));
         res["TextColor"]           = text;
         res["TextMutedColor"]      = textMuted;
         res["PrimaryColor"]        = primary;
