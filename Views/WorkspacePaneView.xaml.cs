@@ -79,6 +79,17 @@ public partial class WorkspacePaneView : UserControl
         if (FocusAccent != null) FocusAccent.Visibility = focused ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    /// <summary>세션 소유권 이전 — 이 패널이 해당 세션을 활성으로 들고 있으면 배선을 끊고 다음 세션으로(없으면 비움).</summary>
+    public void ReleaseSessionIfActive(SessionItem s)
+    {
+        if (!ReferenceEquals(_activeSession, s)) return;
+        try { _terminal.CloseTerminal(s.Id); } catch { /* ignore */ }
+        var parent = ParentOf(s);
+        var next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(x => !ReferenceEquals(x, s) && !x.Hidden);
+        if (next != null) ActivateSession(next);
+        else ClearActiveSession();
+    }
+
     /// <summary>분할 해제 시 — 이 패널이 보여주던 세션의 xterm 배선을 끊고 상태를 비운다(ConPTY·기록 보존).</summary>
     public void ClearForHide()
     {

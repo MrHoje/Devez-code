@@ -42,6 +42,10 @@ public static class SettingsService
         public string? LastActiveProjectPath { get; set; }
         public string? LastActiveSessionId { get; set; }
         public bool CleanShutdown { get; set; }
+        // 중앙 패널 분할 상태(두 프로젝트 동시 열기). 활성 시 패널 B 의 프로젝트/세션을 복원한다.
+        public bool SplitActive { get; set; }
+        public string? SplitBProjectPath { get; set; }
+        public string? SplitBSessionId { get; set; }
         // 우측 패널 브라우저 — 프로젝트별 마지막 방문 URL(재시작 시 복원).
         // 키 = 프로젝트 절대경로. 프로젝트가 없거나 저장된 적 없으면 HomeUrl 로 폴백.
         public Dictionary<string, string> BrowserLastUrlByProject { get; set; } = new();
@@ -231,6 +235,18 @@ public static class SettingsService
     {
         Current.LastActiveProjectPath = projectPath;
         Current.LastActiveSessionId = sessionId;
+        Save();
+    }
+
+    // ── 중앙 패널 분할 상태 ──────────────────────────────────────
+    public static (bool active, string? projectPath, string? sessionId) LoadSplitState()
+        => (Current.SplitActive, Current.SplitBProjectPath, Current.SplitBSessionId);
+
+    public static void SaveSplitState(bool active, string? projectPath, string? sessionId)
+    {
+        Current.SplitActive = active;
+        Current.SplitBProjectPath = projectPath;
+        Current.SplitBSessionId = sessionId;
         Save();
     }
 

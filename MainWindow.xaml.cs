@@ -172,6 +172,7 @@ public partial class MainWindow : Window
             _opencodeLastMsg.Start();
             _agentLastMsg.Start();
             RestoreLastSession();
+            RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
             ApplySidePanelButtonVisibility();
@@ -977,11 +978,39 @@ public partial class MainWindow : Window
         UpdatePaneFocusVisual();
     }
 
+    private bool _inOwnershipRouting;
+
     private void OnPaneActiveChanged(WorkspacePaneView pane)
     {
-        if (!ReferenceEquals(pane, _focusedPane)) return;
-        SyncShellToFocusedPane();
+        // 세션 소유권: 한 세션은 한 패널에서만 표시. 다른 패널이 같은 세션을 들고 있으면 놓아준다.
+        if (!_inOwnershipRouting)
+        {
+            var s = pane.ActiveSession;
+            if (s != null)
+            {
+                _inOwnershipRouting = true;
+                try
+                {
+                    foreach (var other in _panes)
+                        if (!ReferenceEquals(other, pane)) other.ReleaseSessionIfActive(s);
+                }
+                finally { _inOwnershipRouting = false; }
+            }
+        }
+
+        if (ReferenceEquals(pane, _focusedPane)) SyncShellToFocusedPane();
+        // 패널 B 의 활성이 바뀌면 분할 복원용 상태를 갱신(패널 A 는 SyncShell 의 last-active 가 담당).
+        if (ReferenceEquals(pane, PaneB)) PersistSplitState();
     }
+
+    /// <summary>세션이 현재 활성인 패널 → 없으면 그 세션의 프로젝트를 보여주는 패널 → 없으면 포커스 패널.</summary>
+    private WorkspacePaneView PaneFor(SessionItem s)
+        => _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveSession, s))
+           ?? _panes.FirstOrDefault(p => p.ActiveProject != null && p.ActiveProject.Tabs.Contains(s))
+           ?? _focusedPane;
+
+    private void PersistSplitState()
+        => SettingsService.SaveSplitState(_splitActive, PaneB.ActiveProject?.Path, PaneB.ActiveSession?.Id);
 
     /// <summary>포커스 패널의 활성 프로젝트/세션을 셸(파일탐색기·사이드바·last-active)에 반영.</summary>
     private void SyncShellToFocusedPane()
@@ -1007,7 +1036,7 @@ public partial class MainWindow : Window
         else EnableSplit();
     }
 
-    private void EnableSplit()
+    private void EnableSplit(ProjectItem? bProject = null, SessionItem? bSession = null)
     {
         if (_splitActive) return;
         _splitActive = true;
@@ -1021,10 +1050,32 @@ public partial class MainWindow : Window
 
         // 패널 B 포커스로 전환 → 이후 사이드바 클릭이 B 로 향한다.
         _focusedPane = PaneB;
-        // 패널 A 가 아닌 다른 프로젝트가 있으면 자동으로 B 에 연다(없으면 빈 패널).
-        var other = _projects.FirstOrDefault(p => !ReferenceEquals(p, PaneA.ActiveProject));
-        if (other != null) PaneB.SelectProject(other);
-        else SyncShellToFocusedPane();
+        if (bSession != null) PaneB.OpenSession(bSession);
+        else if (bProject != null) PaneB.SelectProject(bProject);
+        else
+        {
+            // 패널 A 가 아닌 다른 프로젝트가 있으면 자동으로 B 에 연다(없으면 빈 패널).
+            var other = _projects.FirstOrDefault(p => !ReferenceEquals(p, PaneA.ActiveProject));
+            if (other != null) PaneB.SelectProject(other);
+            else SyncShellToFocusedPane();
+        }
+        UpdatePaneFocusVisual();
+        PersistSplitState();
+    }
+
+    /// <summary>시작 시 저장된 분할 상태 복원 — 패널 B 프로젝트/세션을 열고 포커스는 A 로 되돌린다.</summary>
+    private void RestoreSplitState()
+    {
+        var (active, bProjPath, bSessId) = SettingsService.LoadSplitState();
+        if (!active) return;
+
+        var bProj = _projects.FirstOrDefault(p => p.Path == bProjPath);
+        var bSess = bProj?.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId)
+                    ?? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId);
+        EnableSplit(bProj, bSess);
+
+        _focusedPane = PaneA;
+        SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
     }
 
@@ -1046,6 +1097,7 @@ public partial class MainWindow : Window
         foreach (var p in _panes) p.SetSplitActive(false);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
+        PersistSplitState();
     }
 
     /// <summary>분할 중일 때 포커스 패널을 시각적으로 표시(상단 액센트). 단일 패널이면 표시 안 함.</summary>
@@ -1062,9 +1114,9 @@ public partial class MainWindow : Window
     private void SelectProject(ProjectItem proj) => _focusedPane.SelectProject(proj);
     private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
-    private void RenameSession(SessionItem session) => _focusedPane.RenameSession(session);
-    private void DeleteSession(SessionItem session) => _focusedPane.DeleteSession(session);
-    private void StopTrackingSession(SessionItem session) => _focusedPane.StopTrackingSession(session);
+    private void RenameSession(SessionItem session) => PaneFor(session).RenameSession(session);
+    private void DeleteSession(SessionItem session) => PaneFor(session).DeleteSession(session);
+    private void StopTrackingSession(SessionItem session) => PaneFor(session).StopTrackingSession(session);
 
     // ── 공개 API (외부 뷰가 호출) ─────────────────────────────────────
     /// <summary>작업 큐 → 포커스 패널의 활성 세션에 텍스트 전송.</summary>
