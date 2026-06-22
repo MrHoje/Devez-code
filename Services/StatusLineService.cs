@@ -5,8 +5,8 @@ using DevezCode.Models;
 namespace DevezCode.Services;
 
 /// <summary>claude statusLine 훅(statusline-hook.ps1)이 떨군 rate_limits JSON 을 감시해
-/// 최신 계정 사용량을 알린다. rate_limits 는 계정 전역값이라 단일 파일(ratelimit.json)에
-/// 마지막으로 떨어진 것이 곧 최신 — roomId 매칭이 필요 없다.</summary>
+/// 최신 계정 사용량을 알린다. 여러 세션이 같은 파일을 덮어쓰므로 같은 reset window 에서
+/// 더 낮은 사용률은 이전 세션의 낡은 스냅샷으로 보고 무시한다.</summary>
 public sealed class StatusLineService : IDisposable
 {
     private static string Dir => Path.Combine(
@@ -16,6 +16,7 @@ public sealed class StatusLineService : IDisposable
     private FileSystemWatcher? _watcher;
     private System.Threading.Timer? _poll;
     private long _lastWriteTicks = -1; // 마지막으로 emit 한 파일 쓰기시각 — 중복 emit 방지
+    private RateLimitSnapshot? _lastSnapshot;
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
@@ -54,8 +55,35 @@ public sealed class StatusLineService : IDisposable
             }
         }
         catch { }
-        var snap = TryRead();
+        var snap = MergeWithLastSnapshot(TryRead());
         if (snap != null) SnapshotUpdated?.Invoke(snap);
+    }
+
+    private RateLimitSnapshot? MergeWithLastSnapshot(RateLimitSnapshot? next)
+    {
+        if (next == null) return null;
+        var last = _lastSnapshot;
+        if (last == null) { _lastSnapshot = next; return next; }
+
+        var merged = new RateLimitSnapshot
+        {
+            FiveHourPercent = KeepNonRegressing(last.FiveHourPercent, last.FiveHourResetsAt,
+                                                next.FiveHourPercent, next.FiveHourResetsAt),
+            SevenDayPercent = KeepNonRegressing(last.SevenDayPercent, last.SevenDayResetsAt,
+                                               next.SevenDayPercent, next.SevenDayResetsAt),
+            FiveHourResetsAt = next.FiveHourResetsAt,
+            SevenDayResetsAt = next.SevenDayResetsAt,
+        };
+        _lastSnapshot = merged;
+        return merged;
+    }
+
+    private static double? KeepNonRegressing(double? oldPct, DateTimeOffset? oldReset,
+                                             double? newPct, DateTimeOffset? newReset)
+    {
+        if (newPct is not double n) return oldPct;
+        if (oldPct is double o && oldReset == newReset && n < o) return o;
+        return n;
     }
 
     /// <summary>파일을 읽어 스냅샷으로 파싱. 쓰기 경합 시 짧게 재시도. 실패/없음이면 null.</summary>
