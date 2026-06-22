@@ -103,7 +103,7 @@
         <!-- Header: 현재 뷰의 경로/제목 (세션 탭 헤더와 정합: 44).
              큐 모드에서는 Collapsed → row Height=Auto 라 자연스럽게 0 으로 축소되어
              콘텐츠(버블 리스트+입력)가 탭 바로 아래에 이어진다. -->
-        <Border x:Name="HeaderBar" Grid.Row="1" Height="44"
+        <Border x:Name="HeaderBar" Grid.Row="1" Height="35"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
             <Grid Margin="14,0,8,0">

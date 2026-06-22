@@ -211,9 +211,9 @@
                     </Border>
 
                     <!-- Tab strip (devez 브라우저식 탭: 둥근 상단 + 선택 탭이 헤더와 이어짐) -->
-                    <Border x:Name="TabBar" Grid.Row="1" Height="44" Background="{DynamicResource BgBrush}"
+                    <Border x:Name="TabBar" Grid.Row="1" Height="35" Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
-                            Padding="0,7,12,0">
+                            Padding="0,4,12,0">
                       <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -263,7 +263,7 @@
                                             </Style>
                                         </Grid.Style>
                                         <Border x:Name="TabBd" Margin="0,0,0,-1"
-                                                VerticalAlignment="Bottom" Padding="0,9"
+                                                VerticalAlignment="Bottom" Padding="0,6"
                                                 MinWidth="131" MaxWidth="248"
                                                 CornerRadius="14,14,0,0"
                                                 BorderThickness="1,1,1,0"
