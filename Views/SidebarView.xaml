@@ -344,25 +344,25 @@
                            Foreground="{DynamicResource TextBrush}"/>
                 <!-- 돋보기: 클릭 시 아래 행(SearchRow) 의 Height 를 0→43 으로 애니메이션하며 펼침 -->
                 <Button x:Name="SearchToggleBtn" Grid.Column="1"
-                        Width="28" Height="28" Margin="0,0,4,0"
+                        Width="24" Height="24" Margin="0,0,4,0"
                         Style="{StaticResource IconButton}"
                         Click="SearchToggleBtn_Click"
                         ToolTip="검색">
                     <Path x:Name="SearchToggleIcon"
                           Style="{StaticResource LucideButtonIcon}"
                           Data="{StaticResource IconSearch}"
-                          Width="14" Height="14"/>
+                          Width="12" Height="12"/>
                 </Button>
                 <Button x:Name="ToggleExpandAllBtn" Grid.Column="2"
-                        Width="28" Height="28"
+                        Width="24" Height="24"
                         Style="{StaticResource IconButton}"
                         Click="ToggleExpandAll_Click"
                         ToolTip="모두 펼치기">
-                    <Grid Width="14" Height="14">
+                    <Grid Width="12" Height="12">
                         <Path x:Name="ToggleExpandAllIcon"
                               Style="{StaticResource LucideButtonIcon}"
                               Data="{StaticResource IconChevronRight}"
-                              Width="12" Height="12"
+                              Width="11" Height="11"
                               RenderTransformOrigin="0.5,0.5">
                             <Path.RenderTransform>
                                 <RotateTransform Angle="90"/>
