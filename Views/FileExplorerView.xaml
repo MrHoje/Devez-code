@@ -226,7 +226,7 @@
                 <Style TargetType="TreeViewItem">
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                     <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-                    <Setter Property="FontSize" Value="{DynamicResource Fs12}"/>
+                    <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
                     <EventSetter Event="MouseDoubleClick" Handler="TreeItem_DoubleClick"/>
                     <EventSetter Event="MouseRightButtonDown" Handler="TreeItem_RightClick"/>
                     <Setter Property="Template">
@@ -247,7 +247,7 @@
                                                   ClickMode="Press" VerticalAlignment="Center"/>
                                     <Border x:Name="Bd" Grid.Row="0" Grid.Column="1"
                                             CornerRadius="6" Background="Transparent"
-                                            Padding="2,1" SnapsToDevicePixels="True">
+                                            Padding="4,3" SnapsToDevicePixels="True">
                                         <ContentPresenter x:Name="PART_Header" ContentSource="Header"
                                                           HorizontalAlignment="Stretch"/>
                                     </Border>
@@ -306,7 +306,7 @@
                         </StackPanel.ContextMenu>
                         <Path Style="{StaticResource LucideIcon}"
                               Data="{Binding Converter={x:Static models:DirIconConverter.Instance}}"
-                              Width="13" Height="13"
+                              Width="14" Height="14"
                               Stroke="{DynamicResource TextMutedBrush}"
                               VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Name}" Margin="7,0,0,0" VerticalAlignment="Center"
