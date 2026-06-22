@@ -36,12 +36,12 @@
                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTriangleAlert}"
                               Width="15" Height="15" VerticalAlignment="Center"
                               Stroke="{DynamicResource PrimaryBrush}"/>
-                        <TextBlock Margin="9,0,0,0" VerticalAlignment="Center"
+                        <TextBlock x:Name="HookBannerText" Margin="9,0,0,0" VerticalAlignment="Center"
                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"
                                    Text="세션 상태(요청 중 스피너) 연동이 설정되지 않았습니다. 원클릭으로 설정할 수 있어요."/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Button Click="HookSetupBtn_Click" Height="28" Padding="14,0" Cursor="Arrow"
+                        <Button x:Name="HookSetupBtn" Click="HookSetupBtn_Click" Height="28" Padding="14,0" Cursor="Arrow"
                                 Style="{StaticResource PrimaryButton}" FontSize="{DynamicResource Fs12}">
                             <TextBlock Text="설정" Foreground="White"/>
                         </Button>
@@ -533,9 +533,11 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition x:Name="FooterSidebarCol" Width="Auto" MinWidth="190"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
-                        <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="0"/>
-                    </Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
+                    <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="0"/>
+                    <!-- 우측 패널 접힘과 무관하게 항상 보이는 설정 버튼용 고정폭 컬럼 -->
+                    <ColumnDefinition x:Name="FooterActionsCol" Width="Auto" MinWidth="48"/>
+                </Grid.ColumnDefinitions>
                     <!-- 좌측: CPU/RAM | (구분선) 클로드 사용량 (devez 정합: 한 StackPanel에 묶음).
                          col0(FooterSidebarCol)은 사이드바 폭으로 미러링되는 절대폭이라 좁다 →
                          star 컬럼까지 ColumnSpan 해 rate-limit 패널이 컬럼 경계에서 잘리지 않게 한다. -->
@@ -584,8 +586,9 @@
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
                     </StackPanel>
-                    <!-- 우측: 설정 버튼 (MCP 서버 버튼은 보류 — 2026-06 보류, 재활성 시 Visibility 제거 + Uncomment) -->
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <!-- 우측: 설정 버튼 (MCP 서버 버튼은 보류 — 2026-06 보류, 재활성 시 Visibility 제거 + Uncomment).
+                         컬럼은 FooterFileExpCol(FooterActionsCol)이 아닌 별도 고정폭 컬럼에 둔다 — 우측 패널 접힘과 무관하게 항상 노출. -->
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right">
                         <!--
                         <Button Style="{StaticResource WinCtrlBtn}" Click="McpBtn_Click"
                                 ToolTip="MCP 서버" Margin="0,0,2,0">
