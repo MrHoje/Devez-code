@@ -363,7 +363,7 @@ public partial class SidebarView : UserControl
                     if (to != from) { Projects.Move(from, to); ProjectsReordered?.Invoke(); }
                 }
                 return Task.CompletedTask;
-            });
+            }, exactFollow: true);
         if (_projectDrag != null) { _didDrag = true; CaptureMouse(); }
         _pendingProject = null;
     }
@@ -386,7 +386,7 @@ public partial class SidebarView : UserControl
                     if (to != from) { project.Sessions.Move(from, to); SessionsReordered?.Invoke(project); }
                 }
                 return Task.CompletedTask;
-            });
+            }, exactFollow: true);
         if (_sessionDrag != null) { _didDrag = true; CaptureMouse(); }
         _pendingSession = null;
     }
