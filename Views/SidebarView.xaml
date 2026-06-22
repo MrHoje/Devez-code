@@ -265,7 +265,7 @@
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
-                                                  Width="10" Height="10"
+                                                  Width="8" Height="8"
                                                   Stretch="Uniform"
                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
@@ -290,7 +290,7 @@
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{StaticResource IconMoreVertical}"
-                                                  Width="10" Height="10"
+                                                  Width="8" Height="8"
                                                   Stretch="Uniform"
                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
