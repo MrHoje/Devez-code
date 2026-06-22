@@ -204,31 +204,6 @@
                                            FontSize="{DynamicResource Fs11}"
                                            Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
-                            <!-- 집계 세션 상태: 살아있는 세션 있으면 테마색 점, 아니면 회색. 옆에 살아있음/전체 수. -->
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
-                                        Margin="6,0,2,0" ToolTip="실행 중 / 전체 세션">
-                                <StackPanel.Style>
-                                    <Style TargetType="StackPanel">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SessionCount}" Value="0">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </StackPanel.Style>
-                                <Ellipse Width="7" Height="7" VerticalAlignment="Center">
-                                    <Ellipse.Style>
-                                        <Style TargetType="Ellipse">
-                                            <Setter Property="Fill" Value="{DynamicResource TextMutedBrush}"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding HasAliveSession}" Value="True">
-                                                    <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Ellipse.Style>
-                                </Ellipse>
-                            </StackPanel>
                             <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용) -->
                             <Button Grid.Column="2" Margin="6,0,0,0" Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
