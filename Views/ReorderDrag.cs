@@ -25,14 +25,16 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly int _sourceIndex;
     private readonly bool _exactFollow;
     private readonly bool _horizontal;
+    private readonly double _grabOffset; // 잡은 지점의 source 내부 오프셋(축) — 드래그 카드 중심 계산용
     private int _targetIndex;
     private bool _finished;
 
     private ReorderDrag(UIElement coordHost, List<Slot> slots, T source, int sourceIndex,
-        DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal)
+        DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal, double grabOffset)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
+        _grabOffset = grabOffset;
         _targetIndex = sourceIndex;
     }
 
@@ -69,10 +71,16 @@ internal sealed class ReorderDrag<T> where T : class
         // ghostSource: ghost 이미지로 캡처할 visual (null이면 sourceElement 사용).
         // 슬롯에는 받침(Path) 자식이 포함되어 sourceElement(row) 자체로는 bitmap에 받침까지
         // 잡혀버리는 경우, 받침 없는 Border를 따로 지정해 ghost에서 받침을 제외한다 (devez 정합).
+        // 잡은 지점의 source row 내부 오프셋(축) — 커서 raw 대신 '드래그 카드 중심'을 기준으로
+        // 타깃을 판정하기 위함. 그래야 source 높이/잡은 위치와 무관하게 위/아래 모두 대칭으로
+        // '이웃 카드 절반을 넘을 때' 순서가 바뀐다.
+        var grabPt = Mouse.GetPosition(sourceElement);
+        double grabOffset = horizontal ? grabPt.X : grabPt.Y;
+
         var ghost = DragHelper.BeginManualDrag(ghostSource ?? sourceElement, sourceElement);
         if (ghost == null) return null;
 
-        return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal);
+        return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal, grabOffset);
     }
 
     public void Update(MouseEventArgs e)
@@ -80,7 +88,9 @@ internal sealed class ReorderDrag<T> where T : class
         if (_finished) return;
         _ghost.MoveToMouse();
         var cursor = _horizontal ? e.GetPosition(_coordHost).X : e.GetPosition(_coordHost).Y;
-        var newTarget = ComputeTargetIndex(cursor);
+        // 커서 raw 대신 드래그 중인 카드의 중심을 기준점으로 사용 — 위/아래 대칭 판정.
+        var draggedCenter = cursor - _grabOffset + _slots[_sourceIndex].Height / 2;
+        var newTarget = ComputeTargetIndex(draggedCenter);
         if (newTarget == _targetIndex) return;
         _targetIndex = newTarget;
         ApplyDisplacement();
