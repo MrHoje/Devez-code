@@ -261,12 +261,13 @@
                                     ToolTip="펼치기 / 접기">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="14" Height="14" CornerRadius="4" Padding="2"
+                                        <Border x:Name="Bd" Width="16" Height="16" CornerRadius="4" Padding="2"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
-                                                  Width="8" Height="8"
+                                                  Width="9" Height="9"
                                                   Stretch="Uniform"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
@@ -286,12 +287,13 @@
                                     ToolTip="메뉴">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="14" Height="14" CornerRadius="4" Padding="2"
+                                        <Border x:Name="Bd" Width="16" Height="16" CornerRadius="4" Padding="2"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{StaticResource IconMoreVertical}"
-                                                  Width="8" Height="8"
+                                                  Width="9" Height="9"
                                                   Stretch="Uniform"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
