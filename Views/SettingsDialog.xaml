@@ -166,16 +166,15 @@
                                 <TextBlock Text="프로젝트와 세션의 기본 동작을 설정합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
-                                <Border Padding="14,12" CornerRadius="10"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                        Background="{DynamicResource PanelSoftBrush}" Margin="0,0,0,10">
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="프로젝트 선택 시 세션 모두 로드" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                            <TextBlock Text="프로젝트 선택 시 세션 모두 로드" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="끄면 첫 번째 세션만 실행하고, 다른 세션은 선택할 때 로드합니다."
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
@@ -205,9 +204,8 @@
                                 <ItemsControl x:Name="AgentList">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Margin="0,0,0,10" Padding="14,12" CornerRadius="10"
-                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                                    Background="{DynamicResource PanelSoftBrush}">
+                                            <Border Margin="0,0,0,18" Padding="0" CornerRadius="0"
+                                                    BorderThickness="0" Background="Transparent">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*"/>
@@ -339,16 +337,15 @@
                                 <TextBlock Text="우측 패널 상단의 뷰 전환 버튼 표시 여부를 선택합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
-                                <Border Padding="14,12" CornerRadius="10"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                        Background="{DynamicResource PanelSoftBrush}" Margin="0,0,0,10">
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="탐색기" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                            <TextBlock Text="탐색기" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="파일 탐색기 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
@@ -359,16 +356,17 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="14,12" CornerRadius="10"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                        Background="{DynamicResource PanelSoftBrush}" Margin="0,0,0,10">
+                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="작업 큐" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                            <TextBlock Text="작업 큐" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="작업 큐 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
@@ -379,16 +377,17 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="14,12" CornerRadius="10"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                        Background="{DynamicResource PanelSoftBrush}" Margin="0,0,0,10">
+                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="웹 브라우저" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                            <TextBlock Text="웹 브라우저" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="브라우저 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
@@ -399,16 +398,17 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="14,12" CornerRadius="10"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                        Background="{DynamicResource PanelSoftBrush}" Margin="0,0,0,10">
+                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="DIFF" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                            <TextBlock Text="DIFF" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="변경 내역(diff) 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
