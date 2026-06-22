@@ -18,6 +18,11 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
+        <!-- 분할 시 포커스된 패널 상단 액센트(2px). 단일 패널이면 항상 숨김. -->
+        <Border x:Name="FocusAccent" Grid.Row="0" Height="2" VerticalAlignment="Top"
+                Background="{DynamicResource PrimaryBrush}" Visibility="Collapsed"
+                IsHitTestVisible="False" Panel.ZIndex="200"/>
+
         <!-- 프로젝트 메타 바 (탭 헤더와 같은 높이). 탭 바 위에 별도 행으로 부착. -->
         <Border x:Name="MetaBar" Grid.Row="0" Height="35" Background="{DynamicResource BgBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"

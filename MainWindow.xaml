@@ -130,8 +130,19 @@
                               DragDelta="SidebarSplitter_DragDelta"
                               DragCompleted="SidebarSplitter_DragCompleted"/>
 
-                <!-- Center: 워크스페이스 패널 A (분할 시 패널 B 가 추가된다) -->
-                <views:WorkspacePaneView x:Name="PaneA" Grid.Column="2"/>
+                <!-- Center: 워크스페이스 패널 A | (분할 시) 스플리터 + 패널 B -->
+                <Grid Grid.Column="2" x:Name="CenterSplit">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="PaneACol" Width="*"/>
+                        <ColumnDefinition x:Name="PaneSplitterCol" Width="0"/>
+                        <ColumnDefinition x:Name="PaneBCol" Width="0"/>
+                    </Grid.ColumnDefinitions>
+                    <views:WorkspacePaneView x:Name="PaneA" Grid.Column="0"/>
+                    <GridSplitter x:Name="PaneSplitter" Grid.Column="1" Width="4"
+                                  HorizontalAlignment="Stretch" Visibility="Collapsed"
+                                  ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
+                    <views:WorkspacePaneView x:Name="PaneB" Grid.Column="2" Visibility="Collapsed"/>
+                </Grid>
 
                 <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"

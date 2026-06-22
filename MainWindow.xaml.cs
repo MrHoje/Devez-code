@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         _projects = WorkspaceStore.Load();
         Sidebar.Projects = _projects;
         SetupPane(PaneA);
+        SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
         _focusedPane = PaneA;
         _ = MarkdownWysiwygHost.PrewarmAsync();
 
@@ -973,6 +974,7 @@ public partial class MainWindow : Window
         if (ReferenceEquals(_focusedPane, pane)) return;
         _focusedPane = pane;
         SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
     }
 
     private void OnPaneActiveChanged(WorkspacePaneView pane)
@@ -996,8 +998,62 @@ public partial class MainWindow : Window
             HookSetupBanner.Visibility = Visibility.Collapsed;
     }
 
-    /// <summary>분할 토글 — Phase 2 에서 구현.</summary>
-    private void OnPaneSplitToggle(WorkspacePaneView pane) { }
+    private bool _splitActive;
+
+    /// <summary>중앙 패널 분할/해제 토글. 분할 시 패널 B 노출 후 두 번째 프로젝트를 자동으로 연다.</summary>
+    private void OnPaneSplitToggle(WorkspacePaneView pane)
+    {
+        if (_splitActive) DisableSplit();
+        else EnableSplit();
+    }
+
+    private void EnableSplit()
+    {
+        if (_splitActive) return;
+        _splitActive = true;
+
+        PaneSplitterCol.Width = new GridLength(4);
+        PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+        PaneSplitter.Visibility = Visibility.Visible;
+        PaneB.Visibility = Visibility.Visible;
+
+        foreach (var p in _panes) p.SetSplitActive(true);
+
+        // 패널 B 포커스로 전환 → 이후 사이드바 클릭이 B 로 향한다.
+        _focusedPane = PaneB;
+        // 패널 A 가 아닌 다른 프로젝트가 있으면 자동으로 B 에 연다(없으면 빈 패널).
+        var other = _projects.FirstOrDefault(p => !ReferenceEquals(p, PaneA.ActiveProject));
+        if (other != null) PaneB.SelectProject(other);
+        else SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+    }
+
+    private void DisableSplit()
+    {
+        if (!_splitActive) return;
+        _splitActive = false;
+
+        // 포커스를 먼저 A 로 옮긴 뒤 B 를 정리해야 B 비우기가 셸의 last-active 를 건드리지 않는다.
+        _focusedPane = PaneA;
+        // 패널 B 의 세션/터미널 배선을 끊고(컬렉션·ConPTY·기록은 보존) 숨긴다.
+        PaneB.ClearForHide();
+        PaneB.Visibility = Visibility.Collapsed;
+        PaneSplitter.Visibility = Visibility.Collapsed;
+        PaneBCol.Width = new GridLength(0);
+        PaneSplitterCol.Width = new GridLength(0);
+        PaneACol.Width = new GridLength(1, GridUnitType.Star);
+
+        foreach (var p in _panes) p.SetSplitActive(false);
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+    }
+
+    /// <summary>분할 중일 때 포커스 패널을 시각적으로 표시(상단 액센트). 단일 패널이면 표시 안 함.</summary>
+    private void UpdatePaneFocusVisual()
+    {
+        foreach (var p in _panes)
+            p.SetFocusedVisual(_splitActive && ReferenceEquals(p, _focusedPane));
+    }
 
     private SessionItem? FindSession(string id)
         => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);

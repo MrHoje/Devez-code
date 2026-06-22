@@ -73,6 +73,22 @@ public partial class WorkspacePaneView : UserControl
         if (SplitIcon != null) SplitIcon.Stroke = (Brush)FindResource(key);
     }
 
+    /// <summary>분할 중 포커스 패널 상단 액센트 표시 여부.</summary>
+    public void SetFocusedVisual(bool focused)
+    {
+        if (FocusAccent != null) FocusAccent.Visibility = focused ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>분할 해제 시 — 이 패널이 보여주던 세션의 xterm 배선을 끊고 상태를 비운다(ConPTY·기록 보존).</summary>
+    public void ClearForHide()
+    {
+        if (_activeSession != null)
+            try { _terminal.CloseTerminal(_activeSession.Id); } catch { /* ignore */ }
+        _activeProject = null;
+        ClearActiveSession();
+        TabsHost.ItemsSource = null;
+    }
+
     // ── 프로젝트 ─────────────────────────────────────────────────
     /// <summary>활성 프로젝트 전환 — 중앙 탭을 그 프로젝트의 탭들로 교체. 세션 활성화는 안 함.</summary>
     private void SetActiveProject(ProjectItem proj)
