@@ -261,11 +261,11 @@
                                     ToolTip="펼치기 / 접기">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="22" Height="22" CornerRadius="6"
+                                        <Border x:Name="Bd" Width="20" Height="20" CornerRadius="6"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
-                                                  Width="9" Height="9"
+                                                  Width="8" Height="8"
                                                   Stroke="{DynamicResource TextMutedBrush}"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
@@ -285,11 +285,11 @@
                                     ToolTip="메뉴">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="22" Height="22" CornerRadius="6"
+                                        <Border x:Name="Bd" Width="20" Height="20" CornerRadius="6"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{StaticResource IconMoreVertical}"
-                                                  Width="13" Height="13"
+                                                  Width="11" Height="11"
                                                   Stroke="{DynamicResource TextMutedBrush}"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
