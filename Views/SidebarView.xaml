@@ -260,13 +260,16 @@
                                     ToolTip="펼치기 / 접기">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="16" Height="16" CornerRadius="4" Padding="2"
+                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="4"
                                                 Background="{TemplateBinding Background}">
+                                            <!-- Padding 2 + 11px Path 중앙 대신 Margin 2.5 로 좌표 고정 →
+                                                 보더가 16→18 로 커져도 아이콘 위치는 동일. -->
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
                                                   Width="11" Height="11"
+                                                  Margin="2.5,2.5,0,0"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Top"
                                                   Stretch="Uniform"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
