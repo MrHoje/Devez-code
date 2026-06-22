@@ -32,15 +32,9 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="BorderBrush" Value="#5a5a5a"/>
                 </Trigger>
-                <!-- 선택된(활성) 프로젝트: primary 보더(1.5px) + primary 글로우. 호버보다 우선 -->
+                <!-- 선택된(활성) 프로젝트: primary 보더 색만 변경. 두께 변경(레이아웃 밀림)·글로우(텍스트 흐려짐) 제거 -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                    <Setter Property="BorderThickness" Value="1.5"/>
-                    <Setter Property="Effect">
-                        <Setter.Value>
-                            <DropShadowEffect Color="{DynamicResource PrimaryColor}" Opacity="0.35" BlurRadius="14" ShadowDepth="0"/>
-                        </Setter.Value>
-                    </Setter>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
