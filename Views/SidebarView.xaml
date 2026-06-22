@@ -27,6 +27,10 @@
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
             <Setter Property="Margin" Value="0,3,0,3"/>
             <Setter Property="Effect" Value="{x:Null}"/>
+            <!-- 채팅 버블 선택 링 방식 참고: 픽셀 스냅·레이아웃 라운딩 끄고 안티에일리어싱 → 부드러운 보더 -->
+            <Setter Property="SnapsToDevicePixels" Value="False"/>
+            <Setter Property="UseLayoutRounding" Value="False"/>
+            <Setter Property="RenderOptions.EdgeMode" Value="Unspecified"/>
             <Style.Triggers>
                 <!-- 호버: 보더만 살짝 더 진하게. 배경/그림자 유지 → 세션 row가 묻히지 않음. 텍스트의 X 슬라이드가 단독 호버 신호 -->
                 <Trigger Property="IsMouseOver" Value="True">
