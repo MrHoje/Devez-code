@@ -158,7 +158,12 @@
                     <Border x:Name="MetaBar" Grid.Row="0" Height="44" Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                             Padding="16,0,12,0">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                          </Grid.ColumnDefinitions>
+                          <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
                             <!-- 프로젝트 명 -->
                             <Path Data="{StaticResource IconHash}" Width="14" Height="14" Stretch="Uniform"
                                   Style="{StaticResource LucideIcon}"
@@ -201,7 +206,27 @@
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
-                        </StackPanel>
+                          </StackPanel>
+
+                          <!-- 우측 dock: 이 세션의 model/effort 선택 (claude 세션일 때만 노출) -->
+                          <StackPanel x:Name="ModelEffortDock" Grid.Column="1" Orientation="Horizontal"
+                                      VerticalAlignment="Center" HorizontalAlignment="Right" Visibility="Collapsed">
+                              <Path Data="{StaticResource IconSparkle}" Width="13" Height="13" Stretch="Uniform"
+                                    Style="{StaticResource LucideIcon}" Stroke="{DynamicResource TextMutedBrush}"
+                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
+                              <ComboBox x:Name="ModelCombo" Style="{StaticResource DockComboBox}" MinWidth="104"
+                                        DisplayMemberPath="Label" SelectedValuePath="Value"
+                                        SelectionChanged="ModelCombo_SelectionChanged"
+                                        ToolTip="이 세션의 모델"/>
+                              <Path Data="{StaticResource IconZap}" Width="13" Height="13" Stretch="Uniform"
+                                    Style="{StaticResource LucideIcon}" Stroke="{DynamicResource TextMutedBrush}"
+                                    VerticalAlignment="Center" Margin="12,0,6,0"/>
+                              <ComboBox x:Name="EffortCombo" Style="{StaticResource DockComboBox}" MinWidth="92"
+                                        DisplayMemberPath="Label" SelectedValuePath="Value"
+                                        SelectionChanged="EffortCombo_SelectionChanged"
+                                        ToolTip="이 세션의 추론 강도(effort)"/>
+                          </StackPanel>
+                        </Grid>
                     </Border>
 
                     <!-- Tab strip (devez 브라우저식 탭: 둥근 상단 + 선택 탭이 헤더와 이어짐) -->

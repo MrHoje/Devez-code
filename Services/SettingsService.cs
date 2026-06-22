@@ -23,6 +23,9 @@ public static class SettingsService
         public Dictionary<string, string> ClaudeCodeRoomDirs { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomSessions { get; set; } = new();
         public List<string> ClaudeCodeRoomLaunched { get; set; } = new();
+        // 방별 model/effort 선택 (claude --model / --effort 런치 플래그). 빈 값/미존재 = 미적용(claude 기본). 로컬 전용.
+        public Dictionary<string, string> ClaudeCodeRoomModel { get; set; } = new();
+        public Dictionary<string, string> ClaudeCodeRoomEffort { get; set; } = new();
         // 범용 — "roomId|agentId" 키로 첫 실행 여부 추적. 비-Claude 에이전트도 같은 메커니즘으로
         // 첫 실행=plain, 이후=ResumeFlag(--last / -c) 분기. (Claude 는 별도 IsClaudeCodeRoomLaunched 그대로 사용)
         public List<string> AgentRoomsLaunched { get; set; } = new();
@@ -145,6 +148,8 @@ public static class SettingsService
         changed |= Current.ClaudeCodeRoomSessions.Remove(roomId);
         changed |= Current.ClaudeCodeRoomLaunched.Remove(roomId);
         changed |= Current.RoomAgents.Remove(roomId);
+        changed |= Current.ClaudeCodeRoomModel.Remove(roomId);
+        changed |= Current.ClaudeCodeRoomEffort.Remove(roomId);
         if (changed) Save();
     }
 
@@ -181,6 +186,24 @@ public static class SettingsService
     {
         Current.ClaudeCodeRoomSessions[roomId] = sessionId;
         Save();
+    }
+
+    // ── 방별 model/effort (claude --model / --effort) ─────────────
+    public static string? LoadClaudeCodeRoomModel(string roomId)
+        => Current.ClaudeCodeRoomModel.TryGetValue(roomId, out var v) && !string.IsNullOrEmpty(v) ? v : null;
+    public static void SaveClaudeCodeRoomModel(string roomId, string? value)
+    { SetOrRemove(Current.ClaudeCodeRoomModel, roomId, value); Save(); }
+
+    public static string? LoadClaudeCodeRoomEffort(string roomId)
+        => Current.ClaudeCodeRoomEffort.TryGetValue(roomId, out var v) && !string.IsNullOrEmpty(v) ? v : null;
+    public static void SaveClaudeCodeRoomEffort(string roomId, string? value)
+    { SetOrRemove(Current.ClaudeCodeRoomEffort, roomId, value); Save(); }
+
+    /// <summary>값이 비면 키 제거, 아니면 설정. (저장은 호출부에서)</summary>
+    private static void SetOrRemove(Dictionary<string, string> map, string key, string? value)
+    {
+        if (string.IsNullOrEmpty(value)) map.Remove(key);
+        else map[key] = value;
     }
 
     // ── 마지막 활성 프로젝트/세션 (정상 종료 시에만 복원) ────────

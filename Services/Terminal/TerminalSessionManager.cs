@@ -440,6 +440,12 @@ public sealed class TerminalSessionManager
         string flags = "--dangerously-skip-permissions";
         if (File.Exists(HookSettingsPath)) flags += $" --settings \"{HookSettingsPath}\"";
 
+        // 방별 model/effort 선택을 런치 플래그로 적용. 값은 콤보 화이트리스트지만 변조 대비 영숫자/하이픈만 허용.
+        var model = SettingsService.LoadClaudeCodeRoomModel(roomId);
+        var effort = SettingsService.LoadClaudeCodeRoomEffort(roomId);
+        if (IsSafeFlagValue(model)) flags += $" --model {model}";
+        if (IsSafeFlagValue(effort)) flags += $" --effort {effort}";
+
         var sessionId = SettingsService.LoadClaudeCodeRoomSession(roomId);
         // 불변식: 세션 ID는 항상 GUID 여야 한다. 비정상 값(설정 파일 변조 등)은 무시 →
         // 배치에 그대로 보간되어 cmd 명령이 주입되는 것을 원천 차단(새 세션처럼 시작).
@@ -520,6 +526,10 @@ public sealed class TerminalSessionManager
     // 방별 claude 직접 실행 배치(cmd /k 로 띄움). 매 실행 시 최신 커맨드로 덮어쓴다.
     private static string LaunchDir => Path.Combine(ClaudeTrackDir, "launch");
     private static string LaunchBatchPath(string roomId) => Path.Combine(LaunchDir, SafeRoomFileName(roomId) + ".cmd");
+
+    /// <summary>런치 플래그 값 안전성 — 영숫자/하이픈만(공백·따옴표·세미콜론 등 주입 차단). 빈 값은 false.</summary>
+    private static bool IsSafeFlagValue(string? v)
+        => !string.IsNullOrEmpty(v) && System.Text.RegularExpressions.Regex.IsMatch(v, @"^[A-Za-z0-9\-]+$");
 
     /// <summary>roomId를 파일명으로 안전하게 (훅 ps1의 -replace 와 동일 규칙).</summary>
     private static string SafeRoomFileName(string roomId)

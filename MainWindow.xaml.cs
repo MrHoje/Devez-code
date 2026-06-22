@@ -12,6 +12,9 @@ using DevezCode.Views;
 
 namespace DevezCode;
 
+/// <summary>메타바 model/effort 콤보 항목 (DisplayMemberPath=Label, SelectedValuePath=Value).</summary>
+public sealed record ModelEffortOption(string Label, string Value);
+
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<ProjectItem> _projects;
@@ -69,7 +72,12 @@ public partial class MainWindow : Window
 
         // 세션 요청 처리중 스피너: claude 훅(busy-hook.ps1)이 떨군 상태 파일을 감시 (clude-blinker 방식).
         _sessionBusy.BusyChanged += (id, busy) =>
-            Dispatcher.InvokeAsync(() => { var s = FindSession(id); if (s != null) s.IsBusy = busy; });
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(id);
+                if (s != null) s.IsBusy = busy;
+                if (!busy) FlushPendingModelEffort(id); // 응답 종료 → 보류된 model/effort 적용
+            });
 
         // 마지막 보낸 메시지: busy 훅이 떨군 lastmsg 파일을 감시 → 세션에 반영(헤더 부제 라이브 갱신).
         _sessionLastMsg.MessageChanged += (id, msg) =>
@@ -1126,6 +1134,7 @@ public partial class MainWindow : Window
         _terminal.FocusTerminal();
         UpdateEmptyState();
         EnsureSelectedTabVisible(session); // 선택 탭이 가려져 있으면 보이게 스크롤
+        RefreshModelEffortDock(); // 메타바 model/effort dock 을 이 세션 값으로 갱신
     }
 
     /// <summary>작업 큐 → 현재 활성 세션 터미널에 텍스트를 입력하고 Enter 로 전송.
@@ -1163,6 +1172,95 @@ public partial class MainWindow : Window
         UpdateEmptyState();
         EnsureSelectedTabVisible(tab);
         tab.Editor.Focus(); // 포커스 이동
+        RefreshModelEffortDock(); // 파일 탭 → 세션 아님 → dock 숨김
+    }
+
+    // ── 메타바 model/effort dock ─────────────────────────────────────────
+    // claude 세션에만 노출. 선택 시 방별 설정 저장 후 세션 재시작(--model/--effort 런치 플래그 적용,
+    // --resume 으로 대화 유지). 응답 처리중(IsBusy)에 바꾸면 종료 후 적용(_pendingModelEffort).
+    private static readonly ModelEffortOption[] ModelOptions =
+    {
+        new("Opus 4.8", "opus"), new("Sonnet 4.6", "sonnet"),
+        new("Haiku 4.5", "haiku"), new("Fable 5", "fable"),
+    };
+    private static readonly ModelEffortOption[] EffortOptions =
+    {
+        new("low", "low"), new("medium", "medium"), new("high", "high"),
+        new("xhigh", "xhigh"), new("max", "max"),
+    };
+    // 미설정 세션의 표시 기본값(claude 실제 기본 추정). 사용자가 한 번 고르면 그 값이 정확한 적용값.
+    private const string DefaultModelValue = "opus";
+    private const string DefaultEffortValue = "high";
+
+    private bool _suppressModelEffort;            // 프로그램적 SelectedValue 설정 시 변경 핸들러 억제
+    private readonly HashSet<string> _pendingModelEffort = new(); // busy 중 변경 → idle 시 적용할 roomId
+
+    /// <summary>활성 세션 기준으로 dock 표시/값 갱신. claude 세션이 아니면 숨김.</summary>
+    private void RefreshModelEffortDock()
+    {
+        if (ModelEffortDock == null) return;
+        var s = _activeSession;
+        var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
+        bool isClaude = s != null && agentId == "claude";
+        ModelEffortDock.Visibility = isClaude ? Visibility.Visible : Visibility.Collapsed;
+        if (!isClaude) return;
+
+        _suppressModelEffort = true;
+        try
+        {
+            if (ModelCombo.ItemsSource == null) ModelCombo.ItemsSource = ModelOptions;
+            if (EffortCombo.ItemsSource == null) EffortCombo.ItemsSource = EffortOptions;
+            ModelCombo.SelectedValue  = SettingsService.LoadClaudeCodeRoomModel(s!.Id)  ?? DefaultModelValue;
+            EffortCombo.SelectedValue = SettingsService.LoadClaudeCodeRoomEffort(s.Id)   ?? DefaultEffortValue;
+        }
+        finally { _suppressModelEffort = false; }
+    }
+
+    private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        => OnModelEffortPicked(isModel: true);
+    private void EffortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        => OnModelEffortPicked(isModel: false);
+
+    private void OnModelEffortPicked(bool isModel)
+    {
+        if (_suppressModelEffort) return;
+        var s = _activeSession;
+        if (s == null) return;
+        var val = (isModel ? ModelCombo : EffortCombo).SelectedValue as string;
+        if (string.IsNullOrEmpty(val)) return;
+
+        if (isModel) SettingsService.SaveClaudeCodeRoomModel(s.Id, val);
+        else         SettingsService.SaveClaudeCodeRoomEffort(s.Id, val);
+
+        if (s.IsBusy) _pendingModelEffort.Add(s.Id); // 응답중 — 종료 후 적용
+        else          ApplyModelEffort(s);
+    }
+
+    /// <summary>응답 종료(busy→idle) 시 보류된 model/effort 변경을 적용.</summary>
+    private void FlushPendingModelEffort(string roomId)
+    {
+        if (!_pendingModelEffort.Remove(roomId)) return;
+        var s = FindSession(roomId);
+        if (s != null) ApplyModelEffort(s);
+    }
+
+    /// <summary>세션 재시작으로 새 --model/--effort 플래그를 적용(대화는 --resume 으로 유지).
+    /// 활성 세션이면 즉시 다시 띄우고, 비활성이면 ConPTY 만 정리(다음 활성화 시 새 플래그로 복원).</summary>
+    private async void ApplyModelEffort(SessionItem s)
+    {
+        bool active = ReferenceEquals(_activeSession, s);
+        try
+        {
+            _terminal.CloseTerminal(s.Id);
+            DisposeSessionProcess(s, purge: false);           // CloseTerminal + DisposeRoom(매핑 보존)
+            TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
+            if (active)
+                TerminalSessionManager.Instance.GetOrCreate(s.Id, 120, 30); // 입력 유실 race 방지 선생성
+        }
+        catch { /* ignore */ }
+        if (!active) return; // 비활성: 다음 탭 클릭 시 ActivateSession→GetOrCreate 로 새 플래그 적용
+        await Task.Delay(150); // JS 가 dispose 메시지를 처리할 시간
+        if (ReferenceEquals(_activeSession, s)) ActivateSession(s);
     }
 
     // ── 새 탭 + 버튼 ──────────────────────────────────────────────
