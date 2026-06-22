@@ -2066,14 +2066,45 @@ public partial class MainWindow : Window
                 SessionHeaderTitle.Text = hasMsg ? msg : sess.Name;
                 SessionHeaderTitle.ToolTip = hasMsg ? msg : null;
                 LastMessageSep.Visibility = hasMsg ? Visibility.Visible : Visibility.Collapsed;
+                FileHeaderIcon.Visibility = Visibility.Collapsed;
+                FileHeaderPathText.Visibility = Visibility.Collapsed;
+                FileDirtyDot.Visibility = Visibility.Collapsed;
+                FileHeaderActions.Visibility = Visibility.Collapsed;
             }
             else if (_activeTab is FileTabItem file)
             {
                 SessionHeaderTitle.Text = file.Title;
                 SessionHeaderTitle.ToolTip = file.FilePath;
                 LastMessageSep.Visibility = Visibility.Collapsed;
+                FileHeaderIcon.Visibility = Visibility.Visible;
+                FileHeaderPathText.Text = file.FilePath;
+                FileHeaderPathText.ToolTip = file.FilePath;
+                FileHeaderPathText.Visibility = Visibility.Visible;
+                FileHeaderActions.Visibility = Visibility.Visible;
+                RefreshFileHeaderState(file);
             }
         }
+    }
+
+    private void RefreshFileHeaderState(FileTabItem? file = null)
+    {
+        file ??= _activeTab as FileTabItem;
+        if (file == null) return;
+        bool dirty = file.Editor.IsDirty;
+        FileDirtyDot.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
+        FileSaveBtn.IsEnabled = dirty;
+    }
+
+    private void FileSaveBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeTab is FileTabItem file && file.Editor.Save())
+            RefreshFileHeaderState(file);
+    }
+
+    private void FileCloseBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeTab is FileTabItem file)
+            file.Editor.RequestClose();
     }
 
     // 푸터 좌측 상태 텍스트는 제거됨(한도 표시로 대체). 호출부 유지를 위해 no-op 로 남긴다.
@@ -2125,6 +2156,7 @@ public partial class MainWindow : Window
         }
         // 에디터의 닫기 요청 → 탭 제거로 라우팅
         tab.Editor.CloseRequested += (_, _) => RemoveFileTab(tab);
+        tab.Editor.DirtyChanged += (_, _) => { if (ReferenceEquals(_activeTab, tab)) RefreshFileHeaderState(tab); };
         _activeProject.Tabs.Add(tab);
         ActivateFileTab(tab);
     }

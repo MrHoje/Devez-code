@@ -11,6 +11,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
 {
     /// <summary>사용자가 닫기를 요청했을 때(저장 확인 포함) 발생. 호스트(=탭)가 탭을 제거한다.</summary>
     public event EventHandler? CloseRequested;
+    public event EventHandler? DirtyChanged;
 
     private string? _path;
     private bool _loading;
@@ -67,8 +68,6 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             _loading = false;
 
             _path = path;
-            FileNameText.Text = Path.GetFileName(path);
-            FilePathText.Text = path;
             SetDirty(false);
 
             Visibility = Visibility.Visible;
@@ -93,12 +92,10 @@ public partial class FileEditorView : UserControl, IFileTabEditor
     private void SetDirty(bool dirty)
     {
         _dirty = dirty;
-        DirtyDot.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
-        SaveBtn.IsEnabled = dirty;
-        UndoBtn.IsEnabled = dirty;
+        DirtyChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool Save()
+    public bool Save()
     {
         if (_path == null) return false;
         try
@@ -114,15 +111,6 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             return false;
         }
     }
-
-    private void UndoBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (Editor.CanUndo) Editor.Undo();
-    }
-
-    private void SaveBtn_Click(object sender, RoutedEventArgs e) => Save();
-
-    private void CloseBtn_Click(object sender, RoutedEventArgs e) => RequestClose();
 
     /// <summary>변경분이 있으면 저장/취소를 묻고, 진행 가능하면 true.</summary>
     private bool ConfirmDiscardOrSave()

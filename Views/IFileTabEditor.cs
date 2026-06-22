@@ -5,9 +5,11 @@ namespace DevezCode.Views;
 public interface IFileTabEditor
 {
     event EventHandler? CloseRequested;
+    event EventHandler? DirtyChanged;
     string? FilePath { get; }
     bool IsDirty { get; }
     bool LoadFile(string path);
+    bool Save();
     void RequestClose();
     bool Focus();
 }

@@ -8,6 +8,7 @@ namespace DevezCode.Views;
 public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisposable
 {
     public event EventHandler? CloseRequested;
+    public event EventHandler? DirtyChanged;
 
     private string? _path;
     private string _currentMarkdown = "";
@@ -44,8 +45,6 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
 
             _path = path;
             _currentMarkdown = File.ReadAllText(path);
-            FileNameText.Text = Path.GetFileName(path);
-            FilePathText.Text = path;
             SetDirty(false);
             _loaded = true;
             MdHost.ApplyTheme(App.CurrentTheme);
@@ -87,11 +86,10 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
     private void SetDirty(bool dirty)
     {
         _dirty = dirty;
-        DirtyDot.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
-        SaveBtn.IsEnabled = dirty;
+        DirtyChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool Save()
+    public bool Save()
     {
         if (_path == null) return false;
         try
@@ -108,9 +106,6 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
             return false;
         }
     }
-
-    private void SaveBtn_Click(object sender, RoutedEventArgs e) => Save();
-    private void CloseBtn_Click(object sender, RoutedEventArgs e) => RequestClose();
 
     public void RequestClose()
     {
