@@ -50,6 +50,7 @@ public partial class MainWindow : Window
         _projects = WorkspaceStore.Load();
         Sidebar.Projects = _projects;
         TerminalHostContainer.Content = _terminal;
+        _ = MarkdownWysiwygHost.PrewarmAsync();
 
         Sidebar.AddProjectRequested    += AddProject;
         Sidebar.ProjectSelected        += SelectProject;

@@ -28,6 +28,18 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    private static readonly Lazy<Task<CoreWebView2Environment>> SharedEnvironment = new(CreateEnvironmentAsync);
+
+    public static Task PrewarmAsync() => SharedEnvironment.Value;
+
+    private static Task<CoreWebView2Environment> CreateEnvironmentAsync()
+    {
+        var userDataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "DevezCode", "WebView2");
+        return CoreWebView2Environment.CreateAsync(null, userDataDir);
+    }
+
     public async Task EnsureReadyAsync()
     {
         if (_initStarted) return;
@@ -42,10 +54,7 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
             _webView = new WebView2 { DefaultBackgroundColor = System.Drawing.Color.Transparent };
             Content = _webView;
 
-            var userDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "DevezCode", "WebView2");
-            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
+            var env = await SharedEnvironment.Value;
             await _webView.EnsureCoreWebView2Async(env);
 
             var core = _webView.CoreWebView2;

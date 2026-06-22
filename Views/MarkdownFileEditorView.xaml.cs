@@ -14,6 +14,7 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
     private string _currentMarkdown = "";
     private bool _dirty;
     private bool _loaded;
+    private bool _initStarted;
 
     public MarkdownFileEditorView()
     {
@@ -23,6 +24,13 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         MdHost.SaveRequested += () => Save();
         MdHost.EditorReady += OnEditorReady;
         App.ThemeChanged += OnThemeChanged;
+        Loaded += OnLoaded;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (_initStarted) return;
+        _initStarted = true;
         _ = MdHost.EnsureReadyAsync();
     }
 
