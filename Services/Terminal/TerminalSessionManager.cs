@@ -565,11 +565,12 @@ public sealed class TerminalSessionManager
                 {
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
                     IncludeSubdirectories = false,
-                    EnableRaisingEvents = true,
                 };
+                // 핸들러를 먼저 붙인 뒤 활성화해야 그 사이 발생 이벤트를 놓치지 않는다.
                 watcher.Created += OnClaudeSessionFileChanged;
                 watcher.Changed += OnClaudeSessionFileChanged;
                 watcher.Renamed += OnClaudeSessionFileRenamed;
+                watcher.EnableRaisingEvents = true;
                 _claudeSessionWatcher = watcher;
             }
             catch (Exception) { /* 추적 실패해도 claude 실행은 계속 */ }
