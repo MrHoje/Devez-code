@@ -57,40 +57,24 @@
             <StackPanel x:Name="TabBarGrid" Orientation="Horizontal" VerticalAlignment="Stretch" HorizontalAlignment="Left">
                 <Button x:Name="DirViewBtn" Click="TabBtn_Click" Tag="0"
                         Style="{StaticResource ViewTabButton}" ToolTip="파일 탐색기">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Path x:Name="DirViewIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconFolderOpen}" Width="14" Height="14" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="DirViewLabel" Text="탐색기" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
-                    </StackPanel>
+                    <Path x:Name="DirViewIcon" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconFolderOpen}" Width="14" Height="14" VerticalAlignment="Center"/>
                 </Button>
                 <!-- 작업 큐 (devez 채팅방 풍 버블 입력) — 탐색기 오른쪽에 배치. -->
                 <Button x:Name="QueueViewBtn" Click="TabBtn_Click" Tag="3"
                         Style="{StaticResource ViewTabButton}" ToolTip="작업 큐">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconListTodo}" Width="14" Height="14" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="QueueViewLabel" Text="작업 큐" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
-                    </StackPanel>
+                    <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconListTodo}" Width="14" Height="14" VerticalAlignment="Center"/>
                 </Button>
                 <Button x:Name="BrowserViewBtn" Click="TabBtn_Click" Tag="1"
                         Style="{StaticResource ViewTabButton}" ToolTip="브라우저">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Path x:Name="BrowserViewIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconGlobe}" Width="14" Height="14" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="BrowserViewLabel" Text="브라우저" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
-                    </StackPanel>
+                    <Path x:Name="BrowserViewIcon" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconGlobe}" Width="14" Height="14" VerticalAlignment="Center"/>
                 </Button>
                 <Button x:Name="DiffViewBtn" Click="TabBtn_Click" Tag="2"
                         Style="{StaticResource ViewTabButton}" ToolTip="DIFF">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconGitCompare}" Width="14" Height="14" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="DiffViewLabel" Text="DIFF" Margin="6,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"/>
-                    </StackPanel>
+                    <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconGitCompare}" Width="14" Height="14" VerticalAlignment="Center"/>
                 </Button>
             </StackPanel>
             </ScrollViewer>

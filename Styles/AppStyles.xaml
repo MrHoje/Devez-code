@@ -318,7 +318,7 @@
         <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
         <Setter Property="FontSize" Value="{DynamicResource Fs12}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-        <Setter Property="Height" Value="26"/>
+        <Setter Property="Height" Value="24"/>
         <Setter Property="ItemContainerStyle" Value="{StaticResource DockComboBoxItem}"/>
         <Setter Property="Template">
             <Setter.Value>

@@ -222,19 +222,17 @@ public partial class FileExplorerView : UserControl
 
     private void UpdateTabTextColors()
     {
-        SetTabColor(DirViewIcon,     DirViewLabel,     _mode == ViewMode.Directory);
-        SetTabColor(BrowserViewIcon, BrowserViewLabel, _mode == ViewMode.Browser);
-        SetTabColor(DiffViewIcon,    DiffViewLabel,    _mode == ViewMode.Diff);
-        SetTabColor(QueueViewIcon,   QueueViewLabel,   _mode == ViewMode.Queue);
+        SetTabColor(DirViewIcon,     _mode == ViewMode.Directory);
+        SetTabColor(BrowserViewIcon, _mode == ViewMode.Browser);
+        SetTabColor(DiffViewIcon,    _mode == ViewMode.Diff);
+        SetTabColor(QueueViewIcon,   _mode == ViewMode.Queue);
     }
 
     /// <summary>탭 아이콘·라벨 색상: 활성=PrimaryBrush, 비활성=TextMutedBrush.
     /// 굵기는 항상 SemiBold로 고정 (활성/비활성 전환 시 글자 폭이 바뀌어 텍스트가 움직이는 현상 방지).</summary>
-    private void SetTabColor(System.Windows.Shapes.Path icon, TextBlock label, bool active)
+    private void SetTabColor(System.Windows.Shapes.Path icon, bool active)
     {
         icon.Stroke = (System.Windows.Media.Brush)FindResource(active ? "PrimaryBrush" : "TextMutedBrush");
-        label.Foreground = (System.Windows.Media.Brush)FindResource(active ? "PrimaryBrush" : "TextMutedBrush");
-        label.FontWeight = FontWeights.SemiBold;
     }
 
     /// <summary>airspace: 오버레이가 뜰 때 브라우저 WebView2 를 스냅샷으로 숨김.</summary>
