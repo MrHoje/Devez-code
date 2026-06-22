@@ -271,9 +271,10 @@
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
                 </StackPanel>
-                <!-- 중앙 패널 분할/해제 토글 — MainWindow 가 Click 을 처리한다. -->
+                <!-- 중앙 패널 분할/해제 토글 — 기능은 유지하되 버튼은 숨김(Visibility=Collapsed). -->
                 <Button x:Name="SplitBtn" Style="{StaticResource TabNavButton}"
-                        Click="SplitBtn_Click" Margin="2,0,0,0" ToolTip="패널 분할/해제">
+                        Click="SplitBtn_Click" Margin="2,0,0,0" ToolTip="패널 분할/해제"
+                        Visibility="Collapsed">
                     <Path x:Name="SplitIcon" Style="{StaticResource LucideIcon}" Data="{StaticResource IconColumns}"
                           Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
