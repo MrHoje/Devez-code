@@ -130,6 +130,13 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
         if (_pageReady) PostJson(new { type = "markClean" });
     }
 
+    /// <summary>콘텐츠는 그대로 두고 정규화 기준선만 갱신 — 외부 변경 감지에서
+    /// "현재 내용 유지" 선택 시 Toast UI 측 baseline만 디스크로 리베이스한다.</summary>
+    public void SetBaseline(string md)
+    {
+        if (_pageReady) PostJson(new { type = "setBaseline", markdown = md ?? "" });
+    }
+
     public void FocusEditor()
     {
         if (_pageReady) { _webView?.Focus(); PostJson(new { type = "focus" }); }
@@ -148,6 +155,12 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
             codeText = Hex("CodeTextBrush", "#0f172a"),
             primary = Hex("PrimaryBrush", "#2563eb"),
         });
+    }
+
+    /// <summary>WebView 내부 토스트(저장/자동 갱신 알림 등) — WPF 토스트는 WebView airspace로 가려지므로 웹 레이어로 띄운다.</summary>
+    public void ShowToast(string text)
+    {
+        if (_pageReady) PostJson(new { type = "toast", text = text ?? "" });
     }
 
     private static string Hex(string brushKey, string fallback)

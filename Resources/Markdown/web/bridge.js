@@ -107,6 +107,9 @@
       case 'markClean':                                    // 저장 후 — 현재값을 새 기준선으로
         baseline = currentMd();
         break;
+      case 'setBaseline':                                  // 외부 변경 감지 — 콘텐츠는 두고 baseline만 갱신
+        baseline = m.markdown || '';                       // (재평가 시점: 다음 사용자 편집/포커스 이벤트)
+        break;
       case 'setTheme':
         setTheme(m);
         break;
