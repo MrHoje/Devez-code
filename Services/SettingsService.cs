@@ -52,6 +52,8 @@ public static class SettingsService
         public double TaskQueueInputMinHeight { get; set; }
         // 작업 큐 버블/입력 글꼴 크기(Ctrl+휠로 조절, devez BubbleFontSize 정합 10~28). 기본 14.
         public double TaskQueueBubbleFontSize { get; set; } = 14;
+        // 프로젝트 선택 시 모든 세션을 미리 켤지 여부. 기본 false = 첫/활성 세션만 실행.
+        public bool PreloadAllProjectSessions { get; set; } = false;
         // 메인 창 위치/크기 + 최대화 상태(재시작 시 복원). 화면 밖이면 복원 안 함. 로컬 전용.
         public double? WindowLeft   { get; set; }
         public double? WindowTop    { get; set; }
@@ -304,6 +306,10 @@ public static class SettingsService
         Current.TaskQueueBubbleFontSize = size;
         Save();
     }
+
+    // ── 일반 설정 ────────────────────────────────────────────────
+    public static bool LoadPreloadAllProjectSessions() => Current.PreloadAllProjectSessions;
+    public static void SavePreloadAllProjectSessions(bool v) { Current.PreloadAllProjectSessions = v; Save(); }
 
     // ── 메인 창 위치/크기 (재시작 복원) ──────────────────────────
     public static (double? left, double? top, double? width, double? height, bool maximized) LoadWindowPlacement()

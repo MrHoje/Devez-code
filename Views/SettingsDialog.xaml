@@ -91,6 +91,15 @@
                                 BorderBrush="{DynamicResource LineBrush}"
                                 BorderThickness="0,0,1,0">
                             <StackPanel Margin="10,16,10,16">
+                                <Button x:Name="CatGeneralBtn" Tag="general"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconSettings}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="일반" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button x:Name="CatThemeBtn" Tag="theme"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -145,6 +154,40 @@
                                       HorizontalScrollBarVisibility="Disabled"
                                       Background="{DynamicResource PanelBrush}">
                           <Grid>
+                            <!-- 일반 패널 -->
+                            <StackPanel x:Name="GeneralPanel" Margin="28,22,28,20">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="일반" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="프로젝트와 세션의 기본 동작을 설정합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+
+                                <Border Padding="14,12" CornerRadius="10"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                        Background="{DynamicResource PanelSoftBrush}" Margin="0,0,0,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="프로젝트 선택 시 세션 모두 로드" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="끄면 첫 번째 세션만 실행하고, 다른 세션은 선택할 때 로드합니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="PreloadAllSessionsToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="PreloadAllSessionsToggle_Changed" Unchecked="PreloadAllSessionsToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+
                             <!-- 에이전트 패널 (설치된 CLI + 활성화 토글) -->
                             <StackPanel x:Name="AgentPanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -378,7 +421,7 @@
                             </StackPanel>
 
                             <!-- 테마 패널 -->
-                            <StackPanel x:Name="ThemePanel" Margin="28,22,28,20">
+                            <StackPanel x:Name="ThemePanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPalette}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"

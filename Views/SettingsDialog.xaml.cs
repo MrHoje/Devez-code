@@ -23,11 +23,13 @@ public partial class SettingsDialog : UserControl
     // 열림 시점의 저장값(기준). 미저장 변경 판정 + 취소 시 복원에 사용. 저장하면 갱신된다.
     private string _originalTheme;
     private int    _originalFontScale;
+    private bool   _originalPreloadAllSessions;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
     private string _selectedTheme;
     private int    _selectedFontScale;
+    private bool   _selectedPreloadAllSessions;
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
@@ -60,10 +62,13 @@ public partial class SettingsDialog : UserControl
         _selectedTheme       = App.CurrentTheme;
         _originalFontScale   = SettingsService.LoadFontScale();
         _selectedFontScale   = _originalFontScale;
+        _originalPreloadAllSessions = SettingsService.LoadPreloadAllProjectSessions();
+        _selectedPreloadAllSessions = _originalPreloadAllSessions;
+        PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
         BuildAgentList();
         UpdateThemeSelectionVisual();
         UpdateFontSelectionVisual();
-        SetActiveCategory("theme");
+        SetActiveCategory("general");
 
         // 라이브 미리보기: 테마/글꼴 변경 시 좌측 탭 활성 배경·테마 카드 보더·글꼴 카드 보더를
         // 즉시 재계산. 캡처된 brush instance 라 DynamicResource 가 자동 갱신되지 않는 케이스 보정.
@@ -97,6 +102,8 @@ public partial class SettingsDialog : UserControl
         var primary = (Brush)FindResource("PrimaryBrush");
         var text    = (Brush)FindResource("TextBrush");
 
+        CatGeneralBtn.Background   = key == "general"    ? active : Brushes.Transparent;
+        CatGeneralBtn.Foreground   = key == "general"    ? primary : text;
         CatThemeBtn.Background     = key == "theme"      ? active : Brushes.Transparent;
         CatThemeBtn.Foreground     = key == "theme"      ? primary : text;
         CatAgentBtn.Background     = key == "agent"      ? active : Brushes.Transparent;
@@ -108,6 +115,7 @@ public partial class SettingsDialog : UserControl
         CatChangelogBtn.Background = key == "changelog"  ? active : Brushes.Transparent;
         CatChangelogBtn.Foreground = key == "changelog"  ? primary : text;
 
+        GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility      = key == "agent"      ? Visibility.Visible : Visibility.Collapsed;
         SidePanelPanel.Visibility  = key == "sidepanel"  ? Visibility.Visible : Visibility.Collapsed;
@@ -116,6 +124,11 @@ public partial class SettingsDialog : UserControl
 
         if (key == "sidepanel") LoadSidePanelSettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
+    }
+
+    private void PreloadAllSessionsToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedPreloadAllSessions = PreloadAllSessionsToggle.IsChecked == true;
     }
 
     // ── 업데이트 내역 렌더링/페이지네이션 (devez 정합) ──
@@ -315,6 +328,7 @@ public partial class SettingsDialog : UserControl
     {
         if (_selectedTheme != _originalTheme) return true;
         if (_selectedFontScale != _originalFontScale) return true;
+        if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
         if (!current.SetEquals(_originalEnabledAgents)) return true;
@@ -327,10 +341,12 @@ public partial class SettingsDialog : UserControl
     {
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);
+        SettingsService.SavePreloadAllProjectSessions(_selectedPreloadAllSessions);
         UpdateAgentEnabledInSettings();
 
         _originalTheme       = _selectedTheme;
         _originalFontScale   = _selectedFontScale;
+        _originalPreloadAllSessions = _selectedPreloadAllSessions;
         _originalEnabledAgents = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
         _originalRetentionDays = _agentItems.FirstOrDefault(a => a.IsClaudeCode)?.RetentionDays
@@ -351,6 +367,11 @@ public partial class SettingsDialog : UserControl
             _selectedFontScale = _originalFontScale;
             (Application.Current as App)?.SetFontScale(_originalFontScale);
             UpdateFontSelectionVisual();
+        }
+        if (_selectedPreloadAllSessions != _originalPreloadAllSessions)
+        {
+            _selectedPreloadAllSessions = _originalPreloadAllSessions;
+            PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
         }
         // 에이전트 활성화 상태 되돌리기
         foreach (var item in _agentItems)

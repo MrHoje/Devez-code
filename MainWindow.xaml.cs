@@ -994,8 +994,9 @@ public partial class MainWindow : Window
             ProjectNameText.ToolTip = proj.Name;
         }
         UpdateProjectBranchBubble(proj); // 브렌치 버블 갱신
-        // 프로젝트가 활성화되면 그 프로젝트의 모든 세션을 백그라운드로 미리 띄운다(시작 복원·전환 공통).
-        PreloadProjectSessions(proj, except: null);
+        // 기본은 선택된 세션만 실행. 옵션이 켜진 경우에만 기존처럼 모든 세션을 미리 띄운다.
+        if (SettingsService.LoadPreloadAllProjectSessions())
+            PreloadProjectSessions(proj, except: null);
     }
 
     /// <summary>타이틀 바 브렌치 그룹 갱신 — 현재 git 브렌치.
@@ -1054,7 +1055,7 @@ public partial class MainWindow : Window
             target = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden);
         if (target != null) ActivateSession(target, unHide: false);
         else ClearActiveSession();
-        // 나머지 세션 preload 는 SetActiveProject 가 이미 처리했다(시작 복원·전환 공통).
+        // 나머지 세션 preload 는 옵션이 켜진 경우 SetActiveProject 가 이미 처리했다.
     }
 
     /// <summary>프로젝트의 모든 세션을 백그라운드로 미리 생성(preload). 활성 세션(except)은 제외.</summary>
@@ -1578,9 +1579,9 @@ public partial class MainWindow : Window
         // 새 ConPTY + resume 으로 복원. 여기서 미리 띄우지 않음 (리소스 낭비 + 사용자가 안 보는 세션).
     }
 
-    /// <summary>테마 변경 적용 — 모든 세션의 ConPTY 를 종료한 뒤 현재 프로젝트의 모든 세션을 다시 불러온다.
+    /// <summary>테마 변경 적용 — 모든 세션의 ConPTY 를 종료한 뒤 현재 프로젝트 세션을 다시 불러온다.
     /// claude(settings.local.json)·opencode(tui.json) 모두 시작 시점에 새 테마를 읽으므로 재시작이 필요.
-    /// 활성 세션은 즉시 띄우고(스피너), 같은 프로젝트의 나머지는 백그라운드 preload, 다른 프로젝트는 lazy.</summary>
+    /// 활성 세션은 즉시 띄우고(스피너), 옵션이 켜진 경우에만 같은 프로젝트의 나머지를 preload 한다.</summary>
     public async void ReloadAllSessionsForTheme()
     {
         var active = _activeSession;
@@ -1600,12 +1601,13 @@ public partial class MainWindow : Window
         // JS 가 dispose 메시지를 처리할 시간 확보 (createTerm 이 dispose 중 인스턴스와 충돌 방지).
         await Task.Delay(150);
 
-        // 2) 현재 프로젝트의 모든 세션 재로드. 활성 세션은 즉시 표시(스피너), 나머지는 백그라운드 preload.
+        // 2) 현재 프로젝트 세션 재로드. 활성 세션은 즉시 표시, 전체 로드 옵션이 켜진 경우 나머지도 preload.
         if (proj != null)
         {
             if (active != null && proj.Tabs.Contains(active))
                 ActivateSession(active);
-            PreloadProjectSessions(proj, except: active);
+            if (SettingsService.LoadPreloadAllProjectSessions())
+                PreloadProjectSessions(proj, except: active);
         }
         // 다른 프로젝트 세션은 정리만 된 상태 — 해당 프로젝트 선택 시 새 테마로 재생성된다.
     }
