@@ -236,7 +236,7 @@
                             </ContextMenu>
                         </StackPanel.ContextMenu>
                         <Path Style="{StaticResource LucideIcon}"
-                              Data="{Binding IsDirectory, Converter={x:Static models:DirIconConverter.Instance}}"
+                              Data="{Binding Converter={x:Static models:DirIconConverter.Instance}}"
                               Width="13" Height="13"
                               Stroke="{DynamicResource TextMutedBrush}"
                               VerticalAlignment="Center"/>
