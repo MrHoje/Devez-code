@@ -30,6 +30,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private WebView2? _webView;
     private bool _initStarted;
     private bool _pageReady;
+    private bool _pendingLoading; // pageReady 전 SetLoading(true) 요청 보류 (콜드스타트 첫 세션 스피너)
     private string? _pendingShowRoomId;
     private readonly List<string> _pendingPreload = new(); // pageReady 전에 들어온 백그라운드 로드 요청
     private string? _activeRoomId;
@@ -322,6 +323,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _pendingShowRoomId = null;
         if (pending != null) PostJson(new { type = "show", roomId = pending });
 
+        // 콜드스타트 동안 보류된 로딩 스피너 적용
+        if (_pendingLoading) { _pendingLoading = false; PostJson(new { type = "loading", on = true }); }
+
         // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
         foreach (var r in _pendingPreload)
             if (r != pending) PostJson(new { type = "preload", roomId = r });
@@ -519,7 +523,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>세션 로딩 스피너(웹 레이어) 표시/숨김. WebView2 는 HwndHost 라 WPF 오버레이로는
     /// 터미널을 못 덮으므로 스피너를 웹 안에서 띄운다(터미널 위에 항상 보임).</summary>
-    public void SetLoading(bool on) => PostJson(new { type = "loading", on });
+    public void SetLoading(bool on)
+    {
+        // 콜드스타트: pageReady 전이면 보류했다가 OnPageReady 에서 flush (web 스피너 유실 방지)
+        if (!_pageReady) { _pendingLoading = on; return; }
+        PostJson(new { type = "loading", on });
+    }
 
     /// <summary>방 삭제 시 호출 — 방별 배선·준비 상태와 JS 쪽 xterm 인스턴스를 정리.
     /// ConPTY 셸 세션은 TerminalSessionManager.DisposeRoom 이 별도로 정리한다.</summary>
