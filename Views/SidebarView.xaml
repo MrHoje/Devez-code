@@ -32,10 +32,9 @@
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="BorderBrush" Value="#5a5a5a"/>
                 </Trigger>
-                <!-- 선택된(활성) 프로젝트: talkremind 방 카드 방식 참고 — primary 보더 + soft 배경 채움으로 부드러운 하이라이트 -->
+                <!-- 선택된(활성) 프로젝트: primary 보더 색만 변경 (배경 채움 없음) -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
