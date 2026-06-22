@@ -333,7 +333,10 @@
 
         <!-- 콘텐츠: 활성 탭에 따라 터미널(공유) 또는 파일 에디터(탭당 1개) 표시 -->
         <Grid Grid.Row="3">
-            <ContentControl x:Name="TerminalHostContainer"/>
+            <ContentControl x:Name="TerminalHostContainer"
+                            AllowDrop="True"
+                            DragOver="TerminalHostContainer_DragOver"
+                            Drop="TerminalHostContainer_Drop"/>
             <ContentControl x:Name="FileEditorHostContainer" Visibility="Collapsed"/>
             <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
