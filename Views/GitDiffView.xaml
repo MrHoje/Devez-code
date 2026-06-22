@@ -227,7 +227,8 @@
 
             <TextBlock x:Name="DiffHint" Grid.Row="1" Grid.Column="0" Visibility="Collapsed"
                        VerticalAlignment="Center" HorizontalAlignment="Center"
-                       Text="변경 파일을 선택하면 전체 코드 비교가 표시됩니다."
+                       TextAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
+                       Text="변경 파일을 선택하면 전체 코드 비교가 표시됩니다.&#x0a;긴 줄은 다음 줄로 자동 줄바꿈됩니다."
                        FontSize="{DynamicResource Fs12}"
                        Foreground="{DynamicResource TextMutedBrush}"/>
             </Grid>
