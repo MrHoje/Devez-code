@@ -261,11 +261,11 @@
                                     ToolTip="펼치기 / 접기">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="16" Height="16" CornerRadius="4" Padding="2"
+                                        <Border x:Name="Bd" Width="14" Height="14" CornerRadius="4" Padding="2"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
-                                                  Width="12" Height="12"
+                                                  Width="10" Height="10"
                                                   Stretch="Uniform"
                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
@@ -286,11 +286,11 @@
                                     ToolTip="메뉴">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="16" Height="16" CornerRadius="4" Padding="2"
+                                        <Border x:Name="Bd" Width="14" Height="14" CornerRadius="4" Padding="2"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{StaticResource IconMoreVertical}"
-                                                  Width="12" Height="12"
+                                                  Width="10" Height="10"
                                                   Stretch="Uniform"
                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                         </Border>
