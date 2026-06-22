@@ -172,18 +172,18 @@
                          초기 배치처럼 한 StackPanel에 묶되, 성능모니터 영역만 고정 폭으로 잡아
                          CPU/RAM 값 길이가 바뀌어도 뒤의 RateLimitPanel 시작점이 밀리지 않게 한다. -->
                     <StackPanel Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
-                        <StackPanel x:Name="PerfChipGroup" Width="260" Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel x:Name="PerfChipGroup" Width="192" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
                                     Style="{StaticResource PerfChipButton}">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="CPU  " FontSize="{DynamicResource PerfChipLblFs}"
                                                Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="PerfCpuText" Text="--" Width="56" TextAlignment="Left"
+                                    <TextBlock x:Name="PerfCpuText" Text="--" Width="38" TextAlignment="Left"
                                                FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextBrush}"/>
                                     <TextBlock Text="RAM  " FontSize="{DynamicResource PerfChipLblFs}"
                                                Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="PerfRamText" Text="--" Width="120" TextAlignment="Left"
+                                    <TextBlock x:Name="PerfRamText" Text="--" Width="82" TextAlignment="Left"
                                                FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextBrush}"/>
                                 </StackPanel>
