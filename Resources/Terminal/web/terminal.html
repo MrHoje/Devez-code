@@ -117,6 +117,7 @@
   const terms = {};
   let cfg = { theme: {}, fontFamily: 'Cascadia Mono', fontSize: 16 };
   let activeRoomId = null;
+  let _scrollSuppress = 0; // >0이면 출력 쓰기 후 스크롤 복원
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
@@ -127,24 +128,11 @@
     return bytes;
   }
 
-  // ── 마우스 트래킹 모드 제거 ──────────────────────────────────────────
-  // claude 등 TUI 가 마우스 트래킹(DECSET ?1000/1002/1003/1006 등)을 켜면 드래그가
-  // PTY 마우스 좌표로 전달돼 텍스트 선택/복사가 안 된다. 출력에서 해당 활성/해제
-  // 시퀀스를 제거해 xterm 이 마우스 모드로 들어가지 않게 한다 → 평소 드래그로 선택.
-  // (트레이드오프: claude 내 마우스 클릭/스크롤은 동작하지 않음 — 키보드로 대체)
-  // 바이트→문자 변환은 entry 별 streaming TextDecoder 로 CJK 멀티바이트 경계 안전.
-  // ESC[?…h/l 가 청크 경계에서 잘리면 꼬리를 다음 청크로 이월(_mmCarry).
-  const MOUSE_DECSET = /\x1b\[\?(1000|1001|1002|1003|1004|1005|1006|1015|1016)(;(1000|1001|1002|1003|1004|1005|1006|1015|1016))*[hl]/g;
-  const MOUSE_TAIL = /\x1b(\[\??[\d;]*)?$/; // 끝에 미완성 ESC / ESC[ / ESC[?123;
-  function stripMouseModes(entry, bytes) {
-    if (!entry._dec) entry._dec = new TextDecoder('utf-8');
-    let s = (entry._mmCarry || '') + entry._dec.decode(bytes, { stream: true });
-    entry._mmCarry = '';
-    const m = MOUSE_TAIL.exec(s);
-    if (m && m[0]) { entry._mmCarry = m[0]; s = s.slice(0, m.index); }
-    return s.replace(MOUSE_DECSET, '');
-  }
-
+  // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
+  // claude 등 TUI 가 켜는 마우스 트래킹(DECSET ?1000/1002/1003/1006)을 막지 않는다
+  // → xterm 이 마우스 모드로 들어가 휠 스크롤/클릭이 앱으로 직접 전달(일반 WT 정합).
+  // 텍스트 선택은 Shift+드래그(마우스 모드 중 xterm 기본 동작). 마우스 모드를 안 쓰는
+  // 일반 셸에서는 그냥 드래그로 선택된다.
   // WT 스킴 → xterm ITheme (WT의 purple == ANSI magenta)
   function toXtermTheme(s) {
     const t = {
@@ -489,6 +477,9 @@
         document.documentElement.style.setProperty('--term-fg', msg.theme.foreground || '#CCCCCC');
         if (msg.accent) document.documentElement.style.setProperty('--term-accent', msg.accent);
         break;
+      case 'suppressScroll':
+        _scrollSuppress = msg.count || 5;
+        break;
       case 'show':
         show(msg.roomId);
         break;
@@ -497,7 +488,17 @@
         break;
       case 'output': {
         const t = terms[msg.roomId];
-        if (t) t.term.write(stripMouseModes(t, b64ToBytes(msg.data)));
+        if (t) {
+          if (_scrollSuppress > 0) {
+            _scrollSuppress--;
+            const vp = t.term.element.querySelector('.xterm-viewport');
+            const saved = vp ? vp.scrollTop : 0;
+            t.term.write(b64ToBytes(msg.data));
+            if (vp) requestAnimationFrame(function () { vp.scrollTop = saved; });
+          } else {
+            t.term.write(b64ToBytes(msg.data));
+          }
+        }
         break;
       }
       case 'exited': {
@@ -512,7 +513,6 @@
         const t = terms[msg.roomId];
         if (t) {
           t.dead = false;
-          t._mmCarry = ''; t._dec = null; // 마우스모드 스트리퍼 상태 초기화
           t.term.reset();
           t.fit.fit();
           post({ type: 'resize', roomId: msg.roomId, cols: t.term.cols, rows: t.term.rows });

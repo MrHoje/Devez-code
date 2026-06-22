@@ -198,11 +198,11 @@
                           <!-- 우측 dock: 이 세션의 model/effort 선택 (claude 세션일 때만 노출) -->
                           <StackPanel x:Name="ModelEffortDock" Grid.Column="1" Orientation="Horizontal"
                                       VerticalAlignment="Center" HorizontalAlignment="Right" Visibility="Collapsed">
-                              <ComboBox x:Name="ModelCombo" Style="{StaticResource DockComboBox}" MinWidth="104"
+                              <ComboBox x:Name="ModelCombo" Style="{StaticResource DockComboBox}" MinWidth="104" Margin="0,4,0,4"
                                         SelectedValuePath="Value"
                                         SelectionChanged="ModelCombo_SelectionChanged"
                                         ToolTip="이 세션의 모델"/>
-                              <ComboBox x:Name="EffortCombo" Style="{StaticResource DockComboBox}" MinWidth="92" Margin="8,0,0,0"
+                              <ComboBox x:Name="EffortCombo" Style="{StaticResource DockComboBox}" MinWidth="92" Margin="8,4,0,4"
                                         SelectedValuePath="Value"
                                         SelectionChanged="EffortCombo_SelectionChanged"
                                         ToolTip="이 세션의 추론 강도(effort)"/>

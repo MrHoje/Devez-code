@@ -110,7 +110,7 @@ public sealed class WtColorScheme
         ["DevezCode Dark"] = new()
         {
             Name = "DevezCode Dark", Background = "#1F1F1E", Foreground = "#E8E8E8",
-            CursorColor = "#C2622A", SelectionBackground = "#C2622A",
+            CursorColor = "#FFFFFF", SelectionBackground = "#3F3F3F",
             Black = "#1F1F1E", Red = "#EF4444", Green = "#22C55E", Yellow = "#FBBF24",
             Blue = "#60A5FA", Purple = "#C084FC", Cyan = "#14B8A6", White = "#E8E8E8",
             BrightBlack = "#767676", BrightRed = "#F87171", BrightGreen = "#4ADE80", BrightYellow = "#FDE047",

@@ -328,7 +328,7 @@
                                       IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                             <ToggleButton.Template>
                                 <ControlTemplate TargetType="ToggleButton">
-                                    <Border x:Name="Bd" Background="{DynamicResource PanelSoftBrush}" CornerRadius="7"
+                                    <Border x:Name="Bd" Background="{DynamicResource PanelSoftBrush}" CornerRadius="5"
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="9,0,6,0">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -353,7 +353,6 @@
                                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelBrush}"/>
                                         </Trigger>
                                         <Trigger Property="IsChecked" Value="True">
-                                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
                                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelBrush}"/>
                                         </Trigger>
                                     </ControlTemplate.Triggers>

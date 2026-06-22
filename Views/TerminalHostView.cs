@@ -476,6 +476,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         return null;
     }
 
+    /// <summary>다음 N회의 출력 쓰기에서 xterm.js 스크롤을 억제(슬래시 명령 자동주입 시 사용).</summary>
+    public void SuppressScroll(int count = 5) => PostJson(new { type = "suppressScroll", count });
+
     /// <summary>현재 터미널 화면을 PNG 스냅샷으로 반환. airspace 우회용.</summary>
     public async Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync()
     {
