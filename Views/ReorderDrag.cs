@@ -96,22 +96,28 @@ internal sealed class ReorderDrag<T> where T : class
         ApplyDisplacement();
     }
 
-    private int ComputeTargetIndex(double cursor)
+    private int ComputeTargetIndex(double center)
     {
         if (_exactFollow)
         {
+            // 드래그 카드의 진행 가장자리(아래 이웃엔 아랫변, 위 이웃엔 윗변)가 그 이웃의
+            // 중점을 넘을 때 = 이웃을 절반 이상 덮었을 때만 넘어선 것으로 카운트.
+            // 위·아래 모두 '이웃 절반'에서 대칭으로 순서가 바뀌고, 카드 높이가 달라도 동작.
+            double half = _slots[_sourceIndex].Height / 2;
             int target = 0;
             for (int i = 0; i < _slots.Count; i++)
             {
                 if (i == _sourceIndex) continue;
-                if (cursor >= _slots[i].Top + _slots[i].Height / 2) target++;
+                double mid = _slots[i].Top + _slots[i].Height / 2;
+                double edge = i < _sourceIndex ? center - half : center + half;
+                if (edge >= mid) target++;
             }
             return target;
         }
         for (int i = 0; i < _slots.Count; i++)
         {
             if (i == _sourceIndex) continue;
-            if (cursor < _slots[i].Top + _slots[i].Height / 2) return i;
+            if (center < _slots[i].Top + _slots[i].Height / 2) return i;
         }
         return _slots.Count;
     }
