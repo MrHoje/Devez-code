@@ -13,14 +13,14 @@
         FontFamily="{StaticResource PretendardFont}">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="24" ResizeBorderThickness="5"
+        <shell:WindowChrome CaptionHeight="30" ResizeBorderThickness="5"
                             CornerRadius="0" GlassFrameThickness="0,0,0,1" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Border x:Name="RootChrome" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
         <Grid x:Name="RootGrid" Grid.IsSharedSizeScope="True">
             <Grid.RowDefinitions>
-                <RowDefinition Height="24"/>
+                <RowDefinition Height="30"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -536,8 +536,10 @@
                         <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
                         <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="0"/>
                     </Grid.ColumnDefinitions>
-                    <!-- 좌측: CPU/RAM | (구분선) 클로드 사용량 (devez 정합: 한 StackPanel에 묶음) -->
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                    <!-- 좌측: CPU/RAM | (구분선) 클로드 사용량 (devez 정합: 한 StackPanel에 묶음).
+                         col0(FooterSidebarCol)은 사이드바 폭으로 미러링되는 절대폭이라 좁다 →
+                         star 컬럼까지 ColumnSpan 해 rate-limit 패널이 컬럼 경계에서 잘리지 않게 한다. -->
+                    <StackPanel Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
                         <StackPanel x:Name="PerfChipGroup" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
                                     Style="{StaticResource PerfChipButton}">
