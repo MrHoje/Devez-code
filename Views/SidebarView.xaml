@@ -19,11 +19,13 @@
             </Style.Triggers>
         </Style>
 
-        <!-- ── 프로젝트 카드: doit ShellShortcut 카드 디자인. 보더 항상 표시(LineBrush), 호버는 보더만(그림자 X → '떠오름' 인상이 텍스트 우상단 이동처럼 보임), 활성은 primary 보더 + 글로우 ── -->
+        <!-- ── 프로젝트 카드: doit ShellShortcut 카드 디자인. 평상시 보더는 테마별 LineStrongBrush(라이트/다크 모두 또렷),
+             호버는 TextMutedBrush(테마 본문색). 보더만 진해져서 '떠오름' 인상이 우상단 텍스트처럼 보이고,
+             선택(활성) 프로젝트는 primary 보더로 구분. -->
         <Style x:Key="ProjectCard" TargetType="Border">
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="BorderThickness" Value="1.5"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource LineStrongBrush}"/>
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
             <Setter Property="Margin" Value="0,3,0,3"/>
             <Setter Property="Effect" Value="{x:Null}"/>
@@ -32,9 +34,9 @@
             <Setter Property="UseLayoutRounding" Value="False"/>
             <Setter Property="RenderOptions.EdgeMode" Value="Unspecified"/>
             <Style.Triggers>
-                <!-- 호버: 보더만 살짝 더 진하게. 배경/그림자 유지 → 세션 row가 묻히지 않음. 텍스트의 X 슬라이드가 단독 호버 신호 -->
+                <!-- 호버: 보더를 본문색(TextMutedBrush)까지 끌어올려 카드 경계가 한 번 더 또렷해짐. -->
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="#5a5a5a"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource TextMutedBrush}"/>
                 </Trigger>
                 <!-- 선택된(활성) 프로젝트: primary 보더 색만 변경 (배경 채움 없음) -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
