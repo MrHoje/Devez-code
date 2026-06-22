@@ -434,8 +434,16 @@ public partial class MainWindow : Window
         SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
     }
 
-    /// <summary>우측 스플리터 드래그 끝 → 새 폭을 즉시 저장 (재실행 시 복원).
-    /// DragDelta 핸들러는 비어있어도 WPF 가 ActualWidth 를 갱신하므로 DragCompleted 에서 한 번만 읽으면 충분.</summary>
+    /// <summary>우측 스플리터 드래그 중 → footer 컬럼 폭을 라이브 동기화.
+    /// FileExpCol/FooterFileExpCol 은 SharedSizeGroup(MainFileExp) 으로 묶여 공유폭=멤버 최대 픽셀폭이라,
+    /// footer 가 따라오지 않으면 패널이 footer 폭 밑으로 못 줄어든다(좌측은 footer 가 그룹 밖이라 무관).</summary>
+    private void FileExpSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        if (_rightCollapsed) return;
+        if (FileExpCol.Width.IsAbsolute) FooterFileExpCol.Width = FileExpCol.Width;
+    }
+
+    /// <summary>우측 스플리터 드래그 끝 → 새 폭을 즉시 저장 (재실행 시 복원).</summary>
     private void FileExpSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
     {
         if (_rightCollapsed) return;
@@ -542,7 +550,7 @@ public partial class MainWindow : Window
     /// 접힘/오버레이(좁은 창) 상태에서는 적용하지 않는다(접기 애니메이션은 MinWidth 0 필요).</summary>
     private void ApplyFileExpMinWidth()
     {
-        _fileExpMinWidth = Math.Ceiling(FileExplorer.TabBarDesiredWidth) + 8; // 약간의 여유
+        _fileExpMinWidth = 190; // 좌측 패널과 동일 최소 폭
         if (!_rightCollapsed && _narrow != true)
             SetMinWidth(_fileExpMinWidth, FileExpCol, FooterFileExpCol);
     }

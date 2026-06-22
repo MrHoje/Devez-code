@@ -5,14 +5,14 @@ using System.Text;
 namespace DevezCode.Services.Terminal;
 
 /// <summary>opencode 커스텀 테마 — DevezCode dark/soft/minimal 팔레트를 opencode TUI에 적용.
-/// <c>~/.config/opencode/themes/devezcode-{dark,soft,minimal}.json</c> 으로 1회 설치.
-/// Per-project 로 <c>tui.json</c> 에 <c>"theme": "devezcode-dark"</c> 형태로 주입해서 사용.</summary>
+/// <c>~/.config/opencode/themes/devez-{dark,soft,minimal}.json</c> 으로 1회 설치(devez 앱이 만든 파일 있으면 보존·재사용).
+/// Per-project 로 <c>tui.json</c> 에 <c>"theme": "devez-dark"</c> 형태로 주입해서 사용.</summary>
 public static class OpenCodeCustomThemes
 {
     private const string ThemesDirName = "themes";
-    private const string DarkSlug     = "devezcode-dark";
-    private const string SoftSlug     = "devezcode-soft";
-    private const string MinimalSlug  = "devezcode-minimal";
+    private const string DarkSlug     = "devez-dark";
+    private const string SoftSlug     = "devez-soft";
+    private const string MinimalSlug  = "devez-minimal";
 
     private static string ThemesDir
     {
@@ -59,7 +59,7 @@ public static class OpenCodeCustomThemes
     private const string DarkThemeJson = """
     {
       "$schema": "https://opencode.ai/theme.json",
-      "name": "DevezCode Dark",
+      "name": "Devez Dark",
       "defs": {
         "bg":         "#1F1F1E",
         "panel":      "#272727",
@@ -138,7 +138,7 @@ public static class OpenCodeCustomThemes
     private const string SoftThemeJson = """
     {
       "$schema": "https://opencode.ai/theme.json",
-      "name": "DevezCode Soft",
+      "name": "Devez Soft",
       "defs": {
         "bg":         "#F2EDE6",
         "panel":      "#FAF7F2",
@@ -217,7 +217,7 @@ public static class OpenCodeCustomThemes
     private const string MinimalThemeJson = """
     {
       "$schema": "https://opencode.ai/theme.json",
-      "name": "DevezCode Minimal",
+      "name": "Devez Minimal",
       "defs": {
         "bg":         "#F8FAFC",
         "panel":      "#FFFFFF",

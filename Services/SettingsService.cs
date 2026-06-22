@@ -159,11 +159,11 @@ public static class SettingsService
     }
 
     // ── 사용자가 활성화한 에이전트 목록 ────────────────────────────
-    /// <summary>빈 값이면 모든 알려진 에이전트를 활성화한 것으로 간주(첫 실행 기본값).</summary>
+    /// <summary>빈 값이면 opencode 제외한 에이전트를 활성화한 것으로 간주(첫 실행 기본값).</summary>
     public static IReadOnlyList<string> LoadEnabledAgents()
     {
         var list = Current.EnabledAgents;
-        if (list.Count == 0) return AgentRegistry.All.Select(a => a.Id).ToList();
+        if (list.Count == 0) return AgentRegistry.All.Where(a => a.Id != "opencode").Select(a => a.Id).ToList();
         return list;
     }
 

@@ -6,14 +6,14 @@ using System.Text;
 namespace DevezCode.Services.Terminal;
 
 /// <summary>claude code 커스텀 테마 — DevezCode 3개 테마 중 soft/minimal 의 톤에 맞춘 두 개.
-/// <c>~/.claude/themes/devezcode-soft.json</c>, <c>devezcode-minimal.json</c> 으로 1회 설치.
-/// Per-session 으로 <c>/config theme=custom:devezcode-soft</c> 같은 형태로 주입해서 사용.
+/// <c>~/.claude/themes/devez-soft.json</c>, <c>devez-minimal.json</c> 으로 1회 설치(devez 앱이 만든 파일 있으면 보존·재사용).
+/// Per-session 으로 <c>/config theme=custom:devez-soft</c> 같은 형태로 주입해서 사용.
 /// (dark 는 claude 내장 "dark" 와 톤이 같으므로 별도 커스텀 불필요.)</summary>
 public static class ClaudeCustomThemes
 {
     private const string ThemesDirName = "themes";
-    private const string SoftSlug     = "devezcode-soft";
-    private const string MinimalSlug  = "devezcode-minimal";
+    private const string SoftSlug     = "devez-soft";
+    private const string MinimalSlug  = "devez-minimal";
 
     /// <summary>앱 시작 시 호출. 테마 파일이 없으면 생성. 기존 파일은 사용자 편집 보존 위해 덮어쓰지 않음.</summary>
     public static void EnsureInstalled()
@@ -50,7 +50,7 @@ public static class ClaudeCustomThemes
     // 미지정 토큰은 light 베이스 폴백. 토큰 이름/효과는 claude code 공식 문서 기준.
     private const string SoftThemeJson = """
     {
-      "name": "DevezCode Soft",
+      "name": "Devez Soft",
       "base": "light",
       "overrides": {
         "claude": "#5C8C4A",
@@ -98,7 +98,7 @@ public static class ClaudeCustomThemes
     // DevezCode Minimal 팔레트 (cool white + blue).
     private const string MinimalThemeJson = """
     {
-      "name": "DevezCode Minimal",
+      "name": "Devez Minimal",
       "base": "light",
       "overrides": {
         "claude": "#2563EB",

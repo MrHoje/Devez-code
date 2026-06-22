@@ -46,6 +46,64 @@ public partial class FileExplorerView : UserControl
         }
     }
 
+    // ── 뷰 전환 탭바 오버플로우 (패널이 좁아 버튼이 잘릴 때 <> 스크롤 + 가장자리 페이드) ──
+    private const double ViewTabScrollStep = 96; // 버튼 한 개 폭 근사
+    private bool _vFadeLeft, _vFadeRight; private double _vFadeWidth = -1;
+
+    private void ViewTabScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        => UpdateViewTabOverflow();
+
+    /// <summary>탭이 넘치면 좌·우 버튼을 띄우고, 스크롤 가능 여부에 따라 활성/페이드 갱신.</summary>
+    private void UpdateViewTabOverflow()
+    {
+        if (ViewTabScroller == null || ViewTabNavGroup == null) return;
+        bool overflow = ViewTabScroller.ScrollableWidth > 0.5;
+        bool canLeft  = ViewTabScroller.HorizontalOffset > 0.5;
+        bool canRight = ViewTabScroller.HorizontalOffset < ViewTabScroller.ScrollableWidth - 0.5;
+        ViewTabNavGroup.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
+        if (ViewTabScrollLeftBtn  != null) ViewTabScrollLeftBtn.IsEnabled  = canLeft;
+        if (ViewTabScrollRightBtn != null) ViewTabScrollRightBtn.IsEnabled = canRight;
+        ApplyViewTabEdgeFade(canLeft, canRight);
+    }
+
+    /// <summary>잘리는 쪽 가장자리를 투명→불투명 그라데이션 OpacityMask 로 페이드 (세션 탭 정합).</summary>
+    private void ApplyViewTabEdgeFade(bool fadeLeft, bool fadeRight)
+    {
+        double w = ViewTabScroller.ActualWidth;
+        if (_vFadeLeft == fadeLeft && _vFadeRight == fadeRight && System.Math.Abs(_vFadeWidth - w) < 0.5) return;
+        _vFadeLeft = fadeLeft; _vFadeRight = fadeRight; _vFadeWidth = w;
+        if (!fadeLeft && !fadeRight) { ViewTabScroller.OpacityMask = null; return; }
+        double f = System.Math.Min(0.12, 28 / System.Math.Max(1, w));
+        var mask = new System.Windows.Media.LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0), EndPoint = new Point(1, 0)
+        };
+        var black = System.Windows.Media.Colors.Black;
+        var clear = System.Windows.Media.Colors.Transparent;
+        mask.GradientStops.Add(new System.Windows.Media.GradientStop(fadeLeft ? clear : black, 0));
+        mask.GradientStops.Add(new System.Windows.Media.GradientStop(black, fadeLeft ? f : 0));
+        mask.GradientStops.Add(new System.Windows.Media.GradientStop(black, fadeRight ? 1 - f : 1));
+        mask.GradientStops.Add(new System.Windows.Media.GradientStop(fadeRight ? clear : black, 1));
+        mask.Freeze();
+        ViewTabScroller.OpacityMask = mask;
+    }
+
+    private void ViewTabScrollLeft_Click(object sender, RoutedEventArgs e)
+        => ViewTabScroller.ScrollToHorizontalOffset(
+            System.Math.Clamp(ViewTabScroller.HorizontalOffset - ViewTabScrollStep, 0, ViewTabScroller.ScrollableWidth));
+
+    private void ViewTabScrollRight_Click(object sender, RoutedEventArgs e)
+        => ViewTabScroller.ScrollToHorizontalOffset(
+            System.Math.Clamp(ViewTabScroller.HorizontalOffset + ViewTabScrollStep, 0, ViewTabScroller.ScrollableWidth));
+
+    private void ViewTabScroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (ViewTabScroller.ScrollableWidth <= 0.5) return;
+        ViewTabScroller.ScrollToHorizontalOffset(
+            System.Math.Clamp(ViewTabScroller.HorizontalOffset - e.Delta, 0, ViewTabScroller.ScrollableWidth));
+        e.Handled = true;
+    }
+
     /// <summary>빈 영역 우클릭 메뉴: 새 파일/폴더 + 붙여넣기 + 탐색기에서 열기. Tree 의 ContextMenu 로 부착.</summary>
     private ContextMenu BuildEmptyAreaMenu()
     {

@@ -44,6 +44,16 @@
         <Border Grid.Row="0" Height="44"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <ScrollViewer x:Name="ViewTabScroller" Grid.Column="0"
+                          HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                          CanContentScroll="False" Background="{x:Null}"
+                          ScrollChanged="ViewTabScroller_ScrollChanged"
+                          PreviewMouseWheel="ViewTabScroller_PreviewMouseWheel">
             <StackPanel x:Name="TabBarGrid" Orientation="Horizontal" VerticalAlignment="Stretch" HorizontalAlignment="Left">
                 <Button x:Name="DirViewBtn" Click="TabBtn_Click" Tag="0"
                         Style="{StaticResource ViewTabButton}" ToolTip="파일 탐색기">
@@ -83,6 +93,26 @@
                     </StackPanel>
                 </Button>
             </StackPanel>
+            </ScrollViewer>
+
+            <!-- 탭 오버플로우 시 좌·우 스크롤 버튼 (세션 탭 헤더 TabNavGroup 정합) — 평소 숨김 -->
+            <StackPanel x:Name="ViewTabNavGroup" Grid.Column="1" Orientation="Horizontal"
+                        VerticalAlignment="Center" Margin="2,0,6,0" Visibility="Collapsed"
+                        Background="{DynamicResource PanelBrush}">
+                <Button x:Name="ViewTabScrollLeftBtn" Style="{StaticResource TabNavButton}"
+                        Click="ViewTabScrollLeft_Click" ToolTip="이전">
+                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronLeft}"
+                          Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                </Button>
+                <Button x:Name="ViewTabScrollRightBtn" Style="{StaticResource TabNavButton}"
+                        Click="ViewTabScrollRight_Click" Margin="2,0,0,0" ToolTip="다음">
+                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronRight}"
+                          Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                </Button>
+            </StackPanel>
+          </Grid>
         </Border>
 
         <!-- Header: 현재 뷰의 경로/제목 (세션 탭 헤더와 정합: 44).
