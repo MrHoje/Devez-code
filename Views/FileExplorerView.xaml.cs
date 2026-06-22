@@ -5,6 +5,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media.Animation;
 using DevezCode.Models;
 using DevezCode.Services;
 using Microsoft.VisualBasic.FileIO;
@@ -159,6 +160,10 @@ public partial class FileExplorerView : UserControl
     public event EventHandler<string>? FileOpenRequested;
 
     private string? _rootPath;
+    private ObservableCollection<FileNode>? _rootNodes;
+    private bool _fileSearchOpen;
+    private const double FileSearchRowHeight = 51;
+    private const int MaxSearchResults = 500;
 
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
     private enum ViewMode { Directory, Browser, Diff, Queue }
@@ -188,6 +193,8 @@ public partial class FileExplorerView : UserControl
         // 큐 모드에서는 44px 헤더(row 1) 를 접어서 콘텐츠가 탭 바로 아래에 이어지게 한다.
         // (탭 자체가 '작업 큐' 제목 역할 → 중복 헤더 불필요)
         HeaderBar.Visibility = idx == 3 ? Visibility.Collapsed : Visibility.Visible;
+        FileSearchToggleBtn.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (idx != 0) CloseFileSearch(immediate: true);
 
         var (icon, title) = idx switch
         {
@@ -253,6 +260,7 @@ public partial class FileExplorerView : UserControl
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
         {
             _rootPath = null;
+            _rootNodes = null;
             if (_mode == ViewMode.Directory) PathText.Text = "파일 탐색기";
             Tree.ItemsSource = null;
             DiffView.SetRepo(null);
@@ -287,7 +295,116 @@ public partial class FileExplorerView : UserControl
                 if (!IsHidden(f)) roots.Add(new FileNode { Name = Path.GetFileName(f), FullPath = f, IsDirectory = false });
         }
         catch { /* 접근 거부 등 */ }
-        Tree.ItemsSource = roots;
+        _rootNodes = roots;
+        ApplyFileSearchFilter();
+    }
+
+    private void FileSearchToggleBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _fileSearchOpen = !_fileSearchOpen;
+        AnimateFileSearchRow(_fileSearchOpen ? FileSearchRowHeight : 0);
+
+        if (_fileSearchOpen)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                FileSearchBox.Focus();
+                FileSearchBox.SelectAll();
+            }), System.Windows.Threading.DispatcherPriority.Input);
+        }
+        else
+        {
+            FileSearchBox.Clear();
+        }
+    }
+
+    private void CloseFileSearch(bool immediate)
+    {
+        _fileSearchOpen = false;
+        FileSearchBox.Clear();
+        if (immediate)
+        {
+            FileSearchRow.BeginAnimation(FrameworkElement.HeightProperty, null);
+            FileSearchRow.Height = 0;
+        }
+        else
+        {
+            AnimateFileSearchRow(0);
+        }
+    }
+
+    private void AnimateFileSearchRow(double height)
+    {
+        var anim = new DoubleAnimation
+        {
+            To = height,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+        };
+        FileSearchRow.BeginAnimation(FrameworkElement.HeightProperty, anim);
+    }
+
+    private void FileSearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFileSearchFilter();
+
+    private void ApplyFileSearchFilter()
+    {
+        var q = FileSearchBox?.Text?.Trim() ?? "";
+        if (q.Length == 0)
+        {
+            Tree.ItemsSource = _rootNodes;
+            return;
+        }
+
+        var root = _rootPath;
+        if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
+        {
+            Tree.ItemsSource = null;
+            return;
+        }
+
+        var results = new List<FileNode>();
+        try
+        {
+            foreach (var path in EnumerateSearchEntries(root))
+            {
+                var name = Path.GetFileName(path);
+                var relative = Path.GetRelativePath(root, path);
+                if (!name.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    && !relative.Contains(q, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                results.Add(new FileNode
+                {
+                    Name = relative,
+                    FullPath = path,
+                    IsDirectory = Directory.Exists(path)
+                });
+                if (results.Count >= MaxSearchResults) break;
+            }
+        }
+        catch { /* 검색 중 접근 거부 등 무시 */ }
+
+        Tree.ItemsSource = new ObservableCollection<FileNode>(
+            results.OrderBy(n => n.IsDirectory ? 0 : 1).ThenBy(n => n.Name, StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<string> EnumerateSearchEntries(string root)
+    {
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            var dir = pending.Pop();
+            IEnumerable<string> entries;
+            try { entries = Directory.EnumerateFileSystemEntries(dir).Where(p => !IsHidden(p)).ToList(); }
+            catch { continue; }
+
+            foreach (var entry in entries)
+            {
+                yield return entry;
+                if (Directory.Exists(entry)) pending.Push(entry);
+            }
+        }
     }
 
     /// <summary>루트 목록을 디스크 상태로 다시 읽는다(루트 레벨 항목 변경 후).</summary>

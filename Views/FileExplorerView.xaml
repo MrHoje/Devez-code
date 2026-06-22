@@ -37,6 +37,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -107,20 +108,86 @@
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
             <Grid Margin="14,0,8,0">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <Path x:Name="HeaderIcon" Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolderOpen}"
                           Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
                     <TextBlock x:Name="PathText" Text="파일 탐색기"
-                               Margin="8,0,0,0" VerticalAlignment="Center"
+                                Margin="8,0,0,0" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                               TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource TextBrush}"/>
+                                TextTrimming="CharacterEllipsis"
+                                Foreground="{DynamicResource TextBrush}"/>
                 </StackPanel>
+                <Button x:Name="FileSearchToggleBtn" Grid.Column="1"
+                        Width="24" Height="24"
+                        Style="{StaticResource IconButton}"
+                        Click="FileSearchToggleBtn_Click"
+                        ToolTip="파일 검색">
+                    <Path Style="{StaticResource LucideButtonIcon}"
+                          Data="{StaticResource IconSearch}"
+                          Width="12" Height="12"/>
+                </Button>
             </Grid>
         </Border>
 
+        <!-- Search row — 좌측 프로젝트 검색과 동일하게 아래로 슬라이드되며 트리를 밀어낸다. -->
+        <Border x:Name="FileSearchRow" Grid.Row="2" Height="0"
+                ClipToBounds="True">
+            <Border Margin="8" Height="35"
+                    Background="{DynamicResource PanelSoftBrush}"
+                    BorderBrush="{DynamicResource LineBrush}"
+                    BorderThickness="1" CornerRadius="8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconSearch}"
+                          Stroke="{DynamicResource TextMutedBrush}"
+                          Width="13" Height="13"
+                          Margin="10,0,0,0" VerticalAlignment="Center"/>
+                    <Grid Grid.Column="1">
+                        <TextBox x:Name="FileSearchBox"
+                                 Margin="6,0,0,0" Padding="0,0,10,0" VerticalContentAlignment="Center"
+                                 Background="Transparent" BorderThickness="0"
+                                 FocusVisualStyle="{x:Null}"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource TextBrush}"
+                                 FontSize="{DynamicResource Fs13}"
+                                 FontFamily="{StaticResource PretendardFont}"
+                                 TextChanged="FileSearchBox_TextChanged">
+                            <TextBox.Resources>
+                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                            </TextBox.Resources>
+                        </TextBox>
+                        <TextBlock Text="파일 검색"
+                                   IsHitTestVisible="False"
+                                   Margin="8,0,10,0" Padding="0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="{DynamicResource Fs13}"
+                                   FontFamily="{StaticResource PretendardFont}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=FileSearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Border>
+
         <!-- File tree -->
-        <TreeView x:Name="Tree" Grid.Row="2"
+        <TreeView x:Name="Tree" Grid.Row="3"
                   Background="Transparent" BorderThickness="0"
                   Padding="6,8"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -250,12 +317,12 @@
         </TreeView>
 
         <!-- 브라우저 뷰 (브라우저 모드일 때만 표시) -->
-        <v:BrowserHostView x:Name="Browser" Grid.Row="2" Visibility="Collapsed"/>
+        <v:BrowserHostView x:Name="Browser" Grid.Row="3" Visibility="Collapsed"/>
 
         <!-- DIFF 뷰 (DIFF 모드일 때만 표시) — git 변경 내역 + diff -->
-        <v:GitDiffView x:Name="DiffView" Grid.Row="2" Visibility="Collapsed"/>
+        <v:GitDiffView x:Name="DiffView" Grid.Row="3" Visibility="Collapsed"/>
 
         <!-- 작업 큐 뷰 (큐 모드일 때만 표시) — 버블 입력 + 영속화 -->
-        <v:TaskQueueView x:Name="QueueView" Grid.Row="2" Visibility="Collapsed"/>
+        <v:TaskQueueView x:Name="QueueView" Grid.Row="3" Visibility="Collapsed"/>
     </Grid>
 </UserControl>
