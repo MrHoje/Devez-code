@@ -383,11 +383,11 @@
                                  탭과 함께 스크롤되며, 활성 프로젝트가 없으면 비활성. -->
                             <Button x:Name="NewTabBtn" Click="NewTabBtn_Click"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}" Cursor="Arrow"
-                                    Width="30" Height="30" Margin="3,0,11,0" VerticalAlignment="Center"
+                                    Width="26" Height="26" Margin="3,0,11,0" VerticalAlignment="Center"
                                     ToolTip="새 세션 추가"
                                     Style="{StaticResource NewTabButton}">
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
-                                      Width="14" Height="14" StrokeThickness="1.8"
+                                      Width="12" Height="12" StrokeThickness="1.5"
                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                             </Button>
                             </StackPanel>
