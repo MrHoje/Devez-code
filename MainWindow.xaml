@@ -456,15 +456,17 @@
                             </StackPanel>
                             <StackPanel x:Name="FileHeaderActions" Grid.Column="1" Orientation="Horizontal"
                                         VerticalAlignment="Center" Visibility="Collapsed">
-                                <Button x:Name="FileSaveBtn" Width="24" Height="24" Style="{StaticResource SmallIconButton}"
+                                <Button x:Name="FileSaveBtn" Style="{StaticResource TabNavButton}"
                                         Click="FileSaveBtn_Click" ToolTip="저장 (Ctrl+S)">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSave}"
-                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                          Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                                 </Button>
-                                <Button x:Name="FileCloseBtn" Width="24" Height="24" Margin="2,0,0,0"
-                                        Style="{StaticResource SmallIconButton}" Click="FileCloseBtn_Click" ToolTip="닫기 (Esc)">
+                                <Button x:Name="FileCloseBtn" Margin="2,0,0,0"
+                                        Style="{StaticResource TabNavButton}" Click="FileCloseBtn_Click" ToolTip="닫기 (Esc)">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
-                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                          Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                                 </Button>
                             </StackPanel>
                         </Grid>
