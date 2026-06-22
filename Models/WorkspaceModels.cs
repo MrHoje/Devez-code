@@ -93,7 +93,8 @@ public sealed class FileTabItem : TabItemBase
 public sealed class ProjectFile : NotifyBase
 {
     public string FilePath { get; set; } = "";
-    public string Name { get; set; } = "";
+    private string _name = "";
+    public string Name { get => _name; set { if (Set(ref _name, value)) OnPropertyChanged(nameof(DisplayName)); } }
     public bool RunAsAdmin { get; set; }
 
     /// <summary>메뉴 표시 이름 — 사용자 지정 이름이 비면 파일명으로 폴백.</summary>

@@ -164,6 +164,13 @@
                     ToolTip="{Binding FilePath}">
                 <Border.ContextMenu>
                     <ContextMenu>
+                        <MenuItem Header="이름 변경" Tag="{Binding}" Click="ProjectFileRename_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPencil}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <Separator/>
                         <MenuItem Header="바로가기 제거" Tag="{Binding}" Click="ProjectFileRemove_Click"
                                   Foreground="{DynamicResource DangerBrush}">
                             <MenuItem.Icon>
@@ -186,10 +193,10 @@
                                FontSize="{DynamicResource Fs12}"
                                Foreground="{DynamicResource TextBrush}"/>
                     <!-- 관리자 권한 실행 표식 -->
-                    <Path Grid.Column="2" Style="{StaticResource LucideIcon}" Data="{StaticResource IconShield}"
-                          Width="12" Height="12" Margin="6,0,0,0" VerticalAlignment="Center"
-                          Stroke="{DynamicResource TextMutedBrush}"
-                          Visibility="{Binding RunAsAdmin, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                    <TextBlock Grid.Column="2" Text="(관리자)" Margin="6,0,0,0" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs11}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Visibility="{Binding RunAsAdmin, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                 </Grid>
             </Border>
         </DataTemplate>

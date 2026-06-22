@@ -31,6 +31,8 @@ public partial class SidebarView : UserControl
     public event Action<ProjectFile>? ProjectFileSelected;
     /// <summary>바로가기 행 제거 요청(MainWindow 위임 — Files 에서 제거 후 저장).</summary>
     public event Action<ProjectFile>? ProjectFileRemoveRequested;
+    /// <summary>바로가기 이름 변경 요청(MainWindow 위임).</summary>
+    public event Action<ProjectFile>? ProjectFileRenameRequested;
     /// <summary>드래그로 프로젝트 순서가 바뀐 뒤 발생(영속 저장용).</summary>
     public event Action? ProjectsReordered;
     // 카드 접힘/펼침 변경 → 영속 저장 트리거 (검색 자동 펼침은 제외, 명시 토글만).
@@ -205,6 +207,12 @@ public partial class SidebarView : UserControl
     private void ProjectFileRemove_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectFile>(sender) is { } f) ProjectFileRemoveRequested?.Invoke(f);
+    }
+
+    /// <summary>바로가기 행 우클릭 메뉴 — 이름 변경.</summary>
+    private void ProjectFileRename_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFile>(sender) is { } f) ProjectFileRenameRequested?.Invoke(f);
     }
 
     /// <summary>프로젝트 메뉴가 열릴 때 "바로가기" 서브메뉴를 등록 목록 + 맨 아래 "바로가기 추가" 로 선(先)채운다.

@@ -58,6 +58,7 @@ public partial class MainWindow : Window
         Sidebar.AddProjectFileRequested += AddProjectFile;
         Sidebar.ProjectFileSelected    += OpenProjectFile;
         Sidebar.ProjectFileRemoveRequested += RemoveProjectFile;
+        Sidebar.ProjectFileRenameRequested += RenameProjectFile;
         Sidebar.ProjectsReordered += () => WorkspaceStore.Save(_projects);
         Sidebar.ProjectExpandChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
@@ -927,6 +928,16 @@ public partial class MainWindow : Window
         var r = ShortcutDialog.ShowCreate(this, initialDir);
         if (r == null) return;
         proj.AddShortcut(r.Path, r.Name, r.RunAsAdmin);
+        WorkspaceStore.Save(_projects);
+    }
+
+    /// <summary>바로가기 이름 변경 — devez PromptDialog 정합. 표시명 갱신 후 저장.</summary>
+    private void RenameProjectFile(ProjectFile file)
+    {
+        var name = PromptDialog.Show("바로가기 이름 변경", "새 이름을 입력하세요.",
+                                     defaultValue: file.DisplayName, maxLength: 60);
+        if (string.IsNullOrWhiteSpace(name) || name == file.Name) return;
+        file.Name = name;
         WorkspaceStore.Save(_projects);
     }
 
