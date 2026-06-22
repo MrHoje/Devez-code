@@ -632,6 +632,27 @@
         </Setter>
     </Style>
 
+    <!-- 푸터 CPU/RAM 칩 — TitleBarChipButton 과 동일하나 호버 배경을 상하 2px 더 키움(Margin 0,0). -->
+    <Style x:Key="PerfChipButton" TargetType="Button" BasedOn="{StaticResource TitleBarChipButton}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4"/>
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Margin="5,2"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                            <Setter TargetName="Bd" Property="Margin" Value="0,0"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ── Primary button ────────────────────────────────────────────────── -->
     <Style x:Key="PrimaryButton" TargetType="Button">
         <Setter Property="IsTabStop" Value="False"/>
