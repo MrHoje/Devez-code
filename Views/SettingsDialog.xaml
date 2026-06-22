@@ -109,15 +109,6 @@
                                         <TextBlock Text="에이전트" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="CatChangelogBtn" Tag="changelog"
-                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconClock}" Width="15" Height="15"
-                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="업데이트 내역" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
                                 <Button x:Name="CatSidePanelBtn" Tag="sidepanel"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -125,6 +116,15 @@
                                               Data="{StaticResource IconPanelLeft}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="사이드 패널" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CatChangelogBtn" Tag="changelog"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconClock}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="업데이트 내역" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                                 <!-- MCP 카테고리 보류 (2026-06): Visibility="Collapsed" — 재활성 시 제거 -->
