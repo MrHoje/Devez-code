@@ -290,8 +290,8 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header (라벨 + 돋보기 + 모두 펼치기/접기) — devez 정합. 높이 29: 중앙 MetaBar·우측 뷰토글과 상단 세퍼레이터 일치 -->
-        <Border Grid.Row="0" Height="29"
+        <!-- Header (라벨 + 돋보기 + 모두 펼치기/접기) — devez 정합. 높이 35: 중앙 MetaBar·우측 뷰토글과 상단 세퍼레이터 일치 -->
+        <Border Grid.Row="0" Height="35"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
             <Grid Margin="16,0,12,0">
                 <Grid.ColumnDefinitions>

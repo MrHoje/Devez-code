@@ -142,7 +142,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- 프로젝트 메타 바 (탭 헤더와 같은 44px). 탭 바 위에 별도 행으로 부착. -->
-                    <Border x:Name="MetaBar" Grid.Row="0" Height="29" Background="{DynamicResource BgBrush}"
+                    <Border x:Name="MetaBar" Grid.Row="0" Height="35" Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                             Padding="16,0,12,0">
                         <Grid>
