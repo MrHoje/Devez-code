@@ -588,10 +588,25 @@ public sealed class TerminalSessionManager
                 # user's own statusLine so the original CLI status line keeps rendering.
                 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                 $raw = [Console]::In.ReadToEnd()
+                $o = $null
+                try { $o = $raw | ConvertFrom-Json } catch { }
                 try {
                   $dir = Join-Path $env:APPDATA 'DevezCode\claude'
                   New-Item -ItemType Directory -Force -Path $dir | Out-Null
                   Set-Content -LiteralPath (Join-Path $dir 'ratelimit.json') -Value $raw -Encoding utf8 -Force
+                } catch { }
+                # 방별 실제 model/effort 를 떨군다(콤보 라이브 연동). claude statusLine JSON 의
+                # model.id / effort.level 이 곧 이 세션의 현재 적용값. roomId 는 claude 가 상속한 env.
+                $sig = ''
+                try {
+                  if ($o) { $sig = (('' + $o.model.id) + '-' + ('' + $o.effort.level)) -replace '[^\w\-]', '' }
+                  $room = $env:DEVEZCODE_ROOM_ID
+                  if ($room -and $o) {
+                    $room = $room -replace '[^\w\-]', ''
+                    $md = Join-Path $dir 'modeleffort'
+                    New-Item -ItemType Directory -Force -Path $md | Out-Null
+                    Set-Content -LiteralPath (Join-Path $md ($room + '.txt')) -Value ("{0}`n{1}" -f $o.model.id, $o.effort.level) -Encoding utf8 -Force
+                  }
                 } catch { }
                 try {
                   $sp = Join-Path $env:USERPROFILE '.claude\settings.json'
@@ -600,7 +615,10 @@ public sealed class TerminalSessionManager
                     if ($cmd) {
                       # 사용자 statusLine 패스스루는 매 호출마다 cmd 프로세스를 새로 띄워 비싸다.
                       # 3초 캐시: 직전 출력을 파일로 두고 만료 전이면 재실행 없이 그대로 통과시킨다.
-                      $cache = Join-Path $dir 'statusline-cache.txt'
+                      # 캐시 키 = 방 + model/effort 시그니처. 방별 분리(세션 간 값 안 섞임) + model/effort 가
+                      # 바뀌면 키가 달라져 즉시 캐시 미스 → 새 모델/강도가 statusline 에 바로 반영(interval 대기 X).
+                      $cacheRoom = if ($env:DEVEZCODE_ROOM_ID) { $env:DEVEZCODE_ROOM_ID -replace '[^\w\-]', '' } else { 'global' }
+                      $cache = Join-Path $dir ('statusline-cache-' + $cacheRoom + '-' + $sig + '.txt')
                       $fresh = (Test-Path $cache) -and (((Get-Date) - (Get-Item $cache).LastWriteTime).TotalSeconds -lt 3)
                       if ($fresh) {
                         [Console]::Out.Write((Get-Content -Raw -LiteralPath $cache))

@@ -336,18 +336,21 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <ContentPresenter Grid.Column="0" VerticalAlignment="Center"
-                                                              Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
-                                                              ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+                                                              TextElement.Foreground="{DynamicResource TextBrush}"
+                                                              TextElement.FontFamily="{StaticResource PretendardFont}"
+                                                              TextElement.FontSize="{DynamicResource Fs12}"
+                                                              Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
                                             <Path Grid.Column="1" Width="11" Height="11" Margin="6,0,0,0" Stretch="Uniform"
-                                                  Data="{StaticResource IconChevronDown}"
+                                                  Data="{DynamicResource IconChevronDown}"
                                                   Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="2"
                                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
                                                   Fill="Transparent" VerticalAlignment="Center"/>
                                         </Grid>
                                     </Border>
                                     <ControlTemplate.Triggers>
+                                        <!-- 호버: 보더 유지, 배경만 살짝 하이라이트 -->
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelBrush}"/>
                                         </Trigger>
                                         <Trigger Property="IsChecked" Value="True">
                                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>

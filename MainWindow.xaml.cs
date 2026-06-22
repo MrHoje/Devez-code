@@ -12,8 +12,11 @@ using DevezCode.Views;
 
 namespace DevezCode;
 
-/// <summary>메타바 model/effort 콤보 항목 (DisplayMemberPath=Label, SelectedValuePath=Value).</summary>
-public sealed record ModelEffortOption(string Label, string Value);
+/// <summary>메타바 model/effort 콤보 항목. ToString=Label 이라 ContentPresenter 가 라벨을 그린다. SelectedValuePath=Value.</summary>
+public sealed record ModelEffortOption(string Label, string Value)
+{
+    public override string ToString() => Label;
+}
 
 public partial class MainWindow : Window
 {
@@ -25,6 +28,8 @@ public partial class MainWindow : Window
     private readonly PerfMonitorService _perfMonitor = new();
     private readonly StatusLineService _statusLine = new();
     private readonly SessionBusyService _sessionBusy = new();
+    // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
+    private readonly ModelEffortService _modelEffort = new();
     private readonly SessionLastMessageService _sessionLastMsg = new();
     // codex — Claude 와 동일하게 ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적.
     private readonly CodexHookService _codexHook = new();
@@ -77,6 +82,13 @@ public partial class MainWindow : Window
                 var s = FindSession(id);
                 if (s != null) s.IsBusy = busy;
                 if (!busy) FlushPendingModelEffort(id); // 응답 종료 → 보류된 model/effort 적용
+            });
+
+        // statusLine 훅이 떨군 방별 실제 model/effort → 활성 세션이면 콤보를 그 값으로 라이브 갱신.
+        _modelEffort.Changed += (roomId, modelId, effortLevel) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (_activeSession != null && _activeSession.Id == roomId) RefreshModelEffortDock();
             });
 
         // 마지막 보낸 메시지: busy 훅이 떨군 lastmsg 파일을 감시 → 세션에 반영(헤더 부제 라이브 갱신).
@@ -161,6 +173,7 @@ public partial class MainWindow : Window
             UserStatusLineInstaller.EnsureInstalled();
             StartStatusLine();
             _sessionBusy.Start();
+            _modelEffort.Start();
             _sessionLastMsg.Start();
             // codex 훅 — 시작 시 스크립트/hooks.json 자동 설치. 사용자가 codex 첫 실행 시 trust 필요.
             CodexHookInstaller.EnsureScriptInstalled();
@@ -189,6 +202,7 @@ public partial class MainWindow : Window
             _perfMonitor.Dispose();
             _statusLine.Dispose();
             _sessionBusy.Dispose();
+            _modelEffort.Dispose();
             _sessionLastMsg.Dispose();
             _codexHook.Dispose();
             _opencodeLastMsg.Dispose();
@@ -1176,8 +1190,9 @@ public partial class MainWindow : Window
     }
 
     // ── 메타바 model/effort dock ─────────────────────────────────────────
-    // claude 세션에만 노출. 선택 시 방별 설정 저장 후 세션 재시작(--model/--effort 런치 플래그 적용,
-    // --resume 으로 대화 유지). 응답 처리중(IsBusy)에 바꾸면 종료 후 적용(_pendingModelEffort).
+    // claude 세션에만 노출. 선택 시 방별 설정 저장(다음 콜드스타트/ resume 시 --model/--effort 런치 플래그로도 적용)
+    // + 살아있는 TUI 에 슬래시(/model·/effort)를 라이브 주입 → 재시작·스피너 없이 즉시 전환.
+    // 응답 처리중(IsBusy)에 바꾸면 입력이 프롬프트에 섞이지 않게 종료 후 주입(_pendingModel/_pendingEffort).
     private static readonly ModelEffortOption[] ModelOptions =
     {
         new("Opus 4.8", "opus"), new("Sonnet 4.6", "sonnet"),
@@ -1193,7 +1208,9 @@ public partial class MainWindow : Window
     private const string DefaultEffortValue = "high";
 
     private bool _suppressModelEffort;            // 프로그램적 SelectedValue 설정 시 변경 핸들러 억제
-    private readonly HashSet<string> _pendingModelEffort = new(); // busy 중 변경 → idle 시 적용할 roomId
+    // busy 중 변경 → idle 시 주입할 보류 값(roomId → model/effort). 같은 항목 재변경은 마지막 값으로 덮어씀.
+    private readonly Dictionary<string, string> _pendingModel = new();
+    private readonly Dictionary<string, string> _pendingEffort = new();
 
     /// <summary>활성 세션 기준으로 dock 표시/값 갱신. claude 세션이 아니면 숨김.</summary>
     private void RefreshModelEffortDock()
@@ -1205,16 +1222,36 @@ public partial class MainWindow : Window
         ModelEffortDock.Visibility = isClaude ? Visibility.Visible : Visibility.Collapsed;
         if (!isClaude) return;
 
+        // 표시 우선순위: statusLine 이 보고한 실제 세션값 > 저장된 선택 > 기본 추정.
+        var (liveModelId, liveEffort) = _modelEffort.Read(s!.Id);
+        var model  = ModelIdToValue(liveModelId) ?? SettingsService.LoadClaudeCodeRoomModel(s.Id)  ?? DefaultModelValue;
+        var effort = (IsKnownEffort(liveEffort) ? liveEffort : null) ?? SettingsService.LoadClaudeCodeRoomEffort(s.Id) ?? DefaultEffortValue;
+
         _suppressModelEffort = true;
         try
         {
             if (ModelCombo.ItemsSource == null) ModelCombo.ItemsSource = ModelOptions;
             if (EffortCombo.ItemsSource == null) EffortCombo.ItemsSource = EffortOptions;
-            ModelCombo.SelectedValue  = SettingsService.LoadClaudeCodeRoomModel(s!.Id)  ?? DefaultModelValue;
-            EffortCombo.SelectedValue = SettingsService.LoadClaudeCodeRoomEffort(s.Id)   ?? DefaultEffortValue;
+            ModelCombo.SelectedValue  = model;
+            EffortCombo.SelectedValue = effort;
         }
         finally { _suppressModelEffort = false; }
     }
+
+    /// <summary>claude statusLine 의 model.id("claude-opus-4-8" 등)를 콤보 값(opus/sonnet/haiku/fable)으로 매핑.</summary>
+    private static string? ModelIdToValue(string? id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        var s = id.ToLowerInvariant();
+        if (s.Contains("opus"))   return "opus";
+        if (s.Contains("sonnet")) return "sonnet";
+        if (s.Contains("haiku"))  return "haiku";
+        if (s.Contains("fable") || s.Contains("mythos")) return "fable";
+        return null;
+    }
+
+    private static bool IsKnownEffort(string? e)
+        => e is "low" or "medium" or "high" or "xhigh" or "max";
 
     private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         => OnModelEffortPicked(isModel: true);
@@ -1232,35 +1269,27 @@ public partial class MainWindow : Window
         if (isModel) SettingsService.SaveClaudeCodeRoomModel(s.Id, val);
         else         SettingsService.SaveClaudeCodeRoomEffort(s.Id, val);
 
-        if (s.IsBusy) _pendingModelEffort.Add(s.Id); // 응답중 — 종료 후 적용
-        else          ApplyModelEffort(s);
+        if (s.IsBusy)
+            (isModel ? _pendingModel : _pendingEffort)[s.Id] = val; // 응답중 — 종료 후 주입
+        else
+            SendModelEffortSlash(s.Id, isModel, val);               // 라이브 즉시 주입
     }
 
-    /// <summary>응답 종료(busy→idle) 시 보류된 model/effort 변경을 적용.</summary>
+    /// <summary>응답 종료(busy→idle) 시 보류된 model/effort 변경을 라이브 주입.</summary>
     private void FlushPendingModelEffort(string roomId)
     {
-        if (!_pendingModelEffort.Remove(roomId)) return;
-        var s = FindSession(roomId);
-        if (s != null) ApplyModelEffort(s);
+        if (_pendingModel.Remove(roomId, out var m))  SendModelEffortSlash(roomId, isModel: true,  m);
+        if (_pendingEffort.Remove(roomId, out var ef)) SendModelEffortSlash(roomId, isModel: false, ef);
     }
 
-    /// <summary>세션 재시작으로 새 --model/--effort 플래그를 적용(대화는 --resume 으로 유지).
-    /// 활성 세션이면 즉시 다시 띄우고, 비활성이면 ConPTY 만 정리(다음 활성화 시 새 플래그로 복원).</summary>
-    private async void ApplyModelEffort(SessionItem s)
+    /// <summary>살아있는 claude TUI 에 /model·/effort 슬래시를 주입해 재시작 없이 즉시 전환.
+    /// 세션이 죽어있으면 무시(다음 콜드스타트 시 저장된 설정이 --model/--effort 런치 플래그로 적용됨).</summary>
+    private void SendModelEffortSlash(string roomId, bool isModel, string value)
     {
-        bool active = ReferenceEquals(_activeSession, s);
-        try
-        {
-            _terminal.CloseTerminal(s.Id);
-            DisposeSessionProcess(s, purge: false);           // CloseTerminal + DisposeRoom(매핑 보존)
-            TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
-            if (active)
-                TerminalSessionManager.Instance.GetOrCreate(s.Id, 120, 30); // 입력 유실 race 방지 선생성
-        }
-        catch { /* ignore */ }
-        if (!active) return; // 비활성: 다음 탭 클릭 시 ActivateSession→GetOrCreate 로 새 플래그 적용
-        await Task.Delay(150); // JS 가 dispose 메시지를 처리할 시간
-        if (ReferenceEquals(_activeSession, s)) ActivateSession(s);
+        var sess = TerminalSessionManager.Instance.Get(roomId);
+        if (sess is not { IsAlive: true }) return;
+        // 명령 + Enter 를 한 번에 써 중간 프레임(명령 타이핑만 된 상태) 재렌더를 줄인다.
+        sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
     }
 
     // ── 새 탭 + 버튼 ──────────────────────────────────────────────
@@ -2090,8 +2119,49 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        _mainHwnd = new WindowInteropHelper(this).Handle;
         if (PresentationSource.FromVisual(this) is HwndSource src) src.AddHook(WndProc);
+        EnableDwmTransitions(_mainHwnd); // 최대화/복원 시 DWM 부드러운 전환 활성화
+        ApplyCornerPreference();          // 최대화 시 각진 모서리(둥근 모서리가 화면 모서리를 깎는 문제 방지)
+        ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
+        StateChanged += (_, _) => { ApplyCornerPreference(); ApplyMaximizeMargin(); };
     }
+
+    /// <summary>WS_CAPTION + WS_THICKFRAME(ResizeMode=CanResize) 창은 최대화 시 표준 방식으로
+    /// 프레임만큼 화면 밖으로 위치해 콘텐츠 가장자리가 잘린다. 최대화 상태에서만 루트에
+    /// 프레임 두께(DPI 보정)만큼 마진을 줘 잘림을 막는다.</summary>
+    private void ApplyMaximizeMargin()
+    {
+        if (RootChrome == null) return;
+        if (WindowState == WindowState.Maximized)
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int pad = GetSystemMetrics(SM_CXPADDEDBORDER);
+            double x = (GetSystemMetrics(SM_CXFRAME) + pad) / dpi.DpiScaleX;
+            double y = (GetSystemMetrics(SM_CYFRAME) + pad) / dpi.DpiScaleY;
+            RootChrome.Margin = new Thickness(x, y, x, y);
+        }
+        else RootChrome.Margin = default;
+    }
+
+    private const int SM_CXFRAME = 32, SM_CYFRAME = 33, SM_CXPADDEDBORDER = 92;
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
+
+    private IntPtr _mainHwnd;
+
+    /// <summary>WS_CAPTION 부여로 최대화 애니메이션을 살리면 Win11 둥근 모서리가 최대화 화면
+    /// 모서리를 깎는다. 최대화 상태에서만 각진 모서리(DONOTROUND)로 전환해 잘림을 막는다.</summary>
+    private void ApplyCornerPreference()
+    {
+        if (_mainHwnd == IntPtr.Zero) return;
+        int pref = WindowState == WindowState.Maximized ? DWMWCP_DONOTROUND : DWMWCP_ROUND;
+        DwmSetWindowAttribute(_mainHwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int));
+    }
+
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWCP_DONOTROUND = 1;
+    private const int DWMWCP_ROUND = 2;
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -2297,4 +2367,20 @@ public partial class MainWindow : Window
         => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
+
+    // ── 보더리스 창에 DWM 최대화/복원 애니메이션 부활 ─────────────────
+    // WindowStyle=None 창은 WS_CAPTION 이 없어 DWM 이 최대화/복원/최소화 전환 애니메이션을
+    // 생략한다(즉시 변함). 캡션 스타일을 Win32 레벨에서 다시 부여하면 DWM 이 "일반 창"으로 보고
+    // 부드러운 전환을 그려준다. 시각적 캡션/테두리는 WindowChrome 의 NCCALCSIZE 가 덮어 안 보인다.
+    private const int GWL_STYLE   = -16;
+    private const int WS_CAPTION  = 0x00C00000;
+
+    private void EnableDwmTransitions(IntPtr hwnd)
+    {
+        int style = GetWindowLong(hwnd, GWL_STYLE);
+        SetWindowLong(hwnd, GWL_STYLE, style | WS_CAPTION);
+    }
+
+    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 }

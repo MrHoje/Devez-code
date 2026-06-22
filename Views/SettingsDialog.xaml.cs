@@ -24,6 +24,7 @@ public partial class SettingsDialog : UserControl
     private string _originalTheme;
     private int    _originalFontScale;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
+    private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
     private string _selectedTheme;
     private int    _selectedFontScale;
@@ -285,7 +286,9 @@ public partial class SettingsDialog : UserControl
         if (_selectedFontScale != _originalFontScale) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
-        return !current.SetEquals(_originalEnabledAgents);
+        if (!current.SetEquals(_originalEnabledAgents)) return true;
+        var claude = _agentItems.FirstOrDefault(a => a.IsClaudeCode);
+        return claude != null && claude.RetentionDays != _originalRetentionDays;
     }
 
     /// <summary>현재 UI 값을 디스크에 저장·확정하고 기준값을 갱신한다.</summary>
@@ -299,6 +302,8 @@ public partial class SettingsDialog : UserControl
         _originalFontScale   = _selectedFontScale;
         _originalEnabledAgents = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
+        _originalRetentionDays = _agentItems.FirstOrDefault(a => a.IsClaudeCode)?.RetentionDays
+            ?? ClaudeGlobalSettings.DefaultCleanupPeriodDays;
     }
 
     /// <summary>미리보기를 열림 시점(저장값)으로 되돌린다.</summary>
@@ -318,7 +323,10 @@ public partial class SettingsDialog : UserControl
         }
         // 에이전트 활성화 상태 되돌리기
         foreach (var item in _agentItems)
+        {
             item.Enabled = _originalEnabledAgents.Contains(item.Id);
+            if (item.IsClaudeCode) item.RetentionDays = _originalRetentionDays;
+        }
     }
 
     private void UpdateThemeSelectionVisual()
@@ -381,10 +389,16 @@ public partial class SettingsDialog : UserControl
                     ? (Brush)FindResource("PrimaryBrush")
                     : muted,
                 Enabled = installed && enabledSet.Contains(agent.Id),
+                IsClaudeCode = agent.Id == "claude",
+                RetentionDays = agent.Id == "claude"
+                    ? ClaudeGlobalSettings.GetCleanupPeriodDays()
+                    : ClaudeGlobalSettings.DefaultCleanupPeriodDays,
             });
         }
         _originalEnabledAgents = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
+        _originalRetentionDays = _agentItems.FirstOrDefault(a => a.IsClaudeCode)?.RetentionDays
+            ?? ClaudeGlobalSettings.DefaultCleanupPeriodDays;
         AgentList.ItemsSource = _agentItems;
     }
 
@@ -393,6 +407,10 @@ public partial class SettingsDialog : UserControl
         var enabled = _agentItems.Where(a => a.Enabled).Select(a => a.Id).ToList();
         SettingsService.SaveEnabledAgents(enabled);
         AgentRegistry.InvalidateCache();
+
+        // Claude Code 세션 유지기간 → ~/.claude/settings.json 전역설정
+        var claude = _agentItems.FirstOrDefault(a => a.IsClaudeCode);
+        if (claude != null) ClaudeGlobalSettings.SetCleanupPeriodDays(claude.RetentionDays);
     }
 
     /// <summary>토글 변경 시 저장 (UI 토글은 즉시 반영되지만, 디스크 저장은 [저장] 버튼에서만 — 다른 설정과 동일).</summary>
@@ -415,6 +433,15 @@ public sealed class AgentItem : INotifyPropertyChanged
 
     private bool _enabled;
     public bool Enabled { get => _enabled; set { if (_enabled != value) { _enabled = value; OnPropertyChanged(); } } }
+
+    /// <summary>Claude Code 항목에만 세션 유지기간 설정 노출.</summary>
+    public bool IsClaudeCode { get; set; }
+
+    /// <summary>유지기간 프리셋(일). ComboBox 바인딩용.</summary>
+    public int[] RetentionOptions { get; } = { 7, 14, 30, 60, 90, 180, 365 };
+
+    private int _retentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
+    public int RetentionDays { get => _retentionDays; set { if (_retentionDays != value) { _retentionDays = value; OnPropertyChanged(); } } }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));

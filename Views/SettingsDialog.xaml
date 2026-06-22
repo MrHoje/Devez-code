@@ -1,6 +1,7 @@
 <UserControl x:Class="DevezCode.Views.SettingsDialog"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="clr-namespace:DevezCode.Models"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True"
              TextOptions.TextFormattingMode="Display"
@@ -172,6 +173,19 @@
                                                         </StackPanel>
                                                         <TextBlock Text="{Binding CommandHint}" FontSize="{DynamicResource Fs11}"
                                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                                        <!-- Claude Code 전용: 세션 유지기간 (~/.claude/settings.json 의 cleanupPeriodDays) -->
+                                                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0"
+                                                                    Visibility="{Binding IsClaudeCode, Converter={x:Static models:BoolVisibilityConverter.Instance}}">
+                                                            <TextBlock Text="세션 유지기간" FontSize="{DynamicResource Fs12}"
+                                                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                                            <ComboBox Margin="10,0,0,0" Width="92" VerticalAlignment="Center"
+                                                                      ItemsSource="{Binding RetentionOptions}"
+                                                                      SelectedItem="{Binding RetentionDays, Mode=TwoWay}"/>
+                                                            <TextBlock Text="일" FontSize="{DynamicResource Fs12}" Margin="6,0,0,0"
+                                                                       Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="이후 세션 기록 자동 정리" FontSize="{DynamicResource Fs11}" Margin="10,0,0,0"
+                                                                       Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                                        </StackPanel>
                                                     </StackPanel>
                                                     <CheckBox Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}"
                                                               IsEnabled="{Binding Installed}"
