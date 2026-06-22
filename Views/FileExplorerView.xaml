@@ -160,6 +160,8 @@
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                     <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                     <Setter Property="FontSize" Value="{DynamicResource Fs12}"/>
+                    <EventSetter Event="MouseDoubleClick" Handler="TreeItem_DoubleClick"/>
+                    <EventSetter Event="MouseRightButtonDown" Handler="TreeItem_RightClick"/>
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="TreeViewItem">

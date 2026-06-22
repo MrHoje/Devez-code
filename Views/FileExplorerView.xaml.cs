@@ -308,7 +308,19 @@ public partial class FileExplorerView : UserControl
     private void Node_DoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (e.ClickCount != 2) return;
-        if (sender is FrameworkElement { DataContext: FileNode node } && !node.IsDirectory)
+        if (sender is FrameworkElement { DataContext: FileNode node })
+            OpenNodeFromExplorer(node, e);
+    }
+
+    private void TreeItem_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is TreeViewItem { DataContext: FileNode node })
+            OpenNodeFromExplorer(node, e);
+    }
+
+    private void OpenNodeFromExplorer(FileNode node, MouseButtonEventArgs e)
+    {
+        if (!node.IsDirectory)
         {
             // 텍스트 계열은 인앱 편집기로, 그 외(이미지·바이너리 등)는 OS 기본 앱으로.
             if (FileEditorView.IsEditable(node.FullPath))
@@ -328,6 +340,15 @@ public partial class FileExplorerView : UserControl
             // TreeView.SelectedItem 은 읽기 전용 — 해당 컨테이너의 IsSelected 를 직접 세팅.
             if (Tree.ItemContainerGenerator.ContainerFromItem(node) is TreeViewItem tvi)
                 tvi.IsSelected = true;
+        }
+    }
+
+    private void TreeItem_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is TreeViewItem tvi)
+        {
+            tvi.IsSelected = true;
+            e.Handled = true;
         }
     }
 
