@@ -235,7 +235,7 @@
                     <Border x:Name="ProjectHeaderRow" Background="Transparent" Cursor="Arrow"
                             MouseLeftButtonUp="Project_Click"
                             PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
-                        <Grid Margin="12,9,8,9">
+                        <Grid Margin="12,11,8,9">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
@@ -261,7 +261,7 @@
                                     ToolTip="펼치기 / 접기">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="5" Padding="3"
+                                        <Border x:Name="Bd" Width="16" Height="16" CornerRadius="4" Padding="2"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
@@ -285,7 +285,7 @@
                                     ToolTip="메뉴">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="5" Padding="3"
+                                        <Border x:Name="Bd" Width="16" Height="16" CornerRadius="4" Padding="2"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{StaticResource IconMoreVertical}"
