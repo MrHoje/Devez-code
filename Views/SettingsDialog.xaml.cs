@@ -437,8 +437,18 @@ public sealed class AgentItem : INotifyPropertyChanged
     /// <summary>Claude Code 항목에만 세션 유지기간 설정 노출.</summary>
     public bool IsClaudeCode { get; set; }
 
-    /// <summary>유지기간 프리셋(일). ComboBox 바인딩용.</summary>
-    public int[] RetentionOptions { get; } = { 7, 14, 30, 60, 90, 180, 365 };
+    /// <summary>유지기간 프리셋. ComboBox 바인딩용(DisplayMemberPath=Label, SelectedValuePath=Days).</summary>
+    public RetentionOption[] RetentionOptions { get; } =
+    {
+        new(7,   "7일"),
+        new(14,  "14일"),
+        new(30,  "30일"),
+        new(60,  "60일"),
+        new(90,  "90일"),
+        new(180, "180일"),
+        new(365, "365일"),
+        new(ClaudeGlobalSettings.PermanentDays, "영구 보관"),
+    };
 
     private int _retentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
     public int RetentionDays { get => _retentionDays; set { if (_retentionDays != value) { _retentionDays = value; OnPropertyChanged(); } } }
@@ -446,3 +456,6 @@ public sealed class AgentItem : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
+
+/// <summary>세션 유지기간 프리셋 한 항목.</summary>
+public sealed record RetentionOption(int Days, string Label);

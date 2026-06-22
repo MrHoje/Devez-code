@@ -18,6 +18,9 @@ public static class ClaudeGlobalSettings
     /// <summary>Claude 기본값(미지정 시 30일 동안 세션 트랜스크립트 유지).</summary>
     public const int DefaultCleanupPeriodDays = 30;
 
+    /// <summary>영구 보관(사실상 정리 안 함) 표현용 일수 — 약 273년.</summary>
+    public const int PermanentDays = 99999;
+
     /// <summary>세션 유지기간(cleanupPeriodDays). 미지정/파싱 실패 시 기본값.</summary>
     public static int GetCleanupPeriodDays()
     {

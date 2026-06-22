@@ -174,17 +174,20 @@
                                                         <TextBlock Text="{Binding CommandHint}" FontSize="{DynamicResource Fs11}"
                                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                                         <!-- Claude Code 전용: 세션 유지기간 (~/.claude/settings.json 의 cleanupPeriodDays) -->
-                                                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0"
+                                                        <StackPanel Margin="0,12,0,0"
                                                                     Visibility="{Binding IsClaudeCode, Converter={x:Static models:BoolVisibilityConverter.Instance}}">
-                                                            <TextBlock Text="세션 유지기간" FontSize="{DynamicResource Fs12}"
-                                                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                                                            <ComboBox Margin="10,0,0,0" Width="92" VerticalAlignment="Center"
-                                                                      ItemsSource="{Binding RetentionOptions}"
-                                                                      SelectedItem="{Binding RetentionDays, Mode=TwoWay}"/>
-                                                            <TextBlock Text="일" FontSize="{DynamicResource Fs12}" Margin="6,0,0,0"
-                                                                       Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                                            <TextBlock Text="이후 세션 기록 자동 정리" FontSize="{DynamicResource Fs11}" Margin="10,0,0,0"
-                                                                       Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="마지막 접근 후" FontSize="{DynamicResource Fs12}"
+                                                                           Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                                                <ComboBox Style="{StaticResource DockComboBox}" Margin="10,0,0,0" Width="108"
+                                                                          VerticalAlignment="Center"
+                                                                          ItemsSource="{Binding RetentionOptions}"
+                                                                          DisplayMemberPath="Label" SelectedValuePath="Days"
+                                                                          SelectedValue="{Binding RetentionDays, Mode=TwoWay}"/>
+                                                            </StackPanel>
+                                                            <TextBlock Text="설정 기간 동안 다시 열리지 않은 세션 기록을 Claude Code 가 자동 정리합니다. (전역설정)"
+                                                                       FontSize="{DynamicResource Fs11}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                     <CheckBox Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}"
