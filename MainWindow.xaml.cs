@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -74,10 +73,6 @@ public partial class MainWindow : Window
         TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
         TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();
         TabsHost.LostMouseCapture += async (_, _) => await EndTabDragAsync();
-
-        // 한자+화살표 = Ctrl+Alt+화살표 (한자 키 = Alt 매핑이 환경에 따라 불안정해서 일반 모디파이어 조합으로 잡음)
-        // 좌/우 → 활성 프로젝트의 세션 탭 순환, 상/하 → 프로젝트 순환
-        PreviewKeyDown += MainWindow_PreviewKeyDown;
 
         _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
         _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } HideSessionLoadingIf(id); };
@@ -1137,16 +1132,6 @@ public partial class MainWindow : Window
         OpenSession(sessionTabs[((idx + dir) % n + n) % n]);
     }
 
-    /// <summary>프로젝트 순환 전환 (한자+↑/↓). 활성 프로젝트가 없으면 첫 프로젝트로.</summary>
-    private void CycleProject(int dir)
-    {
-        if (_projects.Count == 0) return;
-        int idx = _activeProject != null ? _projects.IndexOf(_activeProject) : -1;
-        if (idx < 0) { SelectProject(_projects[0]); return; }
-        int n = _projects.Count;
-        SelectProject(_projects[((idx + dir) % n + n) % n]);
-    }
-
     /// <summary>"세션 N" 다음 번호를 만든다 — 기존 세션 이름에서 최대 N을 찾아 +1.
     /// Count+1 방식과 달리 중간 세션을 삭제해도 번호가 겹치지 않는다.</summary>
     private static string NextSessionName(ProjectItem proj)
@@ -2015,41 +2000,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>탭 빈 영역 드래그로 창 이동 + 더블클릭 최대화/복원 (devez: 탭 바가 캡션 역할).</summary>
-    /// <summary>한자+화살표 (= Ctrl+Alt+화살표) 단축키.
-    /// 한자 키는 환경/IME에 따라 VK_Hanja(0xF2) 또는 ImeProcessed 로 들어와 분기가 불안정해서,
-    /// 한국어 키보드에서 한자 키가 누른 채로 떨어지는 모디파이어 상태(Alt) + Ctrl 을 함께 요구하는 형태로 잡음.
-    /// 좌/우 → 활성 프로젝트의 세션 탭 순환, 상/하 → 프로젝트 순환.
-    /// 이 윈도우가 활성일 때만 동작(다른 앱이 포커스면 무시). 텍스트 입력 컨트롤 포커스면 화살표 패스.</summary>
-    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (!IsActive) return;
-        if (Keyboard.FocusedElement is TextBoxBase or PasswordBox) return;
-
-        bool hanja = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt))
-                     == (ModifierKeys.Control | ModifierKeys.Alt);
-        if (!hanja) return;
-
-        switch (e.Key)
-        {
-            case Key.Left:
-                e.Handled = true;
-                CycleSession(-1);
-                break;
-            case Key.Right:
-                e.Handled = true;
-                CycleSession(1);
-                break;
-            case Key.Up:
-                e.Handled = true;
-                CycleProject(-1);
-                break;
-            case Key.Down:
-                e.Handled = true;
-                CycleProject(1);
-                break;
-        }
-    }
-
     private void TabStrip_DragMove(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
