@@ -7,7 +7,7 @@ namespace DevezCode.Views;
 
 /// <summary>파일 편집기 탭의 본체. 탭마다 1개의 인스턴스가 생성되어 콘텐츠 호스트에 붙는다.
 /// "현재 다른 파일로 교체" 기능은 없음 — 파일을 바꾸려면 새 탭을 연다.</summary>
-public partial class FileEditorView : UserControl
+public partial class FileEditorView : UserControl, IFileTabEditor
 {
     /// <summary>사용자가 닫기를 요청했을 때(저장 확인 포함) 발생. 호스트(=탭)가 탭을 제거한다.</summary>
     public event EventHandler? CloseRequested;

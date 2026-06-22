@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="toastui-editor.css">
+<link rel="stylesheet" href="toastui-editor-dark.css">
+<link rel="stylesheet" href="prism.css">
+<style>
+  /* 배경 투명 — 첫 로드/리페인트 시 흰 화면 깜빡임 방지(뒤 WPF 패널색이 비침) */
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  #editor { position: absolute; inset: 0; }
+  /* 가독 폭 제한 — 스크롤 요소(.toastui-editor-contents) 자체 폭은 건드리지 않고
+     좌우 패딩으로만 본문을 가운데 모은다. (max-width로 줄이면 스크롤바가 보더에서 떨어진다.) */
+  .toastui-editor-contents { padding-left: max(18px, (100% - 880px) / 2);
+    padding-right: max(18px, (100% - 880px) / 2); }
+  /* 앱 테마색 주입 — setTheme 전에는 투명(흰색 대신 WPF 패널색) */
+  .toastui-editor-defaultUI { border: none; }
+  .toastui-editor-main .toastui-editor-md-container,
+  .toastui-editor-main .toastui-editor-ww-container { background: var(--md-bg, transparent); }
+  .toastui-editor-contents { color: var(--md-text, inherit); }
+
+  /* 상단 서식 툴바 — 배경을 테마색/투명으로(기본 흰색 1프레임 플래시 방지) + 버튼 축소 */
+  .toastui-editor-defaultUI-toolbar { zoom: 0.7; background: var(--md-bg, transparent); border: none; }
+  .toastui-editor-defaultUI { background: var(--md-bg, transparent); }
+  /* 본문 제목 크기 축소 — WYSIWYG에서 H1~H3가 과하게 커 보이지 않게 */
+  .toastui-editor-contents h1 { font-size: 1.55em; padding-bottom: 4px; }
+  .toastui-editor-contents h2 { font-size: 1.3em; padding-bottom: 3px; }
+  .toastui-editor-contents h3 { font-size: 1.12em; }
+  .toastui-editor-contents h4 { font-size: 1em; }
+
+  /* 코드 — Prism 신택스 하이라이트(코드블록) + 인라인코드 본문색.
+     Prism 기본(prism.css)은 라이트 토큰 — 코드블록 배경/그림자는 우리 테마로 무력화. */
+  .toastui-editor-contents code, .toastui-editor-contents pre code {
+    font-family: Consolas, 'D2Coding', monospace; }
+  .toastui-editor-contents code { color: var(--md-text, inherit);
+    background: rgba(135,135,135,0.20); padding: 1px 5px; border-radius: 4px; }
+  .toastui-editor-contents pre { background: rgba(135,135,135,0.14); border-radius: 6px; }
+  .toastui-editor-contents pre code { background: transparent; padding: 0; }
+  /* Prism가 pre/code에 입히는 밝은 배경·그림자 제거(우리 테마 배경 유지) */
+  .toastui-editor-contents pre[class*="language-"],
+  .toastui-editor-contents code[class*="language-"] { background: transparent !important; text-shadow: none !important; }
+  .toastui-editor-contents pre[class*="language-"] *,
+  .toastui-editor-contents code[class*="language-"] * { text-shadow: none !important; }
+  /* prism 기본이 operator/entity/url에 반투명 흰 배경을 깔아 다크에서 '형광펜'처럼 보임 → 제거 */
+  .toastui-editor-contents .token.operator,
+  .toastui-editor-contents .token.entity,
+  .toastui-editor-contents .token.url { background: transparent !important; }
+
+  /* 다크 테마 토큰 팔레트(VS Code Dark+ 계열) — 라이트 prism 토큰은 다크에서 저대비라 재정의 */
+  .toastui-editor-dark .toastui-editor-contents .token.comment,
+  .toastui-editor-dark .toastui-editor-contents .token.prolog,
+  .toastui-editor-dark .toastui-editor-contents .token.doctype,
+  .toastui-editor-dark .toastui-editor-contents .token.cdata { color: #6a9955; }
+  .toastui-editor-dark .toastui-editor-contents .token.punctuation,
+  .toastui-editor-dark .toastui-editor-contents .token.operator,
+  .toastui-editor-dark .toastui-editor-contents .token.entity { color: #d4d4d4; }
+  .toastui-editor-dark .toastui-editor-contents .token.keyword,
+  .toastui-editor-dark .toastui-editor-contents .token.atrule,
+  .toastui-editor-dark .toastui-editor-contents .token.tag { color: #569cd6; }
+  .toastui-editor-dark .toastui-editor-contents .token.string,
+  .toastui-editor-dark .toastui-editor-contents .token.char,
+  .toastui-editor-dark .toastui-editor-contents .token.attr-value { color: #ce9178; }
+  .toastui-editor-dark .toastui-editor-contents .token.number,
+  .toastui-editor-dark .toastui-editor-contents .token.boolean,
+  .toastui-editor-dark .toastui-editor-contents .token.constant { color: #b5cea8; }
+  .toastui-editor-dark .toastui-editor-contents .token.function { color: #dcdcaa; }
+  .toastui-editor-dark .toastui-editor-contents .token.class-name,
+  .toastui-editor-dark .toastui-editor-contents .token.builtin { color: #4ec9b0; }
+  .toastui-editor-dark .toastui-editor-contents .token.property,
+  .toastui-editor-dark .toastui-editor-contents .token.attr-name,
+  .toastui-editor-dark .toastui-editor-contents .token.symbol { color: #9cdcfe; }
+  .toastui-editor-dark .toastui-editor-contents .token.deleted { color: #e06c75; }
+
+  /* 스크롤바 — 테마 무관 반투명 회색(라이트/다크 공용) */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(140,140,140,0.4); border-radius: 6px;
+    background-clip: padding-box; border: 2px solid transparent; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(140,140,140,0.65);
+    background-clip: padding-box; border: 2px solid transparent; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+
+  /* 파일 미선택 오버레이 */
+  #cover { position: absolute; inset: 0; display: none; z-index: 10;
+    background: var(--md-bg, #fff); cursor: default; }
+  body.md-locked #cover { display: block; }
+
+  /* 저장/AI 토스트 — WebView 내부 렌더(airspace로 WPF 토스트가 가려지므로) */
+  #md-toast { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    background: var(--md-primary, #2563eb); color: #fff; font-weight: 600; font-size: 13px;
+    padding: 9px 16px; border-radius: 14px; opacity: 0; transition: opacity .25s ease;
+    pointer-events: none; z-index: 9999; white-space: nowrap; }
+  #md-toast.show { opacity: 1; }
+</style>
+<script src="toastui-editor-all.min.js"></script>
+<script src="ko-kr.js"></script>
+<script src="tui-csh-all.min.js"></script>
+</head>
+<body spellcheck="false">
+<div id="editor" spellcheck="false"></div>
+<div id="cover"></div>
+<div id="md-toast"></div>
+<script src="bridge.js"></script>
+</body>
+</html>

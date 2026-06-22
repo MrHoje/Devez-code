@@ -232,7 +232,7 @@
                 </Border.ContextMenu>
                 <StackPanel>
                     <!-- 프로젝트 헤더 행 -->
-                    <Border Background="Transparent" Cursor="Arrow"
+                    <Border x:Name="ProjectHeaderRow" Background="Transparent" Cursor="Arrow"
                             MouseLeftButtonUp="Project_Click"
                             PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
                         <Grid Margin="12,9,8,9">
@@ -253,10 +253,11 @@
                                            FontSize="{DynamicResource Fs11}"
                                            Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
-                            <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용) -->
+                            <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용). 평소엔 숨김 → 호버 시에만 노출해 프로젝트 경로가 안 잘리게. -->
                             <Button Grid.Column="2" Margin="6,0,0,0" Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
+                                    Visibility="{Binding IsMouseOver, ElementName=ProjectHeaderRow, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
                                     ToolTip="펼치기 / 접기">
                                 <Button.Template>
@@ -277,11 +278,12 @@
                                     </ControlTemplate>
                                 </Button.Template>
                             </Button>
-                            <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움 -->
+                            <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움. 평소엔 숨김 → 호버 시에만 노출 -->
                             <Button Grid.Column="3" Margin="2,0,0,0" Tag="{Binding}"
                                     Click="ProjectMenu_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                    Visibility="{Binding IsMouseOver, ElementName=ProjectHeaderRow, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
                                     ToolTip="메뉴">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">

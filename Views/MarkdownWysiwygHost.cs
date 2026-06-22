@@ -1,0 +1,171 @@
+using System.IO;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
+
+namespace DevezCode.Views;
+
+public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
+{
+    private const string VirtualHost = "md.devezcode.local";
+
+    public event Action<string, bool>? MarkdownChanged;
+    public event Action<string>? BaselineReady;
+    public event Action? SaveRequested;
+    public event Action? EditorReady;
+
+    private WebView2? _webView;
+    private bool _initStarted;
+    private bool _pageReady;
+    private (string md, bool markClean)? _pendingMarkdown;
+    private string? _pendingTheme;
+
+    private static readonly JsonSerializerOptions CamelCase = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    public async Task EnsureReadyAsync()
+    {
+        if (_initStarted) return;
+        _initStarted = true;
+        await InitWebViewAsync();
+    }
+
+    private async Task InitWebViewAsync()
+    {
+        try
+        {
+            _webView = new WebView2 { DefaultBackgroundColor = System.Drawing.Color.Transparent };
+            Content = _webView;
+
+            var userDataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DevezCode", "WebView2");
+            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
+            await _webView.EnsureCoreWebView2Async(env);
+
+            var core = _webView.CoreWebView2;
+            core.Settings.AreDefaultContextMenusEnabled = true;
+            core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+            core.Settings.AreDevToolsEnabled = false;
+            core.Settings.IsZoomControlEnabled = false;
+            core.Settings.IsStatusBarEnabled = false;
+
+            var webRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "Markdown", "web");
+            core.SetVirtualHostNameToFolderMapping(
+                VirtualHost, webRoot, CoreWebView2HostResourceAccessKind.Allow);
+
+            core.WebMessageReceived += OnWebMessageReceived;
+            core.Navigate($"https://{VirtualHost}/editor.html");
+        }
+        catch (Exception ex)
+        {
+            Content = new TextBlock
+            {
+                Text = "마크다운 편집기를 시작할 수 없습니다.\nWebView2 런타임이 필요합니다.\n\n" + ex.Message,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(24),
+                Foreground = Application.Current.TryFindResource("TextBrush") as Brush,
+            };
+        }
+    }
+
+    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
+            var root = doc.RootElement;
+            switch (root.GetProperty("type").GetString())
+            {
+                case "pageReady":
+                    _pageReady = true;
+                    if (_pendingTheme != null) { ApplyTheme(_pendingTheme); _pendingTheme = null; }
+                    if (_pendingMarkdown is { } pm) { SetMarkdown(pm.md, pm.markClean); _pendingMarkdown = null; }
+                    EditorReady?.Invoke();
+                    break;
+                case "markdownChanged":
+                    MarkdownChanged?.Invoke(
+                        root.GetProperty("markdown").GetString() ?? "",
+                        root.TryGetProperty("dirty", out var d) && d.GetBoolean());
+                    break;
+                case "baseline":
+                    BaselineReady?.Invoke(root.GetProperty("markdown").GetString() ?? "");
+                    break;
+                case "saveRequested":
+                    SaveRequested?.Invoke();
+                    break;
+                case "zoom":
+                    if (_webView != null && root.TryGetProperty("factor", out var zf))
+                        _webView.ZoomFactor = Math.Clamp(zf.GetDouble(), 0.5, 2.5);
+                    break;
+            }
+        }
+        catch { }
+    }
+
+    public void SetMarkdown(string md, bool markClean)
+    {
+        if (_pageReady) PostJson(new { type = "setMarkdown", markdown = md ?? "", markClean });
+        else _pendingMarkdown = (md ?? "", markClean);
+    }
+
+    public void MarkClean()
+    {
+        if (_pageReady) PostJson(new { type = "markClean" });
+    }
+
+    public void FocusEditor()
+    {
+        if (_pageReady) { _webView?.Focus(); PostJson(new { type = "focus" }); }
+    }
+
+    public void ApplyTheme(string theme)
+    {
+        if (!_pageReady) { _pendingTheme = theme; return; }
+        PostJson(new
+        {
+            type = "setTheme",
+            dark = theme == "dark",
+            bg = Hex("BgBrush", "#ffffff"),
+            text = Hex("TextBrush", "#0f172a"),
+            codeBg = Hex("CodeBgBrush", "#f1f5f9"),
+            codeText = Hex("CodeTextBrush", "#0f172a"),
+            primary = Hex("PrimaryBrush", "#2563eb"),
+        });
+    }
+
+    private static string Hex(string brushKey, string fallback)
+    {
+        if (Application.Current?.TryFindResource(brushKey) is SolidColorBrush b)
+        {
+            var c = b.Color;
+            return $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+        }
+        return fallback;
+    }
+
+    private void PostJson(object message)
+    {
+        try { _webView?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message, CamelCase)); }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            if (_webView?.CoreWebView2 != null)
+                _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+        }
+        catch { }
+        try { _webView?.Dispose(); } catch { }
+        _webView = null;
+    }
+}

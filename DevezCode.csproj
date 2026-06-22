@@ -32,6 +32,10 @@
     <Content Include="Resources\Terminal\web\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Toast UI 기반 마크다운 에디터 번들(WebView2 가상 호스트 로드) -->
+    <Content Include="Resources\Markdown\web\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- 델타 업데이트 복원 도구 (single-file 에도 포함됨) -->
     <Content Include="Resources\Tools\zstd.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

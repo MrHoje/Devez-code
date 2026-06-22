@@ -79,8 +79,8 @@ public sealed class FileTabItem : TabItemBase
     /// <summary>편집 대상 절대 경로. 비교는 OrdinalIgnoreCase.</summary>
     public string FilePath { get; init; } = "";
 
-    /// <summary>탭마다 1개의 FileEditorView 인스턴스. 콘텐츠 호스트에 그대로 붙여 렌더한다.</summary>
-    public FileEditorView Editor { get; init; } = new();
+    /// <summary>탭마다 1개의 파일 편집기 인스턴스. 콘텐츠 호스트에 그대로 붙여 렌더한다.</summary>
+    public IFileTabEditor Editor { get; init; } = new FileEditorView();
 
     /// <summary>탭을 닫을 때 외부에서 호출: dirty 확인 후 비로소 제거해도 되는지 결과를 받는다.</summary>
     public event EventHandler? CloseRequested;
