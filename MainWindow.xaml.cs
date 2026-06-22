@@ -1257,8 +1257,8 @@ public partial class MainWindow : Window
                 t.IsSelected = ReferenceEquals(t, tab);
 
         HideSessionLoading(); // 파일 탭이 로딩 스피너를 물려받지 않도록
-        if (!ReferenceEquals(FileEditorHostContainer.Content, tab.Editor))
-            FileEditorHostContainer.Content = tab.Editor;
+        if (!ReferenceEquals(FileEditorHostContainer.Content, tab.Editor.AsControl()))
+            FileEditorHostContainer.Content = tab.Editor.AsControl();
         UpdateEmptyState();
         EnsureSelectedTabVisible(tab);
         tab.Editor.Focus(); // 포커스 이동
@@ -1486,8 +1486,9 @@ public partial class MainWindow : Window
     {
         var parent = ParentOfTab(tab);
         bool wasActive = ReferenceEquals(_activeTab, tab);
-        if (FileEditorHostContainer.Content == tab.Editor)
+        if (FileEditorHostContainer.Content == tab.Editor.AsControl())
             FileEditorHostContainer.Content = null;
+        if (tab.Editor is IDisposable disposable) disposable.Dispose();
         parent?.Tabs.Remove(tab);
         UpdateStatus();
 
@@ -2116,7 +2117,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var tab = new FileTabItem { FilePath = path };
+        var tab = new FileTabItem { FilePath = path, Editor = CreateFileTabEditor(path) };
         if (!tab.Editor.LoadFile(path))
         {
             // 로드 실패(파일 없음/5MB 초과) → 탭 만들지 않음
@@ -2126,6 +2127,12 @@ public partial class MainWindow : Window
         tab.Editor.CloseRequested += (_, _) => RemoveFileTab(tab);
         _activeProject.Tabs.Add(tab);
         ActivateFileTab(tab);
+    }
+
+    private static IFileTabEditor CreateFileTabEditor(string path)
+    {
+        var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        return ext is ".md" or ".markdown" ? new Views.MarkdownFileEditorView() : new Views.FileEditorView();
     }
 
     /// <summary>airspace 우회: 터미널 WebView2를 PNG 스냅샷으로 대체하고 Collapse.
