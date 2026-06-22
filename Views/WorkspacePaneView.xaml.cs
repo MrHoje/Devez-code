@@ -1,0 +1,1122 @@
+using System.Collections.ObjectModel;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using DevezCode.Models;
+using DevezCode.Services;
+using DevezCode.Services.Terminal;
+
+namespace DevezCode.Views;
+
+/// <summary>
+/// 중앙 워크스페이스 패널(메타바 + 탭 + 세션 헤더 + 터미널/에디터 콘텐츠).
+/// 자체 TerminalHostView·활성 프로젝트/세션/탭 상태를 갖는 독립 단위라
+/// MainWindow 가 두 개를 나란히 두면 두 프로젝트를 동시에 열 수 있다.
+/// 사이드바·파일탐색기·푸터·훅 서비스는 MainWindow(셸)가 소유하고 이벤트로 연동한다.
+/// </summary>
+public partial class WorkspacePaneView : UserControl
+{
+    private readonly TerminalHostView _terminal = new();
+
+    private ProjectItem? _activeProject;
+    private SessionItem? _activeSession;
+    private TabItemBase? _activeTab;
+
+    public ProjectItem? ActiveProject => _activeProject;
+    public SessionItem? ActiveSession => _activeSession;
+    public TabItemBase? ActiveTab => _activeTab;
+
+    /// <summary>MainWindow 가 소유한 공유 프로젝트 컬렉션. 생성 후 한 번 주입한다.</summary>
+    public ObservableCollection<ProjectItem> Projects { get; set; } = new();
+    /// <summary>statusLine 훅이 보고한 방별 실제 model/effort 조회용(공유 서비스).</summary>
+    public ModelEffortService? ModelEffort { get; set; }
+    /// <summary>비-claude 에이전트 last prompt 추적용(공유 서비스).</summary>
+    public AgentLastMessageService? AgentLastMsg { get; set; }
+
+    /// <summary>사용자가 이 패널을 클릭/조작 → 포커스 패널로 지정 요청.</summary>
+    public event Action<WorkspacePaneView>? FocusRequested;
+    /// <summary>활성 프로젝트/세션/탭이 바뀜 → 셸이 파일탐색기·사이드바 하이라이트·last-active 저장을 갱신.</summary>
+    public event Action<WorkspacePaneView>? ActiveChanged;
+    /// <summary>분할 토글 버튼 클릭 → 셸이 분할/해제 처리.</summary>
+    public event Action<WorkspacePaneView>? SplitToggleRequested;
+
+    public TerminalHostView Terminal => _terminal;
+
+    public WorkspacePaneView()
+    {
+        InitializeComponent();
+        TerminalHostContainer.Content = _terminal;
+
+        TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
+        TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();
+        TabsHost.LostMouseCapture += async (_, _) => await EndTabDragAsync();
+
+        _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
+        _terminal.SessionExited += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } HideSessionLoadingIf(id); };
+        _terminal.TerminalReady += id => HideSessionLoadingIf(id);
+        _terminal.SessionActionRequested += OnTerminalSessionAction;
+
+        App.ThemeChanged += OnThemeChanged_UpdateSeam;
+        Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged_UpdateSeam;
+    }
+
+    private void Pane_PreviewInteract(object sender, MouseButtonEventArgs e) => FocusRequested?.Invoke(this);
+
+    private void SplitBtn_Click(object sender, RoutedEventArgs e) => SplitToggleRequested?.Invoke(this);
+
+    /// <summary>분할 상태에 맞춰 분할 토글 아이콘 강조 색을 갱신.</summary>
+    public void SetSplitActive(bool active)
+    {
+        var key = active ? "PrimaryBrush" : "TextMutedBrush";
+        if (SplitIcon != null) SplitIcon.Stroke = (Brush)FindResource(key);
+    }
+
+    // ── 프로젝트 ─────────────────────────────────────────────────
+    /// <summary>활성 프로젝트 전환 — 중앙 탭을 그 프로젝트의 탭들로 교체. 세션 활성화는 안 함.</summary>
+    private void SetActiveProject(ProjectItem proj)
+    {
+        _activeProject = proj;
+        TabsHost.ItemsSource = proj.Tabs;
+        if (ProjectPathText != null) { ProjectPathText.Text = proj.Path; ProjectPathText.ToolTip = proj.Path; }
+        if (ProjectNameText != null) { ProjectNameText.Text = proj.Name; ProjectNameText.ToolTip = proj.Name; }
+        UpdateProjectBranchBubble(proj);
+        if (SettingsService.LoadPreloadAllProjectSessions())
+            PreloadProjectSessions(proj, except: null);
+    }
+
+    private System.Threading.CancellationTokenSource? _projectCts;
+
+    private void UpdateProjectBranchBubble(ProjectItem? proj)
+    {
+        if (proj == null || string.IsNullOrEmpty(proj.Path) || BranchGroup == null)
+        {
+            if (BranchGroup != null) BranchGroup.Visibility = Visibility.Collapsed;
+            return;
+        }
+        _projectCts?.Cancel();
+        _projectCts = new System.Threading.CancellationTokenSource();
+        _ = LoadBranchAsync(proj.Path, _projectCts.Token);
+    }
+
+    private async Task LoadBranchAsync(string repoDir, System.Threading.CancellationToken ct)
+    {
+        string? branch = null;
+        try
+        {
+            if (await GitService.IsRepoAsync(repoDir))
+            {
+                var r = await GitService.RunAsync(repoDir, "rev-parse", "--abbrev-ref", "HEAD");
+                if (r.Ok)
+                {
+                    var name = r.Output.Trim();
+                    if (!string.IsNullOrEmpty(name) && name != "HEAD") branch = name;
+                }
+            }
+        }
+        catch { /* git 미설치 등 */ }
+        if (ct.IsCancellationRequested) return;
+        await Dispatcher.InvokeAsync(() =>
+        {
+            BranchGroup.Visibility = branch != null ? Visibility.Visible : Visibility.Collapsed;
+            if (branch != null) ProjectBranchText.Text = branch;
+        });
+    }
+
+    /// <summary>프로젝트 선택 — 탭 교체 후 세션 하나 활성화(이전 활성 or 첫 세션).</summary>
+    public void SelectProject(ProjectItem proj)
+    {
+        SetActiveProject(proj);
+        SessionItem? target;
+        if (_activeSession != null && proj.Tabs.Contains(_activeSession) && !_activeSession.Hidden)
+            target = _activeSession;
+        else
+            target = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden);
+        if (target != null) ActivateSession(target, unHide: false);
+        else ClearActiveSession();
+        ActiveChanged?.Invoke(this);
+    }
+
+    private void PreloadProjectSessions(ProjectItem proj, SessionItem? except)
+    {
+        foreach (var s in proj.Tabs.OfType<SessionItem>())
+        {
+            if (ReferenceEquals(s, except) || s.Hidden) continue;
+            SettingsService.SaveClaudeCodeRoomDir(s.Id, proj.Path);
+            _terminal.PreloadTerminal(s.Id);
+        }
+    }
+
+    /// <summary>활성 프로젝트가 지정된 프로젝트면 비우고, next 가 있으면 그 프로젝트를 연다.</summary>
+    public void OnProjectRemoved(ProjectItem proj, ProjectItem? next)
+    {
+        if (!ReferenceEquals(_activeProject, proj)) return;
+        _activeProject = null; _activeSession = null; _activeTab = null;
+        if (next != null) SelectProject(next);
+        else { TabsHost.ItemsSource = null; ClearActiveSession(); ActiveChanged?.Invoke(this); }
+    }
+
+    // ── 세션 ─────────────────────────────────────────────────────
+    private void OnTerminalSessionAction(string name, int index) => Dispatcher.BeginInvoke(() =>
+    {
+        switch (name)
+        {
+            case "newSession": if (_activeProject != null) AddSession(_activeProject); break;
+            case "closeSession": if (_activeSession != null) StopTrackingSession(_activeSession); break;
+            case "nextSession": CycleSession(+1); break;
+            case "prevSession": CycleSession(-1); break;
+            case "gotoSession": GotoSession(index); break;
+        }
+    });
+
+    private void GotoSession(int index)
+    {
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().ToList();
+        if (sessionTabs == null || sessionTabs.Count == 0) return;
+        int i = index < 0 ? sessionTabs.Count - 1 : index;
+        if (i < 0 || i >= sessionTabs.Count) return;
+        OpenSession(sessionTabs[i]);
+    }
+
+    private void CycleSession(int dir)
+    {
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().ToList();
+        if (_activeProject == null || _activeSession == null || sessionTabs == null || sessionTabs.Count < 2) return;
+        int idx = sessionTabs.IndexOf(_activeSession);
+        if (idx < 0) return;
+        int n = sessionTabs.Count;
+        OpenSession(sessionTabs[((idx + dir) % n + n) % n]);
+    }
+
+    private static string NextSessionName(ProjectItem proj)
+    {
+        int max = 0;
+        var rx = new System.Text.RegularExpressions.Regex(@"^세션\s+(\d+)$");
+        foreach (var s in proj.Tabs.OfType<SessionItem>())
+        {
+            var m = rx.Match(s.Name);
+            if (m.Success && int.TryParse(m.Groups[1].Value, out var n) && n > max) max = n;
+        }
+        return $"세션 {max + 1}";
+    }
+
+    public void AddSession(ProjectItem proj)
+    {
+        var available = AgentRegistry.GetEnabledAndInstalled();
+        if (available.Count == 0)
+        {
+            ConfirmDialog.Alert("에이전트 없음",
+                "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
+            return;
+        }
+        string agentId;
+        if (available.Count == 1) agentId = available[0].Id;
+        else
+        {
+            var picked = AgentPickerDialog.Pick(Window.GetWindow(this), available, proj.Path);
+            if (picked == null) return;
+            agentId = picked;
+        }
+
+        var session = new SessionItem { Name = NextSessionName(proj), AgentId = agentId };
+        proj.Tabs.Add(session);
+        proj.IsExpanded = true;
+        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
+        SettingsService.SaveAgentForRoom(session.Id, agentId);
+        WorkspaceStore.Save(Projects);
+        if (ReferenceEquals(_activeProject, proj)) OpenSession(session);
+    }
+
+    /// <summary>세션 클릭 — 필요하면 프로젝트 전환 후 해당 세션 활성화.</summary>
+    public void OpenSession(SessionItem session)
+    {
+        var parent = ParentOf(session);
+        if (parent == null) return;
+        if (!ReferenceEquals(_activeProject, parent)) SetActiveProject(parent);
+        ActivateSession(session);
+    }
+
+    private void ActivateSession(SessionItem session, bool unHide = true)
+    {
+        var parent = ParentOf(session);
+        if (parent == null) return;
+
+        if (unHide && session.Hidden) { session.Hidden = false; WorkspaceStore.Save(Projects); }
+        SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
+
+        _activeTab = session;
+        _activeSession = session;
+        foreach (var t in parent.Tabs) t.IsSelected = ReferenceEquals(t, session);
+
+        session.IsAlive = true;
+        var sessionAgentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+        if (sessionAgentId != "claude")
+            AgentLastMsg?.TrackSession(parent.Path, sessionAgentId);
+        if (_terminal.IsReady(session.Id)) HideSessionLoading();
+        else ShowSessionLoading(session.Id);
+        _terminal.ShowTerminal(session.Id);
+        _terminal.FocusTerminal();
+        UpdateEmptyState();
+        EnsureSelectedTabVisible(session);
+        RefreshModelEffortDock();
+        ActiveChanged?.Invoke(this);
+    }
+
+    /// <summary>작업 큐 → 활성 세션 터미널에 텍스트 입력 + Enter. 비활성/죽은 세션이면 false.</summary>
+    public bool SendTextToActiveSession(string text)
+    {
+        var id = _activeSession?.Id;
+        if (string.IsNullOrEmpty(id)) return false;
+        var session = TerminalSessionManager.Instance.Get(id);
+        if (session is not { IsAlive: true }) return false;
+        session.Write(text);
+        session.Write("\r");
+        _terminal.ShowTerminal(id);
+        _terminal.FocusTerminal();
+        return true;
+    }
+
+    private void ActivateFileTab(FileTabItem tab)
+    {
+        var parent = ParentOfTab(tab);
+        if (parent == null) return;
+
+        _activeTab = tab;
+        _activeSession = null;
+        foreach (var t in parent.Tabs) t.IsSelected = ReferenceEquals(t, tab);
+
+        HideSessionLoading();
+        if (!ReferenceEquals(FileEditorHostContainer.Content, tab.Editor.AsControl()))
+            FileEditorHostContainer.Content = tab.Editor.AsControl();
+        UpdateEmptyState();
+        EnsureSelectedTabVisible(tab);
+        tab.Editor.Focus();
+        RefreshModelEffortDock();
+        ActiveChanged?.Invoke(this);
+    }
+
+    // ── 메타바 model/effort dock ─────────────────────────────────
+    private static readonly ModelEffortOption[] ModelOptions =
+    {
+        new("Opus 4.8", "opus"), new("Sonnet 4.6", "sonnet"),
+        new("Haiku 4.5", "haiku"), new("Fable 5", "fable"),
+    };
+    private static readonly ModelEffortOption[] EffortOptions =
+    {
+        new("low", "low"), new("medium", "medium"), new("high", "high"),
+        new("xhigh", "xhigh"), new("max", "max"),
+    };
+    private const string DefaultModelValue = "opus";
+    private const string DefaultEffortValue = "high";
+
+    private bool _suppressModelEffort;
+    private readonly Dictionary<string, string> _pendingModel = new();
+    private readonly Dictionary<string, string> _pendingEffort = new();
+
+    private void RefreshModelEffortDock()
+    {
+        if (ModelEffortDock == null) return;
+        var s = _activeSession;
+        var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
+        bool isClaude = s != null && agentId == "claude";
+        ModelEffortDock.Visibility = isClaude ? Visibility.Visible : Visibility.Collapsed;
+        if (!isClaude) return;
+
+        var (liveModelId, liveEffort) = ModelEffort?.Read(s!.Id) ?? (null, null);
+        var model = ModelIdToValue(liveModelId) ?? SettingsService.LoadClaudeCodeRoomModel(s!.Id) ?? DefaultModelValue;
+        var effort = (IsKnownEffort(liveEffort) ? liveEffort : null) ?? SettingsService.LoadClaudeCodeRoomEffort(s!.Id) ?? DefaultEffortValue;
+
+        _suppressModelEffort = true;
+        try
+        {
+            if (ModelCombo.ItemsSource == null) ModelCombo.ItemsSource = ModelOptions;
+            if (EffortCombo.ItemsSource == null) EffortCombo.ItemsSource = EffortOptions;
+            ModelCombo.SelectedValue = model;
+            EffortCombo.SelectedValue = effort;
+        }
+        finally { _suppressModelEffort = false; }
+    }
+
+    private static string? ModelIdToValue(string? id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        var s = id.ToLowerInvariant();
+        if (s.Contains("opus")) return "opus";
+        if (s.Contains("sonnet")) return "sonnet";
+        if (s.Contains("haiku")) return "haiku";
+        if (s.Contains("fable") || s.Contains("mythos")) return "fable";
+        return null;
+    }
+
+    private static bool IsKnownEffort(string? e)
+        => e is "low" or "medium" or "high" or "xhigh" or "max";
+
+    private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        => OnModelEffortPicked(isModel: true);
+    private void EffortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        => OnModelEffortPicked(isModel: false);
+
+    private void OnModelEffortPicked(bool isModel)
+    {
+        if (_suppressModelEffort) return;
+        var s = _activeSession;
+        if (s == null) return;
+        var val = (isModel ? ModelCombo : EffortCombo).SelectedValue as string;
+        if (string.IsNullOrEmpty(val)) return;
+
+        if (isModel) SettingsService.SaveClaudeCodeRoomModel(s.Id, val);
+        else SettingsService.SaveClaudeCodeRoomEffort(s.Id, val);
+
+        if (s.IsBusy)
+            (isModel ? _pendingModel : _pendingEffort)[s.Id] = val;
+        else
+            SendModelEffortSlash(s.Id, isModel, val);
+    }
+
+    /// <summary>응답 종료(busy→idle) 시 보류된 model/effort 변경을 라이브 주입. 셸이 호출.</summary>
+    public void FlushPendingModelEffort(string roomId)
+    {
+        if (_pendingModel.Remove(roomId, out var m)) SendModelEffortSlash(roomId, isModel: true, m);
+        if (_pendingEffort.Remove(roomId, out var ef)) SendModelEffortSlash(roomId, isModel: false, ef);
+    }
+
+    private void SendModelEffortSlash(string roomId, bool isModel, string value)
+    {
+        var sess = TerminalSessionManager.Instance.Get(roomId);
+        if (sess is not { IsAlive: true }) return;
+        _terminal.SuppressScroll(5);
+        sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
+    }
+
+    private void NewTabBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeProject == null)
+        {
+            ConfirmDialog.Alert("프로젝트 없음", "먼저 왼쪽 사이드바에서 프로젝트를 추가하세요.");
+            return;
+        }
+        AddSession(_activeProject);
+    }
+
+    // ── 세션 로딩 스피너 ─────────────────────────────────────────
+    private string? _loadingRoomId;
+    private System.Windows.Threading.DispatcherTimer? _loadingTimeout;
+
+    private void ShowSessionLoading(string roomId)
+    {
+        _loadingRoomId = roomId;
+        TerminalLoadingOverlay.Visibility = Visibility.Visible;
+        _terminal.SetLoading(true);
+
+        _loadingTimeout?.Stop();
+        _loadingTimeout ??= new System.Windows.Threading.DispatcherTimer();
+        _loadingTimeout.Interval = TimeSpan.FromSeconds(20);
+        _loadingTimeout.Tick -= LoadingTimeout_Tick;
+        _loadingTimeout.Tick += LoadingTimeout_Tick;
+        _loadingTimeout.Start();
+    }
+
+    private void LoadingTimeout_Tick(object? sender, EventArgs e) => HideSessionLoading();
+
+    private void HideSessionLoading()
+    {
+        _loadingTimeout?.Stop();
+        _loadingRoomId = null;
+        TerminalLoadingOverlay.Visibility = Visibility.Collapsed;
+        _terminal.SetLoading(false);
+    }
+
+    private void HideSessionLoadingIf(string roomId)
+    {
+        if (_loadingRoomId == roomId) HideSessionLoading();
+    }
+
+    private void ClearActiveSession()
+    {
+        _activeSession = null;
+        _activeTab = null;
+        if (FileEditorHostContainer != null) FileEditorHostContainer.Content = null;
+        HideSessionLoading();
+        if (_activeProject != null)
+            foreach (var t in _activeProject.Tabs) t.IsSelected = false;
+        UpdateEmptyState();
+        UpdateSelectedTabSeam();
+        ActiveChanged?.Invoke(this);
+    }
+
+    public void RenameSession(SessionItem session)
+    {
+        var name = PromptDialog.Show("세션 이름 변경", "새 이름을 입력하세요.",
+                                     defaultValue: session.Name, maxLength: 60);
+        if (string.IsNullOrWhiteSpace(name) || name == session.Name) return;
+        session.Name = name;
+        WorkspaceStore.Save(Projects);
+    }
+
+    public void DeleteSession(SessionItem session)
+    {
+        if (!ConfirmDialog.Show("세션 삭제",
+                $"'{session.Name}' 세션을 영구 삭제할까요?\n대화 기록(.jsonl)도 디스크에서 함께 삭제되며 복구할 수 없습니다.",
+                okLabel: "삭제", danger: true))
+            return;
+        RemoveSession(session, purge: true);
+    }
+
+    public void StopTrackingSession(SessionItem session)
+    {
+        if (!ConfirmDialog.Show("세션 추적 중단",
+                $"'{session.Name}' 세션을 목록에서 제거할까요?\n대화 기록은 디스크에 그대로 보존됩니다.",
+                okLabel: "중단"))
+            return;
+        RemoveSession(session, purge: false);
+    }
+
+    private void RemoveSession(SessionItem session, bool purge)
+    {
+        var parent = ParentOf(session);
+        bool wasActive = ReferenceEquals(_activeSession, session);
+
+        DisposeSessionProcess(session, purge);
+        parent?.Tabs.Remove(session);
+        WorkspaceStore.Save(Projects);
+
+        if (wasActive)
+        {
+            SessionItem? next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden);
+            if (next != null) ActivateSession(next);
+            else ClearActiveSession();
+        }
+    }
+
+    private void RemoveFileTab(FileTabItem tab)
+    {
+        var parent = ParentOfTab(tab);
+        bool wasActive = ReferenceEquals(_activeTab, tab);
+        if (FileEditorHostContainer.Content == tab.Editor.AsControl())
+            FileEditorHostContainer.Content = null;
+        if (tab.Editor is IDisposable disposable) disposable.Dispose();
+        parent?.Tabs.Remove(tab);
+
+        if (wasActive)
+        {
+            TabItemBase? next = null;
+            if (parent != null)
+                next = parent.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden)
+                       ?? parent.Tabs.FirstOrDefault(t => t != tab);
+            if (next is SessionItem s) ActivateSession(s);
+            else if (next is FileTabItem f) ActivateFileTab(f);
+            else ClearActiveSession();
+        }
+    }
+
+    /// <summary>세션의 터미널 프로세스·매핑 정리(컬렉션은 건드리지 않음). 셸의 DeleteProject 도 호출.</summary>
+    public void DisposeSessionProcess(SessionItem session, bool purge = true)
+    {
+        var workingDir = SettingsService.LoadClaudeCodeRoomDir(session.Id);
+        try { _terminal.CloseTerminal(session.Id); } catch { /* ignore */ }
+        try
+        {
+            if (purge) TerminalSessionManager.Instance.PurgeRoom(session.Id, workingDir);
+            else TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
+        }
+        catch { /* ignore */ }
+        if (purge) SettingsService.RemoveClaudeCodeRoomDir(session.Id);
+    }
+
+    /// <summary>활성 Claude 세션을 재시작 — MCP 매니저 저장 후 호출용. 비활성/비-Claude면 false.</summary>
+    public bool TryRestartActiveClaudeSession()
+    {
+        if (_activeSession == null) return false;
+        RestartAllClaudeSessions();
+        return true;
+    }
+
+    private async void RestartAllClaudeSessions()
+    {
+        var allClaudeSessions = Projects
+            .SelectMany(p => p.Tabs).OfType<SessionItem>()
+            .Where(s =>
+            {
+                var aid = string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
+                return aid == "claude";
+            })
+            .ToList();
+
+        foreach (var s in allClaudeSessions)
+        {
+            try
+            {
+                _terminal.CloseTerminal(s.Id);
+                DisposeSessionProcess(s, purge: false);
+                TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
+                TerminalSessionManager.Instance.GetOrCreate(s.Id, 120, 30);
+            }
+            catch { /* ignore */ }
+        }
+
+        await Task.Delay(150);
+
+        if (_activeSession != null && allClaudeSessions.Contains(_activeSession))
+            ActivateSession(_activeSession);
+    }
+
+    /// <summary>테마 변경 적용 — 이 패널 세션의 ConPTY 를 종료한 뒤 활성 세션을 다시 불러온다.</summary>
+    public async void ReloadAllSessionsForTheme()
+    {
+        var active = _activeSession;
+        var proj = _activeProject;
+
+        foreach (var s in Projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList())
+        {
+            try
+            {
+                DisposeSessionProcess(s, purge: false);
+                TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
+            }
+            catch { /* ignore */ }
+        }
+
+        await Task.Delay(150);
+
+        if (proj != null)
+        {
+            if (active != null && proj.Tabs.Contains(active))
+                ActivateSession(active);
+            if (SettingsService.LoadPreloadAllProjectSessions())
+                PreloadProjectSessions(proj, except: active);
+        }
+    }
+
+    private ProjectItem? ParentOf(SessionItem session)
+        => Projects.FirstOrDefault(p => p.Tabs.Contains(session));
+
+    private ProjectItem? ParentOfTab(TabItemBase tab)
+        => Projects.FirstOrDefault(p => p.Tabs.Contains(tab));
+
+    private SessionItem? FindSession(string id)
+        => Projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
+
+    // ── 탭 이벤트 ─────────────────────────────────────────────────
+    private void Tab_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (_tabDidDrag) { _tabDidDrag = false; return; }
+        if (sender is FrameworkElement { DataContext: TabItemBase tab })
+        {
+            if (tab is SessionItem s) OpenSession(s);
+            else if (tab is FileTabItem f) ActivateFileTab(f);
+        }
+    }
+
+    private void TabHide_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TabItemBase tab }) return;
+
+        if (tab is SessionItem s)
+        {
+            s.Hidden = true;
+            WorkspaceStore.Save(Projects);
+            if (ReferenceEquals(_activeSession, s))
+            {
+                var parent = ParentOf(s);
+                var next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(x => x != s && !x.Hidden);
+                if (next != null) ActivateSession(next);
+                else ClearActiveSession();
+            }
+        }
+        else if (tab is FileTabItem f)
+        {
+            f.Editor.RequestClose();
+        }
+    }
+
+    // ── 탭 드래그 순서변경 ─────────────────────────────────────────
+    private Point _tabPressOrigin;
+    private TabItemBase? _pendingTab;
+    private ReorderDrag<TabItemBase>? _tabDrag;
+    private bool _tabDidDrag;
+    private readonly List<FrameworkElement> _hiddenTabFeet = new();
+    private bool _tabDragHidSeam;
+
+    private void Tab_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _tabPressOrigin = e.GetPosition(TabsHost);
+        _pendingTab = (sender as FrameworkElement)?.DataContext as TabItemBase;
+        _tabDidDrag = false;
+    }
+
+    private void TabsHost_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_tabDrag != null) { _tabDrag.Update(e); return; }
+        if (e.LeftButton != MouseButtonState.Pressed || _pendingTab == null) return;
+        var diff = _tabPressOrigin - e.GetPosition(TabsHost);
+        if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        TryStartTabDrag(_pendingTab);
+    }
+
+    private async Task EndTabDragAsync()
+    {
+        var td = _tabDrag;
+        _tabDrag = null;
+        _pendingTab = null;
+        if (Mouse.Captured == TabsHost) TabsHost.ReleaseMouseCapture();
+        RestoreTabFeet();
+        if (td != null) await td.FinishAsync(commit: true);
+    }
+
+    private void TryStartTabDrag(TabItemBase s)
+    {
+        var coll = _activeProject?.Tabs;
+        if (coll == null) return;
+        var rows = new List<(TabItemBase, FrameworkElement)>();
+        FrameworkElement? sourceBorder = null;
+        FrameworkElement? selectedRoot = null;
+        foreach (var t in coll)
+        {
+            if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
+                && FindTabBorder(fe) is FrameworkElement border
+                && VisualTreeHelper.GetParent(border) is FrameworkElement root)
+            {
+                rows.Add((t, root));
+                if (ReferenceEquals(t, s)) sourceBorder = border;
+                if (ReferenceEquals(t, _activeTab)) selectedRoot = root;
+            }
+        }
+        if (sourceBorder == null || rows.Count < 2) return;
+
+        _tabDrag = ReorderDrag<TabItemBase>.TryStart(TabsHost, rows, s, sourceBorder,
+            (tab, hostTarget, _) =>
+            {
+                var c = _activeProject?.Tabs;
+                if (c != null)
+                {
+                    int from = c.IndexOf(tab);
+                    if (from >= 0)
+                    {
+                        int to = Math.Clamp(hostTarget, 0, c.Count - 1);
+                        if (to != from) { c.Move(from, to); WorkspaceStore.Save(Projects); }
+                    }
+                }
+                return Task.CompletedTask;
+            },
+            exactFollow: true, horizontal: true, ghostSource: sourceBorder);
+        if (_tabDrag != null)
+        {
+            _tabDidDrag = true;
+            TabsHost.CaptureMouse();
+            HideTabFeet(sourceBorder);
+            SetupDragSeam(s, selectedRoot);
+        }
+        else
+        {
+            _pendingTab = null;
+        }
+    }
+
+    private void HideTabFeet(FrameworkElement sourceBorder)
+    {
+        RestoreTabFeet();
+        var root = VisualTreeHelper.GetParent(sourceBorder);
+        if (root == null) return;
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            if (VisualTreeHelper.GetChild(root, i) is FrameworkElement
+                { Name: "TabFootLeftFill" or "TabFootLeftLine"
+                     or "TabFootRightFill" or "TabFootRightLine" } foot)
+            {
+                foot.Visibility = Visibility.Collapsed;
+                _hiddenTabFeet.Add(foot);
+            }
+        }
+    }
+
+    private void RestoreTabFeet()
+    {
+        foreach (var foot in _hiddenTabFeet)
+            foot.ClearValue(UIElement.VisibilityProperty);
+        _hiddenTabFeet.Clear();
+        _tabDragHidSeam = false;
+        if (SelectedTabSeam != null) SelectedTabSeam.RenderTransform = null;
+        Dispatcher.InvokeAsync(UpdateSelectedTabSeam, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    private void SetupDragSeam(TabItemBase source, FrameworkElement? selectedRoot)
+    {
+        if (SelectedTabSeam == null) return;
+        _tabDragHidSeam = true;
+        bool draggingSelected = ReferenceEquals(source, _activeTab);
+        if (draggingSelected || selectedRoot == null)
+        {
+            SelectedTabSeam.RenderTransform = null;
+            SelectedTabSeam.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            SelectedTabSeam.RenderTransform = GetOrCreateTranslate(selectedRoot);
+        }
+    }
+
+    private static TranslateTransform GetOrCreateTranslate(UIElement el)
+    {
+        if (el.RenderTransform is TranslateTransform t) return t;
+        if (el.RenderTransform is TransformGroup g)
+        {
+            var ex = g.Children.OfType<TranslateTransform>().FirstOrDefault();
+            if (ex != null) return ex;
+            var added = new TranslateTransform();
+            g.Children.Add(added);
+            return added;
+        }
+        var nt = new TranslateTransform();
+        if (el.RenderTransform != null && el.RenderTransform != Transform.Identity)
+        {
+            var grp = new TransformGroup();
+            grp.Children.Add(el.RenderTransform);
+            grp.Children.Add(nt);
+            el.RenderTransform = grp;
+        }
+        else el.RenderTransform = nt;
+        return nt;
+    }
+
+    private static FrameworkElement? FindTabBorder(DependencyObject root)
+    {
+        if (root is FrameworkElement { Name: "TabBd" } fe) return fe;
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            if (FindTabBorder(VisualTreeHelper.GetChild(root, i)) is FrameworkElement found)
+                return found;
+        }
+        return null;
+    }
+
+    // ── 탭 오버플로우/seam/스크롤 ─────────────────────────────────
+    private bool? _fadeLeft, _fadeRight;
+    private double _fadeWidth = -1;
+    private Action? _tabScrollAnimCancel;
+    private const double TabScrollStep = 168;
+
+    private void TabScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        UpdateTabOverflowButtons();
+        UpdateSelectedTabSeam();
+    }
+
+    private void OnThemeChanged_UpdateSeam(string _) => Dispatcher.BeginInvoke(new Action(() =>
+    {
+        UpdateSelectedTabSeam();
+    }));
+
+    private void UpdateSelectedTabSeam()
+    {
+        if (SelectedTabSeam == null || TabBar == null || TabsHost == null) return;
+        if (_tabDragHidSeam) return;
+        if (_activeTab == null ||
+            TabsHost.ItemContainerGenerator.ContainerFromItem(_activeTab) is not FrameworkElement container)
+        {
+            SelectedTabSeam.Visibility = Visibility.Collapsed;
+            return;
+        }
+        try
+        {
+            var pt = container.TransformToAncestor(TabBar).Transform(new Point(0, 0));
+            const double seamExtra = 9.15;
+            double bodyWidth = container.ActualWidth - 3;
+            double seamWidth = bodyWidth + seamExtra * 2;
+            double seamLeft = pt.X - seamExtra;
+
+            double clipLeft = TabScroller.TransformToAncestor(TabBar).Transform(new Point(0, 0)).X;
+            if (clipLeft < 0) clipLeft = 0;
+            bool clampedLeft = false;
+            if (seamLeft < clipLeft)
+            {
+                seamWidth -= clipLeft - seamLeft;
+                seamLeft = clipLeft;
+                clampedLeft = true;
+            }
+            if (seamWidth <= 0) { SelectedTabSeam.Visibility = Visibility.Collapsed; return; }
+
+            SelectedTabSeam.Width = seamWidth;
+            SelectedTabSeam.Margin = new Thickness(seamLeft, 0, 0, 0);
+
+            var panelColor = (FindResource("PanelBrush") as SolidColorBrush)?.Color ?? Colors.Black;
+            var clearColor = Color.FromArgb(0, panelColor.R, panelColor.G, panelColor.B);
+            const double fadePx = 4;
+            double f = seamWidth > 0 ? Math.Min(0.45, fadePx / seamWidth) : 0;
+            var brush = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+            brush.GradientStops.Add(new GradientStop(clampedLeft ? panelColor : clearColor, 0));
+            brush.GradientStops.Add(new GradientStop(panelColor, clampedLeft ? 0 : f));
+            brush.GradientStops.Add(new GradientStop(panelColor, 1 - f));
+            brush.GradientStops.Add(new GradientStop(clearColor, 1));
+            brush.Freeze();
+            SelectedTabSeam.Background = brush;
+            SelectedTabSeam.Visibility = Visibility.Visible;
+        }
+        catch { SelectedTabSeam.Visibility = Visibility.Collapsed; }
+    }
+
+    private void UpdateTabOverflowButtons()
+    {
+        if (TabScroller == null || TabNavGroup == null) return;
+        bool overflow = TabScroller.ScrollableWidth > 0.5;
+        bool canLeft = TabScroller.HorizontalOffset > 0.5;
+        bool canRight = TabScroller.HorizontalOffset < TabScroller.ScrollableWidth - 0.5;
+
+        TabNavGroup.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
+        if (TabScrollLeftBtn != null) TabScrollLeftBtn.IsEnabled = canLeft;
+        if (TabScrollRightBtn != null) TabScrollRightBtn.IsEnabled = canRight;
+
+        ApplyTabEdgeFade(canLeft, canRight);
+    }
+
+    private void ApplyTabEdgeFade(bool fadeLeft, bool fadeRight)
+    {
+        double w = TabScroller.ActualWidth;
+        if (_fadeLeft == fadeLeft && _fadeRight == fadeRight && Math.Abs(_fadeWidth - w) < 0.5) return;
+        _fadeLeft = fadeLeft; _fadeRight = fadeRight; _fadeWidth = w;
+
+        if (!fadeLeft && !fadeRight) { TabScroller.OpacityMask = null; return; }
+
+        double f = Math.Min(0.10, 28 / Math.Max(1, w));
+        var mask = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+        var black = Colors.Black;
+        var clear = Colors.Transparent;
+        mask.GradientStops.Add(new GradientStop(fadeLeft ? clear : black, 0));
+        mask.GradientStops.Add(new GradientStop(black, fadeLeft ? f : 0));
+        mask.GradientStops.Add(new GradientStop(black, fadeRight ? 1 - f : 1));
+        mask.GradientStops.Add(new GradientStop(fadeRight ? clear : black, 1));
+        mask.Freeze();
+        TabScroller.OpacityMask = mask;
+    }
+
+    private void TabScrollLeft_Click(object sender, RoutedEventArgs e)
+        => AnimateTabScroll(TabScroller.HorizontalOffset - TabScrollStep);
+
+    private void TabScrollRight_Click(object sender, RoutedEventArgs e)
+        => AnimateTabScroll(TabScroller.HorizontalOffset + TabScrollStep);
+
+    private void TabScroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (TabScroller.ScrollableWidth <= 0.5) return;
+        _tabScrollAnimCancel?.Invoke(); _tabScrollAnimCancel = null;
+        TabScroller.ScrollToHorizontalOffset(
+            Math.Clamp(TabScroller.HorizontalOffset - e.Delta, 0, TabScroller.ScrollableWidth));
+        e.Handled = true;
+    }
+
+    private void AnimateTabScroll(double to)
+    {
+        to = Math.Clamp(to, 0, TabScroller.ScrollableWidth);
+        _tabScrollAnimCancel?.Invoke();
+        var from = TabScroller.HorizontalOffset;
+        if (Math.Abs(to - from) < 0.5) return;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        const int dur = 240;
+        bool cancelled = false;
+        EventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            if (cancelled) { CompositionTarget.Rendering -= handler!; return; }
+            var t = Math.Min(1.0, sw.ElapsedMilliseconds / (double)dur);
+            TabScroller.ScrollToHorizontalOffset(from + (to - from) * EaseInOut(t));
+            if (t >= 1.0) CompositionTarget.Rendering -= handler!;
+        };
+        CompositionTarget.Rendering += handler;
+        _tabScrollAnimCancel = () => { if (cancelled) return; cancelled = true; CompositionTarget.Rendering -= handler; };
+    }
+
+    private void TabStrip_DragMove(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left) return;
+        var win = Window.GetWindow(this);
+        if (win == null) return;
+        if (e.ClickCount == 2)
+        {
+            win.WindowState = win.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            return;
+        }
+        try { win.DragMove(); } catch { /* 이미 캡처 중 등 */ }
+    }
+
+    private void EnsureSelectedTabVisible(TabItemBase tab)
+    {
+        if (TabScroller == null) return;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+        {
+            UpdateSelectedTabSeam();
+            if (TabsHost.ItemContainerGenerator.ContainerFromItem(tab) is not FrameworkElement fe) return;
+            if (TabScroller.ScrollableWidth <= 0.5) return;
+            var tl = fe.TransformToAncestor(TabScroller).Transform(new Point(0, 0));
+            double left = tl.X + TabScroller.HorizontalOffset;
+            double right = left + fe.ActualWidth;
+            const double margin = 30;
+            if (left < TabScroller.HorizontalOffset + margin)
+                AnimateTabScroll(left - margin);
+            else if (right > TabScroller.HorizontalOffset + TabScroller.ViewportWidth - margin)
+                AnimateTabScroll(right - TabScroller.ViewportWidth + margin);
+        }));
+    }
+
+    private static double EaseInOut(double t) =>
+        t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
+
+    // ── 상태/빈 화면 ─────────────────────────────────────────────
+    private void UpdateEmptyState()
+    {
+        bool hasActive = _activeTab != null;
+
+        if (_activeTab is SessionItem)
+        {
+            TerminalHostContainer.Visibility = Visibility.Visible;
+            FileEditorHostContainer.Visibility = Visibility.Collapsed;
+        }
+        else if (_activeTab is FileTabItem)
+        {
+            TerminalHostContainer.Visibility = Visibility.Collapsed;
+            FileEditorHostContainer.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            TerminalHostContainer.Visibility = Visibility.Collapsed;
+            FileEditorHostContainer.Visibility = Visibility.Collapsed;
+        }
+
+        EmptyState.Visibility = hasActive ? Visibility.Collapsed : Visibility.Visible;
+
+        SessionHeaderBar.Visibility = hasActive ? Visibility.Visible : Visibility.Collapsed;
+        if (hasActive)
+        {
+            if (_activeTab is SessionItem sess)
+            {
+                var msg = sess.LastMessage;
+                var hasMsg = !string.IsNullOrEmpty(msg);
+                SessionHeaderTitle.Text = hasMsg ? msg : sess.Name;
+                SessionHeaderTitle.ToolTip = hasMsg ? msg : null;
+                LastMessageSep.Visibility = hasMsg ? Visibility.Visible : Visibility.Collapsed;
+                FileHeaderIcon.Visibility = Visibility.Collapsed;
+                FileHeaderPathText.Visibility = Visibility.Collapsed;
+                FileDirtyDot.Visibility = Visibility.Collapsed;
+                FileHeaderActions.Visibility = Visibility.Collapsed;
+            }
+            else if (_activeTab is FileTabItem file)
+            {
+                SessionHeaderTitle.Text = file.Title;
+                SessionHeaderTitle.ToolTip = file.FilePath;
+                LastMessageSep.Visibility = Visibility.Collapsed;
+                FileHeaderIcon.Visibility = Visibility.Visible;
+                FileHeaderPathText.Text = file.FilePath;
+                FileHeaderPathText.ToolTip = file.FilePath;
+                FileHeaderPathText.Visibility = Visibility.Visible;
+                FileHeaderActions.Visibility = Visibility.Visible;
+                RefreshFileHeaderState(file);
+            }
+        }
+    }
+
+    /// <summary>외부 훅이 세션 상태(lastmsg 등)를 갱신 → 이 패널의 활성 세션이면 헤더 즉시 갱신.</summary>
+    public void NotifySessionStateChanged(SessionItem s)
+    {
+        if (ReferenceEquals(s, _activeSession)) UpdateEmptyState();
+    }
+
+    /// <summary>statusLine 훅이 model/effort 를 갱신 → 이 패널의 활성 세션이면 dock 갱신.</summary>
+    public void NotifyModelEffortChanged(string roomId)
+    {
+        if (_activeSession != null && _activeSession.Id == roomId) RefreshModelEffortDock();
+    }
+
+    private void RefreshFileHeaderState(FileTabItem? file = null)
+    {
+        file ??= _activeTab as FileTabItem;
+        if (file == null) return;
+        bool dirty = file.Editor.IsDirty;
+        FileDirtyDot.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
+        FileSaveBtn.IsEnabled = dirty;
+    }
+
+    private void FileSaveBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeTab is FileTabItem file && file.Editor.Save())
+            RefreshFileHeaderState(file);
+    }
+
+    // ── 파일 탭 ──────────────────────────────────────────────────
+    public void OpenFileAsTab(string path)
+    {
+        if (_activeProject == null) return;
+        if (string.IsNullOrEmpty(path)) return;
+
+        var existing = _activeProject.Tabs.OfType<FileTabItem>()
+            .FirstOrDefault(t => string.Equals(t.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) { ActivateFileTab(existing); return; }
+
+        var tab = new FileTabItem { FilePath = path, Editor = CreateFileTabEditor(path) };
+        if (!tab.Editor.LoadFile(path)) return;
+        tab.Editor.CloseRequested += (_, _) => RemoveFileTab(tab);
+        tab.Editor.DirtyChanged += (_, _) => { if (ReferenceEquals(_activeTab, tab)) RefreshFileHeaderState(tab); };
+        _activeProject.Tabs.Add(tab);
+        ActivateFileTab(tab);
+    }
+
+    private static IFileTabEditor CreateFileTabEditor(string path)
+    {
+        var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        return ext is ".md" or ".markdown" ? new MarkdownFileEditorView() : new FileEditorView();
+    }
+
+    // ── airspace 우회 (오버레이가 뜰 때 터미널 WebView2 정지) ──────────
+    /// <summary>터미널 WebView2 를 스냅샷/커튼으로 대체하고 숨긴다. FileExplorer 는 셸이 처리.</summary>
+    public async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
+    {
+        if (_activeSession == null) return;
+        if (blankCurtain)
+        {
+            TerminalCurtain.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            var snap = await _terminal.CaptureSnapshotAsync();
+            if (snap != null)
+            {
+                TerminalSnapshot.Source = snap;
+                TerminalSnapshot.Visibility = Visibility.Visible;
+            }
+        }
+        TerminalHostContainer.Visibility = Visibility.Collapsed;
+    }
+
+    public void ResumeTerminal()
+    {
+        if (_activeSession != null)
+            TerminalHostContainer.Visibility = Visibility.Visible;
+        TerminalSnapshot.Visibility = Visibility.Collapsed;
+        TerminalSnapshot.Source = null;
+        TerminalCurtain.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>스냅샷만(커튼 없이) 정지 — 우측 오버레이 드로어용.</summary>
+    public async Task SuspendTerminalOnlyAsync()
+    {
+        if (_activeSession == null) return;
+        var snap = await _terminal.CaptureSnapshotAsync();
+        if (snap != null)
+        {
+            TerminalSnapshot.Source = snap;
+            TerminalSnapshot.Visibility = Visibility.Visible;
+        }
+        TerminalHostContainer.Visibility = Visibility.Collapsed;
+    }
+
+    public void ResumeTerminalOnly()
+    {
+        if (_activeSession != null)
+            TerminalHostContainer.Visibility = Visibility.Visible;
+        TerminalSnapshot.Visibility = Visibility.Collapsed;
+        TerminalSnapshot.Source = null;
+    }
+
+    public void DisposeTerminal() => _terminal.Dispose();
+}

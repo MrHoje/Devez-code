@@ -21,10 +21,10 @@ public sealed record ModelEffortOption(string Label, string Value)
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<ProjectItem> _projects;
-    private readonly TerminalHostView _terminal = new();
-    private ProjectItem? _activeProject;   // 중앙 탭 = 이 프로젝트의 Tabs
-    private SessionItem? _activeSession;   // 활성 탭이 세션 탭일 때만 세팅 (터미널용 상태)
-    private TabItemBase? _activeTab;       // 현재 활성 탭(세션 or 파일). null = 미선택
+    // 중앙 워크스페이스 패널들(분할 시 2개). _focusedPane = 사이드바/파일탐색기/단축키가 향하는 패널.
+    private readonly List<WorkspacePaneView> _panes = new();
+    private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
+    private string? _explorerDir;                      // 우측 파일탐색기가 보고 있는 경로(중복 ShowDirectory 방지)
     private readonly PerfMonitorService _perfMonitor = new();
     private readonly StatusLineService _statusLine = new();
     private readonly SessionBusyService _sessionBusy = new();
@@ -38,10 +38,6 @@ public partial class MainWindow : Window
     // opencode — 플러그인이 lastmsg\<room>.txt 에 저장한 user prompt 를 FileSystemWatcher 로 즉시 반영 (claude 와 동일 패턴).
     private readonly OpenCodeLastMessageService _opencodeLastMsg = new();
 
-    /// <summary>현재 로딩 스피너를 띄운 세션. claude 화면이 뜨거나(=TerminalReady) 타임아웃에 해제.</summary>
-    private string? _loadingRoomId;
-    private System.Windows.Threading.DispatcherTimer? _loadingTimeout;
-
     public MainWindow()
     {
         InitializeComponent();
@@ -49,7 +45,8 @@ public partial class MainWindow : Window
 
         _projects = WorkspaceStore.Load();
         Sidebar.Projects = _projects;
-        TerminalHostContainer.Content = _terminal;
+        SetupPane(PaneA);
+        _focusedPane = PaneA;
         _ = MarkdownWysiwygHost.PrewarmAsync();
 
         Sidebar.AddProjectRequested    += AddProject;
@@ -69,33 +66,18 @@ public partial class MainWindow : Window
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
 
-        // 중앙 탭 드래그 순서변경(가로) — devez ReorderDrag
-        TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
-        TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();
-        TabsHost.LostMouseCapture += async (_, _) => await EndTabDragAsync();
-
-        _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
-        _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } HideSessionLoadingIf(id); };
-        // claude 화면이 완전히 뜨면(alt-screen) 로딩 스피너 종료
-        _terminal.TerminalReady  += id => HideSessionLoadingIf(id);
-        // 터미널 단축키(Ctrl+Shift+T/W, Ctrl+Tab) → 세션 추가/닫기/전환
-        _terminal.SessionActionRequested += OnTerminalSessionAction;
-
         // 세션 요청 처리중 스피너: claude 훅(busy-hook.ps1)이 떨군 상태 파일을 감시 (clude-blinker 방식).
         _sessionBusy.BusyChanged += (id, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindSession(id);
                 if (s != null) s.IsBusy = busy;
-                if (!busy) FlushPendingModelEffort(id); // 응답 종료 → 보류된 model/effort 적용
+                if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id); // 응답 종료 → 보류된 model/effort 적용
             });
 
-        // statusLine 훅이 떨군 방별 실제 model/effort → 활성 세션이면 콤보를 그 값으로 라이브 갱신.
+        // statusLine 훅이 떨군 방별 실제 model/effort → 해당 세션을 보여주는 패널 콤보를 라이브 갱신.
         _modelEffort.Changed += (roomId, modelId, effortLevel) =>
-            Dispatcher.InvokeAsync(() =>
-            {
-                if (_activeSession != null && _activeSession.Id == roomId) RefreshModelEffortDock();
-            });
+            Dispatcher.InvokeAsync(() => { foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId); });
 
         // 마지막 보낸 메시지: busy 훅이 떨군 lastmsg 파일을 감시 → 세션에 반영(헤더 부제 라이브 갱신).
         _sessionLastMsg.MessageChanged += (id, msg) =>
@@ -104,14 +86,13 @@ public partial class MainWindow : Window
                 var s = FindSession(id);
                 if (s == null) return;
                 s.LastMessage = msg;
-                if (ReferenceEquals(s, _activeSession)) UpdateEmptyState(); // 활성 세션이면 헤더 즉시 갱신
+                foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
 
         // 비-Claude 비-codex 에이전트(opencode/gjc) — (workingDir, lastPrompt) 이벤트로 같은 디렉터리 세션 모두 갱신.
         _agentLastMsg.LastPromptChanged += (workingDir, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                bool anyActive = false;
                 var norm = System.IO.Path.GetFullPath(workingDir).TrimEnd('\\', '/');
                 foreach (var p in _projects)
                 {
@@ -120,10 +101,9 @@ public partial class MainWindow : Window
                     foreach (var s in p.Tabs.OfType<SessionItem>())
                     {
                         s.LastMessage = msg;
-                        if (ReferenceEquals(s, _activeSession)) anyActive = true;
+                        foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
                     }
                 }
-                if (anyActive) UpdateEmptyState();
             });
 
         // opencode — 플러그인이 떨군 lastmsg 파일을 즉시 반영(claude 와 동일 패턴, 3초 폴링 대기 X).
@@ -133,7 +113,7 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 if (s == null) return;
                 s.LastMessage = msg;
-                if (ReferenceEquals(s, _activeSession)) UpdateEmptyState();
+                foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
 
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
@@ -143,20 +123,19 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 if (s == null) return;
                 s.LastMessage = msg;
-                if (ReferenceEquals(s, _activeSession)) UpdateEmptyState();
+                foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
         _codexHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() => { var s = FindSession(roomId); if (s != null) s.IsBusy = busy; });
         _codexHook.CodexSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() => SettingsService.SaveCodexRoomSession(roomId, sid));
 
-        // 테마 변경 시 선택 탭 seam 색(PanelBrush)을 재계산(frozen brush라 자동 갱신 안 됨)
-        App.ThemeChanged += OnThemeChanged_UpdateSeam;
+        // 테마 변경 시 좌·우 패널 토글 아이콘 brush 재계산(seam 은 각 패널이 자체 처리)
+        App.ThemeChanged += OnThemeChanged_UpdatePanels;
 
-        // 파일 탐색기에서 텍스트 파일 더블클릭 → 새 파일 탭으로 열기
-        FileExplorer.FileOpenRequested += (_, path) => OpenFileAsTab(path);
+        // 파일 탐색기에서 텍스트 파일 더블클릭 → 포커스 패널의 새 파일 탭으로 열기
+        FileExplorer.FileOpenRequested += (_, path) => _focusedPane.OpenFileAsTab(path);
 
-        UpdateEmptyState();
         UpdateStatus();
         RestorePanelStates();
         RightOverlayPanel.RenderTransform = _rightT;   // 오버레이 슬라이드용
@@ -203,9 +182,10 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             // 정상 종료: 마지막 활성 프로젝트/세션 기억 + 클린 종료 플래그 set
-            SettingsService.SaveLastActive(_activeProject?.Path, _activeSession?.Id);
+            SettingsService.SaveLastActive(_focusedPane.ActiveProject?.Path, _focusedPane.ActiveSession?.Id);
             SettingsService.SaveCleanShutdown(true);
-            App.ThemeChanged -= OnThemeChanged_UpdateSeam;
+            App.ThemeChanged -= OnThemeChanged_UpdatePanels;
+            foreach (var pane in _panes) pane.DisposeTerminal();
             _perfMonitor.Dispose();
             _statusLine.Dispose();
             _sessionBusy.Dispose();
@@ -975,101 +955,75 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>활성 프로젝트 전환 — 중앙 탭을 그 프로젝트의 탭들로 교체(같은 컬렉션 바인딩). 세션 활성화는 안 함.
-    /// Hidden 플래그는 보존 — 탭 X 로 숨긴 세션은 프로젝트 재진입 시에도 그대로 숨김 상태 유지.</summary>
-    private void SetActiveProject(ProjectItem proj)
+    // ── 워크스페이스 패널 셸 연동 ────────────────────────────────────
+    /// <summary>패널을 셸에 배선 — 공유 컬렉션/서비스 주입 + 이벤트 구독.</summary>
+    private void SetupPane(WorkspacePaneView pane)
     {
-        _activeProject = proj;
+        pane.Projects = _projects;
+        pane.ModelEffort = _modelEffort;
+        pane.AgentLastMsg = _agentLastMsg;
+        pane.FocusRequested += OnPaneFocusRequested;
+        pane.ActiveChanged += OnPaneActiveChanged;
+        pane.SplitToggleRequested += OnPaneSplitToggle;
+        _panes.Add(pane);
+    }
+
+    private void OnPaneFocusRequested(WorkspacePaneView pane)
+    {
+        if (ReferenceEquals(_focusedPane, pane)) return;
+        _focusedPane = pane;
+        SyncShellToFocusedPane();
+    }
+
+    private void OnPaneActiveChanged(WorkspacePaneView pane)
+    {
+        if (!ReferenceEquals(pane, _focusedPane)) return;
+        SyncShellToFocusedPane();
+    }
+
+    /// <summary>포커스 패널의 활성 프로젝트/세션을 셸(파일탐색기·사이드바·last-active)에 반영.</summary>
+    private void SyncShellToFocusedPane()
+    {
+        var proj = _focusedPane.ActiveProject;
         foreach (var p in _projects) p.IsSelected = ReferenceEquals(p, proj);
-        TabsHost.ItemsSource = proj.Tabs;
-        FileExplorer.ShowDirectory(proj.Path);
-        // 디렉토리 버블 갱신
-        if (ProjectPathText != null)
+        if (proj?.Path != _explorerDir)
         {
-            ProjectPathText.Text = proj.Path;
-            ProjectPathText.ToolTip = proj.Path;
+            _explorerDir = proj?.Path;
+            if (proj != null) FileExplorer.ShowDirectory(proj.Path);
         }
-        if (ProjectNameText != null)
-        {
-            ProjectNameText.Text = proj.Name;
-            ProjectNameText.ToolTip = proj.Name;
-        }
-        UpdateProjectBranchBubble(proj); // 브렌치 버블 갱신
-        // 기본은 선택된 세션만 실행. 옵션이 켜진 경우에만 기존처럼 모든 세션을 미리 띄운다.
-        if (SettingsService.LoadPreloadAllProjectSessions())
-            PreloadProjectSessions(proj, except: null);
+        SettingsService.SaveLastActive(proj?.Path, _focusedPane.ActiveSession?.Id);
+        if (_focusedPane.ActiveSession != null && HookSetupBanner.Visibility == Visibility.Visible)
+            HookSetupBanner.Visibility = Visibility.Collapsed;
     }
 
-    /// <summary>타이틀 바 브렌치 그룹 갱신 — 현재 git 브렌치.
-    /// 브렌치는 비동기로 조회(외부 프로세스라 UI 블로킹 방지). git 저장소가 아니면 숨김.</summary>
-    private void UpdateProjectBranchBubble(ProjectItem? proj)
+    /// <summary>분할 토글 — Phase 2 에서 구현.</summary>
+    private void OnPaneSplitToggle(WorkspacePaneView pane) { }
+
+    private SessionItem? FindSession(string id)
+        => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
+
+    // ── 사이드바 액션 → 포커스 패널로 위임 ────────────────────────────
+    private void SelectProject(ProjectItem proj) => _focusedPane.SelectProject(proj);
+    private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
+    private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
+    private void RenameSession(SessionItem session) => _focusedPane.RenameSession(session);
+    private void DeleteSession(SessionItem session) => _focusedPane.DeleteSession(session);
+    private void StopTrackingSession(SessionItem session) => _focusedPane.StopTrackingSession(session);
+
+    // ── 공개 API (외부 뷰가 호출) ─────────────────────────────────────
+    /// <summary>작업 큐 → 포커스 패널의 활성 세션에 텍스트 전송.</summary>
+    public bool SendTextToActiveSession(string text) => _focusedPane.SendTextToActiveSession(text);
+
+    /// <summary>MCP 저장 후 활성 Claude 세션 재시작.</summary>
+    public bool TryRestartActiveClaudeSession() => _focusedPane.TryRestartActiveClaudeSession();
+
+    /// <summary>테마 변경 — 모든 패널 세션 재로드.</summary>
+    public void ReloadAllSessionsForTheme()
     {
-        if (proj == null || string.IsNullOrEmpty(proj.Path) || BranchGroup == null)
-        {
-            BranchGroup.Visibility = Visibility.Collapsed;
-            return;
-        }
-        // 비동기 조회. 이전 요청이 진행 중일 수 있으니 _projectCts 로 취소.
-        _projectCts?.Cancel();
-        _projectCts = new System.Threading.CancellationTokenSource();
-        _ = LoadBranchAsync(proj.Path, _projectCts.Token);
+        foreach (var pane in _panes) pane.ReloadAllSessionsForTheme();
     }
 
-    private System.Threading.CancellationTokenSource? _projectCts;
-
-    /// <summary>git 브렌치 조회 — UI 스레드에서 결과 반영. 실패/비저장소면 버블 숨김.</summary>
-    private async Task LoadBranchAsync(string repoDir, System.Threading.CancellationToken ct)
-    {
-        string? branch = null;
-        try
-        {
-            if (await GitService.IsRepoAsync(repoDir))
-            {
-                var r = await GitService.RunAsync(repoDir, "rev-parse", "--abbrev-ref", "HEAD");
-                if (r.Ok)
-                {
-                    var name = r.Output.Trim();
-                    if (!string.IsNullOrEmpty(name) && name != "HEAD") branch = name;
-                }
-            }
-        }
-        catch { /* git 미설치 등 */ }
-        if (ct.IsCancellationRequested) return;
-        await Dispatcher.InvokeAsync(() =>
-        {
-            BranchGroup.Visibility = branch != null ? Visibility.Visible : Visibility.Collapsed;
-            if (branch != null) ProjectBranchText.Text = branch;
-        });
-    }
-
-    /// <summary>프로젝트 선택(행 클릭) — 탭 교체 후 세션 하나 활성화(이전 활성 or 첫 세션).</summary>
-    private void SelectProject(ProjectItem proj)
-    {
-        SetActiveProject(proj);
-        // 프로젝트 헤더 클릭 진입 — Hidden 플래그를 보존한다 (unHide=false).
-        // 활성 세션 후보는 항상 비숨김으로만 — 숨겨진 세션을 ActivateSession 으로 보내면
-        // 터미널에는 활성화되지만 탭 스트립에는 보이지 않는 어색한 상태가 된다.
-        SessionItem? target = null;
-        if (_activeSession != null && proj.Tabs.Contains(_activeSession) && !_activeSession.Hidden)
-            target = _activeSession;
-        else
-            target = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden);
-        if (target != null) ActivateSession(target, unHide: false);
-        else ClearActiveSession();
-        // 나머지 세션 preload 는 옵션이 켜진 경우 SetActiveProject 가 이미 처리했다.
-    }
-
-    /// <summary>프로젝트의 모든 세션을 백그라운드로 미리 생성(preload). 활성 세션(except)은 제외.</summary>
-    private void PreloadProjectSessions(ProjectItem proj, SessionItem? except)
-    {
-        foreach (var s in proj.Tabs.OfType<SessionItem>())
-        {
-            if (ReferenceEquals(s, except) || s.Hidden) continue;
-            SettingsService.SaveClaudeCodeRoomDir(s.Id, proj.Path); // 항상 프로젝트 폴더에서 실행되도록 보장
-            _terminal.PreloadTerminal(s.Id);
-        }
-    }
-
+    // ── 프로젝트 ──────────────────────────────────────────────────
     private void DeleteProject(ProjectItem proj)
     {
         if (!ConfirmDialog.Show("프로젝트 제거",
@@ -1077,1047 +1031,35 @@ public partial class MainWindow : Window
                 okLabel: "제거", danger: true))
             return;
 
-        foreach (var s in proj.Tabs.OfType<SessionItem>().ToList()) DisposeSessionProcess(s, purge: false);
+        foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
+            foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);
         _projects.Remove(proj);
         SettingsService.RemoveBrowserLastUrl(proj.Path);
         WorkspaceStore.Save(_projects);
 
-        if (ReferenceEquals(_activeProject, proj))
-        {
-            _activeProject = null;
-            _activeSession = null;
-            _activeTab = null;
-            var next = _projects.FirstOrDefault();
-            if (next != null) SelectProject(next);
-            else { TabsHost.ItemsSource = null; ClearActiveSession(); }
-        }
+        var next = _projects.FirstOrDefault();
+        foreach (var pane in _panes) pane.OnProjectRemoved(proj, next);
         UpdateStatus();
-    }
-
-    // ── 세션 ──────────────────────────────────────────────────────
-    /// <summary>터미널 단축키에서 올라온 세션 액션 처리 (UI 스레드 보장).</summary>
-    private void OnTerminalSessionAction(string name, int index) => Dispatcher.BeginInvoke(() =>
-    {
-        switch (name)
-        {
-            case "newSession":   if (_activeProject != null) AddSession(_activeProject); break;
-            // Ctrl+Shift+W = 닫기 → 목록에서만 제거(기록 .jsonl 보존). 영구 삭제는 명시적 UI 전용.
-            case "closeSession": if (_activeSession != null) StopTrackingSession(_activeSession); break;
-            case "nextSession":  CycleSession(+1); break;
-            case "prevSession":  CycleSession(-1); break;
-            case "gotoSession":  GotoSession(index); break;
-        }
-    });
-
-    /// <summary>활성 프로젝트의 N번째 세션으로 직접 이동 (Ctrl+Alt+1~9). index=-1 이면 마지막. 범위 밖이면 무시.</summary>
-    private void GotoSession(int index)
-    {
-        var proj = _activeProject;
-        var sessionTabs = proj?.Tabs.OfType<SessionItem>().ToList();
-        if (sessionTabs == null || sessionTabs.Count == 0) return;
-        int i = index < 0 ? sessionTabs.Count - 1 : index;
-        if (i < 0 || i >= sessionTabs.Count) return; // WT: 없는 탭 번호면 아무 동작 안 함
-        OpenSession(sessionTabs[i]);
-    }
-
-    /// <summary>활성 프로젝트 내 세션을 순환 전환 (Ctrl+Tab / Ctrl+Shift+Tab).</summary>
-    private void CycleSession(int dir)
-    {
-        var proj = _activeProject;
-        var sessionTabs = proj?.Tabs.OfType<SessionItem>().ToList();
-        if (proj == null || _activeSession == null || sessionTabs == null || sessionTabs.Count < 2) return;
-        int idx = sessionTabs.IndexOf(_activeSession);
-        if (idx < 0) return;
-        int n = sessionTabs.Count;
-        OpenSession(sessionTabs[((idx + dir) % n + n) % n]);
-    }
-
-    /// <summary>"세션 N" 다음 번호를 만든다 — 기존 세션 이름에서 최대 N을 찾아 +1.
-    /// Count+1 방식과 달리 중간 세션을 삭제해도 번호가 겹치지 않는다.</summary>
-    private static string NextSessionName(ProjectItem proj)
-    {
-        int max = 0;
-        var rx = new System.Text.RegularExpressions.Regex(@"^세션\s+(\d+)$");
-        foreach (var s in proj.Tabs.OfType<SessionItem>())
-        {
-            var m = rx.Match(s.Name);
-            if (m.Success && int.TryParse(m.Groups[1].Value, out var n) && n > max) max = n;
-        }
-        return $"세션 {max + 1}";
-    }
-
-    private void AddSession(ProjectItem proj)
-    {
-        // 사용 가능한 에이전트(설치 + 활성화) 선택. 0개면 추가 불가, 1개면 피커 생략.
-        var available = AgentRegistry.GetEnabledAndInstalled();
-        if (available.Count == 0)
-        {
-            ConfirmDialog.Alert("에이전트 없음",
-                "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
-            return;
-        }
-        string agentId;
-        if (available.Count == 1)
-        {
-            agentId = available[0].Id;
-        }
-        else
-        {
-            var picked = AgentPickerDialog.Pick(this, available, proj.Path);
-            if (picked == null) return; // 취소
-            agentId = picked;
-        }
-
-        var session = new SessionItem { Name = NextSessionName(proj), AgentId = agentId };
-        proj.Tabs.Add(session);
-        proj.IsExpanded = true;
-        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
-        SettingsService.SaveAgentForRoom(session.Id, agentId);
-        WorkspaceStore.Save(_projects);
-        // 선택된(활성) 프로젝트의 세션만 화면에 띄운다. 다른 프로젝트엔 트리에 추가만.
-        if (ReferenceEquals(_activeProject, proj)) OpenSession(session);
-        UpdateStatus();
-    }
-
-    /// <summary>세션 클릭(사이드바/탭) — 필요하면 프로젝트 전환 후 해당 세션 활성화.</summary>
-    private void OpenSession(SessionItem session)
-    {
-        var parent = ParentOf(session);
-        if (parent == null) return;
-        if (!ReferenceEquals(_activeProject, parent)) SetActiveProject(parent);
-        ActivateSession(session);
-    }
-
-    /// <summary>세션 활성화 — 선택 표시 + 중앙 터미널 표시(claude 실행).
-    /// unHide=false 이면 탭 X 로 숨겨둔 세션이라도 Hidden 플래그를 건드리지 않는다
-    /// (프로젝트 헤더 클릭으로 진입할 때 — 마지막 활성 세션이 숨겨져 있어도 그대로 유지).</summary>
-    private void ActivateSession(SessionItem session, bool unHide = true)
-    {
-        var parent = ParentOf(session);
-        if (parent == null) return;
-
-        // 사이드바 세션 클릭 (unHide=true): 탭 X 로 숨겨둔 세션을 다시 선택하면 탭도 복귀.
-        // WorkspaceModels.cs 의 HiddenIcon→StatusDot 트리거도 이 플래그 하나에 연동된다.
-        if (unHide) session.Hidden = false;
-
-        // claude 가 항상 프로젝트 디렉터리에서 실행되도록 매핑 보장
-        SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
-
-        _activeTab = session;
-        _activeSession = session;
-        foreach (var p in _projects)
-            foreach (var t in p.Tabs)
-                t.IsSelected = ReferenceEquals(t, session);
-
-        session.IsAlive = true; // 낙관적 — 실패 시 SessionExited 이벤트로 회색
-        // 마지막 활성 세션 즉시 저장 → 강제 종료/크래시 후 재시작에도 이 세션으로 복원
-        SettingsService.SaveLastActive(parent.Path, session.Id);
-        // 비-Claude 에이전트는 last prompt 추적 시작. Claude 는 hook 으로 별도 처리.
-        var sessionAgentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-        if (sessionAgentId != "claude")
-            _agentLastMsg.TrackSession(parent.Path, sessionAgentId);
-        // 세션 실행은 훅 자산을 최신으로 재생성하므로(있던 배너는 더 이상 불필요) 배너를 닫는다.
-        if (HookSetupBanner.Visibility == Visibility.Visible) HookSetupBanner.Visibility = Visibility.Collapsed;
-        // 이미 claude 화면이 떠 있는 세션이면 로딩 없이, 아니면 스피너 표시 후 ShowTerminal.
-        if (_terminal.IsReady(session.Id)) HideSessionLoading();
-        else ShowSessionLoading(session.Id);
-        _terminal.ShowTerminal(session.Id);
-        _terminal.FocusTerminal();
-        UpdateEmptyState();
-        EnsureSelectedTabVisible(session); // 선택 탭이 가려져 있으면 보이게 스크롤
-        RefreshModelEffortDock(); // 메타바 model/effort dock 을 이 세션 값으로 갱신
-    }
-
-    /// <summary>작업 큐 → 현재 활성 세션 터미널에 텍스트를 입력하고 Enter 로 전송.
-    /// 활성 탭이 세션이 아니거나 세션이 죽어 있으면 false.</summary>
-    public bool SendTextToActiveSession(string text)
-    {
-        var id = _activeSession?.Id;
-        if (string.IsNullOrEmpty(id)) return false;
-        var session = TerminalSessionManager.Instance.Get(id);
-        if (session is not { IsAlive: true }) return false;
-
-        session.Write(text);
-        session.Write("\r"); // Enter (ConPTY)
-        _terminal.ShowTerminal(id);
-        _terminal.FocusTerminal();
-        return true;
-    }
-
-    /// <summary>파일 탭 활성화 — FileEditorHostContainer 에 해당 탭의 에디터를 붙이고 표시.
-    /// 이미 같은 에디터가 붙어 있으면 그냥 표시만 갱신한다.</summary>
-    private void ActivateFileTab(FileTabItem tab)
-    {
-        var parent = ParentOfTab(tab);
-        if (parent == null) return;
-
-        _activeTab = tab;
-        _activeSession = null; // 활성 세션 아님 — 터미널 상태 이벤트 무시
-        foreach (var p in _projects)
-            foreach (var t in p.Tabs)
-                t.IsSelected = ReferenceEquals(t, tab);
-
-        HideSessionLoading(); // 파일 탭이 로딩 스피너를 물려받지 않도록
-        if (!ReferenceEquals(FileEditorHostContainer.Content, tab.Editor.AsControl()))
-            FileEditorHostContainer.Content = tab.Editor.AsControl();
-        UpdateEmptyState();
-        EnsureSelectedTabVisible(tab);
-        tab.Editor.Focus(); // 포커스 이동
-        RefreshModelEffortDock(); // 파일 탭 → 세션 아님 → dock 숨김
-    }
-
-    // ── 메타바 model/effort dock ─────────────────────────────────────────
-    // claude 세션에만 노출. 선택 시 방별 설정 저장(다음 콜드스타트/ resume 시 --model/--effort 런치 플래그로도 적용)
-    // + 살아있는 TUI 에 슬래시(/model·/effort)를 라이브 주입 → 재시작·스피너 없이 즉시 전환.
-    // 응답 처리중(IsBusy)에 바꾸면 입력이 프롬프트에 섞이지 않게 종료 후 주입(_pendingModel/_pendingEffort).
-    private static readonly ModelEffortOption[] ModelOptions =
-    {
-        new("Opus 4.8", "opus"), new("Sonnet 4.6", "sonnet"),
-        new("Haiku 4.5", "haiku"), new("Fable 5", "fable"),
-    };
-    private static readonly ModelEffortOption[] EffortOptions =
-    {
-        new("low", "low"), new("medium", "medium"), new("high", "high"),
-        new("xhigh", "xhigh"), new("max", "max"),
-    };
-    // 미설정 세션의 표시 기본값(claude 실제 기본 추정). 사용자가 한 번 고르면 그 값이 정확한 적용값.
-    private const string DefaultModelValue = "opus";
-    private const string DefaultEffortValue = "high";
-
-    private bool _suppressModelEffort;            // 프로그램적 SelectedValue 설정 시 변경 핸들러 억제
-    // busy 중 변경 → idle 시 주입할 보류 값(roomId → model/effort). 같은 항목 재변경은 마지막 값으로 덮어씀.
-    private readonly Dictionary<string, string> _pendingModel = new();
-    private readonly Dictionary<string, string> _pendingEffort = new();
-
-    /// <summary>활성 세션 기준으로 dock 표시/값 갱신. claude 세션이 아니면 숨김.</summary>
-    private void RefreshModelEffortDock()
-    {
-        if (ModelEffortDock == null) return;
-        var s = _activeSession;
-        var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
-        bool isClaude = s != null && agentId == "claude";
-        ModelEffortDock.Visibility = isClaude ? Visibility.Visible : Visibility.Collapsed;
-        if (!isClaude) return;
-
-        // 표시 우선순위: statusLine 이 보고한 실제 세션값 > 저장된 선택 > 기본 추정.
-        var (liveModelId, liveEffort) = _modelEffort.Read(s!.Id);
-        var model  = ModelIdToValue(liveModelId) ?? SettingsService.LoadClaudeCodeRoomModel(s.Id)  ?? DefaultModelValue;
-        var effort = (IsKnownEffort(liveEffort) ? liveEffort : null) ?? SettingsService.LoadClaudeCodeRoomEffort(s.Id) ?? DefaultEffortValue;
-
-        _suppressModelEffort = true;
-        try
-        {
-            if (ModelCombo.ItemsSource == null) ModelCombo.ItemsSource = ModelOptions;
-            if (EffortCombo.ItemsSource == null) EffortCombo.ItemsSource = EffortOptions;
-            ModelCombo.SelectedValue  = model;
-            EffortCombo.SelectedValue = effort;
-        }
-        finally { _suppressModelEffort = false; }
-    }
-
-    /// <summary>claude statusLine 의 model.id("claude-opus-4-8" 등)를 콤보 값(opus/sonnet/haiku/fable)으로 매핑.</summary>
-    private static string? ModelIdToValue(string? id)
-    {
-        if (string.IsNullOrEmpty(id)) return null;
-        var s = id.ToLowerInvariant();
-        if (s.Contains("opus"))   return "opus";
-        if (s.Contains("sonnet")) return "sonnet";
-        if (s.Contains("haiku"))  return "haiku";
-        if (s.Contains("fable") || s.Contains("mythos")) return "fable";
-        return null;
-    }
-
-    private static bool IsKnownEffort(string? e)
-        => e is "low" or "medium" or "high" or "xhigh" or "max";
-
-    private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        => OnModelEffortPicked(isModel: true);
-    private void EffortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        => OnModelEffortPicked(isModel: false);
-
-    private void OnModelEffortPicked(bool isModel)
-    {
-        if (_suppressModelEffort) return;
-        var s = _activeSession;
-        if (s == null) return;
-        var val = (isModel ? ModelCombo : EffortCombo).SelectedValue as string;
-        if (string.IsNullOrEmpty(val)) return;
-
-        if (isModel) SettingsService.SaveClaudeCodeRoomModel(s.Id, val);
-        else         SettingsService.SaveClaudeCodeRoomEffort(s.Id, val);
-
-        if (s.IsBusy)
-            (isModel ? _pendingModel : _pendingEffort)[s.Id] = val; // 응답중 — 종료 후 주입
-        else
-            SendModelEffortSlash(s.Id, isModel, val);               // 라이브 즉시 주입
-    }
-
-    /// <summary>응답 종료(busy→idle) 시 보류된 model/effort 변경을 라이브 주입.</summary>
-    private void FlushPendingModelEffort(string roomId)
-    {
-        if (_pendingModel.Remove(roomId, out var m))  SendModelEffortSlash(roomId, isModel: true,  m);
-        if (_pendingEffort.Remove(roomId, out var ef)) SendModelEffortSlash(roomId, isModel: false, ef);
-    }
-
-    /// <summary>살아있는 claude TUI 에 /model·/effort 슬래시를 주입해 재시작 없이 즉시 전환.
-    /// 세션이 죽어있으면 무시(다음 콜드스타트 시 저장된 설정이 --model/--effort 런치 플래그로 적용됨).</summary>
-    private void SendModelEffortSlash(string roomId, bool isModel, string value)
-    {
-        var sess = TerminalSessionManager.Instance.Get(roomId);
-        if (sess is not { IsAlive: true }) return;
-        // 출력 스크롤 튀김 방지 — command echo + response 가 돌아오는 동안 xterm scroll 을 억제
-        _terminal.SuppressScroll(5);
-        sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
-    }
-
-    // ── 새 탭 + 버튼 ──────────────────────────────────────────────
-    /// <summary>탭 스트립의 + 버튼 클릭. 활성 프로젝트가 있으면 그 프로젝트에, 없으면 먼저 추가 다이얼로그 흐름이 필요한데
-    /// UX 단순화를 위해 활성 프로젝트가 없으면 경고 후 중단. AddSession 내부에서 에이전트 0개·다중 피커를 처리한다.</summary>
-    private void NewTabBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (_activeProject == null)
-        {
-            ConfirmDialog.Alert("프로젝트 없음",
-                "먼저 왼쪽 사이드바에서 프로젝트를 추가하세요.");
-            return;
-        }
-        AddSession(_activeProject);
-    }
-
-    /// <summary>세션 로딩 스피너 표시 — claude 화면이 뜰 때까지. 안전장치로 일정 시간 후 자동 해제.</summary>
-    private void ShowSessionLoading(string roomId)
-    {
-        _loadingRoomId = roomId;
-        TerminalLoadingOverlay.Visibility = Visibility.Visible; // 콜드스타트(WebView2 미렌더) 폴백
-        _terminal.SetLoading(true);                             // 웹 레이어 스피너(터미널 위에 보임)
-
-        _loadingTimeout?.Stop();
-        _loadingTimeout ??= new System.Windows.Threading.DispatcherTimer();
-        _loadingTimeout.Interval = TimeSpan.FromSeconds(20); // alt-screen 미진입(일반 셸 등) 대비 폴백
-        _loadingTimeout.Tick -= LoadingTimeout_Tick;
-        _loadingTimeout.Tick += LoadingTimeout_Tick;
-        _loadingTimeout.Start();
-    }
-
-    private void LoadingTimeout_Tick(object? sender, EventArgs e) => HideSessionLoading();
-
-    /// <summary>로딩 스피너 숨김.</summary>
-    private void HideSessionLoading()
-    {
-        _loadingTimeout?.Stop();
-        _loadingRoomId = null;
-        TerminalLoadingOverlay.Visibility = Visibility.Collapsed;
-        _terminal.SetLoading(false);
-    }
-
-    /// <summary>해당 방이 현재 로딩 중이던 세션이면 스피너 숨김.</summary>
-    private void HideSessionLoadingIf(string roomId)
-    {
-        if (_loadingRoomId == roomId) HideSessionLoading();
-    }
-
-    private void ClearActiveSession()
-    {
-        _activeSession = null;
-        _activeTab = null;
-        if (FileEditorHostContainer != null) FileEditorHostContainer.Content = null;
-        HideSessionLoading();
-        foreach (var p in _projects)
-            foreach (var t in p.Tabs)
-                t.IsSelected = false;
-        UpdateEmptyState();
-        UpdateSelectedTabSeam(); // 활성 탭 없음 → seam 숨김
-    }
-
-    /// <summary>세션 이름 변경 — 우클릭 메뉴. devez PromptDialog 정합.</summary>
-    private void RenameSession(SessionItem session)
-    {
-        var name = PromptDialog.Show("세션 이름 변경", "새 이름을 입력하세요.",
-                                     defaultValue: session.Name, maxLength: 60);
-        if (string.IsNullOrWhiteSpace(name) || name == session.Name) return;
-        session.Name = name;
-        WorkspaceStore.Save(_projects);
-    }
-
-    /// <summary>세션 영구 삭제 — 확인 후 ConPTY 프로세스·매핑 + claude 대화 기록(.jsonl)까지 디스크에서 제거.</summary>
-    private void DeleteSession(SessionItem session)
-    {
-        if (!ConfirmDialog.Show("세션 삭제",
-                $"'{session.Name}' 세션을 영구 삭제할까요?\n대화 기록(.jsonl)도 디스크에서 함께 삭제되며 복구할 수 없습니다.",
-                okLabel: "삭제", danger: true))
-            return;
-        RemoveSession(session, purge: true);
-    }
-
-    /// <summary>세션 추적 중단 — 목록에서만 제거. claude 대화 기록(.jsonl)은 디스크에 보존된다.</summary>
-    private void StopTrackingSession(SessionItem session)
-    {
-        if (!ConfirmDialog.Show("세션 추적 중단",
-                $"'{session.Name}' 세션을 목록에서 제거할까요?\n대화 기록은 디스크에 그대로 보존됩니다.",
-                okLabel: "중단"))
-            return;
-        RemoveSession(session, purge: false);
-    }
-
-    /// <summary>세션을 트리에서 제거하고 다음 세션을 활성화. purge=true 면 대화 기록까지 삭제, false 면 보존.</summary>
-    private void RemoveSession(SessionItem session, bool purge)
-    {
-        var parent = ParentOf(session);
-        bool wasActive = ReferenceEquals(_activeSession, session);
-        int idx = parent?.Tabs.IndexOf(session) ?? -1;
-
-        DisposeSessionProcess(session, purge);
-        parent?.Tabs.Remove(session);
-        WorkspaceStore.Save(_projects);
-
-        if (wasActive)
-        {
-            SessionItem? next = null;
-            if (parent != null)
-                next = parent.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden);
-            if (next != null) ActivateSession(next);
-            else ClearActiveSession();
-        }
-        UpdateStatus();
-    }
-
-    /// <summary>파일 탭을 제거. dirty 면 FileEditorView 가 자체 확인 후 이벤트로 알려준다.
-    /// 에디터가 콘텐츠 호스트에 붙어 있으면 분리한다.</summary>
-    private void RemoveFileTab(FileTabItem tab)
-    {
-        var parent = ParentOfTab(tab);
-        bool wasActive = ReferenceEquals(_activeTab, tab);
-        if (FileEditorHostContainer.Content == tab.Editor.AsControl())
-            FileEditorHostContainer.Content = null;
-        if (tab.Editor is IDisposable disposable) disposable.Dispose();
-        parent?.Tabs.Remove(tab);
-        UpdateStatus();
-
-        if (wasActive)
-        {
-            // 같은 프로젝트의 다른 탭(세션 우선)으로 포커스 이동
-            TabItemBase? next = null;
-            if (parent != null)
-                next = parent.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden)
-                       ?? parent.Tabs.FirstOrDefault(t => t != tab);
-            if (next is SessionItem s) ActivateSession(s);
-            else if (next is FileTabItem f) ActivateFileTab(f);
-            else ClearActiveSession();
-        }
-    }
-
-    /// <summary>세션의 터미널 프로세스·매핑을 정리(컬렉션은 건드리지 않음).
-    /// purge=true 면 claude 대화 기록(.jsonl)까지 영구 삭제, false 면 기록을 디스크에 보존한다.</summary>
-    private void DisposeSessionProcess(SessionItem session, bool purge = true)
-    {
-        var workingDir = SettingsService.LoadClaudeCodeRoomDir(session.Id);
-        try { _terminal.CloseTerminal(session.Id); } catch { /* ignore */ }
-        try
-        {
-            if (purge) TerminalSessionManager.Instance.PurgeRoom(session.Id, workingDir);
-            else       TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
-        }
-        catch { /* ignore */ }
-        // purge=false(재시작) 경로에서는 room dir 매핑을 보존 — ActivateSession 이 다시 저장하긴 하지만,
-        // GetOrCreate 가 먼저 읽어야 resume 경로가 작동하므로 삭제하지 않는다.
-        if (purge) SettingsService.RemoveClaudeCodeRoomDir(session.Id);
-    }
-
-    /// <summary>활성 Claude 세션을 재시작 — 디스크에 저장된 mcpServers 가 다시 로드된다.
-    /// MCP 매니저의 저장 후 호출용. 비활성이거나 비-Claude 세션이면 false.</summary>
-    public bool TryRestartActiveClaudeSession()
-    {
-        if (_activeSession == null) return false;
-        RestartAllClaudeSessions();
-        return true;
-    }
-
-    /// <summary>모든 Claude 세션의 ConPTY 를 재시작. 활성 세션은 즉시 다시 띄우고,
-    /// 비활성 세션은 ConPTY 만 정리(다음 활성화 시 resume 으로 복원).
-    /// 테마 변경 시 모든 세션이 새 테마를 적용하도록 보장.</summary>
-    private async void RestartAllClaudeSessions()
-    {
-        var allClaudeSessions = _projects
-            .SelectMany(p => p.Tabs)
-            .OfType<SessionItem>()
-            .Where(s =>
-            {
-                var aid = string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
-                return aid == "claude";
-            })
-            .ToList();
-
-        SessionItem? activeRestarted = null;
-        foreach (var s in allClaudeSessions)
-        {
-            try
-            {
-                // JS xterm 인스턴스 + ConPTY 모두 정리.
-                // xterm 인스턴스를 재사용하면 composition-view 의 IME 조합 상태가
-                // 새 ConPTY 와 동기화되지 않아 한글이 한 글자씩 깨져 보이는 문제가 발생.
-                // 매번 새 xterm 인스턴스를 만들어 IME 상태를 완전히 초기화.
-                _terminal.CloseTerminal(s.Id);
-                DisposeSessionProcess(s, purge: false);
-                TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
-                // 새 세션을 미리 만들어둔다 — 사용자가 키를 누를 때
-                // Get(roomId) 가 null 을 반환해 input 이 유실되는 race 방지.
-                TerminalSessionManager.Instance.GetOrCreate(s.Id, 120, 30);
-            }
-            catch { /* ignore */ }
-        }
-
-        // JS 가 dispose 메시지를 완전히 처리할 시간 확보.
-        // createTerm 이 dispose 중인 인스턴스와 충돌하지 않도록.
-        await Task.Delay(150);
-
-        // 활성 세션은 즉시 다시 띄움
-        if (_activeSession != null && allClaudeSessions.Contains(_activeSession))
-        {
-            ActivateSession(_activeSession);
-            activeRestarted = _activeSession;
-        }
-
-        // 비활성 세션은 ConPTY 만 정리된 상태 — 다음 탭 클릭 시 ActivateSession → GetOrCreate →
-        // 새 ConPTY + resume 으로 복원. 여기서 미리 띄우지 않음 (리소스 낭비 + 사용자가 안 보는 세션).
-    }
-
-    /// <summary>테마 변경 적용 — 모든 세션의 ConPTY 를 종료한 뒤 현재 프로젝트 세션을 다시 불러온다.
-    /// claude(settings.local.json)·opencode(tui.json) 모두 시작 시점에 새 테마를 읽으므로 재시작이 필요.
-    /// 활성 세션은 즉시 띄우고(스피너), 옵션이 켜진 경우에만 같은 프로젝트의 나머지를 preload 한다.</summary>
-    public async void ReloadAllSessionsForTheme()
-    {
-        var active = _activeSession;
-        var proj   = _activeProject;
-
-        // 1) 모든 프로젝트의 세션 종료 — JS xterm 인스턴스 + ConPTY 모두 정리(IME 상태까지 초기화).
-        foreach (var s in _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList())
-        {
-            try
-            {
-                DisposeSessionProcess(s, purge: false); // CloseTerminal + DisposeRoom(매핑 보존)
-                TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
-            }
-            catch { /* ignore */ }
-        }
-
-        // JS 가 dispose 메시지를 처리할 시간 확보 (createTerm 이 dispose 중 인스턴스와 충돌 방지).
-        await Task.Delay(150);
-
-        // 2) 현재 프로젝트 세션 재로드. 활성 세션은 즉시 표시, 전체 로드 옵션이 켜진 경우 나머지도 preload.
-        if (proj != null)
-        {
-            if (active != null && proj.Tabs.Contains(active))
-                ActivateSession(active);
-            if (SettingsService.LoadPreloadAllProjectSessions())
-                PreloadProjectSessions(proj, except: active);
-        }
-        // 다른 프로젝트 세션은 정리만 된 상태 — 해당 프로젝트 선택 시 새 테마로 재생성된다.
-    }
-
-    private ProjectItem? ParentOf(SessionItem session)
-        => _projects.FirstOrDefault(p => p.Tabs.Contains(session));
-
-    /// <summary>모든 탭(세션+파일)이 속한 프로젝트를 찾는다.</summary>
-    private ProjectItem? ParentOfTab(TabItemBase tab)
-        => _projects.FirstOrDefault(p => p.Tabs.Contains(tab));
-
-    private SessionItem? FindSession(string id)
-        => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
-
-    // ── 탭 이벤트 ─────────────────────────────────────────────────
-    private void Tab_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (_tabDidDrag) { _tabDidDrag = false; return; } // 드래그 직후 클릭 무시
-        if (sender is FrameworkElement { DataContext: TabItemBase tab })
-        {
-            if (tab is SessionItem s) OpenSession(s);
-            else if (tab is FileTabItem f) ActivateFileTab(f);
-        }
-    }
-
-    /// <summary>탭 X = 탭 닫기.
-    /// 세션 탭: 탭에서만 숨김(세션·터미널·기록은 그대로). 사이드바에서 다시 선택하면 복귀.
-    /// 파일 탭: dirty 확인 후 제거(에디터 인스턴스도 함께 폐기).
-    /// 활성 탭을 닫으면 다음 탭(세션 우선)으로 포커스를 옮겨 헤더가 비지 않게 한다.</summary>
-    private void TabHide_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement { DataContext: TabItemBase tab }) return;
-
-        if (tab is SessionItem s)
-        {
-            s.Hidden = true;
-            if (ReferenceEquals(_activeSession, s))
-            {
-                var parent = ParentOf(s);
-                var next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(x => x != s && !x.Hidden);
-                if (next != null) ActivateSession(next);
-                else ClearActiveSession();
-            }
-        }
-        else if (tab is FileTabItem f)
-        {
-            // FileEditorView.RequestClose 가 dirty 확인 후 CloseRequested 를 발생시킨다.
-            // MainWindow 가 그 이벤트를 받아 RemoveFileTab 을 호출하도록 탭 생성 시 연결한다.
-            f.Editor.RequestClose();
-        }
-    }
-
-    // ── 탭 드래그 순서변경 (가로) + 사이드바 세션 순서 양방향 동기화 ──────────
-    private Point _tabPressOrigin;
-    private TabItemBase? _pendingTab;
-    private ReorderDrag<TabItemBase>? _tabDrag;
-    private bool _tabDidDrag;
-    // 드래그 동안 숨겨둔 선택 탭 하단 받침(TabFoot*) — 드롭 후 트리거가 다시 그리도록 복원.
-    private readonly List<FrameworkElement> _hiddenTabFeet = new();
-    // 드래그 대상이 '선택 탭'일 때만 true — 이때만 seam을 숨겨 하단 보더가 이어지게 한다.
-    // (비선택 탭 드래그 중에는 선택 탭의 seam을 그대로 두거나 displacement 따라가게 한다)
-    private bool _tabDragHidSeam;
-
-    private void Tab_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        _tabPressOrigin = e.GetPosition(TabsHost);
-        _pendingTab = (sender as FrameworkElement)?.DataContext as TabItemBase;
-        _tabDidDrag = false;
-    }
-
-    private void TabsHost_PreviewMouseMove(object sender, MouseEventArgs e)
-    {
-        if (_tabDrag != null) { _tabDrag.Update(e); return; }
-        if (e.LeftButton != MouseButtonState.Pressed || _pendingTab == null) return;
-        var diff = _tabPressOrigin - e.GetPosition(TabsHost);
-        if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-        TryStartTabDrag(_pendingTab);
-    }
-
-    private async Task EndTabDragAsync()
-    {
-        var td = _tabDrag;
-        _tabDrag = null;
-        _pendingTab = null;
-        if (Mouse.Captured == TabsHost) TabsHost.ReleaseMouseCapture();
-        RestoreTabFeet(); // 받침·seam 복원 (드롭 후 트리거가 다시 그리게)
-        if (td != null) await td.FinishAsync(commit: true);
-    }
-
-    private void TryStartTabDrag(TabItemBase s)
-    {
-        var coll = _activeProject?.Tabs;
-        if (coll == null) return;
-        // 슬롯 이동 대상은 받침(TabFoot*)까지 포함하는 부모 TabRoot 로 잡아, 밀려나는 선택 탭이
-        // displacement 될 때 하단 라운드 받침도 함께 따라오게 한다. ghost 캡처/숨김 대상은
-        // 받침 없는 TabBd(Border) 로 따로 지정 (devez 정합 — ghost 가 받침까지 잡지 않도록).
-        var rows = new List<(TabItemBase, FrameworkElement)>();
-        FrameworkElement? sourceBorder = null;
-        FrameworkElement? selectedRoot = null;
-        foreach (var t in coll)
-        {
-            if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
-                && FindTabBorder(fe) is FrameworkElement border
-                && VisualTreeHelper.GetParent(border) is FrameworkElement root)
-            {
-                rows.Add((t, root));
-                if (ReferenceEquals(t, s)) sourceBorder = border;
-                if (ReferenceEquals(t, _activeTab)) selectedRoot = root;
-            }
-        }
-        if (sourceBorder == null || rows.Count < 2) return;
-
-        _tabDrag = ReorderDrag<TabItemBase>.TryStart(TabsHost, rows, s, sourceBorder,
-            (tab, hostTarget, _) =>
-            {
-                // 탭 = 활성 프로젝트의 Tabs(동일 컬렉션) → 여기서 옮기면 좌측 리스트도 함께 바뀐다(세션 한정).
-                var c = _activeProject?.Tabs;
-                if (c != null)
-                {
-                    int from = c.IndexOf(tab);
-                    if (from >= 0)
-                    {
-                        int to = Math.Clamp(hostTarget, 0, c.Count - 1);
-                        if (to != from) { c.Move(from, to); WorkspaceStore.Save(_projects); }
-                    }
-                }
-                return Task.CompletedTask;
-            },
-            exactFollow: true, horizontal: true, ghostSource: sourceBorder);
-        if (_tabDrag != null)
-        {
-            _tabDidDrag = true;
-            TabsHost.CaptureMouse();
-            HideTabFeet(sourceBorder);          // 소스 탭 받침 4개 Path 숨김 (ghost 가 잡지 않도록)
-            SetupDragSeam(s, selectedRoot);     // seam 숨김(소스=선택) 또는 displacement 따라가기
-        }
-        _pendingTab = null;
-    }
-
-    // 드래그하는 선택 탭의 하단 받침(곡선 받침/외곽선)을 숨긴다. ghost 는 TabBd 만 들어올리고
-    // 받침 Path 들은 형제라 제자리에 남아 떠 보이기 때문. 드롭 후 RestoreTabFeet 에서 로컬값을
-    // 지워 IsSelected 트리거가 다시 그리게 한다 (devez HideTabFeet 정합).
-    private void HideTabFeet(FrameworkElement sourceBorder)
-    {
-        RestoreTabFeet();
-        var root = VisualTreeHelper.GetParent(sourceBorder);
-        if (root == null) return;
-        int n = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < n; i++)
-        {
-            if (VisualTreeHelper.GetChild(root, i) is FrameworkElement
-                { Name: "TabFootLeftFill" or "TabFootLeftLine"
-                     or "TabFootRightFill" or "TabFootRightLine" } foot)
-            {
-                foot.Visibility = Visibility.Collapsed;
-                _hiddenTabFeet.Add(foot);
-            }
-        }
-    }
-
-    private void RestoreTabFeet()
-    {
-        foreach (var foot in _hiddenTabFeet)
-            foot.ClearValue(UIElement.VisibilityProperty); // IsSelected 트리거가 다시 제어
-        _hiddenTabFeet.Clear();
-        _tabDragHidSeam = false;
-        if (SelectedTabSeam != null) SelectedTabSeam.RenderTransform = null; // 공유했던 displacement 해제
-        // 드롭 후 리스트 재정렬·레이아웃이 끝난 뒤 정확한 위치로 seam 을 다시 그린다.
-        Dispatcher.InvokeAsync(UpdateSelectedTabSeam, System.Windows.Threading.DispatcherPriority.Loaded);
-    }
-
-    // 드래그 중 seam(선택 탭 밑 보더선 가림막) 처리. seam 은 ScrollViewer 밖 정적 오버레이라
-    // 탭 본문/받침과 달리 displacement 를 자동으로 따라가지 못한다.
-    //  · 선택 탭 자신을 드래그 → seam 숨김(하단 보더가 쭉 이어짐).
-    //  · 비선택 탭 드래그 → 밀려나는 선택 탭의 TabRoot displacement TranslateTransform 을
-    //    seam 의 RenderTransform 으로 공유해, 같은 애니메이션으로 함께 움직이게 한다.
-    private void SetupDragSeam(TabItemBase source, FrameworkElement? selectedRoot)
-    {
-        if (SelectedTabSeam == null) return;
-        _tabDragHidSeam = true; // 드래그 동안 UpdateSelectedTabSeam 재계산 차단(위치/표시 고정)
-        bool draggingSelected = ReferenceEquals(source, _activeTab);
-        if (draggingSelected || selectedRoot == null)
-        {
-            SelectedTabSeam.RenderTransform = null;
-            SelectedTabSeam.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            // seam 은 이미 선택 탭 rest 위치에 표시 중 — 그 위치 기준으로 같은 delta 만큼 따라가게 한다.
-            SelectedTabSeam.RenderTransform = GetOrCreateTranslate(selectedRoot);
-        }
-    }
-
-    // ReorderDrag.EnsureTranslate 와 동일한 규칙으로 요소의 TranslateTransform 인스턴스를 얻는다.
-    // 같은 인스턴스를 seam 과 공유하면 ReorderDrag 의 displacement 애니메이션이 seam 에도 그대로 적용된다.
-    private static TranslateTransform GetOrCreateTranslate(UIElement el)
-    {
-        if (el.RenderTransform is TranslateTransform t) return t;
-        if (el.RenderTransform is TransformGroup g)
-        {
-            var ex = g.Children.OfType<TranslateTransform>().FirstOrDefault();
-            if (ex != null) return ex;
-            var added = new TranslateTransform();
-            g.Children.Add(added);
-            return added;
-        }
-        var nt = new TranslateTransform();
-        if (el.RenderTransform != null && el.RenderTransform != Transform.Identity)
-        {
-            var grp = new TransformGroup();
-            grp.Children.Add(el.RenderTransform);
-            grp.Children.Add(nt);
-            el.RenderTransform = grp;
-        }
-        else el.RenderTransform = nt;
-        return nt;
-    }
-
-    private static FrameworkElement? FindTabBorder(DependencyObject root)
-    {
-        if (root is FrameworkElement { Name: "TabBd" } fe) return fe;
-        int n = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < n; i++)
-        {
-            if (FindTabBorder(VisualTreeHelper.GetChild(root, i)) is FrameworkElement found)
-                return found;
-        }
-        return null;
     }
 
     /// <summary>사이드바 세션 순서 변경 — 탭은 같은 컬렉션이라 자동 반영되므로 영속만 한다.</summary>
     private void OnSidebarSessionsReordered(ProjectItem _) => WorkspaceStore.Save(_projects);
 
-    // ── 탭 오버플로우: 좌·우 스크롤 버튼 + 가장자리 페이드 + 빈 영역 드래그 (devez 정합) ──────────
-    private bool? _fadeLeft, _fadeRight;
-    private double _fadeWidth = -1;
-    private Action? _tabScrollAnimCancel;
-    private const double TabScrollStep = 168; // 한 탭 단위(MinWidth 131 + 받침/여백)
-
-    private void TabScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        UpdateTabOverflowButtons();
-        UpdateSelectedTabSeam();
-    }
-
-    private void OnThemeChanged_UpdateSeam(string _) => Dispatcher.BeginInvoke(new Action(() =>
-    {
-        UpdateSelectedTabSeam();
-        // 좌/우 패널 토글 아이콘 brush 재계산 (캡처된 instance 가 stale 되므로)
-        UpdatePanelToggleVisual();
-    }));
-
-    /// <summary>선택 탭 하단 보더를 PanelBrush 로 덮어 세션 헤더와 경계선 없이 매끄럽게 잇는다
-    /// (devez SelectedTabSeam — 스크롤뷰어 밖 정적 오버레이라 탭처럼 클립되지 않음).</summary>
-    private void UpdateSelectedTabSeam()
-    {
-        if (SelectedTabSeam == null || TabBar == null || TabsHost == null) return;
-        // 드래그 중에는 seam을 SetupDragSeam이 직접 제어(숨김/transform 공유)하므로 재계산하지 않는다.
-        if (_tabDragHidSeam) return;
-        if (_activeTab == null ||
-            TabsHost.ItemContainerGenerator.ContainerFromItem(_activeTab) is not FrameworkElement container)
-        {
-            SelectedTabSeam.Visibility = Visibility.Collapsed;
-            return;
-        }
-        try
-        {
-            var pt = container.TransformToAncestor(TabBar).Transform(new Point(0, 0));
-            const double seamExtra = 9.15;                 // 받침 곡선 안쪽까지만 덮음
-            double bodyWidth = container.ActualWidth - 3;  // 컨테이너 폭에 우측 3px 간격(Margin) 포함
-            double seamWidth = bodyWidth + seamExtra * 2;
-            double seamLeft  = pt.X - seamExtra;
-
-            // 선택 탭이 좌측으로 숨으면 seam이 스크롤뷰어 경계를 넘어 왼쪽 패널까지 라인을 지우므로 좌측 클램프.
-            double clipLeft = TabScroller.TransformToAncestor(TabBar).Transform(new Point(0, 0)).X;
-            if (clipLeft < 0) clipLeft = 0;
-            bool clampedLeft = false;
-            if (seamLeft < clipLeft)
-            {
-                seamWidth -= clipLeft - seamLeft;
-                seamLeft = clipLeft;
-                clampedLeft = true; // viewport에 잘린 단면 → 페이드 없이 꽉 채워야 보더색이 안 비친다
-            }
-            if (seamWidth <= 0) { SelectedTabSeam.Visibility = Visibility.Collapsed; return; }
-
-            SelectedTabSeam.Width = seamWidth;
-            SelectedTabSeam.Margin = new Thickness(seamLeft, 0, 0, 0);
-
-            // 양 끝을 PanelBrush→투명으로 페이드해 하단 라인이 딱 끊기지 않고 부드럽게 사라지게 한다.
-            var panelColor = (FindResource("PanelBrush") as System.Windows.Media.SolidColorBrush)?.Color
-                             ?? System.Windows.Media.Colors.Black;
-            var clearColor = System.Windows.Media.Color.FromArgb(0, panelColor.R, panelColor.G, panelColor.B);
-            const double fadePx = 4;
-            double f = seamWidth > 0 ? Math.Min(0.45, fadePx / seamWidth) : 0;
-            var brush = new System.Windows.Media.LinearGradientBrush
-            {
-                StartPoint = new Point(0, 0),
-                EndPoint   = new Point(1, 0)
-            };
-            brush.GradientStops.Add(new System.Windows.Media.GradientStop(clampedLeft ? panelColor : clearColor, 0));
-            brush.GradientStops.Add(new System.Windows.Media.GradientStop(panelColor, clampedLeft ? 0 : f));
-            brush.GradientStops.Add(new System.Windows.Media.GradientStop(panelColor, 1 - f));
-            brush.GradientStops.Add(new System.Windows.Media.GradientStop(clearColor, 1));
-            brush.Freeze();
-            SelectedTabSeam.Background = brush;
-            SelectedTabSeam.Visibility = Visibility.Visible;
-        }
-        catch { SelectedTabSeam.Visibility = Visibility.Collapsed; }
-    }
-
-    /// <summary>탭이 넘치면 좌·우 버튼을 띄우고, 양 끝 스크롤 가능 여부에 따라 활성/페이드를 갱신.</summary>
-    private void UpdateTabOverflowButtons()
-    {
-        if (TabScroller == null || TabNavGroup == null) return;
-        bool overflow = TabScroller.ScrollableWidth > 0.5;
-        bool canLeft  = TabScroller.HorizontalOffset > 0.5;
-        bool canRight = TabScroller.HorizontalOffset < TabScroller.ScrollableWidth - 0.5;
-
-        TabNavGroup.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
-        if (TabScrollLeftBtn  != null) TabScrollLeftBtn.IsEnabled  = canLeft;
-        if (TabScrollRightBtn != null) TabScrollRightBtn.IsEnabled = canRight;
-
-        ApplyTabEdgeFade(canLeft, canRight);
-    }
-
-    /// <summary>잘리는 쪽 가장자리를 투명→불투명 그라데이션 OpacityMask로 페이드 (devez ApplyTabEdgeFade).</summary>
-    private void ApplyTabEdgeFade(bool fadeLeft, bool fadeRight)
-    {
-        double w = TabScroller.ActualWidth;
-        // 상태·폭이 같으면 재계산 안 함(매 프레임 재렌더 방지)
-        if (_fadeLeft == fadeLeft && _fadeRight == fadeRight && Math.Abs(_fadeWidth - w) < 0.5) return;
-        _fadeLeft = fadeLeft; _fadeRight = fadeRight; _fadeWidth = w;
-
-        if (!fadeLeft && !fadeRight) { TabScroller.OpacityMask = null; return; }
-
-        double f = Math.Min(0.10, 28 / Math.Max(1, w)); // 페이드 폭: 화면 10% 또는 28px
-        var mask = new System.Windows.Media.LinearGradientBrush
-        {
-            StartPoint = new Point(0, 0),
-            EndPoint   = new Point(1, 0)
-        };
-        var black = System.Windows.Media.Colors.Black;
-        var clear = System.Windows.Media.Colors.Transparent;
-        mask.GradientStops.Add(new System.Windows.Media.GradientStop(fadeLeft ? clear : black, 0));
-        mask.GradientStops.Add(new System.Windows.Media.GradientStop(black, fadeLeft ? f : 0));
-        mask.GradientStops.Add(new System.Windows.Media.GradientStop(black, fadeRight ? 1 - f : 1));
-        mask.GradientStops.Add(new System.Windows.Media.GradientStop(fadeRight ? clear : black, 1));
-        mask.Freeze();
-        TabScroller.OpacityMask = mask;
-    }
-
-    private void TabScrollLeft_Click(object sender, RoutedEventArgs e)
-        => AnimateTabScroll(TabScroller.HorizontalOffset - TabScrollStep);
-
-    private void TabScrollRight_Click(object sender, RoutedEventArgs e)
-        => AnimateTabScroll(TabScroller.HorizontalOffset + TabScrollStep);
-
-    private void TabScroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (TabScroller.ScrollableWidth <= 0.5) return; // 오버플로우 없으면 세로 휠 그대로 둠
-        _tabScrollAnimCancel?.Invoke(); _tabScrollAnimCancel = null;
-        TabScroller.ScrollToHorizontalOffset(
-            Math.Clamp(TabScroller.HorizontalOffset - e.Delta, 0, TabScroller.ScrollableWidth));
-        e.Handled = true;
-    }
-
-    /// <summary>가로 스크롤 부드러운 애니메이션 (devez SmoothScroll, 프레임 동기 + EaseInOut).</summary>
-    private void AnimateTabScroll(double to)
-    {
-        to = Math.Clamp(to, 0, TabScroller.ScrollableWidth);
-        _tabScrollAnimCancel?.Invoke();
-        var from = TabScroller.HorizontalOffset;
-        if (Math.Abs(to - from) < 0.5) return;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        const int dur = 240;
-        bool cancelled = false;
-        EventHandler? handler = null;
-        handler = (_, _) =>
-        {
-            if (cancelled) { System.Windows.Media.CompositionTarget.Rendering -= handler!; return; }
-            var t = Math.Min(1.0, sw.ElapsedMilliseconds / (double)dur);
-            TabScroller.ScrollToHorizontalOffset(from + (to - from) * EaseInOut(t));
-            if (t >= 1.0) System.Windows.Media.CompositionTarget.Rendering -= handler!;
-        };
-        System.Windows.Media.CompositionTarget.Rendering += handler;
-        _tabScrollAnimCancel = () => { if (cancelled) return; cancelled = true; System.Windows.Media.CompositionTarget.Rendering -= handler; };
-    }
-
-    /// <summary>탭 빈 영역 드래그로 창 이동 + 더블클릭 최대화/복원 (devez: 탭 바가 캡션 역할).</summary>
-    private void TabStrip_DragMove(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ChangedButton != MouseButton.Left) return;
-        if (e.ClickCount == 2)
-        {
-            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-            return;
-        }
-        try { DragMove(); } catch { /* 이미 캡처 중 등 */ }
-    }
-
-    /// <summary>선택 탭이 뷰포트 밖이면 부드럽게 스크롤해 보이게 한다 (devez EnsureSelectedTabVisible).</summary>
-    private void EnsureSelectedTabVisible(TabItemBase tab)
-    {
-        if (TabScroller == null) return;
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
-        {
-            UpdateSelectedTabSeam(); // 스크롤이 안 일어나도 seam은 갱신
-            if (TabsHost.ItemContainerGenerator.ContainerFromItem(tab) is not FrameworkElement fe) return;
-            if (TabScroller.ScrollableWidth <= 0.5) return;
-            var tl = fe.TransformToAncestor(TabScroller).Transform(new Point(0, 0));
-            double left  = tl.X + TabScroller.HorizontalOffset;
-            double right = left + fe.ActualWidth;
-            const double margin = 30; // 양 끝 페이드(약 28px) 여유
-            if (left < TabScroller.HorizontalOffset + margin)
-                AnimateTabScroll(left - margin);
-            else if (right > TabScroller.HorizontalOffset + TabScroller.ViewportWidth - margin)
-                AnimateTabScroll(right - TabScroller.ViewportWidth + margin);
-        }));
-    }
-
-    // ── 상태/빈 화면 ─────────────────────────────────────────────
-    private void UpdateEmptyState()
-    {
-        bool hasActive = _activeTab != null;
-
-        // 콘텐츠 호스트: 활성 탭 종류에 따라 터미널/에디터 중 하나만 표시.
-        if (_activeTab is SessionItem)
-        {
-            TerminalHostContainer.Visibility = Visibility.Visible;
-            FileEditorHostContainer.Visibility = Visibility.Collapsed;
-        }
-        else if (_activeTab is FileTabItem)
-        {
-            TerminalHostContainer.Visibility = Visibility.Collapsed;
-            FileEditorHostContainer.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            TerminalHostContainer.Visibility = Visibility.Collapsed;
-            FileEditorHostContainer.Visibility = Visibility.Collapsed;
-        }
-
-        EmptyState.Visibility = hasActive ? Visibility.Collapsed : Visibility.Visible;
-
-        // 세션 타이틀 영역 (devez HeaderBar): 활성 탭의 제목 표시
-        SessionHeaderBar.Visibility = hasActive ? Visibility.Visible : Visibility.Collapsed;
-        if (hasActive)
-        {
-            if (_activeTab is SessionItem sess)
-            {
-                // 헤더엔 마지막 보낸 메시지만 표시(메시지 없으면 세션 이름). 폭 넘치면 …로 잘리고 호버 시 전체 툴팁.
-                var msg = sess.LastMessage;
-                var hasMsg = !string.IsNullOrEmpty(msg);
-                SessionHeaderTitle.Text = hasMsg ? msg : sess.Name;
-                SessionHeaderTitle.ToolTip = hasMsg ? msg : null;
-                LastMessageSep.Visibility = hasMsg ? Visibility.Visible : Visibility.Collapsed;
-                FileHeaderIcon.Visibility = Visibility.Collapsed;
-                FileHeaderPathText.Visibility = Visibility.Collapsed;
-                FileDirtyDot.Visibility = Visibility.Collapsed;
-                FileHeaderActions.Visibility = Visibility.Collapsed;
-            }
-            else if (_activeTab is FileTabItem file)
-            {
-                SessionHeaderTitle.Text = file.Title;
-                SessionHeaderTitle.ToolTip = file.FilePath;
-                LastMessageSep.Visibility = Visibility.Collapsed;
-                FileHeaderIcon.Visibility = Visibility.Visible;
-                FileHeaderPathText.Text = file.FilePath;
-                FileHeaderPathText.ToolTip = file.FilePath;
-                FileHeaderPathText.Visibility = Visibility.Visible;
-                FileHeaderActions.Visibility = Visibility.Visible;
-                RefreshFileHeaderState(file);
-            }
-        }
-    }
-
-    private void RefreshFileHeaderState(FileTabItem? file = null)
-    {
-        file ??= _activeTab as FileTabItem;
-        if (file == null) return;
-        bool dirty = file.Editor.IsDirty;
-        FileDirtyDot.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
-        FileSaveBtn.IsEnabled = dirty;
-    }
-
-    private void FileSaveBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (_activeTab is FileTabItem file && file.Editor.Save())
-            RefreshFileHeaderState(file);
-    }
-
-    // 푸터 좌측 상태 텍스트는 제거됨(한도 표시로 대체). 호출부 유지를 위해 no-op 로 남긴다.
+    // 푸터 좌측 상태 텍스트는 제거됨(한도 표시로 대체). 호출부 유지를 위해 no-op.
     private void UpdateStatus() { }
 
-    // ── 설정창 ────────────────────────────────────────────────────
-    // 테마 전환은 타이틀바 버튼에서 설정창(SettingsWindow) 안으로 이동했다.
-    // (devez 이식) UserControl(SettingsDialog)을 Borderless Window(SettingsWindow)에 담아 띄운다.
+    /// <summary>테마 변경 시 좌·우 패널 토글 아이콘 brush 재계산(seam 은 각 패널이 자체 처리).</summary>
+    private void OnThemeChanged_UpdatePanels(string _) => Dispatcher.BeginInvoke(new Action(UpdatePanelToggleVisual));
+
+    // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
-        await SuspendTerminalWithSnapshotAsync(blankCurtain: true); // 스냅샷 대신 테마색 빈 배경(테마 변경 시 색 추종)
+        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
         var dlg = new Views.SettingsWindow { Owner = this };
         dlg.Closed += (_, _) => ResumeTerminal();
         dlg.ShowDialog();
     }
 
-    // ── MCP 서버 관리 (오버레이) ──────────────────────────────────
-    // 설정창의 MCP 카테고리에서도 같은 창을 띄울 수 있다 — 직접 진입 단축.
     private async void McpBtn_Click(object sender, RoutedEventArgs e)
     {
         await SuspendTerminalWithSnapshotAsync();
@@ -2126,97 +1068,29 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
-    // ── 파일 탭 (탭 시스템과 통합) ───────────────────────────────
-    /// <summary>파일 탐색기에서 받은 텍스트 파일을 새 탭으로 연다.
-    /// 같은 파일이 이미 열려 있으면 그 탭을 활성화한다(중복 생성 X).</summary>
-    private void OpenFileAsTab(string path)
-    {
-        if (_activeProject == null) return; // 프로젝트 미선택 시 무시
-        if (string.IsNullOrEmpty(path)) return;
-
-        // 같은 경로의 탭이 이미 있으면 활성화만
-        var existing = _activeProject.Tabs.OfType<FileTabItem>()
-            .FirstOrDefault(t => string.Equals(t.FilePath, path, StringComparison.OrdinalIgnoreCase));
-        if (existing != null)
-        {
-            ActivateFileTab(existing);
-            return;
-        }
-
-        var tab = new FileTabItem { FilePath = path, Editor = CreateFileTabEditor(path) };
-        if (!tab.Editor.LoadFile(path))
-        {
-            // 로드 실패(파일 없음/5MB 초과) → 탭 만들지 않음
-            return;
-        }
-        // 에디터의 닫기 요청 → 탭 제거로 라우팅
-        tab.Editor.CloseRequested += (_, _) => RemoveFileTab(tab);
-        tab.Editor.DirtyChanged += (_, _) => { if (ReferenceEquals(_activeTab, tab)) RefreshFileHeaderState(tab); };
-        _activeProject.Tabs.Add(tab);
-        ActivateFileTab(tab);
-    }
-
-    private static IFileTabEditor CreateFileTabEditor(string path)
-    {
-        var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
-        return ext is ".md" or ".markdown" ? new Views.MarkdownFileEditorView() : new Views.FileEditorView();
-    }
-
-    /// <summary>airspace 우회: 터미널 WebView2를 PNG 스냅샷으로 대체하고 Collapse.
-    /// 오버레이(설정창 등)가 항상 맨 앞에 그려지는 WebView2 뒤로 묻히는 것을 막는다.</summary>
+    // ── airspace 우회 (오버레이가 뜰 때 터미널 WebView2 정지) ────────────
+    /// <summary>모든 패널 터미널 + 우측 브라우저를 정지(스냅샷/커튼). 설정·MCP 오버레이용.</summary>
     private async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
-        await FileExplorer.SuspendBrowserAsync(); // 우측 브라우저(WebView2)도 오버레이 뒤로 묻히지 않게 숨김
-        if (_activeSession == null) return; // 터미널이 안 떠 있으면 불필요
-        if (blankCurtain)
-        {
-            // 설정창: 스냅샷 대신 테마색 빈 배경. 테마를 바꾸면 BgBrush 가 갱신돼 색이 함께 바뀐다.
-            TerminalCurtain.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            var snap = await _terminal.CaptureSnapshotAsync();
-            if (snap != null)
-            {
-                TerminalSnapshot.Source = snap;
-                TerminalSnapshot.Visibility = Visibility.Visible;
-            }
-        }
-        TerminalHostContainer.Visibility = Visibility.Collapsed;
+        await FileExplorer.SuspendBrowserAsync();
+        foreach (var pane in _panes) await pane.SuspendTerminalWithSnapshotAsync(blankCurtain);
     }
 
-    /// <summary>오버레이가 닫힌 뒤 WebView2 터미널을 다시 표시하고 스냅샷/커튼을 제거.</summary>
     private void ResumeTerminal()
     {
         FileExplorer.ResumeBrowser();
-        if (_activeSession != null)
-            TerminalHostContainer.Visibility = Visibility.Visible;
-        TerminalSnapshot.Visibility = Visibility.Collapsed;
-        TerminalSnapshot.Source = null;
-        TerminalCurtain.Visibility = Visibility.Collapsed;
+        foreach (var pane in _panes) pane.ResumeTerminal();
     }
 
-    /// <summary>우측 오버레이 드로어용 터미널 전용 정지(스냅샷). FileExplorer 자체가 오버레이
-    /// 본문이므로 그 브라우저는 정지하지 않는다 — 터미널(중앙) WebView2 만 airspace 우회.</summary>
+    /// <summary>우측 오버레이 드로어용 — 터미널만 스냅샷 정지(브라우저는 오버레이 본문이라 제외).</summary>
     private async Task SuspendTerminalOnlyAsync()
     {
-        if (_activeSession == null) return;
-        var snap = await _terminal.CaptureSnapshotAsync();
-        if (snap != null)
-        {
-            TerminalSnapshot.Source = snap;
-            TerminalSnapshot.Visibility = Visibility.Visible;
-        }
-        TerminalHostContainer.Visibility = Visibility.Collapsed;
+        foreach (var pane in _panes) await pane.SuspendTerminalOnlyAsync();
     }
 
-    /// <summary>우측 오버레이가 닫힌 뒤 터미널만 복원.</summary>
     private void ResumeTerminalOnly()
     {
-        if (_activeSession != null)
-            TerminalHostContainer.Visibility = Visibility.Visible;
-        TerminalSnapshot.Visibility = Visibility.Collapsed;
-        TerminalSnapshot.Source = null;
+        foreach (var pane in _panes) pane.ResumeTerminalOnly();
     }
 
     // ── 타이틀바 ──────────────────────────────────────────────────

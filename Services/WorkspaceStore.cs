@@ -8,7 +8,7 @@ namespace DevezCode.Services;
 /// <summary>프로젝트/세션 트리를 %AppData%\DevezCode\workspace.json 에 저장·복원.</summary>
 public static class WorkspaceStore
 {
-    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } }
+    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
     private sealed class ProjectDto
     {
@@ -37,7 +37,7 @@ public static class WorkspaceStore
                 var proj = ProjectItem.FromPath(p.Path);
                 proj.IsExpanded = p.IsExpanded;
                 foreach (var s in p.Sessions)
-                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "" });
+                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden });
                 foreach (var f in p.Files)
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 result.Add(proj);
@@ -62,6 +62,7 @@ public static class WorkspaceStore
                     {
                         Id = s.Id, Name = s.Name,
                         Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
+                        Hidden = s.Hidden,
                     }).ToList(),
                     Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
                 }).ToList()
