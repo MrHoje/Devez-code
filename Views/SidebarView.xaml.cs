@@ -26,6 +26,8 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectDeleteRequested;
     /// <summary>드래그로 프로젝트 순서가 바뀐 뒤 발생(영속 저장용).</summary>
     public event Action? ProjectsReordered;
+    // 카드 접힘/펼침 변경 → 영속 저장 트리거 (검색 자동 펼침은 제외, 명시 토글만).
+    public event Action? ProjectExpandChanged;
     /// <summary>드래그로 특정 프로젝트의 세션 순서가 바뀐 뒤 발생(탭 동기화 + 영속용).</summary>
     public event Action<ProjectItem>? SessionsReordered;
     public event Action<SessionItem>? SessionSelected;
@@ -88,6 +90,7 @@ public partial class SidebarView : UserControl
         bool target = !AreAllExpanded();
         foreach (var p in Projects) p.IsExpanded = target;
         UpdateExpandAllVisual();
+        ProjectExpandChanged?.Invoke();
     }
 
     private bool AreAllExpanded() => Projects.Count > 0 && Projects.All(p => p.IsExpanded);
@@ -129,6 +132,7 @@ public partial class SidebarView : UserControl
     {
         if (ItemOf<ProjectItem>(sender) is { } p) p.IsExpanded = !p.IsExpanded;
         UpdateExpandAllVisual(); // 개별 토글도 일괄 버튼 상태에 반영
+        ProjectExpandChanged?.Invoke();
         e.Handled = true; // 행 선택으로 버블링 방지
     }
 

@@ -12,6 +12,8 @@ public static class WorkspaceStore
     private sealed class ProjectDto
     {
         public string Path { get; set; } = "";
+        // 좌측 카드 접힘/펼침 상태 (기본 펼침). 재시작 시 복원.
+        public bool IsExpanded { get; set; } = true;
         public List<SessionDto> Sessions { get; set; } = new();
     }
     private sealed class WorkspaceDto { public List<ProjectDto> Projects { get; set; } = new(); }
@@ -30,6 +32,7 @@ public static class WorkspaceStore
             foreach (var p in dto.Projects)
             {
                 var proj = ProjectItem.FromPath(p.Path);
+                proj.IsExpanded = p.IsExpanded;
                 foreach (var s in p.Sessions)
                     proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "" });
                 result.Add(proj);
@@ -48,6 +51,7 @@ public static class WorkspaceStore
                 Projects = projects.Select(p => new ProjectDto
                 {
                     Path = p.Path,
+                    IsExpanded = p.IsExpanded,
                     // 파일 탭은 비영속: 세션만 저장 → 재시작 시 사라진다.
                     Sessions = p.Tabs.OfType<SessionItem>().Select(s => new SessionDto
                     {

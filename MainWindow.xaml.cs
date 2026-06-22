@@ -56,6 +56,7 @@ public partial class MainWindow : Window
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
         Sidebar.ProjectsReordered += () => WorkspaceStore.Save(_projects);
+        Sidebar.ProjectExpandChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
         Sidebar.SessionSelected        += OpenSession;
         Sidebar.SessionDeleteRequested += DeleteSession;
@@ -610,6 +611,11 @@ public partial class MainWindow : Window
             SetSplitterWidth(SidebarSplitterCol, 0);
             Sidebar.Visibility = Visibility.Collapsed;
         }
+        else
+        {
+            SidebarCol.Width = new GridLength(_sidebarWidth);
+            FooterSidebarCol.Width = new GridLength(_sidebarWidth);
+        }
         if (SettingsService.LoadRightPanelCollapsed())
         {
             _rightCollapsed = true;
@@ -618,6 +624,11 @@ public partial class MainWindow : Window
             FooterFileExpCol.Width = new GridLength(0);
             SetSplitterWidth(FileExpSplitterCol, 0, FooterFileExpSplitterCol);
             FileExplorer.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            FileExpCol.Width = new GridLength(_fileExpWidth);
+            FooterFileExpCol.Width = new GridLength(_fileExpWidth);
         }
         UpdatePanelToggleVisual();
     }
