@@ -14,6 +14,8 @@ public sealed class StatusLineService : IDisposable
     private static string FilePath => Path.Combine(Dir, "ratelimit.json");
 
     private FileSystemWatcher? _watcher;
+    private System.Threading.Timer? _poll;
+    private long _lastWriteTicks = -1; // 마지막으로 emit 한 파일 쓰기시각 — 중복 emit 방지
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
@@ -30,13 +32,28 @@ public sealed class StatusLineService : IDisposable
             };
             _watcher.Changed += (_, _) => Emit();
             _watcher.Created += (_, _) => Emit();
-            Emit(); // 시작 시 기존 값 1회 반영
         }
-        catch { /* 감시 실패해도 앱은 계속 — 푸터만 비어 있음 */ }
+        catch { /* 감시 실패해도 폴링이 커버 */ }
+
+        // 폴링 폴백: 같은 폴더의 statusline-cache 파일이 수초마다 대량 갱신돼 watcher 내부 버퍼가
+        // 넘치면 ratelimit.json 이벤트가 유실된다(콜드스타트 첫 스냅샷 누락 → 영영 미표시).
+        // 2초 주기로 쓰기시각을 확인해 변했을 때만 emit — watcher 실패와 무관하게 항상 복원.
+        _poll = new System.Threading.Timer(_ => Emit(), null, 0, 2000);
     }
 
     private void Emit()
     {
+        try
+        {
+            // 쓰기시각이 그대로면 파싱 스킵(폴링이 매번 파일을 안 깨물도록).
+            if (File.Exists(FilePath))
+            {
+                var ticks = File.GetLastWriteTimeUtc(FilePath).Ticks;
+                if (ticks == _lastWriteTicks) return;
+                _lastWriteTicks = ticks;
+            }
+        }
+        catch { }
         var snap = TryRead();
         if (snap != null) SnapshotUpdated?.Invoke(snap);
     }
@@ -84,5 +101,7 @@ public sealed class StatusLineService : IDisposable
     {
         _watcher?.Dispose();
         _watcher = null;
+        _poll?.Dispose();
+        _poll = null;
     }
 }
