@@ -13,14 +13,14 @@
         FontFamily="{StaticResource PretendardFont}">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="30" ResizeBorderThickness="5"
+        <shell:WindowChrome CaptionHeight="34" ResizeBorderThickness="5"
                             CornerRadius="0" GlassFrameThickness="0,0,0,1" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Border x:Name="RootChrome" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
         <Grid x:Name="RootGrid" Grid.IsSharedSizeScope="True">
             <Grid.RowDefinitions>
-                <RowDefinition Height="30"/>
+                <RowDefinition Height="34"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -154,10 +154,10 @@
                 <views:FileExplorerView x:Name="FileExplorer" Grid.Column="4"
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
             </Grid>
-            <!-- ── Status bar (헤더와 동일 높이 30, 우측 설정 버튼) ────────────
+            <!-- ── Status bar (헤더와 동일 높이 34, 우측 설정 버튼) ────────────
                  좌측은 사이드바 SharedSizeGroup 에 묶지 않고 Auto 폭 — 사이드바 접힘/폭 변경과
                  무관하게 CPU/RAM + 클로드 사용량이 항상 같은 자리에 고정. -->
-            <Border Grid.Row="3" Height="30" Background="{DynamicResource BgBrush}"
+            <Border Grid.Row="3" Height="34" Background="{DynamicResource BgBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
