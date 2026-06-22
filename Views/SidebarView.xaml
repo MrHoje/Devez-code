@@ -236,33 +236,32 @@
                             MouseLeftButtonUp="Project_Click"
                             PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
                         <Grid Margin="12,9,8,9">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <!-- 프로젝트 명 + 경로(작은 폰트, 잘리면 …). chevron/메뉴는 2줄 헤더에 대해 수직 중앙 정렬 -->
-                            <StackPanel Grid.Column="0" VerticalAlignment="Center" ToolTip="{Binding Path}">
-                                <TextBlock Text="{Binding Name}"
-                                           TextTrimming="CharacterEllipsis"
-                                           FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                                <TextBlock Text="{Binding Path}" Margin="0,1,0,0"
-                                           TextTrimming="CharacterEllipsis"
-                                           FontSize="{DynamicResource Fs11}"
-                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                            </StackPanel>
-                            <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용). 평소엔 숨김 → 호버 시에만 노출해 프로젝트 경로가 안 잘리게. -->
-                            <Button Grid.Column="2" Margin="6,0,0,0" Tag="{Binding}"
+                            <!-- 프로젝트 명 (1행, 좌측). 우상단 버튼과 같은 줄에 떠 잘리지 않음. -->
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="{Binding Name}"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                            <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용). 항상 노출, 타이틀과 같은 줄 우상단. -->
+                            <Button Grid.Row="0" Grid.Column="1" Margin="4,0,0,0" Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
-                                    Visibility="{Binding IsMouseOver, ElementName=ProjectHeaderRow, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                    VerticalAlignment="Center"
                                     ToolTip="펼치기 / 접기">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="20" Height="20" CornerRadius="6"
+                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="5"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
@@ -278,20 +277,20 @@
                                     </ControlTemplate>
                                 </Button.Template>
                             </Button>
-                            <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움. 평소엔 숨김 → 호버 시에만 노출 -->
-                            <Button Grid.Column="3" Margin="2,0,0,0" Tag="{Binding}"
+                            <!-- 세로형 ... 버튼 — 우클릭 메뉴를 동일하게 띄움. 항상 노출, 타이틀과 같은 줄 우상단. -->
+                            <Button Grid.Row="0" Grid.Column="2" Margin="2,0,0,0" Tag="{Binding}"
                                     Click="ProjectMenu_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
-                                    Visibility="{Binding IsMouseOver, ElementName=ProjectHeaderRow, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
+                                    VerticalAlignment="Center"
                                     ToolTip="메뉴">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Bd" Width="20" Height="20" CornerRadius="6"
+                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="5"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
                                                   Data="{StaticResource IconMoreVertical}"
-                                                  Width="11" Height="11"
+                                                  Width="10" Height="10"
                                                   Stroke="{DynamicResource TextMutedBrush}"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
@@ -303,6 +302,13 @@
                                     </ControlTemplate>
                                 </Button.Template>
                             </Button>
+                            <!-- 경로 (2행, 전체 폭). 버튼이 1행으로 빠졌으므로 잘림 없이 표시. -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                                       Text="{Binding Path}" Margin="0,1,0,0"
+                                       TextTrimming="CharacterEllipsis"
+                                       FontSize="{DynamicResource Fs11}"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       ToolTip="{Binding Path}"/>
                         </Grid>
                     </Border>
                     <!-- 세션 리스트 + 바로가기 리스트: 펼침 시 표시. 가이드선/연결됨 텍스트 없음 -->
