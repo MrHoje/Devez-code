@@ -21,15 +21,21 @@
                     <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconCopy}"/>
                 </MenuItem.Icon>
             </MenuItem>
+            <MenuItem Header="수정" Click="BubbleEdit_Click">
+                <MenuItem.Icon>
+                    <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconPencil}"/>
+                </MenuItem.Icon>
+            </MenuItem>
             <MenuItem Header="줄별로 분리" Click="BubbleSplit_Click">
                 <MenuItem.Icon>
                     <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconScissors}"/>
                 </MenuItem.Icon>
             </MenuItem>
             <Separator/>
-            <MenuItem Click="BubbleDelete_Click">
+            <MenuItem Click="BubbleDelete_Click" Foreground="{DynamicResource DangerBrush}">
                 <MenuItem.Icon>
-                    <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconTrash2}"/>
+                    <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconTrash2}"
+                          Stroke="{DynamicResource DangerBrush}"/>
                 </MenuItem.Icon>
             </MenuItem>
         </ContextMenu>
@@ -181,10 +187,25 @@
                                                 Background="{DynamicResource BubbleBrush}"
                                                 CornerRadius="13,13,13,3"
                                                 Padding="14,10">
-                                            <TextBlock Text="{Binding Text}"
-                                                       TextWrapping="Wrap"
-                                                       FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <Grid>
+                                                <TextBlock x:Name="BubbleText" Text="{Binding Text}"
+                                                           TextWrapping="Wrap"
+                                                           FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                           Foreground="{DynamicResource TextBrush}"/>
+                                                <!-- 인라인 수정모드: IsEditing 일 때 TextBlock 대신 편집 TextBox 노출. -->
+                                                <TextBox x:Name="BubbleEditBox"
+                                                         Visibility="Collapsed"
+                                                         Text="{Binding EditText, UpdateSourceTrigger=PropertyChanged}"
+                                                         TextWrapping="Wrap" AcceptsReturn="True"
+                                                         BorderThickness="0" Background="Transparent"
+                                                         Padding="0" MinWidth="160"
+                                                         Foreground="{DynamicResource TextBrush}"
+                                                         CaretBrush="{DynamicResource TextBrush}"
+                                                         FontSize="{Binding BubbleFontSize, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                         FontFamily="{StaticResource PretendardFont}"
+                                                         PreviewKeyDown="BubbleEditBox_PreviewKeyDown"
+                                                         LostKeyboardFocus="BubbleEditBox_LostFocus"/>
+                                            </Grid>
                                         </Border>
                                     </Border>
                                 </Grid>
@@ -227,6 +248,12 @@
                         <DataTemplate.Triggers>
                             <!-- 하이라이트(선택 OR 우클릭) → SelectionRing 노출 -->
                             <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                            <!-- 수정모드: 편집 TextBox 노출 + 본문 TextBlock 숨김 + 링으로 강조 -->
+                            <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                <Setter TargetName="BubbleText" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="BubbleEditBox" Property="Visibility" Value="Visible"/>
                                 <Setter TargetName="SelectionRing" Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                             <!-- 드래그 병합 도착지 → 두꺼운 링으로 "여기에 합쳐짐" 표시 (devez IsMergeHoverIndicatorVisible) -->

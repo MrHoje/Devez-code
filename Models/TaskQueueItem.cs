@@ -50,4 +50,20 @@ public sealed class TaskQueueItem : NotifyBase
         get => _isActionTarget;
         set => Set(ref _isActionTarget, value);
     }
+
+    // ── 인라인 수정모드 (devez MemoMessage.IsEditing 패턴 슬림) ──
+    private bool _isEditing;
+    public bool IsEditing
+    {
+        get => _isEditing;
+        set => Set(ref _isEditing, value);
+    }
+
+    // 수정모드 임시 편집 버퍼. 커밋 시 Text 로 반영, 취소 시 버림.
+    private string _editText = "";
+    public string EditText
+    {
+        get => _editText;
+        set => Set(ref _editText, value);
+    }
 }

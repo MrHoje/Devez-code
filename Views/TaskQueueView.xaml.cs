@@ -290,6 +290,7 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private void Bubble_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.DataContext is not TaskQueueItem item) return;
+        if (item.IsEditing) return; // 수정모드 버블은 드래그/클릭 무시 (편집 TextBox 전담)
         if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0) return;
         if ((DateTime.Now - _lastContextMenuCloseTime).TotalMilliseconds < 300) return;
         _pendingBubbleDragItem = item;
@@ -309,6 +310,14 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private void Bubble_LeftClick(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.DataContext is not TaskQueueItem item) return;
+        if (item.IsEditing) return; // 수정모드 버블 클릭은 편집 TextBox 전담
+        // 더블클릭(비선택모드) → 인라인 수정모드 진입.
+        if (e.ClickCount == 2 && !_isSelectionMode)
+        {
+            StartEdit(item);
+            e.Handled = true;
+            return;
+        }
         DropInputFocus();
 
         // 직전 우클릭 하이라이트 정리
@@ -678,6 +687,8 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     // ── 키보드 (debit Root_PreviewKeyDown 슬림) ──
     private void Root_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // 수정모드 진행 중이면 키는 편집 TextBox 가 전담 (Delete=텍스트 편집, Esc/Enter=편집박스 핸들러).
+        if (Items.Any(i => i.IsEditing)) return;
         // 선택/하이라이트된 버블이 있으면 입력창 포커스와 무관하게 Delete/Esc/Ctrl+C 를 선처리.
         // (작업 큐는 입력창이 항상 포커스를 유지하므로, 포커스 가드로 막으면 Delete 가 영영 안 먹는다.)
         // 단, 입력창에 글자가 있으면(=텍스트 편집 중) Delete 는 가로채지 않는다.
@@ -821,12 +832,16 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
         if (sender is not ContextMenu cm) return;
         var count = CountSelected();
         bool bulk = count > 1;
+        // 메뉴 순서: [0]복사 [1]수정 [2]줄별로분리 [3]구분선 [4]삭제.
         if (cm.Items.Count > 0 && cm.Items[0] is MenuItem copy)
             copy.Header = bulk ? $"선택 {count}개 복사" : "복사";
-        if (cm.Items.Count > 3 && cm.Items[3] is MenuItem del)
+        if (cm.Items.Count > 4 && cm.Items[4] is MenuItem del)
             del.Header = bulk ? $"선택 {count}개 삭제" : "삭제";
+        // 수정: 단일 대상일 때만(다중 선택 시 숨김).
+        if (cm.Items.Count > 1 && cm.Items[1] is MenuItem edit)
+            edit.Visibility = bulk ? Visibility.Collapsed : Visibility.Visible;
         // 줄별로 분리: 단일 대상이고 빈 줄 제외 2줄 이상일 때만(devez CanSplitMemo).
-        if (cm.Items.Count > 1 && cm.Items[1] is MenuItem split)
+        if (cm.Items.Count > 2 && cm.Items[2] is MenuItem split)
         {
             bool showSplit = !bulk && _contextMenuItem != null && CanSplit(_contextMenuItem);
             split.Visibility = showSplit ? Visibility.Visible : Visibility.Collapsed;
@@ -847,6 +862,89 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private void BubbleSplit_Click(object sender, RoutedEventArgs e)
     {
         if (_contextMenuItem is TaskQueueItem item) SplitItemByLines(item);
+    }
+
+    // ── 인라인 수정모드 (devez MemoMessage IsEditing 패턴 슬림) ──
+    private void BubbleEdit_Click(object sender, RoutedEventArgs e)
+    {
+        var item = _contextMenuItem
+            ?? (sender is MenuItem { DataContext: TaskQueueItem mi } ? mi : null);
+        if (item != null) StartEdit(item);
+    }
+
+    private void StartEdit(TaskQueueItem item)
+    {
+        CancelAnyEdit();          // 다른 버블 수정모드 먼저 닫기
+        ClearActionTarget();
+        item.IsSelected = false;
+        item.IsRightClickHighlighted = false;
+        item.EditText = item.Text;
+        item.IsEditing = true;
+
+        // 레이아웃 갱신 후 편집 TextBox 포커스 + 전체 선택.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            BubblesList.ScrollIntoView(item);
+            var box = FindEditBoxFor(item);
+            if (box != null) { box.Focus(); box.SelectAll(); }
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    /// <summary>편집 중인 모든 버블의 수정모드 해제(저장 없이).</summary>
+    private void CancelAnyEdit()
+    {
+        foreach (var it in Items.Where(i => i.IsEditing).ToList()) it.IsEditing = false;
+    }
+
+    private void CommitEdit(TaskQueueItem item)
+    {
+        if (!item.IsEditing) return;
+        var text = (item.EditText ?? "").Trim();
+        item.IsEditing = false;
+        if (text.Length == 0) return; // 빈 내용이면 원본 유지
+        if (text != item.Text) { item.Text = text; Save(); }
+    }
+
+    private TextBox? FindEditBoxFor(TaskQueueItem item)
+    {
+        if (BubblesList.ItemContainerGenerator.ContainerFromItem(item) is not DependencyObject c) return null;
+        return FindDescendantByName(c, "BubbleEditBox") as TextBox;
+    }
+
+    private static FrameworkElement? FindDescendantByName(DependencyObject root, string name)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is FrameworkElement fe && fe.Name == name) return fe;
+            var r = FindDescendantByName(child, name);
+            if (r != null) return r;
+        }
+        return null;
+    }
+
+    private void BubbleEditBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox { DataContext: TaskQueueItem item }) return;
+        if (e.Key == Key.Escape)
+        {
+            item.IsEditing = false; // 취소: EditText 버림
+            e.Handled = true;
+            InputBox.Focus();
+        }
+        // Enter=저장, Shift+Enter=줄바꿈, Ctrl+S=저장.
+        else if ((e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+              || (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control))
+        {
+            CommitEdit(item);
+            e.Handled = true;
+            InputBox.Focus();
+        }
+    }
+
+    private void BubbleEditBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox { DataContext: TaskQueueItem item }) CommitEdit(item);
     }
 
     // ── 버블 드래그 → 병합 (devez 크로스윈도우 고스트의 패널 내 경량 버전) ──
