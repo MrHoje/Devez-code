@@ -13,14 +13,14 @@
         FontFamily="{StaticResource PretendardFont}">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="44" ResizeBorderThickness="5"
+        <shell:WindowChrome CaptionHeight="30" ResizeBorderThickness="5"
                             CornerRadius="0" GlassFrameThickness="0,0,0,1" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Border x:Name="RootChrome" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
         <Grid x:Name="RootGrid" Grid.IsSharedSizeScope="True">
             <Grid.RowDefinitions>
-                <RowDefinition Height="44"/>
+                <RowDefinition Height="30"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -67,7 +67,7 @@
                          fill 32.7%) 과 동일하게 리사이즈했으므로 같은 Height=34 에서 동일한 시각 크기로
                          렌더됨 (visible 17.8x21.3). Translate(2,3) + 17pt Bold BrunoAceSC 도 정합. -->
                     <Image Source="pack://application:,,,/Resources/Logos/logo.png"
-                           Height="35" Stretch="Uniform"
+                           Height="23" Stretch="Uniform"
                            RenderOptions.BitmapScalingMode="HighQuality"
                            SnapsToDevicePixels="True"
                            VerticalAlignment="Center"
@@ -76,7 +76,7 @@
                             <TranslateTransform X="-2" Y="1"/>
                         </Image.RenderTransform>
                     </Image>
-                    <TextBlock Text="DevezCode" FontSize="17" FontWeight="Bold"
+                    <TextBlock Text="DevezCode" FontSize="12" FontWeight="Bold"
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                Foreground="{DynamicResource TextBrush}"
                                VerticalAlignment="Center" Margin="3,1,0,0"/>
@@ -537,10 +537,10 @@
                 <views:FileExplorerView x:Name="FileExplorer" Grid.Column="4"
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
             </Grid>
-            <!-- ── Status bar (헤더와 동일 높이 44, 우측 설정 버튼) ────────────
+            <!-- ── Status bar (헤더와 동일 높이 30, 우측 설정 버튼) ────────────
                  좌측은 사이드바 SharedSizeGroup 에 묶지 않고 Auto 폭 — 사이드바 접힘/폭 변경과
                  무관하게 CPU/RAM + 클로드 사용량이 항상 같은 자리에 고정. -->
-            <Border Grid.Row="3" Height="44" Background="{DynamicResource BgBrush}"
+            <Border Grid.Row="3" Height="30" Background="{DynamicResource BgBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
