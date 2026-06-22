@@ -99,6 +99,14 @@ public sealed class ProjectFile : NotifyBase
     /// <summary>메뉴 표시 이름 — 사용자 지정 이름이 비면 파일명으로 폴백.</summary>
     public string DisplayName => !string.IsNullOrWhiteSpace(Name) ? Name
         : (string.IsNullOrEmpty(FilePath) ? "" : Path.GetFileName(FilePath));
+
+    /// <summary>대상 파일의 셸 아이콘(카드 바로가기 행 표시용). 경로 없으면 null.</summary>
+    private System.Windows.Media.ImageSource? _icon;
+    private bool _iconLoaded;
+    public System.Windows.Media.ImageSource? Icon
+    {
+        get { if (!_iconLoaded) { _iconLoaded = true; _icon = Services.FileIconHelper.GetSmallIcon(FilePath); } return _icon; }
+    }
 }
 
 /// <summary>좌측 트리의 프로젝트(= 디렉터리). 하위에 탭(세션/파일) 목록을 가진다.</summary>

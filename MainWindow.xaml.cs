@@ -57,6 +57,7 @@ public partial class MainWindow : Window
         Sidebar.ProjectDeleteRequested += DeleteProject;
         Sidebar.AddProjectFileRequested += AddProjectFile;
         Sidebar.ProjectFileSelected    += OpenProjectFile;
+        Sidebar.ProjectFileRemoveRequested += RemoveProjectFile;
         Sidebar.ProjectsReordered += () => WorkspaceStore.Save(_projects);
         Sidebar.ProjectExpandChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
@@ -929,6 +930,15 @@ public partial class MainWindow : Window
         WorkspaceStore.Save(_projects);
     }
 
+    /// <summary>바로가기 제거 — 해당 프로젝트 Files 에서 삭제 후 영속 저장.</summary>
+    private void RemoveProjectFile(ProjectFile file)
+    {
+        var proj = _projects.FirstOrDefault(p => p.Files.Contains(file));
+        if (proj == null) return;
+        proj.Files.Remove(file);
+        WorkspaceStore.Save(_projects);
+    }
+
     /// <summary>등록된 바로가기 클릭 — 대상 파일을 외부 실행(관리자 플래그면 runas 로 UAC 승격).</summary>
     private void OpenProjectFile(ProjectFile file)
     {
@@ -1342,7 +1352,8 @@ public partial class MainWindow : Window
     {
         var sess = TerminalSessionManager.Instance.Get(roomId);
         if (sess is not { IsAlive: true }) return;
-        // 명령 + Enter 를 한 번에 써 중간 프레임(명령 타이핑만 된 상태) 재렌더를 줄인다.
+        // 출력 스크롤 튀김 방지 — command echo + response 가 돌아오는 동안 xterm scroll 을 억제
+        _terminal.SuppressScroll(5);
         sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
     }
 
@@ -2219,14 +2230,16 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(hwnd, lParam); handled = true; }
+        if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(lParam); handled = true; }
         return IntPtr.Zero;
     }
 
-    /// <summary>최대화 시 창이 모니터 작업영역에 정확히 맞도록 위치/크기 상한을 설정.</summary>
-    private static void WmGetMinMaxInfo(IntPtr hwnd, IntPtr lParam)
+    /// <summary>최대화 시 창이 모니터 작업영역에 정확히 맞도록 위치/크기 상한을 설정.
+    /// XAML MinWidth/MinHeight 도 여기서 ptMinTrackSize 에 반영한다(WPF 내부 처리가
+    /// handled=true 로 스킵되므로).</summary>
+    private void WmGetMinMaxInfo(IntPtr lParam)
     {
-        var monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        var monitor = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
         if (monitor == IntPtr.Zero) return;
         var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
         if (!GetMonitorInfo(monitor, ref info)) return;
@@ -2237,6 +2250,10 @@ public partial class MainWindow : Window
         mmi.ptMaxPosition.Y = work.Top - mon.Top;
         mmi.ptMaxSize.X = work.Right - work.Left;
         mmi.ptMaxSize.Y = work.Bottom - work.Top;
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        mmi.ptMinTrackSize.X = (int)(MinWidth * dpi.DpiScaleX);
+        mmi.ptMinTrackSize.Y = (int)(MinHeight * dpi.DpiScaleY);
         Marshal.StructureToPtr(mmi, lParam, true);
     }
 

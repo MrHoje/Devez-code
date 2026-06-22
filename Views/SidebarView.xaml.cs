@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using DevezCode.Models;
+using DevezCode.Services;
 
 namespace DevezCode.Views;
 
@@ -28,6 +29,8 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? AddProjectFileRequested;
     /// <summary>등록된 파일 클릭 — 편집 탭으로 연다(MainWindow 위임).</summary>
     public event Action<ProjectFile>? ProjectFileSelected;
+    /// <summary>바로가기 행 제거 요청(MainWindow 위임 — Files 에서 제거 후 저장).</summary>
+    public event Action<ProjectFile>? ProjectFileRemoveRequested;
     /// <summary>드래그로 프로젝트 순서가 바뀐 뒤 발생(영속 저장용).</summary>
     public event Action? ProjectsReordered;
     // 카드 접힘/펼침 변경 → 영속 저장 트리거 (검색 자동 펼침은 제외, 명시 토글만).
@@ -192,19 +195,40 @@ public partial class SidebarView : UserControl
         if (ItemOf<ProjectFile>(sender) is { } f) ProjectFileSelected?.Invoke(f);
     }
 
+    /// <summary>카드 하단 바로가기 행 클릭 — 대상 실행.</summary>
+    private void ProjectFileRow_Click(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is ProjectFile f) ProjectFileSelected?.Invoke(f);
+    }
+
+    /// <summary>바로가기 행 우클릭 메뉴 — 제거.</summary>
+    private void ProjectFileRemove_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFile>(sender) is { } f) ProjectFileRemoveRequested?.Invoke(f);
+    }
+
     /// <summary>프로젝트 메뉴가 열릴 때 "바로가기" 서브메뉴를 등록 목록 + 맨 아래 "바로가기 추가" 로 선(先)채운다.
     /// 서브메뉴가 펼쳐지기 전(메뉴 오픈 시점)에 항목을 넣어, 열리는 도중 Clear 로 인한 팝업 미표시 버그를 피한다.</summary>
     private void ProjectMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu cm) return;
         var parent = cm.Items.OfType<MenuItem>().FirstOrDefault(m => (m.Header as string) == "바로가기");
-        if (parent is null || parent.Tag is not ProjectItem p) return;
+        if (parent is null) return;
+        // 서브메뉴 헤더 자식의 Tag={Binding} 은 Opened 시점에 아직 평가 안 됐을 수 있어 null 가능 →
+        // ContextMenu.DataContext(타겟에서 상속)로 프로젝트를 얻는다. 폴백으로 PlacementTarget·Tag.
+        var p = parent.Tag as ProjectItem
+                ?? cm.DataContext as ProjectItem
+                ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as ProjectItem;
+        if (p is null) return;
 
         parent.Items.Clear();
         foreach (var f in p.Files)
         {
             var header = f.RunAsAdmin ? $"{f.DisplayName}  (관리자)" : f.DisplayName;
             var item = new MenuItem { Header = header, Tag = f, ToolTip = f.FilePath };
+            var icon = FileIconHelper.GetSmallIcon(f.FilePath);
+            if (icon != null)
+                item.Icon = new Image { Source = icon, Width = 16, Height = 16 };
             item.Click += ProjectFileOpen_Click;
             parent.Items.Add(item);
         }

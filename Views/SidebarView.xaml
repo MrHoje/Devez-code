@@ -157,6 +157,43 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
+        <!-- ── 바로가기 row 템플릿 — 세션 row 와 동일 크기. 셸 아이콘 + 이름. 클릭=실행, 우클릭=제거 ── -->
+        <DataTemplate x:Key="ShortcutTemplate" DataType="{x:Type models:ProjectFile}">
+            <Border x:Name="ShortcutRow" Style="{StaticResource SessionCard}"
+                    MouseLeftButtonUp="ProjectFileRow_Click" Cursor="Arrow"
+                    ToolTip="{Binding FilePath}">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="바로가기 제거" Tag="{Binding}" Click="ProjectFileRemove_Click"
+                                  Foreground="{DynamicResource DangerBrush}">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
+                                      Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Grid Margin="10,5,10,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Image Grid.Column="0" Width="14" Height="14" Margin="0,0,10,0" VerticalAlignment="Center"
+                           Source="{Binding Icon}" RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource TextBrush}"/>
+                    <!-- 관리자 권한 실행 표식 -->
+                    <Path Grid.Column="2" Style="{StaticResource LucideIcon}" Data="{StaticResource IconShield}"
+                          Width="12" Height="12" Margin="6,0,0,0" VerticalAlignment="Center"
+                          Stroke="{DynamicResource TextMutedBrush}"
+                          Visibility="{Binding RunAsAdmin, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
         <!-- ── 프로젝트(상위 항목) 템플릿 — 카드 헤더(아이콘·이름·chevron·⋯) + 세션 row 리스트 ── -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
             <Border x:Name="ProjectCardRoot" Style="{StaticResource ProjectCard}"
@@ -170,23 +207,12 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <!-- 등록된 바로가기가 없으면 '바로가기 추가', 하나라도 있으면 '바로가기' 서브메뉴(자식=등록 항목 + 맨 아래 바로가기 추가). -->
-                        <MenuItem Header="바로가기 추가" Tag="{Binding}" Click="AddProjectFile_Click"
-                                  Visibility="{Binding HasFiles, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
+                        <!-- 바로가기 추가 — 등록된 항목은 메뉴가 아니라 카드 하단 행으로 표시된다. -->
+                        <MenuItem Header="바로가기 추가" Tag="{Binding}" Click="AddProjectFile_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFilePlus}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="바로가기" Tag="{Binding}" Style="{StaticResource SubMenuHeaderItem}"
-                                  Visibility="{Binding HasFiles, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
-                            <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
-                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
-                            </MenuItem.Icon>
-                            <!-- 화살표 표시용 placeholder — ContextMenu.Opened 에서 실제 항목으로 교체된다.
-                                 (SubmenuOpened 에서 Clear 하면 열리는 도중 팝업이 항목을 못 잡는 타이밍 버그가 있어 Opened 로 선채움) -->
-                            <MenuItem Header="…"/>
                         </MenuItem>
                         <Separator/>
                         <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="{DynamicResource DangerBrush}">
@@ -270,12 +296,19 @@
                             </Button>
                         </Grid>
                     </Border>
-                    <!-- 세션 리스트: 펼침 시 표시. 가이드선/연결됨 텍스트 없음 -->
+                    <!-- 세션 리스트 + 바로가기 리스트: 펼침 시 표시. 가이드선/연결됨 텍스트 없음 -->
                     <Border Visibility="Collapsed"
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
-                        <ItemsControl ItemsSource="{Binding Sessions}"
-                                      ItemTemplate="{StaticResource SessionTemplate}"
-                                      Margin="8,2,8,8"/>
+                        <StackPanel Margin="8,2,8,8">
+                            <ItemsControl ItemsSource="{Binding Sessions}"
+                                          ItemTemplate="{StaticResource SessionTemplate}"/>
+                            <!-- 바로가기: 세션과 세퍼레이터로 구분, 등록된 게 있을 때만 표시 -->
+                            <Border Height="1" Margin="2,6,2,6"
+                                    Background="{DynamicResource LineBrush}"
+                                    Visibility="{Binding HasFiles, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                            <ItemsControl ItemsSource="{Binding Files}"
+                                          ItemTemplate="{StaticResource ShortcutTemplate}"/>
+                        </StackPanel>
                     </Border>
                 </StackPanel>
             </Border>
