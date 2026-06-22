@@ -185,7 +185,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             core.Settings.IsStatusBarEnabled = false;
             // 외부 OS 드래그(탐색기/이미지 등)는 WPF DragDrop 시스템이 받아 처리하도록 fall-through.
             // WorkspacePaneView 의 TerminalHostContainer Drop 핸들러가 활성 세션에 @경로 를 입력한다.
+            // - AllowExternalDrop: OS OLE 드래그 비활성화 (WPF DragDrop으로 fall-through)
+            // - AllowDrop: WebView2 의 WPF DragDrop 도 비활성화 (자식이 흡수하지 않고 부모로 bubbling)
             _webView.AllowExternalDrop = false;
+            _webView.AllowDrop = false;
 
             var webRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "Terminal", "web");
             core.SetVirtualHostNameToFolderMapping(
