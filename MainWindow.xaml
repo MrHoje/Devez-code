@@ -5,7 +5,7 @@
         xmlns:models="clr-namespace:DevezCode.Models"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="DevezCode" Height="760" Width="1240"
-        MinHeight="520" MinWidth="900"
+        MinHeight="640" MinWidth="960"
         Icon="pack://application:,,,/Resources/Logos/app.ico"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize"
@@ -333,27 +333,27 @@
                                              같은 PanelBrush 라 하단 라인/이음매(seam)를 덮는다. 평소엔 숨김. -->
                                         <Path x:Name="TabFootLeftFill"
                                               HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                                              Margin="-7,0,0,-1"
+                                              Margin="-10,0,0,-1"
                                               Fill="{DynamicResource PanelBrush}"
-                                              Data="M8,0 L7,0 A7,13 0 0 1 0,13 L8,13 Z"
+                                              Data="M11,0 L10,0 A10,13 0 0 1 0,13 L11,13 Z"
                                               Visibility="Collapsed"/>
                                         <Path x:Name="TabFootLeftLine"
                                               HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                                              Margin="-7,0,0,-1"
+                                              Margin="-10,0,0,-1"
                                               Stroke="{DynamicResource LineBrush}" StrokeThickness="1"
-                                              Data="M7,-3 L7,0 A7,13 0 0 1 0,13"
+                                              Data="M10,-3 L10,0 A10,13 0 0 1 0,13"
                                               Visibility="Collapsed"/>
                                         <Path x:Name="TabFootRightFill"
                                               HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                              Margin="0,0,-7,-1"
+                                              Margin="0,0,-10,-1"
                                               Fill="{DynamicResource PanelBrush}"
-                                              Data="M0,0 L1,0 A7,13 0 0 0 8,13 L0,13 Z"
+                                              Data="M0,0 L1,0 A10,13 0 0 0 11,13 L0,13 Z"
                                               Visibility="Collapsed"/>
                                         <Path x:Name="TabFootRightLine"
                                               HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                              Margin="0,0,-7,-1"
+                                              Margin="0,0,-10,-1"
                                               Stroke="{DynamicResource LineBrush}" StrokeThickness="1"
-                                              Data="M1,-3 L1,0 A7,13 0 0 0 8,13"
+                                              Data="M1,-3 L1,0 A10,13 0 0 0 11,13"
                                               Visibility="Collapsed"/>
                                       </Grid>
                                         <DataTemplate.Triggers>
