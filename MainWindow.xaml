@@ -161,42 +161,40 @@
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition x:Name="FooterSidebarCol" Width="Auto" MinWidth="190" SharedSizeGroup="MainSidebar"/>
+                        <ColumnDefinition x:Name="FooterSidebarCol" Width="Auto" MinWidth="190"/>
                         <ColumnDefinition Width="*"/>
                     <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
                     <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="0"/>
                     <!-- 우측 패널 접힘과 무관하게 항상 보이는 설정 버튼용 고정폭 컬럼 -->
                     <ColumnDefinition x:Name="FooterActionsCol" Width="Auto" MinWidth="48"/>
                 </Grid.ColumnDefinitions>
-                    <!-- 성능 모니터: 푸터 좌측 14px 고정. ColumnSpan="2" 로 빈 * 영역까지 차지하되
-                         내용물(Auto) 은 좌측에 그려져 항상 푸터 시작점에서 14px 떨어진 자리에 위치. -->
-                    <StackPanel x:Name="PerfChipGroup" Grid.Column="0" Grid.ColumnSpan="2"
-                                Orientation="Horizontal" Margin="14,0,12,0" VerticalAlignment="Center">
-                        <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
-                                Style="{StaticResource PerfChipButton}">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="CPU  " FontSize="{DynamicResource PerfChipLblFs}"
-                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="PerfCpuText" Text="--" Width="46" TextAlignment="Left"
-                                           FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                                <TextBlock Text="RAM  " FontSize="{DynamicResource PerfChipLblFs}"
-                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="PerfRamText" Text="--" Width="60" TextAlignment="Left"
-                                           FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                    <!-- 클로드 사용량: PerfChipGroup 과 같은 ColumnSpan="2" 영역의 우측(HorizontalAlignment=Right)에 배치.
-                         별도 컬럼을 두지 않아 푸터 폭 배분에서 * 영역이 잠식당하지 않음. 영역 폭이 줄어들어도
-                         PerfChipGroup(좌측 14px) ↔ RateLimitPanel(우측 14px) 위치는 양쪽 끝에 고정되어 흔들리지 않음. -->
-                    <StackPanel x:Name="RateLimitPanel" Grid.Column="0" Grid.ColumnSpan="2"
-                                Orientation="Horizontal" HorizontalAlignment="Right"
-                                VerticalAlignment="Center" Margin="0,0,14,0"
-                                Visibility="Collapsed" ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
-                        <Border Width="1" Height="12" Margin="0,0,14,0" VerticalAlignment="Center"
-                                Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                    <!-- 좌측: CPU/RAM | (구분선) 클로드 사용량.
+                         초기 배치처럼 한 StackPanel에 묶되, 성능모니터 영역만 고정 폭으로 잡아
+                         CPU/RAM 값 길이가 바뀌어도 뒤의 RateLimitPanel 시작점이 밀리지 않게 한다. -->
+                    <StackPanel Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                        <StackPanel x:Name="PerfChipGroup" Width="190" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
+                                    Style="{StaticResource PerfChipButton}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="CPU  " FontSize="{DynamicResource PerfChipLblFs}"
+                                               Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="PerfCpuText" Text="--" Width="46" TextAlignment="Left"
+                                               FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="RAM  " FontSize="{DynamicResource PerfChipLblFs}"
+                                               Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="PerfRamText" Text="--" Width="60" TextAlignment="Left"
+                                               FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <!-- 클로드 사용량: 구분선 + 5시간/주간. 패널 자체가 Collapsed 면 구분선도 함께 숨김. -->
+                        <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed" ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
+                            <Border Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
                         <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
                                Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
                                RenderOptions.BitmapScalingMode="HighQuality"/>
@@ -216,6 +214,7 @@
                         </Border>
                         <TextBlock x:Name="RlSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                    </StackPanel>
                     </StackPanel>
                     <!-- 우측: 설정 버튼 (MCP 서버 버튼은 보류 — 2026-06 보류, 재활성 시 Visibility 제거 + Uncomment).
                          컬럼은 FooterFileExpCol(FooterActionsCol)이 아닌 별도 고정폭 컬럼에 둔다 — 우측 패널 접힘과 무관하게 항상 노출. -->
