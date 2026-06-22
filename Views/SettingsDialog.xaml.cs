@@ -457,5 +457,8 @@ public sealed class AgentItem : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
-/// <summary>세션 유지기간 프리셋 한 항목.</summary>
-public sealed record RetentionOption(int Days, string Label);
+/// <summary>세션 유지기간 프리셋 한 항목. ToString=Label (콤보 SelectionBox 가 DisplayMemberPath 대신 ToString 사용).</summary>
+public sealed record RetentionOption(int Days, string Label)
+{
+    public override string ToString() => Label;
+}
