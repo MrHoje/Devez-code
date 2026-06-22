@@ -35,11 +35,16 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.0.0", "2026-06-22", true, new[]
+        ("v1.1.0", "2026-06-22", true, new[]
         {
-            "DevezCode 정식 출시 — Claude Code·OpenCode·Codex 등 코딩 에이전트를 한 창에서 사용합니다.",
-            "테마 변경 시 모든 세션이 새 테마로 자동 재시작되며, 재시작 동안 로딩 스피너가 표시됩니다.",
-            "프로젝트를 선택하면 그 프로젝트의 모든 세션을 미리 불러오고, 프로젝트 카드에 세션 실행 상태가 표시됩니다.",
+            "사이드바에 새로운 메뉴를 추가했습니다.",
+            "프로젝트에 실행파일 바로가기 추가 기능을 도입했습니다.",
+            "전반적인 UI를 개선했습니다.",
+            "세션 변경 시 항상 표시되던 스피너 문제를 수정했습니다.",
+        }),
+        ("v1.0.0", "2026-06-22", false, new[]
+        {
+            "초기 버전입니다.",
         }),
     };
     private const int ChangelogPageSize = 5;
