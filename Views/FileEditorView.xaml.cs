@@ -2,14 +2,13 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Highlighting;
 
 namespace DevezCode.Views;
 
-/// <summary>파일 편집기 탭의 본체. 탭마다 1개의 인스턴스가 생성되어 콘텐츠 호스트에 붙는다.
-/// "현재 다른 파일로 교체" 기능은 없음 — 파일을 바꾸려면 새 탭을 연다.</summary>
 public partial class FileEditorView : UserControl, IFileTabEditor
 {
-    /// <summary>사용자가 닫기를 요청했을 때(저장 확인 포함) 발생. 호스트(=탭)가 탭을 제거한다.</summary>
     public event EventHandler? CloseRequested;
     public event EventHandler? DirtyChanged;
 
@@ -18,10 +17,8 @@ public partial class FileEditorView : UserControl, IFileTabEditor
 
     public FileEditorView() => InitializeComponent();
 
-    /// <summary>인앱 편집기로 열 수 있는 텍스트 계열 파일인지 판정.</summary>
     public static bool IsEditable(string path)
     {
-        // 확장자 없는 대표 텍스트 파일들
         var name = Path.GetFileName(path).ToLowerInvariant();
         if (name is "dockerfile" or "makefile" or "license" or "readme" or ".gitignore"
                  or ".gitattributes" or ".editorconfig" or ".env")
@@ -40,15 +37,11 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             or ".sln" or ".csproj" or ".props" or ".targets" or ".gitignore";
     }
 
-    /// <summary>현재 편집 중인 절대 경로. 미열림이면 null.</summary>
     public string? FilePath => _path;
-
-    /// <summary>저장되지 않은 변경사항이 있는지.</summary>
     public bool IsDirty => _dirty;
 
     private bool _dirty;
 
-    /// <summary>파일을 읽어 편집기에 표시. 성공 시 true. 호스트가 탭을 만들고 활성화한다.</summary>
     public bool LoadFile(string path)
     {
         try
@@ -64,6 +57,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             }
 
             _loading = true;
+            Editor.SyntaxHighlighting = GetHighlighting(path);
             Editor.Text = File.ReadAllText(path);
             _loading = false;
 
@@ -72,7 +66,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
 
             Visibility = Visibility.Visible;
             Editor.Focus();
-            Editor.CaretIndex = 0;
+            Editor.CaretOffset = 0;
             return true;
         }
         catch (Exception ex)
@@ -83,7 +77,40 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         }
     }
 
-    private void Editor_TextChanged(object sender, TextChangedEventArgs e)
+    private static IHighlightingDefinition? GetHighlighting(string path)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        var mgr = HighlightingManager.Instance;
+        return ext switch
+        {
+            ".cs" or ".csx" => mgr.GetDefinition("C#"),
+            ".xaml" or ".xml" or ".csproj" or ".props" or ".targets" or ".config" or ".plist" or ".svg"
+                => mgr.GetDefinition("XML"),
+            ".html" or ".htm" or ".cshtml" or ".razor" => mgr.GetDefinition("HTML"),
+            ".css" or ".scss" or ".less" => mgr.GetDefinition("CSS"),
+            ".js" or ".jsx" => mgr.GetDefinition("JavaScript"),
+            ".ts" or ".tsx" => mgr.GetDefinition("C#"),
+            ".py" => mgr.GetDefinition("Python"),
+            ".sql" => mgr.GetDefinition("SQL"),
+            ".php" => mgr.GetDefinition("PHP"),
+            ".java" => mgr.GetDefinition("Java"),
+            ".c" or ".h" => mgr.GetDefinition("C"),
+            ".cpp" or ".cc" or ".cxx" or ".hpp" or ".hh" or ".hxx" => mgr.GetDefinition("C++"),
+            ".vb" => mgr.GetDefinition("VB"),
+            ".ps1" or ".psm1" => mgr.GetDefinition("PowerShell"),
+            ".bat" or ".cmd" => mgr.GetDefinition("BAT"),
+            ".json" => mgr.GetDefinition("C#"),
+            ".go" => mgr.GetDefinition("C#"),
+            ".rs" => mgr.GetDefinition("C#"),
+            ".swift" => mgr.GetDefinition("C#"),
+            ".kt" or ".kts" => mgr.GetDefinition("C#"),
+            ".rb" => mgr.GetDefinition("C#"),
+            ".fs" => mgr.GetDefinition("F#"),
+            _ => null,
+        };
+    }
+
+    private void Editor_TextChanged(object? sender, EventArgs e)
     {
         if (_loading) return;
         SetDirty(true);
@@ -112,7 +139,6 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         }
     }
 
-    /// <summary>변경분이 있으면 저장/취소를 묻고, 진행 가능하면 true.</summary>
     private bool ConfirmDiscardOrSave()
     {
         if (!_dirty) return true;
@@ -120,10 +146,9 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         if (r == MessageBoxResult.Cancel) return false;
         if (r == MessageBoxResult.Yes) return Save();
-        return true; // No → 변경 버림
+        return true;
     }
 
-    /// <summary>편집기 닫기 요청 — 변경분 확인 후 호스트에 알린다.</summary>
     public void RequestClose()
     {
         if (string.IsNullOrEmpty(_path)) return;
@@ -131,7 +156,6 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    // ── 키 입력: Ctrl+S 저장 / Esc 닫기 ─────────────────────────────
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         if (e.Key == Key.S && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
