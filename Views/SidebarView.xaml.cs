@@ -380,10 +380,13 @@ public partial class SidebarView : UserControl
             (sess, hostTarget, _) =>
             {
                 int from = project.Sessions.IndexOf(sess);
-                if (from >= 0)
+                if (from < 0) return Task.CompletedTask;
+                int to = Math.Clamp(hostTarget, 0, project.Sessions.Count - 1);
+                if (to != from)
                 {
-                    int to = Math.Clamp(hostTarget, 0, project.Sessions.Count - 1);
-                    if (to != from) { project.Sessions.Move(from, to); SessionsReordered?.Invoke(project); }
+                    // ProjectItem.MoveSession: Tabs 안의 세션 상대 순서도 동기화 → 탭 스트립이 자동으로 따라간다.
+                    project.MoveSession(sess, to);
+                    SessionsReordered?.Invoke(project);
                 }
                 return Task.CompletedTask;
             }, exactFollow: true);

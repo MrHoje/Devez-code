@@ -169,8 +169,25 @@ public sealed class ProjectItem : NotifyBase
     public ProjectItem()
     {
         // Tabs → Sessions 단방향 동기. 역방향은 코드가 항상 Tabs 에만 추가/제거하도록 강제.
+        // 단, Move 액션은 양쪽(탭 스트립·사이드바) 드래그 동기화를 위해 처리한다.
         Tabs.CollectionChanged += (_, e) =>
         {
+            if (e.Action == NotifyCollectionChangedAction.Move)
+            {
+                // ObservableCollection.Move 는 OldItems/NewItems 가 비어 있다. 현재 Tabs 의 세션 순서로
+                // Sessions 를 incremental Move 로 맞춘다 (한 번에 Reset 하면 UI 가 한꺼번에 리셋되어 깜빡임).
+                var ordered = Tabs.OfType<SessionItem>().ToList();
+                for (int i = 0; i < ordered.Count; i++)
+                {
+                    if (i >= Sessions.Count) break;
+                    if (!ReferenceEquals(Sessions[i], ordered[i]))
+                    {
+                        int current = Sessions.IndexOf(ordered[i]);
+                        if (current > i) Sessions.Move(current, i);
+                    }
+                }
+                return;
+            }
             if (e.NewItems != null)
                 foreach (TabItemBase t in e.NewItems)
                     if (t is SessionItem s) Sessions.Add(s);
@@ -210,6 +227,31 @@ public sealed class ProjectItem : NotifyBase
         OnPropertyChanged(nameof(HasAliveSession));
         OnPropertyChanged(nameof(HasBusySession));
         OnPropertyChanged(nameof(SessionStatusText));
+    }
+
+    /// <summary>세션을 세션 기준 새 인덱스(<paramref name="newSessionIndex"/>)로 이동.
+    /// Tabs 안의 세션 상대 순서도 동기화하므로 사이드바에서 드래그해도 탭 스트립 위치가 따라가고,
+    /// 그 반대도 마찬가지다(탭 스트립은 Tabs.Move 를 직접 호출 → Tabs.CollectionChanged Move 가 Sessions 동기).
+    /// 파일 탭은 그 자리에 그대로 남는다(세션 사이를 가로지를 때만 자연스럽게 밀려난다).</summary>
+    public void MoveSession(SessionItem session, int newSessionIndex)
+    {
+        var sessionTabs = Tabs.OfType<SessionItem>().ToList();
+        int oldSessionIndex = sessionTabs.IndexOf(session);
+        if (oldSessionIndex < 0) return;
+        if (newSessionIndex < 0 || newSessionIndex >= sessionTabs.Count) return;
+        if (oldSessionIndex == newSessionIndex) return;
+
+        // target = 새 세션 순서에서 newSessionIndex 위치에 있어야 하는 세션.
+        // Tabs 안에서 그 세션이 있는 자리에 session 을 삽입하면 (post-Move 인덱스 기준)
+        // sessionTabs 의 순서가 newSessionIndex 가 되도록 자연스럽게 맞춰진다.
+        // (위로/아래로/맨끝 모든 경우에 동일한 공식이 성립 — 아래 새 Tabs.CollectionChanged Move 핸들러와 세트.)
+        var target = sessionTabs[newSessionIndex];
+        int oldTabIndex = Tabs.IndexOf(session);
+        int newTabIndex = Tabs.IndexOf(target);
+        if (oldTabIndex == newTabIndex) return;
+
+        Tabs.Move(oldTabIndex, newTabIndex);
+        // Sessions 는 Tabs.CollectionChanged(Move 핸들러)가 incremental Move 로 동기화.
     }
 
     public static ProjectItem FromPath(string path)
