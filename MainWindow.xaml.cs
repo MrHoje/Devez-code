@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -73,6 +74,10 @@ public partial class MainWindow : Window
         TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
         TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();
         TabsHost.LostMouseCapture += async (_, _) => await EndTabDragAsync();
+
+        // 한자+화살표: 좌/우 → 활성 프로젝트의 세션 탭 이동, 상/하 → 프로젝트 이동
+        // (포커스가 어디에 있든 메인 윈도우 PreviewKeyDown 에서 라우팅되어 동작)
+        PreviewKeyDown += MainWindow_PreviewKeyDown;
 
         _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
         _terminal.SessionExited  += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } HideSessionLoadingIf(id); };
@@ -1132,6 +1137,16 @@ public partial class MainWindow : Window
         OpenSession(sessionTabs[((idx + dir) % n + n) % n]);
     }
 
+    /// <summary>프로젝트 순환 전환 (한자+↑/↓). 활성 프로젝트가 없으면 첫 프로젝트로.</summary>
+    private void CycleProject(int dir)
+    {
+        if (_projects.Count == 0) return;
+        int idx = _activeProject != null ? _projects.IndexOf(_activeProject) : -1;
+        if (idx < 0) { SelectProject(_projects[0]); return; }
+        int n = _projects.Count;
+        SelectProject(_projects[((idx + dir) % n + n) % n]);
+    }
+
     /// <summary>"세션 N" 다음 번호를 만든다 — 기존 세션 이름에서 최대 N을 찾아 +1.
     /// Count+1 방식과 달리 중간 세션을 삭제해도 번호가 겹치지 않는다.</summary>
     private static string NextSessionName(ProjectItem proj)
@@ -2000,6 +2015,44 @@ public partial class MainWindow : Window
     }
 
     /// <summary>탭 빈 영역 드래그로 창 이동 + 더블클릭 최대화/복원 (devez: 탭 바가 캡션 역할).</summary>
+    /// <summary>한자+화살표 단축키.
+    /// 한자 키는 한국어 키보드에서 RightAlt 또는 Key.Hanja/ImeProcessed 로 들어오는데 두 케이스 모두 잡음.
+    /// 좌/우 → 활성 프로젝트의 세션 탭 순환, 상/하 → 프로젝트 순환.
+    /// 앱이 포커스된 상태에서만 동작 (다른 윈도우에선 무시).</summary>
+    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // 이 윈도우가 활성일 때만. (다른 앱/오버레이에 포커스 갔을 때도 이벤트는 올라오지만 무시.)
+        if (!IsActive) return;
+        // 텍스트 입력 컨트롤에 포커스가 있으면 화살표는 그 컨트롤 동작(커서 이동)이어야 하므로 패스.
+        if (Keyboard.FocusedElement is TextBoxBase or PasswordBox) return;
+
+        // 한자 키 = 한국어 키보드에서 VK_Hanja(0xF2) 가상 키. WPF Key enum 에는 매핑 상수가 없어
+        // 한자 단독 키를 안정적으로 분기하기 어렵다. 사용자 환경에서 한자를 누른 채로 화살표를 누르면
+        // 보통 Alt 모디파이어가 함께 들어오므로, Alt + 화살표 만으로 동작하게 한다.
+        bool hanja = (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt;
+        if (!hanja) return;
+
+        switch (e.Key)
+        {
+            case Key.Left:
+                e.Handled = true;
+                CycleSession(-1);
+                break;
+            case Key.Right:
+                e.Handled = true;
+                CycleSession(1);
+                break;
+            case Key.Up:
+                e.Handled = true;
+                CycleProject(-1);
+                break;
+            case Key.Down:
+                e.Handled = true;
+                CycleProject(1);
+                break;
+        }
+    }
+
     private void TabStrip_DragMove(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left) return;
