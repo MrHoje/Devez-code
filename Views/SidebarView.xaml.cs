@@ -94,8 +94,6 @@ public partial class SidebarView : UserControl
         if (_archiveOpen) return;
         _archiveOpen = true;
         UpdateArchiveEmptyState();
-        // 보관함은 열 때 항상 전부 접힌 상태로(목록 훑기 편하게).
-        foreach (var p in ArchivedProjects) p.IsExpanded = false;
         UpdateExpandAllVisual();
         // 검색 초기화(보기 전환 시 필터 리셋)
         if (SidebarSearchBox.Text.Length > 0) SidebarSearchBox.Clear();

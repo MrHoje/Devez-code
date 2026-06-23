@@ -33,6 +33,18 @@ export const DevezCodeRoomTracker = async () => {
     } catch (e) { debug(`writeId failed: ${e.message}`); }
   };
 
+  // busy\<room>.txt = running|idle — 요청 처리중 스피너. claude busy hook 과 동일 패턴.
+  // user 프롬프트 전송 → running, session.idle/error → idle.
+  const writeBusy = (state) => {
+    try {
+      if (!safe) return;
+      const dir = path.join(base, "DevezCode", "opencode", "busy");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, safe + ".txt"), state);
+      debug(`busy=${state}`);
+    } catch (e) { debug(`writeBusy failed: ${e.message}`); }
+  };
+
   const writeLastmsg = (text) => {
     try {
       if (!safe || !text) return;
@@ -69,17 +81,23 @@ export const DevezCodeRoomTracker = async () => {
       try {
         if (!event || !event.type) return;
         const props = event.properties || {};
-        // 처음 20개 event 만 구조 로깅 (이후 노이즈 방지)
-        if (eventCount < 20) {
+        // [진단] session.* / message.updated / message.part.updated 만 항상 로깅(노이즈 제외).
+        // 실제 한 턴 동안 어떤 event 가 어떤 순서/sessionID/role/completed 로 흐르는지 확보용.
+        const t = event.type;
+        if (t.startsWith("session.") || t === "message.updated" || t === "message.part.updated") {
           const info = props.info || {};
-          const roleInfo = info.role ?? info.roleName ?? info.roleType ?? "<no-role>";
-          const keys = Object.keys(props).slice(0, 8).join(",");
-          debug(`event[${eventCount}] type=${event.type} props=[${keys}] info.role=${roleInfo}` +
-                (info.id ? ` id=${info.id}` : "") +
-                (props.sessionID ? ` sessionID=${props.sessionID}` : ""));
-          eventCount++;
+          const part = props.part || {};
+          const sid = props.sessionID || info.sessionID || part.sessionID || "?";
+          const role = info.role || messageRole[part.messageID] || "-";
+          const done = info.time && info.time.completed ? "completed" : "-";
+          debug(`EV ${t} sid=${sid} role=${role} time=${done}` +
+                (part.type ? ` partType=${part.type}` : ""));
         }
 
+        // 세션 처리 종료 신호 → 스피너 끄기. session.idle = 응답 완료, session.error = 실패.
+        if (event.type === "session.idle" || event.type === "session.error") {
+          writeBusy("idle");
+        }
         // 세션 생성/갱신 이벤트 — 최신 ID 덮어씀 (--clear·새 대화 시작 시 자동 갱신).
         if (event.type === "session.created" || event.type === "session.updated") {
           const info = props.info;
@@ -104,7 +122,12 @@ export const DevezCodeRoomTracker = async () => {
           // synthetic/ignored part (자동 주입된 메타 텍스트) 는 헤더에 뜨면 노이즈라 무시.
           if (part.synthetic || part.ignored) return;
           const role = messageRole[part.messageID];
-          if (role === "user") writeLastmsg(part.text);
+          if (role === "user") {
+            writeLastmsg(part.text);
+            // 스피너 시작 — chat.message 훅은 버전에 따라 안 불려서(lastmsg 도 이 event 경로로 저장됨)
+            // 검증된 user-part 경로에서 running 을 쓴다. session.idle/error 가 idle 로 해제.
+            writeBusy("running");
+          }
         }
       } catch (e) { debug(`event handler error: ${e.message}`); }
     },
@@ -116,6 +139,7 @@ export const DevezCodeRoomTracker = async () => {
           if (input.message.id) messageRole[input.message.id] = "user";
           const text = extractTextFromParts(input.message.parts);
           if (text) writeLastmsg(text);
+          writeBusy("running"); // user 프롬프트 전송 → 처리 시작 → 스피너 켜기
         }
       } catch (e) { debug(`chat.message error: ${e.message}`); }
     },

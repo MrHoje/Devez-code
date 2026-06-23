@@ -39,6 +39,8 @@ public partial class MainWindow : Window
     private readonly AgentLastMessageService _agentLastMsg = new();
     // opencode — 플러그인이 lastmsg\<room>.txt 에 저장한 user prompt 를 FileSystemWatcher 로 즉시 반영 (claude 와 동일 패턴).
     private readonly OpenCodeLastMessageService _opencodeLastMsg = new();
+    // opencode — 플러그인이 busy\<room>.txt 에 저장한 처리중 상태를 감시해 스피너 연동 (claude busy hook 과 동일 패턴).
+    private readonly OpenCodeBusyService _opencodeBusy = new();
 
     public MainWindow()
     {
@@ -123,6 +125,15 @@ public partial class MainWindow : Window
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
 
+        // opencode — 플러그인이 떨군 busy 파일 감시 → 스피너 (claude 와 동일).
+        _opencodeBusy.BusyChanged += (roomId, busy) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s != null) s.IsBusy = busy;
+                if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
+            });
+
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
         _codexHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
@@ -176,6 +187,7 @@ public partial class MainWindow : Window
             // message.updated( role=user ) → lastmsg\<room>.txt (헤더 타이틀 즉시 표시)
             OpenCodePluginInstaller.EnsureInstalled();
             _opencodeLastMsg.Start();
+            _opencodeBusy.Start();
             _agentLastMsg.Start();
             RestoreLastSession();
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
@@ -211,6 +223,7 @@ public partial class MainWindow : Window
             _sessionLastMsg.Dispose();
             _codexHook.Dispose();
             _opencodeLastMsg.Dispose();
+            _opencodeBusy.Dispose();
             _agentLastMsg.Dispose();
             FileExplorer.DisposeBrowser();
         };
@@ -1100,7 +1113,10 @@ public partial class MainWindow : Window
     private void SyncShellToFocusedPane()
     {
         var proj = _focusedPane.ActiveProject;
+        // 보관함 프로젝트도 패널에 띄울 수 있으므로 활성+보관 양쪽을 순회해야 강조가 정확히 옮겨간다.
+        // (_projects 만 돌면 보관 프로젝트는 선택돼도 강조 안 되고, 선택 해제도 안 됨)
         foreach (var p in _projects) p.IsSelected = ReferenceEquals(p, proj);
+        foreach (var p in _archivedProjects) p.IsSelected = ReferenceEquals(p, proj);
         if (proj?.Path != _explorerDir)
         {
             _explorerDir = proj?.Path;
