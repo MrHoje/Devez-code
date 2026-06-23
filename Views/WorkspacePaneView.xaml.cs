@@ -301,6 +301,8 @@ public partial class WorkspacePaneView : UserControl
         if (parent == null) return;
 
         if (unHide && session.Hidden) { session.Hidden = false; WorkspaceStore.Save(Projects); }
+        // 접혀 있던 프로젝트의 세션이 선택되면 자동으로 펼쳐서 보이게 한다.
+        if (!parent.IsExpanded) parent.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
 
         _activeTab = session;

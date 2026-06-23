@@ -41,7 +41,9 @@ public partial class PromptDialog : Window
     {
         if (_requireInput && string.IsNullOrWhiteSpace(InputBox.Text))
         {
-            ConfirmDialog.Alert("알림", "값을 입력하세요.");
+            HintText.Text = "값을 입력하세요.";
+            HintText.Visibility = Visibility.Visible;
+            if (TryFindResource("DangerBrush") is Brush danger) InputFrame.BorderBrush = danger;
             InputBox.Focus();
             return;
         }
@@ -52,6 +54,7 @@ public partial class PromptDialog : Window
     {
         if (e.Key == Key.Enter) { TryAccept(); e.Handled = true; }
         else if (e.Key == Key.Escape) { DialogResult = false; e.Handled = true; }
+        else if (HintText.Visibility == Visibility.Visible) HintText.Visibility = Visibility.Collapsed;
     }
 
     private void InputBox_GotFocus(object sender, RoutedEventArgs e)

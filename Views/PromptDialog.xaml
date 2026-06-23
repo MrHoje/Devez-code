@@ -91,6 +91,14 @@
                             </TextBox.Resources>
                         </TextBox>
                     </Border>
+
+                    <!-- 입력 검증 안내문구(빈값 등) — 2중 팝업 대신 인라인 표시 -->
+                    <TextBlock x:Name="HintText"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource DangerBrush}"
+                               Margin="2,6,0,0"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed"/>
                 </StackPanel>
 
                 <!-- Footer -->
