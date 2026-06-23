@@ -24,13 +24,28 @@ public static class WorkspaceStore
     private static string WorkspacePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "workspace.json");
 
+    /// <summary>직전 Load 가 손상으로 데이터를 못 읽고 빈 결과를 반환했는지.
+    /// 이 상태에서 빈 트리로 Save 하면 격리해 둔 원본까지 영구 손실되므로 Save 를 막는다.</summary>
+    private static bool _loadDegraded;
+
     public static ObservableCollection<ProjectItem> Load()
     {
         var result = new ObservableCollection<ProjectItem>();
+        _loadDegraded = false;
+
+        // 본 파일 → .bak 순으로 읽되, 역직렬화까지 성공해야 유효로 인정.
+        var text = AtomicFile.ReadValidated(WorkspacePath, IsParseable, out bool corrupted);
+        if (text == null)
+        {
+            // corrupted=true: 파일은 있었으나 본/백업 모두 파싱 실패 → 손상 격리됨.
+            // 빈 트리 Save 로 원본을 덮어쓰지 않도록 플래그.
+            _loadDegraded = corrupted;
+            return result;
+        }
+
         try
         {
-            if (!File.Exists(WorkspacePath)) return result;
-            var dto = JsonSerializer.Deserialize<WorkspaceDto>(File.ReadAllText(WorkspacePath));
+            var dto = JsonSerializer.Deserialize<WorkspaceDto>(text);
             if (dto == null) return result;
             foreach (var p in dto.Projects)
             {
@@ -43,17 +58,28 @@ public static class WorkspaceStore
                 result.Add(proj);
             }
         }
-        catch { /* 손상 시 빈 워크스페이스 */ }
+        catch { _loadDegraded = true; return new ObservableCollection<ProjectItem>(); }
         return result;
+    }
+
+    private static bool IsParseable(string text)
+    {
+        try { return JsonSerializer.Deserialize<WorkspaceDto>(text) != null; }
+        catch { return false; }
     }
 
     public static void Save(IEnumerable<ProjectItem> projects)
     {
         try
         {
+            var list = projects as ICollection<ProjectItem> ?? projects.ToList();
+            // 손상 로드로 빈 시작한 상태에서 빈 트리 저장은 격리 원본까지 묻어버린다 — 스킵.
+            // (사용자가 프로젝트를 추가하면 비어있지 않게 되어 정상 저장·재생성된다.)
+            if (_loadDegraded && list.Count == 0) return;
+
             var dto = new WorkspaceDto
             {
-                Projects = projects.Select(p => new ProjectDto
+                Projects = list.Select(p => new ProjectDto
                 {
                     Path = p.Path,
                     IsExpanded = p.IsExpanded,
@@ -67,9 +93,9 @@ public static class WorkspaceStore
                     Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
                 }).ToList()
             };
-            Directory.CreateDirectory(Path.GetDirectoryName(WorkspacePath)!);
-            File.WriteAllText(WorkspacePath,
+            AtomicFile.WriteAllText(WorkspacePath,
                 JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true }));
+            _loadDegraded = false; // 정상 저장됨 — 이후 빈 가드 해제
         }
         catch { /* non-critical */ }
     }

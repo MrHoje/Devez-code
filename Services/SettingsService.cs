@@ -86,15 +86,22 @@ public static class SettingsService
             lock (_lock)
             {
                 if (_current != null) return _current;
-                try
+                // 본 파일 → .bak 순으로 읽되 역직렬화 성공해야 유효. 손상 시 원본 격리.
+                var text = AtomicFile.ReadValidated(SettingsPath, IsParseable, out _);
+                if (text != null)
                 {
-                    if (File.Exists(SettingsPath))
-                        _current = JsonSerializer.Deserialize<SettingsData>(File.ReadAllText(SettingsPath));
+                    try { _current = JsonSerializer.Deserialize<SettingsData>(text); }
+                    catch { /* 손상 시 새로 시작 */ }
                 }
-                catch { /* 손상 시 새로 시작 */ }
                 return _current ??= new SettingsData();
             }
         }
+    }
+
+    private static bool IsParseable(string text)
+    {
+        try { return JsonSerializer.Deserialize<SettingsData>(text) != null; }
+        catch { return false; }
     }
 
     private static void Save()
@@ -103,8 +110,7 @@ public static class SettingsService
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-                File.WriteAllText(SettingsPath,
+                AtomicFile.WriteAllText(SettingsPath,
                     JsonSerializer.Serialize(_current, new JsonSerializerOptions { WriteIndented = true }));
             }
             catch { /* non-critical */ }
