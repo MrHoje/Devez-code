@@ -262,14 +262,11 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
             AddBubble();
             e.Handled = true;
         }
-        else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Shift)
+        else if (e.Key == Key.Enter
+                 && ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift
+                     || (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control))
         {
-            AddBubble();
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-        {
-            // Ctrl+Enter: 줄바꿈 삽입(WPF TextBox는 Ctrl+Enter에 줄바꿈을 넣지 않으므로 수동 처리).
+            // Shift+Enter / Ctrl+Enter: 줄바꿈 삽입(WPF TextBox는 Ctrl+Enter에 줄바꿈을 넣지 않으므로 수동 처리).
             int idx = InputBox.CaretIndex;
             InputBox.Text = InputBox.Text.Insert(idx, Environment.NewLine);
             InputBox.CaretIndex = idx + Environment.NewLine.Length;
