@@ -282,7 +282,7 @@
                                 </EventTrigger>
                             </Ellipse.Triggers>
                         </Ellipse>
-                        <TextBlock Text="열려 있는 세션을 닫는 중입니다…" Margin="0,18,0,0"
+                        <TextBlock Text="열려있는 세션을 안전하게 닫는 중 입니다." Margin="0,18,0,0"
                                    HorizontalAlignment="Center"
                                    FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextBrush}"/>
