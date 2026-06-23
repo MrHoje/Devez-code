@@ -21,6 +21,8 @@ public sealed record ModelEffortOption(string Label, string Value)
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<ProjectItem> _projects;
+    // 보관함 프로젝트(archived_at 있음) — 활성 목록과 분리 관리. WorkspaceStore 가 함께 영속.
+    private readonly ObservableCollection<ProjectItem> _archivedProjects;
     // 중앙 워크스페이스 패널들(분할 시 2개). _focusedPane = 사이드바/파일탐색기/단축키가 향하는 패널.
     private readonly List<WorkspacePaneView> _panes = new();
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
@@ -43,8 +45,10 @@ public partial class MainWindow : Window
         InitializeComponent();
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
 
-        _projects = WorkspaceStore.Load();
+        _projects = WorkspaceStore.Load(out var archived);
+        _archivedProjects = archived;
         Sidebar.Projects = _projects;
+        Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
         SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
         _focusedPane = PaneA;
@@ -54,6 +58,8 @@ public partial class MainWindow : Window
         Sidebar.ProjectSelected        += SelectProject;
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
+        Sidebar.ProjectArchiveRequested += ArchiveProject;
+        Sidebar.ProjectUnarchiveRequested += UnarchiveProject;
         Sidebar.AddProjectFileRequested += AddProjectFile;
         Sidebar.ProjectFileSelected    += OpenProjectFile;
         Sidebar.ProjectFileRemoveRequested += RemoveProjectFile;
@@ -176,6 +182,13 @@ public partial class MainWindow : Window
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
             ApplySidePanelButtonVisibility();
+            // 전역 단축키: 한자 + 좌/우 방향키 → 포커스 패널의 세션 탭 이전/다음 이동.
+            // 우리 앱이 포그라운드가 아니어도(다른 앱/터미널 점유 중에도) 동작 — 전환 후 창을 앞으로.
+            GlobalTabHotkey.Install(next =>
+            {
+                _focusedPane?.CycleActiveSession(next);
+                BringToForegroundFromHotkey();
+            });
         };
 
         // 창 위치/크기는 닫히기 직전(Closing)에 저장한다 — RestoreBounds 가 유효한 시점.
@@ -186,6 +199,7 @@ public partial class MainWindow : Window
             // 정상 종료: 마지막 활성 프로젝트/세션 기억 + 클린 종료 플래그 set
             SettingsService.SaveLastActive(_focusedPane.ActiveProject?.Path, _focusedPane.ActiveSession?.Id);
             SettingsService.SaveCleanShutdown(true);
+            GlobalTabHotkey.Uninstall();
             App.ThemeChanged -= OnThemeChanged_UpdatePanels;
             foreach (var pane in _panes) pane.DisposeTerminal();
             _perfMonitor.Dispose();
@@ -568,6 +582,28 @@ public partial class MainWindow : Window
     {
         foreach (var pane in _panes) pane.ApplyProjectInfoHeaderVisibility();
     }
+
+    private const int VK_MENU = 0x12;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+
+    /// <summary>전역 단축키(한자+방향키)로 탭 전환 시 창을 앞으로. devez Alt 트릭으로 포그라운드 잠금 우회.</summary>
+    private void BringToForegroundFromHotkey()
+    {
+        try
+        {
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            var h = new WindowInteropHelper(this).Handle;
+            if (h == IntPtr.Zero) return;
+            keybd_event(VK_MENU, 0, 0, UIntPtr.Zero);
+            SetForegroundWindow(h);
+            keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+            Activate();
+        }
+        catch { }
+    }
+
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
     /// <summary>탭 버튼 4개가 온전히 보이는 폭을 측정해 우측 패널(확장 상태)의 최소 폭으로 적용.
     /// 접힘/오버레이(좁은 창) 상태에서는 적용하지 않는다(접기 애니메이션은 MinWidth 0 필요).</summary>
@@ -968,6 +1004,7 @@ public partial class MainWindow : Window
     private void SetupPane(WorkspacePaneView pane)
     {
         pane.Projects = _projects;
+        pane.ArchivedProjects = _archivedProjects;
         pane.ModelEffort = _modelEffort;
         pane.AgentLastMsg = _agentLastMsg;
         pane.FocusRequested += OnPaneFocusRequested;
@@ -1140,6 +1177,7 @@ public partial class MainWindow : Window
     // ── 프로젝트 ──────────────────────────────────────────────────
     private void DeleteProject(ProjectItem proj)
     {
+        bool fromArchive = _archivedProjects.Contains(proj);
         if (!ConfirmDialog.Show("프로젝트 제거",
                 $"'{proj.Name}' 프로젝트를 목록에서 제거할까요?\n(디스크의 실제 파일은 삭제되지 않습니다.)",
                 okLabel: "제거", danger: true))
@@ -1147,12 +1185,47 @@ public partial class MainWindow : Window
 
         foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
             foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);
-        _projects.Remove(proj);
+
+        if (fromArchive) _archivedProjects.Remove(proj);
+        else _projects.Remove(proj);
         SettingsService.RemoveBrowserLastUrl(proj.Path);
-        WorkspaceStore.Save(_projects);
+        WorkspaceStore.Save(_projects, _archivedProjects);
+
+        // 보관 항목 제거는 중앙 패널과 무관(이미 패널에 없음).
+        if (!fromArchive)
+        {
+            var next = _projects.FirstOrDefault();
+            foreach (var pane in _panes) pane.OnProjectRemoved(proj, next);
+        }
+        UpdateStatus();
+    }
+
+    /// <summary>프로젝트 보관 — 활성 목록에서 빼 보관함으로. 세션 프로세스는 정지하되 기록은 보존(devez 정합).</summary>
+    private void ArchiveProject(ProjectItem proj)
+    {
+        if (!_projects.Contains(proj)) return;
+
+        foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
+            foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);
+
+        proj.ArchivedAt = DateTime.UtcNow.ToString("o");
+        _projects.Remove(proj);
+        if (!_archivedProjects.Contains(proj)) _archivedProjects.Add(proj);
+        WorkspaceStore.Save(_projects, _archivedProjects);
 
         var next = _projects.FirstOrDefault();
         foreach (var pane in _panes) pane.OnProjectRemoved(proj, next);
+        UpdateStatus();
+    }
+
+    /// <summary>프로젝트 꺼내기 — 보관함에서 활성 목록으로 복귀(세션은 죽은 상태로 복원, 클릭 시 재기동).</summary>
+    private void UnarchiveProject(ProjectItem proj)
+    {
+        if (!_archivedProjects.Contains(proj)) return;
+        proj.ArchivedAt = null;
+        _archivedProjects.Remove(proj);
+        if (!_projects.Contains(proj)) _projects.Add(proj);
+        WorkspaceStore.Save(_projects, _archivedProjects);
         UpdateStatus();
     }
 

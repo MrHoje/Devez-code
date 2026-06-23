@@ -31,6 +31,10 @@ public partial class WorkspacePaneView : UserControl
 
     /// <summary>MainWindow 가 소유한 공유 프로젝트 컬렉션. 생성 후 한 번 주입한다.</summary>
     public ObservableCollection<ProjectItem> Projects { get; set; } = new();
+    /// <summary>보관함 프로젝트 — 세션/부모 조회 시 활성과 함께 검색해 보관 프로젝트도 정상 실행되게 한다.</summary>
+    public ObservableCollection<ProjectItem>? ArchivedProjects { get; set; }
+    /// <summary>활성 + 보관 전체 — ParentOf/FindSession 조회용.</summary>
+    private IEnumerable<ProjectItem> AllProjects => ArchivedProjects == null ? Projects : Projects.Concat(ArchivedProjects);
     /// <summary>statusLine 훅이 보고한 방별 실제 model/effort 조회용(공유 서비스).</summary>
     public ModelEffortService? ModelEffort { get; set; }
     /// <summary>비-claude 에이전트 last prompt 추적용(공유 서비스).</summary>
@@ -165,15 +169,23 @@ public partial class WorkspacePaneView : UserControl
         });
     }
 
-    /// <summary>프로젝트 선택 — 탭 교체 후 세션 하나 활성화(이전 활성 or 첫 세션).</summary>
+    /// <summary>프로젝트 선택 — 탭 교체 후 세션 하나 활성화.
+    /// 우선순위: 이전 활성 세션 → 열려있는(실행 중) 세션 중 가장 위 → 첫 세션.
+    /// (첫 세션이 안 열렸고 다른 세션만 열려있으면 그 열린 세션으로 연다.)</summary>
     public void SelectProject(ProjectItem proj)
     {
         SetActiveProject(proj);
         SessionItem? target;
         if (_activeSession != null && proj.Tabs.Contains(_activeSession) && !_activeSession.Hidden)
+        {
             target = _activeSession;
+        }
         else
-            target = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden);
+        {
+            var sessions = proj.Tabs.OfType<SessionItem>().Where(s => !s.Hidden).ToList();
+            // 열려있는(실행 중) 세션 중 가장 위. 하나도 없으면 첫 세션.
+            target = sessions.FirstOrDefault(s => s.IsAlive) ?? sessions.FirstOrDefault();
+        }
         if (target != null) ActivateSession(target, unHide: false);
         else ClearActiveSession();
         ActiveChanged?.Invoke(this);
@@ -219,6 +231,9 @@ public partial class WorkspacePaneView : UserControl
         if (i < 0 || i >= sessionTabs.Count) return;
         OpenSession(sessionTabs[i]);
     }
+
+    /// <summary>전역 단축키(한자+방향키)용 — 활성 세션 탭을 이전/다음으로 이동.</summary>
+    public void CycleActiveSession(bool next) => CycleSession(next ? +1 : -1);
 
     private void CycleSession(int dir)
     {
@@ -706,13 +721,13 @@ public partial class WorkspacePaneView : UserControl
     }
 
     private ProjectItem? ParentOf(SessionItem session)
-        => Projects.FirstOrDefault(p => p.Tabs.Contains(session));
+        => AllProjects.FirstOrDefault(p => p.Tabs.Contains(session));
 
     private ProjectItem? ParentOfTab(TabItemBase tab)
-        => Projects.FirstOrDefault(p => p.Tabs.Contains(tab));
+        => AllProjects.FirstOrDefault(p => p.Tabs.Contains(tab));
 
     private SessionItem? FindSession(string id)
-        => Projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
+        => AllProjects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
 
     // ── 탭 이벤트 ─────────────────────────────────────────────────
     private void Tab_Click(object sender, MouseButtonEventArgs e)
@@ -1133,11 +1148,12 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
-    /// <summary>세션 헤더 타이틀/구분자 폰트를 터미널 폰트 크기(px)와 맞춘다.</summary>
+    /// <summary>세션 헤더 타이틀(마지막 메시지)/구분자 폰트를 터미널 폰트 크기보다 2px 작게.</summary>
     private void ApplyHeaderFontSize(double px)
     {
-        SessionHeaderTitle.FontSize = px;
-        LastMessageSep.FontSize = px;
+        double size = Math.Max(1, px - 2);
+        SessionHeaderTitle.FontSize = size;
+        LastMessageSep.FontSize = size;
     }
 
     /// <summary>외부 훅이 세션 상태(lastmsg 등)를 갱신 → 이 패널의 활성 세션이면 헤더 즉시 갱신.</summary>

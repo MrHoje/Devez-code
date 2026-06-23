@@ -25,6 +25,10 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectSelected;
     public event Action<ProjectItem>? AddSessionRequested;
     public event Action<ProjectItem>? ProjectDeleteRequested;
+    /// <summary>프로젝트 메뉴 "보관함 이동" — 활성에서 보관함으로(MainWindow 위임).</summary>
+    public event Action<ProjectItem>? ProjectArchiveRequested;
+    /// <summary>보관함 카드 "꺼내기" — 보관함에서 활성으로(MainWindow 위임).</summary>
+    public event Action<ProjectItem>? ProjectUnarchiveRequested;
     /// <summary>프로젝트 메뉴 "파일 추가" — 파일 다이얼로그로 등록할 파일을 고른다(MainWindow 위임).</summary>
     public event Action<ProjectItem>? AddProjectFileRequested;
     /// <summary>등록된 파일 클릭 — 편집 탭으로 연다(MainWindow 위임).</summary>
@@ -49,6 +53,99 @@ public partial class SidebarView : UserControl
     {
         get => _projects ??= new();
         set { _projects = value; ProjectsHost.ItemsSource = value; }
+    }
+
+    private ObservableCollection<ProjectItem>? _archivedProjects;
+    /// <summary>보관함 프로젝트 — 활성과 동일한 ProjectTemplate 로 보관함 패널에 표시.</summary>
+    public ObservableCollection<ProjectItem> ArchivedProjects
+    {
+        get => _archivedProjects ??= new();
+        set
+        {
+            if (_archivedProjects != null) _archivedProjects.CollectionChanged -= OnArchivedChanged;
+            _archivedProjects = value;
+            ArchivedHost.ItemsSource = value;
+            value.CollectionChanged += OnArchivedChanged;
+            UpdateArchiveEmptyState();
+        }
+    }
+
+    private void OnArchivedChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        => UpdateArchiveEmptyState();
+
+    private void UpdateArchiveEmptyState()
+    {
+        if (ArchiveEmptyText != null)
+            ArchiveEmptyText.Visibility = ArchivedProjects.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // ── 보관함 슬라이드 전환 (devez 정합: 프로젝트↔보관함, 헤더 제목·뒤로가기 교체) ──────────
+    private bool _archiveOpen;
+
+    /// <summary>현재 보기의 대상 컬렉션(검색/일괄펼침/드래그 공용).</summary>
+    private ObservableCollection<ProjectItem> CurrentProjects => _archiveOpen ? ArchivedProjects : Projects;
+    private ItemsControl CurrentHost => _archiveOpen ? ArchivedHost : ProjectsHost;
+
+    private void ArchiveToggleBtn_Click(object sender, RoutedEventArgs e) => OpenArchivePanel();
+    private void ArchiveBack_Click(object sender, RoutedEventArgs e) => CloseArchivePanel();
+
+    private void OpenArchivePanel()
+    {
+        if (_archiveOpen) return;
+        _archiveOpen = true;
+        UpdateArchiveEmptyState();
+        // 보관함은 열 때 항상 전부 접힌 상태로(목록 훑기 편하게).
+        foreach (var p in ArchivedProjects) p.IsExpanded = false;
+        UpdateExpandAllVisual();
+        // 검색 초기화(보기 전환 시 필터 리셋)
+        if (SidebarSearchBox.Text.Length > 0) SidebarSearchBox.Clear();
+
+        double w = ActualWidth > 0 ? ActualWidth : 262;
+        ArchivePanel.Visibility = Visibility.Visible;
+        SlideTo(ArchivePanelTransform, w, 0);
+        SlideTo(ActivePanelTransform, 0, -w, () => ActivePanel.Visibility = Visibility.Collapsed);
+
+        HeaderTitle.Text = "보관함";
+        BackBtn.Visibility = Visibility.Visible;
+        ArchiveToggleBtn.Visibility = Visibility.Collapsed;
+    }
+
+    private void CloseArchivePanel()
+    {
+        if (!_archiveOpen) return;
+        _archiveOpen = false;
+        if (SidebarSearchBox.Text.Length > 0) SidebarSearchBox.Clear();
+
+        double w = ActualWidth > 0 ? ActualWidth : 262;
+        ActivePanel.Visibility = Visibility.Visible;
+        SlideTo(ActivePanelTransform, -w, 0);
+        SlideTo(ArchivePanelTransform, 0, w, () => ArchivePanel.Visibility = Visibility.Collapsed);
+
+        HeaderTitle.Text = "프로젝트";
+        BackBtn.Visibility = Visibility.Collapsed;
+        ArchiveToggleBtn.Visibility = Visibility.Visible;
+    }
+
+    private static void SlideTo(System.Windows.Media.TranslateTransform t, double from, double to, Action? done = null)
+    {
+        var anim = new DoubleAnimation
+        {
+            From = from, To = to,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+        };
+        if (done != null) anim.Completed += (_, _) => done();
+        t.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, anim);
+    }
+
+    private void ArchiveProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) ProjectArchiveRequested?.Invoke(p);
+    }
+
+    private void UnarchiveProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) ProjectUnarchiveRequested?.Invoke(p);
     }
 
     /// <summary>하단 업데이트 버튼 클릭 — 설치 흐름은 MainWindow 에 위임.</summary>
@@ -97,12 +194,12 @@ public partial class SidebarView : UserControl
     private void ToggleExpandAll_Click(object sender, RoutedEventArgs e)
     {
         bool target = !AreAllExpanded();
-        foreach (var p in Projects) p.IsExpanded = target;
+        foreach (var p in CurrentProjects) p.IsExpanded = target;
         UpdateExpandAllVisual();
         ProjectExpandChanged?.Invoke();
     }
 
-    private bool AreAllExpanded() => Projects.Count > 0 && Projects.All(p => p.IsExpanded);
+    private bool AreAllExpanded() => CurrentProjects.Count > 0 && CurrentProjects.All(p => p.IsExpanded);
 
     /// <summary>일괄 버튼 아이콘/툴팁 갱신. 외부(프로젝트 로드 후)에서도 호출.</summary>
     public void UpdateExpandAllVisual()
@@ -117,16 +214,16 @@ public partial class SidebarView : UserControl
     private void SidebarSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         var q = SidebarSearchBox.Text?.Trim() ?? "";
-        if (q.Length == 0) { ProjectsHost.ItemsSource = Projects; return; }
+        if (q.Length == 0) { CurrentHost.ItemsSource = CurrentProjects; return; }
 
-        var filtered = Projects.Where(p =>
+        var filtered = CurrentProjects.Where(p =>
             p.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
             p.Sessions.Any(s => s.Name.Contains(q, StringComparison.OrdinalIgnoreCase))).ToList();
         // 세션만 매칭된 프로젝트는 펼쳐서 해당 세션이 보이게 한다.
         foreach (var p in filtered)
             if (!p.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
                 p.IsExpanded = true;
-        ProjectsHost.ItemsSource = filtered;
+        CurrentHost.ItemsSource = filtered;
     }
 
     private void Project_Click(object sender, MouseButtonEventArgs e)
@@ -326,14 +423,15 @@ public partial class SidebarView : UserControl
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, p));
         if (src.Element == null) return;
 
+        var coll = CurrentProjects;
         _projectDrag = ReorderDrag<ProjectItem>.TryStart(this, rows, p, src.Element,
             (s, hostTarget, _) =>
             {
-                int from = Projects.IndexOf(s);
+                int from = coll.IndexOf(s);
                 if (from >= 0)
                 {
-                    int to = Math.Clamp(hostTarget, 0, Projects.Count - 1);
-                    if (to != from) { Projects.Move(from, to); ProjectsReordered?.Invoke(); }
+                    int to = Math.Clamp(hostTarget, 0, coll.Count - 1);
+                    if (to != from) { coll.Move(from, to); ProjectsReordered?.Invoke(); }
                 }
                 return Task.CompletedTask;
             }, exactFollow: true);
@@ -343,7 +441,7 @@ public partial class SidebarView : UserControl
 
     private void TryStartSessionDrag(SessionItem s)
     {
-        var project = Projects.FirstOrDefault(pr => pr.Sessions.Contains(s));
+        var project = CurrentProjects.FirstOrDefault(pr => pr.Sessions.Contains(s));
         if (project == null) return;
         var rows = GetSessionRows(project).ToList();
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, s));
@@ -369,14 +467,14 @@ public partial class SidebarView : UserControl
 
     private IEnumerable<(ProjectItem Item, FrameworkElement Element)> GetProjectRows()
     {
-        foreach (var p in Projects)
-            if (ProjectsHost.ItemContainerGenerator.ContainerFromItem(p) is FrameworkElement fe)
+        foreach (var p in CurrentProjects)
+            if (CurrentHost.ItemContainerGenerator.ContainerFromItem(p) is FrameworkElement fe)
                 yield return (p, fe);
     }
 
     private IEnumerable<(SessionItem Item, FrameworkElement Element)> GetSessionRows(ProjectItem project)
     {
-        if (ProjectsHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc)
+        if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc)
             yield break;
         var inner = FindVisualChildren<ItemsControl>(pc).FirstOrDefault();
         if (inner == null) yield break;

@@ -146,6 +146,25 @@ public sealed class ProjectItem : NotifyBase
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 
+    /// <summary>보관 시각(ISO-8601 UTC). null/빈값=활성, 값 있으면 보관함 소속.
+    /// devez 의 projects.archived_at(Supabase) 정합 — DevezCode 는 workspace.json 에 로컬 영속.</summary>
+    private string? _archivedAt;
+    public string? ArchivedAt
+    {
+        get => _archivedAt;
+        set { if (Set(ref _archivedAt, value)) { OnPropertyChanged(nameof(IsArchived)); OnPropertyChanged(nameof(IsActive)); OnPropertyChanged(nameof(ArchivedDateDisplay)); } }
+    }
+
+    /// <summary>보관함 소속 여부.</summary>
+    public bool IsArchived => !string.IsNullOrEmpty(ArchivedAt);
+
+    /// <summary>활성(비보관) 여부 — 컨텍스트 메뉴 항목 가시성 분기용.</summary>
+    public bool IsActive => string.IsNullOrEmpty(ArchivedAt);
+
+    /// <summary>보관함 카드 표시용 "보관: yyyy-MM-dd" (활성이면 빈 문자열).</summary>
+    public string ArchivedDateDisplay => string.IsNullOrEmpty(ArchivedAt) ? ""
+        : "보관: " + (ArchivedAt.Length >= 10 ? ArchivedAt[..10] : ArchivedAt);
+
     /// <summary>중앙 탭 스트립에 그대로 바인딩되는 통합 컬렉션(세션 + 파일 탭).
     /// 사이드바는 Sessions(동기 뷰)로 세션만 골라 렌더한다.</summary>
     public ObservableCollection<TabItemBase> Tabs { get; } = new();

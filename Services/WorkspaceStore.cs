@@ -15,6 +15,8 @@ public static class WorkspaceStore
         public string Path { get; set; } = "";
         // 좌측 카드 접힘/펼침 상태 (기본 펼침). 재시작 시 복원.
         public bool IsExpanded { get; set; } = true;
+        // 보관 시각(ISO-8601). null=활성, 값 있으면 보관함. devez archived_at 정합(로컬).
+        public string? ArchivedAt { get; set; }
         public List<SessionDto> Sessions { get; set; } = new();
         // 프로젝트 메뉴에 등록한 바로가기 목록. 재시작 시 복원.
         public List<ShortcutDto> Files { get; set; } = new();
@@ -32,14 +34,26 @@ public static class WorkspaceStore
     // 동시 진입 시 쓰기 충돌을 막기 위한 방어적 잠금.
     private static readonly object _lock = new();
 
-    public static ObservableCollection<ProjectItem> Load()
+    // 보관 프로젝트 컬렉션의 살아있는 참조. Load 가 채워 두면, 이후 활성만 받는
+    // Save(active) 호출도 이 참조를 함께 직렬화해 보관 항목이 유실되지 않는다.
+    // (호출부 대량 수정 없이 보관함을 영속하기 위한 장치.)
+    private static IEnumerable<ProjectItem>? _archivedRef;
+
+    /// <summary>보관 프로젝트 소스 등록 — 이후 모든 Save 가 이 항목들을 함께 기록한다.</summary>
+    public static void SetArchivedSource(IEnumerable<ProjectItem> archived) => _archivedRef = archived;
+
+    public static ObservableCollection<ProjectItem> Load() => Load(out _);
+
+    /// <summary>활성 프로젝트를 반환하고, 보관(archived_at 있음) 프로젝트는 out 으로 분리해 돌려준다.</summary>
+    public static ObservableCollection<ProjectItem> Load(out ObservableCollection<ProjectItem> archived)
     {
-        lock (_lock) return LoadCore();
+        lock (_lock) return LoadCore(out archived);
     }
 
-    private static ObservableCollection<ProjectItem> LoadCore()
+    private static ObservableCollection<ProjectItem> LoadCore(out ObservableCollection<ProjectItem> archived)
     {
-        var result = new ObservableCollection<ProjectItem>();
+        var active = new ObservableCollection<ProjectItem>();
+        archived = new ObservableCollection<ProjectItem>();
         _loadDegraded = false;
 
         // 본 파일 → .bak 순으로 읽되, 역직렬화까지 성공해야 유효로 인정.
@@ -49,26 +63,29 @@ public static class WorkspaceStore
             // corrupted=true: 파일은 있었으나 본/백업 모두 파싱 실패 → 손상 격리됨.
             // 빈 트리 Save 로 원본을 덮어쓰지 않도록 플래그.
             _loadDegraded = corrupted;
-            return result;
+            SetArchivedSource(archived);
+            return active;
         }
 
         try
         {
             var dto = JsonSerializer.Deserialize<WorkspaceDto>(text);
-            if (dto == null) return result;
+            if (dto == null) { SetArchivedSource(archived); return active; }
             foreach (var p in dto.Projects)
             {
                 var proj = ProjectItem.FromPath(p.Path);
                 proj.IsExpanded = p.IsExpanded;
+                proj.ArchivedAt = p.ArchivedAt;
                 foreach (var s in p.Sessions)
                     proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden });
                 foreach (var f in p.Files)
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
-                result.Add(proj);
+                (proj.IsArchived ? archived : active).Add(proj);
             }
         }
-        catch { _loadDegraded = true; return new ObservableCollection<ProjectItem>(); }
-        return result;
+        catch { _loadDegraded = true; archived = new ObservableCollection<ProjectItem>(); SetArchivedSource(archived); return new ObservableCollection<ProjectItem>(); }
+        SetArchivedSource(archived);
+        return active;
     }
 
     private static bool IsParseable(string text)
@@ -84,30 +101,42 @@ public static class WorkspaceStore
         lock (_lock) SaveCore(list);
     }
 
+    /// <summary>활성 + 보관 프로젝트를 함께 저장. 보관 소스도 갱신한다.</summary>
+    public static void Save(IEnumerable<ProjectItem> active, IEnumerable<ProjectItem> archived)
+    {
+        SetArchivedSource(archived as ICollection<ProjectItem> ?? archived.ToList());
+        Save(active);
+    }
+
+    private static ProjectDto ToDto(ProjectItem p) => new ProjectDto
+    {
+        Path = p.Path,
+        IsExpanded = p.IsExpanded,
+        ArchivedAt = p.ArchivedAt,
+        // 파일 탭은 비영속: 세션만 저장 → 재시작 시 사라진다.
+        Sessions = p.Tabs.OfType<SessionItem>().Select(s => new SessionDto
+        {
+            Id = s.Id, Name = s.Name,
+            Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
+            Hidden = s.Hidden,
+        }).ToList(),
+        Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
+    };
+
     private static void SaveCore(ICollection<ProjectItem> list)
     {
         try
         {
+            var archived = _archivedRef as ICollection<ProjectItem> ?? _archivedRef?.ToList();
+            int archivedCount = archived?.Count ?? 0;
             // 손상 로드로 빈 시작한 상태에서 빈 트리 저장은 격리 원본까지 묻어버린다 — 스킵.
             // (사용자가 프로젝트를 추가하면 비어있지 않게 되어 정상 저장·재생성된다.)
-            if (_loadDegraded && list.Count == 0) return;
+            if (_loadDegraded && list.Count == 0 && archivedCount == 0) return;
 
-            var dto = new WorkspaceDto
-            {
-                Projects = list.Select(p => new ProjectDto
-                {
-                    Path = p.Path,
-                    IsExpanded = p.IsExpanded,
-                    // 파일 탭은 비영속: 세션만 저장 → 재시작 시 사라진다.
-                    Sessions = p.Tabs.OfType<SessionItem>().Select(s => new SessionDto
-                    {
-                        Id = s.Id, Name = s.Name,
-                        Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
-                        Hidden = s.Hidden,
-                    }).ToList(),
-                    Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
-                }).ToList()
-            };
+            var projects = list.Select(ToDto).ToList();
+            if (archived != null) projects.AddRange(archived.Select(ToDto));
+
+            var dto = new WorkspaceDto { Projects = projects };
             AtomicFile.WriteAllText(WorkspacePath,
                 JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true }));
             _loadDegraded = false; // 정상 저장됨 — 이후 빈 가드 해제

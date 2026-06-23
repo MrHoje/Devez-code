@@ -203,6 +203,21 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <!-- 활성 프로젝트: 보관함 이동 / 보관 프로젝트: 꺼내기 (동일 템플릿 공유, IsActive/IsArchived 로 분기) -->
+                        <MenuItem Header="보관함 이동" Tag="{Binding}" Click="ArchiveProject_Click"
+                                  Visibility="{Binding IsActive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchive}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="꺼내기" Tag="{Binding}" Click="UnarchiveProject_Click"
+                                  Visibility="{Binding IsArchived, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveRestore}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <Separator/>
                         <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="{DynamicResource DangerBrush}">
                             <MenuItem.Icon>
@@ -286,6 +301,7 @@
                 </StackPanel>
             </Border>
         </DataTemplate>
+
     </UserControl.Resources>
 
     <Grid>
@@ -304,12 +320,34 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="프로젝트" VerticalAlignment="Center"
-                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                           Foreground="{DynamicResource TextBrush}"/>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- 뒤로가기: 보관함 보기일 때만 노출 → 프로젝트 보기로 복귀 -->
+                    <Button x:Name="BackBtn" Width="24" Height="24" Margin="0,0,4,0"
+                            Visibility="Collapsed"
+                            Style="{StaticResource IconButton}"
+                            Click="ArchiveBack_Click" ToolTip="프로젝트로 돌아가기">
+                        <Path Style="{StaticResource LucideButtonIcon}"
+                              Data="{StaticResource IconArrowLeft}"
+                              Width="13" Height="13"/>
+                    </Button>
+                    <TextBlock x:Name="HeaderTitle" Text="프로젝트" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}"/>
+                </StackPanel>
+                <!-- 보관함 열기: 프로젝트 보기에서 보관함으로 슬라이드 전환 -->
+                <Button x:Name="ArchiveToggleBtn" Grid.Column="1"
+                        Width="24" Height="24" Margin="0,0,4,0"
+                        Style="{StaticResource IconButton}"
+                        Click="ArchiveToggleBtn_Click"
+                        ToolTip="보관함">
+                    <Path Style="{StaticResource LucideButtonIcon}"
+                          Data="{StaticResource IconArchive}"
+                          Width="13" Height="13"/>
+                </Button>
                 <!-- 돋보기: 클릭 시 아래 행(SearchRow) 의 Height 를 0→43 으로 애니메이션하며 펼침 -->
-                <Button x:Name="SearchToggleBtn" Grid.Column="1"
+                <Button x:Name="SearchToggleBtn" Grid.Column="2"
                         Width="24" Height="24" Margin="0,0,4,0"
                         Style="{StaticResource IconButton}"
                         Click="SearchToggleBtn_Click"
@@ -319,7 +357,7 @@
                           Data="{StaticResource IconSearch}"
                           Width="12" Height="12"/>
                 </Button>
-                <Button x:Name="ToggleExpandAllBtn" Grid.Column="2"
+                <Button x:Name="ToggleExpandAllBtn" Grid.Column="3"
                         Width="24" Height="24"
                         Style="{StaticResource IconButton}"
                         Click="ToggleExpandAll_Click"
@@ -393,41 +431,63 @@
             </Border>
         </Border>
 
-        <!-- Project tree + floating FAB -->
-        <Grid Grid.Row="2">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8">
-                <ItemsControl x:Name="ProjectsHost" ItemTemplate="{StaticResource ProjectTemplate}"/>
-            </ScrollViewer>
+        <!-- Project tree (활성/보관 슬라이드 전환) + floating FAB -->
+        <Grid Grid.Row="2" ClipToBounds="True">
+            <!-- 활성 프로젝트 패널 -->
+            <Grid x:Name="ActivePanel">
+                <Grid.RenderTransform>
+                    <TranslateTransform x:Name="ActivePanelTransform" X="0"/>
+                </Grid.RenderTransform>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8">
+                    <ItemsControl x:Name="ProjectsHost" ItemTemplate="{StaticResource ProjectTemplate}"/>
+                </ScrollViewer>
 
-            <!-- 새 프로젝트 FAB (devez 방식: 우하단 떠 있는 원형 버튼) -->
-            <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
-                    Margin="0,0,10,10" Panel.ZIndex="10">
-                <Button Width="32" Height="32" Click="AddProject_Click" ToolTip="새 프로젝트">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="Bd" CornerRadius="16" Background="{DynamicResource PrimaryBrush}">
-                                <Border.Effect>
-                                    <DropShadowEffect Color="{DynamicResource ShadowColor}" Opacity="0.3"
-                                                      BlurRadius="12" ShadowDepth="2" Direction="270"/>
-                                </Border.Effect>
-                                <Path Data="{StaticResource IconPlus}"
-                                      Stroke="White" StrokeThickness="2"
-                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                      Width="14" Height="14" Stretch="Uniform"
-                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBrush}"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryPressedBrush}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                </Button>
-            </Border>
+                <!-- 새 프로젝트 FAB (devez 방식: 우하단 떠 있는 원형 버튼) -->
+                <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                        Margin="0,0,10,10" Panel.ZIndex="10">
+                    <Button Width="32" Height="32" Click="AddProject_Click" ToolTip="새 프로젝트">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" CornerRadius="16" Background="{DynamicResource PrimaryBrush}">
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="{DynamicResource ShadowColor}" Opacity="0.3"
+                                                          BlurRadius="12" ShadowDepth="2" Direction="270"/>
+                                    </Border.Effect>
+                                    <Path Data="{StaticResource IconPlus}"
+                                          Stroke="White" StrokeThickness="2"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                          Width="14" Height="14" Stretch="Uniform"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryPressedBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Border>
+            </Grid>
+
+            <!-- 보관함 패널 — 동일 ProjectTemplate 사용(선택/세션실행 전부 동일 동작). 우측에 대기하다 슬라이드 인 -->
+            <Grid x:Name="ArchivePanel" Visibility="Collapsed"
+                  Background="{DynamicResource PanelBrush}">
+                <Grid.RenderTransform>
+                    <TranslateTransform x:Name="ArchivePanelTransform" X="9999"/>
+                </Grid.RenderTransform>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8">
+                    <ItemsControl x:Name="ArchivedHost" ItemTemplate="{StaticResource ProjectTemplate}"/>
+                </ScrollViewer>
+                <!-- 보관함 비었을 때 안내 -->
+                <TextBlock x:Name="ArchiveEmptyText" Text="보관된 프로젝트가 없습니다"
+                           HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0"
+                           Visibility="Collapsed"
+                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+            </Grid>
         </Grid>
 
         <!-- 업데이트 알림 버튼 — 좌측 패널 하단(devez 정합). HasUpdate 일 때만 표시. -->
