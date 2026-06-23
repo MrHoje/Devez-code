@@ -30,6 +30,8 @@
         <!-- ── 프로젝트 카드: doit ShellShortcut 카드 디자인. 보더 항상 표시(LineBrush), 호버는 보더만(그림자 X → '떠오름' 인상이 텍스트 우상단 이동처럼 보임), 활성은 primary 보더 + 글로우 ── -->
         <Style x:Key="ProjectCard" TargetType="Border">
             <Setter Property="CornerRadius" Value="10"/>
+            <!-- 2열(UniformGrid) 에서 셀이 행 최대높이로 잡혀도 카드는 콘텐츠(세션 수)만큼만. 1열 StackPanel 엔 무영향. -->
+            <Setter Property="VerticalAlignment" Value="Top"/>
             <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
