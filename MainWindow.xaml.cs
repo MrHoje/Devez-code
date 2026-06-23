@@ -32,6 +32,9 @@ public partial class MainWindow : Window
     private readonly StatusLineService _statusLine = new();
     private readonly UsageApiService _usageApi = new();
     private Models.RateLimitSnapshot? _rlMerged; // 두 소스를 합친 푸터 표시값
+    // 추가 provider 사용량(푸터): codex(openai) + opencode-go.
+    private readonly CodexUsageService _codex = new();
+    private readonly OpenCodeGoUsageService _openCodeGo = new();
     private readonly SessionBusyService _sessionBusy = new();
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
@@ -223,6 +226,8 @@ public partial class MainWindow : Window
             _perfMonitor.Dispose();
             _statusLine.Dispose();
             _usageApi.Dispose();
+            _codex.Dispose();
+            _openCodeGo.Dispose();
             _sessionBusy.Dispose();
             _modelEffort.Dispose();
             _sessionLastMsg.Dispose();
@@ -341,6 +346,11 @@ public partial class MainWindow : Window
         _usageApi.SnapshotUpdated  += OnRlSnapshot;
         _statusLine.Start();
         _usageApi.Start();
+
+        _codex.Updated      += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _openCodeGo.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _codex.Start();
+        _openCodeGo.Start();
     }
 
     private void OnRlSnapshot(Models.RateLimitSnapshot snap)
@@ -349,6 +359,51 @@ public partial class MainWindow : Window
             _rlMerged = Models.RateLimitSnapshot.Merge(_rlMerged, snap);
             if (_rlMerged != null) ApplyRateLimit(_rlMerged);
         });
+
+    /// <summary>codex/opencode-go 사용량을 해당 푸터 패널에 반영.</summary>
+    private void ApplyProviderUsage(Models.ProviderUsage u)
+    {
+        if (u.Provider == "codex")
+            SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct, CxSevenBar, CxSevenPct, u, "Codex");
+        else if (u.Provider == "opencode-go")
+            SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go");
+    }
+
+    private void SetProviderPanel(System.Windows.Controls.StackPanel panel,
+        TextBlock fLabel, Border fBar, TextBlock fPct, Border wBar, TextBlock wPct,
+        Models.ProviderUsage u, string name)
+    {
+        if (!u.HasData && u.Error == null) { panel.Visibility = Visibility.Collapsed; return; }
+        panel.Visibility = Visibility.Visible;
+        SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
+        // 주간 라벨은 XAML 고정("주간") — 막대/퍼센트만 갱신.
+        if (u.Weekly?.UsedPercent is double wp) { var c = Math.Clamp(wp, 0, 100); wBar.Width = RlTrackWidth * c / 100.0; wBar.Background = RlBrush(c); wPct.Text = $"{wp:F0}%"; }
+        else { wBar.Width = 0; wPct.Text = "--"; }
+        panel.ToolTip = BuildProviderTooltip(u, name);
+    }
+
+    private static string BuildProviderTooltip(Models.ProviderUsage u, string name)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(name);
+        if (u.PlanLabel != null) sb.Append("  ·  ").Append(u.PlanLabel);
+        if (u.Primary?.UsedPercent is double p)
+            sb.Append($"\n5시간 한도 {p:F0}%  ·  초기화까지 {FormatRemaining(u.Primary.ResetsAt)}");
+        if (u.Weekly?.UsedPercent is double w)
+            sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(u.Weekly.ResetsAt)}");
+        if (u.Monthly?.UsedPercent is double m)
+            sb.Append($"\n월간 한도 {m:F0}%  ·  초기화 {FormatResetDate(u.Monthly.ResetsAt)}");
+        if (u.Error != null) sb.Append('\n').Append(u.Error);
+        return sb.ToString();
+    }
+
+    /// <summary>opencode-go 패널 클릭 — 브라우저 로그인으로 쿠키/워크스페이스 재캡처 후 즉시 갱신.</summary>
+    private void GoPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        var win = new Views.OpenCodeGoLoginWindow(this);
+        win.ShowDialog();
+        if (win.Captured) _openCodeGo.RefreshNow();
+    }
 
     private void ApplyRateLimit(Models.RateLimitSnapshot snap)
     {

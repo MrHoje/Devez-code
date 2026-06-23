@@ -1,0 +1,66 @@
+using System.IO;
+using System.Text.Json;
+
+namespace DevezCode.Services;
+
+/// <summary>opencode-go(opencode Zen) 대시보드 접근용 자격증명(workspaceId + authCookie) 해석/저장.
+/// 우선순위: ① DevezCode 자체 스토어(브라우저 로그인으로 캡처해 저장) → ② opencode-quota 플러그인 파일
+/// → ③ 환경변수. 쿠키는 만료되므로 만료 시 브라우저 재로그인으로 ①을 갱신한다.</summary>
+public static class OpenCodeGoCredentialStore
+{
+    public readonly record struct Creds(string WorkspaceId, string AuthCookie);
+
+    // ① DevezCode 자체 스토어
+    private static string OwnStorePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "opencode-go.json");
+
+    // ② opencode-quota 플러그인이 깔아둔 파일
+    private static string PluginPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".config", "opencode", "opencode-quota", "opencode-go.json");
+
+    public static Creds? Resolve()
+    {
+        // ③ env
+        var envWs = Environment.GetEnvironmentVariable("OPENCODE_GO_WORKSPACE_ID")?.Trim();
+        var envCk = Environment.GetEnvironmentVariable("OPENCODE_GO_AUTH_COOKIE")?.Trim();
+        if (!string.IsNullOrEmpty(envWs) && !string.IsNullOrEmpty(envCk)) return new Creds(envWs, envCk);
+
+        return ReadFile(OwnStorePath) ?? ReadFile(PluginPath);
+    }
+
+    private static Creds? ReadFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var doc = JsonDocument.Parse(fs);
+            var root = doc.RootElement;
+            var ws = root.TryGetProperty("workspaceId", out var w) && w.ValueKind == JsonValueKind.String ? w.GetString()?.Trim() : null;
+            var ck = root.TryGetProperty("authCookie", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString()?.Trim() : null;
+            return !string.IsNullOrEmpty(ws) && !string.IsNullOrEmpty(ck) ? new Creds(ws, ck) : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>브라우저 로그인으로 캡처한 자격증명을 자체 스토어에 저장.</summary>
+    public static void Save(string workspaceId, string authCookie)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(OwnStorePath)!);
+            using var ms = new MemoryStream();
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                w.WriteString("workspaceId", workspaceId);
+                w.WriteString("authCookie", authCookie);
+                w.WriteEndObject();
+            }
+            File.WriteAllBytes(OwnStorePath, ms.ToArray());
+        }
+        catch { }
+    }
+}
