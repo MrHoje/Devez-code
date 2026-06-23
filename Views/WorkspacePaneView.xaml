@@ -361,28 +361,8 @@
                              HorizontalAlignment="Center"
                              RenderTransformOrigin="0.5,0.5">
                         <Ellipse.RenderTransform>
-                            <RotateTransform x:Name="TermSpinRot"/>
+                            <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
                         </Ellipse.RenderTransform>
-                        <Ellipse.Style>
-                            <Style TargetType="Ellipse">
-                                <Style.Triggers>
-                                    <Trigger Property="IsVisible" Value="True">
-                                        <Trigger.EnterActions>
-                                            <BeginStoryboard x:Name="TermSpinBs">
-                                                <Storyboard RepeatBehavior="Forever">
-                                                    <DoubleAnimation
-                                                        Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                        From="0" To="360" Duration="0:0:0.85"/>
-                                                </Storyboard>
-                                            </BeginStoryboard>
-                                        </Trigger.EnterActions>
-                                        <Trigger.ExitActions>
-                                            <StopStoryboard BeginStoryboardName="TermSpinBs"/>
-                                        </Trigger.ExitActions>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Ellipse.Style>
                     </Ellipse>
                     <TextBlock Text="세션 여는 중…" Margin="0,14,0,0"
                                FontSize="{DynamicResource Fs13}" TextAlignment="Center"
