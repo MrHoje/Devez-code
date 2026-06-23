@@ -347,10 +347,12 @@ public partial class MainWindow : Window
         _statusLine.Start();
         _usageApi.Start();
 
-        _codex.Updated      += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
-        _openCodeGo.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
-        _codex.Start();
-        _openCodeGo.Start();
+        // [보류] codex·opencode-go 푸터 표시 잠시 숨김 — 조회 서비스 코드는 유지하되 시작만 비활성.
+        //        재활성화 시 아래 4줄 주석 해제(+ XAML 의 CodexPanel/GoPanel 은 데이터 오면 자동 표시).
+        // _codex.Updated      += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        // _openCodeGo.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        // _codex.Start();
+        // _openCodeGo.Start();
     }
 
     private void OnRlSnapshot(Models.RateLimitSnapshot snap)
