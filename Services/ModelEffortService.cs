@@ -72,6 +72,25 @@ public sealed class ModelEffortService : IDisposable
         return (null, null);
     }
 
+    /// <summary>statusLine 훅이 영속한 방의 마지막 (modelId, effort). 인스턴스 없이 런치 시점에 조회용.</summary>
+    public static (string? model, string? effort) ReadPersisted(string roomId)
+    {
+        try { return ParseFile(Path.Combine(Dir, SafeRoom(roomId) + ".txt")); }
+        catch { return (null, null); }
+    }
+
+    /// <summary>claude model.id("claude-opus-4-8…") → 런치 플래그/콤보 값(opus/sonnet/haiku/fable). 미상이면 null.</summary>
+    public static string? ToModelValue(string? id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        var s = id.ToLowerInvariant();
+        if (s.Contains("opus")) return "opus";
+        if (s.Contains("sonnet")) return "sonnet";
+        if (s.Contains("haiku")) return "haiku";
+        if (s.Contains("fable") || s.Contains("mythos")) return "fable";
+        return null;
+    }
+
     private static string SafeRoom(string roomId)
         => System.Text.RegularExpressions.Regex.Replace(roomId, @"[^\w\-]", "");
 

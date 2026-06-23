@@ -310,6 +310,12 @@
     term.clearSelection();
   }
 
+  // copy-on-select: 선택이 있으면 복사하되 선택은 유지(무엇을 복사했는지 보이게). Ctrl+C 와 달리 clear 안 함.
+  function doCopyKeep(term) {
+    const sel = term.getSelection();
+    if (sel) post({ type: 'copy', data: sel });
+  }
+
   // ── 검색바 ──────────────────────────────────────────────────────────
   const searchBar   = document.getElementById('search-bar');
   const searchInput = document.getElementById('search-input');
@@ -420,6 +426,13 @@
 
     setupImeCaretFix(term, el);
     term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
+
+    // copy-on-select: 드래그 선택(마우스 뗄 때) 자동 복사 → Ctrl+C 없이 복사. xterm 이 선택을
+    // 확정한 뒤 읽도록 다음 프레임에 조회. (TUI 마우스 모드에선 Shift+드래그로 선택해야 함)
+    el.addEventListener('mouseup', function () {
+      if (entry.dead) return;
+      setTimeout(function () { if (term.hasSelection()) doCopyKeep(term); }, 0);
+    });
 
     // 검색 결과 카운트 갱신 — 활성 방일 때만 검색바에 반영
     try {

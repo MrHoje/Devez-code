@@ -21,6 +21,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string>? TerminalReady;
     /// <summary>방의 ConPTY 세션이 생성/배선되어 살아있음. roomId 전달.</summary>
     public event Action<string>? SessionStarted;
+    /// <summary>사용자가 단독 ESC 로 응답 취소를 요청. roomId 전달 — 구독자가 busy 스피너를 끈다.</summary>
+    public event Action<string>? InterruptRequested;
     /// <summary>방의 셸 프로세스가 종료됨(끊김/죽음). roomId 전달.</summary>
     public event Action<string>? SessionExited;
     /// <summary>터미널에서 세션(탭) 단축키 발생 — name: newSession/closeSession/nextSession/prevSession/gotoSession.
@@ -66,6 +68,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly HashSet<string> _readyNotified = new();
     /// <summary>alt-screen 진입 후 이만큼 추가 출력이 없으면 "준비 완료"로 본다.</summary>
     private static readonly TimeSpan SettleQuiet = TimeSpan.FromMilliseconds(600);
+    /// <summary>alt-screen 진입 시각(Environment.TickCount). UI 스레드.</summary>
+    private readonly Dictionary<string, int> _altSeenTick = new();
+    /// <summary>alt-screen 진입 후 출력이 계속 흘러도(스피너/시계 등 끊임없는 redraw) 이 시각이 지나면
+    /// 무조건 준비 완료로 본다 — settle 이 영원히 안 떨어져 오버레이가 20s 타임아웃까지 남는 것 방지.</summary>
+    private const int MaxSettleAfterAltMs = 1500;
 
     private static readonly JsonSerializerOptions CamelCase = new()
     {
@@ -132,7 +139,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         {
             _ready.Add(roomId);
             _readyScan.Remove(roomId);
-            BumpSettle(roomId); // 즉시 통지하지 않고, 출력이 멎을 때까지 대기
+            _altSeenTick[roomId] = Environment.TickCount;
+            BumpSettle(roomId); // 즉시 통지하지 않고, 출력이 멎을 때까지 대기(단 MaxSettleAfterAltMs 상한)
             return;
         }
         _readyScan[roomId] = text.Length > 512 ? text[^512..] : text; // 버퍼 과다 방지
@@ -142,6 +150,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private void BumpSettle(string roomId)
     {
         if (_readyNotified.Contains(roomId)) return; // 이미 통지함
+        // alt-screen 진입 후 상한 초과 → 출력이 계속돼도 즉시 통지(끊임없는 redraw 로 settle 못 떨어지는 경우).
+        if (_altSeenTick.TryGetValue(roomId, out var seen) &&
+            unchecked(Environment.TickCount - seen) >= MaxSettleAfterAltMs)
+        {
+            if (_settleTimers.Remove(roomId, out var existing)) existing.Stop();
+            if (_readyNotified.Add(roomId)) TerminalReady?.Invoke(roomId);
+            return;
+        }
         if (!_settleTimers.TryGetValue(roomId, out var t))
         {
             t = new System.Windows.Threading.DispatcherTimer { Interval = SettleQuiet };
@@ -268,6 +284,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     // 커서를 입력 캐럿에서 치운다 → 조합 글자가 화면 끝으로 날아간다.
                     // focus-in/out 을 claude 로 전달하지 않아 항상 포커스 상태로 유지한다.
                     if (data is "\x1b[O" or "\x1b[I") break;
+                    // 단독 ESC = 응답 취소(인터럽트) 의도. agent 가 idle 신호를 안 줘도 스피너가
+                    // 무한정 도는 것을 막기 위해 즉시 busy 해제를 요청한다(입력은 그대로 전달해 실제 취소도 수행).
+                    if (data == "\x1b") InterruptRequested?.Invoke(root.GetProperty("roomId").GetString()!);
                     TerminalSessionManager.Instance
                         .Get(root.GetProperty("roomId").GetString()!)?.Write(data);
                     break;
@@ -568,6 +587,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _ready.Remove(roomId);
         _readyScan.Remove(roomId);
         _readyNotified.Remove(roomId);
+        _altSeenTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         _pendingPreload.Remove(roomId);
         if (_activeRoomId == roomId) _activeRoomId = null;
@@ -657,6 +677,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _ready.Clear();
         _readyScan.Clear();
         _readyNotified.Clear();
+        _altSeenTick.Clear();
         foreach (var t in _settleTimers.Values) t.Stop();
         _settleTimers.Clear();
     }

@@ -442,9 +442,13 @@ public sealed class TerminalSessionManager
         string flags = "--dangerously-skip-permissions";
         if (File.Exists(HookSettingsPath)) flags += $" --settings \"{HookSettingsPath}\"";
 
-        // 방별 model/effort 선택을 런치 플래그로 적용. 값은 콤보 화이트리스트지만 변조 대비 영숫자/하이픈만 허용.
-        var model = SettingsService.LoadClaudeCodeRoomModel(roomId);
-        var effort = SettingsService.LoadClaudeCodeRoomEffort(roomId);
+        // 방별 model/effort 를 런치 플래그로 적용. 값은 콤보 화이트리스트지만 변조 대비 영숫자/하이픈만 허용.
+        // 우선순위: (1) statusLine 이 영속한 라이브값 = 세션이 마지막에 쓰던 model/effort(TUI 안 /model 변경 포함)
+        //          (2) 콤보로 명시 저장한 값  (3) 콤보 기본값(opus). → 세션이 opus 로 끝났으면 reopen 도 opus.
+        var (liveModelId, liveEffort) = ModelEffortService.ReadPersisted(roomId);
+        var model = ModelEffortService.ToModelValue(liveModelId)
+                    ?? SettingsService.LoadClaudeCodeRoomModel(roomId) ?? "opus";
+        var effort = liveEffort ?? SettingsService.LoadClaudeCodeRoomEffort(roomId);
         if (IsSafeFlagValue(model)) flags += $" --model {model}";
         if (IsSafeFlagValue(effort)) flags += $" --effort {effort}";
 
