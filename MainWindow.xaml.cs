@@ -28,7 +28,8 @@ public partial class MainWindow : Window
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
     private string? _explorerDir;                      // 우측 파일탐색기가 보고 있는 경로(중복 ShowDirectory 방지)
     private readonly PerfMonitorService _perfMonitor = new();
-    private readonly StatusLineService _statusLine = new();
+    // 계정 사용량: statusLine 훅 의존(세션 떠 있을 때만 갱신) 대신 OAuth usage API 직접 폴링으로 교체.
+    private readonly UsageApiService _usageApi = new();
     private readonly SessionBusyService _sessionBusy = new();
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
@@ -218,7 +219,7 @@ public partial class MainWindow : Window
             App.ThemeChanged -= OnThemeChanged_UpdatePanels;
             foreach (var pane in _panes) pane.DisposeTerminal();
             _perfMonitor.Dispose();
-            _statusLine.Dispose();
+            _usageApi.Dispose();
             _sessionBusy.Dispose();
             _modelEffort.Dispose();
             _sessionLastMsg.Dispose();
@@ -329,13 +330,13 @@ public partial class MainWindow : Window
         _perfMonitor.Start();
     }
 
-    // ── 계정 사용량 (statusLine 훅 → ratelimit.json → 푸터) ─────────────
-    // claude 세션의 statusLine 훅이 떨군 rate_limits(계정 전역값)를 감시해 푸터에 표시한다.
+    // ── 계정 사용량 (OAuth usage API 폴링 → 푸터) ─────────────
+    // 세션 유무와 무관하게 5분 주기로 계정 사용량을 직접 조회해 푸터에 표시한다.
     private void StartStatusLine()
     {
-        _statusLine.SnapshotUpdated += snap =>
+        _usageApi.SnapshotUpdated += snap =>
             Dispatcher.InvokeAsync(() => ApplyRateLimit(snap));
-        _statusLine.Start();
+        _usageApi.Start();
     }
 
     private void ApplyRateLimit(Models.RateLimitSnapshot snap)
