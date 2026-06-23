@@ -203,6 +203,9 @@
 
   // Ctrl+Enter 가 조합 중에 눌리면 조합 글자 확정 후(compositionend) 보낼 줄바꿈 대상 roomId.
   let pendingComposeNewline = null;
+  // 한글 IME 조합 확정 Enter 는 keydown 이 2번 온다(229=조합중, 직후 13=확정된 Enter).
+  // 229 처리 시각을 적어두고, 직후 따라오는 비조합 Enter keydown 을 흡수해 줄바꿈 중복을 막는다.
+  let composeEnterAt = 0;
 
   // ── 키보드 단축키 (Windows Terminal 정합) ─────────────────────────────
   // attachCustomKeyEventHandler 규약: false 반환 = xterm 이 처리하지 않음(PTY 전송 차단),
@@ -216,7 +219,14 @@
         (e.code === 'Enter' || e.code === 'NumpadEnter' || e.key === 'Enter' || e.keyCode === 13)) {
       if (entry.dead) return true;
       e.preventDefault();
-      if (e.isComposing || e.keyCode === 229) { pendingComposeNewline = roomId; return false; }
+      if (e.isComposing || e.keyCode === 229) {
+        // 조합 중 — 글자 확정(compositionend) 후 줄바꿈 전송. keydown 2번째(확정 Enter) 흡수 준비.
+        pendingComposeNewline = roomId;
+        composeEnterAt = Date.now();
+        return false;
+      }
+      // 비조합 Enter — 직전 조합 확정의 트레일링 keydown 이면 흡수(줄바꿈 한 번만 나가게).
+      if (Date.now() - composeEnterAt < 200) { composeEnterAt = 0; return false; }
       post({ type: 'input', roomId: roomId, data: '\x1b\r' });
       return false;
     }
