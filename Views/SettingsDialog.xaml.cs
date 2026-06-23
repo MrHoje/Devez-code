@@ -44,7 +44,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.3.0", "2026-06-23", true, new[]
+        ("v1.4.0", "2026-06-23", true, new[]
+        {
+            "터미널 드래그 선택과 복사 기능을 개선했습니다.",
+            "세션을 불러오는 성능을 개선했습니다.",
+        }),
+        ("v1.3.0", "2026-06-23", false, new[]
         {
             "프로젝트 보관함 기능을 추가했습니다.",
             "탭 이동 단축키 기능을 추가했습니다.",
@@ -68,10 +73,6 @@ public partial class SettingsDialog : UserControl
             "프로젝트에 실행파일 바로가기 추가 기능을 도입했습니다.",
             "전반적인 UI를 개선했습니다.",
             "세션 변경 시 항상 표시되던 스피너 문제를 수정했습니다.",
-        }),
-        ("v1.0.0", "2026-06-22", false, new[]
-        {
-            "초기 버전입니다.",
         }),
     };
     private const int ChangelogPageSize = 5;
