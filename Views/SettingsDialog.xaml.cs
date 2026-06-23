@@ -284,8 +284,8 @@ public partial class SettingsDialog : UserControl
         (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
     }
 
-    // ── 탭 이동 단축키 리바인드 ───────────────────────────────────
-    /// <summary>키 칸 클릭 → 전역 훅 캡처 시작. 다음 키다운 1회를 해당 필드 키로 지정.</summary>
+    // ── 탭 이동 단축키 수식키 리바인드 (방향키는 ← / → 고정) ──────
+    /// <summary>수식키 칸 클릭 → 전역 훅 캡처 시작. 다음 키다운 1회를 수식키로 지정.</summary>
     private void KeyField_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Border b || b.Tag is not string field) return;
@@ -294,21 +294,10 @@ public partial class SettingsDialog : UserControl
         UpdateShortcutVisual();
         GlobalTabHotkey.BeginCapture(vk =>
         {
-            // Esc = 취소, 그 외 = 지정
-            if (vk != 0x1B) AssignCapturedKey(field, vk);
+            if (vk != 0x1B) _selectedHkMod = vk; // Esc = 취소, 그 외 = 지정
             _capturingField = null;
             UpdateShortcutVisual();
         });
-    }
-
-    private void AssignCapturedKey(string field, int vk)
-    {
-        switch (field)
-        {
-            case "mod":  _selectedHkMod  = vk; break;
-            case "prev": _selectedHkPrev = vk; break;
-            case "next": _selectedHkNext = vk; break;
-        }
     }
 
     private void CancelShortcutCapture()
@@ -319,30 +308,14 @@ public partial class SettingsDialog : UserControl
         UpdateShortcutVisual();
     }
 
-    private void ResetShortcut_Click(object sender, RoutedEventArgs e)
-    {
-        CancelShortcutCapture();
-        _selectedHkMod = 0x19; _selectedHkPrev = 0x25; _selectedHkNext = 0x27;
-        UpdateShortcutVisual();
-    }
-
-    /// <summary>키 칸 텍스트/보더를 현재 선택값(또는 캡처 중 표시)으로 갱신.</summary>
+    /// <summary>수식키 칸 텍스트/보더를 현재 선택값(또는 캡처 중 표시)으로 갱신.</summary>
     private void UpdateShortcutVisual()
     {
-        var primary = (Brush)FindResource("PrimaryBrush");
-        var line    = (Brush)FindResource("LineBrush");
-
-        foreach (var (field, text, border, vk) in new (string, TextBlock, Border, int)[]
-        {
-            ("mod",  ModKeyText,  ModKeyField,  _selectedHkMod),
-            ("prev", PrevKeyText, PrevKeyField, _selectedHkPrev),
-            ("next", NextKeyText, NextKeyField, _selectedHkNext),
-        })
-        {
-            bool capturing = _capturingField == field;
-            text.Text = capturing ? "키 입력…" : GlobalTabHotkey.KeyName(vk);
-            border.BorderBrush = capturing ? primary : line;
-        }
+        bool capturing = _capturingField == "mod";
+        ModKeyText.Text = capturing ? "키 입력…" : GlobalTabHotkey.KeyName(_selectedHkMod);
+        ModKeyField.BorderBrush = capturing
+            ? (Brush)FindResource("PrimaryBrush")
+            : (Brush)FindResource("LineBrush");
     }
 
     // ── 미리보기(저장 없이 화면에만 반영) ──────────────────────────

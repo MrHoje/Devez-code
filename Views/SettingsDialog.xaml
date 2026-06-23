@@ -131,7 +131,7 @@
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconKey}" Width="15" Height="15"
+                                              Data="{StaticResource IconZap}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="단축키" VerticalAlignment="Center"/>
                                     </StackPanel>
@@ -450,32 +450,33 @@
                                 </Border>
                             </StackPanel>
 
-                            <!-- 단축키 패널 — 탭 이동 전역 단축키 리바인드 -->
+                            <!-- 단축키 패널 — 탭 이동 전역 단축키 수식키 리바인드 -->
                             <StackPanel x:Name="ShortcutPanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconKey}"
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconZap}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
                                           Stroke="{DynamicResource TextBrush}"/>
                                     <TextBlock Text="단축키" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="세션 탭을 이전/다음으로 이동하는 전역 단축키입니다. 수정자 키를 누른 채 이전/다음 키를 누릅니다."
+                                <TextBlock Text="세션 탭을 이전/다음으로 이동하는 전역 단축키입니다. 수식키를 누른 채 ← / → 방향키를 누릅니다."
                                            FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
                                 <TextBlock Text="다른 앱이 포그라운드여도 동작합니다. 키 칸을 클릭한 뒤 원하는 키를 누르세요. (Esc 취소)"
                                            FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
-                                <!-- 수정자 키 -->
+                                <!-- 수식키 -->
                                 <Grid Margin="0,0,0,14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="수정자 키" FontSize="{DynamicResource Fs13}"
+                                        <TextBlock Text="수식키" FontSize="{DynamicResource Fs13}"
                                                    Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="누르고 있는 동안 이전/다음 키가 탭 이동으로 동작" FontSize="{DynamicResource Fs11}"
+                                        <TextBlock Text="누르고 있는 동안 ← / → 방향키가 세션 탭 이전/다음 이동으로 동작" FontSize="{DynamicResource Fs11}"
+                                                   TextWrapping="Wrap"
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                     </StackPanel>
                                     <Border x:Name="ModKeyField" Grid.Column="1" Tag="mod"
@@ -488,59 +489,6 @@
                                                    FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                     </Border>
                                 </Grid>
-
-                                <!-- 이전 탭 키 -->
-                                <Grid Margin="0,0,0,14">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="이전 탭" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="수정자와 함께 누르면 왼쪽(이전) 세션 탭으로 이동" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
-                                    </StackPanel>
-                                    <Border x:Name="PrevKeyField" Grid.Column="1" Tag="prev"
-                                            Width="130" Height="38" Cursor="Arrow"
-                                            Background="{DynamicResource PanelSoftBrush}"
-                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
-                                            CornerRadius="8" MouseLeftButtonDown="KeyField_Click">
-                                        <TextBlock x:Name="PrevKeyText" Text="←" VerticalAlignment="Center"
-                                                   HorizontalAlignment="Center" FontSize="{DynamicResource Fs13}"
-                                                   FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
-                                    </Border>
-                                </Grid>
-
-                                <!-- 다음 탭 키 -->
-                                <Grid Margin="0,0,0,20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="다음 탭" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="수정자와 함께 누르면 오른쪽(다음) 세션 탭으로 이동" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
-                                    </StackPanel>
-                                    <Border x:Name="NextKeyField" Grid.Column="1" Tag="next"
-                                            Width="130" Height="38" Cursor="Arrow"
-                                            Background="{DynamicResource PanelSoftBrush}"
-                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
-                                            CornerRadius="8" MouseLeftButtonDown="KeyField_Click">
-                                        <TextBlock x:Name="NextKeyText" Text="→" VerticalAlignment="Center"
-                                                   HorizontalAlignment="Center" FontSize="{DynamicResource Fs13}"
-                                                   FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
-                                    </Border>
-                                </Grid>
-
-                                <Button Click="ResetShortcut_Click"
-                                        Style="{StaticResource SecondaryButton}"
-                                        HorizontalAlignment="Left" Height="34" Padding="14,0"
-                                        FontSize="{DynamicResource Fs12}">
-                                    <TextBlock Text="기본값으로 복원 (한자 + ← / →)"/>
-                                </Button>
                             </StackPanel>
 
                             <!-- 테마 패널 -->
