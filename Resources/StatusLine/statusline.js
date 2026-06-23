@@ -1,6 +1,13 @@
-// DEVEZCODE-STATUSLINE v3 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+// DEVEZCODE-STATUSLINE v4 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
 const _fs = require("fs"), _path = require("path"), _os = require("os");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
+// 직전 정상 출력 캐시. parse 실패/빈 결과로 빈 줄을 뱉으면 세션 진입 시 statusline 이
+// 잠깐 비어 보이므로, 그런 렌더에서는 마지막 정상 줄을 대신 출력해 깜빡임을 막는다.
+const _lastFile = _path.join(_os.tmpdir(), "claude-statusline-last.txt");
+const _emitFallback = () => {
+  try { process.stdout.write(_fs.readFileSync(_lastFile, "utf8")); } catch (e) {}
+  process.exit(0);
+};
 const _cfgDefaults = { branch: true, model: true, eff: true, ctx: true, time: true, week: true, tokens: true };
 let CFG = Object.assign({}, _cfgDefaults);
 try { CFG = Object.assign(CFG, JSON.parse(_fs.readFileSync(_cfgFile, "utf8"))); } catch (e) {}
@@ -148,6 +155,9 @@ process.stdin.on("end", () => {
       }
       parts.push(TOK + disp + ts + " tokens" + R);
     }
-    process.stdout.write(" " + parts.join(PIPE) + "\n");
-  } catch (e) { process.exit(0); }
+    if (parts.length === 0) return _emitFallback(); // 표시할 게 없으면 직전 줄 유지
+    const line = " " + parts.join(PIPE) + "\n";
+    try { _fs.writeFileSync(_lastFile, line); } catch (e) {}
+    process.stdout.write(line);
+  } catch (e) { _emitFallback(); }
 });
