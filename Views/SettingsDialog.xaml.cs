@@ -44,7 +44,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.2.1", "2026-06-23", true, new[]
+        ("v1.3.0", "2026-06-23", true, new[]
+        {
+            "프로젝트 보관함 기능을 추가했습니다.",
+            "탭 이동 단축키 기능을 추가했습니다.",
+            "관리자 권한 바로가기가 실행되지 않던 문제를 수정했습니다.",
+            "프로그램 종료 시 간헐적으로 세션 대화 내용이 소실되던 문제를 수정했습니다.",
+        }),
+        ("v1.2.1", "2026-06-23", false, new[]
         {
             "선택하지 않은 프로젝트의 세션도 우클릭 메뉴와 마우스 호버가 동작합니다.",
             "선택하지 않은 프로젝트의 세션을 클릭하면 해당 세션이 바로 열립니다.",
