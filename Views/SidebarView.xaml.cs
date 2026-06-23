@@ -53,14 +53,13 @@ public partial class SidebarView : UserControl
     // 프로젝트 목록 열 수(1/2). 2면 카드 2열 그리드 + 가로 드래그. 기본 1.
     private int _projectColumns = 1;
 
-    /// <summary>프로젝트/보관함 목록을 1열(세로) 또는 2열(그리드)로 전환. MainWindow 가 설정값으로 호출.</summary>
+    /// <summary>프로젝트/보관함 목록을 1열(세로) 또는 2열(좌/우 독립 컬럼)로 전환. MainWindow 가 설정값으로 호출.
+    /// Tag → ProjectColumnsPanel.Columns 바인딩으로 레이아웃만 바뀌며, 카드의 Column 값은 그대로라 자동 재배치가 없다.</summary>
     public void ApplyProjectColumns(int cols)
     {
         _projectColumns = cols == 2 ? 2 : 1;
-        var key = _projectColumns == 2 ? "ProjectsPanel2Col" : "ProjectsPanel1Col";
-        var tmpl = (ItemsPanelTemplate)FindResource(key);
-        ProjectsHost.ItemsPanel = tmpl;
-        ArchivedHost.ItemsPanel = tmpl; // 같은 템플릿 인스턴스를 두 ItemsControl 이 공유해도 무방.
+        ProjectsHost.Tag = _projectColumns;
+        ArchivedHost.Tag = _projectColumns;
     }
 
     private ObservableCollection<ProjectItem>? _projects;
@@ -442,19 +441,80 @@ public partial class SidebarView : UserControl
         if (src.Element == null) return;
 
         var coll = CurrentProjects;
-        _projectDrag = ReorderDrag<ProjectItem>.TryStart(this, rows, p, src.Element,
-            (s, hostTarget, _) =>
-            {
-                int from = coll.IndexOf(s);
-                if (from >= 0)
+
+        if (_projectColumns >= 2)
+        {
+            // 2열: 목표 컬럼 + 컬럼 내 위치로 커밋. midX 는 패널 가운데(coordHost=this 기준).
+            double midX = ComputeColumnsMidX();
+            _projectDrag = ReorderDrag<ProjectItem>.TryStart(this, rows, p, src.Element,
+                (s, targetCol, targetIdx) =>
                 {
-                    int to = Math.Clamp(hostTarget, 0, coll.Count - 1);
-                    if (to != from) { coll.Move(from, to); ProjectsReordered?.Invoke(); }
-                }
-                return Task.CompletedTask;
-            }, exactFollow: true, columns: _projectColumns);
+                    if (MoveProjectToColumn(coll, s, targetCol, targetIdx)) ProjectsReordered?.Invoke();
+                    return Task.CompletedTask;
+                }, exactFollow: true, columns: 2, gridMidX: midX);
+        }
+        else
+        {
+            _projectDrag = ReorderDrag<ProjectItem>.TryStart(this, rows, p, src.Element,
+                (s, hostTarget, _) =>
+                {
+                    int from = coll.IndexOf(s);
+                    if (from >= 0)
+                    {
+                        int to = Math.Clamp(hostTarget, 0, coll.Count - 1);
+                        if (to != from) { coll.Move(from, to); ProjectsReordered?.Invoke(); }
+                    }
+                    return Task.CompletedTask;
+                }, exactFollow: true);
+        }
         if (_projectDrag != null) { _didDrag = true; CaptureMouse(); }
         _pendingProject = null;
+    }
+
+    /// <summary>현재 보기의 프로젝트 패널 가운데 X(좌/우 컬럼 경계). 좌표계는 this(SidebarView).</summary>
+    private double ComputeColumnsMidX()
+    {
+        var panel = FindVisualChildren<ProjectColumnsPanel>(CurrentHost).FirstOrDefault();
+        if (panel == null || panel.ActualWidth <= 0) return double.PositiveInfinity; // 폴백: 전부 좌 컬럼 취급
+        try
+        {
+            var origin = panel.TransformToAncestor(this).Transform(new Point(0, 0));
+            return origin.X + panel.ActualWidth / 2;
+        }
+        catch { return double.PositiveInfinity; }
+    }
+
+    /// <summary>2열: 드롭한 컬럼/위치로 프로젝트를 옮긴다. 같은 컬럼의 같은 위치면 no-op(false 반환).
+    /// 컬럼 내 상대 순서가 유지되도록 마스터 컬렉션에서 제거 후 알맞은 마스터 인덱스에 재삽입한다.</summary>
+    private static bool MoveProjectToColumn(ObservableCollection<ProjectItem> coll, ProjectItem s, int targetCol, int targetIdx)
+    {
+        targetCol = targetCol == 1 ? 1 : 0;
+        int from = coll.IndexOf(s);
+        if (from < 0) return false;
+
+        // 드롭 전 같은-컬럼 내 현재 위치(no-op 판정용).
+        int oldCol = s.Column;
+        int oldWithin = 0;
+        for (int i = 0; i < from; i++) if (coll[i].Column == oldCol) oldWithin++;
+
+        // 목표 컬럼의 다른 카드들(마스터 순서) — s 제외.
+        var colItems = coll.Where(x => !ReferenceEquals(x, s) && x.Column == targetCol).ToList();
+        targetIdx = Math.Clamp(targetIdx, 0, colItems.Count);
+
+        if (targetCol == oldCol && targetIdx == oldWithin) return false; // 변화 없음
+
+        coll.RemoveAt(from);
+        s.Column = targetCol;
+
+        int insertAt;
+        if (colItems.Count == 0)
+            insertAt = Math.Min(from, coll.Count);                 // 빈 컬럼: 위치 무관(레이아웃은 컬럼만 따름)
+        else if (targetIdx >= colItems.Count)
+            insertAt = coll.IndexOf(colItems[^1]) + 1;             // 컬럼 맨 끝
+        else
+            insertAt = coll.IndexOf(colItems[targetIdx]);          // 해당 카드 앞
+        coll.Insert(Math.Clamp(insertAt, 0, coll.Count), s);
+        return true;
     }
 
     private void TryStartSessionDrag(SessionItem s)

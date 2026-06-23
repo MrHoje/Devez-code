@@ -3,15 +3,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:DevezCode.Models"
              xmlns:b="clr-namespace:DevezCode.Behaviors"
+             xmlns:local="clr-namespace:DevezCode.Views"
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
-        <!-- 프로젝트 목록 패널: 1열(세로 스택) / 2열(UniformGrid). 설정 > 프로젝트에서 전환. -->
-        <ItemsPanelTemplate x:Key="ProjectsPanel1Col">
-            <StackPanel/>
-        </ItemsPanelTemplate>
-        <ItemsPanelTemplate x:Key="ProjectsPanel2Col">
-            <UniformGrid Columns="2"/>
+        <!-- 프로젝트 목록 패널: 열 수는 ItemsControl.Tag(설정 > 프로젝트)로 바인딩.
+             1열=세로 스택, 2열=좌/우 독립 컬럼(카드별 Column 으로 배치, 자동 재배치 없음). -->
+        <ItemsPanelTemplate x:Key="ProjectsPanel">
+            <local:ProjectColumnsPanel Columns="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
         </ItemsPanelTemplate>
 
         <!-- 세션 상태 점: 살아있으면 테마 primary(다크=주황), 죽으면 회색 -->
@@ -30,8 +29,6 @@
         <!-- ── 프로젝트 카드: doit ShellShortcut 카드 디자인. 보더 항상 표시(LineBrush), 호버는 보더만(그림자 X → '떠오름' 인상이 텍스트 우상단 이동처럼 보임), 활성은 primary 보더 + 글로우 ── -->
         <Style x:Key="ProjectCard" TargetType="Border">
             <Setter Property="CornerRadius" Value="10"/>
-            <!-- 2열(UniformGrid) 에서 셀이 행 최대높이로 잡혀도 카드는 콘텐츠(세션 수)만큼만. 1열 StackPanel 엔 무영향. -->
-            <Setter Property="VerticalAlignment" Value="Top"/>
             <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
@@ -457,7 +454,9 @@
                     <TranslateTransform x:Name="ActivePanelTransform" X="0"/>
                 </Grid.RenderTransform>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8">
-                    <ItemsControl x:Name="ProjectsHost" ItemTemplate="{StaticResource ProjectTemplate}"/>
+                    <ItemsControl x:Name="ProjectsHost" Tag="1"
+                                  ItemTemplate="{StaticResource ProjectTemplate}"
+                                  ItemsPanel="{StaticResource ProjectsPanel}"/>
                 </ScrollViewer>
 
                 <!-- 새 프로젝트 FAB (devez 방식: 우하단 떠 있는 원형 버튼) -->
@@ -498,7 +497,9 @@
                     <TranslateTransform x:Name="ArchivePanelTransform" X="9999"/>
                 </Grid.RenderTransform>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8">
-                    <ItemsControl x:Name="ArchivedHost" ItemTemplate="{StaticResource ProjectTemplate}"/>
+                    <ItemsControl x:Name="ArchivedHost" Tag="1"
+                                  ItemTemplate="{StaticResource ProjectTemplate}"
+                                  ItemsPanel="{StaticResource ProjectsPanel}"/>
                 </ScrollViewer>
                 <!-- 보관함 비었을 때 안내 -->
                 <TextBlock x:Name="ArchiveEmptyText" Text="보관된 프로젝트가 없습니다"

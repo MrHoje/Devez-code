@@ -146,6 +146,11 @@ public sealed class ProjectItem : NotifyBase
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 
+    /// <summary>2열 보기에서 이 카드가 속한 컬럼(0=좌, 1=우). 1열 보기에선 무시(전부 한 줄로 쌓임).
+    /// 드래그로만 바뀌며, 열 수를 1↔2로 토글해도 값은 보존(자동 재배치 금지). workspace.json 에 영속.</summary>
+    private int _column;
+    public int Column { get => _column; set => Set(ref _column, value == 1 ? 1 : 0); }
+
     /// <summary>보관 시각(ISO-8601 UTC). null/빈값=활성, 값 있으면 보관함 소속.
     /// devez 의 projects.archived_at(Supabase) 정합 — DevezCode 는 workspace.json 에 로컬 영속.</summary>
     private string? _archivedAt;

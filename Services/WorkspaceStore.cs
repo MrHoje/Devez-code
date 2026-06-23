@@ -17,6 +17,8 @@ public static class WorkspaceStore
         public bool IsExpanded { get; set; } = true;
         // 보관 시각(ISO-8601). null=활성, 값 있으면 보관함. devez archived_at 정합(로컬).
         public string? ArchivedAt { get; set; }
+        // 2열 보기에서의 컬럼(0=좌, 1=우). 1열 보기에선 무시. 기본 0.
+        public int Column { get; set; }
         public List<SessionDto> Sessions { get; set; } = new();
         // 프로젝트 메뉴에 등록한 바로가기 목록. 재시작 시 복원.
         public List<ShortcutDto> Files { get; set; } = new();
@@ -76,6 +78,7 @@ public static class WorkspaceStore
                 var proj = ProjectItem.FromPath(p.Path);
                 proj.IsExpanded = p.IsExpanded;
                 proj.ArchivedAt = p.ArchivedAt;
+                proj.Column = p.Column;
                 foreach (var s in p.Sessions)
                     proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden });
                 foreach (var f in p.Files)
@@ -113,6 +116,7 @@ public static class WorkspaceStore
         Path = p.Path,
         IsExpanded = p.IsExpanded,
         ArchivedAt = p.ArchivedAt,
+        Column = p.Column,
         // 파일 탭은 비영속: 세션만 저장 → 재시작 시 사라진다.
         Sessions = p.Tabs.OfType<SessionItem>().Select(s => new SessionDto
         {

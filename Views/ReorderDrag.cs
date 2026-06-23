@@ -26,23 +26,26 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly int _sourceIndex;
     private readonly bool _exactFollow;
     private readonly bool _horizontal;
-    private readonly int _columns;        // >1 이면 2D 그리드 재정렬(읽기 순서 기반). 1이면 기존 1축 동작.
+    private readonly int _columns;        // >1 이면 2열 컬럼 재정렬(명시적 컬럼 + 컬럼 내 세로 순서). 1이면 기존 1축 동작.
+    private readonly double _gridMidX;    // coordHost 기준, 좌/우 컬럼을 가르는 X(컬럼 판정 기준).
     private readonly double _grabOffsetX; // 잡은 지점의 source 내부 오프셋 — 드래그 카드 중심 계산용
     private readonly double _grabOffsetY;
-    private int _targetIndex;
+    private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
+    private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private bool _finished;
 
     private bool IsGrid => _columns > 1;
     private double AxisPos(Slot s) => _horizontal ? s.Left : s.Top;
     private double AxisSize(Slot s) => _horizontal ? s.Width : s.Height;
+    private int ColumnOf(Slot s) => s.Left + s.Width / 2 >= _gridMidX ? 1 : 0;
 
     private ReorderDrag(UIElement coordHost, List<Slot> slots, T source, int sourceIndex,
         DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal,
-        int columns, double grabOffsetX, double grabOffsetY)
+        int columns, double gridMidX, double grabOffsetX, double grabOffsetY)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
-        _columns = columns; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
+        _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
         _targetIndex = sourceIndex;
     }
 
@@ -57,6 +60,7 @@ internal sealed class ReorderDrag<T> where T : class
         bool exactFollow = false,
         bool horizontal = false,
         int columns = 1,
+        double gridMidX = 0,
         FrameworkElement? ghostSource = null)
     {
         var captured = new List<Slot>();
@@ -72,9 +76,14 @@ internal sealed class ReorderDrag<T> where T : class
             captured.Add(new Slot(item, el, left, top,
                 Math.Max(1, el.ActualWidth), Math.Max(1, el.ActualHeight)));
         }
-        // 그리드: 읽기 순서(행→열). 1축: 해당 축 위치.
+        // 그리드(2열): 컬럼(좌→우) 우선, 그 안에서 위→아래. 1축: 해당 축 위치.
         if (columns > 1)
-            captured.Sort((a, b) => Math.Abs(a.Top - b.Top) > 0.5 ? a.Top.CompareTo(b.Top) : a.Left.CompareTo(b.Left));
+            captured.Sort((a, b) =>
+            {
+                int ca = a.Left + a.Width / 2 >= gridMidX ? 1 : 0;
+                int cb = b.Left + b.Width / 2 >= gridMidX ? 1 : 0;
+                return ca != cb ? ca.CompareTo(cb) : a.Top.CompareTo(b.Top);
+            });
         else
             captured.Sort((a, b) => (horizontal ? a.Left : a.Top).CompareTo(horizontal ? b.Left : b.Top));
 
@@ -93,7 +102,7 @@ internal sealed class ReorderDrag<T> where T : class
         if (ghost == null) return null;
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
-            columns, grabPt.X, grabPt.Y);
+            columns, gridMidX, grabPt.X, grabPt.Y);
     }
 
     public void Update(MouseEventArgs e)
@@ -102,12 +111,14 @@ internal sealed class ReorderDrag<T> where T : class
         _ghost.MoveToMouse();
         if (IsGrid)
         {
-            // 2D 그리드: 드래그 카드 중심을 읽기 순서로 삽입 위치 환산. 시프트 애니메이션은 생략(놓을 때 reflow).
+            // 2열: 드래그 카드 중심의 X로 목표 컬럼을, Y로 그 컬럼 안의 삽입 위치를 정한다.
+            // 시프트 애니메이션은 생략(놓을 때 패널이 reflow). 어느 카드도 자동 이동하지 않음.
             var p = e.GetPosition(_coordHost);
             var src = _slots[_sourceIndex];
             double cx = p.X - _grabOffsetX + src.Width / 2;
             double cy = p.Y - _grabOffsetY + src.Height / 2;
-            _targetIndex = ComputeGridTarget(cx, cy);
+            _targetColumn = cx >= _gridMidX ? 1 : 0;
+            _targetIndex = ComputeColumnTarget(_targetColumn, cy);
             return;
         }
         var cursor = _horizontal ? e.GetPosition(_coordHost).X : e.GetPosition(_coordHost).Y;
@@ -120,20 +131,17 @@ internal sealed class ReorderDrag<T> where T : class
         ApplyDisplacement();
     }
 
-    /// <summary>그리드: 삽입 지점 앞에 오는 (source 제외) 항목 수 = ObservableCollection.Move 의 목표 인덱스.
-    /// source 를 원위치 셀에 놓으면 결과가 _sourceIndex 와 같아 no-op 으로 처리된다.</summary>
-    private int ComputeGridTarget(double cx, double cy)
+    /// <summary>그리드: 목표 컬럼 안에서 드래그 카드 중심 Y 가 들어갈 삽입 위치(0-based, source 제외).
+    /// = 같은 컬럼의 (source 제외) 카드 중 중심 Y 가 위에 있는 개수.</summary>
+    private int ComputeColumnTarget(int column, double cy)
     {
         int target = 0;
         for (int i = 0; i < _slots.Count; i++)
         {
             if (i == _sourceIndex) continue;
             var s = _slots[i];
-            bool before;
-            if (cy >= s.Top + s.Height) before = true;      // 이 항목의 행보다 아래
-            else if (cy < s.Top) before = false;            // 이 항목의 행보다 위
-            else before = cx >= s.Left + s.Width / 2;        // 같은 행: 절반 넘으면 뒤로
-            if (before) target++;
+            if (ColumnOf(s) != column) continue;
+            if (cy >= s.Top + s.Height / 2) target++;
         }
         return target;
     }
@@ -202,11 +210,20 @@ internal sealed class ReorderDrag<T> where T : class
         _ghost.Dispose();
         foreach (var s in _slots) ResetAxis(s.Element);
 
-        if (commit && _targetIndex != _sourceIndex)
+        if (!commit) return;
+
+        if (IsGrid)
         {
-            // 그리드: _targetIndex 는 이미 "source 제외 앞선 항목 수" = Move 목표 인덱스.
-            int hostSource = IsGrid ? _sourceIndex : SlotToHostIndex(_sourceIndex, skipSource: false);
-            int hostTarget = IsGrid ? _targetIndex : SlotToHostIndex(_targetIndex, skipSource: !_exactFollow);
+            // 그리드: (목표 컬럼, 컬럼 내 삽입 위치)를 그대로 전달. 변경 여부 판단은 commit 콜백이 한다.
+            try { await _onCommit(_source, _targetColumn, _targetIndex); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ReorderDrag grid commit failed: {ex}"); }
+            return;
+        }
+
+        if (_targetIndex != _sourceIndex)
+        {
+            int hostSource = SlotToHostIndex(_sourceIndex, skipSource: false);
+            int hostTarget = SlotToHostIndex(_targetIndex, skipSource: !_exactFollow);
             try { await _onCommit(_source, hostTarget, hostSource); }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ReorderDrag commit failed: {ex}"); }
         }
