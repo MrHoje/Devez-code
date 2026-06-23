@@ -166,10 +166,8 @@ public partial class SidebarView : UserControl
         if (_didDrag) { _didDrag = false; return; }
         if (sender is FrameworkElement { DataContext: SessionItem s })
         {
-            // 비선택 프로젝트 세션 클릭: 먼저 프로젝트 선택 후 그 세션도 선택
-            var project = Projects.FirstOrDefault(p => p.Sessions.Contains(s));
-            if (project != null && !project.IsSelected)
-                ProjectSelected?.Invoke(project);
+            // 비선택 프로젝트 세션 클릭도 OpenSession 이 프로젝트 전환까지 처리.
+            // (ProjectSelected 를 따로 호출하면 첫 세션이 추가로 로드되므로 호출하지 않음)
             SessionSelected?.Invoke(s);
         }
     }
