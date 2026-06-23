@@ -73,6 +73,10 @@ public static class SettingsService
         public bool ShowQueueViewBtn   { get; set; } = true;  // 작업 큐
         public bool ShowBrowserViewBtn { get; set; } = true;  // 브라우저
         public bool ShowDiffViewBtn    { get; set; } = true;  // DIFF
+        // 탭 이동 전역 단축키(가상키코드). 기본 한자(0x19) + 좌(0x25)/우(0x27) 방향키.
+        public int TabHotkeyModifierVk { get; set; } = 0x19;
+        public int TabHotkeyPrevVk     { get; set; } = 0x25;
+        public int TabHotkeyNextVk     { get; set; } = 0x27;
     }
 
     private static readonly object _lock = new();
@@ -160,6 +164,18 @@ public static class SettingsService
     public static void SaveShowQueueViewBtn(bool v)   { Current.ShowQueueViewBtn   = v; Save(); }
     public static void SaveShowBrowserViewBtn(bool v) { Current.ShowBrowserViewBtn = v; Save(); }
     public static void SaveShowDiffViewBtn(bool v)    { Current.ShowDiffViewBtn    = v; Save(); }
+
+    // ── 탭 이동 전역 단축키 (수정자 + 이전/다음 키, 가상키코드) ──────
+    public static (int mod, int prev, int next) LoadTabHotkey()
+        => (Current.TabHotkeyModifierVk, Current.TabHotkeyPrevVk, Current.TabHotkeyNextVk);
+
+    public static void SaveTabHotkey(int mod, int prev, int next)
+    {
+        Current.TabHotkeyModifierVk = mod;
+        Current.TabHotkeyPrevVk = prev;
+        Current.TabHotkeyNextVk = next;
+        Save();
+    }
 
     // ── Claude Code 방 작업 디렉터리 ──────────────────────────────
     public static string? LoadClaudeCodeRoomDir(string roomId)

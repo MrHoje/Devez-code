@@ -32,6 +32,11 @@ public partial class SettingsDialog : UserControl
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
     private bool   _selectedHideProjectInfoHeader;
+
+    // 탭 이동 단축키(가상키코드). 디스크 저장은 [저장] 버튼에서만 — 다른 설정과 동일.
+    private int _originalHkMod, _originalHkPrev, _originalHkNext;
+    private int _selectedHkMod, _selectedHkPrev, _selectedHkNext;
+    private string? _capturingField; // 캡처 중인 필드 키("mod"/"prev"/"next"), null=비캡처
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
@@ -81,6 +86,9 @@ public partial class SettingsDialog : UserControl
         _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
         _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
         HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        (_originalHkMod, _originalHkPrev, _originalHkNext) = SettingsService.LoadTabHotkey();
+        _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
+        UpdateShortcutVisual();
         BuildAgentList();
         UpdateThemeSelectionVisual();
         UpdateFontSelectionVisual();
@@ -93,7 +101,7 @@ public partial class SettingsDialog : UserControl
         App.ThemeChanged     += _themeChangedHandler;
         App.FontScaleChanged  += _fontScaleChangedHandler;
         _subscribed = true;
-        Unloaded += (_, _) => Unsubscribe();
+        Unloaded += (_, _) => { Unsubscribe(); GlobalTabHotkey.CancelCapture(); };
     }
 
     private void Unsubscribe()
@@ -130,6 +138,8 @@ public partial class SettingsDialog : UserControl
         CatMcpBtn.Foreground       = key == "mcp"        ? primary : text;
         CatChangelogBtn.Background = key == "changelog"  ? active : Brushes.Transparent;
         CatChangelogBtn.Foreground = key == "changelog"  ? primary : text;
+        CatShortcutBtn.Background  = key == "shortcut"   ? active : Brushes.Transparent;
+        CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
@@ -137,7 +147,9 @@ public partial class SettingsDialog : UserControl
         SidePanelPanel.Visibility  = key == "sidepanel"  ? Visibility.Visible : Visibility.Collapsed;
         McpPanel.Visibility        = key == "mcp"        ? Visibility.Visible : Visibility.Collapsed;
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
+        ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
 
+        if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
         if (key == "sidepanel") LoadSidePanelSettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
     }
@@ -272,6 +284,67 @@ public partial class SettingsDialog : UserControl
         (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
     }
 
+    // ── 탭 이동 단축키 리바인드 ───────────────────────────────────
+    /// <summary>키 칸 클릭 → 전역 훅 캡처 시작. 다음 키다운 1회를 해당 필드 키로 지정.</summary>
+    private void KeyField_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border b || b.Tag is not string field) return;
+        if (_capturingField == field) { CancelShortcutCapture(); return; } // 같은 칸 재클릭 = 취소
+        _capturingField = field;
+        UpdateShortcutVisual();
+        GlobalTabHotkey.BeginCapture(vk =>
+        {
+            // Esc = 취소, 그 외 = 지정
+            if (vk != 0x1B) AssignCapturedKey(field, vk);
+            _capturingField = null;
+            UpdateShortcutVisual();
+        });
+    }
+
+    private void AssignCapturedKey(string field, int vk)
+    {
+        switch (field)
+        {
+            case "mod":  _selectedHkMod  = vk; break;
+            case "prev": _selectedHkPrev = vk; break;
+            case "next": _selectedHkNext = vk; break;
+        }
+    }
+
+    private void CancelShortcutCapture()
+    {
+        if (_capturingField == null) return;
+        _capturingField = null;
+        GlobalTabHotkey.CancelCapture();
+        UpdateShortcutVisual();
+    }
+
+    private void ResetShortcut_Click(object sender, RoutedEventArgs e)
+    {
+        CancelShortcutCapture();
+        _selectedHkMod = 0x19; _selectedHkPrev = 0x25; _selectedHkNext = 0x27;
+        UpdateShortcutVisual();
+    }
+
+    /// <summary>키 칸 텍스트/보더를 현재 선택값(또는 캡처 중 표시)으로 갱신.</summary>
+    private void UpdateShortcutVisual()
+    {
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var line    = (Brush)FindResource("LineBrush");
+
+        foreach (var (field, text, border, vk) in new (string, TextBlock, Border, int)[]
+        {
+            ("mod",  ModKeyText,  ModKeyField,  _selectedHkMod),
+            ("prev", PrevKeyText, PrevKeyField, _selectedHkPrev),
+            ("next", NextKeyText, NextKeyField, _selectedHkNext),
+        })
+        {
+            bool capturing = _capturingField == field;
+            text.Text = capturing ? "키 입력…" : GlobalTabHotkey.KeyName(vk);
+            border.BorderBrush = capturing ? primary : line;
+        }
+    }
+
     // ── 미리보기(저장 없이 화면에만 반영) ──────────────────────────
     private void ThemeCard_Click(object sender, MouseButtonEventArgs e)
     {
@@ -351,6 +424,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedFontScale != _originalFontScale) return true;
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
+        if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
         if (!current.SetEquals(_originalEnabledAgents)) return true;
@@ -371,10 +445,17 @@ public partial class SettingsDialog : UserControl
         }
         UpdateAgentEnabledInSettings();
 
+        if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext)
+        {
+            SettingsService.SaveTabHotkey(_selectedHkMod, _selectedHkPrev, _selectedHkNext);
+            GlobalTabHotkey.Configure(_selectedHkMod, _selectedHkPrev, _selectedHkNext); // 런타임 즉시 적용
+        }
+
         _originalTheme       = _selectedTheme;
         _originalFontScale   = _selectedFontScale;
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
+        _originalHkMod = _selectedHkMod; _originalHkPrev = _selectedHkPrev; _originalHkNext = _selectedHkNext;
         _originalEnabledAgents = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
         _originalRetentionDays = _agentItems.FirstOrDefault(a => a.IsClaudeCode)?.RetentionDays
@@ -406,6 +487,10 @@ public partial class SettingsDialog : UserControl
             _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
             HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
         }
+        // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)
+        CancelShortcutCapture();
+        _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
+        UpdateShortcutVisual();
         // 에이전트 활성화 상태 되돌리기
         foreach (var item in _agentItems)
         {

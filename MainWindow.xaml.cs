@@ -182,8 +182,10 @@ public partial class MainWindow : Window
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
             ApplySidePanelButtonVisibility();
-            // 전역 단축키: 한자 + 좌/우 방향키 → 포커스 패널의 세션 탭 이전/다음 이동.
+            // 전역 단축키: (기본)한자 + 좌/우 방향키 → 포커스 패널의 세션 탭 이전/다음 이동.
             // 우리 앱이 포그라운드가 아니어도(다른 앱/터미널 점유 중에도) 동작 — 전환 후 창을 앞으로.
+            var (hkMod, hkPrev, hkNext) = SettingsService.LoadTabHotkey();
+            GlobalTabHotkey.Configure(hkMod, hkPrev, hkNext);
             GlobalTabHotkey.Install(next =>
             {
                 _focusedPane?.CycleActiveSession(next);
