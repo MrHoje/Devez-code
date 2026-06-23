@@ -257,6 +257,10 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
+        // WebView2(터미널/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
+        // 설정 오버레이와 동일하게 스냅샷+커튼으로 suspend 해 WebView 를 치운 뒤 오버레이를 띄운다.
+        try { await SuspendTerminalWithSnapshotAsync(blankCurtain: true); }
+        catch { /* best effort */ }
         ShutdownOverlay.Visibility = Visibility.Visible;
         try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(1500); }
         catch { /* best effort */ }
