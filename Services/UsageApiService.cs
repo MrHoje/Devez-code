@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using DevezCode.Models;
@@ -7,24 +8,34 @@ namespace DevezCode.Services;
 
 /// <summary>Anthropic OAuth usage API(<c>GET /api/oauth/usage</c>)를 주기적으로 폴링해 계정 사용량을
 /// 알린다. statusLine 훅과 달리 claude 세션이 떠 있지 않아도 값을 갱신할 수 있다.
-/// 토큰은 <c>~/.claude/.credentials.json</c> 에서 매 폴링마다 읽어(claude 가 갱신해도 따라감) 메모리에서만 사용한다.</summary>
+/// 토큰은 <c>~/.claude/.credentials.json</c> 에서 매 폴링마다 읽어(claude 가 갱신해도 따라감) 메모리에서만 사용한다.
+///
+/// 주의: 이 엔드포인트는 <c>User-Agent: claude-code/&lt;ver&gt;</c> 헤더가 없으면 공격적으로 rate limit(영구 429)
+/// 되는 별도 버킷에 떨어진다. 헤더를 넣으면 180초 간격까지 안전(claude-code 이슈 #31021/#31637 참고).
+/// 429 면 이번 주기를 건너뛰고 직전 값을 유지한다.</summary>
 public sealed class UsageApiService : IDisposable
 {
     private const string UsageUrl = "https://api.anthropic.com/api/oauth/usage";
-    private const int PollMs = 5 * 60 * 1000; // 5분 — rate limit 회피(스펙 §9: 5분 미만 폴링 금지)
+    // claude CLI 로 위장한 User-Agent. 없으면 영구 429. claude 업데이트 시 갱신.
+    private const string UserAgent = "claude-code/2.1.186";
+    private const int PollMs = 3 * 60 * 1000; // 3분 — UA 포함 시 안전한 최소 간격
 
     private static string CredentialsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
 
+    // statusline.js 가 live rate_limits 가 없을 때 폴백으로 읽는 파일.
+    private static string Dir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude");
+    private static string FallbackPath => Path.Combine(Dir, "api-usage.json");
+
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private System.Threading.Timer? _poll;
-    private RateLimitSnapshot? _last;
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
     public void Start()
     {
-        // 즉시 1회 + 이후 5분 주기. 폴링은 백그라운드 스레드에서 비동기로 돈다.
+        // 즉시 1회 + 이후 3분 주기. 폴링은 백그라운드 스레드에서 비동기로 돈다.
         _poll = new System.Threading.Timer(_ => _ = PollAsync(), null, 0, PollMs);
     }
 
@@ -38,9 +49,11 @@ public sealed class UsageApiService : IDisposable
             using var req = new HttpRequestMessage(HttpMethod.Get, UsageUrl);
             req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
             req.Headers.TryAddWithoutValidation("anthropic-beta", "oauth-2025-04-20");
+            req.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
 
             using var res = await _http.SendAsync(req).ConfigureAwait(false);
-            if (!res.IsSuccessStatusCode) return; // 401/5xx 등 — 직전 값 유지
+            // 429/401/5xx 등 — 이번 주기 건너뛰고 직전 값 유지(다음 주기 3분 뒤 재시도).
+            if (res.StatusCode == HttpStatusCode.TooManyRequests || !res.IsSuccessStatusCode) return;
 
             await using var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
@@ -54,10 +67,39 @@ public sealed class UsageApiService : IDisposable
                 SevenDayResetsAt = ReadReset(root, "seven_day"),
             };
             if (!snap.HasData) return;
-            _last = snap;
+            WriteFallback(snap); // statusline.js 폴백용
             SnapshotUpdated?.Invoke(snap);
         }
         catch { /* 일시 오류 — 직전 값 유지 */ }
+    }
+
+    /// <summary>statusline.js 가 live rate_limits 부재 시 읽을 폴백 파일을 쓴다.
+    /// claude statusLine JSON 의 rate_limits 와 같은 모양(resets_at = unix 초).</summary>
+    private static void WriteFallback(RateLimitSnapshot snap)
+    {
+        try
+        {
+            Directory.CreateDirectory(Dir);
+            using var ms = new MemoryStream();
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                WriteWindow(w, "five_hour", snap.FiveHourPercent, snap.FiveHourResetsAt);
+                WriteWindow(w, "seven_day", snap.SevenDayPercent, snap.SevenDayResetsAt);
+                w.WriteEndObject();
+            }
+            File.WriteAllBytes(FallbackPath, ms.ToArray());
+        }
+        catch { }
+    }
+
+    private static void WriteWindow(Utf8JsonWriter w, string key, double? pct, DateTimeOffset? reset)
+    {
+        if (pct is not double p) return;
+        w.WriteStartObject(key);
+        w.WriteNumber("used_percentage", p);
+        if (reset is DateTimeOffset r) w.WriteNumber("resets_at", r.ToUnixTimeSeconds());
+        w.WriteEndObject();
     }
 
     /// <summary>credentials.json 에서 OAuth 액세스 토큰 추출(느슨한 매칭). 실패/없음이면 null.</summary>

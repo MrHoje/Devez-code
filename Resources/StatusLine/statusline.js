@@ -1,4 +1,4 @@
-// DEVEZCODE-STATUSLINE v4 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+// DEVEZCODE-STATUSLINE v5 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
 const _fs = require("fs"), _path = require("path"), _os = require("os");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
 // 직전 정상 출력 캐시. parse 실패/빈 결과로 빈 줄을 뱉으면 세션 진입 시 statusline 이
@@ -63,7 +63,15 @@ process.stdin.on("end", () => {
       const startDir = j.cwd || (j.workspace && j.workspace.current_dir);
       if (startDir) gitBranch = findGitBranch(startDir);
     } catch (e) {}
-    const rl   = j.rate_limits || {};
+    // rate_limits: claude 가 넘긴 live 값 우선. 없으면(세션 외/미지원) DevezCode 가 OAuth API 로
+    // 3분마다 떨군 폴백 파일을 읽어 5h/주간 표시를 유지한다(같은 모양: used_percentage + resets_at(unix초)).
+    let rl = j.rate_limits || {};
+    if (!(rl.five_hour && rl.five_hour.used_percentage != null) && process.env.APPDATA) {
+      try {
+        const _apiRl = JSON.parse(_fs.readFileSync(_path.join(process.env.APPDATA, "DevezCode", "claude", "api-usage.json"), "utf8"));
+        if (_apiRl && (_apiRl.five_hour || _apiRl.seven_day)) rl = _apiRl;
+      } catch (e) {}
+    }
     const rl5h = rl.five_hour && rl.five_hour.used_percentage != null ? Math.round(rl.five_hour.used_percentage) : null;
     const rl7d = rl.seven_day && rl.seven_day.used_percentage != null ? Math.round(rl.seven_day.used_percentage) : null;
     const cu   = cw.current_usage || {};

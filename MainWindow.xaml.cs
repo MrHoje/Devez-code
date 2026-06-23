@@ -28,8 +28,10 @@ public partial class MainWindow : Window
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
     private string? _explorerDir;                      // 우측 파일탐색기가 보고 있는 경로(중복 ShowDirectory 방지)
     private readonly PerfMonitorService _perfMonitor = new();
-    // 계정 사용량: statusLine 훅 의존(세션 떠 있을 때만 갱신) 대신 OAuth usage API 직접 폴링으로 교체.
+    // 계정 사용량: statusLine 훅(세션 활성 시 거의 실시간) + OAuth API(세션 없어도 3분 주기) 두 소스를 병합.
+    private readonly StatusLineService _statusLine = new();
     private readonly UsageApiService _usageApi = new();
+    private Models.RateLimitSnapshot? _rlMerged; // 두 소스를 합친 푸터 표시값
     private readonly SessionBusyService _sessionBusy = new();
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
@@ -219,6 +221,7 @@ public partial class MainWindow : Window
             App.ThemeChanged -= OnThemeChanged_UpdatePanels;
             foreach (var pane in _panes) pane.DisposeTerminal();
             _perfMonitor.Dispose();
+            _statusLine.Dispose();
             _usageApi.Dispose();
             _sessionBusy.Dispose();
             _modelEffort.Dispose();
@@ -330,14 +333,22 @@ public partial class MainWindow : Window
         _perfMonitor.Start();
     }
 
-    // ── 계정 사용량 (OAuth usage API 폴링 → 푸터) ─────────────
-    // 세션 유무와 무관하게 5분 주기로 계정 사용량을 직접 조회해 푸터에 표시한다.
+    // ── 계정 사용량 (statusLine 훅 + OAuth API 병합 → 푸터) ─────────────
+    // 두 소스 스냅샷을 RateLimitSnapshot.Merge 로 합쳐(새 윈도우 채택·동일 윈도우 비후퇴) 푸터에 표시.
     private void StartStatusLine()
     {
-        _usageApi.SnapshotUpdated += snap =>
-            Dispatcher.InvokeAsync(() => ApplyRateLimit(snap));
+        _statusLine.SnapshotUpdated += OnRlSnapshot;
+        _usageApi.SnapshotUpdated  += OnRlSnapshot;
+        _statusLine.Start();
         _usageApi.Start();
     }
+
+    private void OnRlSnapshot(Models.RateLimitSnapshot snap)
+        => Dispatcher.InvokeAsync(() =>
+        {
+            _rlMerged = Models.RateLimitSnapshot.Merge(_rlMerged, snap);
+            if (_rlMerged != null) ApplyRateLimit(_rlMerged);
+        });
 
     private void ApplyRateLimit(Models.RateLimitSnapshot snap)
     {
