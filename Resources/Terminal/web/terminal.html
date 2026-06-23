@@ -249,6 +249,16 @@
     if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); term.scrollToTop();    return false; }
     if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); term.scrollToBottom(); return false; }
 
+    // ── Ctrl+Enter: 줄바꿈 삽입 (제출 X) ──
+    // claude/codex 가 Meta+Enter(ESC+CR)를 줄바꿈으로 해석한다(/terminal-setup 의 Shift+Enter 매핑과 동일).
+    // 죽은 세션이면 Enter 재시작을 막지 않도록 통과시킨다.
+    if (ctrl && !shift && !alt && key === 'Enter') {
+      if (entry.dead) return true;
+      e.preventDefault();
+      post({ type: 'input', roomId: roomId, data: '\x1b\r' });
+      return false;
+    }
+
     // ── 세션(탭) 관리 — C# 으로 위임 ──
     if (ctrl && shift && !alt && (key === 't' || key === 'T' || key === 'd' || key === 'D')) {
       e.preventDefault(); post({ type:'action', name:'newSession' }); return false;
