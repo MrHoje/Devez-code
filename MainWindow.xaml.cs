@@ -192,7 +192,7 @@ public partial class MainWindow : Window
         };
 
         // 창 위치/크기는 닫히기 직전(Closing)에 저장한다 — RestoreBounds 가 유효한 시점.
-        Closing += (_, _) => SaveWindowPlacement();
+        Closing += OnWindowClosing;
 
         Closed += (_, _) =>
         {
@@ -242,6 +242,25 @@ public partial class MainWindow : Window
         if (b.IsEmpty || b.Width <= 0 || b.Height <= 0)
             b = new Rect(Left, Top, ActualWidth, ActualHeight);
         SettingsService.SaveWindowPlacement(b.Left, b.Top, b.Width, b.Height, max);
+    }
+
+    private bool _shuttingDown;
+
+    /// <summary>창 종료 가로채기: 살아있는 세션이 있으면 닫기를 보류하고, 오버레이를 띄운 채
+    /// 모든 세션을 graceful 종료(claude/codex transcript flush 기회)한 뒤 실제로 닫는다.</summary>
+    private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        SaveWindowPlacement();
+
+        if (_shuttingDown) return; // 2차 진입(graceful 완료 후 Close()) — 그대로 종료 허용
+        if (!TerminalSessionManager.Instance.HasLiveSessions()) return; // 닫을 세션 없음
+
+        e.Cancel = true;
+        _shuttingDown = true;
+        ShutdownOverlay.Visibility = Visibility.Visible;
+        try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(1500); }
+        catch { /* best effort */ }
+        Close(); // _shuttingDown=true 라 재진입 시 즉시 종료
     }
 
     // ── 훅 연동 설정 배너 ─────────────────────────────────────────

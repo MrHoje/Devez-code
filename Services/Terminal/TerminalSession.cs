@@ -20,6 +20,9 @@ public sealed class TerminalSession : IDisposable
 
     public bool IsAlive { get; private set; }
 
+    /// <summary>셸(직속) 프로세스 ID — graceful 종료 대기에 사용.</summary>
+    public int ProcessId { get; private set; }
+
     private IntPtr _hPC;                       // pseudoconsole 핸들
     private SafeFileHandle? _inputWrite;       // 우리가 쓰면 셸 stdin으로
     private SafeFileHandle? _outputRead;       // 셸 stdout을 우리가 읽음
@@ -109,6 +112,7 @@ public sealed class TerminalSession : IDisposable
 
             // 4) 입출력 스트림 + 종료 감시
             _inputStream = new FileStream(_inputWrite, FileAccess.Write);
+            ProcessId = (int)pi.dwProcessId;
             StartReadLoop();
             StartExitWatch((int)pi.dwProcessId);
         }
@@ -167,6 +171,35 @@ public sealed class TerminalSession : IDisposable
         })
         { IsBackground = true, Name = "ConPTY-ExitWatch" };
         thread.Start();
+    }
+
+    /// <summary>graceful 종료 시도 — claude/codex 가 transcript 를 flush 할 틈을 준다.
+    /// stdin 으로 Ctrl+C 2회(에이전트 종료) + exit(셸 종료)를 보낸 뒤 프로세스 트리 종료를 timeout 까지 대기.
+    /// 반환: 시간 내 정상 종료했으면 true. (이후 호출부가 Dispose 로 하드 정리 — 폴백)</summary>
+    public async Task<bool> TryGracefulExitAsync(int timeoutMs)
+    {
+        if (_disposed || !IsAlive) return true;
+        try
+        {
+            Write("\x03");           // claude: 1회 = 인터럽트
+            await Task.Delay(120);
+            Write("\x03");           // 2회 = 종료 (이때 transcript flush 기회)
+            await Task.Delay(400);
+            Write("exit\r\n");       // 에이전트 종료 후 셸도 닫아 트리 종료
+        }
+        catch { /* 파이프 닫힘 — 이미 종료 중 */ }
+        return await WaitForExitAsync(timeoutMs);
+    }
+
+    private Task<bool> WaitForExitAsync(int timeoutMs)
+    {
+        int pid = ProcessId;
+        if (pid <= 0) return Task.FromResult(true);
+        return Task.Run(() =>
+        {
+            try { using var p = Process.GetProcessById(pid); return p.WaitForExit(timeoutMs); }
+            catch { return true; } // 조회 실패 = 이미 종료
+        });
     }
 
     /// <summary>키 입력 등 텍스트를 셸 stdin으로 전달.</summary>

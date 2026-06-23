@@ -784,6 +784,34 @@ public sealed class TerminalSessionManager
     /// <summary>채팅방 삭제 시 호출 — 해당 방의 셸 프로세스 정리.
     /// <paramref name="purgeTracking"/> 이 false 면 추적 파일(sessions/*.txt, launch batch)을 보존한다.
     /// 재시작 경로에서 resume 에 필요한 session id 추적 파일이 지워지면 대화가 날아가므로 보존.</summary>
+    /// <summary>현재 살아있는(셸 실행 중) 세션이 하나라도 있는지 — 종료 시 graceful 오버레이 표시 판단.</summary>
+    public bool HasLiveSessions()
+    {
+        lock (_lock) return _sessions.Values.Any(s => s.IsAlive);
+    }
+
+    /// <summary>앱 종료 시: 모든 세션을 동시에 graceful 종료(Ctrl+C×2 + exit)해 claude/codex 가
+    /// transcript 를 flush 할 틈을 준 뒤, 잔여를 Dispose 로 하드 정리한다.
+    /// 병렬 처리라 벽시계 시간은 가장 느린 세션 1개 기준(perGraceMs).</summary>
+    public async Task GracefulShutdownAllAsync(int perGraceMs = 1500)
+    {
+        List<KeyValuePair<string, TerminalSession>> snapshot;
+        lock (_lock) snapshot = _sessions.ToList();
+        if (snapshot.Count == 0) return;
+
+        try { await Task.WhenAll(snapshot.Select(kv => kv.Value.TryGracefulExitAsync(perGraceMs))); }
+        catch { /* best effort */ }
+
+        lock (_lock)
+        {
+            foreach (var kv in snapshot)
+            {
+                try { kv.Value.Dispose(); } catch (Exception) { }
+                _sessions.Remove(kv.Key);
+            }
+        }
+    }
+
     public void DisposeRoom(string roomId, bool purgeTracking = true)
     {
         lock (_lock)
