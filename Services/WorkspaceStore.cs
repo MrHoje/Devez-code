@@ -28,7 +28,16 @@ public static class WorkspaceStore
     /// 이 상태에서 빈 트리로 Save 하면 격리해 둔 원본까지 영구 손실되므로 Save 를 막는다.</summary>
     private static bool _loadDegraded;
 
+    // Load/Save 직렬화 — 현재는 UI 스레드 전용이나, tmp/bak 고정 파일명을 쓰므로
+    // 동시 진입 시 쓰기 충돌을 막기 위한 방어적 잠금.
+    private static readonly object _lock = new();
+
     public static ObservableCollection<ProjectItem> Load()
+    {
+        lock (_lock) return LoadCore();
+    }
+
+    private static ObservableCollection<ProjectItem> LoadCore()
     {
         var result = new ObservableCollection<ProjectItem>();
         _loadDegraded = false;
@@ -70,9 +79,15 @@ public static class WorkspaceStore
 
     public static void Save(IEnumerable<ProjectItem> projects)
     {
+        // 순회 전에 스냅샷 — lock 구간 밖에서 컬렉션이 바뀌어도 안전(UI 스레드 전용이라 사실상 불변이나 방어적).
+        var list = projects as ICollection<ProjectItem> ?? projects.ToList();
+        lock (_lock) SaveCore(list);
+    }
+
+    private static void SaveCore(ICollection<ProjectItem> list)
+    {
         try
         {
-            var list = projects as ICollection<ProjectItem> ?? projects.ToList();
             // 손상 로드로 빈 시작한 상태에서 빈 트리 저장은 격리 원본까지 묻어버린다 — 스킵.
             // (사용자가 프로젝트를 추가하면 비어있지 않게 되어 정상 저장·재생성된다.)
             if (_loadDegraded && list.Count == 0) return;
