@@ -210,7 +210,6 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <Separator/>
                         <!-- 활성 프로젝트: 보관함 이동 / 보관 프로젝트: 꺼내기 (동일 템플릿 공유, IsActive/IsArchived 로 분기) -->
                         <MenuItem Header="보관함 이동" Tag="{Binding}" Click="ArchiveProject_Click"
                                   Visibility="{Binding IsActive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
@@ -226,6 +225,7 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <Separator/>
                         <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="{DynamicResource DangerBrush}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
