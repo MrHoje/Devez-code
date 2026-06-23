@@ -26,6 +26,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>터미널에서 세션(탭) 단축키 발생 — name: newSession/closeSession/nextSession/prevSession/gotoSession.
     /// gotoSession 일 때 index = 0-기준 세션 번호(-1 = 마지막), 그 외엔 의미 없음.</summary>
     public event Action<string, int>? SessionActionRequested;
+    /// <summary>터미널 폰트 크기(px)가 바뀜(Ctrl+휠/리셋/초기화). 세션 헤더 타이틀 동기화용.</summary>
+    public event Action<double>? FontSizePxChanged;
 
     private WebView2? _webView;
     private bool _initStarted;
@@ -38,6 +40,18 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly Action<string> _themeChangedHandler;
 
     private const double PtToPx = 96.0 / 72.0;
+
+    /// <summary>현재 유효 터미널 폰트 크기(px). 미설정이면 WT config 기본값.</summary>
+    public double EffectiveFontSizePx
+    {
+        get
+        {
+            if (_fontSizePt > 0) return Math.Round(_fontSizePt * PtToPx, 1);
+            var saved = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();
+            if (saved > 0) return Math.Round(saved * PtToPx, 1);
+            return TerminalSessionManager.Instance.Config.FontSizePx;
+        }
+    }
 
     /// <summary>roomId → 현재 JS와 배선된 세션 (재시작 시 교체 감지용).</summary>
     private readonly Dictionary<string, TerminalSession> _wired = new();
@@ -422,6 +436,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
         PostJson(new { type = "adjustFontSize", size = px });
         DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
+        FontSizePxChanged?.Invoke(px);
     }
 
     /// <summary>폰트 크기를 WT 설정 기본값으로 초기화 (Ctrl+0). 영구 저장.</summary>
@@ -432,6 +447,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         double px = Math.Round(_fontSizePt * PtToPx, 1);
         PostJson(new { type = "adjustFontSize", size = px });
         DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
+        FontSizePxChanged?.Invoke(px);
     }
 
     /// <summary>클립보드에 텍스트 기록 (잠금 충돌 대비 재시도).

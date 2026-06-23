@@ -58,6 +58,9 @@ public partial class WorkspacePaneView : UserControl
         _terminal.SessionExited += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; } HideSessionLoadingIf(id); };
         _terminal.TerminalReady += id => HideSessionLoadingIf(id);
         _terminal.SessionActionRequested += OnTerminalSessionAction;
+        // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
+        _terminal.FontSizePxChanged += ApplyHeaderFontSize;
+        Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);
 
         App.ThemeChanged += OnThemeChanged_UpdateSeam;
         Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged_UpdateSeam;
@@ -1118,6 +1121,13 @@ public partial class WorkspacePaneView : UserControl
                 RefreshFileHeaderState(file);
             }
         }
+    }
+
+    /// <summary>세션 헤더 타이틀/구분자 폰트를 터미널 폰트 크기(px)와 맞춘다.</summary>
+    private void ApplyHeaderFontSize(double px)
+    {
+        SessionHeaderTitle.FontSize = px;
+        LastMessageSep.FontSize = px;
     }
 
     /// <summary>외부 훅이 세션 상태(lastmsg 등)를 갱신 → 이 패널의 활성 세션이면 헤더 즉시 갱신.</summary>
