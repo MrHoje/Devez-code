@@ -100,6 +100,15 @@
                                         <TextBlock Text="일반" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
+                                <Button x:Name="CatProjectBtn" Tag="project"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconFolder}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="프로젝트" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button x:Name="CatThemeBtn" Tag="theme"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -214,6 +223,57 @@
                                                   Checked="HideProjectInfoHeaderToggle_Changed" Unchecked="HideProjectInfoHeaderToggle_Changed"/>
                                     </Grid>
                                 </Border>
+                            </StackPanel>
+
+                            <!-- 프로젝트 패널 — 목록 열 수(1/2) -->
+                            <StackPanel x:Name="ProjectPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolder}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="프로젝트" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="좌측 프로젝트 목록을 몇 열로 표시할지 선택합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
+                                <TextBlock Text="2열로 두면 좌측 패널 최소 너비가 넓어지고, 카드를 가로로 끌어 옮길 수 있습니다."
+                                           FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,16"/>
+
+                                <TextBlock Text="목록 열 수" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,4,0,12"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <!-- 1열 -->
+                                    <Border x:Name="ColCard_1" Tag="1" Width="120" Height="56"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0,0,10,0"
+                                            Cursor="Arrow" MouseLeftButtonDown="ProjectColumnsCard_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Grid Width="14" Height="14" Margin="0,0,8,0">
+                                                <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                <Ellipse x:Name="ColRadioDot_1" Width="7" Height="7"
+                                                         Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                            </Grid>
+                                            <TextBlock Text="1열" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <!-- 2열 -->
+                                    <Border x:Name="ColCard_2" Tag="2" Width="120" Height="56"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0,0,10,0"
+                                            Cursor="Arrow" MouseLeftButtonDown="ProjectColumnsCard_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Grid Width="14" Height="14" Margin="0,0,8,0">
+                                                <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                <Ellipse x:Name="ColRadioDot_2" Width="7" Height="7"
+                                                         Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                            </Grid>
+                                            <TextBlock Text="2열" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- 에이전트 패널 (설치된 CLI + 활성화 토글) -->

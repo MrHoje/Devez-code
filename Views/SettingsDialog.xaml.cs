@@ -28,10 +28,12 @@ public partial class SettingsDialog : UserControl
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
+    private int    _originalProjectColumns;
     private string _selectedTheme;
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
     private bool   _selectedHideProjectInfoHeader;
+    private int    _selectedProjectColumns;
 
     // 탭 이동 단축키(가상키코드). 디스크 저장은 [저장] 버튼에서만 — 다른 설정과 동일.
     private int _originalHkMod, _originalHkPrev, _originalHkNext;
@@ -96,6 +98,9 @@ public partial class SettingsDialog : UserControl
         _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
         _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
         HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        _originalProjectColumns = SettingsService.LoadProjectColumns();
+        _selectedProjectColumns = _originalProjectColumns;
+        UpdateProjectColumnsVisual();
         (_originalHkMod, _originalHkPrev, _originalHkNext) = SettingsService.LoadTabHotkey();
         _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
         UpdateShortcutVisual();
@@ -138,6 +143,8 @@ public partial class SettingsDialog : UserControl
 
         CatGeneralBtn.Background   = key == "general"    ? active : Brushes.Transparent;
         CatGeneralBtn.Foreground   = key == "general"    ? primary : text;
+        CatProjectBtn.Background   = key == "project"    ? active : Brushes.Transparent;
+        CatProjectBtn.Foreground   = key == "project"    ? primary : text;
         CatThemeBtn.Background     = key == "theme"      ? active : Brushes.Transparent;
         CatThemeBtn.Foreground     = key == "theme"      ? primary : text;
         CatAgentBtn.Background     = key == "agent"      ? active : Brushes.Transparent;
@@ -152,6 +159,7 @@ public partial class SettingsDialog : UserControl
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
+        ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility      = key == "agent"      ? Visibility.Visible : Visibility.Collapsed;
         SidePanelPanel.Visibility  = key == "sidepanel"  ? Visibility.Visible : Visibility.Collapsed;
@@ -172,6 +180,32 @@ public partial class SettingsDialog : UserControl
     private void HideProjectInfoHeaderToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedHideProjectInfoHeader = HideProjectInfoHeaderToggle.IsChecked == true;
+    }
+
+    // ── 프로젝트 목록 열 수 (1/2) — 적용은 [저장] 시점에만(라이브 미리보기 없음) ──
+    private void ProjectColumnsCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Border b && b.Tag is string tag && int.TryParse(tag, out var cols))
+        {
+            _selectedProjectColumns = cols == 2 ? 2 : 1;
+            UpdateProjectColumnsVisual();
+        }
+    }
+
+    private void UpdateProjectColumnsVisual()
+    {
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var line    = (Brush)FindResource("LineBrush");
+        foreach (var (card, dot, cols) in new (Border, Ellipse, int)[]
+        {
+            (ColCard_1, ColRadioDot_1, 1),
+            (ColCard_2, ColRadioDot_2, 2),
+        })
+        {
+            var selected = _selectedProjectColumns == cols;
+            card.BorderBrush = selected ? primary : line;
+            dot.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     // ── 업데이트 내역 렌더링/페이지네이션 (devez 정합) ──
@@ -407,6 +441,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedFontScale != _originalFontScale) return true;
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
+        if (_selectedProjectColumns != _originalProjectColumns) return true;
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
@@ -426,6 +461,11 @@ public partial class SettingsDialog : UserControl
             SettingsService.SaveHideProjectInfoHeader(_selectedHideProjectInfoHeader);
             (Application.Current.MainWindow as MainWindow)?.ApplyProjectInfoHeaderVisibility();
         }
+        if (_selectedProjectColumns != _originalProjectColumns)
+        {
+            SettingsService.SaveProjectColumns(_selectedProjectColumns);
+            (Application.Current.MainWindow as MainWindow)?.ApplyProjectColumns(_selectedProjectColumns);
+        }
         UpdateAgentEnabledInSettings();
 
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext)
@@ -438,6 +478,7 @@ public partial class SettingsDialog : UserControl
         _originalFontScale   = _selectedFontScale;
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
+        _originalProjectColumns = _selectedProjectColumns;
         _originalHkMod = _selectedHkMod; _originalHkPrev = _selectedHkPrev; _originalHkNext = _selectedHkNext;
         _originalEnabledAgents = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
@@ -469,6 +510,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
             HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        }
+        if (_selectedProjectColumns != _originalProjectColumns)
+        {
+            _selectedProjectColumns = _originalProjectColumns; // 라이브 미적용이라 선택값만 복원
+            UpdateProjectColumnsVisual();
         }
         // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)
         CancelShortcutCapture();

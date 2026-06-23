@@ -538,6 +538,7 @@ public partial class MainWindow : Window
     private bool   _leftCollapsed;
     private bool   _rightCollapsed;
     private double _sidebarWidth = 262;
+    private double _sidebarMinWidth = 190;  // 프로젝트 1열=190, 2열=380. ApplyProjectColumns 가 갱신.
     private double _fileExpWidth = 300;
     private double _fileExpMinWidth;       // 탭 버튼 4개가 온전히 보이는 최소 폭(런타임 측정)
     private Action? _leftAnimCancel;
@@ -595,7 +596,7 @@ public partial class MainWindow : Window
         {
             _leftCollapsed = false;
             Sidebar.Visibility = Visibility.Visible;
-            SetMinWidth(190, SidebarCol, FooterSidebarCol);
+            SetMinWidth(_sidebarMinWidth, SidebarCol, FooterSidebarCol);
             _leftAnimCancel = AnimatePanelAndSplitter(
                 SidebarCol, _sidebarWidth,
                 SidebarSplitterCol, 4,
@@ -691,6 +692,25 @@ public partial class MainWindow : Window
         foreach (var pane in _panes) pane.ApplyProjectInfoHeaderVisibility();
     }
 
+    /// <summary>프로젝트 목록 열 수(1/2) 적용 — 사이드바 레이아웃 + 좌측 패널 최소/현재 폭.
+    /// 2열이면 최소너비를 2배(380)로 올리고, 현재 폭이 더 좁으면 확장한다.</summary>
+    public void ApplyProjectColumns(int cols)
+    {
+        cols = cols == 2 ? 2 : 1;
+        _sidebarMinWidth = cols == 2 ? 380 : 190;
+        Sidebar.ApplyProjectColumns(cols);
+        if (_leftCollapsed) return; // 접힌 상태에선 폭 0 유지(펼칠 때 _sidebarMinWidth 적용됨)
+
+        SetMinWidth(_sidebarMinWidth, SidebarCol, FooterSidebarCol);
+        if (_sidebarWidth < _sidebarMinWidth)
+        {
+            _sidebarWidth = _sidebarMinWidth;
+            SidebarCol.Width = new GridLength(_sidebarWidth);
+            FooterSidebarCol.Width = new GridLength(_sidebarWidth);
+            SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
+        }
+    }
+
     private const int VK_MENU = 0x12;
     private const uint KEYEVENTF_KEYUP = 0x0002;
 
@@ -775,6 +795,7 @@ public partial class MainWindow : Window
             FooterFileExpCol.Width = new GridLength(_fileExpWidth);
         }
         UpdatePanelToggleVisual();
+        ApplyProjectColumns(SettingsService.LoadProjectColumns()); // 저장된 열 수 복원(최소/현재 폭 반영)
     }
 
     private void UpdatePanelToggleVisual()

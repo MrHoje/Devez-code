@@ -50,6 +50,19 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
 
+    // 프로젝트 목록 열 수(1/2). 2면 카드 2열 그리드 + 가로 드래그. 기본 1.
+    private int _projectColumns = 1;
+
+    /// <summary>프로젝트/보관함 목록을 1열(세로) 또는 2열(그리드)로 전환. MainWindow 가 설정값으로 호출.</summary>
+    public void ApplyProjectColumns(int cols)
+    {
+        _projectColumns = cols == 2 ? 2 : 1;
+        var key = _projectColumns == 2 ? "ProjectsPanel2Col" : "ProjectsPanel1Col";
+        var tmpl = (ItemsPanelTemplate)FindResource(key);
+        ProjectsHost.ItemsPanel = tmpl;
+        ArchivedHost.ItemsPanel = tmpl; // 같은 템플릿 인스턴스를 두 ItemsControl 이 공유해도 무방.
+    }
+
     private ObservableCollection<ProjectItem>? _projects;
     public ObservableCollection<ProjectItem> Projects
     {
@@ -439,7 +452,7 @@ public partial class SidebarView : UserControl
                     if (to != from) { coll.Move(from, to); ProjectsReordered?.Invoke(); }
                 }
                 return Task.CompletedTask;
-            }, exactFollow: true);
+            }, exactFollow: true, columns: _projectColumns);
         if (_projectDrag != null) { _didDrag = true; CaptureMouse(); }
         _pendingProject = null;
     }

@@ -6,6 +6,14 @@
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
+        <!-- 프로젝트 목록 패널: 1열(세로 스택) / 2열(UniformGrid). 설정 > 프로젝트에서 전환. -->
+        <ItemsPanelTemplate x:Key="ProjectsPanel1Col">
+            <StackPanel/>
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="ProjectsPanel2Col">
+            <UniformGrid Columns="2"/>
+        </ItemsPanelTemplate>
+
         <!-- 세션 상태 점: 살아있으면 테마 primary(다크=주황), 죽으면 회색 -->
         <Style x:Key="SessionDot" TargetType="Ellipse">
             <Setter Property="Width" Value="8"/>
