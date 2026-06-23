@@ -83,6 +83,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>해당 방의 claude 화면이 이미 떠서 안정화까지 끝났는지(로딩 불필요).</summary>
     public bool IsReady(string roomId) => _readyNotified.Contains(roomId);
 
+    /// <summary>방의 에이전트 ID(opencode 등) — JS 가 컨테이너 패딩 등 에이전트별 스타일에 사용.</summary>
+    private static string AgentFor(string roomId) => DevezCode.Services.SettingsService.LoadAgentForRoom(roomId);
+
     /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
     public async void ShowTerminal(string roomId)
     {
@@ -92,7 +95,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) PostJson(new { type = "show", roomId });
+        if (_pageReady) PostJson(new { type = "show", roomId, agent = AgentFor(roomId) });
         else _pendingShowRoomId = roomId; // pageReady 때 처리
 
         // 이미 안정화까지 끝난 방이면 즉시 준비 완료 통지 → 로딩 스킵
@@ -109,7 +112,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) PostJson(new { type = "preload", roomId });
+        if (_pageReady) PostJson(new { type = "preload", roomId, agent = AgentFor(roomId) });
         else if (!_pendingPreload.Contains(roomId)) _pendingPreload.Add(roomId);
     }
 
@@ -343,14 +346,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         });
         var pending = _pendingShowRoomId ?? _activeRoomId;
         _pendingShowRoomId = null;
-        if (pending != null) PostJson(new { type = "show", roomId = pending });
+        if (pending != null) PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending) });
 
         // 콜드스타트 동안 보류된 로딩 스피너 적용
         if (_pendingLoading) { _pendingLoading = false; PostJson(new { type = "loading", on = true }); }
 
         // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
         foreach (var r in _pendingPreload)
-            if (r != pending) PostJson(new { type = "preload", roomId = r });
+            if (r != pending) PostJson(new { type = "preload", roomId = r, agent = AgentFor(r) });
         _pendingPreload.Clear();
 
         // 보류된 포커스 적용 — 그 사이 다른 방(채팅 등)으로 전환했으면 훔치지 않음

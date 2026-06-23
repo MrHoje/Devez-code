@@ -305,20 +305,20 @@ public sealed class TerminalSessionManager
 
         var sessionId = SettingsService.LoadCodexRoomSession(roomId);
         if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
-        bool hasLaunched = SettingsService.IsAgentRoomLaunched(roomId, "codex");
-        SettingsService.MarkAgentRoomLaunched(roomId, "codex");
+        SettingsService.MarkAgentRoomLaunched(roomId, "codex"); // 추적용
 
-        // 배치 본문. 첫 실행: codex (신세션). 이후: codex resume <id> (resume 실패 시 fresh 폴백).
-        // codex 가 정상 시작하면 인터랙티브로 유지되어 뒤 폴백 줄은 실행되지 않음.
+        // 배치 본문. 저장된 session_id(훅이 기록) 가 있으면 무조건 resume(실패 시 fresh 폴백).
+        // launched 플래그에 의존하지 않는다 — 작업 중 강제 종료로 플래그가 유실돼도 session_id 가
+        // 살아있으면 이어가야 하기 때문. codex 가 정상 시작하면 뒤 폴백 줄은 실행되지 않음.
         string body;
-        if (!hasLaunched || string.IsNullOrEmpty(sessionId))
+        if (string.IsNullOrEmpty(sessionId))
         {
-            // 첫 실행 — session_id 가 없으면 codex 가 새 세션 생성. 훅이 session_id 를 저장.
+            // session_id 없음 — codex 가 새 세션 생성. 훅이 session_id 를 저장.
             body = "codex";
         }
         else
         {
-            // 재실행 — 저장된 session_id 로 resume. resume 실패(세션 삭제 등) 시 fresh 폴백.
+            // 저장된 session_id 로 resume. resume 실패(세션 삭제 등) 시 fresh 폴백.
             body = $"codex resume {sessionId}\r\n"
                  + $"if errorlevel 1 codex";
         }
@@ -460,11 +460,12 @@ public sealed class TerminalSessionManager
         // (빈 세션 등 conversation 이 저장 안 된 경우 --resume 하면 "No conversation found" 에러가
         //  화면에 뜨므로, 없으면 --session-id 로 새로 시작해 에러를 원천 차단한다.)
         var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-        bool resume = sessionId != null
-                      && SettingsService.IsClaudeCodeRoomLaunched(roomId)
-                      && ClaudeTranscriptExists(ccDir, sessionId);
+        // sessionId(훅 기록 파일에서 동기화) + transcript 가 둘 다 있으면 명백한 이전 대화 → 무조건 resume.
+        // launched 플래그(settings.json)에 의존하지 않는다 — 작업 중 강제 종료로 플래그가 유실돼도
+        // transcript 가 살아있으면 이어가야 하기 때문(예전엔 launched 유실 시 새 세션이 열렸다).
+        bool resume = sessionId != null && ClaudeTranscriptExists(ccDir, sessionId);
         if (sessionId != null && !resume)
-            SettingsService.MarkClaudeCodeRoomLaunched(roomId); // 첫 실행 — 다음부터 resume
+            SettingsService.MarkClaudeCodeRoomLaunched(roomId); // 첫 실행/빈 세션 — 추적용
 
         // 배치 본문: 첫 실행/구버전은 단발, 재진입은 resume → 실패(외부 삭제 등) 시 fresh 폴백.
         // claude 가 정상 시작하면 인터랙티브로 유지되어 뒤 폴백 줄은 실행되지 않는다.

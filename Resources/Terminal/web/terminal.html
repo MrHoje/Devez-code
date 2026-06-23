@@ -12,6 +12,8 @@
   }
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0C0C0C; }
   .term-container { position: absolute; inset: 0; padding: 6px 0 6px 22px; display: none; }
+  /* opencode 세션: 좌우 여백을 더 줄인다 — 패딩 0 + 컨테이너 경계를 바깥으로 밀어(좌 8 / 우 17) 여백 제거 */
+  .term-container.agent-opencode { padding: 6px 0 6px 0; left: 6px; right: -9px; bottom: -22px; }
   .term-container.active { display: block; }
   .term-container .xterm { height: 100%; }
   /* 스크롤바 숨김 (휠 스크롤은 동작) */
@@ -372,9 +374,9 @@
     else post({ type: 'requestPaste', roomId: activeRoomId });
   });
 
-  function createTerm(roomId) {
+  function createTerm(roomId, agent) {
     const el = document.createElement('div');
-    el.className = 'term-container';
+    el.className = 'term-container' + (agent ? ' agent-' + agent : '');
     document.body.appendChild(el);
 
     const term = new Terminal({
@@ -439,10 +441,10 @@
     return entry;
   }
 
-  function show(roomId) {
+  function show(roomId, agent) {
     let entry = terms[roomId];
     const isNew = !entry;
-    if (isNew) entry = createTerm(roomId);
+    if (isNew) entry = createTerm(roomId, agent);
 
     if (searchBar.classList.contains('open')) closeSearch(); // 방 전환 시 검색바 닫기
     for (const id in terms) terms[id].el.classList.toggle('active', id === roomId);
@@ -467,9 +469,9 @@
   // 화면에 표시하지 않고 xterm 인스턴스+ConPTY 세션만 미리 생성(백그라운드 로드).
   // 컨테이너는 display:none(.active 없음) 상태라 xterm 기본 크기(80x24)로 만들고,
   // 실제 크기 보정(fit→resize)은 나중에 show 될 때 일어난다.
-  function preload(roomId) {
+  function preload(roomId, agent) {
     if (terms[roomId]) return; // 이미 생성됨
-    const entry = createTerm(roomId);
+    const entry = createTerm(roomId, agent);
     post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
   }
 
@@ -512,10 +514,10 @@
         _scrollSuppress = msg.count || 5;
         break;
       case 'show':
-        show(msg.roomId);
+        show(msg.roomId, msg.agent);
         break;
       case 'preload':
-        preload(msg.roomId);
+        preload(msg.roomId, msg.agent);
         break;
       case 'output': {
         const t = terms[msg.roomId];
