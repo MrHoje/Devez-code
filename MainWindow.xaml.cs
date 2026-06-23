@@ -60,6 +60,7 @@ public partial class MainWindow : Window
         Sidebar.ProjectSelected        += SelectProject;
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
+        Sidebar.ProjectRenameRequested += RenameProject;
         Sidebar.ProjectArchiveRequested += ArchiveProject;
         Sidebar.ProjectUnarchiveRequested += UnarchiveProject;
         Sidebar.AddProjectFileRequested += AddProjectFile;
@@ -1255,6 +1256,16 @@ public partial class MainWindow : Window
             foreach (var pane in _panes) pane.OnProjectRemoved(proj, next);
         }
         UpdateStatus();
+    }
+
+    /// <summary>프로젝트 이름 변경 — 표시 이름만 바꾸고 경로/세션은 그대로. 활성·보관 양쪽 모두 영속 저장.</summary>
+    private void RenameProject(ProjectItem proj)
+    {
+        var name = PromptDialog.Show("프로젝트 이름 변경", "새 이름을 입력하세요.",
+                                     defaultValue: proj.Name, maxLength: 60);
+        if (string.IsNullOrWhiteSpace(name) || name == proj.Name) return;
+        proj.Name = name;
+        WorkspaceStore.Save(_projects, _archivedProjects);
     }
 
     /// <summary>프로젝트 보관 — 활성 목록에서 빼 보관함으로. 세션 프로세스는 정지하되 기록은 보존(devez 정합).</summary>

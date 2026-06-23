@@ -25,6 +25,8 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectSelected;
     public event Action<ProjectItem>? AddSessionRequested;
     public event Action<ProjectItem>? ProjectDeleteRequested;
+    /// <summary>프로젝트 메뉴 "이름 변경" 요청(MainWindow 위임).</summary>
+    public event Action<ProjectItem>? ProjectRenameRequested;
     /// <summary>프로젝트 메뉴 "보관함 이동" — 활성에서 보관함으로(MainWindow 위임).</summary>
     public event Action<ProjectItem>? ProjectArchiveRequested;
     /// <summary>보관함 카드 "꺼내기" — 보관함에서 활성으로(MainWindow 위임).</summary>
@@ -275,6 +277,11 @@ public partial class SidebarView : UserControl
     private void ProjectDelete_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectItem>(sender) is { } p) ProjectDeleteRequested?.Invoke(p);
+    }
+
+    private void ProjectRename_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) ProjectRenameRequested?.Invoke(p);
     }
 
     private void AddProjectFile_Click(object sender, RoutedEventArgs e)
