@@ -60,7 +60,7 @@
                 </Border>
 
                 <!-- Body -->
-                <StackPanel Grid.Row="1" Margin="28,18,28,10" VerticalAlignment="Center">
+                <StackPanel Grid.Row="1" Margin="28,16,28,16" VerticalAlignment="Center">
                     <TextBlock x:Name="MessageText"
                                FontSize="{DynamicResource Fs13}"
                                Foreground="{DynamicResource TextBrush}"
