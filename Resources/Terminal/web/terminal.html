@@ -191,14 +191,35 @@
     ta.addEventListener('compositionupdate', function () { setTimeout(apply, 0); });
     ta.addEventListener('compositionend', function () {
       el.classList.remove('ime-fixed'); // 조합 종료 → xterm 기본 동작 복귀
+      // 조합 중 Ctrl+Enter 가 눌렸으면 — 확정 글자가 PTY로 전송된 뒤(setTimeout 0)
+      // 줄바꿈을 보낸다. 순서를 보장해 마지막 글자가 새 줄로 내려가지 않게 한다.
+      if (pendingComposeNewline) {
+        const rid = pendingComposeNewline;
+        pendingComposeNewline = null;
+        setTimeout(function () { post({ type: 'input', roomId: rid, data: '\x1b\r' }); }, 0);
+      }
     });
   }
+
+  // Ctrl+Enter 가 조합 중에 눌리면 조합 글자 확정 후(compositionend) 보낼 줄바꿈 대상 roomId.
+  let pendingComposeNewline = null;
 
   // ── 키보드 단축키 (Windows Terminal 정합) ─────────────────────────────
   // attachCustomKeyEventHandler 규약: false 반환 = xterm 이 처리하지 않음(PTY 전송 차단),
   // true 반환 = 평소대로 셸/claude 로 키 전달. 우리가 가로채는 키만 false.
   function handleKey(e, entry, roomId) {
     if (e.type !== 'keydown') return true;
+    // Ctrl+Enter: 줄바꿈 삽입(제출 X). 조합 중에도 동작해야 한다 — 단, isComposing 가드보다
+    // 먼저 처리하되 조합 중이면 줄바꿈을 compositionend 로 미룬다. (먼저 보내면 줄바꿈이
+    // 조합 글자 확정보다 앞서 PTY에 도달해 마지막 글자가 새 줄로 따라 내려간다.)
+    if (e.ctrlKey && !e.shiftKey && !e.altKey &&
+        (e.code === 'Enter' || e.code === 'NumpadEnter' || e.key === 'Enter' || e.keyCode === 13)) {
+      if (entry.dead) return true;
+      e.preventDefault();
+      if (e.isComposing || e.keyCode === 229) { pendingComposeNewline = roomId; return false; }
+      post({ type: 'input', roomId: roomId, data: '\x1b\r' });
+      return false;
+    }
     if (e.isComposing || e.keyCode === 229) return true; // IME 조합 중엔 개입 금지
     if (e.getModifierState && e.getModifierState('AltGraph')) return true; // AltGr = 문자 입력, 가로채지 않음
 
@@ -248,16 +269,6 @@
     if (shift && !alt && key === 'PageDown') { e.preventDefault(); term.scrollPages(1);  return false; }
     if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); term.scrollToTop();    return false; }
     if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); term.scrollToBottom(); return false; }
-
-    // ── Ctrl+Enter: 줄바꿈 삽입 (제출 X) ──
-    // claude/codex 가 Meta+Enter(ESC+CR)를 줄바꿈으로 해석한다(/terminal-setup 의 Shift+Enter 매핑과 동일).
-    // 죽은 세션이면 Enter 재시작을 막지 않도록 통과시킨다.
-    if (ctrl && !shift && !alt && key === 'Enter') {
-      if (entry.dead) return true;
-      e.preventDefault();
-      post({ type: 'input', roomId: roomId, data: '\x1b\r' });
-      return false;
-    }
 
     // ── 세션(탭) 관리 — C# 으로 위임 ──
     if (ctrl && shift && !alt && (key === 't' || key === 'T' || key === 'd' || key === 'D')) {
