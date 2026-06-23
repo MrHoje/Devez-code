@@ -1010,8 +1010,24 @@ public partial class MainWindow : Window
         }
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo(file.FilePath) { UseShellExecute = true };
-            if (file.RunAsAdmin) psi.Verb = "runas";
+            System.Diagnostics.ProcessStartInfo psi;
+            if (file.RunAsAdmin)
+            {
+                // runas verb 는 실행파일에만 등록됨 — .sln/.docx 등 문서 타입엔 없어서 직접 승격 불가.
+                // 승격된 cmd 를 경유해 start 로 열면 연결 프로그램이 관리자 권한을 상속받는다.
+                psi = new System.Diagnostics.ProcessStartInfo("cmd.exe")
+                {
+                    Arguments = $"/c start \"\" \"{file.FilePath}\"",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    CreateNoWindow = true,
+                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                };
+            }
+            else
+            {
+                psi = new System.Diagnostics.ProcessStartInfo(file.FilePath) { UseShellExecute = true };
+            }
             System.Diagnostics.Process.Start(psi);
         }
         catch (System.ComponentModel.Win32Exception)
