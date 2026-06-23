@@ -64,6 +64,16 @@ public partial class WorkspacePaneView : UserControl
 
         App.ThemeChanged += OnThemeChanged_UpdateSeam;
         Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged_UpdateSeam;
+
+        ApplyProjectInfoHeaderVisibility();
+    }
+
+    /// <summary>설정(프로젝트 정보 헤더 숨기기)에 따라 메타바(MetaBar) 표시 여부를 반영.</summary>
+    public void ApplyProjectInfoHeaderVisibility()
+    {
+        if (MetaBar != null)
+            MetaBar.Visibility = SettingsService.LoadHideProjectInfoHeader()
+                ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void Pane_PreviewInteract(object sender, MouseButtonEventArgs e) => FocusRequested?.Invoke(this);

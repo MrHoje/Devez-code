@@ -24,12 +24,14 @@ public partial class SettingsDialog : UserControl
     private string _originalTheme;
     private int    _originalFontScale;
     private bool   _originalPreloadAllSessions;
+    private bool   _originalHideProjectInfoHeader;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
     private string _selectedTheme;
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
+    private bool   _selectedHideProjectInfoHeader;
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
@@ -76,6 +78,9 @@ public partial class SettingsDialog : UserControl
         _originalPreloadAllSessions = SettingsService.LoadPreloadAllProjectSessions();
         _selectedPreloadAllSessions = _originalPreloadAllSessions;
         PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
+        _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
+        _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
+        HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
         BuildAgentList();
         UpdateThemeSelectionVisual();
         UpdateFontSelectionVisual();
@@ -140,6 +145,11 @@ public partial class SettingsDialog : UserControl
     private void PreloadAllSessionsToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedPreloadAllSessions = PreloadAllSessionsToggle.IsChecked == true;
+    }
+
+    private void HideProjectInfoHeaderToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedHideProjectInfoHeader = HideProjectInfoHeaderToggle.IsChecked == true;
     }
 
     // ── 업데이트 내역 렌더링/페이지네이션 (devez 정합) ──
@@ -340,6 +350,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedTheme != _originalTheme) return true;
         if (_selectedFontScale != _originalFontScale) return true;
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
+        if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
         if (!current.SetEquals(_originalEnabledAgents)) return true;
@@ -353,11 +364,17 @@ public partial class SettingsDialog : UserControl
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);
         SettingsService.SavePreloadAllProjectSessions(_selectedPreloadAllSessions);
+        if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
+        {
+            SettingsService.SaveHideProjectInfoHeader(_selectedHideProjectInfoHeader);
+            (Application.Current.MainWindow as MainWindow)?.ApplyProjectInfoHeaderVisibility();
+        }
         UpdateAgentEnabledInSettings();
 
         _originalTheme       = _selectedTheme;
         _originalFontScale   = _selectedFontScale;
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
+        _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
         _originalEnabledAgents = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
         _originalRetentionDays = _agentItems.FirstOrDefault(a => a.IsClaudeCode)?.RetentionDays
@@ -383,6 +400,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedPreloadAllSessions = _originalPreloadAllSessions;
             PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
+        }
+        if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
+        {
+            _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
+            HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
         }
         // 에이전트 활성화 상태 되돌리기
         foreach (var item in _agentItems)

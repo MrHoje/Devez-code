@@ -563,6 +563,12 @@ public partial class MainWindow : Window
         FileExplorer.ApplyTabButtonVisibility();
     }
 
+    /// <summary>설정(프로젝트 정보 헤더 숨기기)을 모든 워크스페이스 패널의 메타바에 반영.</summary>
+    public void ApplyProjectInfoHeaderVisibility()
+    {
+        foreach (var pane in _panes) pane.ApplyProjectInfoHeaderVisibility();
+    }
+
     /// <summary>탭 버튼 4개가 온전히 보이는 폭을 측정해 우측 패널(확장 상태)의 최소 폭으로 적용.
     /// 접힘/오버레이(좁은 창) 상태에서는 적용하지 않는다(접기 애니메이션은 MinWidth 0 필요).</summary>
     private void ApplyFileExpMinWidth()
