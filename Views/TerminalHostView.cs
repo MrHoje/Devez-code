@@ -162,8 +162,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         if (_readyNotified.Contains(roomId)) return; // 이미 통지함
         // alt-screen 진입 후 상한 초과 → 출력이 계속돼도 즉시 통지(끊임없는 redraw 로 settle 못 떨어지는 경우).
+        // 인라인 TUI(gjc)는 resume 시 대화를 재생하며 스크롤이 튀는데, 그 구간을 로딩 오버레이로 덮으려면
+        // 상한을 넉넉히 둬 출력이 멎을 때(SettleQuiet)까지 기다린다(짧은 cap 이면 재생 도중 오버레이가 걷혀 튐이 보임).
+        int cap = DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true ? 6000 : MaxSettleAfterAltMs;
         if (_altSeenTick.TryGetValue(roomId, out var seen) &&
-            unchecked(Environment.TickCount - seen) >= MaxSettleAfterAltMs)
+            unchecked(Environment.TickCount - seen) >= cap)
         {
             if (_settleTimers.Remove(roomId, out var existing)) existing.Stop();
             if (_readyNotified.Add(roomId)) TerminalReady?.Invoke(roomId);
