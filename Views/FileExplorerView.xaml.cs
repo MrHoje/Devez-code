@@ -200,7 +200,10 @@ public partial class FileExplorerView : UserControl
             SwitchTab(idx);
     }
 
-    /// <summary>사용량 버튼 클릭 — 최신 카드를 요청해 채운 뒤 팝오버를 연다.</summary>
+    /// <summary>사용량 탭이 현재 활성(보이는) 상태인지 — 스냅샷 도착 시 패널 갱신 여부 판단에 사용.</summary>
+    public bool IsUsageViewVisible => _mode == ViewMode.Usage;
+
+    /// <summary>사용량 탭 진입 시 최신 카드를 요청한다. MainWindow 가 SetUsageCards 로 응답.</summary>
     public event Action? UsageRequested;
 
     /// <summary>표시 가능한 provider 사용량 카드로 패널을 채운다. 비면 안내 문구 표시.</summary>

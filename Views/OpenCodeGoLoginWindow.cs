@@ -29,6 +29,17 @@ public sealed class OpenCodeGoLoginWindow : Window
         "(document.head||document.documentElement).appendChild(s);}catch(e){}}" +
         "add();if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',add);})();";
 
+    // [임시 진단] 다크 적용 실패 원인 추적용 — webview-diag.txt 에 페이지 상태 기록.
+    private const string DiagScript =
+        "(function(){try{var r=document.querySelector('[data-component=\\\"root\\\"]');" +
+        "return JSON.stringify({href:location.href," +
+        "prefersDark:matchMedia('(prefers-color-scheme: dark)').matches," +
+        "injected:!!document.getElementById('devez-dark')," +
+        "varBg:getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim()," +
+        "rootBg:r?getComputedStyle(r).backgroundColor:'(no-root)'," +
+        "bodyBg:document.body?getComputedStyle(document.body).backgroundColor:'(no-body)'});" +
+        "}catch(e){return 'DIAGERR:'+e.message;}})();";
+
     private readonly WebView2 _view = new();
     private readonly DispatcherTimer _probe;
     private bool _done;
@@ -58,14 +69,27 @@ public sealed class OpenCodeGoLoginWindow : Window
         Closed += (_, _) => { _probe.Stop(); try { _view.Dispose(); } catch { } };
     }
 
+    private static void LogDiag(string msg)
+    {
+        try
+        {
+            var p = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "webview-diag.txt");
+            File.AppendAllText(p, msg + Environment.NewLine);
+        }
+        catch { }
+    }
+
     private async Task InitAsync()
     {
+        LogDiag($"[init] start theme={App.CurrentTheme}");
         try
         {
             var userDataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "WebView2");
             var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
             await _view.EnsureCoreWebView2Async(env);
+            LogDiag("[init] core ready");
             // 앱 테마에 맞춰 웹 콘텐츠도 다크/라이트 적용(prefers-color-scheme).
             _view.CoreWebView2.Profile.PreferredColorScheme = App.CurrentTheme == "dark"
                 ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
@@ -77,7 +101,14 @@ public sealed class OpenCodeGoLoginWindow : Window
                 await _view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(InjectDarkScript);
                 _view.CoreWebView2.NavigationCompleted += async (_, _) =>
                 {
-                    try { await _view.CoreWebView2.ExecuteScriptAsync(InjectDarkScript); } catch { }
+                    LogDiag("[navdone]");
+                    try
+                    {
+                        await _view.CoreWebView2.ExecuteScriptAsync(InjectDarkScript);
+                        var diag = await _view.CoreWebView2.ExecuteScriptAsync(DiagScript);
+                        LogDiag("[diag] " + diag);
+                    }
+                    catch (Exception ex) { LogDiag("[navdone] ERR:" + ex.Message); }
                 };
             }
             // 이전 로그인의 stale auth 쿠키가 WebView2 에 남아 있으면, 사용자가 새로 로그인하기도 전에
@@ -86,9 +117,11 @@ public sealed class OpenCodeGoLoginWindow : Window
             _view.CoreWebView2.SourceChanged += async (_, _) => await TryCaptureAsync();
             _view.CoreWebView2.Navigate(StartUrl);
             _probe.Start();
+            LogDiag("[init] navigate called");
         }
         catch (Exception ex)
         {
+            LogDiag("[init] EXCEPTION: " + ex);
             Title = "WebView2 를 시작할 수 없습니다: " + ex.Message;
         }
     }

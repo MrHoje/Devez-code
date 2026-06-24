@@ -466,7 +466,14 @@ public partial class MainWindow : Window
         {
             _rlMerged = Models.RateLimitSnapshot.Merge(_rlMerged, snap);
             if (_rlMerged != null) ApplyRateLimit(_rlMerged);
+            RefreshUsagePanelIfVisible();
         });
+
+    /// <summary>사용량 탭이 열려 있으면 최신 스냅샷으로 카드를 다시 빌드 — 시작 시/폴링 시 자동 반영.</summary>
+    private void RefreshUsagePanelIfVisible()
+    {
+        if (FileExplorer.IsUsageViewVisible) FileExplorer.SetUsageCards(BuildUsageCards());
+    }
 
     /// <summary>codex/opencode-go 사용량을 해당 푸터 패널에 반영.</summary>
     private void ApplyProviderUsage(Models.ProviderUsage u)
@@ -481,6 +488,7 @@ public partial class MainWindow : Window
             _lastGo = u;
             SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go", GoMonthBar, GoMonthPct);
         }
+        RefreshUsagePanelIfVisible();
     }
 
     private void SetProviderPanel(System.Windows.Controls.StackPanel panel,
