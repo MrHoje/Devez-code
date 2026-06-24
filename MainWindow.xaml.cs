@@ -101,7 +101,7 @@ public partial class MainWindow : Window
             {
                 var s = FindSession(id);
                 if (s == null) return;
-                s.LastMessage = msg;
+                if (!ApplyHeaderMessage(s, msg)) return;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
 
@@ -116,7 +116,7 @@ public partial class MainWindow : Window
                     if (!string.Equals(pNorm, norm, StringComparison.OrdinalIgnoreCase)) continue;
                     foreach (var s in p.Tabs.OfType<SessionItem>())
                     {
-                        s.LastMessage = msg;
+                        if (!ApplyHeaderMessage(s, msg)) continue;
                         foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
                     }
                 }
@@ -128,7 +128,7 @@ public partial class MainWindow : Window
             {
                 var s = FindSession(roomId);
                 if (s == null) return;
-                s.LastMessage = msg;
+                if (!ApplyHeaderMessage(s, msg)) return;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
 
@@ -1301,6 +1301,26 @@ public partial class MainWindow : Window
 
     private SessionItem? FindSession(string id)
         => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
+
+    /// <summary>헤더에 표시할 마지막 메시지 반영. true=헤더 갱신 필요.
+    /// /clear 는 타이틀로 복귀(빈 값), 그 외 슬래시 명령(/...)은 헤더 유지(무시).</summary>
+    private static bool ApplyHeaderMessage(SessionItem s, string? msg)
+    {
+        var m = msg?.Trim() ?? "";
+        if (m.StartsWith("/"))
+        {
+            if (m.Equals("/clear", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrEmpty(s.LastMessage)) return false;
+                s.LastMessage = "";
+                return true;
+            }
+            return false; // 다른 슬래시 명령은 헤더 변경 X
+        }
+        if (s.LastMessage == m) return false;
+        s.LastMessage = m;
+        return true;
+    }
 
     // ── 사이드바 액션 → 포커스 패널로 위임 ────────────────────────────
     private void SelectProject(ProjectItem proj) => _focusedPane.SelectProject(proj);
