@@ -1,7 +1,8 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows;
-using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -29,16 +30,10 @@ public sealed class OpenCodeGoLoginWindow : Window
         "(document.head||document.documentElement).appendChild(s);}catch(e){}}" +
         "add();if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',add);})();";
 
-    // [임시 진단] 다크 적용 실패 원인 추적용 — webview-diag.txt 에 페이지 상태 기록.
-    private const string DiagScript =
-        "(function(){try{var r=document.querySelector('[data-component=\\\"root\\\"]');" +
-        "return JSON.stringify({href:location.href," +
-        "prefersDark:matchMedia('(prefers-color-scheme: dark)').matches," +
-        "injected:!!document.getElementById('devez-dark')," +
-        "varBg:getComputedStyle(document.documentElement).getPropertyValue('--color-background').trim()," +
-        "rootBg:r?getComputedStyle(r).backgroundColor:'(no-root)'," +
-        "bodyBg:document.body?getComputedStyle(document.body).backgroundColor:'(no-body)'});" +
-        "}catch(e){return 'DIAGERR:'+e.message;}})();";
+    // 창 타이틀바 다크 모드(Windows 10 2004+ / 11). 웹은 다크인데 OS 기본 타이틀바만 흰색이던 문제.
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
     private readonly WebView2 _view = new();
     private readonly DispatcherTimer _probe;
@@ -65,31 +60,31 @@ public sealed class OpenCodeGoLoginWindow : Window
         _probe = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
         _probe.Tick += async (_, _) => await TryCaptureAsync();
 
+        // 다크 테마면 OS 타이틀바도 다크로(웹 콘텐츠는 다크인데 흰 타이틀바만 남던 문제).
+        if (dark)
+            SourceInitialized += (_, _) =>
+            {
+                try
+                {
+                    var hwnd = new WindowInteropHelper(this).Handle;
+                    int on = 1;
+                    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
+                }
+                catch { }
+            };
+
         Loaded += async (_, _) => await InitAsync();
         Closed += (_, _) => { _probe.Stop(); try { _view.Dispose(); } catch { } };
     }
 
-    private static void LogDiag(string msg)
-    {
-        try
-        {
-            var p = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "DevezCode", "webview-diag.txt");
-            File.AppendAllText(p, msg + Environment.NewLine);
-        }
-        catch { }
-    }
-
     private async Task InitAsync()
     {
-        LogDiag($"[init] start theme={App.CurrentTheme}");
         try
         {
             var userDataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "WebView2");
             var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
             await _view.EnsureCoreWebView2Async(env);
-            LogDiag("[init] core ready");
             // 앱 테마에 맞춰 웹 콘텐츠도 다크/라이트 적용(prefers-color-scheme).
             _view.CoreWebView2.Profile.PreferredColorScheme = App.CurrentTheme == "dark"
                 ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
@@ -101,14 +96,7 @@ public sealed class OpenCodeGoLoginWindow : Window
                 await _view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(InjectDarkScript);
                 _view.CoreWebView2.NavigationCompleted += async (_, _) =>
                 {
-                    LogDiag("[navdone]");
-                    try
-                    {
-                        await _view.CoreWebView2.ExecuteScriptAsync(InjectDarkScript);
-                        var diag = await _view.CoreWebView2.ExecuteScriptAsync(DiagScript);
-                        LogDiag("[diag] " + diag);
-                    }
-                    catch (Exception ex) { LogDiag("[navdone] ERR:" + ex.Message); }
+                    try { await _view.CoreWebView2.ExecuteScriptAsync(InjectDarkScript); } catch { }
                 };
             }
             // 이전 로그인의 stale auth 쿠키가 WebView2 에 남아 있으면, 사용자가 새로 로그인하기도 전에
@@ -117,11 +105,9 @@ public sealed class OpenCodeGoLoginWindow : Window
             _view.CoreWebView2.SourceChanged += async (_, _) => await TryCaptureAsync();
             _view.CoreWebView2.Navigate(StartUrl);
             _probe.Start();
-            LogDiag("[init] navigate called");
         }
         catch (Exception ex)
         {
-            LogDiag("[init] EXCEPTION: " + ex);
             Title = "WebView2 를 시작할 수 없습니다: " + ex.Message;
         }
     }
