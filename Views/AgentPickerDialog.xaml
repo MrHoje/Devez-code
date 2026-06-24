@@ -38,9 +38,18 @@
 
                 <!-- 본문 -->
                 <StackPanel Grid.Row="0" Margin="16,12,16,8">
-                    <!-- 타이틀 + 프로젝트 경로 -->
-                    <TextBlock Text="에이전트 선택" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}" Margin="0,0,0,3"/>
+                    <!-- 타이틀 + X 닫기 (우상단) -->
+                    <Grid Margin="0,0,0,3">
+                        <TextBlock Text="에이전트 선택" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                        <Button Click="CancelBtn_Click"
+                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                Width="28" Height="28" Margin="0,-4,-6,0"
+                                Style="{StaticResource WinCloseBtn}">
+                            <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
+                        </Button>
+                    </Grid>
+                    <!-- 프로젝트 경로. 카드와의 간격 = 본문 하단 여백(8)과 동일 -->
                     <TextBlock x:Name="HintText" FontSize="{DynamicResource Fs11}"
                                Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,8"
                                TextTrimming="CharacterEllipsis" MaxWidth="300"/>
@@ -62,7 +71,7 @@
                                                     CornerRadius="8" BorderThickness="1"
                                                     BorderBrush="{DynamicResource LineBrush}"
                                                     Background="{DynamicResource PanelBrush}"
-                                                    Padding="10,7" Margin="0,0,0,5"
+                                                    Padding="10,7" Margin="0,0,0,6"
                                                     SnapsToDevicePixels="True">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
