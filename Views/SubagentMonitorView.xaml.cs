@@ -15,6 +15,7 @@ public partial class SubagentMonitorView : INotifyPropertyChanged
     public ObservableCollection<SubagentStatusItem> CompletedAgents { get; } = new();
 
     public event EventHandler<string>? OpenTranscriptRequested;
+    public event EventHandler<SubagentStatusItem>? ShowTranscriptRequested;
 
     public SubagentMonitorView()
     {
@@ -88,20 +89,6 @@ public partial class SubagentMonitorView : INotifyPropertyChanged
     {
         if (sender is not FrameworkElement { DataContext: SubagentStatusItem item }) return;
         e.Handled = true;
-
-        try
-        {
-            var dialog = new SubagentTranscriptView(item);
-            if (Application.Current.MainWindow is Window main && main.IsLoaded && main != dialog)
-                dialog.Owner = main;
-            dialog.ShowDialog();
-
-            if (!string.IsNullOrEmpty(dialog.RequestedFilePath))
-                OpenTranscriptRequested?.Invoke(this, dialog.RequestedFilePath);
-        }
-        catch (Exception ex)
-        {
-            ConfirmDialog.Alert("서브에이전트", $"대화 뷰어를 여는 중 오류가 발생했습니다.\n{ex.Message}");
-        }
+        ShowTranscriptRequested?.Invoke(this, item);
     }
 }

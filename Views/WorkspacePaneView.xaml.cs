@@ -49,10 +49,28 @@ public partial class WorkspacePaneView : UserControl
 
     public TerminalHostView Terminal => _terminal;
 
+    public void ShowTranscriptPanel(Models.SubagentStatusItem item)
+    {
+        TranscriptPanel.ShowTranscript(item);
+        SplitterCol.Width = new GridLength(4);
+        TranscriptCol.Width = new GridLength(360);
+        ContentSplitter.Visibility = Visibility.Visible;
+        TranscriptPanelBorder.Visibility = Visibility.Visible;
+    }
+
+    public void HideTranscriptPanel()
+    {
+        SplitterCol.Width = new GridLength(0);
+        TranscriptCol.Width = new GridLength(0);
+        ContentSplitter.Visibility = Visibility.Collapsed;
+        TranscriptPanelBorder.Visibility = Visibility.Collapsed;
+    }
+
     public WorkspacePaneView()
     {
         InitializeComponent();
         TerminalHostContainer.Content = _terminal;
+        TranscriptPanel.CloseRequested += (_, _) => HideTranscriptPanel();
 
         TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
         TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();

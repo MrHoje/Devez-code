@@ -36,11 +36,17 @@ public sealed class TaskItem : NotifyBase
     public bool IsPending => Status == "pending";
 
     [JsonIgnore]
-    public string StatusDisplay => Status switch
+    public string StatusPrefix => Status switch
     {
-        "in_progress" => "진행 중",
-        "completed" => "완료",
-        "cancelled" => "취소됨",
-        _ => "대기"
+        "in_progress" => "[~]",
+        "completed" => "[x]",
+        "cancelled" => "[-]",
+        _ => "[ ]"
     };
+
+    [JsonIgnore]
+    public double ItemOpacity => Status == "completed" || Status == "cancelled" ? 0.5 : 1.0;
+
+    [JsonIgnore]
+    public bool IsStrikethrough => Status == "completed";
 }

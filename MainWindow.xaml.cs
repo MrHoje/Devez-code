@@ -184,6 +184,7 @@ public partial class MainWindow : Window
         // 파일 탐색기에서 텍스트 파일 더블클릭 → 포커스 패널의 새 파일 탭으로 열기
         FileExplorer.FileOpenRequested += (_, path) => _focusedPane.OpenFileAsTab(path);
         FileExplorer.AgentView.OpenTranscriptRequested += (_, path) => _focusedPane.OpenFileAsTab(path);
+        FileExplorer.AgentView.ShowTranscriptRequested += (_, item) => _focusedPane.ShowTranscriptPanel(item);
 
         UpdateStatus();
         RestorePanelStates();
