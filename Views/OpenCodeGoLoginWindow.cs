@@ -58,6 +58,9 @@ public sealed class OpenCodeGoLoginWindow : Window
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "WebView2");
             var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
             await _view.EnsureCoreWebView2Async(env);
+            // 이전 로그인의 stale auth 쿠키가 WebView2 에 남아 있으면, 사용자가 새로 로그인하기도 전에
+            // 그 만료 쿠키를 즉시 캡처·저장하고 창이 닫혀버린다(떴다 사라짐). 새 로그인을 강제하려 먼저 지운다.
+            try { _view.CoreWebView2.CookieManager.DeleteCookies("auth", "https://opencode.ai"); } catch { }
             _view.CoreWebView2.SourceChanged += async (_, _) => await TryCaptureAsync();
             _view.CoreWebView2.Navigate(StartUrl);
             _probe.Start();

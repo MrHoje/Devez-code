@@ -82,7 +82,7 @@
                 <Button x:Name="UsageBtn" Click="UsageBtn_Click"
                         Style="{StaticResource ViewTabButton}" ToolTip="계정 사용량">
                     <Path x:Name="UsageIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconChartColumn}" Width="15" Height="15" VerticalAlignment="Center"
+                          Data="{StaticResource IconChartPie}" Width="15" Height="15" VerticalAlignment="Center"
                           Stroke="{DynamicResource TextMutedBrush}"/>
                 </Button>
             </StackPanel>
@@ -347,7 +347,7 @@
                 <StackPanel Width="296" Margin="18,16,18,16">
                     <!-- 헤더 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartColumn}"
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartPie}"
                               Width="15" Height="15" VerticalAlignment="Center"
                               Stroke="{DynamicResource PrimaryBrush}"/>
                         <TextBlock Text="계정 사용량" Margin="8,0,0,0" VerticalAlignment="Center"
