@@ -23,8 +23,8 @@ public sealed class GajaeLastMessageService : IDisposable
         "DevezCode", "gajae", "sessions");
 
     private readonly DispatcherTimer _poll;
-    // roomId → 최신 jsonl 의 (경로, mtime). 변화 없으면 재파싱 스킵.
-    private readonly Dictionary<string, (string path, DateTime mtime)> _seen = new();
+    // roomId → 마지막으로 처리한 상태 시그니처(최신 .jsonl 경로+mtime, 또는 빈 새 세션 마커). 같으면 스킵.
+    private readonly Dictionary<string, string> _seen = new();
     private readonly Dictionary<string, string> _lastMsg = new();
     private readonly Dictionary<string, bool> _busy = new();
 
@@ -62,20 +62,38 @@ public sealed class GajaeLastMessageService : IDisposable
         var roomId = Path.GetFileName(roomDir);
         if (string.IsNullOrEmpty(roomId)) return;
 
-        var newest = new DirectoryInfo(roomDir)
-            .GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
+        var di = new DirectoryInfo(roomDir);
+        var newest = di.GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .FirstOrDefault();
-        if (newest == null) return;
 
-        // 같은 파일·같은 mtime 이면 상태 변화 없음 → 스킵. busy 는 순수 내용 기반이라 파일이 바뀔 때만 변한다.
-        if (_seen.TryGetValue(roomId, out var prev) && prev.path == newest.FullName && prev.mtime == newest.LastWriteTimeUtc)
-            return;
-        _seen[roomId] = (newest.FullName, newest.LastWriteTimeUtc);
+        // /new 감지: gjc 는 새 세션의 디렉터리(<ts>_<id>/)를 즉시 만들지만 .jsonl 은 첫 메시지 전까지 안 쓴다.
+        // 그래서 최신 .jsonl 보다 새로운 "orphan 디렉터리"(대응 .jsonl 없음)가 있으면 = 빈 새 세션 → 헤더 리셋.
+        var jsonlIds = di.GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
+            .Select(f => Path.GetFileNameWithoutExtension(f.Name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var newestOrphan = di.GetDirectories()
+            .Where(sd => !jsonlIds.Contains(sd.Name))
+            .OrderByDescending(sd => sd.LastWriteTimeUtc)
+            .FirstOrDefault();
+        bool freshNew = newestOrphan != null
+            && (newest == null || newestOrphan.LastWriteTimeUtc > newest.LastWriteTimeUtc);
 
-        var (msg, busy) = ParseState(newest.FullName);
+        // 상태 시그니처 — 빈 새 세션이면 orphan 디렉터리 기준, 아니면 최신 .jsonl(경로+mtime) 기준.
+        // 시그니처가 그대로면 변화 없음 → 스킵(busy 는 순수 내용 기반이라 파일/세션이 바뀔 때만 변한다).
+        var sig = freshNew ? "NEW:" + newestOrphan!.Name
+                : newest != null ? newest.FullName + "|" + newest.LastWriteTimeUtc.Ticks
+                : null;
+        if (sig == null) return;
+        if (_seen.TryGetValue(roomId, out var prev) && prev == sig) return;
+        _seen[roomId] = sig;
 
-        msg ??= ""; // 새 빈 세션이면 "" → 헤더를 세션명으로 되돌린다.
+        string? msg;
+        bool busy;
+        if (freshNew) { msg = ""; busy = false; }   // 빈 새 세션 → 헤더 세션명 복귀, idle
+        else (msg, busy) = ParseState(newest!.FullName);
+
+        msg ??= ""; // 안전망
         if (!_lastMsg.TryGetValue(roomId, out var wasMsg) || wasMsg != msg)
         {
             _lastMsg[roomId] = msg;
