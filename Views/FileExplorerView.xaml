@@ -66,7 +66,7 @@
                 <Button x:Name="QueueViewBtn" Click="TabBtn_Click" Tag="3"
                         Style="{StaticResource ViewTabButton}" ToolTip="작업 큐">
                     <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconListTodo}" Width="13" Height="13" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconMessageSquare}" Width="13" Height="13" VerticalAlignment="Center"/>
                 </Button>
                 <Button x:Name="BrowserViewBtn" Click="TabBtn_Click" Tag="1"
                         Style="{StaticResource ViewTabButton}" ToolTip="브라우저">
@@ -77,6 +77,11 @@
                         Style="{StaticResource ViewTabButton}" ToolTip="DIFF">
                     <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconGitCompare}" Width="13" Height="13" VerticalAlignment="Center"/>
+                </Button>
+                <Button x:Name="TaskViewBtn" Click="TabBtn_Click" Tag="4"
+                        Style="{StaticResource ViewTabButton}" ToolTip="작업 태스크 뷰">
+                    <Path x:Name="TaskViewIcon" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconListChecks}" Width="13" Height="13" VerticalAlignment="Center"/>
                 </Button>
             </StackPanel>
             </ScrollViewer>
@@ -324,5 +329,7 @@
 
         <!-- 작업 큐 뷰 (큐 모드일 때만 표시) — 버블 입력 + 영속화 -->
         <v:TaskQueueView x:Name="QueueView" Grid.Row="3" Visibility="Collapsed"/>
+
+        <v:TaskView x:Name="TaskView" Grid.Row="3" Visibility="Collapsed"/>
     </Grid>
 </UserControl>

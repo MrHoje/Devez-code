@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private readonly OpenCodeLastMessageService _opencodeLastMsg = new();
     // opencode — 플러그인이 busy\<room>.txt 에 저장한 처리중 상태를 감시해 스피너 연동 (claude busy hook 과 동일 패턴).
     private readonly OpenCodeBusyService _opencodeBusy = new();
+    private readonly TaskTrackingService _taskTracking = new();
 
     public MainWindow()
     {
@@ -145,6 +146,9 @@ public partial class MainWindow : Window
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
             });
 
+        _taskTracking.TasksChanged += () =>
+            Dispatcher.InvokeAsync(() => FileExplorer.TaskView.SetTasks(_taskTracking.Tasks));
+
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
         _codexHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
@@ -206,6 +210,7 @@ public partial class MainWindow : Window
             _opencodeLastMsg.Start();
             _opencodeBusy.Start();
             _agentLastMsg.Start();
+            _taskTracking.Start();
             RestoreLastSession();
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
@@ -245,6 +250,7 @@ public partial class MainWindow : Window
             _opencodeLastMsg.Dispose();
             _opencodeBusy.Dispose();
             _agentLastMsg.Dispose();
+            _taskTracking.Dispose();
             FileExplorer.DisposeBrowser();
         };
     }
@@ -1224,6 +1230,7 @@ public partial class MainWindow : Window
             _explorerDir = proj?.Path;
             if (proj != null) FileExplorer.ShowDirectory(proj.Path);
         }
+        _taskTracking.SetActiveSession(_focusedPane.ActiveSession?.Id, proj?.Path);
         SettingsService.SaveLastActive(proj?.Path, _focusedPane.ActiveSession?.Id);
         if (_focusedPane.ActiveSession != null && HookSetupBanner.Visibility == Visibility.Visible)
             HookSetupBanner.Visibility = Visibility.Collapsed;
