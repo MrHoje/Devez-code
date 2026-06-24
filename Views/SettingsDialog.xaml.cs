@@ -354,7 +354,16 @@ public partial class SettingsDialog : UserControl
         UpdateNotifyPositionVisual();
         SelectComboByTag(NotifyAutoCloseCombo, SettingsService.LoadNotifyAutoCloseSeconds().ToString());
         InitNotifyMonitorCombo();
+        UpdateNotifyDetailVisibility();
         _loadingNotify = false;
+    }
+
+    /// <summary>세션 종료 알림이 꺼져 있으면 상세 설정(자동닫힘/위치/모니터)과 테스트 버튼을 모두 숨긴다.</summary>
+    private void UpdateNotifyDetailVisibility()
+    {
+        var on = NotifyEnabledToggle.IsChecked == true;
+        NotifyDetailPanel.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        TestNotifyBtn.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>설치된 모니터 목록을 콤보에 채우고 저장된 선택값(없으면 주 모니터)을 선택.</summary>
@@ -381,6 +390,7 @@ public partial class SettingsDialog : UserControl
 
     private void NotifyEnabledToggle_Changed(object sender, RoutedEventArgs e)
     {
+        UpdateNotifyDetailVisibility();
         if (_loadingNotify) return;
         SettingsService.SaveNotifySessionDoneEnabled(NotifyEnabledToggle.IsChecked == true);
     }

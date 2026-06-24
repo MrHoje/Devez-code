@@ -806,41 +806,42 @@
                                 <TextBlock Text="세션의 응답이 끝나면 토스트 알림을 표시합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
-                                <!-- 세션 종료 알림 토글 -->
+                                <!-- 세션 종료 알림 토글 + 알림 테스트(토글 왼쪽, devez 정합) -->
                                 <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,4,0,0">
-                                    <Grid>
+                                    <Grid MinHeight="32">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
                                             <TextBlock Text="세션 종료 알림" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="응답 생성이 완료될 때 알려줍니다." FontSize="{DynamicResource Fs11}"
                                                        TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                         </StackPanel>
-                                        <CheckBox x:Name="NotifyEnabledToggle" Grid.Column="1"
+                                        <Button x:Name="TestNotifyBtn" Grid.Column="1" Click="TestNotify_Click"
+                                                Style="{StaticResource IconButton}"
+                                                VerticalAlignment="Center" Margin="0,0,12,0" Padding="10,7"
+                                                Background="Transparent" Cursor="Hand">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Data="{StaticResource IconBell}" Width="13" Height="13" Margin="0,0,6,0"
+                                                      VerticalAlignment="Center" Stretch="Uniform" Fill="Transparent"
+                                                      StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                                      Stroke="{DynamicResource PrimaryBrush}"/>
+                                                <TextBlock Text="알림 테스트" FontSize="{DynamicResource Fs12}"
+                                                           Foreground="{DynamicResource PrimaryBrush}" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <CheckBox x:Name="NotifyEnabledToggle" Grid.Column="2"
                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                                   Checked="NotifyEnabledToggle_Changed" Unchecked="NotifyEnabledToggle_Changed"/>
                                     </Grid>
                                 </Border>
 
-                                <!-- 알림 테스트 — devez 처럼 라벨형 버튼으로 토글 아래에 표시 -->
-                                <Button x:Name="TestNotifyBtn" Click="TestNotify_Click"
-                                        Style="{StaticResource IconButton}"
-                                        HorizontalAlignment="Left" Padding="0,8,0,0" Margin="0,4,0,0"
-                                        Background="Transparent" Cursor="Hand">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Data="{StaticResource IconBell}" Width="13" Height="13" Margin="0,0,6,0"
-                                              VerticalAlignment="Center" Stretch="Uniform" Fill="Transparent"
-                                              StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                              Stroke="{DynamicResource PrimaryBrush}"/>
-                                        <TextBlock Text="알림 테스트" FontSize="{DynamicResource Fs12}"
-                                                   Foreground="{DynamicResource PrimaryBrush}" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
-
+                                <!-- 세션 종료 알림이 켜져 있을 때만 표시되는 상세 설정 -->
+                                <StackPanel x:Name="NotifyDetailPanel">
                                 <Separator Margin="0,18,0,0" Background="{DynamicResource LineBrush}"/>
 
                                 <!-- 자동 닫힘 시간 -->
@@ -876,15 +877,15 @@
 
                                 <Separator Margin="0,18,0,0" Background="{DynamicResource LineBrush}"/>
 
-                                <!-- 표시 위치 (좌) + 표시 모니터 (우) -->
-                                <TextBlock Text="표시 위치" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}" Margin="0,18,0,12"/>
-                                <Grid>
+                                <!-- 표시 위치 (좌) + 표시 모니터 (우) — 제목 줄 맞춤 -->
+                                <Grid Margin="0,18,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
+                                <TextBlock Text="표시 위치" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,0,0,12"/>
                                 <StackPanel Orientation="Horizontal">
                                     <Border x:Name="PosCard_tl" Tag="tl" Width="110" Height="50"
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
@@ -947,19 +948,20 @@
                                 </StackPanel>
                                     </StackPanel>
 
-                                    <!-- 표시 모니터 (위치 카드 오른쪽 남은 영역) -->
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="28,0,0,0">
+                                    <!-- 표시 모니터 (위치 카드 오른쪽 남은 영역) — 제목을 표시 위치와 줄 맞춤 -->
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="28,0,0,0">
                                         <TextBlock Text="표시 모니터" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                   Foreground="{DynamicResource TextBrush}" Margin="0,0,0,12"/>
                                         <TextBlock Text="알림이 나타날 모니터를 선택합니다." FontSize="{DynamicResource Fs11}"
                                                    TextWrapping="Wrap"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,10"/>
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"/>
                                         <ComboBox x:Name="NotifyMonitorCombo"
                                                   Style="{StaticResource DockComboBox}"
                                                   HorizontalAlignment="Left" MinWidth="200"
                                                   SelectionChanged="NotifyMonitorCombo_Changed"/>
                                     </StackPanel>
                                 </Grid>
+                                </StackPanel>
                             </StackPanel>
                           </Grid>
                         </ScrollViewer>
