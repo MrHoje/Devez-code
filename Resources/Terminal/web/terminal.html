@@ -14,6 +14,8 @@
   .term-container { position: absolute; inset: 0; padding: 6px 0 6px 22px; display: none; }
   /* opencode 세션: 좌우 여백을 더 줄인다 — 패딩 0 + 컨테이너 경계를 바깥으로 밀어(좌 8 / 우 17) 여백 제거 */
   .term-container.agent-opencode { padding: 6px 0 12px 0; left: 6px; right: -9px; bottom: -22px; }
+  /* 가재코드(gjc) 인라인 TUI — 입력창이 바닥에 딱 붙지 않게 하단 여백 확보(재페인트 시 1줄 스크롤 토글 완화). */
+  .term-container.agent-gajae { padding-bottom: 14px; }
   .term-container.active { display: block; }
   .term-container .xterm { height: 100%; }
   /* 스크롤바 숨김 (휠 스크롤은 동작) */
@@ -451,6 +453,10 @@
     });
     term.onResize(function (size) {
       post({ type: 'resize', roomId: roomId, cols: size.cols, rows: size.rows });
+      // fit 으로 그리드가 바뀌면 스크롤백이 리플로우되며 스크롤이 점프한다. pin 윈도우(인라인 TUI resume)
+      // 동안엔 리사이즈 후에도 맨 아래로 고정해 위/아래 튐을 막는다.
+      if (Date.now() < _pinBottomUntil)
+        requestAnimationFrame(function () { try { term.scrollToBottom(); } catch (e) {} });
     });
     return entry;
   }
