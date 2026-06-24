@@ -498,13 +498,14 @@ public partial class MainWindow : Window
         // 데이터를 못 불러오면(에러 포함) 빈값(--) 대신 패널 자체를 숨김 — 사이드패널 정합.
         // 또한 설정에서 해당 provider 푸터 표시를 끄면 숨김.
         bool show = u.Provider == "codex" ? SettingsService.LoadShowFooterCodex() : SettingsService.LoadShowFooterGo();
-        if (!u.HasData || !show) { panel.Visibility = Visibility.Collapsed; return; }
+        if (!u.HasData || !show) { panel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
         panel.Visibility = Visibility.Visible;
         SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
         // 주간/월간 라벨은 XAML 고정 — 막대/퍼센트만 갱신.
         SetWindowBar(wBar, wPct, u.Weekly?.UsedPercent);
         if (mBar != null && mPct != null) SetWindowBar(mBar, mPct, u.Monthly?.UsedPercent);
         panel.ToolTip = BuildProviderTooltip(u, name);
+        UpdateFooterDivider();
     }
 
     /// <summary>고정 라벨 윈도우 막대(주간·월간) 갱신 — 값 없으면 막대 0, 퍼센트 "--".</summary>
@@ -582,6 +583,7 @@ public partial class MainWindow : Window
         else { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastCodex != null) ApplyProviderUsage(_lastCodex); else CodexPanel.Visibility = Visibility.Collapsed;
         if (_lastGo != null)    ApplyProviderUsage(_lastGo);    else GoPanel.Visibility    = Visibility.Collapsed;
+        UpdateFooterDivider();
     }
 
     /// <summary>rate limit 툴팁 — 사용률 + 초기화 시각/남은 시간.</summary>
@@ -663,9 +665,17 @@ public partial class MainWindow : Window
         UpdateFooterDivider();
     }
 
-    /// <summary>푸터 구분선 — PerfChipGroup 과 RateLimitPanel 이 다른 컬럼으로 분리되어 더 이상 필요 없음.
-    /// 호출부 호환을 위해 no-op 로 남겨둔다.</summary>
-    private void UpdateFooterDivider() { }
+    /// <summary>provider 패널 사이 리딩 구분선(|)을 동적으로 — 보이는 첫 패널 앞에는 안 그린다.
+    /// Codex 의 구분선은 앞에 Claude 가 보일 때만, Go 의 구분선은 Claude/Codex 중 하나라도 보일 때만 표시.</summary>
+    private void UpdateFooterDivider()
+    {
+        bool claude = RateLimitPanel.Visibility == Visibility.Visible;
+        bool codex = CodexPanel.Visibility == Visibility.Visible;
+        if (CxLeadDivider != null)
+            CxLeadDivider.Visibility = claude ? Visibility.Visible : Visibility.Collapsed;
+        if (GoLeadDivider != null)
+            GoLeadDivider.Visibility = (claude || codex) ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void ApplyPerfSnapshot(Models.PerfSnapshot snap)
     {
