@@ -117,7 +117,8 @@ public partial class ConfirmDialog : Window
 
         // chrome: 본문 좌우 패딩 28*2 + 창 그림자 마진 20*2 + 테두리/여유.
         double needed = maxLine + 56 + 40 + 8;
-        return Math.Max(500, Math.Min(720, needed));
+        // 하한 360(footer 버튼 취소+중단 최소폭) — 짧은 본문은 텍스트에 딱 붙임.
+        return Math.Max(360, Math.Min(720, needed));
     }
 
     private void ConfirmInputBox_TextChanged(object sender, TextChangedEventArgs e)
