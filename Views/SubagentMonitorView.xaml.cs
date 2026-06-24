@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
 using DevezCode.Models;
+using DevezCode.Services;
 
 namespace DevezCode.Views;
 
@@ -86,12 +87,13 @@ public partial class SubagentMonitorView : INotifyPropertyChanged
     private void AgentItem_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: SubagentStatusItem item }) return;
-        if (string.IsNullOrWhiteSpace(item.TranscriptPath) || !System.IO.File.Exists(item.TranscriptPath))
+        var path = SubagentStatusService.ResolveConversationPath(item.RoomId, item.AgentId);
+        if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
         {
-            ConfirmDialog.Alert("서브에이전트", "아직 열 수 있는 대화 파일이 없습니다. 에이전트가 메시지를 남긴 뒤 다시 눌러 주세요.");
+            ConfirmDialog.Alert("서브에이전트", "Claude 저장소에서 이 에이전트의 대화 파일을 찾지 못했습니다.");
             return;
         }
-        OpenTranscriptRequested?.Invoke(this, item.TranscriptPath);
+        OpenTranscriptRequested?.Invoke(this, path);
         e.Handled = true;
     }
 }

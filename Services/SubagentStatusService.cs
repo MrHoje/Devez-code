@@ -100,7 +100,7 @@ public sealed class SubagentStatusService : IDisposable
                     RoomId = roomId,
                     AgentId = agentId,
                     AgentType = root.TryGetProperty("agentType", out var at) ? at.GetString() ?? "" : "",
-                    TranscriptPath = FindTranscriptPath(roomId, agentId) ?? "",
+                    TranscriptPath = ResolveConversationPath(roomId, agentId) ?? "",
                     Prompt = root.TryGetProperty("prompt", out var pr) ? pr.GetString() ?? "" : "",
                     Status = root.TryGetProperty("status", out var st) ? st.GetString() ?? "running" : "running",
                     StartedAt = root.TryGetProperty("startedAt", out var sa) && sa.TryGetDateTime(out var sd) ? sd : DateTime.MinValue,
@@ -118,7 +118,7 @@ public sealed class SubagentStatusService : IDisposable
         return null;
     }
 
-    private static string? FindTranscriptPath(string roomId, string agentId)
+    public static string? ResolveConversationPath(string roomId, string agentId)
     {
         try
         {
@@ -146,11 +146,20 @@ public sealed class SubagentStatusService : IDisposable
 
     private static IEnumerable<string> CandidateAgentFileNames(string agentId)
     {
-        yield return agentId + ".jsonl";
+        foreach (var id in CandidateAgentIds(agentId))
+        {
+            yield return id + ".jsonl";
+            yield return id + ".meta.json";
+        }
+    }
+
+    private static IEnumerable<string> CandidateAgentIds(string agentId)
+    {
+        yield return agentId;
         if (agentId.StartsWith("agent-", StringComparison.OrdinalIgnoreCase))
-            yield return agentId.Substring("agent-".Length) + ".jsonl";
+            yield return agentId.Substring("agent-".Length);
         else
-            yield return "agent-" + agentId + ".jsonl";
+            yield return "agent-" + agentId;
     }
 
     private static string SafeFileName(string value)
