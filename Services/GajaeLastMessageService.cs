@@ -22,15 +22,10 @@ public sealed class GajaeLastMessageService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "gajae", "sessions");
 
-    // 마지막 jsonl 쓰기 후 이 시간 안이면 "처리중"으로 본다. gjc 에이전트 루프는 스트리밍·툴 사이
-    // 수 초 간격으로 jsonl 을 쓰므로, 이 창으로 깜빡임을 줄이고 완료 후 자연스럽게 idle 로 내린다.
-    private static readonly TimeSpan ActiveWindow = TimeSpan.FromSeconds(12);
-
     private readonly DispatcherTimer _poll;
-    // roomId → 최신 jsonl 의 (경로, mtime). 변화 없으면 lastmsg 재파싱은 스킵(단 busy 는 매 틱 재평가).
+    // roomId → 최신 jsonl 의 (경로, mtime). 변화 없으면 재파싱 스킵.
     private readonly Dictionary<string, (string path, DateTime mtime)> _seen = new();
     private readonly Dictionary<string, string> _lastMsg = new();
-    private readonly Dictionary<string, string?> _lastRole = new();
     private readonly Dictionary<string, bool> _busy = new();
 
     /// <summary>(roomId, message) — gjc 세션이 마지막으로 보낸 프롬프트(1줄 요약). 빈 문자열이면 세션명으로 표시.</summary>
@@ -73,28 +68,19 @@ public sealed class GajaeLastMessageService : IDisposable
             .FirstOrDefault();
         if (newest == null) return;
 
-        var mtime = newest.LastWriteTimeUtc;
+        // 같은 파일·같은 mtime 이면 상태 변화 없음 → 스킵. busy 는 순수 내용 기반이라 파일이 바뀔 때만 변한다.
+        if (_seen.TryGetValue(roomId, out var prev) && prev.path == newest.FullName && prev.mtime == newest.LastWriteTimeUtc)
+            return;
+        _seen[roomId] = (newest.FullName, newest.LastWriteTimeUtc);
 
-        // mtime 이 바뀌었을 때만 파일 재파싱(lastmsg + 마지막 role 캐시 갱신).
-        if (!_seen.TryGetValue(roomId, out var prev) || prev.path != newest.FullName || prev.mtime != mtime)
+        var (msg, busy) = ParseState(newest.FullName);
+
+        msg ??= ""; // 새 빈 세션이면 "" → 헤더를 세션명으로 되돌린다.
+        if (!_lastMsg.TryGetValue(roomId, out var wasMsg) || wasMsg != msg)
         {
-            _seen[roomId] = (newest.FullName, mtime);
-            var (msg, role) = ParseState(newest.FullName);
-            _lastRole[roomId] = role;
-
-            msg ??= ""; // 새 빈 세션이면 "" → 헤더를 세션명으로 되돌린다.
-            if (!_lastMsg.TryGetValue(roomId, out var wasMsg) || wasMsg != msg)
-            {
-                _lastMsg[roomId] = msg;
-                MessageChanged?.Invoke(roomId, msg);
-            }
+            _lastMsg[roomId] = msg;
+            MessageChanged?.Invoke(roomId, msg);
         }
-
-        // busy 는 매 틱 재평가(파일이 안 변해도 시간 경과로 idle 전환돼야 하므로).
-        // 처리중 = 최근 ActiveWindow 안에 jsonl 쓰기가 있었거나, 마지막 엔트리가 user/toolResult(응답 대기).
-        var recent = (DateTime.UtcNow - mtime) < ActiveWindow;
-        var lastRole = _lastRole.TryGetValue(roomId, out var lr) ? lr : null;
-        var busy = recent || lastRole is "user" or "toolResult";
         if (!_busy.TryGetValue(roomId, out var wasBusy) || wasBusy != busy)
         {
             _busy[roomId] = busy;
@@ -102,9 +88,13 @@ public sealed class GajaeLastMessageService : IDisposable
         }
     }
 
-    /// <summary>jsonl 을 뒤에서부터 훑어 (마지막 user 메시지 1줄 요약, 마지막 message 엔트리 role) 를 구한다.
-    /// 줄 구조: {"type":"message","message":{"role":"user|assistant|toolResult","content":[{"type":"text","text":"..."}]}}</summary>
-    private static (string? lastUserMsg, string? lastRole) ParseState(string path)
+    /// <summary>jsonl 을 뒤에서부터 훑어 (마지막 user 메시지 1줄 요약, 처리중 여부) 를 구한다.
+    /// busy 판정(시간 무관, 내용 기반): 마지막 message 엔트리 기준 —
+    ///  • role=user/toolResult → 처리중(응답·다음 단계 대기)
+    ///  • role=assistant + content 에 toolCall 있음 → 처리중(툴 실행/연속)
+    ///  • role=assistant + text 만(toolCall 없음) → 완료(idle)
+    /// gjc 한 턴: user → assistant(toolCall) → toolResult → … → assistant(text) 로 끝남.</summary>
+    private static (string? lastUserMsg, bool busy) ParseState(string path)
     {
         string[] lines;
         try
@@ -113,11 +103,11 @@ public sealed class GajaeLastMessageService : IDisposable
             using var sr = new StreamReader(fs, Encoding.UTF8);
             lines = sr.ReadToEnd().Split('\n');
         }
-        catch { return (null, null); }
+        catch { return (null, false); }
 
         string? lastUserMsg = null;
-        string? lastRole = null;
-        bool roleSeen = false;
+        bool busy = false;
+        bool busySeen = false;
 
         for (int i = lines.Length - 1; i >= 0; i--)
         {
@@ -125,6 +115,7 @@ public sealed class GajaeLastMessageService : IDisposable
             if (line.Length == 0 || line[0] != '{') continue;
             string? role;
             string? userText = null;
+            bool hasToolCall = false;
             try
             {
                 using var doc = JsonDocument.Parse(line);
@@ -134,37 +125,40 @@ public sealed class GajaeLastMessageService : IDisposable
                 if (!m.TryGetProperty("role", out var r)) continue;
                 role = r.GetString();
 
-                if (role == "user" && m.TryGetProperty("content", out var content)
-                    && content.ValueKind == JsonValueKind.Array)
+                if (m.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var part in content.EnumerateArray())
                     {
-                        if (part.TryGetProperty("type", out var pt) && pt.GetString() == "text"
+                        if (!part.TryGetProperty("type", out var pt)) continue;
+                        var ptype = pt.GetString();
+                        if (ptype == "toolCall") hasToolCall = true;
+                        if (role == "user" && ptype == "text" && userText == null
                             && part.TryGetProperty("text", out var txt))
                         {
                             var s = txt.GetString();
-                            if (string.IsNullOrWhiteSpace(s)) continue;
-                            userText = string.Join(" ", s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-                            break;
+                            if (!string.IsNullOrWhiteSpace(s))
+                                userText = string.Join(" ", s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
                         }
                     }
                 }
             }
             catch { continue; }
 
-            // 가장 마지막 message 엔트리의 role 기록(한 번만).
-            if (!roleSeen)
+            // 가장 마지막 message 엔트리로 busy 판정(한 번만).
+            if (!busySeen)
             {
-                roleSeen = true;
-                lastRole = role;
+                busySeen = true;
+                // user/toolResult = 진행중. assistant 는 toolCall 있을 때만 진행중(text 만이면 완료).
+                // 그 외 role 은 idle(스턱 방지).
+                busy = role is "user" or "toolResult" || (role == "assistant" && hasToolCall);
             }
 
             if (role == "user" && lastUserMsg == null && userText != null)
                 lastUserMsg = userText.Length > 200 ? userText.Substring(0, 200) : userText;
 
-            if (roleSeen && lastUserMsg != null) break;
+            if (busySeen && lastUserMsg != null) break;
         }
-        return (lastUserMsg, lastRole);
+        return (lastUserMsg, busy);
     }
 
     public void Dispose() => _poll.Stop();
