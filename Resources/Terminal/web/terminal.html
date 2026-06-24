@@ -536,6 +536,18 @@
       case 'pinBottom':
         _pinBottomUntil = Date.now() + (msg.ms || 2000);
         break;
+      case 'nudgeScroll': {
+        // 재생 후 어긋난 viewport 를 강제 리렌더(위 1줄 → 맨 아래)로 고친다. 사용자가 수동으로
+        // 스크롤 올렸다 내리면 정상화되던 것을 자동화 — 인라인 TUI(gjc) resume 직후 호출.
+        const t = terms[msg.roomId];
+        if (t) {
+          try {
+            t.term.scrollLines(-1);
+            requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
+          } catch (e) {}
+        }
+        break;
+      }
       case 'show':
         show(msg.roomId, msg.agent);
         break;
