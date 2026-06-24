@@ -163,6 +163,8 @@ public partial class SettingsDialog : UserControl
         CatChangelogBtn.Foreground = key == "changelog"  ? primary : text;
         CatShortcutBtn.Background  = key == "shortcut"   ? active : Brushes.Transparent;
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
+        CatNotifyBtn.Background    = key == "notify"     ? active : Brushes.Transparent;
+        CatNotifyBtn.Foreground    = key == "notify"     ? primary : text;
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
@@ -172,9 +174,11 @@ public partial class SettingsDialog : UserControl
         McpPanel.Visibility        = key == "mcp"        ? Visibility.Visible : Visibility.Collapsed;
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
+        NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
 
         if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
         if (key == "sidepanel") LoadSidePanelSettings();
+        if (key == "notify") LoadNotifySettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
     }
 
@@ -338,6 +342,53 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveShowDiffViewBtn(ShowDiffViewToggle.IsChecked == true);
         (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
     }
+
+    // ── 알림 설정 (sidepanel 과 동일하게 즉시 저장 — 테스트가 선택값을 바로 반영) ──
+    private bool _loadingNotify;
+    private string _notifyPos = "br";
+    private void LoadNotifySettings()
+    {
+        _loadingNotify = true;
+        NotifyEnabledToggle.IsChecked = SettingsService.LoadNotifySessionDoneEnabled();
+        _notifyPos = SettingsService.LoadNotifyPosition();
+        UpdateNotifyPositionVisual();
+        _loadingNotify = false;
+    }
+
+    private void NotifyEnabledToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loadingNotify) return;
+        SettingsService.SaveNotifySessionDoneEnabled(NotifyEnabledToggle.IsChecked == true);
+    }
+
+    private void NotifyPositionCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border b || b.Tag is not string pos) return;
+        _notifyPos = pos;
+        SettingsService.SaveNotifyPosition(pos);
+        UpdateNotifyPositionVisual();
+    }
+
+    private void UpdateNotifyPositionVisual()
+    {
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var line    = (Brush)FindResource("LineBrush");
+        foreach (var (card, dot, pos) in new (Border, Ellipse, string)[]
+        {
+            (PosCard_tl, PosDot_tl, "tl"),
+            (PosCard_tr, PosDot_tr, "tr"),
+            (PosCard_bl, PosDot_bl, "bl"),
+            (PosCard_br, PosDot_br, "br"),
+        })
+        {
+            var selected = _notifyPos == pos;
+            card.BorderBrush = selected ? primary : line;
+            dot.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void TestNotify_Click(object sender, RoutedEventArgs e)
+        => App.ShowNotification("테스트 알림", "세션이 끝나면 이렇게 알려드립니다.");
 
     // ── 탭 이동 단축키 수식키 리바인드 (방향키는 ← / → 고정) ──────
     /// <summary>수식키 칸 클릭 → 전역 훅 캡처 시작. 다음 키다운 1회를 수식키로 지정.</summary>

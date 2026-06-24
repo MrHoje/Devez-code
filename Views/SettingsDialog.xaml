@@ -145,6 +145,15 @@
                                         <TextBlock Text="단축키" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
+                                <Button x:Name="CatNotifyBtn" Tag="notify"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconBell}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="알림" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button x:Name="CatChangelogBtn" Tag="changelog"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -783,6 +792,122 @@
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
+                            </StackPanel>
+
+                            <!-- 알림 패널 — 세션 종료 알림 / 표시 위치 / 테스트 -->
+                            <StackPanel x:Name="NotifyPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBell}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="알림" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="세션의 응답이 끝나면(스피너가 멈추면) 토스트 알림을 표시합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+
+                                <!-- 세션 종료 알림 토글 -->
+                                <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,4,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="세션 종료 알림" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="응답 생성이 완료되어 스피너가 멈출 때 알려줍니다." FontSize="{DynamicResource Fs11}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="NotifyEnabledToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="NotifyEnabledToggle_Changed" Unchecked="NotifyEnabledToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
+
+                                <!-- 표시 위치 -->
+                                <TextBlock Text="표시 위치" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,22,0,12"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border x:Name="PosCard_tl" Tag="tl" Width="110" Height="50"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0,0,10,0"
+                                            Cursor="Arrow" MouseLeftButtonDown="NotifyPositionCard_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Grid Width="14" Height="14" Margin="0,0,8,0">
+                                                <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                <Ellipse x:Name="PosDot_tl" Width="7" Height="7"
+                                                         Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                            </Grid>
+                                            <TextBlock Text="좌상단" FontSize="{DynamicResource Fs12}"
+                                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border x:Name="PosCard_tr" Tag="tr" Width="110" Height="50"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0"
+                                            Cursor="Arrow" MouseLeftButtonDown="NotifyPositionCard_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Grid Width="14" Height="14" Margin="0,0,8,0">
+                                                <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                <Ellipse x:Name="PosDot_tr" Width="7" Height="7"
+                                                         Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                            </Grid>
+                                            <TextBlock Text="우상단" FontSize="{DynamicResource Fs12}"
+                                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Border x:Name="PosCard_bl" Tag="bl" Width="110" Height="50"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0,0,10,0"
+                                            Cursor="Arrow" MouseLeftButtonDown="NotifyPositionCard_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Grid Width="14" Height="14" Margin="0,0,8,0">
+                                                <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                <Ellipse x:Name="PosDot_bl" Width="7" Height="7"
+                                                         Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                            </Grid>
+                                            <TextBlock Text="좌하단" FontSize="{DynamicResource Fs12}"
+                                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border x:Name="PosCard_br" Tag="br" Width="110" Height="50"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                            Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="0"
+                                            Cursor="Arrow" MouseLeftButtonDown="NotifyPositionCard_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Grid Width="14" Height="14" Margin="0,0,8,0">
+                                                <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                <Ellipse x:Name="PosDot_br" Width="7" Height="7"
+                                                         Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                            </Grid>
+                                            <TextBlock Text="우하단" FontSize="{DynamicResource Fs12}"
+                                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
+
+                                <!-- 알림 테스트 -->
+                                <TextBlock Text="알림 테스트" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,22,0,6"/>
+                                <TextBlock Text="선택한 위치에 샘플 알림을 표시합니다." FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,12"/>
+                                <Button Click="TestNotify_Click" Style="{StaticResource SecondaryButton}"
+                                        Height="38" HorizontalAlignment="Left" Padding="18,0"
+                                        FontSize="{DynamicResource Fs13}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconBell}"
+                                              Width="13" Height="13" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="알림 테스트" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                           </Grid>
                         </ScrollViewer>

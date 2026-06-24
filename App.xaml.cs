@@ -62,6 +62,18 @@ public partial class App : Application
         new MainWindow().Show();
     }
 
+    /// <summary>토스트 알림을 표시한다(설정 위치에 스택). UI 스레드가 아니어도 안전.</summary>
+    public static void ShowNotification(string title, string? content, Action? onClick = null)
+    {
+        var app = Current;
+        if (app == null) return;
+        app.Dispatcher.InvokeAsync(() =>
+        {
+            try { new Views.NotificationPopup(title, content, onClick).Show(); }
+            catch { /* best effort — 알림 실패가 앱을 막지 않도록 */ }
+        });
+    }
+
     /// <summary>이미 실행 중인 DevezCode 창을 복원·전경으로 가져온다.
     /// 전경 잠금(다른 앱이 포커스를 쥔 상태)을 우회하려고 잠깐 topmost 밴드로 끌어올렸다가 바로 푼다.</summary>
     private static void ActivateExistingInstance()
