@@ -66,11 +66,35 @@ public partial class WorkspacePaneView : UserControl
         TranscriptPanelBorder.Visibility = Visibility.Collapsed;
     }
 
+    public void AddOrUpdateAgent(Models.SubagentStatusItem item)
+    {
+        SubagentList.AddOrUpdate(item);
+        // 첫 에이전트가 생성되면 자동으로 split 패널 표시
+        if (TranscriptPanelBorder.Visibility != Visibility.Visible)
+        {
+            SplitterCol.Width = new GridLength(4);
+            TranscriptCol.Width = new GridLength(420);
+            ContentSplitter.Visibility = Visibility.Visible;
+            TranscriptPanelBorder.Visibility = Visibility.Visible;
+        }
+    }
+
+    public void RemoveAgent(string agentId)
+    {
+        SubagentList.Remove(agentId);
+    }
+
+    public void ClearRoomAgents(string roomId)
+    {
+        SubagentList.ClearRoom(roomId);
+    }
+
     public WorkspacePaneView()
     {
         InitializeComponent();
         TerminalHostContainer.Content = _terminal;
         TranscriptPanel.CloseRequested += (_, _) => HideTranscriptPanel();
+        SubagentList.ShowTranscriptRequested += (_, item) => TranscriptPanel.ShowTranscript(item);
 
         TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
         TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();

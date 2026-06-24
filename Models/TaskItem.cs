@@ -39,7 +39,7 @@ public sealed class TaskItem : NotifyBase
     public string StatusPrefix => Status switch
     {
         "in_progress" => "[~]",
-        "completed" => "[x]",
+        "completed" => "[✓]",
         "cancelled" => "[-]",
         _ => "[ ]"
     };

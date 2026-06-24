@@ -148,11 +148,10 @@ public partial class MainWindow : Window
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
             });
 
-        // 서브에이전트 시작/완료 → 우측 패널 AgentView 에 반영.
         _subagentStatus.SubagentChanged += item =>
-            Dispatcher.InvokeAsync(() => FileExplorer.AgentView.AddOrUpdate(item));
+            Dispatcher.InvokeAsync(() => { foreach (var pane in _panes) pane.AddOrUpdateAgent(item); });
         _subagentStatus.SubagentRemoved += (roomId, agentId) =>
-            Dispatcher.InvokeAsync(() => FileExplorer.AgentView.Remove(agentId));
+            Dispatcher.InvokeAsync(() => { foreach (var pane in _panes) pane.RemoveAgent(agentId); });
 
         // 태스크 추적 → 우측 패널 TaskView 에 반영.
         _taskTracking.TasksChanged += () =>
@@ -183,8 +182,6 @@ public partial class MainWindow : Window
 
         // 파일 탐색기에서 텍스트 파일 더블클릭 → 포커스 패널의 새 파일 탭으로 열기
         FileExplorer.FileOpenRequested += (_, path) => _focusedPane.OpenFileAsTab(path);
-        FileExplorer.AgentView.OpenTranscriptRequested += (_, path) => _focusedPane.OpenFileAsTab(path);
-        FileExplorer.AgentView.ShowTranscriptRequested += (_, item) => _focusedPane.ShowTranscriptPanel(item);
 
         UpdateStatus();
         RestorePanelStates();
