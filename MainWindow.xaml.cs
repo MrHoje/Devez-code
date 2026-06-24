@@ -907,11 +907,11 @@ public partial class MainWindow : Window
     {
         var muted   = (System.Windows.Media.Brush)FindResource("TextMutedBrush");
         var primary = (System.Windows.Media.Brush)FindResource("PrimaryBrush");
-        LeftPanelIcon.Stroke  = _leftCollapsed  ? primary : muted;
-        // 좁은 창에서는 오버레이가 닫혀 있으면(=숨김) 강조 표시.
+        // 좌·우 패널 토글은 접힘 상태여도 테마색 강조하지 않는다 — 항상 muted.
+        LeftPanelIcon.Stroke  = muted;
         bool rightHidden = _narrow == true ? !_rightOverlayOpen : _rightCollapsed;
-        RightPanelIcon.Stroke = rightHidden ? primary : muted;
-        // 사용량 사이드바는 '펼침' 상태일 때 강조(다른 토글과 반대 — 열려 있음을 표시).
+        RightPanelIcon.Stroke = muted;
+        // 사용량 사이드바는 '펼침' 상태일 때만 강조(열려 있음 표시).
         UsagePanelIcon.Stroke = _usageOpen ? primary : muted;
         // 우측 패널이 접혔으면 파일탐색기 스플리터 비활성화 — 빈(폭 0) 패널이 드래그로 열리는 것 방지.
         FileExpSplitter.IsEnabled = !rightHidden;
@@ -1677,7 +1677,16 @@ public partial class MainWindow : Window
         }
         SetBoundsInstant(target);
         ApplyCornerPreference();
+
+        // 전체화면 종료 방법 안내 — 세션당 1회만(타이틀 버튼이 화면 끝이라 처음엔 종료법을 모를 수 있음).
+        if (!_fsHintShown)
+        {
+            _fsHintShown = true;
+            App.ShowNotification("전체화면 모드", "상단 표시줄을 더블클릭하면 전체화면을 종료합니다.");
+        }
     }
+
+    private bool _fsHintShown; // 전체화면 종료 안내 토스트 세션당 1회 표시 가드
 
     /// <summary>전체화면 해제 → 진입 전 창 크기를 현재 모니터 작업영역 중앙에 배치(애니메이션 없음).</summary>
     private void ExitFullScreen()
