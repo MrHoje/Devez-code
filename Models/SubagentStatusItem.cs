@@ -7,6 +7,7 @@ public sealed class SubagentStatusItem : NotifyBase
     public string RoomId { get; init; } = "";
     public string AgentId { get; init; } = "";
     public string AgentType { get; init; } = "";
+    public string TranscriptPath { get; init; } = "";
 
     private string _status = "running"; // running / completed / error / cancelled
     public string Status

@@ -13,6 +13,13 @@ public sealed class SubagentStatusService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "claude", "subagents");
 
+    private static string SessionDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "claude", "sessions");
+
+    private static string ClaudeProjectsDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects");
+
     private FileSystemWatcher? _watcher;
 
     /// <summary>(agent) — 서브에이전트 상태 변경(start/update/delete).</summary>
@@ -93,6 +100,7 @@ public sealed class SubagentStatusService : IDisposable
                     RoomId = roomId,
                     AgentId = agentId,
                     AgentType = root.TryGetProperty("agentType", out var at) ? at.GetString() ?? "" : "",
+                    TranscriptPath = FindTranscriptPath(roomId, agentId) ?? "",
                     Prompt = root.TryGetProperty("prompt", out var pr) ? pr.GetString() ?? "" : "",
                     Status = root.TryGetProperty("status", out var st) ? st.GetString() ?? "running" : "running",
                     StartedAt = root.TryGetProperty("startedAt", out var sa) && sa.TryGetDateTime(out var sd) ? sd : DateTime.MinValue,
@@ -109,6 +117,44 @@ public sealed class SubagentStatusService : IDisposable
         }
         return null;
     }
+
+    private static string? FindTranscriptPath(string roomId, string agentId)
+    {
+        try
+        {
+            var sessionPath = Path.Combine(SessionDir, SafeFileName(roomId) + ".txt");
+            if (!File.Exists(sessionPath) || !Directory.Exists(ClaudeProjectsDir)) return null;
+
+            var sessionId = File.ReadAllText(sessionPath).Trim();
+            if (string.IsNullOrWhiteSpace(sessionId)) return null;
+
+            var names = CandidateAgentFileNames(agentId).ToArray();
+            foreach (var projectDir in Directory.EnumerateDirectories(ClaudeProjectsDir))
+            {
+                var subagentDir = Path.Combine(projectDir, sessionId, "subagents");
+                if (!Directory.Exists(subagentDir)) continue;
+                foreach (var name in names)
+                {
+                    var path = Path.Combine(subagentDir, name);
+                    if (File.Exists(path)) return path;
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private static IEnumerable<string> CandidateAgentFileNames(string agentId)
+    {
+        yield return agentId + ".jsonl";
+        if (agentId.StartsWith("agent-", StringComparison.OrdinalIgnoreCase))
+            yield return agentId.Substring("agent-".Length) + ".jsonl";
+        else
+            yield return "agent-" + agentId + ".jsonl";
+    }
+
+    private static string SafeFileName(string value)
+        => System.Text.RegularExpressions.Regex.Replace(value, @"[^\w\-]", "");
 
     public void Dispose()
     {

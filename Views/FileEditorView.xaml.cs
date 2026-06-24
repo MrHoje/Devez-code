@@ -25,7 +25,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             return true;
 
         var ext = Path.GetExtension(path).ToLowerInvariant();
-        return ext is ".txt" or ".md" or ".markdown" or ".json" or ".xml" or ".sql"
+        return ext is ".txt" or ".md" or ".markdown" or ".json" or ".jsonl" or ".xml" or ".sql"
             or ".yml" or ".yaml" or ".toml" or ".ini" or ".conf" or ".config" or ".cfg"
             or ".properties" or ".csv" or ".log" or ".html" or ".htm" or ".css" or ".scss"
             or ".less" or ".js" or ".jsx" or ".ts" or ".tsx" or ".vue" or ".svelte"
