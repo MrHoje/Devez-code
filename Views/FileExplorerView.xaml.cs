@@ -187,7 +187,7 @@ public partial class FileExplorerView : UserControl
     private const int MaxSearchResults = 500;
 
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
-    private enum ViewMode { Directory, Browser, Diff, Queue, Usage }
+    private enum ViewMode { Directory, Browser, Diff, Queue }
     private ViewMode _mode = ViewMode.Queue;
     private bool _browserMode => _mode == ViewMode.Browser;
 
@@ -200,34 +200,17 @@ public partial class FileExplorerView : UserControl
             SwitchTab(idx);
     }
 
-    /// <summary>사용량 탭이 현재 활성(보이는) 상태인지 — 스냅샷 도착 시 패널 갱신 여부 판단에 사용.</summary>
-    public bool IsUsageViewVisible => _mode == ViewMode.Usage;
-
-    /// <summary>사용량 탭 진입 시 최신 카드를 요청한다. MainWindow 가 SetUsageCards 로 응답.</summary>
-    public event Action? UsageRequested;
-
-    /// <summary>표시 가능한 provider 사용량 카드로 패널을 채운다. 비면 안내 문구 표시.</summary>
-    public void SetUsageCards(IReadOnlyList<UsageCardVM> cards)
-    {
-        UsageList.ItemsSource = cards;
-        UsageEmptyHint.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        UsageUpdatedText.Text = cards.Count == 0 ? "" : $"{DateTime.Now:HH:mm} 기준";
-    }
-
-
     private void SwitchTab(int idx)
     {
+        if (idx < 0 || idx > 3) idx = 0; // 사용량 탭(4) 제거 — 저장된 값이 범위 밖이면 탐색기로
         _mode = (ViewMode)idx;
         SettingsService.SaveFileExpActiveTab(idx);
         Tree.Visibility      = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         Browser.Visibility   = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
         DiffView.Visibility  = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
         QueueView.Visibility = idx == 3 ? Visibility.Visible : Visibility.Collapsed;
-        UsageView.Visibility = idx == 4 ? Visibility.Visible : Visibility.Collapsed;
-        UsageUpdatedText.Visibility = idx == 4 ? Visibility.Visible : Visibility.Collapsed;
         if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
         if (idx == 2) _ = DiffView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
-        if (idx == 4) UsageRequested?.Invoke();     // MainWindow 가 SetUsageCards 로 최신값을 채운다(동기)
 
         // 큐 모드에서는 44px 헤더(row 1) 를 접어서 콘텐츠가 탭 바로 아래에 이어지게 한다.
         // (탭 자체가 '작업 큐' 제목 역할 → 중복 헤더 불필요)
@@ -239,7 +222,6 @@ public partial class FileExplorerView : UserControl
         {
             1 => "브라우저",
             2 => "DIFF",
-            4 => "계정 사용량",
             _ => _rootPath ?? "파일 탐색기",
         };
 
@@ -261,7 +243,6 @@ public partial class FileExplorerView : UserControl
         if (BrowserViewBtn.Visibility == Visibility.Visible) visible.Add(1);
         if (DiffViewBtn.Visibility    == Visibility.Visible) visible.Add(2);
         if (QueueViewBtn.Visibility   == Visibility.Visible) visible.Add(3);
-        visible.Add(4);   // 사용량 탭은 항상 표시 — 활성 상태에서 다른 탭으로 강제 전환되지 않게 포함
         if (visible.Count > 0 && !visible.Contains((int)_mode))
             SwitchTab(visible[0]);
     }
@@ -272,7 +253,6 @@ public partial class FileExplorerView : UserControl
         SetTabColor(BrowserViewBtn, BrowserViewIcon, _mode == ViewMode.Browser);
         SetTabColor(DiffViewBtn,    DiffViewIcon,    _mode == ViewMode.Diff);
         SetTabColor(QueueViewBtn,   QueueViewIcon,   _mode == ViewMode.Queue);
-        SetTabColor(UsageBtn,       UsageIcon,       _mode == ViewMode.Usage);
     }
 
     /// <summary>탭 아이콘·라벨 색상: 활성=PrimaryBrush, 비활성=TextMutedBrush.

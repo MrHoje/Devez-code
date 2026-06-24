@@ -78,13 +78,7 @@
                     <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconGitCompare}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
-                <!-- 계정 사용량 — 다른 뷰와 동일하게 패널에 표시되는 탭. -->
-                <Button x:Name="UsageBtn" Click="TabBtn_Click" Tag="4"
-                        Style="{StaticResource ViewTabButton}" ToolTip="계정 사용량">
-                    <Path x:Name="UsageIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconChartPie}" Width="15" Height="15" VerticalAlignment="Center"
-                          Stroke="{DynamicResource TextMutedBrush}"/>
-                </Button>
+                <!-- 계정 사용량 탭은 최우측 전용 사이드바(타이틀바 차트 버튼)로 이동. -->
             </StackPanel>
             </ScrollViewer>
 
@@ -125,11 +119,6 @@
                                FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                 TextTrimming="CharacterEllipsis"
                                 Foreground="{DynamicResource TextBrush}"/>
-                    <!-- 사용량 탭일 때만 표시되는 마지막 갱신 시각. -->
-                    <TextBlock x:Name="UsageUpdatedText" Visibility="Collapsed"
-                               Margin="10,0,0,0" VerticalAlignment="Bottom"
-                               FontSize="{DynamicResource Fs11}"
-                               Foreground="{DynamicResource TextMutedBrush}"/>
                 </StackPanel>
                 <Button x:Name="FileSearchToggleBtn" Grid.Column="1"
                         Width="24" Height="24"
@@ -335,97 +324,5 @@
         <!-- 작업 큐 뷰 (큐 모드일 때만 표시) — 버블 입력 + 영속화 -->
         <v:TaskQueueView x:Name="QueueView" Grid.Row="3" Visibility="Collapsed"/>
 
-        <!-- ── 계정 사용량 뷰 (사용량 모드일 때만 표시) ───────────────────
-             표시 가능한 provider 카드(사용률 막대 + 초기화 안내)만 보여준다.
-             데이터는 MainWindow 가 UsageRequested 응답으로 SetUsageCards 로 채운다. -->
-        <ScrollViewer x:Name="UsageView" Grid.Row="3" Visibility="Collapsed"
-                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                      Background="{DynamicResource PanelBrush}">
-                <StackPanel Margin="18,14,18,16">
-                    <!-- provider 카드 목록 -->
-                    <ItemsControl x:Name="UsageList" AlternationCount="99">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type models:UsageCardVM}">
-                                <Border Margin="0" Padding="0,12,0,12"
-                                        BorderBrush="{DynamicResource LineBrush}">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <!-- 카드 사이 구분선(상단 보더). 첫 카드는 패널 헤더 바로 아래라 구분선 생략. -->
-                                            <Setter Property="BorderThickness" Value="0,1,0,0"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource AncestorType=ContentPresenter}}" Value="0">
-                                                    <Setter Property="BorderThickness" Value="0"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <StackPanel>
-                                        <!-- provider 헤더: 아이콘 · 이름 · 플랜 -->
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,9">
-                                            <Image Source="{Binding IconPath}" Width="15" Height="15"
-                                                   VerticalAlignment="Center"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
-                                            <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="{Binding Plan}" Visibility="{Binding PlanVisibility}"
-                                                       Margin="8,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs11}"
-                                                       Foreground="{DynamicResource TextMutedBrush}"/>
-                                        </StackPanel>
-
-                                        <!-- 윈도우 행들 -->
-                                        <ItemsControl ItemsSource="{Binding Rows}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate DataType="{x:Type models:UsageRowVM}">
-                                                    <Grid Margin="0,0,0,8">
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto"/>
-                                                            <RowDefinition Height="Auto"/>
-                                                        </Grid.RowDefinitions>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="44"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                            <ColumnDefinition Width="*"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Label}"
-                                                                   VerticalAlignment="Center"
-                                                                   FontSize="{DynamicResource Fs11}"
-                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                                        <Border Grid.Row="0" Grid.Column="1" Width="117" Height="6"
-                                                                Margin="6,0,0,0" CornerRadius="3"
-                                                                Background="{DynamicResource LineBrush}"
-                                                                VerticalAlignment="Center">
-                                                            <Border Width="{Binding BarWidth}" HorizontalAlignment="Left"
-                                                                    CornerRadius="3" Background="{Binding BarBrush}"/>
-                                                        </Border>
-                                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding PercentText}"
-                                                                   Margin="10,0,0,0" VerticalAlignment="Center"
-                                                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource TextBrush}"/>
-                                                        <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
-                                                                   Text="{Binding ResetText}" Visibility="{Binding ResetVisibility}"
-                                                                   Margin="6,3,0,0"
-                                                                   FontSize="{DynamicResource Fs11}"
-                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <!-- 표시할 데이터 없을 때 -->
-                    <TextBlock x:Name="UsageEmptyHint" Visibility="Collapsed"
-                               Text="표시할 사용량 정보가 없습니다.&#10;계정에 연결되면 여기에 표시됩니다."
-                               Margin="0,4,0,2" TextWrapping="Wrap" LineHeight="18"
-                               FontSize="{DynamicResource Fs12}"
-                               Foreground="{DynamicResource TextMutedBrush}"/>
-
-                </StackPanel>
-        </ScrollViewer>
     </Grid>
 </UserControl>

@@ -116,7 +116,7 @@
                     <Button x:Name="UsagePanelBtn" Click="UsagePanelBtn_Click"
                             Style="{StaticResource TitleBarChipButton}" ToolTip="계정 사용량 패널 접기/펼치기">
                         <Path x:Name="UsagePanelIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconChartColumn}" Width="16" Height="16"
+                              Data="{StaticResource IconChartPie}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
                     <Border Width="1" Height="16" Margin="6,0,8,0" VerticalAlignment="Center"
@@ -176,7 +176,7 @@
                     <views:WorkspacePaneView x:Name="PaneB" Grid.Column="2" Visibility="Collapsed"/>
                 </Grid>
 
-                <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch"
+                <GridSplitter x:Name="FileExpSplitter" Grid.Column="3" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                               DragDelta="FileExpSplitter_DragDelta"
                               DragCompleted="FileExpSplitter_DragCompleted"/>
@@ -187,128 +187,125 @@
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
 
                 <!-- ── 최우측: 계정 사용량 전용 사이드바 ──────────────────────
-                     provider(Claude/Codex/Go)별 카드 세로 배치. 막대 폭은 RlTrackWidth(90) 고정. -->
+                     기존 우측 패널 '계정 사용량' 탭의 카드 UI를 그대로 이동. 데이터는
+                     MainWindow 가 UsageRequested 대신 SetSidebarUsageCards 로 채운다. -->
                 <Border Grid.Column="5" x:Name="UsageSidebar" ClipToBounds="True"
                         Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel Margin="16,14" MinWidth="220">
-                            <TextBlock Text="계정 사용량" Margin="0,0,0,14"
-                                       FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}"/>
-
-                            <!-- Claude (클릭 시 OAuth 로그인) -->
-                            <StackPanel x:Name="RateLimitPanel" Visibility="Collapsed"
-                                        Background="Transparent" Cursor="Hand" MouseLeftButtonUp="RlPanel_Click"
-                                        ToolTip="Claude 계정 사용량 (5시간 / 주간 한도) — 클릭하여 로그인/재연결">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
-                                           Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
-                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    <TextBlock Text="Claude" VerticalAlignment="Center" FontWeight="SemiBold"
-                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock x:Name="RlFiveLabel" Width="58" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Border Width="90" Height="6" CornerRadius="3"
-                                            Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                        <Border x:Name="RlFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                                    </Border>
-                                    <TextBlock x:Name="RlFivePct" Margin="8,0,0,0" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock x:Name="RlSevenLabel" Text="주간" Width="58" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Border Width="90" Height="6" CornerRadius="3"
-                                            Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                        <Border x:Name="RlSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                                    </Border>
-                                    <TextBlock x:Name="RlSevenPct" Margin="8,0,0,0" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="35"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <!-- 헤더: 제목 + 마지막 갱신 시각 (파일탐색기 헤더 정합: 높이 35) -->
+                        <Border Grid.Row="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+                            <StackPanel Orientation="Horizontal" Margin="16,0,12,0" VerticalAlignment="Center">
+                                <TextBlock Text="계정 사용량" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock x:Name="SidebarUsageUpdated" Margin="10,0,0,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
+                        </Border>
 
-                            <!-- Codex (클릭 시 ChatGPT OAuth 로그인) -->
-                            <StackPanel x:Name="CodexPanel" Visibility="Collapsed"
-                                        Background="Transparent" Cursor="Hand" MouseLeftButtonUp="CodexPanel_Click">
-                                <Border x:Name="CxLeadDivider" Height="1" Margin="0,14" HorizontalAlignment="Stretch"
-                                        Background="{DynamicResource LineBrush}" Opacity="0.6"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
-                                           Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
-                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    <TextBlock Text="Codex" VerticalAlignment="Center" FontWeight="SemiBold"
-                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock x:Name="CxFiveLabel" Width="58" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Border Width="90" Height="6" CornerRadius="3"
-                                            Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                        <Border x:Name="CxFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                                    </Border>
-                                    <TextBlock x:Name="CxFivePct" Margin="8,0,0,0" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock x:Name="CxSevenLabel" Text="주간" Width="58" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Border Width="90" Height="6" CornerRadius="3"
-                                            Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                        <Border x:Name="CxSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                                    </Border>
-                                    <TextBlock x:Name="CxSevenPct" Margin="8,0,0,0" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                            </StackPanel>
-
-                            <!-- opencode-go (클릭 시 재로그인) -->
-                            <StackPanel x:Name="GoPanel" Visibility="Collapsed"
-                                        Background="Transparent" Cursor="Hand" MouseLeftButtonUp="GoPanel_Click">
-                                <Border x:Name="GoLeadDivider" Height="1" Margin="0,14" HorizontalAlignment="Stretch"
-                                        Background="{DynamicResource LineBrush}" Opacity="0.6"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
-                                           Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
-                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    <TextBlock Text="OpenCode Go" VerticalAlignment="Center" FontWeight="SemiBold"
-                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock x:Name="GoFiveLabel" Width="58" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Border Width="90" Height="6" CornerRadius="3"
-                                            Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                        <Border x:Name="GoFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                                    </Border>
-                                    <TextBlock x:Name="GoFivePct" Margin="8,0,0,0" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock x:Name="GoSevenLabel" Text="주간" Width="58" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Border Width="90" Height="6" CornerRadius="3"
-                                            Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                        <Border x:Name="GoSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                                    </Border>
-                                    <TextBlock x:Name="GoSevenPct" Margin="8,0,0,0" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock x:Name="GoMonthLabel" Text="월간" Width="58" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Border Width="90" Height="6" CornerRadius="3"
-                                            Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                        <Border x:Name="GoMonthBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                                    </Border>
-                                    <TextBlock x:Name="GoMonthPct" Margin="8,0,0,0" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                            </StackPanel>
+                        <!-- 업데이트 다운로드 진행률 (평소 숨김) -->
+                        <StackPanel x:Name="UsageUpdateProgress" Grid.Row="1" Visibility="Collapsed" Margin="16,12,16,0">
+                            <TextBlock x:Name="UsageUpdateText" FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextBrush}" Margin="0,0,0,6"/>
+                            <Border x:Name="UsageUpdateTrack" Height="6" CornerRadius="3" Background="{DynamicResource LineBrush}">
+                                <Border x:Name="UsageUpdateBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"
+                                        Background="{DynamicResource PrimaryBrush}"/>
+                            </Border>
                         </StackPanel>
-                    </ScrollViewer>
+
+                        <!-- provider 사용량 카드 목록 (기존 UsageView 와 동일 템플릿) -->
+                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="16,4,16,14" MinWidth="218">
+                                <ItemsControl x:Name="SidebarUsageList" AlternationCount="99">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:UsageCardVM}">
+                                            <Border Margin="0" Cursor="Hand"
+                                                    Background="Transparent" Tag="{Binding Name}"
+                                                    MouseLeftButtonUp="UsageCard_Click"
+                                                    BorderBrush="{DynamicResource LineBrush}">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <!-- 카드 사이 구분선 + 위아래 여백. 첫 카드는 상단 보더·여백 생략. -->
+                                                        <Setter Property="BorderThickness" Value="0,1,0,0"/>
+                                                        <Setter Property="Padding" Value="0,14,0,14"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource AncestorType=ContentPresenter}}" Value="0">
+                                                                <Setter Property="BorderThickness" Value="0"/>
+                                                                <Setter Property="Padding" Value="0,0,0,14"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                                        <Image Source="{Binding IconPath}" Width="15" Height="15"
+                                                               VerticalAlignment="Center"
+                                                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                        <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                        <TextBlock Text="{Binding Plan}" Visibility="{Binding PlanVisibility}"
+                                                                   Margin="8,0,0,0" VerticalAlignment="Center"
+                                                                   FontSize="{DynamicResource Fs11}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    </StackPanel>
+                                                    <ItemsControl ItemsSource="{Binding Rows}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate DataType="{x:Type models:UsageRowVM}">
+                                                                <Grid Margin="0,0,0,8">
+                                                                    <Grid.RowDefinitions>
+                                                                        <RowDefinition Height="Auto"/>
+                                                                        <RowDefinition Height="Auto"/>
+                                                                    </Grid.RowDefinitions>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="44"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Label}"
+                                                                               VerticalAlignment="Center"
+                                                                               FontSize="{DynamicResource Fs11}"
+                                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                                    <Border Grid.Row="0" Grid.Column="1" Width="117" Height="6"
+                                                                            Margin="6,0,0,0" CornerRadius="3"
+                                                                            Background="{DynamicResource LineBrush}"
+                                                                            VerticalAlignment="Center">
+                                                                        <Border Width="{Binding BarWidth}" HorizontalAlignment="Left"
+                                                                                CornerRadius="3" Background="{Binding BarBrush}"/>
+                                                                    </Border>
+                                                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding PercentText}"
+                                                                               Margin="10,0,0,0" VerticalAlignment="Center"
+                                                                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                                               Foreground="{DynamicResource TextBrush}"/>
+                                                                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                                                               Text="{Binding ResetText}" Visibility="{Binding ResetVisibility}"
+                                                                               Margin="6,3,0,0"
+                                                                               FontSize="{DynamicResource Fs11}"
+                                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock x:Name="SidebarUsageEmpty" Visibility="Collapsed"
+                                           Text="표시할 사용량 정보가 없습니다.&#10;계정에 연결되면 여기에 표시됩니다."
+                                           Margin="0,4,0,2" TextWrapping="Wrap" LineHeight="18"
+                                           FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
                 </Border>
             </Grid>
             <!-- ── Status bar (헤더와 동일 높이 32, 우측 설정 버튼) ────────────

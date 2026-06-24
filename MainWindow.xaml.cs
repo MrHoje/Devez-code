@@ -758,6 +758,18 @@ public partial class MainWindow : Window
     private void UsagePanelBtn_Click(object sender, RoutedEventArgs e)
         => SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
 
+    /// <summary>F1 — 계정 사용량 사이드바 토글.</summary>
+    protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.F1)
+        {
+            SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
+            e.Handled = true;
+            return;
+        }
+        base.OnPreviewKeyDown(e);
+    }
+
     /// <summary>최우측 사용량 사이드바를 펼치거나 접는다. animate=true 면 좌·우 패널과 같은 폭 트윈.</summary>
     private void SetUsagePanelOpen(bool open, bool persist, bool animate = false)
     {
@@ -781,6 +793,7 @@ public partial class MainWindow : Window
 
         if (persist) SettingsService.SaveUsagePanelOpen(open);
         UpdatePanelToggleVisual();
+        UpdateUsageSidebarBorder();
     }
 
     /// <summary>설정에 저장된 사이드 패널 뷰 전환 버튼 표시 여부를 우측 패널에 반영한다.</summary>
@@ -2014,6 +2027,7 @@ public partial class MainWindow : Window
         _rightOverlayOpen = true;
         _overlayAnimCancel = AnimateOverlayX(w, 0, 200, easeIn: false);
         UpdatePanelToggleVisual();
+        UpdateUsageSidebarBorder();
     }
 
     /// <summary>오버레이를 닫는다(우측으로 슬라이드 아웃 후 숨김 + 도킹 위치로 복귀).</summary>
@@ -2029,6 +2043,7 @@ public partial class MainWindow : Window
             DockFileExplorer();
             FileExplorer.Visibility = Visibility.Collapsed; // 좁은 창에서는 닫힘=숨김
             ResumeTerminalOnly();                            // 터미널 복원
+            UpdateUsageSidebarBorder();
         });
         UpdatePanelToggleVisual();
     }
