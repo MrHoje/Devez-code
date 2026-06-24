@@ -211,7 +211,7 @@ public partial class FileExplorerView : UserControl
     {
         UsageList.ItemsSource = cards;
         UsageEmptyHint.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        UsageUpdatedText.Text = cards.Count == 0 ? "" : $"갱신 {DateTime.Now:HH:mm:ss}";
+        UsageUpdatedText.Text = cards.Count == 0 ? "" : $"갱신 {DateTime.Now:HH:mm}";
     }
 
     private void SwitchTab(int idx)
