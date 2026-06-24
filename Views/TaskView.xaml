@@ -5,6 +5,8 @@
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
+        <PathGeometry x:Key="SpinnerPath" Figures="M 7,1 A 6,6 0 1,1 1,7"/>
+
         <Style x:Key="StatusTextStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
             <Setter Property="FontFamily" Value="Consolas"/>
@@ -13,9 +15,6 @@
             <Setter Property="HorizontalAlignment" Value="Center"/>
             <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
             <Style.Triggers>
-                <DataTrigger Binding="{Binding Status}" Value="in_progress">
-                    <Setter Property="Margin" Value="0,1,0,0"/>
-                </DataTrigger>
                 <DataTrigger Binding="{Binding Status}" Value="completed">
                     <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
                 </DataTrigger>
@@ -88,12 +87,43 @@
                                 <Grid Grid.Column="0" Width="28" Height="20" Margin="0">
                                     <TextBlock x:Name="StatusPrefixText" Text="{Binding StatusPrefix}"
                                                Style="{StaticResource StatusTextStyle}"/>
+                                    <Path x:Name="SpinnerIndicator" Data="{StaticResource SpinnerPath}"
+                                          Width="14" Height="14" Stretch="Uniform"
+                                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          RenderTransformOrigin="0.5,0.5"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Visibility="Collapsed">
+                                        <Path.RenderTransform>
+                                            <RotateTransform x:Name="SpinnerRotate"/>
+                                        </Path.RenderTransform>
+                                        <Path.Triggers>
+                                            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                                <EventTrigger.Actions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetName="SpinnerRotate"
+                                                                             Storyboard.TargetProperty="Angle"
+                                                                             From="0" To="360" Duration="0:0:0.8"
+                                                                             RepeatBehavior="Forever"/>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </EventTrigger.Actions>
+                                            </EventTrigger>
+                                        </Path.Triggers>
+                                    </Path>
                                 </Grid>
                                 <TextBlock Grid.Column="1" Text="{Binding Description}"
                                            Margin="0,2,0,0"
                                            Style="{StaticResource DescTextStyle}"/>
                             </Grid>
                         </Border>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Status}" Value="in_progress">
+                                <Setter TargetName="SpinnerIndicator" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="StatusPrefixText" Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
