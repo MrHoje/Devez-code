@@ -163,6 +163,8 @@ public partial class SettingsDialog : UserControl
         CatChangelogBtn.Foreground = key == "changelog"  ? primary : text;
         CatShortcutBtn.Background  = key == "shortcut"   ? active : Brushes.Transparent;
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
+        CatNotifyBtn.Background    = key == "notify"     ? active : Brushes.Transparent;
+        CatNotifyBtn.Foreground    = key == "notify"     ? primary : text;
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
@@ -172,9 +174,11 @@ public partial class SettingsDialog : UserControl
         McpPanel.Visibility        = key == "mcp"        ? Visibility.Visible : Visibility.Collapsed;
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
+        NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
 
         if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
         if (key == "sidepanel") LoadSidePanelSettings();
+        if (key == "notify") LoadNotifySettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
     }
 
@@ -338,6 +342,101 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveShowDiffViewBtn(ShowDiffViewToggle.IsChecked == true);
         (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
     }
+
+    // ── 알림 설정 (sidepanel 과 동일하게 즉시 저장 — 테스트가 선택값을 바로 반영) ──
+    private bool _loadingNotify;
+    private string _notifyPos = "br";
+    private void LoadNotifySettings()
+    {
+        _loadingNotify = true;
+        NotifyEnabledToggle.IsChecked = SettingsService.LoadNotifySessionDoneEnabled();
+        _notifyPos = SettingsService.LoadNotifyPosition();
+        UpdateNotifyPositionVisual();
+        SelectComboByTag(NotifyAutoCloseCombo, SettingsService.LoadNotifyAutoCloseSeconds().ToString());
+        InitNotifyMonitorCombo();
+        UpdateNotifyDetailVisibility();
+        _loadingNotify = false;
+    }
+
+    /// <summary>세션 종료 알림이 꺼져 있으면 상세 설정(자동닫힘/위치/모니터)과 테스트 버튼을 모두 숨긴다.</summary>
+    private void UpdateNotifyDetailVisibility()
+    {
+        var on = NotifyEnabledToggle.IsChecked == true;
+        NotifyDetailPanel.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        TestNotifyBtn.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>설치된 모니터 목록을 콤보에 채우고 저장된 선택값(없으면 주 모니터)을 선택.</summary>
+    private void InitNotifyMonitorCombo()
+    {
+        var monitors = MonitorHelper.GetAllMonitors();
+        var saved = SettingsService.LoadNotifyMonitorDevice();
+        NotifyMonitorCombo.Items.Clear();
+        int selectIndex = 0;
+        for (int i = 0; i < monitors.Count; i++)
+        {
+            NotifyMonitorCombo.Items.Add(new ComboBoxItem { Content = monitors[i].DisplayName, Tag = monitors[i].DeviceName });
+            if (monitors[i].DeviceName == saved) selectIndex = i;
+        }
+        if (NotifyMonitorCombo.Items.Count > 0) NotifyMonitorCombo.SelectedIndex = selectIndex;
+    }
+
+    private static void SelectComboByTag(ComboBox combo, string tag)
+    {
+        foreach (var obj in combo.Items)
+            if (obj is ComboBoxItem it && (string?)it.Tag == tag) { combo.SelectedItem = it; return; }
+        if (combo.Items.Count > 0) combo.SelectedIndex = 0;
+    }
+
+    private void NotifyEnabledToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        UpdateNotifyDetailVisibility();
+        if (_loadingNotify) return;
+        SettingsService.SaveNotifySessionDoneEnabled(NotifyEnabledToggle.IsChecked == true);
+    }
+
+    private void NotifyAutoCloseCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingNotify) return;
+        if (NotifyAutoCloseCombo.SelectedItem is ComboBoxItem it && int.TryParse((string)it.Tag, out var sec))
+            SettingsService.SaveNotifyAutoCloseSeconds(sec);
+    }
+
+    private void NotifyMonitorCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingNotify) return;
+        if (NotifyMonitorCombo.SelectedItem is ComboBoxItem it)
+            SettingsService.SaveNotifyMonitorDevice((string)(it.Tag ?? ""));
+    }
+
+    private void NotifyPositionCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border b || b.Tag is not string pos) return;
+        _notifyPos = pos;
+        SettingsService.SaveNotifyPosition(pos);
+        UpdateNotifyPositionVisual();
+    }
+
+    private void UpdateNotifyPositionVisual()
+    {
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var line    = (Brush)FindResource("LineBrush");
+        foreach (var (card, dot, pos) in new (Border, Ellipse, string)[]
+        {
+            (PosCard_tl, PosDot_tl, "tl"),
+            (PosCard_tr, PosDot_tr, "tr"),
+            (PosCard_bl, PosDot_bl, "bl"),
+            (PosCard_br, PosDot_br, "br"),
+        })
+        {
+            var selected = _notifyPos == pos;
+            card.BorderBrush = selected ? primary : line;
+            dot.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void TestNotify_Click(object sender, RoutedEventArgs e)
+        => App.ShowNotification("테스트 알림", "세션이 끝나면 이렇게 알려드립니다.");
 
     // ── 탭 이동 단축키 수식키 리바인드 (방향키는 ← / → 고정) ──────
     /// <summary>수식키 칸 클릭 → 전역 훅 캡처 시작. 다음 키다운 1회를 수식키로 지정.</summary>

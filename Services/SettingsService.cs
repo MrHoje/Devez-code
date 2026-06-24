@@ -82,6 +82,14 @@ public static class SettingsService
         public int TabHotkeyModifierVk { get; set; } = 0x19;
         public int TabHotkeyPrevVk     { get; set; } = 0x25;
         public int TabHotkeyNextVk     { get; set; } = 0x27;
+        // 세션 스피너가 멈출 때(응답 완료) 토스트 알림 표시 여부. 기본 켜짐.
+        public bool NotifySessionDoneEnabled { get; set; } = true;
+        // 알림 토스트 표시 위치: "tl"=좌상단, "tr"=우상단, "bl"=좌하단, "br"=우하단. 기본 우하단.
+        public string NotifyPosition { get; set; } = "br";
+        // 알림을 표시할 모니터 DeviceName. 빈 값이면 주 모니터. (devez 이식)
+        public string NotifyMonitorDevice { get; set; } = "";
+        // 알림 자동 닫힘 시간(초). 1~10, 0=영구(자동 닫힘 없음). 기본 6초.
+        public int NotifyAutoCloseSeconds { get; set; } = 6;
     }
 
     private static readonly object _lock = new();
@@ -183,6 +191,28 @@ public static class SettingsService
         Current.TabHotkeyNextVk = next;
         Save();
     }
+
+    // ── 세션 종료 알림 (스피너 멈출 때 토스트) ────────────────────
+    public static bool LoadNotifySessionDoneEnabled() => Current.NotifySessionDoneEnabled;
+    public static void SaveNotifySessionDoneEnabled(bool v) { Current.NotifySessionDoneEnabled = v; Save(); }
+
+    /// <summary>알림 표시 위치("tl"/"tr"/"bl"/"br"). 알 수 없는 값은 "br" 로 폴백.</summary>
+    public static string LoadNotifyPosition()
+        => Current.NotifyPosition is "tl" or "tr" or "bl" or "br" ? Current.NotifyPosition : "br";
+    public static void SaveNotifyPosition(string v) { Current.NotifyPosition = v; Save(); }
+
+    /// <summary>알림 표시 모니터 DeviceName. 빈 값이면 주 모니터.</summary>
+    public static string LoadNotifyMonitorDevice() => Current.NotifyMonitorDevice;
+    public static void SaveNotifyMonitorDevice(string v) { Current.NotifyMonitorDevice = v ?? ""; Save(); }
+
+    /// <summary>알림 자동 닫힘 시간(초). 0=영구, 그 외 1~10 범위로 클램프.</summary>
+    public static int LoadNotifyAutoCloseSeconds()
+    {
+        var s = Current.NotifyAutoCloseSeconds;
+        if (s <= 0) return 0;
+        return s > 10 ? 10 : s;
+    }
+    public static void SaveNotifyAutoCloseSeconds(int v) { Current.NotifyAutoCloseSeconds = v < 0 ? 0 : (v > 10 ? 10 : v); Save(); }
 
     // ── Claude Code 방 작업 디렉터리 ──────────────────────────────
     public static string? LoadClaudeCodeRoomDir(string roomId)
