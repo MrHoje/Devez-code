@@ -346,7 +346,7 @@
                     <ItemsControl x:Name="UsageList" AlternationCount="99">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type models:UsageCardVM}">
-                                <Border Margin="0,0,0,4" Padding="0,10,0,10"
+                                <Border Margin="0" Padding="0,12,0,12"
                                         BorderBrush="{DynamicResource LineBrush}">
                                     <Border.Style>
                                         <Style TargetType="Border">
