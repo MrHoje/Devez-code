@@ -706,7 +706,7 @@
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                         <TextBlock Text="Claude" FontSize="{DynamicResource Fs13}"
                                                    Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="Claude 계정 사용량(5시간/주간)" FontSize="{DynamicResource Fs11}"
+                                        <TextBlock Text="Claude 계정 사용량" FontSize="{DynamicResource Fs11}"
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <CheckBox x:Name="ShowFooterClaudeToggle" Grid.Column="1"
