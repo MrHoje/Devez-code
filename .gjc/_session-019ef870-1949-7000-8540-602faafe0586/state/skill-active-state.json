@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "active": true,
+  "skill": "deep-interview",
+  "phase": "interviewing",
+  "updated_at": "2026-06-24T07:03:05.581Z",
+  "session_id": "019ef870-1949-7000-8540-602faafe0586",
+  "active_skills": [
+    {
+      "skill": "deep-interview",
+      "phase": "interviewing",
+      "active": true,
+      "activated_at": "2026-06-24T07:03:05.581Z",
+      "updated_at": "2026-06-24T07:03:05.581Z",
+      "session_id": "019ef870-1949-7000-8540-602faafe0586",
+      "hud": {
+        "version": 1,
+        "chips": [
+          {
+            "label": "phase",
+            "value": "interviewing",
+            "priority": 10
+          },
+          {
+            "label": "ambiguity",
+            "value": "100%/5%",
+            "priority": 20
+          },
+          {
+            "label": "round",
+            "value": "0",
+            "priority": 30
+          }
+        ],
+        "updated_at": "2026-06-24T07:03:05.578Z"
+      },
+      "receipt": {
+        "version": 1,
+        "skill": "deep-interview",
+        "owner": "gjc-state-cli",
+        "command": "gjc state deep-interview write",
+        "state_path": "D:\\hojeSource\\Devez-code\\.gjc\\state\\sessions\\019ef870-1949-7000-8540-602faafe0586\\skill-active-state.json",
+        "storage_path": "D:\\hojeSource\\Devez-code\\.gjc\\state\\sessions\\019ef870-1949-7000-8540-602faafe0586\\deep-interview-state.json",
+        "mutated_at": "2026-06-24T07:03:05.569Z",
+        "fresh_until": "2026-06-24T07:33:05.569Z",
+        "status": "fresh",
+        "mutation_id": "deep-interview:2026-06-24T07:03:05.569Z"
+      },
+      "source_state_revision": 2,
+      "state_revision": 2
+    }
+  ],
+  "active_subskills": [],
+  "source_state_revision": 3,
+  "state_revision": 3
+}

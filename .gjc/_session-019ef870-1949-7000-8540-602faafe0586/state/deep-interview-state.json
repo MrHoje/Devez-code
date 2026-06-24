@@ -1,0 +1,57 @@
+{
+  "active": true,
+  "version": 2,
+  "current_phase": "interviewing",
+  "skill": "deep-interview",
+  "cwd": "D:\\hojeSource\\Devez-code",
+  "updated_at": "2026-06-24T07:03:05.569Z",
+  "session_id": "019ef870-1949-7000-8540-602faafe0586",
+  "threshold": 0.05,
+  "threshold_source": "default",
+  "receipt": {
+    "version": 1,
+    "skill": "deep-interview",
+    "owner": "gjc-state-cli",
+    "command": "gjc state deep-interview write",
+    "state_path": "D:\\hojeSource\\Devez-code\\.gjc\\state\\sessions\\019ef870-1949-7000-8540-602faafe0586\\skill-active-state.json",
+    "storage_path": "D:\\hojeSource\\Devez-code\\.gjc\\state\\sessions\\019ef870-1949-7000-8540-602faafe0586\\deep-interview-state.json",
+    "mutated_at": "2026-06-24T07:03:05.569Z",
+    "fresh_until": "2026-06-24T07:33:05.569Z",
+    "status": "fresh",
+    "mutation_id": "deep-interview:2026-06-24T07:03:05.569Z",
+    "content_sha256": {
+      "algorithm": "sha256",
+      "value": "db1ba2d9532964da451ecdc23327b997eb023371db14b92c2947634c6314e4bd",
+      "covered_path": "D:\\hojeSource\\Devez-code\\.gjc\\_session-019ef870-1949-7000-8540-602faafe0586\\state\\deep-interview-state.json",
+      "computed_at": "2026-06-24T07:03:05.572Z"
+    }
+  },
+  "state": {
+    "threshold": 0.05,
+    "threshold_source": "default",
+    "rounds": [],
+    "established_facts": [],
+    "interview_id": "deep-docs-001",
+    "type": "brownfield",
+    "initial_idea": "docs",
+    "current_ambiguity": 1,
+    "topology": {
+      "status": "pending",
+      "confirmed_at": null,
+      "components": [],
+      "deferrals": [],
+      "last_targeted_component_id": null
+    },
+    "ontology_snapshots": [],
+    "auto_researched_rounds": [],
+    "auto_answered_rounds": [],
+    "lateral_reviews": [],
+    "lateral_panel_failures": 0,
+    "auto_answer_streak": 0,
+    "refined_rounds": [],
+    "closure_overrides": [],
+    "ambiguity_milestone": "initial",
+    "architect_failures": 0
+  },
+  "state_revision": 2
+}

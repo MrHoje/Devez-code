@@ -38,10 +38,10 @@ public sealed class TaskItem : NotifyBase
     [JsonIgnore]
     public string StatusPrefix => Status switch
     {
-        "in_progress" => "[~]",
-        "completed" => "[✓]",
-        "cancelled" => "[-]",
-        _ => "[ ]"
+        "in_progress" => "[•] ",
+        "completed" => "[✓] ",
+        "cancelled" => "[-] ",
+        _ => "[ ] "
     };
 
     [JsonIgnore]
