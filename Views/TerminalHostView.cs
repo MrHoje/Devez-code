@@ -102,7 +102,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) PostJson(new { type = "show", roomId, agent = AgentFor(roomId) });
+        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId) }); PinBottomIfInline(roomId); }
         else _pendingShowRoomId = roomId; // pageReady 때 처리
 
         // 이미 안정화까지 끝난 방이면 즉시 준비 완료 통지 → 로딩 스킵
@@ -376,7 +376,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         });
         var pending = _pendingShowRoomId ?? _activeRoomId;
         _pendingShowRoomId = null;
-        if (pending != null) PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending) });
+        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending) }); PinBottomIfInline(pending); }
 
         // 콜드스타트 동안 보류된 로딩 스피너 적용
         if (_pendingLoading) { _pendingLoading = false; PostJson(new { type = "loading", on = true }); }
@@ -535,6 +535,16 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>다음 N회의 출력 쓰기에서 xterm.js 스크롤을 억제(슬래시 명령 자동주입 시 사용).</summary>
     public void SuppressScroll(int count = 5) => PostJson(new { type = "suppressScroll", count });
+
+    /// <summary>ms 동안 출력 쓰기마다 맨 아래로 고정 — 인라인 TUI(gjc) resume 재페인트 시 스크롤 위/아래 튐 방지.</summary>
+    public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });
+
+    /// <summary>인라인 TUI(gjc) 방이면 show 직후 일정 시간 스크롤을 맨 아래로 고정.</summary>
+    private void PinBottomIfInline(string roomId)
+    {
+        if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
+            PinBottom(2500);
+    }
 
     /// <summary>현재 터미널 화면을 PNG 스냅샷으로 반환. airspace 우회용.</summary>
     public async Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync()

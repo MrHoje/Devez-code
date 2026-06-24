@@ -120,6 +120,7 @@
   let cfg = { theme: {}, fontFamily: 'Cascadia Mono', fontSize: 16 };
   let activeRoomId = null;
   let _scrollSuppress = 0; // >0이면 출력 쓰기 후 스크롤 복원
+  let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
@@ -526,6 +527,9 @@
       case 'suppressScroll':
         _scrollSuppress = msg.count || 5;
         break;
+      case 'pinBottom':
+        _pinBottomUntil = Date.now() + (msg.ms || 2000);
+        break;
       case 'show':
         show(msg.roomId, msg.agent);
         break;
@@ -535,7 +539,11 @@
       case 'output': {
         const t = terms[msg.roomId];
         if (t) {
-          if (_scrollSuppress > 0) {
+          if (Date.now() < _pinBottomUntil) {
+            // 인라인 TUI(gjc) resume 재페인트 동안 — 매 출력 후 맨 아래로 고정해 위/아래 튐을 막는다.
+            t.term.write(b64ToBytes(msg.data));
+            requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
+          } else if (_scrollSuppress > 0) {
             _scrollSuppress--;
             const vp = t.term.element.querySelector('.xterm-viewport');
             const saved = vp ? vp.scrollTop : 0;

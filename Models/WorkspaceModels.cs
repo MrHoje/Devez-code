@@ -56,6 +56,10 @@ public sealed class SessionItem : TabItemBase
     /// <summary>이 세션이 사용할 에이전트 ID. 빈 값/누락이면 SettingsService.LoadAgentForRoom 으로 폴백.</summary>
     public string AgentId { get; set; } = "";
 
+    /// <summary>테마 변경 시 아이콘 Source 바인딩을 재평가시키는 트리거(opencode 등 흑/백 변형용).
+    /// 값은 그대로, PropertyChanged(AgentId)만 발생시켜 AgentImageConverter 를 다시 돌린다.</summary>
+    public void RefreshAgentIcon() => OnPropertyChanged(nameof(AgentId));
+
     /// <summary>터미널(ConPTY) 세션이 살아있는지. true=테마색 점, false=회색 점.</summary>
     private bool _isAlive;
     public bool IsAlive { get => _isAlive; set => Set(ref _isAlive, value); }
