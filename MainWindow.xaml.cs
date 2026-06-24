@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     private readonly OpenCodeBusyService _opencodeBusy = new();
     // gjc(가재코드) — 훅 미지원. 방별 세션 .jsonl 을 폴링해 마지막 user 메시지를 헤더에 반영.
     private readonly GajaeLastMessageService _gajaeLastMsg = new();
+    private readonly GajaeBusyService _gajaeBusy = new();
     private readonly TaskTrackingService _taskTracking = new();
 
     public MainWindow()
@@ -158,6 +159,16 @@ public partial class MainWindow : Window
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
             });
 
+        // 가재코드 — 확장(gajae-room-tracker.js)이 떨군 busy 파일 감시 → 스피너 (opencode 와 동일).
+        _gajaeBusy.BusyChanged += (roomId, busy) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                bool was = s?.IsBusy ?? false;
+                if (s != null) s.IsBusy = busy;
+                NotifyIfSessionFinished(s, was, busy);
+            });
+
         _taskTracking.TasksChanged += () =>
             Dispatcher.InvokeAsync(() => FileExplorer.TaskView.SetTasks(_taskTracking.Tasks));
 
@@ -221,7 +232,11 @@ public partial class MainWindow : Window
             OpenCodePluginInstaller.EnsureInstalled();
             _opencodeLastMsg.Start();
             _opencodeBusy.Start();
+            // 가재코드 확장 — 매 시작 시 %LOCALAPPDATA%\DevezCode\gajae\ext\ 갱신. launch 가 `gjc -e` 로 로드.
+            // busy\<room>.txt (스피너) + todos\<room>.json (Task 뷰) 기록.
+            GajaeExtensionInstaller.EnsureInstalled();
             _gajaeLastMsg.Start();
+            _gajaeBusy.Start();
             _agentLastMsg.Start();
             _taskTracking.Start();
             RestoreLastSession();
@@ -263,6 +278,7 @@ public partial class MainWindow : Window
             _opencodeLastMsg.Dispose();
             _opencodeBusy.Dispose();
             _gajaeLastMsg.Dispose();
+            _gajaeBusy.Dispose();
             _agentLastMsg.Dispose();
             _taskTracking.Dispose();
             FileExplorer.DisposeBrowser();

@@ -462,9 +462,12 @@ public sealed class TerminalSessionManager
 
         // --session-dir 토큰은 따옴표로 감싸 공백 경로 안전. -r <id> 는 GUID 만(파일명에서 검증) → 주입 차단.
         string sd = $"--session-dir \"{sessionDir}\"";
-        string body = sessionId != null
-            ? $"gjc {sd} -r {sessionId}\r\nif errorlevel 1 gjc {sd}"
-            : $"gjc {sd}";
+        // busy 스피너·todo 뷰용 확장 로드(설치돼 있을 때만). 사용자 자신의 gjc 는 오염 안 됨(우리 전용 경로).
+        var extPath = GajaeExtensionInstaller.ExtensionInstallPath;
+        string ext = File.Exists(extPath) ? $" -e \"{extPath}\"" : "";
+        string cmd = sessionId != null
+            ? $"gjc {sd}{ext} -r {sessionId}\r\nif errorlevel 1 gjc {sd}{ext}"
+            : $"gjc {sd}{ext}";
 
         try
         {
@@ -473,12 +476,14 @@ public sealed class TerminalSessionManager
                 "DevezCode", "gajae", "launch");
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
-            File.WriteAllText(batchPath, "@echo off\r\n" + body + "\r\n");
+            // 확장이 어느 방인지 알도록 DEVEZCODE_ROOM_ID 를 배치에서 명시(set) — ConPTY env 상속 불안정 대비.
+            string body = $"@echo off\r\nset \"DEVEZCODE_ROOM_ID={roomId}\"\r\n{cmd}\r\n";
+            File.WriteAllText(batchPath, body);
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
         {
-            injectFallback = (sessionId != null ? $"gjc {sd} -r {sessionId}" : $"gjc {sd}") + "\r";
+            injectFallback = (sessionId != null ? $"gjc {sd}{ext} -r {sessionId}" : $"gjc {sd}{ext}") + "\r";
             return null;
         }
     }

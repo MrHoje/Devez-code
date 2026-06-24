@@ -159,8 +159,7 @@ public sealed class TaskTrackingService : IDisposable
             var raw = JsonSerializer.Deserialize<List<TodoRaw>>(json);
             if (raw == null) return;
 
-            for (int i = Tasks.Count - 1; i >= 0; i--)
-                if (Tasks[i].Source == "opencode") Tasks.RemoveAt(i);
+            Tasks.Clear();
 
             var source = $"opencode:{_activeRoomId}";
             foreach (var item in raw)
@@ -184,11 +183,13 @@ public sealed class TaskTrackingService : IDisposable
 
     private void ReloadClaudeTasks()
     {
-        for (int i = Tasks.Count - 1; i >= 0; i--)
-            if (Tasks[i].Source.Contains("claude:")) Tasks.RemoveAt(i);
-
+        Tasks.Clear();
         var claudePath = ClaudeSettingsPath();
         if (claudePath != null) LoadClaudeTasks(claudePath);
+        var gjacDir = GjacGoalsDir();
+        if (gjacDir != null) LoadGjacTasks(gjacDir);
+        var todoPath = ActiveTodoFilePath();
+        if (todoPath != null) LoadOpenCodeTodos(todoPath);
         TasksChanged?.Invoke();
     }
 
@@ -223,11 +224,13 @@ public sealed class TaskTrackingService : IDisposable
 
     private void ReloadGjacTasks()
     {
-        for (int i = Tasks.Count - 1; i >= 0; i--)
-            if (Tasks[i].Source.Contains("gjac:")) Tasks.RemoveAt(i);
-
+        Tasks.Clear();
         var gjacDir = GjacGoalsDir();
         if (gjacDir != null) LoadGjacTasks(gjacDir);
+        var claudePath = ClaudeSettingsPath();
+        if (claudePath != null) LoadClaudeTasks(claudePath);
+        var todoPath = ActiveTodoFilePath();
+        if (todoPath != null) LoadOpenCodeTodos(todoPath);
         TasksChanged?.Invoke();
     }
 
