@@ -559,11 +559,24 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         else TerminalReady?.Invoke(roomId);
     }
 
-    /// <summary>인라인 TUI(gjc) 방이면 show 직후 일정 시간 스크롤을 맨 아래로 고정.</summary>
+    /// <summary>인라인 TUI(gjc) 방이면 show 직후 스크롤을 맨 아래로 고정 + fit/reflow 가 끝날 즈음 여러 번
+    /// 넛지(위→아래)해 어긋난 viewport 를 강제 리렌더. tab 전환·재오픈 등 매 show 마다 동작(ready 상태 무관).
+    /// (인라인 TUI 는 alt-screen 이 아니라 show 시 fit 이 일반 버퍼를 리플로우하며 스크롤이 튄다.)</summary>
     private void PinBottomIfInline(string roomId)
     {
-        if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
-            PinBottom(2500);
+        if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui != true) return;
+        PinBottom(2500);
+        // 여러 시점에 넛지 — show fit, 폰트 로드 후 재fit, resume 재생 등 늦게 오는 reflow 까지 커버.
+        foreach (var ms in new[] { 120, 350, 700, 1200 })
+        {
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                if (_activeRoomId == roomId) PostJson(new { type = "nudgeScroll", roomId });
+            };
+            timer.Start();
+        }
     }
 
     /// <summary>현재 터미널 화면을 PNG 스냅샷으로 반환. airspace 우회용.</summary>
