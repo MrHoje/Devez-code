@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using DevezCode.Models;
 using DevezCode.Services;
 using DevezCode.Services.Terminal;
@@ -1485,55 +1486,89 @@ public partial class MainWindow : Window
     private void EnterFullScreen()
     {
         if (_mainHwnd == IntPtr.Zero) return;
+        var target = GetMonitorDipRect();
+        if (target.IsEmpty) return;
         _preFsBounds = RestoreBounds;   // 최대화 직전의 일반 창 bounds
         _inFullScreen = true;
-        _fsGuard = true;
-        WindowState = WindowState.Normal;
-        _fsGuard = false;
-        // 핵심: WindowState=Maximized→Normal 은 WPF 가 캐시한 복원 bounds(이전 창 크기)로
-        // 지연 리사이즈를 큐에 넣어, 여기서 동기적으로 크기를 키워도 나중에 되돌려 버린다.
-        // 그래서 모니터 전체 사이징을 그 리사이즈 *이후*(Background)로 미뤄 강제 적용한다.
-        Dispatcher.InvokeAsync(ApplyFullScreenBounds, System.Windows.Threading.DispatcherPriority.Background);
-        ApplyFullScreenBounds(); // 즉시 1차 적용(깜빡임 최소화) + 지연 호출이 최종 보장
-    }
-
-    /// <summary>현재 모니터 전체로 창을 키우고 Topmost 로 올린다(작업표시줄 위로).</summary>
-    private void ApplyFullScreenBounds()
-    {
-        if (!_inFullScreen || _mainHwnd == IntPtr.Zero) return;
-        var monitor = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
-        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return;
-        var dpi = VisualTreeHelper.GetDpi(this);
-        var m = info.rcMonitor;
-        // 모니터 전체 + 1px 여유로 over-cover(DIP 반올림으로 가장자리 틈 방지). WPF 속성으로 설정해
-        // WPF 의 후속 리사이즈도 이 값을 사용하게 한다.
-        Left   = m.Left / dpi.DpiScaleX - 1;
-        Top    = m.Top  / dpi.DpiScaleY - 1;
-        Width  = (m.Right  - m.Left) / dpi.DpiScaleX + 2;
-        Height = (m.Bottom - m.Top)  / dpi.DpiScaleY + 2;
         // 작업표시줄은 WS_EX_TOPMOST 라 일반 창은 못 덮음(보조 모니터는 셸 전체화면 감지도 안 먹음).
-        // WPF Topmost 속성으로 올려 WPF 내부 SetWindowPos 에도 일관 유지되게 한다.
+        // WPF Topmost 속성으로 올려 z-order 로 확실히 덮는다(애니메이션 동안에도 위에 유지).
         Topmost = true;
         if (RootChrome != null) RootChrome.Margin = default;
+        if (WindowState == WindowState.Maximized)
+        {
+            // 시작 복원·스냅 등 이미 최대화 — 애니메이션 없이 스냅. WindowState=Maximized→Normal 은
+            // WPF 가 이전 창 크기로 지연 리사이즈를 큐에 넣으므로 그 *이후*(Background)에도 한 번 더 적용.
+            _fsGuard = true;
+            WindowState = WindowState.Normal;
+            _fsGuard = false;
+            Dispatcher.InvokeAsync(() => { if (_inFullScreen) SetBoundsInstant(target); },
+                                   System.Windows.Threading.DispatcherPriority.Background);
+            SetBoundsInstant(target);
+        }
+        else
+        {
+            // 일반 창에서 진입 — 현재 크기에서 모니터 전체로 부드럽게 확대(원래 최대화 애니메이션 느낌).
+            AnimateWindowTo(target);
+        }
         ApplyCornerPreference();
     }
 
-    /// <summary>전체화면 해제 → 진입 전 일반 창 bounds 복원.</summary>
+    /// <summary>전체화면 해제 → 진입 전 일반 창 bounds 로 부드럽게 축소.</summary>
     private void ExitFullScreen()
     {
         if (!_inFullScreen) return;
-        _fsGuard = true;
         _inFullScreen = false;
         Topmost = false;
-        WindowState = WindowState.Normal;
-        if (!_preFsBounds.IsEmpty && _preFsBounds.Width > 0 && _preFsBounds.Height > 0)
-        {
-            Left = _preFsBounds.Left; Top = _preFsBounds.Top;
-            Width = _preFsBounds.Width; Height = _preFsBounds.Height;
-        }
+        var to = (!_preFsBounds.IsEmpty && _preFsBounds.Width > 0 && _preFsBounds.Height > 0)
+                 ? _preFsBounds : new Rect(Left, Top, ActualWidth, ActualHeight);
+        AnimateWindowTo(to);
         ApplyCornerPreference();
-        _fsGuard = false;
+    }
+
+    /// <summary>현재 창이 속한 모니터 전체(작업표시줄 포함) 영역을 DIP Rect 로(±1px over-cover).</summary>
+    private Rect GetMonitorDipRect()
+    {
+        var monitor = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return Rect.Empty;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var m = info.rcMonitor;
+        return new Rect(m.Left / dpi.DpiScaleX - 1, m.Top / dpi.DpiScaleY - 1,
+                        (m.Right - m.Left) / dpi.DpiScaleX + 2, (m.Bottom - m.Top) / dpi.DpiScaleY + 2);
+    }
+
+    private void SetBoundsInstant(Rect r)
+    {
+        StopBoundsAnimation();
+        Left = r.Left; Top = r.Top; Width = r.Width; Height = r.Height;
+    }
+
+    /// <summary>창 Left/Top/Width/Height 를 target 으로 160ms EaseOut 애니메이션. 완료 후 애니메이션을
+    /// 걷어내고 최종값을 고정해 이후 수동 변경(다음 전환·복원)이 정상 동작하게 한다.</summary>
+    private void AnimateWindowTo(Rect target)
+    {
+        StopBoundsAnimation();
+        var dur = new Duration(TimeSpan.FromMilliseconds(160));
+        var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
+        DoubleAnimation A(double from, double to) => new(from, to, dur) { EasingFunction = ease };
+        var hA = A(ActualHeight, target.Height);
+        hA.Completed += (_, _) =>
+        {
+            StopBoundsAnimation();
+            Left = target.Left; Top = target.Top; Width = target.Width; Height = target.Height;
+        };
+        BeginAnimation(LeftProperty,  A(Left, target.Left));
+        BeginAnimation(TopProperty,   A(Top,  target.Top));
+        BeginAnimation(WidthProperty, A(ActualWidth, target.Width));
+        BeginAnimation(HeightProperty, hA);
+    }
+
+    private void StopBoundsAnimation()
+    {
+        BeginAnimation(LeftProperty, null);
+        BeginAnimation(TopProperty, null);
+        BeginAnimation(WidthProperty, null);
+        BeginAnimation(HeightProperty, null);
     }
 
     /// <summary>전체화면 중 활성/비활성에 따라 Topmost 토글 — 다른 창으로 전환 시엔 내려서
