@@ -739,7 +739,7 @@ public partial class MainWindow : Window
     }
 
     // ── 최우측 계정 사용량 사이드바 토글 ────────────────────────────────
-    private const double UsagePanelWidth = 210;
+    private const double UsagePanelWidth = 218; // 좌여백16+라벨34+막대(6+102)+%여백10+"100%"≈32 → 우여백 16
     private bool _usageOpen;
     private Action? _usageAnimCancel;
 

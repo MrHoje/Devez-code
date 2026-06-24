@@ -264,7 +264,8 @@
                                                                     <Grid.ColumnDefinitions>
                                                                         <ColumnDefinition Width="34"/>
                                                                         <ColumnDefinition Width="Auto"/>
-                                                                        <ColumnDefinition Width="*"/>
+                                                                        <!-- % 는 Auto — 텍스트 폭만큼만 차지해 "100%" 도 잘리지 않음 -->
+                                                                        <ColumnDefinition Width="Auto"/>
                                                                     </Grid.ColumnDefinitions>
                                                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Label}"
                                                                                VerticalAlignment="Center"
