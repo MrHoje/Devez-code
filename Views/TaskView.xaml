@@ -47,26 +47,7 @@
     </UserControl.Resources>
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-
-        <Border Grid.Row="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <Grid Margin="14,8,8,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="Task" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                           Foreground="{DynamicResource TextMutedBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding AllTasks.Count, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                           FontSize="{DynamicResource Fs11}"
-                           Foreground="{DynamicResource TextMutedBrush}" Margin="4,0,0,0"/>
-            </Grid>
-        </Border>
-
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="4,4,4,8" Background="Transparent">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,4,4,8" Background="Transparent">
             <ItemsControl ItemsSource="{Binding AllTasks, RelativeSource={RelativeSource AncestorType=UserControl}}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type models:TaskItem}">
@@ -126,7 +107,7 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <TextBlock x:Name="EmptyText" Grid.Row="1"
+        <TextBlock x:Name="EmptyText"
                    Text="No tasks"
                    FontSize="{DynamicResource Fs12}"
                    Foreground="{DynamicResource TextMutedBrush}"

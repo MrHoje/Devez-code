@@ -112,7 +112,7 @@
         <Border x:Name="HeaderBar" Grid.Row="1" Height="35"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
-            <Grid Margin="14,0,8,0">
+            <Grid Margin="7,0,8,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
