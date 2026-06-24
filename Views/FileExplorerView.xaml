@@ -78,6 +78,11 @@
                     <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconGitCompare}" Width="13" Height="13" VerticalAlignment="Center"/>
                 </Button>
+                <Button x:Name="AgentViewBtn" Click="TabBtn_Click" Tag="4"
+                        Style="{StaticResource ViewTabButton}" ToolTip="서브에이전트">
+                    <Path x:Name="AgentViewIcon" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconNetwork}" Width="13" Height="13" VerticalAlignment="Center"/>
+                </Button>
             </StackPanel>
             </ScrollViewer>
 
@@ -324,5 +329,8 @@
 
         <!-- 작업 큐 뷰 (큐 모드일 때만 표시) — 버블 입력 + 영속화 -->
         <v:TaskQueueView x:Name="QueueView" Grid.Row="3" Visibility="Collapsed"/>
+
+        <!-- 서브에이전트 모니터 뷰 (에이전트 모드일 때만 표시) -->
+        <v:SubagentMonitorView x:Name="AgentView" Grid.Row="3" Visibility="Collapsed"/>
     </Grid>
 </UserControl>
