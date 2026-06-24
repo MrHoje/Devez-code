@@ -1333,10 +1333,10 @@ public partial class MainWindow : Window
         var projName = proj != null
             ? System.IO.Path.GetFileName(proj.Path.TrimEnd('\\', '/'))
             : "";
-        var title = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
-        var body = string.IsNullOrEmpty(projName)
-            ? "응답이 완료되었습니다."
-            : $"{projName} · 응답이 완료되었습니다.";
+        var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
+        // 제목(큰 글씨)=프로젝트명, 본문(작은 글씨)=세션명 · 상태. 프로젝트명 없으면 세션명을 제목으로.
+        var title = string.IsNullOrEmpty(projName) ? sessName : projName;
+        var body  = string.IsNullOrEmpty(projName) ? "응답 완료" : $"{sessName} · 응답 완료";
 
         App.ShowNotification(title, body, () =>
         {

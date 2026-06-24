@@ -4,12 +4,13 @@ using System.Windows;
 
 namespace DevezCode.Services;
 
-/// <summary>모니터 열거 + 알림 표시 모니터의 작업영역 조회 (devez MonitorHelper 이식).
+/// <summary>모니터 열거 + 알림 표시 모니터의 작업영역/배율 조회 (devez MonitorHelper 이식).
 /// WPF 앱이라 WinForms(Screen) 의존을 피하고 Win32 EnumDisplayMonitors/GetMonitorInfo 로 구현.
-/// 작업영역(WorkAreaPx)은 물리 픽셀 단위 — 위치 계산 시 창 DPI 로 나눠 DIP 로 환산한다.</summary>
+/// PerMonitorV2 환경에서 모니터마다 DPI 가 다르므로 ScaleX/ScaleY 도 함께 반환한다.
+/// 작업영역(WorkAreaPx)은 물리 픽셀 단위 — 알림 위치는 물리 픽셀로 계산해 SetWindowPos 로 배치한다.</summary>
 public static class MonitorHelper
 {
-    public record MonitorInfo(string DeviceName, string DisplayName, Rect WorkAreaPx, bool IsPrimary);
+    public record MonitorInfo(string DeviceName, string DisplayName, Rect WorkAreaPx, bool IsPrimary, double ScaleX, double ScaleY);
 
     public static List<MonitorInfo> GetAllMonitors()
     {
@@ -26,29 +27,40 @@ public static class MonitorHelper
                 var label = primary ? $"주 모니터 ({w}×{h})" : $"모니터 {index} ({w}×{h})";
                 var work = new Rect(mi.rcWork.Left, mi.rcWork.Top,
                                     mi.rcWork.Right - mi.rcWork.Left, mi.rcWork.Bottom - mi.rcWork.Top);
-                result.Add(new MonitorInfo(mi.szDevice, label, work, primary));
+                GetScale(hMon, out double sx, out double sy);
+                result.Add(new MonitorInfo(mi.szDevice, label, work, primary, sx, sy));
                 if (!primary) index++;
             }
             return true;
         }, IntPtr.Zero);
 
-        // 주 모니터를 맨 앞으로 정렬(콤보 기본 선택 일관성).
         result.Sort((a, b) => b.IsPrimary.CompareTo(a.IsPrimary));
         return result;
     }
 
-    /// <summary>설정에 저장된 모니터(없으면 주 모니터)의 작업영역(물리 픽셀). 모니터가 없으면 1920×1080 폴백.</summary>
-    public static Rect GetNotificationWorkArea()
+    /// <summary>설정에 저장된 모니터(없으면 주 모니터)의 작업영역(물리 픽셀)과 DPI 배율. 없으면 1920×1080 / 1배.</summary>
+    public static (Rect WorkAreaPx, double ScaleX, double ScaleY) GetNotificationTarget()
     {
         var monitors = GetAllMonitors();
         var device = SettingsService.LoadNotifyMonitorDevice();
-        if (!string.IsNullOrEmpty(device))
+        MonitorInfo? m = null;
+        if (!string.IsNullOrEmpty(device)) m = monitors.Find(x => x.DeviceName == device);
+        m ??= monitors.Find(x => x.IsPrimary) ?? (monitors.Count > 0 ? monitors[0] : null);
+        if (m == null) return (new Rect(0, 0, 1920, 1080), 1, 1);
+        return (m.WorkAreaPx, m.ScaleX, m.ScaleY);
+    }
+
+    private static void GetScale(IntPtr hMon, out double sx, out double sy)
+    {
+        try
         {
-            var m = monitors.Find(x => x.DeviceName == device);
-            if (m != null) return m.WorkAreaPx;
+            if (GetDpiForMonitor(hMon, 0 /* MDT_EFFECTIVE_DPI */, out uint dx, out uint dy) == 0 && dx > 0)
+            {
+                sx = dx / 96.0; sy = dy / 96.0; return;
+            }
         }
-        var primary = monitors.Find(x => x.IsPrimary) ?? (monitors.Count > 0 ? monitors[0] : null);
-        return primary?.WorkAreaPx ?? new Rect(0, 0, 1920, 1080);
+        catch { /* Shcore 미지원 — 1배 폴백 */ }
+        sx = sy = 1.0;
     }
 
     private const int MONITORINFOF_PRIMARY = 0x1;
@@ -60,6 +72,9 @@ public static class MonitorHelper
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX lpmi);
+
+    [DllImport("Shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }

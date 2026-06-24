@@ -1,6 +1,7 @@
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Media;
+using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using DevezCode.Services;
@@ -9,11 +10,12 @@ namespace DevezCode.Views;
 
 /// <summary>우측/좌측 모서리 스택형 토스트 알림 (devez NotificationPopup 이식, 로컬 단독 버전).
 /// 표시 위치(4모서리)는 설정값을 따르고, 여러 알림은 코너에서 바깥쪽으로 쌓인다.
-/// 자기 자신을 정적 목록으로 관리해 추가/닫힘 시 전체를 재배치한다.</summary>
+/// PerMonitorV2 환경에서 모니터마다 DPI 가 달라 WPF DIP 좌표로는 화면 밖으로 튀어나가므로,
+/// 위치는 선택 모니터의 물리 픽셀로 계산해 SetWindowPos 로 직접 배치한다.</summary>
 public partial class NotificationPopup : Window
 {
     private static readonly List<NotificationPopup> _active = new();
-    // 모서리 여백 — 기존 12에서 절반으로(요청). 알림 간 간격은 유지.
+    // 모서리 여백(DIP) — 기존 12에서 절반으로. 알림 간 간격은 유지.
     private const double Margin = 6, Gap = 8;
 
     private readonly Action? _onClick;
@@ -38,10 +40,11 @@ public partial class NotificationPopup : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         _active.Add(this);
+        // 물리 픽셀로 직접 배치하므로 SizeToContent 자동 리사이즈를 잠가 SetWindowPos 와 충돌 방지.
+        SizeToContent = SizeToContent.Manual;
         UpdateLayout();
-        LayoutAll(animateNew: false);
+        LayoutAll();
 
-        // 페이드 인
         BeginAnimation(OpacityProperty,
             new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(200))));
 
@@ -57,49 +60,43 @@ public partial class NotificationPopup : Window
 
     private void OnClosed(object sender, EventArgs e)
     {
-        if (_active.Remove(this)) LayoutAll(animateNew: true);
+        if (_active.Remove(this)) LayoutAll();
     }
 
-    /// <summary>전체 활성 알림을 현재 설정 위치 기준으로 코너에서 바깥쪽으로 재배치한다.
-    /// 최신 알림이 코너에 가장 가깝게 위치한다.</summary>
-    private static void LayoutAll(bool animateNew)
+    /// <summary>전체 활성 알림을 선택 모니터의 물리 픽셀 좌표로 코너에서 바깥쪽으로 재배치한다.
+    /// 최신 알림이 코너에 가장 가깝다. 크기·여백은 DIP 를 모니터 배율로 곱해 픽셀로 환산.</summary>
+    private static void LayoutAll()
     {
         var pos = SettingsService.LoadNotifyPosition();
         bool right  = pos is "br" or "tr";
         bool bottom = pos is "br" or "bl";
-        // 선택 모니터 작업영역(물리 픽셀). 창 DPI 로 나눠 DIP 로 환산해 위치 계산.
-        var waPx = MonitorHelper.GetNotificationWorkArea();
+        var (waPx, sx, sy) = MonitorHelper.GetNotificationTarget();
 
+        double marginX = Margin * sx, marginY = Margin * sy, gapPx = Gap * sy;
         double offset = 0;
         for (int i = _active.Count - 1; i >= 0; i--)
         {
             var p = _active[i];
             p.UpdateLayout();
-            var dpi = VisualTreeHelper.GetDpi(p);
-            double waLeft   = waPx.Left   / dpi.DpiScaleX;
-            double waRight  = waPx.Right  / dpi.DpiScaleX;
-            double waTop    = waPx.Top    / dpi.DpiScaleY;
-            double waBottom = waPx.Bottom / dpi.DpiScaleY;
-            double w = p.ActualWidth > 0 ? p.ActualWidth : p.Width;
-            double h = p.ActualHeight;
-            double left = right ? waRight - Margin - w : waLeft + Margin;
-            double top  = bottom ? waBottom - Margin - offset - h : waTop + Margin + offset;
-
-            p.Left = left;
-            if (animateNew) p.AnimateTop(top);
-            else            p.Top = top;
-            offset += h + Gap;
+            double dipW = p.ActualWidth > 0 ? p.ActualWidth : p.Width;
+            double dipH = p.ActualHeight;
+            double wPx = dipW * sx, hPx = dipH * sy;
+            double leftPx = right  ? waPx.Right  - marginX - wPx : waPx.Left + marginX;
+            double topPx  = bottom ? waPx.Bottom - marginY - offset - hPx : waPx.Top + marginY + offset;
+            p.SetPhysicalPlacement(leftPx, topPx, wPx, hPx);
+            offset += hPx + gapPx;
         }
     }
 
-    private void AnimateTop(double targetTop)
+    /// <summary>창을 물리 픽셀 좌표/크기로 직접 배치(SetWindowPos). DIP→PX 변환 없이 정확.</summary>
+    private void SetPhysicalPlacement(double leftPx, double topPx, double wPx, double hPx)
     {
-        var anim = new DoubleAnimation(Top, targetTop, new Duration(TimeSpan.FromMilliseconds(220)))
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        anim.Completed += (_, _) => { BeginAnimation(TopProperty, null); Top = targetTop; };
-        BeginAnimation(TopProperty, anim);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        SetWindowPos(hwnd, HWND_TOPMOST,
+            (int)Math.Round(leftPx), (int)Math.Round(topPx),
+            (int)Math.Ceiling(wPx), (int)Math.Ceiling(hPx),
+            SWP_NOACTIVATE | SWP_SHOWWINDOW);
     }
 
     private void CloseWithAnimation()
@@ -122,4 +119,10 @@ public partial class NotificationPopup : Window
         try { _onClick?.Invoke(); } catch { /* best effort */ }
         CloseWithAnimation();
     }
+
+    private static readonly IntPtr HWND_TOPMOST = new(-1);
+    private const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 }
