@@ -214,6 +214,11 @@ public partial class FileExplorerView : UserControl
         UsageUpdatedText.Text = cards.Count == 0 ? "" : $"{DateTime.Now:HH:mm} 기준";
     }
 
+    /// <summary>"Codex 로그인 / 재연결" 버튼 — MainWindow 가 ChatGPT OAuth 창을 띄운다.</summary>
+    public event Action? CodexLoginRequested;
+
+    private void CodexLoginBtn_Click(object sender, RoutedEventArgs e) => CodexLoginRequested?.Invoke();
+
     private void SwitchTab(int idx)
     {
         _mode = (ViewMode)idx;
@@ -234,15 +239,13 @@ public partial class FileExplorerView : UserControl
         FileSearchToggleBtn.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (idx != 0) CloseFileSearch(immediate: true);
 
-        var (icon, title) = idx switch
+        PathText.Text = idx switch
         {
-            1 => ("IconGlobe", "브라우저"),
-            2 => ("IconGitCompare", "DIFF"),
-            4 => ("IconChartPie", "계정 사용량"),
-            _ => ("IconFolderOpen", _rootPath ?? "파일 탐색기"),
+            1 => "브라우저",
+            2 => "DIFF",
+            4 => "계정 사용량",
+            _ => _rootPath ?? "파일 탐색기",
         };
-        HeaderIcon.Data = (System.Windows.Media.Geometry)FindResource(icon);
-        PathText.Text = title;
 
         UpdateTabTextColors();
     }

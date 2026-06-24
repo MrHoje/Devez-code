@@ -401,6 +401,8 @@ public partial class MainWindow : Window
 
         // 우측 사이드바 사용량 팝오버 — 열 때마다 최신 스냅샷으로 카드를 다시 빌드(남은시간 갱신).
         FileExplorer.UsageRequested += () => FileExplorer.SetUsageCards(BuildUsageCards());
+        // 팝오버의 "Codex 로그인" 버튼 — 미연결 상태(푸터 패널이 없을 때)의 첫 로그인 진입점.
+        FileExplorer.CodexLoginRequested += LoginCodex;
     }
 
     /// <summary>표시 가능한(데이터 있는) provider 만 사용량 카드로 변환. Claude → Codex → OpenCode Go 순.</summary>
@@ -533,6 +535,17 @@ public partial class MainWindow : Window
         var win = new Views.OpenCodeGoLoginWindow(this);
         win.ShowDialog();
         if (win.Captured) _openCodeGo.RefreshNow();
+    }
+
+    /// <summary>codex 패널 클릭 — ChatGPT OAuth 로그인 후 즉시 갱신.</summary>
+    private void CodexPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginCodex();
+
+    /// <summary>ChatGPT(Codex) OAuth 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>
+    private void LoginCodex()
+    {
+        var win = new Views.CodexLoginWindow(this);
+        win.ShowDialog();
+        if (win.Captured) _codex.RefreshNow();
     }
 
     private void ApplyRateLimit(Models.RateLimitSnapshot snap)

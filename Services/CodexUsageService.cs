@@ -15,11 +15,13 @@ public sealed class CodexUsageService : IDisposable
     private const int PollMs = 3 * 60 * 1000;
     private static readonly string[] AuthKeys = { "openai", "codex", "chatgpt", "opencode" };
 
-    // opencode auth.json 후보 경로(런타임 디렉터리).
+    // auth.json 후보 경로. DevezCode 자체 로그인(CodexLoginWindow) 토큰을 최우선으로 보고,
+    // 없으면 opencode 가 깔아둔 토큰을 재사용한다.
     private static IEnumerable<string> AuthPaths()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        yield return CodexCredentialStore.StorePath;
         yield return Path.Combine(home, ".local", "share", "opencode", "auth.json");
         yield return Path.Combine(appData, "opencode", "auth.json");
     }
@@ -30,6 +32,9 @@ public sealed class CodexUsageService : IDisposable
     public event Action<ProviderUsage>? Updated;
 
     public void Start() => _poll = new System.Threading.Timer(_ => _ = PollAsync(), null, 0, PollMs);
+
+    /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
+    public void RefreshNow() => _ = PollAsync();
 
     private async Task PollAsync()
     {
