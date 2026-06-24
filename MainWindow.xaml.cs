@@ -404,6 +404,7 @@ public partial class MainWindow : Window
         // 팝오버의 로그인 버튼 — 미연결 상태(푸터 패널이 없을 때)의 첫 로그인 진입점.
         FileExplorer.CodexLoginRequested += LoginCodex;
         FileExplorer.ClaudeLoginRequested += LoginClaude;
+        FileExplorer.OpenCodeLoginRequested += LoginOpenCode;
     }
 
     /// <summary>표시 가능한(데이터 있는) provider 만 사용량 카드로 변환. Claude → Codex → OpenCode Go 순.</summary>
@@ -533,7 +534,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>opencode-go 패널 클릭 — 브라우저 로그인으로 쿠키/워크스페이스 재캡처 후 즉시 갱신.</summary>
-    private void GoPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private void GoPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginOpenCode();
+
+    /// <summary>opencode.ai 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>
+    private void LoginOpenCode()
     {
         var win = new Views.OpenCodeGoLoginWindow(this);
         win.ShowDialog();

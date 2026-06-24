@@ -224,6 +224,11 @@ public partial class FileExplorerView : UserControl
 
     private void ClaudeLoginBtn_Click(object sender, RoutedEventArgs e) => ClaudeLoginRequested?.Invoke();
 
+    /// <summary>"OpenCode 로그인 / 재연결" 버튼 — MainWindow 가 opencode.ai 로그인 창을 띄운다.</summary>
+    public event Action? OpenCodeLoginRequested;
+
+    private void OpenCodeLoginBtn_Click(object sender, RoutedEventArgs e) => OpenCodeLoginRequested?.Invoke();
+
     private void SwitchTab(int idx)
     {
         _mode = (ViewMode)idx;
