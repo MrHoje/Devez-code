@@ -40,11 +40,17 @@ public sealed class TaskTrackingService : IDisposable
         return File.Exists(path) ? path : null;
     }
 
-    private string? ClaudeSettingsPath()
+    private static string ClaudeTasksRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "tasks");
+
+    // Claude Code 는 ~/.claude/tasks/{sessionId}/{n}.json 에 태스크 저장. 세션ID는 방별로 hooks 가 기록.
+    private string? ClaudeTasksDir()
     {
-        if (string.IsNullOrEmpty(_activeProjectPath)) return null;
-        var path = Path.Combine(_activeProjectPath, ".claude", "settings.json");
-        return File.Exists(path) ? path : null;
+        if (string.IsNullOrEmpty(_activeRoomId)) return null;
+        var sid = SettingsService.LoadClaudeCodeRoomSession(_activeRoomId);
+        if (string.IsNullOrEmpty(sid)) return null;
+        var dir = Path.Combine(ClaudeTasksRoot, sid);
+        return Directory.Exists(dir) ? dir : null;
     }
 
     private string? GjacGoalsDir()
@@ -66,8 +72,8 @@ public sealed class TaskTrackingService : IDisposable
         var todoPath = ActiveTodoFilePath();
         if (todoPath != null) LoadOpenCodeTodos(todoPath);
 
-        var claudePath = ClaudeSettingsPath();
-        if (claudePath != null) LoadClaudeTasks(claudePath);
+        var claudeDir = ClaudeTasksDir();
+        if (claudeDir != null) LoadClaudeTasks(claudeDir);
 
         var gjacDir = GjacGoalsDir();
         if (gjacDir != null) LoadGjacTasks(gjacDir);
@@ -106,21 +112,17 @@ public sealed class TaskTrackingService : IDisposable
 
         try
         {
-            var claudePath = ClaudeSettingsPath();
-            if (claudePath != null)
+            Directory.CreateDirectory(ClaudeTasksRoot);
+            // 세션 디렉터리가 실행 후 생성될 수 있어 루트를 재귀 감시한다.
+            _claudeWatcher = new FileSystemWatcher(ClaudeTasksRoot, "*.json")
             {
-                var dir = Path.GetDirectoryName(claudePath);
-                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
-                {
-                    _claudeWatcher = new FileSystemWatcher(dir, "settings.json")
-                    {
-                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
-                        EnableRaisingEvents = true,
-                    };
-                    _claudeWatcher.Changed += (_, _) => DispatcherInvoke(() => ReloadClaudeTasks());
-                    _claudeWatcher.Created += (_, _) => DispatcherInvoke(() => ReloadClaudeTasks());
-                }
-            }
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+            _claudeWatcher.Changed += (_, e) => DispatcherInvoke(() => { if (MatchesActiveClaude(e.FullPath)) ReloadClaudeTasks(); });
+            _claudeWatcher.Created += (_, e) => DispatcherInvoke(() => { if (MatchesActiveClaude(e.FullPath)) ReloadClaudeTasks(); });
+            _claudeWatcher.Deleted += (_, e) => DispatcherInvoke(() => { if (MatchesActiveClaude(e.FullPath)) ReloadClaudeTasks(); });
         }
         catch { }
 
@@ -181,11 +183,19 @@ public sealed class TaskTrackingService : IDisposable
         catch { }
     }
 
+    private bool MatchesActiveClaude(string filePath)
+    {
+        var dir = ClaudeTasksDir();
+        if (dir == null) return false;
+        var parent = Path.GetDirectoryName(filePath);
+        return string.Equals(parent, dir, StringComparison.OrdinalIgnoreCase);
+    }
+
     private void ReloadClaudeTasks()
     {
         Tasks.Clear();
-        var claudePath = ClaudeSettingsPath();
-        if (claudePath != null) LoadClaudeTasks(claudePath);
+        var claudeDir = ClaudeTasksDir();
+        if (claudeDir != null) LoadClaudeTasks(claudeDir);
         var gjacDir = GjacGoalsDir();
         if (gjacDir != null) LoadGjacTasks(gjacDir);
         var todoPath = ActiveTodoFilePath();
@@ -193,30 +203,40 @@ public sealed class TaskTrackingService : IDisposable
         TasksChanged?.Invoke();
     }
 
-    private void LoadClaudeTasks(string filePath)
+    private void LoadClaudeTasks(string tasksDir)
     {
         try
         {
-            if (!File.Exists(filePath)) return;
-            var json = File.ReadAllText(filePath);
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("tasks", out var tasksEl)) return;
+            if (!Directory.Exists(tasksDir)) return;
+            var files = Directory.GetFiles(tasksDir, "*.json")
+                .OrderBy(f => int.TryParse(Path.GetFileNameWithoutExtension(f), out var n) ? n : int.MaxValue)
+                .ThenBy(f => f);
 
-            foreach (var t in tasksEl.EnumerateArray())
+            var source = $"claude:{_activeRoomId}";
+            foreach (var file in files)
             {
-                var content = t.TryGetProperty("content", out var c) ? c.GetString()?.Trim() ?? "" : "";
-                var status = t.TryGetProperty("status", out var s) ? NormalizeStatus(s.GetString()) : "pending";
-                var priority = t.TryGetProperty("priority", out var pr) ? NormalizePriority(pr.GetString()) : "medium";
-                var id = t.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
-                if (string.IsNullOrEmpty(content)) continue;
-                Tasks.Add(new Models.TaskItem
+                try
                 {
-                    Id = id ?? Guid.NewGuid().ToString("N"),
-                    Description = content,
-                    Status = status,
-                    Priority = priority,
-                    Source = $"claude:{_activeProjectPath}"
-                });
+                    var json = File.ReadAllText(file);
+                    if (string.IsNullOrWhiteSpace(json)) continue;
+                    using var doc = JsonDocument.Parse(json);
+                    var t = doc.RootElement;
+                    var subject = t.TryGetProperty("subject", out var sub) ? sub.GetString()?.Trim() ?? "" : "";
+                    if (string.IsNullOrEmpty(subject)
+                        && t.TryGetProperty("content", out var cEl)) subject = cEl.GetString()?.Trim() ?? "";
+                    var status = t.TryGetProperty("status", out var s) ? NormalizeStatus(s.GetString()) : "pending";
+                    var id = t.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                    if (string.IsNullOrEmpty(subject)) continue;
+                    Tasks.Add(new Models.TaskItem
+                    {
+                        Id = id ?? Path.GetFileNameWithoutExtension(file),
+                        Description = subject,
+                        Status = status,
+                        Priority = "medium",
+                        Source = source
+                    });
+                }
+                catch { }
             }
         }
         catch { }
@@ -227,8 +247,8 @@ public sealed class TaskTrackingService : IDisposable
         Tasks.Clear();
         var gjacDir = GjacGoalsDir();
         if (gjacDir != null) LoadGjacTasks(gjacDir);
-        var claudePath = ClaudeSettingsPath();
-        if (claudePath != null) LoadClaudeTasks(claudePath);
+        var claudeDir = ClaudeTasksDir();
+        if (claudeDir != null) LoadClaudeTasks(claudeDir);
         var todoPath = ActiveTodoFilePath();
         if (todoPath != null) LoadOpenCodeTodos(todoPath);
         TasksChanged?.Invoke();
