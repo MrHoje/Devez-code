@@ -542,19 +542,21 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>ms 동안 출력 쓰기마다 맨 아래로 고정 — 인라인 TUI(gjc) resume 재페인트 시 스크롤 위/아래 튐 방지.</summary>
     public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });
 
-    /// <summary>TerminalReady 통지(중복 방지). 인라인 TUI(gjc)는 통지 후 스크롤을 한 번 위→아래로 넛지해
-    /// resume 재생으로 어긋난 viewport 를 강제 리렌더(사용자 수동 스크롤 업/다운 정상화의 자동화).</summary>
+    /// <summary>TerminalReady 통지(중복 방지). 인라인 TUI(gjc)는 로딩 오버레이가 걷히기 전에 먼저 스크롤을
+    /// 위→아래로 넛지해 resume 재생으로 어긋난 viewport 를 강제 리렌더하고, 그 다음 오버레이를 숨긴다.
+    /// (오버레이를 먼저 걷으면 넛지 전 어긋난 화면이 잠깐 노출돼 튐이 보이므로 순서가 중요.)</summary>
     private void NotifyReady(string roomId)
     {
         if (!_readyNotified.Add(roomId)) return;
-        TerminalReady?.Invoke(roomId);
         if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
         {
-            // 오버레이가 걷히고 화면이 그려진 뒤 넛지(약간 지연).
-            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
-            timer.Tick += (_, _) => { timer.Stop(); PostJson(new { type = "nudgeScroll", roomId }); };
+            // 오버레이로 가린 채 넛지 → 리렌더 안정화 후(다음 틱) 오버레이 숨김.
+            PostJson(new { type = "nudgeScroll", roomId });
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(160) };
+            timer.Tick += (_, _) => { timer.Stop(); TerminalReady?.Invoke(roomId); };
             timer.Start();
         }
+        else TerminalReady?.Invoke(roomId);
     }
 
     /// <summary>인라인 TUI(gjc) 방이면 show 직후 일정 시간 스크롤을 맨 아래로 고정.</summary>
