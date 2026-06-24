@@ -87,13 +87,14 @@ public partial class SubagentMonitorView : INotifyPropertyChanged
     private void AgentItem_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: SubagentStatusItem item }) return;
-        var path = SubagentStatusService.ResolveConversationPath(item.RoomId, item.AgentId);
-        if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
-        {
-            ConfirmDialog.Alert("서브에이전트", "Claude가 아직 이 에이전트의 대화 transcript를 저장하지 않았습니다.");
-            return;
-        }
-        OpenTranscriptRequested?.Invoke(this, path);
         e.Handled = true;
+
+        var dialog = new SubagentTranscriptView(item);
+        if (Application.Current.MainWindow is Window main && main.IsLoaded && main != dialog)
+            dialog.Owner = main;
+        dialog.ShowDialog();
+
+        if (!string.IsNullOrEmpty(dialog.RequestedFilePath))
+            OpenTranscriptRequested?.Invoke(this, dialog.RequestedFilePath);
     }
 }
