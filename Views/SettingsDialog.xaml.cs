@@ -356,6 +356,7 @@ public partial class SettingsDialog : UserControl
         ShowFooterCodexToggle.IsChecked  = SettingsService.LoadShowFooterCodex();
         ShowFooterGoToggle.IsChecked     = SettingsService.LoadShowFooterGo();
         _loadingFooterUsage = false;
+        UpdateConnectionBadges();
     }
 
     private void FooterUsageToggle_Changed(object sender, RoutedEventArgs e)
@@ -369,13 +370,30 @@ public partial class SettingsDialog : UserControl
 
     // ── 계정 사용량 로그인/재연결 — OAuth 창을 띄운다(갱신은 설정 닫힐 때 MainWindow 가 RefreshNow). ──
     private void ClaudeLogin_Click(object sender, RoutedEventArgs e)
-        => new ClaudeLoginWindow(Window.GetWindow(this)).ShowDialog();
+    {
+        new ClaudeLoginWindow(Window.GetWindow(this)).ShowDialog();
+        UpdateConnectionBadges();
+    }
 
     private void CodexLogin_Click(object sender, RoutedEventArgs e)
-        => new CodexLoginWindow(Window.GetWindow(this)).ShowDialog();
+    {
+        new CodexLoginWindow(Window.GetWindow(this)).ShowDialog();
+        UpdateConnectionBadges();
+    }
 
     private void OpenCodeLogin_Click(object sender, RoutedEventArgs e)
-        => new OpenCodeGoLoginWindow(Window.GetWindow(this)).ShowDialog();
+    {
+        new OpenCodeGoLoginWindow(Window.GetWindow(this)).ShowDialog();
+        UpdateConnectionBadges();
+    }
+
+    /// <summary>provider 별 "연결됨" 배지를 현재 토큰/자격증명 상태로 갱신.</summary>
+    private void UpdateConnectionBadges()
+    {
+        ClaudeConnectedBadge.Visibility = UsageApiService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
+        CodexConnectedBadge.Visibility = CodexUsageService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
+        GoConnectedBadge.Visibility = OpenCodeGoCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     // ── 알림 설정 (sidepanel 과 동일하게 즉시 저장 — 테스트가 선택값을 바로 반영) ──
     private bool _loadingNotify;

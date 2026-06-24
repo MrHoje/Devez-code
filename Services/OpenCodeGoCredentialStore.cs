@@ -20,6 +20,9 @@ public static class OpenCodeGoCredentialStore
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".config", "opencode", "opencode-quota", "opencode-go.json");
 
+    /// <summary>opencode-go 자격증명(쿠키/워크스페이스)이 있어 연결된 상태인지.</summary>
+    public static bool IsConnected() => Resolve() != null;
+
     public static Creds? Resolve()
     {
         // ③ env

@@ -47,6 +47,9 @@ public sealed class UsageApiService : IDisposable
     /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
     public void RefreshNow() => _ = PollAsync();
 
+    /// <summary>Claude OAuth 토큰이 있어 연결된 상태인지(claude CLI 또는 DevezCode 자체 로그인).</summary>
+    public static bool IsConnected() => ReadToken() != null;
+
     // DevezCode 자체 로그인(ClaudeLoginWindow) 토큰의 refresh 용 — claude CLI 와 동일 값.
     private const string OAuthClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
     private const string OAuthTokenUrl = "https://console.anthropic.com/v1/oauth/token";

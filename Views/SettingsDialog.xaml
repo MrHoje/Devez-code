@@ -616,8 +616,16 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Claude" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Claude" VerticalAlignment="Center"
+                                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                        <StackPanel x:Name="ClaudeConnectedBadge" Orientation="Horizontal" Visibility="Collapsed"
+                                                    Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="연결됨" Margin="5,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
+                                        </StackPanel>
+                                    </StackPanel>
                                     <Button Grid.Column="1" Click="ClaudeLogin_Click" Style="{StaticResource UsageLoginButton}"
                                             ToolTip="Claude 계정으로 로그인해 사용량 연결">
                                         <StackPanel Orientation="Horizontal">
@@ -625,7 +633,7 @@
                                                    Width="13" Height="13" VerticalAlignment="Center"
                                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                                             <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource PrimaryBrush}"/>
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
                                         </StackPanel>
                                     </Button>
                                 </Grid>
@@ -635,8 +643,16 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Codex" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Codex" VerticalAlignment="Center"
+                                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                        <StackPanel x:Name="CodexConnectedBadge" Orientation="Horizontal" Visibility="Collapsed"
+                                                    Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="연결됨" Margin="5,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
+                                        </StackPanel>
+                                    </StackPanel>
                                     <Button Grid.Column="1" Click="CodexLogin_Click" Style="{StaticResource UsageLoginButton}"
                                             ToolTip="ChatGPT(Codex) 계정으로 로그인해 사용량 연결">
                                         <StackPanel Orientation="Horizontal">
@@ -644,7 +660,7 @@
                                                    Width="13" Height="13" VerticalAlignment="Center"
                                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                                             <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource PrimaryBrush}"/>
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
                                         </StackPanel>
                                     </Button>
                                 </Grid>
@@ -654,8 +670,16 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="OpenCode Go" VerticalAlignment="Center"
-                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="OpenCode Go" VerticalAlignment="Center"
+                                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                        <StackPanel x:Name="GoConnectedBadge" Orientation="Horizontal" Visibility="Collapsed"
+                                                    Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="연결됨" Margin="5,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
+                                        </StackPanel>
+                                    </StackPanel>
                                     <Button Grid.Column="1" Click="OpenCodeLogin_Click" Style="{StaticResource UsageLoginButton}"
                                             ToolTip="opencode.ai 계정으로 로그인해 사용량 연결">
                                         <StackPanel Orientation="Horizontal">
@@ -663,7 +687,7 @@
                                                    Width="13" Height="13" VerticalAlignment="Center"
                                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                                             <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource PrimaryBrush}"/>
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
                                         </StackPanel>
                                     </Button>
                                 </Grid>

@@ -36,6 +36,9 @@ public sealed class CodexUsageService : IDisposable
     /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
     public void RefreshNow() => _ = PollAsync();
 
+    /// <summary>Codex OAuth 토큰이 있어 연결된 상태인지(DevezCode 자체 로그인 또는 opencode).</summary>
+    public static bool IsConnected() => ReadAuth().token != null;
+
     // DevezCode 자체 로그인(CodexLoginWindow) 토큰의 refresh 용 — codex CLI 와 동일 값.
     private const string OAuthClientId = "app_EMoamEEZ73f0CkXaXp7hrann";
     private const string OAuthTokenUrl = "https://auth.openai.com/oauth/token";
