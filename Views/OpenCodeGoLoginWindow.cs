@@ -14,6 +14,18 @@ namespace DevezCode.Views;
 public sealed class OpenCodeGoLoginWindow : Window
 {
     private const string StartUrl = "https://opencode.ai/auth";
+
+    // 다크 강제 CSS — OpenAuth/opencode 의 테마 변수를 다크값으로 덮고 배경을 어둡게. 문서 생성마다 주입.
+    private const string DarkCss =
+        ":root{color-scheme:dark!important;" +
+        "--color-background:var(--color-background-dark,#0e0e11)!important;" +
+        "--color-primary:var(--color-primary-dark,#ffffff)!important;}" +
+        "html,body{background:var(--color-background-dark,#0e0e11)!important;}";
+    private static readonly string InjectDarkScript =
+        "(function(){try{var s=document.createElement('style');s.id='devez-dark';s.textContent=" +
+        System.Text.Json.JsonSerializer.Serialize(DarkCss) +
+        ";(document.head||document.documentElement).appendChild(s);}catch(e){}})();";
+
     private readonly WebView2 _view = new();
     private readonly DispatcherTimer _probe;
     private bool _done;
@@ -54,6 +66,10 @@ public sealed class OpenCodeGoLoginWindow : Window
             // 앱 테마에 맞춰 웹 콘텐츠도 다크/라이트 적용(prefers-color-scheme).
             _view.CoreWebView2.Profile.PreferredColorScheme = App.CurrentTheme == "dark"
                 ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
+            // opencode.ai(OpenAuth) 로그인 UI 가 prefers-color-scheme 를 무시할 때를 대비해,
+            // 디자인 변수(--color-*)를 다크값으로 강제하는 CSS 를 문서 생성 시점에 주입(헤더·배경 다크).
+            if (App.CurrentTheme == "dark")
+                await _view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(InjectDarkScript);
             // 이전 로그인의 stale auth 쿠키가 WebView2 에 남아 있으면, 사용자가 새로 로그인하기도 전에
             // 그 만료 쿠키를 즉시 캡처·저장하고 창이 닫혀버린다(떴다 사라짐). 새 로그인을 강제하려 먼저 지운다.
             try { _view.CoreWebView2.CookieManager.DeleteCookies("auth", "https://opencode.ai"); } catch { }
