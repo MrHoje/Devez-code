@@ -633,6 +633,13 @@ public sealed class TerminalSessionManager
                     New-Item -ItemType Directory -Force -Path $dir | Out-Null
                     Set-Content -LiteralPath (Join-Path $dir ($room + '.txt')) -Value $j.session_id -Encoding Ascii -Force
                   }
+                  # /clear 시 헤더의 마지막 메시지를 비워 세션 타이틀로 복귀시킨다(빈 lastmsg → watcher 갱신).
+                  if ($room -and $j.source -eq 'clear') {
+                    $room = $room -replace '[^\w\-]', ''
+                    $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
+                    New-Item -ItemType Directory -Force -Path $mdir | Out-Null
+                    Set-Content -LiteralPath (Join-Path $mdir ($room + '.txt')) -Value '' -Encoding UTF8 -Force
+                  }
                 } catch { }
                 exit 0
                 """;
