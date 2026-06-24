@@ -330,7 +330,6 @@ public partial class SettingsDialog : UserControl
         ShowQueueViewToggle.IsChecked   = SettingsService.LoadShowQueueViewBtn();
         ShowBrowserViewToggle.IsChecked = SettingsService.LoadShowBrowserViewBtn();
         ShowDiffViewToggle.IsChecked    = SettingsService.LoadShowDiffViewBtn();
-        ShowTaskViewToggle.IsChecked    = SettingsService.LoadShowTaskViewBtn();
         _loadingSidePanel = false;
     }
 
@@ -341,7 +340,6 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveShowQueueViewBtn(ShowQueueViewToggle.IsChecked == true);
         SettingsService.SaveShowBrowserViewBtn(ShowBrowserViewToggle.IsChecked == true);
         SettingsService.SaveShowDiffViewBtn(ShowDiffViewToggle.IsChecked == true);
-        SettingsService.SaveShowTaskViewBtn(ShowTaskViewToggle.IsChecked == true);
         (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
     }
 

@@ -187,7 +187,7 @@ public partial class FileExplorerView : UserControl
     private const int MaxSearchResults = 500;
 
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
-    private enum ViewMode { Directory, Browser, Diff, Queue, Tasks }
+    private enum ViewMode { Directory, Browser, Diff, Queue }
     private ViewMode _mode = ViewMode.Queue;
     private bool _browserMode => _mode == ViewMode.Browser;
 
@@ -208,7 +208,6 @@ public partial class FileExplorerView : UserControl
         Browser.Visibility   = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
         DiffView.Visibility  = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
         QueueView.Visibility = idx == 3 ? Visibility.Visible : Visibility.Collapsed;
-        TaskView.Visibility  = idx == 4 ? Visibility.Visible : Visibility.Collapsed;
         if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
         if (idx == 2) _ = DiffView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
 
@@ -222,7 +221,6 @@ public partial class FileExplorerView : UserControl
         {
             1 => ("IconGlobe", "브라우저"),
             2 => ("IconGitCompare", "DIFF"),
-            4 => ("IconListChecks", "작업 태스크"),
             _ => ("IconFolderOpen", _rootPath ?? "파일 탐색기"),
         };
         HeaderIcon.Data = (System.Windows.Media.Geometry)FindResource(icon);
@@ -239,7 +237,6 @@ public partial class FileExplorerView : UserControl
         QueueViewBtn.Visibility   = SettingsService.LoadShowQueueViewBtn()   ? Visibility.Visible : Visibility.Collapsed;
         BrowserViewBtn.Visibility = SettingsService.LoadShowBrowserViewBtn() ? Visibility.Visible : Visibility.Collapsed;
         DiffViewBtn.Visibility    = SettingsService.LoadShowDiffViewBtn()    ? Visibility.Visible : Visibility.Collapsed;
-        TaskViewBtn.Visibility    = SettingsService.LoadShowTaskViewBtn()    ? Visibility.Visible : Visibility.Collapsed;
 
         // 활성 탭 버튼이 숨겨졌으면 보이는 첫 탭으로 전환 (idx: 0=탐색기,1=브라우저,2=DIFF,3=작업 큐)
         var visible = new System.Collections.Generic.List<int>();
@@ -247,7 +244,6 @@ public partial class FileExplorerView : UserControl
         if (BrowserViewBtn.Visibility == Visibility.Visible) visible.Add(1);
         if (DiffViewBtn.Visibility    == Visibility.Visible) visible.Add(2);
         if (QueueViewBtn.Visibility   == Visibility.Visible) visible.Add(3);
-        if (TaskViewBtn.Visibility    == Visibility.Visible) visible.Add(4);
         if (visible.Count > 0 && !visible.Contains((int)_mode))
             SwitchTab(visible[0]);
     }
@@ -258,7 +254,6 @@ public partial class FileExplorerView : UserControl
         SetTabColor(BrowserViewBtn, BrowserViewIcon, _mode == ViewMode.Browser);
         SetTabColor(DiffViewBtn,    DiffViewIcon,    _mode == ViewMode.Diff);
         SetTabColor(QueueViewBtn,   QueueViewIcon,   _mode == ViewMode.Queue);
-        SetTabColor(TaskViewBtn,    TaskViewIcon,    _mode == ViewMode.Tasks);
     }
 
     /// <summary>탭 아이콘·라벨 색상: 활성=PrimaryBrush, 비활성=TextMutedBrush.

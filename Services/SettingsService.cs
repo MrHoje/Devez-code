@@ -80,7 +80,6 @@ public static class SettingsService
         public bool ShowQueueViewBtn   { get; set; } = true;  // 작업 큐
         public bool ShowBrowserViewBtn { get; set; } = true;  // 브라우저
         public bool ShowDiffViewBtn    { get; set; } = true;  // DIFF
-        public bool ShowTaskViewBtn    { get; set; } = true;
         // 탭 이동 전역 단축키(가상키코드). 기본 한자(0x19) + 좌(0x25)/우(0x27) 방향키.
         public int TabHotkeyModifierVk { get; set; } = 0x19;
         public int TabHotkeyPrevVk     { get; set; } = 0x25;
@@ -176,12 +175,10 @@ public static class SettingsService
     public static bool LoadShowQueueViewBtn()   => Current.ShowQueueViewBtn;
     public static bool LoadShowBrowserViewBtn() => Current.ShowBrowserViewBtn;
     public static bool LoadShowDiffViewBtn()    => Current.ShowDiffViewBtn;
-    public static bool LoadShowTaskViewBtn()    => Current.ShowTaskViewBtn;
     public static void SaveShowDirViewBtn(bool v)     { Current.ShowDirViewBtn     = v; Save(); }
     public static void SaveShowQueueViewBtn(bool v)   { Current.ShowQueueViewBtn   = v; Save(); }
     public static void SaveShowBrowserViewBtn(bool v) { Current.ShowBrowserViewBtn = v; Save(); }
     public static void SaveShowDiffViewBtn(bool v)    { Current.ShowDiffViewBtn    = v; Save(); }
-    public static void SaveShowTaskViewBtn(bool v)    { Current.ShowTaskViewBtn    = v; Save(); }
 
     // ── 탭 이동 전역 단축키 (수정자 + 이전/다음 키, 가상키코드) ──────
     public static (int mod, int prev, int next) LoadTabHotkey()
