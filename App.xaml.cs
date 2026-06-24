@@ -59,6 +59,10 @@ public partial class App : Application
         // per-project tui.json theme 주입의 기반.
         Services.Terminal.OpenCodeCustomThemes.EnsureInstalled();
 
+        // 가재코드(gjc) 테마 — 현재 테마 팔레트를 ~/.gjc/agent/themes/devez.json 에 쓰고 config.yml 을 devez 로.
+        // SetTheme 안에서도 호출되지만, 시작 시 한 번 확실히 적용.
+        Services.Terminal.GajaeCustomThemes.Apply(CurrentTheme);
+
         new MainWindow().Show();
     }
 
@@ -424,6 +428,8 @@ public partial class App : Application
         }
 
         CurrentTheme = theme;
+        // 가재코드(gjc) — devez.json 팔레트를 덮어쓰면 gjc 파일 감시가 라이브 리로드(실행 중 세션도 즉시 반영).
+        Services.Terminal.GajaeCustomThemes.Apply(theme);
         ThemeChanged?.Invoke(theme);
     }
 }
