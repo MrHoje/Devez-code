@@ -87,7 +87,9 @@ public partial class MainWindow : Window
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindSession(id);
+                bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
+                NotifyIfSessionFinished(s, was, busy);
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id); // 응답 종료 → 보류된 model/effort 적용
             });
 
@@ -137,7 +139,9 @@ public partial class MainWindow : Window
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindSession(roomId);
+                bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
+                NotifyIfSessionFinished(s, was, busy);
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
             });
 
@@ -151,7 +155,13 @@ public partial class MainWindow : Window
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
         _codexHook.BusyChanged += (roomId, busy) =>
-            Dispatcher.InvokeAsync(() => { var s = FindSession(roomId); if (s != null) s.IsBusy = busy; });
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                bool was = s?.IsBusy ?? false;
+                if (s != null) s.IsBusy = busy;
+                NotifyIfSessionFinished(s, was, busy);
+            });
         _codexHook.CodexSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() => SettingsService.SaveCodexRoomSession(roomId, sid));
 
@@ -1301,6 +1311,28 @@ public partial class MainWindow : Window
 
     private SessionItem? FindSession(string id)
         => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
+
+    /// <summary>세션이 busy(true)→idle(false)로 바뀐 순간(=스피너 멈춤=응답 완료)에 종료 토스트를 띄운다.
+    /// 설정에서 꺼져 있으면 무시. 클릭 시 해당 세션을 포커스 패널에 연다.</summary>
+    private void NotifyIfSessionFinished(SessionItem? s, bool wasBusy, bool nowBusy)
+    {
+        if (s == null || !wasBusy || nowBusy) return;
+        if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
+
+        var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
+        var projName = proj != null
+            ? System.IO.Path.GetFileName(proj.Path.TrimEnd('\\', '/'))
+            : "";
+        var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
+        // 제목(큰 글씨)=프로젝트명, 본문(작은 글씨)=세션명 · 상태. 프로젝트명 없으면 세션명을 제목으로.
+        var title = string.IsNullOrEmpty(projName) ? sessName : projName;
+        var body  = string.IsNullOrEmpty(projName) ? "응답 완료" : $"{sessName} · 응답 완료";
+
+        App.ShowNotification(title, body, () =>
+        {
+            try { Activate(); OpenSession(s); } catch { /* best effort */ }
+        });
+    }
 
     /// <summary>헤더에 표시할 마지막 메시지 반영. true=헤더 갱신 필요.
     /// /clear 는 타이틀로 복귀(빈 값), 그 외 슬래시 명령(/...)은 헤더 유지(무시).</summary>
