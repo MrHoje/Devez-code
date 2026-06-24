@@ -39,7 +39,7 @@
                 <!-- 본문 -->
                 <StackPanel Grid.Row="0" Margin="16,12,16,8">
                     <!-- 타이틀 + X 닫기 (우상단) -->
-                    <Grid Margin="0,0,0,3">
+                    <Grid Margin="0,0,0,8">
                         <TextBlock Text="에이전트 선택" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                         <Button Click="CancelBtn_Click"
@@ -51,7 +51,7 @@
                     </Grid>
                     <!-- 프로젝트 경로. 카드와의 간격 = 본문 하단 여백(8)과 동일 -->
                     <TextBlock x:Name="HintText" FontSize="{DynamicResource Fs11}"
-                               Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,8"
+                               Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,13"
                                TextTrimming="CharacterEllipsis" MaxWidth="300"/>
 
                     <!-- 세로 풀폭 카드 목록. RadioButton 으로 단일 선택 + 호버/체크 상태 표시 -->
