@@ -79,10 +79,14 @@ public sealed class GajaeLastMessageService : IDisposable
         bool freshNew = newestOrphan != null
             && (newest == null || newestOrphan.LastWriteTimeUtc > newest.LastWriteTimeUtc);
 
-        // 상태 시그니처 — 빈 새 세션이면 orphan 디렉터리 기준, 아니면 최신 .jsonl(경로+mtime) 기준.
+        // 상태 시그니처 — 빈 새 세션이면 orphan 디렉터리 기준, 아니면 최신 .jsonl(경로+실제길이+mtime) 기준.
         // 시그니처가 그대로면 변화 없음 → 스킵(busy 는 순수 내용 기반이라 파일/세션이 바뀔 때만 변한다).
+        // mtime 만으로는 부족: gjc 가 핸들을 연 채 append 하면 디렉터리 엔트리의 mtime 이 stale(미갱신)일 수 있어
+        // user 줄 append(=busy 진입)가 mtime 에 안 잡히면 sig 가 안 바뀌어 skip → 그 턴 내내 스피너가 안 뜬다(간헐적).
+        // FileStream.Length(커널 실제 EOF)는 append 마다 항상 증가하므로 시그니처에 포함하면 stale 을 우회한다.
+        long contentLen = newest != null ? RealContentLength(newest.FullName) : 0;
         var sig = freshNew ? "NEW:" + newestOrphan!.Name
-                : newest != null ? newest.FullName + "|" + newest.LastWriteTimeUtc.Ticks
+                : newest != null ? newest.FullName + "|" + contentLen + "|" + newest.LastWriteTimeUtc.Ticks
                 : null;
         if (sig == null) return;
         // busy 로 마킹된 방은 sig 가 같아도 강제 재파싱한다.
@@ -183,6 +187,19 @@ public sealed class GajaeLastMessageService : IDisposable
             if (busySeen && lastUserMsg != null) break;
         }
         return (lastUserMsg, busy);
+    }
+
+    /// <summary>파일의 실제 콘텐츠 길이(바이트). gjc 가 핸들을 연 채 append 하는 동안 디렉터리 엔트리 기반
+    /// FileInfo.Length/LastWriteTime 은 stale 일 수 있으나, FileStream 으로 열면 커널이 실제 EOF 를 반환해
+    /// 항상 최신 길이를 준다. 변화 감지 시그니처에 사용해 busy 진입(append) 누락을 막는다.</summary>
+    private static long RealContentLength(string path)
+    {
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return fs.Length;
+        }
+        catch { return 0; }
     }
 
     public void Dispose() => _poll.Stop();
