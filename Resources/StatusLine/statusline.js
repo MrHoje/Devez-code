@@ -1,5 +1,5 @@
-// DEVEZCODE-STATUSLINE v5 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
-const _fs = require("fs"), _path = require("path"), _os = require("os");
+// DEVEZCODE-STATUSLINE v6 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+const _fs = require("fs"), _path = require("path"), _os = require("os"), _https = require("https");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
 // 직전 정상 출력 캐시. parse 실패/빈 결과로 빈 줄을 뱉으면 세션 진입 시 statusline 이
 // 잠깐 비어 보이므로, 그런 렌더에서는 마지막 정상 줄을 대신 출력해 깜빡임을 막는다.
@@ -11,6 +11,53 @@ const _emitFallback = () => {
 const _cfgDefaults = { branch: true, model: true, eff: true, ctx: true, time: true, week: true, tokens: true };
 let CFG = Object.assign({}, _cfgDefaults);
 try { CFG = Object.assign(CFG, JSON.parse(_fs.readFileSync(_cfgFile, "utf8"))); } catch (e) {}
+const _codexCacheFile = _path.join(_os.tmpdir(), "devezcode-codex-usage.json");
+
+// Codex(OpenAI/ChatGPT) 사용량을 비동기로 fetch 해 캐시한다. 실패해도 조용히 무시.
+function _fetchCodexCache() {
+  try {
+    const authPath = _path.join(_os.homedir(), ".codex", "auth.json");
+    if (!_fs.existsSync(authPath)) return;
+    const auth = JSON.parse(_fs.readFileSync(authPath, "utf8"));
+    const token = auth.tokens && auth.tokens.access_token;
+    if (!token) return;
+    const opts = {
+      hostname: "chatgpt.com", path: "/backend-api/wham/usage",
+      method: "GET", timeout: 5000,
+      headers: { "Authorization": "Bearer " + token, "User-Agent": "Mozilla/5.0" },
+    };
+    const req = _https.request(opts, (res) => {
+      let data = "";
+      res.on("data", c => data += c);
+      res.on("end", () => {
+        try {
+          const j = JSON.parse(data);
+          const rl = j.rate_limit || {};
+          const pw = rl.primary_window || {};
+          const sw = rl.secondary_window || {};
+          const out = {
+            five_hour: pw.used_percent != null ? Math.round(pw.used_percent) : null,
+            seven_day: sw.used_percent != null ? Math.round(sw.used_percent) : null,
+            ts: Date.now(),
+          };
+          _fs.writeFileSync(_codexCacheFile, JSON.stringify(out));
+        } catch (e) {}
+      });
+    });
+    req.on("error", () => {});
+    req.on("timeout", () => { req.destroy(); });
+    req.end();
+  } catch (e) {}
+}
+
+// Codex 캐시 읽기. 3분 이내면 유효.
+function _readCodexCache() {
+  try {
+    const c = JSON.parse(_fs.readFileSync(_codexCacheFile, "utf8"));
+    if (Date.now() - c.ts < 180000) return c;
+  } catch (e) {}
+  return null;
+}
 
 let d = "";
 process.stdin.on("data", c => d += c);
@@ -74,6 +121,9 @@ process.stdin.on("end", () => {
     }
     const rl5h = rl.five_hour && rl.five_hour.used_percentage != null ? Math.round(rl.five_hour.used_percentage) : null;
     const rl7d = rl.seven_day && rl.seven_day.used_percentage != null ? Math.round(rl.seven_day.used_percentage) : null;
+    // Codex 사용량: 캐시에서 읽고, 캐시가 없거나 오래됐으면 백그라운드에서 갱신.
+    const _codexData = _readCodexCache();
+    if (!_codexData) _fetchCodexCache();
     const cu   = cw.current_usage || {};
     const effortLevel = j.effort && j.effort.level;
 
@@ -150,6 +200,11 @@ process.stdin.on("end", () => {
       parts.push(TIME + label + ": " + rl5h + "%" + R);
     }
     if (CFG.week && rl7d !== null) parts.push(WEEK + "week: " + rl7d + "%" + R);
+    // Codex 사용량 (캐시에서 읽은 데이터). Claude 와 같은 형식, SOFT 색상.
+    if (_codexData && (_codexData.five_hour != null || _codexData.seven_day != null)) {
+      if (_codexData.five_hour != null) parts.push(SOFT + "Codex " + _codexData.five_hour + "%" + R);
+      if (_codexData.seven_day != null) parts.push(SOFT + "Codex week " + _codexData.seven_day + "%" + R);
+    }
     if (worktree) parts.push(MAIN + worktree + R);
     const stale = counter.processing && counter.lastActivity > 0 && (Date.now() - counter.lastActivity) > 15000;
     if (CFG.tokens && counter.processing && !stale) {

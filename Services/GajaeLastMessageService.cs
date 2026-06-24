@@ -85,7 +85,13 @@ public sealed class GajaeLastMessageService : IDisposable
                 : newest != null ? newest.FullName + "|" + newest.LastWriteTimeUtc.Ticks
                 : null;
         if (sig == null) return;
-        if (_seen.TryGetValue(roomId, out var prev) && prev == sig) return;
+        // busy 로 마킹된 방은 sig 가 같아도 강제 재파싱한다.
+        // gjc 는 .jsonl 핸들을 연 채 append 하는데, Windows 는 핸들이 열린 동안 디렉터리 엔트리의
+        // LastWriteTime 을 즉시 안 갱신해(stale) 종료 줄(마지막 assistant text) append 가 mtime 에 안 잡힐 수 있다.
+        // 그러면 sig 가 안 바뀌어 종료(busy=false) emit 을 놓치고 스피너가 영구히 도는 증상이 난다.
+        // 파일 내용 읽기는 메타와 달리 항상 최신 바이트를 주므로, busy 인 동안 매 폴링 재파싱하면 종료를 확실히 감지한다.
+        bool roomBusy = _busy.TryGetValue(roomId, out var wasBusyNow) && wasBusyNow;
+        if (!roomBusy && _seen.TryGetValue(roomId, out var prev) && prev == sig) return;
         _seen[roomId] = sig;
 
         string? msg;
