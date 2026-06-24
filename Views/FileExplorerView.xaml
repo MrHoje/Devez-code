@@ -78,8 +78,8 @@
                     <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconGitCompare}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
-                <!-- 계정 사용량 — 뷰 전환이 아니라 팝오버. 클릭 시 표시 가능한 provider 카드만 띄운다. -->
-                <Button x:Name="UsageBtn" Click="UsageBtn_Click"
+                <!-- 계정 사용량 — 다른 뷰와 동일하게 패널에 표시되는 탭. -->
+                <Button x:Name="UsageBtn" Click="TabBtn_Click" Tag="4"
                         Style="{StaticResource ViewTabButton}" ToolTip="계정 사용량">
                     <Path x:Name="UsageIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconChartPie}" Width="15" Height="15" VerticalAlignment="Center"
@@ -332,29 +332,13 @@
         <!-- 작업 큐 뷰 (큐 모드일 때만 표시) — 버블 입력 + 영속화 -->
         <v:TaskQueueView x:Name="QueueView" Grid.Row="3" Visibility="Collapsed"/>
 
-        <!-- ── 계정 사용량 팝오버 ───────────────────────────────────────
-             UsageBtn 아래에 떠서 표시 가능한 provider 카드(사용률 막대 + 초기화 안내)만 보여준다.
+        <!-- ── 계정 사용량 뷰 (사용량 모드일 때만 표시) ───────────────────
+             표시 가능한 provider 카드(사용률 막대 + 초기화 안내)만 보여준다.
              데이터는 MainWindow 가 UsageRequested 응답으로 SetUsageCards 로 채운다. -->
-        <Popup x:Name="UsagePopup" PlacementTarget="{Binding ElementName=UsageBtn}" Placement="Bottom"
-               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
-               HorizontalOffset="-6" VerticalOffset="4">
-            <Border Margin="12" Background="{DynamicResource PanelBrush}" CornerRadius="12"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="24" ShadowDepth="0" Direction="270"
-                                      Color="#000000" Opacity="{DynamicResource PopupShadowOpacity}"/>
-                </Border.Effect>
-                <StackPanel Width="296" Margin="18,16,18,16">
-                    <!-- 헤더 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartPie}"
-                              Width="15" Height="15" VerticalAlignment="Center"
-                              Stroke="{DynamicResource PrimaryBrush}"/>
-                        <TextBlock Text="계정 사용량" Margin="8,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextBrush}"/>
-                    </StackPanel>
-
+        <ScrollViewer x:Name="UsageView" Grid.Row="3" Visibility="Collapsed"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Background="{DynamicResource PanelBrush}">
+                <StackPanel Margin="18,14,18,16">
                     <!-- provider 카드 목록 -->
                     <ItemsControl x:Name="UsageList">
                         <ItemsControl.ItemTemplate>
@@ -427,7 +411,6 @@
                                FontSize="{DynamicResource Fs12}"
                                Foreground="{DynamicResource TextMutedBrush}"/>
                 </StackPanel>
-            </Border>
-        </Popup>
+        </ScrollViewer>
     </Grid>
 </UserControl>

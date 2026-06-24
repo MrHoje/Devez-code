@@ -187,7 +187,7 @@ public partial class FileExplorerView : UserControl
     private const int MaxSearchResults = 500;
 
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
-    private enum ViewMode { Directory, Browser, Diff, Queue }
+    private enum ViewMode { Directory, Browser, Diff, Queue, Usage }
     private ViewMode _mode = ViewMode.Queue;
     private bool _browserMode => _mode == ViewMode.Browser;
 
@@ -203,13 +203,7 @@ public partial class FileExplorerView : UserControl
     /// <summary>사용량 버튼 클릭 — 최신 카드를 요청해 채운 뒤 팝오버를 연다.</summary>
     public event Action? UsageRequested;
 
-    private void UsageBtn_Click(object sender, RoutedEventArgs e)
-    {
-        UsageRequested?.Invoke();   // MainWindow 가 SetUsageCards 로 최신값을 채운다(동기).
-        UsagePopup.IsOpen = true;
-    }
-
-    /// <summary>표시 가능한 provider 사용량 카드로 팝오버를 채운다. 비면 안내 문구 표시.</summary>
+    /// <summary>표시 가능한 provider 사용량 카드로 패널을 채운다. 비면 안내 문구 표시.</summary>
     public void SetUsageCards(IReadOnlyList<UsageCardVM> cards)
     {
         UsageList.ItemsSource = cards;
@@ -224,8 +218,10 @@ public partial class FileExplorerView : UserControl
         Browser.Visibility   = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
         DiffView.Visibility  = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
         QueueView.Visibility = idx == 3 ? Visibility.Visible : Visibility.Collapsed;
+        UsageView.Visibility = idx == 4 ? Visibility.Visible : Visibility.Collapsed;
         if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
         if (idx == 2) _ = DiffView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
+        if (idx == 4) UsageRequested?.Invoke();     // MainWindow 가 SetUsageCards 로 최신값을 채운다(동기)
 
         // 큐 모드에서는 44px 헤더(row 1) 를 접어서 콘텐츠가 탭 바로 아래에 이어지게 한다.
         // (탭 자체가 '작업 큐' 제목 역할 → 중복 헤더 불필요)
@@ -237,6 +233,7 @@ public partial class FileExplorerView : UserControl
         {
             1 => ("IconGlobe", "브라우저"),
             2 => ("IconGitCompare", "DIFF"),
+            4 => ("IconChartPie", "계정 사용량"),
             _ => ("IconFolderOpen", _rootPath ?? "파일 탐색기"),
         };
         HeaderIcon.Data = (System.Windows.Media.Geometry)FindResource(icon);
@@ -260,6 +257,7 @@ public partial class FileExplorerView : UserControl
         if (BrowserViewBtn.Visibility == Visibility.Visible) visible.Add(1);
         if (DiffViewBtn.Visibility    == Visibility.Visible) visible.Add(2);
         if (QueueViewBtn.Visibility   == Visibility.Visible) visible.Add(3);
+        visible.Add(4);   // 사용량 탭은 항상 표시 — 활성 상태에서 다른 탭으로 강제 전환되지 않게 포함
         if (visible.Count > 0 && !visible.Contains((int)_mode))
             SwitchTab(visible[0]);
     }
@@ -270,6 +268,7 @@ public partial class FileExplorerView : UserControl
         SetTabColor(BrowserViewBtn, BrowserViewIcon, _mode == ViewMode.Browser);
         SetTabColor(DiffViewBtn,    DiffViewIcon,    _mode == ViewMode.Diff);
         SetTabColor(QueueViewBtn,   QueueViewIcon,   _mode == ViewMode.Queue);
+        SetTabColor(UsageBtn,       UsageIcon,       _mode == ViewMode.Usage);
     }
 
     /// <summary>탭 아이콘·라벨 색상: 활성=PrimaryBrush, 비활성=TextMutedBrush.
