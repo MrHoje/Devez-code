@@ -36,6 +36,10 @@
                 <DataTrigger Binding="{Binding Status}" Value="completed">
                     <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="cancelled">
+                    <Setter Property="TextDecorations" Value="Strikethrough"/>
+                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                </DataTrigger>
             </Style.Triggers>
         </Style>
     </UserControl.Resources>
