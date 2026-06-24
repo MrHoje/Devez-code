@@ -57,18 +57,12 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="Task" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextMutedBrush}"/>
                 <TextBlock Grid.Column="1" Text="{Binding AllTasks.Count, RelativeSource={RelativeSource AncestorType=UserControl}}"
                            FontSize="{DynamicResource Fs11}"
                            Foreground="{DynamicResource TextMutedBrush}" Margin="4,0,0,0"/>
-                <Border Grid.Column="2" Height="4" Width="80" CornerRadius="2"
-                        Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                    <Border x:Name="ProgressFill" Width="0" HorizontalAlignment="Left" CornerRadius="2"
-                            Background="{DynamicResource PrimaryBrush}"/>
-                </Border>
             </Grid>
         </Border>
 
@@ -88,7 +82,7 @@
                                     <TextBlock x:Name="StatusPrefixText" Text="{Binding StatusPrefix}"
                                                Style="{StaticResource StatusTextStyle}"/>
                                     <Path x:Name="SpinnerIndicator" Data="{StaticResource SpinnerPath}"
-                                          Width="14" Height="14" Stretch="Uniform"
+                                          Width="13" Height="13" Stretch="Uniform"
                                           Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                           RenderTransformOrigin="0.5,0.5"
@@ -97,7 +91,7 @@
                                         <Path.RenderTransform>
                                             <TransformGroup>
                                                 <RotateTransform x:Name="SpinnerRotate"/>
-                                                <TranslateTransform X="-3" Y="1"/>
+                                                <TranslateTransform X="-4" Y="1"/>
                                             </TransformGroup>
                                         </Path.RenderTransform>
                                         <Path.Triggers>

@@ -16,7 +16,6 @@ public partial class TaskView : INotifyPropertyChanged
         InitializeComponent();
         AllTasks.CollectionChanged += (_, _) =>
         {
-            UpdateProgressBar();
             EmptyText.Visibility = AllTasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         };
     }
@@ -51,14 +50,6 @@ public partial class TaskView : INotifyPropertyChanged
     {
         for (int i = AllTasks.Count - 1; i >= 0; i--)
             if (AllTasks[i].Source == source) AllTasks.RemoveAt(i);
-    }
-
-    private void UpdateProgressBar()
-    {
-        var total = AllTasks.Count;
-        if (total == 0) { ProgressFill.Width = 0; return; }
-        var done = AllTasks.Count(t => t.Status == "completed");
-        ProgressFill.Width = 80 * done / (double)total;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
