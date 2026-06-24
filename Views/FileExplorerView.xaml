@@ -129,7 +129,7 @@
                                 Foreground="{DynamicResource TextBrush}"/>
                     <!-- 사용량 탭일 때만 표시되는 마지막 갱신 시각. -->
                     <TextBlock x:Name="UsageUpdatedText" Visibility="Collapsed"
-                               Margin="10,0,0,0" VerticalAlignment="Center"
+                               Margin="10,0,0,0" VerticalAlignment="Bottom"
                                FontSize="{DynamicResource Fs11}"
                                Foreground="{DynamicResource TextMutedBrush}"/>
                 </StackPanel>
