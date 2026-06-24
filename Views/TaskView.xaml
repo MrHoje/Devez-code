@@ -95,7 +95,10 @@
                                           HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Visibility="Collapsed">
                                         <Path.RenderTransform>
-                                            <RotateTransform x:Name="SpinnerRotate"/>
+                                            <TransformGroup>
+                                                <RotateTransform x:Name="SpinnerRotate"/>
+                                                <TranslateTransform X="-3" Y="1"/>
+                                            </TransformGroup>
                                         </Path.RenderTransform>
                                         <Path.Triggers>
                                             <EventTrigger RoutedEvent="FrameworkElement.Loaded">

@@ -22,10 +22,15 @@ public sealed class GajaeLastMessageService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "gajae", "sessions");
 
+    // 마지막 jsonl 쓰기 후 이 시간 안이면 "처리중"으로 본다. gjc 에이전트 루프는 스트리밍·툴 사이
+    // 수 초 간격으로 jsonl 을 쓰므로, 이 창으로 깜빡임을 줄이고 완료 후 자연스럽게 idle 로 내린다.
+    private static readonly TimeSpan ActiveWindow = TimeSpan.FromSeconds(12);
+
     private readonly DispatcherTimer _poll;
-    // roomId → 마지막으로 읽은 최신 jsonl 의 (경로, mtime). 변화 없으면 재파싱 스킵.
+    // roomId → 최신 jsonl 의 (경로, mtime). 변화 없으면 lastmsg 재파싱은 스킵(단 busy 는 매 틱 재평가).
     private readonly Dictionary<string, (string path, DateTime mtime)> _seen = new();
     private readonly Dictionary<string, string> _lastMsg = new();
+    private readonly Dictionary<string, string?> _lastRole = new();
     private readonly Dictionary<string, bool> _busy = new();
 
     /// <summary>(roomId, message) — gjc 세션이 마지막으로 보낸 프롬프트(1줄 요약). 빈 문자열이면 세션명으로 표시.</summary>
