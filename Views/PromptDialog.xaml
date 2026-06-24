@@ -15,6 +15,10 @@
         RenderOptions.ClearTypeHint="Enabled"
         FontFamily="{StaticResource PretendardFont}">
 
+    <Window.RenderTransform>
+        <TranslateTransform/>
+    </Window.RenderTransform>
+
     <Grid Margin="20">
         <!-- Shadow layer -->
         <Border Background="{DynamicResource BgBrush}" CornerRadius="14">
