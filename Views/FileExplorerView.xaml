@@ -60,28 +60,28 @@
                 <Button x:Name="DirViewBtn" Click="TabBtn_Click" Tag="0"
                         Style="{StaticResource ViewTabButton}" ToolTip="파일 탐색기">
                     <Path x:Name="DirViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconFolderOpen}" Width="13" Height="13" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconFolderOpen}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
                 <!-- 작업 큐 (devez 채팅방 풍 버블 입력) — 탐색기 오른쪽에 배치. -->
                 <Button x:Name="QueueViewBtn" Click="TabBtn_Click" Tag="3"
                         Style="{StaticResource ViewTabButton}" ToolTip="작업 큐">
                     <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconMessageSquare}" Width="13" Height="13" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconMessageSquare}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
                 <Button x:Name="BrowserViewBtn" Click="TabBtn_Click" Tag="1"
                         Style="{StaticResource ViewTabButton}" ToolTip="브라우저">
                     <Path x:Name="BrowserViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconGlobe}" Width="13" Height="13" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconGlobe}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
                 <Button x:Name="DiffViewBtn" Click="TabBtn_Click" Tag="2"
                         Style="{StaticResource ViewTabButton}" ToolTip="DIFF">
                     <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconGitCompare}" Width="13" Height="13" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconGitCompare}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
                 <Button x:Name="TaskViewBtn" Click="TabBtn_Click" Tag="4"
                         Style="{StaticResource ViewTabButton}" ToolTip="작업 태스크 뷰">
                     <Path x:Name="TaskViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconListChecks}" Width="13" Height="13" VerticalAlignment="Center"/>
+                          Data="{StaticResource IconListChecks}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
             </StackPanel>
             </ScrollViewer>
@@ -112,7 +112,7 @@
         <Border x:Name="HeaderBar" Grid.Row="1" Height="35"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
-            <Grid Margin="7,0,8,0">
+            <Grid Margin="9,0,8,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
