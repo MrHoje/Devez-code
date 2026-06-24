@@ -43,14 +43,21 @@ public sealed class TaskTrackingService : IDisposable
     private static string ClaudeTasksRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "tasks");
 
-    // Claude Code 는 ~/.claude/tasks/{sessionId}/{n}.json 에 태스크 저장. 세션ID는 방별로 hooks 가 기록.
+    // Claude Code 는 ~/.claude/tasks/{taskSession}/{n}.json 에 태스크 저장.
+    // taskSession 은 "session-{세션UUID 앞 8자}" 형식(신형) 또는 풀 UUID(구형).
     private string? ClaudeTasksDir()
     {
         if (string.IsNullOrEmpty(_activeRoomId)) return null;
         var sid = SettingsService.LoadClaudeCodeRoomSession(_activeRoomId);
         if (string.IsNullOrEmpty(sid)) return null;
-        var dir = Path.Combine(ClaudeTasksRoot, sid);
-        return Directory.Exists(dir) ? dir : null;
+
+        var short8 = sid.Length >= 8 ? sid.Substring(0, 8) : sid;
+        foreach (var cand in new[] { "session-" + short8, sid, "session-" + sid })
+        {
+            var dir = Path.Combine(ClaudeTasksRoot, cand);
+            if (Directory.Exists(dir)) return dir;
+        }
+        return null;
     }
 
     private string? GjacGoalsDir()
