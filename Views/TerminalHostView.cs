@@ -539,44 +539,21 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>다음 N회의 출력 쓰기에서 xterm.js 스크롤을 억제(슬래시 명령 자동주입 시 사용).</summary>
     public void SuppressScroll(int count = 5) => PostJson(new { type = "suppressScroll", count });
 
-    /// <summary>ms 동안 출력 쓰기마다 맨 아래로 고정 — 인라인 TUI(gjc) resume 재페인트 시 스크롤 위/아래 튐 방지.</summary>
+    /// <summary>ms 동안 출력 쓰기 후 맨 아래로 고정 — 인라인 TUI(gjc) open 직후 최신 화면을 보이게(짧은 창).</summary>
     public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });
 
-    /// <summary>TerminalReady 통지(중복 방지). 인라인 TUI(gjc)는 로딩 오버레이가 걷히기 전에 먼저 스크롤을
-    /// 위→아래로 넛지해 resume 재생으로 어긋난 viewport 를 강제 리렌더하고, 그 다음 오버레이를 숨긴다.
-    /// (오버레이를 먼저 걷으면 넛지 전 어긋난 화면이 잠깐 노출돼 튐이 보이므로 순서가 중요.)</summary>
+    /// <summary>TerminalReady 통지(중복 방지).</summary>
     private void NotifyReady(string roomId)
     {
-        if (!_readyNotified.Add(roomId)) return;
-        if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
-        {
-            // 오버레이로 가린 채 넛지 → 리렌더 안정화 후(다음 틱) 오버레이 숨김.
-            PostJson(new { type = "nudgeScroll", roomId });
-            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(160) };
-            timer.Tick += (_, _) => { timer.Stop(); TerminalReady?.Invoke(roomId); };
-            timer.Start();
-        }
-        else TerminalReady?.Invoke(roomId);
+        if (_readyNotified.Add(roomId)) TerminalReady?.Invoke(roomId);
     }
 
-    /// <summary>인라인 TUI(gjc) 방이면 show 직후 스크롤을 맨 아래로 고정 + fit/reflow 가 끝날 즈음 여러 번
-    /// 넛지(위→아래)해 어긋난 viewport 를 강제 리렌더. tab 전환·재오픈 등 매 show 마다 동작(ready 상태 무관).
-    /// (인라인 TUI 는 alt-screen 이 아니라 show 시 fit 이 일반 버퍼를 리플로우하며 스크롤이 튄다.)</summary>
+    /// <summary>인라인 TUI(gjc) 방이면 show 직후 짧은 창 동안 스크롤을 맨 아래로 고정(open 시 최신 표시).
+    /// 이후엔 일반 동작 — gjc 는 멀티플렉서 모드(STY)로 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.</summary>
     private void PinBottomIfInline(string roomId)
     {
-        if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui != true) return;
-        PinBottom(2500);
-        // 여러 시점에 넛지 — show fit, 폰트 로드 후 재fit, resume 재생 등 늦게 오는 reflow 까지 커버.
-        foreach (var ms in new[] { 120, 350, 700, 1200 })
-        {
-            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
-            timer.Tick += (_, _) =>
-            {
-                timer.Stop();
-                if (_activeRoomId == roomId) PostJson(new { type = "nudgeScroll", roomId });
-            };
-            timer.Start();
-        }
+        if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
+            PinBottom(1500);
     }
 
     /// <summary>현재 터미널 화면을 PNG 스냅샷으로 반환. airspace 우회용.</summary>

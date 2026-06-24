@@ -377,12 +377,8 @@
       post({ type: 'action', name: e.deltaY < 0 ? 'fontInc' : 'fontDec' });
       return;
     }
-    // 인라인 TUI(gjc)는 scrollback:0(재페인트 튐 방지) 이라 휠로 스크롤할 게 없는데, 그대로 두면
-    // xterm 이 휠을 입력(커서 키 등)으로 흘려 입력창이 반응한다 → 일반 휠은 삼켜서 무시한다.
-    if (inTerm.classList.contains('agent-gajae') && e.deltaY !== 0) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
+    // 일반 휠은 xterm 기본 동작(스크롤백 스크롤)에 맡긴다. gjc 는 멀티플렉서 모드(STY)로
+    // 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.
   }, { passive: false, capture: true });
 
   // ── 우클릭: 선택이 있으면 복사, 없으면 붙여넣기 (Windows 콘솔 QuickEdit 정합) ──
@@ -397,9 +393,6 @@
   function createTerm(roomId, agent) {
     const el = document.createElement('div');
     el.className = 'term-container' + (agent ? ' agent-' + agent : '');
-    // 인라인 TUI(gjc): alt-screen 을 안 써서 라이브 렌더 루프가 일반 버퍼를 연속 재페인트(CLR+POS)→스크롤 튐.
-    // 출력마다 맨 아래로 고정해 막는다(유휴 시엔 출력이 없어 스크롤백 정상). AgentRegistry InlineTui 와 일치.
-    const inline = (agent === 'gajae');
     document.body.appendChild(el);
 
     const term = new Terminal({
@@ -409,10 +402,7 @@
       fontSize: cfg.fontSize,
       cursorBlink: true,
       allowProposedApi: true,
-      // 인라인 TUI(gjc)는 alt-screen 없이 CLR+POS 로 전체 재페인트한다. 스크롤백이 있으면 매 재페인트마다
-      // 직전 화면이 스크롤백으로 밀려 올라가며 뷰가 위/아래로 튄다. scrollback:0 으로 제자리 재그리게 해
-      // alt-screen 에이전트(claude/opencode)와 동일하게 튐을 없앤다.
-      scrollback: inline ? 0 : 5000,
+      scrollback: 5000,
       // ConPTY 백엔드 명시 → Windows 줄바꿈/와이드(CJK) 문자 휴리스틱 적용
       windowsPty: { backend: 'conpty', buildNumber: cfg.windowsBuild || 0 },
     });
@@ -422,7 +412,7 @@
     term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, dead: false, ro: null, inline: inline };
+    const entry = { term, fit, el, search, dead: false, ro: null };
     terms[roomId] = entry;
 
     // 컨테이너 실제 픽셀 박스가 바뀔 때마다 재-fit. window resize 만으로는
@@ -574,9 +564,8 @@
       case 'output': {
         const t = terms[msg.roomId];
         if (t) {
-          if (t.inline || Date.now() < _pinBottomUntil) {
-            // 인라인 TUI(gjc): 라이브 렌더 루프가 일반 버퍼를 연속 재페인트하며 스크롤이 튄다.
-            // 출력마다 맨 아래로 고정해 막는다(유휴 시엔 출력이 없어 스크롤백에 영향 없음).
+          if (Date.now() < _pinBottomUntil) {
+            // show 직후 짧은 창 동안만 맨 아래 고정(open 시 최신 표시). 이후엔 일반 동작(휠 스크롤백 자유).
             t.term.write(b64ToBytes(msg.data));
             requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
           } else if (_scrollSuppress > 0) {
