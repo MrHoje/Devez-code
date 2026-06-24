@@ -357,21 +357,12 @@ public partial class MainWindow : Window
     private void HookBannerDismiss_Click(object sender, RoutedEventArgs e)
         => HookSetupBanner.Visibility = Visibility.Collapsed;
 
-    /// <summary>직전이 정상 종료였다면 마지막으로 보고 있던 세션을 복원한다(크래시 시엔 복원하지 않음).</summary>
+    /// <summary>시작 시 마지막 세션/프로젝트를 자동으로 열지 않는다 — 사용자는 늘 프로젝트 미선택 상태로
+    /// 시작하길 원함(세션을 보다 끄든 파일을 보다 끄든 동일). CleanShutdown 마커만 갱신한다.
+    /// 직전에 열려 있던 파일 탭은 RestoreOpenFiles 가 '탭만' 복원하며 활성화(포커스)는 하지 않는다.</summary>
     private void RestoreLastSession()
     {
-        // 마지막 활성 세션은 활성화 시점에 즉시 저장되므로(ActivateSession), 강제 종료·크래시
-        // 후에도 복원한다. (clean-shutdown 게이트는 제거 — 사용자는 재시작 시 늘 복원되길 기대.)
         SettingsService.SaveCleanShutdown(false);
-
-        var (projPath, sessionId) = SettingsService.LoadLastActive();
-        if (string.IsNullOrEmpty(sessionId)) return;
-
-        // 저장된 프로젝트 우선, 없으면 전체에서 세션ID로 탐색
-        var session = _projects.FirstOrDefault(p => p.Path == projPath)?
-                          .Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == sessionId)
-                      ?? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == sessionId);
-        if (session != null) OpenSession(session);
     }
 
     /// <summary>직전 실행에서 열려 있던 파일 편집기 탭들을 복원한다(PaneA 에 생성, 활성화는 안 함).
@@ -412,8 +403,6 @@ public partial class MainWindow : Window
         _codex.Start();
         _openCodeGo.Start();
 
-        // 우측 사이드바 사용량 패널 — 진입할 때마다 최신 스냅샷으로 카드를 다시 빌드(남은시간 갱신).
-        FileExplorer.UsageRequested += () => FileExplorer.SetUsageCards(BuildUsageCards());
     }
 
     /// <summary>표시 가능한(데이터 있는) provider 만 사용량 카드로 변환. Claude → Codex → OpenCode Go 순.</summary>
@@ -478,73 +467,42 @@ public partial class MainWindow : Window
         => Dispatcher.InvokeAsync(() =>
         {
             _rlMerged = Models.RateLimitSnapshot.Merge(_rlMerged, snap);
-            if (_rlMerged != null) ApplyRateLimit(_rlMerged);
             RefreshUsagePanelIfVisible();
         });
 
-    /// <summary>사용량 탭이 열려 있으면 최신 스냅샷으로 카드를 다시 빌드 — 시작 시/폴링 시 자동 반영.</summary>
+    /// <summary>사용량 사이드바가 열려 있으면 최신 스냅샷으로 카드를 다시 빌드 — 시작 시/폴링 시 자동 반영.</summary>
     private void RefreshUsagePanelIfVisible()
     {
-        if (FileExplorer.IsUsageViewVisible) FileExplorer.SetUsageCards(BuildUsageCards());
+        if (_usageOpen) SetSidebarUsageCards(BuildUsageCards());
     }
 
-    /// <summary>codex/opencode-go 사용량을 해당 푸터 패널에 반영.</summary>
+    /// <summary>최우측 사용량 사이드바 카드 채우기. 비면 안내 문구 표시.</summary>
+    private void SetSidebarUsageCards(IReadOnlyList<Models.UsageCardVM> cards)
+    {
+        SidebarUsageList.ItemsSource = cards;
+        SidebarUsageEmpty.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SidebarUsageUpdated.Text = cards.Count == 0 ? "" : $"{DateTime.Now:HH:mm} 기준";
+    }
+
+    /// <summary>사용량 카드 클릭 — provider 별 로그인/재연결 창을 띄운다(Border.Tag = provider 이름).</summary>
+    private void UsageCard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        var name = (sender as FrameworkElement)?.Tag as string;
+        switch (name)
+        {
+            case "Claude": LoginClaude(); break;
+            case "Codex": LoginCodex(); break;
+            case "OpenCode Go": LoginOpenCode(); break;
+        }
+    }
+
+    /// <summary>codex/opencode-go 스냅샷 저장 후 사이드바 갱신.</summary>
     private void ApplyProviderUsage(Models.ProviderUsage u)
     {
-        if (u.Provider == "codex")
-        {
-            _lastCodex = u;
-            SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct, CxSevenBar, CxSevenPct, u, "Codex");
-        }
-        else if (u.Provider == "opencode-go")
-        {
-            _lastGo = u;
-            SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go", GoMonthBar, GoMonthPct);
-        }
+        if (u.Provider == "codex") _lastCodex = u;
+        else if (u.Provider == "opencode-go") _lastGo = u;
         RefreshUsagePanelIfVisible();
     }
-
-    private void SetProviderPanel(System.Windows.Controls.StackPanel panel,
-        TextBlock fLabel, Border fBar, TextBlock fPct, Border wBar, TextBlock wPct,
-        Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null)
-    {
-        // 데이터를 못 불러오면(에러 포함) 빈값(--) 대신 패널 자체를 숨김 — 사이드패널 정합.
-        // 또한 설정에서 해당 provider 푸터 표시를 끄면 숨김.
-        bool show = u.Provider == "codex" ? SettingsService.LoadShowFooterCodex() : SettingsService.LoadShowFooterGo();
-        if (!u.HasData || !show) { panel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
-        panel.Visibility = Visibility.Visible;
-        SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
-        // 주간/월간 라벨은 XAML 고정 — 막대/퍼센트만 갱신.
-        SetWindowBar(wBar, wPct, u.Weekly?.UsedPercent);
-        if (mBar != null && mPct != null) SetWindowBar(mBar, mPct, u.Monthly?.UsedPercent);
-        panel.ToolTip = BuildProviderTooltip(u, name);
-        UpdateFooterDivider();
-    }
-
-    /// <summary>고정 라벨 윈도우 막대(주간·월간) 갱신 — 값 없으면 막대 0, 퍼센트 "--".</summary>
-    private void SetWindowBar(Border bar, TextBlock pct, double? usedPercent)
-    {
-        if (usedPercent is double p) { var c = Math.Clamp(p, 0, 100); bar.Width = RlTrackWidth * c / 100.0; bar.Background = RlBrush(c); pct.Text = $"{p:F0}%"; }
-        else { bar.Width = 0; pct.Text = "--"; }
-    }
-
-    private static string BuildProviderTooltip(Models.ProviderUsage u, string name)
-    {
-        var sb = new System.Text.StringBuilder();
-        sb.Append(name);
-        if (u.PlanLabel != null) sb.Append("  ·  ").Append(u.PlanLabel);
-        if (u.Primary?.UsedPercent is double p)
-            sb.Append($"\n5시간 한도 {p:F0}%  ·  초기화까지 {FormatRemaining(u.Primary.ResetsAt)}");
-        if (u.Weekly?.UsedPercent is double w)
-            sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(u.Weekly.ResetsAt)}");
-        if (u.Monthly?.UsedPercent is double m)
-            sb.Append($"\n월간 한도 {m:F0}%  ·  초기화 {FormatResetDate(u.Monthly.ResetsAt)}");
-        if (u.Error != null) sb.Append('\n').Append(u.Error);
-        return sb.ToString();
-    }
-
-    /// <summary>opencode-go 패널 클릭 — 브라우저 로그인으로 쿠키/워크스페이스 재캡처 후 즉시 갱신.</summary>
-    private void GoPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginOpenCode();
 
     /// <summary>opencode.ai 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>
     private void LoginOpenCode()
@@ -554,9 +512,6 @@ public partial class MainWindow : Window
         if (win.Captured) _openCodeGo.RefreshNow();
     }
 
-    /// <summary>codex 패널 클릭 — ChatGPT OAuth 로그인 후 즉시 갱신.</summary>
-    private void CodexPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginCodex();
-
     /// <summary>ChatGPT(Codex) OAuth 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>
     private void LoginCodex()
     {
@@ -564,9 +519,6 @@ public partial class MainWindow : Window
         win.ShowDialog();
         if (win.Captured) _codex.RefreshNow();
     }
-
-    /// <summary>claude 패널 클릭 — Claude OAuth 로그인 후 즉시 갱신.</summary>
-    private void RlPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginClaude();
 
     /// <summary>Claude(claude.ai) OAuth 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>
     private void LoginClaude()
@@ -576,42 +528,8 @@ public partial class MainWindow : Window
         if (win.Captured) _usageApi.RefreshNow();
     }
 
-    private void ApplyRateLimit(Models.RateLimitSnapshot snap)
-    {
-        if (!snap.HasData || !SettingsService.LoadShowFooterClaude())
-        { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
-        RateLimitPanel.Visibility = Visibility.Visible;
-        UpdateFooterDivider();
-        // 5시간 칸 라벨은 남은시간(없으면 "5시간"), 주간은 고정 라벨.
-        SetBar(RlFiveLabel, RlFiveBar, RlFivePct,
-               FormatRemainingShort(snap.FiveHourResetsAt) ?? "5시간", snap.FiveHourPercent);
-        SetBar(RlSevenLabel, RlSevenBar, RlSevenPct, "주간", snap.SevenDayPercent);
-        RateLimitPanel.ToolTip = BuildRlTooltip(snap);
-    }
-
-    /// <summary>설정에서 푸터 provider 표시 토글 변경 시 — 마지막 스냅샷으로 각 패널 가시성을 다시 평가.</summary>
-    public void ApplyFooterUsageVisibility()
-    {
-        if (_rlMerged != null) ApplyRateLimit(_rlMerged);
-        else { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
-        if (_lastCodex != null) ApplyProviderUsage(_lastCodex); else CodexPanel.Visibility = Visibility.Collapsed;
-        if (_lastGo != null)    ApplyProviderUsage(_lastGo);    else GoPanel.Visibility    = Visibility.Collapsed;
-        UpdateFooterDivider();
-    }
-
-    /// <summary>rate limit 툴팁 — 사용률 + 초기화 시각/남은 시간.</summary>
-    private static string BuildRlTooltip(Models.RateLimitSnapshot snap)
-    {
-        var sb = new System.Text.StringBuilder();
-        if (snap.FiveHourPercent is double f)
-            sb.Append($"5시간 한도 {f:F0}%  ·  초기화까지 {FormatRemaining(snap.FiveHourResetsAt)}");
-        if (snap.SevenDayPercent is double w)
-        {
-            if (sb.Length > 0) sb.Append('\n');
-            sb.Append($"주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(snap.SevenDayResetsAt)}");
-        }
-        return sb.ToString();
-    }
+    /// <summary>설정에서 provider 표시 토글 변경 시 — 사용량 사이드바 카드를 다시 빌드.</summary>
+    public void ApplyFooterUsageVisibility() => RefreshUsagePanelIfVisible();
 
     /// <summary>초기화까지 남은 시간 ("2시간 12분" / "분" / "곧").</summary>
     private static string FormatRemaining(DateTimeOffset? resetsAt)
@@ -627,22 +545,6 @@ public partial class MainWindow : Window
     /// <summary>초기화 일자/시각 ("6월 24일 09:00").</summary>
     private static string FormatResetDate(DateTimeOffset? resetsAt)
         => resetsAt is DateTimeOffset r ? r.ToLocalTime().ToString("M월 d일 HH:mm") : "—";
-
-    private const double RlTrackWidth = 90;
-
-    /// <summary>한도 막대 1세트 갱신 — 라벨 / 채움 너비·색 / 퍼센트.</summary>
-    private void SetBar(TextBlock label, Border bar, TextBlock pctText, string labelText, double? pct)
-    {
-        label.Text = labelText;
-        if (pct is double v)
-        {
-            var c = Math.Clamp(v, 0, 100);
-            bar.Width = RlTrackWidth * c / 100.0;
-            bar.Background = RlBrush(c);
-            pctText.Text = $"{v:F0}%";
-        }
-        else { bar.Width = 0; pctText.Text = "--"; }
-    }
 
     /// <summary>사용률 구간별 막대 색 — 기본(낮음) / 노랑 / 주황 / 빨강.</summary>
     private System.Windows.Media.Brush RlBrush(double pct)
@@ -662,32 +564,10 @@ public partial class MainWindow : Window
         return br;
     }
 
-    /// <summary>남은 시간 짧은 표기 ("1시간24분" / "24분" / "곧"). 초기화 시각 없으면 null.</summary>
-    private static string? FormatRemainingShort(DateTimeOffset? resetsAt)
-    {
-        if (resetsAt is not DateTimeOffset r) return null;
-        var span = r.ToLocalTime() - DateTimeOffset.Now;
-        if (span <= TimeSpan.Zero) return "곧";
-        return span.TotalHours >= 1 ? $"{(int)span.TotalHours}시간{span.Minutes}분" : $"{span.Minutes}분";
-    }
-
-    /// <summary>성능 모니터 칩(푸터) 표시. 토글이 제거되어 항상 표시.</summary>
+    /// <summary>성능 모니터 칩(타이틀바) 표시. 토글이 제거되어 항상 표시.</summary>
     private void ApplyPerfMonitorVisibility()
     {
         PerfChipGroup.Visibility = Visibility.Visible;
-        UpdateFooterDivider();
-    }
-
-    /// <summary>provider 패널 사이 리딩 구분선(|)을 동적으로 — 보이는 첫 패널 앞에는 안 그린다.
-    /// Codex 의 구분선은 앞에 Claude 가 보일 때만, Go 의 구분선은 Claude/Codex 중 하나라도 보일 때만 표시.</summary>
-    private void UpdateFooterDivider()
-    {
-        bool claude = RateLimitPanel.Visibility == Visibility.Visible;
-        bool codex = CodexPanel.Visibility == Visibility.Visible;
-        if (CxLeadDivider != null)
-            CxLeadDivider.Visibility = claude ? Visibility.Visible : Visibility.Collapsed;
-        if (GoLeadDivider != null)
-            GoLeadDivider.Visibility = (claude || codex) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ApplyPerfSnapshot(Models.PerfSnapshot snap)
@@ -880,6 +760,7 @@ public partial class MainWindow : Window
     {
         _usageOpen = open;
         UsageCol.Width = new GridLength(open ? UsagePanelWidth : 0);
+        if (open) SetSidebarUsageCards(BuildUsageCards()); // 펼칠 때 최신 스냅샷으로 카드 빌드
         if (persist) SettingsService.SaveUsagePanelOpen(open);
         UpdatePanelToggleVisual();
     }
@@ -1013,6 +894,8 @@ public partial class MainWindow : Window
         RightPanelIcon.Stroke = rightHidden ? primary : muted;
         // 사용량 사이드바는 '펼침' 상태일 때 강조(다른 토글과 반대 — 열려 있음을 표시).
         UsagePanelIcon.Stroke = _usageOpen ? primary : muted;
+        // 우측 패널이 접혔으면 파일탐색기 스플리터 비활성화 — 빈(폭 0) 패널이 드래그로 열리는 것 방지.
+        FileExpSplitter.IsEnabled = !rightHidden;
     }
 
     // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는
@@ -1208,16 +1091,13 @@ public partial class MainWindow : Window
     {
         _updateInProgress = true;
         Sidebar.HideUpdateButton(); // 설치 진행 중에는 버튼 숨김
-        if (!_usageOpen) SetUsagePanelOpen(true, persist: false); // 진행률은 사용량 패널을 재사용 — 보이도록 펼침
+        if (!_usageOpen) SetUsagePanelOpen(true, persist: false); // 진행률은 사용량 사이드바에 표시 — 보이도록 펼침
+        UsageUpdateProgress.Visibility = Visibility.Visible;
         var progress = new Progress<double>(v =>
         {
-            RateLimitPanel.Visibility = Visibility.Visible;
-            RlFiveLabel.Text = $"업데이트 다운로드 중… {v:P0}";
-            RlFivePct.Text = "";
-            RlFiveBar.Width = RlTrackWidth * Math.Clamp(v, 0, 1);
-            RlFiveBar.Background = (System.Windows.Media.Brush)FindResource("PrimaryBrush");
-            // 진행 표시 중엔 주간 칸은 비워 혼동을 줄인다.
-            RlSevenLabel.Text = ""; RlSevenPct.Text = ""; RlSevenBar.Width = 0;
+            UsageUpdateProgress.Visibility = Visibility.Visible;
+            UsageUpdateText.Text = $"업데이트 다운로드 중… {v:P0}";
+            UsageUpdateBar.Width = UsageUpdateTrack.ActualWidth * Math.Clamp(v, 0, 1);
         });
         try
         {
@@ -1227,7 +1107,7 @@ public partial class MainWindow : Window
         catch
         {
             _updateInProgress = false;
-            RateLimitPanel.Visibility = Visibility.Collapsed; // 진행률 제거 — 다음 한도 스냅샷에 복원
+            UsageUpdateProgress.Visibility = Visibility.Collapsed; // 진행률 제거
             if (_pendingUpdate != null) Sidebar.ShowUpdateButton(_pendingUpdate.Version); // 실패 → 버튼 복원
             // 자동 업데이트 실패 → 브라우저로 직접 다운로드 유도.
             if (ConfirmDialog.Show(
