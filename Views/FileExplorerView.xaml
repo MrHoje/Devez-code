@@ -127,6 +127,11 @@
                                FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                 TextTrimming="CharacterEllipsis"
                                 Foreground="{DynamicResource TextBrush}"/>
+                    <!-- 사용량 탭일 때만 표시되는 마지막 갱신 시각. -->
+                    <TextBlock x:Name="UsageUpdatedText" Visibility="Collapsed"
+                               Margin="10,0,0,0" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs11}"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
                 </StackPanel>
                 <Button x:Name="FileSearchToggleBtn" Grid.Column="1"
                         Width="24" Height="24"

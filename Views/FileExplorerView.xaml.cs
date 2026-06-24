@@ -211,6 +211,7 @@ public partial class FileExplorerView : UserControl
     {
         UsageList.ItemsSource = cards;
         UsageEmptyHint.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        UsageUpdatedText.Text = cards.Count == 0 ? "" : $"갱신 {DateTime.Now:HH:mm:ss}";
     }
 
     private void SwitchTab(int idx)
@@ -222,6 +223,7 @@ public partial class FileExplorerView : UserControl
         DiffView.Visibility  = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
         QueueView.Visibility = idx == 3 ? Visibility.Visible : Visibility.Collapsed;
         UsageView.Visibility = idx == 4 ? Visibility.Visible : Visibility.Collapsed;
+        UsageUpdatedText.Visibility = idx == 4 ? Visibility.Visible : Visibility.Collapsed;
         if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
         if (idx == 2) _ = DiffView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
         if (idx == 4) UsageRequested?.Invoke();     // MainWindow 가 SetUsageCards 로 최신값을 채운다(동기)
