@@ -1465,6 +1465,8 @@ public partial class MainWindow : Window
         ApplyCornerPreference();          // 최대화 시 각진 모서리(둥근 모서리가 화면 모서리를 깎는 문제 방지)
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
         StateChanged += OnStateChangedForFullScreen;
+        Activated   += (_, _) => UpdateFullScreenTopmost();
+        Deactivated += (_, _) => UpdateFullScreenTopmost();
         // 시작 시 최대화 복원 + 전체화면 설정 ON 이면 전체화면으로 전환(StateChanged 훅 이전에 설정됐을 수 있음).
         if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
     }
@@ -1498,10 +1500,12 @@ public partial class MainWindow : Window
         _fsSavedStyle = GetWindowLong(_mainHwnd, GWL_STYLE);
         SetWindowLong(_mainHwnd, GWL_STYLE, _fsSavedStyle & ~(WS_CAPTION | WS_THICKFRAME));
 
-        // DIP 반올림 없이 모니터 물리 픽셀에 정확히 맞춰야 전체화면 감지가 성립.
+        // DIP 반올림 없이 모니터 물리 픽셀에 정확히 맞추고, TOPMOST 로 올려 작업표시줄 위로.
+        // (작업표시줄은 WS_EX_TOPMOST 라 일반 창은 못 덮음. 특히 보조 모니터는 셸 전체화면
+        //  감지가 안 먹어 topmost 가 유일한 확실한 방법.)
         var m = info.rcMonitor;
-        SetWindowPos(_mainHwnd, IntPtr.Zero, m.Left, m.Top, m.Right - m.Left, m.Bottom - m.Top,
-                     SWP_NOZORDER | SWP_FRAMECHANGED);
+        SetWindowPos(_mainHwnd, HWND_TOPMOST, m.Left, m.Top, m.Right - m.Left, m.Bottom - m.Top,
+                     SWP_FRAMECHANGED);
         if (RootChrome != null) RootChrome.Margin = default;
         ApplyCornerPreference();
         _fsGuard = false;
@@ -1521,13 +1525,24 @@ public partial class MainWindow : Window
             Left = _preFsBounds.Left; Top = _preFsBounds.Top;
             Width = _preFsBounds.Width; Height = _preFsBounds.Height;
         }
-        SetWindowPos(_mainHwnd, IntPtr.Zero, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED); // 스타일 변경 반영
+        // TOPMOST 해제 + 스타일 변경 반영.
+        SetWindowPos(_mainHwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
         ApplyCornerPreference();
         _fsGuard = false;
     }
 
+    /// <summary>전체화면 중 활성/비활성에 따라 TOPMOST 토글 — 다른 창으로 전환 시엔 내려서
+    /// 그 창이 보이도록(정상 동작), 다시 활성화되면 올려 작업표시줄을 덮는다.</summary>
+    private void UpdateFullScreenTopmost()
+    {
+        if (_mainHwnd == IntPtr.Zero || !_inFullScreen) return;
+        SetWindowPos(_mainHwnd, IsActive ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE);
+    }
+
     private const int WS_THICKFRAME = 0x00040000;
+    private static readonly IntPtr HWND_TOPMOST = new(-1), HWND_NOTOPMOST = new(-2);
     private const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_FRAMECHANGED = 0x20;
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
