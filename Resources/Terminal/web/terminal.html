@@ -367,11 +367,22 @@
 
   // ── Ctrl+휠: 폰트 확대/축소 (WT 정합). capture+passive:false 로 xterm 스크롤보다 먼저 가로챔 ──
   document.addEventListener('wheel', function (e) {
-    if (!e.ctrlKey || e.altKey || e.shiftKey || e.deltaY === 0) return; // 키보드 분기(ctrl && !alt)와 일관
     if (e.getModifierState && e.getModifierState('AltGraph')) return;
-    if (!e.target || !e.target.closest || !e.target.closest('.term-container')) return; // 터미널 위에서만(검색창 제외)
-    e.preventDefault();
-    post({ type: 'action', name: e.deltaY < 0 ? 'fontInc' : 'fontDec' });
+    if (!e.target || !e.target.closest) return;
+    var inTerm = e.target.closest('.term-container');
+    if (!inTerm) return; // 터미널 위에서만(검색창 제외)
+
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && e.deltaY !== 0) {
+      e.preventDefault();
+      post({ type: 'action', name: e.deltaY < 0 ? 'fontInc' : 'fontDec' });
+      return;
+    }
+    // 인라인 TUI(gjc)는 scrollback:0(재페인트 튐 방지) 이라 휠로 스크롤할 게 없는데, 그대로 두면
+    // xterm 이 휠을 입력(커서 키 등)으로 흘려 입력창이 반응한다 → 일반 휠은 삼켜서 무시한다.
+    if (inTerm.classList.contains('agent-gajae') && e.deltaY !== 0) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }, { passive: false, capture: true });
 
   // ── 우클릭: 선택이 있으면 복사, 없으면 붙여넣기 (Windows 콘솔 QuickEdit 정합) ──
