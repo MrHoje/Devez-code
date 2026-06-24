@@ -550,8 +550,10 @@ public sealed class TerminalSessionManager
             if (!File.Exists(StatusLineScriptPath)) return false;
             if (!File.Exists(SubagentHookScriptPath)) return false;
             var json = File.ReadAllText(HookSettingsPath);
-            // busy 연동(요청중 스피너) + subagent 훅이 들어있는 최신 설정인지 확인
-            return json.Contains("UserPromptSubmit") && json.Contains("busy-hook") && json.Contains("SubagentStart");
+            var subagentScript = File.ReadAllText(SubagentHookScriptPath);
+            // busy 연동(요청중 스피너) + PowerShell 5.1 호환 subagent 훅이 들어있는 최신 설정인지 확인
+            return json.Contains("UserPromptSubmit") && json.Contains("busy-hook") && json.Contains("SubagentStart")
+                && subagentScript.Contains("subagent tracker v2");
         }
         catch { return false; }
     }
@@ -740,7 +742,7 @@ public sealed class TerminalSessionManager
             // subagent 훅: SubagentStart/Stop 시 방별/agentId 별 JSON 파일을 기록해
             // 우측 패널의 서브에이전트 모니터가 실시간 상태를 보여준다.
             const string subagentScript = """
-                # DevezCode subagent tracker (SubagentStart / SubagentStop hook)
+                # DevezCode subagent tracker v2 (SubagentStart / SubagentStop hook)
                 # Writes per-room per-agent status so the right panel shows live agent info.
                 param([string]$status = 'start')
                 try {
@@ -753,23 +755,27 @@ public sealed class TerminalSessionManager
                   if (-not $room -or -not $j.agent_id) { exit 0 }
                   $room = $room -replace '[^\w\-]', ''
                   $aid = ('' + $j.agent_id) -replace '[^\w\-]', ''
-                  $dir = Join-Path $env:APPDATA 'DevezCode\claude\subagents' $room
+                  $dir = Join-Path (Join-Path $env:APPDATA 'DevezCode\claude\subagents') $room
                   New-Item -ItemType Directory -Force -Path $dir | Out-Null
                   $file = Join-Path $dir ($aid + '.json')
                   if ($status -eq 'start') {
+                    $prompt = ''
+                    if ($j.tool_input -and $j.tool_input.prompt) { $prompt = [string]$j.tool_input.prompt }
                     $data = @{
                       agentId   = [string]$j.agent_id
                       agentType = [string]$j.agent_type
                       roomId    = $room
                       status    = 'running'
-                      prompt    = if ($j.tool_input.prompt) { [string]$j.tool_input.prompt } else { '' }
+                      prompt    = $prompt
                       startedAt = (Get-Date).ToString('o')
                     }
                   } else {
                     $data = $null
                     try { $data = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json } catch { }
                     if (-not $data) { $data = New-Object PSObject }
-                    $data | Add-Member -MemberType NoteProperty -Name 'status' -Value ('completed','error','cancelled' -contains $j.reason ? $j.reason : 'completed') -Force
+                    $reason = 'completed'
+                    if (@('completed','error','cancelled') -contains [string]$j.reason) { $reason = [string]$j.reason }
+                    $data | Add-Member -MemberType NoteProperty -Name 'status' -Value $reason -Force
                     $data | Add-Member -MemberType NoteProperty -Name 'endedAt' -Value (Get-Date).ToString('o') -Force
                     if ($j.reason)  { $data | Add-Member -MemberType NoteProperty -Name 'reason' -Value ([string]$j.reason) -Force }
                     if ($j.tool_call_count -ne $null) { $data | Add-Member -MemberType NoteProperty -Name 'toolCallCount' -Value ([int]$j.tool_call_count) -Force }
