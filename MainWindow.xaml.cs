@@ -47,6 +47,8 @@ public partial class MainWindow : Window
     private readonly OpenCodeLastMessageService _opencodeLastMsg = new();
     // opencode — 플러그인이 busy\<room>.txt 에 저장한 처리중 상태를 감시해 스피너 연동 (claude busy hook 과 동일 패턴).
     private readonly OpenCodeBusyService _opencodeBusy = new();
+    // gjc(가재코드) — 훅 미지원. 방별 세션 .jsonl 을 폴링해 마지막 user 메시지를 헤더에 반영.
+    private readonly GajaeLastMessageService _gajaeLastMsg = new();
     private readonly TaskTrackingService _taskTracking = new();
 
     public MainWindow()
@@ -135,6 +137,16 @@ public partial class MainWindow : Window
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
 
+        // gjc — 세션 .jsonl 폴링 결과를 roomId 키로 즉시 반영 (opencode lastmsg 와 동일 처리).
+        _gajaeLastMsg.MessageChanged += (roomId, msg) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s == null) return;
+                if (!ApplyHeaderMessage(s, msg)) return;
+                foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
+            });
+
         // opencode — 플러그인이 떨군 busy 파일 감시 → 스피너 (claude 와 동일).
         _opencodeBusy.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
@@ -209,6 +221,7 @@ public partial class MainWindow : Window
             OpenCodePluginInstaller.EnsureInstalled();
             _opencodeLastMsg.Start();
             _opencodeBusy.Start();
+            _gajaeLastMsg.Start();
             _agentLastMsg.Start();
             _taskTracking.Start();
             RestoreLastSession();
@@ -249,6 +262,7 @@ public partial class MainWindow : Window
             _codexHook.Dispose();
             _opencodeLastMsg.Dispose();
             _opencodeBusy.Dispose();
+            _gajaeLastMsg.Dispose();
             _agentLastMsg.Dispose();
             _taskTracking.Dispose();
             FileExplorer.DisposeBrowser();
