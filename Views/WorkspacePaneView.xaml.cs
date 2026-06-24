@@ -1253,10 +1253,20 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>터미널 WebView2 를 스냅샷/커튼으로 대체하고 숨긴다. FileExplorer 는 셸이 처리.</summary>
     public async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
-        // 파일 편집기(md) 탭이 활성이면 그 WebView2 가 HWND 로 오버레이(앱 종료 "세션 닫는 중"/설정 오버레이)를
-        // 가린다 → 함께 숨겨 오버레이가 보이게 한다. (Resume 시 복원.)
-        if (_activeTab is FileTabItem)
-            FileEditorHostContainer.Visibility = Visibility.Collapsed;
+        // 파일 편집기 탭이 활성이면 그 콘텐츠(md=WebView2 HWND)가 오버레이(앱 종료 "세션 닫는 중"/설정 오버레이)를
+        // 가린다. 마지막 화면을 캡처해 스냅샷 Image 로 깔고 WebView2 컨테이너를 숨긴다(오버레이가 스냅샷 위에 보임).
+        // WPF 네이티브 에디터는 캡처가 null → airspace 문제 없으니 그대로 둔다. (Resume 시 복원.)
+        if (_activeTab is FileTabItem file)
+        {
+            var fileSnap = await file.Editor.CaptureSnapshotAsync();
+            if (fileSnap != null)
+            {
+                TerminalSnapshot.Source = fileSnap;
+                TerminalSnapshot.Visibility = Visibility.Visible;
+                FileEditorHostContainer.Visibility = Visibility.Collapsed;
+            }
+            return;
+        }
 
         if (_activeSession == null) return;
         if (blankCurtain)

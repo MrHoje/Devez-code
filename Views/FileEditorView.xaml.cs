@@ -210,6 +210,10 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         }
     }
 
+    /// <summary>WPF 네이티브 에디터 — airspace 문제가 없어(오버레이가 그대로 덮음) 스냅샷이 불필요. null 반환.</summary>
+    public Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync()
+        => Task.FromResult<System.Windows.Media.Imaging.BitmapSource?>(null);
+
     private bool ConfirmDiscardOrSave()
     {
         if (!_dirty) return true;

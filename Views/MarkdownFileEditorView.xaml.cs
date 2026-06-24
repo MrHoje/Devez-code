@@ -303,6 +303,9 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         MdHost.SetBaseline(content);
     }
 
+    /// <summary>airspace 우회 — WebView2(MdHost) 화면 스냅샷. 앱 종료/오버레이 배경에 사용.</summary>
+    public Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync() => MdHost.CaptureSnapshotAsync();
+
     public void Dispose()
     {
         DisposeFileWatcher();

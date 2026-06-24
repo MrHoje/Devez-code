@@ -329,9 +329,9 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
-        // WebView2(터미널/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
-        // 설정 오버레이와 동일하게 스냅샷+커튼으로 suspend 해 WebView 를 치운 뒤 오버레이를 띄운다.
-        try { await SuspendTerminalWithSnapshotAsync(blankCurtain: true); }
+        // WebView2(터미널/md 에디터/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
+        // 종료 직전 화면을 스냅샷으로 캡처해 깔고 WebView 를 치운 뒤 "세션 닫는 중" 오버레이를 그 위에 띄운다.
+        try { await SuspendTerminalWithSnapshotAsync(blankCurtain: false); }
         catch { /* best effort */ }
         ShutdownOverlay.Visibility = Visibility.Visible;
         try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(1500); }
@@ -724,6 +724,7 @@ public partial class MainWindow : Window
                     // 확장 완료 → 탭 버튼 폭을 최소 폭으로 복원(접힘 직전 0 으로 내렸던 것).
                     if (_fileExpMinWidth > 0) SetMinWidth(_fileExpMinWidth, FileExpCol, FooterFileExpCol);
                     _rightAnimCancel = null;
+                    UpdateUsageSidebarBorder(); // 채널 복원 완료 후 사용량 보더 복구
                 });
         }
         else
@@ -742,6 +743,7 @@ public partial class MainWindow : Window
                 {
                     FileExplorer.Visibility = Visibility.Collapsed;
                     _rightAnimCancel = null;
+                    UpdateUsageSidebarBorder(); // 패널이 완전히 닫힌 뒤에 사용량 보더 보정(미리 사라지지 않게)
                 });
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
@@ -751,16 +753,32 @@ public partial class MainWindow : Window
     // ── 최우측 계정 사용량 사이드바 토글 ────────────────────────────────
     private const double UsagePanelWidth = 250;
     private bool _usageOpen;
+    private Action? _usageAnimCancel;
 
     private void UsagePanelBtn_Click(object sender, RoutedEventArgs e)
-        => SetUsagePanelOpen(!_usageOpen, persist: true);
+        => SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
 
-    /// <summary>최우측 사용량 사이드바를 펼치거나 접는다(폭 토글, 애니메이션 없음).</summary>
-    private void SetUsagePanelOpen(bool open, bool persist)
+    /// <summary>최우측 사용량 사이드바를 펼치거나 접는다. animate=true 면 좌·우 패널과 같은 폭 트윈.</summary>
+    private void SetUsagePanelOpen(bool open, bool persist, bool animate = false)
     {
         _usageOpen = open;
-        UsageCol.Width = new GridLength(open ? UsagePanelWidth : 0);
         if (open) SetSidebarUsageCards(BuildUsageCards()); // 펼칠 때 최신 스냅샷으로 카드 빌드
+
+        _usageAnimCancel?.Invoke();
+        _usageAnimCancel = null;
+        if (animate)
+        {
+            _usageAnimCancel = AnimateColumn(
+                UsageCol, open ? UsagePanelWidth : 0,
+                durationMs: 200, easeIn: !open,
+                cacheTarget: UsageSidebar,
+                onComplete: () => _usageAnimCancel = null);
+        }
+        else
+        {
+            UsageCol.Width = new GridLength(open ? UsagePanelWidth : 0);
+        }
+
         if (persist) SettingsService.SaveUsagePanelOpen(open);
         UpdatePanelToggleVisual();
     }
@@ -896,6 +914,15 @@ public partial class MainWindow : Window
         UsagePanelIcon.Stroke = _usageOpen ? primary : muted;
         // 우측 패널이 접혔으면 파일탐색기 스플리터 비활성화 — 빈(폭 0) 패널이 드래그로 열리는 것 방지.
         FileExpSplitter.IsEnabled = !rightHidden;
+    }
+
+    /// <summary>파일탐색기가 접히면 그 사이 채널이 사라져 중앙 패널 우측 보더와 사용량 사이드바 좌측
+    /// 보더가 맞붙어 2중선이 된다 → 접힘 시 사용량 좌측 보더 제거(중앙 패널 우측 보더로 단일 구분).
+    /// 접기/펼치기 애니메이션 도중이 아니라 '완료된' 상태에서만 호출해야 보더가 미리 사라지지 않는다.</summary>
+    private void UpdateUsageSidebarBorder()
+    {
+        bool rightHidden = _narrow == true ? !_rightOverlayOpen : _rightCollapsed;
+        UsageSidebar.BorderThickness = rightHidden ? new Thickness(0) : new Thickness(1, 0, 0, 0);
     }
 
     // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는

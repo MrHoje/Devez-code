@@ -173,6 +173,26 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
         return fallback;
     }
 
+    /// <summary>현재 에디터 화면을 PNG 스냅샷으로 반환. airspace 우회용(앱 종료/오버레이 배경).</summary>
+    public async Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync()
+    {
+        if (_webView?.CoreWebView2 == null) return null;
+        try
+        {
+            using var ms = new MemoryStream();
+            await _webView.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+            ms.Position = 0;
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+            bitmap.BeginInit();
+            bitmap.StreamSource = ms;
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch { return null; }
+    }
+
     private void PostJson(object message)
     {
         try { _webView?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message, CamelCase)); }
