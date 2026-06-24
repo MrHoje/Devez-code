@@ -11,7 +11,8 @@ namespace DevezCode.Views;
 /// <summary>우측/좌측 모서리 스택형 토스트 알림 (devez NotificationPopup 이식, 로컬 단독 버전).
 /// 표시 위치(4모서리)는 설정값을 따르고, 여러 알림은 코너에서 바깥쪽으로 쌓인다.
 /// PerMonitorV2 환경에서 모니터마다 DPI 가 달라 WPF DIP 좌표로는 화면 밖으로 튀어나가므로,
-/// 위치는 선택 모니터의 물리 픽셀로 계산해 SetWindowPos 로 직접 배치한다.</summary>
+/// (1) 먼저 대상 모니터로 옮겨 WPF 가 해당 모니터 DPI 로 리사이즈하게 한 뒤
+/// (2) 실제 창 픽셀 크기(GetWindowRect)로 코너에 맞춰 SetWindowPos 한다.</summary>
 public partial class NotificationPopup : Window
 {
     private static readonly List<NotificationPopup> _active = new();
@@ -40,13 +41,19 @@ public partial class NotificationPopup : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         _active.Add(this);
-        // 물리 픽셀로 직접 배치하므로 SizeToContent 자동 리사이즈를 잠가 SetWindowPos 와 충돌 방지.
-        SizeToContent = SizeToContent.Manual;
-        UpdateLayout();
-        LayoutAll();
+        Opacity = 0; // 배치 전 깜빡임 방지
 
-        BeginAnimation(OpacityProperty,
-            new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(200))));
+        // 1차: 대상 모니터로 이동 → WPF 가 그 모니터 DPI 로 리사이즈하게 한다(정확한 픽셀 크기 확보).
+        var (waPx, _, _) = MonitorHelper.GetNotificationTarget();
+        MovePx((int)waPx.Left, (int)waPx.Top);
+
+        // 2차: 레이아웃/DPI 안정 후 실제 픽셀 크기로 코너 정렬 + 페이드 인.
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            LayoutAll();
+            BeginAnimation(OpacityProperty,
+                new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(200))));
+        }));
 
         // 자동 닫힘: 설정값(초). 0=영구 → 타이머 없음(닫기 버튼/클릭으로만 닫힘).
         var sec = SettingsService.LoadNotifyAutoCloseSeconds();
@@ -64,7 +71,7 @@ public partial class NotificationPopup : Window
     }
 
     /// <summary>전체 활성 알림을 선택 모니터의 물리 픽셀 좌표로 코너에서 바깥쪽으로 재배치한다.
-    /// 최신 알림이 코너에 가장 가깝다. 크기·여백은 DIP 를 모니터 배율로 곱해 픽셀로 환산.</summary>
+    /// 최신 알림이 코너에 가장 가깝다. 창 크기는 GetWindowRect 로 실제 픽셀을 읽어 정확히 정렬.</summary>
     private static void LayoutAll()
     {
         var pos = SettingsService.LoadNotifyPosition();
@@ -77,26 +84,23 @@ public partial class NotificationPopup : Window
         for (int i = _active.Count - 1; i >= 0; i--)
         {
             var p = _active[i];
-            p.UpdateLayout();
-            double dipW = p.ActualWidth > 0 ? p.ActualWidth : p.Width;
-            double dipH = p.ActualHeight;
-            double wPx = dipW * sx, hPx = dipH * sy;
+            var hwnd = new WindowInteropHelper(p).Handle;
+            if (hwnd == IntPtr.Zero) continue;
+            if (!GetWindowRect(hwnd, out var r)) continue;
+            double wPx = r.Right - r.Left, hPx = r.Bottom - r.Top;
             double leftPx = right  ? waPx.Right  - marginX - wPx : waPx.Left + marginX;
             double topPx  = bottom ? waPx.Bottom - marginY - offset - hPx : waPx.Top + marginY + offset;
-            p.SetPhysicalPlacement(leftPx, topPx, wPx, hPx);
+            SetWindowPos(hwnd, HWND_TOPMOST, (int)Math.Round(leftPx), (int)Math.Round(topPx), 0, 0,
+                SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
             offset += hPx + gapPx;
         }
     }
 
-    /// <summary>창을 물리 픽셀 좌표/크기로 직접 배치(SetWindowPos). DIP→PX 변환 없이 정확.</summary>
-    private void SetPhysicalPlacement(double leftPx, double topPx, double wPx, double hPx)
+    private void MovePx(int x, int y)
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
-        SetWindowPos(hwnd, HWND_TOPMOST,
-            (int)Math.Round(leftPx), (int)Math.Round(topPx),
-            (int)Math.Ceiling(wPx), (int)Math.Ceiling(hPx),
-            SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     }
 
     private void CloseWithAnimation()
@@ -121,8 +125,14 @@ public partial class NotificationPopup : Window
     }
 
     private static readonly IntPtr HWND_TOPMOST = new(-1);
-    private const uint SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
+    private const uint SWP_NOSIZE = 0x0001, SWP_NOACTIVATE = 0x0010, SWP_SHOWWINDOW = 0x0040;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 }

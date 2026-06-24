@@ -23,8 +23,8 @@
         </Border.Effect>
 
         <StackPanel>
-            <!-- 헤더: 벨 아이콘 + Devez + 닫기 (높이 축소: 상하 여백 12→2) -->
-            <Grid Margin="16,2,12,2">
+            <!-- 헤더: 벨 아이콘 + Devez + 닫기 -->
+            <Grid Margin="16,12,12,12">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Path Data="{DynamicResource IconBell}" Width="13" Height="13" Margin="0,0,7,0"
                           VerticalAlignment="Center" Stretch="Uniform" Fill="Transparent"
@@ -58,11 +58,11 @@
 
             <Border Height="1" Background="{DynamicResource LineBrush}"/>
 
-            <!-- 본문: 프로젝트명(큰 글씨) + 세션명(작은 글씨). 아래 여백 +20 (16→36) -->
-            <StackPanel Margin="16,16,16,36">
+            <!-- 본문: 프로젝트명(큰 글씨) + 세션명(작은 글씨) -->
+            <StackPanel Margin="16,14,16,16">
                 <TextBlock x:Name="TitleText" FontSize="{DynamicResource Fs16}" FontWeight="Bold"
                            Foreground="{DynamicResource TextBrush}"
-                           TextWrapping="Wrap" Margin="0,0,0,5"/>
+                           TextWrapping="Wrap" Margin="0,0,0,4"/>
                 <TextBlock x:Name="ContentText" FontSize="{DynamicResource Fs12}"
                            Foreground="{DynamicResource TextMutedBrush}"
                            TextWrapping="Wrap" Visibility="Collapsed"/>
