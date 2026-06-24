@@ -39,13 +39,6 @@ public sealed class TerminalSession : IDisposable
         // CreateProcessW 는 환경변수를 확장하지 않으므로 여기서 직접 확장한다.
         commandLine = Environment.ExpandEnvironmentVariables(commandLine);
 
-        // claude 는 WT_SESSION 으로 터미널을 "windows-terminal" 로 식별한다.
-        // 한글 IME 조합 위치의 직접 해결책은 아니지만(해결은 terminal.html 의
-        // ime-fixed 워크어라운드), 진짜 WT의 claude 와 동일한 환경 조건을 맞춰
-        // 터미널 종류에 따른 잠재적 동작 차이를 줄인다.
-        Environment.SetEnvironmentVariable("WT_SESSION", Guid.NewGuid().ToString());
-        Environment.SetEnvironmentVariable("WT_PROFILE_ID", "{2ece5bfe-50ed-5f3a-ab87-5cd4baafed2b}");
-
         // 1) 파이프 2쌍: (셸이 읽는 stdin), (셸이 쓰는 stdout)
         if (!CreatePipe(out var inputRead, out var inputWriteRaw, IntPtr.Zero, 0))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "CreatePipe(input) 실패");
@@ -97,30 +90,60 @@ public sealed class TerminalSession : IDisposable
                     ref jobInfo, Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>());
             }
 
-            if (!CreateProcessW(null, commandLine, IntPtr.Zero, IntPtr.Zero, false,
-                    EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                    IntPtr.Zero, cwd, ref siEx, out var pi))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), $"셸 실행 실패: {commandLine}");
+            var environmentBlock = BuildChildEnvironmentBlock();
+            try
+            {
+                if (!CreateProcessW(null, commandLine, IntPtr.Zero, IntPtr.Zero, false,
+                        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                        environmentBlock, cwd, ref siEx, out var pi))
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), $"셸 실행 실패: {commandLine}");
 
-            _hProcess = pi.hProcess;
-            _hThread = pi.hThread;
-            // 셸을 Job 에 편입 — 셸이 곧 띄울 claude/node 등 자손도 같은 Job 에 상속된다.
-            // (셸이 initialCmd 로 claude 를 띄우기 전에 편입되므로 자손 누락 경합은 사실상 없음)
-            if (_hJob != IntPtr.Zero)
-                try { AssignProcessToJobObject(_hJob, _hProcess); } catch (Exception) { }
-            IsAlive = true;
+                _hProcess = pi.hProcess;
+                _hThread = pi.hThread;
+                // 셸을 Job 에 편입 — 셸이 곧 띄울 claude/node 등 자손도 같은 Job 에 상속된다.
+                // (셸이 initialCmd 로 claude 를 띄우기 전에 편입되므로 자손 누락 경합은 사실상 없음)
+                if (_hJob != IntPtr.Zero)
+                    try { AssignProcessToJobObject(_hJob, _hProcess); } catch (Exception) { }
+                IsAlive = true;
 
-            // 4) 입출력 스트림 + 종료 감시
-            _inputStream = new FileStream(_inputWrite, FileAccess.Write);
-            ProcessId = (int)pi.dwProcessId;
-            StartReadLoop();
-            StartExitWatch((int)pi.dwProcessId);
+                // 4) 입출력 스트림 + 종료 감시
+                _inputStream = new FileStream(_inputWrite, FileAccess.Write);
+                ProcessId = (int)pi.dwProcessId;
+                StartReadLoop();
+                StartExitWatch((int)pi.dwProcessId);
+            }
+            finally
+            {
+                if (environmentBlock != IntPtr.Zero)
+                    Marshal.FreeHGlobal(environmentBlock);
+            }
         }
         finally
         {
             DeleteProcThreadAttributeList(attrList);
             Marshal.FreeHGlobal(attrList);
         }
+    }
+
+    private static IntPtr BuildChildEnvironmentBlock()
+    {
+        var values = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            var key = entry.Key?.ToString();
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            if (key.StartsWith("CLAUDE_CODE_", StringComparison.OrdinalIgnoreCase)) continue;
+            values[key] = entry.Value?.ToString() ?? "";
+        }
+
+        values["WT_SESSION"] = Guid.NewGuid().ToString();
+        values["WT_PROFILE_ID"] = "{2ece5bfe-50ed-5f3a-ab87-5cd4baafed2b}";
+
+        var block = new StringBuilder();
+        foreach (var pair in values)
+            block.Append(pair.Key).Append('=').Append(pair.Value).Append('\0');
+        block.Append('\0');
+        return Marshal.StringToHGlobalUni(block.ToString());
     }
 
     private void StartReadLoop()

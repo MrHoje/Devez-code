@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private readonly List<WorkspacePaneView> _panes = new();
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
     private string? _explorerDir;                      // 우측 파일탐색기가 보고 있는 경로(중복 ShowDirectory 방지)
+    private string? _taskTrackingProject;              // TaskTrackingService 가 보고 있는 프로젝트 경로
     private readonly PerfMonitorService _perfMonitor = new();
     // 계정 사용량: statusLine 훅(세션 활성 시 거의 실시간) + OAuth API(세션 없어도 3분 주기) 두 소스를 병합.
     private readonly StatusLineService _statusLine = new();
@@ -48,6 +49,7 @@ public partial class MainWindow : Window
     // opencode — 플러그인이 busy\<room>.txt 에 저장한 처리중 상태를 감시해 스피너 연동 (claude busy hook 과 동일 패턴).
     private readonly OpenCodeBusyService _opencodeBusy = new();
     private readonly SubagentStatusService _subagentStatus = new();
+    private readonly TaskTrackingService _taskTracking = new();
 
     public MainWindow()
     {
@@ -152,6 +154,10 @@ public partial class MainWindow : Window
         _subagentStatus.SubagentRemoved += (roomId, agentId) =>
             Dispatcher.InvokeAsync(() => FileExplorer.AgentView.Remove(agentId));
 
+        // 태스크 추적 → 우측 패널 TaskView 에 반영.
+        _taskTracking.TasksChanged += () =>
+            Dispatcher.InvokeAsync(() => FileExplorer.TaskView.SetTasks(_taskTracking.Tasks));
+
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
         _codexHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
@@ -215,6 +221,7 @@ public partial class MainWindow : Window
             _opencodeBusy.Start();
             _agentLastMsg.Start();
             _subagentStatus.Start();
+            _taskTracking.Start();
             RestoreLastSession();
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
@@ -255,6 +262,7 @@ public partial class MainWindow : Window
             _opencodeBusy.Dispose();
             _agentLastMsg.Dispose();
             _subagentStatus.Dispose();
+            _taskTracking.Dispose();
             FileExplorer.DisposeBrowser();
         };
     }
@@ -1233,6 +1241,12 @@ public partial class MainWindow : Window
         {
             _explorerDir = proj?.Path;
             if (proj != null) FileExplorer.ShowDirectory(proj.Path);
+        }
+        if (proj?.Path != _taskTrackingProject)
+        {
+            if (_taskTrackingProject != null) _taskTracking.UnwatchProject(_taskTrackingProject);
+            _taskTrackingProject = proj?.Path;
+            if (_taskTrackingProject != null) _taskTracking.WatchProject(_taskTrackingProject);
         }
         SettingsService.SaveLastActive(proj?.Path, _focusedPane.ActiveSession?.Id);
         if (_focusedPane.ActiveSession != null && HookSetupBanner.Visibility == Visibility.Visible)

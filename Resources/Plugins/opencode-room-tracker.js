@@ -73,6 +73,17 @@ export const DevezCodeRoomTracker = async () => {
     return "";
   };
 
+  // todo\\<room>.json — todowrite 툴로 생성된 태스크 목록을 기록. DevezCode Task View 에서 읽는다.
+  const writeTodos = (todos) => {
+    try {
+      if (!safe) return;
+      const dir = path.join(base, "DevezCode", "opencode", "todos");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, safe + ".json"), JSON.stringify(todos, null, 2));
+      debug(`todos saved (${Array.isArray(todos) ? todos.length : 0} items)`);
+    } catch (e) { debug(`writeTodos failed: ${e.message}`); }
+  };
+
   // 어떤 event 가 오는지 + role 필드 위치를 파악하기 위한 카운터
   let eventCount = 0;
 
@@ -94,6 +105,10 @@ export const DevezCodeRoomTracker = async () => {
                 (part.type ? ` partType=${part.type}` : ""));
         }
 
+        // todowrite 업데이트 — 태스크 목록을 JSON 파일로 기록. DevezCode Task View 에서 사용.
+        if (event.type === "todo.updated") {
+          writeTodos(props.todos);
+        }
         // 세션 처리 종료 신호 → 스피너 끄기. session.idle = 응답 완료, session.error = 실패.
         if (event.type === "session.idle" || event.type === "session.error") {
           writeBusy("idle");

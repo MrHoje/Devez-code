@@ -537,6 +537,27 @@
                                                   Checked="SidePanelToggle_Changed" Unchecked="SidePanelToggle_Changed"/>
                                     </Grid>
                                 </Border>
+
+                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="태스크" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="태스크 뷰 전환 버튼 (opencode/Claude Code 작업 목록)" FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ShowTaskViewToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="SidePanelToggle_Changed" Unchecked="SidePanelToggle_Changed"/>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
 
                             <!-- 단축키 패널 — 탭 이동 전역 단축키 수식키 리바인드 -->
