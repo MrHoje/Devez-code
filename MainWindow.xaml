@@ -80,7 +80,27 @@
                 <!-- 윈도우 컨트롤(오른쪽 고정) -->
                 <StackPanel Orientation="Horizontal" Margin="0,0,4,0" HorizontalAlignment="Right"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <!-- 성능 모니터 칩(CPU/RAM)은 하단 푸터로 이동했다. -->
+                    <!-- 성능 모니터 칩(CPU/RAM) — 상단 타이틀바. -->
+                    <StackPanel x:Name="PerfChipGroup" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                Style="{StaticResource PerfChipButton}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="CPU  " FontSize="{DynamicResource PerfChipLblFs}"
+                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="PerfCpuText" Text="--" TextAlignment="Left"
+                                           FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock Text="RAM  " Margin="14,0,0,0" FontSize="{DynamicResource PerfChipLblFs}"
+                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="PerfRamText" Text="--" TextAlignment="Left"
+                                           FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <Border Width="1" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"
+                            Background="{DynamicResource LineBrush}" Opacity="0.5"/>
 
                     <!-- ── 우 패널 접기/펼치기 (좌측 패널 버튼은 타이틀 로고 블록으로 이동) ──── -->
                     <Button x:Name="RightPanelBtn" Click="RightPanelBtn_Click"
@@ -168,33 +188,12 @@
                     <!-- 우측 패널 접힘과 무관하게 항상 보이는 설정 버튼용 고정폭 컬럼 -->
                     <ColumnDefinition x:Name="FooterActionsCol" Width="Auto" MinWidth="48"/>
                 </Grid.ColumnDefinitions>
-                    <!-- 좌측: CPU/RAM | (구분선) 클로드 사용량.
-                         초기 배치처럼 한 StackPanel에 묶되, 성능모니터 영역만 고정 폭으로 잡아
-                         CPU/RAM 값 길이가 바뀌어도 뒤의 RateLimitPanel 시작점이 밀리지 않게 한다. -->
+                    <!-- 좌측: 클로드 사용량 (CPU/RAM 성능모니터는 상단 타이틀바로 이동). -->
                     <StackPanel Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
-                        <StackPanel x:Name="PerfChipGroup" Width="202" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
-                                    Style="{StaticResource PerfChipButton}">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="CPU  " FontSize="{DynamicResource PerfChipLblFs}"
-                                               Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="PerfCpuText" Text="--" Width="38" TextAlignment="Left"
-                                               FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="RAM  " Margin="10,0,0,0" FontSize="{DynamicResource PerfChipLblFs}"
-                                               Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="PerfRamText" Text="--" Width="82" TextAlignment="Left"
-                                               FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
                         <!-- 계정 사용량: provider(Claude/Codex/Go)별 [구분선][아이콘][이름][5h바][주바]. -->
                         <!-- Claude -->
                         <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal" VerticalAlignment="Center"
                                     Visibility="Collapsed" ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
-                            <Border Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
-                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
                             <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
