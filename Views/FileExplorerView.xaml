@@ -392,7 +392,7 @@
                                                                    VerticalAlignment="Center"
                                                                    FontSize="{DynamicResource Fs11}"
                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                                                        <Border Grid.Row="0" Grid.Column="1" Width="150" Height="6"
+                                                        <Border Grid.Row="0" Grid.Column="1" Width="117" Height="6"
                                                                 Margin="6,0,0,0" CornerRadius="3"
                                                                 Background="{DynamicResource LineBrush}"
                                                                 VerticalAlignment="Center">

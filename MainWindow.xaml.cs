@@ -447,8 +447,8 @@ public partial class MainWindow : Window
         if (percent is not double p) return;
         var c = Math.Clamp(p, 0, 100);
         string reset = isShortWindow
-            ? (resetsAt != null ? $"↻ {FormatRemaining(resetsAt)} 후" : "")
-            : (resetsAt != null ? $"↻ {FormatResetDate(resetsAt)} 초기화" : "");
+            ? (resetsAt != null ? $"↻ {FormatRemaining(resetsAt)}" : "")
+            : (resetsAt != null ? $"↻ {FormatResetDate(resetsAt)}" : "");
         rows.Add(new Models.UsageRowVM
         {
             Label = label,
@@ -459,7 +459,7 @@ public partial class MainWindow : Window
         });
     }
 
-    private const double UsageBarTrack = 150; // 팝오버 막대 트랙 폭(XAML 과 일치)
+    private const double UsageBarTrack = 117; // 사용량 패널 막대 트랙 폭(XAML 과 일치)
 
     private void OnRlSnapshot(Models.RateLimitSnapshot snap)
         => Dispatcher.InvokeAsync(() =>
