@@ -352,13 +352,51 @@ public partial class SettingsDialog : UserControl
         NotifyEnabledToggle.IsChecked = SettingsService.LoadNotifySessionDoneEnabled();
         _notifyPos = SettingsService.LoadNotifyPosition();
         UpdateNotifyPositionVisual();
+        SelectComboByTag(NotifyAutoCloseCombo, SettingsService.LoadNotifyAutoCloseSeconds().ToString());
+        InitNotifyMonitorCombo();
         _loadingNotify = false;
+    }
+
+    /// <summary>설치된 모니터 목록을 콤보에 채우고 저장된 선택값(없으면 주 모니터)을 선택.</summary>
+    private void InitNotifyMonitorCombo()
+    {
+        var monitors = MonitorHelper.GetAllMonitors();
+        var saved = SettingsService.LoadNotifyMonitorDevice();
+        NotifyMonitorCombo.Items.Clear();
+        int selectIndex = 0;
+        for (int i = 0; i < monitors.Count; i++)
+        {
+            NotifyMonitorCombo.Items.Add(new ComboBoxItem { Content = monitors[i].DisplayName, Tag = monitors[i].DeviceName });
+            if (monitors[i].DeviceName == saved) selectIndex = i;
+        }
+        if (NotifyMonitorCombo.Items.Count > 0) NotifyMonitorCombo.SelectedIndex = selectIndex;
+    }
+
+    private static void SelectComboByTag(ComboBox combo, string tag)
+    {
+        foreach (var obj in combo.Items)
+            if (obj is ComboBoxItem it && (string?)it.Tag == tag) { combo.SelectedItem = it; return; }
+        if (combo.Items.Count > 0) combo.SelectedIndex = 0;
     }
 
     private void NotifyEnabledToggle_Changed(object sender, RoutedEventArgs e)
     {
         if (_loadingNotify) return;
         SettingsService.SaveNotifySessionDoneEnabled(NotifyEnabledToggle.IsChecked == true);
+    }
+
+    private void NotifyAutoCloseCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingNotify) return;
+        if (NotifyAutoCloseCombo.SelectedItem is ComboBoxItem it && int.TryParse((string)it.Tag, out var sec))
+            SettingsService.SaveNotifyAutoCloseSeconds(sec);
+    }
+
+    private void NotifyMonitorCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingNotify) return;
+        if (NotifyMonitorCombo.SelectedItem is ComboBoxItem it)
+            SettingsService.SaveNotifyMonitorDevice((string)(it.Tag ?? ""));
     }
 
     private void NotifyPositionCard_Click(object sender, MouseButtonEventArgs e)

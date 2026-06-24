@@ -13,8 +13,8 @@ namespace DevezCode.Views;
 public partial class NotificationPopup : Window
 {
     private static readonly List<NotificationPopup> _active = new();
-    private const double Margin = 12, Gap = 8;
-    private const int AutoCloseMs = 6000;
+    // 모서리 여백 — 기존 12에서 절반으로(요청). 알림 간 간격은 유지.
+    private const double Margin = 6, Gap = 8;
 
     private readonly Action? _onClick;
     private DispatcherTimer? _autoClose;
@@ -45,9 +45,14 @@ public partial class NotificationPopup : Window
         BeginAnimation(OpacityProperty,
             new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(200))));
 
-        _autoClose = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(AutoCloseMs) };
-        _autoClose.Tick += (_, _) => CloseWithAnimation();
-        _autoClose.Start();
+        // 자동 닫힘: 설정값(초). 0=영구 → 타이머 없음(닫기 버튼/클릭으로만 닫힘).
+        var sec = SettingsService.LoadNotifyAutoCloseSeconds();
+        if (sec > 0)
+        {
+            _autoClose = new DispatcherTimer { Interval = TimeSpan.FromSeconds(sec) };
+            _autoClose.Tick += (_, _) => CloseWithAnimation();
+            _autoClose.Start();
+        }
     }
 
     private void OnClosed(object sender, EventArgs e)
@@ -62,17 +67,23 @@ public partial class NotificationPopup : Window
         var pos = SettingsService.LoadNotifyPosition();
         bool right  = pos is "br" or "tr";
         bool bottom = pos is "br" or "bl";
-        var wa = SystemParameters.WorkArea;
+        // 선택 모니터 작업영역(물리 픽셀). 창 DPI 로 나눠 DIP 로 환산해 위치 계산.
+        var waPx = MonitorHelper.GetNotificationWorkArea();
 
         double offset = 0;
         for (int i = _active.Count - 1; i >= 0; i--)
         {
             var p = _active[i];
             p.UpdateLayout();
+            var dpi = VisualTreeHelper.GetDpi(p);
+            double waLeft   = waPx.Left   / dpi.DpiScaleX;
+            double waRight  = waPx.Right  / dpi.DpiScaleX;
+            double waTop    = waPx.Top    / dpi.DpiScaleY;
+            double waBottom = waPx.Bottom / dpi.DpiScaleY;
             double w = p.ActualWidth > 0 ? p.ActualWidth : p.Width;
             double h = p.ActualHeight;
-            double left = right ? wa.Right - Margin - w : wa.Left + Margin;
-            double top  = bottom ? wa.Bottom - Margin - offset - h : wa.Top + Margin + offset;
+            double left = right ? waRight - Margin - w : waLeft + Margin;
+            double top  = bottom ? waBottom - Margin - offset - h : waTop + Margin + offset;
 
             p.Left = left;
             if (animateNew) p.AnimateTop(top);

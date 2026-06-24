@@ -100,6 +100,15 @@
                                         <TextBlock Text="일반" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
+                                <Button x:Name="CatNotifyBtn" Tag="notify"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconBell}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="알림" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button x:Name="CatProjectBtn" Tag="project"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -143,15 +152,6 @@
                                               Data="{StaticResource IconZap}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="단축키" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="CatNotifyBtn" Tag="notify"
-                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconBell}" Width="15" Height="15"
-                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="알림" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="CatChangelogBtn" Tag="changelog"
@@ -794,7 +794,7 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <!-- 알림 패널 — 세션 종료 알림 / 표시 위치 / 테스트 -->
+                            <!-- 알림 패널 — 세션 종료 알림 / 자동 닫힘 / 표시 위치 / 모니터 -->
                             <StackPanel x:Name="NotifyPanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBell}"
@@ -803,7 +803,7 @@
                                     <TextBlock Text="알림" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="세션의 응답이 끝나면(스피너가 멈추면) 토스트 알림을 표시합니다." FontSize="{DynamicResource Fs12}"
+                                <TextBlock Text="세션의 응답이 끝나면 토스트 알림을 표시합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- 세션 종료 알림 토글 -->
@@ -816,7 +816,7 @@
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="세션 종료 알림" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="응답 생성이 완료되어 스피너가 멈출 때 알려줍니다." FontSize="{DynamicResource Fs11}"
+                                            <TextBlock Text="응답 생성이 완료될 때 알려줍니다." FontSize="{DynamicResource Fs11}"
                                                        TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                         </StackPanel>
@@ -826,11 +826,65 @@
                                     </Grid>
                                 </Border>
 
-                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
+                                <!-- 알림 테스트 — devez 처럼 라벨형 버튼으로 토글 아래에 표시 -->
+                                <Button x:Name="TestNotifyBtn" Click="TestNotify_Click"
+                                        Style="{StaticResource IconButton}"
+                                        HorizontalAlignment="Left" Padding="0,8,0,0" Margin="0,4,0,0"
+                                        Background="Transparent" Cursor="Hand">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Data="{StaticResource IconBell}" Width="13" Height="13" Margin="0,0,6,0"
+                                              VerticalAlignment="Center" Stretch="Uniform" Fill="Transparent"
+                                              StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                              Stroke="{DynamicResource PrimaryBrush}"/>
+                                        <TextBlock Text="알림 테스트" FontSize="{DynamicResource Fs12}"
+                                                   Foreground="{DynamicResource PrimaryBrush}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
 
-                                <!-- 표시 위치 -->
+                                <Separator Margin="0,18,0,0" Background="{DynamicResource LineBrush}"/>
+
+                                <!-- 자동 닫힘 시간 -->
+                                <Grid Margin="0,18,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="자동 닫힘 시간" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="알림이 자동으로 사라지기까지의 시간입니다. '영구'면 직접 닫을 때까지 유지됩니다."
+                                                   FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1" x:Name="NotifyAutoCloseCombo"
+                                              Style="{StaticResource DockComboBox}" Width="120"
+                                              VerticalAlignment="Center"
+                                              SelectionChanged="NotifyAutoCloseCombo_Changed">
+                                        <ComboBoxItem Tag="1">1초</ComboBoxItem>
+                                        <ComboBoxItem Tag="2">2초</ComboBoxItem>
+                                        <ComboBoxItem Tag="3">3초</ComboBoxItem>
+                                        <ComboBoxItem Tag="4">4초</ComboBoxItem>
+                                        <ComboBoxItem Tag="5">5초</ComboBoxItem>
+                                        <ComboBoxItem Tag="6">6초</ComboBoxItem>
+                                        <ComboBoxItem Tag="7">7초</ComboBoxItem>
+                                        <ComboBoxItem Tag="8">8초</ComboBoxItem>
+                                        <ComboBoxItem Tag="9">9초</ComboBoxItem>
+                                        <ComboBoxItem Tag="10">10초</ComboBoxItem>
+                                        <ComboBoxItem Tag="0">영구</ComboBoxItem>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Separator Margin="0,18,0,0" Background="{DynamicResource LineBrush}"/>
+
+                                <!-- 표시 위치 (좌) + 표시 모니터 (우) -->
                                 <TextBlock Text="표시 위치" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}" Margin="0,22,0,12"/>
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,18,0,12"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
                                 <StackPanel Orientation="Horizontal">
                                     <Border x:Name="PosCard_tl" Tag="tl" Width="110" Height="50"
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
@@ -891,23 +945,21 @@
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
-
-                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
-
-                                <!-- 알림 테스트 -->
-                                <TextBlock Text="알림 테스트" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}" Margin="0,22,0,6"/>
-                                <TextBlock Text="선택한 위치에 샘플 알림을 표시합니다." FontSize="{DynamicResource Fs11}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,12"/>
-                                <Button Click="TestNotify_Click" Style="{StaticResource SecondaryButton}"
-                                        Height="38" HorizontalAlignment="Left" Padding="18,0"
-                                        FontSize="{DynamicResource Fs13}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconBell}"
-                                              Width="13" Height="13" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="알림 테스트" VerticalAlignment="Center"/>
                                     </StackPanel>
-                                </Button>
+
+                                    <!-- 표시 모니터 (위치 카드 오른쪽 남은 영역) -->
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="28,0,0,0">
+                                        <TextBlock Text="표시 모니터" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="알림이 나타날 모니터를 선택합니다." FontSize="{DynamicResource Fs11}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,10"/>
+                                        <ComboBox x:Name="NotifyMonitorCombo"
+                                                  Style="{StaticResource DockComboBox}"
+                                                  HorizontalAlignment="Left" MinWidth="200"
+                                                  SelectionChanged="NotifyMonitorCombo_Changed"/>
+                                    </StackPanel>
+                                </Grid>
                             </StackPanel>
                           </Grid>
                         </ScrollViewer>
