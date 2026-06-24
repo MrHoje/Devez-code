@@ -315,8 +315,6 @@
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
                                 <TextBlock Text="세션 추가 시 사용할 에이전트(CLI)를 선택합니다. PATH 에서 자동 감지합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
-                                <TextBlock Text="변경은 새 세션부터 적용됩니다. 기존 세션은 그대로 유지됩니다." FontSize="{DynamicResource Fs11}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,18"/>
 
                                 <ItemsControl x:Name="AgentList">
@@ -371,7 +369,9 @@
                                 <!-- OAuth 토큰 외부 연동 경고 -->
                                 <Border Margin="0,4,0,0" Padding="12,10" CornerRadius="8"
                                         Background="{DynamicResource PanelSoftBrush}"
-                                        BorderBrush="{DynamicResource DangerBrush}" BorderThickness="1">
+                                        BorderBrush="{DynamicResource DangerBrush}" BorderThickness="1"
+                                        SnapsToDevicePixels="False" UseLayoutRounding="False"
+                                        RenderOptions.EdgeMode="Unspecified">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
