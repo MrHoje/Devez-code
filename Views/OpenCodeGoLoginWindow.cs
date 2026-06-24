@@ -83,11 +83,13 @@ public sealed class OpenCodeGoLoginWindow : Window
                 if (c.Name == "auth" && !string.IsNullOrEmpty(c.Value)) { auth = c.Value; break; }
             if (auth == null) return;
 
-            // workspaceId: 현재 URL 에서 추출(/workspace/{id}), 없으면 기존 저장값 재사용(쿠키 갱신 케이스).
-            var ws = WorkspaceFromUrl(_view.CoreWebView2.Source) ?? OpenCodeGoCredentialStore.Resolve()?.WorkspaceId;
+            // workspaceId 는 반드시 현재 URL(/workspace/{id})에서만 얻는다.
+            // 기존 저장값으로 fallback 하면 /auth(또는 about:blank) 단계에서 남은 stale 쿠키와 함께
+            // 즉시 캡처돼 창이 뜨자마자 닫혀버린다. URL 이 workspace 에 도달 = 로그인 성공으로 본다.
+            var ws = WorkspaceFromUrl(_view.CoreWebView2.Source);
             if (string.IsNullOrEmpty(ws))
             {
-                _status.Text = "로그인됨 — 워크스페이스 페이지(opencode.ai/workspace/…)로 이동하면 연결이 완료됩니다.";
+                _status.Text = "로그인하세요 — 워크스페이스 페이지(opencode.ai/workspace/…)에 들어가면 자동으로 연결됩니다.";
                 return;
             }
 
