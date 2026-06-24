@@ -381,8 +381,11 @@
                                               Width="15" Height="15" Margin="0,1,10,0" VerticalAlignment="Top"
                                               Stroke="{DynamicResource DangerBrush}"/>
                                         <TextBlock Grid.Column="1" TextWrapping="Wrap" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextBrush}" LineHeight="17"
-                                                   Text="Claude Code의 OAuth 토큰을 외부 서드파티 툴이나 커스텀 에이전트에 연동하는 경우, 약관 위반으로 계정이 정지될 수 있습니다. 외부 연동은 반드시 정식 API Key 또는 다른 정액제 플랜을 사용하세요."/>
+                                                   Foreground="{DynamicResource TextBrush}" LineHeight="17">
+                                            <Run Text="Claude Code의 OAuth 토큰을 외부 서드파티 툴이나 커스텀 에이전트에 연동하는 경우, 약관 위반으로 계정이 정지될 수 있습니다."/>
+                                            <LineBreak/>
+                                            <Run Text="외부 연동은 반드시 정식 API Key 또는 다른 정액제 플랜을 사용하세요."/>
+                                        </TextBlock>
                                     </Grid>
                                 </Border>
                             </StackPanel>
