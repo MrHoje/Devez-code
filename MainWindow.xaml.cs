@@ -1695,26 +1695,65 @@ public partial class MainWindow : Window
 
     private const int WM_NCLBUTTONDBLCLK = 0x00A3;
     private const int WM_NCLBUTTONDOWN = 0x00A1;
+    private const int WM_MOUSEMOVE = 0x0200;
+    private const int WM_LBUTTONUP = 0x0202;
+    private const int WM_SYSCOMMAND = 0x0112;
+    private const int SC_MOVE = 0xF010;
     private const int HTCAPTION = 2;
+
+    // 전체화면 중 캡션 누름 추적: 실제 드래그일 때만 축소, 단순 클릭은 무시, 더블클릭은 시간차로 직접 판정.
+    private bool _fsCapPending;
+    private int _fsCapDownTick;
+    private POINT _fsCapDownPt;
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(lParam); handled = true; }
         // 전체화면 ON 이면 상단바 더블클릭(캡션 더블클릭)도 기본 최대화 대신 전체화면 토글.
         else if (msg == WM_NCLBUTTONDBLCLK && _useFullScreen) { ToggleMaximizeOrFullScreen(); handled = true; }
-        // 전체화면 중 캡션 드래그 → 일반 크기로 복원하며 커서 아래에서 드래그를 이어간다(Win 최대화 창 드래그 동작).
+        // 전체화면 중 캡션 누름: down 에서 바로 처리하지 않고 캡처 후 드래그/클릭/더블클릭을 구분.
         else if (msg == WM_NCLBUTTONDOWN && wParam.ToInt32() == HTCAPTION && _inFullScreen)
         {
             handled = true;
             int sx = (short)(lParam.ToInt32() & 0xFFFF);
             int sy = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
-            RestoreFromFullScreenAndDrag(sx, sy);
+            int tick = Environment.TickCount;
+            bool dbl = (tick - _fsCapDownTick) <= GetDoubleClickTime()
+                       && Math.Abs(sx - _fsCapDownPt.X) <= GetSystemMetrics(SM_CXDOUBLECLK)
+                       && Math.Abs(sy - _fsCapDownPt.Y) <= GetSystemMetrics(SM_CYDOUBLECLK);
+            if (dbl)
+            {
+                _fsCapPending = false; ReleaseCapture(); _fsCapDownTick = 0;
+                ToggleMaximizeOrFullScreen(); // 전체화면 해제
+            }
+            else
+            {
+                _fsCapPending = true; _fsCapDownTick = tick; _fsCapDownPt = new POINT { X = sx, Y = sy };
+                SetCapture(_mainHwnd);
+            }
+        }
+        // 캡처 중 충분히 움직이면 드래그로 판정 → 축소 후 네이티브 이동 루프로 인계.
+        else if (msg == WM_MOUSEMOVE && _fsCapPending && _inFullScreen)
+        {
+            GetCursorPos(out var p);
+            if (Math.Abs(p.X - _fsCapDownPt.X) > GetSystemMetrics(SM_CXDRAG)
+                || Math.Abs(p.Y - _fsCapDownPt.Y) > GetSystemMetrics(SM_CYDRAG))
+            {
+                _fsCapPending = false; _fsCapDownTick = 0;
+                handled = true;
+                RestoreFromFullScreenAndDrag(p.X, p.Y);
+            }
+        }
+        // 움직임 없이 떼면 단순 클릭 — 아무 동작 안 함(다음 down 과의 시간차로 더블클릭 판정).
+        else if (msg == WM_LBUTTONUP && _fsCapPending)
+        {
+            _fsCapPending = false; ReleaseCapture(); handled = true;
         }
         return IntPtr.Zero;
     }
 
-    /// <summary>전체화면 중 캡션을 잡으면 진입 전 일반 크기로 복원하고, 커서가 타이틀바 위에
-    /// 오도록 창을 재배치한 뒤 네이티브 이동 루프를 재시작해 드래그를 이어간다.</summary>
+    /// <summary>전체화면 중 캡션을 드래그하면 진입 전 일반 크기로 복원하고, 커서가 타이틀바 위에
+    /// 오도록 창을 재배치한 뒤 네이티브 이동 루프(SC_MOVE)로 드래그를 이어간다.</summary>
     private void RestoreFromFullScreenAndDrag(int screenPxX, int screenPxY)
     {
         if (!_inFullScreen) return;
@@ -1723,21 +1762,22 @@ public partial class MainWindow : Window
         double w = (!_preFsBounds.IsEmpty && _preFsBounds.Width  > 0) ? _preFsBounds.Width  : 960;
         double h = (!_preFsBounds.IsEmpty && _preFsBounds.Height > 0) ? _preFsBounds.Height : 640;
 
-        // 전체화면 해제(중앙 재배치 없이 플래그만 원복).
         _inFullScreen = false;
         Topmost = false;
         ResizeMode = ResizeMode.CanResize;
         SetBoundsInstant(new Rect(cx - w / 2, cy - 16, w, h));
         ApplyCornerPreference();
 
-        // DragMove 는 WPF 가 버튼 눌림을 못 봐 예외난다(down 을 handled 로 삼킴).
-        // 네이티브 이동 루프를 직접 재시작 — 이제 _inFullScreen=false 라 위 분기로 재진입 안 함.
+        // SC_MOVE: 합성 NCLBUTTONDOWN 을 안 써(더블클릭 오인 방지) 커서 따라 이동 시작.
         ReleaseCapture();
-        int packed = (screenPxY << 16) | (screenPxX & 0xFFFF);
-        SendMessage(_mainHwnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, (IntPtr)packed);
+        SendMessage(_mainHwnd, WM_SYSCOMMAND, (IntPtr)(SC_MOVE | 0x0002), IntPtr.Zero);
     }
 
+    private const int SM_CXDOUBLECLK = 36, SM_CYDOUBLECLK = 37, SM_CXDRAG = 68, SM_CYDRAG = 69;
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] private static extern IntPtr SetCapture(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT pt);
+    [DllImport("user32.dll")] private static extern int GetDoubleClickTime();
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
 
     /// <summary>최대화 시 창이 모니터 작업영역에 정확히 맞도록 위치/크기 상한을 설정.
