@@ -262,8 +262,9 @@ public partial class MainWindow : Window
     /// <summary>현재 창 위치/크기/최대화를 저장. 최대화·최소화 상태여도 RestoreBounds 로 일반 크기를 기록.</summary>
     private void SaveWindowPlacement()
     {
-        bool max = WindowState == WindowState.Maximized;
-        var b = RestoreBounds;
+        bool max = WindowState == WindowState.Maximized || _inFullScreen;
+        // 전체화면 중엔 현재 bounds 가 모니터 전체이므로, 진입 전 일반 bounds 를 저장.
+        var b = _inFullScreen ? _preFsBounds : RestoreBounds;
         if (b.IsEmpty || b.Width <= 0 || b.Height <= 0)
             b = new Rect(Left, Top, ActualWidth, ActualHeight);
         SettingsService.SaveWindowPlacement(b.Left, b.Top, b.Width, b.Height, max);
@@ -1447,8 +1448,13 @@ public partial class MainWindow : Window
     // 모니터 작업영역에 정확히 맞춰 오버플로 자체를 없앤다(표준 해법). 마진 불필요.
     private const int WM_GETMINMAXINFO = 0x0024;
 
-    // 최대화 시 작업표시줄까지 덮을지(전체화면). 설정에서 토글, WmGetMinMaxInfo 가 참조.
+    // 최대화 시 작업표시줄까지 덮을지(전체화면). 설정에서 토글.
+    // Windows 는 WS_MAXIMIZE 창을 전체화면으로 인식하지 않아 작업표시줄을 못 덮는다.
+    // 따라서 전체화면은 Normal 상태로 모니터 전체 rect 를 채워 셸 전체화면 감지를 유도한다.
     private bool _useFullScreen = SettingsService.LoadUseFullScreen();
+    private bool _inFullScreen;        // 현재 수동 전체화면 중
+    private bool _fsGuard;             // WindowState 변경 재진입 방지
+    private Rect _preFsBounds;         // 전체화면 진입 전 일반 창 bounds(복원용)
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -1458,7 +1464,63 @@ public partial class MainWindow : Window
         EnableDwmTransitions(_mainHwnd); // 최대화/복원 시 DWM 부드러운 전환 활성화
         ApplyCornerPreference();          // 최대화 시 각진 모서리(둥근 모서리가 화면 모서리를 깎는 문제 방지)
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
-        StateChanged += (_, _) => { ApplyCornerPreference(); ApplyMaximizeMargin(); };
+        StateChanged += OnStateChangedForFullScreen;
+        // 시작 시 최대화 복원 + 전체화면 설정 ON 이면 전체화면으로 전환(StateChanged 훅 이전에 설정됐을 수 있음).
+        if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
+    }
+
+    private void OnStateChangedForFullScreen(object? sender, EventArgs e)
+    {
+        ApplyCornerPreference();
+        ApplyMaximizeMargin();
+        if (_fsGuard) return;
+        // 전체화면 설정 ON 상태에서 최대화 요청(버튼·더블클릭·시스템) → 수동 전체화면으로 전환.
+        if (_useFullScreen && WindowState == WindowState.Maximized && !_inFullScreen)
+            EnterFullScreen();
+    }
+
+    /// <summary>WS_MAXIMIZE 없이 모니터 전체를 채우는 수동 전체화면 진입(작업표시줄까지 덮음).</summary>
+    private void EnterFullScreen()
+    {
+        if (_mainHwnd == IntPtr.Zero) return;
+        _fsGuard = true;
+        _preFsBounds = RestoreBounds;   // 최대화 직전의 일반 창 bounds
+        _inFullScreen = true;
+        WindowState = WindowState.Normal;
+        var b = GetMonitorBoundsDip();
+        Left = b.Left; Top = b.Top; Width = b.Width; Height = b.Height;
+        if (RootChrome != null) RootChrome.Margin = default; // 보더리스 Normal — 마진 불필요
+        ApplyCornerPreference();
+        _fsGuard = false;
+    }
+
+    /// <summary>전체화면 해제 → 진입 전 일반 창 bounds 로 복원.</summary>
+    private void ExitFullScreen()
+    {
+        if (!_inFullScreen) return;
+        _fsGuard = true;
+        _inFullScreen = false;
+        WindowState = WindowState.Normal;
+        if (!_preFsBounds.IsEmpty && _preFsBounds.Width > 0 && _preFsBounds.Height > 0)
+        {
+            Left = _preFsBounds.Left; Top = _preFsBounds.Top;
+            Width = _preFsBounds.Width; Height = _preFsBounds.Height;
+        }
+        ApplyCornerPreference();
+        _fsGuard = false;
+    }
+
+    /// <summary>창이 속한 모니터의 전체 영역(작업표시줄 포함)을 DIP 단위 Rect 로 반환.</summary>
+    private Rect GetMonitorBoundsDip()
+    {
+        var monitor = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info))
+            return new Rect(Left, Top, Width, Height);
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var m = info.rcMonitor;
+        return new Rect(m.Left / dpi.DpiScaleX, m.Top / dpi.DpiScaleY,
+                        (m.Right - m.Left) / dpi.DpiScaleX, (m.Bottom - m.Top) / dpi.DpiScaleY);
     }
 
     /// <summary>WS_CAPTION + WS_THICKFRAME(ResizeMode=CanResize) 창은 최대화 시 표준 방식으로
@@ -1478,14 +1540,18 @@ public partial class MainWindow : Window
         else RootChrome.Margin = default;
     }
 
-    /// <summary>전체화면(작업표시줄 덮기) 설정 적용. 최대화 상태면 재최대화로 MINMAXINFO 를 즉시 갱신.</summary>
+    /// <summary>전체화면(작업표시줄 덮기) 설정 적용. 현재 최대화/전체화면 상태면 즉시 전환.</summary>
     public void ApplyFullScreen(bool useFullScreen)
     {
         _useFullScreen = useFullScreen;
-        if (WindowState == WindowState.Maximized)
+        if (useFullScreen)
         {
-            WindowState = WindowState.Normal;
-            WindowState = WindowState.Maximized;
+            if (WindowState == WindowState.Maximized && !_inFullScreen) EnterFullScreen();
+        }
+        else if (_inFullScreen)
+        {
+            ExitFullScreen();
+            WindowState = WindowState.Maximized; // 전체화면 해제 시 일반 최대화로
         }
     }
 
@@ -1499,7 +1565,7 @@ public partial class MainWindow : Window
     private void ApplyCornerPreference()
     {
         if (_mainHwnd == IntPtr.Zero) return;
-        int pref = WindowState == WindowState.Maximized ? DWMWCP_DONOTROUND : DWMWCP_ROUND;
+        int pref = (WindowState == WindowState.Maximized || _inFullScreen) ? DWMWCP_DONOTROUND : DWMWCP_ROUND;
         DwmSetWindowAttribute(_mainHwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int));
     }
 
@@ -1525,12 +1591,11 @@ public partial class MainWindow : Window
         if (!GetMonitorInfo(monitor, ref info)) return;
 
         var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
-        // 전체화면이면 모니터 전체(rcMonitor)에 맞춰 작업표시줄까지 덮는다. 아니면 작업영역(rcWork).
-        var area = _useFullScreen ? info.rcMonitor : info.rcWork; var mon = info.rcMonitor;
-        mmi.ptMaxPosition.X = area.Left - mon.Left;
-        mmi.ptMaxPosition.Y = area.Top - mon.Top;
-        mmi.ptMaxSize.X = area.Right - area.Left;
-        mmi.ptMaxSize.Y = area.Bottom - area.Top;
+        var work = info.rcWork; var mon = info.rcMonitor;
+        mmi.ptMaxPosition.X = work.Left - mon.Left;
+        mmi.ptMaxPosition.Y = work.Top - mon.Top;
+        mmi.ptMaxSize.X = work.Right - work.Left;
+        mmi.ptMaxSize.Y = work.Bottom - work.Top;
 
         var dpi = VisualTreeHelper.GetDpi(this);
         mmi.ptMinTrackSize.X = (int)(MinWidth * dpi.DpiScaleX);
@@ -1716,7 +1781,11 @@ public partial class MainWindow : Window
     }
 
     private void MaxBtn_Click(object sender, RoutedEventArgs e)
-        => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    {
+        if (_inFullScreen) { ExitFullScreen(); return; }
+        // 전체화면 ON 이면 Maximized 설정 → StateChanged 가 전체화면으로 전환.
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
 
