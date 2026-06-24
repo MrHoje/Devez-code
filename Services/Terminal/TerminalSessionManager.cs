@@ -112,6 +112,14 @@ public sealed class TerminalSessionManager
                 var direct = TryBuildOpenCodeDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
             }
+            else if (ccDir != null && agent.Id == "gajae")
+            {
+                // 가재코드(gjc): 방별 격리 --session-dir + 그 폴더 최신 세션 ID 추출 → `gjc -r <id>` 로 복원.
+                // gjc 는 --session-id 사전 발급이 없어 cwd 공유 시 -c 가 섞이므로, 방마다 별도 session-dir 로 분리.
+                startDir = ccDir;
+                var direct = TryBuildGajaeDirectLaunch(roomId, out inject);
+                if (direct != null) commandLine = direct;
+            }
             else if (ccDir != null && agent.SupportsHooks)
             {
                 startDir = ccDir;
@@ -401,6 +409,76 @@ public sealed class TerminalSessionManager
         catch
         {
             injectFallback = (sessionId != null ? $"opencode --session {sessionId}" : "opencode") + "\r";
+            return null;
+        }
+    }
+
+    /// <summary>가재코드(gjc) 방별 세션 디렉터리. gjc 가 여기 안에 &lt;timestamp&gt;_&lt;sessionId&gt;.jsonl 로 세션을 저장.
+    /// 방마다 분리해 같은 폴더의 여러 방이 서로의 대화를 침범하지 않게 한다.</summary>
+    private static string GajaeSessionDir(string roomId) => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "gajae", "sessions", SafeRoomFileName(roomId));
+
+    /// <summary>방의 session-dir 에서 가장 최근 세션 .jsonl 의 ID(파일명 끝 UUID)를 추출. 없으면 null.
+    /// gjc 파일명: <c>2026-06-24T06-43-03-266Z_019ef85e-31e2-7000-9b2a-e205d434126f.jsonl</c>
+    /// → 마지막 '_' 뒤가 세션 ID. /clear·새 대화로 ID 가 바뀌어도 항상 최신을 집어 추종한다.</summary>
+    private static string? FindLatestGajaeSessionId(string sessionDir)
+    {
+        try
+        {
+            if (!Directory.Exists(sessionDir)) return null;
+            var newest = new DirectoryInfo(sessionDir)
+                .GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (newest == null) return null;
+            var name = Path.GetFileNameWithoutExtension(newest.Name);
+            var us = name.LastIndexOf('_');
+            if (us < 0 || us + 1 >= name.Length) return null;
+            var id = name.Substring(us + 1);
+            return Guid.TryParse(id, out _) ? id : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>가재코드(gjc)를 cmd /k 배치로 직접 실행. 방별 --session-dir 로 세션을 격리하고,
+    /// 그 폴더의 최신 세션 ID 를 영속(SettingsService)한 뒤 `gjc -r &lt;id&gt;` 로 같은 대화를 복원한다.
+    /// 첫 실행(저장·추출 ID 모두 없음)은 plain `gjc` 로 새 세션 생성. resume 실패(외부 삭제 등) 시 fresh 폴백.
+    /// gjc 는 claude 의 --session-id 같은 사전 발급이 없어, 만들어진 ID 를 파일명에서 캡처하는 방식을 쓴다.</summary>
+    private string? TryBuildGajaeDirectLaunch(string roomId, out string? injectFallback)
+    {
+        injectFallback = null;
+        var sessionDir = GajaeSessionDir(roomId);
+        try { Directory.CreateDirectory(sessionDir); } catch { }
+
+        // 폴더 최신 세션 ID 가 저장값과 다르면 그쪽이 최신 대화 → 교체(새 대화·/clear 추종).
+        var sessionId = SettingsService.LoadGajaeRoomSession(roomId);
+        var latest = FindLatestGajaeSessionId(sessionDir);
+        if (latest != null && latest != sessionId)
+        {
+            sessionId = latest;
+            SettingsService.SaveGajaeRoomSession(roomId, latest);
+        }
+
+        // --session-dir 토큰은 따옴표로 감싸 공백 경로 안전. -r <id> 는 GUID 만(파일명에서 검증) → 주입 차단.
+        string sd = $"--session-dir \"{sessionDir}\"";
+        string body = sessionId != null
+            ? $"gjc {sd} -r {sessionId}\r\nif errorlevel 1 gjc {sd}"
+            : $"gjc {sd}";
+
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "gajae", "launch");
+            Directory.CreateDirectory(dir);
+            var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
+            File.WriteAllText(batchPath, "@echo off\r\n" + body + "\r\n");
+            return $"cmd.exe /k \"{batchPath}\"";
+        }
+        catch
+        {
+            injectFallback = (sessionId != null ? $"gjc {sd} -r {sessionId}" : $"gjc {sd}") + "\r";
             return null;
         }
     }

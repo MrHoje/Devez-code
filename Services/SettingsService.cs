@@ -34,6 +34,9 @@ public static class SettingsService
         // opencode 방별 세션 ID (Devez 패턴 이식). 플러그인이 sessions\<room>.txt 에 기록한 최신 ID 를 영속.
         // 재오픈 시 `opencode --session <id>` 로 같은 대화 정확히 복원(같은 폴더의 여러 방도 분리).
         public Dictionary<string, string> OpenCodeRoomSessions { get; set; } = new();
+        // 가재코드(gjc) 방별 세션 ID. gjc 는 사전 발급 플래그가 없어, 방별 격리 --session-dir 의
+        // 최신 .jsonl 파일명에서 추출한 ID 를 영속 → 재오픈 시 `gjc -r <id>` 로 같은 대화 복원.
+        public Dictionary<string, string> GajaeRoomSessions { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
         public Dictionary<string, string> RoomAgents { get; set; } = new();
         // 사용자가 활성화한 에이전트 ID 목록. 빈 값이면 모든 설치된 에이전트 활성화로 간주.
@@ -458,6 +461,17 @@ public static class SettingsService
     {
         if (string.IsNullOrWhiteSpace(sessionId)) return;
         Current.OpenCodeRoomSessions[roomId] = sessionId;
+        Save();
+    }
+
+    // ── 가재코드(gjc) 세션 ID (방별 --session-dir 최신 세션에서 추출) ─────
+    public static string? LoadGajaeRoomSession(string roomId)
+        => Current.GajaeRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+
+    public static void SaveGajaeRoomSession(string roomId, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        Current.GajaeRoomSessions[roomId] = sessionId;
         Save();
     }
 }

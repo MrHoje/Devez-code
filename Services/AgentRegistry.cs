@@ -56,11 +56,12 @@ public static class AgentRegistry
         new()
         {
             // 가재코드: standalone CLI(`gjc`). bun install -g gajae-code. 훅 미지원.
-            // resume 지원(v0.7.1+): `-c`/`--continue` 로 cwd 의 직전 세션 이어가기 → 재시작 시 보존.
+            // 세션 복원은 TryBuildGajaeDirectLaunch 가 방별 --session-dir + 파일명 ID 추출 → `gjc -r <id>` 로 처리.
+            // (cwd 공유 시 -c 가 방끼리 섞이므로 ResumeFlag 단순 경로 미사용.)
             // 인라인 렌더(alt-screen 미사용) → InlineTui=true 로 로딩 오버레이 첫 출력에 해제.
             Id = "gajae", DisplayName = "Gajae Code", Provider = "Gajae",
             ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
-            Command = "gjc", InlineTui = true, ResumeFlag = "-c",
+            Command = "gjc", InlineTui = true,
         },
     };
 
