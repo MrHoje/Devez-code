@@ -15,7 +15,10 @@ public sealed class OpenCodeGoUsageService : IDisposable
     private const string FirefoxUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gecko/20100101 Firefox/148.0";
     private const int PollMs = 3 * 60 * 1000;
 
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    // 자동 리다이렉트 끔 — 쿠키 만료 시 opencode.ai 는 302 → /auth/authorize 로 보낸다.
+    // follow 하면 로그인 페이지(200)를 받아 파싱만 조용히 실패하므로, 302 를 직접 받아 만료로 처리한다.
+    private readonly HttpClient _http = new(new HttpClientHandler { AllowAutoRedirect = false })
+        { Timeout = TimeSpan.FromSeconds(10) };
     private System.Threading.Timer? _poll;
 
     public event Action<ProviderUsage>? Updated;
@@ -38,7 +41,9 @@ public sealed class OpenCodeGoUsageService : IDisposable
             req.Headers.TryAddWithoutValidation("Cookie", "auth=" + creds.AuthCookie);
 
             using var res = await _http.SendAsync(req).ConfigureAwait(false);
-            if (res.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            // 인증 실패 — 401/403 또는 로그인 페이지로 리다이렉트(302 → /auth/authorize).
+            if (res.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                || (int)res.StatusCode is >= 300 and < 400)
             {
                 Updated?.Invoke(new ProviderUsage { Provider = "opencode-go", Error = "세션 만료 — 클릭하여 재로그인" });
                 return;
