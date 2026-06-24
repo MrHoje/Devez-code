@@ -225,9 +225,7 @@
                                 <ItemsControl x:Name="SidebarUsageList" AlternationCount="99">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:UsageCardVM}">
-                                            <Border Margin="0" Cursor="Hand"
-                                                    Background="Transparent" Tag="{Binding Name}"
-                                                    MouseLeftButtonUp="UsageCard_Click"
+                                            <Border Margin="0" Background="Transparent"
                                                     BorderBrush="{DynamicResource LineBrush}">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
@@ -264,7 +262,7 @@
                                                                         <RowDefinition Height="Auto"/>
                                                                     </Grid.RowDefinitions>
                                                                     <Grid.ColumnDefinitions>
-                                                                        <ColumnDefinition Width="44"/>
+                                                                        <ColumnDefinition Width="34"/>
                                                                         <ColumnDefinition Width="Auto"/>
                                                                         <ColumnDefinition Width="*"/>
                                                                     </Grid.ColumnDefinitions>
@@ -272,7 +270,7 @@
                                                                                VerticalAlignment="Center"
                                                                                FontSize="{DynamicResource Fs11}"
                                                                                Foreground="{DynamicResource TextMutedBrush}"/>
-                                                                    <Border Grid.Row="0" Grid.Column="1" Width="117" Height="6"
+                                                                    <Border Grid.Row="0" Grid.Column="1" Width="102" Height="6"
                                                                             Margin="6,0,0,0" CornerRadius="3"
                                                                             Background="{DynamicResource LineBrush}"
                                                                             VerticalAlignment="Center">

@@ -461,7 +461,7 @@ public partial class MainWindow : Window
         });
     }
 
-    private const double UsageBarTrack = 117; // 사용량 패널 막대 트랙 폭(XAML 과 일치)
+    private const double UsageBarTrack = 102; // 사용량 패널 막대 트랙 폭(XAML 과 일치)
 
     private void OnRlSnapshot(Models.RateLimitSnapshot snap)
         => Dispatcher.InvokeAsync(() =>
@@ -482,18 +482,6 @@ public partial class MainWindow : Window
         SidebarUsageList.ItemsSource = cards;
         SidebarUsageEmpty.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         SidebarUsageUpdated.Text = cards.Count == 0 ? "" : $"{DateTime.Now:HH:mm} 기준";
-    }
-
-    /// <summary>사용량 카드 클릭 — provider 별 로그인/재연결 창을 띄운다(Border.Tag = provider 이름).</summary>
-    private void UsageCard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        var name = (sender as FrameworkElement)?.Tag as string;
-        switch (name)
-        {
-            case "Claude": LoginClaude(); break;
-            case "Codex": LoginCodex(); break;
-            case "OpenCode Go": LoginOpenCode(); break;
-        }
     }
 
     /// <summary>codex/opencode-go 스냅샷 저장 후 사이드바 갱신.</summary>
@@ -751,7 +739,7 @@ public partial class MainWindow : Window
     }
 
     // ── 최우측 계정 사용량 사이드바 토글 ────────────────────────────────
-    private const double UsagePanelWidth = 250;
+    private const double UsagePanelWidth = 210;
     private bool _usageOpen;
     private Action? _usageAnimCancel;
 
