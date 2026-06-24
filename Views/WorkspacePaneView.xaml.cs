@@ -49,14 +49,8 @@ public partial class WorkspacePaneView : UserControl
 
     public TerminalHostView Terminal => _terminal;
 
-    public void ShowTranscriptPanel(Models.SubagentStatusItem item)
-    {
-        TranscriptPanel.ShowTranscript(item);
-        SplitterCol.Width = new GridLength(4);
-        TranscriptCol.Width = new GridLength(360);
-        ContentSplitter.Visibility = Visibility.Visible;
-        TranscriptPanelBorder.Visibility = Visibility.Visible;
-    }
+    private readonly Dictionary<string, SubagentTranscriptPanel> _agentPanels = new();
+    private readonly Dictionary<string, string> _agentRoomIds = new(); // agentId → roomId
 
     public void HideTranscriptPanel()
     {
@@ -68,8 +62,15 @@ public partial class WorkspacePaneView : UserControl
 
     public void AddOrUpdateAgent(Models.SubagentStatusItem item)
     {
-        SubagentList.AddOrUpdate(item);
-        // 첫 에이전트가 생성되면 자동으로 split 패널 표시
+        if (!_agentPanels.TryGetValue(item.AgentId, out var panel))
+        {
+            panel = new SubagentTranscriptPanel();
+            _agentPanels[item.AgentId] = panel;
+            _agentRoomIds[item.AgentId] = item.RoomId;
+            AgentPanelsStack.Children.Add(panel);
+        }
+        panel.ShowTranscript(item, startWatching: true);
+
         if (TranscriptPanelBorder.Visibility != Visibility.Visible)
         {
             SplitterCol.Width = new GridLength(4);
@@ -81,20 +82,26 @@ public partial class WorkspacePaneView : UserControl
 
     public void RemoveAgent(string agentId)
     {
-        SubagentList.Remove(agentId);
+        if (_agentPanels.TryGetValue(agentId, out var panel))
+        {
+            AgentPanelsStack.Children.Remove(panel);
+            _agentPanels.Remove(agentId);
+            _agentRoomIds.Remove(agentId);
+        }
     }
 
     public void ClearRoomAgents(string roomId)
     {
-        SubagentList.ClearRoom(roomId);
+        var ids = _agentRoomIds.Where(kv => kv.Value == roomId).Select(kv => kv.Key).ToList();
+        foreach (var id in ids) RemoveAgent(id);
     }
+
+    private void CloseTranscriptPanel_Click(object sender, RoutedEventArgs e) => HideTranscriptPanel();
 
     public WorkspacePaneView()
     {
         InitializeComponent();
         TerminalHostContainer.Content = _terminal;
-        TranscriptPanel.CloseRequested += (_, _) => HideTranscriptPanel();
-        SubagentList.ShowTranscriptRequested += (_, item) => TranscriptPanel.ShowTranscript(item);
 
         TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
         TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();

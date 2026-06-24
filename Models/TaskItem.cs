@@ -45,8 +45,5 @@ public sealed class TaskItem : NotifyBase
     };
 
     [JsonIgnore]
-    public double ItemOpacity => Status == "completed" || Status == "cancelled" ? 0.5 : 1.0;
-
-    [JsonIgnore]
-    public bool IsStrikethrough => Status == "completed";
+    public double ItemOpacity => Status == "cancelled" ? 0.4 : 1.0;
 }

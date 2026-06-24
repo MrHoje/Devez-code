@@ -9,77 +9,113 @@ public sealed class TaskTrackingService : IDisposable
     private static string OpenCodeTodosDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode", "todos");
 
+    private static string OpenCodeBusyDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode", "busy");
+
     public ObservableCollection<Models.TaskItem> Tasks { get; } = new();
 
     public event Action? TasksChanged;
 
+    private string? _activeRoomId;
+    private string? _activeProjectPath;
     private FileSystemWatcher? _opencodeWatcher;
-    private readonly HashSet<string> _knownOpenCodeRooms = new();
+    private FileSystemWatcher? _claudeWatcher;
 
     public void Start()
     {
-        StartOpenCodeWatcher();
-        StartClaudeWatcher();
+        Directory.CreateDirectory(OpenCodeTodosDir);
     }
 
-    private void StartOpenCodeWatcher()
+    public void SetActiveSession(string? roomId, string? projectPath)
     {
+        _activeRoomId = roomId;
+        _activeProjectPath = projectPath;
+        ReloadForActiveSession();
+        WatchActiveFiles();
+    }
+
+    private string? ActiveTodoFilePath()
+    {
+        if (string.IsNullOrEmpty(_activeRoomId)) return null;
+        var safe = System.Text.RegularExpressions.Regex.Replace(_activeRoomId, @"[^\w\-]", "");
+        var path = Path.Combine(OpenCodeTodosDir, safe + ".json");
+        return File.Exists(path) ? path : null;
+    }
+
+    private string? ClaudeSettingsPath()
+    {
+        if (string.IsNullOrEmpty(_activeProjectPath)) return null;
+        var path = Path.Combine(_activeProjectPath, ".claude", "settings.json");
+        return File.Exists(path) ? path : null;
+    }
+
+    private void ReloadForActiveSession()
+    {
+        Tasks.Clear();
+
+        var todoPath = ActiveTodoFilePath();
+        if (todoPath != null) LoadOpenCodeTodos(todoPath);
+
+        var claudePath = ClaudeSettingsPath();
+        if (claudePath != null) LoadClaudeTasks(claudePath);
+
+        TasksChanged?.Invoke();
+    }
+
+    private void WatchActiveFiles()
+    {
+        _opencodeWatcher?.Dispose();
+        _opencodeWatcher = null;
+        _claudeWatcher?.Dispose();
+        _claudeWatcher = null;
+
         try
         {
             Directory.CreateDirectory(OpenCodeTodosDir);
-            _opencodeWatcher?.Dispose();
             _opencodeWatcher = new FileSystemWatcher(OpenCodeTodosDir, "*.json")
             {
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
                 EnableRaisingEvents = true,
             };
-            _opencodeWatcher.Changed += (_, e) => DispatcherInvoke(() => LoadOpenCodeTodos(e.FullPath));
-            _opencodeWatcher.Created += (_, e) => DispatcherInvoke(() => LoadOpenCodeTodos(e.FullPath));
-            _opencodeWatcher.Deleted += (_, e) => DispatcherInvoke(() => RemoveOpenCodeTodos(e.FullPath));
-
-            foreach (var f in Directory.EnumerateFiles(OpenCodeTodosDir, "*.json"))
-                LoadOpenCodeTodos(f);
+            _opencodeWatcher.Changed += (_, e) => DispatcherInvoke(() =>
+            {
+                if (MatchesActiveRoom(e.FullPath)) LoadOpenCodeTodos(e.FullPath);
+            });
+            _opencodeWatcher.Created += (_, e) => DispatcherInvoke(() =>
+            {
+                if (MatchesActiveRoom(e.FullPath)) LoadOpenCodeTodos(e.FullPath);
+            });
+            _opencodeWatcher.Deleted += (_, e) => DispatcherInvoke(() =>
+            {
+                if (MatchesActiveRoom(e.FullPath)) { Tasks.Clear(); TasksChanged?.Invoke(); }
+            });
         }
         catch { }
-    }
-
-    private static string ClaudeSettingsPath(string projectPath)
-        => string.IsNullOrEmpty(projectPath) ? "" : Path.Combine(projectPath, ".claude", "settings.json");
-
-    private readonly Dictionary<string, FileSystemWatcher> _claudeWatchers = new();
-
-    public void WatchProject(string? projectPath)
-    {
-        if (string.IsNullOrEmpty(projectPath)) return;
-        if (_claudeWatchers.ContainsKey(projectPath)) return;
-
-        var settingsPath = ClaudeSettingsPath(projectPath);
-        var dir = Path.GetDirectoryName(settingsPath);
-        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
 
         try
         {
-            var w = new FileSystemWatcher(dir, "settings.json")
+            var claudePath = ClaudeSettingsPath();
+            if (claudePath == null) return;
+            var dir = Path.GetDirectoryName(claudePath);
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
+
+            _claudeWatcher = new FileSystemWatcher(dir, "settings.json")
             {
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
                 EnableRaisingEvents = true,
             };
-            w.Changed += (_, _) => DispatcherInvoke(() => LoadClaudeTasks(projectPath));
-            _claudeWatchers[projectPath] = w;
-
-            LoadClaudeTasks(projectPath);
+            _claudeWatcher.Changed += (_, _) => DispatcherInvoke(() => ReloadClaudeTasks());
+            _claudeWatcher.Created += (_, _) => DispatcherInvoke(() => ReloadClaudeTasks());
         }
         catch { }
     }
 
-    public void UnwatchProject(string? projectPath)
+    private bool MatchesActiveRoom(string filePath)
     {
-        if (projectPath == null || !_claudeWatchers.Remove(projectPath, out var w)) return;
-        try { w.Dispose(); } catch { }
-    }
-
-    private void StartClaudeWatcher()
-    {
+        if (string.IsNullOrEmpty(_activeRoomId)) return false;
+        var roomId = Path.GetFileNameWithoutExtension(filePath);
+        var safe = System.Text.RegularExpressions.Regex.Replace(_activeRoomId, @"[^\w\-]", "");
+        return string.Equals(roomId, safe, StringComparison.OrdinalIgnoreCase);
     }
 
     private void LoadOpenCodeTodos(string filePath)
@@ -87,21 +123,21 @@ public sealed class TaskTrackingService : IDisposable
         try
         {
             if (!File.Exists(filePath)) return;
-            var roomId = Path.GetFileNameWithoutExtension(filePath);
+            if (!MatchesActiveRoom(filePath)) return;
+
             var json = File.ReadAllText(filePath);
             if (string.IsNullOrWhiteSpace(json) || json == "null") return;
 
             var raw = JsonSerializer.Deserialize<List<TodoRaw>>(json);
             if (raw == null) return;
 
-            _knownOpenCodeRooms.Add(roomId);
-
             for (int i = Tasks.Count - 1; i >= 0; i--)
             {
-                if (Tasks[i].Source == $"opencode:{roomId}")
+                if (Tasks[i].Source == "opencode")
                     Tasks.RemoveAt(i);
             }
 
+            var source = $"opencode:{_activeRoomId}";
             foreach (var item in raw)
             {
                 var content = item.content?.Trim() ?? "";
@@ -115,7 +151,7 @@ public sealed class TaskTrackingService : IDisposable
                     Description = content,
                     Status = status,
                     Priority = NormalizePriority(item.priority),
-                    Source = $"opencode:{roomId}"
+                    Source = source
                 });
             }
 
@@ -124,33 +160,27 @@ public sealed class TaskTrackingService : IDisposable
         catch { }
     }
 
-    private void RemoveOpenCodeTodos(string filePath)
+    private void ReloadClaudeTasks()
     {
-        var roomId = Path.GetFileNameWithoutExtension(filePath);
         for (int i = Tasks.Count - 1; i >= 0; i--)
         {
-            if (Tasks[i].Source == $"opencode:{roomId}")
+            if (Tasks[i].Source == $"claude:{_activeProjectPath}")
                 Tasks.RemoveAt(i);
         }
+
+        var claudePath = ClaudeSettingsPath();
+        if (claudePath != null) LoadClaudeTasks(claudePath);
         TasksChanged?.Invoke();
     }
 
-    private void LoadClaudeTasks(string projectPath)
+    private void LoadClaudeTasks(string filePath)
     {
         try
         {
-            var path = ClaudeSettingsPath(projectPath);
-            if (!File.Exists(path)) return;
-
-            var json = File.ReadAllText(path);
+            if (!File.Exists(filePath)) return;
+            var json = File.ReadAllText(filePath);
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("tasks", out var tasksEl)) return;
-
-            for (int i = Tasks.Count - 1; i >= 0; i--)
-            {
-                if (Tasks[i].Source == $"claude:{projectPath}")
-                    Tasks.RemoveAt(i);
-            }
 
             foreach (var t in tasksEl.EnumerateArray())
             {
@@ -166,11 +196,9 @@ public sealed class TaskTrackingService : IDisposable
                     Description = content,
                     Status = status,
                     Priority = priority,
-                    Source = $"claude:{projectPath}"
+                    Source = $"claude:{_activeProjectPath}"
                 });
             }
-
-            TasksChanged?.Invoke();
         }
         catch { }
     }
@@ -209,8 +237,6 @@ public sealed class TaskTrackingService : IDisposable
     public void Dispose()
     {
         _opencodeWatcher?.Dispose();
-        foreach (var w in _claudeWatchers.Values)
-            try { w.Dispose(); } catch { }
-        _claudeWatchers.Clear();
+        _claudeWatcher?.Dispose();
     }
 }

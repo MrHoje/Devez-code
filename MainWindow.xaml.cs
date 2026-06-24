@@ -27,7 +27,6 @@ public partial class MainWindow : Window
     private readonly List<WorkspacePaneView> _panes = new();
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
     private string? _explorerDir;                      // 우측 파일탐색기가 보고 있는 경로(중복 ShowDirectory 방지)
-    private string? _taskTrackingProject;              // TaskTrackingService 가 보고 있는 프로젝트 경로
     private readonly PerfMonitorService _perfMonitor = new();
     // 계정 사용량: statusLine 훅(세션 활성 시 거의 실시간) + OAuth API(세션 없어도 3분 주기) 두 소스를 병합.
     private readonly StatusLineService _statusLine = new();
@@ -1240,12 +1239,7 @@ public partial class MainWindow : Window
             _explorerDir = proj?.Path;
             if (proj != null) FileExplorer.ShowDirectory(proj.Path);
         }
-        if (proj?.Path != _taskTrackingProject)
-        {
-            if (_taskTrackingProject != null) _taskTracking.UnwatchProject(_taskTrackingProject);
-            _taskTrackingProject = proj?.Path;
-            if (_taskTrackingProject != null) _taskTracking.WatchProject(_taskTrackingProject);
-        }
+        _taskTracking.SetActiveSession(_focusedPane.ActiveSession?.Id, proj?.Path);
         SettingsService.SaveLastActive(proj?.Path, _focusedPane.ActiveSession?.Id);
         if (_focusedPane.ActiveSession != null && HookSetupBanner.Visibility == Visibility.Visible)
             HookSetupBanner.Visibility = Visibility.Collapsed;

@@ -4,6 +4,44 @@
              xmlns:models="clr-namespace:DevezCode.Models"
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
+    <UserControl.Resources>
+        <PathGeometry x:Key="SpinnerPath" Figures="M 7,1 A 6,6 0 1,1 1,7"/>
+
+        <Style x:Key="StatusTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="completed">
+                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="cancelled">
+                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DescTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{DynamicResource Fs12}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Status}" Value="in_progress">
+                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Status}" Value="completed">
+                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -39,34 +77,48 @@
                                 Opacity="{Binding ItemOpacity}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="28"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding StatusPrefix}"
-                                           FontSize="{DynamicResource Fs13}"
-                                           FontFamily="Consolas"
-                                           Foreground="{DynamicResource TextMutedBrush}"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,8,0"/>
+                                <Grid Grid.Column="0" Width="28" Height="20" Margin="0">
+                                    <TextBlock x:Name="StatusPrefixText" Text="{Binding StatusPrefix}"
+                                               Style="{StaticResource StatusTextStyle}"/>
+                                    <Path x:Name="SpinnerIndicator" Data="{StaticResource SpinnerPath}"
+                                          Width="14" Height="14" Stretch="Uniform"
+                                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          RenderTransformOrigin="0.5,0.5"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Visibility="Collapsed">
+                                        <Path.RenderTransform>
+                                            <RotateTransform x:Name="SpinnerRotate"/>
+                                        </Path.RenderTransform>
+                                        <Path.Triggers>
+                                            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                                <EventTrigger.Actions>
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetName="SpinnerRotate"
+                                                                             Storyboard.TargetProperty="Angle"
+                                                                             From="0" To="360" Duration="0:0:0.8"
+                                                                             RepeatBehavior="Forever"/>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </EventTrigger.Actions>
+                                            </EventTrigger>
+                                        </Path.Triggers>
+                                    </Path>
+                                </Grid>
                                 <TextBlock Grid.Column="1" Text="{Binding Description}"
-                                           FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap"
-                                           VerticalAlignment="Center">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="TextDecorations" Value="None"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsStrikethrough}" Value="True">
-                                                    <Setter Property="TextDecorations" Value="Strikethrough"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                           Style="{StaticResource DescTextStyle}"/>
                             </Grid>
                         </Border>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Status}" Value="in_progress">
+                                <Setter TargetName="SpinnerIndicator" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="StatusPrefixText" Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>

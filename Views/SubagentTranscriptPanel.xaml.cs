@@ -10,27 +10,34 @@ namespace DevezCode.Views;
 
 public sealed partial class SubagentTranscriptPanel : UserControl
 {
+    private string? _jsonlPath;
+    private FileSystemWatcher? _watcher;
+    private SubagentStatusItem? _item;
+
     public SubagentTranscriptPanel()
     {
         InitializeComponent();
+        Unloaded += (_, _) => StopWatching();
     }
 
-    public void ShowTranscript(SubagentStatusItem item)
+    public void ShowTranscript(SubagentStatusItem item, bool startWatching)
     {
+        _item = item;
         AgentTypeText.Text = item.AgentType;
         AgentIdText.Text = item.AgentId;
         StatusText.Text = item.Status switch
         {
-            "running" => "진행 중", "completed" => "완료",
-            "error" => "오류", "cancelled" => "취소됨",
-            _ => item.Status
+            "running" => "●", "completed" => "✓",
+            "error" => "✕", "cancelled" => "―",
+            _ => ""
         };
 
-        var path = SubagentStatusService.ResolveConversationPath(item.RoomId, item.AgentId);
+        _jsonlPath = SubagentStatusService.ResolveConversationPath(item.RoomId, item.AgentId);
 
-        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        if (!string.IsNullOrWhiteSpace(_jsonlPath) && File.Exists(_jsonlPath))
         {
-            LoadTranscript(path);
+            LoadTranscript();
+            if (startWatching) StartWatching();
         }
         else
         {
@@ -38,37 +45,40 @@ public sealed partial class SubagentTranscriptPanel : UserControl
         }
     }
 
-    private void LoadTranscript(string path)
+    private void LoadTranscript()
     {
         try
         {
             var entries = new ObservableCollection<TranscriptEntry>();
-            foreach (var line in File.ReadAllLines(path))
+            if (_jsonlPath != null && File.Exists(_jsonlPath))
             {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                try
+                foreach (var line in File.ReadAllLines(_jsonlPath))
                 {
-                    using var doc = JsonDocument.Parse(line);
-                    var root = doc.RootElement;
-                    var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
-                    if (type is "attachment") continue;
-                    if (!root.TryGetProperty("timestamp", out var ts)) continue;
-
-                    var content = type switch
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    try
                     {
-                        "user" => ExtractUserContent(root),
-                        "assistant" => ExtractAssistantContent(root),
-                        _ => null
-                    };
-                    if (!string.IsNullOrWhiteSpace(content) && type != null)
-                        entries.Add(new TranscriptEntry
+                        using var doc = JsonDocument.Parse(line);
+                        var root = doc.RootElement;
+                        var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
+                        if (type is "attachment") continue;
+                        if (!root.TryGetProperty("timestamp", out var ts)) continue;
+
+                        var content = type switch
                         {
-                            Role = type,
-                            Content = content,
-                            Timestamp = FormatTimestamp(ts.GetString())
-                        });
+                            "user" => ExtractUserContent(root),
+                            "assistant" => ExtractAssistantContent(root),
+                            _ => null
+                        };
+                        if (!string.IsNullOrWhiteSpace(content) && type != null)
+                            entries.Add(new TranscriptEntry
+                            {
+                                Role = type,
+                                Content = content,
+                                Timestamp = FormatTimestamp(ts.GetString())
+                            });
+                    }
+                    catch { }
                 }
-                catch { }
             }
 
             TranscriptList.ItemsSource = entries;
@@ -79,23 +89,49 @@ public sealed partial class SubagentTranscriptPanel : UserControl
                 Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background,
                     new Action(() => TranscriptScroll.ScrollToBottom()));
             }
-            else ShowFallback(null);
+            else if (_item != null) ShowFallback(_item);
         }
-        catch
+        catch { }
+    }
+
+    private void StartWatching()
+    {
+        if (_jsonlPath == null) return;
+        StopWatching();
+        try
         {
-            ShowFallback(null);
+            var dir = Path.GetDirectoryName(_jsonlPath);
+            var file = Path.GetFileName(_jsonlPath);
+            if (dir == null) return;
+            _watcher = new FileSystemWatcher(dir, file)
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true
+            };
+            _watcher.Changed += (_, _) =>
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background,
+                    new Action(LoadTranscript));
+        }
+        catch { }
+    }
+
+    private void StopWatching()
+    {
+        if (_watcher != null)
+        {
+            try { _watcher.EnableRaisingEvents = false; _watcher.Dispose(); }
+            catch { }
+            _watcher = null;
         }
     }
 
-    private void ShowFallback(SubagentStatusItem? item)
+    private void ShowFallback(SubagentStatusItem item)
     {
         TranscriptScroll.Visibility = Visibility.Collapsed;
         FallbackScroll.Visibility = Visibility.Visible;
-        if (item == null) return;
-        FbAgentId.Text = item.AgentId;
-        FbType.Text = item.AgentType;
-        FbStatus.Text = item.Status;
-        FbPrompt.Text = item.Prompt;
+        FallbackPrompt.Text = string.IsNullOrWhiteSpace(item.Prompt)
+            ? "대화 transcript 없음"
+            : item.Prompt;
     }
 
     private static string ExtractUserContent(JsonElement root)
@@ -147,7 +183,4 @@ public sealed partial class SubagentTranscriptPanel : UserControl
         if (DateTime.TryParse(iso, out var dt)) return dt.ToLocalTime().ToString("HH:mm:ss");
         return iso;
     }
-
-    public event EventHandler? CloseRequested;
-    private void CloseBtn_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
 }

@@ -548,9 +548,9 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="태스크" FontSize="{DynamicResource Fs13}"
+                                            <TextBlock Text="작업 태스크" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="태스크 뷰 전환 버튼 (opencode/Claude Code 작업 목록)" FontSize="{DynamicResource Fs11}"
+                                            <TextBlock Text="작업 태스크 뷰 전환 버튼 (opencode/Claude Code 작업 목록)" FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                         </StackPanel>
                                         <CheckBox x:Name="ShowTaskViewToggle" Grid.Column="1"
