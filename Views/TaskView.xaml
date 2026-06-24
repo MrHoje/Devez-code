@@ -87,6 +87,7 @@
                                                Style="{StaticResource StatusTextStyle}"/>
                                 </Grid>
                                 <TextBlock Grid.Column="1" Text="{Binding Description}"
+                                           Margin="0,2,0,0"
                                            Style="{StaticResource DescTextStyle}"/>
                             </Grid>
                         </Border>
