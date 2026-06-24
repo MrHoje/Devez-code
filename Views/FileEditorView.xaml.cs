@@ -99,7 +99,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             ".vb" => mgr.GetDefinition("VB"),
             ".ps1" or ".psm1" => mgr.GetDefinition("PowerShell"),
             ".bat" or ".cmd" => mgr.GetDefinition("BAT"),
-            ".json" => mgr.GetDefinition("C#"),
+            ".json" or ".jsonc" => JsonDefinition(),
             ".go" => mgr.GetDefinition("C#"),
             ".rs" => mgr.GetDefinition("C#"),
             ".swift" => mgr.GetDefinition("C#"),
@@ -110,6 +110,39 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         };
     }
 
+    // AvalonEdit 내장 JSON 정의 없음 → 키/문자열/숫자/bool 구분 가능한 전용 정의 임베드.
+    private const string JsonXshd = @"<?xml version='1.0'?>
+<SyntaxDefinition name='JSON' xmlns='http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008'>
+  <Color name='Key'    foreground='#2563EB' />
+  <Color name='String' foreground='#0A7C3E' />
+  <Color name='Number' foreground='#B06000' />
+  <Color name='Bool'   foreground='#9333EA' />
+  <Color name='Punct'  foreground='#64748B' />
+  <RuleSet>
+    <Rule color='Key'>""[^""\\]*(?:\\.[^""\\]*)*""(?=\s*:)</Rule>
+    <Span color='String' multiline='false'>
+      <Begin>""</Begin>
+      <End>""</End>
+      <RuleSet><Span begin='\\' end='.' /></RuleSet>
+    </Span>
+    <Keywords color='Bool'>
+      <Word>true</Word><Word>false</Word><Word>null</Word>
+    </Keywords>
+    <Rule color='Number'>\b[-+]?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?\b</Rule>
+    <Rule color='Punct'>[{}\[\]:,]</Rule>
+  </RuleSet>
+</SyntaxDefinition>";
+
+    private static IHighlightingDefinition? _jsonDef;
+    private static IHighlightingDefinition? JsonDefinition()
+    {
+        if (_jsonDef != null) return _jsonDef;
+        using var sr = new System.IO.StringReader(JsonXshd);
+        using var xr = System.Xml.XmlReader.Create(sr);
+        _jsonDef = ICSharpCode.AvalonEdit.Highlighting.Xshd.HighlightingLoader.Load(xr, HighlightingManager.Instance);
+        return _jsonDef;
+    }
+
     // 하이라이팅 정의별 원본 토큰 색 보존(공유 싱글톤이라 덮어쓰기 누적 방지)
     private static readonly Dictionary<string, Dictionary<string, System.Windows.Media.Color?>> _origColors = new();
 
@@ -117,8 +150,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
     private static IHighlightingDefinition? ThemeHighlighting(IHighlightingDefinition? def)
     {
         if (def == null) return null;
-        bool dark = Application.Current?.TryFindResource("BgColor") is System.Windows.Media.Color bg
-                    && Luminance(bg) < 0.5;
+        bool dark = App.CurrentTheme == "dark";
 
         if (!_origColors.TryGetValue(def.Name, out var orig))
         {
@@ -143,9 +175,10 @@ public partial class FileEditorView : UserControl, IFileTabEditor
     {
         double lum = Luminance(c);
         if (lum >= 0.55) return c;                 // 이미 밝으면 그대로
-        double f = 0.62 / System.Math.Max(lum, 0.04);
-        byte Ch(double v) => (byte)System.Math.Min(255, v * f);
-        return System.Windows.Media.Color.FromRgb(Ch(c.R), Ch(c.G), Ch(c.B));
+        // 흰색 쪽으로 lerp — 순색(순파랑 등)도 확실히 밝아짐. 색조는 cap으로 유지.
+        double t = System.Math.Min(0.68, (0.6 - lum) / 0.6);
+        byte M(byte v) => (byte)(v + (255 - v) * t);
+        return System.Windows.Media.Color.FromRgb(M(c.R), M(c.G), M(c.B));
     }
 
     private void Editor_TextChanged(object? sender, EventArgs e)
