@@ -523,6 +523,8 @@ public sealed class TerminalSessionManager
     private static string StatusLineScriptPath => Path.Combine(ClaudeTrackDir, "statusline-hook.ps1");
     // busy 훅: UserPromptSubmit(running)/Stop(idle) 시 방별 상태 파일을 써 좌측 트리 스피너를 켜고 끈다.
     private static string BusyHookScriptPath => Path.Combine(ClaudeTrackDir, "busy-hook.ps1");
+    // subagent 훅: SubagentStart/Stop 으로 서브에이전트 상태 파일을 방별/agentId 별로 기록.
+    private static string SubagentHookScriptPath => Path.Combine(ClaudeTrackDir, "subagent-hook.ps1");
 
     // 방별 claude 직접 실행 배치(cmd /k 로 띄움). 매 실행 시 최신 커맨드로 덮어쓴다.
     private static string LaunchDir => Path.Combine(ClaudeTrackDir, "launch");
@@ -546,9 +548,10 @@ public sealed class TerminalSessionManager
             if (!File.Exists(BusyHookScriptPath)) return false;
             if (!File.Exists(HookScriptPath)) return false;
             if (!File.Exists(StatusLineScriptPath)) return false;
+            if (!File.Exists(SubagentHookScriptPath)) return false;
             var json = File.ReadAllText(HookSettingsPath);
-            // busy 연동(요청중 스피너) 훅이 들어있는 최신 설정인지 확인
-            return json.Contains("UserPromptSubmit") && json.Contains("busy-hook");
+            // busy 연동(요청중 스피너) + subagent 훅이 들어있는 최신 설정인지 확인
+            return json.Contains("UserPromptSubmit") && json.Contains("busy-hook") && json.Contains("SubagentStart");
         }
         catch { return false; }
     }
@@ -727,10 +730,55 @@ public sealed class TerminalSessionManager
                 """;
             File.WriteAllText(BusyHookScriptPath, busyScript);
 
+            // subagent 훅: SubagentStart/Stop 시 방별/agentId 별 JSON 파일을 기록해
+            // 우측 패널의 서브에이전트 모니터가 실시간 상태를 보여준다.
+            const string subagentScript = """
+                # DevezCode subagent tracker (SubagentStart / SubagentStop hook)
+                # Writes per-room per-agent status so the right panel shows live agent info.
+                param([string]$status = 'start')
+                try {
+                  $raw = ''
+                  try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
+                  $j = $null
+                  try { $j = $raw | ConvertFrom-Json } catch { }
+                  if (-not $j) { exit 0 }
+                  $room = $env:DEVEZCODE_ROOM_ID
+                  if (-not $room -or -not $j.agent_id) { exit 0 }
+                  $room = $room -replace '[^\w\-]', ''
+                  $aid = ('' + $j.agent_id) -replace '[^\w\-]', ''
+                  $dir = Join-Path $env:APPDATA 'DevezCode\claude\subagents' $room
+                  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                  $file = Join-Path $dir ($aid + '.json')
+                  if ($status -eq 'start') {
+                    $data = @{
+                      agentId   = [string]$j.agent_id
+                      agentType = [string]$j.agent_type
+                      roomId    = $room
+                      status    = 'running'
+                      prompt    = if ($j.tool_input.prompt) { [string]$j.tool_input.prompt } else { '' }
+                      startedAt = (Get-Date).ToString('o')
+                    }
+                  } else {
+                    $data = $null
+                    try { $data = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json } catch { }
+                    if (-not $data) { $data = New-Object PSObject }
+                    $data | Add-Member -MemberType NoteProperty -Name 'status' -Value ('completed','error','cancelled' -contains $j.reason ? $j.reason : 'completed') -Force
+                    $data | Add-Member -MemberType NoteProperty -Name 'endedAt' -Value (Get-Date).ToString('o') -Force
+                    if ($j.reason)  { $data | Add-Member -MemberType NoteProperty -Name 'reason' -Value ([string]$j.reason) -Force }
+                    if ($j.tool_call_count -ne $null) { $data | Add-Member -MemberType NoteProperty -Name 'toolCallCount' -Value ([int]$j.tool_call_count) -Force }
+                  }
+                  $data | ConvertTo-Json -Compress -Depth 3 | Set-Content -LiteralPath $file -Encoding utf8 -Force
+                } catch { }
+                exit 0
+                """;
+            File.WriteAllText(SubagentHookScriptPath, subagentScript);
+
             var command = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{HookScriptPath}\"";
             var statusCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{StatusLineScriptPath}\"";
             var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running";
             var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle";
+            var subagentStartCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{SubagentHookScriptPath}\" start";
+            var subagentStopCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{SubagentHookScriptPath}\" stop";
             // refreshInterval 을 의도적으로 넣지 않는다 — 사용자 ~/.claude/settings.json 값과 무관하게 항상 생략.
             // statusLine 은 rate_limits 푸터 캡처가 목적이고 event-driven(메시지마다) 갱신으로 충분하므로,
             // 주기 갱신을 주입하면 idle 중에도 매초 statusLine 프로세스가 떠 CPU 가 튄다. 이를 원천 차단한다.
@@ -747,6 +795,8 @@ public sealed class TerminalSessionManager
                     UserPromptSubmit = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
                     Stop             = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
                     SessionEnd       = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
+                    SubagentStart    = new[] { new { hooks = new[] { new { type = "command", command = subagentStartCommand } } } },
+                    SubagentStop     = new[] { new { hooks = new[] { new { type = "command", command = subagentStopCommand } } } },
                 }
             };
             File.WriteAllText(HookSettingsPath, System.Text.Json.JsonSerializer.Serialize(settings));
