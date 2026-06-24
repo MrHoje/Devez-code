@@ -495,7 +495,8 @@ public partial class MainWindow : Window
         TextBlock fLabel, Border fBar, TextBlock fPct, Border wBar, TextBlock wPct,
         Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null)
     {
-        if (!u.HasData && u.Error == null) { panel.Visibility = Visibility.Collapsed; return; }
+        // 데이터를 못 불러오면(에러 포함) 빈값(--) 대신 패널 자체를 숨김 — 사이드패널 정합.
+        if (!u.HasData) { panel.Visibility = Visibility.Collapsed; return; }
         panel.Visibility = Visibility.Visible;
         SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
         // 주간/월간 라벨은 XAML 고정 — 막대/퍼센트만 갱신.
