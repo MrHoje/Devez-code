@@ -50,6 +50,13 @@ public static class AgentRegistry
             Command = "opencode",
             ResumeFlag = "-c",
         },
+        new()
+        {
+            // 가재코드: standalone CLI(`gjc`). bun install -g gajae-code. 훅/resume 미지원.
+            Id = "gajae", DisplayName = "Gajae Code", Provider = "Gajae",
+            ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
+            Command = "gjc",
+        },
     };
 
     public static AgentDef? Find(string? id)
