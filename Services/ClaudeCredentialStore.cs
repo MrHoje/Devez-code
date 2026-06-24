@@ -12,6 +12,25 @@ public static class ClaudeCredentialStore
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "claude-auth.json");
 
+    /// <summary>저장된 토큰을 읽는다. 없거나 access 가 없으면 null. expiresMs=0 이면 만료 정보 없음.</summary>
+    public static (string access, string? refresh, long expiresMs)? Read()
+    {
+        try
+        {
+            if (!File.Exists(StorePath)) return null;
+            using var fs = new FileStream(StorePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var doc = System.Text.Json.JsonDocument.Parse(fs);
+            if (!doc.RootElement.TryGetProperty("claudeAiOauth", out var o)) return null;
+            var a = o.TryGetProperty("accessToken", out var at) ? at.GetString() : null;
+            if (string.IsNullOrEmpty(a)) return null;
+            var r = o.TryGetProperty("refreshToken", out var rt) ? rt.GetString() : null;
+            var e = o.TryGetProperty("expiresAt", out var ex) && ex.ValueKind == System.Text.Json.JsonValueKind.Number
+                ? ex.GetInt64() : 0;
+            return (a, r, e);
+        }
+        catch { return null; }
+    }
+
     /// <summary>OAuth 토큰을 저장. expiresMs 는 만료 시각(unix epoch 밀리초).</summary>
     public static void Save(string access, string? refresh, long expiresMs)
     {

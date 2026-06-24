@@ -47,10 +47,43 @@ public sealed class UsageApiService : IDisposable
     /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
     public void RefreshNow() => _ = PollAsync();
 
+    // DevezCode 자체 로그인(ClaudeLoginWindow) 토큰의 refresh 용 — claude CLI 와 동일 값.
+    private const string OAuthClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+    private const string OAuthTokenUrl = "https://console.anthropic.com/v1/oauth/token";
+
+    /// <summary>DevezCode 자체 스토어 토큰이 만료 임박(5분)이면 refresh 로 갱신한다.
+    /// claude CLI 파일은 claude 가 관리하므로 건드리지 않는다. 실패 시 기존 토큰 유지(다음에 재로그인 유도).</summary>
+    private async Task EnsureFreshClaudeAsync()
+    {
+        if (ClaudeCredentialStore.Read() is not { } c) return;
+        if (string.IsNullOrEmpty(c.refresh)) return;
+        if (c.expiresMs - DateTimeOffset.Now.ToUnixTimeMilliseconds() > 5 * 60 * 1000) return; // 아직 충분
+        try
+        {
+            using var body = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = c.refresh!,
+                ["client_id"] = OAuthClientId,
+            });
+            using var res = await _http.PostAsync(OAuthTokenUrl, body).ConfigureAwait(false);
+            if (!res.IsSuccessStatusCode) return; // revoked/실패 — 기존 유지
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync().ConfigureAwait(false));
+            var r = doc.RootElement;
+            var access = r.TryGetProperty("access_token", out var a) ? a.GetString() : null;
+            if (string.IsNullOrEmpty(access)) return;
+            var refresh = r.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : c.refresh; // 회전 시 교체
+            var exp = r.TryGetProperty("expires_in", out var ei) && ei.ValueKind == JsonValueKind.Number ? ei.GetInt64() : 3600;
+            ClaudeCredentialStore.Save(access!, refresh, DateTimeOffset.Now.ToUnixTimeMilliseconds() + exp * 1000);
+        }
+        catch { /* 일시 오류 — 기존 토큰 유지 */ }
+    }
+
     private async Task PollAsync()
     {
         try
         {
+            await EnsureFreshClaudeAsync().ConfigureAwait(false);
             var token = ReadToken();
             if (token == null) return; // 자격증명/토큰 없음 — 직전 값 유지
 
