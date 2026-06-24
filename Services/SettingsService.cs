@@ -60,6 +60,8 @@ public static class SettingsService
         public bool PreloadAllProjectSessions { get; set; } = false;
         // 세션 탭 위의 프로젝트 정보 헤더(MetaBar: 프로젝트명~effort) 숨김 여부. 기본 false = 표시.
         public bool HideProjectInfoHeader { get; set; } = false;
+        // 최대화 시 작업표시줄까지 덮는 전체화면 동작 여부. 기본 false = 작업영역에만 맞춤.
+        public bool UseFullScreen { get; set; } = false;
         // 좌측 프로젝트 목록 열 수(1 또는 2). 2면 좌측 패널 최소너비 2배 + 카드 2열 그리드 + 가로 드래그.
         public int ProjectColumns { get; set; } = 1;
         // 메인 창 위치/크기 + 최대화 상태(재시작 시 복원). 화면 밖이면 복원 안 함. 로컬 전용.
@@ -355,6 +357,9 @@ public static class SettingsService
 
     public static bool LoadHideProjectInfoHeader() => Current.HideProjectInfoHeader;
     public static void SaveHideProjectInfoHeader(bool v) { Current.HideProjectInfoHeader = v; Save(); }
+
+    public static bool LoadUseFullScreen() => Current.UseFullScreen;
+    public static void SaveUseFullScreen(bool v) { Current.UseFullScreen = v; Save(); }
 
     public static int LoadProjectColumns() => Current.ProjectColumns == 2 ? 2 : 1;
     public static void SaveProjectColumns(int v) { Current.ProjectColumns = v == 2 ? 2 : 1; Save(); }

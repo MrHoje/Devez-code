@@ -25,6 +25,7 @@ public partial class SettingsDialog : UserControl
     private int    _originalFontScale;
     private bool   _originalPreloadAllSessions;
     private bool   _originalHideProjectInfoHeader;
+    private bool   _originalUseFullScreen;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
@@ -33,6 +34,7 @@ public partial class SettingsDialog : UserControl
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
     private bool   _selectedHideProjectInfoHeader;
+    private bool   _selectedUseFullScreen;
     private int    _selectedProjectColumns;
 
     // 탭 이동 단축키(가상키코드). 디스크 저장은 [저장] 버튼에서만 — 다른 설정과 동일.
@@ -99,6 +101,9 @@ public partial class SettingsDialog : UserControl
         _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
         _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
         HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        _originalUseFullScreen = SettingsService.LoadUseFullScreen();
+        _selectedUseFullScreen = _originalUseFullScreen;
+        UseFullScreenToggle.IsChecked = _selectedUseFullScreen;
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
         UpdateProjectColumnsVisual();
@@ -181,6 +186,11 @@ public partial class SettingsDialog : UserControl
     private void HideProjectInfoHeaderToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedHideProjectInfoHeader = HideProjectInfoHeaderToggle.IsChecked == true;
+    }
+
+    private void UseFullScreenToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedUseFullScreen = UseFullScreenToggle.IsChecked == true;
     }
 
     // ── 프로젝트 목록 열 수 (1/2) — 적용은 [저장] 시점에만(라이브 미리보기 없음) ──
@@ -442,6 +452,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedFontScale != _originalFontScale) return true;
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
+        if (_selectedUseFullScreen != _originalUseFullScreen) return true;
         if (_selectedProjectColumns != _originalProjectColumns) return true;
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext) return true;
         var current = new HashSet<string>(
@@ -462,6 +473,11 @@ public partial class SettingsDialog : UserControl
             SettingsService.SaveHideProjectInfoHeader(_selectedHideProjectInfoHeader);
             (Application.Current.MainWindow as MainWindow)?.ApplyProjectInfoHeaderVisibility();
         }
+        if (_selectedUseFullScreen != _originalUseFullScreen)
+        {
+            SettingsService.SaveUseFullScreen(_selectedUseFullScreen);
+            (Application.Current.MainWindow as MainWindow)?.ApplyFullScreen(_selectedUseFullScreen);
+        }
         if (_selectedProjectColumns != _originalProjectColumns)
         {
             SettingsService.SaveProjectColumns(_selectedProjectColumns);
@@ -479,6 +495,7 @@ public partial class SettingsDialog : UserControl
         _originalFontScale   = _selectedFontScale;
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
+        _originalUseFullScreen = _selectedUseFullScreen;
         _originalProjectColumns = _selectedProjectColumns;
         _originalHkMod = _selectedHkMod; _originalHkPrev = _selectedHkPrev; _originalHkNext = _selectedHkNext;
         _originalEnabledAgents = new HashSet<string>(
@@ -511,6 +528,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
             HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        }
+        if (_selectedUseFullScreen != _originalUseFullScreen)
+        {
+            _selectedUseFullScreen = _originalUseFullScreen;
+            UseFullScreenToggle.IsChecked = _selectedUseFullScreen;
         }
         if (_selectedProjectColumns != _originalProjectColumns)
         {

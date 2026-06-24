@@ -1447,6 +1447,9 @@ public partial class MainWindow : Window
     // 모니터 작업영역에 정확히 맞춰 오버플로 자체를 없앤다(표준 해법). 마진 불필요.
     private const int WM_GETMINMAXINFO = 0x0024;
 
+    // 최대화 시 작업표시줄까지 덮을지(전체화면). 설정에서 토글, WmGetMinMaxInfo 가 참조.
+    private bool _useFullScreen = SettingsService.LoadUseFullScreen();
+
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
@@ -1473,6 +1476,17 @@ public partial class MainWindow : Window
             RootChrome.Margin = new Thickness(x, y, x, y);
         }
         else RootChrome.Margin = default;
+    }
+
+    /// <summary>전체화면(작업표시줄 덮기) 설정 적용. 최대화 상태면 재최대화로 MINMAXINFO 를 즉시 갱신.</summary>
+    public void ApplyFullScreen(bool useFullScreen)
+    {
+        _useFullScreen = useFullScreen;
+        if (WindowState == WindowState.Maximized)
+        {
+            WindowState = WindowState.Normal;
+            WindowState = WindowState.Maximized;
+        }
     }
 
     private const int SM_CXFRAME = 32, SM_CYFRAME = 33, SM_CXPADDEDBORDER = 92;
@@ -1511,11 +1525,12 @@ public partial class MainWindow : Window
         if (!GetMonitorInfo(monitor, ref info)) return;
 
         var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
-        var work = info.rcWork; var mon = info.rcMonitor;
-        mmi.ptMaxPosition.X = work.Left - mon.Left;
-        mmi.ptMaxPosition.Y = work.Top - mon.Top;
-        mmi.ptMaxSize.X = work.Right - work.Left;
-        mmi.ptMaxSize.Y = work.Bottom - work.Top;
+        // 전체화면이면 모니터 전체(rcMonitor)에 맞춰 작업표시줄까지 덮는다. 아니면 작업영역(rcWork).
+        var area = _useFullScreen ? info.rcMonitor : info.rcWork; var mon = info.rcMonitor;
+        mmi.ptMaxPosition.X = area.Left - mon.Left;
+        mmi.ptMaxPosition.Y = area.Top - mon.Top;
+        mmi.ptMaxSize.X = area.Right - area.Left;
+        mmi.ptMaxSize.Y = area.Bottom - area.Top;
 
         var dpi = VisualTreeHelper.GetDpi(this);
         mmi.ptMinTrackSize.X = (int)(MinWidth * dpi.DpiScaleX);
