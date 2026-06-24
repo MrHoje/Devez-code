@@ -189,7 +189,7 @@
                     <ColumnDefinition x:Name="FooterActionsCol" Width="Auto" MinWidth="48"/>
                 </Grid.ColumnDefinitions>
                     <!-- 좌측: 클로드 사용량 (CPU/RAM 성능모니터는 상단 타이틀바로 이동). -->
-                    <StackPanel Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
                         <!-- 계정 사용량: provider(Claude/Codex/Go)별 [구분선][아이콘][이름][5h바][주바]. -->
                         <!-- Claude -->
                         <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal" VerticalAlignment="Center"
