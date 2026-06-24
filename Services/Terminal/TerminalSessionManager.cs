@@ -461,13 +461,11 @@ public sealed class TerminalSessionManager
         }
 
         // --session-dir 토큰은 따옴표로 감싸 공백 경로 안전. -r <id> 는 GUID 만(파일명에서 검증) → 주입 차단.
+        // 확장(busy/lastmsg/todo)은 ~/.gjc/agent/extensions/ auto-discovery 로 로드(플래그 미사용 — 자동전송 버그 회피).
         string sd = $"--session-dir \"{sessionDir}\"";
-        // busy 스피너·todo 뷰용 확장 로드(설치돼 있을 때만). 사용자 자신의 gjc 는 오염 안 됨(우리 전용 경로).
-        var extPath = GajaeExtensionInstaller.ExtensionInstallPath;
-        string ext = File.Exists(extPath) ? $" -e \"{extPath}\"" : "";
         string cmd = sessionId != null
-            ? $"gjc {sd}{ext} -r {sessionId}\r\nif errorlevel 1 gjc {sd}{ext}"
-            : $"gjc {sd}{ext}";
+            ? $"gjc {sd} -r {sessionId}\r\nif errorlevel 1 gjc {sd}"
+            : $"gjc {sd}";
 
         try
         {
@@ -483,7 +481,7 @@ public sealed class TerminalSessionManager
         }
         catch
         {
-            injectFallback = (sessionId != null ? $"gjc {sd}{ext} -r {sessionId}" : $"gjc {sd}{ext}") + "\r";
+            injectFallback = (sessionId != null ? $"gjc {sd} -r {sessionId}" : $"gjc {sd}") + "\r";
             return null;
         }
     }
