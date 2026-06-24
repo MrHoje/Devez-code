@@ -221,7 +221,7 @@
 
                         <!-- provider 사용량 카드 목록 (기존 UsageView 와 동일 템플릿) -->
                         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <StackPanel Margin="16,4,16,14" MinWidth="218">
+                            <StackPanel Margin="16,14,16,14" MinWidth="218">
                                 <ItemsControl x:Name="SidebarUsageList" AlternationCount="99">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:UsageCardVM}">

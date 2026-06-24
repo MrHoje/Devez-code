@@ -934,8 +934,12 @@ public partial class MainWindow : Window
     /// 접기/펼치기 애니메이션 도중이 아니라 '완료된' 상태에서만 호출해야 보더가 미리 사라지지 않는다.</summary>
     private void UpdateUsageSidebarBorder()
     {
+        // 두께는 항상 1px 고정(콘텐츠 영역 폭 불변) — 보이고/안 보이고는 색으로만 토글.
         bool rightHidden = _narrow == true ? !_rightOverlayOpen : _rightCollapsed;
-        UsageSidebar.BorderThickness = rightHidden ? new Thickness(0) : new Thickness(1, 0, 0, 0);
+        if (rightHidden)
+            UsageSidebar.BorderBrush = System.Windows.Media.Brushes.Transparent;
+        else
+            UsageSidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
     }
 
     // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는
