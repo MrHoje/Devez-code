@@ -1480,48 +1480,56 @@ public partial class MainWindow : Window
     }
 
     /// <summary>WS_MAXIMIZE 없이 모니터 전체를 채우는 수동 전체화면 진입(작업표시줄까지 덮음).</summary>
+    private int _fsSavedStyle;         // 전체화면 진입 전 Win32 창 스타일(복원용)
+
     private void EnterFullScreen()
     {
         if (_mainHwnd == IntPtr.Zero) return;
+        var monitor = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return;
+
         _fsGuard = true;
         _preFsBounds = RestoreBounds;   // 최대화 직전의 일반 창 bounds
         _inFullScreen = true;
         WindowState = WindowState.Normal;
-        var b = GetMonitorBoundsDip();
-        Left = b.Left; Top = b.Top; Width = b.Width; Height = b.Height;
-        if (RootChrome != null) RootChrome.Margin = default; // 보더리스 Normal — 마진 불필요
+
+        // WS_CAPTION/WS_THICKFRAME 제거 → 셸이 진짜 전체화면으로 인식(작업표시줄 자동 숨김).
+        _fsSavedStyle = GetWindowLong(_mainHwnd, GWL_STYLE);
+        SetWindowLong(_mainHwnd, GWL_STYLE, _fsSavedStyle & ~(WS_CAPTION | WS_THICKFRAME));
+
+        // DIP 반올림 없이 모니터 물리 픽셀에 정확히 맞춰야 전체화면 감지가 성립.
+        var m = info.rcMonitor;
+        SetWindowPos(_mainHwnd, IntPtr.Zero, m.Left, m.Top, m.Right - m.Left, m.Bottom - m.Top,
+                     SWP_NOZORDER | SWP_FRAMECHANGED);
+        if (RootChrome != null) RootChrome.Margin = default;
         ApplyCornerPreference();
         _fsGuard = false;
     }
 
-    /// <summary>전체화면 해제 → 진입 전 일반 창 bounds 로 복원.</summary>
+    /// <summary>전체화면 해제 → 스타일·진입 전 일반 창 bounds 복원.</summary>
     private void ExitFullScreen()
     {
         if (!_inFullScreen) return;
         _fsGuard = true;
         _inFullScreen = false;
+        if (_fsSavedStyle != 0)
+            SetWindowLong(_mainHwnd, GWL_STYLE, _fsSavedStyle);
         WindowState = WindowState.Normal;
         if (!_preFsBounds.IsEmpty && _preFsBounds.Width > 0 && _preFsBounds.Height > 0)
         {
             Left = _preFsBounds.Left; Top = _preFsBounds.Top;
             Width = _preFsBounds.Width; Height = _preFsBounds.Height;
         }
+        SetWindowPos(_mainHwnd, IntPtr.Zero, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED); // 스타일 변경 반영
         ApplyCornerPreference();
         _fsGuard = false;
     }
 
-    /// <summary>창이 속한 모니터의 전체 영역(작업표시줄 포함)을 DIP 단위 Rect 로 반환.</summary>
-    private Rect GetMonitorBoundsDip()
-    {
-        var monitor = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
-        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info))
-            return new Rect(Left, Top, Width, Height);
-        var dpi = VisualTreeHelper.GetDpi(this);
-        var m = info.rcMonitor;
-        return new Rect(m.Left / dpi.DpiScaleX, m.Top / dpi.DpiScaleY,
-                        (m.Right - m.Left) / dpi.DpiScaleX, (m.Bottom - m.Top) / dpi.DpiScaleY);
-    }
+    private const int WS_THICKFRAME = 0x00040000;
+    private const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_FRAMECHANGED = 0x20;
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     /// <summary>WS_CAPTION + WS_THICKFRAME(ResizeMode=CanResize) 창은 최대화 시 표준 방식으로
     /// 프레임만큼 화면 밖으로 위치해 콘텐츠 가장자리가 잘린다. 최대화 상태에서만 루트에
