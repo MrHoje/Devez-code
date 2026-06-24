@@ -178,6 +178,11 @@ public sealed class ProjectItem : NotifyBase
     /// 사이드바는 Sessions(동기 뷰)로 세션만 골라 렌더한다.</summary>
     public ObservableCollection<TabItemBase> Tabs { get; } = new();
 
+    /// <summary>재시작 복원용 — workspace.json 에서 읽은 "직전에 열려 있던 파일 탭 경로" 목록.
+    /// 모델엔 임시 보관만 하고(직렬화 대상 아님), 시작 시 WorkspacePaneView.RestoreFileTabs 가
+    /// 한 번 소비해 실제 FileTabItem 으로 만든다.</summary>
+    public List<string> PendingOpenFiles { get; set; } = new();
+
     /// <summary>사이드바 호환을 위한 세션 전용 동기 뷰(ObservableCollection).
     /// Tabs.CollectionChanged 에서 SessionItem 만 추려 추가/제거한다 → 사이드바 바인딩이 즉시 갱신.</summary>
     public ObservableCollection<SessionItem> Sessions { get; } = new();

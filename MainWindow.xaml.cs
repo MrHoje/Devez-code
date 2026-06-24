@@ -233,6 +233,7 @@ public partial class MainWindow : Window
             // 가재코드 — 세션 .jsonl 폴링으로 헤더 lastmsg + 스피너 busy 둘 다 처리(확장/훅 불필요).
             _gajaeLastMsg.Start();
             _agentLastMsg.Start();
+            RestoreOpenFiles();  // 직전에 열려 있던 파일 편집기 탭 복원(세션 활성화보다 먼저 → 활성 탭은 세션 유지)
             RestoreLastSession();
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
@@ -371,6 +372,18 @@ public partial class MainWindow : Window
                           .Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == sessionId)
                       ?? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == sessionId);
         if (session != null) OpenSession(session);
+    }
+
+    /// <summary>직전 실행에서 열려 있던 파일 편집기 탭들을 복원한다(PaneA 에 생성, 활성화는 안 함).
+    /// 각 프로젝트의 PendingOpenFiles(workspace.json 에서 로드)를 1회 소비한다. 삭제된 파일은 건너뛴다.</summary>
+    private void RestoreOpenFiles()
+    {
+        foreach (var proj in _projects)
+        {
+            if (proj.PendingOpenFiles.Count == 0) continue;
+            PaneA.RestoreFileTabs(proj, proj.PendingOpenFiles);
+            proj.PendingOpenFiles.Clear();
+        }
     }
 
     // ── 성능 모니터 (헤더 CPU/RAM 칩, devez 이식) ──────────────────────

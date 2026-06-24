@@ -648,6 +648,7 @@ public partial class WorkspacePaneView : UserControl
             FileEditorHostContainer.Content = null;
         if (tab.Editor is IDisposable disposable) disposable.Dispose();
         parent?.Tabs.Remove(tab);
+        PersistWorkspace(); // 닫은 파일 탭을 workspace.json 에서 제거(재시작 시 다시 안 열리도록)
 
         if (wasActive)
         {
@@ -1207,19 +1208,40 @@ public partial class WorkspacePaneView : UserControl
     public void OpenFileAsTab(string path)
     {
         if (_activeProject == null) return;
-        if (string.IsNullOrEmpty(path)) return;
+        var tab = CreateFileTab(_activeProject, path);
+        if (tab == null) return;
+        ActivateFileTab(tab);
+        PersistWorkspace(); // 열린 파일 탭 목록을 workspace.json 에 영속(재시작 복원용)
+    }
 
-        var existing = _activeProject.Tabs.OfType<FileTabItem>()
+    /// <summary>지정 프로젝트에 파일 편집기 탭을 만들어 Tabs 에 추가하고 반환(활성화는 호출부 담당).
+    /// 같은 경로 탭이 이미 있으면 그것을 반환, 경로가 비었거나 로드 실패면 null.</summary>
+    private FileTabItem? CreateFileTab(ProjectItem proj, string path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        var existing = proj.Tabs.OfType<FileTabItem>()
             .FirstOrDefault(t => string.Equals(t.FilePath, path, StringComparison.OrdinalIgnoreCase));
-        if (existing != null) { ActivateFileTab(existing); return; }
+        if (existing != null) return existing;
 
         var tab = new FileTabItem { FilePath = path, Editor = CreateFileTabEditor(path) };
-        if (!tab.Editor.LoadFile(path)) return;
+        if (!tab.Editor.LoadFile(path)) return null;
         tab.Editor.CloseRequested += (_, _) => RemoveFileTab(tab);
         tab.Editor.DirtyChanged += (_, _) => { if (ReferenceEquals(_activeTab, tab)) RefreshFileHeaderState(tab); };
-        _activeProject.Tabs.Add(tab);
-        ActivateFileTab(tab);
+        proj.Tabs.Add(tab);
+        return tab;
     }
+
+    /// <summary>재시작 복원: 저장돼 있던 파일 경로들을 탭으로 다시 연다(활성화 안 함, 저장 순서 유지).
+    /// 삭제됐거나 로드 실패한 파일은 건너뛴다.</summary>
+    public void RestoreFileTabs(ProjectItem proj, IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
+            if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+                CreateFileTab(proj, path);
+    }
+
+    /// <summary>열린 파일 탭 목록 변화를 workspace.json 에 반영(파일 탭 추가/제거 시 호출).</summary>
+    private void PersistWorkspace() => WorkspaceStore.Save(Projects);
 
     private static IFileTabEditor CreateFileTabEditor(string path)
     {
