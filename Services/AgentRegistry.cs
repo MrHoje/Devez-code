@@ -15,6 +15,9 @@ public sealed class AgentDef
     public string Command { get; init; } = "";
     /// <summary>Claude 만 — SessionStart/UserPromptSubmit 훅으로 busy 스피너·lastmsg 헤더 지원.</summary>
     public bool SupportsHooks { get; init; }
+    /// <summary>alt-screen(풀스크린 TUI) 대신 인라인으로 렌더하는 에이전트(gjc 등).
+    /// alt-screen 시퀀스가 없어 로딩 오버레이가 첫 출력 기준으로 해제돼야 함(무한 스피너 방지).</summary>
+    public bool InlineTui { get; init; }
     /// <summary>기존 세션 재오픈 시 같이 넘기는 플래그. codex="--last", opencode="-c".
     /// Claude 는 resume/session-id 를 별도 처리하므로 null.</summary>
     public string? ResumeFlag { get; init; }
@@ -53,9 +56,10 @@ public static class AgentRegistry
         new()
         {
             // 가재코드: standalone CLI(`gjc`). bun install -g gajae-code. 훅/resume 미지원.
+            // 인라인 렌더(alt-screen 미사용) → InlineTui=true 로 로딩 오버레이 첫 출력에 해제.
             Id = "gajae", DisplayName = "Gajae Code", Provider = "Gajae",
             ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
-            Command = "gjc",
+            Command = "gjc", InlineTui = true,
         },
     };
 
