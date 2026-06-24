@@ -1342,13 +1342,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>헤더에 표시할 마지막 메시지 반영. true=헤더 갱신 필요.
-    /// /clear 는 타이틀로 복귀(빈 값), 그 외 슬래시 명령(/...)은 헤더 유지(무시).</summary>
+    /// /clear·/new 는 타이틀로 복귀(빈 값), 그 외 슬래시 명령(/...)은 헤더 유지(무시).</summary>
     private static bool ApplyHeaderMessage(SessionItem s, string? msg)
     {
         var m = msg?.Trim() ?? "";
         if (m.StartsWith("/"))
         {
-            if (m.Equals("/clear", StringComparison.OrdinalIgnoreCase))
+            if (m.Equals("/clear", StringComparison.OrdinalIgnoreCase) ||
+                m.Equals("/new", StringComparison.OrdinalIgnoreCase))
             {
                 if (string.IsNullOrEmpty(s.LastMessage)) return false;
                 s.LastMessage = "";
