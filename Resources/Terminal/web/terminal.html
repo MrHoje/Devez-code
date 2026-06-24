@@ -386,6 +386,9 @@
   function createTerm(roomId, agent) {
     const el = document.createElement('div');
     el.className = 'term-container' + (agent ? ' agent-' + agent : '');
+    // 인라인 TUI(gjc): alt-screen 을 안 써서 라이브 렌더 루프가 일반 버퍼를 연속 재페인트(CLR+POS)→스크롤 튐.
+    // 출력마다 맨 아래로 고정해 막는다(유휴 시엔 출력이 없어 스크롤백 정상). AgentRegistry InlineTui 와 일치.
+    const inline = (agent === 'gajae');
     document.body.appendChild(el);
 
     const term = new Terminal({
@@ -395,7 +398,10 @@
       fontSize: cfg.fontSize,
       cursorBlink: true,
       allowProposedApi: true,
-      scrollback: 5000,
+      // 인라인 TUI(gjc)는 alt-screen 없이 CLR+POS 로 전체 재페인트한다. 스크롤백이 있으면 매 재페인트마다
+      // 직전 화면이 스크롤백으로 밀려 올라가며 뷰가 위/아래로 튄다. scrollback:0 으로 제자리 재그리게 해
+      // alt-screen 에이전트(claude/opencode)와 동일하게 튐을 없앤다.
+      scrollback: inline ? 0 : 5000,
       // ConPTY 백엔드 명시 → Windows 줄바꿈/와이드(CJK) 문자 휴리스틱 적용
       windowsPty: { backend: 'conpty', buildNumber: cfg.windowsBuild || 0 },
     });
@@ -405,7 +411,7 @@
     term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, dead: false, ro: null };
+    const entry = { term, fit, el, search, dead: false, ro: null, inline: inline };
     terms[roomId] = entry;
 
     // 컨테이너 실제 픽셀 박스가 바뀔 때마다 재-fit. window resize 만으로는
@@ -557,8 +563,9 @@
       case 'output': {
         const t = terms[msg.roomId];
         if (t) {
-          if (Date.now() < _pinBottomUntil) {
-            // 인라인 TUI(gjc) resume 재페인트 동안 — 매 출력 후 맨 아래로 고정해 위/아래 튐을 막는다.
+          if (t.inline || Date.now() < _pinBottomUntil) {
+            // 인라인 TUI(gjc): 라이브 렌더 루프가 일반 버퍼를 연속 재페인트하며 스크롤이 튄다.
+            // 출력마다 맨 아래로 고정해 막는다(유휴 시엔 출력이 없어 스크롤백에 영향 없음).
             t.term.write(b64ToBytes(msg.data));
             requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
           } else if (_scrollSuppress > 0) {
