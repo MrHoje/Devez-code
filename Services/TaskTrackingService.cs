@@ -9,9 +9,6 @@ public sealed class TaskTrackingService : IDisposable
     private static string OpenCodeTodosDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode", "todos");
 
-    private static string OpenCodeBusyDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode", "busy");
-
     public ObservableCollection<Models.TaskItem> Tasks { get; } = new();
 
     public event Action? TasksChanged;
@@ -20,6 +17,7 @@ public sealed class TaskTrackingService : IDisposable
     private string? _activeProjectPath;
     private FileSystemWatcher? _opencodeWatcher;
     private FileSystemWatcher? _claudeWatcher;
+    private FileSystemWatcher? _gjacWatcher;
 
     public void Start()
     {
@@ -49,6 +47,18 @@ public sealed class TaskTrackingService : IDisposable
         return File.Exists(path) ? path : null;
     }
 
+    private string? GjacGoalsDir()
+    {
+        if (string.IsNullOrEmpty(_activeProjectPath)) return null;
+        var gjcDir = Path.Combine(_activeProjectPath, ".gjc");
+        if (!Directory.Exists(gjcDir)) return null;
+        var sessionDirs = Directory.GetDirectories(gjcDir, "_session-*");
+        if (sessionDirs.Length == 0) return null;
+        var latest = sessionDirs.OrderByDescending(d => Directory.GetLastWriteTime(d)).First();
+        var goalsPath = Path.Combine(latest, "ultragoal", "goals.json");
+        return File.Exists(goalsPath) ? Path.GetDirectoryName(goalsPath) : null;
+    }
+
     private void ReloadForActiveSession()
     {
         Tasks.Clear();
@@ -59,15 +69,17 @@ public sealed class TaskTrackingService : IDisposable
         var claudePath = ClaudeSettingsPath();
         if (claudePath != null) LoadClaudeTasks(claudePath);
 
+        var gjacDir = GjacGoalsDir();
+        if (gjacDir != null) LoadGjacTasks(gjacDir);
+
         TasksChanged?.Invoke();
     }
 
     private void WatchActiveFiles()
     {
-        _opencodeWatcher?.Dispose();
-        _opencodeWatcher = null;
-        _claudeWatcher?.Dispose();
-        _claudeWatcher = null;
+        _opencodeWatcher?.Dispose(); _opencodeWatcher = null;
+        _claudeWatcher?.Dispose(); _claudeWatcher = null;
+        _gjacWatcher?.Dispose(); _gjacWatcher = null;
 
         try
         {
@@ -95,17 +107,36 @@ public sealed class TaskTrackingService : IDisposable
         try
         {
             var claudePath = ClaudeSettingsPath();
-            if (claudePath == null) return;
-            var dir = Path.GetDirectoryName(claudePath);
-            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
-
-            _claudeWatcher = new FileSystemWatcher(dir, "settings.json")
+            if (claudePath != null)
             {
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
-                EnableRaisingEvents = true,
-            };
-            _claudeWatcher.Changed += (_, _) => DispatcherInvoke(() => ReloadClaudeTasks());
-            _claudeWatcher.Created += (_, _) => DispatcherInvoke(() => ReloadClaudeTasks());
+                var dir = Path.GetDirectoryName(claudePath);
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                {
+                    _claudeWatcher = new FileSystemWatcher(dir, "settings.json")
+                    {
+                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                        EnableRaisingEvents = true,
+                    };
+                    _claudeWatcher.Changed += (_, _) => DispatcherInvoke(() => ReloadClaudeTasks());
+                    _claudeWatcher.Created += (_, _) => DispatcherInvoke(() => ReloadClaudeTasks());
+                }
+            }
+        }
+        catch { }
+
+        try
+        {
+            var gjacDir = GjacGoalsDir();
+            if (gjacDir != null)
+            {
+                _gjacWatcher = new FileSystemWatcher(gjacDir, "goals.json")
+                {
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                    EnableRaisingEvents = true,
+                };
+                _gjacWatcher.Changed += (_, _) => DispatcherInvoke(() => ReloadGjacTasks());
+                _gjacWatcher.Created += (_, _) => DispatcherInvoke(() => ReloadGjacTasks());
+            }
         }
         catch { }
     }
@@ -122,20 +153,14 @@ public sealed class TaskTrackingService : IDisposable
     {
         try
         {
-            if (!File.Exists(filePath)) return;
-            if (!MatchesActiveRoom(filePath)) return;
-
+            if (!File.Exists(filePath) || !MatchesActiveRoom(filePath)) return;
             var json = File.ReadAllText(filePath);
             if (string.IsNullOrWhiteSpace(json) || json == "null") return;
-
             var raw = JsonSerializer.Deserialize<List<TodoRaw>>(json);
             if (raw == null) return;
 
             for (int i = Tasks.Count - 1; i >= 0; i--)
-            {
-                if (Tasks[i].Source == "opencode")
-                    Tasks.RemoveAt(i);
-            }
+                if (Tasks[i].Source == "opencode") Tasks.RemoveAt(i);
 
             var source = $"opencode:{_activeRoomId}";
             foreach (var item in raw)
@@ -143,18 +168,15 @@ public sealed class TaskTrackingService : IDisposable
                 var content = item.content?.Trim() ?? "";
                 var status = NormalizeStatus(item.status);
                 if (string.IsNullOrEmpty(content)) continue;
-
-                var sid = item.id ?? Guid.NewGuid().ToString("N");
                 Tasks.Add(new Models.TaskItem
                 {
-                    Id = sid,
+                    Id = item.id ?? Guid.NewGuid().ToString("N"),
                     Description = content,
                     Status = status,
                     Priority = NormalizePriority(item.priority),
                     Source = source
                 });
             }
-
             TasksChanged?.Invoke();
         }
         catch { }
@@ -163,10 +185,7 @@ public sealed class TaskTrackingService : IDisposable
     private void ReloadClaudeTasks()
     {
         for (int i = Tasks.Count - 1; i >= 0; i--)
-        {
-            if (Tasks[i].Source == $"claude:{_activeProjectPath}")
-                Tasks.RemoveAt(i);
-        }
+            if (Tasks[i].Source.Contains("claude:")) Tasks.RemoveAt(i);
 
         var claudePath = ClaudeSettingsPath();
         if (claudePath != null) LoadClaudeTasks(claudePath);
@@ -187,9 +206,8 @@ public sealed class TaskTrackingService : IDisposable
                 var content = t.TryGetProperty("content", out var c) ? c.GetString()?.Trim() ?? "" : "";
                 var status = t.TryGetProperty("status", out var s) ? NormalizeStatus(s.GetString()) : "pending";
                 var priority = t.TryGetProperty("priority", out var pr) ? NormalizePriority(pr.GetString()) : "medium";
-                var id = t.TryGetProperty("id", out var idEl) ? idEl.GetString() : Guid.NewGuid().ToString("N");
+                var id = t.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
                 if (string.IsNullOrEmpty(content)) continue;
-
                 Tasks.Add(new Models.TaskItem
                 {
                     Id = id ?? Guid.NewGuid().ToString("N"),
@@ -203,11 +221,67 @@ public sealed class TaskTrackingService : IDisposable
         catch { }
     }
 
+    private void ReloadGjacTasks()
+    {
+        for (int i = Tasks.Count - 1; i >= 0; i--)
+            if (Tasks[i].Source.Contains("gjac:")) Tasks.RemoveAt(i);
+
+        var gjacDir = GjacGoalsDir();
+        if (gjacDir != null) LoadGjacTasks(gjacDir);
+        TasksChanged?.Invoke();
+    }
+
+    private void LoadGjacTasks(string goalsDir)
+    {
+        try
+        {
+            var path = Path.Combine(goalsDir, "goals.json");
+            if (!File.Exists(path)) return;
+            var json = File.ReadAllText(path);
+            using var doc = JsonDocument.Parse(json);
+
+            var source = $"gjac:{_activeProjectPath}";
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var g in doc.RootElement.EnumerateArray())
+                {
+                    var id = g.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                    var title = g.TryGetProperty("title", out var tEl) ? tEl.GetString()?.Trim() ?? "" : "";
+                    var objective = g.TryGetProperty("objective", out var oEl) ? oEl.GetString()?.Trim() ?? "" : "";
+                    var status = g.TryGetProperty("status", out var sEl) ? NormalizeStatus(sEl.GetString()) : "pending";
+
+                    var desc = title;
+                    if (!string.IsNullOrEmpty(objective) && !objective.Equals(title, StringComparison.OrdinalIgnoreCase))
+                        desc = $"{title}: {objective}";
+
+                    if (string.IsNullOrEmpty(desc)) continue;
+                    Tasks.Add(new Models.TaskItem
+                    {
+                        Id = id ?? Guid.NewGuid().ToString("N"),
+                        Description = desc,
+                        Status = MapGjacStatus(status),
+                        Priority = "medium",
+                        Source = source
+                    });
+                }
+            }
+        }
+        catch { }
+    }
+
+    private static string MapGjacStatus(string s) => s.ToLowerInvariant() switch
+    {
+        "active" or "in_progress" => "in_progress",
+        "completed" or "done" => "completed",
+        "failed" or "cancelled" or "canceled" => "cancelled",
+        _ => "pending"
+    };
+
     private static string NormalizeStatus(string? s) => s?.ToLowerInvariant() switch
     {
-        "in_progress" or "inprogress" => "in_progress",
+        "in_progress" or "inprogress" or "active" => "in_progress",
         "completed" or "done" => "completed",
-        "cancelled" or "canceled" => "cancelled",
+        "cancelled" or "canceled" or "failed" => "cancelled",
         _ => "pending"
     };
 
@@ -238,5 +312,6 @@ public sealed class TaskTrackingService : IDisposable
     {
         _opencodeWatcher?.Dispose();
         _claudeWatcher?.Dispose();
+        _gjacWatcher?.Dispose();
     }
 }

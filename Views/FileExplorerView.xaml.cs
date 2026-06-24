@@ -241,7 +241,7 @@ public partial class FileExplorerView : UserControl
         DiffViewBtn.Visibility    = SettingsService.LoadShowDiffViewBtn()    ? Visibility.Visible : Visibility.Collapsed;
         TaskViewBtn.Visibility    = SettingsService.LoadShowTaskViewBtn()    ? Visibility.Visible : Visibility.Collapsed;
 
-        // 활성 탭 버튼이 숨겨졌으면 보이는 첫 탭으로 전환 (idx: 0=탐색기,1=브라우저,2=DIFF,3=작업 큐,4=에이전트,5=작업 태스크)
+        // 활성 탭 버튼이 숨겨졌으면 보이는 첫 탭으로 전환 (idx: 0=탐색기,1=브라우저,2=DIFF,3=작업 큐)
         var visible = new System.Collections.Generic.List<int>();
         if (DirViewBtn.Visibility     == Visibility.Visible) visible.Add(0);
         if (BrowserViewBtn.Visibility == Visibility.Visible) visible.Add(1);
