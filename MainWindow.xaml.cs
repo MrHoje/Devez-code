@@ -615,7 +615,7 @@ public partial class MainWindow : Window
     private static string FormatResetDate(DateTimeOffset? resetsAt)
         => resetsAt is DateTimeOffset r ? r.ToLocalTime().ToString("M월 d일 HH:mm") : "—";
 
-    private const double RlTrackWidth = 56;
+    private const double RlTrackWidth = 90;
 
     /// <summary>한도 막대 1세트 갱신 — 라벨 / 채움 너비·색 / 퍼센트.</summary>
     private void SetBar(TextBlock label, Border bar, TextBlock pctText, string labelText, double? pct)
@@ -855,6 +855,22 @@ public partial class MainWindow : Window
         UpdatePanelToggleVisual();
     }
 
+    // ── 최우측 계정 사용량 사이드바 토글 ────────────────────────────────
+    private const double UsagePanelWidth = 250;
+    private bool _usageOpen;
+
+    private void UsagePanelBtn_Click(object sender, RoutedEventArgs e)
+        => SetUsagePanelOpen(!_usageOpen, persist: true);
+
+    /// <summary>최우측 사용량 사이드바를 펼치거나 접는다(폭 토글, 애니메이션 없음).</summary>
+    private void SetUsagePanelOpen(bool open, bool persist)
+    {
+        _usageOpen = open;
+        UsageCol.Width = new GridLength(open ? UsagePanelWidth : 0);
+        if (persist) SettingsService.SaveUsagePanelOpen(open);
+        UpdatePanelToggleVisual();
+    }
+
     /// <summary>설정에 저장된 사이드 패널 뷰 전환 버튼 표시 여부를 우측 패널에 반영한다.</summary>
     public void ApplySidePanelButtonVisibility()
     {
@@ -969,6 +985,7 @@ public partial class MainWindow : Window
             FileExpCol.Width = new GridLength(_fileExpWidth);
             FooterFileExpCol.Width = new GridLength(_fileExpWidth);
         }
+        SetUsagePanelOpen(SettingsService.LoadUsagePanelOpen(), persist: false); // 사용량 사이드바 상태 복원
         UpdatePanelToggleVisual();
         ApplyProjectColumns(SettingsService.LoadProjectColumns()); // 저장된 열 수 복원(최소/현재 폭 반영)
     }
@@ -981,6 +998,8 @@ public partial class MainWindow : Window
         // 좁은 창에서는 오버레이가 닫혀 있으면(=숨김) 강조 표시.
         bool rightHidden = _narrow == true ? !_rightOverlayOpen : _rightCollapsed;
         RightPanelIcon.Stroke = rightHidden ? primary : muted;
+        // 사용량 사이드바는 '펼침' 상태일 때 강조(다른 토글과 반대 — 열려 있음을 표시).
+        UsagePanelIcon.Stroke = _usageOpen ? primary : muted;
     }
 
     // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는
@@ -1176,6 +1195,7 @@ public partial class MainWindow : Window
     {
         _updateInProgress = true;
         Sidebar.HideUpdateButton(); // 설치 진행 중에는 버튼 숨김
+        if (!_usageOpen) SetUsagePanelOpen(true, persist: false); // 진행률은 사용량 패널을 재사용 — 보이도록 펼침
         var progress = new Progress<double>(v =>
         {
             RateLimitPanel.Visibility = Visibility.Visible;

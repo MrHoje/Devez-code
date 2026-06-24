@@ -20,6 +20,8 @@ public static class SettingsService
         public bool   RightPanelCollapsed { get; set; } = false;
         public double SidebarWidth { get; set; } = 262;
         public double FileExpWidth { get; set; } = 300;
+        // 최우측 계정 사용량 사이드바 펼침 상태. 기본 접힘.
+        public bool   UsagePanelOpen { get; set; } = false;
         public Dictionary<string, string> ClaudeCodeRoomDirs { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomSessions { get; set; } = new();
         public List<string> ClaudeCodeRoomLaunched { get; set; } = new();
@@ -169,6 +171,10 @@ public static class SettingsService
         Current.FileExpWidth = width;
         Save();
     }
+
+    // ── 최우측 계정 사용량 사이드바 펼침 상태 ────────────────────
+    public static bool LoadUsagePanelOpen() => Current.UsagePanelOpen;
+    public static void SaveUsagePanelOpen(bool open) { Current.UsagePanelOpen = open; Save(); }
 
     // ── 우측 패널 활성 탭 ─────────────────────────────────────────
     public static int LoadFileExpActiveTab() => Current.FileExpActiveTab;
