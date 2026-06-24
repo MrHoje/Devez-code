@@ -21,10 +21,13 @@ public sealed class OpenCodeGoLoginWindow : Window
         "--color-background:var(--color-background-dark,#0e0e11)!important;" +
         "--color-primary:var(--color-primary-dark,#ffffff)!important;}" +
         "html,body{background:var(--color-background-dark,#0e0e11)!important;}";
+    // head 가 아직 없을 수 있어(문서 생성 직후) DOMContentLoaded 까지 대비. 중복 주입은 id 로 방지.
     private static readonly string InjectDarkScript =
-        "(function(){try{var s=document.createElement('style');s.id='devez-dark';s.textContent=" +
-        System.Text.Json.JsonSerializer.Serialize(DarkCss) +
-        ";(document.head||document.documentElement).appendChild(s);}catch(e){}})();";
+        "(function(){var css=" + System.Text.Json.JsonSerializer.Serialize(DarkCss) + ";" +
+        "function add(){try{if(document.getElementById('devez-dark'))return;" +
+        "var s=document.createElement('style');s.id='devez-dark';s.textContent=css;" +
+        "(document.head||document.documentElement).appendChild(s);}catch(e){}}" +
+        "add();if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',add);})();";
 
     private readonly WebView2 _view = new();
     private readonly DispatcherTimer _probe;
@@ -67,9 +70,16 @@ public sealed class OpenCodeGoLoginWindow : Window
             _view.CoreWebView2.Profile.PreferredColorScheme = App.CurrentTheme == "dark"
                 ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
             // opencode.ai(OpenAuth) 로그인 UI 가 prefers-color-scheme 를 무시할 때를 대비해,
-            // 디자인 변수(--color-*)를 다크값으로 강제하는 CSS 를 문서 생성 시점에 주입(헤더·배경 다크).
+            // 디자인 변수(--color-*)를 다크값으로 강제하는 CSS 를 주입(헤더·배경 다크).
+            // 문서 생성 시점(깜빡임 방지) + 네비게이션 완료 후(확실한 적용) 양쪽에서 주입.
             if (App.CurrentTheme == "dark")
+            {
                 await _view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(InjectDarkScript);
+                _view.CoreWebView2.NavigationCompleted += async (_, _) =>
+                {
+                    try { await _view.CoreWebView2.ExecuteScriptAsync(InjectDarkScript); } catch { }
+                };
+            }
             // 이전 로그인의 stale auth 쿠키가 WebView2 에 남아 있으면, 사용자가 새로 로그인하기도 전에
             // 그 만료 쿠키를 즉시 캡처·저장하고 창이 닫혀버린다(떴다 사라짐). 새 로그인을 강제하려 먼저 지운다.
             try { _view.CoreWebView2.CookieManager.DeleteCookies("auth", "https://opencode.ai"); } catch { }
