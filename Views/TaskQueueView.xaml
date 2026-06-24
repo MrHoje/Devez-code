@@ -85,7 +85,7 @@
             <!-- 비어있을 때 안내 -->
             <StackPanel x:Name="EmptyHint" VerticalAlignment="Center" HorizontalAlignment="Center"
                         Visibility="Collapsed">
-                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconListTodo}"
+                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconMessageSquare}"
                       Width="32" Height="32" Stroke="{DynamicResource TextMutedBrush}"
                       HorizontalAlignment="Center" Opacity="0.5"/>
                 <TextBlock Text="아직 작업이 없어요."
