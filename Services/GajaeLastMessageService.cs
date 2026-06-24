@@ -60,8 +60,8 @@ public sealed class GajaeLastMessageService : IDisposable
         if (_seenMtime.TryGetValue(roomId, out var prev) && prev == newest.LastWriteTimeUtc) return;
         _seenMtime[roomId] = newest.LastWriteTimeUtc;
 
-        var msg = ExtractLastUserMessage(newest.FullName);
-        if (string.IsNullOrEmpty(msg)) return;
+        // null(=새 빈 세션, /clear·/new) 이면 "" 로 emit → 헤더를 세션명으로 되돌린다.
+        var msg = ExtractLastUserMessage(newest.FullName) ?? "";
         if (_lastMsg.TryGetValue(roomId, out var was) && was == msg) return;
         _lastMsg[roomId] = msg;
         MessageChanged?.Invoke(roomId, msg);

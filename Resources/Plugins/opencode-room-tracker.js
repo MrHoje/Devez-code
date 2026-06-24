@@ -59,6 +59,18 @@ export const DevezCodeRoomTracker = async () => {
     } catch (e) { debug(`writeLastmsg failed: ${e.message}`); }
   };
 
+  // 새 세션(/clear·/new) → lastmsg 를 빈 문자열로 덮어써 헤더를 세션명으로 되돌린다.
+  // (claude 는 "/clear" 텍스트가 user 메시지로 흘러 자동 처리되지만 opencode 는 안 흘러서 명시적으로 비움)
+  const clearLastmsg = () => {
+    try {
+      if (!safe) return;
+      const dir = path.join(base, "DevezCode", "opencode", "lastmsg");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, safe + ".txt"), "");
+      debug("lastmsg cleared (new session)");
+    } catch (e) { debug(`clearLastmsg failed: ${e.message}`); }
+  };
+
   // message.updated 에서 본 messageID → "user"/"assistant" 매핑. message.part.updated 가
   // user prompt 텍스트를 따로 떨어뜨릴 때 부모가 user 인지 빠르게 판별하는 데 쓴다.
   // (opencode 1.17.x 는 message.updated 의 info 에 role 이 있고 텍스트는 별도 part 이벤트로 흐름)
@@ -116,7 +128,11 @@ export const DevezCodeRoomTracker = async () => {
         // 세션 생성/갱신 이벤트 — 최신 ID 덮어씀 (--clear·새 대화 시작 시 자동 갱신).
         if (event.type === "session.created" || event.type === "session.updated") {
           const info = props.info;
-          if (info && info.id) writeId(info.id);
+          if (info && info.id) {
+            // 같은 방에서 새 세션이 생성되면(/clear·/new) 이전 todos·lastmsg 를 초기화한다.
+            if (event.type === "session.created") { writeTodos([]); clearLastmsg(); }
+            writeId(info.id);
+          }
         }
         // message.updated — 메시지 메타( role, id ) 캐시. 텍스트 본문은 여기에 없음.
         else if (event.type === "message.updated") {
