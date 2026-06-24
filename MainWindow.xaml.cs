@@ -499,7 +499,9 @@ public partial class MainWindow : Window
         Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null)
     {
         // 데이터를 못 불러오면(에러 포함) 빈값(--) 대신 패널 자체를 숨김 — 사이드패널 정합.
-        if (!u.HasData) { panel.Visibility = Visibility.Collapsed; return; }
+        // 또한 설정에서 해당 provider 푸터 표시를 끄면 숨김.
+        bool show = u.Provider == "codex" ? SettingsService.LoadShowFooterCodex() : SettingsService.LoadShowFooterGo();
+        if (!u.HasData || !show) { panel.Visibility = Visibility.Collapsed; return; }
         panel.Visibility = Visibility.Visible;
         SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
         // 주간/월간 라벨은 XAML 고정 — 막대/퍼센트만 갱신.
@@ -562,7 +564,8 @@ public partial class MainWindow : Window
 
     private void ApplyRateLimit(Models.RateLimitSnapshot snap)
     {
-        if (!snap.HasData) { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
+        if (!snap.HasData || !SettingsService.LoadShowFooterClaude())
+        { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
         RateLimitPanel.Visibility = Visibility.Visible;
         UpdateFooterDivider();
         // 5시간 칸 라벨은 남은시간(없으면 "5시간"), 주간은 고정 라벨.
@@ -570,6 +573,15 @@ public partial class MainWindow : Window
                FormatRemainingShort(snap.FiveHourResetsAt) ?? "5시간", snap.FiveHourPercent);
         SetBar(RlSevenLabel, RlSevenBar, RlSevenPct, "주간", snap.SevenDayPercent);
         RateLimitPanel.ToolTip = BuildRlTooltip(snap);
+    }
+
+    /// <summary>설정에서 푸터 provider 표시 토글 변경 시 — 마지막 스냅샷으로 각 패널 가시성을 다시 평가.</summary>
+    public void ApplyFooterUsageVisibility()
+    {
+        if (_rlMerged != null) ApplyRateLimit(_rlMerged);
+        else { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
+        if (_lastCodex != null) ApplyProviderUsage(_lastCodex); else CodexPanel.Visibility = Visibility.Collapsed;
+        if (_lastGo != null)    ApplyProviderUsage(_lastGo);    else GoPanel.Visibility    = Visibility.Collapsed;
     }
 
     /// <summary>rate limit 툴팁 — 사용률 + 초기화 시각/남은 시간.</summary>

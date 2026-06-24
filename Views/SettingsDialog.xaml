@@ -145,6 +145,15 @@
                                         <TextBlock Text="사이드 패널" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
+                                <Button x:Name="CatUsageBtn" Tag="usage"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconChartPie}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="계정 사용량" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button x:Name="CatShortcutBtn" Tag="shortcut"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -560,6 +569,77 @@
                                     </Grid>
                                 </Border>
 
+                            </StackPanel>
+
+                            <!-- 계정 사용량 패널 — 하단 푸터에 표시할 provider 토글 -->
+                            <StackPanel x:Name="UsagePanel" Margin="28,22,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartPie}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="계정 사용량" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="하단 푸터에 표시할 계정 사용량(provider)을 선택합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+
+                                <Border Padding="0" BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="Claude" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="Claude 계정 사용량(5시간/주간)" FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ShowFooterClaudeToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
+
+                                <Border Padding="0" BorderThickness="0" Background="Transparent" Margin="0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="Codex" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="ChatGPT(Codex) 계정 사용량" FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ShowFooterCodexToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
+
+                                <Border Padding="0" BorderThickness="0" Background="Transparent" Margin="0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="OpenCode Go" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="OpenCode Go 계정 사용량" FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="ShowFooterGoToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
 
                             <!-- 단축키 패널 — 탭 이동 전역 단축키 수식키 리바인드 -->

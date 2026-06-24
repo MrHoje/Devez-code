@@ -157,6 +157,8 @@ public partial class SettingsDialog : UserControl
         CatAgentBtn.Foreground     = key == "agent"      ? primary : text;
         CatSidePanelBtn.Background = key == "sidepanel"  ? active : Brushes.Transparent;
         CatSidePanelBtn.Foreground = key == "sidepanel"  ? primary : text;
+        CatUsageBtn.Background     = key == "usage"      ? active : Brushes.Transparent;
+        CatUsageBtn.Foreground     = key == "usage"      ? primary : text;
         CatMcpBtn.Background       = key == "mcp"        ? active : Brushes.Transparent;
         CatMcpBtn.Foreground       = key == "mcp"        ? primary : text;
         CatChangelogBtn.Background = key == "changelog"  ? active : Brushes.Transparent;
@@ -171,6 +173,7 @@ public partial class SettingsDialog : UserControl
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility      = key == "agent"      ? Visibility.Visible : Visibility.Collapsed;
         SidePanelPanel.Visibility  = key == "sidepanel"  ? Visibility.Visible : Visibility.Collapsed;
+        UsagePanel.Visibility      = key == "usage"      ? Visibility.Visible : Visibility.Collapsed;
         McpPanel.Visibility        = key == "mcp"        ? Visibility.Visible : Visibility.Collapsed;
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
@@ -178,6 +181,7 @@ public partial class SettingsDialog : UserControl
 
         if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
         if (key == "sidepanel") LoadSidePanelSettings();
+        if (key == "usage") LoadFooterUsageSettings();
         if (key == "notify") LoadNotifySettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
     }
@@ -341,6 +345,26 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveShowBrowserViewBtn(ShowBrowserViewToggle.IsChecked == true);
         SettingsService.SaveShowDiffViewBtn(ShowDiffViewToggle.IsChecked == true);
         (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
+    }
+
+    // ── 하단 푸터 계정 사용량(provider) 표시 설정 ─────────────────
+    private bool _loadingFooterUsage;
+    private void LoadFooterUsageSettings()
+    {
+        _loadingFooterUsage = true;
+        ShowFooterClaudeToggle.IsChecked = SettingsService.LoadShowFooterClaude();
+        ShowFooterCodexToggle.IsChecked  = SettingsService.LoadShowFooterCodex();
+        ShowFooterGoToggle.IsChecked     = SettingsService.LoadShowFooterGo();
+        _loadingFooterUsage = false;
+    }
+
+    private void FooterUsageToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loadingFooterUsage) return;
+        SettingsService.SaveShowFooterClaude(ShowFooterClaudeToggle.IsChecked == true);
+        SettingsService.SaveShowFooterCodex(ShowFooterCodexToggle.IsChecked == true);
+        SettingsService.SaveShowFooterGo(ShowFooterGoToggle.IsChecked == true);
+        (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
     }
 
     // ── 알림 설정 (sidepanel 과 동일하게 즉시 저장 — 테스트가 선택값을 바로 반영) ──
