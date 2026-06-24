@@ -90,7 +90,7 @@ public partial class SubagentMonitorView : INotifyPropertyChanged
         var path = SubagentStatusService.ResolveConversationPath(item.RoomId, item.AgentId);
         if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
         {
-            ConfirmDialog.Alert("서브에이전트", "Claude 저장소에서 이 에이전트의 대화 파일을 찾지 못했습니다.");
+            ConfirmDialog.Alert("서브에이전트", "Claude가 아직 이 에이전트의 대화 transcript를 저장하지 않았습니다.");
             return;
         }
         OpenTranscriptRequested?.Invoke(this, path);

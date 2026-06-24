@@ -147,10 +147,7 @@ public sealed class SubagentStatusService : IDisposable
     private static IEnumerable<string> CandidateAgentFileNames(string agentId)
     {
         foreach (var id in CandidateAgentIds(agentId))
-        {
             yield return id + ".jsonl";
-            yield return id + ".meta.json";
-        }
     }
 
     private static IEnumerable<string> CandidateAgentIds(string agentId)
