@@ -1708,13 +1708,13 @@ public partial class MainWindow : Window
             handled = true;
             int sx = (short)(lParam.ToInt32() & 0xFFFF);
             int sy = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
-            Dispatcher.BeginInvoke(new Action(() => RestoreFromFullScreenAndDrag(sx, sy)));
+            RestoreFromFullScreenAndDrag(sx, sy);
         }
         return IntPtr.Zero;
     }
 
     /// <summary>전체화면 중 캡션을 잡으면 진입 전 일반 크기로 복원하고, 커서가 타이틀바 위에
-    /// 오도록 창을 재배치한 뒤 드래그를 이어간다.</summary>
+    /// 오도록 창을 재배치한 뒤 네이티브 이동 루프를 재시작해 드래그를 이어간다.</summary>
     private void RestoreFromFullScreenAndDrag(int screenPxX, int screenPxY)
     {
         if (!_inFullScreen) return;
@@ -1730,8 +1730,15 @@ public partial class MainWindow : Window
         SetBoundsInstant(new Rect(cx - w / 2, cy - 16, w, h));
         ApplyCornerPreference();
 
-        try { DragMove(); } catch { /* 버튼이 이미 떼졌으면 무시 */ }
+        // DragMove 는 WPF 가 버튼 눌림을 못 봐 예외난다(down 을 handled 로 삼킴).
+        // 네이티브 이동 루프를 직접 재시작 — 이제 _inFullScreen=false 라 위 분기로 재진입 안 함.
+        ReleaseCapture();
+        int packed = (screenPxY << 16) | (screenPxX & 0xFFFF);
+        SendMessage(_mainHwnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, (IntPtr)packed);
     }
+
+    [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
 
     /// <summary>최대화 시 창이 모니터 작업영역에 정확히 맞도록 위치/크기 상한을 설정.
     /// XAML MinWidth/MinHeight 도 여기서 ptMinTrackSize 에 반영한다(WPF 내부 처리가
