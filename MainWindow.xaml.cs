@@ -291,7 +291,14 @@ public partial class MainWindow : Window
                 Left = ll; Top = tt; Width = ww; Height = hh;
             }
         }
-        if (max) WindowState = WindowState.Maximized;
+        if (max)
+        {
+            // 전체화면 복원: Maximized 로 만들면 Left/Top 이 무시돼 주 모니터로 최대화됨 →
+            // EnterFullScreen 이 잘못된 모니터를 잡는다. 일반 bounds(Normal) 유지 후
+            // OnSourceInitialized 에서 전체화면 진입 → MonitorFromWindow 가 올바른 모니터 감지.
+            if (_useFullScreen) _restoreFullScreen = true;
+            else WindowState = WindowState.Maximized;
+        }
     }
 
     /// <summary>현재 창 위치/크기/최대화를 저장. 최대화·최소화 상태여도 RestoreBounds 로 일반 크기를 기록.</summary>
@@ -1532,6 +1539,7 @@ public partial class MainWindow : Window
     private bool _useFullScreen = SettingsService.LoadUseFullScreen();
     private bool _inFullScreen;        // 현재 수동 전체화면 중
     private bool _fsGuard;             // WindowState 변경 재진입 방지
+    private bool _restoreFullScreen;   // 시작 복원 시 전체화면 진입 예약(올바른 모니터 감지용)
     private Rect _preFsBounds;         // 전체화면 진입 전 일반 창 bounds(복원용)
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -1545,8 +1553,9 @@ public partial class MainWindow : Window
         StateChanged += OnStateChangedForFullScreen;
         Activated   += (_, _) => UpdateFullScreenTopmost();
         Deactivated += (_, _) => UpdateFullScreenTopmost();
-        // 시작 시 최대화 복원 + 전체화면 설정 ON 이면 전체화면으로 전환(StateChanged 훅 이전에 설정됐을 수 있음).
-        if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
+        // 시작 시 전체화면 복원: 저장된 일반 bounds 위치(=올바른 모니터)에서 전체화면 진입.
+        if (_restoreFullScreen) { _restoreFullScreen = false; EnterFullScreen(); }
+        else if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
     }
 
     private void OnStateChangedForFullScreen(object? sender, EventArgs e)
