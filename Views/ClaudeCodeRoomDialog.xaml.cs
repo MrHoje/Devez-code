@@ -40,17 +40,31 @@ public partial class ClaudeCodeRoomDialog : Window
     {
         if (string.IsNullOrWhiteSpace(NameBox.Text))
         {
-            ConfirmDialog.Alert("알림", "채팅방 이름을 입력하세요.");
+            NameFrame.BorderBrush = new SolidColorBrush(Color.FromRgb(0xef, 0x44, 0x44));
+            ShakeWindow();
             NameBox.Focus();
             return;
         }
         if (!Directory.Exists(DirBox.Text.Trim()))
         {
-            ConfirmDialog.Alert("알림", "존재하지 않는 디렉토리입니다.\n작업 시작 디렉토리를 확인해주세요.");
+            DirFrame.BorderBrush = new SolidColorBrush(Color.FromRgb(0xef, 0x44, 0x44));
+            ShakeWindow();
             DirBox.Focus();
             return;
         }
         DialogResult = true;
+    }
+
+    /// <summary>검증 실패 시 창을 좌우로 흔드는 피드백(devez 정합).</summary>
+    private void ShakeWindow()
+    {
+        if (RenderTransform is not TranslateTransform tt) return;
+        var shake = new System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(500) };
+        double[] offsets = { 0, -8, 8, -6, 6, -3, 3, 0 };
+        for (int i = 0; i < offsets.Length; i++)
+            shake.KeyFrames.Add(new System.Windows.Media.Animation.EasingDoubleKeyFrame(
+                offsets[i], System.Windows.Media.Animation.KeyTime.FromPercent((double)i / (offsets.Length - 1))));
+        tt.BeginAnimation(TranslateTransform.XProperty, shake);
     }
 
     private void Box_KeyDown(object sender, KeyEventArgs e)
