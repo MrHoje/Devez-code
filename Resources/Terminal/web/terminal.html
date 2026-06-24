@@ -133,6 +133,96 @@
     return bytes;
   }
 
+  // ── 동기화 업데이트(DECSET 2026) 배칭 ────────────────────────────────
+  // gjc(멀티플렉서 모드)는 응답 한 줄이 추가될 때마다 변경 구간(새 줄~하단 입력창)을
+  // \x1b[2K(줄 지움)+다시그리기로 repaint 하고 그 전체를 \x1b[?2026h … \x1b[?2026l 로
+  // 감싸 "한 프레임에 원자적으로 그려라"고 지시한다. 그러나 번들된 xterm 5.5.0 은
+  // ?2026 을 지원하지 않고, C# PTY 출력은 chunk 단위로 쪼개 보내므로 repaint 가 여러
+  // term.write() 로 나뉘어 입력창이 지워졌다 다시 그려지는 중간 상태가 노출된다(튐).
+  // → 여기서 open~close 사이 바이트를 모아 close 가 올 때 한 번의 write 로 흘려보낸다.
+  const SYNC_OPEN  = [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x32, 0x36, 0x68]; // ESC[?2026h
+  const SYNC_CLOSE = [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x32, 0x36, 0x6c]; // ESC[?2026l
+
+  function indexOfSeq(buf, seq, from) {
+    outer: for (let i = from; i + seq.length <= buf.length; i++) {
+      for (let j = 0; j < seq.length; j++) if (buf[i + j] !== seq[j]) continue outer;
+      return i;
+    }
+    return -1;
+  }
+  // buf 의 끝이 seq 의 진부분 접두사이면(=마커가 chunk 경계에서 잘림) 그 시작 인덱스, 없으면 -1.
+  function trailingPrefixStart(buf, seq) {
+    const maxLen = Math.min(seq.length - 1, buf.length);
+    for (let len = maxLen; len > 0; len--) {
+      let ok = true;
+      for (let j = 0; j < len; j++) if (buf[buf.length - len + j] !== seq[j]) { ok = false; break; }
+      if (ok) return buf.length - len;
+    }
+    return -1;
+  }
+  function concatBytes(a, b) {
+    const r = new Uint8Array(a.length + b.length); r.set(a, 0); r.set(b, a.length); return r;
+  }
+  function concatAll(arr) {
+    let n = 0; for (let i = 0; i < arr.length; i++) n += arr[i].length;
+    const r = new Uint8Array(n); let o = 0;
+    for (let i = 0; i < arr.length; i++) { r.set(arr[i], o); o += arr[i].length; }
+    return r;
+  }
+
+  // bytes 를 동기화 마커 기준으로 처리. sync 밖은 즉시 flush, open~close 는 모아 한 번에 flush.
+  // 마커가 chunk 경계에서 잘릴 수 있어 끝의 부분 접두사는 entry.syncCarry 로 다음 chunk 까지 보류.
+  function feedSync(entry, bytes, flush) {
+    let buf = bytes;
+    if (entry.syncCarry && entry.syncCarry.length) { buf = concatBytes(entry.syncCarry, bytes); entry.syncCarry = null; }
+    let pos = 0;
+    while (pos < buf.length) {
+      if (!entry.inSync) {
+        const open = indexOfSeq(buf, SYNC_OPEN, pos);
+        if (open === -1) {
+          const pre = trailingPrefixStart(buf, SYNC_OPEN);
+          if (pre >= pos) { if (pre > pos) flush(buf.subarray(pos, pre)); entry.syncCarry = buf.slice(pre); }
+          else flush(buf.subarray(pos));
+          return;
+        }
+        if (open > pos) flush(buf.subarray(pos, open)); // open 이전은 즉시
+        entry.inSync = true;
+        entry.syncChunks = [buf.subarray(open, open + SYNC_OPEN.length)]; // 마커도 버퍼에(xterm 무시)
+        pos = open + SYNC_OPEN.length;
+      } else {
+        const close = indexOfSeq(buf, SYNC_CLOSE, pos);
+        if (close === -1) {
+          const pre = trailingPrefixStart(buf, SYNC_CLOSE);
+          if (pre >= pos) { if (pre > pos) entry.syncChunks.push(buf.subarray(pos, pre)); entry.syncCarry = buf.slice(pre); }
+          else entry.syncChunks.push(buf.subarray(pos));
+          return;
+        }
+        const end = close + SYNC_CLOSE.length;
+        entry.syncChunks.push(buf.subarray(pos, end));
+        flush(concatAll(entry.syncChunks)); // open~close 전체를 한 번에
+        entry.syncChunks = [];
+        entry.inSync = false;
+        pos = end;
+      }
+    }
+  }
+
+  // pin/suppress 정책을 적용해 실제 term 에 쓴다(기존 output 분기 로직을 함수화).
+  function writeOut(t, bytes) {
+    if (Date.now() < _pinBottomUntil) {
+      t.term.write(bytes);
+      requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
+    } else if (_scrollSuppress > 0) {
+      _scrollSuppress--;
+      const vp = t.term.element.querySelector('.xterm-viewport');
+      const saved = vp ? vp.scrollTop : 0;
+      t.term.write(bytes);
+      if (vp) requestAnimationFrame(function () { vp.scrollTop = saved; });
+    } else {
+      t.term.write(bytes);
+    }
+  }
+
   // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
   // claude 등 TUI 가 켜는 마우스 트래킹(DECSET ?1000/1002/1003/1006)을 막지 않는다
   // → xterm 이 마우스 모드로 들어가 휠 스크롤/클릭이 앱으로 직접 전달(일반 WT 정합).
@@ -412,7 +502,7 @@
     term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, dead: false, ro: null };
+    const entry = { term, fit, el, search, dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null };
     terms[roomId] = entry;
 
     // 컨테이너 실제 픽셀 박스가 바뀔 때마다 재-fit. window resize 만으로는
@@ -564,19 +654,9 @@
       case 'output': {
         const t = terms[msg.roomId];
         if (t) {
-          if (Date.now() < _pinBottomUntil) {
-            // show 직후 짧은 창 동안만 맨 아래 고정(open 시 최신 표시). 이후엔 일반 동작(휠 스크롤백 자유).
-            t.term.write(b64ToBytes(msg.data));
-            requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
-          } else if (_scrollSuppress > 0) {
-            _scrollSuppress--;
-            const vp = t.term.element.querySelector('.xterm-viewport');
-            const saved = vp ? vp.scrollTop : 0;
-            t.term.write(b64ToBytes(msg.data));
-            if (vp) requestAnimationFrame(function () { vp.scrollTop = saved; });
-          } else {
-            t.term.write(b64ToBytes(msg.data));
-          }
+          // 동기화 업데이트(?2026) 구간을 한 번의 write 로 모아 흘려 입력창 튐을 막는다.
+          // pin/suppress 정책은 flush 시점(writeOut)에 적용.
+          feedSync(t, b64ToBytes(msg.data), function (out) { writeOut(t, out); });
         }
         break;
       }
@@ -592,6 +672,7 @@
         const t = terms[msg.roomId];
         if (t) {
           t.dead = false;
+          t.inSync = false; t.syncChunks = []; t.syncCarry = null; // 잔여 sync 버퍼 폐기
           t.term.reset();
           t.fit.fit();
           post({ type: 'resize', roomId: msg.roomId, cols: t.term.cols, rows: t.term.rows });
