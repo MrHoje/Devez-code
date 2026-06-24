@@ -219,6 +219,11 @@ public partial class FileExplorerView : UserControl
 
     private void CodexLoginBtn_Click(object sender, RoutedEventArgs e) => CodexLoginRequested?.Invoke();
 
+    /// <summary>"Claude 로그인 / 재연결" 버튼 — MainWindow 가 Claude OAuth 창을 띄운다.</summary>
+    public event Action? ClaudeLoginRequested;
+
+    private void ClaudeLoginBtn_Click(object sender, RoutedEventArgs e) => ClaudeLoginRequested?.Invoke();
+
     private void SwitchTab(int idx)
     {
         _mode = (ViewMode)idx;

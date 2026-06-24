@@ -191,9 +191,11 @@
                     <!-- 좌측: 클로드 사용량 (CPU/RAM 성능모니터는 상단 타이틀바로 이동). -->
                     <StackPanel Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
                         <!-- 계정 사용량: provider(Claude/Codex/Go)별 [구분선][아이콘][이름][5h바][주바]. -->
-                        <!-- Claude -->
+                        <!-- Claude (클릭 시 OAuth 로그인) -->
                         <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal" VerticalAlignment="Center"
-                                    Visibility="Collapsed" ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
+                                    Visibility="Collapsed" Background="Transparent" Cursor="Hand"
+                                    MouseLeftButtonUp="RlPanel_Click"
+                                    ToolTip="Claude 계정 사용량 (5시간 / 주간 한도) — 클릭하여 로그인/재연결">
                             <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>

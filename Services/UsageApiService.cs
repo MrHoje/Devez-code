@@ -20,8 +20,13 @@ public sealed class UsageApiService : IDisposable
     private const string UserAgent = "claude-code/2.1.186";
     private const int PollMs = 3 * 60 * 1000; // 3분 — UA 포함 시 안전한 최소 간격
 
-    private static string CredentialsPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
+    // 토큰 후보 경로: claude CLI 파일(있으면 최신) → DevezCode 자체 로그인(ClaudeLoginWindow) 파일.
+    private static IEnumerable<string> CredentialPaths()
+    {
+        yield return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
+        yield return ClaudeCredentialStore.StorePath;
+    }
 
     // statusline.js 가 live rate_limits 가 없을 때 폴백으로 읽는 파일.
     private static string Dir => Path.Combine(
@@ -38,6 +43,9 @@ public sealed class UsageApiService : IDisposable
         // 즉시 1회 + 이후 3분 주기. 폴링은 백그라운드 스레드에서 비동기로 돈다.
         _poll = new System.Threading.Timer(_ => _ = PollAsync(), null, 0, PollMs);
     }
+
+    /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
+    public void RefreshNow() => _ = PollAsync();
 
     private async Task PollAsync()
     {
@@ -102,24 +110,27 @@ public sealed class UsageApiService : IDisposable
         w.WriteEndObject();
     }
 
-    /// <summary>credentials.json 에서 OAuth 액세스 토큰 추출(느슨한 매칭). 실패/없음이면 null.</summary>
+    /// <summary>credentials.json 에서 OAuth 액세스 토큰 추출(느슨한 매칭). 후보 경로를 순서대로 시도.</summary>
     private static string? ReadToken()
     {
-        try
+        foreach (var path in CredentialPaths())
         {
-            if (!File.Exists(CredentialsPath)) return null;
-            using var fs = new FileStream(CredentialsPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var doc = JsonDocument.Parse(fs);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("claudeAiOauth", out var oauth)
-                && oauth.TryGetProperty("accessToken", out var at)
-                && at.ValueKind == JsonValueKind.String)
-                return at.GetString();
-            foreach (var key in new[] { "accessToken", "access_token", "token" })
-                if (root.TryGetProperty(key, out var t) && t.ValueKind == JsonValueKind.String)
-                    return t.GetString();
+            try
+            {
+                if (!File.Exists(path)) continue;
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var doc = JsonDocument.Parse(fs);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("claudeAiOauth", out var oauth)
+                    && oauth.TryGetProperty("accessToken", out var at)
+                    && at.ValueKind == JsonValueKind.String)
+                    return at.GetString();
+                foreach (var key in new[] { "accessToken", "access_token", "token" })
+                    if (root.TryGetProperty(key, out var t) && t.ValueKind == JsonValueKind.String)
+                        return t.GetString();
+            }
+            catch { }
         }
-        catch { }
         return null;
     }
 
