@@ -367,6 +367,16 @@ public partial class SettingsDialog : UserControl
         (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
     }
 
+    // ── 계정 사용량 로그인/재연결 — OAuth 창을 띄운다(갱신은 설정 닫힐 때 MainWindow 가 RefreshNow). ──
+    private void ClaudeLogin_Click(object sender, RoutedEventArgs e)
+        => new ClaudeLoginWindow(Window.GetWindow(this)).ShowDialog();
+
+    private void CodexLogin_Click(object sender, RoutedEventArgs e)
+        => new CodexLoginWindow(Window.GetWindow(this)).ShowDialog();
+
+    private void OpenCodeLogin_Click(object sender, RoutedEventArgs e)
+        => new OpenCodeGoLoginWindow(Window.GetWindow(this)).ShowDialog();
+
     // ── 알림 설정 (sidepanel 과 동일하게 즉시 저장 — 테스트가 선택값을 바로 반영) ──
     private bool _loadingNotify;
     private string _notifyPos = "br";

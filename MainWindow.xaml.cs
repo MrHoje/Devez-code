@@ -399,12 +399,8 @@ public partial class MainWindow : Window
         _codex.Start();
         _openCodeGo.Start();
 
-        // 우측 사이드바 사용량 팝오버 — 열 때마다 최신 스냅샷으로 카드를 다시 빌드(남은시간 갱신).
+        // 우측 사이드바 사용량 패널 — 진입할 때마다 최신 스냅샷으로 카드를 다시 빌드(남은시간 갱신).
         FileExplorer.UsageRequested += () => FileExplorer.SetUsageCards(BuildUsageCards());
-        // 팝오버의 로그인 버튼 — 미연결 상태(푸터 패널이 없을 때)의 첫 로그인 진입점.
-        FileExplorer.CodexLoginRequested += LoginCodex;
-        FileExplorer.ClaudeLoginRequested += LoginClaude;
-        FileExplorer.OpenCodeLoginRequested += LoginOpenCode;
     }
 
     /// <summary>표시 가능한(데이터 있는) provider 만 사용량 카드로 변환. Claude → Codex → OpenCode Go 순.</summary>
@@ -1613,7 +1609,14 @@ public partial class MainWindow : Window
     {
         await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
         var dlg = new Views.SettingsWindow { Owner = this };
-        dlg.Closed += (_, _) => ResumeTerminal();
+        dlg.Closed += (_, _) =>
+        {
+            ResumeTerminal();
+            // 설정의 계정 사용량에서 로그인/재연결했을 수 있으니 즉시 갱신.
+            _usageApi.RefreshNow();
+            _codex.RefreshNow();
+            _openCodeGo.RefreshNow();
+        };
         dlg.ShowDialog();
     }
 

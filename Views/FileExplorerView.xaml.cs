@@ -214,20 +214,6 @@ public partial class FileExplorerView : UserControl
         UsageUpdatedText.Text = cards.Count == 0 ? "" : $"{DateTime.Now:HH:mm} 기준";
     }
 
-    /// <summary>"Codex 로그인 / 재연결" 버튼 — MainWindow 가 ChatGPT OAuth 창을 띄운다.</summary>
-    public event Action? CodexLoginRequested;
-
-    private void CodexLoginBtn_Click(object sender, RoutedEventArgs e) => CodexLoginRequested?.Invoke();
-
-    /// <summary>"Claude 로그인 / 재연결" 버튼 — MainWindow 가 Claude OAuth 창을 띄운다.</summary>
-    public event Action? ClaudeLoginRequested;
-
-    private void ClaudeLoginBtn_Click(object sender, RoutedEventArgs e) => ClaudeLoginRequested?.Invoke();
-
-    /// <summary>"OpenCode 로그인 / 재연결" 버튼 — MainWindow 가 opencode.ai 로그인 창을 띄운다.</summary>
-    public event Action? OpenCodeLoginRequested;
-
-    private void OpenCodeLoginBtn_Click(object sender, RoutedEventArgs e) => OpenCodeLoginRequested?.Invoke();
 
     private void SwitchTab(int idx)
     {
