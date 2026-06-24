@@ -1482,69 +1482,68 @@ public partial class MainWindow : Window
     }
 
     /// <summary>WS_MAXIMIZE 없이 모니터 전체를 채우는 수동 전체화면 진입(작업표시줄까지 덮음).</summary>
-    private int _fsSavedStyle;         // 전체화면 진입 전 Win32 창 스타일(복원용)
-
     private void EnterFullScreen()
     {
         if (_mainHwnd == IntPtr.Zero) return;
+        _preFsBounds = RestoreBounds;   // 최대화 직전의 일반 창 bounds
+        _inFullScreen = true;
+        _fsGuard = true;
+        WindowState = WindowState.Normal;
+        _fsGuard = false;
+        // 핵심: WindowState=Maximized→Normal 은 WPF 가 캐시한 복원 bounds(이전 창 크기)로
+        // 지연 리사이즈를 큐에 넣어, 여기서 동기적으로 크기를 키워도 나중에 되돌려 버린다.
+        // 그래서 모니터 전체 사이징을 그 리사이즈 *이후*(Background)로 미뤄 강제 적용한다.
+        Dispatcher.InvokeAsync(ApplyFullScreenBounds, System.Windows.Threading.DispatcherPriority.Background);
+        ApplyFullScreenBounds(); // 즉시 1차 적용(깜빡임 최소화) + 지연 호출이 최종 보장
+    }
+
+    /// <summary>현재 모니터 전체로 창을 키우고 Topmost 로 올린다(작업표시줄 위로).</summary>
+    private void ApplyFullScreenBounds()
+    {
+        if (!_inFullScreen || _mainHwnd == IntPtr.Zero) return;
         var monitor = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
         var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
         if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return;
-
-        _fsGuard = true;
-        _preFsBounds = RestoreBounds;   // 최대화 직전의 일반 창 bounds
-        _inFullScreen = true;
-        WindowState = WindowState.Normal;
-
-        // WS_CAPTION/WS_THICKFRAME 제거 → 셸이 진짜 전체화면으로 인식(작업표시줄 자동 숨김).
-        _fsSavedStyle = GetWindowLong(_mainHwnd, GWL_STYLE);
-        SetWindowLong(_mainHwnd, GWL_STYLE, _fsSavedStyle & ~(WS_CAPTION | WS_THICKFRAME));
-
-        // DIP 반올림 없이 모니터 물리 픽셀에 정확히 맞추고, TOPMOST 로 올려 작업표시줄 위로.
-        // (작업표시줄은 WS_EX_TOPMOST 라 일반 창은 못 덮음. 특히 보조 모니터는 셸 전체화면
-        //  감지가 안 먹어 topmost 가 유일한 확실한 방법.)
+        var dpi = VisualTreeHelper.GetDpi(this);
         var m = info.rcMonitor;
-        SetWindowPos(_mainHwnd, HWND_TOPMOST, m.Left, m.Top, m.Right - m.Left, m.Bottom - m.Top,
-                     SWP_FRAMECHANGED);
+        // 모니터 전체 + 1px 여유로 over-cover(DIP 반올림으로 가장자리 틈 방지). WPF 속성으로 설정해
+        // WPF 의 후속 리사이즈도 이 값을 사용하게 한다.
+        Left   = m.Left / dpi.DpiScaleX - 1;
+        Top    = m.Top  / dpi.DpiScaleY - 1;
+        Width  = (m.Right  - m.Left) / dpi.DpiScaleX + 2;
+        Height = (m.Bottom - m.Top)  / dpi.DpiScaleY + 2;
+        // 작업표시줄은 WS_EX_TOPMOST 라 일반 창은 못 덮음(보조 모니터는 셸 전체화면 감지도 안 먹음).
+        // WPF Topmost 속성으로 올려 WPF 내부 SetWindowPos 에도 일관 유지되게 한다.
+        Topmost = true;
         if (RootChrome != null) RootChrome.Margin = default;
         ApplyCornerPreference();
-        _fsGuard = false;
     }
 
-    /// <summary>전체화면 해제 → 스타일·진입 전 일반 창 bounds 복원.</summary>
+    /// <summary>전체화면 해제 → 진입 전 일반 창 bounds 복원.</summary>
     private void ExitFullScreen()
     {
         if (!_inFullScreen) return;
         _fsGuard = true;
         _inFullScreen = false;
-        if (_fsSavedStyle != 0)
-            SetWindowLong(_mainHwnd, GWL_STYLE, _fsSavedStyle);
+        Topmost = false;
         WindowState = WindowState.Normal;
         if (!_preFsBounds.IsEmpty && _preFsBounds.Width > 0 && _preFsBounds.Height > 0)
         {
             Left = _preFsBounds.Left; Top = _preFsBounds.Top;
             Width = _preFsBounds.Width; Height = _preFsBounds.Height;
         }
-        // TOPMOST 해제 + 스타일 변경 반영.
-        SetWindowPos(_mainHwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
         ApplyCornerPreference();
         _fsGuard = false;
     }
 
-    /// <summary>전체화면 중 활성/비활성에 따라 TOPMOST 토글 — 다른 창으로 전환 시엔 내려서
+    /// <summary>전체화면 중 활성/비활성에 따라 Topmost 토글 — 다른 창으로 전환 시엔 내려서
     /// 그 창이 보이도록(정상 동작), 다시 활성화되면 올려 작업표시줄을 덮는다.</summary>
     private void UpdateFullScreenTopmost()
     {
-        if (_mainHwnd == IntPtr.Zero || !_inFullScreen) return;
-        SetWindowPos(_mainHwnd, IsActive ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE);
+        if (!_inFullScreen) return;
+        Topmost = IsActive;
     }
 
-    private const int WS_THICKFRAME = 0x00040000;
-    private static readonly IntPtr HWND_TOPMOST = new(-1), HWND_NOTOPMOST = new(-2);
-    private const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_FRAMECHANGED = 0x20;
-    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     /// <summary>WS_CAPTION + WS_THICKFRAME(ResizeMode=CanResize) 창은 최대화 시 표준 방식으로
     /// 프레임만큼 화면 밖으로 위치해 콘텐츠 가장자리가 잘린다. 최대화 상태에서만 루트에
