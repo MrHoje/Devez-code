@@ -1694,13 +1694,43 @@ public partial class MainWindow : Window
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
 
     private const int WM_NCLBUTTONDBLCLK = 0x00A3;
+    private const int WM_NCLBUTTONDOWN = 0x00A1;
+    private const int HTCAPTION = 2;
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(lParam); handled = true; }
         // 전체화면 ON 이면 상단바 더블클릭(캡션 더블클릭)도 기본 최대화 대신 전체화면 토글.
         else if (msg == WM_NCLBUTTONDBLCLK && _useFullScreen) { ToggleMaximizeOrFullScreen(); handled = true; }
+        // 전체화면 중 캡션 드래그 → 일반 크기로 복원하며 커서 아래에서 드래그를 이어간다(Win 최대화 창 드래그 동작).
+        else if (msg == WM_NCLBUTTONDOWN && wParam.ToInt32() == HTCAPTION && _inFullScreen)
+        {
+            handled = true;
+            int sx = (short)(lParam.ToInt32() & 0xFFFF);
+            int sy = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+            Dispatcher.BeginInvoke(new Action(() => RestoreFromFullScreenAndDrag(sx, sy)));
+        }
         return IntPtr.Zero;
+    }
+
+    /// <summary>전체화면 중 캡션을 잡으면 진입 전 일반 크기로 복원하고, 커서가 타이틀바 위에
+    /// 오도록 창을 재배치한 뒤 드래그를 이어간다.</summary>
+    private void RestoreFromFullScreenAndDrag(int screenPxX, int screenPxY)
+    {
+        if (!_inFullScreen) return;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        double cx = screenPxX / dpi.DpiScaleX, cy = screenPxY / dpi.DpiScaleY;
+        double w = (!_preFsBounds.IsEmpty && _preFsBounds.Width  > 0) ? _preFsBounds.Width  : 960;
+        double h = (!_preFsBounds.IsEmpty && _preFsBounds.Height > 0) ? _preFsBounds.Height : 640;
+
+        // 전체화면 해제(중앙 재배치 없이 플래그만 원복).
+        _inFullScreen = false;
+        Topmost = false;
+        ResizeMode = ResizeMode.CanResize;
+        SetBoundsInstant(new Rect(cx - w / 2, cy - 16, w, h));
+        ApplyCornerPreference();
+
+        try { DragMove(); } catch { /* 버튼이 이미 떼졌으면 무시 */ }
     }
 
     /// <summary>최대화 시 창이 모니터 작업영역에 정확히 맞도록 위치/크기 상한을 설정.
