@@ -340,11 +340,22 @@
                       Background="{DynamicResource PanelBrush}">
                 <StackPanel Margin="18,14,18,16">
                     <!-- provider 카드 목록 -->
-                    <ItemsControl x:Name="UsageList">
+                    <ItemsControl x:Name="UsageList" AlternationCount="99">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type models:UsageCardVM}">
                                 <Border Margin="0,0,0,4" Padding="0,10,0,10"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                                        BorderBrush="{DynamicResource LineBrush}">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <!-- 카드 사이 구분선(상단 보더). 첫 카드는 패널 헤더 바로 아래라 구분선 생략. -->
+                                            <Setter Property="BorderThickness" Value="0,1,0,0"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource AncestorType=ContentPresenter}}" Value="0">
+                                                    <Setter Property="BorderThickness" Value="0"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <StackPanel>
                                         <!-- provider 헤더: 아이콘 · 이름 · 플랜 -->
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,9">
