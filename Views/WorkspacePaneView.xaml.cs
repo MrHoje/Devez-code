@@ -612,6 +612,7 @@ public partial class WorkspacePaneView : UserControl
     {
         var parent = ParentOf(session);
         bool wasActive = ReferenceEquals(_activeSession, session);
+        int idx = parent?.Tabs.IndexOf(session) ?? -1;
 
         DisposeSessionProcess(session, purge);
         parent?.Tabs.Remove(session);
@@ -619,16 +620,30 @@ public partial class WorkspacePaneView : UserControl
 
         if (wasActive)
         {
-            SessionItem? next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden);
-            if (next != null) ActivateSession(next);
+            var next = PickNeighborTab(parent, idx);
+            if (next is SessionItem s) ActivateSession(s);
+            else if (next is FileTabItem f) ActivateFileTab(f);
             else ClearActiveSession();
         }
+    }
+
+    /// <summary>닫힌 탭(원래 idx) 기준 왼쪽 우선, 없으면 오른쪽에서 표시 가능한 탭 선택.</summary>
+    private TabItemBase? PickNeighborTab(ProjectItem? parent, int removedIdx)
+    {
+        if (parent == null || removedIdx < 0) return null;
+        bool Visible(TabItemBase t) => !(t is SessionItem s && s.Hidden);
+        for (int i = removedIdx - 1; i >= 0; i--)
+            if (Visible(parent.Tabs[i])) return parent.Tabs[i];
+        for (int i = removedIdx; i < parent.Tabs.Count; i++)
+            if (Visible(parent.Tabs[i])) return parent.Tabs[i];
+        return null;
     }
 
     private void RemoveFileTab(FileTabItem tab)
     {
         var parent = ParentOfTab(tab);
         bool wasActive = ReferenceEquals(_activeTab, tab);
+        int idx = parent?.Tabs.IndexOf(tab) ?? -1;
         if (FileEditorHostContainer.Content == tab.Editor.AsControl())
             FileEditorHostContainer.Content = null;
         if (tab.Editor is IDisposable disposable) disposable.Dispose();
@@ -636,10 +651,7 @@ public partial class WorkspacePaneView : UserControl
 
         if (wasActive)
         {
-            TabItemBase? next = null;
-            if (parent != null)
-                next = parent.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden)
-                       ?? parent.Tabs.FirstOrDefault(t => t != tab);
+            var next = PickNeighborTab(parent, idx);
             if (next is SessionItem s) ActivateSession(s);
             else if (next is FileTabItem f) ActivateFileTab(f);
             else ClearActiveSession();
