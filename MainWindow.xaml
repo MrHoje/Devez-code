@@ -262,6 +262,14 @@
                             </Border>
                             <TextBlock x:Name="GoSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock x:Name="GoMonthLabel" Text="월간" Margin="14,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="GoMonthBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="GoMonthPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
                     </StackPanel>
                     <!-- 우측: 설정 버튼 (MCP 서버 버튼은 보류 — 2026-06 보류, 재활성 시 Visibility 제거 + Uncomment).

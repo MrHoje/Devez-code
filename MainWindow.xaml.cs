@@ -390,12 +390,11 @@ public partial class MainWindow : Window
         _statusLine.Start();
         _usageApi.Start();
 
-        // [보류] codex·opencode-go 푸터 표시 잠시 숨김 — 조회 서비스 코드는 유지하되 시작만 비활성.
-        //        재활성화 시 아래 4줄 주석 해제(+ XAML 의 CodexPanel/GoPanel 은 데이터 오면 자동 표시).
-        // _codex.Updated      += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
-        // _openCodeGo.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
-        // _codex.Start();
-        // _openCodeGo.Start();
+        // codex·opencode-go 사용량 폴링 → 푸터 패널(데이터 오면 CodexPanel/GoPanel 자동 표시).
+        _codex.Updated      += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _openCodeGo.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _codex.Start();
+        _openCodeGo.Start();
     }
 
     private void OnRlSnapshot(Models.RateLimitSnapshot snap)
@@ -411,20 +410,27 @@ public partial class MainWindow : Window
         if (u.Provider == "codex")
             SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct, CxSevenBar, CxSevenPct, u, "Codex");
         else if (u.Provider == "opencode-go")
-            SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go");
+            SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go", GoMonthBar, GoMonthPct);
     }
 
     private void SetProviderPanel(System.Windows.Controls.StackPanel panel,
         TextBlock fLabel, Border fBar, TextBlock fPct, Border wBar, TextBlock wPct,
-        Models.ProviderUsage u, string name)
+        Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null)
     {
         if (!u.HasData && u.Error == null) { panel.Visibility = Visibility.Collapsed; return; }
         panel.Visibility = Visibility.Visible;
         SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
-        // 주간 라벨은 XAML 고정("주간") — 막대/퍼센트만 갱신.
-        if (u.Weekly?.UsedPercent is double wp) { var c = Math.Clamp(wp, 0, 100); wBar.Width = RlTrackWidth * c / 100.0; wBar.Background = RlBrush(c); wPct.Text = $"{wp:F0}%"; }
-        else { wBar.Width = 0; wPct.Text = "--"; }
+        // 주간/월간 라벨은 XAML 고정 — 막대/퍼센트만 갱신.
+        SetWindowBar(wBar, wPct, u.Weekly?.UsedPercent);
+        if (mBar != null && mPct != null) SetWindowBar(mBar, mPct, u.Monthly?.UsedPercent);
         panel.ToolTip = BuildProviderTooltip(u, name);
+    }
+
+    /// <summary>고정 라벨 윈도우 막대(주간·월간) 갱신 — 값 없으면 막대 0, 퍼센트 "--".</summary>
+    private void SetWindowBar(Border bar, TextBlock pct, double? usedPercent)
+    {
+        if (usedPercent is double p) { var c = Math.Clamp(p, 0, 100); bar.Width = RlTrackWidth * c / 100.0; bar.Background = RlBrush(c); pct.Text = $"{p:F0}%"; }
+        else { bar.Width = 0; pct.Text = "--"; }
     }
 
     private static string BuildProviderTooltip(Models.ProviderUsage u, string name)
