@@ -57,7 +57,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             }
 
             _loading = true;
-            Editor.SyntaxHighlighting = GetHighlighting(path);
+            Editor.SyntaxHighlighting = ThemeHighlighting(GetHighlighting(path));
             Editor.Text = File.ReadAllText(path);
             _loading = false;
 
@@ -108,6 +108,44 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             ".fs" => mgr.GetDefinition("F#"),
             _ => null,
         };
+    }
+
+    // 하이라이팅 정의별 원본 토큰 색 보존(공유 싱글톤이라 덮어쓰기 누적 방지)
+    private static readonly Dictionary<string, Dictionary<string, System.Windows.Media.Color?>> _origColors = new();
+
+    /// <summary>현재 테마 배경이 어두우면 토큰색을 밝게 보정해 가독성 확보. 밝은 테마는 원본 유지.</summary>
+    private static IHighlightingDefinition? ThemeHighlighting(IHighlightingDefinition? def)
+    {
+        if (def == null) return null;
+        bool dark = Application.Current?.TryFindResource("BgColor") is System.Windows.Media.Color bg
+                    && Luminance(bg) < 0.5;
+
+        if (!_origColors.TryGetValue(def.Name, out var orig))
+        {
+            orig = new();
+            foreach (var c in def.NamedHighlightingColors)
+                orig[c.Name] = c.Foreground?.GetColor(null);
+            _origColors[def.Name] = orig;
+        }
+
+        foreach (var c in def.NamedHighlightingColors)
+        {
+            if (!orig.TryGetValue(c.Name, out var o) || o is not System.Windows.Media.Color src) continue;
+            c.Foreground = new SimpleHighlightingBrush(dark ? Brighten(src) : src);
+        }
+        return def;
+    }
+
+    private static double Luminance(System.Windows.Media.Color c)
+        => (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) / 255.0;
+
+    private static System.Windows.Media.Color Brighten(System.Windows.Media.Color c)
+    {
+        double lum = Luminance(c);
+        if (lum >= 0.55) return c;                 // 이미 밝으면 그대로
+        double f = 0.62 / System.Math.Max(lum, 0.04);
+        byte Ch(double v) => (byte)System.Math.Min(255, v * f);
+        return System.Windows.Media.Color.FromRgb(Ch(c.R), Ch(c.G), Ch(c.B));
     }
 
     private void Editor_TextChanged(object? sender, EventArgs e)
