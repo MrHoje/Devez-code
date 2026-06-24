@@ -40,9 +40,8 @@ public partial class ConfirmDialog : Window
             // 기본(devez 정합) — 기본 폭 460 유지. 단, 가장 긴 줄이 460 에서 줄바꿈돼
             // 줄 수가 늘어나는 경우만 폭을 살짝 단계적으로 키워 한 줄에 담는다.
             var maxLineLength = message.Split('\n').DefaultIfEmpty("").Max(s => s.Length);
-            Width = maxLineLength <= 22 ? 460
-                  : maxLineLength <= 30 ? 510
-                  : maxLineLength <= 38 ? 560
+            Width = maxLineLength <= 30 ? 500
+                  : maxLineLength <= 38 ? 550
                   : 600;
         }
 
