@@ -47,6 +47,7 @@ internal sealed class ReorderDrag<T> where T : class
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
         _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
         _targetIndex = sourceIndex;
+        _targetColumn = -1; // 그리드: 첫 Update 가 항상 displacement 를 적용하도록 미지정으로 시작.
     }
 
     public T Source => _source;
@@ -112,13 +113,17 @@ internal sealed class ReorderDrag<T> where T : class
         if (IsGrid)
         {
             // 2열: 드래그 카드 중심의 X로 목표 컬럼을, Y로 그 컬럼 안의 삽입 위치를 정한다.
-            // 시프트 애니메이션은 생략(놓을 때 패널이 reflow). 어느 카드도 자동 이동하지 않음.
+            // 좌/우 컬럼은 각각 독립된 세로 리스트로 시프트 애니메이션한다 — 같은 컬럼이면 그 안에서
+            // 재정렬, 다른 컬럼으로 넘기면 원래 컬럼은 빈자리를 위로 메우고 목표 컬럼은 자리를 연다.
             var p = e.GetPosition(_coordHost);
             var src = _slots[_sourceIndex];
             double cx = p.X - _grabOffsetX + src.Width / 2;
             double cy = p.Y - _grabOffsetY + src.Height / 2;
-            _targetColumn = cx >= _gridMidX ? 1 : 0;
-            _targetIndex = ComputeColumnTarget(_targetColumn, cy);
+            int newCol = cx >= _gridMidX ? 1 : 0;
+            int newIdx = ComputeColumnTarget(newCol, cy);
+            if (newCol == _targetColumn && newIdx == _targetIndex) return;
+            _targetColumn = newCol; _targetIndex = newIdx;
+            ApplyGridDisplacement();
             return;
         }
         var cursor = _horizontal ? e.GetPosition(_coordHost).X : e.GetPosition(_coordHost).Y;
@@ -144,6 +149,52 @@ internal sealed class ReorderDrag<T> where T : class
             if (cy >= s.Top + s.Height / 2) target++;
         }
         return target;
+    }
+
+    /// <summary>해당 컬럼 안에서 slotIdx 카드의 0-based 위치(source 제외).</summary>
+    private int WithinColumnIndex(int slotIdx, int column)
+    {
+        int w = 0;
+        for (int i = 0; i < slotIdx; i++)
+        {
+            if (i == _sourceIndex) continue;
+            if (ColumnOf(_slots[i]) == column) w++;
+        }
+        return w;
+    }
+
+    /// <summary>그리드(2열) 시프트 애니메이션. 좌/우 컬럼을 독립 세로 리스트로 다룬다.
+    /// - 같은 컬럼 재정렬: 1열처럼 source 가 비집고 들어갈 자리만큼 사이 카드를 민다.
+    /// - 다른 컬럼으로 이동: 원래 컬럼은 source 아래 카드를 위로 당겨 빈자리를 메우고,
+    ///   목표 컬럼은 삽입 위치 이후 카드를 아래로 밀어 자리를 연다.</summary>
+    private void ApplyGridDisplacement()
+    {
+        int originCol = ColumnOf(_slots[_sourceIndex]);
+        double srcH = _slots[_sourceIndex].Height;
+        int srcWithin = WithinColumnIndex(_sourceIndex, originCol);
+
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (i == _sourceIndex) { AnimateAxis(_slots[i].Element, 0); continue; }
+            int col = ColumnOf(_slots[i]);
+            int w = WithinColumnIndex(i, col);
+            double to = 0;
+            if (col == originCol && col == _targetColumn)
+            {
+                // 같은 컬럼 내 재정렬 (w 는 source 제외 인덱스).
+                if (_targetIndex < srcWithin && w >= _targetIndex && w < srcWithin) to = srcH;
+                else if (_targetIndex > srcWithin && w >= srcWithin && w < _targetIndex) to = -srcH;
+            }
+            else if (col == originCol)
+            {
+                if (w >= srcWithin) to = -srcH; // source 가 떠난 컬럼: 아래 카드 위로 당김
+            }
+            else if (col == _targetColumn)
+            {
+                if (w >= _targetIndex) to = srcH; // 들어올 컬럼: 삽입 위치 이후 아래로 밂
+            }
+            AnimateAxis(_slots[i].Element, to);
+        }
     }
 
     private int ComputeTargetIndex(double center)
