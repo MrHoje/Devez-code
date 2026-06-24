@@ -1596,9 +1596,13 @@ public partial class MainWindow : Window
     private const int DWMWCP_ROUND = 2;
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
 
+    private const int WM_NCLBUTTONDBLCLK = 0x00A3;
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(lParam); handled = true; }
+        // 전체화면 ON 이면 상단바 더블클릭(캡션 더블클릭)도 기본 최대화 대신 전체화면 토글.
+        else if (msg == WM_NCLBUTTONDBLCLK && _useFullScreen) { ToggleMaximizeOrFullScreen(); handled = true; }
         return IntPtr.Zero;
     }
 
@@ -1802,10 +1806,17 @@ public partial class MainWindow : Window
         return () => { if (!cancelled) { cancelled = true; System.Windows.Media.CompositionTarget.Rendering -= handler; } };
     }
 
-    private void MaxBtn_Click(object sender, RoutedEventArgs e)
+    private void MaxBtn_Click(object sender, RoutedEventArgs e) => ToggleMaximizeOrFullScreen();
+
+    /// <summary>최대화 버튼·상단바 더블클릭 공통 토글. 전체화면 설정 ON 이면 Maximized 상태를
+    /// 거치지 않고 Normal 에서 바로 전체화면 진입/해제(최대화→복원 2단 애니메이션 제거).</summary>
+    private void ToggleMaximizeOrFullScreen()
     {
-        if (_inFullScreen) { ExitFullScreen(); return; }
-        // 전체화면 ON 이면 Maximized 설정 → StateChanged 가 전체화면으로 전환.
+        if (_useFullScreen)
+        {
+            if (_inFullScreen) ExitFullScreen(); else EnterFullScreen();
+            return;
+        }
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     }
 
