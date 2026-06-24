@@ -594,7 +594,7 @@
 
                             </StackPanel>
 
-                            <!-- 계정 사용량 패널 — 하단 푸터에 표시할 provider 토글 -->
+                            <!-- 계정 사용량 패널 — 계정 연결(로그인) + 푸터 표시 토글 -->
                             <StackPanel x:Name="UsagePanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartPie}"
@@ -603,99 +603,124 @@
                                     <TextBlock Text="계정 사용량" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="하단 푸터에 표시할 계정 사용량(provider)을 선택합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+                                <TextBlock Text="계정을 연결하면 사용량 탭과 하단 푸터에서 사용량(5시간/주간 등 한도)을 확인할 수 있습니다."
+                                           FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
 
-                                <Border Padding="0" BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="Claude" FontSize="{DynamicResource Fs13}"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="Claude 계정 사용량(5시간/주간)" FontSize="{DynamicResource Fs11}"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                            <Button Click="ClaudeLogin_Click" Style="{StaticResource UsageLoginButton}"
-                                                    Margin="0,9,0,0" ToolTip="Claude 계정으로 로그인해 사용량 연결">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Image Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
-                                                           Width="13" Height="13" VerticalAlignment="Center"
-                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                                    <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                               FontSize="{DynamicResource Fs11}"
-                                                               Foreground="{DynamicResource PrimaryBrush}"/>
-                                                </StackPanel>
-                                            </Button>
+                                <!-- 그룹 1: 계정 연결(로그인/재연결) -->
+                                <TextBlock Text="계정 연결" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,24,0,12"/>
+
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Claude" VerticalAlignment="Center"
+                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                    <Button Grid.Column="1" Click="ClaudeLogin_Click" Style="{StaticResource UsageLoginButton}"
+                                            ToolTip="Claude 계정으로 로그인해 사용량 연결">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Image Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
+                                                   Width="13" Height="13" VerticalAlignment="Center"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource PrimaryBrush}"/>
                                         </StackPanel>
-                                        <CheckBox x:Name="ShowFooterClaudeToggle" Grid.Column="1"
-                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                    </Grid>
-                                </Border>
+                                    </Button>
+                                </Grid>
 
-                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
-
-                                <Border Padding="0" BorderThickness="0" Background="Transparent" Margin="0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="Codex" FontSize="{DynamicResource Fs13}"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="ChatGPT(Codex) 계정 사용량" FontSize="{DynamicResource Fs11}"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                            <Button Click="CodexLogin_Click" Style="{StaticResource UsageLoginButton}"
-                                                    Margin="0,9,0,0" ToolTip="ChatGPT(Codex) 계정으로 로그인해 사용량 연결">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Image Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
-                                                           Width="13" Height="13" VerticalAlignment="Center"
-                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                                    <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                               FontSize="{DynamicResource Fs11}"
-                                                               Foreground="{DynamicResource PrimaryBrush}"/>
-                                                </StackPanel>
-                                            </Button>
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Codex" VerticalAlignment="Center"
+                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                    <Button Grid.Column="1" Click="CodexLogin_Click" Style="{StaticResource UsageLoginButton}"
+                                            ToolTip="ChatGPT(Codex) 계정으로 로그인해 사용량 연결">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Image Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
+                                                   Width="13" Height="13" VerticalAlignment="Center"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource PrimaryBrush}"/>
                                         </StackPanel>
-                                        <CheckBox x:Name="ShowFooterCodexToggle" Grid.Column="1"
-                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                    </Grid>
-                                </Border>
+                                    </Button>
+                                </Grid>
 
-                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
-
-                                <Border Padding="0" BorderThickness="0" Background="Transparent" Margin="0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="OpenCode Go" FontSize="{DynamicResource Fs13}"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="OpenCode Go 계정 사용량" FontSize="{DynamicResource Fs11}"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                            <Button Click="OpenCodeLogin_Click" Style="{StaticResource UsageLoginButton}"
-                                                    Margin="0,9,0,0" ToolTip="opencode.ai 계정으로 로그인해 사용량 연결">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Image Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
-                                                           Width="13" Height="13" VerticalAlignment="Center"
-                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                                    <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                               FontSize="{DynamicResource Fs11}"
-                                                               Foreground="{DynamicResource PrimaryBrush}"/>
-                                                </StackPanel>
-                                            </Button>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="OpenCode Go" VerticalAlignment="Center"
+                                               FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                    <Button Grid.Column="1" Click="OpenCodeLogin_Click" Style="{StaticResource UsageLoginButton}"
+                                            ToolTip="opencode.ai 계정으로 로그인해 사용량 연결">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Image Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
+                                                   Width="13" Height="13" VerticalAlignment="Center"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource PrimaryBrush}"/>
                                         </StackPanel>
-                                        <CheckBox x:Name="ShowFooterGoToggle" Grid.Column="1"
-                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                    </Grid>
-                                </Border>
+                                    </Button>
+                                </Grid>
+
+                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
+
+                                <!-- 그룹 2: 하단 푸터 표시 -->
+                                <TextBlock Text="하단 푸터 표시" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,20,0,12"/>
+
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="Claude" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="Claude 계정 사용량(5시간/주간)" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowFooterClaudeToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="Codex" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="ChatGPT(Codex) 계정 사용량" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowFooterCodexToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                </Grid>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="OpenCode Go" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="OpenCode Go 계정 사용량" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowFooterGoToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                </Grid>
                             </StackPanel>
 
                             <!-- 단축키 패널 — 탭 이동 전역 단축키 수식키 리바인드 -->
