@@ -78,6 +78,13 @@
                     <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconGitCompare}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
+                <!-- 계정 사용량 — 뷰 전환이 아니라 팝오버. 클릭 시 표시 가능한 provider 카드만 띄운다. -->
+                <Button x:Name="UsageBtn" Click="UsageBtn_Click"
+                        Style="{StaticResource ViewTabButton}" ToolTip="계정 사용량">
+                    <Path x:Name="UsageIcon" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconChartColumn}" Width="15" Height="15" VerticalAlignment="Center"
+                          Stroke="{DynamicResource TextMutedBrush}"/>
+                </Button>
             </StackPanel>
             </ScrollViewer>
 
@@ -324,5 +331,103 @@
 
         <!-- 작업 큐 뷰 (큐 모드일 때만 표시) — 버블 입력 + 영속화 -->
         <v:TaskQueueView x:Name="QueueView" Grid.Row="3" Visibility="Collapsed"/>
+
+        <!-- ── 계정 사용량 팝오버 ───────────────────────────────────────
+             UsageBtn 아래에 떠서 표시 가능한 provider 카드(사용률 막대 + 초기화 안내)만 보여준다.
+             데이터는 MainWindow 가 UsageRequested 응답으로 SetUsageCards 로 채운다. -->
+        <Popup x:Name="UsagePopup" PlacementTarget="{Binding ElementName=UsageBtn}" Placement="Bottom"
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+               HorizontalOffset="-6" VerticalOffset="4">
+            <Border Margin="12" Background="{DynamicResource PanelBrush}" CornerRadius="12"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="0" Direction="270"
+                                      Color="#000000" Opacity="{DynamicResource PopupShadowOpacity}"/>
+                </Border.Effect>
+                <StackPanel Width="296" Margin="18,16,18,16">
+                    <!-- 헤더 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartColumn}"
+                              Width="15" Height="15" VerticalAlignment="Center"
+                              Stroke="{DynamicResource PrimaryBrush}"/>
+                        <TextBlock Text="계정 사용량" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                    </StackPanel>
+
+                    <!-- provider 카드 목록 -->
+                    <ItemsControl x:Name="UsageList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:UsageCardVM}">
+                                <Border Margin="0,0,0,4" Padding="0,10,0,10"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                                    <StackPanel>
+                                        <!-- provider 헤더: 아이콘 · 이름 · 플랜 -->
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,9">
+                                            <Image Source="{Binding IconPath}" Width="15" Height="15"
+                                                   VerticalAlignment="Center"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="{Binding Plan}" Visibility="{Binding PlanVisibility}"
+                                                       Margin="8,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                                        </StackPanel>
+
+                                        <!-- 윈도우 행들 -->
+                                        <ItemsControl ItemsSource="{Binding Rows}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type models:UsageRowVM}">
+                                                    <Grid Margin="0,0,0,8">
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="44"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Label}"
+                                                                   VerticalAlignment="Center"
+                                                                   FontSize="{DynamicResource Fs11}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                                        <Border Grid.Row="0" Grid.Column="1" Width="150" Height="6"
+                                                                Margin="6,0,0,0" CornerRadius="3"
+                                                                Background="{DynamicResource LineBrush}"
+                                                                VerticalAlignment="Center">
+                                                            <Border Width="{Binding BarWidth}" HorizontalAlignment="Left"
+                                                                    CornerRadius="3" Background="{Binding BarBrush}"/>
+                                                        </Border>
+                                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding PercentText}"
+                                                                   Margin="10,0,0,0" VerticalAlignment="Center"
+                                                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                        <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                                                   Text="{Binding ResetText}" Visibility="{Binding ResetVisibility}"
+                                                                   Margin="6,3,0,0"
+                                                                   FontSize="{DynamicResource Fs11}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- 표시할 데이터 없을 때 -->
+                    <TextBlock x:Name="UsageEmptyHint" Visibility="Collapsed"
+                               Text="표시할 사용량 정보가 없습니다.&#10;계정에 연결되면 여기에 표시됩니다."
+                               Margin="0,4,0,2" TextWrapping="Wrap" LineHeight="18"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                </StackPanel>
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

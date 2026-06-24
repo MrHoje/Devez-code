@@ -35,6 +35,9 @@ public partial class MainWindow : Window
     // 추가 provider 사용량(푸터): codex(openai) + opencode-go.
     private readonly CodexUsageService _codex = new();
     private readonly OpenCodeGoUsageService _openCodeGo = new();
+    // 사용량 팝오버(우측 사이드바)용 최신 스냅샷 보관 — 데이터 있는 provider 만 카드로 노출.
+    private Models.ProviderUsage? _lastCodex;
+    private Models.ProviderUsage? _lastGo;
     private readonly SessionBusyService _sessionBusy = new();
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
@@ -395,7 +398,68 @@ public partial class MainWindow : Window
         _openCodeGo.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _codex.Start();
         _openCodeGo.Start();
+
+        // 우측 사이드바 사용량 팝오버 — 열 때마다 최신 스냅샷으로 카드를 다시 빌드(남은시간 갱신).
+        FileExplorer.UsageRequested += () => FileExplorer.SetUsageCards(BuildUsageCards());
     }
+
+    /// <summary>표시 가능한(데이터 있는) provider 만 사용량 카드로 변환. Claude → Codex → OpenCode Go 순.</summary>
+    private IReadOnlyList<Models.UsageCardVM> BuildUsageCards()
+    {
+        var cards = new List<Models.UsageCardVM>();
+
+        // Claude — RateLimitSnapshot(5시간/주간)
+        if (_rlMerged is { HasData: true } rl)
+        {
+            var rows = new List<Models.UsageRowVM>();
+            AddRow(rows, "5시간", rl.FiveHourPercent, rl.FiveHourResetsAt, isShortWindow: true);
+            AddRow(rows, "주간", rl.SevenDayPercent, rl.SevenDayResetsAt, isShortWindow: false);
+            cards.Add(new Models.UsageCardVM
+            {
+                Name = "Claude",
+                IconPath = "pack://application:,,,/Resources/Images/ShellPresets/claude_code.png",
+                Rows = rows,
+            });
+        }
+
+        AddProviderCard(cards, _lastCodex, "Codex",
+            "pack://application:,,,/Resources/Images/ShellPresets/codex.png");
+        AddProviderCard(cards, _lastGo, "OpenCode Go",
+            "pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png");
+
+        return cards;
+    }
+
+    /// <summary>ProviderUsage(codex/go) → 카드. 데이터 없으면(미연결/오류) 건너뛴다.</summary>
+    private void AddProviderCard(List<Models.UsageCardVM> cards, Models.ProviderUsage? u, string name, string iconPath)
+    {
+        if (u is not { HasData: true }) return;
+        var rows = new List<Models.UsageRowVM>();
+        AddRow(rows, "5시간", u.Primary?.UsedPercent, u.Primary?.ResetsAt, isShortWindow: true);
+        AddRow(rows, "주간", u.Weekly?.UsedPercent, u.Weekly?.ResetsAt, isShortWindow: false);
+        AddRow(rows, "월간", u.Monthly?.UsedPercent, u.Monthly?.ResetsAt, isShortWindow: false);
+        cards.Add(new Models.UsageCardVM { Name = name, Plan = u.PlanLabel, IconPath = iconPath, Rows = rows });
+    }
+
+    /// <summary>사용률 값이 있을 때만 행을 추가. 단기 윈도우는 "남은 시간", 그 외는 "초기화 일시"로 안내.</summary>
+    private void AddRow(List<Models.UsageRowVM> rows, string label, double? percent, DateTimeOffset? resetsAt, bool isShortWindow)
+    {
+        if (percent is not double p) return;
+        var c = Math.Clamp(p, 0, 100);
+        string reset = isShortWindow
+            ? (resetsAt != null ? $"↻ {FormatRemaining(resetsAt)} 후" : "")
+            : (resetsAt != null ? $"↻ {FormatResetDate(resetsAt)} 초기화" : "");
+        rows.Add(new Models.UsageRowVM
+        {
+            Label = label,
+            PercentText = $"{p:F0}%",
+            ResetText = reset,
+            BarWidth = UsageBarTrack * c / 100.0,
+            BarBrush = RlBrush(c),
+        });
+    }
+
+    private const double UsageBarTrack = 150; // 팝오버 막대 트랙 폭(XAML 과 일치)
 
     private void OnRlSnapshot(Models.RateLimitSnapshot snap)
         => Dispatcher.InvokeAsync(() =>
@@ -408,9 +472,15 @@ public partial class MainWindow : Window
     private void ApplyProviderUsage(Models.ProviderUsage u)
     {
         if (u.Provider == "codex")
+        {
+            _lastCodex = u;
             SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct, CxSevenBar, CxSevenPct, u, "Codex");
+        }
         else if (u.Provider == "opencode-go")
+        {
+            _lastGo = u;
             SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go", GoMonthBar, GoMonthPct);
+        }
     }
 
     private void SetProviderPanel(System.Windows.Controls.StackPanel panel,

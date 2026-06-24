@@ -200,6 +200,22 @@ public partial class FileExplorerView : UserControl
             SwitchTab(idx);
     }
 
+    /// <summary>사용량 버튼 클릭 — 최신 카드를 요청해 채운 뒤 팝오버를 연다.</summary>
+    public event Action? UsageRequested;
+
+    private void UsageBtn_Click(object sender, RoutedEventArgs e)
+    {
+        UsageRequested?.Invoke();   // MainWindow 가 SetUsageCards 로 최신값을 채운다(동기).
+        UsagePopup.IsOpen = true;
+    }
+
+    /// <summary>표시 가능한 provider 사용량 카드로 팝오버를 채운다. 비면 안내 문구 표시.</summary>
+    public void SetUsageCards(IReadOnlyList<UsageCardVM> cards)
+    {
+        UsageList.ItemsSource = cards;
+        UsageEmptyHint.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void SwitchTab(int idx)
     {
         _mode = (ViewMode)idx;
