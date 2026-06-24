@@ -28,22 +28,8 @@ public partial class ConfirmDialog : Window
             OkBtn.IsEnabled = false;
             Loaded += (_, _) => ConfirmInputBox.Focus();
         }
-        else if (wideLayout)
-        {
-            // 세션 재시작 안내처럼 긴 본문 전용 — 넓게(현 상태 유지).
-            var lines = message.Count(c => c == '\n') + 1;
-            var maxLineLength = message.Split('\n').DefaultIfEmpty("").Max(s => s.Length);
-            Width = maxLineLength >= 36 || lines >= 4 ? 640 : 600;
-        }
-        else
-        {
-            // 기본(devez 정합) — 기본 폭 460 유지. 단, 가장 긴 줄이 460 에서 줄바꿈돼
-            // 줄 수가 늘어나는 경우만 폭을 살짝 단계적으로 키워 한 줄에 담는다.
-            var maxLineLength = message.Split('\n').DefaultIfEmpty("").Max(s => s.Length);
-            Width = maxLineLength <= 30 ? 500
-                  : maxLineLength <= 38 ? 550
-                  : 600;
-        }
+        // 폭은 SizeToContent=WidthAndHeight 가 본문 실제 폭에 맞춰 자동 산정(MinWidth 500 ~ MaxWidth 640).
+        // wideLayout 은 더 이상 별도 분기 불필요 — 긴 본문은 MaxWidth 까지 자연 확장 후 줄바꿈.
 
         KeyDown += OnKeyDown;
         PreviewKeyDown += OnPreviewKeyDown;
