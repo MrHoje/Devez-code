@@ -105,7 +105,7 @@
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                             Background="{DynamicResource PanelSoftBrush}">
                                         <Border.Style>
-                                            <Style TargetType="Border" BasedOn="{StaticResource {x:Type Border}}">
+                                            <Style TargetType="Border">
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Role}" Value="user">
                                                         <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -129,7 +129,7 @@
                                                 <Border CornerRadius="3" Padding="5,1"
                                                         Background="{DynamicResource PrimaryBrush}">
                                                     <Border.Style>
-                                                        <Style TargetType="Border" BasedOn="{StaticResource {x:Type Border}}">
+                                                        <Style TargetType="Border">
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding Role}" Value="user">
                                                                     <Setter Property="Background" Value="{DynamicResource TextMutedBrush}"/>
@@ -153,7 +153,7 @@
                                                        LineStackingStrategy="BlockLineHeight"
                                                        LineHeight="20">
                                                 <TextBlock.Style>
-                                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                    <Style TargetType="TextBlock">
                                                         <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding Role}" Value="user">

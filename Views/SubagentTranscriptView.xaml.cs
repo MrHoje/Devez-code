@@ -65,16 +65,19 @@ public partial class SubagentTranscriptView : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        _transcriptPath = SubagentStatusService.ResolveConversationPath(_item.RoomId, _item.AgentId);
+        try
+        {
+            _transcriptPath = SubagentStatusService.ResolveConversationPath(_item.RoomId, _item.AgentId);
 
-        if (!string.IsNullOrWhiteSpace(_transcriptPath) && File.Exists(_transcriptPath))
-        {
-            LoadTranscript(_transcriptPath);
+            if (!string.IsNullOrWhiteSpace(_transcriptPath) && File.Exists(_transcriptPath))
+            {
+                LoadTranscript(_transcriptPath);
+                return;
+            }
         }
-        else
-        {
-            ShowFallback();
-        }
+        catch { /* file access fail → fallback */ }
+
+        ShowFallback();
     }
 
     /// <summary>JSONL 파일을 읽어 채팅 메시지 목록으로 랜더링.</summary>
