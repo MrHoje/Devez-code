@@ -132,6 +132,17 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             BumpSettle(roomId);
             return;
         }
+        // 인라인 렌더 에이전트(gjc 등)는 alt-screen 시퀀스가 없어 첫 출력을 준비 시작으로 본다.
+        // (안 그러면 로딩 오버레이가 20초 타임아웃까지 스피너만 돌고 터미널을 가린다.)
+        if (bytes.Length > 0 &&
+            DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
+        {
+            _ready.Add(roomId);
+            _readyScan.Remove(roomId);
+            _altSeenTick[roomId] = Environment.TickCount;
+            BumpSettle(roomId);
+            return;
+        }
         // 찾는 시퀀스는 모두 ASCII 제어/문자라 ASCII 디코드로 충분
         var text = (_readyScan.TryGetValue(roomId, out var prev) ? prev : string.Empty)
                    + System.Text.Encoding.ASCII.GetString(bytes);
