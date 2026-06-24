@@ -130,6 +130,11 @@ public sealed class TaskTrackingService : IDisposable
             _claudeWatcher.Changed += (_, e) => DispatcherInvoke(() => { if (MatchesActiveClaude(e.FullPath)) ReloadClaudeTasks(); });
             _claudeWatcher.Created += (_, e) => DispatcherInvoke(() => { if (MatchesActiveClaude(e.FullPath)) ReloadClaudeTasks(); });
             _claudeWatcher.Deleted += (_, e) => DispatcherInvoke(() => { if (MatchesActiveClaude(e.FullPath)) ReloadClaudeTasks(); });
+            // 태스크 파일이 임시파일→리네임(atomic)으로 써질 수 있어 Renamed 도 처리. 신/구 경로 모두 검사.
+            _claudeWatcher.Renamed += (_, e) => DispatcherInvoke(() =>
+            {
+                if (MatchesActiveClaude(e.FullPath) || MatchesActiveClaude(e.OldFullPath)) ReloadClaudeTasks();
+            });
         }
         catch { }
 
