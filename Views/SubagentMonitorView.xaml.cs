@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Input;
 using DevezCode.Models;
 
 namespace DevezCode.Views;
@@ -11,6 +12,8 @@ public partial class SubagentMonitorView : INotifyPropertyChanged
 {
     public ObservableCollection<SubagentStatusItem> RunningAgents { get; } = new();
     public ObservableCollection<SubagentStatusItem> CompletedAgents { get; } = new();
+
+    public event EventHandler<string>? OpenTranscriptRequested;
 
     public SubagentMonitorView()
     {
@@ -79,4 +82,16 @@ public partial class SubagentMonitorView : INotifyPropertyChanged
 
     /// <summary>탭 진입 시 초기화 (브라우저 WebView2 와 동일 패턴).</summary>
     public void EnsureStarted() { }
+
+    private void AgentItem_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SubagentStatusItem item }) return;
+        if (string.IsNullOrWhiteSpace(item.TranscriptPath) || !System.IO.File.Exists(item.TranscriptPath))
+        {
+            ConfirmDialog.Alert("서브에이전트", "아직 열 수 있는 대화 파일이 없습니다. 에이전트가 메시지를 남긴 뒤 다시 눌러 주세요.");
+            return;
+        }
+        OpenTranscriptRequested?.Invoke(this, item.TranscriptPath);
+        e.Handled = true;
+    }
 }

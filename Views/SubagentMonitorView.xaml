@@ -35,7 +35,9 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type models:SubagentStatusItem}">
                         <Border CornerRadius="6" Background="{DynamicResource PanelSoftBrush}"
-                                Padding="8,6" Margin="2,3">
+                                Padding="8,6" Margin="2,3" Cursor="Hand"
+                                ToolTip="클릭해서 서브에이전트 대화 열기"
+                                MouseLeftButtonUp="AgentItem_Click">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -90,7 +92,9 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type models:SubagentStatusItem}">
                         <Border CornerRadius="6" Background="{DynamicResource PanelSoftBrush}"
-                                Padding="8,6" Margin="2,3" Opacity="0.6">
+                                Padding="8,6" Margin="2,3" Opacity="0.6" Cursor="Hand"
+                                ToolTip="클릭해서 서브에이전트 대화 열기"
+                                MouseLeftButtonUp="AgentItem_Click">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
