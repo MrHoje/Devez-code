@@ -32,7 +32,7 @@
                     </Style>
                 </Border.Style>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="왼쪽 패널" FontSize="{DynamicResource Fs16}"
+                    <TextBlock Text="왼쪽" FontSize="{DynamicResource Fs16}"
                                FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
                                HorizontalAlignment="Center"/>
                     <TextBlock x:Name="PaneAText" Margin="0,8,0,0"
@@ -55,7 +55,7 @@
                     </Style>
                 </Border.Style>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="오른쪽 패널" FontSize="{DynamicResource Fs16}"
+                    <TextBlock Text="오른쪽" FontSize="{DynamicResource Fs16}"
                                FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
                                HorizontalAlignment="Center"/>
                     <TextBlock x:Name="PaneBText" Margin="0,8,0,0"
