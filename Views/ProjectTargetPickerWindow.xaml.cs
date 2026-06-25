@@ -48,9 +48,10 @@ public partial class ProjectTargetPickerWindow : Window
         GapCol.Width = gap;
         RightCol.Width = right;
 
-        // 모든 테마에서 흰 그림자(글로우)로 글자 가독성을 높인다.
-        ShadowA.Color = Colors.White;
-        ShadowB.Color = Colors.White;
+        // 다크 테마는 검은 그림자, 밝은(minimal/soft) 테마는 흰 그림자로 글자 가독성을 높인다.
+        var shadow = App.CurrentTheme == "dark" ? Colors.Black : Colors.White;
+        ShadowA.Color = shadow;
+        ShadowB.Color = shadow;
     }
 
     private void PaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
