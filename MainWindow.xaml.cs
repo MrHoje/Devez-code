@@ -1503,6 +1503,8 @@ public partial class MainWindow : Window
     /// <summary>시작 시 저장된 분할 상태 복원 — 패널 B 프로젝트/세션을 열고 포커스는 A 로 되돌린다.</summary>
     private void RestoreSplitState()
     {
+        // 프로젝트 자동 로드 옵션이 꺼져 있으면 분할 복원도 건너뛴다 — 미선택 상태로 시작(기본).
+        if (!SettingsService.LoadAutoLoadLastProject()) return;
         var (active, bProjPath, bSessId) = SettingsService.LoadSplitState();
         if (!active) return;
 
