@@ -64,6 +64,7 @@ public partial class WorkspacePaneView : UserControl
         // 단독 ESC 취소 → busy 스피너 즉시 해제(agent 가 idle 신호를 안 줘도 무한 스피너 방지).
         _terminal.InterruptRequested += id => { var s = FindSession(id); if (s != null) s.IsBusy = false; };
         _terminal.SessionActionRequested += OnTerminalSessionAction;
+        _terminal.UserInteracted += () => FocusRequested?.Invoke(this);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
         _terminal.FontSizePxChanged += ApplyHeaderFontSize;
         Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);

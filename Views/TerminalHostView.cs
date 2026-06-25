@@ -30,6 +30,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string, int>? SessionActionRequested;
     /// <summary>터미널 폰트 크기(px)가 바뀜(Ctrl+휠/리셋/초기화). 세션 헤더 타이틀 동기화용.</summary>
     public event Action<double>? FontSizePxChanged;
+    /// <summary>사용자가 WebView2 터미널 표면을 클릭/조작함. WPF PreviewMouseDown 이 HWND 경계를 넘지 못해 별도 통지한다.</summary>
+    public event Action? UserInteracted;
 
     private WebView2? _webView;
     private bool _initStarted;
@@ -272,6 +274,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             var type = root.GetProperty("type").GetString();
             switch (type)
             {
+                case "interact":
+                    UserInteracted?.Invoke();
+                    break;
                 case "pageReady":
                     OnPageReady();
                     break;

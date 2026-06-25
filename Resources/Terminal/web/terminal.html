@@ -471,6 +471,11 @@
     // 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.
   }, { passive: false, capture: true });
 
+  // WebView2 는 별도 HWND 라 WPF 부모의 PreviewMouseDown 이 터미널 클릭을 보지 못한다.
+  // 터미널을 클릭하면 호스트 패널을 포커스 패널로 승격해 사이드바/파일탐색기 선택을 맞춘다.
+  document.addEventListener('mousedown', function () {
+    post({ type: 'interact' });
+  }, { capture: true });
   // ── 우클릭: 선택이 있으면 복사, 없으면 붙여넣기 (Windows 콘솔 QuickEdit 정합) ──
   document.addEventListener('contextmenu', function (e) {
     e.preventDefault();
