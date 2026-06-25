@@ -15,10 +15,12 @@
             <ColumnDefinition x:Name="GapCol" Width="0"/>
             <ColumnDefinition x:Name="RightCol" Width="*"/>
         </Grid.ColumnDefinitions>
-        <Border Grid.Column="0" Cursor="Hand" Background="Transparent"
+        <Border Grid.Column="0" Cursor="Hand"
                 MouseLeftButtonDown="PaneA_MouseLeftButtonDown">
             <Border.Style>
                 <Style TargetType="Border">
+                    <!-- 기본 Transparent 는 Setter 로 둔다. 로컬 값으로 두면 호버 Trigger 가 덮어쓰지 못한다. -->
+                    <Setter Property="Background" Value="Transparent"/>
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Background" Value="#1AFFFFFF"/>
@@ -27,10 +29,11 @@
                 </Style>
             </Border.Style>
         </Border>
-        <Border Grid.Column="2" Cursor="Hand" Background="Transparent"
+        <Border Grid.Column="2" Cursor="Hand"
                 MouseLeftButtonDown="PaneB_MouseLeftButtonDown">
             <Border.Style>
                 <Style TargetType="Border">
+                    <Setter Property="Background" Value="Transparent"/>
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Background" Value="#1AFFFFFF"/>
