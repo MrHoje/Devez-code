@@ -1474,6 +1474,7 @@ public partial class MainWindow : Window
 
     private bool _splitActive;
     private int _lastFocusVisualIndex = -1;
+    private ProjectItem? _pendingProjectTarget;
 
     /// <summary>중앙 패널 분할/해제 토글. 분할 시 패널 B 노출 후 두 번째 프로젝트를 자동으로 연다.</summary>
     private void OnPaneSplitToggle(WorkspacePaneView pane)
@@ -1658,7 +1659,65 @@ public partial class MainWindow : Window
     }
 
     // ── 사이드바 액션 → 포커스 패널로 위임 ────────────────────────────
-    private void SelectProject(ProjectItem proj) => _focusedPane.SelectProject(proj);
+    private void SelectProject(ProjectItem proj) => SelectProjectFromSidebar(proj);
+    private void SelectProjectFromSidebar(ProjectItem proj)
+    {
+        if (_splitActive)
+        {
+            if (PaneA.ActiveProject == null)
+            {
+                SelectProjectIntoPane(PaneA, proj);
+                return;
+            }
+
+            if (PaneB.ActiveProject == null)
+            {
+                SelectProjectIntoPane(PaneB, proj);
+                return;
+            }
+
+            ShowProjectTargetPicker(proj);
+            return;
+        }
+
+        SelectProjectIntoPane(_focusedPane, proj);
+    }
+
+    private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
+    {
+        _pendingProjectTarget = null;
+        ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
+        _focusedPane = pane;
+        pane.SelectProject(proj);
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+    }
+
+    private void ShowProjectTargetPicker(ProjectItem proj)
+    {
+        _pendingProjectTarget = proj;
+        ProjectTargetPaneAText.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
+        ProjectTargetPaneBText.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
+        ProjectTargetPickerOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void ProjectTargetPaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (_pendingProjectTarget != null) SelectProjectIntoPane(PaneA, _pendingProjectTarget);
+    }
+
+    private void ProjectTargetPaneB_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (_pendingProjectTarget != null) SelectProjectIntoPane(PaneB, _pendingProjectTarget);
+    }
+
+    private void ProjectTargetPickerOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _pendingProjectTarget = null;
+        ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
+    }
     private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
     private void RenameSession(SessionItem session) => PaneFor(session).RenameSession(session);
