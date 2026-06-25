@@ -410,7 +410,7 @@ public partial class MainWindow : Window
     {
         var cards = new List<Models.UsageCardVM>();
 
-        // Claude — RateLimitSnapshot(5시간/주간)
+        // Claude — RateLimitSnapshot(5시간/주간). 사이드바는 연결된 provider 를 항상 표시(토글 무관).
         if (_rlMerged is { HasData: true } rl)
         {
             var rows = new List<Models.UsageRowVM>();
@@ -467,7 +467,8 @@ public partial class MainWindow : Window
         => Dispatcher.InvokeAsync(() =>
         {
             _rlMerged = Models.RateLimitSnapshot.Merge(_rlMerged, snap);
-            RefreshUsagePanelIfVisible();
+            if (_rlMerged != null) ApplyRateLimit(_rlMerged); // 하단 푸터
+            RefreshUsagePanelIfVisible();                     // 우측 사이드바
         });
 
     /// <summary>사용량 사이드바가 열려 있으면 최신 스냅샷으로 카드를 다시 빌드 — 시작 시/폴링 시 자동 반영.</summary>
@@ -484,12 +485,123 @@ public partial class MainWindow : Window
         SidebarUsageUpdated.Text = cards.Count == 0 ? "" : $"{DateTime.Now:HH:mm} 기준";
     }
 
-    /// <summary>codex/opencode-go 스냅샷 저장 후 사이드바 갱신.</summary>
+    /// <summary>codex/opencode-go 스냅샷 저장 후 하단 푸터 + 우측 사이드바 갱신.</summary>
     private void ApplyProviderUsage(Models.ProviderUsage u)
     {
-        if (u.Provider == "codex") _lastCodex = u;
-        else if (u.Provider == "opencode-go") _lastGo = u;
+        if (u.Provider == "codex")
+        {
+            _lastCodex = u;
+            SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct, CxSevenBar, CxSevenPct, u, "Codex");
+        }
+        else if (u.Provider == "opencode-go")
+        {
+            _lastGo = u;
+            SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go", GoMonthBar, GoMonthPct);
+        }
         RefreshUsagePanelIfVisible();
+    }
+
+    /* ── 하단 푸터 계정 사용량 (우측 사이드바와 별개; 설정의 '하단 푸터 표시' 토글로 provider별 on/off) ── */
+
+    private const double RlTrackWidth = 56;
+
+    private void RlPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginClaude();
+    private void CodexPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginCodex();
+    private void GoPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginOpenCode();
+
+    /// <summary>Claude rate limit 을 하단 푸터에 반영. 데이터 없거나 설정 off 면 숨김.</summary>
+    private void ApplyRateLimit(Models.RateLimitSnapshot snap)
+    {
+        if (!snap.HasData || !SettingsService.LoadShowFooterClaude())
+        { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
+        RateLimitPanel.Visibility = Visibility.Visible;
+        UpdateFooterDivider();
+        SetBar(RlFiveLabel, RlFiveBar, RlFivePct,
+               FormatRemainingShort(snap.FiveHourResetsAt) ?? "5시간", snap.FiveHourPercent);
+        SetBar(RlSevenLabel, RlSevenBar, RlSevenPct, "주간", snap.SevenDayPercent);
+        RateLimitPanel.ToolTip = BuildRlTooltip(snap);
+    }
+
+    /// <summary>codex/go 사용량을 해당 푸터 패널에 반영. 데이터 없거나 설정 off 면 숨김.</summary>
+    private void SetProviderPanel(System.Windows.Controls.StackPanel panel,
+        TextBlock fLabel, Border fBar, TextBlock fPct, Border wBar, TextBlock wPct,
+        Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null)
+    {
+        bool show = u.Provider == "codex" ? SettingsService.LoadShowFooterCodex() : SettingsService.LoadShowFooterGo();
+        if (!u.HasData || !show) { panel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
+        panel.Visibility = Visibility.Visible;
+        SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
+        SetWindowBar(wBar, wPct, u.Weekly?.UsedPercent);
+        if (mBar != null && mPct != null) SetWindowBar(mBar, mPct, u.Monthly?.UsedPercent);
+        panel.ToolTip = BuildProviderTooltip(u, name);
+        UpdateFooterDivider();
+    }
+
+    /// <summary>한도 막대 1세트 갱신 — 라벨 / 채움 너비·색 / 퍼센트.</summary>
+    private void SetBar(TextBlock label, Border bar, TextBlock pctText, string labelText, double? pct)
+    {
+        label.Text = labelText;
+        if (pct is double v)
+        {
+            var c = Math.Clamp(v, 0, 100);
+            bar.Width = RlTrackWidth * c / 100.0;
+            bar.Background = RlBrush(c);
+            pctText.Text = $"{v:F0}%";
+        }
+        else { bar.Width = 0; pctText.Text = "--"; }
+    }
+
+    /// <summary>고정 라벨 윈도우 막대(주간·월간) 갱신.</summary>
+    private void SetWindowBar(Border bar, TextBlock pct, double? usedPercent)
+    {
+        if (usedPercent is double p) { var c = Math.Clamp(p, 0, 100); bar.Width = RlTrackWidth * c / 100.0; bar.Background = RlBrush(c); pct.Text = $"{p:F0}%"; }
+        else { bar.Width = 0; pct.Text = "--"; }
+    }
+
+    /// <summary>provider 패널 사이 리딩 구분선(|) 동적 표시 — 앞 패널이 보일 때만.</summary>
+    private void UpdateFooterDivider()
+    {
+        bool claude = RateLimitPanel.Visibility == Visibility.Visible;
+        bool codex = CodexPanel.Visibility == Visibility.Visible;
+        if (CxLeadDivider != null) CxLeadDivider.Visibility = claude ? Visibility.Visible : Visibility.Collapsed;
+        if (GoLeadDivider != null) GoLeadDivider.Visibility = (claude || codex) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static string BuildRlTooltip(Models.RateLimitSnapshot snap)
+    {
+        var sb = new System.Text.StringBuilder();
+        if (snap.FiveHourPercent is double f)
+            sb.Append($"5시간 한도 {f:F0}%  ·  초기화까지 {FormatRemaining(snap.FiveHourResetsAt)}");
+        if (snap.SevenDayPercent is double w)
+        {
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append($"주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(snap.SevenDayResetsAt)}");
+        }
+        return sb.ToString();
+    }
+
+    private static string BuildProviderTooltip(Models.ProviderUsage u, string name)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(name);
+        if (u.PlanLabel != null) sb.Append("  ·  ").Append(u.PlanLabel);
+        if (u.Primary?.UsedPercent is double p)
+            sb.Append($"\n5시간 한도 {p:F0}%  ·  초기화까지 {FormatRemaining(u.Primary.ResetsAt)}");
+        if (u.Weekly?.UsedPercent is double w)
+            sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(u.Weekly.ResetsAt)}");
+        if (u.Monthly?.UsedPercent is double m)
+            sb.Append($"\n월간 한도 {m:F0}%  ·  초기화 {FormatResetDate(u.Monthly.ResetsAt)}");
+        if (u.Error != null) sb.Append('\n').Append(u.Error);
+        return sb.ToString();
+    }
+
+    /// <summary>남은 시간 짧은 표기 ("1시간24분" / "24분" / "곧"). 초기화 시각 없으면 null.</summary>
+    private static string? FormatRemainingShort(DateTimeOffset? resetsAt)
+    {
+        if (resetsAt is not DateTimeOffset r) return null;
+        var span = r.ToLocalTime() - DateTimeOffset.Now;
+        if (span <= TimeSpan.Zero) return "곧";
+        return span.TotalHours >= 1 ? $"{(int)span.TotalHours}시간{span.Minutes}분" : $"{span.Minutes}분";
     }
 
     /// <summary>opencode.ai 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>
@@ -516,8 +628,16 @@ public partial class MainWindow : Window
         if (win.Captured) _usageApi.RefreshNow();
     }
 
-    /// <summary>설정에서 provider 표시 토글 변경 시 — 사용량 사이드바 카드를 다시 빌드.</summary>
-    public void ApplyFooterUsageVisibility() => RefreshUsagePanelIfVisible();
+    /// <summary>설정의 '하단 푸터 표시' 토글 변경 시 — 마지막 스냅샷으로 각 푸터 패널 가시성을 다시 평가.
+    /// (우측 사이드바는 토글과 무관하게 연결된 provider 를 항상 표시하므로 별도 갱신만.)</summary>
+    public void ApplyFooterUsageVisibility()
+    {
+        if (_rlMerged != null) ApplyRateLimit(_rlMerged);
+        else { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
+        if (_lastCodex != null) ApplyProviderUsage(_lastCodex); else { CodexPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
+        if (_lastGo != null)    ApplyProviderUsage(_lastGo);    else { GoPanel.Visibility    = Visibility.Collapsed; UpdateFooterDivider(); }
+        RefreshUsagePanelIfVisible();
+    }
 
     /// <summary>초기화까지 남은 시간 ("2시간 12분" / "분" / "곧").</summary>
     private static string FormatRemaining(DateTimeOffset? resetsAt)

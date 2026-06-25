@@ -321,7 +321,93 @@
                     <!-- 우측 패널 접힘과 무관하게 항상 보이는 설정 버튼용 고정폭 컬럼 -->
                     <ColumnDefinition x:Name="FooterActionsCol" Width="Auto" MinWidth="48"/>
                 </Grid.ColumnDefinitions>
-                    <!-- 좌측 사용량 표시는 최우측 '계정 사용량' 사이드바로 이동(타이틀바 차트 버튼으로 토글). -->
+                    <!-- 좌측: 계정 사용량 (설정 > '하단 푸터 표시' 토글로 provider별 on/off). 우측 사이드바와 별개. -->
+                    <StackPanel Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                        <!-- 계정 사용량: provider(Claude/Codex/Go)별 [구분선][아이콘][이름][5h바][주바]. -->
+                        <!-- Claude (클릭 시 OAuth 로그인) -->
+                        <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal" VerticalAlignment="Center"
+                                    Visibility="Collapsed" Background="Transparent" Cursor="Hand"
+                                    MouseLeftButtonUp="RlPanel_Click"
+                                    ToolTip="Claude 계정 사용량 (5시간 / 주간 한도) — 클릭하여 로그인/재연결">
+                            <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                                   Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <TextBlock x:Name="RlFiveLabel" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="RlFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="RlFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock x:Name="RlSevenLabel" Text="주간" Margin="14,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="RlSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="RlSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
+                        <!-- Codex (클릭 시 ChatGPT OAuth 로그인) -->
+                        <StackPanel x:Name="CodexPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
+                                    Background="Transparent" Cursor="Hand" MouseLeftButtonUp="CodexPanel_Click">
+                            <Border x:Name="CxLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                            <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                                   Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <TextBlock x:Name="CxFiveLabel" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="CxFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="CxFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock x:Name="CxSevenLabel" Text="주간" Margin="14,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="CxSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="CxSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
+                        <!-- opencode-go (클릭 시 재로그인) -->
+                        <StackPanel x:Name="GoPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
+                                    Background="Transparent" Cursor="Hand" MouseLeftButtonUp="GoPanel_Click">
+                            <Border x:Name="GoLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                            <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                                   Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <TextBlock x:Name="GoFiveLabel" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="GoFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="GoFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock x:Name="GoSevenLabel" Text="주간" Margin="14,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="GoSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="GoSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock x:Name="GoMonthLabel" Text="월간" Margin="14,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="GoMonthBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="GoMonthPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
+                    </StackPanel>
                     <!-- 우측: 설정 버튼 (MCP 서버 버튼은 보류 — 2026-06 보류, 재활성 시 Visibility 제거 + Uncomment).
                          컬럼은 FooterFileExpCol(FooterActionsCol)이 아닌 별도 고정폭 컬럼에 둔다 — 우측 패널 접힘과 무관하게 항상 노출. -->
                     <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right">

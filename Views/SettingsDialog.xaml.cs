@@ -48,9 +48,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.5.1", "2026-06-25", true, new[]
+        ("v1.5.2", "2026-06-25", true, new[]
         {
-            "전체화면 모드에서 종료 방법을 안내하는 알림을 추가했습니다.",
+            "하단 푸터의 계정 사용량 표시가 동작하지 않던 문제를 수정했습니다. (설정 > 계정 사용량 > 하단 푸터 표시)",
+        }),
+        ("v1.5.1", "2026-06-25", false, new[]
+        {
+            "전체화면 기능을 추가했습니다.",
             "가재코드(Gajae Code) 에이전트를 추가했습니다.",
             "프로젝트에 열어두었던 파일을 재실행 시 그대로 유지합니다.",
         }),
