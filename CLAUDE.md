@@ -34,3 +34,4 @@ Start-Process "bin\DevezCode.exe"
 - 원격 접속(RDP/Chrome Remote Desktop)에서는 GPU 합성 화면이 전달되지 않아 창이 안 보일 수 있다.
   `App.OnStartup`에서 원격 세션을 감지해 `RenderMode.SoftwareOnly`를 강제하므로 새 창을 만들 때 이 처리를 빠뜨리지 말 것.
 - 디자인(테마/색상/폰트/아이콘/팝업)은 `C:\source\devez`의 디자인 시스템을 따른다. 새 UI도 `AppStyles.xaml`의 전역 스타일을 사용하고 인라인 스타일을 남발하지 말 것.
+- 에이전트(Claude Code / Codex / OpenCode / Gajae Code 등) 추가 규칙은 `에이전트추가규칙.md` 참조.

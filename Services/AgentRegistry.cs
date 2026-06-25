@@ -63,6 +63,12 @@ public static class AgentRegistry
             ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
             Command = "gjc", InlineTui = true,
         },
+        new()
+        {
+            Id = "antigravity", DisplayName = "Google Anti-Gravity", Provider = "Antigravity",
+            ExeNames = new[] { "agy.exe", "agy.cmd", "agy.bat", "agy.ps1", "agy" },
+            Command = "agy",
+        },
     };
 
     public static AgentDef? Find(string? id)

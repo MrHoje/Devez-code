@@ -39,6 +39,8 @@ public static class SettingsService
         // 가재코드(gjc) 방별 세션 ID. gjc 는 사전 발급 플래그가 없어, 방별 격리 --session-dir 의
         // 최신 .jsonl 파일명에서 추출한 ID 를 영속 → 재오픈 시 `gjc -r <id>` 로 같은 대화 복원.
         public Dictionary<string, string> GajaeRoomSessions { get; set; } = new();
+        // 안티그래비티(agy) 방별 세션 ID. agy 자체 세션ID 저장/복원용.
+        public Dictionary<string, string> AntigravityRoomSessions { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
         public Dictionary<string, string> RoomAgents { get; set; } = new();
         // 사용자가 활성화한 에이전트 ID 목록. 빈 값이면 모든 설치된 에이전트 활성화로 간주.
@@ -256,6 +258,7 @@ public static class SettingsService
         changed |= Current.RoomAgents.Remove(roomId);
         changed |= Current.ClaudeCodeRoomModel.Remove(roomId);
         changed |= Current.ClaudeCodeRoomEffort.Remove(roomId);
+        changed |= Current.AntigravityRoomSessions.Remove(roomId);
         if (changed) Save();
       }
     }
@@ -501,6 +504,17 @@ public static class SettingsService
         Current.GajaeRoomSessions[roomId] = sessionId;
         Save();
     }
+    // ── 안티그래비티(agy) 세션 ID ────────────────────────────────
+    public static string? LoadAntigravityRoomSession(string roomId)
+        => Current.AntigravityRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+
+    public static void SaveAntigravityRoomSession(string roomId, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        Current.AntigravityRoomSessions[roomId] = sessionId;
+        Save();
+    }
+
 }
 
 /// <summary>작업 큐에 저장되는 단일 항목. JSON 직렬화용.</summary>
