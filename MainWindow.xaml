@@ -75,6 +75,13 @@
                               Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
+                    <!-- 패널 분할/확장 토글 — 좌측 패널 버튼 오른쪽. 분할 중이면 다시 눌러 해제. -->
+                    <Button x:Name="SplitToggleBtn" Click="SplitToggleBtn_Click" Margin="2,0,0,0"
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="패널 분할">
+                        <Path x:Name="SplitToggleIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconColumns}" Width="16" Height="16"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
                 </StackPanel>
 
                 <!-- 윈도우 컨트롤(오른쪽 고정) -->

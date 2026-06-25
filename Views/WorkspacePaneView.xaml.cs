@@ -87,35 +87,13 @@ public partial class WorkspacePaneView : UserControl
 
     private void Pane_PreviewInteract(object sender, MouseButtonEventArgs e) => FocusRequested?.Invoke(this);
 
-    private void SplitBtn_Click(object sender, RoutedEventArgs e) => SplitToggleRequested?.Invoke(this);
-
-    /// <summary>분할 시 이 패널이 우측(PaneB)인지. true 면 분할 중 탭바 버튼이 X(분할 닫기)로 표시된다.</summary>
+    /// <summary>분할 시 이 패널이 우측(PaneB)인지. 좌/우 위치 스왑 추적에 쓰인다.</summary>
     public bool IsRightPane { get; set; }
 
     private bool _split;
 
-    /// <summary>분할 상태에 맞춰 탭바 버튼을 갱신.
-    /// 비분할: 분할 토글(IconColumns) 표시. 분할: 우측 패널만 X(분할 닫기), 좌측 패널은 숨김.</summary>
-    public void SetSplitActive(bool active)
-    {
-        _split = active;
-        if (!_split)
-        {
-            SplitBtn.Visibility = Visibility.Visible;
-            SplitIcon.Data = (Geometry)FindResource("IconColumns");
-            SplitBtn.ToolTip = "패널 분할";
-        }
-        else if (IsRightPane)
-        {
-            SplitBtn.Visibility = Visibility.Visible;
-            SplitIcon.Data = (Geometry)FindResource("IconX");
-            SplitBtn.ToolTip = "분할 닫기";
-        }
-        else
-        {
-            SplitBtn.Visibility = Visibility.Collapsed;
-        }
-    }
+    /// <summary>분할 상태 저장. 분할 토글 버튼은 상단 타이틀바로 이동해 패널 탭바에는 버튼이 없다.</summary>
+    public void SetSplitActive(bool active) => _split = active;
 
     /// <summary>분할 중 포커스 패널 상단 액센트 표시 여부. 좌/우 패널 전환 시 가볍게 슬라이드한다.</summary>
     public void SetFocusedVisual(bool focused, double slideFromX = 0)

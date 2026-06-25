@@ -275,13 +275,6 @@
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
                 </StackPanel>
-                <!-- 비분할: 분할 토글(IconColumns) / 분할 시 우측 패널: X(분할 닫기). 좌측 패널은 분할 중 숨김. -->
-                <Button x:Name="SplitBtn" Style="{StaticResource TabNavButton}"
-                        Click="SplitBtn_Click" Margin="2,0,0,0" ToolTip="패널 분할">
-                    <Path x:Name="SplitIcon" Style="{StaticResource LucideIcon}" Data="{StaticResource IconColumns}"
-                          Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
-                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                </Button>
             </StackPanel>
           </Grid>
         </Border>

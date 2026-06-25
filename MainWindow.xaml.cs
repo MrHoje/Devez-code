@@ -897,6 +897,12 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+        if (e.Key == System.Windows.Input.Key.Escape && _projectTargetPickerWindow != null)
+        {
+            HidePanePick();
+            e.Handled = true;
+            return;
+        }
         base.OnPreviewKeyDown(e);
     }
 
@@ -1550,6 +1556,20 @@ public partial class MainWindow : Window
         else EnableSplit();
     }
 
+    // 상단 타이틀바 분할 토글 버튼(좌측 패널 버튼 오른쪽).
+    private void SplitToggleBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_splitActive) DisableSplit();
+        else EnableSplit();
+    }
+
+    /// <summary>분할 토글 버튼: 분할 중이면 테마색 강조 + '분할 닫기' 툴팁, 아니면 기본.</summary>
+    private void UpdateSplitToggleVisual()
+    {
+        SplitToggleIcon.Stroke = (System.Windows.Media.Brush)FindResource(_splitActive ? "PrimaryBrush" : "TextMutedBrush");
+        SplitToggleBtn.ToolTip = _splitActive ? "분할 닫기" : "패널 분할";
+    }
+
 
     private void EnableSplit(ProjectItem? bProject = null, SessionItem? bSession = null)
     {
@@ -1578,6 +1598,7 @@ public partial class MainWindow : Window
         UpdatePaneFocusVisual();
         UpdatePaneRoles();
         Sidebar.IsSplitActive = true;
+        UpdateSplitToggleVisual();
         PersistSplitState();
     }
 
@@ -1648,6 +1669,7 @@ public partial class MainWindow : Window
         UpdatePaneFocusVisual();
         UpdatePaneRoles();
         Sidebar.IsSplitActive = false;
+        UpdateSplitToggleVisual();
         PersistSplitState();
     }
 
@@ -1831,8 +1853,20 @@ public partial class MainWindow : Window
         win.Width = CenterSplit.ActualWidth;
         win.Height = CenterSplit.ActualHeight;
         win.PaneSelected += pane => SelectProjectIntoPane(pane == "A" ? LeftPane : RightPane, proj);
+        win.Closed += PanePicker_Closed;
         _projectTargetPickerWindow = win;
+        // picker 는 포커스를 안 가져가므로 취소(바깥 클릭·Esc)는 메인 창에서 감지한다.
+        PreviewMouseDown += PanePicker_OutsideMouseDown;
         win.Show();
+    }
+
+    // 메인 창 영역(사이드바 등) 클릭 = picker 바깥 클릭 → 취소. picker 반쪽 클릭은 별도 창이라 여기로 안 온다.
+    private void PanePicker_OutsideMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e) => HidePanePick();
+
+    private void PanePicker_Closed(object? sender, EventArgs e)
+    {
+        PreviewMouseDown -= PanePicker_OutsideMouseDown;
+        if (ReferenceEquals(_projectTargetPickerWindow, sender)) _projectTargetPickerWindow = null;
     }
 
     private void HidePanePick() => _projectTargetPickerWindow?.Close();
