@@ -437,6 +437,9 @@ public partial class App : Application
         }
 
         CurrentTheme = theme;
+        // 가재코드(gjc) — devez.json 팔레트 덮어쓰기. gjc의 테마는 전역 파일 하나(watch)라 외부 세션도 영향받지만,
+        // 이 호출을 빼면 DevezCode 안 세션도 못 따라간다. (Claude/OpenCode는 per-project 설정이라 이런 문제 없음)
+        Services.Terminal.GajaeCustomThemes.Apply(theme);
         ThemeChanged?.Invoke(theme);
     }
 }

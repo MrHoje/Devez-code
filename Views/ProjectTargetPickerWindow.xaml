@@ -19,11 +19,11 @@
                 MouseLeftButtonDown="PaneA_MouseLeftButtonDown">
             <Border.Style>
                 <Style TargetType="Border">
-                    <!-- 기본 Transparent 는 Setter 로 둔다. 로컬 값으로 두면 호버 Trigger 가 덮어쓰지 못한다. -->
-                    <Setter Property="Background" Value="Transparent"/>
+                    <!-- 기본은 어둡게 깔고(딤), 호버 시 살짝 밝아진다. Setter 로 둬야 Trigger 가 덮어쓴다. -->
+                    <Setter Property="Background" Value="#66000000"/>
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#1AFFFFFF"/>
+                            <Setter Property="Background" Value="#40000000"/>
                         </Trigger>
                     </Style.Triggers>
                 </Style>
