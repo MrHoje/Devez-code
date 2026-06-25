@@ -14,8 +14,16 @@ public partial class FileEditorView : UserControl, IFileTabEditor
 
     private string? _path;
     private bool _loading;
+    private readonly Action<string> _themeChangedHandler;
 
-    public FileEditorView() => InitializeComponent();
+
+    public FileEditorView()
+    {
+        InitializeComponent();
+        _themeChangedHandler = _ => Dispatcher.BeginInvoke(new Action(RefreshHighlighting));
+        App.ThemeChanged += _themeChangedHandler;
+        Unloaded += (_, _) => App.ThemeChanged -= _themeChangedHandler;
+    }
 
     public static bool IsEditable(string path)
     {
@@ -179,6 +187,14 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         double t = System.Math.Min(0.68, (0.6 - lum) / 0.6);
         byte M(byte v) => (byte)(v + (255 - v) * t);
         return System.Windows.Media.Color.FromRgb(M(c.R), M(c.G), M(c.B));
+    }
+
+    /// <summary>테마 변경 시 열려 있는 파일 편집기의 구문 하이라이팅을 새 테마색으로 다시 적용.</summary>
+    private void RefreshHighlighting()
+    {
+        if (string.IsNullOrEmpty(_path)) return;
+        var def = GetHighlighting(_path);
+        Editor.SyntaxHighlighting = ThemeHighlighting(def);
     }
 
     private void Editor_TextChanged(object? sender, EventArgs e)
