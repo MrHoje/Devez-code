@@ -797,9 +797,18 @@ public sealed class TerminalSessionManager
             // 종료이므로 무조건 idle.
             const string busyScript = """
                 # DevezCode busy-state hook. Arg1 = running|idle. Writes per-room state for the sidebar spinner.
-                # On 'running' (UserPromptSubmit) also records the last submitted prompt for the header title.
-                # On 'idle' (Stop): if background subagents are still running, keep 'running' so no premature
-                # "response done" notification fires; only signal idle once all subagents have completed.
+                # On 'running' (UserPromptSubmit): record the last submitted prompt for the header title.
+                #   백그라운드 서브에이전트가 완료되면 그 결과가 <task-notification> 프롬프트로 재주입돼 다시
+                #   running→idle 사이클이 돈다. 메인 턴이 서브에이전트를 띄우고 끝나면(또는 각 서브 완료 재주입마다)
+                #   Stop 이 발화하는데, 그대로 idle 을 쓰면 서브가 아직 도는데도 "응답 완료" 알림이 조기에/반복해서 뜬다.
+                # On 'idle' (Stop): 미완료 백그라운드 작업 수(pending)를 계산해 0 일 때만 idle 을 쓴다.
+                #   pending = (이번 루트턴에서 새로 뜬 서브에이전트 수) - (그 사이 완료된 수)
+                #   • 새 launch 수: 세션 subagents 디렉터리의 agent-*.meta.json 개수(launch 즉시 생성 — 메인
+                #     transcript 는 resume/버퍼링으로 Stop 시점에 stale 할 수 있어 신뢰 불가). 단 누적이므로
+                #     실제 사용자 프롬프트(루트턴 시작) 때 현재 개수를 baseline 으로 떠 과거분을 제외한다.
+                #   • 완료 수: <task-notification> 재주입 프롬프트의 distinct <task-id> — 훅이 직접 누적 기록.
+                #     (메인 transcript 엔 Stop 시점에 아직 안 박혀있을 수 있어 훅이 직접 센다.)
+                # SessionEnd 는 세션 종료이므로 무조건 idle.
                 param([string]$status = 'idle')
                 try {
                   $room = $env:DEVEZCODE_ROOM_ID
@@ -813,14 +822,40 @@ public sealed class TerminalSessionManager
                   try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
                   $j = $null
                   try { $j = $raw | ConvertFrom-Json } catch { }
+                  $sid = ''; try { $sid = ('' + $j.session_id) -replace '[^\w\-]', '' } catch { }
+                  $tp = '';  try { $tp = '' + $j.transcript_path } catch { }
+
+                  # 세션 subagents 디렉터리의 agent-*.meta.json 개수 = 그 세션에서 launch 된 누적 서브에이전트 수.
+                  function Get-MetaCount($transcriptPath) {
+                    try {
+                      if (-not $transcriptPath) { return 0 }
+                      $sub = Join-Path (Join-Path ([System.IO.Path]::GetDirectoryName($transcriptPath)) ([System.IO.Path]::GetFileNameWithoutExtension($transcriptPath))) 'subagents'
+                      if (Test-Path -LiteralPath $sub) { return @(Get-ChildItem -LiteralPath $sub -Filter 'agent-*.meta.json' -ErrorAction SilentlyContinue).Count }
+                    } catch { }
+                    return 0
+                  }
+                  $sdir = Join-Path $dir '_state'
+                  New-Item -ItemType Directory -Force -Path $sdir | Out-Null
+                  $baseFile = Join-Path $sdir ('base_' + $sid + '.txt')
+                  $doneFile = Join-Path $sdir ('done_' + $sid + '.txt')
 
                   if ($status -eq 'running') {
                     Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
-                    # UserPromptSubmit 은 stdin 으로 {"prompt":"..."} 를 넘긴다. 1줄로 요약해 별도 파일에 기록.
                     $prompt = ''
                     try { $prompt = '' + $j.prompt } catch { }
-                    # 백그라운드 완료가 프롬프트로 재주입되는 <task-notification> 은 헤더에 쓰지 않는다(실제 사용자 프롬프트 유지).
-                    if ($prompt -and -not $prompt.StartsWith('<task-notification>')) {
+                    if ($prompt -and $prompt.StartsWith('<task-notification>')) {
+                      # 백그라운드 서브에이전트 1건 완료 재주입 → distinct task-id 를 세션별 완료목록에 누적(헤더엔 안 씀).
+                      if ($sid -and ($prompt -match '<task-id>\s*([A-Za-z0-9]+)')) {
+                        $tid = $matches[1]
+                        $have = @(); if (Test-Path -LiteralPath $doneFile) { $have = @(Get-Content -LiteralPath $doneFile -ErrorAction SilentlyContinue) }
+                        if ($have -notcontains $tid) { Add-Content -LiteralPath $doneFile -Value $tid -Encoding Ascii }
+                      }
+                    } elseif ($prompt) {
+                      # 실제 사용자 프롬프트 = 새 루트턴 시작 → baseline(현재 meta 수) 스냅샷 + 완료목록 리셋.
+                      if ($sid) {
+                        Set-Content -LiteralPath $baseFile -Value ([string](Get-MetaCount $tp)) -Encoding Ascii -Force
+                        if (Test-Path -LiteralPath $doneFile) { Remove-Item -LiteralPath $doneFile -Force -ErrorAction SilentlyContinue }
+                      }
                       $prompt = ($prompt -replace '\s+', ' ').Trim()
                       if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
                       $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
@@ -830,26 +865,19 @@ public sealed class TerminalSessionManager
                     exit 0
                   }
 
-                  # status = idle (Stop/SessionEnd). 미완료 백그라운드 서브에이전트가 있으면 완료로 보지 않는다.
-                  $evt = ''
-                  try { $evt = '' + $j.hook_event_name } catch { }
+                  # status = idle (Stop/SessionEnd)
+                  $evt = ''; try { $evt = '' + $j.hook_event_name } catch { }
                   $pending = 0
-                  if ($evt -ne 'SessionEnd') {
+                  if ($evt -ne 'SessionEnd' -and $sid) {
                     try {
-                      $tp = '' + $j.transcript_path
-                      if ($tp -and (Test-Path -LiteralPath $tp)) {
-                        $launched = 0
-                        $done = @{}
-                        foreach ($line in [System.IO.File]::ReadLines($tp)) {
-                          if ($line.Contains('"name":"Agent"')) {
-                            $launched += ([regex]::Matches($line, '"name":"Agent"')).Count
-                          }
-                          if ($line.Contains('task-notification') -and $line.Contains('"role":"user"')) {
-                            foreach ($m in [regex]::Matches($line, '<task-id>\s*([A-Za-z0-9]+)\s*</task-id>')) { $done[$m.Groups[1].Value] = 1 }
-                          }
-                        }
-                        $pending = $launched - $done.Count
-                      }
+                      $meta = Get-MetaCount $tp
+                      # baseline 미존재(훅 배포 직후 중간턴 등)면 현재 meta 를 기준으로 삼아 newLaunched=0 → idle(스피너 영구 회전 방지).
+                      $base = $meta; if (Test-Path -LiteralPath $baseFile) { [int]::TryParse((Get-Content -LiteralPath $baseFile -Raw -ErrorAction SilentlyContinue).Trim(), [ref]$base) | Out-Null }
+                      $newLaunched = $meta - $base
+                      if ($newLaunched -lt 0) { $newLaunched = 0 }
+                      $completed = 0; if (Test-Path -LiteralPath $doneFile) { $completed = @(Get-Content -LiteralPath $doneFile -ErrorAction SilentlyContinue | Sort-Object -Unique).Count }
+                      $pending = $newLaunched - $completed
+                      if ($pending -lt 0) { $pending = 0 }
                     } catch { $pending = 0 }
                   }
 

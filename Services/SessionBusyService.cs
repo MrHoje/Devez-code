@@ -44,6 +44,10 @@ public sealed class SessionBusyService : IDisposable
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
         if (status == null) return;
+        // 훅의 Set-Content 는 파일을 0바이트로 truncate 후 기록한다. 그 찰나에 watcher 가 Changed 를 받아
+        // 빈 파일을 읽으면 status="" 가 되어 "running 아님"=idle 로 오인되고, busy→idle 전이로 잡혀 가짜
+        // "응답 완료" 알림이 뜬다(서브에이전트 작업 중 매 상태 기록마다 깜빡임). 빈 읽기는 쓰기 중 과도상태이므로 무시.
+        if (string.IsNullOrWhiteSpace(status)) return;
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
     }
 
