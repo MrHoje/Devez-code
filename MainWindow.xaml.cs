@@ -1693,7 +1693,7 @@ public partial class MainWindow : Window
     private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
     {
         _pendingProjectTarget = null;
-        ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
+        ProjectTargetPickerOverlay.IsOpen = false;
         _focusedPane = pane;
         pane.SelectProject(proj);
         SyncShellToFocusedPane();
@@ -1703,7 +1703,7 @@ public partial class MainWindow : Window
     private void FocusPaneOnly(WorkspacePaneView pane)
     {
         _pendingProjectTarget = null;
-        ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
+        ProjectTargetPickerOverlay.IsOpen = false;
         _focusedPane = pane;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
@@ -1714,7 +1714,7 @@ public partial class MainWindow : Window
         _pendingProjectTarget = proj;
         ProjectTargetPaneAText.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
         ProjectTargetPaneBText.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
-        ProjectTargetPickerOverlay.Visibility = Visibility.Visible;
+        ProjectTargetPickerOverlay.IsOpen = true;
     }
 
     private void ProjectTargetPaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1732,7 +1732,7 @@ public partial class MainWindow : Window
     private void ProjectTargetPickerOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _pendingProjectTarget = null;
-        ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
+        ProjectTargetPickerOverlay.IsOpen = false;
     }
     private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
