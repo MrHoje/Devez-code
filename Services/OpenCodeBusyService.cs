@@ -42,6 +42,9 @@ public sealed class OpenCodeBusyService : IDisposable
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
         if (status == null) return;
+        // 쓰기(writeFileSync)가 파일을 truncate 하는 찰나에 watcher 가 빈 파일을 읽으면 idle 로 오인돼
+        // 가짜 "응답 완료" 알림이 뜬다(SessionBusyService 와 동일 경합). busy 파일은 정상값이 빈 적이 없으므로 무시.
+        if (string.IsNullOrWhiteSpace(status)) return;
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
     }
 

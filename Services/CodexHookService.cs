@@ -84,6 +84,9 @@ public sealed class CodexHookService : IDisposable
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
         if (status == null) return;
+        // Set-Content 의 truncate 찰나에 watcher 가 빈 파일을 읽어 idle 로 오인 → 가짜 "응답 완료" 알림 방지
+        // (SessionBusyService / OpenCodeBusyService 와 동일 경합). busy 파일은 정상값이 빈 적이 없으므로 무시.
+        if (string.IsNullOrWhiteSpace(status)) return;
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
     }
 
