@@ -94,10 +94,11 @@ public partial class WorkspacePaneView : UserControl
         if (SplitIcon != null) SplitIcon.Stroke = (Brush)FindResource(key);
     }
 
-    /// <summary>분할 중 포커스 패널 상단 액센트 표시 여부.</summary>
+    /// <summary>분할 중 포커스 패널 보더 색상 표시. 두께는 고정해 터미널 리사이즈/스크롤을 유발하지 않는다.</summary>
     public void SetFocusedVisual(bool focused)
     {
-        if (FocusAccent != null) FocusAccent.Visibility = focused ? Visibility.Visible : Visibility.Collapsed;
+        if (CenterArea != null)
+            CenterArea.BorderBrush = (Brush)FindResource(focused ? "PrimaryBrush" : "LineBrush");
     }
 
     /// <summary>세션 소유권 이전 — 이 패널이 해당 세션을 활성으로 들고 있으면 배선을 끊고 다음 세션으로(없으면 비움).</summary>
