@@ -745,6 +745,7 @@ public partial class MainWindow : Window
     private Action? _overlayAnimCancel;
 
     // GridSplitter 수동 드래그
+    private void PaneSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => UpdatePaneFocusVisual(animate: false);
     private void SidebarSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
         if (_leftCollapsed) return;

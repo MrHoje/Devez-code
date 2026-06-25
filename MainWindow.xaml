@@ -172,7 +172,8 @@
                     <views:WorkspacePaneView x:Name="PaneA" Grid.Column="0"/>
                     <GridSplitter x:Name="PaneSplitter" Grid.Column="1" Width="4"
                                   HorizontalAlignment="Stretch" Visibility="Collapsed"
-                                  ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"/>
+                                  ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                  DragDelta="PaneSplitter_DragDelta"/>
                     <views:WorkspacePaneView x:Name="PaneB" Grid.Column="2" Visibility="Collapsed"/>
                     <Border x:Name="CenterFocusIndicator" Grid.Column="0" Grid.ColumnSpan="3"
                             Height="2" Width="0" VerticalAlignment="Top" HorizontalAlignment="Left"
