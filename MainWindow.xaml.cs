@@ -1854,11 +1854,44 @@ public partial class MainWindow : Window
                 return;
             }
 
-            ShowProjectTargetPicker(proj);
+            ShowProjectTargetPicker(pane => SelectProjectIntoPane(pane, proj));
             return;
         }
 
         SelectProjectIntoPane(_focusedPane, proj);
+    }
+
+    /// <summary>사이드바에서 세션 클릭 → 프로젝트 선택과 동일한 패널 타게팅 규칙을 따른다.
+    /// (이미 열린 패널 포커스 → 빈 패널 채움 → 둘 다 차 있으면 피커). 단 프로젝트 대신 세션을 활성화한다.</summary>
+    private void OpenSession(SessionItem session)
+    {
+        var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
+        if (parent == null) { OpenSessionIntoPane(_focusedPane, session); return; }
+
+        var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent));
+        if (existingPane != null)
+        {
+            OpenSessionIntoPane(existingPane, session);
+            return;
+        }
+
+        if (_splitActive)
+        {
+            if (PaneA.ActiveProject == null) { OpenSessionIntoPane(PaneA, session); return; }
+            if (PaneB.ActiveProject == null) { OpenSessionIntoPane(PaneB, session); return; }
+            ShowProjectTargetPicker(pane => OpenSessionIntoPane(pane, session));
+            return;
+        }
+
+        OpenSessionIntoPane(_focusedPane, session);
+    }
+
+    private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session)
+    {
+        _focusedPane = pane;
+        pane.OpenSession(session);
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
     }
 
     private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
@@ -1880,7 +1913,7 @@ public partial class MainWindow : Window
 
     // 별도 최상위 창으로 띄운다(터미널 WebView2 HWND 위에 합성). 중앙 패널(CenterSplit) 영역에
     // 정확히 겹치도록 위치·크기를 잡고, 좌/우 컬럼 폭은 실제 PaneA/Gap/PaneB 폭으로 채운다.
-    private void ShowProjectTargetPicker(ProjectItem proj)
+    private void ShowProjectTargetPicker(Action<WorkspacePaneView> onSelect)
     {
         _projectTargetPickerWindow?.Close();
 
@@ -1898,7 +1931,7 @@ public partial class MainWindow : Window
         win.Top = dip.Y;
         win.Width = CenterSplit.ActualWidth;
         win.Height = CenterSplit.ActualHeight;
-        win.PaneSelected += pane => SelectProjectIntoPane(pane == "A" ? LeftPane : RightPane, proj);
+        win.PaneSelected += pane => onSelect(pane == "A" ? LeftPane : RightPane);
         win.Closed += PanePicker_Closed;
         _projectTargetPickerWindow = win;
         // picker 는 포커스를 안 가져가므로 취소(바깥 클릭·Esc)는 메인 창에서 감지한다.
@@ -1917,7 +1950,6 @@ public partial class MainWindow : Window
 
     private void HidePanePick() => _projectTargetPickerWindow?.Close();
 
-    private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
     private void RenameSession(SessionItem session) => PaneFor(session).RenameSession(session);
     private void DeleteSession(SessionItem session) => PaneFor(session).DeleteSession(session);
