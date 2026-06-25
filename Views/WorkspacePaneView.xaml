@@ -349,7 +349,7 @@
                 <Path Grid.Row="0" Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
                       Width="40" Height="40" Stroke="{DynamicResource TextMutedBrush}"
                       HorizontalAlignment="Center" Opacity="0.5"/>
-                <TextBlock Grid.Row="1" Text="프로젝트를 추가하고 세션을 열어 Claude Code를 시작하세요."
+                <TextBlock x:Name="EmptyStateText" Grid.Row="1" Text="프로젝트를 추가하고 세션을 열어 Claude Code를 시작하세요."
                            Margin="0,16,0,0" FontSize="{DynamicResource Fs13}"
                            Foreground="{DynamicResource TextMutedBrush}" TextAlignment="Center"
                            TextWrapping="Wrap"/>

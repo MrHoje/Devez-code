@@ -1669,6 +1669,7 @@ public partial class MainWindow : Window
         else
         {
             PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+            PaneB.SetEmptyTextWrapping(true);
             UpdatePaneFocusVisual();
         }
     }
@@ -1678,9 +1679,11 @@ public partial class MainWindow : Window
     private async Task AnimateSplitOpenAsync()
     {
         await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
+        PaneB.SetEmptyTextWrapping(false); // 펼침 애니메이션 중 줄바꿈 방지
         AnimatePaneSplit(0, 1, () =>
         {
             PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+            PaneB.SetEmptyTextWrapping(true); // 완전히 펼쳐진 후에만 줄바꿈
             PaneA.ResumeTerminalOnly();
             PaneB.ResumeTerminalOnly();
             UpdatePaneFocusVisual(animate: false);
@@ -1754,6 +1757,7 @@ public partial class MainWindow : Window
     private async Task AnimateSplitCloseAsync(bool swapped)
     {
         await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
+        PaneB.SetEmptyTextWrapping(false); // 접힘 애니메이션 중 줄바꿈 방지
         AnimatePaneSplit(1, 0, () =>
         {
             if (!swapped) PaneB.ClearForHide();   // 비스왑: 축소 완료 후 세션/터미널 배선 해제(컬렉션·ConPTY·기록은 보존).

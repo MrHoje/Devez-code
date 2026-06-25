@@ -106,6 +106,13 @@ public partial class WorkspacePaneView : UserControl
         else
             FocusFrame.BorderBrush = System.Windows.Media.Brushes.Transparent;
     }
+    /// <summary>분할 접힘/펼침 애니메이션 중 줄바꿈을 꺼서 텍스트가 세로로 늘어나지 않게 한다.
+    /// 완전히 보일 때만 Wrap 으로 복원한다.</summary>
+    public void SetEmptyTextWrapping(bool wrap)
+    {
+        if (EmptyStateText == null) return;
+        EmptyStateText.TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap;
+    }
 
     /// <summary>세션 소유권 이전 — 이 패널이 해당 세션을 활성으로 들고 있으면 배선을 끊고 다음 세션으로(없으면 비움).</summary>
     public void ReleaseSessionIfActive(SessionItem s)
