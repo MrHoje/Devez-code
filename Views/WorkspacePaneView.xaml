@@ -357,7 +357,7 @@
                 <TextBlock Grid.Row="1" Text="프로젝트를 추가하고 세션을 열어 Claude Code를 시작하세요."
                            Margin="0,16,0,0" FontSize="{DynamicResource Fs13}"
                            Foreground="{DynamicResource TextMutedBrush}" TextAlignment="Center"
-                           TextTrimming="CharacterEllipsis"/>
+                           TextWrapping="Wrap"/>
             </Grid>
 
             <Grid x:Name="TerminalLoadingOverlay" Visibility="Collapsed"
