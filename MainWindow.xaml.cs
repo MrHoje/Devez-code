@@ -1641,19 +1641,26 @@ public partial class MainWindow : Window
         PersistSplitState();
 
         if (animate)
-        {
-            // PaneB 를 0% → 50% 로 펼치고, 완료 후 1* 로 고정 + 포커스 액센트 표시.
-            AnimatePaneSplit(0, 1, () =>
-            {
-                PaneBCol.Width = new GridLength(1, GridUnitType.Star);
-                UpdatePaneFocusVisual(animate: false);
-            });
-        }
+            _ = AnimateSplitOpenAsync();
         else
         {
             PaneBCol.Width = new GridLength(1, GridUnitType.Star);
             UpdatePaneFocusVisual();
         }
+    }
+
+    /// <summary>분할 펼침: 두 패널 터미널을 스냅샷으로 정지(WebView2 매 프레임 리사이즈 깜빡임 방지)한 뒤
+    /// PaneB 를 0%→50% 로 펼치고, 완료 시 라이브 터미널로 복원한다.</summary>
+    private async Task AnimateSplitOpenAsync()
+    {
+        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(), PaneB.SuspendTerminalOnlyAsync());
+        AnimatePaneSplit(0, 1, () =>
+        {
+            PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+            PaneA.ResumeTerminalOnly();
+            PaneB.ResumeTerminalOnly();
+            UpdatePaneFocusVisual(animate: false);
+        });
     }
 
     /// <summary>시작 시 저장된 분할 상태 복원 — 패널 B 프로젝트/세션을 열고 포커스는 A 로 되돌린다.</summary>
@@ -1715,7 +1722,14 @@ public partial class MainWindow : Window
         Sidebar.IsSplitActive = false;
         UpdateSplitToggleVisual();
 
-        // PaneB 를 50% → 0% 로 접고, 완료 후 숨김·세션 배선 해제·컬럼 정규화.
+        _ = AnimateSplitCloseAsync(swapped);
+    }
+
+    /// <summary>분할 접힘: 두 패널 터미널을 스냅샷으로 정지한 뒤 PaneB 를 50%→0% 로 접고,
+    /// 완료 시 PaneB 숨김·세션 배선 해제·컬럼 정규화 후 PaneA 를 라이브로 복원한다.</summary>
+    private async Task AnimateSplitCloseAsync(bool swapped)
+    {
+        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(), PaneB.SuspendTerminalOnlyAsync());
         AnimatePaneSplit(1, 0, () =>
         {
             if (!swapped) PaneB.ClearForHide();   // 비스왑: 축소 완료 후 세션/터미널 배선 해제(컬렉션·ConPTY·기록은 보존).
@@ -1724,6 +1738,8 @@ public partial class MainWindow : Window
             PaneBCol.Width = new GridLength(0);
             PaneSplitterCol.Width = new GridLength(0);
             PaneACol.Width = new GridLength(1, GridUnitType.Star);
+            PaneB.ResumeTerminalOnly();   // 숨겨질 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록).
+            PaneA.ResumeTerminalOnly();
             UpdatePaneFocusVisual(animate: false);
             PersistSplitState();
         });
