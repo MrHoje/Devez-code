@@ -45,6 +45,20 @@ export const DevezCodeRoomTracker = async () => {
     } catch (e) { debug(`writeBusy failed: ${e.message}`); }
   };
 
+  // opencode 는 한 턴 안에서도 스텝(도구 실행) 사이마다 session.idle 을 (연달아) 쏘고 곧바로 다시
+  // 생성을 재개한다. 그때마다 idle 을 쓰면 좌측 스피너가 깜빡이고, 무엇보다 DevezCode 가 busy→idle
+  // 전이를 "응답 완료" 로 잡아 한 턴에 알림이 여러 번 뜬다. → idle 을 디바운스한다: session.idle 은
+  // 타이머만 (재)설정하고, 그 사이 running(사용자/재개) 이 오면 취소한다. 잠깐 쉬었다 재개하는 중간
+  // idle 은 모두 흡수되고, 진짜 턴 종료(이후 재개 없음)에서만 idle 이 한 번 기록된다.
+  const IDLE_DEBOUNCE_MS = 2500;
+  let idleTimer = null;
+  const cancelIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+  const setRunning = () => { cancelIdle(); writeBusy("running"); };
+  const scheduleIdle = () => {
+    cancelIdle();
+    idleTimer = setTimeout(() => { idleTimer = null; writeBusy("idle"); }, IDLE_DEBOUNCE_MS);
+  };
+
   const writeLastmsg = (text) => {
     try {
       if (!safe || !text) return;
@@ -123,7 +137,7 @@ export const DevezCodeRoomTracker = async () => {
         }
         // 세션 처리 종료 신호 → 스피너 끄기. session.idle = 응답 완료, session.error = 실패.
         if (event.type === "session.idle" || event.type === "session.error") {
-          writeBusy("idle");
+          scheduleIdle();
         }
         // 세션 생성/갱신 이벤트 — 최신 ID 덮어씀 (--clear·새 대화 시작 시 자동 갱신).
         if (event.type === "session.created" || event.type === "session.updated") {
@@ -157,7 +171,7 @@ export const DevezCodeRoomTracker = async () => {
             writeLastmsg(part.text);
             // 스피너 시작 — chat.message 훅은 버전에 따라 안 불려서(lastmsg 도 이 event 경로로 저장됨)
             // 검증된 user-part 경로에서 running 을 쓴다. session.idle/error 가 idle 로 해제.
-            writeBusy("running");
+            setRunning();
           }
         }
       } catch (e) { debug(`event handler error: ${e.message}`); }
@@ -170,7 +184,7 @@ export const DevezCodeRoomTracker = async () => {
           if (input.message.id) messageRole[input.message.id] = "user";
           const text = extractTextFromParts(input.message.parts);
           if (text) writeLastmsg(text);
-          writeBusy("running"); // user 프롬프트 전송 → 처리 시작 → 스피너 켜기
+          setRunning(); // user 프롬프트 전송 → 처리 시작 → 스피너 켜기
         }
       } catch (e) { debug(`chat.message error: ${e.message}`); }
     },
