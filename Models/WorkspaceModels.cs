@@ -183,6 +183,10 @@ public sealed class ProjectItem : NotifyBase
     /// 한 번 소비해 실제 FileTabItem 으로 만든다.</summary>
     public List<string> PendingOpenFiles { get; set; } = new();
 
+    /// <summary>이 프로젝트에서 마지막으로 활성화했던 탭 참조. 형식: "S:&lt;세션ID&gt;" 또는 "F:&lt;파일경로&gt;".
+    /// 프로젝트를 다시 선택할 때 이 탭을 복원한다(없거나 못 찾으면 기본 우선순위로 폴백). workspace.json 에 영속.</summary>
+    public string? LastActiveTabRef { get; set; }
+
     /// <summary>사이드바 호환을 위한 세션 전용 동기 뷰(ObservableCollection).
     /// Tabs.CollectionChanged 에서 SessionItem 만 추려 추가/제거한다 → 사이드바 바인딩이 즉시 갱신.</summary>
     public ObservableCollection<SessionItem> Sessions { get; } = new();

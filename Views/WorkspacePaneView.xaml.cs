@@ -177,20 +177,56 @@ public partial class WorkspacePaneView : UserControl
     public void SelectProject(ProjectItem proj)
     {
         SetActiveProject(proj);
-        SessionItem? target;
+
+        // 이전 활성 세션이 이 프로젝트 소속이면 그대로 유지.
         if (_activeSession != null && proj.Tabs.Contains(_activeSession) && !_activeSession.Hidden)
         {
-            target = _activeSession;
+            ActivateSession(_activeSession, unHide: false);
+            return;
         }
-        else
-        {
-            var sessions = proj.Tabs.OfType<SessionItem>().Where(s => !s.Hidden).ToList();
-            // 열려있는(실행 중) 세션 중 가장 위. 하나도 없으면 첫 세션.
-            target = sessions.FirstOrDefault(s => s.IsAlive) ?? sessions.FirstOrDefault();
-        }
+
+        // 이 프로젝트에서 마지막으로 봤던 탭(세션/파일)을 복원 시도.
+        if (TryActivateLastTab(proj)) return;
+
+        // 폴백: 실행 중 세션 중 가장 위 → 첫 세션 → 없으면 비움.
+        var sessions = proj.Tabs.OfType<SessionItem>().Where(s => !s.Hidden).ToList();
+        var target = sessions.FirstOrDefault(s => s.IsAlive) ?? sessions.FirstOrDefault();
         if (target != null) ActivateSession(target, unHide: false);
         else ClearActiveSession();
         ActiveChanged?.Invoke(this);
+    }
+
+    /// <summary>proj.LastActiveTabRef("S:&lt;id&gt;"/"F:&lt;path&gt;")가 가리키는 탭을 찾아 활성화. 성공 시 true.
+    /// 세션은 숨김 제외, 파일은 현재 열린 탭 중에서 찾는다(못 찾으면 false → 기본 폴백).</summary>
+    private bool TryActivateLastTab(ProjectItem proj)
+    {
+        var rf = proj.LastActiveTabRef;
+        if (string.IsNullOrEmpty(rf) || rf.Length < 2 || rf[1] != ':') return false;
+        var key = rf[2..];
+        switch (rf[0])
+        {
+            case 'S':
+                var sess = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden && s.Id == key);
+                if (sess == null) return false;
+                ActivateSession(sess, unHide: false);
+                return true;
+            case 'F':
+                var file = proj.Tabs.OfType<FileTabItem>()
+                    .FirstOrDefault(f => string.Equals(f.FilePath, key, StringComparison.OrdinalIgnoreCase));
+                if (file == null) return false;
+                ActivateFileTab(file);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>프로젝트의 "마지막 활성 탭" 참조를 갱신하고, 바뀐 경우에만 workspace.json 에 영속.</summary>
+    private void RecordActiveTab(ProjectItem proj, string tabRef)
+    {
+        if (proj.LastActiveTabRef == tabRef) return;
+        proj.LastActiveTabRef = tabRef;
+        WorkspaceStore.Save(Projects);
     }
 
     private void PreloadProjectSessions(ProjectItem proj, SessionItem? except)
@@ -307,6 +343,7 @@ public partial class WorkspacePaneView : UserControl
 
         _activeTab = session;
         _activeSession = session;
+        RecordActiveTab(parent, "S:" + session.Id);
         foreach (var t in parent.Tabs) t.IsSelected = ReferenceEquals(t, session);
 
         session.IsAlive = true;
@@ -420,6 +457,7 @@ public partial class WorkspacePaneView : UserControl
 
         _activeTab = tab;
         _activeSession = null;
+        RecordActiveTab(parent, "F:" + tab.FilePath);
         foreach (var t in parent.Tabs) t.IsSelected = ReferenceEquals(t, tab);
 
         HideSessionLoading();

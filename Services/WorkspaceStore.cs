@@ -24,6 +24,8 @@ public static class WorkspaceStore
         public List<ShortcutDto> Files { get; set; } = new();
         // 직전에 열려 있던 파일 편집기 탭의 절대 경로 목록. 재시작 시 다시 탭으로 복원.
         public List<string> OpenFiles { get; set; } = new();
+        // 마지막으로 활성화했던 탭 참조("S:<세션ID>"/"F:<파일경로>"). 프로젝트 재선택 시 복원.
+        public string? LastActiveTab { get; set; }
     }
     private sealed class WorkspaceDto { public List<ProjectDto> Projects { get; set; } = new(); }
 
@@ -86,6 +88,7 @@ public static class WorkspaceStore
                 foreach (var f in p.Files)
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 proj.PendingOpenFiles = p.OpenFiles ?? new();   // 시작 시 RestoreFileTabs 가 1회 소비
+                proj.LastActiveTabRef = p.LastActiveTab;
                 (proj.IsArchived ? archived : active).Add(proj);
             }
         }
@@ -129,6 +132,7 @@ public static class WorkspaceStore
         Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
         // 열린 파일 탭 경로 → 재시작 시 복원(Tabs 순서 그대로).
         OpenFiles = p.Tabs.OfType<FileTabItem>().Select(f => f.FilePath).ToList(),
+        LastActiveTab = p.LastActiveTabRef,
     };
 
     private static void SaveCore(ICollection<ProjectItem> list)
