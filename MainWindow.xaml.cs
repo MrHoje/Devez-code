@@ -1552,7 +1552,7 @@ public partial class MainWindow : Window
         var currentIndex = _splitActive ? _panes.IndexOf(_focusedPane) : -1;
         var slideFromX = 0d;
         if (currentIndex >= 0 && _lastFocusVisualIndex >= 0 && currentIndex != _lastFocusVisualIndex)
-            slideFromX = _lastFocusVisualIndex < currentIndex ? -36d : 36d;
+            slideFromX = _lastFocusVisualIndex < currentIndex ? -64d : 64d;
 
         foreach (var p in _panes)
             p.SetFocusedVisual(_splitActive && ReferenceEquals(p, _focusedPane), slideFromX);

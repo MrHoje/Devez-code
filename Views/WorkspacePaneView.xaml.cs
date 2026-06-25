@@ -112,30 +112,51 @@ public partial class WorkspacePaneView : UserControl
                 transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
                 {
                     To = 0,
-                    Duration = TimeSpan.FromMilliseconds(160),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                    Duration = TimeSpan.FromMilliseconds(240),
+                    EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut },
+                    FillBehavior = FillBehavior.Stop
                 });
+                transform.X = 0;
             }
 
             FocusAccent.BeginAnimation(OpacityProperty, new DoubleAnimation
             {
                 To = 1,
-                Duration = TimeSpan.FromMilliseconds(120),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                Duration = TimeSpan.FromMilliseconds(180),
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
             });
         }
         else
         {
-            if (transform != null) transform.BeginAnimation(TranslateTransform.XProperty, null);
+            if (transform != null)
+            {
+                transform.BeginAnimation(TranslateTransform.XProperty, null);
+                var exitX = slideFromX == 0 ? 0 : -slideFromX;
+                transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
+                {
+                    To = exitX,
+                    Duration = TimeSpan.FromMilliseconds(180),
+                    EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+                });
+            }
+
             var fade = new DoubleAnimation
             {
                 To = 0,
-                Duration = TimeSpan.FromMilliseconds(90),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                Duration = TimeSpan.FromMilliseconds(150),
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
             };
             fade.Completed += (_, _) =>
             {
-                if (FocusAccent.Opacity <= 0.01) FocusAccent.Visibility = Visibility.Collapsed;
+                if (FocusAccent.Opacity <= 0.01)
+                {
+                    FocusAccent.Visibility = Visibility.Collapsed;
+                    if (transform != null)
+                    {
+                        transform.BeginAnimation(TranslateTransform.XProperty, null);
+                        transform.X = 0;
+                    }
+                }
             };
             FocusAccent.BeginAnimation(OpacityProperty, fade);
         }
