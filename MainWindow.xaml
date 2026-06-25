@@ -189,9 +189,10 @@
                            StaysOpen="True">
                         <Border Width="{Binding ActualWidth, ElementName=CenterSplit}"
                                 Height="{Binding ActualHeight, ElementName=CenterSplit}"
-                                Background="#66000000"
+                                Background="#33000000"
                                 MouseLeftButtonDown="ProjectTargetPickerOverlay_MouseLeftButtonDown">
-                            <Grid Margin="28">
+                            <Grid Width="560" Height="220"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="4"/>

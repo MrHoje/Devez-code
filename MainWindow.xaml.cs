@@ -331,6 +331,7 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
+        CloseProjectTargetPicker();
         // WebView2(터미널/md 에디터/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
         // 종료 직전 화면을 스냅샷으로 캡처해 깔고 WebView 를 치운 뒤 "세션 닫는 중" 오버레이를 그 위에 띄운다.
         try { await SuspendTerminalWithSnapshotAsync(blankCurtain: false); }
@@ -883,6 +884,13 @@ public partial class MainWindow : Window
     /// <summary>F1 — 계정 사용량 사이드바 토글.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key == System.Windows.Input.Key.Escape && ProjectTargetPickerOverlay.IsOpen)
+        {
+            CloseProjectTargetPicker();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == System.Windows.Input.Key.F1)
         {
             SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
@@ -1717,6 +1725,12 @@ public partial class MainWindow : Window
         ProjectTargetPickerOverlay.IsOpen = true;
     }
 
+    private void CloseProjectTargetPicker()
+    {
+        _pendingProjectTarget = null;
+        ProjectTargetPickerOverlay.IsOpen = false;
+    }
+
     private void ProjectTargetPaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
@@ -1731,8 +1745,7 @@ public partial class MainWindow : Window
 
     private void ProjectTargetPickerOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        _pendingProjectTarget = null;
-        ProjectTargetPickerOverlay.IsOpen = false;
+        CloseProjectTargetPicker();
     }
     private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
