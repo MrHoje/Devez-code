@@ -1483,13 +1483,7 @@ public partial class MainWindow : Window
         _focusedPane = PaneB;
         if (bSession != null) PaneB.OpenSession(bSession);
         else if (bProject != null) PaneB.SelectProject(bProject);
-        else
-        {
-            // 패널 A 가 아닌 다른 프로젝트가 있으면 자동으로 B 에 연다(없으면 빈 패널).
-            var other = _projects.FirstOrDefault(p => !ReferenceEquals(p, PaneA.ActiveProject));
-            if (other != null) PaneB.SelectProject(other);
-            else SyncShellToFocusedPane();
-        }
+        else SyncShellToFocusedPane();   // 사용자 토글 시 B 는 빈 패널 — 직접 프로젝트를 고르게 한다.
         UpdatePaneFocusVisual();
         PersistSplitState();
     }
