@@ -787,9 +787,21 @@ public partial class MainWindow : Window
     // 패널 토글은 AnimatePanelAndSplitter 로 부드럽게 0/원래 폭을 보간한다(200ms, EaseIn).
     // 자식 컨트롤(Sidebar/FileExplorer)을 cacheTarget 으로 잡아 매 프레임 폭이 바뀌어도
     // 내부 트리·WebView2 가 다시 그려지는 깜빡임을 BitmapCache 로 차단한다 — HideEditorColumn 과 동일 패턴.
-    private void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
+    /// <summary>좌/우/사용량 패널 토글로 중앙 `*` 컬럼이 리사이즈될 때, 보이는 워크스페이스 패널의
+    /// 터미널 WebView2 를 스냅샷으로 정지해 매 프레임 reflow 깜빡임을 막는다(분할 애니메이션과 동일 처리).</summary>
+    private Task FreezeWorkspaceTerminalsAsync()
+        => Task.WhenAll(_panes.Where(p => p.Visibility == Visibility.Visible)
+                              .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true)));
+
+    private void UnfreezeWorkspaceTerminals()
+    {
+        foreach (var p in _panes) p.ResumeTerminalOnly();
+    }
+
+    private async void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
     {
         _leftAnimCancel?.Invoke();
+        await FreezeWorkspaceTerminalsAsync();
         if (_leftCollapsed)
         {
             _leftCollapsed = false;
@@ -802,7 +814,7 @@ public partial class MainWindow : Window
                 colMirrors: new[] { FooterSidebarCol },
                 splitterMirrors: Array.Empty<ColumnDefinition>(),
                 cacheTarget: Sidebar,
-                onComplete: () => _leftAnimCancel = null);
+                onComplete: () => { _leftAnimCancel = null; UnfreezeWorkspaceTerminals(); });
         }
         else
         {
@@ -820,13 +832,14 @@ public partial class MainWindow : Window
                 {
                     Sidebar.Visibility = Visibility.Collapsed;
                     _leftAnimCancel = null;
+                    UnfreezeWorkspaceTerminals();
                 });
         }
         SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
         UpdatePanelToggleVisual();
     }
 
-    private void RightPanelBtn_Click(object sender, RoutedEventArgs e)
+    private async void RightPanelBtn_Click(object sender, RoutedEventArgs e)
     {
         // 좁은 창: 도킹 대신 오버레이 드로어를 토글한다.
         if (_narrow == true)
@@ -837,6 +850,7 @@ public partial class MainWindow : Window
         }
 
         _rightAnimCancel?.Invoke();
+        await FreezeWorkspaceTerminalsAsync();
         if (_rightCollapsed)
         {
             _rightCollapsed = false;
@@ -854,6 +868,7 @@ public partial class MainWindow : Window
                     // 확장 완료 → 탭 버튼 폭을 최소 폭으로 복원(접힘 직전 0 으로 내렸던 것).
                     if (_fileExpMinWidth > 0) SetMinWidth(_fileExpMinWidth, FileExpCol, FooterFileExpCol);
                     _rightAnimCancel = null;
+                    UnfreezeWorkspaceTerminals();
                     UpdateUsageSidebarBorder(); // 채널 복원 완료 후 사용량 보더 복구
                 });
         }
@@ -873,6 +888,7 @@ public partial class MainWindow : Window
                 {
                     FileExplorer.Visibility = Visibility.Collapsed;
                     _rightAnimCancel = null;
+                    UnfreezeWorkspaceTerminals();
                     UpdateUsageSidebarBorder(); // 패널이 완전히 닫힌 뒤에 사용량 보더 보정(미리 사라지지 않게)
                 });
         }
@@ -916,11 +932,7 @@ public partial class MainWindow : Window
         _usageAnimCancel = null;
         if (animate)
         {
-            _usageAnimCancel = AnimateColumn(
-                UsageCol, open ? UsagePanelWidth : 0,
-                durationMs: 200, easeIn: !open,
-                cacheTarget: UsageSidebar,
-                onComplete: () => _usageAnimCancel = null);
+            _ = FreezeThenAnimateUsageAsync(open);
         }
         else
         {
@@ -930,6 +942,17 @@ public partial class MainWindow : Window
         if (persist) SettingsService.SaveUsagePanelOpen(open);
         UpdatePanelToggleVisual();
         UpdateUsageSidebarBorder();
+    }
+
+    /// <summary>사용량 패널 트윈 전 중앙 터미널을 스냅샷 정지 → 완료 시 복원(reflow 깜빡임 방지).</summary>
+    private async Task FreezeThenAnimateUsageAsync(bool open)
+    {
+        await FreezeWorkspaceTerminalsAsync();
+        _usageAnimCancel = AnimateColumn(
+            UsageCol, open ? UsagePanelWidth : 0,
+            durationMs: 200, easeIn: !open,
+            cacheTarget: UsageSidebar,
+            onComplete: () => { _usageAnimCancel = null; UnfreezeWorkspaceTerminals(); });
     }
 
     /// <summary>설정에 저장된 사이드 패널 뷰 전환 버튼 표시 여부를 우측 패널에 반영한다.</summary>
