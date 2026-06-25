@@ -77,6 +77,9 @@ public partial class ProjectTargetPickerWindow : Window
         SelectPane("B");
     }
 
+    // 카드 바깥(딤 오버레이) 클릭 → 닫기. 패널 A/B 클릭은 e.Handled=true 라 여기로 버블링되지 않는다.
+    private void Overlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => Close();
+
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)

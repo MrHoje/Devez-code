@@ -75,6 +75,8 @@ public partial class MainWindow : Window
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
         Sidebar.ProjectRenameRequested += RenameProject;
+        Sidebar.ShowInLeftPaneRequested  += p => ShowProjectInPane(p, left: true);
+        Sidebar.ShowInRightPaneRequested += p => ShowProjectInPane(p, left: false);
         Sidebar.ProjectArchiveRequested += ArchiveProject;
         Sidebar.ProjectUnarchiveRequested += UnarchiveProject;
         Sidebar.AddProjectFileRequested += AddProjectFile;
@@ -1449,6 +1451,33 @@ public partial class MainWindow : Window
         UpdatePaneRoles();
     }
 
+    /// <summary>프로젝트 메뉴 "왼쪽/오른쪽 패널에 표시". 분할 시에만 동작.
+    /// 대상이 반대 패널에 떠 있으면 좌우를 맞바꾸고(swap), 아니면 해당 패널에 띄운다.</summary>
+    private void ShowProjectInPane(ProjectItem p, bool left)
+    {
+        if (!_splitActive) return;
+        var target = left ? PaneA : PaneB;
+        var other = left ? PaneB : PaneA;
+        if (ReferenceEquals(target.ActiveProject, p)) return;   // 이미 그 패널 — 변화 없음(메뉴도 비활성)
+
+        if (ReferenceEquals(other.ActiveProject, p))
+        {
+            // 반대 패널에 떠 있던 프로젝트 → 좌우 swap: 원래 이 패널에 있던 걸 반대 패널로 보낸다.
+            var prev = target.ActiveProject;
+            target.SelectProject(p);
+            if (prev != null) other.SelectProject(prev);
+        }
+        else
+        {
+            target.SelectProject(p);
+        }
+
+        _focusedPane = target;
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+        UpdatePaneRoles();
+    }
+
     /// <summary>분할 중 각 프로젝트가 떠 있는 패널(좌=PaneA / 우=PaneB)을 PaneRole 에 반영.
     /// 사이드바 카드 헤더의 패널 배지가 이 값으로 좌/우 칸을 하이라이트한다. 비분할이면 전부 None.</summary>
     private void UpdatePaneRoles()
@@ -1518,6 +1547,7 @@ public partial class MainWindow : Window
         else SyncShellToFocusedPane();   // 사용자 토글 시 B 는 빈 패널 — 직접 프로젝트를 고르게 한다.
         UpdatePaneFocusVisual();
         UpdatePaneRoles();
+        Sidebar.IsSplitActive = true;
         PersistSplitState();
     }
 
@@ -1564,6 +1594,7 @@ public partial class MainWindow : Window
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
         UpdatePaneRoles();
+        Sidebar.IsSplitActive = false;
         PersistSplitState();
     }
 
@@ -1909,7 +1940,7 @@ public partial class MainWindow : Window
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
         StateChanged += OnStateChangedForFullScreen;
         Activated   += (_, _) => UpdateFullScreenTopmost();
-        Deactivated += (_, _) => { UpdateFullScreenTopmost(); _projectTargetPickerWindow?.Close(); };
+        Deactivated += (_, _) => UpdateFullScreenTopmost();
         // 시작 시 전체화면 복원: 저장된 일반 bounds 위치(=올바른 모니터)에서 전체화면 진입.
         if (_restoreFullScreen) { _restoreFullScreen = false; EnterFullScreen(); }
         else if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();

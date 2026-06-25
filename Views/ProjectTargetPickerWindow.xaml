@@ -6,7 +6,7 @@
         WindowStartupLocation="Manual"
         PreviewKeyDown="Window_PreviewKeyDown"
         FontFamily="{StaticResource PretendardFont}">
-    <Grid Background="#33000000">
+    <Grid Background="#33000000" MouseLeftButtonDown="Overlay_MouseLeftButtonDown">
         <Grid x:Name="Card" Width="560" Height="220"
               HorizontalAlignment="Center" VerticalAlignment="Center"
               Opacity="0" RenderTransformOrigin="0.5,0.5">
