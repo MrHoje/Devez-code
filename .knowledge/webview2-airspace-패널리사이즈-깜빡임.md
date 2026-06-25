@@ -41,23 +41,31 @@ HwndHost 는 `Visibility.Hidden` 에서 **레이아웃 슬롯을 남기며 네�
 핵심: **reflow(re-fit) 자체가 HWND 위에서 일어나므로 in-pane 스냅샷으로는 가릴 수 없다.**
 애니메이션 "도중"은 WebView 가 `Collapsed`(숨김)라 스냅샷이 덮어 깔끔하다. 문제는 **reveal 직후 1~2 프레임**.
 
-## reveal 깜빡임의 완전한 해법(미구현, 설계)
-in-pane 스냅샷으로는 불가능(airspace). 둘 중 하나가 필요:
-1. **최상위 커버 창**: reveal 직전에 중앙 영역을 덮는 borderless Window(picker 패턴)를 띄우고,
-   그 아래에서 WebView 를 `Visible` 로 돌려 reflow 를 보이지 않게 끝낸 뒤(짧은 settle, 또는 JS
-   "re-fit+render 완료" ack), 커버 창을 닫는다. 레이아웃이 최종에서 정적이라 프레임 추적 불필요.
-2. **추적 커버 창**: 작업 내내 중앙을 덮는 창이 매 프레임 중앙 rect 를 추종(`CompositionTarget.Rendering`),
-   터미널은 라이브로 그 아래서 리사이즈. 도중/reveal 모두 가려져 완전 무결점이나 구현/정렬 비용 큼.
+## reveal 깜빡임 해법 시도 기록
+in-pane 스냅샷으로는 불가능(airspace).
 
-> JS ack 만으로는 안 됨: WebView 가 `Visible` 인 순간 HWND 가 위로 올라와 reflow 가 이미 보임.
-> 반드시 최상위 창이 그 순간을 덮어야 한다.
+### ❌ 시도 1 — RenderTargetBitmap 정적 최상위 커버 창 (2026-06-26, 실패·롤백)
+reveal 직전 `CenterSplit` 을 `RenderTargetBitmap` 으로 캡처해 picker 패턴의 borderless 창으로
+덮고, 그 아래서 WebView 를 되살린 뒤(150ms settle) 닫는 방식. **실패**:
+- 깜빡임이 그대로였고(= 캡처/덮기 타이밍이 실제 reflow 순간을 못 가림),
+- 커버 창을 150ms 띄웠다 닫는 과정에서 "재개 시 더 이상한 동작"(정적 비트맵이 잠깐 떴다 튀는 인상)이 생김.
+→ 전부 롤백하고 단순 `Collapsed + ResumeTerminalOnly`(애니메이션 도중은 깔끔, reveal 1~2프레임만 잔존)로 복귀.
+
+### 향후 제대로 하려면 (미구현)
+- **추적 커버 창**: 작업 내내(애니메이션 도중부터 settle 까지) 중앙을 덮는 창이 매 프레임 중앙 rect 를
+  추종(`CompositionTarget.Rendering`)하고, 터미널은 라이브로 그 아래서 리사이즈. 정적 캡처가 아니라
+  "작업 시작 전"에 띄워 reveal 까지 한 번도 안 걷어야 reflow 순간을 확실히 가린다.
+- 또는 JS(xterm)에 "최종 폭 re-fit+render 완료" ack 를 추가해 그 신호 뒤에만 커버를 걷는다.
+
+> 교훈: 정적 캡처를 reveal "직후"에만 잠깐 씌우면 ① 캡처 시점이 한 프레임 늦고 ② 걷는 순간 라이브와
+> 어긋나 더 튄다. 커버는 reflow 가 시작되기 "전"부터 끝날 "때까지" 연속으로 덮고 있어야 의미가 있다.
 
 ## 적용 현황 (2026-06-26)
 - 분할 펼침/접힘: `AnimateSplitOpenAsync/CloseAsync` 에서 양 패널 `SuspendTerminalOnlyAsync(anchorTopLeft)` → 애니메이션 → `ResumeTerminalOnly`.
 - 좌/우/사용량 토글: `FreezeWorkspaceTerminalsAsync()`/`UnfreezeWorkspaceTerminals()` 로 동일 처리.
 - 설정/MCP 창: `SuspendTerminalWithSnapshotAsync(blankCurtain:false)` (단색 커튼 X, 스냅샷 O).
 - 종료("세션 닫는 중" 오버레이): 스냅샷 캡처 → 렌더 프레임 flush → `ShutdownOverlay` 표시 순서.
-- 위 모두 애니메이션 "도중"은 매끄럽고, 리사이즈 경로의 reveal 1~2 프레임 깜빡임만 잔존(최상위 커버 창 미구현).
+- 위 모두 애니메이션 "도중"은 매끄럽고, 리사이즈 경로의 reveal 1~2 프레임 깜빡임만 잔존(정적 커버 창 시도는 실패·롤백, 위 "시도 기록" 참고).
 
 ## 주의
 - 새 오버레이/패널을 터미널 위에 띄울 땐 반드시 먼저 `SuspendTerminal...` 로 WebView 를 `Collapsed`.

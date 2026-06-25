@@ -795,58 +795,9 @@ public partial class MainWindow : Window
         => Task.WhenAll(_panes.Where(p => p.Visibility == Visibility.Visible)
                               .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true)));
 
-    private async void UnfreezeWorkspaceTerminals()
-        => await RevealWorkspaceTerminalsAsync();
-
-    private Views.SnapshotCoverWindow? _centerCover;
-
-    /// <summary>리사이즈가 끝난(레이아웃 정적) 뒤 라이브 터미널을 되살린다. reveal 순간 xterm 이 최종 폭으로
-    /// re-fit 하며 1~2 프레임 비치는 깜빡임을, 중앙 영역을 캡처한 최상위 커버 창으로 가린 채 처리한다(airspace 우회).
-    /// 커버는 WebView 가 아직 Collapsed(=in-pane 스냅샷이 보이는) 상태에서 캡처해야 실제 화면과 일치한다.</summary>
-    private async Task RevealWorkspaceTerminalsAsync()
+    private void UnfreezeWorkspaceTerminals()
     {
-        var cover = ShowCenterCover();                       // 1) 현재(스냅샷) 화면을 최상위 창으로 덮는다.
-        foreach (var p in _panes) p.ResumeTerminalOnly();    // 2) 라이브 WebView 복귀 → 커버 아래서 reflow.
-        if (cover != null)
-        {
-            await Task.Delay(150);                           // 3) re-fit + paint 정착 대기.
-            cover.Close();                                   // 4) 커버 제거 → 이미 정착된 라이브가 드러난다.
-            if (ReferenceEquals(_centerCover, cover)) _centerCover = null;
-        }
-    }
-
-    /// <summary>CenterSplit 영역을 캡처해(현재는 in-pane 스냅샷이 보임) 그 위치에 정확히 겹치는 최상위 창으로 띄운다.</summary>
-    private Views.SnapshotCoverWindow? ShowCenterCover()
-    {
-        try
-        {
-            if (CenterSplit.ActualWidth < 2 || CenterSplit.ActualHeight < 2) return null;
-            var dpi = VisualTreeHelper.GetDpi(this);
-            int pw = (int)Math.Ceiling(CenterSplit.ActualWidth * dpi.DpiScaleX);
-            int ph = (int)Math.Ceiling(CenterSplit.ActualHeight * dpi.DpiScaleY);
-            var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(
-                pw, ph, 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
-            rtb.Render(CenterSplit);
-            rtb.Freeze();
-
-            var topLeftDev = CenterSplit.PointToScreen(new Point(0, 0));
-            var m = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-            var dip = m.Transform(topLeftDev);
-
-            _centerCover?.Close();   // 직전 커버가 남아 있으면 정리(빠른 연속 토글).
-            var win = new Views.SnapshotCoverWindow(rtb)
-            {
-                Owner = this,
-                Left = dip.X,
-                Top = dip.Y,
-                Width = CenterSplit.ActualWidth,
-                Height = CenterSplit.ActualHeight
-            };
-            _centerCover = win;
-            win.Show();
-            return win;
-        }
-        catch { return null; }
+        foreach (var p in _panes) p.ResumeTerminalOnly();
     }
 
     private async void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
@@ -1730,8 +1681,9 @@ public partial class MainWindow : Window
         AnimatePaneSplit(0, 1, () =>
         {
             PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+            PaneA.ResumeTerminalOnly();
+            PaneB.ResumeTerminalOnly();
             UpdatePaneFocusVisual(animate: false);
-            _ = RevealWorkspaceTerminalsAsync();   // 최상위 커버로 reveal reflow 깜빡임 차단.
         });
     }
 
@@ -1810,9 +1762,10 @@ public partial class MainWindow : Window
             PaneBCol.Width = new GridLength(0);
             PaneSplitterCol.Width = new GridLength(0);
             PaneACol.Width = new GridLength(1, GridUnitType.Star);
+            PaneB.ResumeTerminalOnly();   // 숨겨질 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록).
+            PaneA.ResumeTerminalOnly();
             UpdatePaneFocusVisual(animate: false);
             PersistSplitState();
-            _ = RevealWorkspaceTerminalsAsync();   // 최상위 커버로 reveal reflow 깜빡임 차단(PaneB 스냅샷 정리 포함).
         });
     }
 
