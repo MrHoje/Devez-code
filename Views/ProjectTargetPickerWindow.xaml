@@ -29,10 +29,10 @@
             </Border.Style>
             <TextBlock x:Name="PaneAText" VerticalAlignment="Center" HorizontalAlignment="Center"
                        Margin="16,0" TextTrimming="CharacterEllipsis"
-                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                       FontSize="28" FontWeight="Bold"
                        Foreground="{DynamicResource PrimaryBrush}">
                 <TextBlock.Effect>
-                    <DropShadowEffect x:Name="ShadowA" BlurRadius="6" ShadowDepth="0" Opacity="0.6" Color="Black"/>
+                    <DropShadowEffect x:Name="ShadowA" BlurRadius="12" ShadowDepth="0" Opacity="1" Color="Black"/>
                 </TextBlock.Effect>
             </TextBlock>
         </Border>
@@ -51,10 +51,10 @@
             </Border.Style>
             <TextBlock x:Name="PaneBText" VerticalAlignment="Center" HorizontalAlignment="Center"
                        Margin="16,0" TextTrimming="CharacterEllipsis"
-                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                       FontSize="28" FontWeight="Bold"
                        Foreground="{DynamicResource PrimaryBrush}">
                 <TextBlock.Effect>
-                    <DropShadowEffect x:Name="ShadowB" BlurRadius="6" ShadowDepth="0" Opacity="0.6" Color="Black"/>
+                    <DropShadowEffect x:Name="ShadowB" BlurRadius="12" ShadowDepth="0" Opacity="1" Color="Black"/>
                 </TextBlock.Effect>
             </TextBlock>
         </Border>
