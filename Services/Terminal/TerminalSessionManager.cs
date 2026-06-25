@@ -904,6 +904,11 @@ public sealed class TerminalSessionManager
                 // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를
                 // 자동 삭제한다(그 세션은 resume 불가). 30일 보존.
                 cleanupPeriodDays = 30,
+                // theme 을 최상위 소스(이 파일은 --settings 로 주입돼 command-line scope = 최우선)에 박는다.
+                // 이게 없으면 claude 의 effective theme 이 'auto'(터미널 배경 자동 감지)로 떨어지는데,
+                // ConPTY + xterm 환경에선 배경색 쿼리(OSC 11) 응답이 레이스라 가끔 감지 실패 → light(흰 화면)로
+                // 세션 내내 고정된다. 현재 앱 테마를 명시해 auto 경로 자체를 제거한다(dark→"dark", soft/minimal→custom:slug).
+                theme = ClaudeCustomThemes.MapToClaudeTheme(DevezCode.App.CurrentTheme),
                 statusLine,
                 hooks = new
                 {
