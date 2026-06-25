@@ -18,7 +18,7 @@
            → 1px 내려 구분선을 피하면 4면이 모두 2px 로 동일하게 보인다.
            UseLayoutRounding/SnapsToDevicePixels: 별표 레이아웃의 소수 픽셀 경계에서 좌/우가 1~2px 로
            들쭉날쭉해지지 않도록 디바이스 픽셀에 스냅해 4면 두께를 균일하게 한다. -->
-      <Border x:Name="FocusFrame" BorderThickness="2" BorderBrush="Transparent"
+      <Border x:Name="FocusFrame" BorderThickness="1" BorderBrush="Transparent"
               Margin="0,1,0,0" UseLayoutRounding="True" SnapsToDevicePixels="True">
       <Grid>
         <Grid.RowDefinitions>
