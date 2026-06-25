@@ -1504,14 +1504,20 @@ public partial class MainWindow : Window
     /// <summary>시작 시 저장된 분할 상태 복원 — 패널 B 프로젝트/세션을 열고 포커스는 A 로 되돌린다.</summary>
     private void RestoreSplitState()
     {
-        // 프로젝트 자동 로드 옵션이 꺼져 있으면 분할 복원도 건너뛴다 — 미선택 상태로 시작(기본).
-        if (!SettingsService.LoadAutoLoadLastProject()) return;
+        // 분할(좌우 분리) 레이아웃은 옵션과 무관하게 항상 복원한다.
         var (active, bProjPath, bSessId) = SettingsService.LoadSplitState();
         if (!active) return;
 
-        var bProj = _projects.FirstOrDefault(p => p.Path == bProjPath);
-        var bSess = bProj?.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId)
+        // 단, 패널 B 의 프로젝트/세션 복원은 "프로젝트 자동 로드" 옵션이 켜진 경우에만.
+        // 옵션이 꺼져 있으면 빈 분할 패널로 시작한다(미선택 상태).
+        ProjectItem? bProj = null;
+        SessionItem? bSess = null;
+        if (SettingsService.LoadAutoLoadLastProject())
+        {
+            bProj = _projects.FirstOrDefault(p => p.Path == bProjPath);
+            bSess = bProj?.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId)
                     ?? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId);
+        }
         EnableSplit(bProj, bSess);
 
         _focusedPane = PaneA;
