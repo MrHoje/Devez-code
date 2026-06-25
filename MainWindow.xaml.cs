@@ -1738,18 +1738,20 @@ public partial class MainWindow : Window
         ProjectTargetPaneAText.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
         ProjectTargetPaneBText.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
 
-        // 오버레이를 미리 visible 상태로(투명) 만들고 suspend + 애니메이션 동시 진행 — Visibility 토글이 없어 깜빡임 방지
+        // 오버레이 root 를 먼저 visible(투명) 상태로 만든 뒤 terminal 을 suspend 한다.
+        // 애니메이션은 suspend 후에 시작해야 WebView2 뒤에서 숨은 채로 진행되지 않아 깜빡임이 없다.
         ProjectTargetPickerOverlay.IsHitTestVisible = true;
         ProjectTargetPickerOverlay.Opacity = 1;
-
-        AnimateProjectTargetPickerOpen();
 
         await SuspendProjectTargetPickerBackdropAsync();
 
         if (!ReferenceEquals(_pendingProjectTarget, proj) || !IsActive)
         {
             CloseProjectTargetPicker();
+            return;
         }
+
+        AnimateProjectTargetPickerOpen();
     }
 
     private void AnimateProjectTargetPickerOpen()
