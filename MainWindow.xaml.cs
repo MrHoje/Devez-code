@@ -27,6 +27,12 @@ public partial class MainWindow : Window
     // 중앙 워크스페이스 패널들(분할 시 2개). _focusedPane = 사이드바/파일탐색기/단축키가 향하는 패널.
     private readonly List<WorkspacePaneView> _panes = new();
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
+
+    // 좌/우 위치 교환은 콘텐츠 이동 없이 패널의 물리 컬럼만 맞바꿔 표현한다(터미널 재부착=세션 재로딩 방지).
+    // _panesSwapped=false → PaneA 가 좌(col0)/PaneB 가 우(col2), true → 반대. 비분할 시엔 항상 false 로 정규화.
+    private bool _panesSwapped;
+    private WorkspacePaneView LeftPane  => _panesSwapped ? PaneB : PaneA;
+    private WorkspacePaneView RightPane => _panesSwapped ? PaneA : PaneB;
     private string? _explorerDir;                      // 우측 파일탐색기가 보고 있는 경로(중복 ShowDirectory 방지)
     private readonly PerfMonitorService _perfMonitor = new();
     // 계정 사용량: statusLine 훅(세션 활성 시 거의 실시간) + OAuth API(세션 없어도 3분 주기) 두 소스를 병합.
@@ -1444,7 +1450,7 @@ public partial class MainWindow : Window
 
         if (ReferenceEquals(pane, _focusedPane)) SyncShellToFocusedPane();
         // 패널 B 의 활성이 바뀌면 분할 복원용 상태를 갱신(패널 A 는 SyncShell 의 last-active 가 담당).
-        if (ReferenceEquals(pane, PaneB)) PersistSplitState();
+        if (ReferenceEquals(pane, RightPane)) PersistSplitState();
         UpdatePaneRoles();
     }
 
@@ -1453,34 +1459,54 @@ public partial class MainWindow : Window
     private void ShowProjectInPane(ProjectItem p, bool left)
     {
         if (!_splitActive) return;
-        var target = left ? PaneA : PaneB;
-        var other = left ? PaneB : PaneA;
+        var target = left ? LeftPane : RightPane;
+        var other  = left ? RightPane : LeftPane;
         if (ReferenceEquals(target.ActiveProject, p)) return;   // 이미 그 패널 — 변화 없음(메뉴도 비활성)
 
         if (ReferenceEquals(other.ActiveProject, p))
         {
-            // 반대 패널에 떠 있던 프로젝트 → 좌우 swap: 원래 이 패널에 있던 걸 반대 패널로 보낸다.
-            var prev = target.ActiveProject;
-            target.SelectProject(p);
-            if (prev != null) other.SelectProject(prev);
-        }
-        else
-        {
-            target.SelectProject(p);
+            // 반대 패널에 이미 떠 있는 프로젝트 → 좌/우 위치만 교환(콘텐츠 이동 X = 세션 재로딩 없음).
+            // 목표 패널이 비어 있었으면 빈 패널이 반대로 넘어가 '이동', 차 있었으면 '맞바꿈'이 된다.
+            SwapPanePositions();
+            _focusedPane = other;   // p 가 들어 있던 패널 — 스왑 후 목표 슬롯으로 이동한다.
+            SyncShellToFocusedPane();
+            UpdatePaneRoles();
+            PersistSplitState();
+            // 컬럼 재배치 후 레이아웃이 반영된 뒤 포커스 라인을 갱신.
+            Dispatcher.BeginInvoke(() => UpdatePaneFocusVisual(), System.Windows.Threading.DispatcherPriority.Render);
+            return;
         }
 
+        // 어느 패널에도 없던 프로젝트 → 목표 패널에 새로 연다(이건 실제 로딩이라 불가피).
+        target.SelectProject(p);
         _focusedPane = target;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
         UpdatePaneRoles();
+        PersistSplitState();
+    }
+
+    /// <summary>두 패널의 물리 컬럼(좌 col0 / 우 col2)을 맞바꿔 좌/우 위치만 교환한다.
+    /// 콘텐츠·터미널은 각 패널에 그대로 남으므로 세션 재로딩이 없다. 분할 중에만 호출.</summary>
+    private void SwapPanePositions()
+    {
+        int ca = Grid.GetColumn(PaneA), cb = Grid.GetColumn(PaneB);
+        Grid.SetColumn(PaneA, cb);
+        Grid.SetColumn(PaneB, ca);
+        _panesSwapped = !_panesSwapped;
+
+        // 우측 패널 표식(탭바 X=분할 닫기 버튼)을 새 좌/우에 맞춰 갱신.
+        PaneA.IsRightPane = ReferenceEquals(RightPane, PaneA);
+        PaneB.IsRightPane = ReferenceEquals(RightPane, PaneB);
+        foreach (var pn in _panes) pn.SetSplitActive(_splitActive);
     }
 
     /// <summary>분할 중 각 프로젝트가 떠 있는 패널(좌=PaneA / 우=PaneB)을 PaneRole 에 반영.
     /// 사이드바 카드 헤더의 패널 배지가 이 값으로 좌/우 칸을 하이라이트한다. 비분할이면 전부 None.</summary>
     private void UpdatePaneRoles()
     {
-        var left = _splitActive ? PaneA.ActiveProject : null;
-        var right = _splitActive ? PaneB.ActiveProject : null;
+        var left = _splitActive ? LeftPane.ActiveProject : null;
+        var right = _splitActive ? RightPane.ActiveProject : null;
         foreach (var p in _projects.Concat(_archivedProjects))
             p.PaneRole = ReferenceEquals(p, left) ? PaneRole.Left
                        : ReferenceEquals(p, right) ? PaneRole.Right
@@ -1494,7 +1520,7 @@ public partial class MainWindow : Window
            ?? _focusedPane;
 
     private void PersistSplitState()
-        => SettingsService.SaveSplitState(_splitActive, PaneB.ActiveProject?.Path, PaneB.ActiveSession?.Id);
+        => SettingsService.SaveSplitState(_splitActive, RightPane.ActiveProject?.Path, RightPane.ActiveSession?.Id);
 
     /// <summary>포커스 패널의 활성 프로젝트/세션을 셸(파일탐색기·사이드바·last-active)에 반영.</summary>
     private void SyncShellToFocusedPane()
@@ -1529,6 +1555,13 @@ public partial class MainWindow : Window
     {
         if (_splitActive) return;
         _splitActive = true;
+
+        // 분할 진입은 항상 정규 배치(PaneA=좌/PaneB=우)에서 시작. (DisableSplit 가 이미 정규화하지만 방어적으로 보장)
+        _panesSwapped = false;
+        Grid.SetColumn(PaneA, 0);
+        Grid.SetColumn(PaneB, 2);
+        PaneA.IsRightPane = false;
+        PaneB.IsRightPane = true;
 
         PaneSplitterCol.Width = new GridLength(4);
         PaneBCol.Width = new GridLength(1, GridUnitType.Star);
@@ -1577,15 +1610,38 @@ public partial class MainWindow : Window
         if (!_splitActive) return;
         _splitActive = false;
 
-        // 포커스를 먼저 A 로 옮긴 뒤 B 를 정리해야 B 비우기가 셸의 last-active 를 건드리지 않는다.
+        // 좌측(주) 패널 콘텐츠를 유지, 우측은 버린다. 스왑 상태에서는 유지 콘텐츠가 PaneB 에 있을 수 있다.
+        var keep = LeftPane;
+        var drop = RightPane;
+        if (!ReferenceEquals(keep, PaneA))
+        {
+            // 비분할의 주 패널은 PaneA 이므로, 스왑으로 PaneB 에 있던 유지 콘텐츠를 PaneA 로 되돌린다.
+            // (분할 해제 시점이라 한 번의 재부착은 허용 — '단순 위치 변경'이 아니다.)
+            var proj = keep.ActiveProject;
+            var sess = keep.ActiveSession;
+            drop.ClearForHide();   // PaneA(=drop) 비우기
+            keep.ClearForHide();   // PaneB(=keep) 콘텐츠 떼기
+            if (sess != null) PaneA.OpenSession(sess);
+            else if (proj != null) PaneA.SelectProject(proj);
+        }
+        else
+        {
+            drop.ClearForHide();   // PaneB 의 세션/터미널 배선을 끊고(컬렉션·ConPTY·기록은 보존) 숨긴다.
+        }
+
         _focusedPane = PaneA;
-        // 패널 B 의 세션/터미널 배선을 끊고(컬렉션·ConPTY·기록은 보존) 숨긴다.
-        PaneB.ClearForHide();
         PaneB.Visibility = Visibility.Collapsed;
         PaneSplitter.Visibility = Visibility.Collapsed;
+
+        // 컬럼 정규화: PaneA=col0(*), Splitter=col1(0), PaneB=col2(0). 좌/우 스왑 상태 해제.
+        Grid.SetColumn(PaneA, 0);
+        Grid.SetColumn(PaneB, 2);
         PaneBCol.Width = new GridLength(0);
         PaneSplitterCol.Width = new GridLength(0);
         PaneACol.Width = new GridLength(1, GridUnitType.Star);
+        _panesSwapped = false;
+        PaneA.IsRightPane = false;
+        PaneB.IsRightPane = true;
 
         foreach (var p in _panes) p.SetSplitActive(false);
         SyncShellToFocusedPane();
@@ -1768,13 +1824,13 @@ public partial class MainWindow : Window
 
         var win = new ProjectTargetPickerWindow { Owner = this };
         // CenterSplit 의 실제 컬럼 GridLength 를 그대로 복사 → 동일 폭에서 좌/우가 패널과 정확히 일치.
-        win.Configure(PaneA.ActiveProject?.Name ?? "빈 패널", PaneB.ActiveProject?.Name ?? "빈 패널",
+        win.Configure(LeftPane.ActiveProject?.Name ?? "빈 패널", RightPane.ActiveProject?.Name ?? "빈 패널",
                       PaneACol.Width, PaneSplitterCol.Width, PaneBCol.Width);
         win.Left = dip.X;
         win.Top = dip.Y;
         win.Width = CenterSplit.ActualWidth;
         win.Height = CenterSplit.ActualHeight;
-        win.PaneSelected += pane => SelectProjectIntoPane(pane == "A" ? PaneA : PaneB, proj);
+        win.PaneSelected += pane => SelectProjectIntoPane(pane == "A" ? LeftPane : RightPane, proj);
         _projectTargetPickerWindow = win;
         win.Show();
     }
