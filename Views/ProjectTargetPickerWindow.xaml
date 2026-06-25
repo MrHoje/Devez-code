@@ -29,7 +29,7 @@
             </Border.Style>
             <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
                 <!-- 블러 배경 rectangle -->
-                <Border CornerRadius="14" Background="#99000000" IsHitTestVisible="False">
+                <Border CornerRadius="14" Background="#E6000000" IsHitTestVisible="False">
                     <Border.Effect>
                         <BlurEffect Radius="20" KernelType="Gaussian"/>
                     </Border.Effect>
@@ -67,7 +67,7 @@
             </Border.Style>
             <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
                 <!-- 블러 배경 rectangle -->
-                <Border CornerRadius="14" Background="#99000000" IsHitTestVisible="False">
+                <Border CornerRadius="14" Background="#E6000000" IsHitTestVisible="False">
                     <Border.Effect>
                         <BlurEffect Radius="20" KernelType="Gaussian"/>
                     </Border.Effect>

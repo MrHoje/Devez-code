@@ -2050,7 +2050,7 @@ public partial class MainWindow : Window
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
-        await SuspendTerminalWithSnapshotAsync(blankCurtain: false);   // 단색 커튼이 아니라 직전 화면을 캡처해 깔아 이음매 없이.
+        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);   // 터미널을 숨기고 단색 커튼(배경색)만 보이게.
         var dlg = new Views.SettingsWindow { Owner = this };
         dlg.Closed += (_, _) =>
         {
