@@ -4,8 +4,6 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" ShowInTaskbar="False"
         WindowStartupLocation="Manual"
-        Deactivated="Window_Deactivated"
-        PreviewKeyDown="Window_PreviewKeyDown"
         FontFamily="{StaticResource PretendardFont}">
     <!-- 좌/우 컬럼 폭은 MainWindow 가 실제 PaneA/PaneB 폭으로 채워 패널 영역에 정확히 맞춘다.
          현재 떠 있는 프로젝트 이름을 표시하고, 호버 시에만 살짝 밝아진다(흰색 저알파). -->
@@ -34,7 +32,7 @@
                        FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                        Foreground="{DynamicResource PrimaryBrush}">
                 <TextBlock.Effect>
-                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.6" Color="Black"/>
+                    <DropShadowEffect x:Name="ShadowA" BlurRadius="6" ShadowDepth="0" Opacity="0.6" Color="Black"/>
                 </TextBlock.Effect>
             </TextBlock>
         </Border>
@@ -56,7 +54,7 @@
                        FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                        Foreground="{DynamicResource PrimaryBrush}">
                 <TextBlock.Effect>
-                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.6" Color="Black"/>
+                    <DropShadowEffect x:Name="ShadowB" BlurRadius="6" ShadowDepth="0" Opacity="0.6" Color="Black"/>
                 </TextBlock.Effect>
             </TextBlock>
         </Border>
