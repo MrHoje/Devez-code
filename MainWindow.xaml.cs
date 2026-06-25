@@ -1452,6 +1452,19 @@ public partial class MainWindow : Window
         if (ReferenceEquals(pane, _focusedPane)) SyncShellToFocusedPane();
         // 패널 B 의 활성이 바뀌면 분할 복원용 상태를 갱신(패널 A 는 SyncShell 의 last-active 가 담당).
         if (ReferenceEquals(pane, PaneB)) PersistSplitState();
+        UpdatePaneRoles();
+    }
+
+    /// <summary>분할 중 각 프로젝트가 떠 있는 패널(좌=PaneA / 우=PaneB)을 PaneRole 에 반영.
+    /// 사이드바 카드 헤더의 패널 배지가 이 값으로 좌/우 칸을 하이라이트한다. 비분할이면 전부 None.</summary>
+    private void UpdatePaneRoles()
+    {
+        var left = _splitActive ? PaneA.ActiveProject : null;
+        var right = _splitActive ? PaneB.ActiveProject : null;
+        foreach (var p in _projects.Concat(_archivedProjects))
+            p.PaneRole = ReferenceEquals(p, left) ? PaneRole.Left
+                       : ReferenceEquals(p, right) ? PaneRole.Right
+                       : PaneRole.None;
     }
 
     /// <summary>세션이 현재 활성인 패널 → 없으면 그 세션의 프로젝트를 보여주는 패널 → 없으면 포커스 패널.</summary>
@@ -1511,6 +1524,7 @@ public partial class MainWindow : Window
         else if (bProject != null) PaneB.SelectProject(bProject);
         else SyncShellToFocusedPane();   // 사용자 토글 시 B 는 빈 패널 — 직접 프로젝트를 고르게 한다.
         UpdatePaneFocusVisual();
+        UpdatePaneRoles();
         PersistSplitState();
     }
 
@@ -1556,6 +1570,7 @@ public partial class MainWindow : Window
         foreach (var p in _panes) p.SetSplitActive(false);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
+        UpdatePaneRoles();
         PersistSplitState();
     }
 
@@ -1722,14 +1737,19 @@ public partial class MainWindow : Window
         _pendingProjectTarget = proj;
         ProjectTargetPaneAText.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
         ProjectTargetPaneBText.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
+
+        // 오버레이를 미리 visible 상태로(투명) 만들고 suspend + 애니메이션 동시 진행 — Visibility 토글이 없어 깜빡임 방지
+        ProjectTargetPickerOverlay.IsHitTestVisible = true;
+        ProjectTargetPickerOverlay.Opacity = 1;
+
+        AnimateProjectTargetPickerOpen();
+
         await SuspendProjectTargetPickerBackdropAsync();
+
         if (!ReferenceEquals(_pendingProjectTarget, proj) || !IsActive)
         {
             CloseProjectTargetPicker();
-            return;
         }
-        ProjectTargetPickerOverlay.Visibility = Visibility.Visible;
-        AnimateProjectTargetPickerOpen();
     }
 
     private void AnimateProjectTargetPickerOpen()
@@ -1772,7 +1792,19 @@ public partial class MainWindow : Window
     private void CloseProjectTargetPicker()
     {
         _pendingProjectTarget = null;
-        ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
+
+        if (_projectTargetPickerSuspended)
+        {
+            _projectTargetPickerSuspended = false;
+            ResumeTerminal();
+        }
+
+        // 오버레이 root
+        ProjectTargetPickerOverlay.IsHitTestVisible = false;
+        ProjectTargetPickerOverlay.BeginAnimation(OpacityProperty, null);
+        ProjectTargetPickerOverlay.Opacity = 0;
+
+        // 스크림·카드 애니메이션 중단 및 초기화
         ProjectTargetPickerScrim.BeginAnimation(OpacityProperty, null);
         ProjectTargetPickerCard.BeginAnimation(OpacityProperty, null);
         ProjectTargetPickerScrim.Opacity = 0;
@@ -1783,12 +1815,6 @@ public partial class MainWindow : Window
             scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
             scale.ScaleX = 0.96;
             scale.ScaleY = 0.96;
-        }
-
-        if (_projectTargetPickerSuspended)
-        {
-            _projectTargetPickerSuspended = false;
-            ResumeTerminal();
         }
     }
 

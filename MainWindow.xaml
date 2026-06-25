@@ -454,7 +454,7 @@
             <!-- 설정창 오버레이 호스트 (전체 영역 덮음) -->
             <Grid x:Name="OverlayHost" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="200"/>
             <Grid x:Name="ProjectTargetPickerOverlay" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="250"
-                  Visibility="Collapsed">
+                  IsHitTestVisible="False" Opacity="0">
                 <Border x:Name="ProjectTargetPickerScrim"
                         Background="#33000000" Opacity="0"
                         MouseLeftButtonDown="ProjectTargetPickerOverlay_MouseLeftButtonDown">
