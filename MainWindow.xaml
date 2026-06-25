@@ -185,7 +185,8 @@
                     </Border>
                     <Popup x:Name="ProjectTargetPickerOverlay"
                            PlacementTarget="{Binding ElementName=RootChrome}"
-                           Placement="Center"
+                           Placement="Relative"
+                           HorizontalOffset="0" VerticalOffset="0"
                            AllowsTransparency="True"
                            StaysOpen="True">
                         <Border x:Name="ProjectTargetPickerScrim"
