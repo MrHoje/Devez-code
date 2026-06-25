@@ -1567,7 +1567,8 @@ public partial class MainWindow : Window
     private void UpdateSplitToggleVisual()
     {
         SplitToggleIcon.Data = (System.Windows.Media.Geometry)FindResource(_splitActive ? "IconPanelLeftClose" : "IconPanelLeftOpen");
-        SplitToggleIcon.Stroke = (System.Windows.Media.Brush)FindResource(_splitActive ? "PrimaryBrush" : "TextMutedBrush");
+        // 구체 브러시를 박으면 DynamicResource 추적이 끊겨 테마 변경을 못 따라간다 → SetResourceReference 로 동적 연결 유지.
+        SplitToggleIcon.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, _splitActive ? "PrimaryBrush" : "TextMutedBrush");
         SplitToggleBtn.ToolTip = _splitActive ? "분할 닫기" : "패널 분할";
     }
 
