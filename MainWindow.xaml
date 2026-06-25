@@ -183,49 +183,6 @@
                             <TranslateTransform/>
                         </Border.RenderTransform>
                     </Border>
-
-                    <!-- ── 패널 선택 오버레이 (분할 시 '다른 프로젝트' 클릭 → 어느 패널에 띄울지 선택) ──
-                         좌/우 Border가 PaneA(col 0)·PaneB(col 2)와 같은 컬럼을 써서 패널 영역에 정확히 맞는다. -->
-                    <Border x:Name="PanePickLeft" Grid.Column="0" Panel.ZIndex="400"
-                            Visibility="Collapsed" Cursor="Hand" Background="#66000000"
-                            MouseLeftButtonDown="PanePickLeft_Click">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#99000000"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <TextBlock Text="왼쪽" FontSize="{DynamicResource Fs16}" FontWeight="SemiBold"
-                                       Foreground="White" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="PanePickLeftName" Margin="0,8,0,0"
-                                       FontSize="{DynamicResource Fs12}" Foreground="#CCFFFFFF"
-                                       HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                    </Border>
-                    <Border x:Name="PanePickRight" Grid.Column="2" Panel.ZIndex="400"
-                            Visibility="Collapsed" Cursor="Hand" Background="#66000000"
-                            MouseLeftButtonDown="PanePickRight_Click">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#99000000"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <TextBlock Text="오른쪽" FontSize="{DynamicResource Fs16}" FontWeight="SemiBold"
-                                       Foreground="White" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="PanePickRightName" Margin="0,8,0,0"
-                                       FontSize="{DynamicResource Fs12}" Foreground="#CCFFFFFF"
-                                       HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                    </Border>
                 </Grid>
 
                 <GridSplitter x:Name="FileExpSplitter" Grid.Column="3" HorizontalAlignment="Stretch"

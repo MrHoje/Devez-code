@@ -894,12 +894,6 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        if (e.Key == System.Windows.Input.Key.Escape && _panePickProject != null)
-        {
-            HidePanePick();
-            e.Handled = true;
-            return;
-        }
         base.OnPreviewKeyDown(e);
     }
 
@@ -1762,40 +1756,34 @@ public partial class MainWindow : Window
         UpdatePaneFocusVisual();
     }
 
-    // 패널 선택 오버레이가 떠 있을 때 선택 대상 프로젝트.
-    private ProjectItem? _panePickProject;
+    private ProjectTargetPickerWindow? _projectTargetPickerWindow;
 
+    // 별도 최상위 창으로 띄운다(터미널 WebView2 HWND 위에 합성). 중앙 패널(CenterSplit) 영역에
+    // 정확히 겹치도록 위치·크기를 잡고, 좌/우 컬럼 폭은 실제 PaneA/Gap/PaneB 폭으로 채운다.
     private void ShowProjectTargetPicker(ProjectItem proj)
     {
-        _panePickProject = proj;
-        PanePickLeftName.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
-        PanePickRightName.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
-        PanePickLeft.Visibility = Visibility.Visible;
-        PanePickRight.Visibility = Visibility.Visible;
+        _projectTargetPickerWindow?.Close();
+
+        var topLeft = CenterSplit.PointToScreen(new System.Windows.Point(0, 0));
+        var m = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice
+                ?? System.Windows.Media.Matrix.Identity;
+        var dip = m.Transform(topLeft); // 화면 픽셀 → DIP
+
+        double gap = PaneSplitter.Visibility == Visibility.Visible ? PaneSplitterCol.ActualWidth : 0;
+
+        var win = new ProjectTargetPickerWindow { Owner = this };
+        win.Configure(PaneA.ActiveProject?.Name ?? "빈 패널", PaneB.ActiveProject?.Name ?? "빈 패널",
+                      PaneA.ActualWidth, gap, PaneB.ActualWidth);
+        win.Left = dip.X;
+        win.Top = dip.Y;
+        win.Width = CenterSplit.ActualWidth;
+        win.Height = CenterSplit.ActualHeight;
+        win.PaneSelected += pane => SelectProjectIntoPane(pane == "A" ? PaneA : PaneB, proj);
+        _projectTargetPickerWindow = win;
+        win.Show();
     }
 
-    private void HidePanePick()
-    {
-        PanePickLeft.Visibility = Visibility.Collapsed;
-        PanePickRight.Visibility = Visibility.Collapsed;
-        _panePickProject = null;
-    }
-
-    private void PanePickLeft_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-        var p = _panePickProject;
-        HidePanePick();
-        if (p != null) SelectProjectIntoPane(PaneA, p);
-    }
-
-    private void PanePickRight_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-        var p = _panePickProject;
-        HidePanePick();
-        if (p != null) SelectProjectIntoPane(PaneB, p);
-    }
+    private void HidePanePick() => _projectTargetPickerWindow?.Close();
 
     private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);

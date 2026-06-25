@@ -314,24 +314,17 @@
                             <!-- 우상단 액션: [패널 배지] + [chevron]. 배지는 분할 시 이 프로젝트가 떠 있는 패널(좌/우)을 칸 하이라이트로 표시. -->
                             <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
                                         VerticalAlignment="Center" Margin="4,-4,0,0">
-                            <!-- 패널 배지: 둥근 사각형 + 세로 분할선. 활성 칸(좌/우)을 테마색으로 채운다. 기본 숨김, PaneRole 로 노출. -->
-                            <Border x:Name="PaneBadge" Width="16" Height="12" CornerRadius="2"
-                                    BorderThickness="1.3" BorderBrush="{DynamicResource TextMutedBrush}"
-                                    Background="Transparent" VerticalAlignment="Center" Margin="0,0,6,0"
-                                    Visibility="Collapsed" b:CornerRadiusClip.Radius="2"
-                                    ToolTip="열려 있는 패널">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition x:Name="PaneBadgeLeftCol" Width="*"/>
-                                        <ColumnDefinition x:Name="PaneBadgeRightCol" Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border x:Name="PaneBadgeLeftCell" Grid.Column="0" Background="Transparent"/>
-                                    <Border x:Name="PaneBadgeRightCell" Grid.Column="1" Background="Transparent"/>
-                                    <!-- 세로 분할선(두 칸 경계) -->
-                                    <Rectangle Grid.Column="0" Width="1.3" HorizontalAlignment="Right"
-                                               Fill="{DynamicResource TextMutedBrush}"/>
+                            <!-- 패널 배지: 우클릭 메뉴 아이콘과 동일한 lucide panel + 반대쪽 칸 테마색 채움. 기본 숨김, PaneRole 로 노출/방향 결정. -->
+                            <Viewbox x:Name="PaneBadge" Width="16" Height="16"
+                                     VerticalAlignment="Center" Margin="0,0,6,0"
+                                     Visibility="Collapsed" ToolTip="열려 있는 패널">
+                                <Grid Width="24" Height="24">
+                                    <Rectangle x:Name="PaneBadgeFill" RadiusX="1.5" RadiusY="1.5"
+                                               Fill="{DynamicResource PrimaryBrush}"/>
+                                    <Path x:Name="PaneBadgeIcon" Style="{StaticResource LucideIcon}"
+                                          Width="24" Height="24" Stroke="{DynamicResource TextMutedBrush}"/>
                                 </Grid>
-                            </Border>
+                            </Viewbox>
                             <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용). 항상 노출, 타이틀과 같은 줄 우상단. -->
                             <Button Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
@@ -389,18 +382,18 @@
                 <!-- 분할 좌 패널(PaneA): 배지 노출 + 왼쪽 칸 테마색 하이라이트 -->
                 <DataTrigger Binding="{Binding PaneRole}" Value="Left">
                     <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
-                    <Setter TargetName="PaneBadgeLeftCell" Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-                    <!-- 선택된(좌) 칸을 더 넓게 -->
-                    <Setter TargetName="PaneBadgeLeftCol" Property="Width" Value="1.7*"/>
-                    <Setter TargetName="PaneBadgeRightCol" Property="Width" Value="1*"/>
+                    <Setter TargetName="PaneBadgeIcon" Property="Data" Value="{StaticResource IconPanelLeft}"/>
+                    <Setter TargetName="PaneBadgeFill" Property="HorizontalAlignment" Value="Right"/>
+                    <Setter TargetName="PaneBadgeFill" Property="Width" Value="12.8"/>
+                    <Setter TargetName="PaneBadgeFill" Property="Margin" Value="0,2.2,2.2,2.2"/>
                 </DataTrigger>
-                <!-- 분할 우 패널(PaneB): 배지 노출 + 오른쪽 칸 테마색 하이라이트 -->
+                <!-- 분할 우 패널(PaneB) -->
                 <DataTrigger Binding="{Binding PaneRole}" Value="Right">
                     <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
-                    <Setter TargetName="PaneBadgeRightCell" Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-                    <!-- 선택된(우) 칸을 더 넓게 -->
-                    <Setter TargetName="PaneBadgeLeftCol" Property="Width" Value="1*"/>
-                    <Setter TargetName="PaneBadgeRightCol" Property="Width" Value="1.7*"/>
+                    <Setter TargetName="PaneBadgeIcon" Property="Data" Value="{StaticResource IconPanelRight}"/>
+                    <Setter TargetName="PaneBadgeFill" Property="HorizontalAlignment" Value="Left"/>
+                    <Setter TargetName="PaneBadgeFill" Property="Width" Value="12.8"/>
+                    <Setter TargetName="PaneBadgeFill" Property="Margin" Value="2.2,2.2,0,2.2"/>
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
