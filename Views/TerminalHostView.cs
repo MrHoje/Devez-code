@@ -208,25 +208,30 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     private async Task InitWebViewAsync()
     {
+        // 지역 참조 사용 — 초기화 도중 Dispose 가 _webView 를 null 로 만들어도 NRE 없이 안전하게 진행.
+        var webView = new WebView2();
         try
         {
-            _webView = new WebView2();
-            Content = _webView;
+            _webView = webView;
+            Content = webView;
 
             var userDataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "DevezCode", "WebView2");
             var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
-            await _webView.EnsureCoreWebView2Async(env);
+            if (_disposed) return; // 초기화 중 앱 종료 — Dispose 가 webView 를 정리하므로 더 진행하지 않음
+            await webView.EnsureCoreWebView2Async(env);
+            if (_disposed) return;
             // 리사이즈(패널 접기/펴기) 중 WebView2 가 흰색으로 클리어했다 다시 그리며
             // 깜빡이는 것을 막는다 — 페인트 전 기본 배경을 터미널 배경(#0C0C0C)에 맞춤.
-            _webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, 0x0C, 0x0C, 0x0C);
+            webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, 0x0C, 0x0C, 0x0C);
             // 초기화 완료 시 호스트가 숨겨진 상태라면 WPF 렌더 큐를 비워
             // 새로 생성된 HWND에 Collapsed 상태가 반영되기 전 한 프레임 튀는 현상을 방지한다.
             if (!IsVisible)
                 await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            if (_disposed) return;
 
-            var core = _webView.CoreWebView2;
+            var core = webView.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = false;
             core.Settings.AreBrowserAcceleratorKeysEnabled = false; // F5 새로고침 등 차단 (터미널 보호)
             core.Settings.AreDevToolsEnabled = false;
@@ -236,10 +241,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             // HwndSource(부모) 로 fall-through → WebView2 의 WPF Drop 이벤트로 변환되어 들어온다.
             // - AllowExternalDrop: OS OLE Drop 비활성화 (fall-through 트리거)
             // - AllowDrop: WPF Drop 이벤트 활성화
-            _webView.AllowExternalDrop = false;
-            _webView.AllowDrop = true;
-            _webView.Drop += OnWebViewDrop;
-            _webView.DragOver += OnWebViewDragOver;
+            webView.AllowExternalDrop = false;
+            webView.AllowDrop = true;
+            webView.Drop += OnWebViewDrop;
+            webView.DragOver += OnWebViewDragOver;
 
             var webRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "Terminal", "web");
             core.SetVirtualHostNameToFolderMapping(

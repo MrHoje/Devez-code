@@ -235,17 +235,21 @@ public static class SettingsService
     public static void SaveNotifyAutoCloseSeconds(int v) { Current.NotifyAutoCloseSeconds = v < 0 ? 0 : (v > 10 ? 10 : v); Save(); }
 
     // ── Claude Code 방 작업 디렉터리 ──────────────────────────────
+    // 아래 방별 dict/list 들은 claude 세션 워처(FileSystemWatcher = 비-UI 스레드)와 UI 스레드가
+    // 동시에 접근한다. Dictionary/List 는 스레드 안전하지 않고 Save() 가 _current 를 직렬화(읽기)하므로,
+    // 접근을 _lock 으로 감싸 Save 직렬화와 상호배제한다(_lock 은 재진입 가능 → 내부 Save() 안전).
     public static string? LoadClaudeCodeRoomDir(string roomId)
-        => Current.ClaudeCodeRoomDirs.TryGetValue(roomId, out var d) ? d : null;
+    { lock (_lock) return Current.ClaudeCodeRoomDirs.TryGetValue(roomId, out var d) ? d : null; }
 
     public static void SaveClaudeCodeRoomDir(string roomId, string dir)
     {
-        Current.ClaudeCodeRoomDirs[roomId] = dir;
-        Save();
+        lock (_lock) { Current.ClaudeCodeRoomDirs[roomId] = dir; Save(); }
     }
 
     public static void RemoveClaudeCodeRoomDir(string roomId)
     {
+      lock (_lock)
+      {
         bool changed = Current.ClaudeCodeRoomDirs.Remove(roomId);
         changed |= Current.ClaudeCodeRoomSessions.Remove(roomId);
         changed |= Current.ClaudeCodeRoomLaunched.Remove(roomId);
@@ -253,6 +257,7 @@ public static class SettingsService
         changed |= Current.ClaudeCodeRoomModel.Remove(roomId);
         changed |= Current.ClaudeCodeRoomEffort.Remove(roomId);
         if (changed) Save();
+      }
     }
 
     // ── 방별 에이전트 ID (미설정 시 기본값 claude) ────────────────
@@ -282,12 +287,11 @@ public static class SettingsService
 
     // ── Claude 세션 ID ────────────────────────────────────────────
     public static string? LoadClaudeCodeRoomSession(string roomId)
-        => Current.ClaudeCodeRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+    { lock (_lock) return Current.ClaudeCodeRoomSessions.TryGetValue(roomId, out var s) ? s : null; }
 
     public static void SaveClaudeCodeRoomSession(string roomId, string sessionId)
     {
-        Current.ClaudeCodeRoomSessions[roomId] = sessionId;
-        Save();
+        lock (_lock) { Current.ClaudeCodeRoomSessions[roomId] = sessionId; Save(); }
     }
 
     // ── 방별 model/effort (claude --model / --effort) ─────────────
@@ -436,14 +440,17 @@ public static class SettingsService
 
     // ── 방이 한 번이라도 실행됐는지 (resume 판단용) ──────────────
     public static bool IsClaudeCodeRoomLaunched(string roomId)
-        => Current.ClaudeCodeRoomLaunched.Contains(roomId);
+    { lock (_lock) return Current.ClaudeCodeRoomLaunched.Contains(roomId); }
 
     public static void MarkClaudeCodeRoomLaunched(string roomId)
     {
-        if (!Current.ClaudeCodeRoomLaunched.Contains(roomId))
+        lock (_lock)
         {
-            Current.ClaudeCodeRoomLaunched.Add(roomId);
-            Save();
+            if (!Current.ClaudeCodeRoomLaunched.Contains(roomId))
+            {
+                Current.ClaudeCodeRoomLaunched.Add(roomId);
+                Save();
+            }
         }
     }
 
