@@ -331,7 +331,7 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
-        CloseProjectTargetPicker();
+        _projectTargetPickerWindow?.Close();
         // WebView2(터미널/md 에디터/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
         // 종료 직전 화면을 스냅샷으로 캡처해 깔고 WebView 를 치운 뒤 "세션 닫는 중" 오버레이를 그 위에 띄운다.
         try { await SuspendTerminalWithSnapshotAsync(blankCurtain: false); }
@@ -885,13 +885,6 @@ public partial class MainWindow : Window
     /// <summary>F1 — 계정 사용량 사이드바 토글.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == System.Windows.Input.Key.Escape && ProjectTargetPickerOverlay.Visibility == Visibility.Visible)
-        {
-            CloseProjectTargetPicker();
-            e.Handled = true;
-            return;
-        }
-
         if (e.Key == System.Windows.Input.Key.F1)
         {
             SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
@@ -1496,8 +1489,6 @@ public partial class MainWindow : Window
 
     private bool _splitActive;
     private int _lastFocusVisualIndex = -1;
-    private ProjectItem? _pendingProjectTarget;
-    private bool _projectTargetPickerSuspended;
 
     /// <summary>중앙 패널 분할/해제 토글. 분할 시 패널 B 노출 후 두 번째 프로젝트를 자동으로 연다.</summary>
     private void OnPaneSplitToggle(WorkspacePaneView pane)
@@ -1684,7 +1675,10 @@ public partial class MainWindow : Window
     }
 
     // ── 사이드바 액션 → 포커스 패널로 위임 ────────────────────────────
+    private ProjectTargetPickerWindow? _projectTargetPickerWindow;
+
     private void SelectProject(ProjectItem proj) => SelectProjectFromSidebar(proj);
+
     private void SelectProjectFromSidebar(ProjectItem proj)
     {
         var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, proj));
@@ -1717,7 +1711,6 @@ public partial class MainWindow : Window
 
     private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
     {
-        CloseProjectTargetPicker();
         _focusedPane = pane;
         pane.SelectProject(proj);
         SyncShellToFocusedPane();
@@ -1726,123 +1719,24 @@ public partial class MainWindow : Window
 
     private void FocusPaneOnly(WorkspacePaneView pane)
     {
-        CloseProjectTargetPicker();
         _focusedPane = pane;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
     }
 
-    private async void ShowProjectTargetPicker(ProjectItem proj)
+    private void ShowProjectTargetPicker(ProjectItem proj)
     {
-        _pendingProjectTarget = proj;
-        ProjectTargetPaneAText.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
-        ProjectTargetPaneBText.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
-
-        // 오버레이 root 를 먼저 visible(투명) 상태로 만든 뒤 terminal 을 suspend 한다.
-        // 애니메이션은 suspend 후에 시작해야 WebView2 뒤에서 숨은 채로 진행되지 않아 깜빡임이 없다.
-        ProjectTargetPickerOverlay.IsHitTestVisible = true;
-        ProjectTargetPickerOverlay.Opacity = 1;
-
-        await SuspendProjectTargetPickerBackdropAsync();
-
-        if (!ReferenceEquals(_pendingProjectTarget, proj) || !IsActive)
+        var win = new ProjectTargetPickerWindow();
+        win.SetLabels(PaneA.ActiveProject?.Name ?? "빈 패널", PaneB.ActiveProject?.Name ?? "빈 패널");
+        win.Owner = this;
+        win.PaneSelected += pane =>
         {
-            CloseProjectTargetPicker();
-            return;
-        }
-
-        AnimateProjectTargetPickerOpen();
+            SelectProjectIntoPane(pane == "A" ? PaneA : PaneB, proj);
+        };
+        _projectTargetPickerWindow = win;
+        win.ShowDialog();
     }
 
-    private void AnimateProjectTargetPickerOpen()
-    {
-        ProjectTargetPickerScrim.BeginAnimation(OpacityProperty, new DoubleAnimation
-        {
-            From = 0,
-            To = 1,
-            Duration = TimeSpan.FromMilliseconds(180),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        });
-
-        ProjectTargetPickerCard.BeginAnimation(OpacityProperty, new DoubleAnimation
-        {
-            From = 0,
-            To = 1,
-            Duration = TimeSpan.FromMilliseconds(220),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        });
-
-        if (ProjectTargetPickerCard.RenderTransform is ScaleTransform scale)
-        {
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation
-            {
-                From = 0.96,
-                To = 1,
-                Duration = TimeSpan.FromMilliseconds(220),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            });
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation
-            {
-                From = 0.96,
-                To = 1,
-                Duration = TimeSpan.FromMilliseconds(220),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            });
-        }
-    }
-
-    private void CloseProjectTargetPicker()
-    {
-        _pendingProjectTarget = null;
-
-        if (_projectTargetPickerSuspended)
-        {
-            _projectTargetPickerSuspended = false;
-            ResumeTerminal();
-        }
-
-        // 오버레이 root
-        ProjectTargetPickerOverlay.IsHitTestVisible = false;
-        ProjectTargetPickerOverlay.BeginAnimation(OpacityProperty, null);
-        ProjectTargetPickerOverlay.Opacity = 0;
-
-        // 스크림·카드 애니메이션 중단 및 초기화
-        ProjectTargetPickerScrim.BeginAnimation(OpacityProperty, null);
-        ProjectTargetPickerCard.BeginAnimation(OpacityProperty, null);
-        ProjectTargetPickerScrim.Opacity = 0;
-        ProjectTargetPickerCard.Opacity = 0;
-        if (ProjectTargetPickerCard.RenderTransform is ScaleTransform scale)
-        {
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-            scale.ScaleX = 0.96;
-            scale.ScaleY = 0.96;
-        }
-    }
-
-    private async Task SuspendProjectTargetPickerBackdropAsync()
-    {
-        if (_projectTargetPickerSuspended) return;
-        await SuspendTerminalWithSnapshotAsync(blankCurtain: false);
-        _projectTargetPickerSuspended = true;
-    }
-
-    private void ProjectTargetPaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-        if (_pendingProjectTarget != null) SelectProjectIntoPane(PaneA, _pendingProjectTarget);
-    }
-
-    private void ProjectTargetPaneB_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-        if (_pendingProjectTarget != null) SelectProjectIntoPane(PaneB, _pendingProjectTarget);
-    }
-
-    private void ProjectTargetPickerOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        CloseProjectTargetPicker();
-    }
     private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
     private void RenameSession(SessionItem session) => PaneFor(session).RenameSession(session);
@@ -2013,7 +1907,7 @@ public partial class MainWindow : Window
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
         StateChanged += OnStateChangedForFullScreen;
         Activated   += (_, _) => UpdateFullScreenTopmost();
-        Deactivated += (_, _) => { UpdateFullScreenTopmost(); CloseProjectTargetPicker(); };
+        Deactivated += (_, _) => { UpdateFullScreenTopmost(); _projectTargetPickerWindow?.Close(); };
         // 시작 시 전체화면 복원: 저장된 일반 bounds 위치(=올바른 모니터)에서 전체화면 진입.
         if (_restoreFullScreen) { _restoreFullScreen = false; EnterFullScreen(); }
         else if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
