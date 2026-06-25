@@ -182,14 +182,6 @@
                                   ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                                   DragDelta="PaneSplitter_DragDelta"/>
                     <views:WorkspacePaneView x:Name="PaneB" Grid.Column="2" Visibility="Collapsed"/>
-                    <Border x:Name="CenterFocusIndicator" Grid.Column="0" Grid.ColumnSpan="3"
-                            Height="2" Width="0" VerticalAlignment="Top" HorizontalAlignment="Left"
-                            Background="{DynamicResource PrimaryBrush}" Visibility="Collapsed"
-                            IsHitTestVisible="False" Panel.ZIndex="300">
-                        <Border.RenderTransform>
-                            <TranslateTransform/>
-                        </Border.RenderTransform>
-                    </Border>
                 </Grid>
 
                 <GridSplitter x:Name="FileExpSplitter" Grid.Column="3" HorizontalAlignment="Stretch"

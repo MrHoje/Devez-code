@@ -10,6 +10,11 @@
     <Border x:Name="CenterArea" Background="{DynamicResource BgBrush}"
             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,1,0"
             MouseLeftButtonDown="Pane_PreviewInteract" PreviewMouseLeftButtonDown="Pane_PreviewInteract">
+      <!-- 포커스 프레임: 분할 시 포커스된 패널 둘레를 2px 테마색으로 4면 모두 감싼다.
+           콘텐츠(터미널 포함)를 BorderThickness 만큼 안쪽으로 들여, 보더가 WebView2 와 겹치지 않으므로
+           4면 전부 터미널 위로 보인다(airspace 회피). 두께는 항상 예약하고 색만 바꿔, 포커스 전환 시
+           터미널이 리사이즈되지 않는다. 비포커스 시 Transparent → CenterArea 배경이 비쳐 보이지 않는다. -->
+      <Border x:Name="FocusFrame" BorderThickness="2" BorderBrush="Transparent">
       <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -17,15 +22,6 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-
-        <!-- 분할 시 포커스된 패널 상단 액센트(2px). Grid.RowSpan 으로 전체 콘텐츠 위에 얹어 빈 패널(MetaBar collapsed)에서도 행 높이를 만들지 않는다. -->
-        <Border x:Name="FocusAccent" Grid.Row="0" Grid.RowSpan="4" Height="2" VerticalAlignment="Top"
-                Background="{DynamicResource PrimaryBrush}" Visibility="Collapsed" Opacity="0"
-                IsHitTestVisible="False" Panel.ZIndex="200">
-            <Border.RenderTransform>
-                <TranslateTransform/>
-            </Border.RenderTransform>
-        </Border>
 
         <!-- 프로젝트 메타 바 (탭 헤더와 같은 높이). 탭 바 위에 별도 행으로 부착. -->
         <Border x:Name="MetaBar" Grid.Row="0" Height="35" Background="{DynamicResource BgBrush}"
@@ -374,5 +370,6 @@
             </Grid>
         </Grid>
       </Grid>
+      </Border>
     </Border>
 </UserControl>

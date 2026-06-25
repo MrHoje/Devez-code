@@ -95,70 +95,16 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>분할 상태 저장. 분할 토글 버튼은 상단 타이틀바로 이동해 패널 탭바에는 버튼이 없다.</summary>
     public void SetSplitActive(bool active) => _split = active;
 
-    /// <summary>분할 중 포커스 패널 상단 액센트 표시 여부. 좌/우 패널 전환 시 가볍게 슬라이드한다.</summary>
-    public void SetFocusedVisual(bool focused, double slideFromX = 0)
+    /// <summary>분할 중 포커스 패널을 4면 테마색 보더로 표시. 포커스 시 PrimaryBrush, 아니면 투명.
+    /// 색만 바뀌고 두께(레이아웃)는 고정이라 터미널 리사이즈가 없다. SetResourceReference 로 연결해
+    /// 테마 변경 시 색이 자동으로 따라온다.</summary>
+    public void SetFocusedVisual(bool focused)
     {
-        if (FocusAccent == null) return;
-
-        var transform = FocusAccent.RenderTransform as TranslateTransform;
+        if (FocusFrame == null) return;
         if (focused)
-        {
-            FocusAccent.Visibility = Visibility.Visible;
-            if (transform != null)
-            {
-                transform.BeginAnimation(TranslateTransform.XProperty, null);
-                transform.X = slideFromX;
-                transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
-                {
-                    To = 0,
-                    Duration = TimeSpan.FromMilliseconds(240),
-                    EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut },
-                    FillBehavior = FillBehavior.Stop
-                });
-                transform.X = 0;
-            }
-
-            FocusAccent.BeginAnimation(OpacityProperty, new DoubleAnimation
-            {
-                To = 1,
-                Duration = TimeSpan.FromMilliseconds(180),
-                EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
-            });
-        }
+            FocusFrame.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
         else
-        {
-            if (transform != null)
-            {
-                transform.BeginAnimation(TranslateTransform.XProperty, null);
-                var exitX = slideFromX == 0 ? 0 : -slideFromX;
-                transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
-                {
-                    To = exitX,
-                    Duration = TimeSpan.FromMilliseconds(180),
-                    EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
-                });
-            }
-
-            var fade = new DoubleAnimation
-            {
-                To = 0,
-                Duration = TimeSpan.FromMilliseconds(150),
-                EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
-            };
-            fade.Completed += (_, _) =>
-            {
-                if (FocusAccent.Opacity <= 0.01)
-                {
-                    FocusAccent.Visibility = Visibility.Collapsed;
-                    if (transform != null)
-                    {
-                        transform.BeginAnimation(TranslateTransform.XProperty, null);
-                        transform.X = 0;
-                    }
-                }
-            };
-            FocusAccent.BeginAnimation(OpacityProperty, fade);
-        }
+            FocusFrame.BorderBrush = System.Windows.Media.Brushes.Transparent;
     }
 
     /// <summary>세션 소유권 이전 — 이 패널이 해당 세션을 활성으로 들고 있으면 배선을 끊고 다음 세션으로(없으면 비움).</summary>

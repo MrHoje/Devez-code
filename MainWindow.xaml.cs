@@ -1570,7 +1570,6 @@ public partial class MainWindow : Window
     }
 
     private bool _splitActive;
-    private int _lastFocusVisualIndex = -1;
 
     // 분할 펼침/접힘 애니메이션 진행도(0=합쳐짐, 1=완전 분할). GridLength 는 직접 애니메이션이 안 되므로
     // 이 double DP 를 애니메이션하고 콜백에서 PaneB 컬럼의 star 폭을 갱신한다.
@@ -1768,67 +1767,16 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>분할 중일 때 포커스 패널을 시각적으로 표시(상단 액센트). 하나의 라인이 좌우 패널 사이를 실제로 슬라이드한다.</summary>
+    /// <summary>분할 중일 때 포커스된 패널을 4면 테마색 보더(각 패널의 FocusFrame)로 표시한다.
+    /// 단일 패널이면 모두 끈다. 보더는 패널 레이아웃을 따르므로 별도 위치 계산이 필요 없다.</summary>
     private void UpdatePaneFocusVisual(bool animate = true)
     {
         foreach (var p in _panes)
             p.SetFocusedVisual(false);
 
-        if (!_splitActive)
-        {
-            CenterFocusIndicator.Visibility = Visibility.Collapsed;
-            _lastFocusVisualIndex = -1;
-            return;
-        }
+        if (!_splitActive) return;
 
-        var currentIndex = _panes.IndexOf(_focusedPane);
-        if (currentIndex < 0 || _focusedPane.ActualWidth <= 1 || CenterSplit.ActualWidth <= 1)
-        {
-            Dispatcher.BeginInvoke(() => UpdatePaneFocusVisual(animate), System.Windows.Threading.DispatcherPriority.Render);
-            return;
-        }
-
-        var x = _focusedPane.TranslatePoint(new Point(0, 0), CenterSplit).X + 1;
-        var width = _focusedPane.ActualWidth - 2;
-        var transform = CenterFocusIndicator.RenderTransform as TranslateTransform;
-
-        CenterFocusIndicator.Visibility = Visibility.Visible;
-
-        if (!animate || _lastFocusVisualIndex < 0 || transform == null)
-        {
-            if (transform != null)
-            {
-                transform.BeginAnimation(TranslateTransform.XProperty, null);
-                transform.X = x;
-            }
-            CenterFocusIndicator.BeginAnimation(WidthProperty, null);
-            CenterFocusIndicator.Width = width;
-            CenterFocusIndicator.Opacity = 1;
-            _lastFocusVisualIndex = currentIndex;
-            return;
-        }
-
-        var ease = new QuarticEase { EasingMode = EasingMode.EaseOut };
-        transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
-        {
-            To = x,
-            Duration = TimeSpan.FromMilliseconds(260),
-            EasingFunction = ease
-        });
-        CenterFocusIndicator.BeginAnimation(WidthProperty, new DoubleAnimation
-        {
-            To = width,
-            Duration = TimeSpan.FromMilliseconds(260),
-            EasingFunction = ease
-        });
-        CenterFocusIndicator.BeginAnimation(OpacityProperty, new DoubleAnimation
-        {
-            To = 1,
-            Duration = TimeSpan.FromMilliseconds(120),
-            EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
-        });
-
-        _lastFocusVisualIndex = currentIndex;
+        _focusedPane.SetFocusedVisual(true);
     }
 
     private SessionItem? FindSession(string id)
