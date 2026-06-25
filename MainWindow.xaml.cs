@@ -2103,7 +2103,7 @@ public partial class MainWindow : Window
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
         StateChanged += OnStateChangedForFullScreen;
         Activated   += (_, _) => UpdateFullScreenTopmost();
-        Deactivated += (_, _) => UpdateFullScreenTopmost();
+        Deactivated += (_, _) => { UpdateFullScreenTopmost(); HidePanePick(); };
         // 시작 시 전체화면 복원: 저장된 일반 bounds 위치(=올바른 모니터)에서 전체화면 진입.
         if (_restoreFullScreen) { _restoreFullScreen = false; EnterFullScreen(); }
         else if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
@@ -2262,6 +2262,10 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // 상단바(비클라이언트 캡션) 클릭은 WPF PreviewMouseDown 으로 안 잡히므로 여기서 picker 를 닫는다.
+        if ((msg == WM_NCLBUTTONDOWN || msg == WM_NCLBUTTONDBLCLK) && _projectTargetPickerWindow != null)
+            HidePanePick();
+
         if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(lParam); handled = true; }
         // 전체화면 ON 이면 상단바 더블클릭(캡션 더블클릭)도 기본 최대화 대신 전체화면 토글.
         else if (msg == WM_NCLBUTTONDBLCLK && _useFullScreen) { ToggleMaximizeOrFullScreen(); handled = true; }
