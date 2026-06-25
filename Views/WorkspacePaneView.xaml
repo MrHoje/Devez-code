@@ -4,12 +4,12 @@
              xmlns:models="clr-namespace:DevezCode.Models"
              FontFamily="{StaticResource PretendardFont}">
 
-    <!-- Center: tabs + content (좌·우·상·하 1px 보더로 중앙 채널 형성).
-         포커스 표시는 보더 색만 바꿔 레이아웃 크기 변화와 터미널 스크롤 점프를 막는다. -->
-    <Border x:Name="CenterArea" Background="{DynamicResource BgBrush}"
-            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+    <!-- Center: tabs + content.
+         보더는 Stroke/오버레이가 아니라 1px Padding 뒤의 배경색으로 만든다.
+         WebView2 터미널 HWND가 선을 덮지 않고, 포커스 전환 때 크기도 변하지 않는다. -->
+    <Border x:Name="CenterArea" Background="{DynamicResource LineBrush}" Padding="1"
             MouseLeftButtonDown="Pane_PreviewInteract" PreviewMouseLeftButtonDown="Pane_PreviewInteract">
-      <Grid>
+      <Grid Background="{DynamicResource BgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>

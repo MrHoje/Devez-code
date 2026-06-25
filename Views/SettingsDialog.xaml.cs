@@ -24,6 +24,7 @@ public partial class SettingsDialog : UserControl
     private string _originalTheme;
     private int    _originalFontScale;
     private bool   _originalPreloadAllSessions;
+    private bool   _originalAutoLoadLastProject;
     private bool   _originalHideProjectInfoHeader;
     private bool   _originalUseFullScreen;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
@@ -33,6 +34,7 @@ public partial class SettingsDialog : UserControl
     private string _selectedTheme;
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
+    private bool   _selectedAutoLoadLastProject;
     private bool   _selectedHideProjectInfoHeader;
     private bool   _selectedUseFullScreen;
     private int    _selectedProjectColumns;
@@ -114,6 +116,9 @@ public partial class SettingsDialog : UserControl
         _originalPreloadAllSessions = SettingsService.LoadPreloadAllProjectSessions();
         _selectedPreloadAllSessions = _originalPreloadAllSessions;
         PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
+        _originalAutoLoadLastProject = SettingsService.LoadAutoLoadLastProject();
+        _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
+        AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
         _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
         _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
         HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
@@ -205,6 +210,11 @@ public partial class SettingsDialog : UserControl
     private void PreloadAllSessionsToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedPreloadAllSessions = PreloadAllSessionsToggle.IsChecked == true;
+    }
+
+    private void AutoLoadLastProjectToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedAutoLoadLastProject = AutoLoadLastProjectToggle.IsChecked == true;
     }
 
     private void HideProjectInfoHeaderToggle_Changed(object sender, RoutedEventArgs e)
@@ -618,6 +628,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedTheme != _originalTheme) return true;
         if (_selectedFontScale != _originalFontScale) return true;
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
+        if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
         if (_selectedProjectColumns != _originalProjectColumns) return true;
@@ -635,6 +646,7 @@ public partial class SettingsDialog : UserControl
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);
         SettingsService.SavePreloadAllProjectSessions(_selectedPreloadAllSessions);
+        SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
         {
             SettingsService.SaveHideProjectInfoHeader(_selectedHideProjectInfoHeader);
@@ -661,6 +673,7 @@ public partial class SettingsDialog : UserControl
         _originalTheme       = _selectedTheme;
         _originalFontScale   = _selectedFontScale;
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
+        _originalAutoLoadLastProject = _selectedAutoLoadLastProject;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
         _originalUseFullScreen = _selectedUseFullScreen;
         _originalProjectColumns = _selectedProjectColumns;
@@ -690,6 +703,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedPreloadAllSessions = _originalPreloadAllSessions;
             PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
+        }
+        if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject)
+        {
+            _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
+            AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
         }
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
         {

@@ -253,6 +253,26 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="프로그램 실행 시 프로젝트 자동 로드" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="켜면 시작할 때 마지막으로 보던 프로젝트를 자동으로 불러옵니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="AutoLoadLastProjectToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="AutoLoadLastProjectToggle_Changed" Unchecked="AutoLoadLastProjectToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="선택된 프로젝트 정보 헤더 숨기기" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="켜면 세션 탭 위의 프로젝트명·경로·모델·effort 영역을 숨깁니다."

@@ -362,6 +362,18 @@ public partial class MainWindow : Window
     /// 직전에 열려 있던 파일 탭은 RestoreOpenFiles 가 '탭만' 복원하며 활성화(포커스)는 하지 않는다.</summary>
     private void RestoreLastSession()
     {
+        // 옵션이 켜져 있으면 마지막으로 보던 프로젝트(가능하면 세션까지)를 자동으로 복원한다. 기본 false.
+        if (SettingsService.LoadAutoLoadLastProject())
+        {
+            var (projPath, sessId) = SettingsService.LoadLastActive();
+            var proj = projPath != null ? _projects.FirstOrDefault(p => p.Path == projPath) : null;
+            if (proj != null)
+            {
+                var sess = sessId != null ? proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == sessId) : null;
+                if (sess != null) _focusedPane.OpenSession(sess);
+                else _focusedPane.SelectProject(proj);
+            }
+        }
         SettingsService.SaveCleanShutdown(false);
     }
 

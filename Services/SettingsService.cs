@@ -63,6 +63,8 @@ public static class SettingsService
         public double TaskQueueBubbleFontSize { get; set; } = 14;
         // 프로젝트 선택 시 모든 세션을 미리 켤지 여부. 기본 false = 첫/활성 세션만 실행.
         public bool PreloadAllProjectSessions { get; set; } = false;
+        // 프로그램 실행 시 마지막으로 보던 프로젝트를 자동으로 불러올지 여부. 기본 false = 미선택 상태로 시작.
+        public bool AutoLoadLastProject { get; set; } = false;
         // 세션 탭 위의 프로젝트 정보 헤더(MetaBar: 프로젝트명~effort) 숨김 여부. 기본 false = 표시.
         public bool HideProjectInfoHeader { get; set; } = false;
         // 최대화 시 작업표시줄까지 덮는 전체화면 동작 여부. 기본 false = 작업영역에만 맞춤.
@@ -405,6 +407,9 @@ public static class SettingsService
     // ── 일반 설정 ────────────────────────────────────────────────
     public static bool LoadPreloadAllProjectSessions() => Current.PreloadAllProjectSessions;
     public static void SavePreloadAllProjectSessions(bool v) { Current.PreloadAllProjectSessions = v; Save(); }
+
+    public static bool LoadAutoLoadLastProject() => Current.AutoLoadLastProject;
+    public static void SaveAutoLoadLastProject(bool v) { Current.AutoLoadLastProject = v; Save(); }
 
     public static bool LoadHideProjectInfoHeader() => Current.HideProjectInfoHeader;
     public static void SaveHideProjectInfoHeader(bool v) { Current.HideProjectInfoHeader = v; Save(); }
