@@ -27,22 +27,30 @@
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="16,0">
-                <TextBlock x:Name="PaneAText" HorizontalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"
-                           FontSize="28" FontWeight="Bold"
-                           Foreground="{DynamicResource PrimaryBrush}">
-                    <TextBlock.Effect>
-                        <DropShadowEffect x:Name="ShadowA" BlurRadius="12" ShadowDepth="0" Opacity="1" Color="Black"/>
-                    </TextBlock.Effect>
-                </TextBlock>
-                <TextBlock x:Name="PaneAPath" HorizontalAlignment="Center" Margin="0,6,0,0"
-                           TextTrimming="CharacterEllipsis" FontSize="17" Foreground="White">
-                    <TextBlock.Effect>
-                        <DropShadowEffect BlurRadius="8" ShadowDepth="0" Opacity="1" Color="Black"/>
-                    </TextBlock.Effect>
-                </TextBlock>
-            </StackPanel>
+            <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- 블러 배경 rectangle -->
+                <Border CornerRadius="14" Background="#4C000000" IsHitTestVisible="False">
+                    <Border.Effect>
+                        <BlurEffect Radius="20" KernelType="Gaussian"/>
+                    </Border.Effect>
+                </Border>
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="32,18">
+                    <TextBlock x:Name="PaneAText" HorizontalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               FontSize="28" FontWeight="Bold"
+                               Foreground="{DynamicResource PrimaryBrush}">
+                        <TextBlock.Effect>
+                            <DropShadowEffect x:Name="ShadowA" BlurRadius="12" ShadowDepth="0" Opacity="1" Color="Black"/>
+                        </TextBlock.Effect>
+                    </TextBlock>
+                    <TextBlock x:Name="PaneAPath" HorizontalAlignment="Center" Margin="0,6,0,0"
+                               TextTrimming="CharacterEllipsis" FontSize="17" Foreground="White">
+                        <TextBlock.Effect>
+                            <DropShadowEffect BlurRadius="8" ShadowDepth="0" Opacity="1" Color="Black"/>
+                        </TextBlock.Effect>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
         </Border>
         <Border Grid.Column="2" Cursor="Hand"
                 MouseLeftButtonDown="PaneB_MouseLeftButtonDown">
@@ -57,22 +65,30 @@
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="16,0">
-                <TextBlock x:Name="PaneBText" HorizontalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"
-                           FontSize="28" FontWeight="Bold"
-                           Foreground="{DynamicResource PrimaryBrush}">
-                    <TextBlock.Effect>
-                        <DropShadowEffect x:Name="ShadowB" BlurRadius="12" ShadowDepth="0" Opacity="1" Color="Black"/>
-                    </TextBlock.Effect>
-                </TextBlock>
-                <TextBlock x:Name="PaneBPath" HorizontalAlignment="Center" Margin="0,6,0,0"
-                           TextTrimming="CharacterEllipsis" FontSize="17" Foreground="White">
-                    <TextBlock.Effect>
-                        <DropShadowEffect BlurRadius="8" ShadowDepth="0" Opacity="1" Color="Black"/>
-                    </TextBlock.Effect>
-                </TextBlock>
-            </StackPanel>
+            <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- 블러 배경 rectangle -->
+                <Border CornerRadius="14" Background="#4C000000" IsHitTestVisible="False">
+                    <Border.Effect>
+                        <BlurEffect Radius="20" KernelType="Gaussian"/>
+                    </Border.Effect>
+                </Border>
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="32,18">
+                    <TextBlock x:Name="PaneBText" HorizontalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               FontSize="28" FontWeight="Bold"
+                               Foreground="{DynamicResource PrimaryBrush}">
+                        <TextBlock.Effect>
+                            <DropShadowEffect x:Name="ShadowB" BlurRadius="12" ShadowDepth="0" Opacity="1" Color="Black"/>
+                        </TextBlock.Effect>
+                    </TextBlock>
+                    <TextBlock x:Name="PaneBPath" HorizontalAlignment="Center" Margin="0,6,0,0"
+                               TextTrimming="CharacterEllipsis" FontSize="17" Foreground="White">
+                        <TextBlock.Effect>
+                            <DropShadowEffect BlurRadius="8" ShadowDepth="0" Opacity="1" Color="Black"/>
+                        </TextBlock.Effect>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </Window>
