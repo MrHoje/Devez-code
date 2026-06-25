@@ -1849,6 +1849,7 @@ public partial class MainWindow : Window
         var win = new ProjectTargetPickerWindow { Owner = this };
         // CenterSplit 의 실제 컬럼 GridLength 를 그대로 복사 → 동일 폭에서 좌/우가 패널과 정확히 일치.
         win.Configure(LeftPane.ActiveProject?.Name ?? "빈 패널", RightPane.ActiveProject?.Name ?? "빈 패널",
+                      LeftPane.ActiveProject?.Path ?? "", RightPane.ActiveProject?.Path ?? "",
                       PaneACol.Width, PaneSplitterCol.Width, PaneBCol.Width);
         win.Left = dip.X;
         win.Top = dip.Y;
