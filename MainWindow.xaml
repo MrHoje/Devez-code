@@ -187,12 +187,17 @@
                            Placement="Center"
                            AllowsTransparency="True"
                            StaysOpen="True">
-                        <Border Width="{Binding ActualWidth, ElementName=CenterSplit}"
+                        <Border x:Name="ProjectTargetPickerScrim"
+                                Width="{Binding ActualWidth, ElementName=CenterSplit}"
                                 Height="{Binding ActualHeight, ElementName=CenterSplit}"
-                                Background="#33000000"
+                                Background="#33000000" Opacity="0"
                                 MouseLeftButtonDown="ProjectTargetPickerOverlay_MouseLeftButtonDown">
-                            <Grid Width="560" Height="220"
-                                  HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Grid x:Name="ProjectTargetPickerCard" Width="560" Height="220"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Opacity="0" RenderTransformOrigin="0.5,0.5">
+                                <Grid.RenderTransform>
+                                    <ScaleTransform ScaleX="0.96" ScaleY="0.96"/>
+                                </Grid.RenderTransform>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="4"/>
@@ -200,10 +205,19 @@
                                 </Grid.ColumnDefinitions>
 
                                 <Border x:Name="ProjectTargetPaneA" Grid.Column="0"
-                                        Background="{DynamicResource PanelBrush}"
-                                        BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="1"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                         CornerRadius="14,0,0,14" Cursor="Hand"
                                         MouseLeftButtonDown="ProjectTargetPaneA_MouseLeftButtonDown">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                         <TextBlock Text="왼쪽 패널" FontSize="{DynamicResource Fs16}"
                                                    FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
@@ -217,10 +231,19 @@
                                 <Border Grid.Column="1" Background="{DynamicResource BgBrush}"/>
 
                                 <Border x:Name="ProjectTargetPaneB" Grid.Column="2"
-                                        Background="{DynamicResource PanelBrush}"
-                                        BorderBrush="{DynamicResource PrimaryBrush}" BorderThickness="1"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                         CornerRadius="0,14,14,0" Cursor="Hand"
                                         MouseLeftButtonDown="ProjectTargetPaneB_MouseLeftButtonDown">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                         <TextBlock Text="오른쪽 패널" FontSize="{DynamicResource Fs16}"
                                                    FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"

@@ -1723,12 +1723,57 @@ public partial class MainWindow : Window
         ProjectTargetPaneAText.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
         ProjectTargetPaneBText.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
         ProjectTargetPickerOverlay.IsOpen = true;
+        AnimateProjectTargetPickerOpen();
+    }
+
+    private void AnimateProjectTargetPickerOpen()
+    {
+        ProjectTargetPickerScrim.BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            From = 0,
+            To = 1,
+            Duration = TimeSpan.FromMilliseconds(180),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
+
+        ProjectTargetPickerCard.BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            From = 0,
+            To = 1,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
+
+        if (ProjectTargetPickerCard.RenderTransform is ScaleTransform scale)
+        {
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation
+            {
+                From = 0.96,
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(220),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation
+            {
+                From = 0.96,
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(220),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+        }
     }
 
     private void CloseProjectTargetPicker()
     {
         _pendingProjectTarget = null;
         ProjectTargetPickerOverlay.IsOpen = false;
+        ProjectTargetPickerScrim.Opacity = 0;
+        ProjectTargetPickerCard.Opacity = 0;
+        if (ProjectTargetPickerCard.RenderTransform is ScaleTransform scale)
+        {
+            scale.ScaleX = 0.96;
+            scale.ScaleY = 0.96;
+        }
     }
 
     private void ProjectTargetPaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
