@@ -183,13 +183,13 @@
                         </Border.RenderTransform>
                     </Border>
                     <Popup x:Name="ProjectTargetPickerOverlay"
-                           PlacementTarget="{Binding ElementName=CenterSplit}"
+                           PlacementTarget="{Binding ElementName=RootChrome}"
                            Placement="Center"
                            AllowsTransparency="True"
                            StaysOpen="True">
                         <Border x:Name="ProjectTargetPickerScrim"
-                                Width="{Binding ActualWidth, ElementName=CenterSplit}"
-                                Height="{Binding ActualHeight, ElementName=CenterSplit}"
+                                Width="{Binding ActualWidth, ElementName=RootChrome}"
+                                Height="{Binding ActualHeight, ElementName=RootChrome}"
                                 Background="#33000000" Opacity="0"
                                 MouseLeftButtonDown="ProjectTargetPickerOverlay_MouseLeftButtonDown">
                             <Grid x:Name="ProjectTargetPickerCard" Width="560" Height="220"
