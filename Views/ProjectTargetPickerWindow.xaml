@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" ShowInTaskbar="False"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         PreviewKeyDown="Window_PreviewKeyDown"
         FontFamily="{StaticResource PretendardFont}">
     <Grid Background="#33000000">

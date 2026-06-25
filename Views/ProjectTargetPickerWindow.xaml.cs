@@ -16,7 +16,26 @@ public partial class ProjectTargetPickerWindow : Window
     {
         InitializeComponent();
         Opacity = 0;
-        Loaded += async (_, _) => await AnimateOpenAsync();
+        Loaded += async (_, _) =>
+        {
+            MatchOwnerBounds();
+            await AnimateOpenAsync();
+        };
+    }
+
+    // 딤 오버레이가 메인 창 영역에만 깔리도록 소유자 창과 동일한 위치·크기로 맞춘다.
+    // (크기를 지정하지 않으면 기본 크기로 떠서 오버레이가 프로그램 밖으로 넘친다.)
+    private void MatchOwnerBounds()
+    {
+        if (Owner == null) return;
+        var topLeft = Owner.PointToScreen(new Point(0, 0));
+        var src = PresentationSource.FromVisual(Owner);
+        var m = src?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+        var dip = m.Transform(topLeft); // 화면 픽셀 → DIP
+        Left = dip.X;
+        Top = dip.Y;
+        Width = Owner.ActualWidth;
+        Height = Owner.ActualHeight;
     }
 
     public void SetLabels(string paneAName, string paneBName)
