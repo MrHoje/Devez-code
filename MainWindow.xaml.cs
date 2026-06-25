@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using DevezCode.Models;
 using DevezCode.Services;
 using DevezCode.Services.Terminal;
@@ -64,6 +65,7 @@ public partial class MainWindow : Window
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
         SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
+        CenterSplit.SizeChanged += (_, _) => UpdatePaneFocusVisual(animate: false);
         _focusedPane = PaneA;
         _ = MarkdownWysiwygHost.PrewarmAsync();
 
@@ -1546,16 +1548,65 @@ public partial class MainWindow : Window
         PersistSplitState();
     }
 
-    /// <summary>분할 중일 때 포커스 패널을 시각적으로 표시(상단 액센트). 좌우 전환은 슬라이드로 표시한다.</summary>
-    private void UpdatePaneFocusVisual()
+    /// <summary>분할 중일 때 포커스 패널을 시각적으로 표시(상단 액센트). 하나의 라인이 좌우 패널 사이를 실제로 슬라이드한다.</summary>
+    private void UpdatePaneFocusVisual(bool animate = true)
     {
-        var currentIndex = _splitActive ? _panes.IndexOf(_focusedPane) : -1;
-        var slideFromX = 0d;
-        if (currentIndex >= 0 && _lastFocusVisualIndex >= 0 && currentIndex != _lastFocusVisualIndex)
-            slideFromX = _lastFocusVisualIndex < currentIndex ? -64d : 64d;
-
         foreach (var p in _panes)
-            p.SetFocusedVisual(_splitActive && ReferenceEquals(p, _focusedPane), slideFromX);
+            p.SetFocusedVisual(false);
+
+        if (!_splitActive)
+        {
+            CenterFocusIndicator.Visibility = Visibility.Collapsed;
+            _lastFocusVisualIndex = -1;
+            return;
+        }
+
+        var currentIndex = _panes.IndexOf(_focusedPane);
+        if (currentIndex < 0 || _focusedPane.ActualWidth <= 1 || CenterSplit.ActualWidth <= 1)
+        {
+            Dispatcher.BeginInvoke(() => UpdatePaneFocusVisual(animate), System.Windows.Threading.DispatcherPriority.Render);
+            return;
+        }
+
+        var x = _focusedPane.TranslatePoint(new Point(0, 0), CenterSplit).X;
+        var width = _focusedPane.ActualWidth;
+        var transform = CenterFocusIndicator.RenderTransform as TranslateTransform;
+
+        CenterFocusIndicator.Visibility = Visibility.Visible;
+
+        if (!animate || _lastFocusVisualIndex < 0 || transform == null)
+        {
+            if (transform != null)
+            {
+                transform.BeginAnimation(TranslateTransform.XProperty, null);
+                transform.X = x;
+            }
+            CenterFocusIndicator.BeginAnimation(WidthProperty, null);
+            CenterFocusIndicator.Width = width;
+            CenterFocusIndicator.Opacity = 1;
+            _lastFocusVisualIndex = currentIndex;
+            return;
+        }
+
+        var ease = new QuarticEase { EasingMode = EasingMode.EaseOut };
+        transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
+        {
+            To = x,
+            Duration = TimeSpan.FromMilliseconds(260),
+            EasingFunction = ease
+        });
+        CenterFocusIndicator.BeginAnimation(WidthProperty, new DoubleAnimation
+        {
+            To = width,
+            Duration = TimeSpan.FromMilliseconds(260),
+            EasingFunction = ease
+        });
+        CenterFocusIndicator.BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            To = 1,
+            Duration = TimeSpan.FromMilliseconds(120),
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
+        });
 
         _lastFocusVisualIndex = currentIndex;
     }
