@@ -183,81 +183,6 @@
                             <TranslateTransform/>
                         </Border.RenderTransform>
                     </Border>
-                    <Popup x:Name="ProjectTargetPickerOverlay"
-                           PlacementTarget="{Binding ElementName=RootChrome}"
-                           Placement="Relative"
-                           HorizontalOffset="0" VerticalOffset="0"
-                           AllowsTransparency="True"
-                           StaysOpen="True">
-                        <Border x:Name="ProjectTargetPickerScrim"
-                                Width="{Binding ActualWidth, ElementName=RootChrome}"
-                                Height="{Binding ActualHeight, ElementName=RootChrome}"
-                                Background="#33000000" Opacity="0"
-                                MouseLeftButtonDown="ProjectTargetPickerOverlay_MouseLeftButtonDown">
-                            <Grid x:Name="ProjectTargetPickerCard" Width="560" Height="220"
-                                  HorizontalAlignment="Center" VerticalAlignment="Center"
-                                  Opacity="0" RenderTransformOrigin="0.5,0.5">
-                                <Grid.RenderTransform>
-                                    <ScaleTransform ScaleX="0.96" ScaleY="0.96"/>
-                                </Grid.RenderTransform>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="4"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <Border x:Name="ProjectTargetPaneA" Grid.Column="0"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                        CornerRadius="14,0,0,14" Cursor="Hand"
-                                        MouseLeftButtonDown="ProjectTargetPaneA_MouseLeftButtonDown">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
-                                            <Style.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <TextBlock Text="왼쪽 패널" FontSize="{DynamicResource Fs16}"
-                                                   FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                        <TextBlock x:Name="ProjectTargetPaneAText" Margin="0,8,0,0"
-                                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
-                                                   HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Column="1" Background="{DynamicResource BgBrush}"/>
-
-                                <Border x:Name="ProjectTargetPaneB" Grid.Column="2"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                        CornerRadius="0,14,14,0" Cursor="Hand"
-                                        MouseLeftButtonDown="ProjectTargetPaneB_MouseLeftButtonDown">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
-                                            <Style.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <TextBlock Text="오른쪽 패널" FontSize="{DynamicResource Fs16}"
-                                                   FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
-                                                   HorizontalAlignment="Center"/>
-                                        <TextBlock x:Name="ProjectTargetPaneBText" Margin="0,8,0,0"
-                                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
-                                                   HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </Border>
-                    </Popup>
                 </Grid>
 
                 <GridSplitter x:Name="FileExpSplitter" Grid.Column="3" HorizontalAlignment="Stretch"
@@ -528,6 +453,75 @@
 
             <!-- 설정창 오버레이 호스트 (전체 영역 덮음) -->
             <Grid x:Name="OverlayHost" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="200"/>
+            <Grid x:Name="ProjectTargetPickerOverlay" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="250"
+                  Visibility="Collapsed">
+                <Border x:Name="ProjectTargetPickerScrim"
+                        Background="#33000000" Opacity="0"
+                        MouseLeftButtonDown="ProjectTargetPickerOverlay_MouseLeftButtonDown">
+                    <Grid x:Name="ProjectTargetPickerCard" Width="560" Height="220"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Opacity="0" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform ScaleX="0.96" ScaleY="0.96"/>
+                        </Grid.RenderTransform>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="4"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border x:Name="ProjectTargetPaneA" Grid.Column="0"
+                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                CornerRadius="14,0,0,14" Cursor="Hand"
+                                MouseLeftButtonDown="ProjectTargetPaneA_MouseLeftButtonDown">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <TextBlock Text="왼쪽 패널" FontSize="{DynamicResource Fs16}"
+                                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="ProjectTargetPaneAText" Margin="0,8,0,0"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
+                                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="1" Background="{DynamicResource BgBrush}"/>
+
+                        <Border x:Name="ProjectTargetPaneB" Grid.Column="2"
+                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                CornerRadius="0,14,14,0" Cursor="Hand"
+                                MouseLeftButtonDown="ProjectTargetPaneB_MouseLeftButtonDown">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <TextBlock Text="오른쪽 패널" FontSize="{DynamicResource Fs16}"
+                                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="ProjectTargetPaneBText" Margin="0,8,0,0"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
+                                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
 
             <!-- 종료 중 오버레이 — 열린 세션을 graceful 종료하는 동안 표시 -->
             <Grid x:Name="ShutdownOverlay" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="300"

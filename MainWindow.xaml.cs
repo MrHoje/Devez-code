@@ -885,7 +885,7 @@ public partial class MainWindow : Window
     /// <summary>F1 — 계정 사용량 사이드바 토글.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == System.Windows.Input.Key.Escape && ProjectTargetPickerOverlay.IsOpen)
+        if (e.Key == System.Windows.Input.Key.Escape && ProjectTargetPickerOverlay.Visibility == Visibility.Visible)
         {
             CloseProjectTargetPicker();
             e.Handled = true;
@@ -1484,6 +1484,7 @@ public partial class MainWindow : Window
     private bool _splitActive;
     private int _lastFocusVisualIndex = -1;
     private ProjectItem? _pendingProjectTarget;
+    private bool _projectTargetPickerSuspended;
 
     /// <summary>중앙 패널 분할/해제 토글. 분할 시 패널 B 노출 후 두 번째 프로젝트를 자동으로 연다.</summary>
     private void OnPaneSplitToggle(WorkspacePaneView pane)
@@ -1701,8 +1702,7 @@ public partial class MainWindow : Window
 
     private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
     {
-        _pendingProjectTarget = null;
-        ProjectTargetPickerOverlay.IsOpen = false;
+        CloseProjectTargetPicker();
         _focusedPane = pane;
         pane.SelectProject(proj);
         SyncShellToFocusedPane();
@@ -1711,19 +1711,24 @@ public partial class MainWindow : Window
 
     private void FocusPaneOnly(WorkspacePaneView pane)
     {
-        _pendingProjectTarget = null;
-        ProjectTargetPickerOverlay.IsOpen = false;
+        CloseProjectTargetPicker();
         _focusedPane = pane;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
     }
 
-    private void ShowProjectTargetPicker(ProjectItem proj)
+    private async void ShowProjectTargetPicker(ProjectItem proj)
     {
         _pendingProjectTarget = proj;
         ProjectTargetPaneAText.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
         ProjectTargetPaneBText.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
-        ProjectTargetPickerOverlay.IsOpen = true;
+        await SuspendProjectTargetPickerBackdropAsync();
+        if (!ReferenceEquals(_pendingProjectTarget, proj) || !IsActive)
+        {
+            CloseProjectTargetPicker();
+            return;
+        }
+        ProjectTargetPickerOverlay.Visibility = Visibility.Visible;
         AnimateProjectTargetPickerOpen();
     }
 
@@ -1767,14 +1772,31 @@ public partial class MainWindow : Window
     private void CloseProjectTargetPicker()
     {
         _pendingProjectTarget = null;
-        ProjectTargetPickerOverlay.IsOpen = false;
+        ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
+        ProjectTargetPickerScrim.BeginAnimation(OpacityProperty, null);
+        ProjectTargetPickerCard.BeginAnimation(OpacityProperty, null);
         ProjectTargetPickerScrim.Opacity = 0;
         ProjectTargetPickerCard.Opacity = 0;
         if (ProjectTargetPickerCard.RenderTransform is ScaleTransform scale)
         {
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
             scale.ScaleX = 0.96;
             scale.ScaleY = 0.96;
         }
+
+        if (_projectTargetPickerSuspended)
+        {
+            _projectTargetPickerSuspended = false;
+            ResumeTerminal();
+        }
+    }
+
+    private async Task SuspendProjectTargetPickerBackdropAsync()
+    {
+        if (_projectTargetPickerSuspended) return;
+        await SuspendTerminalWithSnapshotAsync(blankCurtain: false);
+        _projectTargetPickerSuspended = true;
     }
 
     private void ProjectTargetPaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
