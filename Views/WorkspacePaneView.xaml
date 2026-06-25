@@ -345,8 +345,8 @@
                    RenderOptions.BitmapScalingMode="HighQuality"/>
             <Border x:Name="TerminalCurtain" Background="{DynamicResource BgBrush}"
                     Visibility="Collapsed"/>
-            <Grid x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
-                  MaxWidth="360" Visibility="Visible">
+            <Grid x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                  Visibility="Visible">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
