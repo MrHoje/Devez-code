@@ -1871,8 +1871,13 @@ public partial class MainWindow : Window
     // 푸터 좌측 상태 텍스트는 제거됨(한도 표시로 대체). 호출부 유지를 위해 no-op.
     private void UpdateStatus() { }
 
-    /// <summary>테마 변경 시 좌·우 패널 토글 아이콘 brush 재계산(seam 은 각 패널이 자체 처리).</summary>
-    private void OnThemeChanged_UpdatePanels(string _) => Dispatcher.BeginInvoke(new Action(UpdatePanelToggleVisual));
+    /// <summary>테마 변경 시 패널 토글 아이콘 + 하단 푸터 막대색 + 우측 사용량 사이드바 카드를 재갱신한다.
+    /// (푸터/사이드바는 캐시된 데이터로 SetBar → RlBrush(c) → FindResource 를 다시 태워 새 테마색을 즉시 반영)</summary>
+    private void OnThemeChanged_UpdatePanels(string _) => Dispatcher.BeginInvoke(new Action(() =>
+    {
+        UpdatePanelToggleVisual();
+        ApplyFooterUsageVisibility();
+    }));
 
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
