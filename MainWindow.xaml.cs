@@ -523,9 +523,6 @@ public partial class MainWindow : Window
 
     private const double RlTrackWidth = 56;
 
-    private void RlPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginClaude();
-    private void CodexPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginCodex();
-    private void GoPanel_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => LoginOpenCode();
 
     /// <summary>Claude rate limit 을 하단 푸터에 반영. 데이터 없거나 설정 off 면 숨김.</summary>
     private void ApplyRateLimit(Models.RateLimitSnapshot snap)

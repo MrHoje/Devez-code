@@ -335,9 +335,8 @@
                         <!-- 계정 사용량: provider(Claude/Codex/Go)별 [구분선][아이콘][이름][5h바][주바]. -->
                         <!-- Claude (클릭 시 OAuth 로그인) -->
                         <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal" VerticalAlignment="Center"
-                                    Visibility="Collapsed" Background="Transparent" Cursor="Hand"
-                                    MouseLeftButtonUp="RlPanel_Click"
-                                    ToolTip="Claude 계정 사용량 (5시간 / 주간 한도) — 클릭하여 로그인/재연결">
+                                    Visibility="Collapsed" Background="Transparent" Cursor="Arrow"
+                                    ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
                             <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
@@ -360,7 +359,7 @@
                         </StackPanel>
                         <!-- Codex (클릭 시 ChatGPT OAuth 로그인) -->
                         <StackPanel x:Name="CodexPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
-                                    Background="Transparent" Cursor="Hand" MouseLeftButtonUp="CodexPanel_Click">
+                                    Background="Transparent" Cursor="Arrow">
                             <Border x:Name="CxLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
                                     Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
                             <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
@@ -385,7 +384,7 @@
                         </StackPanel>
                         <!-- opencode-go (클릭 시 재로그인) -->
                         <StackPanel x:Name="GoPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
-                                    Background="Transparent" Cursor="Hand" MouseLeftButtonUp="GoPanel_Click">
+                                    Background="Transparent" Cursor="Arrow">
                             <Border x:Name="GoLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
                                     Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
                             <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
