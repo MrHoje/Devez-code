@@ -218,6 +218,34 @@
                 <Border.ContextMenu>
                     <!-- 카드 어디서든 우클릭하면 프로젝트 메뉴가 뜨도록 outer Border로 이동 -->
                     <ContextMenu Opened="ProjectMenu_Opened">
+                        <!-- 분할 시에만 노출: 이 프로젝트를 좌/우 패널에 표시. 이미 떠 있는 쪽은 비활성(반대쪽=좌우 변경). -->
+                        <MenuItem Header="왼쪽 패널에 표시" Tag="{Binding}" Click="ShowInLeftPane_Click" Visibility="Collapsed">
+                            <MenuItem.Icon>
+                                <!-- lucide panel-left 그대로 + 반대쪽(우측 큰 칸 x9~21) 테마색 채움 -->
+                                <Viewbox Width="16" Height="16">
+                                    <Grid Width="24" Height="24">
+                                        <Rectangle HorizontalAlignment="Right" Width="12.8" Margin="0,2.2,2.2,2.2"
+                                                   RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource PrimaryBrush}"/>
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelLeft}"
+                                              Width="24" Height="24" Stroke="{DynamicResource TextMutedBrush}"/>
+                                    </Grid>
+                                </Viewbox>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="오른쪽 패널에 표시" Tag="{Binding}" Click="ShowInRightPane_Click" Visibility="Collapsed">
+                            <MenuItem.Icon>
+                                <!-- lucide panel-right 그대로 + 반대쪽(좌측 큰 칸 x3~15) 테마색 채움 -->
+                                <Viewbox Width="16" Height="16">
+                                    <Grid Width="24" Height="24">
+                                        <Rectangle HorizontalAlignment="Left" Width="12.8" Margin="2.2,2.2,0,2.2"
+                                                   RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource PrimaryBrush}"/>
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelRight}"
+                                              Width="24" Height="24" Stroke="{DynamicResource TextMutedBrush}"/>
+                                    </Grid>
+                                </Viewbox>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <Separator Tag="PaneSep" Visibility="Collapsed"/>
                         <MenuItem Header="세션 추가" Tag="{Binding}" Click="AddSession_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"

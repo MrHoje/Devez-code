@@ -334,7 +334,7 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
-        _projectTargetPickerWindow?.Close();
+        HidePanePick();
         // WebView2(터미널/md 에디터/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
         // 종료 직전 화면을 스냅샷으로 캡처해 깔고 WebView 를 치운 뒤 "세션 닫는 중" 오버레이를 그 위에 띄운다.
         try { await SuspendTerminalWithSnapshotAsync(blankCurtain: false); }
@@ -891,6 +891,12 @@ public partial class MainWindow : Window
         if (e.Key == System.Windows.Input.Key.F1)
         {
             SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == System.Windows.Input.Key.Escape && _panePickProject != null)
+        {
+            HidePanePick();
             e.Handled = true;
             return;
         }
@@ -1708,7 +1714,6 @@ public partial class MainWindow : Window
     }
 
     // ── 사이드바 액션 → 포커스 패널로 위임 ────────────────────────────
-    private ProjectTargetPickerWindow? _projectTargetPickerWindow;
 
     private void SelectProject(ProjectItem proj) => SelectProjectFromSidebar(proj);
 
@@ -1757,17 +1762,39 @@ public partial class MainWindow : Window
         UpdatePaneFocusVisual();
     }
 
+    // 패널 선택 오버레이가 떠 있을 때 선택 대상 프로젝트.
+    private ProjectItem? _panePickProject;
+
     private void ShowProjectTargetPicker(ProjectItem proj)
     {
-        var win = new ProjectTargetPickerWindow();
-        win.SetLabels(PaneA.ActiveProject?.Name ?? "빈 패널", PaneB.ActiveProject?.Name ?? "빈 패널");
-        win.Owner = this;
-        win.PaneSelected += pane =>
-        {
-            SelectProjectIntoPane(pane == "A" ? PaneA : PaneB, proj);
-        };
-        _projectTargetPickerWindow = win;
-        win.ShowDialog();
+        _panePickProject = proj;
+        PanePickLeftName.Text = PaneA.ActiveProject?.Name ?? "빈 패널";
+        PanePickRightName.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
+        PanePickLeft.Visibility = Visibility.Visible;
+        PanePickRight.Visibility = Visibility.Visible;
+    }
+
+    private void HidePanePick()
+    {
+        PanePickLeft.Visibility = Visibility.Collapsed;
+        PanePickRight.Visibility = Visibility.Collapsed;
+        _panePickProject = null;
+    }
+
+    private void PanePickLeft_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        var p = _panePickProject;
+        HidePanePick();
+        if (p != null) SelectProjectIntoPane(PaneA, p);
+    }
+
+    private void PanePickRight_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        var p = _panePickProject;
+        HidePanePick();
+        if (p != null) SelectProjectIntoPane(PaneB, p);
     }
 
     private void OpenSession(SessionItem session) => _focusedPane.OpenSession(session);
