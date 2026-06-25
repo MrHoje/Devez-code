@@ -18,8 +18,8 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 분할 시 포커스된 패널 상단 액센트(2px). 단일 패널이면 항상 숨김. -->
-        <Border x:Name="FocusAccent" Grid.Row="0" Height="2" VerticalAlignment="Top"
+        <!-- 분할 시 포커스된 패널 상단 액센트(2px). Grid.RowSpan 으로 전체 콘텐츠 위에 얹어 빈 패널(MetaBar collapsed)에서도 행 높이를 만들지 않는다. -->
+        <Border x:Name="FocusAccent" Grid.Row="0" Grid.RowSpan="4" Height="2" VerticalAlignment="Top"
                 Background="{DynamicResource PrimaryBrush}" Visibility="Collapsed" Opacity="0"
                 IsHitTestVisible="False" Panel.ZIndex="200">
             <Border.RenderTransform>
