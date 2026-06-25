@@ -48,6 +48,15 @@ public partial class App : Application
             RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
 
         base.OnStartup(e);
+
+        // ConPTY 자식(node 기반 claude/codex 등)이 색 지원을 간헐적으로 0(무색)으로 오판해 화면
+        // 전체가 흰 글자로 렌더되던 문제 방지. node 의 supports-color 는 stdout.isTTY===false 면
+        // WT_SESSION 이 있어도 색 레벨 0 을 반환하는데, ConPTY 초기화 타이밍에 따라 isTTY 가
+        // 간헐적으로 false 로 잡힌다. FORCE_COLOR=3 / COLORTERM 으로 truecolor 를 강제해 항상 색을 켠다.
+        // CreateProcessW 가 부모 환경을 상속하므로(lpEnvironment=Zero) 여기 한 번 설정하면 모든 세션이 상속.
+        Environment.SetEnvironmentVariable("FORCE_COLOR", "3");
+        Environment.SetEnvironmentVariable("COLORTERM", "truecolor");
+
         SetFontScale(SettingsService.LoadFontScale());
         SetTheme(LoadSavedTheme());
 
