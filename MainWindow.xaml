@@ -79,7 +79,7 @@
                     <Button x:Name="SplitToggleBtn" Click="SplitToggleBtn_Click" Margin="2,0,0,0"
                             Style="{StaticResource TitleBarChipButton}" ToolTip="패널 분할">
                         <Path x:Name="SplitToggleIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconColumns}" Width="16" Height="16"
+                              Data="{StaticResource IconPanelLeftOpen}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
                 </StackPanel>

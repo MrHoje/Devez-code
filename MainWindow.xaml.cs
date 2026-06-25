@@ -1566,6 +1566,7 @@ public partial class MainWindow : Window
     /// <summary>분할 토글 버튼: 분할 중이면 테마색 강조 + '분할 닫기' 툴팁, 아니면 기본.</summary>
     private void UpdateSplitToggleVisual()
     {
+        SplitToggleIcon.Data = (System.Windows.Media.Geometry)FindResource(_splitActive ? "IconPanelLeftClose" : "IconPanelLeftOpen");
         SplitToggleIcon.Stroke = (System.Windows.Media.Brush)FindResource(_splitActive ? "PrimaryBrush" : "TextMutedBrush");
         SplitToggleBtn.ToolTip = _splitActive ? "분할 닫기" : "패널 분할";
     }
