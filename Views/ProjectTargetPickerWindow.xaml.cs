@@ -17,15 +17,16 @@ public partial class ProjectTargetPickerWindow : Window
         InitializeComponent();
     }
 
-    /// <summary>좌/우 프로젝트 이름과 컬럼 폭(=실제 PaneA/Gap/PaneB 폭)을 채운다.</summary>
-    public void Configure(string paneAName, string paneBName, double leftWidth, double gap, double rightWidth)
+    /// <summary>좌/우 프로젝트 이름과 컬럼 폭을 채운다. 폭은 실제 CenterSplit 의 컬럼 GridLength
+    /// (PaneACol/PaneSplitterCol/PaneBCol)를 그대로 받아 복사한다. 창 전체 폭이 CenterSplit 과
+    /// 같으므로 동일한 제약으로 풀려 좌/우가 패널과 픽셀 단위로 정확히 일치한다.</summary>
+    public void Configure(string paneAName, string paneBName, GridLength left, GridLength gap, GridLength right)
     {
         PaneAText.Text = paneAName;
         PaneBText.Text = paneBName;
-        LeftCol.Width = new GridLength(leftWidth);
-        GapCol.Width = new GridLength(gap);
-        // RightCol 은 XAML 의 '*' 그대로 둬서 남은 폭을 모두 차지(rightWidth 는 폭 검증용으로만 받음).
-        _ = rightWidth;
+        LeftCol.Width = left;
+        GapCol.Width = gap;
+        RightCol.Width = right;
     }
 
     private void PaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

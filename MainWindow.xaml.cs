@@ -1766,11 +1766,10 @@ public partial class MainWindow : Window
                 ?? System.Windows.Media.Matrix.Identity;
         var dip = m.Transform(topLeft); // 화면 픽셀 → DIP
 
-        double gap = PaneSplitter.Visibility == Visibility.Visible ? PaneSplitterCol.ActualWidth : 0;
-
         var win = new ProjectTargetPickerWindow { Owner = this };
+        // CenterSplit 의 실제 컬럼 GridLength 를 그대로 복사 → 동일 폭에서 좌/우가 패널과 정확히 일치.
         win.Configure(PaneA.ActiveProject?.Name ?? "빈 패널", PaneB.ActiveProject?.Name ?? "빈 패널",
-                      PaneA.ActualWidth, gap, PaneB.ActualWidth);
+                      PaneACol.Width, PaneSplitterCol.Width, PaneBCol.Width);
         win.Left = dip.X;
         win.Top = dip.Y;
         win.Width = CenterSplit.ActualWidth;
