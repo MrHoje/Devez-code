@@ -15,13 +15,11 @@ public partial class FileEditorView : UserControl, IFileTabEditor
     private string? _path;
     private bool _loading;
     private readonly Action<string> _themeChangedHandler;
-
-
     public FileEditorView()
     {
         InitializeComponent();
         _themeChangedHandler = _ => Dispatcher.BeginInvoke(new Action(RefreshHighlighting));
-        App.ThemeChanged += _themeChangedHandler;
+        Loaded += (_, _) => App.ThemeChanged += _themeChangedHandler;
         Unloaded += (_, _) => App.ThemeChanged -= _themeChangedHandler;
     }
 
