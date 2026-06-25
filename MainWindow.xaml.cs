@@ -1653,7 +1653,7 @@ public partial class MainWindow : Window
     /// PaneB 를 0%→50% 로 펼치고, 완료 시 라이브 터미널로 복원한다.</summary>
     private async Task AnimateSplitOpenAsync()
     {
-        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(), PaneB.SuspendTerminalOnlyAsync());
+        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
         AnimatePaneSplit(0, 1, () =>
         {
             PaneBCol.Width = new GridLength(1, GridUnitType.Star);
@@ -1729,7 +1729,7 @@ public partial class MainWindow : Window
     /// 완료 시 PaneB 숨김·세션 배선 해제·컬럼 정규화 후 PaneA 를 라이브로 복원한다.</summary>
     private async Task AnimateSplitCloseAsync(bool swapped)
     {
-        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(), PaneB.SuspendTerminalOnlyAsync());
+        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
         AnimatePaneSplit(1, 0, () =>
         {
             if (!swapped) PaneB.ClearForHide();   // 비스왑: 축소 완료 후 세션/터미널 배선 해제(컬렉션·ConPTY·기록은 보존).

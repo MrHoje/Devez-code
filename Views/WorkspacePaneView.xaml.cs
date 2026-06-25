@@ -1401,13 +1401,21 @@ public partial class WorkspacePaneView : UserControl
         TerminalCurtain.Visibility = Visibility.Collapsed;
     }
 
-    /// <summary>스냅샷만(커튼 없이) 정지 — 우측 오버레이 드로어용.</summary>
-    public async Task SuspendTerminalOnlyAsync()
+    /// <summary>스냅샷만(커튼 없이) 정지 — 우측 오버레이 드로어용.
+    /// anchorTopLeft=true 면 캡처 시점 크기로 좌상단 고정 → 패널이 리사이즈돼도 이미지가 같이 늘어나지 않고 잘려 보인다(분할 애니메이션용).</summary>
+    public async Task SuspendTerminalOnlyAsync(bool anchorTopLeft = false)
     {
         if (_activeSession == null) return;
         var snap = await _terminal.CaptureSnapshotAsync();
         if (snap != null)
         {
+            if (anchorTopLeft)
+            {
+                TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Left;
+                TerminalSnapshot.VerticalAlignment = VerticalAlignment.Top;
+                TerminalSnapshot.Width = TerminalHostContainer.ActualWidth;
+                TerminalSnapshot.Height = TerminalHostContainer.ActualHeight;
+            }
             TerminalSnapshot.Source = snap;
             TerminalSnapshot.Visibility = Visibility.Visible;
         }
@@ -1420,6 +1428,11 @@ public partial class WorkspacePaneView : UserControl
             TerminalHostContainer.Visibility = Visibility.Visible;
         TerminalSnapshot.Visibility = Visibility.Collapsed;
         TerminalSnapshot.Source = null;
+        // 고정 크기/정렬 원복(다음 사용에서 기본 Fill 동작으로).
+        TerminalSnapshot.Width = double.NaN;
+        TerminalSnapshot.Height = double.NaN;
+        TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
+        TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
     }
 
     public void DisposeTerminal() => _terminal.Dispose();
