@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using DevezCode.Models;
 using DevezCode.Services;
 using DevezCode.Services.Terminal;
@@ -75,12 +76,13 @@ public partial class WorkspacePaneView : UserControl
         ApplyProjectInfoHeaderVisibility();
     }
 
-    /// <summary>설정(프로젝트 정보 헤더 숨기기)에 따라 메타바(MetaBar) 표시 여부를 반영.</summary>
+    /// <summary>설정(프로젝트 정보 헤더 숨기기) + 프로젝트 선택 여부에 따라 메타바(MetaBar) 표시 반영.
+    /// 프로젝트가 선택되지 않은 빈 패널이면 설정과 무관하게 항상 숨긴다(#·경로 아이콘 제거).</summary>
     public void ApplyProjectInfoHeaderVisibility()
     {
         if (MetaBar != null)
-            MetaBar.Visibility = SettingsService.LoadHideProjectInfoHeader()
-                ? Visibility.Collapsed : Visibility.Visible;
+            MetaBar.Visibility = (_activeProject != null && !SettingsService.LoadHideProjectInfoHeader())
+                ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Pane_PreviewInteract(object sender, MouseButtonEventArgs e) => FocusRequested?.Invoke(this);
@@ -94,10 +96,49 @@ public partial class WorkspacePaneView : UserControl
         if (SplitIcon != null) SplitIcon.Stroke = (Brush)FindResource(key);
     }
 
-    /// <summary>분할 중 포커스 패널 상단 액센트 표시 여부.</summary>
-    public void SetFocusedVisual(bool focused)
+    /// <summary>분할 중 포커스 패널 상단 액센트 표시 여부. 좌/우 패널 전환 시 가볍게 슬라이드한다.</summary>
+    public void SetFocusedVisual(bool focused, double slideFromX = 0)
     {
-        if (FocusAccent != null) FocusAccent.Visibility = focused ? Visibility.Visible : Visibility.Collapsed;
+        if (FocusAccent == null) return;
+
+        var transform = FocusAccent.RenderTransform as TranslateTransform;
+        if (focused)
+        {
+            FocusAccent.Visibility = Visibility.Visible;
+            if (transform != null)
+            {
+                transform.BeginAnimation(TranslateTransform.XProperty, null);
+                transform.X = slideFromX;
+                transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
+                {
+                    To = 0,
+                    Duration = TimeSpan.FromMilliseconds(160),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                });
+            }
+
+            FocusAccent.BeginAnimation(OpacityProperty, new DoubleAnimation
+            {
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(120),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+        }
+        else
+        {
+            if (transform != null) transform.BeginAnimation(TranslateTransform.XProperty, null);
+            var fade = new DoubleAnimation
+            {
+                To = 0,
+                Duration = TimeSpan.FromMilliseconds(90),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            fade.Completed += (_, _) =>
+            {
+                if (FocusAccent.Opacity <= 0.01) FocusAccent.Visibility = Visibility.Collapsed;
+            };
+            FocusAccent.BeginAnimation(OpacityProperty, fade);
+        }
     }
 
     /// <summary>세션 소유권 이전 — 이 패널이 해당 세션을 활성으로 들고 있으면 배선을 끊고 다음 세션으로(없으면 비움).</summary>
@@ -1177,6 +1218,11 @@ public partial class WorkspacePaneView : UserControl
         }
 
         EmptyState.Visibility = hasActive ? Visibility.Collapsed : Visibility.Visible;
+
+        // 프로젝트 미선택(빈 패널) 시 새 탭(+) 버튼과 메타바(#·경로) 숨김.
+        if (NewTabBtn != null)
+            NewTabBtn.Visibility = _activeProject != null ? Visibility.Visible : Visibility.Collapsed;
+        ApplyProjectInfoHeaderVisibility();
 
         SessionHeaderBar.Visibility = hasActive ? Visibility.Visible : Visibility.Collapsed;
         if (hasActive)

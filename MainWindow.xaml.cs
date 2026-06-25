@@ -1471,6 +1471,7 @@ public partial class MainWindow : Window
     }
 
     private bool _splitActive;
+    private int _lastFocusVisualIndex = -1;
 
     /// <summary>중앙 패널 분할/해제 토글. 분할 시 패널 B 노출 후 두 번째 프로젝트를 자동으로 연다.</summary>
     private void OnPaneSplitToggle(WorkspacePaneView pane)
@@ -1539,11 +1540,18 @@ public partial class MainWindow : Window
         PersistSplitState();
     }
 
-    /// <summary>분할 중일 때 포커스 패널을 시각적으로 표시(상단 액센트). 단일 패널이면 표시 안 함.</summary>
+    /// <summary>분할 중일 때 포커스 패널을 시각적으로 표시(상단 액센트). 좌우 전환은 슬라이드로 표시한다.</summary>
     private void UpdatePaneFocusVisual()
     {
+        var currentIndex = _splitActive ? _panes.IndexOf(_focusedPane) : -1;
+        var slideFromX = 0d;
+        if (currentIndex >= 0 && _lastFocusVisualIndex >= 0 && currentIndex != _lastFocusVisualIndex)
+            slideFromX = _lastFocusVisualIndex < currentIndex ? -36d : 36d;
+
         foreach (var p in _panes)
-            p.SetFocusedVisual(_splitActive && ReferenceEquals(p, _focusedPane));
+            p.SetFocusedVisual(_splitActive && ReferenceEquals(p, _focusedPane), slideFromX);
+
+        _lastFocusVisualIndex = currentIndex;
     }
 
     private SessionItem? FindSession(string id)
