@@ -51,14 +51,22 @@ reveal 직전 `CenterSplit` 을 `RenderTargetBitmap` 으로 캡처해 picker 패
 - 커버 창을 150ms 띄웠다 닫는 과정에서 "재개 시 더 이상한 동작"(정적 비트맵이 잠깐 떴다 튀는 인상)이 생김.
 → 전부 롤백하고 단순 `Collapsed + ResumeTerminalOnly`(애니메이션 도중은 깔끔, reveal 1~2프레임만 잔존)로 복귀.
 
-### 향후 제대로 하려면 (미구현)
-- **추적 커버 창**: 작업 내내(애니메이션 도중부터 settle 까지) 중앙을 덮는 창이 매 프레임 중앙 rect 를
-  추종(`CompositionTarget.Rendering`)하고, 터미널은 라이브로 그 아래서 리사이즈. 정적 캡처가 아니라
-  "작업 시작 전"에 띄워 reveal 까지 한 번도 안 걷어야 reflow 순간을 확실히 가린다.
-- 또는 JS(xterm)에 "최종 폭 re-fit+render 완료" ack 를 추가해 그 신호 뒤에만 커버를 걷는다.
+### ✅ 시도 2 — 커버 "올라온 것 확인 후" reveal (2026-06-26, 적용)
+시도 1 실패의 핵심 버그: `cover.Show()` **직후 곧장** WebView 를 되살림 → Show() 는 즉시 렌더되지
+않으므로 커버가 아직 화면에 안 떴고, 그 사이 reflow 가 그대로 비쳤다(= 깜빡임 그대로). 또 뒤늦게 뜬
+정적 커버가 닫히며 튐.
+수정: `SnapshotCoverWindow.Shown`(= `OnContentRendered` 완료) Task 를 **반드시 await** 한 뒤에만
+`ResumeTerminalOnly()` 호출. 커버가 위에 올라온 게 보장된 상태에서 reflow 가 일어나므로 안 보인다.
+흐름: `RenderCenterSplit()`(in-pane 스냅샷이 보이는 CenterSplit 을 RTB 캡처) → 커버 Show + `await Shown`
+→ 패널 라이브 복귀(커버 아래 reflow) → settle(~160ms) → 커버 Close.
+- 커버 위치/크기는 picker 와 동일하게 `PointToScreen`+`TransformFromDevice`+`CenterSplit.ActualWidth/Height`.
+- `WS_EX_NOACTIVATE | WS_EX_TRANSPARENT` (포커스 안 뺏고 클릭 통과).
+- 알려진 잔여 cosmetic: grow(중앙이 넓어지는) 경로는 in-pane 스냅샷이 anchored 라 커버에 우측 gap 이
+  잠깐 보일 수 있음. clear/flash 는 사라지되 내용 rewrap 은 close 시 한 번 일어남. 필요시 per-pane
+  `CapturePreviewAsync` 합성으로 정착 화면을 채워 seamless close 가능(미적용).
 
-> 교훈: 정적 캡처를 reveal "직후"에만 잠깐 씌우면 ① 캡처 시점이 한 프레임 늦고 ② 걷는 순간 라이브와
-> 어긋나 더 튄다. 커버는 reflow 가 시작되기 "전"부터 끝날 "때까지" 연속으로 덮고 있어야 의미가 있다.
+> 교훈: 정적 캡처라도 ① 커버가 "올라온 것"을 await 로 보장하고 ② reflow 끝날 때까지 연속으로 덮으면
+> 클리어 프레임은 가려진다. await 없이 Show 직후 reveal 하면 의미 없다.
 
 ## 적용 현황 (2026-06-26)
 - 분할 펼침/접힘: `AnimateSplitOpenAsync/CloseAsync` 에서 양 패널 `SuspendTerminalOnlyAsync(anchorTopLeft)` → 애니메이션 → `ResumeTerminalOnly`.
