@@ -13,8 +13,13 @@
       <!-- 포커스 프레임: 분할 시 포커스된 패널 둘레를 2px 테마색으로 4면 모두 감싼다.
            콘텐츠(터미널 포함)를 BorderThickness 만큼 안쪽으로 들여, 보더가 WebView2 와 겹치지 않으므로
            4면 전부 터미널 위로 보인다(airspace 회피). 두께는 항상 예약하고 색만 바꿔, 포커스 전환 시
-           터미널이 리사이즈되지 않는다. 비포커스 시 Transparent → CenterArea 배경이 비쳐 보이지 않는다. -->
-      <Border x:Name="FocusFrame" BorderThickness="2" BorderBrush="Transparent">
+           터미널이 리사이즈되지 않는다. 비포커스 시 Transparent → CenterArea 배경이 비쳐 보이지 않는다.
+           Margin 상단 1px: 본문 최상단의 1px 가로 구분선이 패널 top 을 덮어 상단 보더만 1px 로 잘려 보였다
+           → 1px 내려 구분선을 피하면 4면이 모두 2px 로 동일하게 보인다.
+           UseLayoutRounding/SnapsToDevicePixels: 별표 레이아웃의 소수 픽셀 경계에서 좌/우가 1~2px 로
+           들쭉날쭉해지지 않도록 디바이스 픽셀에 스냅해 4면 두께를 균일하게 한다. -->
+      <Border x:Name="FocusFrame" BorderThickness="2" BorderBrush="Transparent"
+              Margin="0,1,0,0" UseLayoutRounding="True" SnapsToDevicePixels="True">
       <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
