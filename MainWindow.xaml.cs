@@ -1725,7 +1725,6 @@ public partial class MainWindow : Window
         ProjectTargetPaneBText.Text = PaneB.ActiveProject?.Name ?? "빈 패널";
         ProjectTargetPickerOverlay.IsOpen = true;
         AnimateProjectTargetPickerOpen();
-        ProjectTargetPickerOverlay.Opened += ProjectTargetPickerOverlay_Opened;
     }
 
     private void AnimateProjectTargetPickerOpen()
@@ -1964,21 +1963,12 @@ public partial class MainWindow : Window
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
         StateChanged += OnStateChangedForFullScreen;
         Activated   += (_, _) => UpdateFullScreenTopmost();
-        Deactivated += (_, _) => UpdateFullScreenTopmost();
+        Deactivated += (_, _) => { UpdateFullScreenTopmost(); CloseProjectTargetPicker(); };
+        // 시작 시 전체화면 복원: 저장된 일반 bounds 위치(=올바른 모니터)에서 전체화면 진입.
+        if (_restoreFullScreen) { _restoreFullScreen = false; EnterFullScreen(); }
+        else if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
     }
 
-    private void ProjectTargetPickerOverlay_Opened(object? sender, EventArgs e)
-    {
-        try
-        {
-            var child = ProjectTargetPickerOverlay.Child;
-            if (child == null) return;
-            var src = PresentationSource.FromVisual(child) as System.Windows.Interop.HwndSource;
-            if (src == null || src.Handle == IntPtr.Zero) return;
-            SetWindowPos(src.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-        }
-        catch { /* best effort */ }
-    }
 
     private void OnStateChangedForFullScreen(object? sender, EventArgs e)
     {
@@ -2100,10 +2090,6 @@ public partial class MainWindow : Window
 
     private const int SM_CXFRAME = 32, SM_CYFRAME = 33, SM_CXPADDEDBORDER = 92;
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
-    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, int hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-    private const int HWND_TOPMOST = -1;
-    private const uint SWP_NOMOVE = 0x0002;
-    private const uint SWP_NOSIZE = 0x0001;
 
     private IntPtr _mainHwnd;
 
