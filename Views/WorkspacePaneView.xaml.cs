@@ -1365,20 +1365,31 @@ public partial class WorkspacePaneView : UserControl
             TerminalSnapshot.Source = snap;
             TerminalSnapshot.Visibility = Visibility.Visible;
         }
-        TerminalHostContainer.Visibility = Visibility.Collapsed;
+        // Collapsed(폭 0) 가 아니라 Hidden 으로 숨긴다 → 레이아웃 슬롯이 남아 WebView2 가 애니메이션 동안 최종 폭으로
+        // (보이지 않게) 미리 reflow 한다. Resume 시 0→최종폭 점프가 없어 reflow flash 가 사라진다.
+        TerminalHostContainer.Visibility = Visibility.Hidden;
     }
 
     public void ResumeTerminalOnly()
     {
+        // 라이브를 드러내고 스냅샷을 동시에 치우면, 숨김 WebView 가 아직 최종 프레임을 못 그린 순간이 비쳐 깜빡인다.
+        // 한 렌더 프레임 뒤(숨김 상태로 최종 폭 정착 완료)에 교체해 이음매 없이 전환한다. 스냅샷은 교체 직전까지 고정 유지.
+        void reveal()
+        {
+            if (_activeSession != null)
+                TerminalHostContainer.Visibility = Visibility.Visible;
+            TerminalSnapshot.Visibility = Visibility.Collapsed;
+            TerminalSnapshot.Source = null;
+            // 고정 크기/정렬 원복(다음 사용에서 기본 Fill 동작으로).
+            TerminalSnapshot.Width = double.NaN;
+            TerminalSnapshot.Height = double.NaN;
+            TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
+            TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
+        }
         if (_activeSession != null)
-            TerminalHostContainer.Visibility = Visibility.Visible;
-        TerminalSnapshot.Visibility = Visibility.Collapsed;
-        TerminalSnapshot.Source = null;
-        // 고정 크기/정렬 원복(다음 사용에서 기본 Fill 동작으로).
-        TerminalSnapshot.Width = double.NaN;
-        TerminalSnapshot.Height = double.NaN;
-        TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
-        TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
+            Dispatcher.InvokeAsync(reveal, System.Windows.Threading.DispatcherPriority.Render);
+        else
+            reveal();
     }
 
     public void DisposeTerminal() => _terminal.Dispose();
