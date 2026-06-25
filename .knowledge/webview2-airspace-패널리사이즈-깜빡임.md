@@ -51,29 +51,37 @@ reveal 직전 `CenterSplit` 을 `RenderTargetBitmap` 으로 캡처해 picker 패
 - 커버 창을 150ms 띄웠다 닫는 과정에서 "재개 시 더 이상한 동작"(정적 비트맵이 잠깐 떴다 튀는 인상)이 생김.
 → 전부 롤백하고 단순 `Collapsed + ResumeTerminalOnly`(애니메이션 도중은 깔끔, reveal 1~2프레임만 잔존)로 복귀.
 
-### ✅ 시도 2 — 커버 "올라온 것 확인 후" reveal (2026-06-26, 적용)
-시도 1 실패의 핵심 버그: `cover.Show()` **직후 곧장** WebView 를 되살림 → Show() 는 즉시 렌더되지
-않으므로 커버가 아직 화면에 안 떴고, 그 사이 reflow 가 그대로 비쳤다(= 깜빡임 그대로). 또 뒤늦게 뜬
-정적 커버가 닫히며 튐.
-수정: `SnapshotCoverWindow.Shown`(= `OnContentRendered` 완료) Task 를 **반드시 await** 한 뒤에만
-`ResumeTerminalOnly()` 호출. 커버가 위에 올라온 게 보장된 상태에서 reflow 가 일어나므로 안 보인다.
-흐름: `RenderCenterSplit()`(in-pane 스냅샷이 보이는 CenterSplit 을 RTB 캡처) → 커버 Show + `await Shown`
-→ 패널 라이브 복귀(커버 아래 reflow) → settle(~160ms) → 커버 Close.
-- 커버 위치/크기는 picker 와 동일하게 `PointToScreen`+`TransformFromDevice`+`CenterSplit.ActualWidth/Height`.
-- `WS_EX_NOACTIVATE | WS_EX_TRANSPARENT` (포커스 안 뺏고 클릭 통과).
-- 알려진 잔여 cosmetic: grow(중앙이 넓어지는) 경로는 in-pane 스냅샷이 anchored 라 커버에 우측 gap 이
-  잠깐 보일 수 있음. clear/flash 는 사라지되 내용 rewrap 은 close 시 한 번 일어남. 필요시 per-pane
-  `CapturePreviewAsync` 합성으로 정착 화면을 채워 seamless close 가능(미적용).
+### ❌ 시도 2 — 커버 "올라온 것 확인 후"(await Shown) reveal (2026-06-26, 실패·롤백)
+시도 1 의 타이밍 버그(Show 직후 곧장 reveal)를 고쳐, `SnapshotCoverWindow.Shown`(=`OnContentRendered`)
+을 await 한 뒤에만 `ResumeTerminalOnly()` 했다. 커버가 확실히 위에 올라온 뒤 reflow 가 일어나는데도
+**깜빡임이 그대로**였다 → 정적 최상위 커버로는 못 막는다는 결론.
 
-> 교훈: 정적 캡처라도 ① 커버가 "올라온 것"을 await 로 보장하고 ② reflow 끝날 때까지 연속으로 덮으면
-> 클리어 프레임은 가려진다. await 없이 Show 직후 reveal 하면 의미 없다.
+### 결론 — 최상위 커버로도 못 막는 이유 (windowed WebView2 swap chain)
+windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합성**한다(DWM 의 창 z-order 합성을
+부분적으로 우회). 그래서:
+- **정적**일 때는 picker 같은 최상위 창이 위에 보인다(WebView 가 다시 안 그림).
+- 그러나 **reflow 로 다시 그리는 순간**엔 그 repaint 가 커버 창을 뚫고 비친다 → 어떤 WPF/최상위 창으로도 못 가림.
+
+즉 **터미널이 리사이즈(=reflow)하는 한 그 한 프레임은 가릴 수 없다.** 시도 1·2 가 모두 실패한 근본 이유.
+
+### 그래서 가능한 길은 둘뿐
+1. **그 경로에서 터미널을 리사이즈하지 않기**(드로어처럼 패널이 터미널 위로 슬라이드해 덮기). reflow 자체가
+   없어 100% 무결점. 단 "밀어내기"가 "덮기"로 UX 가 바뀜. 분할은 본질적으로 리사이즈라 불가.
+2. **WebView2 를 windowless(컴포지션) 모드로 호스팅**: `CoreWebView2Environment` +
+   `CoreWebView2CompositionController` + WPF 컴포지션에 얹으면 airspace 자체가 사라져 WPF 가 위를 덮을 수
+   있고 RTB 캡처/페이드도 가능. 그러나 입력/포커스/IME/DnD 재배선 비용이 크고 회귀 위험 큼(대규모 작업).
+
+> 핵심 교훈: airspace 는 "정적 가림"만 해결한다. 활성 repaint(reflow) 가 swap chain 으로 뚫고 나오므로,
+> 리사이즈가 있는 한 최상위 커버로도 그 프레임은 못 가린다. windowless 호스팅이 아니면 근본 해결 불가.
 
 ## 적용 현황 (2026-06-26)
 - 분할 펼침/접힘: `AnimateSplitOpenAsync/CloseAsync` 에서 양 패널 `SuspendTerminalOnlyAsync(anchorTopLeft)` → 애니메이션 → `ResumeTerminalOnly`.
 - 좌/우/사용량 토글: `FreezeWorkspaceTerminalsAsync()`/`UnfreezeWorkspaceTerminals()` 로 동일 처리.
 - 설정/MCP 창: `SuspendTerminalWithSnapshotAsync(blankCurtain:false)` (단색 커튼 X, 스냅샷 O).
 - 종료("세션 닫는 중" 오버레이): 스냅샷 캡처 → 렌더 프레임 flush → `ShutdownOverlay` 표시 순서.
-- 위 모두 애니메이션 "도중"은 매끄럽고, 리사이즈 경로의 reveal 1~2 프레임 깜빡임만 잔존(정적 커버 창 시도는 실패·롤백, 위 "시도 기록" 참고).
+- 위 모두 애니메이션 "도중"은 매끄럽고, 리사이즈 경로의 reveal 1~2 프레임 깜빡임만 잔존.
+  **최상위 커버 창 2회 시도 모두 실패**(windowed WebView2 swap chain 이 reflow repaint 로 커버를 뚫음).
+  근본 해결은 "리사이즈 안 하기" 또는 "windowless WebView2 호스팅"뿐 — 위 결론 참고.
 
 ## 주의
 - 새 오버레이/패널을 터미널 위에 띄울 땐 반드시 먼저 `SuspendTerminal...` 로 WebView 를 `Collapsed`.
