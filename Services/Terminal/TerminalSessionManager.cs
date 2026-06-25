@@ -786,31 +786,77 @@ public sealed class TerminalSessionManager
             // busy 훅(clude-blinker 방식): claude 가 한 턴을 처리하는 동안만 좌측 스피너를 켠다.
             // UserPromptSubmit 에서 running, Stop(턴 종료)에서 idle 을 방별 파일로 기록한다.
             // 방 ID는 SessionStart 훅과 동일하게 $env:DEVEZCODE_ROOM_ID (claude 자식이 상속)로 구분.
+            //
+            // 백그라운드 서브에이전트 보정: 메인이 Agent 도구로 백그라운드 서브에이전트를 띄우면 메인 턴이
+            // 즉시 끝나 Stop 이 발화한다. 이때 그대로 idle 을 쓰면 서브에이전트들이 아직 도는데도 "응답 완료"
+            // 알림이 조기에(그리고 각 서브 완료 재주입마다 반복) 뜬다. 그래서 idle(Stop) 시점에 세션
+            // transcript 를 읽어 미완료 백그라운드 작업 수를 센다:
+            //   pending = (Agent tool_use launch 수) - (재주입된 <task-notification> 의 distinct <task-id> 수)
+            // pending>0 이면 idle 대신 running 을 유지해 스피너를 켜두고 완료 알림을 보류한다. 모든 서브가
+            // 끝나(pending=0) 메인이 최종 응답 후 Stop 할 때 단 한 번 idle→알림이 뜬다. SessionEnd 는 세션
+            // 종료이므로 무조건 idle.
             const string busyScript = """
                 # DevezCode busy-state hook. Arg1 = running|idle. Writes per-room state for the sidebar spinner.
                 # On 'running' (UserPromptSubmit) also records the last submitted prompt for the header title.
+                # On 'idle' (Stop): if background subagents are still running, keep 'running' so no premature
+                # "response done" notification fires; only signal idle once all subagents have completed.
                 param([string]$status = 'idle')
                 try {
                   $room = $env:DEVEZCODE_ROOM_ID
-                  if ($room) {
-                    $room = $room -replace '[^\w\-]', ''
-                    $dir = Join-Path $env:APPDATA 'DevezCode\claude\busy'
-                    New-Item -ItemType Directory -Force -Path $dir | Out-Null
-                    Set-Content -LiteralPath (Join-Path $dir ($room + '.txt')) -Value $status -Encoding Ascii -Force
-                    if ($status -eq 'running') {
-                      # UserPromptSubmit 은 stdin 으로 {"prompt":"..."} 를 넘긴다. 1줄로 요약해 별도 파일에 기록.
-                      $raw = ''
-                      try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
-                      $prompt = ''
-                      try { $prompt = ($raw | ConvertFrom-Json).prompt } catch { }
-                      if ($prompt) {
-                        $prompt = ($prompt -replace '\s+', ' ').Trim()
-                        if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
-                        $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
-                        New-Item -ItemType Directory -Force -Path $mdir | Out-Null
-                        Set-Content -LiteralPath (Join-Path $mdir ($room + '.txt')) -Value $prompt -Encoding UTF8 -Force
-                      }
+                  if (-not $room) { exit 0 }
+                  $room = $room -replace '[^\w\-]', ''
+                  $dir = Join-Path $env:APPDATA 'DevezCode\claude\busy'
+                  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                  $busyFile = Join-Path $dir ($room + '.txt')
+
+                  $raw = ''
+                  try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
+                  $j = $null
+                  try { $j = $raw | ConvertFrom-Json } catch { }
+
+                  if ($status -eq 'running') {
+                    Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
+                    # UserPromptSubmit 은 stdin 으로 {"prompt":"..."} 를 넘긴다. 1줄로 요약해 별도 파일에 기록.
+                    $prompt = ''
+                    try { $prompt = '' + $j.prompt } catch { }
+                    # 백그라운드 완료가 프롬프트로 재주입되는 <task-notification> 은 헤더에 쓰지 않는다(실제 사용자 프롬프트 유지).
+                    if ($prompt -and -not $prompt.StartsWith('<task-notification>')) {
+                      $prompt = ($prompt -replace '\s+', ' ').Trim()
+                      if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
+                      $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
+                      New-Item -ItemType Directory -Force -Path $mdir | Out-Null
+                      Set-Content -LiteralPath (Join-Path $mdir ($room + '.txt')) -Value $prompt -Encoding UTF8 -Force
                     }
+                    exit 0
+                  }
+
+                  # status = idle (Stop/SessionEnd). 미완료 백그라운드 서브에이전트가 있으면 완료로 보지 않는다.
+                  $evt = ''
+                  try { $evt = '' + $j.hook_event_name } catch { }
+                  $pending = 0
+                  if ($evt -ne 'SessionEnd') {
+                    try {
+                      $tp = '' + $j.transcript_path
+                      if ($tp -and (Test-Path -LiteralPath $tp)) {
+                        $launched = 0
+                        $done = @{}
+                        foreach ($line in [System.IO.File]::ReadLines($tp)) {
+                          if ($line.Contains('"name":"Agent"')) {
+                            $launched += ([regex]::Matches($line, '"name":"Agent"')).Count
+                          }
+                          if ($line.Contains('task-notification') -and $line.Contains('"role":"user"')) {
+                            foreach ($m in [regex]::Matches($line, '<task-id>\s*([A-Za-z0-9]+)\s*</task-id>')) { $done[$m.Groups[1].Value] = 1 }
+                          }
+                        }
+                        $pending = $launched - $done.Count
+                      }
+                    } catch { $pending = 0 }
+                  }
+
+                  if ($pending -gt 0) {
+                    Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
+                  } else {
+                    Set-Content -LiteralPath $busyFile -Value 'idle' -Encoding Ascii -Force
                   }
                 } catch { }
                 exit 0
