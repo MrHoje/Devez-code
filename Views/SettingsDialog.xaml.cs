@@ -50,7 +50,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.5.2", "2026-06-25", true, new[]
+        ("v1.6.0", "2026-06-26", true, new[]
+        {
+            "세션 화면을 좌우로 분할해 두 프로젝트를 동시에 볼 수 있는 분할 기능을 추가했습니다.",
+            "응답 완료 알림이 서브에이전트 작업을 본 응답 완료로 잘못 인식하던 문제를 수정했습니다.",
+        }),
+        ("v1.5.2", "2026-06-25", false, new[]
         {
             "하단 푸터의 계정 사용량 표시가 동작하지 않던 문제를 수정했습니다. (설정 > 계정 사용량 > 하단 푸터 표시)",
         }),
