@@ -7,50 +7,37 @@
         Deactivated="Window_Deactivated"
         PreviewKeyDown="Window_PreviewKeyDown"
         FontFamily="{StaticResource PretendardFont}">
-    <!-- 좌/우 컬럼 폭은 MainWindow 가 실제 PaneA/PaneB 폭으로 채워 패널 영역에 정확히 맞춘다. -->
+    <!-- 좌/우 컬럼 폭은 MainWindow 가 실제 PaneA/PaneB 폭으로 채워 패널 영역에 정확히 맞춘다.
+         평소엔 투명, 호버 시에만 살짝 밝아진다(흰색 저알파). -->
     <Grid x:Name="Root">
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="LeftCol" Width="*"/>
             <ColumnDefinition x:Name="GapCol" Width="0"/>
             <ColumnDefinition x:Name="RightCol" Width="*"/>
         </Grid.ColumnDefinitions>
-        <Border Grid.Column="0" Cursor="Hand" Background="#66000000"
+        <Border Grid.Column="0" Cursor="Hand" Background="Transparent"
                 MouseLeftButtonDown="PaneA_MouseLeftButtonDown">
             <Border.Style>
                 <Style TargetType="Border">
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#99000000"/>
+                            <Setter Property="Background" Value="#1AFFFFFF"/>
                         </Trigger>
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="왼쪽" FontSize="{DynamicResource Fs16}"
-                           FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="PaneAText" Margin="0,8,0,0"
-                           FontSize="{DynamicResource Fs12}" Foreground="#CCFFFFFF"
-                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            </StackPanel>
         </Border>
-        <Border Grid.Column="2" Cursor="Hand" Background="#66000000"
+        <Border Grid.Column="2" Cursor="Hand" Background="Transparent"
                 MouseLeftButtonDown="PaneB_MouseLeftButtonDown">
             <Border.Style>
                 <Style TargetType="Border">
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#99000000"/>
+                            <Setter Property="Background" Value="#1AFFFFFF"/>
                         </Trigger>
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="오른쪽" FontSize="{DynamicResource Fs16}"
-                           FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center"/>
-                <TextBlock x:Name="PaneBText" Margin="0,8,0,0"
-                           FontSize="{DynamicResource Fs12}" Foreground="#CCFFFFFF"
-                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            </StackPanel>
         </Border>
     </Grid>
 </Window>

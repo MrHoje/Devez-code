@@ -1769,8 +1769,7 @@ public partial class MainWindow : Window
         double gap = PaneSplitter.Visibility == Visibility.Visible ? PaneSplitterCol.ActualWidth : 0;
 
         var win = new ProjectTargetPickerWindow { Owner = this };
-        win.Configure(PaneA.ActiveProject?.Name ?? "빈 패널", PaneB.ActiveProject?.Name ?? "빈 패널",
-                      PaneA.ActualWidth, gap, PaneB.ActualWidth);
+        win.Configure(PaneA.ActualWidth, gap, PaneB.ActualWidth);
         win.Left = dip.X;
         win.Top = dip.Y;
         win.Width = CenterSplit.ActualWidth;

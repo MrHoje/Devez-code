@@ -316,7 +316,7 @@
                                         VerticalAlignment="Center" Margin="4,-4,0,0">
                             <!-- 패널 배지: 우클릭 메뉴 아이콘과 동일한 lucide panel + 반대쪽 칸 테마색 채움. 기본 숨김, PaneRole 로 노출/방향 결정. -->
                             <Viewbox x:Name="PaneBadge" Width="16" Height="16"
-                                     VerticalAlignment="Center" Margin="0,0,6,0"
+                                     VerticalAlignment="Center" Margin="0,-1,6,1"
                                      Visibility="Collapsed" ToolTip="열려 있는 패널">
                                 <Grid Width="24" Height="24">
                                     <Rectangle x:Name="PaneBadgeFill" RadiusX="1.5" RadiusY="1.5"

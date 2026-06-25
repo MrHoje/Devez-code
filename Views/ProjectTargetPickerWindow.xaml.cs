@@ -17,11 +17,9 @@ public partial class ProjectTargetPickerWindow : Window
         InitializeComponent();
     }
 
-    /// <summary>좌/우 라벨과 컬럼 폭(=실제 PaneA/Gap/PaneB 폭)을 채운다.</summary>
-    public void Configure(string paneAName, string paneBName, double leftWidth, double gap, double rightWidth)
+    /// <summary>좌/우 컬럼 폭(=실제 PaneA/Gap/PaneB 폭)을 채운다.</summary>
+    public void Configure(double leftWidth, double gap, double rightWidth)
     {
-        PaneAText.Text = paneAName;
-        PaneBText.Text = paneBName;
         LeftCol.Width = new GridLength(leftWidth);
         GapCol.Width = new GridLength(gap);
         RightCol.Width = new GridLength(rightWidth);
