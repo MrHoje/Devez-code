@@ -24,7 +24,8 @@ public partial class ProjectTargetPickerWindow : Window
         PaneBText.Text = paneBName;
         LeftCol.Width = new GridLength(leftWidth);
         GapCol.Width = new GridLength(gap);
-        RightCol.Width = new GridLength(rightWidth);
+        // RightCol 은 XAML 의 '*' 그대로 둬서 남은 폭을 모두 차지(rightWidth 는 폭 검증용으로만 받음).
+        _ = rightWidth;
     }
 
     private void PaneA_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

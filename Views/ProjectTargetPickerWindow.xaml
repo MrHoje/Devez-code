@@ -13,6 +13,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="LeftCol" Width="*"/>
             <ColumnDefinition x:Name="GapCol" Width="0"/>
+            <!-- 오른쪽은 남은 폭을 모두 채워 패널 B 영역에 확실히 맞춘다(반올림으로 비는 것 방지). -->
             <ColumnDefinition x:Name="RightCol" Width="*"/>
         </Grid.ColumnDefinitions>
         <Border Grid.Column="0" Cursor="Hand"
@@ -30,9 +31,10 @@
             </Border.Style>
             <TextBlock x:Name="PaneAText" VerticalAlignment="Center" HorizontalAlignment="Center"
                        Margin="16,0" TextTrimming="CharacterEllipsis"
-                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold" Foreground="White">
+                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource PrimaryBrush}">
                 <TextBlock.Effect>
-                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.8" Color="Black"/>
+                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.6" Color="Black"/>
                 </TextBlock.Effect>
             </TextBlock>
         </Border>
@@ -50,9 +52,10 @@
             </Border.Style>
             <TextBlock x:Name="PaneBText" VerticalAlignment="Center" HorizontalAlignment="Center"
                        Margin="16,0" TextTrimming="CharacterEllipsis"
-                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold" Foreground="White">
+                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource PrimaryBrush}">
                 <TextBlock.Effect>
-                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.8" Color="Black"/>
+                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.6" Color="Black"/>
                 </TextBlock.Effect>
             </TextBlock>
         </Border>
