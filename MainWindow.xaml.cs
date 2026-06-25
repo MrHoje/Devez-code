@@ -1549,6 +1549,44 @@ public partial class MainWindow : Window
     private bool _splitActive;
     private int _lastFocusVisualIndex = -1;
 
+    // 분할 펼침/접힘 애니메이션 진행도(0=합쳐짐, 1=완전 분할). GridLength 는 직접 애니메이션이 안 되므로
+    // 이 double DP 를 애니메이션하고 콜백에서 PaneB 컬럼의 star 폭을 갱신한다.
+    private static readonly DependencyProperty PaneSplitProgressProperty =
+        DependencyProperty.Register(nameof(PaneSplitProgress), typeof(double), typeof(MainWindow),
+            new PropertyMetadata(0.0, OnPaneSplitProgressChanged));
+
+    private double PaneSplitProgress
+    {
+        get => (double)GetValue(PaneSplitProgressProperty);
+        set => SetValue(PaneSplitProgressProperty, value);
+    }
+
+    private static void OnPaneSplitProgressChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var w = (MainWindow)d;
+        // PaneA 는 1* 고정, PaneB 는 p* → 비율 p/(1+p). p:0→1 이면 0%→50% 로 부드럽게 자란다.
+        w.PaneBCol.Width = new GridLength((double)e.NewValue, GridUnitType.Star);
+    }
+
+    /// <summary>PaneB 컬럼을 from→to(0~1) 로 애니메이션. 완료 시 onComplete 호출.</summary>
+    private void AnimatePaneSplit(double from, double to, Action onComplete)
+    {
+        PaneSplitProgress = from;
+        var anim = new DoubleAnimation
+        {
+            From = from,
+            To = to,
+            Duration = TimeSpan.FromMilliseconds(210),
+            EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+        };
+        anim.Completed += (_, _) =>
+        {
+            BeginAnimation(PaneSplitProgressProperty, null);   // 애니메이션 해제 → 이후 스플리터 드래그가 자유롭게 폭을 바꿀 수 있다.
+            onComplete();
+        };
+        BeginAnimation(PaneSplitProgressProperty, anim);
+    }
+
     /// <summary>중앙 패널 분할/해제 토글. 분할 시 패널 B 노출 후 두 번째 프로젝트를 자동으로 연다.</summary>
     private void OnPaneSplitToggle(WorkspacePaneView pane)
     {
@@ -1573,7 +1611,7 @@ public partial class MainWindow : Window
     }
 
 
-    private void EnableSplit(ProjectItem? bProject = null, SessionItem? bSession = null)
+    private void EnableSplit(ProjectItem? bProject = null, SessionItem? bSession = null, bool animate = true)
     {
         if (_splitActive) return;
         _splitActive = true;
@@ -1586,7 +1624,7 @@ public partial class MainWindow : Window
         PaneB.IsRightPane = true;
 
         PaneSplitterCol.Width = new GridLength(4);
-        PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+        PaneACol.Width = new GridLength(1, GridUnitType.Star);
         PaneSplitter.Visibility = Visibility.Visible;
         PaneB.Visibility = Visibility.Visible;
 
@@ -1597,11 +1635,25 @@ public partial class MainWindow : Window
         if (bSession != null) PaneB.OpenSession(bSession);
         else if (bProject != null) PaneB.SelectProject(bProject);
         else SyncShellToFocusedPane();   // 사용자 토글 시 B 는 빈 패널 — 직접 프로젝트를 고르게 한다.
-        UpdatePaneFocusVisual();
         UpdatePaneRoles();
         Sidebar.IsSplitActive = true;
         UpdateSplitToggleVisual();
         PersistSplitState();
+
+        if (animate)
+        {
+            // PaneB 를 0% → 50% 로 펼치고, 완료 후 1* 로 고정 + 포커스 액센트 표시.
+            AnimatePaneSplit(0, 1, () =>
+            {
+                PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+                UpdatePaneFocusVisual(animate: false);
+            });
+        }
+        else
+        {
+            PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+            UpdatePaneFocusVisual();
+        }
     }
 
     /// <summary>시작 시 저장된 분할 상태 복원 — 패널 B 프로젝트/세션을 열고 포커스는 A 로 되돌린다.</summary>
@@ -1621,7 +1673,7 @@ public partial class MainWindow : Window
             bSess = bProj?.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId)
                     ?? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId);
         }
-        EnableSplit(bProj, bSess);
+        EnableSplit(bProj, bSess, animate: false);   // 시작 시 복원은 애니메이션 없이 즉시.
 
         _focusedPane = PaneA;
         SyncShellToFocusedPane();
@@ -1636,9 +1688,10 @@ public partial class MainWindow : Window
         // 좌측(주) 패널 콘텐츠를 유지, 우측은 버린다. 스왑 상태에서는 유지 콘텐츠가 PaneB 에 있을 수 있다.
         var keep = LeftPane;
         var drop = RightPane;
-        if (!ReferenceEquals(keep, PaneA))
+        bool swapped = !ReferenceEquals(keep, PaneA);
+        if (swapped)
         {
-            // 비분할의 주 패널은 PaneA 이므로, 스왑으로 PaneB 에 있던 유지 콘텐츠를 PaneA 로 되돌린다.
+            // 비분할의 주 패널은 PaneA 이므로, 스왑으로 PaneB 에 있던 유지 콘텐츠를 PaneA 로 되돌린다(애니메이션 동안 좌측에 보이도록 먼저 처리).
             // (분할 해제 시점이라 한 번의 재부착은 허용 — '단순 위치 변경'이 아니다.)
             var proj = keep.ActiveProject;
             var sess = keep.ActiveSession;
@@ -1646,33 +1699,34 @@ public partial class MainWindow : Window
             keep.ClearForHide();   // PaneB(=keep) 콘텐츠 떼기
             if (sess != null) PaneA.OpenSession(sess);
             else if (proj != null) PaneA.SelectProject(proj);
+            // 컬럼 정규화: PaneA=col0, PaneB=col2.
+            Grid.SetColumn(PaneA, 0);
+            Grid.SetColumn(PaneB, 2);
+            _panesSwapped = false;
+            PaneA.IsRightPane = false;
+            PaneB.IsRightPane = true;
         }
-        else
-        {
-            drop.ClearForHide();   // PaneB 의 세션/터미널 배선을 끊고(컬렉션·ConPTY·기록은 보존) 숨긴다.
-        }
+        // 비스왑일 땐 PaneB 의 콘텐츠를 접힘 애니메이션이 끝난 뒤 정리한다(축소되며 사라지는 인상).
 
         _focusedPane = PaneA;
-        PaneB.Visibility = Visibility.Collapsed;
-        PaneSplitter.Visibility = Visibility.Collapsed;
-
-        // 컬럼 정규화: PaneA=col0(*), Splitter=col1(0), PaneB=col2(0). 좌/우 스왑 상태 해제.
-        Grid.SetColumn(PaneA, 0);
-        Grid.SetColumn(PaneB, 2);
-        PaneBCol.Width = new GridLength(0);
-        PaneSplitterCol.Width = new GridLength(0);
-        PaneACol.Width = new GridLength(1, GridUnitType.Star);
-        _panesSwapped = false;
-        PaneA.IsRightPane = false;
-        PaneB.IsRightPane = true;
-
         foreach (var p in _panes) p.SetSplitActive(false);
         SyncShellToFocusedPane();
-        UpdatePaneFocusVisual();
         UpdatePaneRoles();
         Sidebar.IsSplitActive = false;
         UpdateSplitToggleVisual();
-        PersistSplitState();
+
+        // PaneB 를 50% → 0% 로 접고, 완료 후 숨김·세션 배선 해제·컬럼 정규화.
+        AnimatePaneSplit(1, 0, () =>
+        {
+            if (!swapped) PaneB.ClearForHide();   // 비스왑: 축소 완료 후 세션/터미널 배선 해제(컬렉션·ConPTY·기록은 보존).
+            PaneB.Visibility = Visibility.Collapsed;
+            PaneSplitter.Visibility = Visibility.Collapsed;
+            PaneBCol.Width = new GridLength(0);
+            PaneSplitterCol.Width = new GridLength(0);
+            PaneACol.Width = new GridLength(1, GridUnitType.Star);
+            UpdatePaneFocusVisual(animate: false);
+            PersistSplitState();
+        });
     }
 
     /// <summary>분할 중일 때 포커스 패널을 시각적으로 표시(상단 액센트). 하나의 라인이 좌우 패널 사이를 실제로 슬라이드한다.</summary>
