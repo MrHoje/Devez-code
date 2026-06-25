@@ -1662,6 +1662,13 @@ public partial class MainWindow : Window
     private void SelectProject(ProjectItem proj) => SelectProjectFromSidebar(proj);
     private void SelectProjectFromSidebar(ProjectItem proj)
     {
+        var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, proj));
+        if (existingPane != null)
+        {
+            FocusPaneOnly(existingPane);
+            return;
+        }
+
         if (_splitActive)
         {
             if (PaneA.ActiveProject == null)
@@ -1689,6 +1696,15 @@ public partial class MainWindow : Window
         ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
         _focusedPane = pane;
         pane.SelectProject(proj);
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+    }
+
+    private void FocusPaneOnly(WorkspacePaneView pane)
+    {
+        _pendingProjectTarget = null;
+        ProjectTargetPickerOverlay.Visibility = Visibility.Collapsed;
+        _focusedPane = pane;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
     }
