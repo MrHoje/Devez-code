@@ -221,12 +221,12 @@
                         <!-- 분할 시에만 노출: 이 프로젝트를 좌/우 패널에 표시. 이미 떠 있는 쪽은 비활성(반대쪽=좌우 변경). -->
                         <MenuItem Header="왼쪽 패널에 표시" Tag="{Binding}" Click="ShowInLeftPane_Click" Visibility="Collapsed">
                             <MenuItem.Icon>
-                                <!-- lucide panel-left 그대로 + 반대쪽(우측 큰 칸 x9~21) 테마색 채움 -->
+                                <!-- panel-right + 좌측 큰 칸(x3~15) 테마색 채움 -->
                                 <Viewbox Width="16" Height="16">
                                     <Grid Width="24" Height="24">
-                                        <Rectangle HorizontalAlignment="Right" Width="12.8" Margin="0,2.2,2.2,2.2"
+                                        <Rectangle HorizontalAlignment="Left" Width="12.8" Margin="2.2,2.2,0,2.2"
                                                    RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource PrimaryBrush}"/>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelLeft}"
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelRight}"
                                               Width="24" Height="24" Stroke="{DynamicResource TextMutedBrush}"/>
                                     </Grid>
                                 </Viewbox>
@@ -234,12 +234,12 @@
                         </MenuItem>
                         <MenuItem Header="오른쪽 패널에 표시" Tag="{Binding}" Click="ShowInRightPane_Click" Visibility="Collapsed">
                             <MenuItem.Icon>
-                                <!-- lucide panel-right 그대로 + 반대쪽(좌측 큰 칸 x3~15) 테마색 채움 -->
+                                <!-- panel-left + 우측 큰 칸(x9~21) 테마색 채움 -->
                                 <Viewbox Width="16" Height="16">
                                     <Grid Width="24" Height="24">
-                                        <Rectangle HorizontalAlignment="Left" Width="12.8" Margin="2.2,2.2,0,2.2"
+                                        <Rectangle HorizontalAlignment="Right" Width="12.8" Margin="0,2.2,2.2,2.2"
                                                    RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource PrimaryBrush}"/>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelRight}"
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelLeft}"
                                               Width="24" Height="24" Stroke="{DynamicResource TextMutedBrush}"/>
                                     </Grid>
                                 </Viewbox>
@@ -382,18 +382,18 @@
                 <!-- 분할 좌 패널(PaneA): 배지 노출 + 왼쪽 칸 테마색 하이라이트 -->
                 <DataTrigger Binding="{Binding PaneRole}" Value="Left">
                     <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
-                    <Setter TargetName="PaneBadgeIcon" Property="Data" Value="{StaticResource IconPanelLeft}"/>
-                    <Setter TargetName="PaneBadgeFill" Property="HorizontalAlignment" Value="Right"/>
-                    <Setter TargetName="PaneBadgeFill" Property="Width" Value="8.53"/>
-                    <Setter TargetName="PaneBadgeFill" Property="Margin" Value="0,1.47,1.47,1.47"/>
-                </DataTrigger>
-                <!-- 분할 우 패널(PaneB) -->
-                <DataTrigger Binding="{Binding PaneRole}" Value="Right">
-                    <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
                     <Setter TargetName="PaneBadgeIcon" Property="Data" Value="{StaticResource IconPanelRight}"/>
                     <Setter TargetName="PaneBadgeFill" Property="HorizontalAlignment" Value="Left"/>
                     <Setter TargetName="PaneBadgeFill" Property="Width" Value="8.53"/>
                     <Setter TargetName="PaneBadgeFill" Property="Margin" Value="1.47,1.47,0,1.47"/>
+                </DataTrigger>
+                <!-- 분할 우 패널(PaneB) -->
+                <DataTrigger Binding="{Binding PaneRole}" Value="Right">
+                    <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="PaneBadgeIcon" Property="Data" Value="{StaticResource IconPanelLeft}"/>
+                    <Setter TargetName="PaneBadgeFill" Property="HorizontalAlignment" Value="Right"/>
+                    <Setter TargetName="PaneBadgeFill" Property="Width" Value="8.53"/>
+                    <Setter TargetName="PaneBadgeFill" Property="Margin" Value="0,1.47,1.47,1.47"/>
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
