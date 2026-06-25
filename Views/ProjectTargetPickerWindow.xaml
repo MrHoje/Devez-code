@@ -37,7 +37,7 @@
                     </TextBlock.Effect>
                 </TextBlock>
                 <TextBlock x:Name="PaneAPath" HorizontalAlignment="Center" Margin="0,6,0,0"
-                           TextTrimming="CharacterEllipsis" FontSize="15" Foreground="White">
+                           TextTrimming="CharacterEllipsis" FontSize="17" Foreground="White">
                     <TextBlock.Effect>
                         <DropShadowEffect BlurRadius="8" ShadowDepth="0" Opacity="1" Color="Black"/>
                     </TextBlock.Effect>
@@ -67,7 +67,7 @@
                     </TextBlock.Effect>
                 </TextBlock>
                 <TextBlock x:Name="PaneBPath" HorizontalAlignment="Center" Margin="0,6,0,0"
-                           TextTrimming="CharacterEllipsis" FontSize="15" Foreground="White">
+                           TextTrimming="CharacterEllipsis" FontSize="17" Foreground="White">
                     <TextBlock.Effect>
                         <DropShadowEffect BlurRadius="8" ShadowDepth="0" Opacity="1" Color="Black"/>
                     </TextBlock.Effect>
