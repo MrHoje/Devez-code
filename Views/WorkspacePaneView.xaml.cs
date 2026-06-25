@@ -89,11 +89,32 @@ public partial class WorkspacePaneView : UserControl
 
     private void SplitBtn_Click(object sender, RoutedEventArgs e) => SplitToggleRequested?.Invoke(this);
 
-    /// <summary>분할 상태에 맞춰 분할 토글 아이콘 강조 색을 갱신.</summary>
+    /// <summary>분할 시 이 패널이 우측(PaneB)인지. true 면 분할 중 탭바 버튼이 X(분할 닫기)로 표시된다.</summary>
+    public bool IsRightPane { get; set; }
+
+    private bool _split;
+
+    /// <summary>분할 상태에 맞춰 탭바 버튼을 갱신.
+    /// 비분할: 분할 토글(IconColumns) 표시. 분할: 우측 패널만 X(분할 닫기), 좌측 패널은 숨김.</summary>
     public void SetSplitActive(bool active)
     {
-        var key = active ? "PrimaryBrush" : "TextMutedBrush";
-        if (SplitIcon != null) SplitIcon.Stroke = (Brush)FindResource(key);
+        _split = active;
+        if (!_split)
+        {
+            SplitBtn.Visibility = Visibility.Visible;
+            SplitIcon.Data = (Geometry)FindResource("IconColumns");
+            SplitBtn.ToolTip = "패널 분할";
+        }
+        else if (IsRightPane)
+        {
+            SplitBtn.Visibility = Visibility.Visible;
+            SplitIcon.Data = (Geometry)FindResource("IconX");
+            SplitBtn.ToolTip = "분할 닫기";
+        }
+        else
+        {
+            SplitBtn.Visibility = Visibility.Collapsed;
+        }
     }
 
     /// <summary>분할 중 포커스 패널 상단 액센트 표시 여부. 좌/우 패널 전환 시 가볍게 슬라이드한다.</summary>
@@ -1152,7 +1173,7 @@ public partial class WorkspacePaneView : UserControl
     private void TabScrollRight_Click(object sender, RoutedEventArgs e)
         => AnimateTabScroll(TabScroller.HorizontalOffset + TabScrollStep);
 
-    private void TabScroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    private void TabBar_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (TabScroller.ScrollableWidth <= 0.5) return;
         _tabScrollAnimCancel?.Invoke(); _tabScrollAnimCancel = null;

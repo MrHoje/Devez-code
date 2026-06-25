@@ -62,14 +62,14 @@
             <Grid Grid.Row="0" Background="{DynamicResource BgBrush}">
                 <!-- 앱 이름(왼쪽 고정) -->
                 <StackPanel x:Name="TitleLogoBlock" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0"
-                            HorizontalAlignment="Left">
+                            HorizontalAlignment="Left"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <TextBlock Text="DevezCode" FontSize="12" FontWeight="Bold"
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                Foreground="{DynamicResource TextBrush}"
                                VerticalAlignment="Center" Margin="3,1,0,0"/>
-                    <!-- 왼쪽 패널 접기/펼치기 — 타이틀 바로 옆에 배치 -->
+                    <!-- 왼쪽 패널 접기/펼치기 — 타이틀 바로 옆에 배치(원위치) -->
                     <Button x:Name="LeftPanelBtn" Click="LeftPanelBtn_Click" Margin="8,0,0,0"
-                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource TitleBarChipButton}" ToolTip="왼쪽 패널 접기/펼치기">
                         <Path x:Name="LeftPanelIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconPanelLeft}" Width="16" Height="16"

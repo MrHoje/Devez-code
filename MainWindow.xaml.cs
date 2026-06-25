@@ -65,6 +65,7 @@ public partial class MainWindow : Window
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
         SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
+        PaneB.IsRightPane = true;   // 분할 시 우측 패널 — 탭바 버튼이 X(분할 닫기)로 표시됨.
         CenterSplit.SizeChanged += (_, _) => UpdatePaneFocusVisual(animate: false);
         _focusedPane = PaneA;
         _ = MarkdownWysiwygHost.PrewarmAsync();
@@ -1496,6 +1497,7 @@ public partial class MainWindow : Window
         if (_splitActive) DisableSplit();
         else EnableSplit();
     }
+
 
     private void EnableSplit(ProjectItem? bProject = null, SessionItem? bSession = null)
     {

@@ -23,6 +23,10 @@ public abstract class NotifyBase : INotifyPropertyChanged
 /// <summary>중앙 탭 종류. 탭 아이콘·콘텐츠 분기에 사용.</summary>
 public enum TabKind { Session, File }
 
+/// <summary>분할(2분할) 시 이 프로젝트가 어느 패널에 떠 있는지. 사이드바 카드의 패널 배지 표시에 사용.
+/// None=어느 패널에도 없음(또는 비분할), Left=좌 패널(PaneA), Right=우 패널(PaneB).</summary>
+public enum PaneRole { None, Left, Right }
+
 /// <summary>중앙 탭(터미널/파일 편집기)의 공통 베이스. 탭 스트립 + 콘텐츠 호스트 양쪽에서 사용.</summary>
 public abstract class TabItemBase : NotifyBase
 {
@@ -149,6 +153,11 @@ public sealed class ProjectItem : NotifyBase
 
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
+
+    /// <summary>2분할 시 이 프로젝트가 떠 있는 패널(좌/우). 비분할이거나 어느 패널에도 없으면 None.
+    /// 사이드바 카드 헤더의 패널 배지(좌/우 칸 하이라이트) 가시성·방향 분기에 사용. 영속 대상 아님.</summary>
+    private PaneRole _paneRole;
+    public PaneRole PaneRole { get => _paneRole; set => Set(ref _paneRole, value); }
 
     /// <summary>2열 보기에서 이 카드가 속한 컬럼(0=좌, 1=우). 1열 보기에선 무시(전부 한 줄로 쌓임).
     /// 드래그로만 바뀌며, 열 수를 1↔2로 토글해도 값은 보존(자동 재배치 금지). workspace.json 에 영속.</summary>

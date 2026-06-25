@@ -27,6 +27,9 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectDeleteRequested;
     /// <summary>프로젝트 메뉴 "이름 변경" 요청(MainWindow 위임).</summary>
     public event Action<ProjectItem>? ProjectRenameRequested;
+    /// <summary>프로젝트 메뉴 "왼쪽/오른쪽 패널에 표시"(분할 시만) — 해당 패널에 띄운다(MainWindow 위임).</summary>
+    public event Action<ProjectItem>? ShowInLeftPaneRequested;
+    public event Action<ProjectItem>? ShowInRightPaneRequested;
     /// <summary>프로젝트 메뉴 "보관함 이동" — 활성에서 보관함으로(MainWindow 위임).</summary>
     public event Action<ProjectItem>? ProjectArchiveRequested;
     /// <summary>보관함 카드 "꺼내기" — 보관함에서 활성으로(MainWindow 위임).</summary>
@@ -326,9 +329,42 @@ public partial class SidebarView : UserControl
 
     /// <summary>프로젝트 메뉴가 열릴 때 "바로가기" 서브메뉴를 등록 목록 + 맨 아래 "바로가기 추가" 로 선(先)채운다.
     /// 서브메뉴가 펼쳐지기 전(메뉴 오픈 시점)에 항목을 넣어, 열리는 도중 Clear 로 인한 팝업 미표시 버그를 피한다.</summary>
+    /// <summary>중앙 패널 2분할 활성 여부 — 분할 시에만 "왼쪽/오른쪽 패널에 표시" 메뉴를 노출한다. MainWindow 가 갱신.</summary>
+    public bool IsSplitActive { get; set; }
+
+    private void ShowInLeftPane_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) ShowInLeftPaneRequested?.Invoke(p);
+    }
+
+    private void ShowInRightPane_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) ShowInRightPaneRequested?.Invoke(p);
+    }
+
     private void ProjectMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu cm) return;
+
+        // ── "왼쪽/오른쪽 패널에 표시": 분할 시에만 노출. 이미 떠 있는 쪽 항목은 비활성(반대쪽=좌우 변경). ──
+        var target = (cm.Items.OfType<MenuItem>().FirstOrDefault(m => (m.Header as string) == "바로가기")?.Tag as ProjectItem)
+                     ?? cm.DataContext as ProjectItem
+                     ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as ProjectItem;
+        var left = cm.Items.OfType<MenuItem>().FirstOrDefault(m => (m.Header as string) == "왼쪽 패널에 표시");
+        var right = cm.Items.OfType<MenuItem>().FirstOrDefault(m => (m.Header as string) == "오른쪽 패널에 표시");
+        var sep = cm.Items.OfType<Separator>().FirstOrDefault(s => (s.Tag as string) == "PaneSep");
+        if (left != null && right != null)
+        {
+            var vis = IsSplitActive ? Visibility.Visible : Visibility.Collapsed;
+            left.Visibility = right.Visibility = vis;
+            if (sep != null) sep.Visibility = vis;
+            if (IsSplitActive && target != null)
+            {
+                left.IsEnabled = target.PaneRole != PaneRole.Left;    // 이미 좌측이면 비활성
+                right.IsEnabled = target.PaneRole != PaneRole.Right;  // 이미 우측이면 비활성
+            }
+        }
+
         var parent = cm.Items.OfType<MenuItem>().FirstOrDefault(m => (m.Header as string) == "바로가기");
         if (parent is null) return;
         // 서브메뉴 헤더 자식의 Tag={Binding} 은 Opened 시점에 아직 평가 안 됐을 수 있어 null 가능 →

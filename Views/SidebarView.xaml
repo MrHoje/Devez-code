@@ -283,8 +283,29 @@
                                        VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
+                            <!-- 우상단 액션: [패널 배지] + [chevron]. 배지는 분할 시 이 프로젝트가 떠 있는 패널(좌/우)을 칸 하이라이트로 표시. -->
+                            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
+                                        VerticalAlignment="Center" Margin="4,-4,0,0">
+                            <!-- 패널 배지: 둥근 사각형 + 세로 분할선. 활성 칸(좌/우)을 테마색으로 채운다. 기본 숨김, PaneRole 로 노출. -->
+                            <Border x:Name="PaneBadge" Width="16" Height="12" CornerRadius="2"
+                                    BorderThickness="1.3" BorderBrush="{DynamicResource TextMutedBrush}"
+                                    Background="Transparent" VerticalAlignment="Center" Margin="0,0,6,0"
+                                    Visibility="Collapsed" b:CornerRadiusClip.Radius="2"
+                                    ToolTip="열려 있는 패널">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition x:Name="PaneBadgeLeftCol" Width="*"/>
+                                        <ColumnDefinition x:Name="PaneBadgeRightCol" Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border x:Name="PaneBadgeLeftCell" Grid.Column="0" Background="Transparent"/>
+                                    <Border x:Name="PaneBadgeRightCell" Grid.Column="1" Background="Transparent"/>
+                                    <!-- 세로 분할선(두 칸 경계) -->
+                                    <Rectangle Grid.Column="0" Width="1.3" HorizontalAlignment="Right"
+                                               Fill="{DynamicResource TextMutedBrush}"/>
+                                </Grid>
+                            </Border>
                             <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용). 항상 노출, 타이틀과 같은 줄 우상단. -->
-                            <Button Grid.Row="0" Grid.Column="1" Margin="4,-4,0,0" Tag="{Binding}"
+                            <Button Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
@@ -310,6 +331,7 @@
                                     </ControlTemplate>
                                 </Button.Template>
                             </Button>
+                            </StackPanel>
                             <!-- 경로 (2행, 전체 폭). 버튼이 1행으로 빠졌으므로 잘림 없이 표시. -->
                             <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                        Text="{Binding Path}" Margin="0,1,0,0"
@@ -335,6 +357,24 @@
                     </Border>
                 </StackPanel>
             </Border>
+            <DataTemplate.Triggers>
+                <!-- 분할 좌 패널(PaneA): 배지 노출 + 왼쪽 칸 테마색 하이라이트 -->
+                <DataTrigger Binding="{Binding PaneRole}" Value="Left">
+                    <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="PaneBadgeLeftCell" Property="Background" Value="{DynamicResource PrimaryBrush}"/>
+                    <!-- 선택된(좌) 칸을 더 넓게 -->
+                    <Setter TargetName="PaneBadgeLeftCol" Property="Width" Value="1.7*"/>
+                    <Setter TargetName="PaneBadgeRightCol" Property="Width" Value="1*"/>
+                </DataTrigger>
+                <!-- 분할 우 패널(PaneB): 배지 노출 + 오른쪽 칸 테마색 하이라이트 -->
+                <DataTrigger Binding="{Binding PaneRole}" Value="Right">
+                    <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="PaneBadgeRightCell" Property="Background" Value="{DynamicResource PrimaryBrush}"/>
+                    <!-- 선택된(우) 칸을 더 넓게 -->
+                    <Setter TargetName="PaneBadgeLeftCol" Property="Width" Value="1*"/>
+                    <Setter TargetName="PaneBadgeRightCol" Property="Width" Value="1.7*"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
 
     </UserControl.Resources>
