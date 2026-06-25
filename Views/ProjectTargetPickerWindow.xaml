@@ -8,7 +8,7 @@
         PreviewKeyDown="Window_PreviewKeyDown"
         FontFamily="{StaticResource PretendardFont}">
     <!-- 좌/우 컬럼 폭은 MainWindow 가 실제 PaneA/PaneB 폭으로 채워 패널 영역에 정확히 맞춘다.
-         평소엔 투명, 호버 시에만 살짝 밝아진다(흰색 저알파). -->
+         현재 떠 있는 프로젝트 이름을 표시하고, 호버 시에만 살짝 밝아진다(흰색 저알파). -->
     <Grid x:Name="Root">
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="LeftCol" Width="*"/>
@@ -28,6 +28,13 @@
                     </Style.Triggers>
                 </Style>
             </Border.Style>
+            <TextBlock x:Name="PaneAText" VerticalAlignment="Center" HorizontalAlignment="Center"
+                       Margin="16,0" TextTrimming="CharacterEllipsis"
+                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold" Foreground="White">
+                <TextBlock.Effect>
+                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.8" Color="Black"/>
+                </TextBlock.Effect>
+            </TextBlock>
         </Border>
         <Border Grid.Column="2" Cursor="Hand"
                 MouseLeftButtonDown="PaneB_MouseLeftButtonDown">
@@ -41,6 +48,13 @@
                     </Style.Triggers>
                 </Style>
             </Border.Style>
+            <TextBlock x:Name="PaneBText" VerticalAlignment="Center" HorizontalAlignment="Center"
+                       Margin="16,0" TextTrimming="CharacterEllipsis"
+                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold" Foreground="White">
+                <TextBlock.Effect>
+                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.8" Color="Black"/>
+                </TextBlock.Effect>
+            </TextBlock>
         </Border>
     </Grid>
 </Window>
