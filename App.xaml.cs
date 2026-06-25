@@ -437,8 +437,6 @@ public partial class App : Application
         }
 
         CurrentTheme = theme;
-        // 가재코드(gjc) — devez.json 팔레트를 덮어쓰면 gjc 파일 감시가 라이브 리로드(실행 중 세션도 즉시 반영).
-        Services.Terminal.GajaeCustomThemes.Apply(theme);
         ThemeChanged?.Invoke(theme);
     }
 }
