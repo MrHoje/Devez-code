@@ -631,17 +631,9 @@
                     </LinearGradientBrush>
                 </Rectangle.OpacityMask>
             </Rectangle>
-                       Fill="{DynamicResource PanelBrush}">
-                <Rectangle.OpacityMask>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                        <GradientStop Offset="0" Color="Transparent"/>
-                        <GradientStop Offset="1" Color="Black"/>
-                    </LinearGradientBrush>
-                </Rectangle.OpacityMask>
-            </Rectangle>
         </Grid>
 
-        <!-- 업데이트 알림 버튼 — 좌측 패널 하단(devez 정합). HasUpdate 일 때만 표시. -->
+        <!-- 업데이트 알림 버튼 -->
         <Button x:Name="UpdateButton" Grid.Row="3"
                 Margin="12,0,12,10" Height="34" Visibility="Collapsed"
                 Click="UpdateButton_Click" Cursor="Hand"
