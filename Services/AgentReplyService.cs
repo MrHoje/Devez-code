@@ -41,19 +41,54 @@ public static class AgentReplyService
     };
 
     /// <summary>%USERPROFILE%\.claude\projects\&lt;encoded-cwd&gt;\&lt;sessionId&gt;.jsonl
-    /// (경로 규칙은 TerminalSessionManager.ClaudeTranscriptExists 와 동일).</summary>
+    /// sessionId 는 busy-hook 추적 파일(최신) → settings 순으로 구하고, 둘 다 빗나가면
+    /// 같은 프로젝트 폴더의 최근 transcript 로 폴백한다(경로 규칙은 ClaudeTranscriptExists 와 동일).</summary>
     private static string? ClaudeTranscriptPath(string roomId)
     {
         var workingDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-        var sessionId = SettingsService.LoadClaudeCodeRoomSession(roomId);
-        if (string.IsNullOrWhiteSpace(workingDir) || string.IsNullOrWhiteSpace(sessionId)) return null;
+        if (string.IsNullOrWhiteSpace(workingDir)) return null;
 
         var full = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
         var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
-        var path = Path.Combine(
+        var dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "projects", encoded, sessionId + ".jsonl");
-        return File.Exists(path) ? path : null;
+            ".claude", "projects", encoded);
+        if (!Directory.Exists(dir)) return null;
+
+        // sessionId: busy-hook 이 기록한 추적 파일이 settings 보다 최신일 수 있어 우선.
+        var sessionId = ReadTrackedClaudeSession(roomId)
+                        ?? SettingsService.LoadClaudeCodeRoomSession(roomId);
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            var p = Path.Combine(dir, sessionId + ".jsonl");
+            if (File.Exists(p)) return p;
+        }
+
+        // 폴백: sessionId 가 비었거나(미발급/미동기화) 그 파일이 없으면 같은 폴더의 최근 transcript.
+        // (방금 답한 세션일 확률이 높다. 같은 폴더에 여러 세션이 동시 활동 중이면 부정확할 수 있어
+        //  sessionId 매칭을 항상 우선한다.)
+        var newest = new DirectoryInfo(dir)
+            .GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(f => f.LastWriteTimeUtc)
+            .FirstOrDefault();
+        return newest?.FullName;
+    }
+
+    /// <summary>busy-hook 이 기록한 방별 claude 세션 ID
+    /// (%APPDATA%\DevezCode\claude\sessions\&lt;room&gt;.txt). settings 동기화 지연을 우회한다.</summary>
+    private static string? ReadTrackedClaudeSession(string roomId)
+    {
+        try
+        {
+            var safe = System.Text.RegularExpressions.Regex.Replace(roomId, @"[^\w\-]", "");
+            var p = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "claude", "sessions", safe + ".txt");
+            if (!File.Exists(p)) return null;
+            var s = File.ReadAllText(p).Trim();
+            return Guid.TryParse(s, out _) ? s : null;
+        }
+        catch { return null; }
     }
 
     /// <summary>%AppData%\DevezCode\gajae\sessions\&lt;roomId&gt;\*.jsonl 중 최신 파일.</summary>
