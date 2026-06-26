@@ -103,7 +103,6 @@
     --ob-muted: rgba(120,120,128,0.85);
     --ob-inline-code: #c7254e;     /* 라이트 인라인코드 텍스트(Obsidian 핑크 계열) */
     --ob-inline-bg: rgba(124,92,255,0.10);
-    --ob-th-bg: rgba(124,92,255,0.12);  /* 표 헤더 배경 */
   }
   .toastui-editor-dark {
     --ob-accent: #a78bfa;          /* 다크 액센트(밝은 보라) */
@@ -112,7 +111,6 @@
     --ob-muted: rgba(180,180,190,0.65);
     --ob-inline-code: #e06c9c;
     --ob-inline-bg: rgba(167,139,250,0.14);
-    --ob-th-bg: rgba(167,139,250,0.18);  /* 표 헤더 배경 */
   }
 
   .toastui-editor-contents {
@@ -184,8 +182,7 @@
     border: 1px solid var(--ob-border); padding: 6px 12px;
   }
   .toastui-editor-contents table th {
-    background: var(--ob-th-bg); font-weight: 600;
-    border-bottom-width: 2px;
+    color: var(--ob-muted); font-weight: 600;
   }
 
   /* 수평선 — 옅은 보더 */
