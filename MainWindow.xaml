@@ -249,7 +249,7 @@
                             </Grid>
                         </Border>
                         <!-- 세션 타이틀 영역과 동일 사이즈 패널 -->
-                        <Border Grid.Row="1" Background="{DynamicResource PanelSoftBrush}"
+                        <Border Grid.Row="1"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="9,0,12,0">
                                 <Ellipse x:Name="SessionBusySpinner" Width="12" Height="12"
