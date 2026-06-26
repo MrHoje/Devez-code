@@ -619,7 +619,7 @@
                            FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
             </Grid>
             <!-- 상단 스크롤 페이드 -->
-            <Rectangle Height="24" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
+            <Rectangle Height="48" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
                        Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -629,7 +629,7 @@
                 </Rectangle.OpacityMask>
             </Rectangle>
             <!-- 스크롤 페이드 아웃 -->
-            <Rectangle Height="24" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+            <Rectangle Height="48" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
                         Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
