@@ -155,6 +155,11 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
             codeText = Hex("CodeTextBrush", "#0f172a"),
             primary = Hex("PrimaryBrush", "#2563eb"),
         });
+
+        // modal dialog(설정창)가 주 윈도우를 비활성화한 상태에서도 WebView2가 즉시 repaint
+        // 하도록 강제한다. PostWebMessageAsJson 메시지는 WebView2 프로세스에 도달하지만
+        // 부모 HWND가 disabled면 화면 갱신이 보류될 수 있음.
+        Dispatcher.BeginInvoke(new Action(() => _webView?.InvalidateVisual()), System.Windows.Threading.DispatcherPriority.Render);
     }
 
     /// <summary>WebView 내부 토스트(저장/자동 갱신 알림 등) — WPF 토스트는 WebView airspace로 가려지므로 웹 레이어로 띄운다.</summary>
