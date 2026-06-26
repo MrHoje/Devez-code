@@ -265,6 +265,9 @@ public sealed class DiscordBotService : IDisposable
 
         if (content.StartsWith("!dc", StringComparison.OrdinalIgnoreCase))
         {
+            // 명령어는 #명령어 채널에서만 받는다(채널이 아직 없으면 어디서나 허용 — 부트스트랩용).
+            var cmdId = SettingsService.LoadDiscordCommandChannel();
+            if (cmdId != 0 && message.Channel.Id != cmdId) return;
             await HandleCommandAsync(message, content);
             return;
         }
@@ -559,10 +562,18 @@ public sealed class DiscordBotService : IDisposable
     {
         var errors = new List<string>();
         var cmdId = SettingsService.LoadDiscordCommandChannel();
-        foreach (var ch in guild.TextChannels.Where(c =>
-                     c.CategoryId == null && c.Id != cmdId &&
-                     (c.Name.Equals("일반", StringComparison.OrdinalIgnoreCase) ||
-                      c.Name.Equals("general", StringComparison.OrdinalIgnoreCase))).ToList())
+        // 카테고리 위치와 무관하게 이름이 일반/general 인 텍스트 채널을 지운다.
+        // (봇이 만든 sessions·명령어 채널만 제외)
+        var targets = guild.TextChannels.Where(c =>
+            c.Id != cmdId &&
+            !c.Name.Equals("sessions", StringComparison.OrdinalIgnoreCase) &&
+            (c.Name.Trim().Equals("일반", StringComparison.OrdinalIgnoreCase) ||
+             c.Name.Trim().Equals("general", StringComparison.OrdinalIgnoreCase))).ToList();
+
+        if (targets.Count == 0)
+            errors.Add("ℹ️ `#일반`/`#general` 텍스트 채널을 못 찾음(이미 없거나, 봇이 View Channel 권한 없어 안 보이거나, 이름이 다름).");
+
+        foreach (var ch in targets)
         {
             try { await ch.DeleteAsync(); }
             catch (Exception ex) { errors.Add($"`#{ch.Name}`: {ex.Message}"); }
