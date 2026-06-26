@@ -88,15 +88,23 @@ public static class AgentRegistry
             string? found = null;
             try
             {
-                var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-                foreach (var dir in path.Split(Path.PathSeparator))
+                var dirs = new List<string>();
+                try { dirs.AddRange((Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) ?? "")
+                    .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)); }
+                catch { }
+                try { dirs.AddRange((Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "")
+                    .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)); }
+                catch { }
+                try { dirs.AddRange((Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine) ?? "")
+                    .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)); }
+                catch { }
+                foreach (var dir in dirs.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
-                    if (string.IsNullOrWhiteSpace(dir)) continue;
                     foreach (var name in agent.ExeNames)
                     {
                         try
                         {
-                            var full = Path.Combine(dir.Trim(), name);
+                            var full = Path.Combine(dir, name);
                             if (File.Exists(full)) { found = full; break; }
                         }
                         catch { /* 잘못된 경로 무시 */ }

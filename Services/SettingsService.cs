@@ -1,3 +1,4 @@
+using DevezCode.Models;
 using System.IO;
 using System.Text.Json;
 
@@ -22,6 +23,8 @@ public static class SettingsService
         public double FileExpWidth { get; set; } = 300;
         // 최우측 계정 사용량 사이드바 펼침 상태. 기본 접힘.
         public bool   UsagePanelOpen { get; set; } = false;
+        // 계정 사용량 오른쪽의 세션 완료 기록 사이드바 펼침 상태. 기본 접힘.
+        public bool   SessionHistoryPanelOpen { get; set; } = false;
         public Dictionary<string, string> ClaudeCodeRoomDirs { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomSessions { get; set; } = new();
         public List<string> ClaudeCodeRoomLaunched { get; set; } = new();
@@ -96,6 +99,8 @@ public static class SettingsService
         public int TabHotkeyNextVk     { get; set; } = 0x27;
         // 세션 스피너가 멈출 때(응답 완료) 토스트 알림 표시 여부. 기본 켜짐.
         public bool NotifySessionDoneEnabled { get; set; } = true;
+        // 세션 완료 기록 (재시작 시 복원). 최신순(index 0 = 가장 최근).
+        public List<SessionCompletionRecord>? SessionHistoryRecords { get; set; }
         // 알림 토스트 표시 위치: "tl"=좌상단, "tr"=우상단, "bl"=좌하단, "br"=우하단. 기본 우하단.
         public string NotifyPosition { get; set; } = "br";
         // 알림을 표시할 모니터 DeviceName. 빈 값이면 주 모니터. (devez 이식)
@@ -179,6 +184,21 @@ public static class SettingsService
     // ── 최우측 계정 사용량 사이드바 펼침 상태 ────────────────────
     public static bool LoadUsagePanelOpen() => Current.UsagePanelOpen;
     public static void SaveUsagePanelOpen(bool open) { Current.UsagePanelOpen = open; Save(); }
+
+    // ── 세션 완료 기록 사이드바 펼침 상태 ───────────────────────
+    public static bool LoadSessionHistoryPanelOpen() => Current.SessionHistoryPanelOpen;
+    public static void SaveSessionHistoryPanelOpen(bool open) { Current.SessionHistoryPanelOpen = open; Save(); }
+
+    // ── 세션 완료 기록 목록 영속 ────────────────────────────────
+    public static List<SessionCompletionRecord>? LoadSessionHistoryRecords()
+        => Current.SessionHistoryRecords;
+
+    public static void SaveSessionHistoryRecords(List<SessionCompletionRecord> records, int maxCount)
+    {
+        while (records.Count > maxCount) records.RemoveAt(records.Count - 1);
+        Current.SessionHistoryRecords = records;
+        Save();
+    }
 
     // ── 우측 패널 활성 탭 ─────────────────────────────────────────
     public static int LoadFileExpActiveTab() => Current.FileExpActiveTab;

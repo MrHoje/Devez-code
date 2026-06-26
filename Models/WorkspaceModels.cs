@@ -77,6 +77,26 @@ public sealed class SessionItem : TabItemBase
     public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
 }
 
+/// <summary>우측 세션 완료 기록 패널에 쌓는 런타임 완료 이벤트. 최신 항목이 위에 표시된다.</summary>
+public sealed class SessionCompletionRecord : NotifyBase
+{
+    public required string SessionId { get; init; }
+    public required string SessionName { get; init; }
+    public required string ProjectName { get; init; }
+    public required string AgentId { get; init; }
+    public string LastMessage { get; init; } = "";
+    public DateTime CompletedAt { get; init; } = DateTime.Now;
+    /// <summary>사용자가 이 기록을 확인했는지 여부. 카드 클릭 또는 해당 세션 직접 열기 시 true.</summary>
+    private bool _isRead;
+    public bool IsRead { get => _isRead; set => Set(ref _isRead, value); }
+
+    public string TimeText => CompletedAt.ToString("HH:mm");
+    public System.Windows.Visibility ProjectVisibility
+        => string.IsNullOrWhiteSpace(ProjectName) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+    public System.Windows.Visibility LastMessageVisibility
+        => string.IsNullOrWhiteSpace(LastMessage) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+}
+
 /// <summary>파일 편집기 탭. 파일 탐색기에서 텍스트 파일을 더블클릭하면 새로 열린다.
 /// 각 탭은 자신만의 FileEditorView 인스턴스를 갖고, 닫히면 디스크에서 제거(영속 X).</summary>
 public sealed class FileTabItem : TabItemBase

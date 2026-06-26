@@ -477,13 +477,16 @@
     post({ type: 'interact' });
   }, { capture: true });
   // ── 우클릭: 선택이 있으면 복사, 없으면 붙여넣기 (Windows 콘솔 QuickEdit 정합) ──
-  document.addEventListener('contextmenu', function (e) {
-    e.preventDefault();
+  // contextmenu 는 브라우저 메뉴 억제만. 실제 동작은 mouseup(버튼2)에서 1회만 처리.
+  // (contextmenu 가 mousedown/mouseup 두 경로로 중복 디스패치되는 환경 회피 → 붙여넣기 1회 보장)
+  document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  document.addEventListener('mouseup', function (e) {
+    if (e.button !== 2) return;
     const t = activeRoomId ? terms[activeRoomId] : null;
     if (!t || t.dead) return;
-    if (t.term.hasSelection()) doCopy(t.term);
-    else post({ type: 'requestPaste', roomId: activeRoomId });
-  });
+    if (t.term.hasSelection()) { doCopy(t.term); return; }
+    post({ type: 'requestPaste', roomId: activeRoomId });
+  }, { capture: true });
 
   function createTerm(roomId, agent) {
     const el = document.createElement('div');

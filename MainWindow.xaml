@@ -119,8 +119,14 @@
                     <Border Width="1" Height="16" Margin="6,0,8,0" VerticalAlignment="Center"
                             Background="{DynamicResource LineBrush}" Opacity="0.5"/>
 
-                    <!-- ── 계정 사용량 패널 접기/펼치기 (우측 패널 버튼 오른쪽) ──── -->
-                    <Button x:Name="UsagePanelBtn" Click="UsagePanelBtn_Click"
+                    <!-- ── 세션 완료 기록 패널 접기/펼치기 (우측 패널 → 계정 사용량 순) ──── -->
+                    <Button x:Name="SessionHistoryPanelBtn" Click="SessionHistoryPanelBtn_Click"
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="세션 완료 기록 패널 접기/펼치기">
+                        <Path x:Name="SessionHistoryPanelIcon" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconClock}" Width="16" Height="16"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Button>
+                    <Button x:Name="UsagePanelBtn" Click="UsagePanelBtn_Click" Margin="2,0,0,0"
                             Style="{StaticResource TitleBarChipButton}" ToolTip="계정 사용량 패널 접기/펼치기">
                         <Path x:Name="UsagePanelIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconChartPie}" Width="16" Height="16"
@@ -153,7 +159,8 @@
                     <ColumnDefinition Width="*" MinWidth="360"/>
                     <ColumnDefinition x:Name="FileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
                     <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="0" SharedSizeGroup="MainFileExp"/>
-                    <!-- 최우측: 계정 사용량 전용 사이드바 (기본 접힘=0, 타이틀바 버튼으로 토글) -->
+                    <!-- 세션 완료 기록 (안쪽) / 계정 사용량 (최우측) ── 순서 중요: col5=완료기록, col6=사용량 -->
+                    <ColumnDefinition x:Name="SessionHistoryCol" Width="0" MinWidth="0"/>
                     <ColumnDefinition x:Name="UsageCol" Width="0" MinWidth="0"/>
                 </Grid.ColumnDefinitions>
 
@@ -194,10 +201,100 @@
                 <views:FileExplorerView x:Name="FileExplorer" Grid.Column="4"
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
 
-                <!-- ── 최우측: 계정 사용량 전용 사이드바 ──────────────────────
-                     기존 우측 패널 '계정 사용량' 탭의 카드 UI를 그대로 이동. 데이터는
-                     MainWindow 가 UsageRequested 대신 SetSidebarUsageCards 로 채운다. -->
-                <Border Grid.Column="5" x:Name="UsageSidebar" ClipToBounds="True"
+                <!-- ── 안쪽(col5): 세션 완료 기록 사이드바 ──────────────────
+                     계정 사용량보다 중앙에 가까이 위치. -->
+                <Border Grid.Column="5" x:Name="SessionHistorySidebar" ClipToBounds="True"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="35"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+                            <StackPanel Orientation="Horizontal" Margin="9,0,12,0" VerticalAlignment="Center">
+                                <TextBlock Text="세션 완료 기록" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                        </Border>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                      Padding="8,8,8,8">
+                            <StackPanel>
+                                <ItemsControl x:Name="SessionHistoryList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:SessionCompletionRecord}">
+                                            <Border CornerRadius="10" Padding="12,11,8,9" Margin="0,3,0,3"
+                                                    Cursor="Arrow" MouseLeftButtonUp="SessionHistoryItem_Click"
+                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource LineBrush}"/>
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+                                                    <Image Grid.Row="0" Grid.Column="0" Width="15" Height="15"
+                                                           Margin="0,1,9,0" VerticalAlignment="Top"
+                                                           Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                                                        <Ellipse Width="6" Height="6" Fill="{DynamicResource PrimaryBrush}"
+                                                                 VerticalAlignment="Center" Margin="0,0,7,0"
+                                                                 Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
+                                                        <TextBlock Text="{Binding ProjectName}"
+                                                                   Visibility="{Binding ProjectVisibility}"
+                                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding TimeText}" Margin="8,0,0,0"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="{DynamicResource Fs11}"
+                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                                                               Text="{Binding SessionName}" Margin="0,3,0,0"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               FontSize="{DynamicResource Fs12}"
+                                                               Foreground="{DynamicResource TextBrush}"/>
+                                                    <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                                                               Text="{Binding LastMessage}" Visibility="{Binding LastMessageVisibility}"
+                                                               Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
+                                                               FontSize="{DynamicResource Fs11}"
+                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock x:Name="SessionHistoryEmpty"
+                                           Text="완료된 세션 기록이 없습니다."
+                                           Margin="2,4,2,2" TextWrapping="Wrap" LineHeight="18"
+                                           FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+
+                <!-- ── 최우측(col6): 계정 사용량 전용 사이드바 ─────────────
+                     기존 UI 그대로. 세션 완료 기록보다 바깥쪽에 위치. -->
+                <Border Grid.Column="6" x:Name="UsageSidebar" ClipToBounds="True"
                         Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
                     <Grid>
@@ -206,9 +303,8 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <!-- 헤더: 제목 + 마지막 갱신 시각 (파일탐색기 헤더 정합: 높이 35) -->
                         <Border Grid.Row="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                            <StackPanel Orientation="Horizontal" Margin="16,0,12,0" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Margin="9,0,12,0" VerticalAlignment="Center">
                                 <TextBlock Text="계정 사용량" VerticalAlignment="Center"
                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextBrush}"/>
@@ -216,8 +312,6 @@
                                            FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
                         </Border>
-
-                        <!-- 업데이트 다운로드 진행률 (평소 숨김) -->
                         <StackPanel x:Name="UsageUpdateProgress" Grid.Row="1" Visibility="Collapsed" Margin="16,12,16,0">
                             <TextBlock x:Name="UsageUpdateText" FontSize="{DynamicResource Fs12}"
                                        Foreground="{DynamicResource TextBrush}" Margin="0,0,0,6"/>
@@ -226,8 +320,6 @@
                                         Background="{DynamicResource PrimaryBrush}"/>
                             </Border>
                         </StackPanel>
-
-                        <!-- provider 사용량 카드 목록 (기존 UsageView 와 동일 템플릿) -->
                         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Margin="16,14,16,14" MinWidth="218">
                                 <ItemsControl x:Name="SidebarUsageList" AlternationCount="99">
@@ -237,7 +329,6 @@
                                                     BorderBrush="{DynamicResource LineBrush}">
                                                 <Border.Style>
                                                     <Style TargetType="Border">
-                                                        <!-- 카드 사이 구분선 + 위아래 여백. 첫 카드는 상단 보더·여백 생략. -->
                                                         <Setter Property="BorderThickness" Value="0,1,0,0"/>
                                                         <Setter Property="Padding" Value="0,14,0,14"/>
                                                         <Style.Triggers>
@@ -272,7 +363,6 @@
                                                                     <Grid.ColumnDefinitions>
                                                                         <ColumnDefinition Width="34"/>
                                                                         <ColumnDefinition Width="Auto"/>
-                                                                        <!-- % 는 Auto — 텍스트 폭만큼만 차지해 "100%" 도 잘리지 않음 -->
                                                                         <ColumnDefinition Width="Auto"/>
                                                                     </Grid.ColumnDefinitions>
                                                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Label}"
@@ -304,7 +394,6 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-
                                 <TextBlock x:Name="SidebarUsageEmpty" Visibility="Collapsed"
                                            Text="표시할 사용량 정보가 없습니다.&#10;계정에 연결되면 여기에 표시됩니다."
                                            Margin="0,4,0,2" TextWrapping="Wrap" LineHeight="18"

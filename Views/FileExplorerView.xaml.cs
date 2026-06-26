@@ -212,9 +212,9 @@ public partial class FileExplorerView : UserControl
         if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
         if (idx == 2) _ = DiffView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
 
-        // 큐 모드에서는 44px 헤더(row 1) 를 접어서 콘텐츠가 탭 바로 아래에 이어지게 한다.
-        // (탭 자체가 '작업 큐' 제목 역할 → 중복 헤더 불필요)
-        HeaderBar.Visibility = idx == 3 ? Visibility.Collapsed : Visibility.Visible;
+        // 큐·브라우저 모드에서는 44px 헤더(row 1) 를 접어서 콘텐츠가 탭 바로 아래에 이어지게 한다.
+        // (탭 자체가 각각 '작업 큐'·'브라우저' 제목 역할 → 중복 헤더 불필요)
+        HeaderBar.Visibility = idx is 1 or 3 ? Visibility.Collapsed : Visibility.Visible;
         FileSearchToggleBtn.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (idx != 0) CloseFileSearch(immediate: true);
 

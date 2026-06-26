@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<ProjectItem> _projects;
     // 보관함 프로젝트(archived_at 있음) — 활성 목록과 분리 관리. WorkspaceStore 가 함께 영속.
     private readonly ObservableCollection<ProjectItem> _archivedProjects;
+    private readonly ObservableCollection<SessionCompletionRecord> _sessionDoneRecords = new();
     // 중앙 워크스페이스 패널들(분할 시 2개). _focusedPane = 사이드바/파일탐색기/단축키가 향하는 패널.
     private readonly List<WorkspacePaneView> _panes = new();
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
@@ -64,6 +65,14 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
+        SessionHistoryList.ItemsSource = _sessionDoneRecords;
+        // 영속된 완료 기록 복원 (설정에 저장된 최신순 목록).
+        var saved = SettingsService.LoadSessionHistoryRecords();
+        if (saved != null && saved.Count > 0)
+        {
+            foreach (var r in saved) _sessionDoneRecords.Add(r);
+        }
+        UpdateSessionHistoryEmpty();
 
         _projects = WorkspaceStore.Load(out var archived);
         _archivedProjects = archived;
@@ -900,11 +909,18 @@ public partial class MainWindow : Window
 
     // ── 최우측 계정 사용량 사이드바 토글 ────────────────────────────────
     private const double UsagePanelWidth = 218; // 좌여백16+라벨34+막대(6+102)+%여백10+"100%"≈32 → 우여백 16
+    private const double SessionHistoryPanelWidth = 218;
+    private const int MaxSessionDoneRecords = 50;
     private bool _usageOpen;
+    private bool _sessionHistoryOpen;
     private Action? _usageAnimCancel;
+    private Action? _sessionHistoryAnimCancel;
 
     private void UsagePanelBtn_Click(object sender, RoutedEventArgs e)
         => SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
+
+    private void SessionHistoryPanelBtn_Click(object sender, RoutedEventArgs e)
+        => SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true, animate: true);
 
     /// <summary>F1 — 계정 사용량 사이드바 토글.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
@@ -955,6 +971,37 @@ public partial class MainWindow : Window
             durationMs: 200, easeIn: !open,
             cacheTarget: UsageSidebar,
             onComplete: () => { _usageAnimCancel = null; UnfreezeWorkspaceTerminals(); });
+    }
+
+    /// <summary>세션 완료 기록 사이드바를 펼치거나 접는다. 계정 사용량 패널과 같은 우측 보조 패널 패턴.</summary>
+    private void SetSessionHistoryPanelOpen(bool open, bool persist, bool animate = false)
+    {
+        _sessionHistoryOpen = open;
+
+        _sessionHistoryAnimCancel?.Invoke();
+        _sessionHistoryAnimCancel = null;
+        if (animate)
+        {
+            _ = FreezeThenAnimateSessionHistoryAsync(open);
+        }
+        else
+        {
+            SessionHistoryCol.Width = new GridLength(open ? SessionHistoryPanelWidth : 0);
+        }
+
+        if (persist) SettingsService.SaveSessionHistoryPanelOpen(open);
+        UpdatePanelToggleVisual();
+        UpdateUsageSidebarBorder();
+    }
+
+    private async Task FreezeThenAnimateSessionHistoryAsync(bool open)
+    {
+        await FreezeWorkspaceTerminalsAsync();
+        _sessionHistoryAnimCancel = AnimateColumn(
+            SessionHistoryCol, open ? SessionHistoryPanelWidth : 0,
+            durationMs: 200, easeIn: !open,
+            cacheTarget: SessionHistorySidebar,
+            onComplete: () => { _sessionHistoryAnimCancel = null; UnfreezeWorkspaceTerminals(); });
     }
 
     /// <summary>설정에 저장된 사이드 패널 뷰 전환 버튼 표시 여부를 우측 패널에 반영한다.</summary>
@@ -1072,6 +1119,7 @@ public partial class MainWindow : Window
             FooterFileExpCol.Width = new GridLength(_fileExpWidth);
         }
         SetUsagePanelOpen(SettingsService.LoadUsagePanelOpen(), persist: false); // 사용량 사이드바 상태 복원
+        SetSessionHistoryPanelOpen(SettingsService.LoadSessionHistoryPanelOpen(), persist: false); // 완료 기록 사이드바 상태 복원
         UpdatePanelToggleVisual();
         ApplyProjectColumns(SettingsService.LoadProjectColumns()); // 저장된 열 수 복원(최소/현재 폭 반영)
     }
@@ -1086,21 +1134,45 @@ public partial class MainWindow : Window
         RightPanelIcon.Stroke = muted;
         // 사용량 사이드바는 '펼침' 상태일 때만 강조(열려 있음 표시).
         UsagePanelIcon.Stroke = _usageOpen ? primary : muted;
+        SessionHistoryPanelIcon.Stroke = _sessionHistoryOpen ? primary : muted;
         // 우측 패널이 접혔으면 파일탐색기 스플리터 비활성화 — 빈(폭 0) 패널이 드래그로 열리는 것 방지.
         FileExpSplitter.IsEnabled = !rightHidden;
     }
 
-    /// <summary>파일탐색기가 접히면 그 사이 채널이 사라져 중앙 패널 우측 보더와 사용량 사이드바 좌측
-    /// 보더가 맞붙어 2중선이 된다 → 접힘 시 사용량 좌측 보더 제거(중앙 패널 우측 보더로 단일 구분).
-    /// 접기/펼치기 애니메이션 도중이 아니라 '완료된' 상태에서만 호출해야 보더가 미리 사라지지 않는다.</summary>
+    /// <summary>파일탐색기가 접히면 그 사이 채널이 사라져 중앙 패널 우측 보더와 가장 안쪽 보조
+    /// 패널의 좌측 보더가 맞붙어 2중선이 된다 → 접힘 시 그 패널의 좌측 보더 제거.
+    /// 현재 순서: [FileExplorer] col4 → [SessionHistory] col5 → [Usage] col6 이므로
+    /// 접힘 시 열려 있는 첫 번째 보조 패널의 좌측 보더를 제거한다.</summary>
     private void UpdateUsageSidebarBorder()
     {
-        // 두께는 항상 1px 고정(콘텐츠 영역 폭 불변) — 보이고/안 보이고는 색으로만 토글.
         bool rightHidden = _narrow == true ? !_rightOverlayOpen : _rightCollapsed;
-        if (rightHidden)
-            UsageSidebar.BorderBrush = System.Windows.Media.Brushes.Transparent;
-        else
+        if (!rightHidden)
+        {
+            SessionHistorySidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
             UsageSidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
+            return;
+        }
+
+        // 우측 패널 접힘: 열린 첫 번째 패널의 좌측 보더를 투명하게(중앙 패널 우측 보더와 2중선 방지).
+        if (_sessionHistoryOpen)
+        {
+            // SessionHistory(col5)가 중앙과 맞닿음.
+            SessionHistorySidebar.BorderBrush = System.Windows.Media.Brushes.Transparent;
+            UsageSidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
+        }
+        else if (_usageOpen)
+        {
+            // Usage(col6)가 중앙과 맞닿음(SessionHistory는 접힘).
+            UsageSidebar.BorderBrush = System.Windows.Media.Brushes.Transparent;
+            SessionHistorySidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
+        }
+        else
+        {
+            // 둘 다 접힘 — 무관.
+            SessionHistorySidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
+            UsageSidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
+        }
+
     }
 
     // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는
@@ -1788,11 +1860,48 @@ public partial class MainWindow : Window
     private SessionItem? FindSession(string id)
         => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
 
+    private void AddSessionCompletionRecord(SessionItem s)
+    {
+        var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
+        var projName = proj != null
+            ? System.IO.Path.GetFileName(proj.Path.TrimEnd('\\', '/'))
+            : "";
+        var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
+
+        _sessionDoneRecords.Insert(0, new SessionCompletionRecord
+        {
+            SessionId = s.Id,
+            SessionName = sessName,
+            ProjectName = projName,
+            AgentId = s.AgentId,
+            LastMessage = s.LastMessage?.Trim() ?? "",
+            CompletedAt = DateTime.Now,
+        });
+
+        while (_sessionDoneRecords.Count > MaxSessionDoneRecords)
+            _sessionDoneRecords.RemoveAt(_sessionDoneRecords.Count - 1);
+        SettingsService.SaveSessionHistoryRecords(
+            new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+        UpdateSessionHistoryEmpty();
+    }
+
+    private void UpdateSessionHistoryEmpty()
+        => SessionHistoryEmpty.Visibility = _sessionDoneRecords.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    private void SessionHistoryItem_Click(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not SessionCompletionRecord r) return;
+        var s = FindSession(r.SessionId);
+        if (s == null) return;
+        try { Activate(); OpenSession(s); } catch { /* best effort */ }
+    }
+
     /// <summary>세션이 busy(true)→idle(false)로 바뀐 순간(=스피너 멈춤=응답 완료)에 종료 토스트를 띄운다.
     /// 설정에서 꺼져 있으면 무시. 클릭 시 해당 세션을 포커스 패널에 연다.</summary>
     private void NotifyIfSessionFinished(SessionItem? s, bool wasBusy, bool nowBusy)
     {
         if (s == null || !wasBusy || nowBusy) return;
+        AddSessionCompletionRecord(s);
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
         var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
@@ -1869,6 +1978,7 @@ public partial class MainWindow : Window
     /// (이미 열린 패널 포커스 → 빈 패널 채움 → 둘 다 차 있으면 피커). 단 프로젝트 대신 세션을 활성화한다.</summary>
     private void OpenSession(SessionItem session)
     {
+        MarkSessionRead(session.Id);
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
         if (parent == null) { OpenSessionIntoPane(_focusedPane, session); return; }
 
@@ -1896,6 +2006,23 @@ public partial class MainWindow : Window
         pane.OpenSession(session);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
+    }
+
+    /// <summary>세션 ID 로 완료 기록 중 미확인 항목을 읽음 처리하고 저장.</summary>
+    private void MarkSessionRead(string sessionId)
+    {
+        bool changed = false;
+        foreach (var r in _sessionDoneRecords)
+        {
+            if (r.SessionId == sessionId && !r.IsRead)
+            {
+                r.IsRead = true;
+                changed = true;
+            }
+        }
+        if (changed)
+            SettingsService.SaveSessionHistoryRecords(
+                new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
     }
 
     private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
