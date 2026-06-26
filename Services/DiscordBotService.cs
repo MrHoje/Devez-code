@@ -775,15 +775,16 @@ public sealed class DiscordBotService : IDisposable
     /// <summary>스레드 이름 앞에 붙일 에이전트별 이모지(사이드바 목록에서 아이콘처럼 보인다).</summary>
     private static string AgentEmoji(string? agentId) => (agentId ?? "").ToLowerInvariant() switch
     {
-        "claude" => "✳️",
+        "claude" => "",      // 기본값 — 접두 이모지 없음
         "codex" => "🟢",
-        "opencode" => "🔷",
+        "opencode" => "🔳",  // 테두리 사각형
         "gajae" => "🦞",
         _ => "💠",
     };
 
-    /// <summary>모든 에이전트 이모지(세션 채널명 접두 식별용 — AgentEmoji 와 동기화 유지).</summary>
-    private static readonly string[] AllAgentEmojis = { "✳️", "🟢", "🔷", "🦞", "💠" };
+    /// <summary>모든 에이전트 이모지(세션 채널명 접두 식별용 — AgentEmoji 와 동기화 유지).
+    /// claude 는 이모지가 없으므로 제외(빈 문자열은 StartsWith 가 항상 true 라 넣으면 안 됨).</summary>
+    private static readonly string[] AllAgentEmojis = { "🟢", "🔳", "🦞", "💠" };
 
     /// <summary>채널명이 봇 세션 채널 접두(에이전트 이모지)로 시작하는지 — /reset 고아 정리용.</summary>
     private static bool StartsWithAgentEmoji(string? name)
