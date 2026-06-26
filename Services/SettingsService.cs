@@ -258,7 +258,11 @@ public static class SettingsService
         changed |= Current.RoomAgents.Remove(roomId);
         changed |= Current.ClaudeCodeRoomModel.Remove(roomId);
         changed |= Current.ClaudeCodeRoomEffort.Remove(roomId);
+        changed |= Current.CodexRoomSessions.Remove(roomId);
+        changed |= Current.OpenCodeRoomSessions.Remove(roomId);
+        changed |= Current.GajaeRoomSessions.Remove(roomId);
         changed |= Current.AntigravityRoomSessions.Remove(roomId);
+        changed |= Current.AgentRoomsLaunched.RemoveAll(k => k.StartsWith(roomId + "|", StringComparison.Ordinal)) > 0;
         if (changed) Save();
       }
     }

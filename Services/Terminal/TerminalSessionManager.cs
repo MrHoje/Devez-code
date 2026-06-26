@@ -334,9 +334,7 @@ public sealed class TerminalSessionManager
         try
         {
             // codex-launch\<room>.cmd (Claude 의 launch 디렉터리와 별도 — codex 전용)
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "DevezCode", "codex", "launch");
+            var dir = CodexLaunchDir();
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
             File.WriteAllText(batchPath, "@echo off\r\n" + body + "\r\n");
@@ -398,9 +396,7 @@ public sealed class TerminalSessionManager
 
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "DevezCode", "opencode", "launch");
+            var dir = OpenCodeLaunchDir();
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
             File.WriteAllText(batchPath, body);
@@ -418,6 +414,18 @@ public sealed class TerminalSessionManager
     private static string GajaeSessionDir(string roomId) => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "gajae", "sessions", SafeRoomFileName(roomId));
+
+    private static string CodexLaunchDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "codex", "launch");
+
+    private static string OpenCodeLaunchDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "opencode", "launch");
+
+    private static string GajaeLaunchDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "gajae", "launch");
 
     /// <summary>방의 session-dir 에서 가장 최근 세션 .jsonl 의 ID(파일명 끝 UUID)를 추출. 없으면 null.
     /// gjc 파일명: <c>2026-06-24T06-43-03-266Z_019ef85e-31e2-7000-9b2a-e205d434126f.jsonl</c>
@@ -469,9 +477,7 @@ public sealed class TerminalSessionManager
 
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "DevezCode", "gajae", "launch");
+            var dir = GajaeLaunchDir();
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
             // STY(멀티플렉서 감지용) 를 세팅해 gjc 가 "멀티플렉서 모드" 로 렌더하게 한다:
@@ -1016,8 +1022,14 @@ public sealed class TerminalSessionManager
         {
             LoadTrackedSessionId(roomId),
             SettingsService.LoadClaudeCodeRoomSession(roomId),
+            SettingsService.LoadCodexRoomSession(roomId),
+            SettingsService.LoadOpenCodeRoomSession(roomId),
+            SettingsService.LoadGajaeRoomSession(roomId),
+            SettingsService.LoadAntigravityRoomSession(roomId),
         };
         DisposeRoom(roomId);
+
+        PurgeAppOwnedRoomArtifacts(roomId, ids);
 
         if (string.IsNullOrWhiteSpace(workingDir)) return;
         try
@@ -1032,6 +1044,59 @@ public sealed class TerminalSessionManager
                     try { File.Delete(Path.Combine(dir, id + ".jsonl")); } catch (Exception) { }
         }
         catch (Exception) { }
+    }
+
+    private static void PurgeAppOwnedRoomArtifacts(string roomId, IEnumerable<string?> sessionIds)
+    {
+        var roomFile = SafeRoomFileName(roomId);
+
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "lastmsg", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "modeleffort", roomFile + ".txt"));
+        TryDeleteFiles(ClaudeTrackDir, "statusline-cache-" + roomFile + "-*.txt");
+
+        foreach (var id in sessionIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            TryDeleteFile(Path.Combine(ClaudeTrackDir, "busy", "_state", $"base_{id}.txt"));
+            TryDeleteFile(Path.Combine(ClaudeTrackDir, "busy", "_state", $"done_{id}.txt"));
+        }
+
+        var codexDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "codex");
+        TryDeleteFile(Path.Combine(codexDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(codexDir, "lastmsg", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(codexDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(CodexLaunchDir(), roomFile + ".cmd"));
+
+        var opencodeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode");
+        TryDeleteFile(Path.Combine(opencodeDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(opencodeDir, "lastmsg", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(opencodeDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(opencodeDir, "todos", roomFile + ".json"));
+        TryDeleteFile(Path.Combine(OpenCodeLaunchDir(), roomFile + ".cmd"));
+
+        TryDeleteFile(Path.Combine(GajaeLaunchDir(), roomFile + ".cmd"));
+        TryDeleteDirectory(GajaeSessionDir(roomId));
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch (Exception) { }
+    }
+
+    private static void TryDeleteFiles(string dir, string pattern)
+    {
+        try
+        {
+            if (!Directory.Exists(dir)) return;
+            foreach (var path in Directory.EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly))
+                TryDeleteFile(path);
+        }
+        catch (Exception) { }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); } catch (Exception) { }
     }
 
     /// <summary>앱 종료 시 호출 — 모든 셸 프로세스 정리 (좀비 방지).</summary>
