@@ -139,18 +139,18 @@ public sealed class DiscordBotService : IDisposable
         var title = string.IsNullOrWhiteSpace(project.Name) ? "프로젝트" : project.Name;
         var sess = string.IsNullOrWhiteSpace(session.Name) ? "세션" : session.Name;
 
-        // 에이전트의 최종 답변 텍스트를 우선 전송. 추출 불가(codex/opencode 등)면 질문 폴백.
+        // 어떤 질문에 대한 답인지 구분되도록 "내 질문 + 답변"을 함께 보낸다.
+        // (질문은 PC/Discord 어디서 보냈든 busy 훅이 기록한 마지막 프롬프트.)
+        var question = string.IsNullOrWhiteSpace(session.LastMessage)
+            ? "" : $"\n> {HeadForDiscord(session.LastMessage, 300)}";
+
+        // 에이전트의 최종 답변 텍스트. 추출 불가(codex/opencode 등)면 질문만.
         var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
         var reply = AgentReplyService.TryGetLastAssistantReply(session.Id, agentId);
 
-        string body;
-        if (!string.IsNullOrWhiteSpace(reply))
-            body = $"✅ **{title} / {sess}** 응답 완료\n{HeadForDiscord(reply, 1800)}";
-        else
-        {
-            var last = string.IsNullOrWhiteSpace(session.LastMessage) ? "" : $"\n> {TrimForDiscord(session.LastMessage, 500)}";
-            body = $"✅ **{title} / {sess}** 응답 완료{last}";
-        }
+        var body = string.IsNullOrWhiteSpace(reply)
+            ? $"✅ **{title} / {sess}** 응답 완료{question}"
+            : $"✅ **{title} / {sess}** 응답 완료{question}\n\n{HeadForDiscord(reply, 1500)}";
         await SafeSendAsync(thread, body);
     }
 

@@ -83,6 +83,8 @@ public partial class MainWindow : Window
             foreach (var r in saved) _sessionDoneRecords.Add(r);
         }
         UpdateSessionHistoryEmpty();
+        // 세션 완료 기록 "전체보기"/"한줄만 보기" 상태 복원 (재시작 유지).
+        ShowFullPrompt = SettingsService.LoadShowFullPrompt();
 
         _projects = WorkspaceStore.Load(out var archived);
         UpdateSessionBusyDisplay();
@@ -2019,7 +2021,9 @@ public partial class MainWindow : Window
 
     private void TogglePromptBtn_Click(object sender, RoutedEventArgs e)
     {
-        ShowFullPrompt = !ShowFullPrompt;
+        bool next = !ShowFullPrompt;
+        ShowFullPrompt = next;
+        SettingsService.SaveShowFullPrompt(next);
     }
 
     private void MarkAllReadBtn_Click(object sender, RoutedEventArgs e)

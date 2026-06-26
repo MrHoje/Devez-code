@@ -25,6 +25,8 @@ public static class SettingsService
         public bool   UsagePanelOpen { get; set; } = false;
         // 계정 사용량 오른쪽의 세션 완료 기록 사이드바 펼침 상태. 기본 접힘.
         public bool   SessionHistoryPanelOpen { get; set; } = false;
+        // 세션 완료 기록 "한줄만 보기"/"전체보기" 토글 상태. 기본 한줄만 보기(=false).
+        public bool   ShowFullPrompt { get; set; } = false;
         // 세션 완료 기록 사이드바 너비 (드래그로 조절, settings.json 에 영속).
         public double SessionHistoryWidth { get; set; } = 218;
         public Dictionary<string, string> ClaudeCodeRoomDirs { get; set; } = new();
@@ -214,6 +216,11 @@ public static class SettingsService
         Current.SessionHistoryRecords = records;
         Save();
     }
+
+    // ── 세션 완료 기록 "한줄만 보기"/"전체보기" 토글 상태 ──────────────
+    public static bool LoadShowFullPrompt() => Current.ShowFullPrompt;
+    public static void SaveShowFullPrompt(bool full) { Current.ShowFullPrompt = full; Save(); }
+
 
     // ── 우측 패널 활성 탭 ─────────────────────────────────────────
     public static int LoadFileExpActiveTab() => Current.FileExpActiveTab;
