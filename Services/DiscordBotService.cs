@@ -479,6 +479,8 @@ public sealed class DiscordBotService : IDisposable
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return;
 
+        await DeleteDefaultGeneralChannelsAsync(guild);
+
         var channelId = SettingsService.LoadDiscordCommandChannel();
         if (channelId != 0 && guild.GetTextChannel(channelId) != null) return;
 
@@ -494,6 +496,20 @@ public sealed class DiscordBotService : IDisposable
                 "세션 조작은 각 세션 스레드에서 진행하세요.");
         }
         catch { /* 권한 부족 등은 무시 */ }
+    }
+
+    /// <summary>디스코드가 서버 생성 시 자동으로 만드는 기본 텍스트 채널(`일반`/`general`)을 삭제한다.
+    /// 카테고리에 속하지 않은 루트 채널 중 이름이 일치하는 것만 지운다(프로젝트 채널·#명령어 는 건드리지 않음).</summary>
+    private static async Task DeleteDefaultGeneralChannelsAsync(SocketGuild guild)
+    {
+        foreach (var ch in guild.TextChannels.Where(c =>
+                     c.CategoryId == null &&
+                     (c.Name.Equals("일반", StringComparison.OrdinalIgnoreCase) ||
+                      c.Name.Equals("general", StringComparison.OrdinalIgnoreCase))).ToList())
+        {
+            try { await ch.DeleteAsync(); }
+            catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
+        }
     }
 
     public async Task<ITextChannel?> EnsureProjectChannelAsync(ProjectItem project)
