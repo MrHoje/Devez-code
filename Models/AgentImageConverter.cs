@@ -22,7 +22,6 @@ public sealed class AgentImageConverter : IValueConverter
             "claude"      => "claude_code.png",
             "codex"       => "codex.png",
             "gajae"       => "gajae_code.png",
-            "antigravity" => "anti.png",
             _             => "claude_code.png",
         };
         return new System.Uri($"pack://application:,,,/Resources/Images/ShellPresets/{fileName}", System.UriKind.Absolute);

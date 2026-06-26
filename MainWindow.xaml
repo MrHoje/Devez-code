@@ -83,11 +83,6 @@
                               Data="{StaticResource IconPanelLeftOpen}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
-                    <Border Width="1" Height="16" Margin="6,0,8,0" VerticalAlignment="Center"
-                            Background="{DynamicResource LineBrush}" Opacity="0.5"/>
-                    <TextBlock x:Name="BusyCountLabel" VerticalAlignment="Center" Margin="0,0,8,0"
-                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"
-                               Text="응답대기 0"/>
                 </StackPanel>
 
                 <!-- 윈도우 컨트롤(오른쪽 고정) -->
@@ -318,8 +313,8 @@
                                                 </Grid>
                                             </Border>
                                                 <!-- strip: 카드 Border 바깥에 배치, CornerRadius 클리핑 없음 -->
-                                                <Border Width="2" VerticalAlignment="Stretch"
-                                                        HorizontalAlignment="Left" Margin="-5,14,0,12"
+                                                <Border Width="3" VerticalAlignment="Stretch"
+                                                        HorizontalAlignment="Left" Margin="-1,18,0,16"
                                                         Background="{DynamicResource PrimaryBrush}" CornerRadius="1"
                                                         Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
                                             </Grid>
