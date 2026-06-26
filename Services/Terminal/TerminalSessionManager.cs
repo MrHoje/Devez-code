@@ -1000,7 +1000,8 @@ public sealed class TerminalSessionManager
         if (string.IsNullOrWhiteSpace(workingDir) || string.IsNullOrWhiteSpace(sessionId)) return false;
         try
         {
-            var full = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+            var full = Path.GetFullPath(workingDir);
+            if (full.Length > 3) full = full.TrimEnd('\\', '/'); // 드라이브 루트(C:\)는 백슬래시 유지 — claude 인코딩(C--)과 일치
             var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -1083,7 +1084,8 @@ public sealed class TerminalSessionManager
         if (string.IsNullOrWhiteSpace(workingDir)) return;
         try
         {
-            var full = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+            var full = Path.GetFullPath(workingDir);
+            if (full.Length > 3) full = full.TrimEnd('\\', '/'); // 드라이브 루트(C:\)는 백슬래시 유지 — claude 인코딩(C--)과 일치
             var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
