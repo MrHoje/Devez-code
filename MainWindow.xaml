@@ -217,6 +217,7 @@
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="37"/>
+                            <RowDefinition Height="34"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <Border Grid.Row="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
@@ -246,7 +247,25 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                        <!-- 세션 타이틀 영역과 동일 사이즈 패널 -->
+                        <Border Grid.Row="1" Background="{DynamicResource PanelSoftBrush}"
+                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="11,0,8,0">
+                                <Ellipse x:Name="SessionBusySpinner" Width="10" Height="10"
+                                         VerticalAlignment="Center" Margin="0,0,7,0" Visibility="Collapsed"
+                                         Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                         StrokeDashArray="15 100" StrokeDashCap="Round"
+                                         RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                                <TextBlock x:Name="SessionBusyLabel" Text="진행중인 세션 없음."
+                                           VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            </StackPanel>
+                        </Border>
+                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                       Padding="8,8,8,8">
                             <StackPanel>
                                 <ItemsControl x:Name="SessionHistoryList">
@@ -314,7 +333,7 @@
                                             </Border>
                                                 <!-- strip: 카드 Border 바깥에 배치, CornerRadius 클리핑 없음 -->
                                                 <Border Width="3" VerticalAlignment="Stretch"
-                                                        HorizontalAlignment="Left" Margin="-1,18,0,16"
+                                                        HorizontalAlignment="Left" Margin="-1,21,0,19"
                                                         Background="{DynamicResource PrimaryBrush}" CornerRadius="1"
                                                         Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
                                             </Grid>
@@ -465,7 +484,7 @@
                         <StackPanel x:Name="RateLimitPanel" Orientation="Horizontal" VerticalAlignment="Center"
                                     Visibility="Collapsed" Background="Transparent" Cursor="Arrow"
                                     ToolTip="Claude 계정 사용량 (5시간 / 주간 한도)">
-                            <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                            <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/claude_code.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                             <TextBlock x:Name="RlFiveLabel" VerticalAlignment="Center"
@@ -490,7 +509,7 @@
                                     Background="Transparent" Cursor="Arrow">
                             <Border x:Name="CxLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
                                     Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-                            <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                            <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                             <TextBlock x:Name="CxFiveLabel" VerticalAlignment="Center"
@@ -515,7 +534,7 @@
                                     Background="Transparent" Cursor="Arrow">
                             <Border x:Name="GoLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
                                     Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-                            <Image Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                            <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                             <TextBlock x:Name="GoFiveLabel" VerticalAlignment="Center"

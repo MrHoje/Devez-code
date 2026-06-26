@@ -73,6 +73,7 @@ public partial class MainWindow : Window
             foreach (var r in saved) _sessionDoneRecords.Add(r);
         }
         UpdateSessionHistoryEmpty();
+        UpdateSessionBusyDisplay();
 
         _projects = WorkspaceStore.Load(out var archived);
         _archivedProjects = archived;
@@ -115,7 +116,8 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
-                if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id); // 응답 종료 → 보류된 model/effort 적용
+                UpdateSessionBusyDisplay();
+                if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
             });
 
         // statusLine 훅이 떨군 방별 실제 model/effort → 해당 세션을 보여주는 패널 콤보를 라이브 갱신.
@@ -177,6 +179,7 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
             });
 
@@ -188,6 +191,7 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateSessionBusyDisplay();
             });
 
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
@@ -206,6 +210,7 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateSessionBusyDisplay();
             });
         _codexHook.CodexSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() => SettingsService.SaveCodexRoomSession(roomId, sid));
@@ -1905,8 +1910,28 @@ public partial class MainWindow : Window
         UpdateSessionHistoryEmpty();
     }
 
+
+    private void UpdateSessionBusyDisplay()
+    {
+        int count = 0;
+        foreach (var p in _projects)
+            foreach (var t in p.Tabs)
+                if (t is SessionItem { IsBusy: true }) count++;
+        if (count > 0)
+        {
+            SessionBusySpinner.Visibility = Visibility.Visible;
+            SessionBusyLabel.Text = $"진행중인 세션 {count}개";
+        }
+        else
+        {
+            SessionBusySpinner.Visibility = Visibility.Collapsed;
+            SessionBusyLabel.Text = "진행중인 세션 없음.";
+        }
+    }
+
     private void UpdateSessionHistoryEmpty()
         => SessionHistoryEmpty.Visibility = _sessionDoneRecords.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
 
 
     private void SessionHistoryItem_Click(object sender, MouseButtonEventArgs e)
