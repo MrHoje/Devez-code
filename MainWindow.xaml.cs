@@ -126,7 +126,6 @@ public partial class MainWindow : Window
                 var s = FindSession(id);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
-                if (busy) MarkSessionRead(id);
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
@@ -190,7 +189,6 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
-                if (busy) MarkSessionRead(roomId);
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
@@ -203,7 +201,6 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
-                if (busy) MarkSessionRead(roomId);
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
             });
@@ -224,7 +221,6 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
-                if (busy) MarkSessionRead(roomId);
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
             });

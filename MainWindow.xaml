@@ -232,30 +232,34 @@
                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextBrush}"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <Button x:Name="TogglePromptBtn" Click="TogglePromptBtn_Click"
-                                        Width="22" Height="22">
+                                     <Button x:Name="TogglePromptBtn" Click="TogglePromptBtn_Click"
+                                         Width="22" Height="22">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
                                             <Setter Property="ToolTip" Value="프롬프트 전체보기"/>
-                                            <Setter Property="Content">
-                                                <Setter.Value>
-                                    <Path Style="{StaticResource LucideButtonIcon}"
-                                          Data="{StaticResource IconMaximize2}" Width="12" Height="12"/>
-                                                </Setter.Value>
-                                            </Setter>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding ShowFullPrompt, Source={x:Reference ThisWindow}}" Value="True">
+                                                <DataTrigger Binding="{Binding ShowFullPrompt, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
                                                     <Setter Property="ToolTip" Value="한줄만 보기"/>
-                                                    <Setter Property="Content">
-                                                        <Setter.Value>
-                                    <Path Style="{StaticResource LucideButtonIcon}"
-                                          Data="{StaticResource IconChevronUp}" Width="12" Height="12"/>
-                                                        </Setter.Value>
-                                                    </Setter>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Button.Style>
+                                    <Grid>
+                                    <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconChevronRight}" Width="12" Height="12"/>
+                                     <Path Data="{StaticResource IconChevronDown}" Width="12" Height="12"
+                                               Visibility="Collapsed">
+                                             <Path.Style>
+                                                 <Style TargetType="Path" BasedOn="{StaticResource LucideButtonIcon}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ShowFullPrompt, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                            </Path.Style>
+                                        </Path>
+                                    </Grid>
                                 </Button>
                                     <Button x:Name="MarkAllReadBtn" Click="MarkAllReadBtn_Click"
                                         Width="22" Height="22"
@@ -362,7 +366,7 @@
                                                                 <Setter Property="TextWrapping" Value="NoWrap"/>
                                                                 <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                                                                 <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding ShowFullPrompt, Source={x:Reference ThisWindow}}" Value="True">
+                                                                    <DataTrigger Binding="{Binding ShowFullPrompt, ElementName=ThisWindow}" Value="True">
                                                                         <Setter Property="TextWrapping" Value="Wrap"/>
                                                                         <Setter Property="TextTrimming" Value="None"/>
                                                                     </DataTrigger>
