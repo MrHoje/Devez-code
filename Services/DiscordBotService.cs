@@ -16,15 +16,22 @@ public sealed class DiscordBotService : IDisposable
     private readonly object _sync = new();
     private readonly Dictionary<string, StringBuilder> _outputBuffers = new();
     private readonly HashSet<string> _flushScheduled = new(StringComparer.Ordinal);
+    // 자동 시작 대기 중인 입력: sessionId → 준비되면 주입할 메시지들.
+    private readonly Dictionary<string, List<string>> _pendingInput = new(StringComparer.Ordinal);
     private ObservableCollection<ProjectItem>? _projects;
     private DiscordSocketClient? _client;
     private bool _starting;
+    // 꺼진 세션을 UI 스레드에서 열어달라는 요청 핸들러. MainWindow 가 주입.
+    private Action<string>? _openSessionRequest;
 
     public bool IsConnected { get; private set; }
 
     private DiscordBotService() { }
 
     public void SetProjects(ObservableCollection<ProjectItem> projects) => _projects = projects;
+
+    /// <summary>꺼진 세션 스레드에 메시지가 오면 호출할 "세션 열기" 핸들러를 등록한다(MainWindow 가 UI 스레드에서 처리).</summary>
+    public void SetOpenSessionRequest(Action<string> handler) => _openSessionRequest = handler;
 
     public void Start()
     {
@@ -90,6 +97,7 @@ public sealed class DiscordBotService : IDisposable
             _starting = false;
             _outputBuffers.Clear();
             _flushScheduled.Clear();
+            _pendingInput.Clear();
         }
 
         IsConnected = false;
@@ -203,12 +211,76 @@ public sealed class DiscordBotService : IDisposable
         var session = TerminalSessionManager.Instance.Get(sessionId);
         if (session is not { IsAlive: true })
         {
-            await SafeSendAsync(thread, "⚠️ 해당 세션 터미널이 실행 중이 아닙니다. DevezCode에서 세션을 먼저 열어주세요.");
+            await RequestAutoStartAsync(thread, sessionId, content);
             return;
         }
 
         session.Write(content);
         session.Write("\r");
+    }
+
+    /// <summary>꺼진 세션에 메시지가 오면 그 메시지를 버퍼링하고 UI 에 세션 시작을 요청한다.
+    /// 세션이 준비되면 <see cref="NotifySessionReady"/> 가 버퍼를 주입한다.</summary>
+    private async Task RequestAutoStartAsync(SocketThreadChannel thread, string sessionId, string content)
+    {
+        if (_openSessionRequest == null)
+        {
+            await SafeSendAsync(thread, "⚠️ 해당 세션 터미널이 실행 중이 아닙니다. DevezCode에서 세션을 먼저 열어주세요.");
+            return;
+        }
+
+        bool firstRequest;
+        lock (_sync)
+        {
+            if (!_pendingInput.TryGetValue(sessionId, out var queue))
+            {
+                queue = new List<string>();
+                _pendingInput[sessionId] = queue;
+                firstRequest = true;
+            }
+            else firstRequest = false;
+            queue.Add(content);
+        }
+
+        if (!firstRequest) return; // 이미 시작 요청 진행 중 — 메시지만 버퍼에 누적
+
+        await SafeSendAsync(thread, "⏳ 세션을 시작하는 중입니다. 준비되면 메시지를 전달합니다…");
+        try { _openSessionRequest.Invoke(sessionId); } catch { /* UI 디스패치 실패는 무시 */ }
+
+        // 안전장치: 일정 시간 내 준비되지 않으면 버퍼를 폐기하고 안내한다.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(45000);
+            bool stillPending;
+            lock (_sync) stillPending = _pendingInput.Remove(sessionId);
+            if (stillPending)
+                await SafeSendAsync(thread, "⚠️ 세션 시작이 시간 내에 완료되지 않았습니다. DevezCode에서 직접 세션을 열어주세요.");
+        });
+    }
+
+    /// <summary>UI 가 세션 터미널 준비 완료를 알리면 자동 시작 대기 중이던 메시지를 순서대로 주입한다.</summary>
+    public void NotifySessionReady(string sessionId)
+    {
+        List<string>? queued;
+        lock (_sync)
+        {
+            if (!_pendingInput.Remove(sessionId, out queued)) return;
+        }
+        if (queued == null || queued.Count == 0) return;
+
+        _ = Task.Run(async () =>
+        {
+            // TUI 가 입력란을 그릴 약간의 여유를 둔 뒤 주입한다.
+            await Task.Delay(500);
+            var session = TerminalSessionManager.Instance.Get(sessionId);
+            if (session is not { IsAlive: true }) return;
+            foreach (var msg in queued)
+            {
+                session.Write(msg);
+                session.Write("\r");
+                await Task.Delay(200);
+            }
+        });
     }
 
     private async Task HandleCommandAsync(SocketMessage message, string content)

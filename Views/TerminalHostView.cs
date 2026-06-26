@@ -556,7 +556,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>TerminalReady 통지(중복 방지).</summary>
     private void NotifyReady(string roomId)
     {
-        if (_readyNotified.Add(roomId)) TerminalReady?.Invoke(roomId);
+        if (_readyNotified.Add(roomId))
+        {
+            TerminalReady?.Invoke(roomId);
+            // 자동 시작으로 열린 세션이면 대기 중이던 Discord 메시지를 주입한다.
+            DevezCode.Services.DiscordBotService.Instance.NotifySessionReady(roomId);
+        }
     }
 
     /// <summary>인라인 TUI(gjc) 방이면 show 직후 짧은 창 동안 스크롤을 맨 아래로 고정(open 시 최신 표시).

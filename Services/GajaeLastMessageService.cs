@@ -33,6 +33,7 @@ public sealed class GajaeLastMessageService : IDisposable
 
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중(스피너).</summary>
     public event Action<string, bool>? BusyChanged;
+    private bool _started;
 
     public GajaeLastMessageService()
     {
@@ -53,6 +54,7 @@ public sealed class GajaeLastMessageService : IDisposable
                 try { ScanRoom(roomDir); }
                 catch { /* 다음 폴링 */ }
             }
+            _started = true;
         }
         catch { /* 다음 폴링 */ }
     }
@@ -102,6 +104,8 @@ public sealed class GajaeLastMessageService : IDisposable
         bool busy;
         if (freshNew) { msg = ""; busy = false; }   // 빈 새 세션 → 헤더 세션명 복귀, idle
         else (msg, busy) = ParseState(newest!.FullName);
+        // 첫 스캔: 이전 실행에서 종료된 진행 상태는 취소된 것으로 간주, busy=false
+        if (!_started) busy = false;
 
         msg ??= ""; // 안전망
         if (!_lastMsg.TryGetValue(roomId, out var wasMsg) || wasMsg != msg)

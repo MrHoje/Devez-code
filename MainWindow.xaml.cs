@@ -88,6 +88,12 @@ public partial class MainWindow : Window
         UpdateSessionBusyDisplay();
         _archivedProjects = archived;
         _discordBot.SetProjects(_projects);
+        // Discord 스레드에 메시지가 왔는데 세션이 꺼져 있으면 UI 스레드에서 해당 세션을 자동으로 연다.
+        _discordBot.SetOpenSessionRequest(sessionId => Dispatcher.BeginInvoke(() =>
+        {
+            var s = FindSession(sessionId);
+            if (s != null) { try { Activate(); } catch { } OpenSession(s); }
+        }));
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
@@ -273,6 +279,7 @@ public partial class MainWindow : Window
             _discordBot.Start();
             RestoreOpenFiles();  // 직전에 열려 있던 파일 편집기 탭 복원(세션 활성화보다 먼저 → 활성 탭은 세션 유지)
             RestoreLastSession();
+            ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
@@ -1946,6 +1953,14 @@ public partial class MainWindow : Window
         UpdateSessionHistoryEmpty();
     }
 
+
+    /// <summary>시작 시 모든 세션의 IsBusy 를 false 로 초기화. 프로그램 종료 시 진행 중이던 상태는 취소됨.</summary>
+    private void ResetAllSessionBusy()
+    {
+        foreach (var p in _projects)
+            foreach (var t in p.Tabs)
+                if (t is SessionItem s) s.IsBusy = false;
+    }
 
     private void UpdateSessionBusyDisplay()
     {
