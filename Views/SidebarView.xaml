@@ -66,6 +66,7 @@
                 <!-- 호버: 보더만 살짝 더 진하게. 배경/그림자 유지 → 세션 row가 묻히지 않음. 텍스트의 X 슬라이드가 단독 호버 신호 -->
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="BorderBrush" Value="#5a5a5a"/>
+                    <Setter Property="BorderThickness" Value="1.5"/>
                 </Trigger>
                 <!-- 선택된(활성) 프로젝트: primary 보더 색만 변경 (배경 채움 없음) -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
@@ -80,12 +81,12 @@
             <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="Margin" Value="0,2,0,2"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                    <Setter Property="BorderBrush" Value="#5a5a5a"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -156,7 +157,6 @@
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
                     <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
                     <Setter TargetName="SessionRow" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                    <Setter TargetName="SessionRow" Property="BorderThickness" Value="1.5"/>
                 </DataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
                 <DataTrigger Binding="{Binding Hidden}" Value="True">
