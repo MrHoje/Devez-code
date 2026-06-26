@@ -452,22 +452,58 @@ public sealed class DiscordBotService : IDisposable
     {
         var client = _client;
         if (client == null || !IsConfigured) return;
+        var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+        if (guild == null) return;
 
-        var ids = SettingsService.LoadAllDiscordObjectIds();
+        var ids = SettingsService.LoadAllDiscordObjectIds().ToList();
         SettingsService.ClearDiscordWorkspace(); // 매핑 먼저 비워 재구성이 새로 만들도록
 
+        // 카테고리 안에 매핑되지 않은 잔여 채널(수동 생성 등)도 함께 지우도록, 저장된 카테고리의 모든 자식을 수집.
+        foreach (var cat in guild.CategoryChannels.Where(c => ids.Contains(c.Id)))
+            foreach (var child in cat.Channels)
+                if (!ids.Contains(child.Id)) ids.Add(child.Id);
+
+        int deleted = 0, failed = 0;
+        var errors = new List<string>();
         foreach (var id in ids)
         {
-            try
-            {
-                // 채널/스레드는 IChannel, 카테고리는 따로 — 둘 다 GetChannel 으로 잡아 삭제.
-                if (client.GetChannel(id) is IDeletable deletable)
-                    await deletable.DeleteAsync();
-            }
-            catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
+            var err = await TryDeleteChannelAsync(client, guild, id);
+            if (err == null) deleted++;
+            else if (err.Length > 0) { failed++; if (errors.Count < 8) errors.Add(err); }
+            // err == "" : 캐시·REST 모두 없음(이미 삭제됨) → 성공/실패 어디에도 안 셈
         }
 
+        // #일반/#general 기본 채널 정리 — 실패 사유를 직접 받아 리포트에 합친다.
+        var genErrors = await DeleteDefaultGeneralChannelsAsync(guild);
+
         await SyncWorkspaceAsync(); // #명령어 + 프로젝트 채널/스레드 재생성
+
+        // 진단 리포트 — 재생성된 #명령어 채널에 결과를 남겨 무엇이 왜 실패했는지 보이게.
+        var cmd = guild.GetTextChannel(SettingsService.LoadDiscordCommandChannel());
+        if (cmd != null)
+        {
+            var report = $"♻️ 초기화 완료 — 삭제 {deleted}건, 실패 {failed}건";
+            errors.AddRange(genErrors);
+            if (errors.Count > 0)
+                report += "\n⚠️ 실패 상세(권한 문제일 가능성 높음 — 봇 역할에 `채널 관리` 권한 확인):\n" + string.Join("\n", errors);
+            await SafeSendAsync(cmd, report);
+        }
+    }
+
+    /// <summary>채널/스레드/카테고리를 캐시→REST 순으로 찾아 삭제한다.
+    /// 반환: null=삭제 성공, ""=대상 없음(이미 삭제), 그 외=실패 사유 메시지.</summary>
+    private static async Task<string?> TryDeleteChannelAsync(DiscordSocketClient client, SocketGuild guild, ulong id)
+    {
+        try
+        {
+            IDeletable? target = guild.GetChannel(id) as IDeletable
+                                 ?? client.GetChannel(id) as IDeletable
+                                 ?? await client.Rest.GetChannelAsync(id) as IDeletable;
+            if (target == null) return ""; // 어디에도 없음 — 이미 삭제됐다고 간주
+            await target.DeleteAsync();
+            return null;
+        }
+        catch (Exception ex) { return $"`{id}`: {ex.Message}"; }
     }
 
     /// <summary>명령어 입력용 서버 루트 채널 `#명령어`를 보장한다(디스코드 기본 `#일반` 대체).
@@ -479,7 +515,7 @@ public sealed class DiscordBotService : IDisposable
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return;
 
-        await DeleteDefaultGeneralChannelsAsync(guild);
+        _ = await DeleteDefaultGeneralChannelsAsync(guild);
 
         var channelId = SettingsService.LoadDiscordCommandChannel();
         if (channelId != 0 && guild.GetTextChannel(channelId) != null) return;
@@ -499,17 +535,21 @@ public sealed class DiscordBotService : IDisposable
     }
 
     /// <summary>디스코드가 서버 생성 시 자동으로 만드는 기본 텍스트 채널(`일반`/`general`)을 삭제한다.
-    /// 카테고리에 속하지 않은 루트 채널 중 이름이 일치하는 것만 지운다(프로젝트 채널·#명령어 는 건드리지 않음).</summary>
-    private static async Task DeleteDefaultGeneralChannelsAsync(SocketGuild guild)
+    /// 카테고리에 속하지 않은 루트 채널 중 이름이 일치하는 것만 지운다(프로젝트 채널·#명령어 는 건드리지 않음).
+    /// 반환: 삭제 실패 사유 목록(없으면 빈 목록).</summary>
+    private static async Task<List<string>> DeleteDefaultGeneralChannelsAsync(SocketGuild guild)
     {
+        var errors = new List<string>();
+        var cmdId = SettingsService.LoadDiscordCommandChannel();
         foreach (var ch in guild.TextChannels.Where(c =>
-                     c.CategoryId == null &&
+                     c.CategoryId == null && c.Id != cmdId &&
                      (c.Name.Equals("일반", StringComparison.OrdinalIgnoreCase) ||
                       c.Name.Equals("general", StringComparison.OrdinalIgnoreCase))).ToList())
         {
             try { await ch.DeleteAsync(); }
-            catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
+            catch (Exception ex) { errors.Add($"`#{ch.Name}`: {ex.Message}"); }
         }
+        return errors;
     }
 
     public async Task<ITextChannel?> EnsureProjectChannelAsync(ProjectItem project)
