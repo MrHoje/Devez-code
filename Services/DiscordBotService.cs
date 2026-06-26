@@ -209,7 +209,7 @@ public sealed class DiscordBotService : IDisposable
         // 동기화에 시간이 걸릴 수 있으니 먼저 ack(나에게만 보이는 ephemeral).
         try { await command.DeferAsync(ephemeral: true); } catch { }
         await SyncWorkspaceAsync();
-        try { await command.FollowupAsync("✅ 새로고침 완료 — 세션 스레드 동기화 및 이름 갱신.", ephemeral: true); } catch { }
+        try { await command.FollowupAsync("✅ 새로고침 완료 — 세션 스레드 동기화·이름 갱신 및 채널 입력창 권한 적용.", ephemeral: true); } catch { }
     }
 
     public async Task SyncWorkspaceAsync()
@@ -224,6 +224,9 @@ public sealed class DiscordBotService : IDisposable
             foreach (var session in project.Sessions)
                 await EnsureSessionThreadAsync(project, session);
         }
+
+        // 기존 채널은 EnsureProjectChannelAsync 가 조기 반환하므로 권한이 안 걸린다 — 여기서 일괄 재적용.
+        await RefreshChannelRestrictionsAsync();
     }
 
     public async Task NotifySessionDoneAsync(ProjectItem? project, SessionItem session)
@@ -413,7 +416,14 @@ public sealed class DiscordBotService : IDisposable
             return;
         }
 
-        await SafeSendAsync(message.Channel, "사용법: `/refresh`(동기화+이름 갱신), `!dc status`, `!dc list`, `!dc keys`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
+        if (content.Equals("!dc refresh", StringComparison.OrdinalIgnoreCase))
+        {
+            await RefreshChannelRestrictionsAsync();
+            await SafeSendAsync(message.Channel, "기존 세션 채널 권한을 갱신했습니다. (파일첨부·스티커·슬래시명령·음성메시지 차단)");
+            return;
+        }
+
+        await SafeSendAsync(message.Channel, "사용법: `/refresh`(동기화+이름 갱신+권한 적용), `!dc refresh`(채널 권한만), `!dc status`, `!dc list`, `!dc keys`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
     }
 
     private string BuildStatusText()
@@ -462,7 +472,42 @@ public sealed class DiscordBotService : IDisposable
             props.Topic = project.Path;
         });
         SettingsService.SaveDiscordProjectChannel(project.Path, channel.Id);
+        await ApplyChannelRestrictionsAsync(guild, channel);
         return channel;
+    }
+
+    /// <summary>세션 채널 입력창의 불필요한 디스코드 네이티브 기능(파일첨부/스티커/슬래시명령/음성메시지)을
+    /// @everyone 권한 오버라이드로 막는다. 이모지·GIF 선택기는 디스코드가 차단 권한을 제공하지 않아 숨길 수 없다.</summary>
+    private static async Task ApplyChannelRestrictionsAsync(SocketGuild guild, ITextChannel channel)
+    {
+        try
+        {
+            var deny = new OverwritePermissions(
+                attachFiles: PermValue.Deny,
+                useExternalStickers: PermValue.Deny,
+                useApplicationCommands: PermValue.Deny,
+                sendVoiceMessages: PermValue.Deny);
+            await channel.AddPermissionOverwriteAsync(guild.EveryoneRole, deny);
+        }
+        catch { /* 권한 부족 등은 무시 — 메시징 자체는 계속 동작 */ }
+    }
+
+    /// <summary>이미 생성된 모든 활성 프로젝트 채널에 입력창 기능 차단 권한을 다시 적용한다(!dc refresh).</summary>
+    private async Task RefreshChannelRestrictionsAsync()
+    {
+        var client = _client;
+        var projects = _projects;
+        if (client == null || projects == null || !IsConfigured) return;
+        var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+        if (guild == null) return;
+
+        foreach (var project in projects.Where(p => p.IsActive))
+        {
+            var channelId = SettingsService.LoadDiscordProjectChannel(project.Path);
+            if (channelId == 0) continue;
+            if (guild.GetTextChannel(channelId) is { } channel)
+                await ApplyChannelRestrictionsAsync(guild, channel);
+        }
     }
 
     public async Task<IMessageChannel?> EnsureSessionThreadAsync(ProjectItem project, SessionItem session)
