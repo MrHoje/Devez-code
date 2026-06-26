@@ -296,6 +296,15 @@ public partial class App : Application
             (byte)(primarySoft.B + (bg.B - primarySoft.B) * 0.5)));
         res["BubbleBrush"]            = new SolidColorBrush(bubble);
         res["BubbleBorderBrush"]      = new SolidColorBrush(bubbleBorder);
+        // 세션 row 호버/포커스 배경 (devez 정합: 테마별 색상 구조 상이)
+        res["SessionHoverBrush"] = new SolidColorBrush(
+            theme == "dark" ? panelSoft  // 다크: 호버=기본(변화 없음)
+            : theme == "soft" ? Color.FromRgb(0xea, 0xe5, 0xdc)
+            : Color.FromRgb(0xef, 0xf3, 0xf7)); // minimal
+        res["SessionFocusBrush"] = new SolidColorBrush(
+            theme == "dark" ? Color.FromRgb(0x42, 0x42, 0x42)
+            : theme == "soft" ? Color.FromRgb(0xdc, 0xea, 0xd4)
+            : Color.FromRgb(0xd9, 0xe8, 0xfc)); // minimal
         res["DangerBrush"]            = new SolidColorBrush(danger);
         var successGreen = theme == "dark"
             ? Color.FromRgb(0x22, 0xc5, 0x5e)

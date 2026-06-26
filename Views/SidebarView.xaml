@@ -83,7 +83,7 @@
             <Setter Property="Margin" Value="0,2,0,2"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource LineBrush}"/>
+                    <Setter Property="Background" Value="{DynamicResource SessionHoverBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -152,7 +152,7 @@
             <DataTemplate.Triggers>
                 <!-- 활성(보고 있는) 세션: 배경색 변경으로 구분 -->
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
-                    <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource PrimaryOverlay50Brush}"/>
+                    <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
                 </DataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
                 <DataTrigger Binding="{Binding Hidden}" Value="True">
