@@ -1,5 +1,6 @@
 using DevezCode.Models;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace DevezCode.Services;
@@ -291,6 +292,33 @@ public static class SettingsService
     public static void SaveDiscordNotifySessionDone(bool v) { Current.DiscordNotifySessionDone = v; Save(); }
     public static ulong LoadDiscordCommandChannel() => Current.DiscordCommandChannel;
     public static void SaveDiscordCommandChannel(ulong v) { Current.DiscordCommandChannel = v; Save(); }
+
+    /// <summary>봇이 만든 모든 채널/카테고리/스레드 ID(명령어 채널 + 프로젝트 채널·카테고리 + 세션 스레드). 삭제 대상 수집용.</summary>
+    public static IReadOnlyList<ulong> LoadAllDiscordObjectIds()
+    {
+        lock (_lock)
+        {
+            var ids = new List<ulong>();
+            if (Current.DiscordCommandChannel != 0) ids.Add(Current.DiscordCommandChannel);
+            ids.AddRange(Current.DiscordProjectChannels.Values.Where(v => v != 0));
+            ids.AddRange(Current.DiscordProjectCategories.Values.Where(v => v != 0));
+            ids.AddRange(Current.DiscordSessionThreads.Values.Where(v => v != 0));
+            return ids;
+        }
+    }
+
+    /// <summary>워크스페이스 매핑(명령어 채널·프로젝트 채널/카테고리·세션 스레드)을 모두 비운다.</summary>
+    public static void ClearDiscordWorkspace()
+    {
+        lock (_lock)
+        {
+            Current.DiscordCommandChannel = 0;
+            Current.DiscordProjectChannels.Clear();
+            Current.DiscordProjectCategories.Clear();
+            Current.DiscordSessionThreads.Clear();
+            Save();
+        }
+    }
     public static ulong LoadDiscordProjectCategory(string projectPath)
     { lock (_lock) return Current.DiscordProjectCategories.TryGetValue(projectPath, out var v) ? v : 0; }
     public static void SaveDiscordProjectCategory(string projectPath, ulong id)

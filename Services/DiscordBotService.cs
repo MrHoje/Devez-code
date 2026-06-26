@@ -411,7 +411,19 @@ public sealed class DiscordBotService : IDisposable
             return;
         }
 
-        await SafeSendAsync(message.Channel, "사용법: `/refresh`(동기화+이름 갱신+권한 적용), `!dc status`, `!dc list`, `!dc keys`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
+        if (content.Equals("!dc reset", StringComparison.OrdinalIgnoreCase))
+        {
+            await SafeSendAsync(message.Channel, "⚠️ 봇이 만든 **모든 채널·카테고리·세션 스레드**를 삭제하고 새로 구성합니다. 되돌릴 수 없습니다.\n진행하려면 `!dc reset confirm` 을 입력하세요.");
+            return;
+        }
+
+        if (content.Equals("!dc reset confirm", StringComparison.OrdinalIgnoreCase))
+        {
+            await ResetWorkspaceAsync();
+            return; // 재구성된 #명령어 채널에 안내가 다시 올라온다.
+        }
+
+        await SafeSendAsync(message.Channel, "사용법: `/refresh`(동기화+이름 갱신+권한 적용), `!dc status`, `!dc list`, `!dc keys`, `!dc reset`(전체 초기화)\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
     }
 
     private string BuildStatusText()
@@ -432,6 +444,30 @@ public sealed class DiscordBotService : IDisposable
             }
         }
         return TrimForDiscord(sb.ToString(), 1900);
+    }
+
+    /// <summary>봇이 만든 모든 채널·카테고리·세션 스레드를 삭제하고 매핑을 비운 뒤 새로 구성한다(!dc reset confirm).
+    /// 개발 중 깨끗한 상태에서 다시 테스트하기 위한 용도.</summary>
+    private async Task ResetWorkspaceAsync()
+    {
+        var client = _client;
+        if (client == null || !IsConfigured) return;
+
+        var ids = SettingsService.LoadAllDiscordObjectIds();
+        SettingsService.ClearDiscordWorkspace(); // 매핑 먼저 비워 재구성이 새로 만들도록
+
+        foreach (var id in ids)
+        {
+            try
+            {
+                // 채널/스레드는 IChannel, 카테고리는 따로 — 둘 다 GetChannel 으로 잡아 삭제.
+                if (client.GetChannel(id) is IDeletable deletable)
+                    await deletable.DeleteAsync();
+            }
+            catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
+        }
+
+        await SyncWorkspaceAsync(); // #명령어 + 프로젝트 채널/스레드 재생성
     }
 
     /// <summary>명령어 입력용 서버 루트 채널 `#명령어`를 보장한다(디스코드 기본 `#일반` 대체).
