@@ -709,19 +709,19 @@ public sealed class TerminalSessionManager
 
             const string script = """
                 # DevezCode claude room session tracker (SessionStart hook)
-                # Records the live session id per chat room so the app resumes the latest conversation.
+                # 세션 ID 추적은 UserPromptSubmit(busy 'running')에서만 한다 — 사용자가 실제로 메시지를 보낸
+                # 세션만 기록해, 방을 열고 대화하지 않은 빈 세션(--session-id 시작 등)이 직전의 실제 대화 ID 를
+                # 덮어써 영구 소실시키는 것을 막는다. SessionStart 는 /clear 전환만 처리한다.
                 try {
                   $j = [Console]::In.ReadToEnd() | ConvertFrom-Json
                   $room = $env:DEVEZCODE_ROOM_ID
-                  if ($room -and $j.session_id) {
+                  # /clear: 새 (빈) 세션으로 명시 전환. 이전 대화는 복원하지 않는다(정책). 새 session_id 를 추적에
+                  # 박아 다음 실행이 빈 새 세션으로 시작하게 하고, 헤더 lastmsg 를 비워 세션 타이틀로 복귀시킨다.
+                  if ($room -and $j.session_id -and $j.source -eq 'clear') {
                     $room = $room -replace '[^\w\-]', ''
                     $dir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
                     New-Item -ItemType Directory -Force -Path $dir | Out-Null
                     Set-Content -LiteralPath (Join-Path $dir ($room + '.txt')) -Value $j.session_id -Encoding Ascii -Force
-                  }
-                  # /clear 시 헤더의 마지막 메시지를 비워 세션 타이틀로 복귀시킨다(빈 lastmsg → watcher 갱신).
-                  if ($room -and $j.source -eq 'clear') {
-                    $room = $room -replace '[^\w\-]', ''
                     $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
                     New-Item -ItemType Directory -Force -Path $mdir | Out-Null
                     Set-Content -LiteralPath (Join-Path $mdir ($room + '.txt')) -Value '' -Encoding UTF8 -Force
@@ -861,6 +861,11 @@ public sealed class TerminalSessionManager
                       if ($sid) {
                         Set-Content -LiteralPath $baseFile -Value ([string](Get-MetaCount $tp)) -Encoding Ascii -Force
                         if (Test-Path -LiteralPath $doneFile) { Remove-Item -LiteralPath $doneFile -Force -ErrorAction SilentlyContinue }
+                        # 사용자가 실제로 메시지를 보낸 세션 = 이 방의 진짜 현재 대화. 추적파일에 확정 기록한다.
+                        # (SessionStart 가 아닌 여기서만 기록 → 대화 없는 빈 세션이 직전 대화 ID 를 덮지 않는다.)
+                        $tdir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
+                        New-Item -ItemType Directory -Force -Path $tdir | Out-Null
+                        Set-Content -LiteralPath (Join-Path $tdir ($room + '.txt')) -Value $sid -Encoding Ascii -Force
                       }
                       $prompt = ($prompt -replace '\s+', ' ').Trim()
                       if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
