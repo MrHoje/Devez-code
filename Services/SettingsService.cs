@@ -107,6 +107,14 @@ public static class SettingsService
         public string NotifyMonitorDevice { get; set; } = "";
         // 알림 자동 닫힘 시간(초). 1~10, 0=영구(자동 닫힘 없음). 기본 6초.
         public int NotifyAutoCloseSeconds { get; set; } = 6;
+        // Discord 연동. 토큰이 비어 있거나 Enabled=false 면 완전히 비활성화된다.
+        public bool DiscordEnabled { get; set; }
+        public string DiscordBotToken { get; set; } = "";
+        public ulong DiscordGuildId { get; set; }
+        public bool DiscordNotifySessionDone { get; set; } = true;
+        public Dictionary<string, ulong> DiscordProjectCategories { get; set; } = new();
+        public Dictionary<string, ulong> DiscordProjectChannels { get; set; } = new();
+        public Dictionary<string, ulong> DiscordSessionThreads { get; set; } = new();
     }
 
     private static readonly object _lock = new();
@@ -263,6 +271,37 @@ public static class SettingsService
     }
     public static void SaveNotifyAutoCloseSeconds(int v) { Current.NotifyAutoCloseSeconds = v < 0 ? 0 : (v > 10 ? 10 : v); Save(); }
 
+
+    // ── Discord 연동 ─────────────────────────────────────────────
+    public static bool LoadDiscordEnabled() => Current.DiscordEnabled;
+    public static void SaveDiscordEnabled(bool v) { Current.DiscordEnabled = v; Save(); }
+    public static string LoadDiscordBotToken() => Current.DiscordBotToken ?? "";
+    public static void SaveDiscordBotToken(string? v) { Current.DiscordBotToken = v?.Trim() ?? ""; Save(); }
+    public static ulong LoadDiscordGuildId() => Current.DiscordGuildId;
+    public static void SaveDiscordGuildId(ulong v) { Current.DiscordGuildId = v; Save(); }
+    public static bool LoadDiscordNotifySessionDone() => Current.DiscordNotifySessionDone;
+    public static void SaveDiscordNotifySessionDone(bool v) { Current.DiscordNotifySessionDone = v; Save(); }
+    public static ulong LoadDiscordProjectCategory(string projectPath)
+    { lock (_lock) return Current.DiscordProjectCategories.TryGetValue(projectPath, out var v) ? v : 0; }
+    public static void SaveDiscordProjectCategory(string projectPath, ulong id)
+    { lock (_lock) { if (id == 0) Current.DiscordProjectCategories.Remove(projectPath); else Current.DiscordProjectCategories[projectPath] = id; Save(); } }
+    public static ulong LoadDiscordProjectChannel(string projectPath)
+    { lock (_lock) return Current.DiscordProjectChannels.TryGetValue(projectPath, out var v) ? v : 0; }
+    public static void SaveDiscordProjectChannel(string projectPath, ulong id)
+    { lock (_lock) { if (id == 0) Current.DiscordProjectChannels.Remove(projectPath); else Current.DiscordProjectChannels[projectPath] = id; Save(); } }
+    public static ulong LoadDiscordSessionThread(string sessionId)
+    { lock (_lock) return Current.DiscordSessionThreads.TryGetValue(sessionId, out var v) ? v : 0; }
+    public static void SaveDiscordSessionThread(string sessionId, ulong id)
+    { lock (_lock) { if (id == 0) Current.DiscordSessionThreads.Remove(sessionId); else Current.DiscordSessionThreads[sessionId] = id; Save(); } }
+    public static string? FindDiscordSessionByThread(ulong threadId)
+    {
+        lock (_lock)
+        {
+            foreach (var kv in Current.DiscordSessionThreads)
+                if (kv.Value == threadId) return kv.Key;
+            return null;
+        }
+    }
     // ── Claude Code 방 작업 디렉터리 ──────────────────────────────
     // 아래 방별 dict/list 들은 claude 세션 워처(FileSystemWatcher = 비-UI 스레드)와 UI 스레드가
     // 동시에 접근한다. Dictionary/List 는 스레드 안전하지 않고 Save() 가 _current 를 직렬화(읽기)하므로,
