@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Text;
 using System.Text.RegularExpressions;
 using Discord;
@@ -26,7 +27,69 @@ public sealed class DiscordBotService : IDisposable
 
     private DiscordBotService() { }
 
-    public void SetProjects(ObservableCollection<ProjectItem> projects) => _projects = projects;
+    public void SetProjects(ObservableCollection<ProjectItem> projects)
+    {
+        // 기존 구독 해제(재호출 대비) → 새 컬렉션 구독.
+        if (_projects != null)
+        {
+            _projects.CollectionChanged -= OnProjectsChanged;
+            foreach (var p in _projects) p.Sessions.CollectionChanged -= OnSessionsChanged;
+        }
+        _projects = projects;
+        projects.CollectionChanged += OnProjectsChanged;
+        foreach (var p in projects)
+        {
+            p.Sessions.CollectionChanged -= OnSessionsChanged;
+            p.Sessions.CollectionChanged += OnSessionsChanged;
+        }
+    }
+
+    /// <summary>프로젝트 추가/삭제 — 추가된 프로젝트의 세션 변경을 구독하고, 삭제된 프로젝트는 해제.</summary>
+    private void OnProjectsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems != null)
+            foreach (ProjectItem p in e.NewItems)
+            {
+                p.Sessions.CollectionChanged -= OnSessionsChanged;
+                p.Sessions.CollectionChanged += OnSessionsChanged;
+                if (IsConfigured && IsConnected && p.IsActive)
+                    foreach (var s in p.Sessions) _ = EnsureSessionThreadAsync(p, s);
+            }
+        if (e.OldItems != null)
+            foreach (ProjectItem p in e.OldItems)
+                p.Sessions.CollectionChanged -= OnSessionsChanged;
+    }
+
+    /// <summary>세션 추가 → 스레드 생성, 세션 삭제 → 스레드 삭제·매핑 정리.
+    /// 봇이 아직 연결 전이면 무시한다(OnReady 의 SyncWorkspaceAsync 가 일괄 생성).</summary>
+    private void OnSessionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (!IsConfigured || !IsConnected) return;
+        var project = _projects?.FirstOrDefault(p => ReferenceEquals(p.Sessions, sender));
+
+        if (e.NewItems != null && project is { IsActive: true })
+            foreach (SessionItem s in e.NewItems) _ = EnsureSessionThreadAsync(project, s);
+
+        if (e.OldItems != null)
+            foreach (SessionItem s in e.OldItems) _ = RemoveSessionThreadAsync(s.Id);
+    }
+
+    /// <summary>세션 삭제 시 Discord 스레드를 삭제하고 매핑·대기 입력을 정리한다.</summary>
+    private async Task RemoveSessionThreadAsync(string sessionId)
+    {
+        var threadId = SettingsService.LoadDiscordSessionThread(sessionId);
+        lock (_sync) _pendingInput.Remove(sessionId);
+        if (threadId == 0) return;
+        SettingsService.SaveDiscordSessionThread(sessionId, 0); // 매핑 제거
+        var client = _client;
+        if (client == null) return;
+        try
+        {
+            if (client.GetChannel(threadId) is IThreadChannel thread)
+                await thread.DeleteAsync();
+        }
+        catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
+    }
 
     /// <summary>꺼진 세션 스레드에 메시지가 오면 호출할 "세션 열기" 핸들러를 등록한다(MainWindow 가 UI 스레드에서 처리).</summary>
     public void SetOpenSessionRequest(Action<string> handler) => _openSessionRequest = handler;
