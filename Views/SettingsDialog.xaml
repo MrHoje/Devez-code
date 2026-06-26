@@ -63,6 +63,28 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Discord 패널 입력 필드 라벨 (MCP 관리자 폼과 동일 톤) -->
+        <Style x:Key="DiscordFieldLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="FontSize" Value="{DynamicResource Fs11}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,7"/>
+        </Style>
+
+        <!-- Discord 입력 카드 (둥근 모서리 + 포커스 시 PrimaryBrush 테두리) -->
+        <Style x:Key="DiscordFieldBox" TargetType="Border" BasedOn="{StaticResource AuthInputBorder}">
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource TextMutedBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <!-- 설정창 콘텐츠 (devez SettingsDialog 이식).
@@ -1222,11 +1244,32 @@
                                     <CheckBox x:Name="DiscordEnabledToggle" Grid.Column="1" Style="{StaticResource ToggleSwitch}" Checked="DiscordSetting_Changed" Unchecked="DiscordSetting_Changed"/>
                                 </Grid>
                                 <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
-                                <TextBlock Text="Bot Token" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
-                                <PasswordBox x:Name="DiscordTokenBox" Height="34" PasswordChanged="DiscordSetting_Changed" Background="{DynamicResource PanelSoftBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="10,6"/>
-                                <TextBlock Text="Guild ID" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,18,0,8"/>
-                                <TextBox x:Name="DiscordGuildIdBox" Height="34" TextChanged="DiscordSetting_Changed" Background="{DynamicResource PanelSoftBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="10,6"/>
-                                <Grid Margin="0,18,0,0">
+
+                                <!-- 연결 정보 -->
+                                <TextBlock Text="연결 정보" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,0,0,12"/>
+
+                                <TextBlock Text="BOT TOKEN" Style="{StaticResource DiscordFieldLabel}"/>
+                                <Border Style="{StaticResource DiscordFieldBox}">
+                                    <PasswordBox x:Name="DiscordTokenBox" Style="{StaticResource PasswordStyle}"
+                                                 FontSize="{DynamicResource Fs12}"
+                                                 PasswordChanged="DiscordSetting_Changed"/>
+                                </Border>
+                                <TextBlock Text="Discord 개발자 포털 > Bot 에서 발급한 토큰." FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="2,6,0,0"/>
+
+                                <TextBlock Text="GUILD ID" Style="{StaticResource DiscordFieldLabel}" Margin="0,18,0,7"/>
+                                <Border Style="{StaticResource DiscordFieldBox}">
+                                    <TextBox x:Name="DiscordGuildIdBox" Style="{StaticResource InputStyle}"
+                                             FontSize="{DynamicResource Fs12}"
+                                             TextChanged="DiscordSetting_Changed"/>
+                                </Border>
+                                <TextBlock Text="서버 우클릭 > 서버 ID 복사 (개발자 모드 필요)." FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="2,6,0,0"/>
+
+                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
+
+                                <Grid Margin="0,0,0,0">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Margin="0,0,16,0">
                                         <TextBlock Text="세션 완료 Discord 알림" FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
