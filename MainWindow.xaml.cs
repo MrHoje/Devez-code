@@ -1948,8 +1948,11 @@ public partial class MainWindow : Window
     private void SessionHistoryScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         var sv = (ScrollViewer)sender;
-        SessionHistoryFadeTop.Visibility = sv.VerticalOffset > 0 ? Visibility.Visible : Visibility.Collapsed;
-        SessionHistoryFadeBottom.Visibility = sv.VerticalOffset < sv.ScrollableHeight ? Visibility.Visible : Visibility.Collapsed;
+        bool top = sv.VerticalOffset > 0;
+        bool bottom = sv.VerticalOffset < sv.ScrollableHeight;
+        SessionHistoryFadeTop.Visibility = top ? Visibility.Visible : Visibility.Collapsed;
+        SessionHistoryFadeBottom.Visibility = bottom ? Visibility.Visible : Visibility.Collapsed;
+        sv.Padding = new Thickness(8, top ? 0 : 8, 8, bottom ? 0 : 8);
     }
 
     private void UpdateSessionHistoryEmpty()
