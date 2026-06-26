@@ -14,8 +14,32 @@ public static class AgentReplyService
     {
         try
         {
+            // claude: busy-hook(Stop)이 stdin 의 last_assistant_message 를 그대로 기록한 파일을 우선 사용한다.
+            // transcript 경로/세션ID 추적이 필요 없어 가장 정확하고 견고하다.
+            if (agentId == "claude")
+            {
+                var hookReply = ReadHookReply(roomId);
+                if (!string.IsNullOrWhiteSpace(hookReply)) return hookReply;
+            }
             var path = TranscriptPath(roomId, agentId);
             return path == null ? null : LastAssistantTextFromJsonl(path);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>busy-hook(Stop)이 기록한 방의 마지막 assistant 답변
+    /// (%AppData%\DevezCode\claude\lastreply\&lt;room&gt;.txt).</summary>
+    private static string? ReadHookReply(string roomId)
+    {
+        try
+        {
+            var safe = System.Text.RegularExpressions.Regex.Replace(roomId, @"[^\w\-]", "");
+            var p = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "claude", "lastreply", safe + ".txt");
+            if (!File.Exists(p)) return null;
+            var s = File.ReadAllText(p).Trim();
+            return string.IsNullOrWhiteSpace(s) ? null : s;
         }
         catch { return null; }
     }
@@ -41,8 +65,8 @@ public static class AgentReplyService
     };
 
     /// <summary>%USERPROFILE%\.claude\projects\&lt;encoded-cwd&gt;\&lt;sessionId&gt;.jsonl
-    /// sessionId 는 busy-hook 추적 파일(최신) → settings 순으로 구하고, 둘 다 빗나가면
-    /// 같은 프로젝트 폴더의 최근 transcript 로 폴백한다(경로 규칙은 ClaudeTranscriptExists 와 동일).</summary>
+    /// sessionId 는 busy-hook 추적 파일(최신) → settings 순으로 구한다. 그 sessionId 의 transcript 만
+    /// 사용한다 — "폴더 최근 jsonl" 폴백은 같은 폴더의 다른(옛) 세션 대화를 가져와 엉뚱한 답을 보내므로 쓰지 않는다.</summary>
     private static string? ClaudeTranscriptPath(string roomId)
     {
         var workingDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
@@ -58,20 +82,10 @@ public static class AgentReplyService
         // sessionId: busy-hook 이 기록한 추적 파일이 settings 보다 최신일 수 있어 우선.
         var sessionId = ReadTrackedClaudeSession(roomId)
                         ?? SettingsService.LoadClaudeCodeRoomSession(roomId);
-        if (!string.IsNullOrWhiteSpace(sessionId))
-        {
-            var p = Path.Combine(dir, sessionId + ".jsonl");
-            if (File.Exists(p)) return p;
-        }
+        if (string.IsNullOrWhiteSpace(sessionId)) return null;
 
-        // 폴백: sessionId 가 비었거나(미발급/미동기화) 그 파일이 없으면 같은 폴더의 최근 transcript.
-        // (방금 답한 세션일 확률이 높다. 같은 폴더에 여러 세션이 동시 활동 중이면 부정확할 수 있어
-        //  sessionId 매칭을 항상 우선한다.)
-        var newest = new DirectoryInfo(dir)
-            .GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
-            .OrderByDescending(f => f.LastWriteTimeUtc)
-            .FirstOrDefault();
-        return newest?.FullName;
+        var path = Path.Combine(dir, sessionId + ".jsonl");
+        return File.Exists(path) ? path : null;
     }
 
     /// <summary>busy-hook 이 기록한 방별 claude 세션 ID

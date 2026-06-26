@@ -527,9 +527,9 @@ public sealed class TerminalSessionManager
     private string? TryBuildDirectLaunch(string roomId, string shellCommandLine, out string? injectFallback)
     {
         injectFallback = null;
-        EnsureSessionHookAssets();
+        var roomSettings = BuildRoomSettings(roomId); // 방별 settings 생성(roomId 인자 박힌 hook command 포함)
         string flags = "--dangerously-skip-permissions";
-        if (File.Exists(HookSettingsPath)) flags += $" --settings \"{HookSettingsPath}\"";
+        if (File.Exists(roomSettings)) flags += $" --settings \"{roomSettings}\"";
 
         // 방별 model/effort 를 런치 플래그로 적용. 값은 콤보 화이트리스트지만 변조 대비 영숫자/하이픈만 허용.
         // 우선순위: (1) statusLine 이 영속한 라이브값 = 세션이 마지막에 쓰던 model/effort(TUI 안 /model 변경 포함)
@@ -615,7 +615,8 @@ public sealed class TerminalSessionManager
     private static string ClaudeTrackDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude");
     private static string HookScriptPath => Path.Combine(ClaudeTrackDir, "room-hook.ps1");
-    private static string HookSettingsPath => Path.Combine(ClaudeTrackDir, "room-settings.json");
+    // 방별 claude --settings 파일. hook/statusLine command 에 roomId 인자가 박혀 있다(BuildRoomSettings).
+    private static string RoomSettingsPath(string roomId) => Path.Combine(ClaudeTrackDir, "room-settings", SafeRoomFileName(roomId) + ".json");
     // statusLine 훅: stdin 으로 받은 statusLine JSON 을 그대로 파일에 떨군다(계정 rate_limits 추출용).
     private static string StatusLineScriptPath => Path.Combine(ClaudeTrackDir, "statusline-hook.ps1");
     // busy 훅: UserPromptSubmit(running)/Stop(idle) 시 방별 상태 파일을 써 좌측 트리 스피너를 켜고 끈다.
@@ -639,13 +640,13 @@ public sealed class TerminalSessionManager
     {
         try
         {
-            if (!File.Exists(HookSettingsPath)) return false;
             if (!File.Exists(BusyHookScriptPath)) return false;
             if (!File.Exists(HookScriptPath)) return false;
             if (!File.Exists(StatusLineScriptPath)) return false;
-            var json = File.ReadAllText(HookSettingsPath);
-            // busy 연동(요청중 스피너) 훅이 들어있는 최신 설정인지 확인
-            return json.Contains("UserPromptSubmit") && json.Contains("busy-hook");
+            // settings 는 방별로 세션마다 생성되므로 공통 파일 대신 스크립트가 최신본인지 확인한다.
+            // (roomId 인자 수신 + 응답 기록 기능이 들어있어야 최신)
+            var busy = File.ReadAllText(BusyHookScriptPath);
+            return busy.Contains("roomArg") && busy.Contains("last_assistant_message");
         }
         catch { return false; }
     }
@@ -720,9 +721,12 @@ public sealed class TerminalSessionManager
                 # 세션 ID 추적은 UserPromptSubmit(busy 'running')에서만 한다 — 사용자가 실제로 메시지를 보낸
                 # 세션만 기록해, 방을 열고 대화하지 않은 빈 세션(--session-id 시작 등)이 직전의 실제 대화 ID 를
                 # 덮어써 영구 소실시키는 것을 막는다. SessionStart 는 /clear 전환만 처리한다.
+                # roomId 는 settings command 인자(우선) 또는 env 로 받는다(claude 가 env 를 자식에 못 넘기는
+                # 환경 대비 — 인자가 1차, env 는 폴백).
+                param([string]$roomArg = '')
                 try {
                   $j = [Console]::In.ReadToEnd() | ConvertFrom-Json
-                  $room = $env:DEVEZCODE_ROOM_ID
+                  $room = if ($roomArg) { $roomArg } else { $env:DEVEZCODE_ROOM_ID }
                   # /clear: 새 (빈) 세션으로 명시 전환. 이전 대화는 복원하지 않는다(정책). 새 session_id 를 추적에
                   # 박아 다음 실행이 빈 새 세션으로 시작하게 하고, 헤더 lastmsg 를 비워 세션 타이틀로 복귀시킨다.
                   if ($room -and $j.session_id -and $j.source -eq 'clear') {
@@ -746,6 +750,9 @@ public sealed class TerminalSessionManager
             const string statusScript = """
                 # DevezCode statusLine: capture account rate_limits, then pass through to the
                 # user's own statusLine so the original CLI status line keeps rendering.
+                # roomId 는 settings command 인자(우선) 또는 env(폴백)로 받는다.
+                param([string]$roomArg = '')
+                $rid = if ($roomArg) { $roomArg } else { $env:DEVEZCODE_ROOM_ID }
                 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                 $raw = [Console]::In.ReadToEnd()
                 $o = $null
@@ -760,7 +767,7 @@ public sealed class TerminalSessionManager
                 $sig = ''
                 try {
                   if ($o) { $sig = (('' + $o.model.id) + '-' + ('' + $o.effort.level)) -replace '[^\w\-]', '' }
-                  $room = $env:DEVEZCODE_ROOM_ID
+                  $room = $rid
                   if ($room -and $o) {
                     $room = $room -replace '[^\w\-]', ''
                     $md = Join-Path $dir 'modeleffort'
@@ -777,7 +784,7 @@ public sealed class TerminalSessionManager
                       # 3초 캐시: 직전 출력을 파일로 두고 만료 전이면 재실행 없이 그대로 통과시킨다.
                       # 캐시 키 = 방 + model/effort 시그니처. 방별 분리(세션 간 값 안 섞임) + model/effort 가
                       # 바뀌면 키가 달라져 즉시 캐시 미스 → 새 모델/강도가 statusline 에 바로 반영(interval 대기 X).
-                      $cacheRoom = if ($env:DEVEZCODE_ROOM_ID) { $env:DEVEZCODE_ROOM_ID -replace '[^\w\-]', '' } else { 'global' }
+                      $cacheRoom = if ($rid) { $rid -replace '[^\w\-]', '' } else { 'global' }
                       $cache = Join-Path $dir ('statusline-cache-' + $cacheRoom + '-' + $sig + '.txt')
                       $fresh = (Test-Path $cache) -and (((Get-Date) - (Get-Item $cache).LastWriteTime).TotalSeconds -lt 3)
                       if ($fresh) {
@@ -823,9 +830,9 @@ public sealed class TerminalSessionManager
                 #   • 완료 수: <task-notification> 재주입 프롬프트의 distinct <task-id> — 훅이 직접 누적 기록.
                 #     (메인 transcript 엔 Stop 시점에 아직 안 박혀있을 수 있어 훅이 직접 센다.)
                 # SessionEnd 는 세션 종료이므로 무조건 idle.
-                param([string]$status = 'idle')
+                param([string]$status = 'idle', [string]$roomArg = '')
                 try {
-                  $room = $env:DEVEZCODE_ROOM_ID
+                  $room = if ($roomArg) { $roomArg } else { $env:DEVEZCODE_ROOM_ID }
                   if (-not $room) { exit 0 }
                   $room = $room -replace '[^\w\-]', ''
                   $dir = Join-Path $env:APPDATA 'DevezCode\claude\busy'
@@ -904,42 +911,65 @@ public sealed class TerminalSessionManager
                     Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
                   } else {
                     Set-Content -LiteralPath $busyFile -Value 'idle' -Encoding Ascii -Force
+                    # 진짜 응답 완료(pending=0) → claude 가 stdin 으로 준 마지막 답변을 방별로 기록한다.
+                    # Discord reply 가 이 파일을 바로 읽으므로 transcript 경로/세션ID 추적이 필요 없다.
+                    if ($evt -ne 'SessionEnd') {
+                      try {
+                        $lastMsg = '' + $j.last_assistant_message
+                        if ($lastMsg) {
+                          $rdir = Join-Path $env:APPDATA 'DevezCode\claude\lastreply'
+                          New-Item -ItemType Directory -Force -Path $rdir | Out-Null
+                          Set-Content -LiteralPath (Join-Path $rdir ($room + '.txt')) -Value $lastMsg -Encoding UTF8 -Force
+                        }
+                      } catch { }
+                    }
                   }
                 } catch { }
                 exit 0
                 """;
             File.WriteAllText(BusyHookScriptPath, busyScript);
-
-            var command = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{HookScriptPath}\"";
-            var statusCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{StatusLineScriptPath}\"";
-            var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running";
-            var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle";
-            // refreshInterval 을 의도적으로 넣지 않는다 — 사용자 ~/.claude/settings.json 값과 무관하게 항상 생략.
-            // statusLine 은 rate_limits 푸터 캡처가 목적이고 event-driven(메시지마다) 갱신으로 충분하므로,
-            // 주기 갱신을 주입하면 idle 중에도 매초 statusLine 프로세스가 떠 CPU 가 튄다. 이를 원천 차단한다.
-            var statusLine = new { type = "command", command = statusCommand };
-            var settings = new
-            {
-                // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를
-                // 자동 삭제한다(그 세션은 resume 불가). 30일 보존.
-                cleanupPeriodDays = 30,
-                // theme 을 최상위 소스(이 파일은 --settings 로 주입돼 command-line scope = 최우선)에 박는다.
-                // 이게 없으면 claude 의 effective theme 이 'auto'(터미널 배경 자동 감지)로 떨어지는데,
-                // ConPTY + xterm 환경에선 배경색 쿼리(OSC 11) 응답이 레이스라 가끔 감지 실패 → light(흰 화면)로
-                // 세션 내내 고정된다. 현재 앱 테마를 명시해 auto 경로 자체를 제거한다(dark→"dark", soft/minimal→custom:slug).
-                theme = ClaudeCustomThemes.MapToClaudeTheme(DevezCode.App.CurrentTheme),
-                statusLine,
-                hooks = new
-                {
-                    SessionStart     = new[] { new { hooks = new[] { new { type = "command", command } } } },
-                    UserPromptSubmit = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
-                    Stop             = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
-                    SessionEnd       = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
-                }
-            };
-            File.WriteAllText(HookSettingsPath, System.Text.Json.JsonSerializer.Serialize(settings));
         }
         catch (Exception) { /* 추적 실패해도 claude 실행은 계속 — flags 에서 파일 존재 확인 */ }
+    }
+
+    /// <summary>방별 claude --settings 파일을 생성하고 경로를 반환한다.
+    /// 각 hook/statusLine command 에 roomId 를 인자로 박아, claude 가 부모 환경변수
+    /// (DEVEZCODE_ROOM_ID)를 자식 hook 프로세스에 넘기지 못하는 환경에서도 어느 방인지 확실히 알게 한다.
+    /// (공통 settings + env 의존 방식은 claude 버전/타이밍에 따라 추적이 끊겼다 — 인자 전달로 견고화.)</summary>
+    private static string BuildRoomSettings(string roomId)
+    {
+        EnsureSessionHookAssets(); // 공통 스크립트 보장
+        var arg = SafeRoomFileName(roomId); // 영숫자/-/_ 만 → 공백·특수문자 없음(명령 인자 안전)
+
+        var command         = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{HookScriptPath}\" {arg}";
+        var statusCommand   = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{StatusLineScriptPath}\" {arg}";
+        var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running {arg}";
+        var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle {arg}";
+        // refreshInterval 은 의도적으로 생략 — statusLine 은 event-driven 갱신으로 충분(idle 중 CPU 튐 방지).
+        var statusLine = new { type = "command", command = statusCommand };
+        var settings = new
+        {
+            // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를 자동 삭제(resume 불가). 30일.
+            cleanupPeriodDays = 30,
+            // theme 을 command-line scope(최우선)에 박아 auto(배경 자동감지) 경로를 제거 — ConPTY 에서 흰 화면 고착 방지.
+            theme = ClaudeCustomThemes.MapToClaudeTheme(DevezCode.App.CurrentTheme),
+            statusLine,
+            hooks = new
+            {
+                SessionStart     = new[] { new { hooks = new[] { new { type = "command", command } } } },
+                UserPromptSubmit = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
+                Stop             = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
+                SessionEnd       = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
+            }
+        };
+        var path = RoomSettingsPath(roomId);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(settings));
+        }
+        catch (Exception) { /* 생성 실패 시 호출부가 파일 존재로 판단 */ }
+        return path;
     }
 
     /// <summary>방의 추적 세션 파일(sessions\<room>.txt)을 제거. 빈 세션 ID 고착을 풀 때 호출.</summary>
