@@ -235,9 +235,9 @@ public sealed class DiscordBotService : IDisposable
         switch (name)
         {
             case "refresh":
-                try { await command.DeferAsync(ephemeral: true); } catch { }
-                await SyncWorkspaceAsync();
-                try { await command.FollowupAsync("✅ 새로고침 완료 — 동기화·이름 갱신·채널 권한 적용.", ephemeral: true); } catch { }
+                // 채널 생성·이름변경은 rate-limit 으로 오래 걸릴 수 있어 게이트웨이를 잡지 않게 백그라운드로.
+                try { await command.RespondAsync("🔄 동기화를 시작합니다… (채널 변경은 잠시 걸릴 수 있어요)", ephemeral: true); } catch { }
+                _ = Task.Run(SyncWorkspaceAsync);
                 break;
 
             case "status":
@@ -266,7 +266,7 @@ public sealed class DiscordBotService : IDisposable
     /// <summary>워크스페이스 동기화 — 다른 동기화/리셋과 겹치지 않게 직렬화한다.</summary>
     public async Task SyncWorkspaceAsync()
     {
-        await _workspaceLock.WaitAsync();
+        if (!await _workspaceLock.WaitAsync(0)) return; // 이미 동기화/리셋 진행 중 — 중복 실행 방지
         try { await SyncWorkspaceCoreAsync(); }
         finally { _workspaceLock.Release(); }
     }
@@ -494,7 +494,7 @@ public sealed class DiscordBotService : IDisposable
     /// 개발 중 깨끗한 상태에서 다시 테스트하기 위한 용도.</summary>
     private async Task ResetWorkspaceAsync()
     {
-        await _workspaceLock.WaitAsync();
+        if (!await _workspaceLock.WaitAsync(0)) return; // 이미 동기화/리셋 진행 중 — 중복 실행 방지
         try { await ResetWorkspaceCoreAsync(); }
         finally { _workspaceLock.Release(); }
     }
@@ -820,8 +820,11 @@ public sealed class DiscordBotService : IDisposable
     {
         var expected = SessionChannelName(session);
         if (string.Equals(channel.Name, expected, StringComparison.Ordinal)) return;
-        try { await channel.ModifyAsync(p => p.Name = expected); }
-        catch { /* rate limit(채널 rename 은 빡셈)/권한 실패는 무시 */ }
+        // 채널 rename 은 "채널당 10분에 2회" 제한이 있다. 기본 RetryMode 는 그 시간만큼 '대기'하므로
+        // 동기화 전체가 몇 분씩 멈춘다 → AlwaysFail 로 즉시 포기하고 다음 동기화에서 재시도.
+        var opts = new RequestOptions { RetryMode = RetryMode.AlwaysFail, Timeout = 5000 };
+        try { await channel.ModifyAsync(p => p.Name = expected, opts); }
+        catch { /* rate limit/권한 실패는 무시 — 다음 동기화 때 다시 시도 */ }
     }
 
     private static string TrimForDiscord(string text, int max)
