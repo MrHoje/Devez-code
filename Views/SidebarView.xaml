@@ -152,7 +152,8 @@
             <DataTemplate.Triggers>
                 <!-- 활성(보고 있는) 세션: 배경색 변경으로 구분 -->
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
-                    <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                    <Setter TargetName="SessionRow" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter TargetName="SessionRow" Property="BorderThickness" Value="1.5"/>
                 </DataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
                 <DataTrigger Binding="{Binding Hidden}" Value="True">
