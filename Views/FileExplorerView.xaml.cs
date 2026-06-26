@@ -182,8 +182,6 @@ public partial class FileExplorerView : UserControl
     private string? _rootPath;
     private ObservableCollection<FileNode>? _rootNodes;
     private FileSystemWatcher? _fileWatcher;
-    private bool _fileSearchOpen;
-    private const double FileSearchRowHeight = 51;
     private const int MaxSearchResults = 500;
 
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
@@ -215,15 +213,7 @@ public partial class FileExplorerView : UserControl
         // 큐·브라우저 모드에서는 44px 헤더(row 1) 를 접어서 콘텐츠가 탭 바로 아래에 이어지게 한다.
         // (탭 자체가 각각 '작업 큐'·'브라우저' 제목 역할 → 중복 헤더 불필요)
         HeaderBar.Visibility = idx is 1 or 3 ? Visibility.Collapsed : Visibility.Visible;
-        FileSearchToggleBtn.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (idx != 0) CloseFileSearch(immediate: true);
 
-        PathText.Text = idx switch
-        {
-            1 => "브라우저",
-            2 => "DIFF",
-            _ => _rootPath ?? "파일 탐색기",
-        };
 
         UpdateTabTextColors();
     }
@@ -282,7 +272,6 @@ public partial class FileExplorerView : UserControl
             _rootPath = null;
             _rootNodes = null;
             DisposeFileWatcher();
-            if (_mode == ViewMode.Directory) PathText.Text = "파일 탐색기";
             Tree.ItemsSource = null;
             DiffView.SetRepo(null);
             // 큐도 null 로 전환 → 전역 큐 (해당 프로젝트 큐가 닫히면 사라지지 않게 빈도 모드)
@@ -294,7 +283,6 @@ public partial class FileExplorerView : UserControl
         if (_rootPath == path) return;
         _rootPath = path;
         SetupFileWatcher(path);
-        if (_mode == ViewMode.Directory) PathText.Text = path;
         DiffView.SetRepo(path);
         // diff 탭이 현재 켜져 있으면 SetRepo 가 비워버리므로 즉시 새로 읽어 동기화.
         // (다른 탭이면 사용자가 diff 탭으로 진입할 때 SwitchTab 에서 RefreshAsync 가 호출됨.)
@@ -319,51 +307,6 @@ public partial class FileExplorerView : UserControl
         catch { /* 접근 거부 등 */ }
         _rootNodes = roots;
         ApplyFileSearchFilter();
-    }
-
-    private void FileSearchToggleBtn_Click(object sender, RoutedEventArgs e)
-    {
-        _fileSearchOpen = !_fileSearchOpen;
-        AnimateFileSearchRow(_fileSearchOpen ? FileSearchRowHeight : 0);
-
-        if (_fileSearchOpen)
-        {
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                FileSearchBox.Focus();
-                FileSearchBox.SelectAll();
-            }), System.Windows.Threading.DispatcherPriority.Input);
-        }
-        else
-        {
-            FileSearchBox.Clear();
-        }
-    }
-
-    private void CloseFileSearch(bool immediate)
-    {
-        _fileSearchOpen = false;
-        FileSearchBox.Clear();
-        if (immediate)
-        {
-            FileSearchRow.BeginAnimation(FrameworkElement.HeightProperty, null);
-            FileSearchRow.Height = 0;
-        }
-        else
-        {
-            AnimateFileSearchRow(0);
-        }
-    }
-
-    private void AnimateFileSearchRow(double height)
-    {
-        var anim = new DoubleAnimation
-        {
-            To = height,
-            Duration = TimeSpan.FromMilliseconds(220),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
-        };
-        FileSearchRow.BeginAnimation(FrameworkElement.HeightProperty, anim);
     }
 
     private void FileSearchBox_TextChanged(object sender, TextChangedEventArgs e)

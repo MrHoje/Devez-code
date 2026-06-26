@@ -110,83 +110,47 @@
                 Background="{DynamicResource PanelBrush}">
             <Grid Margin="11,0,8,0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock x:Name="PathText" Text="파일 탐색기"
-                                VerticalAlignment="Bottom"
-                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                TextTrimming="CharacterEllipsis"
-                                Foreground="{DynamicResource TextBrush}"/>
-                </StackPanel>
-                <Button x:Name="FileSearchToggleBtn" Grid.Column="1"
-                        Width="24" Height="24"
-                        Style="{StaticResource IconButton}"
-                        Click="FileSearchToggleBtn_Click"
-                        ToolTip="파일 검색">
-                    <Path Style="{StaticResource LucideButtonIcon}"
-                          Data="{StaticResource IconSearch}"
-                          Width="12" Height="12"/>
-                </Button>
+                <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                      Data="{StaticResource IconSearch}"
+                      Stroke="{DynamicResource TextMutedBrush}"
+                      Width="13" Height="13" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                <Grid Grid.Column="1">
+                    <TextBox x:Name="FileSearchBox"
+                             VerticalAlignment="Center"
+                             Background="Transparent" BorderThickness="0"
+                             FocusVisualStyle="{x:Null}"
+                             Foreground="{DynamicResource TextBrush}"
+                             CaretBrush="{DynamicResource TextBrush}"
+                             FontSize="{DynamicResource Fs12}"
+                             FontFamily="{StaticResource PretendardFont}"
+                             VerticalContentAlignment="Center"
+                             TextChanged="FileSearchBox_TextChanged"/>
+                    <TextBlock Text="파일 검색"
+                               IsHitTestVisible="False"
+                               VerticalAlignment="Center" Padding="0"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="{DynamicResource Fs12}"
+                               FontFamily="{StaticResource PretendardFont}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=FileSearchBox}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
             </Grid>
         </Border>
 
-        <!-- Search row — 좌측 프로젝트 검색과 동일하게 아래로 슬라이드되며 트리를 밀어낸다. -->
-        <Border x:Name="FileSearchRow" Grid.Row="2" Height="0"
-                ClipToBounds="True">
-            <Border Margin="8" Height="35"
-                    Background="{DynamicResource PanelSoftBrush}"
-                    BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="1" CornerRadius="8">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconSearch}"
-                          Stroke="{DynamicResource TextMutedBrush}"
-                          Width="13" Height="13"
-                          Margin="10,0,0,0" VerticalAlignment="Center"/>
-                    <Grid Grid.Column="1">
-                        <TextBox x:Name="FileSearchBox"
-                                 Margin="6,0,0,0" Padding="0,0,10,0" VerticalContentAlignment="Center"
-                                 Background="Transparent" BorderThickness="0"
-                                 FocusVisualStyle="{x:Null}"
-                                 Foreground="{DynamicResource TextBrush}"
-                                 CaretBrush="{DynamicResource TextBrush}"
-                                 FontSize="{DynamicResource Fs13}"
-                                 FontFamily="{StaticResource PretendardFont}"
-                                 TextChanged="FileSearchBox_TextChanged">
-                            <TextBox.Resources>
-                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
-                            </TextBox.Resources>
-                        </TextBox>
-                        <TextBlock Text="파일 검색"
-                                   IsHitTestVisible="False"
-                                   Margin="8,0,10,0" Padding="0" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   FontSize="{DynamicResource Fs13}"
-                                   FontFamily="{StaticResource PretendardFont}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Text, ElementName=FileSearchBox}" Value="">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Grid>
-                </Grid>
-            </Border>
-        </Border>
-
         <!-- File tree -->
-        <TreeView x:Name="Tree" Grid.Row="3"
+        <TreeView x:Name="Tree" Grid.Row="2"
                   Background="Transparent" BorderThickness="0"
                   Padding="6,8"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
