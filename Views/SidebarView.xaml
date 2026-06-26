@@ -623,7 +623,7 @@
             </Grid>
             <!-- 스크롤 페이드 아웃 -->
             <Rectangle Height="20" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
-                       Background="{DynamicResource PanelBrush}">
+                       Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                         <GradientStop Offset="0" Color="Transparent"/>
