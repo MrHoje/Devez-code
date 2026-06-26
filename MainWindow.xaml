@@ -245,8 +245,17 @@
                                         </Style>
                                     </Button.Style>
                                     <Grid>
-                                    <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconChevronDown}" Width="12" Height="12"/>
+                                    <Path Data="{StaticResource IconChevronDown}" Width="12" Height="12">
+                                             <Path.Style>
+                                                 <Style TargetType="Path" BasedOn="{StaticResource LucideButtonIcon}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ShowFullPrompt, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                            </Path.Style>
+                                        </Path>
                                      <Path Data="{StaticResource IconChevronUp}" Width="12" Height="12"
                                                Visibility="Collapsed">
                                              <Path.Style>
