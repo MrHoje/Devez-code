@@ -52,7 +52,7 @@ public sealed class DiscordBotService : IDisposable
             {
                 p.Sessions.CollectionChanged -= OnSessionsChanged;
                 p.Sessions.CollectionChanged += OnSessionsChanged;
-                if (IsConfigured && IsConnected && p.IsActive)
+                if (IsConfigured && p.IsActive)
                     foreach (var s in p.Sessions) _ = EnsureSessionThreadAsync(p, s);
             }
         if (e.OldItems != null)
@@ -61,10 +61,12 @@ public sealed class DiscordBotService : IDisposable
     }
 
     /// <summary>세션 추가 → 스레드 생성, 세션 삭제 → 스레드 삭제·매핑 정리.
-    /// 봇이 아직 연결 전이면 무시한다(OnReady 의 SyncWorkspaceAsync 가 일괄 생성).</summary>
+    /// client 가 아직 없으면 EnsureSessionThreadAsync 가 무시하고, OnReady 가 일괄 생성한다.</summary>
     private void OnSessionsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (!IsConfigured || !IsConnected) return;
+        // IsConnected 는 재연결(Resumed) 후 false 로 남을 수 있어 가드로 부적합 —
+        // 실제 생성은 EnsureSessionThreadAsync 가 client==null 로 보호한다.
+        if (!IsConfigured) return;
         var project = _projects?.FirstOrDefault(p => ReferenceEquals(p.Sessions, sender));
 
         if (e.NewItems != null && project is { IsActive: true })
