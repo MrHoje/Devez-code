@@ -282,6 +282,9 @@ public sealed class DiscordBotService : IDisposable
     {
         if (!SettingsService.LoadDiscordNotifySessionDone()) return;
         if (project == null || !IsConfigured) return;
+        // 자동 시작으로 세션을 깨우는 중(주입 전/직후)이면 resume 직후의 가짜 idle 이다 —
+        // 내 메시지를 처리한 게 아니라 이전 대화의 마지막 답이므로 완료 알림을 보내지 않는다.
+        lock (_sync) { if (_pendingInput.ContainsKey(session.Id)) return; }
 
         var thread = await EnsureSessionThreadAsync(project, session);
         if (thread == null) return;
@@ -420,21 +423,36 @@ public sealed class DiscordBotService : IDisposable
         List<string>? queued;
         lock (_sync)
         {
-            if (!_pendingInput.Remove(sessionId, out queued)) return;
+            // 제거하지 않고 읽기만 — 주입이 끝나 claude 가 busy 로 전환할 때까지 _pendingInput 을 유지해
+            // 그 전(resume 직후)의 가짜 완료 알림을 NotifySessionDoneAsync 가 억제하게 한다.
+            if (!_pendingInput.TryGetValue(sessionId, out queued)) return;
         }
-        if (queued == null || queued.Count == 0) return;
+        if (queued == null || queued.Count == 0)
+        {
+            lock (_sync) _pendingInput.Remove(sessionId);
+            return;
+        }
 
         _ = Task.Run(async () =>
         {
-            // TUI 가 입력란을 그릴 약간의 여유를 둔 뒤 주입한다.
-            await Task.Delay(500);
-            var session = TerminalSessionManager.Instance.Get(sessionId);
-            if (session is not { IsAlive: true }) return;
-            foreach (var msg in queued)
+            try
             {
-                session.Write(msg);
-                session.Write("\r");
-                await Task.Delay(200);
+                // TUI 가 입력란을 그릴 약간의 여유를 둔 뒤 주입한다.
+                await Task.Delay(500);
+                var session = TerminalSessionManager.Instance.Get(sessionId);
+                if (session is not { IsAlive: true }) return;
+                foreach (var msg in queued)
+                {
+                    session.Write(msg);
+                    session.Write("\r");
+                    await Task.Delay(200);
+                }
+                // claude 가 주입된 메시지로 busy 전환할 여유를 준 뒤 억제 해제 → 이후 진짜 완료만 알림.
+                await Task.Delay(1500);
+            }
+            finally
+            {
+                lock (_sync) _pendingInput.Remove(sessionId);
             }
         });
     }
