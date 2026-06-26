@@ -396,13 +396,6 @@ public sealed class DiscordBotService : IDisposable
 
     private async Task HandleCommandAsync(SocketMessage message, string content)
     {
-        if (content.Equals("!dc sync", StringComparison.OrdinalIgnoreCase))
-        {
-            await SyncWorkspaceAsync();
-            await SafeSendAsync(message.Channel, "동기화 완료");
-            return;
-        }
-
         if (content.Equals("!dc status", StringComparison.OrdinalIgnoreCase) ||
             content.Equals("!dc list", StringComparison.OrdinalIgnoreCase))
         {
@@ -416,14 +409,7 @@ public sealed class DiscordBotService : IDisposable
             return;
         }
 
-        if (content.Equals("!dc refresh", StringComparison.OrdinalIgnoreCase))
-        {
-            await RefreshChannelRestrictionsAsync();
-            await SafeSendAsync(message.Channel, "기존 세션 채널 권한을 갱신했습니다. (파일첨부·스티커·슬래시명령·음성메시지 차단)");
-            return;
-        }
-
-        await SafeSendAsync(message.Channel, "사용법: `/refresh`(동기화+이름 갱신+권한 적용), `!dc refresh`(채널 권한만), `!dc status`, `!dc list`, `!dc keys`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
+        await SafeSendAsync(message.Channel, "사용법: `/refresh`(동기화+이름 갱신+권한 적용), `!dc status`, `!dc list`, `!dc keys`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
     }
 
     private string BuildStatusText()
