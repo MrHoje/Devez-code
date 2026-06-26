@@ -307,13 +307,25 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <!-- 프로젝트 명 (1행, 좌측). 우상단 버튼과 같은 줄에 떠 잘리지 않음. -->
-                            <TextBlock Grid.Row="0" Grid.Column="0"
-                                       Text="{Binding Name}"
-                                       TextTrimming="CharacterEllipsis"
-                                       VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}"/>
+                            <!-- 프로젝트 명 (1행, 좌측). 우상단 버튼과 같은 줄에 떠 잘리지 않음.
+                                 접힘 상태에서 내부 세션이 요청 처리중이면 이름 왼쪽에 회전 스피너 노출. -->
+                            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
+                                <Ellipse x:Name="ProjectBusySpinner" Width="12" Height="12"
+                                         Margin="0,0,7,0" VerticalAlignment="Center"
+                                         Visibility="Collapsed"
+                                         Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                         StrokeDashArray="15 100" StrokeDashCap="Round"
+                                         RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                                <TextBlock Text="{Binding Name}"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
                             <!-- 우상단 액션: [패널 배지] + [chevron]. 배지는 분할 시 이 프로젝트가 떠 있는 패널(좌/우)을 칸 하이라이트로 표시. -->
                             <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
                                         VerticalAlignment="Center" Margin="4,-4,0,0">
@@ -382,6 +394,14 @@
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
+                <!-- 접힘 + 내부 세션 요청 처리중 → 프로젝트명 왼쪽 스피너 노출. -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsExpanded}" Value="False"/>
+                        <Condition Binding="{Binding HasBusySession}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="ProjectBusySpinner" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
                 <!-- 분할 좌 패널(PaneA): 배지 노출 + 왼쪽 칸 테마색 하이라이트 -->
                 <DataTrigger Binding="{Binding PaneRole}" Value="Left">
                     <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>

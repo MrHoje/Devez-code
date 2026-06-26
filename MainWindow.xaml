@@ -212,11 +212,22 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <Border Grid.Row="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                            <StackPanel Orientation="Horizontal" Margin="9,0,12,0" VerticalAlignment="Center">
+                            <Grid Margin="9,0,12,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
                                 <TextBlock Text="세션 완료 기록" VerticalAlignment="Center"
                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextBrush}"/>
-                            </StackPanel>
+                                <Button Grid.Column="1" x:Name="ClearHistoryBtn" Click="ClearHistoryBtn_Click"
+                                        Width="22" Height="22"
+                                        Style="{StaticResource IconButton}"
+                                        ToolTip="모든 기록 지우기">
+                                    <Path Style="{StaticResource LucideButtonIcon}"
+                                          Data="{StaticResource IconTrash2}" Width="12" Height="12"/>
+                                </Button>
+                            </Grid>
                         </Border>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                       Padding="8,8,8,8">
@@ -224,7 +235,7 @@
                                 <ItemsControl x:Name="SessionHistoryList">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:SessionCompletionRecord}">
-                                            <Border CornerRadius="10" Padding="12,11,8,9" Margin="0,3,0,3"
+                                            <Border CornerRadius="10" Padding="12,11,12,9" Margin="0,3,0,3"
                                                     Cursor="Arrow" MouseLeftButtonUp="SessionHistoryItem_Click"
                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                                                 <Border.Style>
@@ -249,9 +260,13 @@
                                                         <RowDefinition Height="Auto"/>
                                                     </Grid.RowDefinitions>
                                                     <Image Grid.Row="0" Grid.Column="0" Width="15" Height="15"
-                                                           Margin="0,1,9,0" VerticalAlignment="Top"
+                                                           Margin="0,0,9,0" VerticalAlignment="Top"
                                                            Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
-                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                           RenderOptions.BitmapScalingMode="HighQuality">
+                                                        <Image.RenderTransform>
+                                                            <TranslateTransform Y="-2"/>
+                                                        </Image.RenderTransform>
+                                                    </Image>
                                                     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                                                         <Ellipse Width="6" Height="6" Fill="{DynamicResource PrimaryBrush}"
                                                                  VerticalAlignment="Center" Margin="0,0,7,0"
@@ -259,22 +274,26 @@
                                                         <TextBlock Text="{Binding ProjectName}"
                                                                    Visibility="{Binding ProjectVisibility}"
                                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextBrush}">
+                                                            <TextBlock.RenderTransform>
+                                                                <TranslateTransform Y="-2"/>
+                                                            </TextBlock.RenderTransform>
+                                                        </TextBlock>
                                                     </StackPanel>
                                                     <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding TimeText}" Margin="8,0,0,0"
                                                                VerticalAlignment="Center"
-                                                               FontSize="{DynamicResource Fs11}"
+                                                               FontSize="{DynamicResource Fs12}"
                                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                                     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
-                                                               Text="{Binding SessionName}" Margin="0,3,0,0"
+                                                               Text="{Binding SessionName}" Margin="0,5,0,0"
                                                                TextTrimming="CharacterEllipsis"
-                                                               FontSize="{DynamicResource Fs12}"
+                                                               FontSize="{DynamicResource Fs13}"
                                                                Foreground="{DynamicResource TextBrush}"/>
                                                     <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
                                                                Text="{Binding LastMessage}" Visibility="{Binding LastMessageVisibility}"
                                                                Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
-                                                               FontSize="{DynamicResource Fs11}"
+                                                               FontSize="{DynamicResource Fs12}"
                                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                                 </Grid>
                                             </Border>

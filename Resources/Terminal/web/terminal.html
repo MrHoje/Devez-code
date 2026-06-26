@@ -473,20 +473,18 @@
 
   // WebView2 는 별도 HWND 라 WPF 부모의 PreviewMouseDown 이 터미널 클릭을 보지 못한다.
   // 터미널을 클릭하면 호스트 패널을 포커스 패널로 승격해 사이드바/파일탐색기 선택을 맞춘다.
-  document.addEventListener('mousedown', function () {
+  // ── 우클릭: 누르는 즉시(mousedown) 선택 있으면 복사, 없으면 붙여넣기 — Windows Terminal 정합 ──
+  // 누름 시점 1회 처리 → 빠른 클릭·꾹 눌러도 즉시 붙여넣기, 뗄 때 추가 붙여넣기 없음.
+  // (우버튼 SGR 마우스 리포트는 onData 에서 걸러 TUI 의 자체 붙여넣기 중복을 막는다)
+  document.addEventListener('mousedown', function (e) {
     post({ type: 'interact' });
-  }, { capture: true });
-  // ── 우클릭: 선택이 있으면 복사, 없으면 붙여넣기 (Windows 콘솔 QuickEdit 정합) ──
-  // contextmenu 는 브라우저 메뉴 억제만. 실제 동작은 mouseup(버튼2)에서 1회만 처리.
-  // (contextmenu 가 mousedown/mouseup 두 경로로 중복 디스패치되는 환경 회피 → 붙여넣기 1회 보장)
-  document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-  document.addEventListener('mouseup', function (e) {
     if (e.button !== 2) return;
     const t = activeRoomId ? terms[activeRoomId] : null;
     if (!t || t.dead) return;
     if (t.term.hasSelection()) { doCopy(t.term); return; }
     post({ type: 'requestPaste', roomId: activeRoomId });
   }, { capture: true });
+  document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
   function createTerm(roomId, agent) {
     const el = document.createElement('div');
@@ -553,6 +551,16 @@
       if (entry.dead) {
         if (data === '\r') post({ type: 'restart', roomId: roomId }); // Enter로 재시작
         return;
+      }
+      // 우클릭은 호스트에서 복사/붙여넣기로 처리한다. 마우스 트래킹(TUI) 모드에선 xterm 이
+      // 우버튼 SGR 리포트(ESC[<2..M/m)도 PTY 로 보내는데, claude 등 TUI 가 이를 받아 자체
+      // 붙여넣기를 또 수행 → 붙여넣기 2회. 우버튼 리포트만 걸러 PTY 로 전달하지 않는다.
+      // (b&3)===2 = 우버튼, b<64 = 휠 제외. 좌/중/휠/모션은 그대로 전달(선택 등 보존).
+      if (data.indexOf('\x1b[<') !== -1) {
+        data = data.replace(/\x1b\[<(\d+);\d+;\d+[Mm]/g, function (seq, b) {
+          b = +b; return ((b & 3) === 2 && b < 64) ? '' : seq;
+        });
+        if (!data) return;
       }
       post({ type: 'input', roomId: roomId, data: data });
     });

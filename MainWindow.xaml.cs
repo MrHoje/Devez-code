@@ -1896,6 +1896,20 @@ public partial class MainWindow : Window
         try { Activate(); OpenSession(s); } catch { /* best effort */ }
     }
 
+    private void ClearHistoryBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_sessionDoneRecords.Count == 0) return;
+        if (!ConfirmDialog.Show("기록 지우기",
+                "세션 완료기록을 초기화하시겠습니까?",
+                okLabel: "지우기", danger: true))
+            return;
+
+        _sessionDoneRecords.Clear();
+        SettingsService.SaveSessionHistoryRecords(
+            new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+        UpdateSessionHistoryEmpty();
+    }
+
     /// <summary>세션이 busy(true)→idle(false)로 바뀐 순간(=스피너 멈춤=응답 완료)에 종료 토스트를 띄운다.
     /// 설정에서 꺼져 있으면 무시. 클릭 시 해당 세션을 포커스 패널에 연다.</summary>
     private void NotifyIfSessionFinished(SessionItem? s, bool wasBusy, bool nowBusy)

@@ -120,6 +120,15 @@ public sealed class TerminalSessionManager
                 var direct = TryBuildGajaeDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
             }
+            else if (ccDir != null && agent.Id == "antigravity")
+            {
+                // agy: 세션 ID 사전 발급이 없고 `agy --conversation <id>` 로만 복원. agy 가 cwd→conversation 매핑을
+                // 자체 기록(~/.gemini/antigravity-cli/cache/last_conversations.json)하므로 그 파일로 방의 작업폴더에
+                // 해당하는 최신 conversation 을 추종. db 가 없으면(빈/유실 ID) 폐기 후 새 대화(claude 빈 세션 탈출과 동일).
+                startDir = ccDir;
+                var direct = TryBuildAntigravityDirectLaunch(roomId, out inject);
+                if (direct != null) commandLine = direct;
+            }
             else if (ccDir != null && agent.SupportsHooks)
             {
                 startDir = ccDir;
@@ -427,6 +436,16 @@ public sealed class TerminalSessionManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "gajae", "launch");
 
+    private static string AntigravityLaunchDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "antigravity", "launch");
+
+    /// <summary>agy CLI 데이터 루트. 대화는 conversations\&lt;id&gt;.db, cwd→conversation 매핑은
+    /// cache\last_conversations.json 에 저장된다.</summary>
+    private static string AntigravityCliDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".gemini", "antigravity-cli");
+
     /// <summary>방의 session-dir 에서 가장 최근 세션 .jsonl 의 ID(파일명 끝 UUID)를 추출. 없으면 null.
     /// gjc 파일명: <c>2026-06-24T06-43-03-266Z_019ef85e-31e2-7000-9b2a-e205d434126f.jsonl</c>
     /// → 마지막 '_' 뒤가 세션 ID. /clear·새 대화로 ID 가 바뀌어도 항상 최신을 집어 추종한다.</summary>
@@ -494,6 +513,95 @@ public sealed class TerminalSessionManager
         }
     }
 
+    /// <summary>안티그래비티(agy)를 cmd /k 배치로 직접 실행. agy 는 세션 ID 사전 발급(claude --session-id)이
+    /// 없고 <c>agy --conversation &lt;id&gt;</c> 로만 복원한다. agy 가 작업폴더→conversation 매핑을 자체 기록하므로
+    /// (~/.gemini/antigravity-cli/cache/last_conversations.json) 그 파일에서 방의 cwd 에 해당하는 최신
+    /// conversation ID 를 읽어 추종한다(새 대화·이어가기 자동 반영). conversation db(.db)가 실제로 있을 때만
+    /// resume, 없으면(빈/유실 ID) 그 ID 를 폐기하고 새 대화로 시작한다(claude 의 빈 세션 탈출과 동일 — 잘못된
+    /// ID 를 계속 추적해 매번 빈 화면이 되는 것을 막음). resume 실패(외부 삭제 등) 시 fresh 폴백.
+    /// <para>주의: agy 는 작업폴더당 conversation 을 1개만 기억하므로, 같은 폴더에 방을 여러 개 두면 한 대화를
+    /// 공유한다(agy CLI 제약 — gjc 의 --session-dir 같은 방별 격리 옵션이 없음).</para></summary>
+    private string? TryBuildAntigravityDirectLaunch(string roomId, out string? injectFallback)
+    {
+        injectFallback = null;
+        const string flags = "--dangerously-skip-permissions";
+        var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+
+        var sessionId = SettingsService.LoadAntigravityRoomSession(roomId);
+        // 불변식: conversation ID 는 GUID. 비정상 값(설정 변조 등)은 무시 → 배치 주입 차단.
+        if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
+
+        // agy 자체 cwd→conversation 매핑이 더 최신이면 그쪽으로 추종(새 대화·이어가기 추적).
+        var byCwd = FindAntigravityConversationByCwd(ccDir);
+        if (byCwd != null && byCwd != sessionId)
+        {
+            sessionId = byCwd;
+            SettingsService.SaveAntigravityRoomSession(roomId, byCwd);
+        }
+
+        // db 가 실제로 있을 때만 resume. 없으면 빈/유실 ID → 폐기하고 새 대화(무한 빈 세션 방지).
+        bool resume = sessionId != null && AntigravityConversationExists(sessionId);
+        if (sessionId != null && !resume)
+        {
+            SettingsService.RemoveAntigravityRoomSession(roomId);
+            sessionId = null;
+        }
+
+        // -r <id> 는 GUID 만(위에서 검증) → 주입 차단. 실패 시 fresh 폴백.
+        string body = sessionId != null
+            ? $"agy --conversation {sessionId} {flags}\r\nif errorlevel 1 agy {flags}"
+            : $"agy {flags}";
+
+        try
+        {
+            var dir = AntigravityLaunchDir();
+            Directory.CreateDirectory(dir);
+            var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
+            File.WriteAllText(batchPath, "@echo off\r\n" + body + "\r\n");
+            return $"cmd.exe /k \"{batchPath}\"";
+        }
+        catch (Exception)
+        {
+            injectFallback = (sessionId != null ? $"agy --conversation {sessionId} {flags}" : $"agy {flags}") + "\r";
+            return null;
+        }
+    }
+
+    /// <summary>agy 의 cwd→conversation 매핑(last_conversations.json)에서 작업폴더에 해당하는 conversation ID.
+    /// 없거나 GUID 가 아니면 null.</summary>
+    private static string? FindAntigravityConversationByCwd(string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(workingDir)) return null;
+        try
+        {
+            var path = Path.Combine(AntigravityCliDir(), "cache", "last_conversations.json");
+            if (!File.Exists(path)) return null;
+            var norm = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                try
+                {
+                    if (!string.Equals(Path.GetFullPath(prop.Name).TrimEnd('\\', '/'), norm, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var id = prop.Value.GetString();
+                    return id != null && Guid.TryParse(id, out _) ? id : null;
+                }
+                catch (Exception) { /* 비정상 키 무시하고 다음 후보 */ }
+            }
+        }
+        catch (Exception) { }
+        return null;
+    }
+
+    /// <summary>agy conversation transcript(conversations\&lt;id&gt;.db)가 실제 디스크에 있는지.</summary>
+    private static bool AntigravityConversationExists(string? conversationId)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId)) return false;
+        try { return File.Exists(Path.Combine(AntigravityCliDir(), "conversations", conversationId + ".db")); }
+        catch (Exception) { return false; }
+    }
+
     /// <summary>"셸 준비 후 주입" 커맨드. 직접 실행(cmd /k) 방·일반 방은 null.
     /// GetOrCreate 가 결정해 둔 값을 1회 소비한다.</summary>
     public string? GetInitialCommand(string roomId)
@@ -557,19 +665,27 @@ public sealed class TerminalSessionManager
         // launched 플래그(settings.json)에 의존하지 않는다 — 작업 중 강제 종료로 플래그가 유실돼도
         // transcript 가 살아있으면 이어가야 하기 때문(예전엔 launched 유실 시 새 세션이 열렸다).
         bool resume = sessionId != null && ClaudeTranscriptExists(ccDir, sessionId);
-        if (sessionId != null && !resume)
-            SettingsService.MarkClaudeCodeRoomLaunched(roomId); // 첫 실행/빈 세션 — 추적용
 
-        // 배치 본문: 첫 실행/구버전은 단발, 재진입은 resume → 실패(외부 삭제 등) 시 fresh 폴백.
+        // 추적·settings 가 가리키는 세션의 transcript 가 디스크에 없다 = 빈 세션 ID 고착.
+        // 그대로 --session-id 로 재사용하면 매 실행이 같은 빈 세션을 다시 열어(영원히 빈 화면),
+        // 새 대화를 저장해도 추적이 옛 빈 ID 를 계속 가리켜 복원되지 않는다.
+        // → 빈 ID 를 폐기(settings·추적파일 제거)하고 claude 가 새 세션을 발급하게 한다. 사용자가 실제로
+        // 대화하면 UserPromptSubmit 훅(busy-hook)이 그 새 유효 세션 ID 를 추적파일에 기록 → 다음부터 정상 resume.
+        if (sessionId != null && !resume)
+        {
+            SettingsService.RemoveClaudeCodeRoomSession(roomId);
+            DeleteTrackedSessionFile(roomId);
+            sessionId = null;
+        }
+
+        // 배치 본문: 세션 없으면 단발(새 세션), 있으면(=transcript 확인됨) resume → 실패(외부 삭제 등) 시 fresh 폴백.
         // claude 가 정상 시작하면 인터랙티브로 유지되어 뒤 폴백 줄은 실행되지 않는다.
         string body;
         if (sessionId == null)
             body = $"claude {flags}";
-        else if (resume)
+        else
             body = $"claude --resume {sessionId} {flags}\r\n"
                  + $"if errorlevel 1 claude --session-id {sessionId} {flags}";
-        else
-            body = $"claude --session-id {sessionId} {flags}";
 
         try
         {
@@ -934,6 +1050,13 @@ public sealed class TerminalSessionManager
         catch (Exception) { /* 추적 실패해도 claude 실행은 계속 — flags 에서 파일 존재 확인 */ }
     }
 
+    /// <summary>방의 추적 세션 파일(sessions\<room>.txt)을 제거. 빈 세션 ID 고착을 풀 때 호출.</summary>
+    private static void DeleteTrackedSessionFile(string roomId)
+    {
+        try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt")); }
+        catch (Exception) { }
+    }
+
     /// <summary>훅이 기록한 방의 최신 세션 ID. 없거나 UUID가 아니면 null.</summary>
     private static string? LoadTrackedSessionId(string roomId)
     {
@@ -1081,6 +1204,12 @@ public sealed class TerminalSessionManager
 
         TryDeleteFile(Path.Combine(GajaeLaunchDir(), roomFile + ".cmd"));
         TryDeleteDirectory(GajaeSessionDir(roomId));
+
+        // antigravity(agy): 런치 배치 + 이 방의 conversation transcript(.db) 삭제.
+        // db 는 agy 전역 conversations 폴더에 conversation ID 로 저장되므로 ID 별로만 지운다(같은 폴더 다른 방 안전).
+        TryDeleteFile(Path.Combine(AntigravityLaunchDir(), roomFile + ".cmd"));
+        foreach (var id in sessionIds.Where(id => !string.IsNullOrWhiteSpace(id) && Guid.TryParse(id, out _)))
+            TryDeleteFile(Path.Combine(AntigravityCliDir(), "conversations", id + ".db"));
     }
 
     private static void TryDeleteFile(string path)

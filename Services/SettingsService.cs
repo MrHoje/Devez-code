@@ -321,6 +321,12 @@ public static class SettingsService
         lock (_lock) { Current.ClaudeCodeRoomSessions[roomId] = sessionId; Save(); }
     }
 
+    /// <summary>방의 추적 세션 ID 를 제거. transcript 없는 빈 세션 ID 고착을 풀 때 호출.</summary>
+    public static void RemoveClaudeCodeRoomSession(string roomId)
+    {
+        lock (_lock) { if (Current.ClaudeCodeRoomSessions.Remove(roomId)) Save(); }
+    }
+
     // ── 방별 model/effort (claude --model / --effort) ─────────────
     public static string? LoadClaudeCodeRoomModel(string roomId)
         => Current.ClaudeCodeRoomModel.TryGetValue(roomId, out var v) && !string.IsNullOrEmpty(v) ? v : null;
@@ -537,6 +543,12 @@ public static class SettingsService
         if (string.IsNullOrWhiteSpace(sessionId)) return;
         Current.AntigravityRoomSessions[roomId] = sessionId;
         Save();
+    }
+
+    /// <summary>방의 추적 conversation ID 를 제거. transcript(.db) 없는 빈/유실 ID 고착을 풀 때 호출.</summary>
+    public static void RemoveAntigravityRoomSession(string roomId)
+    {
+        if (Current.AntigravityRoomSessions.Remove(roomId)) Save();
     }
 
 }
