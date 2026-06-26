@@ -491,8 +491,9 @@ public sealed class DiscordBotService : IDisposable
         // 시그니처(프로젝트 채널=이름 "sessions", 명령어 채널=루트 "명령어")로 길드를 직접 훑어 잡는다.
         var ids = new HashSet<ulong>(SettingsService.LoadAllDiscordObjectIds());
 
-        // 1) 프로젝트 채널(이름 "sessions") + 그 부모 카테고리
-        foreach (var ch in guild.TextChannels.Where(c => c.Name.Equals("sessions", StringComparison.OrdinalIgnoreCase)))
+        // 1) 봇이 만든 세션 채널(이름이 에이전트 이모지로 시작) + 그 부모 카테고리.
+        //    매핑이 유실된 고아도 이 시그니처로 잡는다(카테고리가 잡히면 3)에서 자식 전부 수거).
+        foreach (var ch in guild.TextChannels.Where(c => StartsWithAgentEmoji(c.Name)))
         {
             ids.Add(ch.Id);
             if (ch.CategoryId is ulong catId) ids.Add(catId);
@@ -782,6 +783,13 @@ public sealed class DiscordBotService : IDisposable
         "gajae" => "🦞",
         _ => "💠",
     };
+
+    /// <summary>모든 에이전트 이모지(세션 채널명 접두 식별용 — AgentEmoji 와 동기화 유지).</summary>
+    private static readonly string[] AllAgentEmojis = { "✳️", "🟢", "🔷", "🦞", "💠" };
+
+    /// <summary>채널명이 봇 세션 채널 접두(에이전트 이모지)로 시작하는지 — /reset 고아 정리용.</summary>
+    private static bool StartsWithAgentEmoji(string? name)
+        => !string.IsNullOrEmpty(name) && AllAgentEmojis.Any(e => name!.StartsWith(e, StringComparison.Ordinal));
 
     /// <summary>기존 스레드 이름이 현재 에이전트 이모지 규칙과 다르면 갱신한다.
     /// Discord 는 스레드 rename 을 10분당 2회로 제한하므로 다를 때만 호출한다.</summary>
