@@ -150,7 +150,8 @@
                                     BorderBrush="{DynamicResource LineBrush}"
                                     Cursor="Arrow"
                                     PreviewMouseLeftButtonDown="Tab_PreviewMouseLeftButtonDown"
-                                    MouseLeftButtonUp="Tab_Click">
+                                    MouseLeftButtonUp="Tab_Click"
+                                    PreviewMouseRightButtonUp="Tab_RightClick">
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>

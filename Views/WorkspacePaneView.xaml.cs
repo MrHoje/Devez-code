@@ -822,6 +822,71 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
+    private void Tab_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TabItemBase tab }) return;
+        e.Handled = true;
+
+        var cm = new ContextMenu();
+
+        if (tab is FileTabItem file)
+        {
+            var closeItem = new MenuItem { Header = "닫기" };
+            closeItem.Click += (_, _) => file.Editor.RequestClose();
+            cm.Items.Add(closeItem);
+
+            var closeOthers = new MenuItem { Header = "다른 파일 모두 닫기" };
+            closeOthers.Click += (_, _) =>
+            {
+                var parent = ParentOfTab(file);
+                if (parent == null) return;
+                foreach (var t in parent.Tabs.OfType<FileTabItem>().ToList())
+                    if (t != file) t.Editor.RequestClose();
+            };
+            cm.Items.Add(closeOthers);
+        }
+        else if (tab is SessionItem s)
+        {
+            var hideItem = new MenuItem { Header = "숨기기" };
+            hideItem.Click += (_, _) =>
+            {
+                s.Hidden = true;
+                WorkspaceStore.Save(Projects);
+                if (ReferenceEquals(_activeSession, s))
+                {
+                    var parent = ParentOf(s);
+                    var next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(x => x != s && !x.Hidden);
+                    if (next != null) ActivateSession(next);
+                    else ClearActiveSession();
+                }
+            };
+            cm.Items.Add(hideItem);
+
+            var hideOthers = new MenuItem { Header = "다른 세션 모두 숨기기" };
+            hideOthers.Click += (_, _) =>
+            {
+                var parent = ParentOf(s);
+                if (parent == null) return;
+                foreach (var t in parent.Tabs.OfType<SessionItem>().ToList())
+                {
+                    if (t == s) continue;
+                    t.Hidden = true;
+                }
+                WorkspaceStore.Save(Projects);
+                if (ReferenceEquals(_activeSession, s))
+                {
+                    var next = parent.Tabs.OfType<SessionItem>().FirstOrDefault(x => !x.Hidden);
+                    if (next != null) ActivateSession(next);
+                    else ClearActiveSession();
+                }
+            };
+            cm.Items.Add(hideOthers);
+        }
+
+        cm.PlacementTarget = sender as UIElement;
+        cm.IsOpen = true;
+    }
+
     private void TabHide_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: TabItemBase tab }) return;
