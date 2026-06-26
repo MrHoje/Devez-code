@@ -127,6 +127,7 @@ public sealed class DiscordBotService : IDisposable
             client.Ready += OnReady;
             client.MessageReceived += OnMessageReceived;
             client.ButtonExecuted += OnButtonExecuted;
+            client.SlashCommandExecuted += OnSlashCommand;
             client.Disconnected += _ => { IsConnected = false; return Task.CompletedTask; };
 
             await client.LoginAsync(TokenType.Bot, SettingsService.LoadDiscordBotToken());
@@ -164,6 +165,7 @@ public sealed class DiscordBotService : IDisposable
         if (client == null) return;
         try { client.MessageReceived -= OnMessageReceived; } catch { }
         try { client.ButtonExecuted -= OnButtonExecuted; } catch { }
+        try { client.SlashCommandExecuted -= OnSlashCommand; } catch { }
         try { client.Ready -= OnReady; } catch { }
         _ = Task.Run(async () =>
         {
@@ -176,7 +178,36 @@ public sealed class DiscordBotService : IDisposable
     private async Task OnReady()
     {
         IsConnected = true;
+        await RegisterCommandsAsync();
         await SyncWorkspaceAsync();
+    }
+
+    /// <summary>Guild 범위 슬래시 명령을 등록한다(같은 이름이면 덮어쓰기 — Ready 마다 호출해도 안전).</summary>
+    private async Task RegisterCommandsAsync()
+    {
+        var client = _client;
+        if (client == null) return;
+        var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+        if (guild == null) return;
+        try
+        {
+            var refresh = new SlashCommandBuilder()
+                .WithName("refresh")
+                .WithDescription("세션 스레드를 동기화하고 이름을 최신 상태로 갱신합니다.")
+                .Build();
+            await guild.CreateApplicationCommandAsync(refresh);
+        }
+        catch { /* 등록 실패는 앱 동작을 막지 않는다. */ }
+    }
+
+    /// <summary>슬래시 명령 처리. 현재는 /refresh(동기화 + 스레드 이름 갱신)만 지원.</summary>
+    private async Task OnSlashCommand(SocketSlashCommand command)
+    {
+        if (!command.Data.Name.Equals("refresh", StringComparison.Ordinal)) return;
+        // 동기화에 시간이 걸릴 수 있으니 먼저 ack(나에게만 보이는 ephemeral).
+        try { await command.DeferAsync(ephemeral: true); } catch { }
+        await SyncWorkspaceAsync();
+        try { await command.FollowupAsync("✅ 새로고침 완료 — 세션 스레드 동기화 및 이름 갱신.", ephemeral: true); } catch { }
     }
 
     public async Task SyncWorkspaceAsync()
@@ -380,7 +411,7 @@ public sealed class DiscordBotService : IDisposable
             return;
         }
 
-        await SafeSendAsync(message.Channel, "사용법: `!dc status`, `!dc list`, `!dc sync`, `!dc keys`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
+        await SafeSendAsync(message.Channel, "사용법: `/refresh`(동기화+이름 갱신), `!dc status`, `!dc list`, `!dc keys`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
     }
 
     private string BuildStatusText()
@@ -439,7 +470,10 @@ public sealed class DiscordBotService : IDisposable
 
         var threadId = SettingsService.LoadDiscordSessionThread(session.Id);
         if (threadId != 0 && client.GetChannel(threadId) is IMessageChannel existing)
+        {
+            if (existing is SocketThreadChannel st) await EnsureThreadNameAsync(st, session);
             return existing;
+        }
 
         var channel = await EnsureProjectChannelAsync(project);
         if (channel == null) return null;
@@ -485,6 +519,16 @@ public sealed class DiscordBotService : IDisposable
         "gajae" => "🦞",
         _ => "💠",
     };
+
+    /// <summary>기존 스레드 이름이 현재 에이전트 이모지 규칙과 다르면 갱신한다.
+    /// Discord 는 스레드 rename 을 10분당 2회로 제한하므로 다를 때만 호출한다.</summary>
+    private static async Task EnsureThreadNameAsync(SocketThreadChannel thread, SessionItem session)
+    {
+        var expected = $"{AgentEmoji(session.AgentId)} {SafeThreadName(session.Name)}".Trim();
+        if (string.Equals(thread.Name, expected, StringComparison.Ordinal)) return;
+        try { await thread.ModifyAsync(p => p.Name = expected); }
+        catch { /* rate limit/권한 실패는 무시 */ }
+    }
 
     private static string SafeThreadName(string value)
     {
