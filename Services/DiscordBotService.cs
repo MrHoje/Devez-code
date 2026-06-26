@@ -236,7 +236,7 @@ public sealed class DiscordBotService : IDisposable
         {
             case "refresh":
                 // 채널 생성·이름변경은 rate-limit 으로 오래 걸릴 수 있어 게이트웨이를 잡지 않게 백그라운드로.
-                try { await command.RespondAsync("🔄 동기화를 시작합니다… (채널 변경은 잠시 걸릴 수 있어요)", ephemeral: true); } catch { }
+                try { await command.RespondAsync("동기화를 시작합니다… (채널 변경은 잠시 걸릴 수 있어요)", ephemeral: true); } catch { }
                 _ = Task.Run(SyncWorkspaceAsync);
                 break;
 
@@ -245,7 +245,7 @@ public sealed class DiscordBotService : IDisposable
                 break;
 
             case "keys":
-                try { await command.RespondAsync("⌨️ 키 컨트롤", components: BuildKeyControls()); } catch { }
+                try { await command.RespondAsync("키 컨트롤", components: BuildKeyControls()); } catch { }
                 break;
 
             case "reset":
@@ -257,7 +257,7 @@ public sealed class DiscordBotService : IDisposable
                 }
                 // 즉시 ack 후 백그라운드 실행 — 채널 대량 삭제는 rate-limit 으로 오래 걸려
                 // 게이트웨이 스레드를 잡으면 봇이 먹통이 된다. 완료 결과는 #명령어 채널 리포트로.
-                try { await command.RespondAsync("♻️ 초기화를 시작합니다… 완료되면 #명령어 채널에 결과가 표시됩니다.", ephemeral: true); } catch { }
+                try { await command.RespondAsync("초기화를 시작합니다… 완료되면 #명령어 채널에 결과가 표시됩니다.", ephemeral: true); } catch { }
                 _ = Task.Run(ResetWorkspaceAsync);
                 break;
         }
@@ -315,8 +315,8 @@ public sealed class DiscordBotService : IDisposable
         var reply = AgentReplyService.TryGetLastAssistantReply(session.Id, agentId);
 
         var body = string.IsNullOrWhiteSpace(reply)
-            ? $"✅ **{title} / {sess}** 응답 완료{question}"
-            : $"✅ **{title} / {sess}** 응답 완료{question}\n\n{HeadForDiscord(reply, 1500)}";
+            ? $"**{title} / {sess}** 응답 완료{question}"
+            : $"**{title} / {sess}** 응답 완료{question}\n\n{HeadForDiscord(reply, 1500)}";
         await SafeSendAsync(thread, body);
     }
 
@@ -397,7 +397,7 @@ public sealed class DiscordBotService : IDisposable
     {
         if (_openSessionRequest == null)
         {
-            await SafeSendAsync(thread, "⚠️ 해당 세션 터미널이 실행 중이 아닙니다. DevezCode에서 세션을 먼저 열어주세요.");
+            await SafeSendAsync(thread, "해당 세션 터미널이 실행 중이 아닙니다. DevezCode에서 세션을 먼저 열어주세요.");
             return;
         }
 
@@ -416,7 +416,7 @@ public sealed class DiscordBotService : IDisposable
 
         if (!firstRequest) return; // 이미 시작 요청 진행 중 — 메시지만 버퍼에 누적
 
-        await SafeSendAsync(thread, "⏳ 세션을 시작하는 중입니다. 준비되면 메시지를 전달합니다…");
+        await SafeSendAsync(thread, "세션을 시작하는 중입니다. 준비되면 메시지를 전달합니다…");
         try { _openSessionRequest.Invoke(sessionId); } catch { /* UI 디스패치 실패는 무시 */ }
 
         // 안전장치: 일정 시간 내 준비되지 않으면 버퍼를 폐기하고 안내한다.
@@ -426,7 +426,7 @@ public sealed class DiscordBotService : IDisposable
             bool stillPending;
             lock (_sync) stillPending = _pendingInput.Remove(sessionId);
             if (stillPending)
-                await SafeSendAsync(thread, "⚠️ 세션 시작이 시간 내에 완료되지 않았습니다. DevezCode에서 직접 세션을 열어주세요.");
+                await SafeSendAsync(thread, "세션 시작이 시간 내에 완료되지 않았습니다. DevezCode에서 직접 세션을 열어주세요.");
         });
     }
 
@@ -479,7 +479,7 @@ public sealed class DiscordBotService : IDisposable
         sb.AppendLine("**DevezCode 세션 상태**");
         foreach (var project in projects.Where(p => p.IsActive))
         {
-            sb.AppendLine($"\n📁 {project.Name}");
+            sb.AppendLine($"\n**{project.Name}**");
             foreach (var session in project.Sessions)
             {
                 var state = session.IsBusy ? "작업중" : session.IsAlive ? "실행중" : "중지";
@@ -548,9 +548,9 @@ public sealed class DiscordBotService : IDisposable
                   ?? await client.Rest.GetChannelAsync(cmdId) as IMessageChannel;
         if (cmd != null)
         {
-            var report = $"♻️ 초기화 완료 — 삭제 {deleted}건, 실패 {failed}건";
+            var report = $"초기화 완료 — 삭제 {deleted}건, 실패 {failed}건";
             if (errors.Count > 0)
-                report += "\n⚠️ 실패 상세(권한 문제일 가능성 높음 — 봇 역할에 `채널 관리` 권한 확인):\n" + string.Join("\n", errors);
+                report += "\n실패 상세(권한 문제일 가능성 높음 — 봇 역할에 `채널 관리` 권한 확인):\n" + string.Join("\n", errors);
             await SafeSendAsync(cmd, report);
         }
     }
@@ -602,7 +602,7 @@ public sealed class DiscordBotService : IDisposable
                 SettingsService.SaveDiscordCommandChannel(channel.Id);
                 await ApplyChannelRestrictionsAsync(guild, channel); // 초대/첨부 등 차단
                 await SafeSendAsync(channel,
-                    "🛠️ **DevezCode 명령어 채널** (명령은 이 채널에서만 동작)\n" +
+                    "**DevezCode 명령어 채널** (명령은 이 채널에서만 동작)\n" +
                     "- `/refresh` — 세션 동기화 + 스레드 이름 갱신 + 채널 권한 적용\n" +
                     "- `/status` — 프로젝트·세션 상태\n" +
                     "- `/reset confirm:True` — 전체 초기화(되돌릴 수 없음)\n" +
@@ -645,7 +645,7 @@ public sealed class DiscordBotService : IDisposable
              c.Name.Trim().Equals("general", StringComparison.OrdinalIgnoreCase))).ToList();
 
         if (targets.Count == 0)
-            errors.Add("ℹ️ `#일반`/`#general` 텍스트 채널을 못 찾음(이미 없거나, 봇이 View Channel 권한 없어 안 보이거나, 이름이 다름).");
+            errors.Add("`#일반`/`#general` 텍스트 채널을 못 찾음(이미 없거나, 봇이 View Channel 권한 없어 안 보이거나, 이름이 다름).");
 
         foreach (var ch in targets)
         {
