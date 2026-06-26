@@ -275,6 +275,9 @@ public partial class App : Application
         res["BgBrush"]                = new SolidColorBrush(bg);
         res["PanelBrush"]             = new SolidColorBrush(panel);
         res["PanelSoftBrush"]         = new SolidColorBrush(panelSoft);
+        res["HoverBrush"] = theme == "dark"
+            ? new SolidColorBrush(Color.FromRgb(0x42, 0x42, 0x42))
+            : new SolidColorBrush(panelSoft);
         res["LineBrush"]              = new SolidColorBrush(line);
         res["TextBrush"]              = new SolidColorBrush(text);
         res["TextMutedBrush"]         = new SolidColorBrush(textMuted);

@@ -181,7 +181,7 @@
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconChartPie}" Width="15" Height="15"
+                                              Data="{StaticResource IconChartBar}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="계정 사용량" VerticalAlignment="Center"/>
                                     </StackPanel>
@@ -626,7 +626,7 @@
                             <!-- 계정 사용량 패널 — 계정 연결(로그인) + 푸터 표시 토글 -->
                             <StackPanel x:Name="UsagePanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartPie}"
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartBar}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
                                           Stroke="{DynamicResource TextBrush}"/>
                                     <TextBlock Text="계정 사용량" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
