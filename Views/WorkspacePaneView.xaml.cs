@@ -1026,7 +1026,23 @@ public partial class WorkspacePaneView : UserControl
         foreach (var proj in AllProjects)
             foreach (var s in proj.Tabs.OfType<SessionItem>())
                 s.RefreshAgentIcon();
+
+        // 설정창 오버레이가 열려 파일 에디터(WebView2)가 스냅샷으로 대체된 상태면,
+        // 새 테마 적용 후 스냅샷을 다시 캡처해 교체한다.
+       if (_activeTab is FileTabItem file && FileEditorHostContainer.Visibility == Visibility.Collapsed)
+        {
+           _ = RefreshSnapshotAfterThemeAsync(file);
+       }
     }));
+
+    private async Task RefreshSnapshotAfterThemeAsync(FileTabItem file)
+    {
+        await Task.Delay(80);
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+        var snap = await file.Editor.CaptureSnapshotAsync();
+        if (snap != null)
+            TerminalSnapshot.Source = snap;
+    }
 
     private void UpdateSelectedTabSeam()
     {
