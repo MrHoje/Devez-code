@@ -21,6 +21,15 @@ public sealed record ModelEffortOption(string Label, string Value)
 
 public partial class MainWindow : Window
 {
+    public static readonly DependencyProperty ShowFullPromptProperty =
+        DependencyProperty.Register(nameof(ShowFullPrompt), typeof(bool), typeof(MainWindow), new PropertyMetadata(false));
+
+    public bool ShowFullPrompt
+{
+        get => (bool)GetValue(ShowFullPromptProperty);
+        set => SetValue(ShowFullPromptProperty, value);
+    }
+
     private readonly ObservableCollection<ProjectItem> _projects;
     // 보관함 프로젝트(archived_at 있음) — 활성 목록과 분리 관리. WorkspaceStore 가 함께 영속.
     private readonly ObservableCollection<ProjectItem> _archivedProjects;
@@ -117,6 +126,7 @@ public partial class MainWindow : Window
                 var s = FindSession(id);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
+                if (busy) MarkSessionRead(id);
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
@@ -180,6 +190,7 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
+                if (busy) MarkSessionRead(roomId);
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
@@ -192,11 +203,13 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
+                if (busy) MarkSessionRead(roomId);
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
             });
 
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
+
         _codexHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -211,6 +224,7 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
+                if (busy) MarkSessionRead(roomId);
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
             });
@@ -1022,9 +1036,10 @@ public partial class MainWindow : Window
         _sessionHistoryOpen = open;
         double targetWidth = open ? SettingsService.LoadSessionHistoryWidth() : 0;
 
-        // 닫을 때 MinWidth(150)가 남아 폭 0 으로 줘도 완전히 안 닫힘 → 닫힘 시 0, 열림 시 150 복원.
+        // 닫을 때 MinWidth(150)가 남아 폭 0 으로 줘도 완전히 안 닫힘 → 닫힘 시 0.
+        // 열 때 즉시 150 주면 애니 시작 전 0→150 으로 툭 점프하므로, 애니 완료 후 복원한다.
         // 드래그 클램프(MinWidth 사용)는 열린 상태에서만 동작하므로 리사이즈 동작엔 영향 없음.
-        SessionHistoryCol.MinWidth = open ? 150 : 0;
+        if (!open) SessionHistoryCol.MinWidth = 0;
 
         _sessionHistoryAnimCancel?.Invoke();
         _sessionHistoryAnimCancel = null;
@@ -1035,6 +1050,7 @@ public partial class MainWindow : Window
         else
         {
             SessionHistoryCol.Width = new GridLength(targetWidth);
+            if (open) SessionHistoryCol.MinWidth = 150;
         }
 
         if (persist) SettingsService.SaveSessionHistoryPanelOpen(open);
@@ -1049,7 +1065,7 @@ public partial class MainWindow : Window
             SessionHistoryCol, targetWidth,
             durationMs: 200, easeIn: !open,
             cacheTarget: SessionHistorySidebar,
-            onComplete: () => { _sessionHistoryAnimCancel = null; UnfreezeWorkspaceTerminals(); });
+            onComplete: () => { _sessionHistoryAnimCancel = null; if (open) SessionHistoryCol.MinWidth = 150; UnfreezeWorkspaceTerminals(); });
     }
 
     /// <summary>설정에 저장된 사이드 패널 뷰 전환 버튼 표시 여부를 우측 패널에 반영한다.</summary>
@@ -1988,6 +2004,11 @@ public partial class MainWindow : Window
         SettingsService.SaveSessionHistoryRecords(
             new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
         UpdateSessionHistoryEmpty();
+    }
+
+    private void TogglePromptBtn_Click(object sender, RoutedEventArgs e)
+    {
+        ShowFullPrompt = !ShowFullPrompt;
     }
 
     private void MarkAllReadBtn_Click(object sender, RoutedEventArgs e)
