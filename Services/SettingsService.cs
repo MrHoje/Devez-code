@@ -114,6 +114,7 @@ public static class SettingsService
         public string DiscordBotToken { get; set; } = "";
         public ulong DiscordGuildId { get; set; }
         public bool DiscordNotifySessionDone { get; set; } = true;
+        public ulong DiscordCommandChannel { get; set; }
         public Dictionary<string, ulong> DiscordProjectCategories { get; set; } = new();
         public Dictionary<string, ulong> DiscordProjectChannels { get; set; } = new();
         public Dictionary<string, ulong> DiscordSessionThreads { get; set; } = new();
@@ -288,6 +289,8 @@ public static class SettingsService
     public static void SaveDiscordGuildId(ulong v) { Current.DiscordGuildId = v; Save(); }
     public static bool LoadDiscordNotifySessionDone() => Current.DiscordNotifySessionDone;
     public static void SaveDiscordNotifySessionDone(bool v) { Current.DiscordNotifySessionDone = v; Save(); }
+    public static ulong LoadDiscordCommandChannel() => Current.DiscordCommandChannel;
+    public static void SaveDiscordCommandChannel(ulong v) { Current.DiscordCommandChannel = v; Save(); }
     public static ulong LoadDiscordProjectCategory(string projectPath)
     { lock (_lock) return Current.DiscordProjectCategories.TryGetValue(projectPath, out var v) ? v : 0; }
     public static void SaveDiscordProjectCategory(string projectPath, ulong id)

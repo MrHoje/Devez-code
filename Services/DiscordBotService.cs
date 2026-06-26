@@ -217,6 +217,8 @@ public sealed class DiscordBotService : IDisposable
         var projects = _projects;
         if (!IsConfigured || projects == null) return;
 
+        await EnsureCommandChannelAsync();
+
         foreach (var project in projects.Where(p => p.IsActive))
         {
             var channel = await EnsureProjectChannelAsync(project);
@@ -430,6 +432,32 @@ public sealed class DiscordBotService : IDisposable
             }
         }
         return TrimForDiscord(sb.ToString(), 1900);
+    }
+
+    /// <summary>명령어 입력용 서버 루트 채널 `#명령어`를 보장한다(디스코드 기본 `#일반` 대체).
+    /// 카테고리에 속하지 않은 최상단 텍스트 채널로 만들고, 사용법 안내를 한 번 남긴다.</summary>
+    public async Task EnsureCommandChannelAsync()
+    {
+        var client = _client;
+        if (client == null || !IsConfigured) return;
+        var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+        if (guild == null) return;
+
+        var channelId = SettingsService.LoadDiscordCommandChannel();
+        if (channelId != 0 && guild.GetTextChannel(channelId) != null) return;
+
+        try
+        {
+            var channel = await guild.CreateTextChannelAsync("명령어", props => props.CategoryId = null);
+            SettingsService.SaveDiscordCommandChannel(channel.Id);
+            await SafeSendAsync(channel,
+                "🛠️ **DevezCode 명령어 채널**\n" +
+                "- `/refresh` — 세션 동기화 + 스레드 이름 갱신 + 채널 권한 적용\n" +
+                "- `!dc status` / `!dc list` — 세션 상태\n" +
+                "- `!dc keys` — 키 컨트롤 버튼\n" +
+                "세션 조작은 각 세션 스레드에서 진행하세요.");
+        }
+        catch { /* 권한 부족 등은 무시 */ }
     }
 
     public async Task<ITextChannel?> EnsureProjectChannelAsync(ProjectItem project)
