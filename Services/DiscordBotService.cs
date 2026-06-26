@@ -675,6 +675,10 @@ public sealed class DiscordBotService : IDisposable
             channel = await guild.CreateTextChannelAsync(SafeDiscordName(project.Name), props => props.Topic = project.Path);
             SettingsService.SaveDiscordProjectChannel(project.Path, channel.Id);
             await ApplyChannelRestrictionsAsync(guild, channel); // 스레드가 상속할 입력창 제한
+            // 빈 채널이면 모바일에서 환영 배너와 "스레드 시작" 시스템 메시지가 겹쳐 보이는
+            // 디스코드 버그가 있어, 실제 메시지(헤더) 하나로 빈 상태를 푼다.
+            var pname = string.IsNullOrWhiteSpace(project.Name) ? "프로젝트" : project.Name;
+            await SafeSendAsync(channel, $"**{pname}** · 세션은 아래 스레드에서 진행됩니다.");
         }
         return channel;
     }
