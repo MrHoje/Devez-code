@@ -561,6 +561,7 @@ public sealed class DiscordBotService : IDisposable
             {
                 var channel = await guild.CreateTextChannelAsync("명령어", props => props.CategoryId = targetCategory);
                 SettingsService.SaveDiscordCommandChannel(channel.Id);
+                await ApplyChannelRestrictionsAsync(guild, channel); // 초대/첨부 등 차단
                 await SafeSendAsync(channel,
                     "🛠️ **DevezCode 명령어 채널** (명령은 이 채널에서만 동작)\n" +
                     "- `/refresh` — 세션 동기화 + 스레드 이름 갱신 + 채널 권한 적용\n" +
@@ -647,7 +648,8 @@ public sealed class DiscordBotService : IDisposable
                 attachFiles: PermValue.Deny,
                 useExternalStickers: PermValue.Deny,
                 useApplicationCommands: PermValue.Deny,
-                sendVoiceMessages: PermValue.Deny);
+                sendVoiceMessages: PermValue.Deny,
+                createInstantInvite: PermValue.Deny); // 빈 채널의 "채널로 초대하기" 버튼 제거
             await channel.AddPermissionOverwriteAsync(guild.EveryoneRole, deny);
         }
         catch { /* 권한 부족 등은 무시 — 메시징 자체는 계속 동작 */ }
