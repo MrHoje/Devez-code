@@ -5,7 +5,7 @@
              FontFamily="{StaticResource PretendardFont}">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="37"/>
+            <RowDefinition Height="34"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
