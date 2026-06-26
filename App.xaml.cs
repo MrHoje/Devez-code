@@ -282,6 +282,9 @@ public partial class App : Application
         res["TabFocusRingBrush"]      = new SolidColorBrush(Color.FromArgb(0x8C, primary.R, primary.G, primary.B));
         res["PrimaryOverlay50Brush"]  = new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
         res["ProjectCardHoverBrush"] = theme == "dark"
+            ? new SolidColorBrush(Color.FromRgb(0x42, 0x42, 0x42))
+            : new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
+        res["ProjectCardHoverBorderBrush"] = theme == "dark"
             ? new SolidColorBrush(Color.FromRgb(0x5a, 0x5a, 0x5a))
             : new SolidColorBrush(Color.FromArgb(0x80, primary.R, primary.G, primary.B));
         res["PrimaryHoverBrush"]      = new SolidColorBrush(primaryHover);
@@ -305,7 +308,7 @@ public partial class App : Application
             : theme == "soft" ? Color.FromRgb(0xea, 0xe5, 0xdc)
             : Color.FromRgb(0xef, 0xf3, 0xf7)); // minimal
         res["SessionFocusBrush"] = new SolidColorBrush(
-            theme == "dark" ? Color.FromRgb(0x42, 0x42, 0x42)
+            theme == "dark" ? Color.FromRgb(0x5a, 0x5a, 0x5a)
             : theme == "soft" ? Color.FromRgb(0xdc, 0xea, 0xd4)
             : Color.FromRgb(0xd9, 0xe8, 0xfc)); // minimal
         res["DangerBrush"]            = new SolidColorBrush(danger);

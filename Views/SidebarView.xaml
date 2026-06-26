@@ -63,11 +63,6 @@
             <Setter Property="UseLayoutRounding" Value="False"/>
             <Setter Property="RenderOptions.EdgeMode" Value="Unspecified"/>
             <Style.Triggers>
-                <!-- 호버: 보더만 살짝 더 진하게. 배경/그림자 유지 → 세션 row가 묻히지 않음. 텍스트의 X 슬라이드가 단독 호버 신호 -->
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="{DynamicResource ProjectCardHoverBrush}"/>
-                    <Setter Property="BorderThickness" Value="1.5"/>
-                </Trigger>
                 <!-- 선택된(활성) 프로젝트: primary 보더 색만 변경 (배경 채움 없음) -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
@@ -422,6 +417,22 @@
                     <Setter TargetName="PaneBadgeFill" Property="Width" Value="8.53"/>
                     <Setter TargetName="PaneBadgeFill" Property="Margin" Value="0,1.47,1.47,1.47"/>
                 </DataTrigger>
+                <!-- 일반 프로젝트 카드 호버: 보더색 변경 (스타일 레벨에서 제거 후 템플릿 레벨로 이동) -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsArchived}" Value="False"/>
+                        <Condition Binding="{Binding IsMouseOver, ElementName=ProjectCardRoot}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="ProjectCardRoot" Property="BorderBrush" Value="{DynamicResource ProjectCardHoverBorderBrush}"/>
+                </MultiDataTrigger>
+                <!-- 보관함 카드 호버: 파일탐색기 파일 호버와 동일하게 배경 PanelSoftBrush -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsArchived}" Value="True"/>
+                        <Condition Binding="{Binding IsMouseOver, ElementName=ProjectCardRoot}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="ProjectCardRoot" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                </MultiDataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
 
@@ -620,7 +631,7 @@
                            Visibility="Collapsed"
                            FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
             </Grid>
-            <Rectangle x:Name="ProjectFadeTop" Height="48" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
+            <Rectangle x:Name="ProjectFadeTop" Height="24" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
                        Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -629,7 +640,7 @@
                     </LinearGradientBrush>
                 </Rectangle.OpacityMask>
             </Rectangle>
-            <Rectangle x:Name="ProjectFadeBottom" Height="48" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+            <Rectangle x:Name="ProjectFadeBottom" Height="24" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
                         Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">

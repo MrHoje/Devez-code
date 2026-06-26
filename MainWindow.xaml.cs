@@ -1018,6 +1018,10 @@ public partial class MainWindow : Window
         _sessionHistoryOpen = open;
         double targetWidth = open ? SettingsService.LoadSessionHistoryWidth() : 0;
 
+        // 닫을 때 MinWidth(150)가 남아 폭 0 으로 줘도 완전히 안 닫힘 → 닫힘 시 0, 열림 시 150 복원.
+        // 드래그 클램프(MinWidth 사용)는 열린 상태에서만 동작하므로 리사이즈 동작엔 영향 없음.
+        SessionHistoryCol.MinWidth = open ? 150 : 0;
+
         _sessionHistoryAnimCancel?.Invoke();
         _sessionHistoryAnimCancel = null;
         if (animate)

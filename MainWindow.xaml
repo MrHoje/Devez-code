@@ -282,7 +282,7 @@
                                                         <Setter Property="Background" Value="Transparent"/>
                                                         <Style.Triggers>
                                                             <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter Property="Background" Value="{DynamicResource LineBrush}"/>
+                                                                <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                                                             </Trigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -350,7 +350,7 @@
                                            Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
                         </ScrollViewer>
-                        <Rectangle x:Name="SessionHistoryFadeTop" Grid.Row="2" Height="48" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
+                        <Rectangle x:Name="SessionHistoryFadeTop" Grid.Row="2" Height="24" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -359,7 +359,7 @@
                                 </LinearGradientBrush>
                             </Rectangle.OpacityMask>
                         </Rectangle>
-                        <Rectangle x:Name="SessionHistoryFadeBottom" Grid.Row="2" Height="48" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+                        <Rectangle x:Name="SessionHistoryFadeBottom" Grid.Row="2" Height="24" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
