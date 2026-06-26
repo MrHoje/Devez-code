@@ -257,7 +257,7 @@
                                 <ItemsControl x:Name="SessionHistoryList">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:SessionCompletionRecord}">
-                                            <Border CornerRadius="10" Padding="12,11,12,9" Margin="0,3,0,3"
+                                            <Border x:Name="SessionHistoryCard" CornerRadius="10" Padding="12,11,12,9" Margin="0,3,0,3"
                                                     Cursor="Arrow" MouseLeftButtonUp="SessionHistoryItem_Click"
                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                                                 <Border.Style>
@@ -281,6 +281,11 @@
                                                         <RowDefinition Height="Auto"/>
                                                         <RowDefinition Height="Auto"/>
                                                     </Grid.RowDefinitions>
+                                                    <Border Grid.Row="0" Grid.Column="0" Grid.RowSpan="3"
+                                                            Width="3" Height="11" VerticalAlignment="Center"
+                                                            HorizontalAlignment="Left" Margin="0,0,0,0"
+                                                            Background="{DynamicResource PrimaryBrush}" CornerRadius="1.5"
+                                                            Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
                                                     <Image Grid.Row="0" Grid.Column="0" Width="15" Height="15"
                                                            Margin="0,0,9,0" VerticalAlignment="Top"
                                                            Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
@@ -289,11 +294,6 @@
                                                             <TranslateTransform Y="-2"/>
                                                         </Image.RenderTransform>
                                                     </Image>
-                                                    <Border Grid.Row="0" Grid.Column="0" Grid.RowSpan="3"
-                                                               Width="5" HorizontalAlignment="Left"
-                                                               VerticalAlignment="Stretch" Margin="-12,15,0,15"
-                                                               Background="{DynamicResource PrimaryBrush}" CornerRadius="1.5"
-                                                               Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
                                                     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                                                         <TextBlock Text="{Binding ProjectName}"
                                                                    Visibility="{Binding ProjectVisibility}"
