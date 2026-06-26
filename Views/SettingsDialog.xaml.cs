@@ -193,6 +193,8 @@ public partial class SettingsDialog : UserControl
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
         CatNotifyBtn.Background    = key == "notify"     ? active : Brushes.Transparent;
         CatNotifyBtn.Foreground    = key == "notify"     ? primary : text;
+        CatDiscordBtn.Background   = key == "discord"    ? active : Brushes.Transparent;
+        CatDiscordBtn.Foreground   = key == "discord"    ? primary : text;
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
@@ -204,11 +206,13 @@ public partial class SettingsDialog : UserControl
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
         NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
+        DiscordPanel.Visibility    = key == "discord"    ? Visibility.Visible : Visibility.Collapsed;
 
         if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
         if (key == "sidepanel") LoadSidePanelSettings();
         if (key == "usage") LoadFooterUsageSettings();
         if (key == "notify") LoadNotifySettings();
+        if (key == "discord") LoadDiscordSettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
     }
 
@@ -520,6 +524,38 @@ public partial class SettingsDialog : UserControl
 
     private void TestNotify_Click(object sender, RoutedEventArgs e)
         => App.ShowNotification("테스트 알림", "세션이 끝나면 이렇게 알려드립니다.");
+
+    // ── Discord 설정 (즉시 저장 — 토큰/서버 ID 변경 후 재연결 버튼으로 런타임 반영) ──
+    private bool _loadingDiscord;
+
+    private void LoadDiscordSettings()
+    {
+        _loadingDiscord = true;
+        DiscordEnabledToggle.IsChecked = SettingsService.LoadDiscordEnabled();
+        DiscordTokenBox.Password = SettingsService.LoadDiscordBotToken();
+        var guildId = SettingsService.LoadDiscordGuildId();
+        DiscordGuildIdBox.Text = guildId == 0 ? "" : guildId.ToString();
+        DiscordNotifyDoneToggle.IsChecked = SettingsService.LoadDiscordNotifySessionDone();
+        _loadingDiscord = false;
+    }
+
+    private void DiscordSetting_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loadingDiscord) return;
+        SettingsService.SaveDiscordEnabled(DiscordEnabledToggle.IsChecked == true);
+        SettingsService.SaveDiscordBotToken(DiscordTokenBox.Password);
+        SettingsService.SaveDiscordNotifySessionDone(DiscordNotifyDoneToggle.IsChecked == true);
+        if (ulong.TryParse(DiscordGuildIdBox.Text.Trim(), out var guildId))
+            SettingsService.SaveDiscordGuildId(guildId);
+        else if (string.IsNullOrWhiteSpace(DiscordGuildIdBox.Text))
+            SettingsService.SaveDiscordGuildId(0);
+    }
+
+    private void DiscordReconnect_Click(object sender, RoutedEventArgs e)
+    {
+        DiscordSetting_Changed(sender, e);
+        DiscordBotService.Instance.Restart();
+    }
 
     // ── 탭 이동 단축키 수식키 리바인드 (방향키는 ← / → 고정) ──────
     /// <summary>수식키 칸 클릭 → 전역 훅 캡처 시작. 다음 키다운 1회를 수식키로 지정.</summary>

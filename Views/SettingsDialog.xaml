@@ -132,6 +132,15 @@
                                         <TextBlock Text="알림" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
+                                <Button x:Name="CatDiscordBtn" Tag="discord"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconServer}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Discord" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button x:Name="CatProjectBtn" Tag="project"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -1190,6 +1199,44 @@
                                     </StackPanel>
                                 </Grid>
                                 </StackPanel>
+                            </StackPanel>
+
+                            <!-- Discord 연동 패널 -->
+                            <StackPanel x:Name="DiscordPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="Discord" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="Discord 서버에서 프로젝트별 카테고리와 세션별 스레드로 DevezCode 세션을 원격 제어합니다. 봇은 outbound WebSocket만 사용합니다."
+                                           FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                        <TextBlock Text="Discord 연동 사용" FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="토큰과 서버 ID가 저장되어 있어야 연결됩니다." FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="DiscordEnabledToggle" Grid.Column="1" Style="{StaticResource ToggleSwitch}" Checked="DiscordSetting_Changed" Unchecked="DiscordSetting_Changed"/>
+                                </Grid>
+                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
+                                <TextBlock Text="Bot Token" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,8"/>
+                                <PasswordBox x:Name="DiscordTokenBox" Height="34" PasswordChanged="DiscordSetting_Changed" Background="{DynamicResource PanelSoftBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="10,6"/>
+                                <TextBlock Text="Guild ID" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" Margin="0,18,0,8"/>
+                                <TextBox x:Name="DiscordGuildIdBox" Height="34" TextChanged="DiscordSetting_Changed" Background="{DynamicResource PanelSoftBrush}" Foreground="{DynamicResource TextBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="10,6"/>
+                                <Grid Margin="0,18,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                                        <TextBlock Text="세션 완료 Discord 알림" FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="응답 완료 시 해당 세션 스레드에도 알립니다." FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="DiscordNotifyDoneToggle" Grid.Column="1" Style="{StaticResource ToggleSwitch}" Checked="DiscordSetting_Changed" Unchecked="DiscordSetting_Changed"/>
+                                </Grid>
+                                <Button Click="DiscordReconnect_Click" Style="{StaticResource PrimaryButton}" Height="38" HorizontalAlignment="Left" Margin="0,22,0,0" Padding="18,0">
+                                    <TextBlock Text="연결 다시 시작" Foreground="White" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                </Button>
                             </StackPanel>
                           </Grid>
                         </ScrollViewer>
