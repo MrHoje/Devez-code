@@ -60,6 +60,7 @@ public partial class MainWindow : Window
     private readonly OpenCodeBusyService _opencodeBusy = new();
     // gjc(가재코드) — 훅 미지원. 방별 세션 .jsonl 을 폴링해 마지막 user 메시지를 헤더에 반영.
     private readonly GajaeLastMessageService _gajaeLastMsg = new();
+    private readonly DiscordBotService _discordBot = DiscordBotService.Instance;
 
     public MainWindow()
     {
@@ -77,6 +78,7 @@ public partial class MainWindow : Window
         _projects = WorkspaceStore.Load(out var archived);
         UpdateSessionBusyDisplay();
         _archivedProjects = archived;
+        _discordBot.SetProjects(_projects);
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
@@ -258,6 +260,7 @@ public partial class MainWindow : Window
             // 가재코드 — 세션 .jsonl 폴링으로 헤더 lastmsg + 스피너 busy 둘 다 처리(확장/훅 불필요).
             _gajaeLastMsg.Start();
             _agentLastMsg.Start();
+            _discordBot.Start();
             RestoreOpenFiles();  // 직전에 열려 있던 파일 편집기 탭 복원(세션 활성화보다 먼저 → 활성 탭은 세션 유지)
             RestoreLastSession();
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
@@ -299,6 +302,7 @@ public partial class MainWindow : Window
             _opencodeBusy.Dispose();
             _gajaeLastMsg.Dispose();
             _agentLastMsg.Dispose();
+            _discordBot.Dispose();
             FileExplorer.DisposeBrowser();
         };
     }
@@ -2005,9 +2009,10 @@ public partial class MainWindow : Window
     {
         if (s == null || !wasBusy || nowBusy) return;
         AddSessionCompletionRecord(s);
+        var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
+        _ = _discordBot.NotifySessionDoneAsync(proj, s);
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
-        var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
         var projName = proj != null
             ? System.IO.Path.GetFileName(proj.Path.TrimEnd('\\', '/'))
             : "";
