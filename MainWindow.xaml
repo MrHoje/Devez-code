@@ -281,11 +281,6 @@
                                                         <RowDefinition Height="Auto"/>
                                                         <RowDefinition Height="Auto"/>
                                                     </Grid.RowDefinitions>
-                                                    <Border Grid.Row="0" Grid.Column="0" Grid.RowSpan="3"
-                                                            Width="3" Height="11" VerticalAlignment="Center"
-                                                            HorizontalAlignment="Left" Margin="0,0,0,0"
-                                                            Background="{DynamicResource PrimaryBrush}" CornerRadius="1.5"
-                                                            Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
                                                     <Image Grid.Row="0" Grid.Column="0" Width="15" Height="15"
                                                            Margin="0,0,9,0" VerticalAlignment="Top"
                                                            Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
@@ -321,6 +316,12 @@
                                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                                 </Grid>
                                             </Border>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IsRead}" Value="False">
+                                                    <Setter TargetName="SessionHistoryCard" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                                    <Setter TargetName="SessionHistoryCard" Property="BorderThickness" Value="3,1,1,1"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
