@@ -237,6 +237,9 @@ public sealed class ProjectItem : NotifyBase
     /// <summary>헤더 표시용 "살아있음/전체" (세션 없으면 빈 문자열).</summary>
     public string SessionStatusText => Sessions.Count == 0 ? "" : $"{AliveSessionCount}/{Sessions.Count}";
 
+    private bool _showHiddenSessions = true;
+    public bool ShowHiddenSessions { get => _showHiddenSessions; set => Set(ref _showHiddenSessions, value); }
+
     public ProjectItem()
     {
         // Tabs → Sessions 단방향 동기. 역방향은 코드가 항상 Tabs 에만 추가/제거하도록 강제.

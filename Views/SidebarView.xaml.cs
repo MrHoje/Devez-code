@@ -267,6 +267,17 @@ public partial class SidebarView : UserControl
         e.Handled = true; // 행 선택으로 버블링 방지
     }
 
+    private void HiddenToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p)
+        {
+            p.ShowHiddenSessions = !p.ShowHiddenSessions;
+            if (sender is Button btn)
+                btn.ToolTip = p.ShowHiddenSessions ? "숨김 세션 숨기기" : "숨김 세션 표시";
+    }
+        e.Handled = true;
+    }
+
     /// <summary>세로형 ... 버튼 — 행에 정의된 우클릭 메뉴를 버튼 위치에 띄운다.</summary>
     private void ProjectMenu_Click(object sender, RoutedEventArgs e)
     {

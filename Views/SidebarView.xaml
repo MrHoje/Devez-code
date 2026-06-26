@@ -56,7 +56,8 @@
             <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
-            <Setter Property="Margin" Value="0,3,0,3"/>
+            <Setter Property="Padding" Value="0,0,0,5"/>
+            <Setter Property="Margin" Value="0,3,0,8"/>
             <Setter Property="Effect" Value="{x:Null}"/>
             <!-- 채팅 버블 선택 링 방식 참고: 픽셀 스냅·레이아웃 라운딩 끄고 안티에일리어싱 → 부드러운 보더 -->
             <Setter Property="SnapsToDevicePixels" Value="False"/>
@@ -156,6 +157,14 @@
                     <Setter TargetName="BusySpinner" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="HiddenIcon" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
+                <!-- ShowHiddenSessions=false + Hidden=true → 세션 row 숨김 -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Tag, RelativeSource={RelativeSource FindAncestor, AncestorType=ItemsControl}}" Value="False"/>
+                        <Condition Binding="{Binding Hidden}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="SessionRow" Property="Visibility" Value="Collapsed"/>
+                </MultiDataTrigger>
                 <!-- 요청 처리중 스피너: 숨김 세션(!Hidden)일 때만 동작. -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
@@ -323,7 +332,11 @@
                                            TextTrimming="CharacterEllipsis"
                                            VerticalAlignment="Center"
                                            FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"/>
+                                           Foreground="{DynamicResource TextBrush}">
+                                    <TextBlock.RenderTransform>
+                                        <TranslateTransform Y="1"/>
+                                    </TextBlock.RenderTransform>
+                                </TextBlock>
                             </StackPanel>
                             <!-- 우상단 액션: [패널 배지] + [chevron]. 배지는 분할 시 이 프로젝트가 떠 있는 패널(좌/우)을 칸 하이라이트로 표시. -->
                             <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
@@ -339,6 +352,45 @@
                                 <Path x:Name="PaneBadgeIcon" Style="{StaticResource LucideIcon}"
                                       Width="16" Height="16" Stroke="{DynamicResource TextMutedBrush}"/>
                             </Grid>
+                            <!-- 숨김 세션 보기/숨기기 토글 -->
+                            <Button Tag="{Binding}"
+                                    Click="HiddenToggle_Click" Cursor="Arrow"
+                                    Background="Transparent" BorderThickness="0"
+                                    IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                    VerticalAlignment="Center" Margin="0,0,2,0">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="ToolTip" Value="숨김 세션 표시"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowHiddenSessions}" Value="True">
+                                                <Setter Property="ToolTip" Value="숨김 세션 숨기기"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="4"
+                                                Background="{TemplateBinding Background}">
+                                            <Path x:Name="Icon"
+                                                  Style="{StaticResource LucideButtonIcon}"
+                                                  Data="{StaticResource IconEyeOff}"
+                                                  Width="11" Height="11"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Stretch="Uniform"
+                                                  Stroke="{DynamicResource TextMutedBrush}"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                            </Trigger>
+                                            <DataTrigger Binding="{Binding ShowHiddenSessions}" Value="True">
+                                                <Setter TargetName="Icon" Property="Data" Value="{StaticResource IconEye}"/>
+                                            </DataTrigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
                             <!-- 접고/펴기는 이 chevron 버튼으로만 (행 클릭은 선택 전용). 항상 노출, 타이틀과 같은 줄 우상단. -->
                             <Button Tag="{Binding}"
                                     Click="ProjectChevron_Click" Cursor="Arrow"
@@ -373,14 +425,18 @@
                                        TextTrimming="CharacterEllipsis"
                                        FontSize="{DynamicResource Fs11}"
                                        Foreground="{DynamicResource TextMutedBrush}"
-                                       ToolTip="{Binding Path}"/>
+                                       ToolTip="{Binding Path}">
+                                <TextBlock.RenderTransform>
+                                    <TranslateTransform Y="1"/>
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
                         </Grid>
                     </Border>
                     <!-- 세션 리스트 + 바로가기 리스트: 펼침 시 표시. 가이드선/연결됨 텍스트 없음 -->
                     <Border Visibility="Collapsed"
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
                         <StackPanel Margin="8,2,8,8">
-                            <ItemsControl ItemsSource="{Binding Sessions}"
+                            <ItemsControl ItemsSource="{Binding Sessions}" Tag="{Binding ShowHiddenSessions}"
                                           ItemTemplate="{StaticResource SessionTemplate}"/>
                             <!-- 바로가기: 세션과 세퍼레이터로 구분, 등록된 게 있을 때만 표시 -->
                             <Border Height="1" Margin="2,6,2,6"
@@ -421,6 +477,7 @@
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding IsArchived}" Value="False"/>
+                        <Condition Binding="{Binding IsSelected}" Value="False"/>
                         <Condition Binding="{Binding IsMouseOver, ElementName=ProjectCardRoot}" Value="True"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="ProjectCardRoot" Property="BorderBrush" Value="{DynamicResource ProjectCardHoverBorderBrush}"/>
