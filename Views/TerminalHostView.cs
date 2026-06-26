@@ -447,7 +447,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 cmdSent = true;
                 session.Write(initialCmd!);
             }
-            DevezCode.Services.DiscordBotService.Instance.ForwardTerminalOutput(roomId, bytes);
             var b64 = Convert.ToBase64String(bytes);
             Dispatcher.BeginInvoke(() =>
             {

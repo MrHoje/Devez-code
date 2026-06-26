@@ -14,8 +14,6 @@ public sealed class DiscordBotService : IDisposable
     public static DiscordBotService Instance { get; } = new();
 
     private readonly object _sync = new();
-    private readonly Dictionary<string, StringBuilder> _outputBuffers = new();
-    private readonly HashSet<string> _flushScheduled = new(StringComparer.Ordinal);
     // 자동 시작 대기 중인 입력: sessionId → 준비되면 주입할 메시지들.
     private readonly Dictionary<string, List<string>> _pendingInput = new(StringComparer.Ordinal);
     private ObservableCollection<ProjectItem>? _projects;
@@ -95,8 +93,6 @@ public sealed class DiscordBotService : IDisposable
             client = _client;
             _client = null;
             _starting = false;
-            _outputBuffers.Clear();
-            _flushScheduled.Clear();
             _pendingInput.Clear();
         }
 
@@ -142,54 +138,20 @@ public sealed class DiscordBotService : IDisposable
 
         var title = string.IsNullOrWhiteSpace(project.Name) ? "프로젝트" : project.Name;
         var sess = string.IsNullOrWhiteSpace(session.Name) ? "세션" : session.Name;
-        var last = string.IsNullOrWhiteSpace(session.LastMessage) ? "" : $"\n> {TrimForDiscord(session.LastMessage, 500)}";
-        await SafeSendAsync(thread, $"✅ **{title} / {sess}** 응답 완료{last}");
-    }
 
-    public void ForwardTerminalOutput(string sessionId, byte[] bytes)
-    {
-        if (!IsConfigured || bytes.Length == 0) return;
-        if (SettingsService.LoadDiscordSessionThread(sessionId) == 0) return;
+        // 에이전트의 최종 답변 텍스트를 우선 전송. 추출 불가(codex/opencode 등)면 질문 폴백.
+        var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+        var reply = AgentReplyService.TryGetLastAssistantReply(session.Id, agentId);
 
-        var text = Encoding.UTF8.GetString(bytes);
-        text = StripAnsi(text);
-        if (string.IsNullOrWhiteSpace(text)) return;
-
-        lock (_sync)
+        string body;
+        if (!string.IsNullOrWhiteSpace(reply))
+            body = $"✅ **{title} / {sess}** 응답 완료\n{HeadForDiscord(reply, 1800)}";
+        else
         {
-            if (!_outputBuffers.TryGetValue(sessionId, out var sb))
-            {
-                sb = new StringBuilder();
-                _outputBuffers[sessionId] = sb;
-            }
-            sb.Append(text);
-            if (_flushScheduled.Contains(sessionId)) return;
-            _flushScheduled.Add(sessionId);
+            var last = string.IsNullOrWhiteSpace(session.LastMessage) ? "" : $"\n> {TrimForDiscord(session.LastMessage, 500)}";
+            body = $"✅ **{title} / {sess}** 응답 완료{last}";
         }
-
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(1200);
-            await FlushOutputAsync(sessionId);
-        });
-    }
-
-    private async Task FlushOutputAsync(string sessionId)
-    {
-        string text;
-        lock (_sync)
-        {
-            _flushScheduled.Remove(sessionId);
-            if (!_outputBuffers.TryGetValue(sessionId, out var sb) || sb.Length == 0) return;
-            text = sb.ToString();
-            sb.Clear();
-        }
-
-        text = TrimForDiscord(text.Trim(), 1800);
-        if (string.IsNullOrWhiteSpace(text)) return;
-        var channel = await GetThreadChannelAsync(sessionId);
-        if (channel == null) return;
-        await SafeSendAsync(channel, $"```\n{text}\n```");
+        await SafeSendAsync(thread, body);
     }
 
     private async Task OnMessageReceived(SocketMessage message)
@@ -369,15 +331,6 @@ public sealed class DiscordBotService : IDisposable
         return thread;
     }
 
-    private Task<IMessageChannel?> GetThreadChannelAsync(string sessionId)
-    {
-        var client = _client;
-        if (client == null) return Task.FromResult<IMessageChannel?>(null);
-        var threadId = SettingsService.LoadDiscordSessionThread(sessionId);
-        if (threadId == 0) return Task.FromResult<IMessageChannel?>(null);
-        return Task.FromResult(client.GetChannel(threadId) as IMessageChannel);
-    }
-
     private bool IsConfigured => SettingsService.LoadDiscordEnabled()
         && !string.IsNullOrWhiteSpace(SettingsService.LoadDiscordBotToken())
         && SettingsService.LoadDiscordGuildId() != 0;
@@ -401,11 +354,12 @@ public sealed class DiscordBotService : IDisposable
         return text[..Math.Min(text.Length, 90)];
     }
 
-    private static string StripAnsi(string text)
-        => Regex.Replace(text, @"\x1B\[[0-?]*[ -/]*[@-~]", "");
-
     private static string TrimForDiscord(string text, int max)
         => text.Length <= max ? text : text[^max..];
+
+    /// <summary>앞에서부터 max 자 유지(답변 본문용 — 끝이 아니라 앞이 중요). 잘리면 말줄임 표시.</summary>
+    private static string HeadForDiscord(string text, int max)
+        => text.Length <= max ? text : text[..max] + "…";
 
     public void Dispose() => Stop();
 }
