@@ -499,9 +499,7 @@ public sealed class DiscordBotService : IDisposable
             // err == "" : 캐시·REST 모두 없음(이미 삭제됨) → 성공/실패 어디에도 안 셈
         }
 
-        // #일반/#general 기본 채널 정리 — 실패 사유를 직접 받아 리포트에 합친다.
-        var genErrors = await DeleteDefaultGeneralChannelsAsync(guild);
-
+        // #명령어 재생성 + #일반 정리는 EnsureCommandChannelAsync 가 처리(채팅채널 카테고리로 이동).
         await SyncWorkspaceAsync(); // #명령어 + 프로젝트 채널/스레드 재생성
 
         // 진단 리포트 — 재생성된 #명령어 채널에 결과를 남겨 무엇이 왜 실패했는지 보이게.
@@ -512,7 +510,6 @@ public sealed class DiscordBotService : IDisposable
         if (cmd != null)
         {
             var report = $"♻️ 초기화 완료 — 삭제 {deleted}건, 실패 {failed}건";
-            errors.AddRange(genErrors);
             if (errors.Count > 0)
                 report += "\n⚠️ 실패 상세(권한 문제일 가능성 높음 — 봇 역할에 `채널 관리` 권한 확인):\n" + string.Join("\n", errors);
             await SafeSendAsync(cmd, report);
@@ -546,24 +543,50 @@ public sealed class DiscordBotService : IDisposable
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return;
 
-        _ = await DeleteDefaultGeneralChannelsAsync(guild);
-
+        // #일반 이 속한 카테고리("채팅채널"/"텍스트 채널" 등)를 삭제 전에 파악 — #명령어 를 그 안에 둔다.
         var channelId = SettingsService.LoadDiscordCommandChannel();
-        if (channelId != 0 && guild.GetTextChannel(channelId) != null) return;
+        var general = guild.TextChannels.FirstOrDefault(c =>
+            c.Id != channelId &&
+            (c.Name.Trim().Equals("일반", StringComparison.OrdinalIgnoreCase) ||
+             c.Name.Trim().Equals("general", StringComparison.OrdinalIgnoreCase)));
+        ulong? targetCategory = general?.CategoryId
+            ?? guild.CategoryChannels.FirstOrDefault(c => IsChatCategoryName(c.Name))?.Id;
 
-        try
+        // #명령어 보장 — 없으면 그 카테고리에 생성, 이미 있으면 그 카테고리로 이동.
+        ITextChannel? cmd = channelId == 0 ? null
+            : guild.GetTextChannel(channelId) ?? await client.Rest.GetChannelAsync(channelId) as ITextChannel;
+        if (cmd == null)
         {
-            var channel = await guild.CreateTextChannelAsync("명령어", props => props.CategoryId = null);
-            SettingsService.SaveDiscordCommandChannel(channel.Id);
-            await SafeSendAsync(channel,
-                "🛠️ **DevezCode 명령어 채널** (명령은 이 채널에서만 동작)\n" +
-                "- `/refresh` — 세션 동기화 + 스레드 이름 갱신 + 채널 권한 적용\n" +
-                "- `/status` — 프로젝트·세션 상태\n" +
-                "- `/reset confirm:True` — 전체 초기화(되돌릴 수 없음)\n" +
-                "- `/keys` — 키 컨트롤 버튼(세션 스레드에서 사용)\n" +
-                "세션 조작은 각 세션 스레드에서 진행하세요.");
+            try
+            {
+                var channel = await guild.CreateTextChannelAsync("명령어", props => props.CategoryId = targetCategory);
+                SettingsService.SaveDiscordCommandChannel(channel.Id);
+                await SafeSendAsync(channel,
+                    "🛠️ **DevezCode 명령어 채널** (명령은 이 채널에서만 동작)\n" +
+                    "- `/refresh` — 세션 동기화 + 스레드 이름 갱신 + 채널 권한 적용\n" +
+                    "- `/status` — 프로젝트·세션 상태\n" +
+                    "- `/reset confirm:True` — 전체 초기화(되돌릴 수 없음)\n" +
+                    "- `/keys` — 키 컨트롤 버튼(세션 스레드에서 사용)\n" +
+                    "세션 조작은 각 세션 스레드에서 진행하세요.");
+            }
+            catch { /* 권한 부족 등은 무시 */ }
         }
-        catch { /* 권한 부족 등은 무시 */ }
+        else if (targetCategory != null && cmd.CategoryId != targetCategory)
+        {
+            try { await cmd.ModifyAsync(p => p.CategoryId = targetCategory); } catch { }
+        }
+
+        // 마지막에 #일반/#general 삭제(카테고리는 남는다).
+        _ = await DeleteDefaultGeneralChannelsAsync(guild);
+    }
+
+    /// <summary>"채팅채널"/"텍스트 채널"/"text channels" 류의 기본 텍스트 카테고리 이름인지(공백·대소문자 무시).</summary>
+    private static bool IsChatCategoryName(string name)
+    {
+        var n = name.Replace(" ", "").Trim();
+        return n.Equals("채팅채널", StringComparison.OrdinalIgnoreCase)
+            || n.Equals("텍스트채널", StringComparison.OrdinalIgnoreCase)
+            || n.Equals("textchannels", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>디스코드가 서버 생성 시 자동으로 만드는 기본 텍스트 채널(`일반`/`general`)을 삭제한다.
