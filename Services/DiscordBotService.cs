@@ -381,7 +381,8 @@ public sealed class DiscordBotService : IDisposable
         var channel = await EnsureProjectChannelAsync(project);
         if (channel == null) return null;
 
-        var thread = await channel.CreateThreadAsync(SafeThreadName(session.Name), ThreadType.PublicThread, ThreadArchiveDuration.OneDay);
+        var threadName = $"{AgentEmoji(session.AgentId)} {SafeThreadName(session.Name)}".Trim();
+        var thread = await channel.CreateThreadAsync(threadName, ThreadType.PublicThread, ThreadArchiveDuration.OneDay);
         SettingsService.SaveDiscordSessionThread(session.Id, thread.Id);
         await SafeSendAsync(thread,
             $"🔗 DevezCode 세션 연결: `{session.Name}` / `{session.AgentId}`\n선택지 메뉴는 아래 버튼으로 조작하세요. (버튼이 사라지면 `!dc keys`)",
@@ -411,6 +412,16 @@ public sealed class DiscordBotService : IDisposable
         text = Regex.Replace(text, @"[^a-z0-9가-힣\-_]+", "-").Trim('-');
         return string.IsNullOrWhiteSpace(text) ? "project" : text[..Math.Min(text.Length, 90)];
     }
+
+    /// <summary>스레드 이름 앞에 붙일 에이전트별 이모지(사이드바 목록에서 아이콘처럼 보인다).</summary>
+    private static string AgentEmoji(string? agentId) => (agentId ?? "").ToLowerInvariant() switch
+    {
+        "claude" => "✳️",
+        "codex" => "🟢",
+        "opencode" => "🔷",
+        "gajae" => "🦞",
+        _ => "💠",
+    };
 
     private static string SafeThreadName(string value)
     {
