@@ -267,7 +267,7 @@
                             </StackPanel>
                         </Border>
                         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                      Padding="8,8,8,8">
+                                      Padding="8,0,8,0">
                             <StackPanel>
                                 <ItemsControl x:Name="SessionHistoryList">
                                     <ItemsControl.ItemTemplate>

@@ -65,7 +65,7 @@
             <Style.Triggers>
                 <!-- 호버: 보더만 살짝 더 진하게. 배경/그림자 유지 → 세션 row가 묻히지 않음. 텍스트의 X 슬라이드가 단독 호버 신호 -->
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="#5a5a5a"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource ProjectCardHoverBrush}"/>
                     <Setter Property="BorderThickness" Value="1.5"/>
                 </Trigger>
                 <!-- 선택된(활성) 프로젝트: primary 보더 색만 변경 (배경 채움 없음) -->
@@ -80,13 +80,11 @@
         <Style x:Key="SessionCard" TargetType="Border">
             <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="Margin" Value="0,2,0,2"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="BorderBrush" Value="#5a5a5a"/>
+                    <Setter Property="Background" Value="{DynamicResource ProjectCardHoverBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -156,7 +154,6 @@
                 <!-- 활성(보고 있는) 세션: 배경색 변경으로 구분 -->
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
                     <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
-                    <Setter TargetName="SessionRow" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
                 </DataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
                 <DataTrigger Binding="{Binding Hidden}" Value="True">
@@ -565,7 +562,7 @@
                 <Grid.RenderTransform>
                     <TranslateTransform x:Name="ActivePanelTransform" X="0"/>
                 </Grid.RenderTransform>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,0,8,0"
                               Style="{StaticResource OverlayVScroll}">
                     <ItemsControl x:Name="ProjectsHost" Tag="1"
                                   ItemTemplate="{StaticResource ProjectTemplate}"
@@ -609,7 +606,7 @@
                 <Grid.RenderTransform>
                     <TranslateTransform x:Name="ArchivePanelTransform" X="9999"/>
                 </Grid.RenderTransform>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,0,8,0"
                               Style="{StaticResource OverlayVScroll}">
                     <ItemsControl x:Name="ArchivedHost" Tag="1"
                                   ItemTemplate="{StaticResource ProjectTemplate}"

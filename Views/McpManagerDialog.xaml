@@ -44,7 +44,7 @@
         </Style>
 
         <!-- 필드 라벨 -->
-        <Style x:Key="FieldLabel" TargetType="TextBlock">
+        <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="FontSize" Value="{DynamicResource Fs11}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>

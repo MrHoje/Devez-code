@@ -281,6 +281,9 @@ public partial class App : Application
         res["PrimaryBrush"]           = new SolidColorBrush(primary);
         res["TabFocusRingBrush"]      = new SolidColorBrush(Color.FromArgb(0x8C, primary.R, primary.G, primary.B));
         res["PrimaryOverlay50Brush"]  = new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
+        res["ProjectCardHoverBrush"] = theme == "dark"
+            ? new SolidColorBrush(Color.FromRgb(0x5a, 0x5a, 0x5a))
+            : new SolidColorBrush(Color.FromArgb(0x80, primary.R, primary.G, primary.B));
         res["PrimaryHoverBrush"]      = new SolidColorBrush(primaryHover);
         res["PrimaryPressedBrush"]    = new SolidColorBrush(primaryPressed);
         var tableHl = theme == "dark" ? primarySoft : primary;

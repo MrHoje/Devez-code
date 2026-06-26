@@ -309,6 +309,8 @@
                                 VerticalAlignment="Center"
                                 FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                 Foreground="{DynamicResource TextBrush}"
+                                TextOptions.TextFormattingMode="Ideal"
+                                TextOptions.TextRenderingMode="ClearType"
                                 TextTrimming="CharacterEllipsis"/>
                     <Ellipse x:Name="FileDirtyDot" Width="7" Height="7" Margin="8,1,0,0"
                              VerticalAlignment="Center" Visibility="Collapsed"
