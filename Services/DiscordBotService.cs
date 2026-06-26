@@ -793,18 +793,17 @@ public sealed class DiscordBotService : IDisposable
     }
 
     /// <summary>스레드 이름 앞에 붙일 에이전트별 이모지(사이드바 목록에서 아이콘처럼 보인다).</summary>
-    // 디스코드 채널명은 ASCII 괄호 () 를 제거하므로, 보존되는 전각 괄호 （ ） 를 쓴다.
     private static string AgentEmoji(string? agentId) => (agentId ?? "").ToLowerInvariant() switch
     {
         "claude" => "",        // 클로드는 접두 없이 이름만
-        "gajae" => "（gjc）",
+        "gajae" => "[gjc]",
         "" => "",
-        var id => $"（{id}）",  // codex→（codex）, opencode→（opencode）, 기타→（id）
+        var id => $"[{id}]",   // codex→[codex], opencode→[opencode], 기타→[id]
     };
 
     /// <summary>알려진 에이전트 접두(세션 채널명 식별용 — AgentEmoji 와 동기화 유지).
     /// claude 는 접두가 없어 제외(빈 문자열은 StartsWith 가 항상 true 라 넣으면 안 됨).</summary>
-    private static readonly string[] AllAgentEmojis = { "（codex）", "（opencode）", "（gjc）" };
+    private static readonly string[] AllAgentEmojis = { "[codex]", "[opencode]", "[gjc]" };
 
     /// <summary>채널명이 봇 세션 채널 접두(에이전트 이모지)로 시작하는지 — /reset 고아 정리용.</summary>
     private static bool StartsWithAgentEmoji(string? name)
