@@ -135,7 +135,7 @@
         <!-- Search row — 좌측 프로젝트 검색과 동일하게 아래로 슬라이드되며 트리를 밀어낸다. -->
         <Border x:Name="FileSearchRow" Grid.Row="2" Height="0"
                 ClipToBounds="True">
-            <Border Margin="8" Height="35"
+            <Border Margin="8,8,8,4" Height="35"
                     Background="{DynamicResource PanelSoftBrush}"
                     BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="1" CornerRadius="8">

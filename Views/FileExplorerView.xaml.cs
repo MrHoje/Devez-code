@@ -183,7 +183,7 @@ public partial class FileExplorerView : UserControl
     private ObservableCollection<FileNode>? _rootNodes;
     private FileSystemWatcher? _fileWatcher;
     private bool _fileSearchOpen;
-    private const double FileSearchRowHeight = 51;
+    private const double FileSearchRowHeight = 47; // 8(margin-top) + 35(pill) + 4(margin-bottom)
     private const int MaxSearchResults = 500;
 
     /// <summary>우측 패널의 현재 뷰 모드.</summary>
