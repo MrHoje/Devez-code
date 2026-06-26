@@ -1300,9 +1300,8 @@
                                     <TextBlock Text="Discord" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="Discord 서버에서 프로젝트별 카테고리와 세션별 스레드로 DevezCode 세션을 원격 제어합니다. 봇은 outbound WebSocket만 사용합니다."
-                                           FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+                                <TextBlock FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"><Run Text="Discord 서버에서 프로젝트별 카테고리와 세션별 스레드로 DevezCode 세션을 원격 제어합니다."/><LineBreak/><Run Text="봇은 outbound WebSocket만 사용합니다."/></TextBlock>
                                 <Grid Margin="0,4,0,0">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Margin="0,0,16,0">
