@@ -519,6 +519,8 @@ public sealed class DiscordBotService : IDisposable
             await target.DeleteAsync();
             return null;
         }
+        // 10003 Unknown Channel = 부모 삭제로 이미 사라진 스레드 등 — 실패 아님.
+        catch (Discord.Net.HttpException ex) when (ex.DiscordCode == DiscordErrorCode.UnknownChannel) { return ""; }
         catch (Exception ex) { return $"`{id}`: {ex.Message}"; }
     }
 
@@ -575,13 +577,18 @@ public sealed class DiscordBotService : IDisposable
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return null;
 
+        // 존재 확인은 소켓 캐시만 믿지 말 것: 방금 만든 채널은 게이트웨이 이벤트 도착 전이라
+        // 캐시에 없어 null 이 나오고, 그러면 세션마다 같은 프로젝트 채널/카테고리를 또 만든다(중복).
+        // REST 폴백으로 실제 존재를 확인한다.
         var channelId = SettingsService.LoadDiscordProjectChannel(project.Path);
-        var existing = channelId == 0 ? null : guild.GetTextChannel(channelId);
+        ITextChannel? existing = channelId == 0 ? null
+            : guild.GetTextChannel(channelId) ?? await client.Rest.GetChannelAsync(channelId) as ITextChannel;
         if (existing != null) return existing;
 
         var safeProjectName = SafeDiscordName(project.Name);
         var categoryId = SettingsService.LoadDiscordProjectCategory(project.Path);
-        ICategoryChannel? category = categoryId == 0 ? null : guild.GetCategoryChannel(categoryId);
+        ICategoryChannel? category = categoryId == 0 ? null
+            : guild.GetCategoryChannel(categoryId) ?? await client.Rest.GetChannelAsync(categoryId) as ICategoryChannel;
         if (category == null)
         {
             category = await guild.CreateCategoryChannelAsync(safeProjectName);
@@ -638,10 +645,16 @@ public sealed class DiscordBotService : IDisposable
         if (client == null || !IsConfigured) return null;
 
         var threadId = SettingsService.LoadDiscordSessionThread(session.Id);
-        if (threadId != 0 && client.GetChannel(threadId) is IMessageChannel existing)
+        if (threadId != 0)
         {
-            if (existing is SocketThreadChannel st) await EnsureThreadNameAsync(st, session);
-            return existing;
+            // 캐시 미스 시 REST 폴백 — 방금 만든 스레드를 못 찾아 중복 생성하는 것 방지.
+            var existing = client.GetChannel(threadId) as IMessageChannel
+                           ?? await client.Rest.GetChannelAsync(threadId) as IMessageChannel;
+            if (existing != null)
+            {
+                if (existing is SocketThreadChannel st) await EnsureThreadNameAsync(st, session);
+                return existing;
+            }
         }
 
         var channel = await EnsureProjectChannelAsync(project);
