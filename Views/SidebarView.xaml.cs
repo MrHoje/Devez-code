@@ -181,7 +181,7 @@ public partial class SidebarView : UserControl
 
     // ── 검색 행 토글 (돋보기 버튼) — Height 0↔43 애니메이션으로 프로젝트 카드를 아래로 밀어냄 ──
     private bool _searchOpen;
-    private const double SearchRowHeight = 51; // 8(margin-top) + 35(pill) + 8(margin-bottom)
+    private const double SearchRowHeight = 47; // 8(margin-top) + 35(pill) + 4(margin-bottom)
 
     private void SearchToggleBtn_Click(object sender, RoutedEventArgs e)
     {

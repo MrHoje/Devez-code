@@ -508,7 +508,7 @@
              프로젝트 카드를 아래로 밀어냄. ClipToBounds 로 닫힐 때 내부 pill 이 넘쳐 보이지 않게 클립. -->
         <Border x:Name="SearchRow" Grid.Row="1" Height="0"
                 ClipToBounds="True">
-            <Border Margin="8" Height="35"
+            <Border Margin="8,8,8,4" Height="35"
                     Background="{DynamicResource PanelSoftBrush}"
                     BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="1" CornerRadius="8">
