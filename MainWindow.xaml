@@ -266,7 +266,8 @@
                                            FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
                         </Border>
-                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                        <ScrollViewer x:Name="SessionHistoryScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                      ScrollChanged="SessionHistoryScrollChanged"
                                       Padding="8,0,8,0">
                             <StackPanel>
                                 <ItemsControl x:Name="SessionHistoryList">
@@ -349,8 +350,7 @@
                                            Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
                         </ScrollViewer>
-                        <!-- 상단 스크롤 페이드 -->
-                        <Rectangle Grid.Row="2" Height="48" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
+                        <Rectangle x:Name="SessionHistoryFadeTop" Grid.Row="2" Height="48" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -359,8 +359,7 @@
                                 </LinearGradientBrush>
                             </Rectangle.OpacityMask>
                         </Rectangle>
-                        <!-- 스크롤 페이드 아웃 -->
-                        <Rectangle Grid.Row="2" Height="48" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+                        <Rectangle x:Name="SessionHistoryFadeBottom" Grid.Row="2" Height="48" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">

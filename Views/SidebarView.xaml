@@ -563,7 +563,8 @@
                     <TranslateTransform x:Name="ActivePanelTransform" X="0"/>
                 </Grid.RenderTransform>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,0,8,0"
-                              Style="{StaticResource OverlayVScroll}">
+                              Style="{StaticResource OverlayVScroll}"
+                              ScrollChanged="ProjectScrollChanged">
                     <ItemsControl x:Name="ProjectsHost" Tag="1"
                                   ItemTemplate="{StaticResource ProjectTemplate}"
                                   ItemsPanel="{StaticResource ProjectsPanel}"/>
@@ -607,7 +608,8 @@
                     <TranslateTransform x:Name="ArchivePanelTransform" X="9999"/>
                 </Grid.RenderTransform>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,0,8,0"
-                              Style="{StaticResource OverlayVScroll}">
+                              Style="{StaticResource OverlayVScroll}"
+                              ScrollChanged="ProjectScrollChanged">
                     <ItemsControl x:Name="ArchivedHost" Tag="1"
                                   ItemTemplate="{StaticResource ProjectTemplate}"
                                   ItemsPanel="{StaticResource ProjectsPanel}"/>
@@ -618,8 +620,7 @@
                            Visibility="Collapsed"
                            FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
             </Grid>
-            <!-- 상단 스크롤 페이드 -->
-            <Rectangle Height="48" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
+            <Rectangle x:Name="ProjectFadeTop" Height="48" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
                        Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -628,8 +629,7 @@
                     </LinearGradientBrush>
                 </Rectangle.OpacityMask>
             </Rectangle>
-            <!-- 스크롤 페이드 아웃 -->
-            <Rectangle Height="48" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+            <Rectangle x:Name="ProjectFadeBottom" Height="48" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
                         Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">

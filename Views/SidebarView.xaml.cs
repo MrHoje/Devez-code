@@ -241,6 +241,13 @@ public partial class SidebarView : UserControl
         CurrentHost.ItemsSource = filtered;
     }
 
+    private void ProjectScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        var sv = (ScrollViewer)sender;
+        ProjectFadeTop.Visibility = sv.VerticalOffset > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ProjectFadeBottom.Visibility = sv.VerticalOffset < sv.ScrollableHeight ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void Project_Click(object sender, MouseButtonEventArgs e)
     {
         if (_didDrag) { _didDrag = false; return; } // 드래그 직후의 클릭은 무시

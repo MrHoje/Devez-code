@@ -1945,6 +1945,13 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SessionHistoryScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        var sv = (ScrollViewer)sender;
+        SessionHistoryFadeTop.Visibility = sv.VerticalOffset > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SessionHistoryFadeBottom.Visibility = sv.VerticalOffset < sv.ScrollableHeight ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void UpdateSessionHistoryEmpty()
         => SessionHistoryEmpty.Visibility = _sessionDoneRecords.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
