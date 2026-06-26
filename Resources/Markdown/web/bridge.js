@@ -92,11 +92,11 @@
         killSpellcheck();
         if (m.markClean) {
           baseline = currentMd();                          // 정규화 기준선 갱신
-          editor.setScrollTop(0);                          // 파일 전환 시 스크롤 초기화
           // 실제 페인트(레이아웃 완료) 후에 통지 — C# 로딩 스피너가 빈 화면 위에서 먼저 사라지지 않도록.
           // double rAF: 첫 프레임에 레이아웃, 다음 프레임 직전 = 콘텐츠가 화면에 그려진 시점.
           requestAnimationFrame(function () {
             requestAnimationFrame(function () {
+              editor.setScrollTop(0);                      // 레이아웃 완료 후 스크롤 초기화
               post({ type: 'baseline', markdown: baseline });
             });
           });
@@ -121,6 +121,10 @@
         break;
       case 'focus':
         editor.focus();
+        // WYSIWYG 모드: contentEditable focus 시 브라우저가 커서 위치로 스크롤할 수 있으므로
+        // 커서를 맨 앞으로 이동 + 스크롤 재설정 — MD 파일 열었을 때 맨 아래 붙는 문제 수정.
+        editor.moveCursorToStart();
+        editor.setScrollTop(0);
         break;
     }
   });
