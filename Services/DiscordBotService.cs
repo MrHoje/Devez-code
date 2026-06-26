@@ -565,7 +565,9 @@ public sealed class DiscordBotService : IDisposable
                                  ?? client.GetChannel(id) as IDeletable
                                  ?? await client.Rest.GetChannelAsync(id) as IDeletable;
             if (target == null) return ""; // 어디에도 없음 — 이미 삭제됐다고 간주
-            await target.DeleteAsync();
+            // 채널을 한꺼번에 많이 지우면 디스코드가 긴 rate-limit 을 건다. 기본 RetryMode 는 그만큼
+            // '대기'하므로 reset 이 수십 분 멈춘다 → AlwaysFail 로 즉시 포기하고 다음 reset 에서 재시도.
+            await target.DeleteAsync(new RequestOptions { RetryMode = RetryMode.AlwaysFail, Timeout = 8000 });
             return null;
         }
         // 10003 Unknown Channel = 부모 삭제로 이미 사라진 스레드 등 — 실패 아님.
