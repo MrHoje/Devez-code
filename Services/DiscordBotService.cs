@@ -184,7 +184,7 @@ public sealed class DiscordBotService : IDisposable
         await SyncWorkspaceAsync();
     }
 
-    /// <summary>Guild 범위 슬래시 명령을 등록한다(같은 이름이면 덮어쓰기 — Ready 마다 호출해도 안전).</summary>
+    /// <summary>Guild 범위 슬래시 명령을 일괄 등록한다(BulkOverwrite — Ready 마다 호출해도 안전, 옛 명령 정리).</summary>
     private async Task RegisterCommandsAsync()
     {
         var client = _client;
@@ -193,23 +193,70 @@ public sealed class DiscordBotService : IDisposable
         if (guild == null) return;
         try
         {
-            var refresh = new SlashCommandBuilder()
-                .WithName("refresh")
-                .WithDescription("세션 스레드를 동기화하고 이름을 최신 상태로 갱신합니다.")
-                .Build();
-            await guild.CreateApplicationCommandAsync(refresh);
+            var cmds = new ApplicationCommandProperties[]
+            {
+                new SlashCommandBuilder().WithName("refresh")
+                    .WithDescription("세션 동기화 + 스레드 이름 갱신 + 채널 입력창 권한 적용").Build(),
+                new SlashCommandBuilder().WithName("status")
+                    .WithDescription("등록된 프로젝트·세션 상태를 표시합니다.").Build(),
+                new SlashCommandBuilder().WithName("keys")
+                    .WithDescription("세션 스레드 조작용 키 컨트롤 버튼을 표시합니다.").Build(),
+                new SlashCommandBuilder().WithName("reset")
+                    .WithDescription("봇이 만든 모든 채널을 삭제하고 새로 구성합니다(되돌릴 수 없음).")
+                    .AddOption("confirm", ApplicationCommandOptionType.Boolean, "정말 초기화하려면 True 를 선택", isRequired: true)
+                    .Build(),
+            };
+            // 같은 이름이면 덮어쓰기 — Ready 마다 호출해도 안전.
+            foreach (var cmd in cmds)
+                await guild.CreateApplicationCommandAsync(cmd);
         }
         catch { /* 등록 실패는 앱 동작을 막지 않는다. */ }
     }
 
-    /// <summary>슬래시 명령 처리. 현재는 /refresh(동기화 + 스레드 이름 갱신)만 지원.</summary>
+    /// <summary>슬래시 명령 처리. /reset·/status·/refresh 는 #명령어 채널 한정, /keys 는 어디서나(주로 세션 스레드).</summary>
     private async Task OnSlashCommand(SocketSlashCommand command)
     {
-        if (!command.Data.Name.Equals("refresh", StringComparison.Ordinal)) return;
-        // 동기화에 시간이 걸릴 수 있으니 먼저 ack(나에게만 보이는 ephemeral).
-        try { await command.DeferAsync(ephemeral: true); } catch { }
-        await SyncWorkspaceAsync();
-        try { await command.FollowupAsync("✅ 새로고침 완료 — 세션 스레드 동기화·이름 갱신 및 채널 입력창 권한 적용.", ephemeral: true); } catch { }
+        var name = command.Data.Name;
+
+        // /keys 외 관리 명령은 #명령어 채널에서만 받는다(채널이 아직 없으면 부트스트랩 허용).
+        if (name != "keys")
+        {
+            var cmdId = SettingsService.LoadDiscordCommandChannel();
+            if (cmdId != 0 && command.ChannelId != cmdId)
+            {
+                try { await command.RespondAsync($"이 명령은 <#{cmdId}> 채널에서만 사용할 수 있습니다.", ephemeral: true); } catch { }
+                return;
+            }
+        }
+
+        switch (name)
+        {
+            case "refresh":
+                try { await command.DeferAsync(ephemeral: true); } catch { }
+                await SyncWorkspaceAsync();
+                try { await command.FollowupAsync("✅ 새로고침 완료 — 동기화·이름 갱신·채널 권한 적용.", ephemeral: true); } catch { }
+                break;
+
+            case "status":
+                try { await command.RespondAsync(BuildStatusText(), ephemeral: true); } catch { }
+                break;
+
+            case "keys":
+                try { await command.RespondAsync("⌨️ 키 컨트롤", components: BuildKeyControls()); } catch { }
+                break;
+
+            case "reset":
+                var confirm = command.Data.Options.FirstOrDefault(o => o.Name == "confirm")?.Value as bool? ?? false;
+                if (!confirm)
+                {
+                    try { await command.RespondAsync("취소됨 — 초기화하려면 `confirm` 을 True 로 실행하세요.", ephemeral: true); } catch { }
+                    return;
+                }
+                try { await command.DeferAsync(ephemeral: true); } catch { }
+                await ResetWorkspaceAsync();
+                try { await command.FollowupAsync("♻️ 초기화 완료 — 상세 결과는 #명령어 채널 리포트를 확인하세요.", ephemeral: true); } catch { }
+                break;
+        }
     }
 
     public async Task SyncWorkspaceAsync()
@@ -263,15 +310,8 @@ public sealed class DiscordBotService : IDisposable
         var content = message.Content?.Trim() ?? "";
         if (content.Length == 0) return;
 
-        if (content.StartsWith("!dc", StringComparison.OrdinalIgnoreCase))
-        {
-            // 명령어는 #명령어 채널에서만 받는다(채널이 아직 없으면 어디서나 허용 — 부트스트랩용).
-            var cmdId = SettingsService.LoadDiscordCommandChannel();
-            if (cmdId != 0 && message.Channel.Id != cmdId) return;
-            await HandleCommandAsync(message, content);
-            return;
-        }
-
+        // 명령은 모두 슬래시 명령(/refresh, /status, /keys, /reset)으로 처리한다.
+        // 세션 스레드의 일반 메시지만 터미널로 전달.
         if (message.Channel is not SocketThreadChannel thread) return;
         var sessionId = SettingsService.FindDiscordSessionByThread(thread.Id);
         if (string.IsNullOrWhiteSpace(sessionId)) return;
@@ -399,36 +439,6 @@ public sealed class DiscordBotService : IDisposable
         });
     }
 
-    private async Task HandleCommandAsync(SocketMessage message, string content)
-    {
-        if (content.Equals("!dc status", StringComparison.OrdinalIgnoreCase) ||
-            content.Equals("!dc list", StringComparison.OrdinalIgnoreCase))
-        {
-            await SafeSendAsync(message.Channel, BuildStatusText());
-            return;
-        }
-
-        if (content.Equals("!dc keys", StringComparison.OrdinalIgnoreCase))
-        {
-            await SafeSendAsync(message.Channel, "⌨️ 키 컨트롤", BuildKeyControls());
-            return;
-        }
-
-        if (content.Equals("!dc reset", StringComparison.OrdinalIgnoreCase))
-        {
-            await SafeSendAsync(message.Channel, "⚠️ 봇이 만든 **모든 채널·카테고리·세션 스레드**를 삭제하고 새로 구성합니다. 되돌릴 수 없습니다.\n진행하려면 `!dc reset confirm` 을 입력하세요.");
-            return;
-        }
-
-        if (content.Equals("!dc reset confirm", StringComparison.OrdinalIgnoreCase))
-        {
-            await ResetWorkspaceAsync();
-            return; // 재구성된 #명령어 채널에 안내가 다시 올라온다.
-        }
-
-        await SafeSendAsync(message.Channel, "사용법: `/refresh`(동기화+이름 갱신+권한 적용), `!dc status`, `!dc list`, `!dc keys`, `!dc reset`(전체 초기화)\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
-    }
-
     private string BuildStatusText()
     {
         var projects = _projects;
@@ -546,10 +556,11 @@ public sealed class DiscordBotService : IDisposable
             var channel = await guild.CreateTextChannelAsync("명령어", props => props.CategoryId = null);
             SettingsService.SaveDiscordCommandChannel(channel.Id);
             await SafeSendAsync(channel,
-                "🛠️ **DevezCode 명령어 채널**\n" +
+                "🛠️ **DevezCode 명령어 채널** (명령은 이 채널에서만 동작)\n" +
                 "- `/refresh` — 세션 동기화 + 스레드 이름 갱신 + 채널 권한 적용\n" +
-                "- `!dc status` / `!dc list` — 세션 상태\n" +
-                "- `!dc keys` — 키 컨트롤 버튼\n" +
+                "- `/status` — 프로젝트·세션 상태\n" +
+                "- `/reset confirm:True` — 전체 초기화(되돌릴 수 없음)\n" +
+                "- `/keys` — 키 컨트롤 버튼(세션 스레드에서 사용)\n" +
                 "세션 조작은 각 세션 스레드에서 진행하세요.");
         }
         catch { /* 권한 부족 등은 무시 */ }
