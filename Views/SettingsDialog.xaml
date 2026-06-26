@@ -64,6 +64,90 @@
             </Setter>
         </Style>
 
+        <!-- ── 설정 폼 콤보박스 (devez 이식: 둥근 카드 + chevron + 테마 드롭다운) ── -->
+        <Style x:Key="ThemedComboItem" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
+            <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                                Padding="10,8" Margin="3,1">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThemedCombo" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
+            <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ThemedComboItem}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleBd" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Bd" CornerRadius="10" BorderThickness="1"
+                                                BorderBrush="{DynamicResource LineBrush}"
+                                                Background="{DynamicResource PanelBrush}">
+                                            <Path HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Margin="0,0,14,0"
+                                                  Data="{DynamicResource IconChevronDown}"
+                                                  Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="2"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                                  Width="12" Height="12" Stretch="Uniform" Fill="Transparent"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource TextMutedBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              IsHitTestVisible="False"
+                                              Margin="14,0,36,0" VerticalAlignment="Center"/>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" VerticalOffset="2"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True" Focusable="False">
+                                <Border Background="{DynamicResource PanelBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                        CornerRadius="8" SnapsToDevicePixels="True"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ComboBox}}">
+                                    <ScrollViewer MaxHeight="220" Background="Transparent" Margin="2">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Discord 패널 입력 필드 라벨 (MCP 관리자 폼과 동일 톤) -->
         <Style x:Key="DiscordFieldLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="FontSize" Value="{DynamicResource Fs11}"/>
@@ -1117,7 +1201,7 @@
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <ComboBox Grid.Column="1" x:Name="NotifyAutoCloseCombo"
-                                              Style="{StaticResource DockComboBox}" Width="120"
+                                              Style="{StaticResource ThemedCombo}" Width="120"
                                               VerticalAlignment="Center"
                                               SelectionChanged="NotifyAutoCloseCombo_Changed">
                                         <ComboBoxItem Tag="1">1초</ComboBoxItem>
@@ -1215,7 +1299,7 @@
                                                    TextWrapping="Wrap"
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"/>
                                         <ComboBox x:Name="NotifyMonitorCombo"
-                                                  Style="{StaticResource DockComboBox}"
+                                                  Style="{StaticResource ThemedCombo}"
                                                   HorizontalAlignment="Left" MinWidth="200"
                                                   SelectionChanged="NotifyMonitorCombo_Changed"/>
                                     </StackPanel>
