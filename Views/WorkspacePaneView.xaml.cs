@@ -1019,7 +1019,7 @@ public partial class WorkspacePaneView : UserControl
         UpdateSelectedTabSeam();
     }
 
-    private void OnThemeChanged_UpdateSeam(string _) => Dispatcher.BeginInvoke(new Action(() =>
+    private void OnThemeChanged_UpdateSeam(string _key) => Dispatcher.BeginInvoke(new Action(() =>
     {
         UpdateSelectedTabSeam();
         // 테마 변경 → 에이전트 아이콘(opencode 흑/백 등) 재평가. 값 변경 없이 바인딩만 다시 돌린다.
@@ -1037,11 +1037,23 @@ public partial class WorkspacePaneView : UserControl
 
     private async Task RefreshSnapshotAfterThemeAsync(FileTabItem file)
     {
-        await Task.Delay(80);
+        try
+        {
+            // CapturePreviewAsync는 WebView2가 Collapsed(숨김) 상태면 마지막 가시적 프레임만 반환하므로
+            // 새 테마가 적용된 화면을 얻으려면 WebView2를 잠시 visible로 만든 후 캡처해야 한다.
+        FileEditorHostContainer.Visibility = Visibility.Visible;
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+        await Task.Delay(50);
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+
         var snap = await file.Editor.CaptureSnapshotAsync();
         if (snap != null)
             TerminalSnapshot.Source = snap;
+        }
+        finally
+        {
+            FileEditorHostContainer.Visibility = Visibility.Collapsed;
+        }
     }
 
     private void UpdateSelectedTabSeam()
