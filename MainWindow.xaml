@@ -157,7 +157,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="SidebarCol" Width="262" MinWidth="190" SharedSizeGroup="MainSidebar"/>
                     <ColumnDefinition x:Name="SidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
-                    <ColumnDefinition Width="*" MinWidth="360"/>
+                    <ColumnDefinition x:Name="CenterCol" Width="*" MinWidth="360"/>
                     <ColumnDefinition x:Name="FileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
                     <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="0" SharedSizeGroup="MainFileExp"/>
                     <!-- 세션 완료 기록 사이드바 스플리터 / 사이드바 / 계정 사용량 ── col5=splitter, col6=기록, col7=사용량 -->
@@ -206,6 +206,7 @@
                 <!-- 세션 완료 기록 스플리터 (파일탐색기와 세션기록 사이) -->
                 <GridSplitter x:Name="SessionHistorySplitter" Grid.Column="5" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                              DragStarted="SessionHistorySplitter_DragStarted"
                               DragDelta="SessionHistorySplitter_DragDelta"
                               DragCompleted="SessionHistorySplitter_DragCompleted"/>
 
@@ -250,7 +251,7 @@
                         <!-- 세션 타이틀 영역과 동일 사이즈 패널 -->
                         <Border Grid.Row="1" Background="{DynamicResource PanelSoftBrush}"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="11,0,8,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="9,0,12,0">
                                 <Ellipse x:Name="SessionBusySpinner" Width="10" Height="10"
                                          VerticalAlignment="Center" Margin="0,0,7,0" Visibility="Collapsed"
                                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"

@@ -73,9 +73,9 @@ public partial class MainWindow : Window
             foreach (var r in saved) _sessionDoneRecords.Add(r);
         }
         UpdateSessionHistoryEmpty();
-        UpdateSessionBusyDisplay();
 
         _projects = WorkspaceStore.Load(out var archived);
+        UpdateSessionBusyDisplay();
         _archivedProjects = archived;
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
@@ -791,17 +791,32 @@ public partial class MainWindow : Window
         if (FileExpCol.Width.IsAbsolute) FooterFileExpCol.Width = FileExpCol.Width;
     }
 
+    // 세션기록 스플리터 드래그 스냅샷(시작 시점 폭 고정 → GridSplitter 기본 동작과 충돌 방지).
+    private double _histDragStartW;     // 드래그 시작 시 History 폭
+    private double _histDragMaxW;       // 중앙 * 가 MinWidth 까지 양보 가능한 최대 History 폭
+    private double _histDragFileExpW;   // 드래그 시작 시 FileExp 폭(매 프레임 복원)
+    private double _histDragAccum;       // 시작 이후 누적 가로 이동량
+
+    private void SessionHistorySplitter_DragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e)
+    {
+        _histDragStartW = SessionHistoryCol.ActualWidth;
+        _histDragFileExpW = _rightCollapsed ? 0
+            : (FileExpCol.Width.IsAbsolute ? FileExpCol.Width.Value : FileExpCol.ActualWidth);
+        _histDragMaxW = _histDragStartW + System.Math.Max(0, CenterCol.ActualWidth - CenterCol.MinWidth);
+        _histDragAccum = 0;
+    }
+
     private void SessionHistorySplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
-        // 우측(파일탐색기) 패널이 펼쳐져 있으면 GridSplitter 기본 동작(이전=FileExp / 다음=History)에 맡긴다.
-        if (!_rightCollapsed) return;
-
-        // 우측 패널이 접히면 이전 이웃(FileExp)이 0폭이라 기본 PreviousAndNext 로는 History 를 줄일 수 없다.
-        // → History 폭을 직접 조정(드래그 오른쪽=축소)하고 FileExp 는 0으로 고정. 중앙 * 컬럼이 흡수/클램프한다.
-        double w = SessionHistoryCol.ActualWidth - e.HorizontalChange;
+        // 이 스플리터는 History 폭만 조정한다. 기본 PreviousAndNext 로는 이전 이웃(FileExp)이 따라
+        // 넓어지므로, FileExp 는 시작 폭으로 고정하고 중앙 * 컬럼이 변화를 흡수하게 한다.
+        // 드래그 오른쪽(+)=History 축소. 시작 스냅샷 기준 누적 이동량으로 계산해 GridSplitter 기본 변경을 덮어쓴다.
+        _histDragAccum += e.HorizontalChange;
+        double w = _histDragStartW - _histDragAccum;
         if (w < SessionHistoryCol.MinWidth) w = SessionHistoryCol.MinWidth;
+        if (w > _histDragMaxW) w = _histDragMaxW;
         SessionHistoryCol.Width = new GridLength(w);
-        FileExpCol.Width = new GridLength(0);
+        FileExpCol.Width = new GridLength(_histDragFileExpW);   // FileExp 가 따라 넓어지지 않게 고정
     }
 
     /// <summary>우측 스플리터 드래그 끝 → 새 폭을 즉시 저장 (재실행 시 복원).</summary>
@@ -1181,8 +1196,9 @@ public partial class MainWindow : Window
         // 우측 패널 접힘: 열린 첫 번째 패널의 좌측 보더를 투명하게(중앙 패널 우측 보더와 2중선 방지).
         if (_sessionHistoryOpen)
         {
-            // SessionHistory(col5)가 중앙과 맞닿음.
-            SessionHistorySidebar.BorderBrush = System.Windows.Media.Brushes.Transparent;
+            // SessionHistory 는 자체 좌측 보더를 항상 유지(중앙 패널과의 4px 채널 = 앱 공통 더블라인 룩).
+            // 투명 처리하면 세로 세퍼레이터가 사라지므로 LineBrush 고정.
+            SessionHistorySidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
             UsageSidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
         }
         else if (_usageOpen)
