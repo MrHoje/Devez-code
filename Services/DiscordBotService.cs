@@ -455,13 +455,26 @@ public sealed class DiscordBotService : IDisposable
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return;
 
-        var ids = SettingsService.LoadAllDiscordObjectIds().ToList();
-        SettingsService.ClearDiscordWorkspace(); // 매핑 먼저 비워 재구성이 새로 만들도록
+        // 저장된 매핑 + "봇 구조 시그니처" 스윕을 합친다.
+        // 이전 reset 이 매핑만 비우고 삭제에 실패했으면 고아 채널이 남는데, 매핑엔 없으므로
+        // 시그니처(프로젝트 채널=이름 "sessions", 명령어 채널=루트 "명령어")로 길드를 직접 훑어 잡는다.
+        var ids = new HashSet<ulong>(SettingsService.LoadAllDiscordObjectIds());
 
-        // 카테고리 안에 매핑되지 않은 잔여 채널(수동 생성 등)도 함께 지우도록, 저장된 카테고리의 모든 자식을 수집.
+        // 1) 프로젝트 채널(이름 "sessions") + 그 부모 카테고리
+        foreach (var ch in guild.TextChannels.Where(c => c.Name.Equals("sessions", StringComparison.OrdinalIgnoreCase)))
+        {
+            ids.Add(ch.Id);
+            if (ch.CategoryId is ulong catId) ids.Add(catId);
+        }
+        // 2) 루트 명령어 채널(이름 "명령어")
+        foreach (var ch in guild.TextChannels.Where(c => c.CategoryId == null && c.Name.Equals("명령어", StringComparison.OrdinalIgnoreCase)))
+            ids.Add(ch.Id);
+        // 3) 위에서 모인 카테고리의 모든 자식(매핑 안 된 잔여 채널 포함)
         foreach (var cat in guild.CategoryChannels.Where(c => ids.Contains(c.Id)))
             foreach (var child in cat.Channels)
-                if (!ids.Contains(child.Id)) ids.Add(child.Id);
+                ids.Add(child.Id);
+
+        SettingsService.ClearDiscordWorkspace(); // 수집 후 매핑 비우기 — 재구성이 새로 만들도록
 
         int deleted = 0, failed = 0;
         var errors = new List<string>();
@@ -479,7 +492,10 @@ public sealed class DiscordBotService : IDisposable
         await SyncWorkspaceAsync(); // #명령어 + 프로젝트 채널/스레드 재생성
 
         // 진단 리포트 — 재생성된 #명령어 채널에 결과를 남겨 무엇이 왜 실패했는지 보이게.
-        var cmd = guild.GetTextChannel(SettingsService.LoadDiscordCommandChannel());
+        // 방금 만든 채널은 게이트웨이 캐시에 아직 없을 수 있어 REST 로 폴백.
+        var cmdId = SettingsService.LoadDiscordCommandChannel();
+        var cmd = (IMessageChannel?)guild.GetTextChannel(cmdId)
+                  ?? await client.Rest.GetChannelAsync(cmdId) as IMessageChannel;
         if (cmd != null)
         {
             var report = $"♻️ 초기화 완료 — 삭제 {deleted}건, 실패 {failed}건";
