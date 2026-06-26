@@ -1026,35 +1026,7 @@ public partial class WorkspacePaneView : UserControl
         foreach (var proj in AllProjects)
             foreach (var s in proj.Tabs.OfType<SessionItem>())
                 s.RefreshAgentIcon();
-
-        // 설정창 오버레이가 열려 파일 에디터(WebView2)가 스냅샷으로 대체된 상태면,
-        // 새 테마 적용 후 스냅샷을 다시 캡처해 교체한다.
-       if (_activeTab is FileTabItem file && FileEditorHostContainer.Visibility == Visibility.Collapsed)
-        {
-           _ = RefreshSnapshotAfterThemeAsync(file);
-       }
     }));
-
-    private async Task RefreshSnapshotAfterThemeAsync(FileTabItem file)
-    {
-        try
-        {
-            // CapturePreviewAsync는 WebView2가 Collapsed(숨김) 상태면 마지막 가시적 프레임만 반환하므로
-            // 새 테마가 적용된 화면을 얻으려면 WebView2를 잠시 visible로 만든 후 캡처해야 한다.
-        FileEditorHostContainer.Visibility = Visibility.Visible;
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
-        await Task.Delay(50);
-        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
-
-        var snap = await file.Editor.CaptureSnapshotAsync();
-        if (snap != null)
-            TerminalSnapshot.Source = snap;
-        }
-        finally
-        {
-            FileEditorHostContainer.Visibility = Visibility.Collapsed;
-        }
-    }
 
     private void UpdateSelectedTabSeam()
     {
@@ -1351,14 +1323,20 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>터미널 WebView2 를 스냅샷/커튼으로 대체하고 숨긴다. FileExplorer 는 셸이 처리.</summary>
     public async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
-        // 파일 편집기 탭이 활성이면 그 콘텐츠(md=WebView2 HWND)가 오버레이(앱 종료 "세션 닫는 중"/설정 오버레이)를
-        // 가린다. 마지막 화면을 캡처해 스냅샷 Image 로 깔고 WebView2 컨테이너를 숨긴다(오버레이가 스냅샷 위에 보임).
-        // WPF 네이티브 에디터는 캡처가 null → airspace 문제 없으니 그대로 둔다. (Resume 시 복원.)
+        // 파일 편집기(WebView2) 처리
         if (_activeTab is FileTabItem file)
+    {
+            if (blankCurtain)
         {
+                // 설정창(modal ShowDialog)이 열린 경우 — 파일 에디터 WebView2를 visible로 유지.
+                // 설정창은 별도 Window이므로 HWND airspace가 없고, 설정창 뒤로 새 테마가
+                // 실시간 반영되어 보인다.
+                return;
+            }
+            // 앱 종료 오버레이("세션 닫는 중") 등: WebView2를 숨기고 스냅샷으로 대체
             var fileSnap = await file.Editor.CaptureSnapshotAsync();
             if (fileSnap != null)
-            {
+    {
                 TerminalSnapshot.Source = fileSnap;
                 TerminalSnapshot.Visibility = Visibility.Visible;
                 FileEditorHostContainer.Visibility = Visibility.Collapsed;
