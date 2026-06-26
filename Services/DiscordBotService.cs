@@ -706,10 +706,30 @@ public sealed class DiscordBotService : IDisposable
         });
         SettingsService.SaveDiscordSessionThread(session.Id, ch.Id);
         await ApplyChannelRestrictionsAsync(guild, ch);
+        // 새 채널이 비어 보이지 않게 transcript 의 최근 대화를 먼저 채운다(claude/gajae 만 가능).
+        await PostRecentConversationAsync(ch, session);
         await SafeSendAsync(ch,
-            $"🔗 DevezCode 세션 연결: `{session.Name}` / `{session.AgentId}`\n선택지 메뉴는 아래 버튼으로 조작하세요. (버튼이 사라지면 `!dc keys`)",
+            $"🔗 DevezCode 세션 연결: `{session.Name}` / `{session.AgentId}`\n선택지 메뉴는 아래 버튼으로 조작하세요. (버튼이 사라지면 `/keys`)",
             BuildKeyControls());
         return ch;
+    }
+
+    /// <summary>세션 채널을 처음 만들 때 transcript 의 최근 대화(최대 10개 메시지 ≈ 5턴)를 시간순으로 게시한다.
+    /// claude/gajae 만 transcript 접근 가능 — 그 외 에이전트는 게시할 게 없어 조용히 넘어간다.</summary>
+    private static async Task PostRecentConversationAsync(IMessageChannel channel, SessionItem session)
+    {
+        var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+        var convo = AgentReplyService.GetRecentConversation(session.Id, agentId, 10);
+        if (convo.Count == 0) return;
+
+        await SafeSendAsync(channel, "🗂️ **이전 대화** (최근 일부)");
+        foreach (var (role, text) in convo)
+        {
+            var body = role == "user"
+                ? $"🧑 **나**\n> {HeadForDiscord(text, 1500)}"
+                : $"🤖 **{agentId}**\n{HeadForDiscord(text, 1800)}";
+            await SafeSendAsync(channel, body);
+        }
     }
 
     private bool IsConfigured => SettingsService.LoadDiscordEnabled()

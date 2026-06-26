@@ -4,9 +4,9 @@ using System.Text.Json;
 
 namespace DevezCode.Services;
 
-/// <summary>세션 완료 시 에이전트의 마지막 assistant 응답 텍스트를 추출한다(Discord 전송용).
-/// claude·gajae 는 transcript(.jsonl)에서 추출하고, 그 외 에이전트(codex/opencode 등)는
-/// transcript 접근 경로가 없어 null 을 반환한다(호출부가 질문 폴백으로 처리).</summary>
+/// <summary>세션의 대화 내용을 transcript(.jsonl)에서 읽어 Discord 전송용으로 추출한다.
+/// claude·gajae 는 transcript 경로가 있어 추출 가능하고, 그 외 에이전트(codex/opencode 등)는
+/// 접근 경로가 없어 null/빈 목록을 반환한다(호출부가 폴백 처리).</summary>
 public static class AgentReplyService
 {
     /// <summary>roomId(=세션 ID)와 에이전트로 마지막 assistant 텍스트 응답을 구한다. 없으면 null.</summary>
@@ -14,19 +14,35 @@ public static class AgentReplyService
     {
         try
         {
-            return agentId switch
-            {
-                "claude" => FromClaude(roomId),
-                "gajae"  => FromGajae(roomId),
-                _ => null,
-            };
+            var path = TranscriptPath(roomId, agentId);
+            return path == null ? null : LastAssistantTextFromJsonl(path);
         }
         catch { return null; }
     }
 
-    /// <summary>%USERPROFILE%\.claude\projects\&lt;encoded-cwd&gt;\&lt;sessionId&gt;.jsonl 에서 추출
+    /// <summary>세션의 최근 대화를 시간순(오래된→최신)으로 최대 maxMessages 개 반환한다.
+    /// 각 항목은 (role: "user"|"assistant", text). 실제 사용자/어시스턴트 텍스트만 — tool_use/tool_result 제외.</summary>
+    public static List<(string role, string text)> GetRecentConversation(string roomId, string agentId, int maxMessages)
+    {
+        try
+        {
+            var path = TranscriptPath(roomId, agentId);
+            return path == null ? new() : RecentFromJsonl(path, maxMessages);
+        }
+        catch { return new(); }
+    }
+
+    /// <summary>에이전트별 transcript .jsonl 경로. 없으면 null.</summary>
+    private static string? TranscriptPath(string roomId, string agentId) => agentId switch
+    {
+        "claude" => ClaudeTranscriptPath(roomId),
+        "gajae"  => GajaeTranscriptPath(roomId),
+        _ => null,
+    };
+
+    /// <summary>%USERPROFILE%\.claude\projects\&lt;encoded-cwd&gt;\&lt;sessionId&gt;.jsonl
     /// (경로 규칙은 TerminalSessionManager.ClaudeTranscriptExists 와 동일).</summary>
-    private static string? FromClaude(string roomId)
+    private static string? ClaudeTranscriptPath(string roomId)
     {
         var workingDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
         var sessionId = SettingsService.LoadClaudeCodeRoomSession(roomId);
@@ -37,11 +53,11 @@ public static class AgentReplyService
         var path = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".claude", "projects", encoded, sessionId + ".jsonl");
-        return File.Exists(path) ? LastAssistantTextFromJsonl(path) : null;
+        return File.Exists(path) ? path : null;
     }
 
-    /// <summary>%AppData%\DevezCode\gajae\sessions\&lt;roomId&gt;\*.jsonl 중 최신 파일에서 추출.</summary>
-    private static string? FromGajae(string roomId)
+    /// <summary>%AppData%\DevezCode\gajae\sessions\&lt;roomId&gt;\*.jsonl 중 최신 파일.</summary>
+    private static string? GajaeTranscriptPath(string roomId)
     {
         var dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -52,55 +68,94 @@ public static class AgentReplyService
             .GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .FirstOrDefault();
-        return newest == null ? null : LastAssistantTextFromJsonl(newest.FullName);
+        return newest?.FullName;
     }
 
     /// <summary>jsonl 끝에서부터 거슬러 올라가 text 파트를 가진 첫 assistant 메시지의 텍스트를 반환.
-    /// 마지막 줄이 tool_use(텍스트 없음)일 수 있어, 실제 답변 텍스트가 나올 때까지 위로 스캔한다.
-    /// 라인 포맷: {"type":...,"message":{"role":"assistant","content":[{"type":"text","text":"…"}, …]}}</summary>
+    /// 마지막 줄이 tool_use(텍스트 없음)일 수 있어, 실제 답변 텍스트가 나올 때까지 위로 스캔한다.</summary>
     private static string? LastAssistantTextFromJsonl(string path)
     {
-        string[] lines;
+        var lines = ReadLines(path);
+        if (lines == null) return null;
+
+        for (int i = lines.Length - 1; i >= 0; i--)
+        {
+            if (TryParseMessage(lines[i], out var role, out var text) && role == "assistant" && text != null)
+                return text;
+        }
+        return null;
+    }
+
+    /// <summary>최근 user/assistant 텍스트 메시지를 끝에서부터 maxMessages 개 모아 시간순으로 반환.</summary>
+    private static List<(string role, string text)> RecentFromJsonl(string path, int maxMessages)
+    {
+        var result = new List<(string, string)>();
+        var lines = ReadLines(path);
+        if (lines == null) return result;
+
+        for (int i = lines.Length - 1; i >= 0 && result.Count < maxMessages; i--)
+        {
+            if (TryParseMessage(lines[i], out var role, out var text)
+                && (role == "user" || role == "assistant") && text != null)
+                result.Add((role!, text));
+        }
+        result.Reverse(); // 오래된 → 최신
+        return result;
+    }
+
+    /// <summary>jsonl 한 줄에서 (role, 합쳐진 text)를 뽑는다. text 파트가 없으면 text=null.
+    /// content 가 문자열(사용자 입력)이거나 배열의 type=="text" 파트만 취하고 tool_use/tool_result 는 제외.</summary>
+    private static bool TryParseMessage(string line, out string? role, out string? text)
+    {
+        role = null; text = null;
+        line = line.Trim();
+        if (line.Length == 0 || line[0] != '{') return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("message", out var m)) return false;
+            if (!m.TryGetProperty("role", out var r)) return false;
+            role = r.GetString();
+            if (!m.TryGetProperty("content", out var content)) return true;
+
+            if (content.ValueKind == JsonValueKind.String)
+            {
+                var s = content.GetString();
+                if (!string.IsNullOrWhiteSpace(s)) text = s!.Trim();
+                return true;
+            }
+            if (content.ValueKind != JsonValueKind.Array) return true;
+
+            var sb = new StringBuilder();
+            foreach (var part in content.EnumerateArray())
+            {
+                if (part.TryGetProperty("type", out var pt) && pt.GetString() == "text"
+                    && part.TryGetProperty("text", out var txt))
+                {
+                    var s = txt.GetString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        if (sb.Length > 0) sb.Append('\n');
+                        sb.Append(s!.Trim());
+                    }
+                }
+            }
+            if (sb.Length > 0) text = sb.ToString();
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static string[]? ReadLines(string path)
+    {
         try
         {
             // 에이전트가 파일을 열고 있을 수 있어 공유 읽기.
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var sr = new StreamReader(fs);
-            lines = sr.ReadToEnd().Split('\n');
+            return sr.ReadToEnd().Split('\n');
         }
         catch { return null; }
-
-        for (int i = lines.Length - 1; i >= 0; i--)
-        {
-            var line = lines[i].Trim();
-            if (line.Length == 0 || line[0] != '{') continue;
-            try
-            {
-                using var doc = JsonDocument.Parse(line);
-                var root = doc.RootElement;
-                if (!root.TryGetProperty("message", out var m)) continue;
-                if (!m.TryGetProperty("role", out var r) || r.GetString() != "assistant") continue;
-                if (!m.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) continue;
-
-                var sb = new StringBuilder();
-                foreach (var part in content.EnumerateArray())
-                {
-                    if (part.TryGetProperty("type", out var pt) && pt.GetString() == "text"
-                        && part.TryGetProperty("text", out var txt))
-                    {
-                        var s = txt.GetString();
-                        if (!string.IsNullOrWhiteSpace(s))
-                        {
-                            if (sb.Length > 0) sb.Append('\n');
-                            sb.Append(s.Trim());
-                        }
-                    }
-                }
-                var result = sb.ToString().Trim();
-                if (result.Length > 0) return result; // text 없는 assistant(tool_use만)면 계속 위로
-            }
-            catch { /* 깨진 줄 무시 */ }
-        }
-        return null;
     }
 }
