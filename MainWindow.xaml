@@ -349,6 +349,16 @@
                                            Foreground="{DynamicResource TextMutedBrush}"/>
                             </StackPanel>
                         </ScrollViewer>
+                        <!-- 스크롤 페이드 아웃 -->
+                        <Rectangle Grid.Row="2" Height="20" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+                                   Background="{DynamicResource PanelBrush}">
+                            <Rectangle.OpacityMask>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Offset="0" Color="Transparent"/>
+                                    <GradientStop Offset="1" Color="Black"/>
+                                </LinearGradientBrush>
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
                     </Grid>
                 </Border>
 
