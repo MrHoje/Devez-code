@@ -726,10 +726,8 @@ public sealed class DiscordBotService : IDisposable
         SettingsService.SaveDiscordSessionThread(session.Id, ch.Id);
         await ApplyChannelRestrictionsAsync(guild, ch);
         // 새 채널이 비어 보이지 않게 transcript 의 최근 대화를 먼저 채운다(claude/gajae 만 가능).
+        // 연결 안내·키 버튼은 자동으로 띄우지 않는다(필요 시 /keys 로 호출).
         await PostRecentConversationAsync(ch, session);
-        await SafeSendAsync(ch,
-            $"🔗 DevezCode 세션 연결: `{session.Name}` / `{session.AgentId}`\n선택지 메뉴는 아래 버튼으로 조작하세요. (버튼이 사라지면 `/keys`)",
-            BuildKeyControls());
         return ch;
     }
 
