@@ -375,7 +375,7 @@ public sealed class TerminalSessionManager
         if (sessionId == null)
         {
             var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-            var byCwd = OpenCodePluginInstaller.FindSessionIdByCwd(ccDir);
+            var byCwd = OpenCodePluginInstaller.FindSessionIdByCwd(ccDir, roomId);
             if (byCwd != null)
             {
                 sessionId = byCwd;
