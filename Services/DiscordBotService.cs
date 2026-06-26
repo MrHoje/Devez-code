@@ -268,13 +268,13 @@ public sealed class DiscordBotService : IDisposable
 
         foreach (var project in projects.Where(p => p.IsActive))
         {
-            var channel = await EnsureProjectChannelAsync(project);
-            if (channel == null) continue;
+            var category = await EnsureProjectCategoryAsync(project);
+            if (category == null) continue;
             foreach (var session in project.Sessions)
                 await EnsureSessionThreadAsync(project, session);
         }
 
-        // 기존 채널은 EnsureProjectChannelAsync 가 조기 반환하므로 권한이 안 걸린다 — 여기서 일괄 재적용.
+        // 기존 세션 채널은 EnsureSessionThreadAsync 가 조기 반환하므로 권한이 안 걸린다 — 여기서 일괄 재적용.
         await RefreshChannelRestrictionsAsync();
     }
 
@@ -311,15 +311,15 @@ public sealed class DiscordBotService : IDisposable
         if (content.Length == 0) return;
 
         // 명령은 모두 슬래시 명령(/refresh, /status, /keys, /reset)으로 처리한다.
-        // 세션 스레드의 일반 메시지만 터미널로 전달.
-        if (message.Channel is not SocketThreadChannel thread) return;
-        var sessionId = SettingsService.FindDiscordSessionByThread(thread.Id);
+        // 세션 채널의 일반 메시지만 터미널로 전달.
+        if (message.Channel is not ITextChannel ch) return;
+        var sessionId = SettingsService.FindDiscordSessionByThread(ch.Id);
         if (string.IsNullOrWhiteSpace(sessionId)) return;
 
         var session = TerminalSessionManager.Instance.Get(sessionId);
         if (session is not { IsAlive: true })
         {
-            await RequestAutoStartAsync(thread, sessionId, content);
+            await RequestAutoStartAsync(ch, sessionId, content);
             return;
         }
 
@@ -377,7 +377,7 @@ public sealed class DiscordBotService : IDisposable
 
     /// <summary>꺼진 세션에 메시지가 오면 그 메시지를 버퍼링하고 UI 에 세션 시작을 요청한다.
     /// 세션이 준비되면 <see cref="NotifySessionReady"/> 가 버퍼를 주입한다.</summary>
-    private async Task RequestAutoStartAsync(SocketThreadChannel thread, string sessionId, string content)
+    private async Task RequestAutoStartAsync(IMessageChannel thread, string sessionId, string content)
     {
         if (_openSessionRequest == null)
         {
@@ -592,39 +592,26 @@ public sealed class DiscordBotService : IDisposable
         return errors;
     }
 
-    public async Task<ITextChannel?> EnsureProjectChannelAsync(ProjectItem project)
+    /// <summary>프로젝트 카테고리를 보장하고 반환한다. 세션은 이 카테고리 바로 아래의 텍스트 채널로 만든다
+    /// (중간 sessions 채널 없이 프로젝트 → 세션 채널 구조).</summary>
+    public async Task<ICategoryChannel?> EnsureProjectCategoryAsync(ProjectItem project)
     {
         var client = _client;
         if (client == null || !IsConfigured) return null;
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return null;
 
-        // 존재 확인은 소켓 캐시만 믿지 말 것: 방금 만든 채널은 게이트웨이 이벤트 도착 전이라
-        // 캐시에 없어 null 이 나오고, 그러면 세션마다 같은 프로젝트 채널/카테고리를 또 만든다(중복).
-        // REST 폴백으로 실제 존재를 확인한다.
-        var channelId = SettingsService.LoadDiscordProjectChannel(project.Path);
-        ITextChannel? existing = channelId == 0 ? null
-            : guild.GetTextChannel(channelId) ?? await client.Rest.GetChannelAsync(channelId) as ITextChannel;
-        if (existing != null) return existing;
-
-        var safeProjectName = SafeDiscordName(project.Name);
+        // 캐시 미스 시 REST 폴백 — 방금 만든 카테고리가 게이트웨이 이벤트 도착 전이라
+        // 캐시에 없으면 세션마다 같은 카테고리를 또 만드는 중복을 막는다.
         var categoryId = SettingsService.LoadDiscordProjectCategory(project.Path);
         ICategoryChannel? category = categoryId == 0 ? null
             : guild.GetCategoryChannel(categoryId) ?? await client.Rest.GetChannelAsync(categoryId) as ICategoryChannel;
         if (category == null)
         {
-            category = await guild.CreateCategoryChannelAsync(safeProjectName);
+            category = await guild.CreateCategoryChannelAsync(SafeDiscordName(project.Name));
             SettingsService.SaveDiscordProjectCategory(project.Path, category.Id);
         }
-
-        var channel = await guild.CreateTextChannelAsync("sessions", props =>
-        {
-            props.CategoryId = category.Id;
-            props.Topic = project.Path;
-        });
-        SettingsService.SaveDiscordProjectChannel(project.Path, channel.Id);
-        await ApplyChannelRestrictionsAsync(guild, channel);
-        return channel;
+        return category;
     }
 
     /// <summary>세션 채널 입력창의 불필요한 디스코드 네이티브 기능(파일첨부/스티커/슬래시명령/음성메시지)을
@@ -653,42 +640,51 @@ public sealed class DiscordBotService : IDisposable
         if (guild == null) return;
 
         foreach (var project in projects.Where(p => p.IsActive))
-        {
-            var channelId = SettingsService.LoadDiscordProjectChannel(project.Path);
-            if (channelId == 0) continue;
-            if (guild.GetTextChannel(channelId) is { } channel)
-                await ApplyChannelRestrictionsAsync(guild, channel);
-        }
+            foreach (var session in project.Sessions)
+            {
+                var channelId = SettingsService.LoadDiscordSessionThread(session.Id);
+                if (channelId != 0 && guild.GetTextChannel(channelId) is { } channel)
+                    await ApplyChannelRestrictionsAsync(guild, channel);
+            }
     }
 
+    /// <summary>세션을 프로젝트 카테고리 바로 아래의 텍스트 채널로 보장하고 반환한다.
+    /// (이전엔 sessions 채널 아래 스레드였으나, 프로젝트 → 세션 채널 구조로 변경됨.
+    /// 메서드명/매핑 키는 호환을 위해 유지 — DiscordSessionThreads 의 값이 이제 채널 ID 다.)</summary>
     public async Task<IMessageChannel?> EnsureSessionThreadAsync(ProjectItem project, SessionItem session)
     {
         var client = _client;
         if (client == null || !IsConfigured) return null;
+        var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+        if (guild == null) return null;
 
-        var threadId = SettingsService.LoadDiscordSessionThread(session.Id);
-        if (threadId != 0)
+        var channelId = SettingsService.LoadDiscordSessionThread(session.Id);
+        if (channelId != 0)
         {
-            // 캐시 미스 시 REST 폴백 — 방금 만든 스레드를 못 찾아 중복 생성하는 것 방지.
-            var existing = client.GetChannel(threadId) as IMessageChannel
-                           ?? await client.Rest.GetChannelAsync(threadId) as IMessageChannel;
+            // 캐시 미스 시 REST 폴백 — 방금 만든 채널을 못 찾아 중복 생성하는 것 방지.
+            var existing = client.GetChannel(channelId) as ITextChannel
+                           ?? await client.Rest.GetChannelAsync(channelId) as ITextChannel;
             if (existing != null)
             {
-                if (existing is SocketThreadChannel st) await EnsureThreadNameAsync(st, session);
+                await EnsureChannelNameAsync(existing, session);
                 return existing;
             }
         }
 
-        var channel = await EnsureProjectChannelAsync(project);
-        if (channel == null) return null;
+        var category = await EnsureProjectCategoryAsync(project);
+        if (category == null) return null;
 
-        var threadName = $"{AgentEmoji(session.AgentId)} {SafeThreadName(session.Name)}".Trim();
-        var thread = await channel.CreateThreadAsync(threadName, ThreadType.PublicThread, ThreadArchiveDuration.OneDay);
-        SettingsService.SaveDiscordSessionThread(session.Id, thread.Id);
-        await SafeSendAsync(thread,
+        var ch = await guild.CreateTextChannelAsync(SessionChannelName(session), props =>
+        {
+            props.CategoryId = category.Id;
+            props.Topic = $"{session.AgentId} · {session.Name}";
+        });
+        SettingsService.SaveDiscordSessionThread(session.Id, ch.Id);
+        await ApplyChannelRestrictionsAsync(guild, ch);
+        await SafeSendAsync(ch,
             $"🔗 DevezCode 세션 연결: `{session.Name}` / `{session.AgentId}`\n선택지 메뉴는 아래 버튼으로 조작하세요. (버튼이 사라지면 `!dc keys`)",
             BuildKeyControls());
-        return thread;
+        return ch;
     }
 
     private bool IsConfigured => SettingsService.LoadDiscordEnabled()
@@ -726,18 +722,16 @@ public sealed class DiscordBotService : IDisposable
 
     /// <summary>기존 스레드 이름이 현재 에이전트 이모지 규칙과 다르면 갱신한다.
     /// Discord 는 스레드 rename 을 10분당 2회로 제한하므로 다를 때만 호출한다.</summary>
-    private static async Task EnsureThreadNameAsync(SocketThreadChannel thread, SessionItem session)
-    {
-        var expected = $"{AgentEmoji(session.AgentId)} {SafeThreadName(session.Name)}".Trim();
-        if (string.Equals(thread.Name, expected, StringComparison.Ordinal)) return;
-        try { await thread.ModifyAsync(p => p.Name = expected); }
-        catch { /* rate limit/권한 실패는 무시 */ }
-    }
+    /// <summary>세션 채널 이름 = 에이전트 이모지 + 안전화한 세션명. (Discord 채널명은 소문자/하이픈으로 정규화됨.)</summary>
+    private static string SessionChannelName(SessionItem session)
+        => $"{AgentEmoji(session.AgentId)}{SafeDiscordName(session.Name)}";
 
-    private static string SafeThreadName(string value)
+    private static async Task EnsureChannelNameAsync(ITextChannel channel, SessionItem session)
     {
-        var text = string.IsNullOrWhiteSpace(value) ? "session" : value.Trim();
-        return text[..Math.Min(text.Length, 90)];
+        var expected = SessionChannelName(session);
+        if (string.Equals(channel.Name, expected, StringComparison.Ordinal)) return;
+        try { await channel.ModifyAsync(p => p.Name = expected); }
+        catch { /* rate limit(채널 rename 은 빡셈)/권한 실패는 무시 */ }
     }
 
     private static string TrimForDiscord(string text, int max)
