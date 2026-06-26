@@ -790,7 +790,13 @@ public partial class WorkspacePaneView : UserControl
         if (proj != null)
         {
             if (active != null && proj.Tabs.Contains(active))
+            {
+                // ActivateSession 가드(_activeSession 동일 시 no-op) 우회 — 터미널이 dispose 됐으므로 강제 재활성화해 ConPTY 재생성 + 로딩 스피너 표시.
+                if (_activeSession != null) _activeSession.IsActive = false;
+                _activeSession = null;
+                _activeTab = null;
                 ActivateSession(active);
+            }
             if (SettingsService.LoadPreloadAllProjectSessions())
                 PreloadProjectSessions(proj, except: active);
         }
