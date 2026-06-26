@@ -15,6 +15,9 @@ public sealed class DiscordBotService : IDisposable
     public static DiscordBotService Instance { get; } = new();
 
     private readonly object _sync = new();
+    // 워크스페이스 동기화/리셋 직렬화 — 재연결 OnReady 동기화와 /reset 이 겹쳐(재진입) 채널이
+    // 중복 생성·삭제되며 봇이 먹통이 되는 것을 막는다.
+    private readonly SemaphoreSlim _workspaceLock = new(1, 1);
     // 자동 시작 대기 중인 입력: sessionId → 준비되면 주입할 메시지들.
     private readonly Dictionary<string, List<string>> _pendingInput = new(StringComparer.Ordinal);
     private ObservableCollection<ProjectItem>? _projects;
@@ -252,14 +255,24 @@ public sealed class DiscordBotService : IDisposable
                     try { await command.RespondAsync("취소됨 — 초기화하려면 `confirm` 을 True 로 실행하세요.", ephemeral: true); } catch { }
                     return;
                 }
-                try { await command.DeferAsync(ephemeral: true); } catch { }
-                await ResetWorkspaceAsync();
-                try { await command.FollowupAsync("♻️ 초기화 완료 — 상세 결과는 #명령어 채널 리포트를 확인하세요.", ephemeral: true); } catch { }
+                // 즉시 ack 후 백그라운드 실행 — 채널 대량 삭제는 rate-limit 으로 오래 걸려
+                // 게이트웨이 스레드를 잡으면 봇이 먹통이 된다. 완료 결과는 #명령어 채널 리포트로.
+                try { await command.RespondAsync("♻️ 초기화를 시작합니다… 완료되면 #명령어 채널에 결과가 표시됩니다.", ephemeral: true); } catch { }
+                _ = Task.Run(ResetWorkspaceAsync);
                 break;
         }
     }
 
+    /// <summary>워크스페이스 동기화 — 다른 동기화/리셋과 겹치지 않게 직렬화한다.</summary>
     public async Task SyncWorkspaceAsync()
+    {
+        await _workspaceLock.WaitAsync();
+        try { await SyncWorkspaceCoreAsync(); }
+        finally { _workspaceLock.Release(); }
+    }
+
+    /// <summary>실제 동기화 본체(락 없음 — reset 처럼 이미 락을 잡은 경로에서 직접 호출).</summary>
+    private async Task SyncWorkspaceCoreAsync()
     {
         var projects = _projects;
         if (!IsConfigured || projects == null) return;
@@ -481,6 +494,13 @@ public sealed class DiscordBotService : IDisposable
     /// 개발 중 깨끗한 상태에서 다시 테스트하기 위한 용도.</summary>
     private async Task ResetWorkspaceAsync()
     {
+        await _workspaceLock.WaitAsync();
+        try { await ResetWorkspaceCoreAsync(); }
+        finally { _workspaceLock.Release(); }
+    }
+
+    private async Task ResetWorkspaceCoreAsync()
+    {
         var client = _client;
         if (client == null || !IsConfigured) return;
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
@@ -519,7 +539,7 @@ public sealed class DiscordBotService : IDisposable
         }
 
         // #명령어 재생성 + #일반 정리는 EnsureCommandChannelAsync 가 처리(채팅채널 카테고리로 이동).
-        await SyncWorkspaceAsync(); // #명령어 + 프로젝트 채널/스레드 재생성
+        await SyncWorkspaceCoreAsync(); // 이미 _workspaceLock 보유 — core 직접 호출(재획득 시 데드락)
 
         // 진단 리포트 — 재생성된 #명령어 채널에 결과를 남겨 무엇이 왜 실패했는지 보이게.
         // 방금 만든 채널은 게이트웨이 캐시에 아직 없을 수 있어 REST 로 폴백.
