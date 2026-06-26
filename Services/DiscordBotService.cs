@@ -63,6 +63,7 @@ public sealed class DiscordBotService : IDisposable
 
             client.Ready += OnReady;
             client.MessageReceived += OnMessageReceived;
+            client.ButtonExecuted += OnButtonExecuted;
             client.Disconnected += _ => { IsConnected = false; return Task.CompletedTask; };
 
             await client.LoginAsync(TokenType.Bot, SettingsService.LoadDiscordBotToken());
@@ -99,6 +100,7 @@ public sealed class DiscordBotService : IDisposable
         IsConnected = false;
         if (client == null) return;
         try { client.MessageReceived -= OnMessageReceived; } catch { }
+        try { client.ButtonExecuted -= OnButtonExecuted; } catch { }
         try { client.Ready -= OnReady; } catch { }
         _ = Task.Run(async () =>
         {
@@ -181,6 +183,54 @@ public sealed class DiscordBotService : IDisposable
         session.Write("\r");
     }
 
+    /// <summary>세션 스레드의 키 컨트롤 버튼 클릭을 받아 해당 키스트로크를 터미널 stdin 으로 전달한다.</summary>
+    private async Task OnButtonExecuted(SocketMessageComponent component)
+    {
+        var id = component.Data?.CustomId ?? "";
+        if (!id.StartsWith("dc:key:", StringComparison.Ordinal)) return;
+
+        // 클릭을 조용히 ack(메시지/로딩 표시 없이) — 안 하면 Discord 가 "상호작용 실패" 를 표시한다.
+        try { await component.DeferAsync(); } catch { }
+
+        var threadId = component.Channel?.Id ?? component.ChannelId ?? 0;
+        if (threadId == 0) return;
+        var sessionId = SettingsService.FindDiscordSessionByThread(threadId);
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+
+        var session = TerminalSessionManager.Instance.Get(sessionId);
+        if (session is not { IsAlive: true }) return;
+
+        var seq = MapKey(id["dc:key:".Length..]);
+        if (seq == null) return;
+        session.Write(seq);
+    }
+
+    /// <summary>버튼 customId 의 키 이름을 터미널이 이해하는 입력 바이트열로 변환한다.</summary>
+    private static string? MapKey(string key) => key switch
+    {
+        "up" => "\x1b[A",
+        "down" => "\x1b[B",
+        "left" => "\x1b[D",
+        "right" => "\x1b[C",
+        "enter" => "\r",
+        "esc" => "\x1b",
+        "1" or "2" or "3" or "4" or "5" => key, // 번호 직접 선택(대부분 TUI 는 숫자 입력 즉시 선택)
+        _ => null,
+    };
+
+    /// <summary>세션 스레드용 키 컨트롤(방향/선택/취소/번호) 버튼 메시지 컴포넌트.</summary>
+    private static MessageComponent BuildKeyControls()
+    {
+        var b = new ComponentBuilder();
+        b.WithButton("위", "dc:key:up", ButtonStyle.Secondary, new Emoji("⬆️"), row: 0);
+        b.WithButton("아래", "dc:key:down", ButtonStyle.Secondary, new Emoji("⬇️"), row: 0);
+        b.WithButton("선택(Enter)", "dc:key:enter", ButtonStyle.Success, row: 0);
+        b.WithButton("취소(Esc)", "dc:key:esc", ButtonStyle.Danger, row: 0);
+        for (var i = 1; i <= 5; i++)
+            b.WithButton(i.ToString(), $"dc:key:{i}", ButtonStyle.Secondary, row: 1);
+        return b.Build();
+    }
+
     /// <summary>꺼진 세션에 메시지가 오면 그 메시지를 버퍼링하고 UI 에 세션 시작을 요청한다.
     /// 세션이 준비되면 <see cref="NotifySessionReady"/> 가 버퍼를 주입한다.</summary>
     private async Task RequestAutoStartAsync(SocketThreadChannel thread, string sessionId, string content)
@@ -261,7 +311,13 @@ public sealed class DiscordBotService : IDisposable
             return;
         }
 
-        await SafeSendAsync(message.Channel, "사용법: `!dc status`, `!dc list`, `!dc sync`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다.");
+        if (content.Equals("!dc keys", StringComparison.OrdinalIgnoreCase))
+        {
+            await SafeSendAsync(message.Channel, "⌨️ 키 컨트롤", BuildKeyControls());
+            return;
+        }
+
+        await SafeSendAsync(message.Channel, "사용법: `!dc status`, `!dc list`, `!dc sync`, `!dc keys`\n세션 스레드에 일반 메시지를 보내면 해당 터미널로 전달됩니다. 선택지 메뉴는 키 컨트롤 버튼(`!dc keys`)으로 조작하세요.");
     }
 
     private string BuildStatusText()
@@ -327,7 +383,9 @@ public sealed class DiscordBotService : IDisposable
 
         var thread = await channel.CreateThreadAsync(SafeThreadName(session.Name), ThreadType.PublicThread, ThreadArchiveDuration.OneDay);
         SettingsService.SaveDiscordSessionThread(session.Id, thread.Id);
-        await SafeSendAsync(thread, $"🔗 DevezCode 세션 연결: `{session.Name}` / `{session.AgentId}`");
+        await SafeSendAsync(thread,
+            $"🔗 DevezCode 세션 연결: `{session.Name}` / `{session.AgentId}`\n선택지 메뉴는 아래 버튼으로 조작하세요. (버튼이 사라지면 `!dc keys`)",
+            BuildKeyControls());
         return thread;
     }
 
@@ -338,6 +396,12 @@ public sealed class DiscordBotService : IDisposable
     private static async Task SafeSendAsync(IMessageChannel channel, string text)
     {
         try { await channel.SendMessageAsync(TrimForDiscord(text, 1900)); }
+        catch { /* Discord 연결/권한 실패는 앱 동작을 막지 않는다. */ }
+    }
+
+    private static async Task SafeSendAsync(IMessageChannel channel, string text, MessageComponent? components)
+    {
+        try { await channel.SendMessageAsync(TrimForDiscord(text, 1900), components: components); }
         catch { /* Discord 연결/권한 실패는 앱 동작을 막지 않는다. */ }
     }
 
