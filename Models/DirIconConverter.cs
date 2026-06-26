@@ -95,7 +95,7 @@ public sealed class ChevronConverter : IValueConverter
 
     public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        var key = value is true ? "IconChevronDown" : "IconChevronRight";
+        var key = value is true ? "IconChevronUp" : "IconChevronDown";
         return Application.Current?.TryFindResource(key) as Geometry;
     }
 

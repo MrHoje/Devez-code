@@ -246,8 +246,8 @@
                                     </Button.Style>
                                     <Grid>
                                     <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconChevronRight}" Width="12" Height="12"/>
-                                     <Path Data="{StaticResource IconChevronDown}" Width="12" Height="12"
+                                              Data="{StaticResource IconChevronDown}" Width="12" Height="12"/>
+                                     <Path Data="{StaticResource IconChevronUp}" Width="12" Height="12"
                                                Visibility="Collapsed">
                                              <Path.Style>
                                                  <Style TargetType="Path" BasedOn="{StaticResource LucideButtonIcon}">
