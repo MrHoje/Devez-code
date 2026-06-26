@@ -117,6 +117,10 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private bool _rubberAdditiveSelection;
     private HashSet<string>? _rubberSelectionBase;
 
+    // ── IME 조합 중 Ctrl+Enter 추적 ──
+    // IME가 Ctrl을 떼고 Enter를 재전송할 때, 그 잔여 Enter를 줄바꿈으로 전환하기 위한 시각(Environment.TickCount64).
+    private long _lastImeCtrlEnterMs;
+
     public TaskQueueView()
     {
         InitializeComponent();
@@ -257,27 +261,67 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
 
     private void InputBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+
+        // IME 조합 중이면 Key.ImeProcessed + ImeProcessedKey 로 들어오므로 둘 다 확인.
+        bool isEnter = e.Key == Key.Enter
+            || (e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Enter);
+
+        if (!isEnter)
         {
+            if (e.Key == Key.Escape)
+            {
+                if (_isSelectionMode) { IsSelectionMode = false; e.Handled = true; return; }
+                InputBox.Clear();
+                e.Handled = true;
+            }
+            return;
+        }
+
+        // IME 조합 중 Ctrl+Enter 감지 → IME가 Ctrl을 제거하고 Enter를 재전송할 수 있으므로 타임스탬프 기록.
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control
+            && e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Enter)
+        {
+            _lastImeCtrlEnterMs = Environment.TickCount64;
+            e.Handled = true;
+            return;
+        }
+
+        // IME 조합 잔여 Enter(IME가 Ctrl을 떼고 재전송한 것) → 줄바꿈.
+        if (Keyboard.Modifiers == ModifierKeys.None
+            && _lastImeCtrlEnterMs != 0
+            && Environment.TickCount64 - _lastImeCtrlEnterMs < 300)
+        {
+            _lastImeCtrlEnterMs = 0;
+            InsertNewline();
+            e.Handled = true;
+            return;
+        }
+
+        // 일반 Enter: 작업 제출.
+        if (Keyboard.Modifiers == ModifierKeys.None)
+        {
+            _lastImeCtrlEnterMs = 0;
             AddBubble();
             e.Handled = true;
+            return;
         }
-        else if (e.Key == Key.Enter
-                 && ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift
-                     || (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control))
+
+        // Shift+Enter / Ctrl+Enter(IME 미조합 경로): 줄바꿈.
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift
+            || (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
-            // Shift+Enter / Ctrl+Enter: 줄바꿈 삽입(WPF TextBox는 Ctrl+Enter에 줄바꿈을 넣지 않으므로 수동 처리).
-            int idx = InputBox.CaretIndex;
-            InputBox.Text = InputBox.Text.Insert(idx, Environment.NewLine);
-            InputBox.CaretIndex = idx + Environment.NewLine.Length;
+            _lastImeCtrlEnterMs = 0;
+            InsertNewline();
             e.Handled = true;
+            return;
         }
-        else if (e.Key == Key.Escape)
-        {
-            if (_isSelectionMode) { IsSelectionMode = false; e.Handled = true; return; }
-            InputBox.Clear();
-            e.Handled = true;
-        }
+    }
+
+    private void InsertNewline()
+    {
+        int idx = InputBox.CaretIndex;
+        InputBox.Text = InputBox.Text.Insert(idx, Environment.NewLine);
+        InputBox.CaretIndex = idx + Environment.NewLine.Length;
     }
 
     private void AddBubble()
@@ -931,20 +975,46 @@ public partial class TaskQueueView : UserControl, INotifyPropertyChanged
     private void BubbleEditBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (sender is not TextBox { DataContext: TaskQueueItem item }) return;
+        // IME 조합 중이면 Key.ImeProcessed + ImeProcessedKey 로 들어오므로 둘 다 확인.
+        bool isEnter = e.Key == Key.Enter
+            || (e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Enter);
+
+        // IME 조합 중 Ctrl+Enter 감지 → 플래그 기록.
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control
+            && e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Enter)
+        {
+            _lastImeCtrlEnterMs = Environment.TickCount64;
+            e.Handled = true;
+            return;
+        }
+
+        // IME 잔여 Enter → 줄바꿈(AcceptsReturn 기본 동작에 위임).
+        if (isEnter && Keyboard.Modifiers == ModifierKeys.None
+            && _lastImeCtrlEnterMs != 0
+            && Environment.TickCount64 - _lastImeCtrlEnterMs < 300)
+        {
+            _lastImeCtrlEnterMs = 0;
+            return; // AcceptsReturn=True 이므로 기본 동작이 줄바꿈을 넣음.
+        }
+
         if (e.Key == Key.Escape)
         {
             item.IsEditing = false; // 취소: EditText 버림
             e.Handled = true;
             InputBox.Focus();
+            return;
         }
         // Enter=저장, Shift+Enter=줄바꿈, Ctrl+S=저장.
-        else if ((e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+        else if ((isEnter && Keyboard.Modifiers == ModifierKeys.None)
               || (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control))
         {
+            _lastImeCtrlEnterMs = 0;
             CommitEdit(item);
             e.Handled = true;
             InputBox.Focus();
         }
+
+        // Shift+Enter / Ctrl+Enter: AcceptsReturn 기본 동작(줄바꿈)에 위임.
     }
 
     private void BubbleEditBox_LostFocus(object sender, RoutedEventArgs e)

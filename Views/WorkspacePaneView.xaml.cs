@@ -258,6 +258,7 @@ public partial class WorkspacePaneView : UserControl
     public void OnProjectRemoved(ProjectItem proj, ProjectItem? next)
     {
         if (!ReferenceEquals(_activeProject, proj)) return;
+        if (_activeSession != null) _activeSession.IsActive = false;
         _activeProject = null; _activeSession = null; _activeTab = null;
         if (next != null) SelectProject(next);
         else { TabsHost.ItemsSource = null; ClearActiveSession(); ActiveChanged?.Invoke(this); }
@@ -348,6 +349,8 @@ public partial class WorkspacePaneView : UserControl
 
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
+        if (ReferenceEquals(_activeSession, session)) return;
+        if (_activeSession != null) _activeSession.IsActive = false;
         var parent = ParentOf(session);
         if (parent == null) return;
 
@@ -358,6 +361,7 @@ public partial class WorkspacePaneView : UserControl
 
         _activeTab = session;
         _activeSession = session;
+        session.IsActive = true;
         RecordActiveTab(parent, "S:" + session.Id);
         foreach (var t in parent.Tabs) t.IsSelected = ReferenceEquals(t, session);
 
@@ -471,6 +475,7 @@ public partial class WorkspacePaneView : UserControl
         if (parent == null) return;
 
         _activeTab = tab;
+        if (_activeSession != null) _activeSession.IsActive = false;
         _activeSession = null;
         RecordActiveTab(parent, "F:" + tab.FilePath);
         foreach (var t in parent.Tabs) t.IsSelected = ReferenceEquals(t, tab);
@@ -623,6 +628,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void ClearActiveSession()
     {
+        if (_activeSession != null) _activeSession.IsActive = false;
         _activeSession = null;
         _activeTab = null;
         if (FileEditorHostContainer != null) FileEditorHostContainer.Content = null;

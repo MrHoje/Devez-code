@@ -75,13 +75,19 @@
                               Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
-                    <!-- 패널 분할/확장 토글 — 좌측 패널 버튼 오른쪽. 분할 중이면 다시 눌러 해제. -->
+                    <Border Width="1" Height="16" Margin="6,0,6,0" VerticalAlignment="Center"
+                            Background="{DynamicResource LineBrush}" Opacity="0.5"/>
                     <Button x:Name="SplitToggleBtn" Click="SplitToggleBtn_Click" Margin="2,0,0,0"
                             Style="{StaticResource TitleBarChipButton}" ToolTip="패널 분할">
                         <Path x:Name="SplitToggleIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconPanelLeftOpen}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
+                    <Border Width="1" Height="16" Margin="6,0,8,0" VerticalAlignment="Center"
+                            Background="{DynamicResource LineBrush}" Opacity="0.5"/>
+                    <TextBlock x:Name="BusyCountLabel" VerticalAlignment="Center" Margin="0,0,8,0"
+                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"
+                               Text="응답대기 0"/>
                 </StackPanel>
 
                 <!-- 윈도우 컨트롤(오른쪽 고정) -->
@@ -159,8 +165,9 @@
                     <ColumnDefinition Width="*" MinWidth="360"/>
                     <ColumnDefinition x:Name="FileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
                     <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="0" SharedSizeGroup="MainFileExp"/>
-                    <!-- 세션 완료 기록 (안쪽) / 계정 사용량 (최우측) ── 순서 중요: col5=완료기록, col6=사용량 -->
-                    <ColumnDefinition x:Name="SessionHistoryCol" Width="0" MinWidth="0"/>
+                    <!-- 세션 완료 기록 사이드바 스플리터 / 사이드바 / 계정 사용량 ── col5=splitter, col6=기록, col7=사용량 -->
+                    <ColumnDefinition x:Name="SessionHistorySplitterCol" Width="4" MinWidth="0"/>
+                    <ColumnDefinition x:Name="SessionHistoryCol" Width="0" MinWidth="150"/>
                     <ColumnDefinition x:Name="UsageCol" Width="0" MinWidth="0"/>
                 </Grid.ColumnDefinitions>
 
@@ -201,14 +208,20 @@
                 <views:FileExplorerView x:Name="FileExplorer" Grid.Column="4"
                                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0"/>
 
-                <!-- ── 안쪽(col5): 세션 완료 기록 사이드바 ──────────────────
+                <!-- 세션 완료 기록 스플리터 (파일탐색기와 세션기록 사이) -->
+                <GridSplitter x:Name="SessionHistorySplitter" Grid.Column="5" HorizontalAlignment="Stretch"
+                              ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                              DragDelta="SessionHistorySplitter_DragDelta"
+                              DragCompleted="SessionHistorySplitter_DragCompleted"/>
+
+                <!-- ── 안쪽(col6): 세션 완료 기록 사이드바 ──────────────────
                      계정 사용량보다 중앙에 가까이 위치. -->
-                <Border Grid.Column="5" x:Name="SessionHistorySidebar" ClipToBounds="True"
+                <Border Grid.Column="6" x:Name="SessionHistorySidebar" ClipToBounds="True"
                         Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="35"/>
+                            <RowDefinition Height="37"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <Border Grid.Row="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
@@ -220,13 +233,22 @@
                                 <TextBlock Text="세션 완료 기록" VerticalAlignment="Center"
                                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextBrush}"/>
-                                <Button Grid.Column="1" x:Name="ClearHistoryBtn" Click="ClearHistoryBtn_Click"
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button x:Name="MarkAllReadBtn" Click="MarkAllReadBtn_Click"
+                                        Width="22" Height="22"
+                                        Style="{StaticResource IconButton}"
+                                            ToolTip="모두 확인">
+                                    <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconCheckCheck}" Width="12" Height="12"/>
+                                </Button>
+                                    <Button x:Name="ClearHistoryBtn" Click="ClearHistoryBtn_Click"
                                         Width="22" Height="22"
                                         Style="{StaticResource IconButton}"
                                         ToolTip="모든 기록 지우기">
                                     <Path Style="{StaticResource LucideButtonIcon}"
                                           Data="{StaticResource IconTrash2}" Width="12" Height="12"/>
                                 </Button>
+                                </StackPanel>
                             </Grid>
                         </Border>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
@@ -267,10 +289,12 @@
                                                             <TranslateTransform Y="-2"/>
                                                         </Image.RenderTransform>
                                                     </Image>
+                                                    <Border Grid.Row="0" Grid.Column="0" Grid.RowSpan="3"
+                                                               Width="3" HorizontalAlignment="Left"
+                                                               VerticalAlignment="Stretch" Margin="-14,15,0,15"
+                                                               Background="{DynamicResource PrimaryBrush}" CornerRadius="1.5"
+                                                               Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
                                                     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                                                        <Ellipse Width="6" Height="6" Fill="{DynamicResource PrimaryBrush}"
-                                                                 VerticalAlignment="Center" Margin="0,0,7,0"
-                                                                 Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
                                                         <TextBlock Text="{Binding ProjectName}"
                                                                    Visibility="{Binding ProjectVisibility}"
                                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
@@ -313,12 +337,12 @@
 
                 <!-- ── 최우측(col6): 계정 사용량 전용 사이드바 ─────────────
                      기존 UI 그대로. 세션 완료 기록보다 바깥쪽에 위치. -->
-                <Border Grid.Column="6" x:Name="UsageSidebar" ClipToBounds="True"
+                <Border Grid.Column="7" x:Name="UsageSidebar" ClipToBounds="True"
                         Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="35"/>
+                            <RowDefinition Height="37"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>

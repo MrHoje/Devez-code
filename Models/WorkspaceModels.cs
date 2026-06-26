@@ -75,6 +75,11 @@ public sealed class SessionItem : TabItemBase
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";
     public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
+
+    /// <summary>이 세션이 현재 워크스페이스 패널에서 활성(보고 있는) 세션인지 여부.
+    /// 좌측 트리에서 PrimaryBrush 배경 하이라이트에 사용.</summary>
+    private bool _isActive;
+    public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
 }
 
 /// <summary>우측 세션 완료 기록 패널에 쌓는 런타임 완료 이벤트. 최신 항목이 위에 표시된다.</summary>

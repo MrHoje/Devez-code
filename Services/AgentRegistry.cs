@@ -65,7 +65,7 @@ public static class AgentRegistry
         },
         new()
         {
-            Id = "antigravity", DisplayName = "Google Anti-Gravity", Provider = "Antigravity",
+            Id = "antigravity", DisplayName = "Google Antigravity", Provider = "Antigravity",
             ExeNames = new[] { "agy.exe", "agy.cmd", "agy.bat", "agy.ps1", "agy" },
             Command = "agy",
         },

@@ -77,6 +77,7 @@ public partial class MainWindow : Window
         _projects = WorkspaceStore.Load(out var archived);
         _archivedProjects = archived;
         Sidebar.Projects = _projects;
+        UpdateBusyCount();
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
         SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
@@ -115,6 +116,7 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateBusyCount();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id); // 응답 종료 → 보류된 model/effort 적용
             });
 
@@ -177,6 +179,7 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateBusyCount();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
             });
 
@@ -188,6 +191,7 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateBusyCount();
             });
 
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
@@ -206,6 +210,7 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateBusyCount();
             });
         _codexHook.CodexSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() => SettingsService.SaveCodexRoomSession(roomId, sid));
@@ -786,6 +791,11 @@ public partial class MainWindow : Window
         if (FileExpCol.Width.IsAbsolute) FooterFileExpCol.Width = FileExpCol.Width;
     }
 
+    private void SessionHistorySplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        // splitter 는 항상 동작 (우측 패널 접힘 여부 무관)
+    }
+
     /// <summary>우측 스플리터 드래그 끝 → 새 폭을 즉시 저장 (재실행 시 복원).</summary>
     private void FileExpSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
     {
@@ -907,9 +917,15 @@ public partial class MainWindow : Window
         UpdatePanelToggleVisual();
     }
 
+    private void SessionHistorySplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (e.Canceled) return;
+        if (SessionHistoryCol.Width.IsAbsolute && SessionHistoryCol.Width.Value > 0)
+            SettingsService.SaveSessionHistoryWidth(SessionHistoryCol.Width.Value);
+    }
+
     // ── 최우측 계정 사용량 사이드바 토글 ────────────────────────────────
     private const double UsagePanelWidth = 218; // 좌여백16+라벨34+막대(6+102)+%여백10+"100%"≈32 → 우여백 16
-    private const double SessionHistoryPanelWidth = 218;
     private const int MaxSessionDoneRecords = 50;
     private bool _usageOpen;
     private bool _sessionHistoryOpen;
@@ -977,16 +993,17 @@ public partial class MainWindow : Window
     private void SetSessionHistoryPanelOpen(bool open, bool persist, bool animate = false)
     {
         _sessionHistoryOpen = open;
+        double targetWidth = open ? SettingsService.LoadSessionHistoryWidth() : 0;
 
         _sessionHistoryAnimCancel?.Invoke();
         _sessionHistoryAnimCancel = null;
         if (animate)
         {
-            _ = FreezeThenAnimateSessionHistoryAsync(open);
+            _ = FreezeThenAnimateSessionHistoryAsync(open, targetWidth);
         }
         else
         {
-            SessionHistoryCol.Width = new GridLength(open ? SessionHistoryPanelWidth : 0);
+            SessionHistoryCol.Width = new GridLength(targetWidth);
         }
 
         if (persist) SettingsService.SaveSessionHistoryPanelOpen(open);
@@ -994,11 +1011,11 @@ public partial class MainWindow : Window
         UpdateUsageSidebarBorder();
     }
 
-    private async Task FreezeThenAnimateSessionHistoryAsync(bool open)
+    private async Task FreezeThenAnimateSessionHistoryAsync(bool open, double targetWidth)
     {
         await FreezeWorkspaceTerminalsAsync();
         _sessionHistoryAnimCancel = AnimateColumn(
-            SessionHistoryCol, open ? SessionHistoryPanelWidth : 0,
+            SessionHistoryCol, targetWidth,
             durationMs: 200, easeIn: !open,
             cacheTarget: SessionHistorySidebar,
             onComplete: () => { _sessionHistoryAnimCancel = null; UnfreezeWorkspaceTerminals(); });
@@ -1888,6 +1905,16 @@ public partial class MainWindow : Window
     private void UpdateSessionHistoryEmpty()
         => SessionHistoryEmpty.Visibility = _sessionDoneRecords.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>현재 응답 대기(IsBusy=true) 중인 세션 수를 타이틀바에 갱신.</summary>
+    private void UpdateBusyCount()
+    {
+        int count = 0;
+        foreach (var p in _projects)
+            foreach (var s in p.Tabs)
+                if (s is SessionItem { IsBusy: true }) count++;
+        BusyCountLabel.Text = count > 0 ? $"응답대기 {count}" : "응답대기 0";
+    }
+
     private void SessionHistoryItem_Click(object sender, MouseButtonEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not SessionCompletionRecord r) return;
@@ -1907,6 +1934,19 @@ public partial class MainWindow : Window
         _sessionDoneRecords.Clear();
         SettingsService.SaveSessionHistoryRecords(
             new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+        UpdateSessionHistoryEmpty();
+    }
+
+    private void MarkAllReadBtn_Click(object sender, RoutedEventArgs e)
+    {
+        bool changed = false;
+        foreach (var r in _sessionDoneRecords)
+        {
+            if (!r.IsRead) { r.IsRead = true; changed = true; }
+        }
+        if (changed)
+            SettingsService.SaveSessionHistoryRecords(
+                new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
         UpdateSessionHistoryEmpty();
     }
 

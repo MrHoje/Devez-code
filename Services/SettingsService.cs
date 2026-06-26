@@ -25,6 +25,8 @@ public static class SettingsService
         public bool   UsagePanelOpen { get; set; } = false;
         // 계정 사용량 오른쪽의 세션 완료 기록 사이드바 펼침 상태. 기본 접힘.
         public bool   SessionHistoryPanelOpen { get; set; } = false;
+        // 세션 완료 기록 사이드바 너비 (드래그로 조절, settings.json 에 영속).
+        public double SessionHistoryWidth { get; set; } = 218;
         public Dictionary<string, string> ClaudeCodeRoomDirs { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomSessions { get; set; } = new();
         public List<string> ClaudeCodeRoomLaunched { get; set; } = new();
@@ -166,6 +168,7 @@ public static class SettingsService
     public static bool   LoadRightPanelCollapsed() => Current.RightPanelCollapsed;
     public static double LoadSidebarWidth() => Current.SidebarWidth;
     public static double LoadFileExpWidth() => Current.FileExpWidth;
+    public static double LoadSessionHistoryWidth() => Current.SessionHistoryWidth;
 
     public static void SaveLeftPanel(bool collapsed, double width)
     {
@@ -178,6 +181,12 @@ public static class SettingsService
     {
         Current.RightPanelCollapsed = collapsed;
         Current.FileExpWidth = width;
+        Save();
+    }
+
+    public static void SaveSessionHistoryWidth(double width)
+    {
+        Current.SessionHistoryWidth = width;
         Save();
     }
 
