@@ -41,11 +41,32 @@ public sealed class DiscordBotService : IDisposable
     private readonly HashSet<string> _meSuppressOnce = new(StringComparer.Ordinal);
     // 세션별 마지막으로 디스코드에 보낸 완료 본문 — busy 경로와 폴링 경로가 같은 답을 두 번 보내는 것 방지.
     private readonly Dictionary<string, string> _lastPostedBody = new(StringComparer.Ordinal);
-    // /model·/effort 선택지(메타바 콤보와 동일). 클릭 시 "/model <value>" / "/effort <value>" 주입.
+    // /model 선택지(선택 가능). fable 은 비활성이라 별도(비활성 버튼)로 표시.
     private static readonly (string label, string value)[] ModelChoices =
-        { ("Opus 4.8", "opus"), ("Sonnet 4.6", "sonnet"), ("Haiku 4.5", "haiku"), ("Fable 5", "fable") };
+        { ("Opus 4.8", "opus"), ("Sonnet 4.6", "sonnet"), ("Haiku 4.5", "haiku") };
+    // 전체 effort 값(검증용). 모델별 실제 허용 목록은 EffortForModel.
     private static readonly (string label, string value)[] EffortChoices =
-        { ("low", "low"), ("medium", "medium"), ("high", "high"), ("xhigh", "xhigh"), ("max", "max") };
+        { ("low", "low"), ("medium", "medium"), ("high", "high"), ("xhigh", "xhigh"), ("max", "max"), ("ultracode", "ultracode") };
+
+    /// <summary>모델별 선택 가능한 effort 목록. opus=low~ultracode, sonnet=~high, haiku=변경불가(빈 목록).</summary>
+    private static (string label, string value)[] EffortForModel(string? modelValue) => (modelValue ?? "opus") switch
+    {
+        "sonnet" => new[] { ("low", "low"), ("medium", "medium"), ("high", "high") },
+        "haiku"  => System.Array.Empty<(string, string)>(),
+        _        => EffortChoices, // opus(기본): 전체
+    };
+
+    /// <summary>세션의 현재 모델 값(opus/sonnet/haiku/fable). 라이브(statusLine)→설정→기본(opus).</summary>
+    private static string CurrentModelValue(string roomId)
+    {
+        var (mid, _) = ModelEffortService.ReadPersisted(roomId);
+        var s = (mid ?? "").ToLowerInvariant();
+        if (s.Contains("opus")) return "opus";
+        if (s.Contains("sonnet")) return "sonnet";
+        if (s.Contains("haiku")) return "haiku";
+        if (s.Contains("fable") || s.Contains("mythos")) return "fable";
+        return SettingsService.LoadClaudeCodeRoomModel(roomId) ?? "opus";
+    }
 
     public bool IsConnected { get; private set; }
 
@@ -323,6 +344,23 @@ public sealed class DiscordBotService : IDisposable
             }
 
             case "model":
+            {
+                var sid = SettingsService.FindDiscordSessionByThread(command.ChannelId ?? 0);
+                if (string.IsNullOrWhiteSpace(sid))
+                {
+                    try { await command.RespondAsync("세션 스레드에서 사용하세요.", ephemeral: true); } catch { }
+                    break;
+                }
+                var b = new ComponentBuilder();
+                int n = 0;
+                for (; n < ModelChoices.Length; n++)
+                    b.WithButton($"{n + 1}. {ModelChoices[n].label}", $"dc:model:{ModelChoices[n].value}", ButtonStyle.Secondary, row: n / 5);
+                // fable: 현재 비활성 → 보이되 선택 불가.
+                b.WithButton($"{n + 1}. Fable 5 (비활성)", "dc:model:fable", ButtonStyle.Secondary, disabled: true, row: n / 5);
+                try { await command.RespondAsync("모델을 선택하세요:", components: b.Build()); } catch { }
+                break;
+            }
+
             case "effort":
             {
                 var sid = SettingsService.FindDiscordSessionByThread(command.ChannelId ?? 0);
@@ -331,12 +369,17 @@ public sealed class DiscordBotService : IDisposable
                     try { await command.RespondAsync("세션 스레드에서 사용하세요.", ephemeral: true); } catch { }
                     break;
                 }
-                bool isModel = name == "model";
-                var choices = isModel ? ModelChoices : EffortChoices;
+                var model = CurrentModelValue(sid!);
+                var choices = EffortForModel(model);
+                if (choices.Length == 0)
+                {
+                    try { await command.RespondAsync($"`{model}` 모델은 effort 를 변경할 수 없습니다.", ephemeral: true); } catch { }
+                    break;
+                }
                 var b = new ComponentBuilder();
                 for (int i = 0; i < choices.Length; i++)
-                    b.WithButton($"{i + 1}. {choices[i].label}", $"dc:{name}:{choices[i].value}", ButtonStyle.Secondary, row: i / 5);
-                try { await command.RespondAsync(isModel ? "모델을 선택하세요:" : "effort 를 선택하세요:", components: b.Build()); } catch { }
+                    b.WithButton($"{i + 1}. {choices[i].label}", $"dc:effort:{choices[i].value}", ButtonStyle.Secondary, row: i / 5);
+                try { await command.RespondAsync($"effort 를 선택하세요 (`{model}`):", components: b.Build()); } catch { }
                 break;
             }
 
