@@ -10,20 +10,29 @@ public sealed class OpenCodeBusyService : IDisposable
 {
     private static string Dir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode", "busy");
+    private static string WaitingDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode", "waiting");
 
     private FileSystemWatcher? _watcher;
+    private FileSystemWatcher? _waitingWatcher;
 
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중(스피너).</summary>
     public event Action<string, bool>? BusyChanged;
+
+    /// <summary>(roomId, waiting) — waiting=true 면 선택지(question.asked) 응답 대기 중(❗).</summary>
+    public event Action<string, bool>? WaitingChoiceChanged;
 
     public void Start()
     {
         try
         {
             Directory.CreateDirectory(Dir);
-            // 앱 재시작 시 stale running 이 남아 스피너가 영원히 도는 것 방지 (SessionBusyService 와 동일).
+            Directory.CreateDirectory(WaitingDir);
+            // 앱 재시작 시 stale running/waiting 이 남아 영원히 표시되는 것 방지 (SessionBusyService 와 동일).
             foreach (var f in Directory.EnumerateFiles(Dir, "*.txt"))
                 try { File.Delete(f); } catch { /* hook write 와 경합 가능, 무시 */ }
+            foreach (var f in Directory.EnumerateFiles(WaitingDir, "*.txt"))
+                try { File.Delete(f); } catch { }
             _watcher?.Dispose();
             _watcher = new FileSystemWatcher(Dir, "*.txt")
             {
@@ -32,6 +41,15 @@ public sealed class OpenCodeBusyService : IDisposable
             };
             _watcher.Changed += (_, e) => Emit(e.FullPath);
             _watcher.Created += (_, e) => Emit(e.FullPath);
+
+            _waitingWatcher?.Dispose();
+            _waitingWatcher = new FileSystemWatcher(WaitingDir, "*.txt")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+            _waitingWatcher.Changed += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Created += (_, e) => EmitWaiting(e.FullPath);
         }
         catch { /* 감시 실패해도 앱은 계속 — 스피너만 안 뜸 */ }
     }
@@ -46,6 +64,15 @@ public sealed class OpenCodeBusyService : IDisposable
         // 가짜 "응답 완료" 알림이 뜬다(SessionBusyService 와 동일 경합). busy 파일은 정상값이 빈 적이 없으므로 무시.
         if (string.IsNullOrWhiteSpace(status)) return;
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void EmitWaiting(string path)
+    {
+        var room = Path.GetFileNameWithoutExtension(path);
+        if (string.IsNullOrEmpty(room)) return;
+        var status = TryRead(path);
+        if (string.IsNullOrWhiteSpace(status)) return; // truncate 찰나의 빈 읽기 무시
+        WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string? TryRead(string path)
@@ -69,5 +96,7 @@ public sealed class OpenCodeBusyService : IDisposable
     {
         _watcher?.Dispose();
         _watcher = null;
+        _waitingWatcher?.Dispose();
+        _waitingWatcher = null;
     }
 }

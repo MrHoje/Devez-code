@@ -59,6 +59,20 @@ export const DevezCodeRoomTracker = async () => {
     idleTimer = setTimeout(() => { idleTimer = null; writeBusy("idle"); }, IDLE_DEBOUNCE_MS);
   };
 
+  // waiting\<room>.txt = waiting|idle — 선택지(question.asked) 응답 대기 ❗. busy 와 동일 파일 패턴.
+  let awaitingAnswer = false;
+  const writeWaiting = (state) => {
+    try {
+      if (!safe) return;
+      const dir = path.join(base, "DevezCode", "opencode", "waiting");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, safe + ".txt"), state);
+      debug(`waiting=${state}`);
+    } catch (e) { debug(`writeWaiting failed: ${e.message}`); }
+  };
+  const setWaiting = () => { awaitingAnswer = true; writeWaiting("waiting"); };
+  const clearWaiting = () => { if (awaitingAnswer) { awaitingAnswer = false; writeWaiting("idle"); } };
+
   const writeLastmsg = (text) => {
     try {
       if (!safe || !text) return;
@@ -133,6 +147,11 @@ export const DevezCodeRoomTracker = async () => {
       try {
         if (!event || !event.type) return;
         const props = event.properties || {};
+
+        // 선택지(ask) 응답 대기 ❗ — opencode 는 'question.asked' 로 사용자 선택지를 띄운다.
+        // 대기 진입 시 waiting 파일에 기록. 대기 중에는 이벤트가 흐르지 않으므로(블록), 답하면 generation
+        // 재개(message.part.updated reasoning/text) 또는 턴 종료(session.idle)에서 해제한다.
+        if (event.type === "question.asked") { setWaiting(); return; }
         // [진단] session.* / message.updated / message.part.updated 만 항상 로깅(노이즈 제외).
         // 실제 한 턴 동안 어떤 event 가 어떤 순서/sessionID/role/completed 로 흐르는지 확보용.
         const t = event.type;
@@ -153,13 +172,14 @@ export const DevezCodeRoomTracker = async () => {
         // 세션 처리 종료 신호 → 스피너 끄기. session.idle = 응답 완료, session.error = 실패.
         if (event.type === "session.idle" || event.type === "session.error") {
           scheduleIdle();
+          clearWaiting(); // 턴 종료 = 더 이상 선택지 대기 아님
         }
         // 세션 생성/갱신 이벤트 — 최신 ID 덮어씀 (--clear·새 대화 시작 시 자동 갱신).
         if (event.type === "session.created" || event.type === "session.updated") {
           const info = props.info;
           if (info && info.id) {
             // 같은 방에서 새 세션이 생성되면(/clear·/new) 이전 todos·lastmsg 를 초기화한다.
-            if (event.type === "session.created") { writeTodos([]); clearLastmsg(); }
+            if (event.type === "session.created") { writeTodos([]); clearLastmsg(); clearWaiting(); }
             writeId(info.id);
           }
         }
@@ -176,6 +196,8 @@ export const DevezCodeRoomTracker = async () => {
         else if (event.type === "message.part.updated") {
           const part = props.part;
           if (!part) return;
+          // 답변 후 generation 재개(reasoning/text/step-start) = 선택지 대기 해제. (tool part 는 ask 자체의 잔여라 제외)
+          if (awaitingAnswer && part.type !== "tool") clearWaiting();
           // sessionID 백업 채널 — part.sessionID 가 항상 옴.
           if (part.sessionID) writeId(part.sessionID);
           if (part.type !== "text" || !part.text) return;

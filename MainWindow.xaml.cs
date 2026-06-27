@@ -204,6 +204,15 @@ public partial class MainWindow : Window
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
             });
 
+        // opencode — 플러그인 question.asked → waiting 파일 감시 → 선택지 응답 대기 ❗.
+        _opencodeBusy.WaitingChoiceChanged += (roomId, waiting) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s != null) s.IsWaitingChoice = waiting;
+                UpdateSessionBusyDisplay();
+            });
+
         // 가재코드 — 세션 .jsonl 폴링으로 busy 판정 → 스피너 (GajaeLastMessageService 가 lastmsg 와 함께 emit).
         _gajaeLastMsg.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
