@@ -284,6 +284,10 @@
     <PathGeometry x:Key="IconBell"
         Figures="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M13.73 21a2 2 0 0 1-3.46 0"/>
 
+    <!-- lucide circle-alert: 입력 대기(선택지 메뉴) 표시용. -->
+    <PathGeometry x:Key="IconAlertCircle"
+        Figures="M12 2 A10 10 0 1 0 12 22 A10 10 0 1 0 12 2 M12 8 L12 12 M12 16 L12.01 16"/>
+
     <PathGeometry x:Key="IconBellOff"
         Figures="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M13.73 21a2 2 0 0 1-3.46 0 M2 2 22 22"/>
 

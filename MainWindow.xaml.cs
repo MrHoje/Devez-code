@@ -56,6 +56,8 @@ public partial class MainWindow : Window
     private Models.ProviderUsage? _lastCodex;
     private Models.ProviderUsage? _lastGo;
     private readonly SessionBusyService _sessionBusy = new();
+    // claude 선택지(1·2·3…) 입력 대기 감지 — 터미널 화면을 주기 폴링해 세션의 IsWaitingChoice 를 토글(스피너→❗).
+    private System.Windows.Threading.DispatcherTimer? _choicePoll;
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
     private readonly SessionLastMessageService _sessionLastMsg = new();
@@ -263,6 +265,7 @@ public partial class MainWindow : Window
             UserStatusLineInstaller.EnsureInstalled();
             StartStatusLine();
             _sessionBusy.Start();
+            StartChoicePoll();
             _modelEffort.Start();
             _sessionLastMsg.Start();
             // codex 훅 — 시작 시 스크립트/hooks.json 자동 설치. 사용자가 codex 첫 실행 시 trust 필요.
@@ -2023,6 +2026,34 @@ public partial class MainWindow : Window
 
     private SessionItem? FindSession(string id)
         => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
+
+    /// <summary>claude 세션의 터미널 화면을 주기 폴링해 1·2·3… 선택지 메뉴 등장/소멸에 맞춰
+    /// IsWaitingChoice 를 토글한다(스피너 정지 + ❗). 감지 로직은 Discord 자동전송과 ClaudeMenuDetector 로 공유.</summary>
+    private void StartChoicePoll()
+    {
+        _choicePoll = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(400),
+        };
+        _choicePoll.Tick += (_, _) =>
+        {
+            foreach (var p in _projects)
+            {
+                if (!p.IsActive) continue;
+                foreach (var s in p.Tabs.OfType<SessionItem>())
+                {
+                    // 선택지 UI 패턴이 에이전트마다 달라 우선 claude 만(Discord 폴링과 동일 기준).
+                    var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
+                    if (agentId != "claude") { if (s.IsWaitingChoice) s.IsWaitingChoice = false; continue; }
+
+                    var session = TerminalSessionManager.Instance.Get(s.Id);
+                    bool waiting = session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());
+                    if (s.IsWaitingChoice != waiting) s.IsWaitingChoice = waiting;
+                }
+            }
+        };
+        _choicePoll.Start();
+    }
 
     private void AddSessionCompletionRecord(SessionItem s)
     {

@@ -22,6 +22,7 @@
     <Color x:Key="BubbleColor">#eef4ff</Color>
     <Color x:Key="DangerColor">#ef4444</Color>
     <Color x:Key="SuccessColor">#22c55e</Color>
+    <Color x:Key="WarningColor">#eab308</Color>
     <Color x:Key="TodayColor">#f97316</Color>
     <Color x:Key="SidebarSubTextColor">#475569</Color>
     <sys:Double x:Key="CheckedBubbleOpacity">0.4</sys:Double>
@@ -51,6 +52,8 @@
     <SolidColorBrush x:Key="BubbleBrush"       Color="{DynamicResource BubbleColor}"/>
     <SolidColorBrush x:Key="BubbleBorderBrush" Color="{DynamicResource BubbleBorderColor}"/>
     <SolidColorBrush x:Key="DangerBrush"        Color="{DynamicResource DangerColor}"/>
+    <!-- 입력 대기(선택지 메뉴) ❗ 등 주의 상태색. 팔레트 계열의 노란색(yellow-500). -->
+    <SolidColorBrush x:Key="WarningBrush"       Color="{DynamicResource WarningColor}"/>
     <SolidColorBrush x:Key="SuccessBrush"       Color="{DynamicResource SuccessColor}"/>
     <SolidColorBrush x:Key="TodayBrush"         Color="{DynamicResource TodayColor}"/>
     <SolidColorBrush x:Key="SidebarSubTextBrush" Color="{DynamicResource SidebarSubTextColor}"/>

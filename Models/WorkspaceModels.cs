@@ -72,6 +72,11 @@ public sealed class SessionItem : TabItemBase
     private bool _isBusy;
     public bool IsBusy { get => _isBusy; set => Set(ref _isBusy, value); }
 
+    /// <summary>claude 가 1·2·3… 선택지 메뉴를 띄우고 사용자 입력을 기다리는 중인지.
+    /// true=스피너 대신 ❗(느낌표)를 표시(busy 중이라도 우선). 화면 폴링으로 갱신.</summary>
+    private bool _isWaitingChoice;
+    public bool IsWaitingChoice { get => _isWaitingChoice; set => Set(ref _isWaitingChoice, value); }
+
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";
     public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
