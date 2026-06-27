@@ -1131,31 +1131,48 @@ public sealed class DiscordBotService : IDisposable
 
     /// <summary>에이전트 아이콘을 길드 커스텀 이모지로 보장(없으면 업로드)하고 멘션을 캐시한다.
     /// 권한/슬롯 부족 등 실패 시 해당 에이전트는 아이콘 없이 표시.</summary>
+    // 이모지 이름 버전 — 렌더 크기 바꿀 때 bump 하면 옛 버전을 지우고 새로 올린다.
+    private const string EmotePrefix = "dz3_";
+
     private async Task EnsureAgentEmotesAsync()
     {
         var client = _client;
         var guild = client?.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return;
-        foreach (var agentId in new[] { "claude", "codex", "opencode", "gajae" })
+
+        // 옛 버전(devez_*, dz_*, dz2_*, 다른 dz3_ 외) 정리 — 슬롯 회수.
+        foreach (var e in guild.Emotes.Where(e =>
+                     (e.Name.StartsWith("devez_", StringComparison.Ordinal) || e.Name.StartsWith("dz", StringComparison.Ordinal))
+                     && !e.Name.StartsWith(EmotePrefix, StringComparison.Ordinal)).ToList())
+            try { await guild.DeleteEmoteAsync(e); } catch { }
+
+        // 에이전트 아이콘 + 상태 점(on/off) 이모지 보장.
+        var specs = new (string key, Func<System.IO.Stream?> open)[]
         {
-            if (_agentEmotes.ContainsKey(agentId)) continue;
-            var emoteName = "dz_" + agentId; // 꽉 찬 버전(v2). 레거시 devez_* 는 여백이 커서 폐기.
+            ("claude",   () => OpenAgentEmoteImage("claude")),
+            ("codex",    () => OpenAgentEmoteImage("codex")),
+            ("opencode", () => OpenAgentEmoteImage("opencode")),
+            ("gajae",    () => OpenAgentEmoteImage("gajae")),
+            ("on",       () => OpenDotImage(true)),
+            ("off",      () => OpenDotImage(false)),
+        };
+        foreach (var (key, open) in specs)
+        {
+            if (_agentEmotes.ContainsKey(key)) continue;
+            var emoteName = EmotePrefix + key;
             var existing = guild.Emotes.FirstOrDefault(e => e.Name == emoteName);
-            if (existing != null) { _agentEmotes[agentId] = existing.ToString(); continue; }
-            // 레거시(여백 큰) 이모지 정리 — 슬롯 회수.
-            var legacy = guild.Emotes.FirstOrDefault(e => e.Name == "devez_" + agentId);
-            if (legacy != null) { try { await guild.DeleteEmoteAsync(legacy); } catch { } }
+            if (existing != null) { _agentEmotes[key] = existing.ToString(); continue; }
             try
             {
-                var st = OpenAgentEmoteImage(agentId);
+                var st = open();
                 if (st == null) continue;
                 using (st)
                 {
                     var created = await guild.CreateEmoteAsync(emoteName, new Image(st));
-                    _agentEmotes[agentId] = created.ToString();
+                    _agentEmotes[key] = created.ToString();
                 }
             }
-            catch { /* 권한(이모지 관리)·슬롯 부족 → 아이콘 생략 */ }
+            catch { /* 권한(이모지 관리)·슬롯 부족 → 생략 */ }
         }
     }
 
@@ -1173,7 +1190,8 @@ public sealed class DiscordBotService : IDisposable
             {
                 var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
                 var emote = _agentEmotes.TryGetValue(agentId, out var em) ? em + " " : "";
-                var dot = session.IsAlive || session.IsBusy ? "🟢" : "🔴";
+                bool live = session.IsAlive || session.IsBusy;
+                var dot = _agentEmotes.TryGetValue(live ? "on" : "off", out var de) ? de : (live ? "🟢" : "🔴");
                 sb.AppendLine($"{emote}{dot} {session.Name}");
             }
             sb.AppendLine();
@@ -1653,12 +1671,43 @@ public sealed class DiscordBotService : IDisposable
                 var frame = System.Windows.Media.Imaging.BitmapFrame.Create(src,
                     System.Windows.Media.Imaging.BitmapCreateOptions.None,
                     System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
-                const int canvas = 128; // 여백 없이 가장 긴 변을 캔버스에 맞춤(꽉 채움)
-                double scale = canvas / (double)Math.Max(frame.PixelWidth, frame.PixelHeight);
+                const int canvas = 128; // 가장 긴 변을 캔버스의 0.8배로(꽉참 대비 1/5 축소)
+                double scale = canvas * 0.8 / Math.Max(frame.PixelWidth, frame.PixelHeight);
                 double w = frame.PixelWidth * scale, h = frame.PixelHeight * scale;
                 var dv = new System.Windows.Media.DrawingVisual();
                 using (var dc = dv.RenderOpen())
                     dc.DrawImage(frame, new System.Windows.Rect((canvas - w) / 2.0, (canvas - h) / 2.0, w, h));
+                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(canvas, canvas, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+                var ms = new System.IO.MemoryStream();
+                enc.Save(ms);
+                ms.Position = 0;
+                result = ms;
+            });
+            return result;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>상태 점 커스텀 이모지 이미지 — 128 캔버스에 지름 절반(64)짜리 원(초록/빨강)을 그려 점을 작게 보이게.</summary>
+    private static System.IO.Stream? OpenDotImage(bool on)
+    {
+        try
+        {
+            var app = System.Windows.Application.Current;
+            if (app == null) return null;
+            System.IO.MemoryStream? result = null;
+            app.Dispatcher.Invoke(() =>
+            {
+                const int canvas = 128; const double d = 64; // 지름 = 캔버스의 절반
+                var color = on ? System.Windows.Media.Color.FromRgb(0x57, 0xC2, 0x7A)
+                               : System.Windows.Media.Color.FromRgb(0xED, 0x42, 0x45);
+                var dv = new System.Windows.Media.DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                    dc.DrawEllipse(new System.Windows.Media.SolidColorBrush(color), null,
+                        new System.Windows.Point(canvas / 2.0, canvas / 2.0), d / 2, d / 2);
                 var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(canvas, canvas, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
                 rtb.Render(dv);
                 var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
