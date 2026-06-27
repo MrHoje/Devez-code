@@ -182,7 +182,7 @@ public partial class App : Application
         res["PerfChipLblFs"] = scale == 0 ? 11.0 : 12.0;
 
         // 완료/대기 카드 아이콘 세로 보정: 작게(0)는 텍스트와 맞춰 위로 2px, 크게(1)는 0.
-        res["HistoryIconY"] = scale == 0 ? -1.0 : 1.0;
+        res["HistoryIconY"] = scale == 0 ? -1.0 : 0.0;
 
         res["HdrBtnSize"] = (double)(28 + d);
         res["RailWidth"]    = scale == 0 ? 44.0 : 46.0;
