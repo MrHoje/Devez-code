@@ -2067,8 +2067,11 @@ public partial class MainWindow : Window
                     var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
                     if (agentId != "claude") continue;
 
+                    // IsBusy 게이트: 선택지 대기는 턴 진행 중(busy)에만 유효. claude alt-screen 출력 버퍼는
+                    // append-only라 메뉴를 Esc 로 닫아도 잔상이 남는데, 닫으면 Stop 훅 → busy=false 가 되므로
+                    // busy 일 때만 본다 → 잔상으로 ❗ 가 안 꺼지는 문제 방지.
                     var session = TerminalSessionManager.Instance.Get(s.Id);
-                    bool waiting = session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());
+                    bool waiting = s.IsBusy && session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());
                     if (s.IsWaitingChoice != waiting) { s.IsWaitingChoice = waiting; changed = true; }
                 }
             }
