@@ -448,26 +448,26 @@ public sealed class DiscordBotService : IDisposable
         int take = Math.Min(45, all.Length);
         int from0 = all.Length - take;
 
-        // 메뉴는 보통 박스(╭…╰) 안에 그려진다 → 마지막 박스 top(╭/┌)부터만 읽어
-        // 그 위의 입력 에코·스피너 노이즈("다시 띄워봐", "✻ Cooked …")를 제외한다.
-        for (int i = all.Length - 1; i >= from0; i--)
-            if (all[i].Contains('╭') || all[i].Contains('┌')) { from0 = i; break; }
-
-        // 화면(박스) 부분을 박스/커서 문자 제거 후 한 줄로 평탄화(공백 압축).
+        // 화면 끝부분을 한 줄로 평탄화. 박스 세로/모서리·커서 문자는 공백으로,
+        // 단 가로 구분선('─')은 질문 경계 판단에 쓰므로 유지한다.
+        // (claude 메뉴는 ╭ 박스가 아니라 긴 '──────' 구분선으로 그려지고, alt-screen 리페인트로
+        //  이전 렌더 히스토리가 위쪽에 잔뜩 쌓인다 → '─' 구분선 기준으로 현재 메뉴만 잘라낸다.)
         bool hasCursor = false;
         var sbFlat = new StringBuilder();
         for (int i = from0; i < all.Length; i++)
         {
             var line = all[i];
             if (line.Contains('❯') || line.Contains('›')) hasCursor = true;
-            var c = line.Replace('│', ' ').Replace('─', ' ')
+            var c = line.Replace('│', ' ')
                 .Replace('╮', ' ').Replace('╭', ' ').Replace('╯', ' ').Replace('╰', ' ')
                 .Replace('┌', ' ').Replace('┐', ' ').Replace('└', ' ').Replace('┘', ' ')
                 .Replace('├', ' ').Replace('┤', ' ').Replace('|', ' ')
                 .Replace('❯', ' ').Replace('›', ' ').Replace('☐', ' ').Replace('☑', ' ');
             sbFlat.Append(' ').Append(c);
         }
-        var flat = Regex.Replace(sbFlat.ToString(), @"\s+", " ").Trim();
+        // '─' 는 보존하되 연속 '─' 는 한 글자로 줄이고, 그 외 공백만 압축.
+        var flat = Regex.Replace(sbFlat.ToString(), "─+", "─");
+        flat = Regex.Replace(flat, @"[^\S─]+", " ").Trim();
 
         // 푸터 힌트("Enter to select · ↑/↓ to navigate · Esc to cancel" 등)는 마지막 옵션에 들러붙으므로
         // 가장 먼저 나오는 힌트 위치에서 잘라낸다(힌트는 항상 옵션 뒤에 온다).
@@ -499,17 +499,23 @@ public sealed class DiscordBotService : IDisposable
         if (maxOpt == 0) return null;
         if (!(hasCursor && maxOpt >= 1) && maxOpt < 2) return null; // 오탐 최소화: 커서+옵션 or 옵션 2개+
 
-        // 질문(헤더): 첫 옵션 앞 텍스트. 길면 끝쪽(질문은 보통 옵션 바로 앞)만.
-        var question = flat[..marks[0].start].Trim();
+        // 질문: 첫 옵션 앞 텍스트에서, 마지막 '─' 구분선(=현재 메뉴 박스 상단) 이후만 사용한다.
+        // 이러면 위쪽 입력 에코·스피너·이전 렌더 히스토리가 모두 잘려나간다.
+        var pre = flat[..marks[0].start];
+        int sep = pre.LastIndexOf('─');
+        var question = (sep >= 0 ? pre[(sep + 1)..] : pre);
+        question = question.Replace("─", " ").Replace("☐", " ").Replace("☑", " ");
+        question = Regex.Replace(question, @"\s{2,}", " ").Trim();
         if (question.Length > 200) question = "…" + question[^200..];
 
-        // 각 옵션: 이 마커 content 시작 ~ 다음 마커 start 까지.
+        // 각 옵션: 이 마커 content 시작 ~ 다음 마커 start 까지. 본문의 '─'(구분선) 제거.
         var opts = new List<string>();
         for (int k = 0; k < marks.Count; k++)
         {
             int from = marks[k].contentStart;
             int to = k + 1 < marks.Count ? marks[k + 1].start : flat.Length;
-            var body = flat[from..to].Trim();
+            var body = flat[from..to].Replace("─", " ");
+            body = Regex.Replace(body, @"\s{2,}", " ").Trim();
             if (body.Length > 150) body = body[..150].Trim() + "…";
             opts.Add($"{marks[k].num}. {body}");
         }
