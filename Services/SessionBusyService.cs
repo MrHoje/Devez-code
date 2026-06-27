@@ -61,8 +61,28 @@ public sealed class SessionBusyService : IDisposable
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
-        if (string.IsNullOrWhiteSpace(status)) return; // truncate 찰나의 빈 읽기 무시
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            // Set-Content 가 파일을 비웠다 쓰는 truncate 찰나에 watcher 가 단발 Changed 를 받아 빈 값을
+            // 읽으면, 그 뒤 'waiting'/'idle' 정착값을 영영 못 잡는다. 특히 1번 답변 '직후' 2번 선택지가
+            // 곧바로 떠 같은 'waiting' 을 재기록하는 타이트한 타이밍에서 ❗ 재무장이 누락된다(몇 초 뒤면
+            // 안정된 값을 읽어 우연히 잡힘). 짧게 뒤 한 번 더 읽어 정착값을 반드시 반영한다.
+            _ = ReEmitWaitingAfterSettleAsync(path, room);
+            return;
+        }
         WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path, string room)
+    {
+        try
+        {
+            await System.Threading.Tasks.Task.Delay(60).ConfigureAwait(false);
+            var status = TryRead(path);
+            if (string.IsNullOrWhiteSpace(status)) return; // 그래도 비면(파일 삭제 등) 포기
+            WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+        }
+        catch { /* fire-and-forget — 재읽기 실패해도 앱 영향 없음 */ }
     }
 
     private void Emit(string path)

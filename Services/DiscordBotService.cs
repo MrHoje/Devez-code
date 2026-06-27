@@ -535,9 +535,19 @@ public sealed class DiscordBotService : IDisposable
 
     /// <summary>alive 한 claude 세션의 터미널 화면을 폴링해, 입력 대기 선택지 메뉴가 새로 뜨면
     /// 그 화면 텍스트 + 키 컨트롤 버튼을 해당 스레드로 보낸다(메뉴 등장 1회당 1번).</summary>
+    private static void DbgPoll(SessionItem s, string msg)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "devez_poll.log");
+            System.IO.File.AppendAllText(path, $"{DateTime.Now:HH:mm:ss.fff} [{s.Name}/{s.Id}] {msg}\n");
+        }
+        catch { }
+    }
+
     private void PollPrompts()
     {
-        if (!IsConnected) return;
+        if (!IsConnected) { try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "devez_poll.log"), $"{DateTime.Now:HH:mm:ss.fff} POLL skip: not connected\n"); } catch { } return; }
         var projects = _projects;
         if (projects == null) return;
 
@@ -550,8 +560,8 @@ public sealed class DiscordBotService : IDisposable
                 if (agentId != "claude") continue; // 우선 claude 만 — 선택지 UI 패턴이 에이전트마다 달라서.
 
                 var session = TerminalSessionManager.Instance.Get(s.Id);
-                if (session is not { IsAlive: true }) { lock (_sync) _promptActive.Remove(s.Id); continue; }
-                lock (_sync) { if (_pendingInput.ContainsKey(s.Id)) continue; } // 자동시작 주입 중이면 스킵
+                if (session is not { IsAlive: true }) { DbgPoll(s, "no-session/dead"); lock (_sync) _promptActive.Remove(s.Id); continue; }
+                lock (_sync) { if (_pendingInput.ContainsKey(s.Id)) { DbgPoll(s, "pendingInput"); continue; } } // 자동시작 주입 중이면 스킵
 
                 // 모델/effort 변경 감지 → 디바운스(~2초 모아 최종 상태 1장만 전송). 선택지·확인 메뉴는 안 보냄.
                 var (mid, eff) = ModelEffortService.ReadPersisted(s.Id);
@@ -577,20 +587,22 @@ public sealed class DiscordBotService : IDisposable
 
                 // 생각 중(스피너)에는 화면이 불안정해 스피너·토큰 카운트가 가짜 메뉴로 잡힌다 → 감지 안 함.
                 // 단, 선택지/권한 메뉴는 턴 도중(busy=true)에 뜨므로 IsWaitingChoice(Notification 훅) 면 통과시킨다.
-                if (s.IsBusy && !s.IsWaitingChoice) { lock (_sync) _promptActive.Remove(s.Id); continue; }
+                if (s.IsBusy && !s.IsWaitingChoice) { DbgPoll(s, "busy-not-waiting"); lock (_sync) _promptActive.Remove(s.Id); continue; }
 
                 var recent = session.GetRecentText();
                 var menu = ClaudeMenuDetector.Extract(recent);
                 if (menu == null)
                 {
+                    DbgPoll(s, $"no-menu busy={s.IsBusy} wait={s.IsWaitingChoice} recentLen={recent?.Length}");
                     lock (_sync) _promptActive.Remove(s.Id); // 메뉴 사라짐 → 다음 등장 시 다시 보낼 수 있게.
                     continue;
                 }
                 // /model·/effort 선택지/확인 메뉴는 디스코드로 보내지 않는다(변경 알림으로 대체).
-                if (IsModelEffortUi(recent, menu.Value.text)) { lock (_sync) _promptActive.Add(s.Id); continue; }
+                if (IsModelEffortUi(recent, menu.Value.text)) { DbgPoll(s, "model-effort-ui"); lock (_sync) _promptActive.Add(s.Id); continue; }
 
                 bool already; lock (_sync) already = !_promptActive.Add(s.Id);
-                if (already) continue; // 이미 이번 등장에서 보냄(리페인트 중복 방지).
+                if (already) { DbgPoll(s, "already-sent"); continue; } // 이미 이번 등장에서 보냄(리페인트 중복 방지).
+                DbgPoll(s, $"SEND maxOpt={menu.Value.maxOpt}");
 
                 var proj = p; var sess = s; var m = menu.Value;
                 _ = SendPromptAsync(proj, sess, m.text, m.maxOpt, m.typeOpt);
