@@ -28,7 +28,7 @@ public sealed class SessionBusyService : IDisposable
             Directory.CreateDirectory(Dir);
             Directory.CreateDirectory(WaitingDir);
             foreach (var f in Directory.EnumerateFiles(WaitingDir))
-                try { File.Delete(f); } catch { /* 시작 시 stale 대기/perm 마커 제거 */ }
+                try { File.Delete(f); } catch { /* 시작 시 stale 대기 상태 파일 제거 */ }
             // 앱 시작 시 기존 busy 파일 모두 삭제. 프로그램을 닫으면 ConPTY/claude 프로세스는 죽지만
             // busy 상태 파일은 디스크에 남아있어, 재시작 후 세션을 다시 열면 이전 세션의 stale 한
             // "running" 상태가 그대로 emit 되어 스피너가 영원히 도는 문제가 생긴다(앱 재시작 후 세션
