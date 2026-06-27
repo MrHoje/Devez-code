@@ -514,8 +514,6 @@ public sealed class DiscordBotService : IDisposable
         }
     }
 
-    private const string PromptHeader = "### [입력 대기 — 선택지가 있습니다]";
-
     /// <summary>입력 대기 선택지 메뉴를 Components V2(Container + 텍스트 + 버튼)로 전송. 작성자=Claude(웹훅).
     /// V2/웹훅 실패 시 기존 텍스트+버튼 방식으로 폴백.</summary>
     private async Task SendPromptAsync(ProjectItem project, SessionItem session, string menu, int maxOpt, int typeOpt)
@@ -543,7 +541,7 @@ public sealed class DiscordBotService : IDisposable
                 }
                 catch { /* V2/웹훅 실패 → 폴백 */ }
             }
-            var flat = question.Length > 0 ? $"{PromptHeader}\n{question}\n" + string.Join("\n", options) : $"{PromptHeader}\n" + string.Join("\n", options);
+            var flat = (question.Length > 0 ? question + "\n" : "") + string.Join("\n", options);
             await SendAsAgentAsync(project, thread, agentId, flat, BuildKeyControls(maxOpt, typeOpt));
         }
         catch { lock (_sync) _promptActive.Remove(session.Id); }
@@ -579,17 +577,19 @@ public sealed class DiscordBotService : IDisposable
         return q.Trim();
     }
 
-    /// <summary>선택지 메뉴 V2 컨테이너: 헤더+질문, 옵션마다 Separator 로 구분, (옵션) 버튼.</summary>
+    /// <summary>선택지 메뉴 V2 컨테이너: (질문), 옵션마다 Separator 로 구분, 옵션 아래에도 Separator, (옵션) 버튼.</summary>
     private static ContainerBuilder BuildPromptContainer(string question, List<string> options, bool withButtons, int maxOpt, int typeOpt)
     {
-        var container = new ContainerBuilder()
-            .AddComponent(new TextDisplayBuilder().WithContent(
-                question.Length > 0 ? $"{PromptHeader}\n{question}" : PromptHeader));
+        var container = new ContainerBuilder();
+        if (question.Length > 0)
+            container.AddComponent(new TextDisplayBuilder().WithContent(question));
         foreach (var opt in options)
         {
             container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
             container.AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord(opt, 1000)));
         }
+        if (options.Count > 0) // 마지막 옵션 아래 구분선
+            container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
         if (withButtons)
             foreach (var row in BuildKeyRows(maxOpt, typeOpt)) container.AddComponent(row);
         return container;
