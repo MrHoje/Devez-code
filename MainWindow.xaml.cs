@@ -2148,6 +2148,9 @@ public partial class MainWindow : Window
         {
             SessionWaitingLabel.Text = $"응답 대기 중 {waiting}개";
             SessionWaitingRow.Visibility = Visibility.Visible;
+            // 진행중 줄이 보일 때만 위 간격(4px). 대기만 단독이면 0 → 가운데 정렬에서 안 밀림.
+            SessionWaitingRow.Margin = SessionBusyRow.Visibility == Visibility.Visible
+                ? new Thickness(0, 4, 0, 0) : new Thickness(0);
         }
         else
         {

@@ -345,38 +345,20 @@
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
                                                         <Grid.RowDefinitions>
                                                             <RowDefinition Height="Auto"/>
                                                             <RowDefinition Height="Auto"/>
                                                         </Grid.RowDefinitions>
                                                         <Image Grid.Row="0" Grid.Column="0" Width="15" Height="15"
-                                                               Margin="0,0,9,0" VerticalAlignment="Top"
+                                                               Margin="0,0,9,0" VerticalAlignment="Center"
                                                                Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
-                                                               RenderOptions.BitmapScalingMode="HighQuality">
-                                                            <Image.RenderTransform>
-                                                                <TranslateTransform Y="-2"/>
-                                                            </Image.RenderTransform>
-                                                        </Image>
+                                                               RenderOptions.BitmapScalingMode="HighQuality"/>
                                                         <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Name}"
                                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                                    FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource TextBrush}">
-                                                            <TextBlock.RenderTransform>
-                                                                <TranslateTransform Y="-2"/>
-                                                            </TextBlock.RenderTransform>
-                                                        </TextBlock>
-                                                        <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                                            <Path Width="11" Height="11" Margin="0,0,4,0" VerticalAlignment="Center"
-                                                                  Data="{StaticResource IconExclamation}" Stretch="Uniform"
-                                                                  Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
-                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent"/>
-                                                            <TextBlock Text="응답 대기 중" VerticalAlignment="Center"
-                                                                       FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                                                       Foreground="{DynamicResource WarningBrush}"/>
-                                                        </StackPanel>
-                                                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                                                    Text="{Binding LastMessage}" Margin="0,5,0,0"
                                                                    FontSize="{DynamicResource Fs12}"
                                                                    Foreground="{DynamicResource TextMutedBrush}">
