@@ -37,10 +37,12 @@ public sealed class DiscordBotService : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastMenu = new(StringComparer.Ordinal);
     // 메뉴 답변(버튼/팝업) 후 claude 응답을 기다리는 중인 세션 — 중복 폴링 방지.
     private readonly HashSet<string> _awaitingReply = new(StringComparer.Ordinal);
-    // 세션별 마지막 관측 (modelId|effort) — 변경 시 "Set model/effort" 알림용.
+    // 세션별 마지막 관측 (modelId|effort) — 변경 감지용.
     private readonly Dictionary<string, string> _meBaseline = new(StringComparer.Ordinal);
-    // 디스코드에서 model/effort 를 바꾼 직후 1회는 변경 알림을 생략(버튼 메시지로 이미 표시).
-    private readonly HashSet<string> _meSuppressOnce = new(StringComparer.Ordinal);
+    // 변경 카드 디바운스 대기 중인 세션(연쇄 변경을 한 장으로 합침).
+    private readonly HashSet<string> _mePending = new(StringComparer.Ordinal);
+    // 세션별 마지막으로 카드로 보낸 (modelId|effort) — 동일 상태 중복 전송 방지.
+    private readonly Dictionary<string, string> _meLastPosted = new(StringComparer.Ordinal);
     // 세션별 마지막으로 디스코드에 보낸 완료 본문 — busy 경로와 폴링 경로가 같은 답을 두 번 보내는 것 방지.
     private readonly Dictionary<string, string> _lastPostedBody = new(StringComparer.Ordinal);
     // /model 선택지(선택 가능). fable 은 비활성이라 별도(비활성 버튼)로 표시.
@@ -551,7 +553,7 @@ public sealed class DiscordBotService : IDisposable
                 if (session is not { IsAlive: true }) { lock (_sync) _promptActive.Remove(s.Id); continue; }
                 lock (_sync) { if (_pendingInput.ContainsKey(s.Id)) continue; } // 자동시작 주입 중이면 스킵
 
-                // 모델/effort 변경 감지 → "Set model/effort" 만 전송(선택지·확인 메뉴 자체는 안 보냄).
+                // 모델/effort 변경 감지 → 디바운스(~2초 모아 최종 상태 1장만 전송). 선택지·확인 메뉴는 안 보냄.
                 var (mid, eff) = ModelEffortService.ReadPersisted(s.Id);
                 var meKey = (mid ?? "") + "|" + (eff ?? "");
                 lock (_sync)
@@ -560,8 +562,16 @@ public sealed class DiscordBotService : IDisposable
                     else if (prevKey != meKey)
                     {
                         _meBaseline[s.Id] = meKey;
-                        bool suppress = _meSuppressOnce.Remove(s.Id);
-                        if (!suppress) { var pj = p; var ss = s; var pk = prevKey; _ = PostModelEffortChangeAsync(pj, ss, pk, meKey); }
+                        if (_mePending.Add(s.Id)) // 이미 대기 중이면 새 타이머 안 만듦(연쇄 변경 합치기)
+                        {
+                            var pj = p; var ss = s;
+                            _ = Task.Run(async () =>
+                            {
+                                await Task.Delay(2000);
+                                lock (_sync) _mePending.Remove(ss.Id);
+                                await PostModelEffortChangeAsync(pj, ss);
+                            });
+                        }
                     }
                 }
 
@@ -640,13 +650,19 @@ public sealed class DiscordBotService : IDisposable
         return id;
     }
 
-    /// <summary>model/effort 가 바뀌면 "Model이 변경되었습니다. > 값" 을 Components V2 로 감싸 웹훅(에이전트 작성자)으로 전송.</summary>
-    private async Task PostModelEffortChangeAsync(ProjectItem project, SessionItem session, string oldKey, string newKey)
+    /// <summary>현재 model·effort 를 "변경되었습니다 > Model / > Effort" V2 카드로 웹훅(에이전트 작성자) 전송.
+    /// 디바운스 후 호출되어 현재 상태를 읽고, 동일 상태면 중복 전송하지 않는다.</summary>
+    private async Task PostModelEffortChangeAsync(ProjectItem project, SessionItem session)
     {
-        var np = newKey.Split('|');
-        string nm = np.Length > 0 ? np[0] : "", ne = np.Length > 1 ? np[1] : "";
+        var (mid, eff) = ModelEffortService.ReadPersisted(session.Id);
+        var key = (mid ?? "") + "|" + (eff ?? "");
+        lock (_sync)
+        {
+            if (_meLastPosted.TryGetValue(session.Id, out var prev) && prev == key) return; // 동일 상태 중복 방지
+            _meLastPosted[session.Id] = key;
+        }
         // model·effort 를 항상 같이 표시(현재값).
-        var body = $"변경되었습니다.\n> Model: {(nm.Length > 0 ? ModelIdToLabel(nm) : "-")}\n> Effort: {(ne.Length > 0 ? ne : "-")}";
+        var body = $"변경되었습니다.\n> Model: {(!string.IsNullOrEmpty(mid) ? ModelIdToLabel(mid) : "-")}\n> Effort: {(!string.IsNullOrEmpty(eff) ? eff : "-")}";
         var thread = await EnsureSessionThreadAsync(project, session);
         if (thread == null) return;
         var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
