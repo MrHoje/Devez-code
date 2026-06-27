@@ -345,6 +345,7 @@
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
                                                         <Grid.RowDefinitions>
                                                             <RowDefinition Height="Auto"/>
@@ -358,7 +359,12 @@
                                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                                    FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource TextBrush}"/>
-                                                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                                        <!-- 완료카드의 시간 위치에 노란색 '대기' 표시 -->
+                                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="대기" Margin="8,0,0,0"
+                                                                   VerticalAlignment="Center"
+                                                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource WarningBrush}"/>
+                                                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
                                                                    Text="{Binding LastMessage}" Margin="0,5,0,0"
                                                                    FontSize="{DynamicResource Fs12}"
                                                                    Foreground="{DynamicResource TextMutedBrush}">
