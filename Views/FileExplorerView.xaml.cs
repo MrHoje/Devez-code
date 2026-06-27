@@ -214,6 +214,9 @@ public partial class FileExplorerView : UserControl
         // (탭 자체가 각각 '작업 큐'·'브라우저' 제목 역할 → 중복 헤더 불필요)
         HeaderBar.Visibility = idx is 1 or 3 ? Visibility.Collapsed : Visibility.Visible;
 
+        // 파일 검색 박스는 탐색기(Directory) 모드에서만 의미가 있으므로 그때만 표시.
+        FileSearchRow.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
+
         PathText.Text = idx switch
         {
             1 => "브라우저",
