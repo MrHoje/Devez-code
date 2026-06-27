@@ -141,7 +141,7 @@
                               Fill="Transparent" SnapsToDevicePixels="True"/>
                         <!-- 입력 대기(선택지 메뉴) — 스피너 정지 + 느낌표. -->
                         <Path x:Name="WaitingIcon" Visibility="Collapsed"
-                              Data="{StaticResource IconAlertCircle}"
+                              Data="{StaticResource IconAlertTriangle}"
                               Width="13" Height="13" Stretch="Uniform"
                               Stroke="{DynamicResource WarningBrush}" StrokeThickness="1.8"
                               Fill="Transparent" SnapsToDevicePixels="True"/>
