@@ -2100,7 +2100,7 @@ public partial class MainWindow : Window
     {
         foreach (var p in _projects)
             foreach (var t in p.Tabs)
-                if (t is SessionItem s) s.IsBusy = false;
+                if (t is SessionItem s) { s.IsBusy = false; s.IsWaitingChoice = false; }
     }
 
     private void UpdateSessionBusyDisplay()
