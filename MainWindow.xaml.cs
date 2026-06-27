@@ -2051,14 +2051,20 @@ public partial class MainWindow : Window
 
     /// <summary>claude 세션의 터미널 화면을 주기 폴링해 1·2·3… 선택지 메뉴 등장/소멸에 맞춰
     /// IsWaitingChoice 를 토글한다(스피너 정지 + ❗). 감지 로직은 Discord 자동전송과 ClaudeMenuDetector 로 공유.</summary>
+    // 앱 시작 직후 grace 윈도우 — 이 동안 화면에 보이는 메뉴는 "재시작 전 잔존"으로 보고 ❗ 를 켜지 않는다
+    // (busy 스피너가 시작 시 취소되는 것과 동일하게, 대기 상태도 껐다 켜면 빼준다. 어차피 다시 입력해야 함).
+    private DateTime _choicePollGraceUntil;
+
     private void StartChoicePoll()
     {
+        _choicePollGraceUntil = DateTime.UtcNow.AddSeconds(6); // 세션 resume 렌더가 안착할 시간
         _choicePoll = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(400),
         };
         _choicePoll.Tick += (_, _) =>
         {
+            bool inGrace = DateTime.UtcNow < _choicePollGraceUntil;
             foreach (var p in _projects)
             {
                 if (!p.IsActive) continue;
@@ -2075,7 +2081,8 @@ public partial class MainWindow : Window
                     string? menuSig = session is { IsAlive: true } ? ClaudeMenuDetector.Extract(session.GetRecentText())?.text : null;
                     bool waiting;
                     if (menuSig == null) { waiting = false; s.DismissedMenuSig = null; } // 메뉴 사라짐 → 잔상 표식 해제
-                    else if (menuSig == s.DismissedMenuSig) waiting = false;             // Esc 로 닫은 그 메뉴 → 무시
+                    else if (inGrace) { waiting = false; s.DismissedMenuSig = menuSig; }  // 시작 직후 잔존 메뉴 → 닫힌 것으로 기록(다시 입력해야 함)
+                    else if (menuSig == s.DismissedMenuSig) waiting = false;              // Esc 로 닫은/시작 시 잔존 그 메뉴 → 무시
                     else waiting = true;
                     if (s.IsWaitingChoice != waiting) s.IsWaitingChoice = waiting;
                 }
