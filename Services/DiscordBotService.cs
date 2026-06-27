@@ -141,11 +141,13 @@ public sealed class DiscordBotService : IDisposable
         try
         {
             // 채널/스레드 무엇이든 IDeletable 로 삭제(캐시 미스 시 REST 폴백).
+            // 주의: 스레드 삭제에는 봇 역할에 "스레드 관리(Manage Threads)" 권한이 필요하다
+            // (글이 웹훅으로 생성돼 봇이 소유자가 아니므로). 권한 없으면 50013 으로 조용히 실패한다.
             IDeletable? ch = client.GetChannel(channelId) as IDeletable
                              ?? await client.Rest.GetChannelAsync(channelId) as IDeletable;
             if (ch != null) await ch.DeleteAsync();
         }
-        catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
+        catch { /* 권한 없음(Manage Threads 누락)/이미 삭제됨 — 무시 */ }
     }
 
     private Task OnChannelDestroyed(SocketChannel channel) { HandleDiscordDeleted(channel.Id); return Task.CompletedTask; }
