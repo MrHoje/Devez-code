@@ -334,7 +334,7 @@ public sealed class DiscordBotService : IDisposable
         if (thread == null) return;
 
         // 카드 본문(첫 메시지)을 방금 보낸 프롬프트로 갱신.
-        await UpdatePostStarterAsync(project, thread.Id, session);
+        await UpdatePostStarterAsync(thread, session);
 
         var title = string.IsNullOrWhiteSpace(project.Name) ? "프로젝트" : project.Name;
         var sess = string.IsNullOrWhiteSpace(session.Name) ? "세션" : session.Name;
@@ -351,7 +351,7 @@ public sealed class DiscordBotService : IDisposable
         var body = string.IsNullOrWhiteSpace(reply)
             ? $"**{title} / {sess}** 응답 완료{question}"
             : $"**{title} / {sess}** 응답 완료{question}\n\n{HeadForDiscord(reply, 1500)}";
-        await SendAsAgentAsync(project, thread, agentId, body); // 작성자명 = 에이전트(웹훅)
+        await SafeSendAsync(thread, body);
     }
 
     private async Task OnMessageReceived(SocketMessage message)
@@ -773,33 +773,20 @@ public sealed class DiscordBotService : IDisposable
         var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
         var title = ThreadName(session);
         var body = StarterText(session); // 카드 본문 = 마지막 보낸 프롬프트
-        var name = AgentDisplayName(agentId);
 
-        ulong postId;
-        var hook = await GetWebhookAsync(forum.Id);
-        if (hook != null)
+        IThreadChannel post;
+        var icon = OpenAgentIcon(agentId);
+        if (icon is { } ic)
         {
-            // 웹훅 + threadName 으로 포럼 글 생성 → 작성자=에이전트. 반환 ID = 글(스레드) ID.
-            var icon = OpenAgentIcon(agentId);
-            if (icon is { } ic)
-            {
-                using var s = ic.stream;
-                postId = await hook.SendFileAsync(s, ic.fileName, body, username: name, threadName: title);
-            }
-            else
-            {
-                postId = await hook.SendMessageAsync(body, username: name, threadName: title);
-            }
+            using var fa = new FileAttachment(ic.stream, ic.fileName);
+            post = await forum.CreatePostWithFileAsync(title, fa, ThreadArchiveDuration.OneWeek, text: body);
         }
         else
         {
-            // 폴백: 봇으로 생성(작성자=봇).
-            var post0 = await forum.CreatePostAsync(title, ThreadArchiveDuration.OneWeek, text: body);
-            postId = post0.Id;
+            post = await forum.CreatePostAsync(title, ThreadArchiveDuration.OneWeek, text: body);
         }
-
-        SettingsService.SaveDiscordSessionThread(session.Id, postId);
-        return client.GetChannel(postId) as IMessageChannel ?? await client.Rest.GetChannelAsync(postId) as IMessageChannel;
+        SettingsService.SaveDiscordSessionThread(session.Id, post.Id);
+        return post;
     }
 
     private bool IsConfigured => SettingsService.LoadDiscordEnabled()
@@ -856,16 +843,6 @@ public sealed class DiscordBotService : IDisposable
             ? "아직 보낸 메시지가 없습니다."
             : HeadForDiscord(session.LastMessage, 1500);
 
-    /// <summary>완료/메시지를 보낼 때 표시할 에이전트 작성자명(웹훅 username).</summary>
-    private static string AgentDisplayName(string? agentId) => (agentId ?? "").ToLowerInvariant() switch
-    {
-        "codex" => "Codex",
-        "opencode" => "OpenCode",
-        "gajae" => "Gajae",
-        "claude" => "Claude",
-        _ => "Agent",
-    };
-
     /// <summary>글 제목이 현재 규칙과 다르면 갱신한다(rate-limit 즉시 포기).</summary>
     private static async Task EnsureThreadNameAsync(IThreadChannel thread, SessionItem session)
     {
@@ -876,46 +853,16 @@ public sealed class DiscordBotService : IDisposable
         catch { /* rate limit/권한 실패는 무시 — 다음 동기화 때 다시 시도 */ }
     }
 
-    /// <summary>포럼 채널의 웹훅을 가져오거나 만든다(포럼별 1개, 캐시). threadName/threadId 로 글 생성·답글에 사용.</summary>
-    private async Task<DiscordWebhookClient?> GetWebhookAsync(ulong forumId)
+    /// <summary>포럼 글의 첫 메시지(카드 본문)를 최신 프롬프트로 갱신한다. 봇이 만든 시작 메시지만 수정 가능.</summary>
+    private static async Task UpdatePostStarterAsync(IMessageChannel thread, SessionItem session)
     {
-        if (_webhooks.TryGetValue(forumId, out var cached)) return cached;
-        var client = _client;
-        if (client == null) return null;
+        if (thread is not IThreadChannel t) return; // 포럼 글의 시작 메시지 ID = 글(스레드) ID
         try
         {
-            if (client.GetChannel(forumId) is not IIntegrationChannel ch) return null;
-            var hooks = await ch.GetWebhooksAsync();
-            var wh = hooks.FirstOrDefault(h => h.Name == "devez" && h.Token != null)
-                     ?? await ch.CreateWebhookAsync("devez");
-            var whc = new DiscordWebhookClient(wh);
-            _webhooks[forumId] = whc;
-            return whc;
+            if (await t.GetMessageAsync(t.Id) is IUserMessage msg)
+                await msg.ModifyAsync(m => m.Content = StarterText(session));
         }
-        catch { return null; }
-    }
-
-    /// <summary>세션 글(스레드)에 에이전트 작성자명으로 메시지를 보낸다(포럼 웹훅 + threadId). 실패 시 봇 폴백.</summary>
-    private async Task SendAsAgentAsync(ProjectItem project, IMessageChannel thread, string? agentId, string text)
-    {
-        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
-        var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
-        if (hook != null)
-        {
-            try { await hook.SendMessageAsync(TrimForDiscord(text, 1900), username: AgentDisplayName(agentId), threadId: thread.Id); return; }
-            catch { /* 웹훅 실패 → 봇으로 폴백 */ }
-        }
-        await SafeSendAsync(thread, text);
-    }
-
-    /// <summary>포럼 글 첫 메시지(카드 본문)를 최신 프롬프트로 갱신(웹훅). 글 ID = 시작 메시지 ID.</summary>
-    private async Task UpdatePostStarterAsync(ProjectItem project, ulong postId, SessionItem session)
-    {
-        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
-        var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
-        if (hook == null) return;
-        try { await hook.ModifyMessageAsync(postId, m => m.Content = StarterText(session), threadId: postId); }
-        catch { /* 무시 */ }
+        catch { /* 권한/조회 실패는 무시 */ }
     }
 
     /// <summary>에이전트 아이콘 리소스를 절반 여백 캔버스로 만들어 스트림으로 연다(포럼 Gallery 썸네일용).</summary>
