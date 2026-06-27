@@ -89,6 +89,11 @@ public static class ClaudeMenuDetector
         question = Regex.Replace(question, @"\s{2,}", " ").Trim();
         if (question.Length > 200) question = "…" + question[^200..];
 
+        // 생각중 스피너(✸✶✻✽, "thought for", "esc to interrupt")가 섞이면 가짜 메뉴 →
+        // 토큰 카운트 숫자가 옵션 마커로 오인된 것이므로 무효 처리. (스피너 전용 신호만 — 정상 메뉴 오탐 방지)
+        if (Regex.IsMatch(flat, "✸|✶|✻|✽|thought for|esc to interrupt", RegexOptions.IgnoreCase))
+            return null;
+
         // 각 옵션: 이 마커 content 시작 ~ 다음 마커 start 까지. 본문의 '─'(구분선) 제거.
         var opts = new List<string>();
         int typeOpt = 0; // "Type something"(자유 입력) 옵션 번호 — 디스코드 모달로 처리.
