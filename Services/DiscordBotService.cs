@@ -275,9 +275,9 @@ public sealed class DiscordBotService : IDisposable
             var cmds = new ApplicationCommandProperties[]
             {
                 new SlashCommandBuilder().WithName("refresh")
-                    .WithDescription("세션 동기화 + 스레드 이름 갱신 + 채널 입력창 권한 적용").Build(),
+                    .WithDescription("(대시보드) 세션 동기화 + 스레드 이름 갱신 + 채널 입력창 권한 적용").Build(),
                 new SlashCommandBuilder().WithName("status")
-                    .WithDescription("연결 상태 + 등록된 프로젝트·세션 상태를 표시합니다.").Build(),
+                    .WithDescription("(대시보드) 연결 상태 + 등록된 프로젝트·세션 상태를 표시합니다.").Build(),
                 new SlashCommandBuilder().WithName("keys")
                     .WithDescription("세션 스레드 조작용 키 컨트롤 버튼을 표시합니다.").Build(),
                 new SlashCommandBuilder().WithName("usage")
@@ -287,7 +287,7 @@ public sealed class DiscordBotService : IDisposable
                 new SlashCommandBuilder().WithName("effort")
                     .WithDescription("이 세션의 claude effort 를 번호로 선택합니다.").Build(),
                 new SlashCommandBuilder().WithName("reset")
-                    .WithDescription("봇이 만든 모든 채널을 삭제하고 새로 구성합니다(되돌릴 수 없음).")
+                    .WithDescription("(대시보드) 봇이 만든 모든 채널을 삭제하고 새로 구성합니다(되돌릴 수 없음).")
                     .AddOption("confirm", ApplicationCommandOptionType.Boolean, "정말 초기화하려면 True 를 선택", isRequired: true)
                     .Build(),
             };
@@ -390,7 +390,7 @@ public sealed class DiscordBotService : IDisposable
                 }
                 // 즉시 ack 후 백그라운드 실행 — 채널 대량 삭제는 rate-limit 으로 오래 걸려
                 // 게이트웨이 스레드를 잡으면 봇이 먹통이 된다. 완료 결과는 #명령어 채널 리포트로.
-                try { await command.RespondAsync("초기화를 시작합니다… 완료되면 #명령어 채널에 결과가 표시됩니다.", ephemeral: true); } catch { }
+                try { await command.RespondAsync("초기화를 시작합니다… 완료되면 대시보드 채널에 결과가 표시됩니다.", ephemeral: true); } catch { }
                 _ = Task.Run(ResetWorkspaceAsync);
                 break;
         }
@@ -1205,7 +1205,7 @@ public sealed class DiscordBotService : IDisposable
                 IForumChannel f => LooksLikePath(f.Topic),
                 ITextChannel t => LooksLikePath(t.Topic) || StartsWithAgentEmoji(t.Name)
                                    || t.Name.Equals("sessions", StringComparison.OrdinalIgnoreCase)
-                                   || (t.CategoryId == null && t.Name.Equals("명령어", StringComparison.OrdinalIgnoreCase)),
+                                   || (t.CategoryId == null && (t.Name.Equals("명령어", StringComparison.OrdinalIgnoreCase) || t.Name.Equals("대시보드", StringComparison.OrdinalIgnoreCase))),
                 _ => false,
             };
             if (!hit) continue;
@@ -1294,22 +1294,31 @@ public sealed class DiscordBotService : IDisposable
         {
             try
             {
-                var channel = await guild.CreateTextChannelAsync("명령어", props => props.CategoryId = targetCategory);
+                var channel = await guild.CreateTextChannelAsync("대시보드", props => props.CategoryId = targetCategory);
                 SettingsService.SaveDiscordCommandChannel(channel.Id);
                 await ApplyChannelRestrictionsAsync(guild, channel); // 초대/첨부 등 차단
                 await SafeSendAsync(channel,
-                    "**DevezCode 명령어 채널** (명령은 이 채널에서만 동작)\n" +
+                    "**DevezCode 대시보드** (대시보드 명령은 이 채널에서만 동작)\n" +
                     "- `/refresh` — 세션 동기화 + 스레드 이름 갱신 + 채널 권한 적용\n" +
-                    "- `/status` — 프로젝트·세션 상태\n" +
+                    "- `/status` — 연결 상태 + 프로젝트·세션 상태\n" +
                     "- `/reset confirm:True` — 전체 초기화(되돌릴 수 없음)\n" +
                     "- `/keys` — 키 컨트롤 버튼(세션 스레드에서 사용)\n" +
                     "세션 조작은 각 세션 스레드에서 진행하세요.");
             }
             catch { /* 권한 부족 등은 무시 */ }
         }
-        else if (targetCategory != null && cmd.CategoryId != targetCategory)
+        else
         {
-            try { await cmd.ModifyAsync(p => p.CategoryId = targetCategory); } catch { }
+            // 이미 있으면: 카테고리 이동 + 옛 이름("명령어")이면 "대시보드"로 변경.
+            try
+            {
+                await cmd.ModifyAsync(p =>
+                {
+                    if (targetCategory != null && cmd.CategoryId != targetCategory) p.CategoryId = targetCategory;
+                    if (!cmd.Name.Equals("대시보드", StringComparison.OrdinalIgnoreCase)) p.Name = "대시보드";
+                });
+            }
+            catch { }
         }
 
         // 마지막에 #일반/#general 삭제(카테고리는 남는다).
