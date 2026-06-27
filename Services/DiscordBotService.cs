@@ -435,6 +435,7 @@ public sealed class DiscordBotService : IDisposable
         {
             var thread = await EnsureSessionThreadAsync(project, session);
             if (thread == null) { lock (_sync) _promptActive.Remove(session.Id); return; }
+            menu = ForceSpacing(menu);
             _lastMenu[session.Id] = menu; // 버튼 클릭 시 고른 옵션 라벨 복원용
             var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
             // 메뉴는 Claude(웹훅)가 보낸 것으로 표시. 웹훅이 버튼을 못 실으면 봇으로 폴백(SendAsAgentAsync 내부).
@@ -442,6 +443,11 @@ public sealed class DiscordBotService : IDisposable
         }
         catch { lock (_sync) _promptActive.Remove(session.Id); }
     }
+
+    /// <summary>alt-screen 의 열 정렬 공백이 사라져 라벨이 설명에 들러붙는 경우 강제로 공백을 넣어 가독성 보정.
+    /// "N번" 라벨이 한글에 바로 붙으면(예: "4번네") 사이를 띄운다.</summary>
+    private static string ForceSpacing(string menu)
+        => Regex.Replace(menu, @"(\d번)(?=[가-힣])", "$1 ");
 
     /// <summary>세션 스레드의 키 컨트롤 버튼 클릭을 받아 해당 키스트로크를 터미널 stdin 으로 전달한다.</summary>
     private async Task OnButtonExecuted(SocketMessageComponent component)
