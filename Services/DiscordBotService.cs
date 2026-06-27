@@ -488,7 +488,7 @@ public sealed class DiscordBotService : IDisposable
         {
             try
             {
-                await Task.Delay(inline ? 4000 : 2000); // TUI 가 입력란을 그릴 여유(넉넉하게)
+                await Task.Delay(inline ? 3000 : 2000); // TUI 가 입력란을 그릴 여유
                 var session = TerminalSessionManager.Instance.Get(sessionId);
                 if (session is not { IsAlive: true }) return;
                 foreach (var msg in queued)
