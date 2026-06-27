@@ -446,11 +446,17 @@ public sealed class DiscordBotService : IDisposable
         if (string.IsNullOrEmpty(screen)) return null;
         var all = screen.Replace("\r", "").Split('\n');
         int take = Math.Min(45, all.Length);
+        int from0 = all.Length - take;
 
-        // 화면 끝부분을 박스/커서 문자 제거 후 한 줄로 평탄화(공백 압축).
+        // 메뉴는 보통 박스(╭…╰) 안에 그려진다 → 마지막 박스 top(╭/┌)부터만 읽어
+        // 그 위의 입력 에코·스피너 노이즈("다시 띄워봐", "✻ Cooked …")를 제외한다.
+        for (int i = all.Length - 1; i >= from0; i--)
+            if (all[i].Contains('╭') || all[i].Contains('┌')) { from0 = i; break; }
+
+        // 화면(박스) 부분을 박스/커서 문자 제거 후 한 줄로 평탄화(공백 압축).
         bool hasCursor = false;
         var sbFlat = new StringBuilder();
-        for (int i = all.Length - take; i < all.Length; i++)
+        for (int i = from0; i < all.Length; i++)
         {
             var line = all[i];
             if (line.Contains('❯') || line.Contains('›')) hasCursor = true;
@@ -462,6 +468,16 @@ public sealed class DiscordBotService : IDisposable
             sbFlat.Append(' ').Append(c);
         }
         var flat = Regex.Replace(sbFlat.ToString(), @"\s+", " ").Trim();
+
+        // 푸터 힌트("Enter to select · ↑/↓ to navigate · Esc to cancel" 등)는 마지막 옵션에 들러붙으므로
+        // 가장 먼저 나오는 힌트 위치에서 잘라낸다(힌트는 항상 옵션 뒤에 온다).
+        int cut = flat.Length;
+        foreach (var kw in new[] { "Enter to select", "↑/↓", "↑ /↓", "to navigate", "Esc to cancel", "esc to interrupt", "to interrupt" })
+        {
+            var idx = flat.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0 && idx < cut) cut = idx;
+        }
+        flat = flat[..cut].Trim();
 
         // 1,2,3… 연속 번호 마커를 순서대로 찾는다(앞에서부터, 직전 마커 뒤에서만 다음 번호 탐색).
         var marks = new List<(int num, int start, int contentStart)>();
