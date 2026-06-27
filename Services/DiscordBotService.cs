@@ -514,7 +514,10 @@ public sealed class DiscordBotService : IDisposable
         }
     }
 
-    /// <summary>입력 대기 선택지 메뉴 화면을 스레드로 전송(옵션 수에 맞춘 키 버튼 포함).</summary>
+    private const string PromptHeader = "⌨️ 입력 대기 — 선택지가 있습니다:";
+
+    /// <summary>입력 대기 선택지 메뉴를 Components V2(Container + 텍스트 + 버튼)로 전송. 작성자=Claude(웹훅).
+    /// V2/웹훅 실패 시 기존 텍스트+버튼 방식으로 폴백.</summary>
     private async Task SendPromptAsync(ProjectItem project, SessionItem session, string menu, int maxOpt, int typeOpt)
     {
         try
@@ -524,10 +527,59 @@ public sealed class DiscordBotService : IDisposable
             menu = ForceSpacing(menu);
             _lastMenu[session.Id] = menu; // 버튼 클릭 시 고른 옵션 라벨 복원용
             var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-            // 메뉴는 Claude(웹훅)가 보낸 것으로 표시. 웹훅이 버튼을 못 실으면 봇으로 폴백(SendAsAgentAsync 내부).
-            await SendAsAgentAsync(project, thread, agentId, $"⌨️ 입력 대기 — 선택지가 있습니다:\n{menu}", BuildKeyControls(maxOpt, typeOpt));
+
+            var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
+            var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
+            if (hook != null)
+            {
+                try
+                {
+                    var container = new ContainerBuilder()
+                        .AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord($"{PromptHeader}\n{menu}", 3500)));
+                    foreach (var row in BuildKeyRows(maxOpt, typeOpt)) container.AddComponent(row);
+                    var comp = new ComponentBuilderV2().AddComponent(container).Build();
+                    await hook.SendMessageAsync(text: null, username: AgentDisplayName(agentId), avatarUrl: AgentAvatarUrl(agentId),
+                        components: comp, flags: MessageFlags.ComponentsV2, threadId: thread.Id);
+                    return;
+                }
+                catch { /* V2/웹훅 실패 → 폴백 */ }
+            }
+            await SendAsAgentAsync(project, thread, agentId, $"{PromptHeader}\n{menu}", BuildKeyControls(maxOpt, typeOpt));
         }
         catch { lock (_sync) _promptActive.Remove(session.Id); }
+    }
+
+    /// <summary>번호 선택 버튼을 ActionRow 목록으로 만든다(행당 5개). typeOpt 번은 ✏️ 직접 입력 버튼.</summary>
+    private static List<ActionRowBuilder> BuildKeyRows(int maxOpt, int typeOpt)
+    {
+        var n = Math.Clamp(maxOpt, 1, 9);
+        var rows = new List<ActionRowBuilder>();
+        ActionRowBuilder? cur = null;
+        for (int i = 1; i <= n; i++)
+        {
+            if ((i - 1) % 5 == 0) { cur = new ActionRowBuilder(); rows.Add(cur); }
+            if (i == typeOpt) cur!.WithButton($"✏️ {i} 직접 입력", $"dc:type:{i}", ButtonStyle.Primary);
+            else cur!.WithButton(i.ToString(), $"dc:key:{i}", ButtonStyle.Secondary);
+        }
+        return rows;
+    }
+
+    /// <summary>V2 선택지 메시지의 버튼을 제거(중복 선택 방지) — 메뉴 텍스트만 남긴 V2 컨테이너로 다시 그린다.</summary>
+    private async Task RemoveV2ButtonsAsync(ProjectItem? project, ulong threadId, ulong messageId, string? sessionId)
+    {
+        if (project == null) return;
+        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
+        var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
+        if (hook == null) return;
+        var menu = sessionId != null && _lastMenu.TryGetValue(sessionId, out var mm) ? mm : "";
+        try
+        {
+            var container = new ContainerBuilder()
+                .AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord($"{PromptHeader}\n{menu}", 3500)));
+            var comp = new ComponentBuilderV2().AddComponent(container).Build();
+            await hook.ModifyMessageAsync(messageId, m => m.Components = comp, threadId: threadId);
+        }
+        catch { /* 무시 */ }
     }
 
     /// <summary>alt-screen 의 열 정렬 공백이 사라져 라벨이 설명에 들러붙는 경우 강제로 공백을 넣어 가독성 보정.
@@ -617,33 +669,15 @@ public sealed class DiscordBotService : IDisposable
         if (seq == null) return;
         session.Write(seq);
 
-        // 선택을 "내 메시지"로 표시(웹훅 임퍼스네이션) + 중복 방지로 버튼 제거.
+        // 선택을 "내 메시지"로 표시(웹훅 임퍼스네이션) + 중복 방지로 버튼 제거(V2 메시지 다시 그리기).
         var project = ProjectForSession(sessionId);
         if (project != null && component.Channel is IMessageChannel ch && int.TryParse(keyName, out var num))
             await SendAsUserAsync(project, ch, component.User, ChoiceText(sessionId, num));
-        await RemovePromptButtonsAsync(project, component.Channel as IMessageChannel, component.Message.Id, threadId);
+        await RemoveV2ButtonsAsync(project, threadId, component.Message.Id, sessionId);
 
         // 메뉴 답변 완료 알림(busy 전환이 없으므로 lastreply 폴링으로 직접 전송).
         var sItem = project?.Sessions.FirstOrDefault(s => s.Id == sessionId);
         if (project != null && sItem != null) _ = WaitAndPostReplyAsync(project, sItem);
-    }
-
-    /// <summary>웹훅(Claude)으로 보낸 메뉴 메시지의 버튼을 제거(중복 선택 방지). 봇 메시지면 봇으로 폴백.</summary>
-    private async Task RemovePromptButtonsAsync(ProjectItem? project, IMessageChannel? thread, ulong messageId, ulong threadId)
-    {
-        if (project != null)
-        {
-            var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
-            var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
-            if (hook != null)
-            {
-                try { await hook.ModifyMessageAsync(messageId, m => m.Components = new ComponentBuilder().Build(), threadId: threadId); return; }
-                catch { /* 웹훅 메시지가 아니거나 실패 → 봇 폴백 */ }
-            }
-        }
-        if (thread != null)
-            try { if (await thread.GetMessageAsync(messageId) is IUserMessage um) await um.ModifyAsync(m => m.Components = new ComponentBuilder().Build()); }
-            catch { }
     }
 
     /// <summary>세션 ID 로 소속 프로젝트를 찾는다(없으면 null).</summary>
@@ -743,7 +777,7 @@ public sealed class DiscordBotService : IDisposable
         if (project != null && modal.Channel is IMessageChannel uch && !string.IsNullOrEmpty(text))
             await SendAsUserAsync(project, uch, modal.User, text);
         try { await modal.DeleteOriginalResponseAsync(); } catch { }
-        await RemovePromptButtonsAsync(project, modal.Channel as IMessageChannel, msgId, threadId);
+        await RemoveV2ButtonsAsync(project, threadId, msgId, sessionId);
 
         // 메뉴 답변 완료 알림(busy 전환이 없으므로 lastreply 폴링으로 직접 전송).
         var sItem = project?.Sessions.FirstOrDefault(s => s.Id == sessionId);
