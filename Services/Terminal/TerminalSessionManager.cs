@@ -558,15 +558,13 @@ public sealed class TerminalSessionManager
         // transcript 가 살아있으면 이어가야 하기 때문(예전엔 launched 유실 시 새 세션이 열렸다).
         bool resume = sessionId != null && ClaudeTranscriptExists(ccDir, sessionId);
 
-        // 추적·settings 가 가리키는 세션의 transcript 가 디스크에 없다 = 빈 세션 ID 고착.
-        // 그대로 --session-id 로 재사용하면 매 실행이 같은 빈 세션을 다시 열어(영원히 빈 화면),
-        // 새 대화를 저장해도 추적이 옛 빈 ID 를 계속 가리켜 복원되지 않는다.
-        // → 빈 ID 를 폐기(settings·추적파일 제거)하고 claude 가 새 세션을 발급하게 한다. 사용자가 실제로
-        // 대화하면 UserPromptSubmit 훅(busy-hook)이 그 새 유효 세션 ID 를 추적파일에 기록 → 다음부터 정상 resume.
+        // transcript 를 못 찾으면 이번엔 새 세션으로 시작하되, 추적/settings 는 절대 삭제하지 않는다.
+        // (예전엔 여기서 삭제(자폭)했는데 — 스캔 일시 실패·파일잠금·외부 동기화 지연 등으로 잠깐만 못 찾아도
+        //  멀쩡한 세션을 영구히 잃었다. 삭제하지 않으면: ① 사용자가 새 세션에서 대화하면 busy-hook 이
+        //  새 sid 로 추적을 덮어 자연히 정상화되고, ② transcript 가 다시 보이면 그대로 resume 된다.
+        //  빈 세션 ID 고착(영원히 빈 화면)도 안 생긴다 — 이번 실행이 이미 새 세션(sessionId=null)으로 시작하기 때문.)
         if (sessionId != null && !resume)
         {
-            SettingsService.RemoveClaudeCodeRoomSession(roomId);
-            DeleteTrackedSessionFile(roomId);
             sessionId = null;
         }
 
