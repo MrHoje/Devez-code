@@ -295,10 +295,8 @@ public sealed class DiscordBotService : IDisposable
             case "info":
             {
                 var sid = SettingsService.FindDiscordSessionByThread(command.ChannelId ?? 0);
-                var line = string.IsNullOrWhiteSpace(sid) ? null : ReadStatusLine(sid!);
-                var msg = line != null
-                    ? $"📊 {line}"
-                    : "이 세션의 상태 정보를 찾을 수 없습니다. (세션 스레드에서, claude 가 한 번 이상 응답한 뒤 사용하세요.)";
+                var line = string.IsNullOrWhiteSpace(sid) ? null : SessionInfoLine(sid!);
+                var msg = line ?? "이 세션의 상태 정보를 찾을 수 없습니다. (세션 스레드에서, claude 가 한 번 이상 응답한 뒤 사용하세요.)";
                 try { await command.RespondAsync(msg, ephemeral: true); } catch { }
                 break;
             }
@@ -380,12 +378,17 @@ public sealed class DiscordBotService : IDisposable
             body = string.IsNullOrWhiteSpace(question) ? "응답 완료" : question;
 
         // 중복 방지: 같은 본문을 직전에 보냈으면(busy 경로 + 폴링 경로 동시 발동) 한 번만 보낸다.
+        // dedup 키는 정보줄(아래)을 제외한 본문으로 비교 — ctx 가 미세하게 달라도 중복 전송되지 않게.
         lock (_sync)
         {
             if (_lastPostedBody.TryGetValue(session.Id, out var prev) && prev == body) return;
             _lastPostedBody[session.Id] = body;
         }
-        await SendAsAgentAsync(project, thread, agentId, body); // 작성자명 = 에이전트(웹훅)
+
+        // 마지막 줄에 현재 모델·effort·컨텍스트(claude) 정보 한 줄 추가.
+        var info = SessionInfoLine(session.Id);
+        var sendText = info != null ? $"{body}\n{info}" : body;
+        await SendAsAgentAsync(project, thread, agentId, sendText); // 작성자명 = 에이전트(웹훅)
     }
 
     private async Task OnMessageReceived(SocketMessage message)
@@ -787,6 +790,16 @@ public sealed class DiscordBotService : IDisposable
             return clean.Length == 0 ? null : clean;
         }
         catch { return null; }
+    }
+
+    /// <summary>상태줄을 "week: …" 세그먼트까지만 잘라서 반환(그 뒤 reset/usage 등은 제거). 없으면 null.</summary>
+    private static string? SessionInfoLine(string roomId)
+    {
+        var s = ReadStatusLine(roomId);
+        if (s == null) return null;
+        var idx = s.IndexOf("week", StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0) { var bar = s.IndexOf('|', idx); if (bar > idx) s = s[..bar].TrimEnd(); }
+        return s;
     }
 
     private string BuildStatusText()
