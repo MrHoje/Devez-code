@@ -60,7 +60,10 @@ public sealed class DiscordBotService : IDisposable
             }
         if (e.OldItems != null)
             foreach (ProjectItem p in e.OldItems)
+            {
                 p.Sessions.CollectionChanged -= OnSessionsChanged;
+                if (IsConfigured) _ = RemoveProjectAsync(p); // 카테고리·세션 채널 삭제
+            }
     }
 
     /// <summary>세션 추가 → 스레드 생성, 세션 삭제 → 스레드 삭제·매핑 정리.
@@ -79,19 +82,47 @@ public sealed class DiscordBotService : IDisposable
             foreach (SessionItem s in e.OldItems) _ = RemoveSessionThreadAsync(s.Id);
     }
 
-    /// <summary>세션 삭제 시 Discord 스레드를 삭제하고 매핑·대기 입력을 정리한다.</summary>
+    /// <summary>세션 삭제 시 Discord 세션 채널을 삭제하고 매핑·대기 입력을 정리한다.</summary>
     private async Task RemoveSessionThreadAsync(string sessionId)
     {
-        var threadId = SettingsService.LoadDiscordSessionThread(sessionId);
+        var channelId = SettingsService.LoadDiscordSessionThread(sessionId);
         lock (_sync) _pendingInput.Remove(sessionId);
-        if (threadId == 0) return;
+        if (channelId == 0) return;
         SettingsService.SaveDiscordSessionThread(sessionId, 0); // 매핑 제거
         var client = _client;
         if (client == null) return;
         try
         {
-            if (client.GetChannel(threadId) is IThreadChannel thread)
-                await thread.DeleteAsync();
+            // 채널/스레드 무엇이든 IDeletable 로 삭제(캐시 미스 시 REST 폴백).
+            IDeletable? ch = client.GetChannel(channelId) as IDeletable
+                             ?? await client.Rest.GetChannelAsync(channelId) as IDeletable;
+            if (ch != null) await ch.DeleteAsync();
+        }
+        catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
+    }
+
+    /// <summary>프로젝트 삭제 시 세션 채널들과 프로젝트 카테고리를 삭제하고 매핑을 정리한다.</summary>
+    private async Task RemoveProjectAsync(ProjectItem project)
+    {
+        // 세션 채널 먼저 삭제(카테고리는 자식이 있어도 지워지지만, 자식 채널은 안 지워지므로 선삭제).
+        foreach (var s in project.Sessions) await RemoveSessionThreadAsync(s.Id);
+
+        var catId = SettingsService.LoadDiscordProjectCategory(project.Path);
+        SettingsService.SaveDiscordProjectCategory(project.Path, 0);
+        SettingsService.SaveDiscordProjectChannel(project.Path, 0); // 레거시 매핑도 정리
+        if (catId == 0) return;
+        var client = _client;
+        if (client == null) return;
+        try
+        {
+            // 카테고리에 남은(매핑 안 된) 자식 채널까지 정리 후 카테고리 삭제.
+            var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+            if (guild?.GetCategoryChannel(catId) is { } cat)
+                foreach (var child in cat.Channels.ToList())
+                    try { await child.DeleteAsync(); } catch { }
+            IDeletable? c = client.GetChannel(catId) as IDeletable
+                            ?? await client.Rest.GetChannelAsync(catId) as IDeletable;
+            if (c != null) await c.DeleteAsync();
         }
         catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
     }
