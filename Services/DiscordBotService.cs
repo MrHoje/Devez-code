@@ -328,6 +328,9 @@ public sealed class DiscordBotService : IDisposable
         var thread = await EnsureSessionThreadAsync(project, session);
         if (thread == null) return;
 
+        // 카드 본문(첫 메시지)을 방금 보낸 프롬프트로 갱신 — Gallery/List 카드에 최신 질문이 보이게.
+        await UpdatePostStarterAsync(thread, session);
+
         var title = string.IsNullOrWhiteSpace(project.Name) ? "프로젝트" : project.Name;
         var sess = string.IsNullOrWhiteSpace(session.Name) ? "세션" : session.Name;
 
@@ -767,7 +770,7 @@ public sealed class DiscordBotService : IDisposable
         // 에이전트 아이콘을 첨부하면 포럼 Gallery 뷰에서 글 카드 썸네일로 보인다.
         var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
         var title = ThreadName(session);
-        var body = $"세션: {session.Name} · {agentId}";
+        var body = StarterText(session); // 카드 본문 = 마지막 보낸 프롬프트
 
         IThreadChannel post;
         var icon = OpenAgentIcon(agentId);
@@ -876,12 +879,29 @@ public sealed class DiscordBotService : IDisposable
         catch { return null; }
     }
 
-    /// <summary>포럼 글(스레드) 제목 = 에이전트 접두 + 세션명. 글 제목은 채널명과 달리 정규화가 없어 자유 형식.</summary>
+    /// <summary>포럼 글(스레드) 제목 = 세션명만(접두 없음). 글 제목은 채널명과 달리 정규화가 없어 자유 형식.</summary>
     private static string ThreadName(SessionItem session)
     {
         var name = string.IsNullOrWhiteSpace(session.Name) ? "세션" : session.Name.Trim();
-        var full = $"{AgentEmoji(session.AgentId)}{name}";
-        return full.Length <= 100 ? full : full[..100]; // 글 제목 최대 100자
+        return name.Length <= 100 ? name : name[..100]; // 글 제목 최대 100자
+    }
+
+    /// <summary>포럼 글 카드 본문(첫 메시지) = 마지막 보낸 프롬프트. 없으면 안내 문구.</summary>
+    private static string StarterText(SessionItem session)
+        => string.IsNullOrWhiteSpace(session.LastMessage)
+            ? "아직 보낸 메시지가 없습니다."
+            : HeadForDiscord(session.LastMessage, 1500);
+
+    /// <summary>포럼 글의 첫 메시지(카드 본문)를 최신 프롬프트로 갱신한다. 봇이 만든 시작 메시지만 수정 가능.</summary>
+    private static async Task UpdatePostStarterAsync(IMessageChannel thread, SessionItem session)
+    {
+        if (thread is not IThreadChannel t) return; // 포럼 글의 시작 메시지 ID = 글(스레드) ID
+        try
+        {
+            if (await t.GetMessageAsync(t.Id) is IUserMessage msg)
+                await msg.ModifyAsync(m => m.Content = StarterText(session));
+        }
+        catch { /* 권한/조회 실패는 무시 */ }
     }
 
     /// <summary>글 제목이 현재 규칙과 다르면 갱신한다.
