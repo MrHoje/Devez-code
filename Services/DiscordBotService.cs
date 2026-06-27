@@ -305,7 +305,9 @@ public sealed class DiscordBotService : IDisposable
             {
                 var sid = SettingsService.FindDiscordSessionByThread(command.ChannelId ?? 0);
                 var line = string.IsNullOrWhiteSpace(sid) ? null : SessionInfoLine(sid!);
-                var msg = line ?? "이 세션의 상태 정보를 찾을 수 없습니다. (세션 스레드에서, claude 가 한 번 이상 응답한 뒤 사용하세요.)";
+                string msg;
+                if (line == null) msg = "이 세션의 상태 정보를 찾을 수 없습니다. (세션 스레드에서, claude 가 한 번 이상 응답한 뒤 사용하세요.)";
+                else { var (a, b) = SplitInfo(line); msg = b.Length > 0 ? $"{a}\n{b}" : a; }
                 try { await command.RespondAsync(msg, ephemeral: true); } catch { }
                 break;
             }
@@ -412,9 +414,14 @@ public sealed class DiscordBotService : IDisposable
             _lastPostedBody[session.Id] = body;
         }
 
-        // 마지막에 구분선 + 현재 모델·effort·컨텍스트(claude) 정보를 작은 글씨(subtext)로 추가.
+        // 마지막에 현재 모델·effort·컨텍스트(claude) 정보를 작은 글씨(subtext) 두 줄로 추가(푸터처럼 구분).
         var info = SessionInfoLine(session.Id);
-        var sendText = info != null ? $"{body}\n-# ────────────────\n-# {info}" : body;
+        var sendText = body;
+        if (info != null)
+        {
+            var (a, b) = SplitInfo(info);
+            sendText = b.Length > 0 ? $"{body}\n-# {a}\n-# {b}" : $"{body}\n-# {a}";
+        }
         await SendAsAgentAsync(project, thread, agentId, sendText); // 작성자명 = 에이전트(웹훅)
     }
 
@@ -873,6 +880,15 @@ public sealed class DiscordBotService : IDisposable
         var idx = s.IndexOf("week", StringComparison.OrdinalIgnoreCase);
         if (idx >= 0) { var bar = s.IndexOf('|', idx); if (bar > idx) s = s[..bar].TrimEnd(); }
         return s;
+    }
+
+    /// <summary>상태줄을 두 줄로 나눈다: (모델·effort·ctx, 5h·week). ctx 세그먼트 기준 분할.</summary>
+    private static (string a, string b) SplitInfo(string info)
+    {
+        var segs = info.Split('|').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+        int ctx = segs.FindIndex(x => x.StartsWith("ctx", StringComparison.OrdinalIgnoreCase));
+        if (ctx < 0 || ctx + 1 >= segs.Count) return (string.Join(" | ", segs), "");
+        return (string.Join(" | ", segs.Take(ctx + 1)), string.Join(" | ", segs.Skip(ctx + 1)));
     }
 
     private string BuildStatusText()
