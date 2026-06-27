@@ -190,7 +190,8 @@
                     <GridSplitter x:Name="PaneSplitter" Grid.Column="1" Width="4"
                                   HorizontalAlignment="Stretch" Visibility="Collapsed"
                                   ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
-                                  DragDelta="PaneSplitter_DragDelta"/>
+                                  DragDelta="PaneSplitter_DragDelta"
+                                  DragCompleted="PaneSplitter_DragCompleted"/>
                     <views:WorkspacePaneView x:Name="PaneB" Grid.Column="2" Visibility="Collapsed"/>
                 </Grid>
 

@@ -302,7 +302,8 @@ public partial class MainWindow : Window
 
         Closed += (_, _) =>
         {
-            // 정상 종료: 마지막 활성 프로젝트/세션 기억 + 클린 종료 플래그 set
+            // 정상 종료: 분할 상태 + 마지막 활성 프로젝트/세션 기억 + 클린 종료 플래그 set
+            if (_splitActive) PersistSplitState();
             SettingsService.SaveLastActive(_focusedPane.ActiveProject?.Path, _focusedPane.ActiveSession?.Id);
             SettingsService.SaveCleanShutdown(true);
             GlobalTabHotkey.Uninstall();
@@ -791,6 +792,13 @@ public partial class MainWindow : Window
 
     // GridSplitter 수동 드래그
     private void PaneSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => UpdatePaneFocusVisual(animate: false);
+
+    private void PaneSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (e.Canceled) return;
+        if (PaneBCol.Width.IsStar && PaneBCol.Width.Value > 0)
+            SettingsService.SaveSplitBStar(PaneBCol.Width.Value);
+    }
     private void SidebarSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
         if (_leftCollapsed) return;
@@ -1672,6 +1680,7 @@ public partial class MainWindow : Window
         PaneA.IsRightPane = ReferenceEquals(RightPane, PaneA);
         PaneB.IsRightPane = ReferenceEquals(RightPane, PaneB);
         foreach (var pn in _panes) pn.SetSplitActive(_splitActive);
+        PersistSplitState();
     }
 
     /// <summary>분할 중 각 프로젝트가 떠 있는 패널(좌=PaneA / 우=PaneB)을 PaneRole 에 반영.
@@ -1693,7 +1702,11 @@ public partial class MainWindow : Window
            ?? _focusedPane;
 
     private void PersistSplitState()
-        => SettingsService.SaveSplitState(_splitActive, RightPane.ActiveProject?.Path, RightPane.ActiveSession?.Id);
+        => SettingsService.SaveFullSplitState(
+            _splitActive,
+            LeftPane.ActiveProject?.Path, LeftPane.ActiveSession?.Id,
+            RightPane.ActiveProject?.Path, RightPane.ActiveSession?.Id,
+            _panesSwapped);
 
     /// <summary>포커스 패널의 활성 프로젝트/세션을 셸(파일탐색기·사이드바·last-active)에 반영.</summary>
     private void SyncShellToFocusedPane()
@@ -1810,7 +1823,7 @@ public partial class MainWindow : Window
             _ = AnimateSplitOpenAsync();
         else
         {
-            PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+            PaneBCol.Width = new GridLength(SettingsService.LoadSplitBStar(), GridUnitType.Star);
             PaneB.SetEmptyTextWrapping(true);
             UpdatePaneFocusVisual();
         }
@@ -1832,28 +1845,35 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>시작 시 저장된 분할 상태 복원 — 패널 B 프로젝트/세션을 열고 포커스는 A 로 되돌린다.</summary>
+    /// <summary>시작 시 저장된 분할 상태 복원 — 양쪽 패널 프로젝트/세션 + 비율 + 스왑을 복원한다.</summary>
     private void RestoreSplitState()
     {
         // 분할(좌우 분리) 레이아웃은 옵션과 무관하게 항상 복원한다.
-        var (active, bProjPath, bSessId) = SettingsService.LoadSplitState();
+        var (active, aProjPath, aSessId, bProjPath, bSessId, swapped) = SettingsService.LoadFullSplitState();
         if (!active) return;
 
-        // 단, 패널 B 의 프로젝트/세션 복원은 "프로젝트 자동 로드" 옵션이 켜진 경우에만.
+        // 단, 양쪽 패널의 프로젝트/세션 복원은 "프로젝트 자동 로드" 옵션이 켜진 경우에만.
         // 옵션이 꺼져 있으면 빈 분할 패널로 시작한다(미선택 상태).
-        ProjectItem? bProj = null;
-        SessionItem? bSess = null;
+        ProjectItem? aProj = null, bProj = null;
+        SessionItem? aSess = null, bSess = null;
         if (SettingsService.LoadAutoLoadLastProject())
         {
+            aProj = _projects.FirstOrDefault(p => p.Path == aProjPath);
+            aSess = aProj?.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == aSessId);
             bProj = _projects.FirstOrDefault(p => p.Path == bProjPath);
             bSess = bProj?.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId)
                     ?? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId);
         }
-        EnableSplit(bProj, bSess, animate: false);   // 시작 시 복원은 애니메이션 없이 즉시.
 
-        _focusedPane = PaneA;
-        SyncShellToFocusedPane();
-        UpdatePaneFocusVisual();
+        EnableSplit(bProj, bSess, animate: false);
+        // 레이아웃이 적용된 후 스왑 복원(PaneBCol star 할당이 EnableSplit 에서 일어난 뒤여야 함)
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (swapped) SwapPanePositions();
+            _focusedPane = PaneA;
+            SyncShellToFocusedPane();
+            UpdatePaneFocusVisual();
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void DisableSplit()
