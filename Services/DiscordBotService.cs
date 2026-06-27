@@ -28,6 +28,9 @@ public sealed class DiscordBotService : IDisposable
     private bool _starting;
     // 꺼진 세션을 UI 스레드에서 열어달라는 요청 핸들러. MainWindow 가 주입.
     private Action<string>? _openSessionRequest;
+    // 입력 대기 선택지 메뉴 자동 전송 — 터미널 화면을 주기 폴링. 메뉴 등장 1회당 1번만 보내려고 active 세션 추적.
+    private System.Threading.Timer? _promptPoll;
+    private readonly HashSet<string> _promptActive = new(StringComparer.Ordinal);
 
     public bool IsConnected { get; private set; }
 
@@ -196,6 +199,9 @@ public sealed class DiscordBotService : IDisposable
         }
 
         IsConnected = false;
+        try { _promptPoll?.Dispose(); } catch { }
+        _promptPoll = null;
+        lock (_sync) _promptActive.Clear();
         foreach (var wh in _webhooks.Values) { try { wh.Dispose(); } catch { } }
         _webhooks.Clear();
         if (client == null) return;
@@ -216,6 +222,7 @@ public sealed class DiscordBotService : IDisposable
         IsConnected = true;
         await RegisterCommandsAsync();
         await SyncWorkspaceAsync();
+        _promptPoll ??= new System.Threading.Timer(_ => { try { PollPrompts(); } catch { } }, null, 3000, 2000);
     }
 
     /// <summary>Guild 범위 슬래시 명령을 일괄 등록한다(BulkOverwrite — Ready 마다 호출해도 안전, 옛 명령 정리).</summary>
@@ -378,6 +385,93 @@ public sealed class DiscordBotService : IDisposable
         session.Write(content);
         await Task.Delay(inline ? 500 : 250);
         session.Write("\r");
+    }
+
+    /// <summary>alive 한 claude 세션의 터미널 화면을 폴링해, 입력 대기 선택지 메뉴가 새로 뜨면
+    /// 그 화면 텍스트 + 키 컨트롤 버튼을 해당 스레드로 보낸다(메뉴 등장 1회당 1번).</summary>
+    private void PollPrompts()
+    {
+        if (!IsConnected) return;
+        var projects = _projects;
+        if (projects == null) return;
+
+        foreach (var p in projects.ToArray())
+        {
+            if (!p.IsActive) continue;
+            foreach (var s in p.Sessions.ToArray())
+            {
+                var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
+                if (agentId != "claude") continue; // 우선 claude 만 — 선택지 UI 패턴이 에이전트마다 달라서.
+
+                var session = TerminalSessionManager.Instance.Get(s.Id);
+                if (session is not { IsAlive: true }) { lock (_sync) _promptActive.Remove(s.Id); continue; }
+                lock (_sync) { if (_pendingInput.ContainsKey(s.Id)) continue; } // 자동시작 주입 중이면 스킵
+
+                var menu = ExtractClaudeMenu(session.GetRecentText());
+                if (menu == null)
+                {
+                    lock (_sync) _promptActive.Remove(s.Id); // 메뉴 사라짐 → 다음 등장 시 다시 보낼 수 있게.
+                    continue;
+                }
+                bool already; lock (_sync) already = !_promptActive.Add(s.Id);
+                if (already) continue; // 이미 이번 등장에서 보냄(리페인트 중복 방지).
+
+                var proj = p; var sess = s; var text = menu;
+                _ = SendPromptAsync(proj, sess, text);
+            }
+        }
+    }
+
+    /// <summary>입력 대기 선택지 메뉴 화면을 스레드로 전송(키 버튼 포함).</summary>
+    private async Task SendPromptAsync(ProjectItem project, SessionItem session, string menu)
+    {
+        try
+        {
+            var thread = await EnsureSessionThreadAsync(project, session);
+            if (thread == null) { lock (_sync) _promptActive.Remove(session.Id); return; }
+            await SafeSendAsync(thread, $"⌨️ 입력 대기 — 선택지가 있습니다:\n```\n{menu}\n```", BuildKeyControls());
+        }
+        catch { lock (_sync) _promptActive.Remove(session.Id); }
+    }
+
+    // claude 대화형 선택 UI: 선택 커서('❯'/'›'/'>') + 번호 옵션(1. 2. …). statusline/일반 출력과 구분하는 신호.
+    private static readonly Regex ClaudeOptionLine = new(@"^\s*[❯›>]?\s*\d+[\.\)]\s+\S", RegexOptions.Compiled);
+
+    /// <summary>최근 터미널 화면 텍스트에서 입력 대기 선택지 메뉴를 추출한다. 없으면 null.
+    /// 선택 커서('❯')와 번호 옵션이 화면 끝부분에 함께 있을 때만 메뉴로 간주(오탐 최소화).</summary>
+    private static string? ExtractClaudeMenu(string screen)
+    {
+        if (string.IsNullOrEmpty(screen)) return null;
+        var raw = screen.Replace("\r", "");
+        // 화면 끝 ~40줄만 본다(현재 보이는 영역). 박스 테두리·공백 줄은 정리.
+        var all = raw.Split('\n');
+        int take = Math.Min(40, all.Length);
+        var tail = new List<string>();
+        for (int i = all.Length - take; i < all.Length; i++)
+        {
+            var line = all[i].TrimEnd();
+            // 박스 드로잉/구분선만 있는 줄은 시각 노이즈 → 테두리 문자 제거 후 평가.
+            var cleaned = line.Trim('│', '╮', '╭', '╯', '╰', '─', '┌', '┐', '└', '┘', '├', '┤', '|', ' ');
+            tail.Add(cleaned);
+        }
+
+        bool hasCursor = tail.Any(l => l.Contains('❯') || l.Contains('›'));
+        int optionCount = tail.Count(l => ClaudeOptionLine.IsMatch(l));
+        if (!(hasCursor && optionCount >= 1) && optionCount < 2) return null; // 커서+옵션 or 옵션 2개 이상
+
+        // 마지막 옵션 줄까지, 그 앞 질문 몇 줄을 포함해 묶는다.
+        int lastOpt = -1;
+        for (int i = tail.Count - 1; i >= 0; i--) if (ClaudeOptionLine.IsMatch(tail[i])) { lastOpt = i; break; }
+        if (lastOpt < 0) return null;
+        int start = Math.Max(0, lastOpt - 12);
+
+        var block = new List<string>();
+        for (int i = start; i <= lastOpt; i++)
+            if (tail[i].Length > 0) block.Add(tail[i]);
+
+        var text = string.Join("\n", block).Trim();
+        if (text.Length > 1500) text = text[^1500..];
+        return text.Length == 0 ? null : text;
     }
 
     /// <summary>세션 스레드의 키 컨트롤 버튼 클릭을 받아 해당 키스트로크를 터미널 stdin 으로 전달한다.</summary>
