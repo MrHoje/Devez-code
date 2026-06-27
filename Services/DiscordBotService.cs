@@ -250,6 +250,8 @@ public sealed class DiscordBotService : IDisposable
                     .WithDescription("등록된 프로젝트·세션 상태를 표시합니다.").Build(),
                 new SlashCommandBuilder().WithName("keys")
                     .WithDescription("세션 스레드 조작용 키 컨트롤 버튼을 표시합니다.").Build(),
+                new SlashCommandBuilder().WithName("info")
+                    .WithDescription("이 세션의 모델·effort·컨텍스트 사용량을 표시합니다(claude).").Build(),
                 new SlashCommandBuilder().WithName("reset")
                     .WithDescription("봇이 만든 모든 채널을 삭제하고 새로 구성합니다(되돌릴 수 없음).")
                     .AddOption("confirm", ApplicationCommandOptionType.Boolean, "정말 초기화하려면 True 를 선택", isRequired: true)
@@ -267,8 +269,8 @@ public sealed class DiscordBotService : IDisposable
     {
         var name = command.Data.Name;
 
-        // /keys 외 관리 명령은 #명령어 채널에서만 받는다(채널이 아직 없으면 부트스트랩 허용).
-        if (name != "keys")
+        // /keys·/info 외 관리 명령은 #명령어 채널에서만 받는다(세션 스레드에서 쓰는 명령은 예외).
+        if (name != "keys" && name != "info")
         {
             var cmdId = SettingsService.LoadDiscordCommandChannel();
             if (cmdId != 0 && command.ChannelId != cmdId)
@@ -289,6 +291,17 @@ public sealed class DiscordBotService : IDisposable
             case "status":
                 try { await command.RespondAsync(BuildStatusText(), ephemeral: true); } catch { }
                 break;
+
+            case "info":
+            {
+                var sid = SettingsService.FindDiscordSessionByThread(command.ChannelId ?? 0);
+                var line = string.IsNullOrWhiteSpace(sid) ? null : ReadStatusLine(sid!);
+                var msg = line != null
+                    ? $"📊 {line}"
+                    : "이 세션의 상태 정보를 찾을 수 없습니다. (세션 스레드에서, claude 가 한 번 이상 응답한 뒤 사용하세요.)";
+                try { await command.RespondAsync(msg, ephemeral: true); } catch { }
+                break;
+            }
 
             case "keys":
                 try { await command.RespondAsync("키 컨트롤", components: BuildKeyControls()); } catch { }
@@ -750,6 +763,30 @@ public sealed class DiscordBotService : IDisposable
             foreach (var s in p.Sessions)
                 if (s.Id == sessionId) return string.IsNullOrWhiteSpace(s.AgentId) ? null : s.AgentId;
         return null;
+    }
+
+    /// <summary>claude statusLine 훅이 캐시한 방의 렌더된 상태줄(모델·effort·ctx·사용량)을 읽어 ANSI 제거 후 반환.
+    /// (%AppData%\DevezCode\claude\statusline-cache-&lt;room&gt;-*.txt 중 최신. 없으면 null.)</summary>
+    private static string? ReadStatusLine(string roomId)
+    {
+        try
+        {
+            var dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude");
+            var room = Regex.Replace(roomId, @"[^\w\-]", "");
+            if (!System.IO.Directory.Exists(dir)) return null;
+            var newest = new System.IO.DirectoryInfo(dir)
+                .GetFiles($"statusline-cache-{room}-*.txt")
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (newest == null) return null;
+            var raw = System.IO.File.ReadAllText(newest.FullName);
+            // ANSI(색) 제거 + 공백 정리.
+            var clean = Regex.Replace(raw, @"\x1b\[[0-9;]*m", "");
+            clean = Regex.Replace(clean, @"[ \t]{2,}", " ").Trim();
+            return clean.Length == 0 ? null : clean;
+        }
+        catch { return null; }
     }
 
     private string BuildStatusText()
