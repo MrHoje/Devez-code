@@ -255,7 +255,7 @@ public sealed class DiscordBotService : IDisposable
                     .WithDescription("등록된 프로젝트·세션 상태를 표시합니다.").Build(),
                 new SlashCommandBuilder().WithName("keys")
                     .WithDescription("세션 스레드 조작용 키 컨트롤 버튼을 표시합니다.").Build(),
-                new SlashCommandBuilder().WithName("info")
+                new SlashCommandBuilder().WithName("usage")
                     .WithDescription("이 세션의 모델·effort·컨텍스트 사용량을 표시합니다(claude).").Build(),
                 new SlashCommandBuilder().WithName("model")
                     .WithDescription("이 세션의 claude 모델을 번호로 선택합니다.").Build(),
@@ -278,8 +278,8 @@ public sealed class DiscordBotService : IDisposable
     {
         var name = command.Data.Name;
 
-        // 세션 스레드에서 쓰는 명령(keys/info/model/effort)은 #명령어 채널 제한에서 예외.
-        if (name is not ("keys" or "info" or "model" or "effort"))
+        // 세션 스레드에서 쓰는 명령(keys/usage/model/effort)은 #명령어 채널 제한에서 예외.
+        if (name is not ("keys" or "usage" or "model" or "effort"))
         {
             var cmdId = SettingsService.LoadDiscordCommandChannel();
             if (cmdId != 0 && command.ChannelId != cmdId)
@@ -301,7 +301,7 @@ public sealed class DiscordBotService : IDisposable
                 try { await command.RespondAsync(BuildStatusText(), ephemeral: true); } catch { }
                 break;
 
-            case "info":
+            case "usage":
             {
                 var sid = SettingsService.FindDiscordSessionByThread(command.ChannelId ?? 0);
                 var line = string.IsNullOrWhiteSpace(sid) ? null : SessionInfoLine(sid!);
@@ -674,9 +674,8 @@ public sealed class DiscordBotService : IDisposable
                 if (isModel) SettingsService.SaveClaudeCodeRoomModel(sid!, value);
                 else SettingsService.SaveClaudeCodeRoomEffort(sid!, value);
 
-                // 모델 변경 시 claude 가 "Switch model?"(캐시 무효화 경고) 확인 메뉴를 띄운다 → 자동으로 1.Yes.
-                // 그 확인 메뉴는 디스코드로 보내지 않게 _promptActive 에 넣어 PollPrompts 전송을 억제한다.
-                if (isModel)
+                // 모델/effort 변경 시 claude 가 "Switch model?"/"Change effort level?"(캐시 무효화 경고)
+                // 확인 메뉴를 띄운다 → 자동으로 1.Yes. 그 확인 메뉴는 디스코드로 안 보내게 _promptActive 로 억제.
                 {
                     lock (_sync) _promptActive.Add(sid!);
                     var sidL = sid!;
@@ -690,6 +689,7 @@ public sealed class DiscordBotService : IDisposable
                             {
                                 var txt = s2.GetRecentText();
                                 if (txt.IndexOf("Switch model", StringComparison.OrdinalIgnoreCase) >= 0
+                                    || txt.IndexOf("Change effort", StringComparison.OrdinalIgnoreCase) >= 0
                                     || txt.IndexOf("switch to", StringComparison.OrdinalIgnoreCase) >= 0)
                                 { s2.Write("1"); await Task.Delay(250); s2.Write("\r"); }
                             }
