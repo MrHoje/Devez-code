@@ -540,22 +540,32 @@ public sealed class DiscordBotService : IDisposable
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return;
 
-        // 저장된 매핑 + "봇 구조 시그니처" 스윕을 합친다.
-        // 이전 reset 이 매핑만 비우고 삭제에 실패했으면 고아 채널이 남는데, 매핑엔 없으므로
-        // 시그니처(프로젝트 채널=이름 "sessions", 명령어 채널=루트 "명령어")로 길드를 직접 훑어 잡는다.
+        // 저장된 매핑 + "봇 구조 시그니처" 스윕을 합친다(그동안 채널/카테고리/포럼 구조를 오가며 생긴 고아까지).
+        // 봇이 만든 객체 공통 신호: Topic = 프로젝트 경로(포럼·세션채널), 이름 = 에이전트 접두/sessions/명령어,
+        // 카테고리 = 현재 프로젝트명. 매핑이 유실돼도 이 신호로 잡는다.
         var ids = new HashSet<ulong>(SettingsService.LoadAllDiscordObjectIds());
+        var projectNames = new HashSet<string>(
+            (_projects ?? new()).Select(p => SafeDiscordName(p.Name)), StringComparer.OrdinalIgnoreCase);
 
-        // 1) 봇이 만든 세션 채널(이름이 에이전트 이모지로 시작) + 그 부모 카테고리.
-        //    매핑이 유실된 고아도 이 시그니처로 잡는다(카테고리가 잡히면 3)에서 자식 전부 수거).
-        foreach (var ch in guild.TextChannels.Where(c => StartsWithAgentEmoji(c.Name)))
+        // 1) 포럼/텍스트 채널: Topic 이 경로거나, 봇 이름 규칙이면 수거 + 부모 카테고리.
+        foreach (var ch in guild.Channels)
         {
+            bool hit = ch switch
+            {
+                IForumChannel f => LooksLikePath(f.Topic),
+                ITextChannel t => LooksLikePath(t.Topic) || StartsWithAgentEmoji(t.Name)
+                                   || t.Name.Equals("sessions", StringComparison.OrdinalIgnoreCase)
+                                   || (t.CategoryId == null && t.Name.Equals("명령어", StringComparison.OrdinalIgnoreCase)),
+                _ => false,
+            };
+            if (!hit) continue;
             ids.Add(ch.Id);
-            if (ch.CategoryId is ulong catId) ids.Add(catId);
+            if (ch is INestedChannel nc && nc.CategoryId is ulong catId) ids.Add(catId);
         }
-        // 2) 루트 명령어 채널(이름 "명령어")
-        foreach (var ch in guild.TextChannels.Where(c => c.CategoryId == null && c.Name.Equals("명령어", StringComparison.OrdinalIgnoreCase)))
-            ids.Add(ch.Id);
-        // 3) 위에서 모인 카테고리의 모든 자식(매핑 안 된 잔여 채널 포함)
+        // 2) 프로젝트명과 일치하는 카테고리(고아 카테고리 포함).
+        foreach (var cat in guild.CategoryChannels.Where(c => projectNames.Contains(c.Name)))
+            ids.Add(cat.Id);
+        // 3) 수거된 카테고리의 모든 자식(매핑 안 된 잔여 채널 포함).
         foreach (var cat in guild.CategoryChannels.Where(c => ids.Contains(c.Id)))
             foreach (var child in cat.Channels)
                 ids.Add(child.Id);
@@ -804,6 +814,11 @@ public sealed class DiscordBotService : IDisposable
         try { await channel.SendMessageAsync(TrimForDiscord(text, 1900), components: components); }
         catch { /* Discord 연결/권한 실패는 앱 동작을 막지 않는다. */ }
     }
+
+    /// <summary>채널 Topic 이 파일 경로처럼 보이는지(봇이 프로젝트 채널 Topic 에 project.Path 를 넣음).</summary>
+    private static bool LooksLikePath(string? topic)
+        => !string.IsNullOrEmpty(topic)
+           && (Regex.IsMatch(topic, @"^[A-Za-z]:[\\/]") || topic.StartsWith("/", StringComparison.Ordinal));
 
     private static string SafeDiscordName(string value)
     {
