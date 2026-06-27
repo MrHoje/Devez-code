@@ -904,12 +904,15 @@ public sealed class DiscordBotService : IDisposable
                 var frame = System.Windows.Media.Imaging.BitmapFrame.Create(src,
                     System.Windows.Media.Imaging.BitmapCreateOptions.None,
                     System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
-                int canvas = Math.Max(frame.PixelWidth, frame.PixelHeight) * 2;
+                // 원본 해상도가 제각각이라(opencode=50px, claude/gjc=큰 이미지) 본문 표시 크기가 다르다.
+                // 아이콘을 고정 크기(50px)로 맞추고 2배 캔버스(100px)에 가운데 배치 → 모든 에이전트 동일 크기.
+                const int target = 50, canvas = target * 2;
+                double scale = target / (double)Math.Max(frame.PixelWidth, frame.PixelHeight);
+                double w = frame.PixelWidth * scale, h = frame.PixelHeight * scale;
                 var dv = new System.Windows.Media.DrawingVisual();
                 using (var dc = dv.RenderOpen())
                 {
-                    double x = (canvas - frame.PixelWidth) / 2.0, y = (canvas - frame.PixelHeight) / 2.0;
-                    dc.DrawImage(frame, new System.Windows.Rect(x, y, frame.PixelWidth, frame.PixelHeight));
+                    dc.DrawImage(frame, new System.Windows.Rect((canvas - w) / 2.0, (canvas - h) / 2.0, w, h));
                 }
                 var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(canvas, canvas, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
                 rtb.Render(dv);
