@@ -32,6 +32,9 @@ public sealed class DiscordBotService : IDisposable
     private Action<string>? _openSessionRequest;
     private Action<string>? _removeSessionRequest;
     private Action<string, string>? _renameSessionRequest;
+    private Action<string, string, ulong, string>? _createSessionRequest; // (projectPath, name, threadId, content)
+    // 앱이 직접 만든 포럼 글 id — ThreadCreated 에서 사용자 글과 구분해 자기 글을 무시한다.
+    private readonly HashSet<ulong> _selfCreatedThreads = new();
 
     /// <summary>Discord 에 스레드를 만들/보일 에이전트인지(현재는 claude 만).</summary>
     private static bool IsClaude(SessionItem s)
@@ -207,6 +210,53 @@ public sealed class DiscordBotService : IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>Discord 포럼에 사용자가 새 포스트를 만들면(Discord→app), 제목으로 claude 세션을 만들고
+    /// 본문을 첫 메시지로 전송한다. 앱이 만든 글(자기 글)은 무시한다.</summary>
+    private async Task OnThreadCreated(SocketThreadChannel thread)
+    {
+        try
+        {
+            if (_createSessionRequest == null || !IsConfigured) return;
+            var forumId = thread.ParentChannel?.Id ?? 0;
+            if (forumId == 0) return;
+
+            // 이 포럼이 우리 프로젝트인지 역조회.
+            var projects = _projects;
+            var project = projects?.FirstOrDefault(p =>
+                p.IsActive && SettingsService.LoadDiscordProjectChannel(p.Path) == forumId);
+            if (project == null) return;
+
+            // 게이트웨이 이벤트가 앱의 웹훅 생성보다 먼저 도착할 수 있어 잠깐 대기 후 자기 글/매핑을 재확인.
+            await Task.Delay(1500);
+            lock (_sync) { if (_selfCreatedThreads.Remove(thread.Id)) return; }
+            if (!string.IsNullOrEmpty(SettingsService.FindDiscordSessionByThread(thread.Id))) return; // 이미 매핑됨
+
+            var title = string.IsNullOrWhiteSpace(thread.Name) ? "세션" : thread.Name.Trim();
+
+            // 시작 메시지(포럼 글 본문) = thread.Id 와 같은 id 의 메시지. 봇/웹훅 글은 위 가드로 이미 제외됨.
+            string content = "";
+            try
+            {
+                var starter = await thread.GetMessageAsync(thread.Id) as IMessage;
+                if (starter != null && !starter.Author.IsBot) content = starter.Content?.Trim() ?? "";
+            }
+            catch { }
+
+            _createSessionRequest.Invoke(project.Path, title, thread.Id, content);
+        }
+        catch { /* 생성 실패는 무시 */ }
+    }
+
+    /// <summary>새로 만든 세션에 첫 메시지(포스트 본문)를 전달한다 — 세션을 자동 시작하고 준비되면 주입.</summary>
+    public async Task InjectFirstMessageAsync(string sessionId, ulong threadId, string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return;
+        var client = _client;
+        if (client == null) return;
+        var thread = client.GetChannel(threadId) as IMessageChannel ?? await client.Rest.GetChannelAsync(threadId) as IMessageChannel;
+        if (thread != null) await RequestAutoStartAsync(thread, sessionId, content);
+    }
+
     /// <summary>Discord 에서 스레드/채널이 삭제됨 → 매핑된 앱 세션을 제거한다(양방향 동기화의 반대 방향).
     /// 앱→Discord 삭제(RemoveSessionThreadAsync)는 매핑을 먼저 0으로 지우므로 여기서 재매칭되지 않아 루프가 없다.</summary>
     private void HandleDiscordDeleted(ulong channelId)
@@ -254,6 +304,9 @@ public sealed class DiscordBotService : IDisposable
     /// <summary>Discord 에서 스레드 이름이 바뀌면 호출할 "세션 이름 변경" 핸들러(sessionId, 새 이름).</summary>
     public void SetRenameSessionRequest(Action<string, string> handler) => _renameSessionRequest = handler;
 
+    /// <summary>Discord 에서 새 포스트가 생기면 호출할 "세션 생성" 핸들러(projectPath, 제목, threadId, 본문).</summary>
+    public void SetCreateSessionRequest(Action<string, string, ulong, string> handler) => _createSessionRequest = handler;
+
     public void Start()
     {
         if (!SettingsService.LoadDiscordEnabled()) return;
@@ -292,6 +345,7 @@ public sealed class DiscordBotService : IDisposable
             client.ChannelDestroyed += OnChannelDestroyed;          // 채널/스레드 삭제 → 세션·프로젝트 제거
             client.ThreadDeleted += OnThreadDeleted;                // 스레드 삭제(별도 게이트웨이 이벤트)
             client.ThreadUpdated += OnThreadUpdated;                // 스레드 이름 변경 → 세션 이름 동기화
+            client.ThreadCreated += OnThreadCreated;                // 새 포스트 → 세션 생성 + 본문 전송
             client.Disconnected += _ => { IsConnected = false; return Task.CompletedTask; };
 
             await client.LoginAsync(TokenType.Bot, SettingsService.LoadDiscordBotToken());
@@ -336,6 +390,7 @@ public sealed class DiscordBotService : IDisposable
         try { client.ChannelDestroyed -= OnChannelDestroyed; } catch { }
         try { client.ThreadDeleted -= OnThreadDeleted; } catch { }
         try { client.ThreadUpdated -= OnThreadUpdated; } catch { }
+        try { client.ThreadCreated -= OnThreadCreated; } catch { }
         try { client.ButtonExecuted -= OnButtonExecuted; } catch { }
         try { client.ModalSubmitted -= OnModalSubmitted; } catch { }
         try { client.SlashCommandExecuted -= OnSlashCommand; } catch { }
@@ -1672,6 +1727,7 @@ public sealed class DiscordBotService : IDisposable
             var post0 = await forum.CreatePostAsync(title, ThreadArchiveDuration.OneWeek, text: body);
             postId = post0.Id;
         }
+        lock (_sync) _selfCreatedThreads.Add(postId); // 자기 글 — ThreadCreated 에서 사용자 글로 오인 방지
         SettingsService.SaveDiscordSessionThread(session.Id, postId);
         return client.GetChannel(postId) as IMessageChannel ?? await client.Rest.GetChannelAsync(postId) as IMessageChannel;
     }

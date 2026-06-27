@@ -111,6 +111,9 @@ public partial class MainWindow : Window
             var s = FindSession(sessionId);
             if (s != null) RenameSessionSilent(s, name);
         }));
+        // Discord 에서 새 포스트를 만들면 제목으로 claude 세션을 만들고 본문을 첫 메시지로 보낸다.
+        _discordBot.SetCreateSessionRequest((projectPath, name, threadId, content) => Dispatcher.BeginInvoke(() =>
+            CreateSessionFromDiscord(projectPath, name, threadId, content)));
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
@@ -2442,6 +2445,31 @@ public partial class MainWindow : Window
     private void DeleteSession(SessionItem session) => PaneFor(session).DeleteSession(session);
     public void RemoveSessionSilent(SessionItem session) => PaneFor(session).RemoveSessionSilent(session);
     public void RenameSessionSilent(SessionItem session, string newName) => PaneFor(session).RenameSessionSilent(session, newName);
+
+    /// <summary>Discord 새 포스트 → claude 세션 생성 + 본문을 첫 메시지로 전송. 매핑을 먼저 저장해
+    /// 세션 추가(OnSessionsChanged)가 새 스레드를 또 만들지 않게 한다.</summary>
+    public void CreateSessionFromDiscord(string projectPath, string name, ulong threadId, string content)
+    {
+        var norm = System.IO.Path.GetFullPath(projectPath).TrimEnd('\\', '/');
+        var proj = _projects.FirstOrDefault(p =>
+            string.Equals(System.IO.Path.GetFullPath(p.Path).TrimEnd('\\', '/'), norm, StringComparison.OrdinalIgnoreCase));
+        if (proj == null) return;
+
+        var sessionName = string.IsNullOrWhiteSpace(name) ? "세션" : name.Trim();
+        if (sessionName.Length > 60) sessionName = sessionName[..60];
+
+        var session = new SessionItem { Name = sessionName, AgentId = "claude" };
+        // 매핑·설정을 Tabs 추가보다 먼저 저장 → CollectionChanged 핸들러가 기존 스레드를 인식.
+        SettingsService.SaveDiscordSessionThread(session.Id, threadId);
+        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
+        SettingsService.SaveAgentForRoom(session.Id, "claude");
+        proj.Tabs.Add(session);
+        proj.IsExpanded = true;
+        WorkspaceStore.Save(_projects);
+
+        if (!string.IsNullOrWhiteSpace(content))
+            _ = _discordBot.InjectFirstMessageAsync(session.Id, threadId, content);
+    }
     private void StopTrackingSession(SessionItem session) => PaneFor(session).StopTrackingSession(session);
 
     // ── 공개 API (외부 뷰가 호출) ─────────────────────────────────────
