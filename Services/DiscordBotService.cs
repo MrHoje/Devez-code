@@ -839,7 +839,20 @@ public sealed class DiscordBotService : IDisposable
         {
             var uri = new Uri($"pack://application:,,,/Resources/Images/ShellPresets/{file}", UriKind.Absolute);
             var info = System.Windows.Application.GetResourceStream(uri);
-            return info == null ? null : (info.Stream, file);
+            if (info == null) return null;
+            using var src = info.Stream;
+            // 절반 크기로 스케일 후 PNG 로 다시 인코딩.
+            var frame = System.Windows.Media.Imaging.BitmapFrame.Create(src,
+                System.Windows.Media.Imaging.BitmapCreateOptions.None,
+                System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+            var scaled = new System.Windows.Media.Imaging.TransformedBitmap(frame,
+                new System.Windows.Media.ScaleTransform(0.5, 0.5));
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(scaled));
+            var ms = new System.IO.MemoryStream();
+            encoder.Save(ms);
+            ms.Position = 0;
+            return (ms, file);
         }
         catch { return null; }
     }
