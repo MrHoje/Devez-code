@@ -222,7 +222,7 @@
                                         <TextBlock Text="알림" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="CatDiscordBtn" Tag="discord" Visibility="Collapsed"
+                                <Button x:Name="CatDiscordBtn" Tag="discord"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource LucideButtonIcon}"
