@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Discord;
 using Discord.WebSocket;
+using Discord.Webhook;
 using DevezCode.Models;
 using DevezCode.Services.Terminal;
 
@@ -18,6 +19,8 @@ public sealed class DiscordBotService : IDisposable
     // 워크스페이스 동기화/리셋 직렬화 — 재연결 OnReady 동기화와 /reset 이 겹쳐(재진입) 채널이
     // 중복 생성·삭제되며 봇이 먹통이 되는 것을 막는다.
     private readonly SemaphoreSlim _workspaceLock = new(1, 1);
+    // 세션 채널별 웹훅 클라이언트 캐시 — 완료 메시지를 에이전트 이름 작성자로 보내는 데 사용.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, DiscordWebhookClient> _webhooks = new();
     // 자동 시작 대기 중인 입력: sessionId → 준비되면 주입할 메시지들.
     private readonly Dictionary<string, List<string>> _pendingInput = new(StringComparer.Ordinal);
     private ObservableCollection<ProjectItem>? _projects;
@@ -101,22 +104,26 @@ public sealed class DiscordBotService : IDisposable
         catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
     }
 
-    /// <summary>프로젝트 삭제 시 포럼 채널(과 그 안의 글 전부)을 삭제하고 매핑을 정리한다.</summary>
+    /// <summary>프로젝트 삭제 시 세션 채널들과 프로젝트 카테고리를 삭제하고 매핑을 정리한다.</summary>
     private async Task RemoveProjectAsync(ProjectItem project)
     {
-        // 세션 매핑 정리(포럼 채널을 지우면 글은 함께 삭제됨).
-        foreach (var s in project.Sessions) SettingsService.SaveDiscordSessionThread(s.Id, 0);
+        // 세션 채널 먼저 삭제(카테고리는 자식 채널이 있으면 안 지워지므로 선삭제).
+        foreach (var s in project.Sessions) await RemoveSessionThreadAsync(s.Id);
 
-        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
-        SettingsService.SaveDiscordProjectChannel(project.Path, 0);
-        SettingsService.SaveDiscordProjectCategory(project.Path, 0); // 레거시(카테고리) 매핑도 정리
-        if (forumId == 0) return;
+        var catId = SettingsService.LoadDiscordProjectCategory(project.Path);
+        SettingsService.SaveDiscordProjectCategory(project.Path, 0);
+        SettingsService.SaveDiscordProjectChannel(project.Path, 0); // 레거시(포럼) 매핑도 정리
+        if (catId == 0) return;
         var client = _client;
         if (client == null) return;
         try
         {
-            IDeletable? c = client.GetChannel(forumId) as IDeletable
-                            ?? await client.Rest.GetChannelAsync(forumId) as IDeletable;
+            var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+            if (guild?.GetCategoryChannel(catId) is { } cat)
+                foreach (var child in cat.Channels.ToList())
+                    try { await child.DeleteAsync(); } catch { }
+            IDeletable? c = client.GetChannel(catId) as IDeletable
+                            ?? await client.Rest.GetChannelAsync(catId) as IDeletable;
             if (c != null) await c.DeleteAsync();
         }
         catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
@@ -193,6 +200,8 @@ public sealed class DiscordBotService : IDisposable
         }
 
         IsConnected = false;
+        foreach (var wh in _webhooks.Values) { try { wh.Dispose(); } catch { } }
+        _webhooks.Clear();
         if (client == null) return;
         try { client.MessageReceived -= OnMessageReceived; } catch { }
         try { client.ButtonExecuted -= OnButtonExecuted; } catch { }
@@ -305,15 +314,18 @@ public sealed class DiscordBotService : IDisposable
 
         await EnsureCommandChannelAsync();
 
+        var guild = _client?.GetGuild(SettingsService.LoadDiscordGuildId());
         foreach (var project in projects.Where(p => p.IsActive))
         {
-            var forum = await EnsureProjectForumAsync(project);
-            if (forum == null) continue;
+            var category = await EnsureProjectCategoryAsync(project);
+            if (category == null) continue;
             foreach (var session in project.Sessions)
                 await EnsureSessionThreadAsync(project, session);
+            // 세션 채널 순서를 DevezCode 세션 순서에 맞춰 정렬.
+            if (guild != null) await ApplySessionOrderAsync(guild, project);
         }
 
-        // 포럼 채널 입력창 권한 일괄 재적용(글/스레드는 부모 권한을 상속).
+        // 세션 채널 입력창 권한 일괄 재적용.
         await RefreshChannelRestrictionsAsync();
     }
 
@@ -327,9 +339,6 @@ public sealed class DiscordBotService : IDisposable
 
         var thread = await EnsureSessionThreadAsync(project, session);
         if (thread == null) return;
-
-        // 카드 본문(첫 메시지)을 방금 보낸 프롬프트로 갱신 — Gallery/List 카드에 최신 질문이 보이게.
-        await UpdatePostStarterAsync(thread, session);
 
         var title = string.IsNullOrWhiteSpace(project.Name) ? "프로젝트" : project.Name;
         var sess = string.IsNullOrWhiteSpace(session.Name) ? "세션" : session.Name;
@@ -346,7 +355,7 @@ public sealed class DiscordBotService : IDisposable
         var body = string.IsNullOrWhiteSpace(reply)
             ? $"**{title} / {sess}** 응답 완료{question}"
             : $"**{title} / {sess}** 응답 완료{question}\n\n{HeadForDiscord(reply, 1500)}";
-        await SafeSendAsync(thread, body);
+        await SendAsAgentAsync(thread, agentId, body); // 작성자명 = 에이전트(웹훅)
     }
 
     private async Task OnMessageReceived(SocketMessage message)
@@ -688,25 +697,24 @@ public sealed class DiscordBotService : IDisposable
 
     /// <summary>프로젝트 = 포럼 채널 하나를 보장하고 반환한다. 세션은 이 포럼의 글(스레드)로 만든다.
     /// (DiscordProjectChannels 매핑 값 = 포럼 채널 ID.)</summary>
-    public async Task<IForumChannel?> EnsureProjectForumAsync(ProjectItem project)
+    public async Task<ICategoryChannel?> EnsureProjectCategoryAsync(ProjectItem project)
     {
         var client = _client;
         if (client == null || !IsConfigured) return null;
         var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
         if (guild == null) return null;
 
-        // 캐시 미스 시 REST 폴백 — 방금 만든 채널이 게이트웨이 이벤트 도착 전이라
-        // 캐시에 없으면 같은 포럼을 또 만드는 중복을 막는다.
-        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
-        IForumChannel? forum = forumId == 0 ? null
-            : guild.GetForumChannel(forumId) ?? await client.Rest.GetChannelAsync(forumId) as IForumChannel;
-        if (forum == null)
+        // 캐시 미스 시 REST 폴백 — 방금 만든 카테고리가 게이트웨이 이벤트 도착 전이라
+        // 캐시에 없으면 세션마다 같은 카테고리를 또 만드는 중복을 막는다.
+        var categoryId = SettingsService.LoadDiscordProjectCategory(project.Path);
+        ICategoryChannel? category = categoryId == 0 ? null
+            : guild.GetCategoryChannel(categoryId) ?? await client.Rest.GetChannelAsync(categoryId) as ICategoryChannel;
+        if (category == null)
         {
-            forum = await guild.CreateForumChannelAsync(SafeDiscordName(project.Name), props => props.Topic = project.Path);
-            SettingsService.SaveDiscordProjectChannel(project.Path, forum.Id);
-            await ApplyChannelRestrictionsAsync(guild, forum); // 글(스레드)이 상속할 입력창 제한
+            category = await guild.CreateCategoryChannelAsync(SafeDiscordName(project.Name));
+            SettingsService.SaveDiscordProjectCategory(project.Path, category.Id);
         }
-        return forum;
+        return category;
     }
 
     /// <summary>세션 채널 입력창의 불필요한 디스코드 네이티브 기능(파일첨부/스티커/슬래시명령/음성메시지)을
@@ -736,55 +744,64 @@ public sealed class DiscordBotService : IDisposable
         if (guild == null) return;
 
         foreach (var project in projects.Where(p => p.IsActive))
-        {
-            var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
-            if (forumId != 0 && guild.GetForumChannel(forumId) is { } forum)
-                await ApplyChannelRestrictionsAsync(guild, forum);
-        }
+            foreach (var session in project.Sessions)
+            {
+                var channelId = SettingsService.LoadDiscordSessionThread(session.Id);
+                if (channelId != 0 && guild.GetTextChannel(channelId) is { } channel)
+                    await ApplyChannelRestrictionsAsync(guild, channel);
+            }
     }
 
-    /// <summary>세션 = 프로젝트 포럼의 글(스레드)을 보장하고 반환한다.
-    /// (DiscordSessionThreads 매핑 값 = 포럼 글/스레드 ID.)</summary>
+    /// <summary>세션 = 프로젝트 카테고리 아래의 텍스트 채널을 보장하고 반환한다.
+    /// (DiscordSessionThreads 매핑 값 = 채널 ID. 메서드명은 호환 위해 유지.)</summary>
     public async Task<IMessageChannel?> EnsureSessionThreadAsync(ProjectItem project, SessionItem session)
     {
         var client = _client;
         if (client == null || !IsConfigured) return null;
+        var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+        if (guild == null) return null;
 
-        var threadId = SettingsService.LoadDiscordSessionThread(session.Id);
-        if (threadId != 0)
+        var channelId = SettingsService.LoadDiscordSessionThread(session.Id);
+        if (channelId != 0)
         {
-            // 캐시 미스 시 REST 폴백 — 방금 만든 글을 못 찾아 중복 생성하는 것 방지.
-            var existing = client.GetChannel(threadId) as IThreadChannel
-                           ?? await client.Rest.GetChannelAsync(threadId) as IThreadChannel;
+            // 캐시 미스 시 REST 폴백 — 방금 만든 채널을 못 찾아 중복 생성하는 것 방지.
+            var existing = client.GetChannel(channelId) as ITextChannel
+                           ?? await client.Rest.GetChannelAsync(channelId) as ITextChannel;
             if (existing != null)
             {
-                await EnsureThreadNameAsync(existing, session);
+                await EnsureChannelNameAsync(existing, session);
                 return existing;
             }
         }
 
-        var forum = await EnsureProjectForumAsync(project);
-        if (forum == null) return null;
+        var category = await EnsureProjectCategoryAsync(project);
+        if (category == null) return null;
 
-        // 포럼 글은 최초 메시지가 필수 — 세션 정보 한 줄로 시작(과거 대화는 끌어오지 않음).
-        // 에이전트 아이콘을 첨부하면 포럼 Gallery 뷰에서 글 카드 썸네일로 보인다.
-        var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-        var title = ThreadName(session);
-        var body = StarterText(session); // 카드 본문 = 마지막 보낸 프롬프트
+        var ch = await guild.CreateTextChannelAsync(SessionChannelName(session), props =>
+        {
+            props.CategoryId = category.Id;
+            props.Topic = $"{session.AgentId} · {session.Name}";
+        });
+        SettingsService.SaveDiscordSessionThread(session.Id, ch.Id);
+        await ApplyChannelRestrictionsAsync(guild, ch);
+        return ch;
+    }
 
-        IThreadChannel post;
-        var icon = OpenAgentIcon(agentId);
-        if (icon is { } ic)
+    /// <summary>세션 채널 위치(position)를 DevezCode 세션 순서에 맞춘다(카테고리 내 정렬).
+    /// position 이 이미 맞으면 건드리지 않는다(rate-limit 회피, AlwaysFail).</summary>
+    private static async Task ApplySessionOrderAsync(SocketGuild guild, ProjectItem project)
+    {
+        int i = 0;
+        foreach (var session in project.Sessions)
         {
-            using var fa = new FileAttachment(ic.stream, ic.fileName);
-            post = await forum.CreatePostWithFileAsync(title, fa, ThreadArchiveDuration.OneWeek, text: body);
+            var id = SettingsService.LoadDiscordSessionThread(session.Id);
+            if (id != 0 && guild.GetTextChannel(id) is { } ch && ch.Position != i)
+            {
+                var opts = new RequestOptions { RetryMode = RetryMode.AlwaysFail, Timeout = 5000 };
+                try { await ch.ModifyAsync(p => p.Position = i, opts); } catch { }
+            }
+            i++;
         }
-        else
-        {
-            post = await forum.CreatePostAsync(title, ThreadArchiveDuration.OneWeek, text: body);
-        }
-        SettingsService.SaveDiscordSessionThread(session.Id, post.Id);
-        return post;
     }
 
     private bool IsConfigured => SettingsService.LoadDiscordEnabled()
@@ -828,91 +845,59 @@ public sealed class DiscordBotService : IDisposable
     private static bool StartsWithAgentEmoji(string? name)
         => !string.IsNullOrEmpty(name) && AllAgentEmojis.Any(e => name!.StartsWith(e, StringComparison.Ordinal));
 
-    /// <summary>에이전트 아이콘 리소스를 스트림으로 연다(없으면 null). 포럼 Gallery 뷰 카드 썸네일용 첨부.</summary>
-    private static (System.IO.Stream stream, string fileName)? OpenAgentIcon(string? agentId)
+    /// <summary>세션 채널 이름 = 세션명만(접두 없음, 정규화). 에이전트 구분은 웹훅 작성자명으로 표시.</summary>
+    private static string SessionChannelName(SessionItem session) => SafeDiscordName(session.Name);
+
+    /// <summary>완료/메시지를 보낼 때 표시할 에이전트 작성자명(웹훅 username).</summary>
+    private static string AgentDisplayName(string? agentId) => (agentId ?? "").ToLowerInvariant() switch
     {
-        var file = (agentId ?? "").ToLowerInvariant() switch
-        {
-            "codex" => "codex.png",
-            "opencode" => "opencode_icon_white_50.png",
-            "gajae" => "gajae_code.png",
-            _ => "claude_code.png",
-        };
+        "codex" => "Codex",
+        "opencode" => "OpenCode",
+        "gajae" => "Gajae",
+        "claude" => "Claude",
+        _ => "Agent",
+    };
+
+    /// <summary>세션 채널 이름이 현재 규칙과 다르면 갱신한다.
+    /// rename 은 "10분당 2회" 제한이 있고 기본 RetryMode 가 그만큼 대기하므로 AlwaysFail 로 즉시 포기(다음 동기화 재시도).</summary>
+    private static async Task EnsureChannelNameAsync(ITextChannel channel, SessionItem session)
+    {
+        var expected = SessionChannelName(session);
+        if (string.Equals(channel.Name, expected, StringComparison.Ordinal)) return;
+        var opts = new RequestOptions { RetryMode = RetryMode.AlwaysFail, Timeout = 5000 };
+        try { await channel.ModifyAsync(p => p.Name = expected, opts); }
+        catch { /* rate limit/권한 실패는 무시 — 다음 동기화 때 다시 시도 */ }
+    }
+
+    /// <summary>세션 채널의 웹훅을 가져오거나 만든다(채널별 1개, 캐시). 작성자명을 에이전트로 표시하는 데 사용.</summary>
+    private async Task<DiscordWebhookClient?> GetSessionWebhookAsync(ulong channelId)
+    {
+        if (_webhooks.TryGetValue(channelId, out var cached)) return cached;
+        var client = _client;
+        if (client == null) return null;
         try
         {
-            var app = System.Windows.Application.Current;
-            if (app == null) return null;
-
-            // 디스코드 Gallery 카드는 첨부 이미지를 카드에 꽉 채워 표시한다 → 픽셀만 줄여선 작아 보이지 않는다.
-            // 아이콘 둘레에 투명 여백을 넣어(캔버스를 키워) 아이콘이 카드의 일부만 차지하게 만든다.
-            // RenderTargetBitmap 은 UI 스레드에서 안전하므로 Dispatcher 로 실행.
-            System.IO.MemoryStream? result = null;
-            app.Dispatcher.Invoke(() =>
-            {
-                var uri = new Uri($"pack://application:,,,/Resources/Images/ShellPresets/{file}", UriKind.Absolute);
-                var info = System.Windows.Application.GetResourceStream(uri);
-                if (info == null) return;
-                using var src = info.Stream;
-                var frame = System.Windows.Media.Imaging.BitmapFrame.Create(src,
-                    System.Windows.Media.Imaging.BitmapCreateOptions.None,
-                    System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
-
-                int canvas = Math.Max(frame.PixelWidth, frame.PixelHeight) * 2; // 아이콘이 카드의 ~50% 차지
-                var dv = new System.Windows.Media.DrawingVisual();
-                using (var dc = dv.RenderOpen())
-                {
-                    double x = (canvas - frame.PixelWidth) / 2.0, y = (canvas - frame.PixelHeight) / 2.0;
-                    dc.DrawImage(frame, new System.Windows.Rect(x, y, frame.PixelWidth, frame.PixelHeight));
-                }
-                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(
-                    canvas, canvas, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-                rtb.Render(dv);
-                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
-                var ms = new System.IO.MemoryStream();
-                encoder.Save(ms);
-                ms.Position = 0;
-                result = ms;
-            });
-            return result == null ? null : (result, file);
+            if (client.GetChannel(channelId) is not ITextChannel ch) return null;
+            var hooks = await ch.GetWebhooksAsync();
+            var wh = hooks.FirstOrDefault(h => h.Name == "devez" && h.Token != null)
+                     ?? await ch.CreateWebhookAsync("devez");
+            var whc = new DiscordWebhookClient(wh);
+            _webhooks[channelId] = whc;
+            return whc;
         }
         catch { return null; }
     }
 
-    /// <summary>포럼 글(스레드) 제목 = 세션명만(접두 없음). 글 제목은 채널명과 달리 정규화가 없어 자유 형식.</summary>
-    private static string ThreadName(SessionItem session)
+    /// <summary>세션 채널에 에이전트 작성자명으로 메시지를 보낸다(웹훅). 실패 시 봇으로 폴백.</summary>
+    private async Task SendAsAgentAsync(IMessageChannel channel, string? agentId, string text)
     {
-        var name = string.IsNullOrWhiteSpace(session.Name) ? "세션" : session.Name.Trim();
-        return name.Length <= 100 ? name : name[..100]; // 글 제목 최대 100자
-    }
-
-    /// <summary>포럼 글 카드 본문(첫 메시지) = 마지막 보낸 프롬프트. 없으면 안내 문구.</summary>
-    private static string StarterText(SessionItem session)
-        => string.IsNullOrWhiteSpace(session.LastMessage)
-            ? "아직 보낸 메시지가 없습니다."
-            : HeadForDiscord(session.LastMessage, 1500);
-
-    /// <summary>포럼 글의 첫 메시지(카드 본문)를 최신 프롬프트로 갱신한다. 봇이 만든 시작 메시지만 수정 가능.</summary>
-    private static async Task UpdatePostStarterAsync(IMessageChannel thread, SessionItem session)
-    {
-        if (thread is not IThreadChannel t) return; // 포럼 글의 시작 메시지 ID = 글(스레드) ID
-        try
+        var hook = await GetSessionWebhookAsync(channel.Id);
+        if (hook != null)
         {
-            if (await t.GetMessageAsync(t.Id) is IUserMessage msg)
-                await msg.ModifyAsync(m => m.Content = StarterText(session));
+            try { await hook.SendMessageAsync(TrimForDiscord(text, 1900), username: AgentDisplayName(agentId)); return; }
+            catch { /* 웹훅 실패 → 봇으로 폴백 */ }
         }
-        catch { /* 권한/조회 실패는 무시 */ }
-    }
-
-    /// <summary>글 제목이 현재 규칙과 다르면 갱신한다.
-    /// rename 은 "10분당 2회" 제한이 있고 기본 RetryMode 가 그만큼 대기하므로 AlwaysFail 로 즉시 포기(다음 동기화 재시도).</summary>
-    private static async Task EnsureThreadNameAsync(IThreadChannel thread, SessionItem session)
-    {
-        var expected = ThreadName(session);
-        if (string.Equals(thread.Name, expected, StringComparison.Ordinal)) return;
-        var opts = new RequestOptions { RetryMode = RetryMode.AlwaysFail, Timeout = 5000 };
-        try { await thread.ModifyAsync(p => p.Name = expected, opts); }
-        catch { /* rate limit/권한 실패는 무시 — 다음 동기화 때 다시 시도 */ }
+        await SafeSendAsync(channel, text);
     }
 
     private static string TrimForDiscord(string text, int max)
