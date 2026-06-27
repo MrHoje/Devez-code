@@ -71,7 +71,7 @@ public partial class WorkspacePaneView : UserControl
             s.IsBusy = false;
             s.IsWaitingChoice = false;
             var sess = TerminalSessionManager.Instance.Get(id);
-            if (sess != null) s.DismissedMenuSig = ClaudeMenuDetector.Extract(sess.GetRecentText())?.text;
+            if (sess != null) s.DismissedMenuSig = ClaudeMenuDetector.Extract(sess.GetRecentText(), requireCursor: true)?.text;
         };
         // 선택지 답변(Enter/숫자키) → 그 메뉴를 dismissed 로 기록해 ❗ 해제. claude 출력 버퍼에 메뉴가
         // 남아 폴링이 재감지하는 것을 막는다(busy 는 유지 — claude 가 답변 처리로 계속 진행).
@@ -80,7 +80,7 @@ public partial class WorkspacePaneView : UserControl
             var s = FindSession(id);
             if (s == null || !s.IsWaitingChoice) return;
             var sess = TerminalSessionManager.Instance.Get(id);
-            if (sess != null) s.DismissedMenuSig = ClaudeMenuDetector.Extract(sess.GetRecentText())?.text;
+            if (sess != null) s.DismissedMenuSig = ClaudeMenuDetector.Extract(sess.GetRecentText(), requireCursor: true)?.text;
             s.IsWaitingChoice = false;
         };
         _terminal.SessionActionRequested += OnTerminalSessionAction;

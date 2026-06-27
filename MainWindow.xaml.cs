@@ -2073,7 +2073,7 @@ public partial class MainWindow : Window
                     // 화면에 선택지 메뉴가 보이면 대기. Esc 로 닫은 동일 메뉴(시그니처 일치)는 잔상이므로 무시.
                     // (claude alt-screen 출력 버퍼는 append-only라 Esc 후에도 메뉴가 남아 재감지됨.)
                     var session = TerminalSessionManager.Instance.Get(s.Id);
-                    string? menuSig = session is { IsAlive: true } ? ClaudeMenuDetector.Extract(session.GetRecentText())?.text : null;
+                    string? menuSig = session is { IsAlive: true } ? ClaudeMenuDetector.Extract(session.GetRecentText(), requireCursor: true)?.text : null;
                     bool waiting;
                     if (menuSig == null) { waiting = false; s.DismissedMenuSig = null; } // 메뉴 사라짐 → 잔상 표식 해제
                     else if (menuSig == s.DismissedMenuSig) waiting = false;              // Esc 로 닫은 그 메뉴 → 무시

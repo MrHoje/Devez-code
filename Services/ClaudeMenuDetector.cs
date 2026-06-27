@@ -14,11 +14,13 @@ public static class ClaudeMenuDetector
     private static readonly Regex OptionMarker = new(@"(\d+)[\.\)]", RegexOptions.Compiled);
 
     /// <summary>선택지 메뉴가 화면에 떠 있는지만 빠르게 판정(텍스트 가공 불필요 시 사용).</summary>
-    public static bool HasMenu(string? screen) => Extract(screen) != null;
+    public static bool HasMenu(string? screen, bool requireCursor = false) => Extract(screen, requireCursor) != null;
 
     /// <summary>최근 터미널 화면에서 입력 대기 선택지 메뉴를 깔끔하게 추출한다(질문 + 번호 옵션).
-    /// 없으면 null. 반환: (디스코드 표시 텍스트, 최대 옵션 번호, "Type something" 옵션 번호[없으면 0]).</summary>
-    public static (string text, int maxOpt, int typeOpt)? Extract(string? screen)
+    /// 없으면 null. 반환: (디스코드 표시 텍스트, 최대 옵션 번호, "Type something" 옵션 번호[없으면 0]).
+    /// <paramref name="requireCursor"/>=true 면 활성 커서(❯/›)가 있는 '대화형' 메뉴만 인정한다 —
+    /// claude 화면 폴링용. 답변/완료 후 전사에 남은 번호 목록(커서 없음)을 메뉴로 오인하는 것을 막는다.</summary>
+    public static (string text, int maxOpt, int typeOpt)? Extract(string? screen, bool requireCursor = false)
     {
         if (string.IsNullOrEmpty(screen)) return null;
         var all = screen.Replace("\r", "").Split('\n');
@@ -75,6 +77,7 @@ public static class ClaudeMenuDetector
         }
         int maxOpt = marks.Count;
         if (maxOpt == 0) return null;
+        if (requireCursor && !hasCursor) return null; // 대화형 메뉴만(완료 후 번호목록 에코 오탐 차단)
         if (!(hasCursor && maxOpt >= 1) && maxOpt < 2) return null; // 오탐 최소화: 커서+옵션 or 옵션 2개+
 
         // 질문: 첫 옵션 앞 텍스트에서, 마지막 '─' 구분선(=현재 메뉴 박스 상단) 이후만 사용한다.
