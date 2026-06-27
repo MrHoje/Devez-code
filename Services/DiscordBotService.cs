@@ -372,7 +372,11 @@ public sealed class DiscordBotService : IDisposable
             return;
         }
 
+        // 텍스트 입력과 Enter 를 분리해 TUI 가 붙여넣은 텍스트를 입력란에 등록한 뒤 제출하게 한다.
+        // (opencode 등 alt-screen TUI 는 즉시 \r 을 보내면 텍스트가 등록되기 전에 빈 제출이 되어 메시지가 누락됨.)
+        bool inline = AgentRegistry.Find(AgentIdForSession(sessionId))?.InlineTui == true;
         session.Write(content);
+        await Task.Delay(inline ? 500 : 250);
         session.Write("\r");
     }
 
