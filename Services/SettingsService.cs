@@ -461,11 +461,19 @@ public static class SettingsService
         Save();
     }
 
-    /// <summary>분할 비율 (PaneB star 값). 기본 1.0 (50/50).</summary>
-    public static double LoadSplitBStar() => Current.SplitBStarRatio;
+    /// <summary>분할 비율 (PaneB star 값). 기본 1.0 (50/50). 로드 시 10%~90% 범위로 클램프.</summary>
+    public static double LoadSplitBStar()
+    {
+        double star = Current.SplitBStarRatio;
+        if (star < 0.112) star = 0.112;
+        if (star > 9.0) star = 9.0;
+        return star;
+    }
     public static void SaveSplitBStar(double star)
     {
-        if (star < 0.1) star = 0.1;
+        // 최소 10% ~ 최대 90% 비율 보장 (PaneA=1* 기준 PaneB star)
+        if (star < 0.112) star = 0.112; // PaneB >= 10%
+        if (star > 9.0) star = 9.0;     // PaneA >= 10%
         Current.SplitBStarRatio = star;
         Save();
     }
