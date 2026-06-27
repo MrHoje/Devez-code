@@ -2097,9 +2097,10 @@ public partial class MainWindow : Window
         int count = 0, waiting = 0;
         foreach (var p in _projects)
             foreach (var t in p.Tabs)
-                if (t is SessionItem s && s.IsBusy)
+                if (t is SessionItem s)
                 {
-                    count++;
+                    if (s.IsBusy) count++;
+                    // 사이드바 ❗(IsWaitingChoice 단독)과 일치하도록 busy 여부와 무관하게 센다.
                     if (s.IsWaitingChoice) waiting++;
                 }
         if (count > 0)
