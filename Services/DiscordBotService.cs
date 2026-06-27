@@ -794,7 +794,7 @@ public sealed class DiscordBotService : IDisposable
                 sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
                 if (isModel) SettingsService.SaveClaudeCodeRoomModel(sid!, value);
                 else SettingsService.SaveClaudeCodeRoomEffort(sid!, value);
-                lock (_sync) _meSuppressOnce.Add(sid!); // 디스코드发 변경은 버튼 메시지로 표시 → "Set …" 중복 알림 생략
+                // 변경 결과는 PollPrompts 가 터미널 변경과 동일한 Claude 웹훅 V2 카드로 게시(중복 억제 안 함).
 
                 // 모델/effort 변경 시 claude 가 "Switch model?"/"Change effort level?"(캐시 무효화 경고)
                 // 확인 메뉴를 띄운다 → 자동으로 1.Yes. 그 확인 메뉴는 디스코드로 안 보내게 _promptActive 로 억제.
@@ -824,12 +824,9 @@ public sealed class DiscordBotService : IDisposable
                     });
                 }
             }
-            // model·effort 를 항상 같이 표시(바뀐 값 + 나머지는 현재값 조회).
-            var (curMid, curEff) = string.IsNullOrWhiteSpace(sid) ? (null, null) : ModelEffortService.ReadPersisted(sid!);
-            var modelLabel = isModel ? match.label : ModelIdToLabel(curMid ?? "");
-            var effortVal = isModel ? (curEff ?? "-") : match.label;
-            var content = $"model: {modelLabel}\neffort: {effortVal}";
-            try { await component.Message.ModifyAsync(m => { m.Content = content; m.Components = new ComponentBuilder().Build(); }); } catch { }
+            // 피커 메시지는 제거 — 변경 결과는 PollPrompts 가 터미널과 동일한 카드로 게시한다.
+            try { await component.Message.DeleteAsync(); }
+            catch { try { await component.Message.ModifyAsync(m => m.Components = new ComponentBuilder().Build()); } catch { } }
             return;
         }
 
