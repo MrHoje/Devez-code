@@ -813,16 +813,19 @@ public sealed class DiscordBotService : IDisposable
                     {
                         try
                         {
-                            await Task.Delay(900);
-                            var s2 = TerminalSessionManager.Instance.Get(sidL);
-                            if (s2 is { IsAlive: true })
+                            // 확인창이 늦게 뜰 수 있어 ~3초 동안 재시도. 현재 화면 메뉴(ClaudeMenuDetector)로만
+                            // 판정 → 스크롤백 잔상 오탐 없음. 확인창(Yes/No, "Switch model?"/"Change effort?")이면 1.Yes.
+                            for (int i = 0; i < 6; i++)
                             {
-                                // 스크롤백 잔상(이전 변경의 "Switch model")에 오탐하지 않도록 화면 끝부분만 검사.
-                                var txt = s2.GetRecentText();
-                                var tail = txt.Length > 400 ? txt[^400..] : txt;
-                                if (tail.IndexOf("Switch model", StringComparison.OrdinalIgnoreCase) >= 0
-                                    || tail.IndexOf("Change effort", StringComparison.OrdinalIgnoreCase) >= 0)
-                                { s2.Write("1"); await Task.Delay(250); s2.Write("\r"); }
+                                await Task.Delay(i == 0 ? 800 : 400);
+                                var s2 = TerminalSessionManager.Instance.Get(sidL);
+                                if (s2 is not { IsAlive: true }) break;
+                                var menuV = ClaudeMenuDetector.Extract(s2.GetRecentText());
+                                if (menuV == null) continue;
+                                var t = menuV.Value.text.ToLowerInvariant();
+                                bool confirm = t.Contains("switch model") || t.Contains("change effort")
+                                               || (t.Contains("yes") && t.Contains("go back"));
+                                if (confirm) { s2.Write("1"); await Task.Delay(250); s2.Write("\r"); break; }
                             }
                         }
                         catch { }
