@@ -35,6 +35,8 @@ public sealed class DiscordBotService : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastMenu = new(StringComparer.Ordinal);
     // 메뉴 답변(버튼/팝업) 후 claude 응답을 기다리는 중인 세션 — 중복 폴링 방지.
     private readonly HashSet<string> _awaitingReply = new(StringComparer.Ordinal);
+    // 세션별 마지막으로 디스코드에 보낸 완료 본문 — busy 경로와 폴링 경로가 같은 답을 두 번 보내는 것 방지.
+    private readonly Dictionary<string, string> _lastPostedBody = new(StringComparer.Ordinal);
 
     public bool IsConnected { get; private set; }
 
@@ -363,6 +365,13 @@ public sealed class DiscordBotService : IDisposable
             body = string.IsNullOrWhiteSpace(question) ? HeadForDiscord(reply, 1500) : $"{question}\n\n{HeadForDiscord(reply, 1500)}";
         else
             body = string.IsNullOrWhiteSpace(question) ? "응답 완료" : question;
+
+        // 중복 방지: 같은 본문을 직전에 보냈으면(busy 경로 + 폴링 경로 동시 발동) 한 번만 보낸다.
+        lock (_sync)
+        {
+            if (_lastPostedBody.TryGetValue(session.Id, out var prev) && prev == body) return;
+            _lastPostedBody[session.Id] = body;
+        }
         await SendAsAgentAsync(project, thread, agentId, body); // 작성자명 = 에이전트(웹훅)
     }
 
