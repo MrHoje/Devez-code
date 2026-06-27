@@ -34,6 +34,8 @@ public partial class MainWindow : Window
     // 보관함 프로젝트(archived_at 있음) — 활성 목록과 분리 관리. WorkspaceStore 가 함께 영속.
     private readonly ObservableCollection<ProjectItem> _archivedProjects;
     private readonly ObservableCollection<SessionCompletionRecord> _sessionDoneRecords = new();
+    // 응답 대기(선택지) 중인 세션 카드 — 완료기록 위에 항상 표시. IsWaitingChoice 변화에 맞춰 동기화.
+    private readonly ObservableCollection<SessionItem> _waitingSessions = new();
     // 중앙 워크스페이스 패널들(분할 시 2개). _focusedPane = 사이드바/파일탐색기/단축키가 향하는 패널.
     private readonly List<WorkspacePaneView> _panes = new();
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
@@ -78,6 +80,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
         SessionHistoryList.ItemsSource = _sessionDoneRecords;
+        WaitingList.ItemsSource = _waitingSessions;
         // 영속된 완료 기록 복원 (설정에 저장된 최신순 목록).
         var saved = SettingsService.LoadSessionHistoryRecords();
         if (saved != null && saved.Count > 0)
@@ -2150,6 +2153,26 @@ public partial class MainWindow : Window
         {
             SessionWaitingRow.Visibility = Visibility.Collapsed;
         }
+
+        SyncWaitingCards();
+    }
+
+    /// <summary>응답 대기(선택지) 세션 카드 목록을 IsWaitingChoice 상태에 맞춰 동기화한다.
+    /// 완료기록 위에 항상 표시, 둘 다 있으면 세퍼레이터로 구분. 변화가 있을 때만 컬렉션을 건드려 깜빡임 방지.</summary>
+    private void SyncWaitingCards()
+    {
+        // 더 이상 대기 아님(또는 죽은 세션) → 제거.
+        for (int i = _waitingSessions.Count - 1; i >= 0; i--)
+            if (!_waitingSessions[i].IsWaitingChoice) _waitingSessions.RemoveAt(i);
+        // 새로 대기 진입한 세션 → 최신이 위로 오도록 맨 앞에 삽입.
+        foreach (var p in _projects)
+            foreach (var t in p.Tabs.OfType<SessionItem>())
+                if (t.IsWaitingChoice && !_waitingSessions.Contains(t))
+                    _waitingSessions.Insert(0, t);
+
+        bool any = _waitingSessions.Count > 0;
+        WaitingList.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        WaitingSeparator.Visibility = (any && _sessionDoneRecords.Count > 0) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void SessionHistoryScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -2172,6 +2195,13 @@ public partial class MainWindow : Window
         if ((sender as FrameworkElement)?.DataContext is not SessionCompletionRecord r) return;
         var s = FindSession(r.SessionId);
         if (s == null) return;
+        try { Activate(); OpenSession(s); } catch { /* best effort */ }
+    }
+
+    /// <summary>응답 대기 카드 클릭 → 해당 세션을 열어 선택지에 답할 수 있게 한다.</summary>
+    private void WaitingCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not SessionItem s) return;
         try { Activate(); OpenSession(s); } catch { /* best effort */ }
     }
 

@@ -21,6 +21,8 @@ public sealed class DiscordBotService : IDisposable
     private readonly SemaphoreSlim _workspaceLock = new(1, 1);
     // 세션 채널별 웹훅 클라이언트 캐시 — 완료 메시지를 에이전트 이름 작성자로 보내는 데 사용.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, DiscordWebhookClient> _webhooks = new();
+    // 에이전트별 길드 커스텀 이모지 멘션(<:devez_claude:id>) — /status 세션 목록 아이콘용.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _agentEmotes = new(StringComparer.Ordinal);
     // 자동 시작 대기 중인 입력: sessionId → 준비되면 주입할 메시지들.
     private readonly Dictionary<string, List<string>> _pendingInput = new(StringComparer.Ordinal);
     private ObservableCollection<ProjectItem>? _projects;
@@ -1136,10 +1138,11 @@ public sealed class DiscordBotService : IDisposable
         var srv = guild != null ? guild.Name : $"{AnsiRed}접근 불가{AnsiReset}";
         var lat = client != null ? client.Latency + " ms" : "-";
 
+        // 한글(전각)은 코드블록에서 폭이 일정치 않아 공백 컬럼 정렬이 어긋난다 → "라벨: 값" 형식.
         var sb = new StringBuilder("```ansi\n");
-        sb.AppendLine($"게이트웨이   {gw}");
-        sb.AppendLine($"서버         {srv}");
-        sb.AppendLine($"지연         {lat}");
+        sb.AppendLine($"게이트웨이: {gw}");
+        sb.AppendLine($"서버: {srv}");
+        sb.AppendLine($"지연: {lat}");
         sb.Append("```");
         return sb.ToString();
     }

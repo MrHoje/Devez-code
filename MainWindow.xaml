@@ -323,6 +323,91 @@
                                       ScrollChanged="SessionHistoryScrollChanged"
                                       Padding="8,8,8,8">
                             <StackPanel>
+                                <!-- ── 응답 대기(선택지) 세션 카드 — 항상 완료기록 위. 내용은 내가 보낸 프롬프트(LastMessage). ── -->
+                                <ItemsControl x:Name="WaitingList" Visibility="Collapsed">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:SessionItem}">
+                                            <Grid Margin="0,3,0,3">
+                                                <Border x:Name="WaitingCardBd" CornerRadius="10" Padding="12,11,12,9"
+                                                        Cursor="Arrow" MouseLeftButtonUp="WaitingCard_Click"
+                                                        BorderBrush="{DynamicResource WarningBrush}" BorderThickness="1">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="Transparent"/>
+                                                            <Style.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                                                </Trigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        <Image Grid.Row="0" Grid.Column="0" Width="15" Height="15"
+                                                               Margin="0,0,9,0" VerticalAlignment="Top"
+                                                               Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                               RenderOptions.BitmapScalingMode="HighQuality">
+                                                            <Image.RenderTransform>
+                                                                <TranslateTransform Y="-2"/>
+                                                            </Image.RenderTransform>
+                                                        </Image>
+                                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Name}"
+                                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextBrush}">
+                                                            <TextBlock.RenderTransform>
+                                                                <TranslateTransform Y="-2"/>
+                                                            </TextBlock.RenderTransform>
+                                                        </TextBlock>
+                                                        <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Path Width="11" Height="11" Margin="0,0,4,0" VerticalAlignment="Center"
+                                                                  Data="{StaticResource IconExclamation}" Stretch="Uniform"
+                                                                  Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
+                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent"/>
+                                                            <TextBlock Text="응답 대기 중" VerticalAlignment="Center"
+                                                                       FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource WarningBrush}"/>
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                                                                   Text="{Binding LastMessage}" Margin="0,5,0,0"
+                                                                   FontSize="{DynamicResource Fs12}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="TextWrapping" Value="NoWrap"/>
+                                                                    <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding ShowFullPrompt, ElementName=ThisWindow}" Value="True">
+                                                                            <Setter Property="TextWrapping" Value="Wrap"/>
+                                                                            <Setter Property="TextTrimming" Value="None"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </Border>
+                                                <!-- 좌측 강조 strip(warning) — 대기 카드 표식 -->
+                                                <Border Width="3" VerticalAlignment="Stretch"
+                                                        HorizontalAlignment="Left" Margin="-1,21,0,19"
+                                                        Background="{DynamicResource WarningBrush}" CornerRadius="1"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- 세퍼레이터: 대기 카드와 완료기록 구분(둘 다 있을 때만) -->
+                                <Border x:Name="WaitingSeparator" Visibility="Collapsed" Height="1"
+                                        Margin="2,7,2,9" Background="{DynamicResource LineBrush}"/>
+
                                 <ItemsControl x:Name="SessionHistoryList">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:SessionCompletionRecord}">
