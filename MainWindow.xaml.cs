@@ -1067,7 +1067,13 @@ public partial class MainWindow : Window
         double targetWidth = open ? SettingsService.LoadSessionHistoryWidth() : 0;
 
         // 닫힘 시 스플리터를 숨겨 잡아끌어 다시 펼치는 것을 막는다(폭 0 이어도 히트 가능 방지).
+        // 4px 채널(세퍼레이터/여백)도 접을 때 0 으로 줄여 우측 끝에 빈 띠가 남지 않게 한다.
         SessionHistorySplitter.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        SessionHistorySplitterCol.Width = new GridLength(open ? 4 : 0);
+        // 파일탐색기↔세션기록 채널을 양쪽 1px 라인(더블라인)으로 만든다 — 세션기록이 열리면
+        // 파일탐색기에 우측 보더도 그린다(세션기록 좌측 보더 + 4px 간격 + 파일탐색기 우측 보더).
+        // 닫히면 파일탐색기는 다시 좌측 보더만 두어 우측 끝이 깔끔하게 끝난다.
+        FileExplorer.BorderThickness = new Thickness(1, 0, open ? 1 : 0, 0);
 
         // 닫을 때 MinWidth(150)가 남아 폭 0 으로 줘도 완전히 안 닫힘 → 닫힘 시 0.
         // 열 때 즉시 150 주면 애니 시작 전 0→150 으로 툭 점프하므로, 애니 완료 후 복원한다.
