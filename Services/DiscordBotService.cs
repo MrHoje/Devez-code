@@ -164,6 +164,7 @@ public sealed class DiscordBotService : IDisposable
             client.Ready += OnReady;
             client.MessageReceived += OnMessageReceived;
             client.ButtonExecuted += OnButtonExecuted;
+            client.ModalSubmitted += OnModalSubmitted;
             client.SlashCommandExecuted += OnSlashCommand;
             client.Disconnected += _ => { IsConnected = false; return Task.CompletedTask; };
 
@@ -207,6 +208,7 @@ public sealed class DiscordBotService : IDisposable
         if (client == null) return;
         try { client.MessageReceived -= OnMessageReceived; } catch { }
         try { client.ButtonExecuted -= OnButtonExecuted; } catch { }
+        try { client.ModalSubmitted -= OnModalSubmitted; } catch { }
         try { client.SlashCommandExecuted -= OnSlashCommand; } catch { }
         try { client.Ready -= OnReady; } catch { }
         _ = Task.Run(async () =>
@@ -417,19 +419,19 @@ public sealed class DiscordBotService : IDisposable
                 if (already) continue; // 이미 이번 등장에서 보냄(리페인트 중복 방지).
 
                 var proj = p; var sess = s; var m = menu.Value;
-                _ = SendPromptAsync(proj, sess, m.text, m.maxOpt);
+                _ = SendPromptAsync(proj, sess, m.text, m.maxOpt, m.typeOpt);
             }
         }
     }
 
     /// <summary>입력 대기 선택지 메뉴 화면을 스레드로 전송(옵션 수에 맞춘 키 버튼 포함).</summary>
-    private async Task SendPromptAsync(ProjectItem project, SessionItem session, string menu, int maxOpt)
+    private async Task SendPromptAsync(ProjectItem project, SessionItem session, string menu, int maxOpt, int typeOpt)
     {
         try
         {
             var thread = await EnsureSessionThreadAsync(project, session);
             if (thread == null) { lock (_sync) _promptActive.Remove(session.Id); return; }
-            await SafeSendAsync(thread, $"⌨️ 입력 대기 — 선택지가 있습니다:\n{menu}", BuildKeyControls(maxOpt));
+            await SafeSendAsync(thread, $"⌨️ 입력 대기 — 선택지가 있습니다:\n{menu}", BuildKeyControls(maxOpt, typeOpt));
         }
         catch { lock (_sync) _promptActive.Remove(session.Id); }
     }
@@ -439,9 +441,9 @@ public sealed class DiscordBotService : IDisposable
     private static readonly Regex OptionMarker = new(@"(\d+)[\.\)]", RegexOptions.Compiled);
 
     /// <summary>최근 터미널 화면에서 입력 대기 선택지 메뉴를 깔끔하게 추출한다(질문 + 번호 옵션).
-    /// 없으면 null. 반환: (디스코드 표시 텍스트, 최대 옵션 번호).
+    /// 없으면 null. 반환: (디스코드 표시 텍스트, 최대 옵션 번호, "Type something" 옵션 번호[없으면 0]).
     /// alt-screen 의 시각적 줄바꿈이 사라져 텍스트가 들러붙으므로, 1·2·3… 연속 번호 마커로 직접 쪼갠다.</summary>
-    private static (string text, int maxOpt)? ExtractClaudeMenu(string screen)
+    private static (string text, int maxOpt, int typeOpt)? ExtractClaudeMenu(string screen)
     {
         if (string.IsNullOrEmpty(screen)) return null;
         var all = screen.Replace("\r", "").Split('\n');
@@ -510,12 +512,14 @@ public sealed class DiscordBotService : IDisposable
 
         // 각 옵션: 이 마커 content 시작 ~ 다음 마커 start 까지. 본문의 '─'(구분선) 제거.
         var opts = new List<string>();
+        int typeOpt = 0; // "Type something"(자유 입력) 옵션 번호 — 디스코드 모달로 처리.
         for (int k = 0; k < marks.Count; k++)
         {
             int from = marks[k].contentStart;
             int to = k + 1 < marks.Count ? marks[k + 1].start : flat.Length;
             var body = flat[from..to].Replace("─", " ");
             body = Regex.Replace(body, @"\s{2,}", " ").Trim();
+            if (body.IndexOf("type something", StringComparison.OrdinalIgnoreCase) >= 0) typeOpt = marks[k].num;
             if (body.Length > 150) body = body[..150].Trim() + "…";
             opts.Add($"{marks[k].num}. {body}");
         }
@@ -527,13 +531,27 @@ public sealed class DiscordBotService : IDisposable
         sb.Append("```");
         var text = sb.ToString();
         if (text.Length > 1800) text = text[..1800] + "\n```";
-        return (text, maxOpt);
+        return (text, maxOpt, typeOpt);
     }
 
     /// <summary>세션 스레드의 키 컨트롤 버튼 클릭을 받아 해당 키스트로크를 터미널 stdin 으로 전달한다.</summary>
     private async Task OnButtonExecuted(SocketMessageComponent component)
     {
         var id = component.Data?.CustomId ?? "";
+
+        // "직접 입력" 버튼 → 디스코드 모달(텍스트 입력 팝업)을 띄운다. (모달은 즉시 응답이어야 해 Defer 금지)
+        if (id.StartsWith("dc:type:", StringComparison.Ordinal))
+        {
+            var optNum = id["dc:type:".Length..];
+            var modal = new ModalBuilder()
+                .WithTitle("직접 입력")
+                .WithCustomId($"dc:typemodal:{optNum}:{component.Message.Id}")
+                .AddTextInput("내용", "dc:typeinput", TextInputStyle.Paragraph, "여기에 입력하세요", required: true)
+                .Build();
+            try { await component.RespondWithModalAsync(modal); } catch { }
+            return;
+        }
+
         if (!id.StartsWith("dc:key:", StringComparison.Ordinal)) return;
 
         // 클릭을 조용히 ack(메시지/로딩 표시 없이) — 안 하면 Discord 가 "상호작용 실패" 를 표시한다.
@@ -555,6 +573,43 @@ public sealed class DiscordBotService : IDisposable
         try { await component.Message.ModifyAsync(m => m.Components = new ComponentBuilder().Build()); } catch { }
     }
 
+    /// <summary>"직접 입력" 모달 제출 처리 — 옵션 선택(자유입력 진입) → 입력 텍스트 → Enter 를 터미널에 주입.</summary>
+    private async Task OnModalSubmitted(SocketModal modal)
+    {
+        var id = modal.Data?.CustomId ?? "";
+        if (!id.StartsWith("dc:typemodal:", StringComparison.Ordinal)) return;
+        try { await modal.DeferAsync(); } catch { }
+
+        // customId = dc:typemodal:<optNum>:<messageId>
+        var parts = id.Split(':');
+        int optNum = parts.Length > 2 && int.TryParse(parts[2], out var n) ? n : 0;
+        ulong msgId = parts.Length > 3 && ulong.TryParse(parts[3], out var mid) ? mid : 0;
+        var text = modal.Data?.Components?.FirstOrDefault(c => c.CustomId == "dc:typeinput")?.Value ?? "";
+
+        var threadId = modal.Channel?.Id ?? modal.ChannelId ?? 0;
+        if (threadId == 0) return;
+        var sessionId = SettingsService.FindDiscordSessionByThread(threadId);
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        var session = TerminalSessionManager.Instance.Get(sessionId);
+        if (session is not { IsAlive: true }) return;
+
+        // 옵션 선택(자유입력 칸으로 진입) → 텍스트 → Enter. (사이에 등록 여유를 둔다)
+        if (optNum > 0) { session.Write(optNum.ToString()); await Task.Delay(500); }
+        if (!string.IsNullOrEmpty(text)) { session.Write(text); await Task.Delay(300); }
+        session.Write("\r");
+
+        // 버튼 제거(중복 방지).
+        if (msgId != 0 && modal.Channel is IMessageChannel ch)
+        {
+            try
+            {
+                if (await ch.GetMessageAsync(msgId) is IUserMessage um)
+                    await um.ModifyAsync(m => m.Components = new ComponentBuilder().Build());
+            }
+            catch { }
+        }
+    }
+
     /// <summary>버튼 customId 의 키 이름을 터미널이 이해하는 입력 바이트열로 변환한다.</summary>
     private static string? MapKey(string key) => key switch
     {
@@ -569,13 +624,19 @@ public sealed class DiscordBotService : IDisposable
     };
 
     /// <summary>세션 스레드용 번호 선택 버튼. <paramref name="maxOpt"/> 만큼(1~9, 행당 5개). 기본 5.
-    /// 번호 입력 시 대부분 TUI 가 즉시 선택하므로 방향/Enter/Esc 버튼은 두지 않는다.</summary>
-    private static MessageComponent BuildKeyControls(int maxOpt = 5)
+    /// 번호 입력 시 대부분 TUI 가 즉시 선택하므로 방향/Enter/Esc 버튼은 두지 않는다.
+    /// <paramref name="typeOpt"/> 번 옵션("Type something")은 디스코드 모달(직접 입력)로 처리한다.</summary>
+    private static MessageComponent BuildKeyControls(int maxOpt = 5, int typeOpt = 0)
     {
         var n = Math.Clamp(maxOpt, 1, 9);
         var b = new ComponentBuilder();
         for (var i = 1; i <= n; i++)
-            b.WithButton(i.ToString(), $"dc:key:{i}", ButtonStyle.Secondary, row: (i - 1) / 5);
+        {
+            if (i == typeOpt)
+                b.WithButton($"✏️ {i} 직접 입력", $"dc:type:{i}", ButtonStyle.Primary, row: (i - 1) / 5);
+            else
+                b.WithButton(i.ToString(), $"dc:key:{i}", ButtonStyle.Secondary, row: (i - 1) / 5);
+        }
         return b.Build();
     }
 
