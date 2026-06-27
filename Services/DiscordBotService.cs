@@ -832,7 +832,12 @@ public sealed class DiscordBotService : IDisposable
                     });
                 }
             }
-            try { await component.Message.ModifyAsync(m => { m.Content = (isModel ? "model: " : "effort: ") + match.label; m.Components = new ComponentBuilder().Build(); }); } catch { }
+            // model·effort 를 항상 같이 표시(바뀐 값 + 나머지는 현재값 조회).
+            var (curMid, curEff) = string.IsNullOrWhiteSpace(sid) ? (null, null) : ModelEffortService.ReadPersisted(sid!);
+            var modelLabel = isModel ? match.label : ModelIdToLabel(curMid ?? "");
+            var effortVal = isModel ? (curEff ?? "-") : match.label;
+            var content = $"model: {modelLabel}\neffort: {effortVal}";
+            try { await component.Message.ModifyAsync(m => { m.Content = content; m.Components = new ComponentBuilder().Build(); }); } catch { }
             return;
         }
 

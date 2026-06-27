@@ -330,7 +330,7 @@
                                             <Grid Margin="0,3,0,3">
                                                 <Border x:Name="WaitingCardBd" CornerRadius="10" Padding="12,11,12,9"
                                                         Cursor="Arrow" MouseLeftButtonUp="WaitingCard_Click"
-                                                        BorderBrush="{DynamicResource WarningBrush}" BorderThickness="1">
+                                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                                                     <Border.Style>
                                                         <Style TargetType="Border">
                                                             <Setter Property="Background" Value="Transparent"/>
