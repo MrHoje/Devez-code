@@ -640,7 +640,8 @@ public sealed class DiscordBotService : IDisposable
         return id;
     }
 
-    /// <summary>model/effort 가 바뀌면 "Set model: …" / "Set effort: …" 를 스레드로 전송(Claude 작성자).</summary>
+    /// <summary>model/effort 가 바뀌면 "model: …" / "effort: …" 를 스레드로 전송.
+    /// 디스코드 버튼 변경과 동일하게 봇(DevezCode 앱)이 보낸 메시지로 표시(웹훅/에이전트 작성자 아님).</summary>
     private async Task PostModelEffortChangeAsync(ProjectItem project, SessionItem session, string oldKey, string newKey)
     {
         var op = oldKey.Split('|'); var np = newKey.Split('|');
@@ -652,8 +653,7 @@ public sealed class DiscordBotService : IDisposable
         if (lines.Count == 0) return;
         var thread = await EnsureSessionThreadAsync(project, session);
         if (thread == null) return;
-        var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-        await SendAsAgentAsync(project, thread, agentId, string.Join("\n", lines));
+        await SafeSendAsync(thread, string.Join("\n", lines)); // 봇(DevezCode 앱) 작성자
     }
 
     /// <summary>메뉴 텍스트(```펜스/질문/번호옵션)를 (질문, 옵션줄 목록)으로 파싱.</summary>
