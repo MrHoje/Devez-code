@@ -30,6 +30,7 @@ public sealed class DiscordBotService : IDisposable
     private bool _starting;
     // 꺼진 세션을 UI 스레드에서 열어달라는 요청 핸들러. MainWindow 가 주입.
     private Action<string>? _openSessionRequest;
+    private Action<string>? _removeSessionRequest;
     // 입력 대기 선택지 메뉴 자동 전송 — 터미널 화면을 주기 폴링. 메뉴 등장 1회당 1번만 보내려고 active 세션 추적.
     private System.Threading.Timer? _promptPoll;
     private readonly HashSet<string> _promptActive = new(StringComparer.Ordinal);
@@ -147,6 +148,26 @@ public sealed class DiscordBotService : IDisposable
         catch { /* 권한 없음/이미 삭제됨 — 무시 */ }
     }
 
+    private Task OnChannelDestroyed(SocketChannel channel) { HandleDiscordDeleted(channel.Id); return Task.CompletedTask; }
+    private Task OnThreadDeleted(Cacheable<SocketThreadChannel, ulong> thread) { HandleDiscordDeleted(thread.Id); return Task.CompletedTask; }
+
+    /// <summary>Discord 에서 스레드/채널이 삭제됨 → 매핑된 앱 세션을 제거한다(양방향 동기화의 반대 방향).
+    /// 앱→Discord 삭제(RemoveSessionThreadAsync)는 매핑을 먼저 0으로 지우므로 여기서 재매칭되지 않아 루프가 없다.</summary>
+    private void HandleDiscordDeleted(ulong channelId)
+    {
+        var projects = _projects;
+        if (projects == null || _removeSessionRequest == null) return;
+        foreach (var p in projects.ToArray())
+            foreach (var s in p.Sessions.ToArray())
+            {
+                if (SettingsService.LoadDiscordSessionThread(s.Id) != channelId) continue;
+                SettingsService.SaveDiscordSessionThread(s.Id, 0); // 매핑 정리(앱→Discord 재삭제 시도 방지)
+                lock (_sync) _pendingInput.Remove(s.Id);
+                try { _removeSessionRequest.Invoke(s.Id); } catch { /* UI 디스패치 실패 무시 */ }
+                return;
+            }
+    }
+
     /// <summary>프로젝트 삭제 시 포럼 채널(과 그 안의 글 전부)을 삭제하고 매핑을 정리한다.</summary>
     private async Task RemoveProjectAsync(ProjectItem project)
     {
@@ -170,6 +191,9 @@ public sealed class DiscordBotService : IDisposable
 
     /// <summary>꺼진 세션 스레드에 메시지가 오면 호출할 "세션 열기" 핸들러를 등록한다(MainWindow 가 UI 스레드에서 처리).</summary>
     public void SetOpenSessionRequest(Action<string> handler) => _openSessionRequest = handler;
+
+    /// <summary>Discord 에서 스레드가 삭제되면 호출할 "세션 제거" 핸들러(MainWindow 가 UI 스레드에서 처리).</summary>
+    public void SetRemoveSessionRequest(Action<string> handler) => _removeSessionRequest = handler;
 
     public void Start()
     {
@@ -206,6 +230,8 @@ public sealed class DiscordBotService : IDisposable
             client.ButtonExecuted += OnButtonExecuted;
             client.ModalSubmitted += OnModalSubmitted;
             client.SlashCommandExecuted += OnSlashCommand;
+            client.ChannelDestroyed += OnChannelDestroyed;          // 채널/스레드 삭제 → 세션·프로젝트 제거
+            client.ThreadDeleted += OnThreadDeleted;                // 스레드 삭제(별도 게이트웨이 이벤트)
             client.Disconnected += _ => { IsConnected = false; return Task.CompletedTask; };
 
             await client.LoginAsync(TokenType.Bot, SettingsService.LoadDiscordBotToken());
@@ -247,6 +273,8 @@ public sealed class DiscordBotService : IDisposable
         _webhooks.Clear();
         if (client == null) return;
         try { client.MessageReceived -= OnMessageReceived; } catch { }
+        try { client.ChannelDestroyed -= OnChannelDestroyed; } catch { }
+        try { client.ThreadDeleted -= OnThreadDeleted; } catch { }
         try { client.ButtonExecuted -= OnButtonExecuted; } catch { }
         try { client.ModalSubmitted -= OnModalSubmitted; } catch { }
         try { client.SlashCommandExecuted -= OnSlashCommand; } catch { }

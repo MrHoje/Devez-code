@@ -99,6 +99,12 @@ public partial class MainWindow : Window
             var s = FindSession(sessionId);
             if (s != null) { try { Activate(); } catch { } OpenSession(s); }
         }));
+        // Discord 에서 스레드를 삭제하면 UI 스레드에서 해당 세션을 제거한다(양방향 삭제 동기화).
+        _discordBot.SetRemoveSessionRequest(sessionId => Dispatcher.BeginInvoke(() =>
+        {
+            var s = FindSession(sessionId);
+            if (s != null) DeleteSession(s);
+        }));
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
