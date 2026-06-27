@@ -1132,7 +1132,7 @@ public sealed class DiscordBotService : IDisposable
     /// <summary>에이전트 아이콘을 길드 커스텀 이모지로 보장(없으면 업로드)하고 멘션을 캐시한다.
     /// 권한/슬롯 부족 등 실패 시 해당 에이전트는 아이콘 없이 표시.</summary>
     // 이모지 이름 버전 — 렌더 크기 바꿀 때 bump 하면 옛 버전을 지우고 새로 올린다.
-    private const string EmotePrefix = "dz3_";
+    private const string EmotePrefix = "dz4_";
 
     private async Task EnsureAgentEmotesAsync()
     {
@@ -1191,8 +1191,8 @@ public sealed class DiscordBotService : IDisposable
                 var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
                 var emote = _agentEmotes.TryGetValue(agentId, out var em) ? em + " " : "";
                 bool live = session.IsAlive || session.IsBusy;
-                var dot = _agentEmotes.TryGetValue(live ? "on" : "off", out var de) ? de : (live ? "🟢" : "🔴");
-                sb.AppendLine($"{emote}{dot} {session.Name}");
+                var dot = _agentEmotes.TryGetValue(live ? "on" : "off", out var de) ? de + " " : (live ? "🟢 " : "🔴 ");
+                sb.AppendLine($"{dot}{emote}{session.Name}");
             }
             sb.AppendLine();
         }
@@ -1701,7 +1701,7 @@ public sealed class DiscordBotService : IDisposable
             System.IO.MemoryStream? result = null;
             app.Dispatcher.Invoke(() =>
             {
-                const int canvas = 128; const double d = 64; // 지름 = 캔버스의 절반
+                const int canvas = 128; const double d = 44; // 점 지름(작게)
                 var color = on ? System.Windows.Media.Color.FromRgb(0x57, 0xC2, 0x7A)
                                : System.Windows.Media.Color.FromRgb(0xED, 0x42, 0x45);
                 var dv = new System.Windows.Media.DrawingVisual();
