@@ -95,6 +95,11 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>분할 상태 저장. 분할 토글 버튼은 상단 타이틀바로 이동해 패널 탭바에는 버튼이 없다.</summary>
     public void SetSplitActive(bool active) => _split = active;
 
+    /// <summary>이 패널의 우측 보더(우측 채널 세퍼레이터) 표시 여부. 우측에 아무 패널도
+    /// 열려 있지 않은 최우측 패널은 우측 보더를 꺼서 떠 있는 세로선을 없앤다.</summary>
+    public void SetRightChannelBorder(bool show)
+        => CenterArea.BorderThickness = new Thickness(1, 0, show ? 1 : 0, 0);
+
     /// <summary>분할 중 포커스 패널을 4면 테마색 보더로 표시. 포커스 시 PrimaryBrush, 아니면 투명.
     /// 색만 바뀌고 두께(레이아웃)는 고정이라 터미널 리사이즈가 없다. SetResourceReference 로 연결해
     /// 테마 변경 시 색이 자동으로 따라온다.</summary>

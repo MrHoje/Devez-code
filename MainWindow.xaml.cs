@@ -1248,6 +1248,7 @@ public partial class MainWindow : Window
     /// 접힘 시 열려 있는 첫 번째 보조 패널의 좌측 보더를 제거한다.</summary>
     private void UpdateUsageSidebarBorder()
     {
+        UpdateCenterRightBorder();
         bool rightHidden = _narrow == true ? !_rightOverlayOpen : _rightCollapsed;
         if (!rightHidden)
         {
@@ -1277,6 +1278,18 @@ public partial class MainWindow : Window
             UsageSidebar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
         }
 
+    }
+
+    /// <summary>우측에 도킹된 패널(파일탐색기/세션기록/사용량)이 하나도 없으면 최우측 중앙
+    /// 패널의 우측 보더(스플리터 좌측 세퍼레이터)를 꺼서 떠 있는 세로선을 없앤다. 하나라도
+    /// 열려 있으면 채널 형성을 위해 켠다. narrow 에선 파일탐색기가 오버레이라 도킹으로 안 친다.</summary>
+    private void UpdateCenterRightBorder()
+    {
+        bool fileExpDockedOpen = _narrow == true ? false : !_rightCollapsed;
+        bool anyRightOpen = fileExpDockedOpen || _sessionHistoryOpen || _usageOpen;
+        var rightmost = _splitActive ? RightPane : PaneA;
+        foreach (var p in _panes) p.SetRightChannelBorder(true);
+        rightmost.SetRightChannelBorder(anyRightOpen);
     }
 
     // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는
@@ -1706,6 +1719,7 @@ public partial class MainWindow : Window
         PaneA.IsRightPane = ReferenceEquals(RightPane, PaneA);
         PaneB.IsRightPane = ReferenceEquals(RightPane, PaneB);
         foreach (var pn in _panes) pn.SetSplitActive(_splitActive);
+        UpdateCenterRightBorder();   // 최우측 패널이 바뀌었으니 우측 보더 재배치
         PersistSplitState();
     }
 
@@ -1834,6 +1848,7 @@ public partial class MainWindow : Window
         PaneB.Visibility = Visibility.Visible;
 
         foreach (var p in _panes) p.SetSplitActive(true);
+        UpdateCenterRightBorder();   // 최우측이 PaneB 로 바뀜
 
         // 패널 B 포커스로 전환 → 이후 사이드바 클릭이 B 로 향한다.
         _focusedPane = PaneB;
@@ -1961,6 +1976,7 @@ public partial class MainWindow : Window
 
         _focusedPane = PaneA;
         foreach (var p in _panes) p.SetSplitActive(false);
+        UpdateCenterRightBorder();   // 최우측이 다시 PaneA 로 정규화됨
         SyncShellToFocusedPane();
         UpdatePaneRoles();
         Sidebar.IsSplitActive = false;
