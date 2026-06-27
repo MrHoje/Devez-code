@@ -842,11 +842,35 @@ public sealed class TerminalSessionManager
                   $wdir = Join-Path $env:APPDATA 'DevezCode\claude\waiting'
                   New-Item -ItemType Directory -Force -Path $wdir | Out-Null
                   $waitFile = Join-Path $wdir ($room + '.txt')
+                  $permFile = Join-Path $wdir ($room + '.perm')  # PermissionRequest 발화 시각(UTC Ticks) — 지연 Notification 중복 차단용
 
-                  # Notification 훅 = 권한/선택지 입력 대기 진입. busy=running 일 때만 기록(60초 idle 알림 제외).
+                  # 입력 대기 ❗ 진입 신호. busy=running 일 때만 기록(60초 idle 알림 제외).
+                  #  • notify-perm (PermissionRequest): 권한 대화창 즉시 발화 → waiting 기록 + perm 타임스탬프 갱신.
+                  #  • notify (Notification): 폴백(AskUserQuestion 등). 단, 방금(10초 내) PermissionRequest 가 처리한
+                  #    권한이면 이 Notification 은 그 '지연 중복'(claude 측 수초 지연)이므로 재무장하지 않는다.
+                  #    → 사용자가 답한 뒤 늦게 도착한 Notification 이 ❗ 를 되살려 완료까지 박히는 문제 차단.
+                  if ($status -eq 'notify-perm') {
+                    $b = ''; try { if (Test-Path -LiteralPath $busyFile) { $b = (Get-Content -LiteralPath $busyFile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
+                    if ($b -eq 'running') {
+                      Set-Content -LiteralPath $waitFile -Value 'waiting' -Encoding Ascii -Force
+                      Set-Content -LiteralPath $permFile -Value ([string]([DateTime]::UtcNow.Ticks)) -Encoding Ascii -Force
+                    }
+                    exit 0
+                  }
                   if ($status -eq 'notify') {
                     $b = ''; try { if (Test-Path -LiteralPath $busyFile) { $b = (Get-Content -LiteralPath $busyFile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
-                    if ($b -eq 'running') { Set-Content -LiteralPath $waitFile -Value 'waiting' -Encoding Ascii -Force }
+                    if ($b -eq 'running') {
+                      $recentPerm = $false
+                      try {
+                        if (Test-Path -LiteralPath $permFile) {
+                          $pt = [long]0
+                          if ([long]::TryParse(((Get-Content -LiteralPath $permFile -Raw -ErrorAction SilentlyContinue) + '').Trim(), [ref]$pt) -and $pt -gt 0) {
+                            if ((([DateTime]::UtcNow.Ticks - $pt) / 1e7) -lt 10) { $recentPerm = $true }
+                          }
+                        }
+                      } catch { }
+                      if (-not $recentPerm) { Set-Content -LiteralPath $waitFile -Value 'waiting' -Encoding Ascii -Force }
+                    }
                     exit 0
                   }
                   # PostToolUse 등 = 답변 처리 재개 → 선택지 대기 해제.
@@ -881,6 +905,7 @@ public sealed class TerminalSessionManager
                   if ($status -eq 'running') {
                     Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
                     Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force  # 새 턴 → 대기 해제
+                    Remove-Item -LiteralPath $permFile -Force -ErrorAction SilentlyContinue
                     $prompt = ''
                     try { $prompt = '' + $j.prompt } catch { }
                     if ($prompt -and $prompt.StartsWith('<task-notification>')) {
@@ -912,6 +937,7 @@ public sealed class TerminalSessionManager
 
                   # status = idle (Stop/SessionEnd) — 턴 종료/중단이므로 선택지 대기도 해제.
                   Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force
+                  Remove-Item -LiteralPath $permFile -Force -ErrorAction SilentlyContinue
                   $evt = ''; try { $evt = '' + $j.hook_event_name } catch { }
                   $pending = 0
                   if ($evt -ne 'SessionEnd' -and $sid) {
@@ -966,6 +992,7 @@ public sealed class TerminalSessionManager
         var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running {arg}";
         var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle {arg}";
         var busyNotifyCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notify {arg}";
+        var busyPermCommand   = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notify-perm {arg}";
         // refreshInterval 은 의도적으로 생략 — statusLine 은 event-driven 갱신으로 충분(idle 중 CPU 튐 방지).
         var statusLine = new { type = "command", command = statusCommand };
         var settings = new
@@ -985,7 +1012,7 @@ public sealed class TerminalSessionManager
                 //  • PermissionRequest: 툴 권한 대화창이 뜨는 '즉시' 발화(matcher * = 모든 툴) → 지연 없음.
                 //  • Notification: 그 외 입력 대기(AskUserQuestion 등) 폴백(claude 측 타이밍상 수 초 지연 가능).
                 // 해제는 UserPromptSubmit/Stop(파일) + 답변 입력(즉시 UI).
-                PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
+                PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyPermCommand } } } },
                 Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
             }
         };

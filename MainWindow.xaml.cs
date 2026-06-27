@@ -136,7 +136,13 @@ public partial class MainWindow : Window
             {
                 var s = FindSession(id);
                 bool was = s?.IsBusy ?? false;
-                if (s != null) s.IsBusy = busy;
+                if (s != null)
+                {
+                    s.IsBusy = busy;
+                    // 턴 종료(busy=false)면 선택지 대기일 수 없다 → ❗ 도 반드시 해제.
+                    // waiting 파일의 단발 idle 쓰기가 truncate 경합으로 watcher 에서 누락돼도 여기서 보강(완료까지 ❗ 박힘 방지).
+                    if (!busy) s.IsWaitingChoice = false;
+                }
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
@@ -209,7 +215,11 @@ public partial class MainWindow : Window
             {
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
-                if (s != null) s.IsBusy = busy;
+                if (s != null)
+                {
+                    s.IsBusy = busy;
+                    if (!busy) s.IsWaitingChoice = false; // 턴 종료 → ❗ 보강 해제(완료까지 박힘 방지)
+                }
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
@@ -230,7 +240,11 @@ public partial class MainWindow : Window
             {
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
-                if (s != null) s.IsBusy = busy;
+                if (s != null)
+                {
+                    s.IsBusy = busy;
+                    if (!busy) s.IsWaitingChoice = false; // 턴 종료 → ❗ 보강 해제(완료까지 박힘 방지)
+                }
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
             });
