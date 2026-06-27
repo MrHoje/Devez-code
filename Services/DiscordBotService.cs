@@ -33,6 +33,8 @@ public sealed class DiscordBotService : IDisposable
     // 입력 대기 선택지 메뉴 자동 전송 — 터미널 화면을 주기 폴링. 메뉴 등장 1회당 1번만 보내려고 active 세션 추적.
     private System.Threading.Timer? _promptPoll;
     private readonly HashSet<string> _promptActive = new(StringComparer.Ordinal);
+    // 폴링을 한 번이라도 거친 세션 — 시작 직후 화면에 이미 떠 있던 메뉴를 재전송하지 않기 위함.
+    private readonly HashSet<string> _promptInitialized = new(StringComparer.Ordinal);
     // 세션별 마지막으로 보낸 선택지 메뉴 텍스트 — 버튼 클릭 시 고른 옵션 라벨을 되살려 "내 메시지"로 표시.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastMenu = new(StringComparer.Ordinal);
     // 메뉴 답변(버튼/팝업) 후 claude 응답을 기다리는 중인 세션 — 중복 폴링 방지.
@@ -550,8 +552,9 @@ public sealed class DiscordBotService : IDisposable
                 if (agentId != "claude") continue; // 우선 claude 만 — 선택지 UI 패턴이 에이전트마다 달라서.
 
                 var session = TerminalSessionManager.Instance.Get(s.Id);
-                if (session is not { IsAlive: true }) { lock (_sync) _promptActive.Remove(s.Id); continue; }
+                if (session is not { IsAlive: true }) { lock (_sync) { _promptActive.Remove(s.Id); _promptInitialized.Remove(s.Id); } continue; }
                 lock (_sync) { if (_pendingInput.ContainsKey(s.Id)) continue; } // 자동시작 주입 중이면 스킵
+                bool firstPoll; lock (_sync) firstPoll = _promptInitialized.Add(s.Id); // 이 세션 첫 폴링?
 
                 // 모델/effort 변경 감지 → 디바운스(~2초 모아 최종 상태 1장만 전송). 선택지·확인 메뉴는 안 보냄.
                 var (mid, eff) = ModelEffortService.ReadPersisted(s.Id);
@@ -587,6 +590,9 @@ public sealed class DiscordBotService : IDisposable
                 }
                 // /model·/effort 선택지/확인 메뉴는 디스코드로 보내지 않는다(변경 알림으로 대체).
                 if (IsModelEffortUi(recent, menu.Value.text)) { lock (_sync) _promptActive.Add(s.Id); continue; }
+
+                // 시작 직후 첫 폴링에 이미 떠 있던 메뉴는 재전송하지 않는다(재실행 시 중복 방지).
+                if (firstPoll) { lock (_sync) _promptActive.Add(s.Id); continue; }
 
                 bool already; lock (_sync) already = !_promptActive.Add(s.Id);
                 if (already) continue; // 이미 이번 등장에서 보냄(리페인트 중복 방지).
