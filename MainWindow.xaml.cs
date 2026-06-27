@@ -2053,10 +2053,10 @@ public partial class MainWindow : Window
                 if (!p.IsActive) continue;
                 foreach (var s in p.Tabs.OfType<SessionItem>())
                 {
-                    // 화면(원본 출력 버퍼) 폴링으로 잡는 에이전트: claude, opencode.
-                    // gjc 는 스피너가 출력 버퍼를 도배해 메뉴가 안 남으므로 jsonl('ask' 툴콜)로 별도 처리 → 여기선 제외.
+                    // 화면(원본 출력 버퍼) 폴링은 claude 만. alt-screen 리페인트라 현재 화면을 정확히 반영.
+                    // opencode/gjc 는 인라인 TUI라 출력 버퍼가 append-only(잔상·번호목록 오탐) → 이벤트/jsonl 신호로 별도 처리.
                     var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
-                    if (agentId is not ("claude" or "opencode")) continue; // gjc/codex 등은 화면 폴링 대상 아님
+                    if (agentId != "claude") continue;
 
                     var session = TerminalSessionManager.Instance.Get(s.Id);
                     bool waiting = session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());
