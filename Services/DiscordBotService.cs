@@ -472,12 +472,71 @@ public sealed class DiscordBotService : IDisposable
         var session = TerminalSessionManager.Instance.Get(sessionId);
         if (session is not { IsAlive: true }) return;
 
-        var seq = MapKey(id["dc:key:".Length..]);
+        var keyName = id["dc:key:".Length..];
+        var seq = MapKey(keyName);
         if (seq == null) return;
         session.Write(seq);
 
-        // 선택 완료 → 중복 선택 방지를 위해 이 메시지의 버튼을 제거한다.
-        try { await component.Message.ModifyAsync(m => m.Components = new ComponentBuilder().Build()); } catch { }
+        // 선택을 "내 메시지"로 표시(웹훅 임퍼스네이션) + 중복 방지로 버튼 제거.
+        var project = ProjectForSession(sessionId);
+        if (project != null && component.Channel is IMessageChannel ch && int.TryParse(keyName, out var num))
+            await SendAsUserAsync(project, ch, component.User, ChoiceText(sessionId, num));
+        await RemovePromptButtonsAsync(project, component.Channel as IMessageChannel, component.Message.Id, threadId);
+    }
+
+    /// <summary>웹훅(Claude)으로 보낸 메뉴 메시지의 버튼을 제거(중복 선택 방지). 봇 메시지면 봇으로 폴백.</summary>
+    private async Task RemovePromptButtonsAsync(ProjectItem? project, IMessageChannel? thread, ulong messageId, ulong threadId)
+    {
+        if (project != null)
+        {
+            var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
+            var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
+            if (hook != null)
+            {
+                try { await hook.ModifyMessageAsync(messageId, m => m.Components = new ComponentBuilder().Build(), threadId: threadId); return; }
+                catch { /* 웹훅 메시지가 아니거나 실패 → 봇 폴백 */ }
+            }
+        }
+        if (thread != null)
+            try { if (await thread.GetMessageAsync(messageId) is IUserMessage um) await um.ModifyAsync(m => m.Components = new ComponentBuilder().Build()); }
+            catch { }
+    }
+
+    /// <summary>세션 ID 로 소속 프로젝트를 찾는다(없으면 null).</summary>
+    private ProjectItem? ProjectForSession(string? sessionId)
+    {
+        var projects = _projects;
+        if (projects == null || string.IsNullOrEmpty(sessionId)) return null;
+        foreach (var p in projects)
+            foreach (var s in p.Sessions)
+                if (s.Id == sessionId) return p;
+        return null;
+    }
+
+    /// <summary>저장해 둔 메뉴에서 n 번 옵션 줄("n. …")을 찾아 반환. 없으면 "n번".</summary>
+    private string ChoiceText(string sessionId, int n)
+    {
+        if (_lastMenu.TryGetValue(sessionId, out var menu))
+        {
+            var m = Regex.Match(menu, $@"(?m)^{n}\. (.+)$");
+            if (m.Success) return $"{n}. {m.Groups[1].Value.Trim()}";
+        }
+        return $"{n}번";
+    }
+
+    /// <summary>클릭/입력한 사용자의 이름·아바타로(웹훅) 메시지를 보내 "내가 보낸 것"처럼 표시한다.</summary>
+    private async Task SendAsUserAsync(ProjectItem project, IMessageChannel thread, IUser user, string text)
+    {
+        var name = (user as IGuildUser)?.Nickname ?? user.GlobalName ?? user.Username;
+        var avatar = user.GetAvatarUrl(size: 128) ?? user.GetDefaultAvatarUrl();
+        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
+        var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
+        if (hook != null)
+        {
+            try { await hook.SendMessageAsync(TrimForDiscord(text, 1900), username: name, avatarUrl: avatar, threadId: thread.Id); return; }
+            catch { /* 웹훅 실패 → 봇 폴백 */ }
+        }
+        await SafeSendAsync(thread, $"**{name}**: {text}");
     }
 
     /// <summary>"직접 입력" 모달 제출 처리 — 옵션 선택(자유입력 진입) → 입력 텍스트 → Enter 를 터미널에 주입.</summary>
@@ -492,9 +551,8 @@ public sealed class DiscordBotService : IDisposable
         ulong msgId = parts.Length > 3 && ulong.TryParse(parts[3], out var mid) ? mid : 0;
         var text = modal.Data?.Components?.FirstOrDefault(c => c.CustomId == "dc:typeinput")?.Value ?? "";
 
-        // 입력 내용을 보이는 메시지로 응답(= 상호작용 ack + 내가 보낸 내용 기록).
-        // Defer 후 무응답이면 Discord 가 "응답하지 않음" 경고를 띄우므로 반드시 보이는 응답을 보낸다.
-        try { await modal.RespondAsync($"💬 {text}"); } catch { }
+        // 봇 메시지 없이 ack: ephemeral defer 후 그 placeholder 를 삭제한다(고지/봇응답 안 보이게).
+        try { await modal.DeferAsync(ephemeral: true); } catch { }
 
         var threadId = modal.Channel?.Id ?? modal.ChannelId ?? 0;
         if (threadId == 0) return;
@@ -508,16 +566,12 @@ public sealed class DiscordBotService : IDisposable
         if (!string.IsNullOrEmpty(text)) { session.Write(text); await Task.Delay(300); }
         session.Write("\r");
 
-        // 버튼 제거(중복 방지).
-        if (msgId != 0 && modal.Channel is IMessageChannel ch)
-        {
-            try
-            {
-                if (await ch.GetMessageAsync(msgId) is IUserMessage um)
-                    await um.ModifyAsync(m => m.Components = new ComponentBuilder().Build());
-            }
-            catch { }
-        }
+        // 입력 내용을 "내 메시지"로 표시(웹훅) + ephemeral placeholder 삭제 + 버튼 제거.
+        var project = ProjectForSession(sessionId);
+        if (project != null && modal.Channel is IMessageChannel uch && !string.IsNullOrEmpty(text))
+            await SendAsUserAsync(project, uch, modal.User, text);
+        try { await modal.DeleteOriginalResponseAsync(); } catch { }
+        await RemovePromptButtonsAsync(project, modal.Channel as IMessageChannel, msgId, threadId);
     }
 
     /// <summary>버튼 customId 의 키 이름을 터미널이 이해하는 입력 바이트열로 변환한다.</summary>
