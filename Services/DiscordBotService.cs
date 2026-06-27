@@ -31,6 +31,11 @@ public sealed class DiscordBotService : IDisposable
     // 꺼진 세션을 UI 스레드에서 열어달라는 요청 핸들러. MainWindow 가 주입.
     private Action<string>? _openSessionRequest;
     private Action<string>? _removeSessionRequest;
+    private Action<string, string>? _renameSessionRequest;
+
+    /// <summary>Discord 에 스레드를 만들/보일 에이전트인지(현재는 claude 만).</summary>
+    private static bool IsClaude(SessionItem s)
+        => (string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId) == "claude";
     // 입력 대기 선택지 메뉴 자동 전송 — 터미널 화면을 주기 폴링. 메뉴 등장 1회당 1번만 보내려고 active 세션 추적.
     private System.Threading.Timer? _promptPoll;
     private readonly HashSet<string> _promptActive = new(StringComparer.Ordinal);
@@ -83,7 +88,11 @@ public sealed class DiscordBotService : IDisposable
         if (_projects != null)
         {
             _projects.CollectionChanged -= OnProjectsChanged;
-            foreach (var p in _projects) p.Sessions.CollectionChanged -= OnSessionsChanged;
+            foreach (var p in _projects)
+            {
+                p.Sessions.CollectionChanged -= OnSessionsChanged;
+                foreach (var s in p.Sessions) s.PropertyChanged -= OnSessionPropChanged;
+            }
         }
         _projects = projects;
         projects.CollectionChanged += OnProjectsChanged;
@@ -91,7 +100,31 @@ public sealed class DiscordBotService : IDisposable
         {
             p.Sessions.CollectionChanged -= OnSessionsChanged;
             p.Sessions.CollectionChanged += OnSessionsChanged;
+            foreach (var s in p.Sessions) { s.PropertyChanged -= OnSessionPropChanged; s.PropertyChanged += OnSessionPropChanged; }
         }
+    }
+
+    /// <summary>세션 이름 변경 → Discord 스레드 이름 동기화(app→Discord). claude 세션만.
+    /// Discord→app 변경으로 Name 이 바뀐 경우엔 EnsureThreadNameAsync 의 동일성 검사로 재호출이 멈춘다.</summary>
+    private void OnSessionPropChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(SessionItem.Name) || sender is not SessionItem s) return;
+        if (!IsConfigured || !IsClaude(s)) return;
+        _ = RenameThreadAsync(s);
+    }
+
+    /// <summary>세션 매핑 스레드의 이름을 현재 세션 이름으로 갱신(스레드가 없으면 무시 — 생성하지 않음).</summary>
+    private async Task RenameThreadAsync(SessionItem session)
+    {
+        var client = _client;
+        var tid = SettingsService.LoadDiscordSessionThread(session.Id);
+        if (client == null || tid == 0) return;
+        try
+        {
+            var thread = client.GetChannel(tid) as IThreadChannel ?? await client.Rest.GetChannelAsync(tid) as IThreadChannel;
+            if (thread != null) await EnsureThreadNameAsync(thread, session);
+        }
+        catch { /* 권한/rate-limit 무시 — 다음 동기화 때 재시도 */ }
     }
 
     /// <summary>프로젝트 추가/삭제 — 추가된 프로젝트의 세션 변경을 구독하고, 삭제된 프로젝트는 해제.</summary>
@@ -102,6 +135,7 @@ public sealed class DiscordBotService : IDisposable
             {
                 p.Sessions.CollectionChanged -= OnSessionsChanged;
                 p.Sessions.CollectionChanged += OnSessionsChanged;
+                foreach (var s in p.Sessions) { s.PropertyChanged -= OnSessionPropChanged; s.PropertyChanged += OnSessionPropChanged; }
                 if (IsConfigured && p.IsActive)
                     foreach (var s in p.Sessions) _ = EnsureSessionThreadAsync(p, s);
             }
@@ -109,6 +143,7 @@ public sealed class DiscordBotService : IDisposable
             foreach (ProjectItem p in e.OldItems)
             {
                 p.Sessions.CollectionChanged -= OnSessionsChanged;
+                foreach (var s in p.Sessions) s.PropertyChanged -= OnSessionPropChanged;
                 if (IsConfigured) _ = RemoveProjectAsync(p); // 카테고리·세션 채널 삭제
             }
     }
@@ -123,10 +158,18 @@ public sealed class DiscordBotService : IDisposable
         var project = _projects?.FirstOrDefault(p => ReferenceEquals(p.Sessions, sender));
 
         if (e.NewItems != null && project is { IsActive: true })
-            foreach (SessionItem s in e.NewItems) _ = EnsureSessionThreadAsync(project, s);
+            foreach (SessionItem s in e.NewItems)
+            {
+                s.PropertyChanged -= OnSessionPropChanged; s.PropertyChanged += OnSessionPropChanged;
+                _ = EnsureSessionThreadAsync(project, s);
+            }
 
         if (e.OldItems != null)
-            foreach (SessionItem s in e.OldItems) _ = RemoveSessionThreadAsync(s.Id);
+            foreach (SessionItem s in e.OldItems)
+            {
+                s.PropertyChanged -= OnSessionPropChanged;
+                _ = RemoveSessionThreadAsync(s.Id);
+            }
     }
 
     /// <summary>세션 삭제 시 Discord 세션 채널을 삭제하고 매핑·대기 입력을 정리한다.</summary>
@@ -152,6 +195,17 @@ public sealed class DiscordBotService : IDisposable
 
     private Task OnChannelDestroyed(SocketChannel channel) { HandleDiscordDeleted(channel.Id); return Task.CompletedTask; }
     private Task OnThreadDeleted(Cacheable<SocketThreadChannel, ulong> thread) { HandleDiscordDeleted(thread.Id); return Task.CompletedTask; }
+
+    /// <summary>Discord 에서 스레드 이름이 바뀌면 매핑된 세션 이름을 동기화(Discord→app).
+    /// app 쪽에서 Name 을 바꾸면 OnSessionPropChanged 가 다시 스레드를 갱신하지만, 이름이 같아져
+    /// EnsureThreadNameAsync 동일성 검사로 멈추므로 무한 루프가 없다.</summary>
+    private Task OnThreadUpdated(Cacheable<SocketThreadChannel, ulong> before, SocketThreadChannel after)
+    {
+        var sid = SettingsService.FindDiscordSessionByThread(after.Id);
+        if (!string.IsNullOrEmpty(sid) && !string.IsNullOrWhiteSpace(after.Name))
+            try { _renameSessionRequest?.Invoke(sid!, after.Name); } catch { }
+        return Task.CompletedTask;
+    }
 
     /// <summary>Discord 에서 스레드/채널이 삭제됨 → 매핑된 앱 세션을 제거한다(양방향 동기화의 반대 방향).
     /// 앱→Discord 삭제(RemoveSessionThreadAsync)는 매핑을 먼저 0으로 지우므로 여기서 재매칭되지 않아 루프가 없다.</summary>
@@ -197,6 +251,9 @@ public sealed class DiscordBotService : IDisposable
     /// <summary>Discord 에서 스레드가 삭제되면 호출할 "세션 제거" 핸들러(MainWindow 가 UI 스레드에서 처리).</summary>
     public void SetRemoveSessionRequest(Action<string> handler) => _removeSessionRequest = handler;
 
+    /// <summary>Discord 에서 스레드 이름이 바뀌면 호출할 "세션 이름 변경" 핸들러(sessionId, 새 이름).</summary>
+    public void SetRenameSessionRequest(Action<string, string> handler) => _renameSessionRequest = handler;
+
     public void Start()
     {
         if (!SettingsService.LoadDiscordEnabled()) return;
@@ -234,6 +291,7 @@ public sealed class DiscordBotService : IDisposable
             client.SlashCommandExecuted += OnSlashCommand;
             client.ChannelDestroyed += OnChannelDestroyed;          // 채널/스레드 삭제 → 세션·프로젝트 제거
             client.ThreadDeleted += OnThreadDeleted;                // 스레드 삭제(별도 게이트웨이 이벤트)
+            client.ThreadUpdated += OnThreadUpdated;                // 스레드 이름 변경 → 세션 이름 동기화
             client.Disconnected += _ => { IsConnected = false; return Task.CompletedTask; };
 
             await client.LoginAsync(TokenType.Bot, SettingsService.LoadDiscordBotToken());
@@ -277,6 +335,7 @@ public sealed class DiscordBotService : IDisposable
         try { client.MessageReceived -= OnMessageReceived; } catch { }
         try { client.ChannelDestroyed -= OnChannelDestroyed; } catch { }
         try { client.ThreadDeleted -= OnThreadDeleted; } catch { }
+        try { client.ThreadUpdated -= OnThreadUpdated; } catch { }
         try { client.ButtonExecuted -= OnButtonExecuted; } catch { }
         try { client.ModalSubmitted -= OnModalSubmitted; } catch { }
         try { client.SlashCommandExecuted -= OnSlashCommand; } catch { }
@@ -1509,9 +1568,10 @@ public sealed class DiscordBotService : IDisposable
     {
         try
         {
-            // 현재 이 프로젝트 세션들이 가리키는 유효 스레드 id 집합.
+            // 현재 이 프로젝트의 claude 세션들이 가리키는 유효 스레드 id 집합.
+            // (claude 만 노출하므로 비-claude 세션의 기존 스레드는 고아로 간주돼 삭제된다.)
             var valid = new HashSet<ulong>(
-                project.Sessions.Select(s => SettingsService.LoadDiscordSessionThread(s.Id)).Where(v => v != 0));
+                project.Sessions.Where(IsClaude).Select(s => SettingsService.LoadDiscordSessionThread(s.Id)).Where(v => v != 0));
 
             var threads = new List<IThreadChannel>();
             try { threads.AddRange(await forum.GetActiveThreadsAsync()); } catch { }
@@ -1569,6 +1629,7 @@ public sealed class DiscordBotService : IDisposable
     {
         var client = _client;
         if (client == null || !IsConfigured) return null;
+        if (!IsClaude(session)) return null; // 현재는 claude 세션만 Discord 에 노출.
 
         var threadId = SettingsService.LoadDiscordSessionThread(session.Id);
         if (threadId != 0)

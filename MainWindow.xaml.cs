@@ -99,11 +99,17 @@ public partial class MainWindow : Window
             var s = FindSession(sessionId);
             if (s != null) { try { Activate(); } catch { } OpenSession(s); }
         }));
-        // Discord 에서 스레드를 삭제하면 UI 스레드에서 해당 세션을 제거한다(양방향 삭제 동기화).
+        // Discord 에서 스레드를 삭제하면 UI 스레드에서 해당 세션을 제거한다(확인창 없이 즉시).
         _discordBot.SetRemoveSessionRequest(sessionId => Dispatcher.BeginInvoke(() =>
         {
             var s = FindSession(sessionId);
-            if (s != null) DeleteSession(s);
+            if (s != null) RemoveSessionSilent(s);
+        }));
+        // Discord 에서 스레드 이름을 바꾸면 세션 이름을 동기화한다(양방향 이름 동기화).
+        _discordBot.SetRenameSessionRequest((sessionId, name) => Dispatcher.BeginInvoke(() =>
+        {
+            var s = FindSession(sessionId);
+            if (s != null) RenameSessionSilent(s, name);
         }));
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
@@ -2434,6 +2440,8 @@ public partial class MainWindow : Window
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
     private void RenameSession(SessionItem session) => PaneFor(session).RenameSession(session);
     private void DeleteSession(SessionItem session) => PaneFor(session).DeleteSession(session);
+    public void RemoveSessionSilent(SessionItem session) => PaneFor(session).RemoveSessionSilent(session);
+    public void RenameSessionSilent(SessionItem session, string newName) => PaneFor(session).RenameSessionSilent(session, newName);
     private void StopTrackingSession(SessionItem session) => PaneFor(session).StopTrackingSession(session);
 
     // ── 공개 API (외부 뷰가 호출) ─────────────────────────────────────
