@@ -528,6 +528,9 @@ public sealed class DiscordBotService : IDisposable
         var seq = MapKey(id["dc:key:".Length..]);
         if (seq == null) return;
         session.Write(seq);
+
+        // 선택 완료 → 중복 선택 방지를 위해 이 메시지의 버튼을 제거한다.
+        try { await component.Message.ModifyAsync(m => m.Components = new ComponentBuilder().Build()); } catch { }
     }
 
     /// <summary>버튼 customId 의 키 이름을 터미널이 이해하는 입력 바이트열로 변환한다.</summary>
@@ -543,18 +546,14 @@ public sealed class DiscordBotService : IDisposable
         _ => null,
     };
 
-    /// <summary>세션 스레드용 키 컨트롤(방향/선택/취소/번호) 버튼 메시지 컴포넌트.
-    /// <paramref name="maxOpt"/> 만큼 번호 버튼을 만든다(1~9, 행당 5개). 기본 5.</summary>
+    /// <summary>세션 스레드용 번호 선택 버튼. <paramref name="maxOpt"/> 만큼(1~9, 행당 5개). 기본 5.
+    /// 번호 입력 시 대부분 TUI 가 즉시 선택하므로 방향/Enter/Esc 버튼은 두지 않는다.</summary>
     private static MessageComponent BuildKeyControls(int maxOpt = 5)
     {
         var n = Math.Clamp(maxOpt, 1, 9);
         var b = new ComponentBuilder();
-        b.WithButton("위", "dc:key:up", ButtonStyle.Secondary, new Emoji("⬆️"), row: 0);
-        b.WithButton("아래", "dc:key:down", ButtonStyle.Secondary, new Emoji("⬇️"), row: 0);
-        b.WithButton("선택(Enter)", "dc:key:enter", ButtonStyle.Success, row: 0);
-        b.WithButton("취소(Esc)", "dc:key:esc", ButtonStyle.Danger, row: 0);
         for (var i = 1; i <= n; i++)
-            b.WithButton(i.ToString(), $"dc:key:{i}", ButtonStyle.Secondary, row: 1 + (i - 1) / 5);
+            b.WithButton(i.ToString(), $"dc:key:{i}", ButtonStyle.Secondary, row: (i - 1) / 5);
         return b.Build();
     }
 
