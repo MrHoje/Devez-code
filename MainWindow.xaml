@@ -294,7 +294,7 @@
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
                             <StackPanel VerticalAlignment="Center" Margin="9,6,12,6">
                                 <!-- 진행중 줄: 스피너 + 텍스트 -->
-                                <StackPanel Orientation="Horizontal">
+                                <StackPanel x:Name="SessionBusyRow" Orientation="Horizontal">
                                     <Ellipse x:Name="SessionBusySpinner" Width="12" Height="12"
                                              VerticalAlignment="Center" Margin="0,0,7,0" Visibility="Collapsed"
                                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"

@@ -2107,11 +2107,14 @@ public partial class MainWindow : Window
         {
             SessionBusySpinner.Visibility = Visibility.Visible;
             SessionBusyLabel.Text = $"진행중인 세션 {count}개";
+            SessionBusyRow.Visibility = Visibility.Visible;
         }
         else
         {
             SessionBusySpinner.Visibility = Visibility.Collapsed;
             SessionBusyLabel.Text = "진행중인 세션 없음.";
+            // 진행중이 없어도 응답 대기 세션이 있으면 "없음." 줄은 숨긴다(대기 줄만 표시).
+            SessionBusyRow.Visibility = waiting > 0 ? Visibility.Collapsed : Visibility.Visible;
         }
 
         // 응답 대기(선택지) 세션이 있을 때만 둘째 줄 노출 → 이때만 헤더 높이가 늘어난다.
