@@ -215,6 +215,16 @@ public partial class MainWindow : Window
                 UpdateSessionBusyDisplay();
             });
 
+        // 가재코드 — 'ask' 선택지 응답 대기(❗). gjc 는 스피너 라인이 출력 버퍼를 도배해 화면 폴링이 불가하므로
+        // jsonl 의 'ask' 툴콜로 판정한다(busy 와 동일 경로).
+        _gajaeLastMsg.WaitingChoiceChanged += (roomId, waiting) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s != null) s.IsWaitingChoice = waiting;
+                UpdateSessionBusyDisplay();
+            });
+
         // codex — Claude 와 동일하게 roomId 키로 즉시 갱신 (폴링 X).
 
         _codexHook.MessageChanged += (roomId, msg) =>
@@ -2043,10 +2053,10 @@ public partial class MainWindow : Window
                 if (!p.IsActive) continue;
                 foreach (var s in p.Tabs.OfType<SessionItem>())
                 {
-                    // 번호 선택지 메뉴를 쓰는 에이전트만: claude, gjc(가재, claude 계열), opencode.
-                    // (codex 는 UI 가 달라 제외 — 필요 시 전용 패턴 추가.)
+                    // 화면(원본 출력 버퍼) 폴링으로 잡는 에이전트: claude, opencode.
+                    // gjc 는 스피너가 출력 버퍼를 도배해 메뉴가 안 남으므로 jsonl('ask' 툴콜)로 별도 처리 → 여기선 제외.
                     var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
-                    if (agentId is not ("claude" or "gajae" or "opencode")) { if (s.IsWaitingChoice) { s.IsWaitingChoice = false; changed = true; } continue; }
+                    if (agentId is not ("claude" or "opencode")) continue; // gjc/codex 등은 화면 폴링 대상 아님
 
                     var session = TerminalSessionManager.Instance.Get(s.Id);
                     bool waiting = session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());

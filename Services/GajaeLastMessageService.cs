@@ -27,12 +27,16 @@ public sealed class GajaeLastMessageService : IDisposable
     private readonly Dictionary<string, string> _seen = new();
     private readonly Dictionary<string, string> _lastMsg = new();
     private readonly Dictionary<string, bool> _busy = new();
+    private readonly Dictionary<string, bool> _waiting = new();
 
     /// <summary>(roomId, message) — gjc 세션이 마지막으로 보낸 프롬프트(1줄 요약). 빈 문자열이면 세션명으로 표시.</summary>
     public event Action<string, string>? MessageChanged;
 
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중(스피너).</summary>
     public event Action<string, bool>? BusyChanged;
+
+    /// <summary>(roomId, waiting) — waiting=true 면 선택지('ask') 응답 대기 중(❗). jsonl 의 'ask' 툴콜로 판정.</summary>
+    public event Action<string, bool>? WaitingChoiceChanged;
     private bool _started;
 
     public GajaeLastMessageService()
@@ -102,10 +106,11 @@ public sealed class GajaeLastMessageService : IDisposable
 
         string? msg;
         bool busy;
-        if (freshNew) { msg = ""; busy = false; }   // 빈 새 세션 → 헤더 세션명 복귀, idle
-        else (msg, busy) = ParseState(newest!.FullName);
+        bool waiting;
+        if (freshNew) { msg = ""; busy = false; waiting = false; }   // 빈 새 세션 → 헤더 세션명 복귀, idle
+        else (msg, busy, waiting) = ParseState(newest!.FullName);
         // 첫 스캔: 이전 실행에서 종료된 진행 상태는 취소된 것으로 간주, busy=false
-        if (!_started) busy = false;
+        if (!_started) { busy = false; waiting = false; }
 
         msg ??= ""; // 안전망
         if (!_lastMsg.TryGetValue(roomId, out var wasMsg) || wasMsg != msg)
@@ -118,6 +123,11 @@ public sealed class GajaeLastMessageService : IDisposable
             _busy[roomId] = busy;
             BusyChanged?.Invoke(roomId, busy);
         }
+        if (!_waiting.TryGetValue(roomId, out var wasWaiting) || wasWaiting != waiting)
+        {
+            _waiting[roomId] = waiting;
+            WaitingChoiceChanged?.Invoke(roomId, waiting);
+        }
     }
 
     /// <summary>jsonl 을 뒤에서부터 훑어 (마지막 user 메시지 1줄 요약, 처리중 여부) 를 구한다.
@@ -126,7 +136,7 @@ public sealed class GajaeLastMessageService : IDisposable
     ///  • role=assistant + content 에 toolCall 있음 → 처리중(툴 실행/연속)
     ///  • role=assistant + text 만(toolCall 없음) → 완료(idle)
     /// gjc 한 턴: user → assistant(toolCall) → toolResult → … → assistant(text) 로 끝남.</summary>
-    private static (string? lastUserMsg, bool busy) ParseState(string path)
+    private static (string? lastUserMsg, bool busy, bool waitingChoice) ParseState(string path)
     {
         string[] lines;
         try
@@ -135,10 +145,11 @@ public sealed class GajaeLastMessageService : IDisposable
             using var sr = new StreamReader(fs, Encoding.UTF8);
             lines = sr.ReadToEnd().Split('\n');
         }
-        catch { return (null, false); }
+        catch { return (null, false, false); }
 
         string? lastUserMsg = null;
         bool busy = false;
+        bool waitingChoice = false;
         bool busySeen = false;
 
         for (int i = lines.Length - 1; i >= 0; i--)
@@ -148,6 +159,7 @@ public sealed class GajaeLastMessageService : IDisposable
             string? role;
             string? userText = null;
             bool hasToolCall = false;
+            bool hasAskCall = false; // 사용자에게 선택지를 묻는 'ask' 툴콜(응답 대기 신호)
             try
             {
                 using var doc = JsonDocument.Parse(line);
@@ -163,7 +175,11 @@ public sealed class GajaeLastMessageService : IDisposable
                     {
                         if (!part.TryGetProperty("type", out var pt)) continue;
                         var ptype = pt.GetString();
-                        if (ptype == "toolCall") hasToolCall = true;
+                        if (ptype == "toolCall")
+                        {
+                            hasToolCall = true;
+                            if (part.TryGetProperty("name", out var nm) && nm.GetString() == "ask") hasAskCall = true;
+                        }
                         if (role == "user" && ptype == "text" && userText == null
                             && part.TryGetProperty("text", out var txt))
                         {
@@ -176,13 +192,15 @@ public sealed class GajaeLastMessageService : IDisposable
             }
             catch { continue; }
 
-            // 가장 마지막 message 엔트리로 busy 판정(한 번만).
+            // 가장 마지막 message 엔트리로 busy/대기 판정(한 번만).
             if (!busySeen)
             {
                 busySeen = true;
                 // user/toolResult = 진행중. assistant 는 toolCall 있을 때만 진행중(text 만이면 완료).
                 // 그 외 role 은 idle(스턱 방지).
                 busy = role is "user" or "toolResult" || (role == "assistant" && hasToolCall);
+                // 마지막 엔트리가 assistant 의 'ask' 툴콜이면(뒤에 toolResult 없음) = 선택지 응답 대기.
+                waitingChoice = role == "assistant" && hasAskCall;
             }
 
             if (role == "user" && lastUserMsg == null && userText != null)
@@ -190,7 +208,7 @@ public sealed class GajaeLastMessageService : IDisposable
 
             if (busySeen && lastUserMsg != null) break;
         }
-        return (lastUserMsg, busy);
+        return (lastUserMsg, busy, waitingChoice);
     }
 
     /// <summary>파일의 실제 콘텐츠 길이(바이트). gjc 가 핸들을 연 채 append 하는 동안 디렉터리 엔트리 기반
