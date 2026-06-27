@@ -727,13 +727,16 @@ public sealed class TerminalSessionManager
                 try {
                   $j = [Console]::In.ReadToEnd() | ConvertFrom-Json
                   $room = if ($roomArg) { $roomArg } else { $env:DEVEZCODE_ROOM_ID }
+                  # session_id 가 비면(claude stdin 포맷/필드명 변경 대비) transcript_path 파일명(<sid>.jsonl)에서 복구한다.
+                  $sid = '' + $j.session_id
+                  if (-not $sid) { try { $sid = [System.IO.Path]::GetFileNameWithoutExtension('' + $j.transcript_path) } catch { } }
                   # /clear: 새 (빈) 세션으로 명시 전환. 이전 대화는 복원하지 않는다(정책). 새 session_id 를 추적에
                   # 박아 다음 실행이 빈 새 세션으로 시작하게 하고, 헤더 lastmsg 를 비워 세션 타이틀로 복귀시킨다.
-                  if ($room -and $j.session_id -and $j.source -eq 'clear') {
+                  if ($room -and $sid -and $j.source -eq 'clear') {
                     $room = $room -replace '[^\w\-]', ''
                     $dir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
                     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-                    Set-Content -LiteralPath (Join-Path $dir ($room + '.txt')) -Value $j.session_id -Encoding Ascii -Force
+                    Set-Content -LiteralPath (Join-Path $dir ($room + '.txt')) -Value $sid -Encoding Ascii -Force
                     $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
                     New-Item -ItemType Directory -Force -Path $mdir | Out-Null
                     Set-Content -LiteralPath (Join-Path $mdir ($room + '.txt')) -Value '' -Encoding UTF8 -Force
@@ -845,6 +848,8 @@ public sealed class TerminalSessionManager
                   try { $j = $raw | ConvertFrom-Json } catch { }
                   $sid = ''; try { $sid = ('' + $j.session_id) -replace '[^\w\-]', '' } catch { }
                   $tp = '';  try { $tp = '' + $j.transcript_path } catch { }
+                  # session_id 가 비면(claude stdin 포맷/필드명 변경 대비) transcript_path 파일명(<sid>.jsonl)에서 복구한다.
+                  if (-not $sid -and $tp) { try { $sid = ([System.IO.Path]::GetFileNameWithoutExtension($tp)) -replace '[^\w\-]', '' } catch { } }
 
                   # 세션 subagents 디렉터리의 agent-*.meta.json 개수 = 그 세션에서 launch 된 누적 서브에이전트 수.
                   function Get-MetaCount($transcriptPath) {
@@ -992,24 +997,48 @@ public sealed class TerminalSessionManager
         catch (Exception) { return null; }
     }
 
-    /// <summary>해당 작업 디렉터리에 주어진 세션 ID의 claude 대화 transcript 가 실제로 존재하는지.
+    /// <summary>해당 세션 ID의 claude 대화 transcript(.jsonl) 실제 경로. 없으면 null.
     /// claude 는 대화를 %USERPROFILE%\.claude\projects\&lt;경로 인코딩&gt;\&lt;세션ID&gt;.jsonl 로 저장한다.
-    /// (경로 인코딩: 영숫자 외 문자를 모두 '-' 로 치환. Windows 경로는 대소문자 무시로 매칭됨)</summary>
-    private static bool ClaudeTranscriptExists(string? workingDir, string? sessionId)
+    /// 1) workingDir 인코딩으로 바로 확인(빠른 경로, 대부분 적중)
+    /// 2) 실패하면 projects 하위 폴더 전체에서 &lt;sid&gt;.jsonl 을 검색한다 — working dir 이동/이름변경,
+    ///    경로 인코딩 엣지(UNC·네트워크 드라이브 등), claude 의 인코딩 규칙 변경에도 sessionId(GUID 는 projects
+    ///    전역에서 유일)로 정확히 찾아낸다. (예전엔 인코딩이 어긋나면 "대화 없음"으로 오판해 멀쩡한 세션
+    ///    추적을 폐기 → 재실행 시 그 대화에 영영 못 붙었다.)</summary>
+    public static string? FindClaudeTranscriptPath(string? workingDir, string? sessionId)
     {
-        if (string.IsNullOrWhiteSpace(workingDir) || string.IsNullOrWhiteSpace(sessionId)) return false;
+        if (string.IsNullOrWhiteSpace(sessionId) || !Guid.TryParse(sessionId, out _)) return null;
         try
         {
-            var full = Path.GetFullPath(workingDir);
-            if (full.Length > 3) full = full.TrimEnd('\\', '/'); // 드라이브 루트(C:\)는 백슬래시 유지 — claude 인코딩(C--)과 일치
-            var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
-            var dir = Path.Combine(
+            var projects = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".claude", "projects", encoded);
-            return File.Exists(Path.Combine(dir, sessionId + ".jsonl"));
+                ".claude", "projects");
+            if (!Directory.Exists(projects)) return null;
+            var file = sessionId + ".jsonl";
+
+            // 1) 빠른 경로: working dir 인코딩으로 바로 확인.
+            if (!string.IsNullOrWhiteSpace(workingDir))
+            {
+                var full = Path.GetFullPath(workingDir);
+                if (full.Length > 3) full = full.TrimEnd('\\', '/'); // 드라이브 루트(C:\)는 백슬래시 유지 — claude 인코딩(C--)과 일치
+                var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
+                var fast = Path.Combine(projects, encoded, file);
+                if (File.Exists(fast)) return fast;
+            }
+
+            // 2) 폴백: 빠른 경로가 빗나갔을 때만 projects 하위 폴더 전체를 스캔(폴더 변경/인코딩 무관).
+            foreach (var dir in Directory.EnumerateDirectories(projects))
+            {
+                var p = Path.Combine(dir, file);
+                if (File.Exists(p)) return p;
+            }
         }
-        catch (Exception) { return false; }
+        catch (Exception) { }
+        return null;
     }
+
+    /// <summary>주어진 세션 ID의 claude transcript 가 디스크에 존재하는지(폴더 변경/인코딩 무관).</summary>
+    private static bool ClaudeTranscriptExists(string? workingDir, string? sessionId)
+        => FindClaudeTranscriptPath(workingDir, sessionId) != null;
 
     /// <summary>채팅방 삭제 시 호출 — 해당 방의 셸 프로세스 정리.
     /// <paramref name="purgeTracking"/> 이 false 면 추적 파일(sessions/*.txt, launch batch)을 보존한다.

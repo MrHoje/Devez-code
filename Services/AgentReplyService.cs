@@ -70,23 +70,14 @@ public static class AgentReplyService
     private static string? ClaudeTranscriptPath(string roomId)
     {
         var workingDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-        if (string.IsNullOrWhiteSpace(workingDir)) return null;
-
-        var full = Path.GetFullPath(workingDir);
-        if (full.Length > 3) full = full.TrimEnd('\\', '/'); // 드라이브 루트(C:\)는 백슬래시 유지 — claude 인코딩(C--)과 일치
-        var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "projects", encoded);
-        if (!Directory.Exists(dir)) return null;
 
         // sessionId: busy-hook 이 기록한 추적 파일이 settings 보다 최신일 수 있어 우선.
         var sessionId = ReadTrackedClaudeSession(roomId)
                         ?? SettingsService.LoadClaudeCodeRoomSession(roomId);
         if (string.IsNullOrWhiteSpace(sessionId)) return null;
 
-        var path = Path.Combine(dir, sessionId + ".jsonl");
-        return File.Exists(path) ? path : null;
+        // working dir 인코딩이 어긋나도(폴더 이동/이름변경·UNC 등) sessionId(GUID 는 전역 유일)로 실제 파일을 찾는다.
+        return Terminal.TerminalSessionManager.FindClaudeTranscriptPath(workingDir, sessionId);
     }
 
     /// <summary>busy-hook 이 기록한 방별 claude 세션 ID
