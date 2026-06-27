@@ -412,9 +412,9 @@ public sealed class DiscordBotService : IDisposable
             _lastPostedBody[session.Id] = body;
         }
 
-        // 마지막 줄에 현재 모델·effort·컨텍스트(claude) 정보 한 줄 추가.
+        // 마지막에 구분선 + 현재 모델·effort·컨텍스트(claude) 정보를 작은 글씨(subtext)로 추가.
         var info = SessionInfoLine(session.Id);
-        var sendText = info != null ? $"{body}\n{info}" : body;
+        var sendText = info != null ? $"{body}\n-# ────────────────\n-# {info}" : body;
         await SendAsAgentAsync(project, thread, agentId, sendText); // 작성자명 = 에이전트(웹훅)
     }
 
