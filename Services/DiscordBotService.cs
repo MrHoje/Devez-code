@@ -453,6 +453,7 @@ public sealed class DiscordBotService : IDisposable
             if (forum == null) continue;
             foreach (var session in project.Sessions)
                 await EnsureSessionThreadAsync(project, session);
+            await PruneOrphanThreadsAsync(forum, project); // 앱에 없는 스레드(고아) 삭제 → 5 vs 3 불일치 정리
         }
 
         // 포럼 채널 입력창 권한 일괄 재적용(글/스레드는 부모 권한 상속).
@@ -1498,6 +1499,32 @@ public sealed class DiscordBotService : IDisposable
             await ApplyChannelRestrictionsAsync(guild, forum); // 글(스레드)이 상속할 입력창 제한
         }
         return forum;
+    }
+
+    /// <summary>포럼에서 현재 앱 세션에 매핑되지 않은 글(스레드)을 삭제한다 — 앱 닫힘/봇 끊김 중 세션이
+    /// 지워져 이벤트를 놓쳐 남은 고아 스레드(앱 3 vs Discord 5 같은 불일치)를 동기화 때 정리한다.</summary>
+    private async Task PruneOrphanThreadsAsync(IForumChannel forum, ProjectItem project)
+    {
+        try
+        {
+            // 현재 이 프로젝트 세션들이 가리키는 유효 스레드 id 집합.
+            var valid = new HashSet<ulong>(
+                project.Sessions.Select(s => SettingsService.LoadDiscordSessionThread(s.Id)).Where(v => v != 0));
+
+            var threads = new List<IThreadChannel>();
+            try { threads.AddRange(await forum.GetActiveThreadsAsync()); } catch { }
+            try { threads.AddRange(await forum.GetPublicArchivedThreadsAsync()); } catch { }
+
+            foreach (var t in threads.GroupBy(t => t.Id).Select(g => g.First()))
+            {
+                if (valid.Contains(t.Id)) continue;
+                // 혹시 다른 세션 매핑에 남아 있으면(다른 프로젝트로 옮긴 경우 등) 매핑도 정리.
+                var sid = SettingsService.FindDiscordSessionByThread(t.Id);
+                if (!string.IsNullOrEmpty(sid)) SettingsService.SaveDiscordSessionThread(sid!, 0);
+                try { await t.DeleteAsync(); } catch { /* 권한/이미 삭제 무시 */ }
+            }
+        }
+        catch { /* 열거 실패는 무시 — 다음 동기화 때 재시도 */ }
     }
 
     /// <summary>세션 채널 입력창의 불필요한 디스코드 네이티브 기능(파일첨부/스티커/슬래시명령/음성메시지)을
