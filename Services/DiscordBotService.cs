@@ -640,20 +640,40 @@ public sealed class DiscordBotService : IDisposable
         return id;
     }
 
-    /// <summary>model/effort 가 바뀌면 "model: …" / "effort: …" 를 스레드로 전송.
-    /// 디스코드 버튼 변경과 동일하게 봇(DevezCode 앱)이 보낸 메시지로 표시(웹훅/에이전트 작성자 아님).</summary>
+    /// <summary>model/effort 가 바뀌면 "Model이 변경되었습니다. > 값" 을 Components V2 로 감싸 웹훅(에이전트 작성자)으로 전송.</summary>
     private async Task PostModelEffortChangeAsync(ProjectItem project, SessionItem session, string oldKey, string newKey)
     {
         var op = oldKey.Split('|'); var np = newKey.Split('|');
         string om = op.Length > 0 ? op[0] : "", oe = op.Length > 1 ? op[1] : "";
         string nm = np.Length > 0 ? np[0] : "", ne = np.Length > 1 ? np[1] : "";
-        var lines = new List<string>();
-        if (nm.Length > 0 && nm != om) lines.Add($"model: {ModelIdToLabel(nm)}");
-        if (ne.Length > 0 && ne != oe) lines.Add($"effort: {ne}");
-        if (lines.Count == 0) return;
+        var blocks = new List<string>();
+        if (nm.Length > 0 && nm != om) blocks.Add($"Model이 변경되었습니다.\n> {ModelIdToLabel(nm)}");
+        if (ne.Length > 0 && ne != oe) blocks.Add($"Effort가 변경되었습니다.\n> {ne}");
+        if (blocks.Count == 0) return;
         var thread = await EnsureSessionThreadAsync(project, session);
         if (thread == null) return;
-        await SafeSendAsync(thread, string.Join("\n", lines)); // 봇(DevezCode 앱) 작성자
+        var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+
+        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
+        var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
+        if (hook != null)
+        {
+            try
+            {
+                var container = new ContainerBuilder();
+                for (int i = 0; i < blocks.Count; i++)
+                {
+                    if (i > 0) container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
+                    container.AddComponent(new TextDisplayBuilder().WithContent(blocks[i]));
+                }
+                var comp = new ComponentBuilderV2().AddComponent(container).Build();
+                await hook.SendMessageAsync(text: null, username: AgentDisplayName(agentId), avatarUrl: AgentAvatarUrl(agentId),
+                    components: comp, flags: MessageFlags.ComponentsV2, threadId: thread.Id);
+                return;
+            }
+            catch { /* V2/웹훅 실패 → 봇 폴백 */ }
+        }
+        await SafeSendAsync(thread, string.Join("\n", blocks));
     }
 
     /// <summary>메뉴 텍스트(```펜스/질문/번호옵션)를 (질문, 옵션줄 목록)으로 파싱.</summary>
