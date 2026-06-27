@@ -72,15 +72,10 @@ public sealed class SessionItem : TabItemBase
     private bool _isBusy;
     public bool IsBusy { get => _isBusy; set => Set(ref _isBusy, value); }
 
-    /// <summary>claude 가 1·2·3… 선택지 메뉴를 띄우고 사용자 입력을 기다리는 중인지.
-    /// true=스피너 대신 ❗(느낌표)를 표시(busy 중이라도 우선). 화면 폴링으로 갱신.</summary>
+    /// <summary>선택지/권한 응답 대기 중인지. true=스피너 대신 ❗(느낌표)를 표시(busy 중이라도 우선).
+    /// claude=Notification 훅, opencode=플러그인 question.asked, gjc=jsonl 'ask' 툴콜로 갱신.</summary>
     private bool _isWaitingChoice;
     public bool IsWaitingChoice { get => _isWaitingChoice; set => Set(ref _isWaitingChoice, value); }
-
-    /// <summary>Esc 로 닫은 선택지 메뉴의 시그니처(메뉴 텍스트). claude alt-screen 출력 버퍼는 append-only라
-    /// Esc 후에도 같은 메뉴가 버퍼에 남아 폴링이 재감지하므로, 동일 시그니처면 ❗ 재표시를 막는다.
-    /// 메뉴가 화면에서 사라지거나(버퍼에서 빠짐) 다른 메뉴가 뜨면 무효화된다.</summary>
-    internal string? DismissedMenuSig { get; set; }
 
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";

@@ -62,27 +62,11 @@ public partial class WorkspacePaneView : UserControl
         _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
         _terminal.SessionExited += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; s.IsWaitingChoice = false; } HideSessionLoadingIf(id); };
         _terminal.TerminalReady += id => HideSessionLoadingIf(id);
-        // 단독 ESC 취소 → busy 스피너 + 입력 대기 ❗ 즉시 해제(agent 가 idle 신호를 안 줘도 무한 표시 방지).
-        // Esc 로 닫은 메뉴의 시그니처를 기억 → 폴링이 잔상(버퍼에 남은 동일 메뉴)으로 ❗ 를 재표시하지 않게.
-        _terminal.InterruptRequested += id =>
-        {
-            var s = FindSession(id);
-            if (s == null) return;
-            s.IsBusy = false;
-            s.IsWaitingChoice = false;
-            var sess = TerminalSessionManager.Instance.Get(id);
-            if (sess != null) s.DismissedMenuSig = ClaudeMenuDetector.Extract(sess.GetRecentText(), requireCursor: true)?.text;
-        };
-        // 선택지 답변(Enter/숫자키) → 그 메뉴를 dismissed 로 기록해 ❗ 해제. claude 출력 버퍼에 메뉴가
-        // 남아 폴링이 재감지하는 것을 막는다(busy 는 유지 — claude 가 답변 처리로 계속 진행).
-        _terminal.MenuInputSubmitted += id =>
-        {
-            var s = FindSession(id);
-            if (s == null || !s.IsWaitingChoice) return;
-            var sess = TerminalSessionManager.Instance.Get(id);
-            if (sess != null) s.DismissedMenuSig = ClaudeMenuDetector.Extract(sess.GetRecentText(), requireCursor: true)?.text;
-            s.IsWaitingChoice = false;
-        };
+        // 단독 ESC 취소 → busy 스피너 + 입력 대기 ❗ 즉시 해제(훅 신호보다 빠른 UI 반응; 훅도 곧 확정).
+        _terminal.InterruptRequested += id => { var s = FindSession(id); if (s != null) { s.IsBusy = false; s.IsWaitingChoice = false; } };
+        // 선택지 답변(Enter/숫자키) → 대기 ❗ 즉시 해제(busy 는 유지 — claude 가 답변 처리로 계속 진행).
+        // 툴을 안 띄우는 메뉴(PostToolUse 미발화)에서도 ❗ 가 확실히 빠지게 하는 보조 신호.
+        _terminal.MenuInputSubmitted += id => { var s = FindSession(id); if (s is { IsWaitingChoice: true }) s.IsWaitingChoice = false; };
         _terminal.SessionActionRequested += OnTerminalSessionAction;
         _terminal.UserInteracted += () => FocusRequested?.Invoke(this);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.

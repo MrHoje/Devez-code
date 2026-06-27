@@ -839,6 +839,21 @@ public sealed class TerminalSessionManager
                   $dir = Join-Path $env:APPDATA 'DevezCode\claude\busy'
                   New-Item -ItemType Directory -Force -Path $dir | Out-Null
                   $busyFile = Join-Path $dir ($room + '.txt')
+                  $wdir = Join-Path $env:APPDATA 'DevezCode\claude\waiting'
+                  New-Item -ItemType Directory -Force -Path $wdir | Out-Null
+                  $waitFile = Join-Path $wdir ($room + '.txt')
+
+                  # Notification 훅 = 권한/선택지 입력 대기 진입. busy=running 일 때만 기록(60초 idle 알림 제외).
+                  if ($status -eq 'notify') {
+                    $b = ''; try { if (Test-Path -LiteralPath $busyFile) { $b = (Get-Content -LiteralPath $busyFile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
+                    if ($b -eq 'running') { Set-Content -LiteralPath $waitFile -Value 'waiting' -Encoding Ascii -Force }
+                    exit 0
+                  }
+                  # PostToolUse 등 = 답변 처리 재개 → 선택지 대기 해제.
+                  if ($status -eq 'unwait') {
+                    Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force
+                    exit 0
+                  }
 
                   $raw = ''
                   try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
@@ -865,6 +880,7 @@ public sealed class TerminalSessionManager
 
                   if ($status -eq 'running') {
                     Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
+                    Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force  # 새 턴 → 대기 해제
                     $prompt = ''
                     try { $prompt = '' + $j.prompt } catch { }
                     if ($prompt -and $prompt.StartsWith('<task-notification>')) {
@@ -894,7 +910,8 @@ public sealed class TerminalSessionManager
                     exit 0
                   }
 
-                  # status = idle (Stop/SessionEnd)
+                  # status = idle (Stop/SessionEnd) — 턴 종료/중단이므로 선택지 대기도 해제.
+                  Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force
                   $evt = ''; try { $evt = '' + $j.hook_event_name } catch { }
                   $pending = 0
                   if ($evt -ne 'SessionEnd' -and $sid) {
@@ -948,6 +965,7 @@ public sealed class TerminalSessionManager
         var statusCommand   = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{StatusLineScriptPath}\" {arg}";
         var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running {arg}";
         var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle {arg}";
+        var busyNotifyCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notify {arg}";
         // refreshInterval 은 의도적으로 생략 — statusLine 은 event-driven 갱신으로 충분(idle 중 CPU 튐 방지).
         var statusLine = new { type = "command", command = statusCommand };
         var settings = new
@@ -963,6 +981,8 @@ public sealed class TerminalSessionManager
                 UserPromptSubmit = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
                 Stop             = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
                 SessionEnd       = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
+                // 선택지/권한 입력 대기 ❗ — Notification 진입. 해제는 UserPromptSubmit/Stop(파일) + 답변 입력(즉시 UI).
+                Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
             }
         };
         var path = RoomSettingsPath(roomId);

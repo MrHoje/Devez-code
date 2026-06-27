@@ -58,8 +58,6 @@ public partial class MainWindow : Window
     private Models.ProviderUsage? _lastCodex;
     private Models.ProviderUsage? _lastGo;
     private readonly SessionBusyService _sessionBusy = new();
-    // claude 선택지(1·2·3…) 입력 대기 감지 — 터미널 화면을 주기 폴링해 세션의 IsWaitingChoice 를 토글(스피너→❗).
-    private System.Windows.Threading.DispatcherTimer? _choicePoll;
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
     private readonly SessionLastMessageService _sessionLastMsg = new();
@@ -142,6 +140,16 @@ public partial class MainWindow : Window
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
+            });
+
+        // claude 선택지/권한 응답 대기 ❗ — Notification 훅이 떨군 waiting 파일을 감시(화면 스크래핑은
+        // alt-screen append-only 버퍼라 잔상으로 오작동 → 훅 신호로 전환. opencode/gjc 와 동일 방식).
+        _sessionBusy.WaitingChoiceChanged += (id, waiting) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(id);
+                if (s != null) s.IsWaitingChoice = waiting;
+                UpdateSessionBusyDisplay();
             });
 
         // statusLine 훅이 떨군 방별 실제 model/effort → 해당 세션을 보여주는 패널 콤보를 라이브 갱신.
@@ -287,7 +295,7 @@ public partial class MainWindow : Window
             UserStatusLineInstaller.EnsureInstalled();
             StartStatusLine();
             _sessionBusy.Start();
-            StartChoicePoll();
+            StartBusyDisplaySync();
             _modelEffort.Start();
             _sessionLastMsg.Start();
             // codex 훅 — 시작 시 스크립트/hooks.json 자동 설치. 사용자가 codex 첫 실행 시 trust 필요.
@@ -2049,43 +2057,14 @@ public partial class MainWindow : Window
     private SessionItem? FindSession(string id)
         => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
 
-    /// <summary>claude 세션의 터미널 화면을 주기 폴링해 1·2·3… 선택지 메뉴 등장/소멸에 맞춰
-    /// IsWaitingChoice 를 토글한다(스피너 정지 + ❗). 감지 로직은 Discord 자동전송과 ClaudeMenuDetector 로 공유.</summary>
-    private void StartChoicePoll()
+    /// <summary>완료기록 헤더("진행중/응답 대기 중 N개")·대기 카드를 IsBusy/IsWaitingChoice 와 주기 동기화.
+    /// 대기/진행 감지는 모두 훅·이벤트(Notification/jsonl/플러그인)가 담당하고, 여기선 화면 스크래핑 없이
+    /// 표시만 맞춘다 — Esc/세션 종료 등 이벤트 밖 경로에서 플래그가 바뀌어도 헤더가 즉시 따라오게.</summary>
+    private void StartBusyDisplaySync()
     {
-        _choicePoll = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(400),
-        };
-        _choicePoll.Tick += (_, _) =>
-        {
-            foreach (var p in _projects)
-            {
-                if (!p.IsActive) continue;
-                foreach (var s in p.Tabs.OfType<SessionItem>())
-                {
-                    // 화면(원본 출력 버퍼) 폴링은 claude 만. alt-screen 리페인트라 현재 화면을 정확히 반영.
-                    // opencode/gjc 는 인라인 TUI라 출력 버퍼가 append-only(잔상·번호목록 오탐) → 이벤트/jsonl 신호로 별도 처리.
-                    // (재시작 시 claude resume 은 선택지 메뉴를 다시 그리지 않으므로 별도 시작 가드 불필요.)
-                    var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
-                    if (agentId != "claude") continue;
-
-                    // 화면에 선택지 메뉴가 보이면 대기. Esc 로 닫은 동일 메뉴(시그니처 일치)는 잔상이므로 무시.
-                    // (claude alt-screen 출력 버퍼는 append-only라 Esc 후에도 메뉴가 남아 재감지됨.)
-                    var session = TerminalSessionManager.Instance.Get(s.Id);
-                    string? menuSig = session is { IsAlive: true } ? ClaudeMenuDetector.Extract(session.GetRecentText(), requireCursor: true)?.text : null;
-                    bool waiting;
-                    if (menuSig == null) { waiting = false; s.DismissedMenuSig = null; } // 메뉴 사라짐 → 잔상 표식 해제
-                    else if (menuSig == s.DismissedMenuSig) waiting = false;              // Esc 로 닫은 그 메뉴 → 무시
-                    else waiting = true;
-                    if (s.IsWaitingChoice != waiting) s.IsWaitingChoice = waiting;
-                }
-            }
-            // 매 tick 무조건 헤더 갱신 — InterruptRequested/SessionExited 등 폴링 밖에서 IsWaitingChoice 가
-            // 꺼지면 "변화 없음"이라 안 불려 헤더 "응답 대기 중" 줄이 잔류하던 문제 방지(셋팅 동일값은 no-op).
-            UpdateSessionBusyDisplay();
-        };
-        _choicePoll.Start();
+        var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        t.Tick += (_, _) => UpdateSessionBusyDisplay(); // 동일값 set 은 no-op → 깜빡임/비용 없음
+        t.Start();
     }
 
     private void AddSessionCompletionRecord(SessionItem s)
