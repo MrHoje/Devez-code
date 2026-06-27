@@ -35,6 +35,10 @@ public sealed class DiscordBotService : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastMenu = new(StringComparer.Ordinal);
     // 메뉴 답변(버튼/팝업) 후 claude 응답을 기다리는 중인 세션 — 중복 폴링 방지.
     private readonly HashSet<string> _awaitingReply = new(StringComparer.Ordinal);
+    // 세션별 마지막 관측 (modelId|effort) — 변경 시 "Set model/effort" 알림용.
+    private readonly Dictionary<string, string> _meBaseline = new(StringComparer.Ordinal);
+    // 디스코드에서 model/effort 를 바꾼 직후 1회는 변경 알림을 생략(버튼 메시지로 이미 표시).
+    private readonly HashSet<string> _meSuppressOnce = new(StringComparer.Ordinal);
     // 세션별 마지막으로 디스코드에 보낸 완료 본문 — busy 경로와 폴링 경로가 같은 답을 두 번 보내는 것 방지.
     private readonly Dictionary<string, string> _lastPostedBody = new(StringComparer.Ordinal);
     // /model·/effort 선택지(메타바 콤보와 동일). 클릭 시 "/model <value>" / "/effort <value>" 주입.
@@ -499,12 +503,30 @@ public sealed class DiscordBotService : IDisposable
                 if (session is not { IsAlive: true }) { lock (_sync) _promptActive.Remove(s.Id); continue; }
                 lock (_sync) { if (_pendingInput.ContainsKey(s.Id)) continue; } // 자동시작 주입 중이면 스킵
 
-                var menu = ClaudeMenuDetector.Extract(session.GetRecentText());
+                // 모델/effort 변경 감지 → "Set model/effort" 만 전송(선택지·확인 메뉴 자체는 안 보냄).
+                var (mid, eff) = ModelEffortService.ReadPersisted(s.Id);
+                var meKey = (mid ?? "") + "|" + (eff ?? "");
+                lock (_sync)
+                {
+                    if (!_meBaseline.TryGetValue(s.Id, out var prevKey)) _meBaseline[s.Id] = meKey;
+                    else if (prevKey != meKey)
+                    {
+                        _meBaseline[s.Id] = meKey;
+                        bool suppress = _meSuppressOnce.Remove(s.Id);
+                        if (!suppress) { var pj = p; var ss = s; var pk = prevKey; _ = PostModelEffortChangeAsync(pj, ss, pk, meKey); }
+                    }
+                }
+
+                var recent = session.GetRecentText();
+                var menu = ClaudeMenuDetector.Extract(recent);
                 if (menu == null)
                 {
                     lock (_sync) _promptActive.Remove(s.Id); // 메뉴 사라짐 → 다음 등장 시 다시 보낼 수 있게.
                     continue;
                 }
+                // /model·/effort 선택지/확인 메뉴는 디스코드로 보내지 않는다(변경 알림으로 대체).
+                if (IsModelEffortUi(recent, menu.Value.text)) { lock (_sync) _promptActive.Add(s.Id); continue; }
+
                 bool already; lock (_sync) already = !_promptActive.Add(s.Id);
                 if (already) continue; // 이미 이번 등장에서 보냄(리페인트 중복 방지).
 
@@ -545,6 +567,45 @@ public sealed class DiscordBotService : IDisposable
             await SendAsAgentAsync(project, thread, agentId, flat, BuildKeyControls(maxOpt, typeOpt));
         }
         catch { lock (_sync) _promptActive.Remove(session.Id); }
+    }
+
+    /// <summary>화면/메뉴가 model·effort 선택 UI(피커 또는 "Switch model?"/"Change effort?" 확인)인지.</summary>
+    private static bool IsModelEffortUi(string recent, string menuText)
+    {
+        if (recent.IndexOf("Switch model", StringComparison.OrdinalIgnoreCase) >= 0
+            || recent.IndexOf("Change effort", StringComparison.OrdinalIgnoreCase) >= 0
+            || recent.IndexOf("effort level", StringComparison.OrdinalIgnoreCase) >= 0
+            || recent.IndexOf("Select a model", StringComparison.OrdinalIgnoreCase) >= 0
+            || recent.IndexOf("Select model", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+        var t = menuText.ToLowerInvariant();
+        return t.Contains("opus") || t.Contains("sonnet") || t.Contains("haiku") || t.Contains("fable") || t.Contains("xhigh");
+    }
+
+    /// <summary>modelId("claude-opus-4-8…") → 표시 라벨. 미상이면 원본.</summary>
+    private static string ModelIdToLabel(string id)
+    {
+        var s = id.ToLowerInvariant();
+        if (s.Contains("opus")) return "Opus 4.8";
+        if (s.Contains("sonnet")) return "Sonnet 4.6";
+        if (s.Contains("haiku")) return "Haiku 4.5";
+        if (s.Contains("fable") || s.Contains("mythos")) return "Fable 5";
+        return id;
+    }
+
+    /// <summary>model/effort 가 바뀌면 "Set model: …" / "Set effort: …" 를 스레드로 전송(Claude 작성자).</summary>
+    private async Task PostModelEffortChangeAsync(ProjectItem project, SessionItem session, string oldKey, string newKey)
+    {
+        var op = oldKey.Split('|'); var np = newKey.Split('|');
+        string om = op.Length > 0 ? op[0] : "", oe = op.Length > 1 ? op[1] : "";
+        string nm = np.Length > 0 ? np[0] : "", ne = np.Length > 1 ? np[1] : "";
+        var lines = new List<string>();
+        if (nm.Length > 0 && nm != om) lines.Add($"Set model: {ModelIdToLabel(nm)}");
+        if (ne.Length > 0 && ne != oe) lines.Add($"Set effort: {ne}");
+        if (lines.Count == 0) return;
+        var thread = await EnsureSessionThreadAsync(project, session);
+        if (thread == null) return;
+        var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+        await SendAsAgentAsync(project, thread, agentId, string.Join("\n", lines));
     }
 
     /// <summary>메뉴 텍스트(```펜스/질문/번호옵션)를 (질문, 옵션줄 목록)으로 파싱.</summary>
@@ -673,6 +734,7 @@ public sealed class DiscordBotService : IDisposable
                 sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
                 if (isModel) SettingsService.SaveClaudeCodeRoomModel(sid!, value);
                 else SettingsService.SaveClaudeCodeRoomEffort(sid!, value);
+                lock (_sync) _meSuppressOnce.Add(sid!); // 디스코드发 변경은 버튼 메시지로 표시 → "Set …" 중복 알림 생략
 
                 // 모델/effort 변경 시 claude 가 "Switch model?"/"Change effort level?"(캐시 무효화 경고)
                 // 확인 메뉴를 띄운다 → 자동으로 1.Yes. 그 확인 메뉴는 디스코드로 안 보내게 _promptActive 로 억제.
@@ -698,7 +760,7 @@ public sealed class DiscordBotService : IDisposable
                     });
                 }
             }
-            try { await component.Message.ModifyAsync(m => { m.Content = (isModel ? "✅ 모델: " : "✅ effort: ") + match.label; m.Components = new ComponentBuilder().Build(); }); } catch { }
+            try { await component.Message.ModifyAsync(m => { m.Content = (isModel ? "model: " : "effort: ") + match.label; m.Components = new ComponentBuilder().Build(); }); } catch { }
             return;
         }
 
