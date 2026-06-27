@@ -277,9 +277,7 @@ public sealed class DiscordBotService : IDisposable
                 new SlashCommandBuilder().WithName("refresh")
                     .WithDescription("세션 동기화 + 스레드 이름 갱신 + 채널 입력창 권한 적용").Build(),
                 new SlashCommandBuilder().WithName("status")
-                    .WithDescription("등록된 프로젝트·세션 상태를 표시합니다.").Build(),
-                new SlashCommandBuilder().WithName("connection")
-                    .WithDescription("DevezCode ↔ Discord 연결 상태를 테스트합니다.").Build(),
+                    .WithDescription("연결 상태 + 등록된 프로젝트·세션 상태를 표시합니다.").Build(),
                 new SlashCommandBuilder().WithName("keys")
                     .WithDescription("세션 스레드 조작용 키 컨트롤 버튼을 표시합니다.").Build(),
                 new SlashCommandBuilder().WithName("usage")
@@ -293,9 +291,8 @@ public sealed class DiscordBotService : IDisposable
                     .AddOption("confirm", ApplicationCommandOptionType.Boolean, "정말 초기화하려면 True 를 선택", isRequired: true)
                     .Build(),
             };
-            // 같은 이름이면 덮어쓰기 — Ready 마다 호출해도 안전.
-            foreach (var cmd in cmds)
-                await guild.CreateApplicationCommandAsync(cmd);
+            // BulkOverwrite: 이 목록으로 전체 교체 → 더 이상 없는 옛 명령(/info·/connection 등)도 자동 제거.
+            await guild.BulkOverwriteApplicationCommandAsync(cmds);
         }
         catch { /* 등록 실패는 앱 동작을 막지 않는다. */ }
     }
@@ -325,12 +322,9 @@ public sealed class DiscordBotService : IDisposable
                 break;
 
             case "status":
-                try { await command.RespondAsync(BuildStatusText(), ephemeral: true); } catch { }
+                try { await command.RespondAsync(text: null, components: BuildStatusComponent(), ephemeral: true, flags: MessageFlags.ComponentsV2); } catch { }
                 break;
 
-            case "connection":
-                try { await command.RespondAsync(BuildConnectionText(), ephemeral: true); } catch { }
-                break;
 
             case "usage":
             {
@@ -356,7 +350,7 @@ public sealed class DiscordBotService : IDisposable
                 for (; n < ModelChoices.Length; n++)
                     b.WithButton($"{n + 1}. {ModelChoices[n].label}", $"dc:model:{ModelChoices[n].value}", ButtonStyle.Secondary, row: n / 5);
                 // fable: 현재 비활성 → 보이되 선택 불가.
-                b.WithButton($"{n + 1}. Fable 5 (비활성)", "dc:model:fable", ButtonStyle.Secondary, disabled: true, row: n / 5);
+                b.WithButton($"{n + 1}. Fable 5 (disable)", "dc:model:fable", ButtonStyle.Secondary, disabled: true, row: n / 5);
                 try { await command.RespondAsync("모델을 선택하세요:", components: b.Build()); } catch { }
                 break;
             }
@@ -1114,35 +1108,45 @@ public sealed class DiscordBotService : IDisposable
         return (string.Join(" | ", segs.Take(ctx + 1)), string.Join(" | ", segs.Skip(ctx + 1)));
     }
 
-    /// <summary>봇↔Discord 연결 상태 진단 텍스트(게이트웨이·길드·지연·등록 수).</summary>
-    private string BuildConnectionText()
+    /// <summary>연결 상태 행 목록(이모지 없음). /connection·/status 공용.</summary>
+    private List<string> ConnectionRows()
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("**DevezCode ↔ Discord 연결 상태**");
         var client = _client;
-        sb.AppendLine($"- 게이트웨이: {(IsConnected && client != null ? "✅ 연결됨" : "❌ 끊김")}");
-        if (client != null)
-        {
-            var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
-            sb.AppendLine($"- 서버(길드): {(guild != null ? $"✅ {guild.Name}" : "❌ 접근 불가")}");
-            sb.AppendLine($"- 지연(latency): {client.Latency} ms");
-            var cmdId = SettingsService.LoadDiscordCommandChannel();
-            sb.AppendLine($"- 명령어 채널: {(cmdId != 0 ? $"<#{cmdId}>" : "미설정")}");
-        }
+        var guild = client?.GetGuild(SettingsService.LoadDiscordGuildId());
+        var cmdId = SettingsService.LoadDiscordCommandChannel();
         var projects = _projects;
         int pc = projects?.Count(p => p.IsActive) ?? 0;
         int sc = projects?.Where(p => p.IsActive).Sum(p => p.Sessions.Count) ?? 0;
-        sb.AppendLine($"- 동기화: 프로젝트 {pc} · 세션 {sc}");
-        return sb.ToString();
+        return new List<string>
+        {
+            $"**게이트웨이**  {(IsConnected && client != null ? "연결됨" : "끊김")}",
+            $"**서버**  {(guild != null ? guild.Name : "접근 불가")}",
+            $"**지연**  {(client != null ? client.Latency + " ms" : "-")}",
+            $"**명령어 채널**  {(cmdId != 0 ? $"<#{cmdId}>" : "미설정")}",
+            $"**동기화**  프로젝트 {pc} · 세션 {sc}",
+        };
     }
 
-    private string BuildStatusText()
+    /// <summary>/status: 연결 상태(위) + 세션 상태(아래)를 Components V2 로 합쳐 구성.</summary>
+    private MessageComponent BuildStatusComponent()
+    {
+        var container = new ContainerBuilder()
+            .AddComponent(new TextDisplayBuilder().WithContent("### 연결 상태"))
+            .AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small))
+            .AddComponent(new TextDisplayBuilder().WithContent(string.Join("\n", ConnectionRows())))
+            .AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Large))
+            .AddComponent(new TextDisplayBuilder().WithContent("### 세션 상태"))
+            .AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small))
+            .AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord(BuildSessionStatusText(), 3500)));
+        return new ComponentBuilderV2().AddComponent(container).Build();
+    }
+
+    private string BuildSessionStatusText()
     {
         var projects = _projects;
         if (projects == null || projects.Count == 0) return "등록된 프로젝트가 없습니다.";
 
         var sb = new StringBuilder();
-        sb.AppendLine("**DevezCode 세션 상태**");
         foreach (var project in projects.Where(p => p.IsActive))
         {
             sb.AppendLine($"\n**{project.Name}**");
@@ -1153,7 +1157,7 @@ public sealed class DiscordBotService : IDisposable
                 sb.AppendLine($"- {session.Name} · {agent} · {state}");
             }
         }
-        return TrimForDiscord(sb.ToString(), 1900);
+        return TrimForDiscord(sb.ToString().Trim(), 1900);
     }
 
     /// <summary>봇이 만든 모든 채널·카테고리·세션 스레드를 삭제하고 매핑을 비운 뒤 새로 구성한다(!dc reset confirm).
