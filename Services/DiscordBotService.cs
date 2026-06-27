@@ -434,78 +434,73 @@ public sealed class DiscordBotService : IDisposable
         catch { lock (_sync) _promptActive.Remove(session.Id); }
     }
 
-    // claude 대화형 선택 UI: 번호 옵션(1. 2. …). 선택 커서('❯'/'›')와 함께 뜬다.
-    private static readonly Regex ClaudeOptionLine = new(@"^(\d+)[\.\)]\s+\S", RegexOptions.Compiled);
-    // 스피너·상태줄·입력 안내 등 메뉴와 무관한 노이즈 줄(헤더에서 제외).
-    private static readonly Regex MenuNoise = new(@"Cooked|Worked|esc to|tokens|⏵|✻|to interrupt|↑|↓", RegexOptions.Compiled);
+    // 옵션 마커: 텍스트 어디서든 "N." / "N)" (alt-screen 은 줄바꿈을 ANSI 커서이동으로 처리 → \n 신뢰 불가,
+    // 그래서 줄 단위가 아니라 번호 마커로 직접 분할한다).
+    private static readonly Regex OptionMarker = new(@"(\d+)[\.\)]", RegexOptions.Compiled);
 
     /// <summary>최근 터미널 화면에서 입력 대기 선택지 메뉴를 깔끔하게 추출한다(질문 + 번호 옵션).
-    /// 없으면 null. 반환: (디스코드 표시 텍스트, 최대 옵션 번호).</summary>
+    /// 없으면 null. 반환: (디스코드 표시 텍스트, 최대 옵션 번호).
+    /// alt-screen 의 시각적 줄바꿈이 사라져 텍스트가 들러붙으므로, 1·2·3… 연속 번호 마커로 직접 쪼갠다.</summary>
     private static (string text, int maxOpt)? ExtractClaudeMenu(string screen)
     {
         if (string.IsNullOrEmpty(screen)) return null;
         var all = screen.Replace("\r", "").Split('\n');
         int take = Math.Min(45, all.Length);
 
-        // 각 줄: 박스 드로잉/커서 제거 + 공백 압축. (정렬용 다중 공백을 한 칸으로)
-        var lines = new List<string>(take);
+        // 화면 끝부분을 박스/커서 문자 제거 후 한 줄로 평탄화(공백 압축).
+        bool hasCursor = false;
+        var sbFlat = new StringBuilder();
         for (int i = all.Length - take; i < all.Length; i++)
         {
-            var c = all[i].Replace('│', ' ').Replace('─', ' ')
+            var line = all[i];
+            if (line.Contains('❯') || line.Contains('›')) hasCursor = true;
+            var c = line.Replace('│', ' ').Replace('─', ' ')
                 .Replace('╮', ' ').Replace('╭', ' ').Replace('╯', ' ').Replace('╰', ' ')
                 .Replace('┌', ' ').Replace('┐', ' ').Replace('└', ' ').Replace('┘', ' ')
                 .Replace('├', ' ').Replace('┤', ' ').Replace('|', ' ')
                 .Replace('❯', ' ').Replace('›', ' ').Replace('☐', ' ').Replace('☑', ' ');
-            c = Regex.Replace(c, @"\s{2,}", " ").Trim();
-            lines.Add(c);
+            sbFlat.Append(' ').Append(c);
         }
+        var flat = Regex.Replace(sbFlat.ToString(), @"\s+", " ").Trim();
 
-        bool hasCursor = false;
-        for (int i = all.Length - take; i < all.Length; i++)
-            if (all[i].Contains('❯') || all[i].Contains('›')) { hasCursor = true; break; }
-
-        // 옵션 줄 인덱스 수집.
-        var optIdx = new List<int>();
-        for (int i = 0; i < lines.Count; i++) if (ClaudeOptionLine.IsMatch(lines[i])) optIdx.Add(i);
-        if (optIdx.Count == 0) return null;
-        if (!(hasCursor && optIdx.Count >= 1) && optIdx.Count < 2) return null; // 오탐 최소화
-
-        int firstOpt = optIdx[0], lastOpt = optIdx[^1];
-
-        // 헤더(질문): firstOpt 바로 위에서 연속된 의미있는 줄만 위로 수집(빈줄/노이즈 만나면 중단).
-        var header = new List<string>();
-        for (int i = firstOpt - 1; i >= 0 && header.Count < 3; i--)
+        // 1,2,3… 연속 번호 마커를 순서대로 찾는다(앞에서부터, 직전 마커 뒤에서만 다음 번호 탐색).
+        var marks = new List<(int num, int start, int contentStart)>();
+        int searchFrom = 0, expected = 1;
+        while (true)
         {
-            var l = lines[i];
-            if (l.Length == 0 || MenuNoise.IsMatch(l)) break;
-            if (ClaudeOptionLine.IsMatch(l)) break;
-            header.Insert(0, l);
+            Match? found = null;
+            foreach (Match m in OptionMarker.Matches(flat))
+            {
+                if (m.Index < searchFrom) continue;
+                if (int.Parse(m.Groups[1].Value) == expected) { found = m; break; }
+            }
+            if (found == null) break;
+            marks.Add((expected, found.Index, found.Index + found.Length));
+            searchFrom = found.Index + found.Length;
+            expected++;
         }
+        int maxOpt = marks.Count;
+        if (maxOpt == 0) return null;
+        if (!(hasCursor && maxOpt >= 1) && maxOpt < 2) return null; // 오탐 최소화: 커서+옵션 or 옵션 2개+
 
-        // 옵션: firstOpt..lastOpt. 옵션 줄은 그대로, 사이 비-옵션 줄은 직전 옵션의 설명으로 합친다.
+        // 질문(헤더): 첫 옵션 앞 텍스트. 길면 끝쪽(질문은 보통 옵션 바로 앞)만.
+        var question = flat[..marks[0].start].Trim();
+        if (question.Length > 200) question = "…" + question[^200..];
+
+        // 각 옵션: 이 마커 content 시작 ~ 다음 마커 start 까지.
         var opts = new List<string>();
-        int maxOpt = 0;
-        for (int i = firstOpt; i <= lastOpt; i++)
+        for (int k = 0; k < marks.Count; k++)
         {
-            var l = lines[i];
-            if (l.Length == 0 || MenuNoise.IsMatch(l)) continue;
-            var mm = ClaudeOptionLine.Match(l);
-            if (mm.Success)
-            {
-                opts.Add(l);
-                if (int.TryParse(mm.Groups[1].Value, out var n) && n > maxOpt) maxOpt = n;
-            }
-            else if (opts.Count > 0)
-            {
-                opts[^1] += " " + l; // 줄바꿈된 설명을 직전 옵션에 붙임
-            }
+            int from = marks[k].contentStart;
+            int to = k + 1 < marks.Count ? marks[k + 1].start : flat.Length;
+            var body = flat[from..to].Trim();
+            if (body.Length > 150) body = body[..150].Trim() + "…";
+            opts.Add($"{marks[k].num}. {body}");
         }
-        if (opts.Count == 0) return null;
 
         var sb = new StringBuilder();
         sb.Append("```\n");
-        foreach (var h in header) sb.Append(h).Append('\n');
-        if (header.Count > 0) sb.Append('\n');
+        if (question.Length > 0) sb.Append(question).Append("\n\n");
         foreach (var o in opts) sb.Append(o).Append('\n');
         sb.Append("```");
         var text = sb.ToString();
