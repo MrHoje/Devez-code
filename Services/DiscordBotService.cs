@@ -536,6 +536,30 @@ public sealed class DiscordBotService : IDisposable
                 sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
                 if (isModel) SettingsService.SaveClaudeCodeRoomModel(sid!, value);
                 else SettingsService.SaveClaudeCodeRoomEffort(sid!, value);
+
+                // 모델 변경 시 claude 가 "Switch model?"(캐시 무효화 경고) 확인 메뉴를 띄운다 → 자동으로 1.Yes.
+                // 그 확인 메뉴는 디스코드로 보내지 않게 _promptActive 에 넣어 PollPrompts 전송을 억제한다.
+                if (isModel)
+                {
+                    lock (_sync) _promptActive.Add(sid!);
+                    var sidL = sid!;
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await Task.Delay(900);
+                            var s2 = TerminalSessionManager.Instance.Get(sidL);
+                            if (s2 is { IsAlive: true })
+                            {
+                                var txt = s2.GetRecentText();
+                                if (txt.IndexOf("Switch model", StringComparison.OrdinalIgnoreCase) >= 0
+                                    || txt.IndexOf("switch to", StringComparison.OrdinalIgnoreCase) >= 0)
+                                { s2.Write("1"); await Task.Delay(250); s2.Write("\r"); }
+                            }
+                        }
+                        catch { }
+                    });
+                }
             }
             try { await component.Message.ModifyAsync(m => { m.Content = (isModel ? "✅ 모델: " : "✅ effort: ") + match.label; m.Components = new ComponentBuilder().Build(); }); } catch { }
             return;
