@@ -1103,7 +1103,10 @@ public sealed class TerminalSessionManager
 
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "lastmsg", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "lastreply", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "modeleffort", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "room-settings", roomFile + ".json"));
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".txt"));
         TryDeleteFiles(ClaudeTrackDir, "statusline-cache-" + roomFile + "-*.txt");
 
         foreach (var id in sessionIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase))
