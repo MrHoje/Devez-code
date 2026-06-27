@@ -73,6 +73,21 @@ export const DevezCodeRoomTracker = async () => {
     } catch (e) { debug(`writeLastmsg failed: ${e.message}`); }
   };
 
+  // lastreply\<room>.txt = 마지막 assistant 답변 텍스트. Discord 완료 알림에 본문으로 보낸다
+  // (claude 의 lastreply hook 과 동일 패턴). 한 assistant 메시지의 text part 들을 합쳐 기록.
+  const writeLastreply = (text) => {
+    try {
+      if (!safe) return;
+      const dir = path.join(base, "DevezCode", "opencode", "lastreply");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, safe + ".txt"), String(text || ""));
+    } catch (e) { debug(`writeLastreply failed: ${e.message}`); }
+  };
+
+  // 현재 assistant 메시지의 text part 누적(part.id → text). 새 assistant 메시지가 오면 비운다.
+  let asstMsgId = null;
+  const asstParts = {};
+
   // 새 세션(/clear·/new) → lastmsg 를 빈 문자열로 덮어써 헤더를 세션명으로 되돌린다.
   // (claude 는 "/clear" 텍스트가 user 메시지로 흘러 자동 처리되지만 opencode 는 안 흘러서 명시적으로 비움)
   const clearLastmsg = () => {
@@ -172,6 +187,12 @@ export const DevezCodeRoomTracker = async () => {
             // 스피너 시작 — chat.message 훅은 버전에 따라 안 불려서(lastmsg 도 이 event 경로로 저장됨)
             // 검증된 user-part 경로에서 running 을 쓴다. session.idle/error 가 idle 로 해제.
             setRunning();
+          } else if (role === "assistant") {
+            // assistant 텍스트 누적 → lastreply 에 합쳐 기록(스트리밍 중 계속 덮어써 최종본 보존).
+            if (part.messageID !== asstMsgId) { asstMsgId = part.messageID; for (const k in asstParts) delete asstParts[k]; }
+            asstParts[part.id || "_"] = part.text;
+            const joined = Object.values(asstParts).join("\n").trim();
+            writeLastreply(joined);
           }
         }
       } catch (e) { debug(`event handler error: ${e.message}`); }

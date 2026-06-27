@@ -21,6 +21,12 @@ public static class AgentReplyService
                 var hookReply = ReadHookReply(roomId);
                 if (!string.IsNullOrWhiteSpace(hookReply)) return hookReply;
             }
+            // opencode: 플러그인이 떨군 lastreply 파일에서 마지막 assistant 답변을 읽는다.
+            if (agentId == "opencode")
+            {
+                var ocReply = ReadOpenCodeReply(roomId);
+                if (!string.IsNullOrWhiteSpace(ocReply)) return ocReply;
+            }
             var path = TranscriptPath(roomId, agentId);
             return path == null ? null : LastAssistantTextFromJsonl(path);
         }
@@ -37,6 +43,23 @@ public static class AgentReplyService
             var p = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "DevezCode", "claude", "lastreply", safe + ".txt");
+            if (!File.Exists(p)) return null;
+            var s = File.ReadAllText(p).Trim();
+            return string.IsNullOrWhiteSpace(s) ? null : s;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>opencode room-tracker 플러그인이 기록한 방의 마지막 assistant 답변
+    /// (%AppData%\DevezCode\opencode\lastreply\&lt;room&gt;.txt).</summary>
+    private static string? ReadOpenCodeReply(string roomId)
+    {
+        try
+        {
+            var safe = System.Text.RegularExpressions.Regex.Replace(roomId, @"[^\w\-]", "");
+            var p = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "opencode", "lastreply", safe + ".txt");
             if (!File.Exists(p)) return null;
             var s = File.ReadAllText(p).Trim();
             return string.IsNullOrWhiteSpace(s) ? null : s;
