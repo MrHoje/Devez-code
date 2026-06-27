@@ -796,8 +796,25 @@ public partial class MainWindow : Window
     private void PaneSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
     {
         if (e.Canceled) return;
+        double star;
         if (PaneBCol.Width.IsStar && PaneBCol.Width.Value > 0)
-            SettingsService.SaveSplitBStar(PaneBCol.Width.Value);
+        {
+            star = PaneBCol.Width.Value;
+        }
+        else if (PaneACol.Width.IsAbsolute && PaneBCol.Width.IsAbsolute)
+        {
+            // GridSplitter가 star 컬럼을 absolute(px)로 변환했으므로, 실제 너비 비율로 star 값 계산
+            // PaneA=1* 기준: PaneB star = PaneB_px / PaneA_px
+            if (PaneACol.Width.Value > 0)
+                star = PaneBCol.Width.Value / PaneACol.Width.Value;
+            else
+                star = 1.0;
+        }
+        else
+        {
+            star = 1.0;
+        }
+        SettingsService.SaveSplitBStar(star);
     }
     private void SidebarSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
@@ -1830,14 +1847,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>분할 펼침: 두 패널 터미널을 스냅샷으로 정지(WebView2 매 프레임 리사이즈 깜빡임 방지)한 뒤
-    /// PaneB 를 0%→50% 로 펼치고, 완료 시 라이브 터미널로 복원한다.</summary>
+    /// PaneB 를 0%→저장된 비율로 펼치고, 완료 시 라이브 터미널로 복원한다.</summary>
     private async Task AnimateSplitOpenAsync()
     {
         await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
         PaneB.SetEmptyTextWrapping(false); // 펼침 애니메이션 중 줄바꿈 방지
-        AnimatePaneSplit(0, 1, () =>
+        double targetStar = SettingsService.LoadSplitBStar();
+        AnimatePaneSplit(0, targetStar, () =>
         {
-            PaneBCol.Width = new GridLength(1, GridUnitType.Star);
+            PaneBCol.Width = new GridLength(targetStar, GridUnitType.Star);
             PaneB.SetEmptyTextWrapping(true); // 완전히 펼쳐진 후에만 줄바꿈
             PaneA.ResumeTerminalOnly();
             PaneB.ResumeTerminalOnly();
