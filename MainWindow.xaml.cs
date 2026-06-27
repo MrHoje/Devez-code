@@ -2099,9 +2099,9 @@ public partial class MainWindow : Window
             foreach (var t in p.Tabs)
                 if (t is SessionItem s)
                 {
-                    if (s.IsBusy) count++;
-                    // 사이드바 ❗(IsWaitingChoice 단독)과 일치하도록 busy 여부와 무관하게 센다.
+                    // 응답 대기 중인 세션은 진행중에서 빼고 대기로만 센다.
                     if (s.IsWaitingChoice) waiting++;
+                    else if (s.IsBusy) count++;
                 }
         if (count > 0)
         {
