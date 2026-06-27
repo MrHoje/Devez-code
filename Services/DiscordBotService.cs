@@ -794,11 +794,11 @@ public sealed class DiscordBotService : IDisposable
             if (icon is { } ic)
             {
                 using var s = ic.stream;
-                postId = await hook.SendFileAsync(s, ic.fileName, body, username: name, threadName: title);
+                postId = await hook.SendFileAsync(s, ic.fileName, body, username: name, avatarUrl: AgentAvatarUrl(agentId), threadName: title);
             }
             else
             {
-                postId = await hook.SendMessageAsync(body, username: name, threadName: title);
+                postId = await hook.SendMessageAsync(body, username: name, avatarUrl: AgentAvatarUrl(agentId), threadName: title);
             }
         }
         else
@@ -879,6 +879,18 @@ public sealed class DiscordBotService : IDisposable
         _ => "Agent",
     };
 
+    // 웹훅 아바타용 공개 아이콘 URL(Devez-models 릴리즈 에셋 — 디스코드가 읽을 수 있는 공개 주소).
+    private const string IconBaseUrl = "https://github.com/MrHoje/Devez-models/releases/download/agent-icons";
+
+    /// <summary>웹훅 메시지 아바타로 쓸 에이전트 아이콘 공개 URL.</summary>
+    private static string AgentAvatarUrl(string? agentId) => (agentId ?? "").ToLowerInvariant() switch
+    {
+        "codex" => $"{IconBaseUrl}/codex.png",
+        "opencode" => $"{IconBaseUrl}/opencode_icon_white_50.png",
+        "gajae" => $"{IconBaseUrl}/gajae_code.png",
+        _ => $"{IconBaseUrl}/claude_code.png",
+    };
+
     /// <summary>글 제목이 현재 규칙과 다르면 갱신한다(rate-limit 즉시 포기).</summary>
     private static async Task EnsureThreadNameAsync(IThreadChannel thread, SessionItem session)
     {
@@ -915,7 +927,7 @@ public sealed class DiscordBotService : IDisposable
         var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
         if (hook != null)
         {
-            try { await hook.SendMessageAsync(TrimForDiscord(text, 1900), username: AgentDisplayName(agentId), threadId: thread.Id); return; }
+            try { await hook.SendMessageAsync(TrimForDiscord(text, 1900), username: AgentDisplayName(agentId), avatarUrl: AgentAvatarUrl(agentId), threadId: thread.Id); return; }
             catch { /* 웹훅 실패 → 봇으로 폴백 */ }
         }
         await SafeSendAsync(thread, text);
