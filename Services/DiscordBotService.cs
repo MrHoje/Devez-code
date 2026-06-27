@@ -583,13 +583,18 @@ public sealed class DiscordBotService : IDisposable
         var container = new ContainerBuilder();
         if (question.Length > 0)
             container.AddComponent(new TextDisplayBuilder().WithContent($"**{question}**"));
-        foreach (var opt in options)
+        // 맨 위(질문↔첫 옵션)는 구분선 대신 여백.
+        if (options.Count > 0)
+            container.AddComponent(new SeparatorBuilder().WithIsDivider(false).WithSpacing(SeparatorSpacingSize.Small));
+        for (int i = 0; i < options.Count; i++)
         {
-            container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
-            container.AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord(opt, 1000)));
+            if (i > 0) // 옵션 사이에만 구분선
+                container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
+            container.AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord(options[i], 1000)));
         }
-        if (options.Count > 0) // 마지막 옵션 아래 구분선
-            container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
+        // 맨 아래(마지막 옵션↔버튼)도 구분선 대신 여백.
+        if (options.Count > 0)
+            container.AddComponent(new SeparatorBuilder().WithIsDivider(false).WithSpacing(SeparatorSpacingSize.Small));
         if (withButtons)
             foreach (var row in BuildKeyRows(maxOpt, typeOpt)) container.AddComponent(row);
         return container;
