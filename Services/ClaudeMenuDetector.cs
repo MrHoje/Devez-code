@@ -89,9 +89,12 @@ public static class ClaudeMenuDetector
         question = Regex.Replace(question, @"\s{2,}", " ").Trim();
         if (question.Length > 200) question = "…" + question[^200..];
 
-        // 생각중 스피너(✸✶✻✽, "thought for", "esc to interrupt")가 섞이면 가짜 메뉴 →
-        // 토큰 카운트 숫자가 옵션 마커로 오인된 것이므로 무효 처리. (스피너 전용 신호만 — 정상 메뉴 오탐 방지)
-        if (Regex.IsMatch(flat, "✸|✶|✻|✽|thought for|esc to interrupt", RegexOptions.IgnoreCase))
+        // 생각중 스피너(✸✶✻✽, "thought for")가 섞이면 가짜 메뉴 → 토큰 카운트 숫자가 옵션 마커로
+        // 오인된 것이므로 무효 처리. 단, 16KB 롤링 버퍼 위쪽 스크롤백에는 옛 스피너 글리프가 잔뜩
+        // 쌓이므로 flat 전체가 아니라 '현재 메뉴 영역'(마지막 구분선 이후 ~ 끝)만 검사한다.
+        // (이걸 flat 전체로 검사하면 진짜 메뉴도 스크롤백 잔상 때문에 버려진다.)
+        var region = sep >= 0 ? flat[sep..] : flat;
+        if (Regex.IsMatch(region, "✸|✶|✻|✽|thought for", RegexOptions.IgnoreCase))
             return null;
 
         // 각 옵션: 이 마커 content 시작 ~ 다음 마커 start 까지. 본문의 '─'(구분선) 제거.
