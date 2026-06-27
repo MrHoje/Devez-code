@@ -514,7 +514,7 @@ public sealed class DiscordBotService : IDisposable
         }
     }
 
-    private const string PromptHeader = "⌨️ 입력 대기 — 선택지가 있습니다:";
+    private const string PromptHeader = "### [입력 대기 — 선택지가 있습니다]";
 
     /// <summary>입력 대기 선택지 메뉴를 Components V2(Container + 텍스트 + 버튼)로 전송. 작성자=Claude(웹훅).
     /// V2/웹훅 실패 시 기존 텍스트+버튼 방식으로 폴백.</summary>
@@ -564,7 +564,19 @@ public sealed class DiscordBotService : IDisposable
             else if (!started) qLines.Add(l);
             else if (options.Count > 0) options[^1] += " " + l; // 줄바꿈된 설명 합치기
         }
-        return (string.Join(" ", qLines).Trim(), options);
+        return (CleanQuestion(string.Join(" ", qLines).Trim()), options);
+    }
+
+    /// <summary>질문에서 claude 다중질문 UI 의 탭 바 chrome("← 탭들 ✔Submit →")을 제거한다.
+    /// 실제 질문은 Submit/화살표 뒤에 오므로, 마지막 Submit(또는 →) 이후만 남기고 화살표·체크를 정리.</summary>
+    private static string CleanQuestion(string q)
+    {
+        if (string.IsNullOrEmpty(q)) return q;
+        var sub = q.LastIndexOf("Submit", StringComparison.OrdinalIgnoreCase);
+        if (sub >= 0) q = q[(sub + "Submit".Length)..];
+        else { var arrow = q.LastIndexOf('→'); if (arrow >= 0) q = q[(arrow + 1)..]; }
+        q = q.Trim(' ', '\t', '→', '←', '✔', '✓', '·', ':', '-');
+        return q.Trim();
     }
 
     /// <summary>선택지 메뉴 V2 컨테이너: 헤더+질문, 옵션마다 Separator 로 구분, (옵션) 버튼.</summary>
