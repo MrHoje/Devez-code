@@ -2069,10 +2069,14 @@ public partial class MainWindow : Window
                     var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
                     if (agentId != "claude") continue;
 
-                    // 화면에 선택지 메뉴가 보이면 대기. (IsBusy 게이트는 busy 훅이 메뉴 중 running 을 항상
-                    // 유지하지 않아 ❗ 가 아예 안 뜨는 문제가 있어 제거 — 순수 화면 감지로 복귀.)
+                    // 화면에 선택지 메뉴가 보이면 대기. Esc 로 닫은 동일 메뉴(시그니처 일치)는 잔상이므로 무시.
+                    // (claude alt-screen 출력 버퍼는 append-only라 Esc 후에도 메뉴가 남아 재감지됨.)
                     var session = TerminalSessionManager.Instance.Get(s.Id);
-                    bool waiting = session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());
+                    string? menuSig = session is { IsAlive: true } ? ClaudeMenuDetector.Extract(session.GetRecentText())?.text : null;
+                    bool waiting;
+                    if (menuSig == null) { waiting = false; s.DismissedMenuSig = null; } // 메뉴 사라짐 → 잔상 표식 해제
+                    else if (menuSig == s.DismissedMenuSig) waiting = false;             // Esc 로 닫은 그 메뉴 → 무시
+                    else waiting = true;
                     if (s.IsWaitingChoice != waiting) s.IsWaitingChoice = waiting;
                 }
             }

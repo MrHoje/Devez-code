@@ -77,6 +77,11 @@ public sealed class SessionItem : TabItemBase
     private bool _isWaitingChoice;
     public bool IsWaitingChoice { get => _isWaitingChoice; set => Set(ref _isWaitingChoice, value); }
 
+    /// <summary>Esc 로 닫은 선택지 메뉴의 시그니처(메뉴 텍스트). claude alt-screen 출력 버퍼는 append-only라
+    /// Esc 후에도 같은 메뉴가 버퍼에 남아 폴링이 재감지하므로, 동일 시그니처면 ❗ 재표시를 막는다.
+    /// 메뉴가 화면에서 사라지거나(버퍼에서 빠짐) 다른 메뉴가 뜨면 무효화된다.</summary>
+    internal string? DismissedMenuSig { get; set; }
+
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";
     public string LastMessage { get => _lastMessage; set => Set(ref _lastMessage, value); }
