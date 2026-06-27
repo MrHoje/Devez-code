@@ -336,21 +336,20 @@ public sealed class DiscordBotService : IDisposable
         // 카드 본문(첫 메시지)을 방금 보낸 프롬프트로 갱신(웹훅).
         await UpdatePostStarterAsync(project, thread.Id, session);
 
-        var title = string.IsNullOrWhiteSpace(project.Name) ? "프로젝트" : project.Name;
-        var sess = string.IsNullOrWhiteSpace(session.Name) ? "세션" : session.Name;
-
-        // 어떤 질문에 대한 답인지 구분되도록 "내 질문 + 답변"을 함께 보낸다.
-        // (질문은 PC/Discord 어디서 보냈든 busy 훅이 기록한 마지막 프롬프트.)
+        // 작성자(에이전트 이름·아바타)로 누구 응답인지 보이므로 "프로젝트/세션 응답 완료" 머리글은 생략.
+        // 어떤 질문에 대한 답인지 구분되도록 "내 질문 + 답변"만 보낸다.
         var question = string.IsNullOrWhiteSpace(session.LastMessage)
-            ? "" : $"\n> {HeadForDiscord(session.LastMessage, 300)}";
+            ? "" : $"> {HeadForDiscord(session.LastMessage, 300)}";
 
         // 에이전트의 최종 답변 텍스트. 추출 불가(codex/opencode 등)면 질문만.
         var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
         var reply = AgentReplyService.TryGetLastAssistantReply(session.Id, agentId);
 
-        var body = string.IsNullOrWhiteSpace(reply)
-            ? $"**{title} / {sess}** 응답 완료{question}"
-            : $"**{title} / {sess}** 응답 완료{question}\n\n{HeadForDiscord(reply, 1500)}";
+        string body;
+        if (!string.IsNullOrWhiteSpace(reply))
+            body = string.IsNullOrWhiteSpace(question) ? HeadForDiscord(reply, 1500) : $"{question}\n\n{HeadForDiscord(reply, 1500)}";
+        else
+            body = string.IsNullOrWhiteSpace(question) ? "응답 완료" : question;
         await SendAsAgentAsync(project, thread, agentId, body); // 작성자명 = 에이전트(웹훅)
     }
 
