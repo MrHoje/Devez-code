@@ -981,7 +981,11 @@ public sealed class TerminalSessionManager
                 UserPromptSubmit = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
                 Stop             = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
                 SessionEnd       = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
-                // 선택지/권한 입력 대기 ❗ — Notification 진입. 해제는 UserPromptSubmit/Stop(파일) + 답변 입력(즉시 UI).
+                // 선택지/권한 입력 대기 ❗ — 진입 신호 둘:
+                //  • PermissionRequest: 툴 권한 대화창이 뜨는 '즉시' 발화(matcher * = 모든 툴) → 지연 없음.
+                //  • Notification: 그 외 입력 대기(AskUserQuestion 등) 폴백(claude 측 타이밍상 수 초 지연 가능).
+                // 해제는 UserPromptSubmit/Stop(파일) + 답변 입력(즉시 UI).
+                PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
                 Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
             }
         };
