@@ -479,21 +479,26 @@ public sealed class DiscordBotService : IDisposable
             return;
         }
 
+        // 인라인 TUI(gjc)는 resume 시 대화 재생·리드로우가 길어 ready 통지 시점에도 입력 준비 전일 수 있다.
+        // → 주입 지연을 넉넉히 두고, 텍스트 입력과 Enter 를 분리해 TUI 가 텍스트를 등록한 뒤 제출하게 한다.
+        var agentId = AgentIdForSession(sessionId) ?? AgentRegistry.DefaultAgentId;
+        bool inline = AgentRegistry.Find(agentId)?.InlineTui == true;
+
         _ = Task.Run(async () =>
         {
             try
             {
-                // TUI 가 입력란을 그릴 약간의 여유를 둔 뒤 주입한다.
-                await Task.Delay(500);
+                await Task.Delay(inline ? 3000 : 500); // TUI 가 입력란을 그릴 여유
                 var session = TerminalSessionManager.Instance.Get(sessionId);
                 if (session is not { IsAlive: true }) return;
                 foreach (var msg in queued)
                 {
                     session.Write(msg);
+                    if (inline) await Task.Delay(400); // 텍스트가 입력란에 등록될 시간
                     session.Write("\r");
-                    await Task.Delay(200);
+                    await Task.Delay(inline ? 500 : 200);
                 }
-                // claude 가 주입된 메시지로 busy 전환할 여유를 준 뒤 억제 해제 → 이후 진짜 완료만 알림.
+                // 주입한 메시지로 busy 전환할 여유를 준 뒤 억제 해제 → 이후 진짜 완료만 알림.
                 await Task.Delay(1500);
             }
             finally
@@ -501,6 +506,17 @@ public sealed class DiscordBotService : IDisposable
                 lock (_sync) _pendingInput.Remove(sessionId);
             }
         });
+    }
+
+    /// <summary>sessionId 로 등록된 세션의 에이전트 ID 를 찾는다(없으면 null).</summary>
+    private string? AgentIdForSession(string sessionId)
+    {
+        var projects = _projects;
+        if (projects == null) return null;
+        foreach (var p in projects)
+            foreach (var s in p.Sessions)
+                if (s.Id == sessionId) return string.IsNullOrWhiteSpace(s.AgentId) ? null : s.AgentId;
+        return null;
     }
 
     private string BuildStatusText()
@@ -873,7 +889,7 @@ public sealed class DiscordBotService : IDisposable
     {
         "codex" => "Codex",
         "opencode" => "OpenCode",
-        "gajae" => "Gajae",
+        "gajae" => "gjc",
         "claude" => "Claude",
         _ => "Agent",
     };
