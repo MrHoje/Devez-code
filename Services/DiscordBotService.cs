@@ -1131,22 +1131,15 @@ public sealed class DiscordBotService : IDisposable
     {
         var client = _client;
         var guild = client?.GetGuild(SettingsService.LoadDiscordGuildId());
-        var cmdId = SettingsService.LoadDiscordCommandChannel();
-        var projects = _projects;
-        int pc = projects?.Count(p => p.IsActive) ?? 0;
-        int sc = projects?.Where(p => p.IsActive).Sum(p => p.Sessions.Count) ?? 0;
 
         var gw = IsConnected && client != null ? $"{AnsiGreen}연결됨{AnsiReset}" : $"{AnsiRed}끊김{AnsiReset}";
         var srv = guild != null ? guild.Name : $"{AnsiRed}접근 불가{AnsiReset}";
         var lat = client != null ? client.Latency + " ms" : "-";
-        var ch = cmdId != 0 ? ("#" + (guild?.GetTextChannel(cmdId)?.Name ?? cmdId.ToString())) : "미설정";
 
         var sb = new StringBuilder("```ansi\n");
         sb.AppendLine($"게이트웨이   {gw}");
         sb.AppendLine($"서버         {srv}");
         sb.AppendLine($"지연         {lat}");
-        sb.AppendLine($"명령어 채널  {ch}");
-        sb.AppendLine($"동기화       프로젝트 {pc} · 세션 {sc}");
         sb.Append("```");
         return sb.ToString();
     }
@@ -1163,11 +1156,10 @@ public sealed class DiscordBotService : IDisposable
             sb.AppendLine(project.Name);
             foreach (var session in project.Sessions)
             {
-                var st = session.IsBusy ? $"{AnsiGreen}작업중{AnsiReset}"
-                       : session.IsAlive ? $"{AnsiGreen}실행중{AnsiReset}"
-                       : $"{AnsiRed}중지{AnsiReset}";
+                // 세션명 왼쪽에 상태 점: 실행중/작업중=초록(●), 중지=빨강(●).
+                var dot = session.IsAlive || session.IsBusy ? $"{AnsiGreen}●{AnsiReset}" : $"{AnsiRed}●{AnsiReset}";
                 var agent = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-                sb.AppendLine($"  {session.Name} · {agent} · {st}");
+                sb.AppendLine($"  {dot} {session.Name} · {agent}");
             }
         }
         sb.Append("```");
