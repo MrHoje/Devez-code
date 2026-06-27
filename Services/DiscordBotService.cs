@@ -257,6 +257,8 @@ public sealed class DiscordBotService : IDisposable
                     .WithDescription("세션 동기화 + 스레드 이름 갱신 + 채널 입력창 권한 적용").Build(),
                 new SlashCommandBuilder().WithName("status")
                     .WithDescription("등록된 프로젝트·세션 상태를 표시합니다.").Build(),
+                new SlashCommandBuilder().WithName("connection")
+                    .WithDescription("DevezCode ↔ Discord 연결 상태를 테스트합니다.").Build(),
                 new SlashCommandBuilder().WithName("keys")
                     .WithDescription("세션 스레드 조작용 키 컨트롤 버튼을 표시합니다.").Build(),
                 new SlashCommandBuilder().WithName("usage")
@@ -303,6 +305,10 @@ public sealed class DiscordBotService : IDisposable
 
             case "status":
                 try { await command.RespondAsync(BuildStatusText(), ephemeral: true); } catch { }
+                break;
+
+            case "connection":
+                try { await command.RespondAsync(BuildConnectionText(), ephemeral: true); } catch { }
                 break;
 
             case "usage":
@@ -1063,6 +1069,28 @@ public sealed class DiscordBotService : IDisposable
         int ctx = segs.FindIndex(x => x.StartsWith("ctx", StringComparison.OrdinalIgnoreCase));
         if (ctx < 0 || ctx + 1 >= segs.Count) return (string.Join(" | ", segs), "");
         return (string.Join(" | ", segs.Take(ctx + 1)), string.Join(" | ", segs.Skip(ctx + 1)));
+    }
+
+    /// <summary>봇↔Discord 연결 상태 진단 텍스트(게이트웨이·길드·지연·등록 수).</summary>
+    private string BuildConnectionText()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("**DevezCode ↔ Discord 연결 상태**");
+        var client = _client;
+        sb.AppendLine($"- 게이트웨이: {(IsConnected && client != null ? "✅ 연결됨" : "❌ 끊김")}");
+        if (client != null)
+        {
+            var guild = client.GetGuild(SettingsService.LoadDiscordGuildId());
+            sb.AppendLine($"- 서버(길드): {(guild != null ? $"✅ {guild.Name}" : "❌ 접근 불가")}");
+            sb.AppendLine($"- 지연(latency): {client.Latency} ms");
+            var cmdId = SettingsService.LoadDiscordCommandChannel();
+            sb.AppendLine($"- 명령어 채널: {(cmdId != 0 ? $"<#{cmdId}>" : "미설정")}");
+        }
+        var projects = _projects;
+        int pc = projects?.Count(p => p.IsActive) ?? 0;
+        int sc = projects?.Where(p => p.IsActive).Sum(p => p.Sessions.Count) ?? 0;
+        sb.AppendLine($"- 동기화: 프로젝트 {pc} · 세션 {sc}");
+        return sb.ToString();
     }
 
     private string BuildStatusText()
