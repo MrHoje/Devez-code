@@ -582,7 +582,7 @@ public sealed class DiscordBotService : IDisposable
     {
         var container = new ContainerBuilder();
         if (question.Length > 0)
-            container.AddComponent(new TextDisplayBuilder().WithContent(question));
+            container.AddComponent(new TextDisplayBuilder().WithContent($"### {question}"));
         foreach (var opt in options)
         {
             container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
