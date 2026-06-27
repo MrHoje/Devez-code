@@ -23,6 +23,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string>? SessionStarted;
     /// <summary>사용자가 단독 ESC 로 응답 취소를 요청. roomId 전달 — 구독자가 busy 스피너를 끈다.</summary>
     public event Action<string>? InterruptRequested;
+    /// <summary>선택지 메뉴에 제출 입력(Enter/숫자키)이 들어옴 — 입력 대기 ❗ 해제용.</summary>
+    public event Action<string>? MenuInputSubmitted;
     /// <summary>방의 셸 프로세스가 종료됨(끊김/죽음). roomId 전달.</summary>
     public event Action<string>? SessionExited;
     /// <summary>터미널에서 세션(탭) 단축키 발생 — name: newSession/closeSession/nextSession/prevSession/gotoSession.
@@ -308,11 +310,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     // 커서를 입력 캐럿에서 치운다 → 조합 글자가 화면 끝으로 날아간다.
                     // focus-in/out 을 claude 로 전달하지 않아 항상 포커스 상태로 유지한다.
                     if (data is "\x1b[O" or "\x1b[I") break;
+                    var inputRoom = root.GetProperty("roomId").GetString()!;
                     // 단독 ESC = 응답 취소(인터럽트) 의도. agent 가 idle 신호를 안 줘도 스피너가
                     // 무한정 도는 것을 막기 위해 즉시 busy 해제를 요청한다(입력은 그대로 전달해 실제 취소도 수행).
-                    if (data == "\x1b") InterruptRequested?.Invoke(root.GetProperty("roomId").GetString()!);
-                    TerminalSessionManager.Instance
-                        .Get(root.GetProperty("roomId").GetString()!)?.Write(data);
+                    if (data == "\x1b") InterruptRequested?.Invoke(inputRoom);
+                    // 선택지 제출(Enter / 숫자키) — 메뉴를 답한 것이므로 입력 대기 ❗ 해제 신호.
+                    // (화살표 등 네비게이션은 제외 → 아직 답 안 한 상태.)
+                    else if (data is "\r" or "\n" or "\r\n" || (data.Length == 1 && data[0] >= '1' && data[0] <= '9'))
+                        MenuInputSubmitted?.Invoke(inputRoom);
+                    TerminalSessionManager.Instance.Get(inputRoom)?.Write(data);
                     break;
                 }
                 case "resize":
