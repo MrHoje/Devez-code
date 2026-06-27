@@ -764,9 +764,22 @@ public sealed class DiscordBotService : IDisposable
         if (forum == null) return null;
 
         // 포럼 글은 최초 메시지가 필수 — 세션 정보 한 줄로 시작(과거 대화는 끌어오지 않음).
+        // 에이전트 아이콘을 첨부하면 포럼 Gallery 뷰에서 글 카드 썸네일로 보인다.
         var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-        var post = await forum.CreatePostAsync(ThreadName(session), ThreadArchiveDuration.OneWeek,
-            text: $"세션: {session.Name} · {agentId}");
+        var title = ThreadName(session);
+        var body = $"세션: {session.Name} · {agentId}";
+
+        IThreadChannel post;
+        var icon = OpenAgentIcon(agentId);
+        if (icon is { } ic)
+        {
+            using var fa = new FileAttachment(ic.stream, ic.fileName);
+            post = await forum.CreatePostWithFileAsync(title, fa, ThreadArchiveDuration.OneWeek, text: body);
+        }
+        else
+        {
+            post = await forum.CreatePostAsync(title, ThreadArchiveDuration.OneWeek, text: body);
+        }
         SettingsService.SaveDiscordSessionThread(session.Id, post.Id);
         return post;
     }
@@ -811,6 +824,25 @@ public sealed class DiscordBotService : IDisposable
     /// <summary>채널명이 봇 세션 채널 접두(에이전트 이모지)로 시작하는지 — /reset 고아 정리용.</summary>
     private static bool StartsWithAgentEmoji(string? name)
         => !string.IsNullOrEmpty(name) && AllAgentEmojis.Any(e => name!.StartsWith(e, StringComparison.Ordinal));
+
+    /// <summary>에이전트 아이콘 리소스를 스트림으로 연다(없으면 null). 포럼 Gallery 뷰 카드 썸네일용 첨부.</summary>
+    private static (System.IO.Stream stream, string fileName)? OpenAgentIcon(string? agentId)
+    {
+        var file = (agentId ?? "").ToLowerInvariant() switch
+        {
+            "codex" => "codex.png",
+            "opencode" => "opencode_icon_white_50.png",
+            "gajae" => "gajae_code.png",
+            _ => "claude_code.png",
+        };
+        try
+        {
+            var uri = new Uri($"pack://application:,,,/Resources/Images/ShellPresets/{file}", UriKind.Absolute);
+            var info = System.Windows.Application.GetResourceStream(uri);
+            return info == null ? null : (info.Stream, file);
+        }
+        catch { return null; }
+    }
 
     /// <summary>포럼 글(스레드) 제목 = 에이전트 접두 + 세션명. 글 제목은 채널명과 달리 정규화가 없어 자유 형식.</summary>
     private static string ThreadName(SessionItem session)
