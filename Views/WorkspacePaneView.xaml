@@ -181,7 +181,7 @@
                                     <Path Grid.Column="0" x:Name="TabWaitingIcon" Width="15" Height="15" Margin="0,0,6,0"
                                           Stretch="Uniform" Visibility="Collapsed" VerticalAlignment="Center"
                                           Data="{StaticResource IconAlertTriangle}"
-                                          Stroke="{DynamicResource WarningBrush}" StrokeThickness="1.8"
+                                          Stroke="{DynamicResource WarningBrush}" StrokeThickness="1.5"
                                           Fill="Transparent" SnapsToDevicePixels="True"/>
                                     <TextBlock x:Name="TabTitle" Grid.Column="1" Text="{Binding Title}"
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"

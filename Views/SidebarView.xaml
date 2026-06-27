@@ -139,11 +139,13 @@
                               Width="12" Height="12" Stretch="Uniform"
                               Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.4"
                               Fill="Transparent" SnapsToDevicePixels="True"/>
-                        <!-- 입력 대기(선택지 메뉴) — 스피너 정지 + 느낌표. -->
+                        <!-- 입력 대기(선택지 메뉴) — 스피너 정지 + 느낌표.
+                             Margin 으로 12x12 박스 안쪽에 그려 stretch 시 뾰족한 꼭짓점 stroke 가 잘리지 않게. -->
                         <Path x:Name="WaitingIcon" Visibility="Collapsed"
                               Data="{StaticResource IconAlertTriangle}"
-                              Width="13" Height="13" Stretch="Uniform"
-                              Stroke="{DynamicResource WarningBrush}" StrokeThickness="1.8"
+                              Margin="1" Stretch="Uniform"
+                              HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                              Stroke="{DynamicResource WarningBrush}" StrokeThickness="1.6"
                               Fill="Transparent" SnapsToDevicePixels="True"/>
                     </Grid>
                     <TextBlock Grid.Column="2" Text="{Binding Name}" Margin="10,0,0,0"

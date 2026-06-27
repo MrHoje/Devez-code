@@ -31,6 +31,8 @@ public sealed class DiscordBotService : IDisposable
     // 입력 대기 선택지 메뉴 자동 전송 — 터미널 화면을 주기 폴링. 메뉴 등장 1회당 1번만 보내려고 active 세션 추적.
     private System.Threading.Timer? _promptPoll;
     private readonly HashSet<string> _promptActive = new(StringComparer.Ordinal);
+    // 세션별 마지막으로 보낸 선택지 메뉴 텍스트 — 버튼 클릭 시 고른 옵션 라벨을 되살려 "내 메시지"로 표시.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastMenu = new(StringComparer.Ordinal);
 
     public bool IsConnected { get; private set; }
 
@@ -431,7 +433,10 @@ public sealed class DiscordBotService : IDisposable
         {
             var thread = await EnsureSessionThreadAsync(project, session);
             if (thread == null) { lock (_sync) _promptActive.Remove(session.Id); return; }
-            await SafeSendAsync(thread, $"⌨️ 입력 대기 — 선택지가 있습니다:\n{menu}", BuildKeyControls(maxOpt, typeOpt));
+            _lastMenu[session.Id] = menu; // 버튼 클릭 시 고른 옵션 라벨 복원용
+            var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+            // 메뉴는 Claude(웹훅)가 보낸 것으로 표시. 웹훅이 버튼을 못 실으면 봇으로 폴백(SendAsAgentAsync 내부).
+            await SendAsAgentAsync(project, thread, agentId, $"⌨️ 입력 대기 — 선택지가 있습니다:\n{menu}", BuildKeyControls(maxOpt, typeOpt));
         }
         catch { lock (_sync) _promptActive.Remove(session.Id); }
     }
@@ -1057,16 +1062,16 @@ public sealed class DiscordBotService : IDisposable
     }
 
     /// <summary>세션 글(스레드)에 에이전트 작성자명으로 메시지를 보낸다(포럼 웹훅 + threadId). 실패 시 봇 폴백.</summary>
-    private async Task SendAsAgentAsync(ProjectItem project, IMessageChannel thread, string? agentId, string text)
+    private async Task SendAsAgentAsync(ProjectItem project, IMessageChannel thread, string? agentId, string text, MessageComponent? components = null)
     {
         var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
         var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
         if (hook != null)
         {
-            try { await hook.SendMessageAsync(TrimForDiscord(text, 1900), username: AgentDisplayName(agentId), avatarUrl: AgentAvatarUrl(agentId), threadId: thread.Id); return; }
-            catch { /* 웹훅 실패 → 봇으로 폴백 */ }
+            try { await hook.SendMessageAsync(TrimForDiscord(text, 1900), username: AgentDisplayName(agentId), avatarUrl: AgentAvatarUrl(agentId), components: components, threadId: thread.Id); return; }
+            catch { /* 웹훅 실패(버튼 미지원 등) → 봇으로 폴백 */ }
         }
-        await SafeSendAsync(thread, text);
+        await SafeSendAsync(thread, text, components);
     }
 
     /// <summary>포럼 글 첫 메시지(카드 본문)를 최신 프롬프트로 갱신(웹훅). 글 ID = 시작 메시지 ID.</summary>
