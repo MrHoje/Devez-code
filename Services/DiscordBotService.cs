@@ -324,8 +324,10 @@ public sealed class DiscordBotService : IDisposable
                 break;
 
             case "status":
+                // 이모지 업로드가 3초를 넘겨 ack 시한을 초과할 수 있으니 먼저 defer 후 followup.
+                try { await command.DeferAsync(ephemeral: true); } catch { }
                 await EnsureAgentEmotesAsync(); // 세션 목록 아이콘(커스텀 이모지) 보장
-                try { await command.RespondAsync(text: null, components: BuildStatusComponent(), ephemeral: true, flags: MessageFlags.ComponentsV2); } catch { }
+                try { await command.FollowupAsync(text: null, components: BuildStatusComponent(), ephemeral: true, flags: MessageFlags.ComponentsV2); } catch { }
                 break;
 
 
