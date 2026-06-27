@@ -837,22 +837,41 @@ public sealed class DiscordBotService : IDisposable
         };
         try
         {
-            var uri = new Uri($"pack://application:,,,/Resources/Images/ShellPresets/{file}", UriKind.Absolute);
-            var info = System.Windows.Application.GetResourceStream(uri);
-            if (info == null) return null;
-            using var src = info.Stream;
-            // 절반 크기로 스케일 후 PNG 로 다시 인코딩.
-            var frame = System.Windows.Media.Imaging.BitmapFrame.Create(src,
-                System.Windows.Media.Imaging.BitmapCreateOptions.None,
-                System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
-            var scaled = new System.Windows.Media.Imaging.TransformedBitmap(frame,
-                new System.Windows.Media.ScaleTransform(0.5, 0.5));
-            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(scaled));
-            var ms = new System.IO.MemoryStream();
-            encoder.Save(ms);
-            ms.Position = 0;
-            return (ms, file);
+            var app = System.Windows.Application.Current;
+            if (app == null) return null;
+
+            // 디스코드 Gallery 카드는 첨부 이미지를 카드에 꽉 채워 표시한다 → 픽셀만 줄여선 작아 보이지 않는다.
+            // 아이콘 둘레에 투명 여백을 넣어(캔버스를 키워) 아이콘이 카드의 일부만 차지하게 만든다.
+            // RenderTargetBitmap 은 UI 스레드에서 안전하므로 Dispatcher 로 실행.
+            System.IO.MemoryStream? result = null;
+            app.Dispatcher.Invoke(() =>
+            {
+                var uri = new Uri($"pack://application:,,,/Resources/Images/ShellPresets/{file}", UriKind.Absolute);
+                var info = System.Windows.Application.GetResourceStream(uri);
+                if (info == null) return;
+                using var src = info.Stream;
+                var frame = System.Windows.Media.Imaging.BitmapFrame.Create(src,
+                    System.Windows.Media.Imaging.BitmapCreateOptions.None,
+                    System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+
+                int canvas = Math.Max(frame.PixelWidth, frame.PixelHeight) * 2; // 아이콘이 카드의 ~50% 차지
+                var dv = new System.Windows.Media.DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    double x = (canvas - frame.PixelWidth) / 2.0, y = (canvas - frame.PixelHeight) / 2.0;
+                    dc.DrawImage(frame, new System.Windows.Rect(x, y, frame.PixelWidth, frame.PixelHeight));
+                }
+                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                    canvas, canvas, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+                var ms = new System.IO.MemoryStream();
+                encoder.Save(ms);
+                ms.Position = 0;
+                result = ms;
+            });
+            return result == null ? null : (result, file);
         }
         catch { return null; }
     }
