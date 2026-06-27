@@ -2043,9 +2043,10 @@ public partial class MainWindow : Window
                 if (!p.IsActive) continue;
                 foreach (var s in p.Tabs.OfType<SessionItem>())
                 {
-                    // 선택지 UI 패턴이 에이전트마다 달라 우선 claude 만(Discord 폴링과 동일 기준).
+                    // 선택지 UI 패턴이 에이전트마다 다름. claude + gjc(가재, claude 계열) 만 — 같은 detector 로 시험.
+                    // (opencode/codex 는 UI 가 달라 전용 패턴 필요 → 제외.)
                     var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
-                    if (agentId != "claude") { if (s.IsWaitingChoice) { s.IsWaitingChoice = false; changed = true; } continue; }
+                    if (agentId is not ("claude" or "gajae")) { if (s.IsWaitingChoice) { s.IsWaitingChoice = false; changed = true; } continue; }
 
                     var session = TerminalSessionManager.Instance.Get(s.Id);
                     bool waiting = session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());
