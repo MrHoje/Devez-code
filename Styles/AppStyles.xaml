@@ -60,8 +60,8 @@
     <Color x:Key="RailIconColor">#475569</Color>
     <SolidColorBrush x:Key="RailIconBrush" Color="{DynamicResource RailIconColor}"/>
 
-    <!-- 완료/대기 카드 에이전트 아이콘 세로 보정. 작게(0)=-2, 크게(1)=0. App.SetFontScale 에서 조정 -->
-    <sys:Double x:Key="HistoryIconY">-2</sys:Double>
+    <!-- 완료/대기 카드 에이전트 아이콘 세로 보정. 작게(0)=-1, 크게(1)=1. App.SetFontScale 에서 조정 -->
+    <sys:Double x:Key="HistoryIconY">-1</sys:Double>
 
     <!-- 글꼴 크기 (보통=기본값, 크게=+2). 런타임에 App.SetFontScale 에서 조정 -->
     <sys:Double x:Key="Fs8">8</sys:Double>
