@@ -416,62 +416,101 @@ public sealed class DiscordBotService : IDisposable
                 bool already; lock (_sync) already = !_promptActive.Add(s.Id);
                 if (already) continue; // 이미 이번 등장에서 보냄(리페인트 중복 방지).
 
-                var proj = p; var sess = s; var text = menu;
-                _ = SendPromptAsync(proj, sess, text);
+                var proj = p; var sess = s; var m = menu.Value;
+                _ = SendPromptAsync(proj, sess, m.text, m.maxOpt);
             }
         }
     }
 
-    /// <summary>입력 대기 선택지 메뉴 화면을 스레드로 전송(키 버튼 포함).</summary>
-    private async Task SendPromptAsync(ProjectItem project, SessionItem session, string menu)
+    /// <summary>입력 대기 선택지 메뉴 화면을 스레드로 전송(옵션 수에 맞춘 키 버튼 포함).</summary>
+    private async Task SendPromptAsync(ProjectItem project, SessionItem session, string menu, int maxOpt)
     {
         try
         {
             var thread = await EnsureSessionThreadAsync(project, session);
             if (thread == null) { lock (_sync) _promptActive.Remove(session.Id); return; }
-            await SafeSendAsync(thread, $"⌨️ 입력 대기 — 선택지가 있습니다:\n```\n{menu}\n```", BuildKeyControls());
+            await SafeSendAsync(thread, $"⌨️ 입력 대기 — 선택지가 있습니다:\n{menu}", BuildKeyControls(maxOpt));
         }
         catch { lock (_sync) _promptActive.Remove(session.Id); }
     }
 
-    // claude 대화형 선택 UI: 선택 커서('❯'/'›'/'>') + 번호 옵션(1. 2. …). statusline/일반 출력과 구분하는 신호.
-    private static readonly Regex ClaudeOptionLine = new(@"^\s*[❯›>]?\s*\d+[\.\)]\s+\S", RegexOptions.Compiled);
+    // claude 대화형 선택 UI: 번호 옵션(1. 2. …). 선택 커서('❯'/'›')와 함께 뜬다.
+    private static readonly Regex ClaudeOptionLine = new(@"^(\d+)[\.\)]\s+\S", RegexOptions.Compiled);
+    // 스피너·상태줄·입력 안내 등 메뉴와 무관한 노이즈 줄(헤더에서 제외).
+    private static readonly Regex MenuNoise = new(@"Cooked|Worked|esc to|tokens|⏵|✻|to interrupt|↑|↓", RegexOptions.Compiled);
 
-    /// <summary>최근 터미널 화면 텍스트에서 입력 대기 선택지 메뉴를 추출한다. 없으면 null.
-    /// 선택 커서('❯')와 번호 옵션이 화면 끝부분에 함께 있을 때만 메뉴로 간주(오탐 최소화).</summary>
-    private static string? ExtractClaudeMenu(string screen)
+    /// <summary>최근 터미널 화면에서 입력 대기 선택지 메뉴를 깔끔하게 추출한다(질문 + 번호 옵션).
+    /// 없으면 null. 반환: (디스코드 표시 텍스트, 최대 옵션 번호).</summary>
+    private static (string text, int maxOpt)? ExtractClaudeMenu(string screen)
     {
         if (string.IsNullOrEmpty(screen)) return null;
-        var raw = screen.Replace("\r", "");
-        // 화면 끝 ~40줄만 본다(현재 보이는 영역). 박스 테두리·공백 줄은 정리.
-        var all = raw.Split('\n');
-        int take = Math.Min(40, all.Length);
-        var tail = new List<string>();
+        var all = screen.Replace("\r", "").Split('\n');
+        int take = Math.Min(45, all.Length);
+
+        // 각 줄: 박스 드로잉/커서 제거 + 공백 압축. (정렬용 다중 공백을 한 칸으로)
+        var lines = new List<string>(take);
         for (int i = all.Length - take; i < all.Length; i++)
         {
-            var line = all[i].TrimEnd();
-            // 박스 드로잉/구분선만 있는 줄은 시각 노이즈 → 테두리 문자 제거 후 평가.
-            var cleaned = line.Trim('│', '╮', '╭', '╯', '╰', '─', '┌', '┐', '└', '┘', '├', '┤', '|', ' ');
-            tail.Add(cleaned);
+            var c = all[i].Replace('│', ' ').Replace('─', ' ')
+                .Replace('╮', ' ').Replace('╭', ' ').Replace('╯', ' ').Replace('╰', ' ')
+                .Replace('┌', ' ').Replace('┐', ' ').Replace('└', ' ').Replace('┘', ' ')
+                .Replace('├', ' ').Replace('┤', ' ').Replace('|', ' ')
+                .Replace('❯', ' ').Replace('›', ' ').Replace('☐', ' ').Replace('☑', ' ');
+            c = Regex.Replace(c, @"\s{2,}", " ").Trim();
+            lines.Add(c);
         }
 
-        bool hasCursor = tail.Any(l => l.Contains('❯') || l.Contains('›'));
-        int optionCount = tail.Count(l => ClaudeOptionLine.IsMatch(l));
-        if (!(hasCursor && optionCount >= 1) && optionCount < 2) return null; // 커서+옵션 or 옵션 2개 이상
+        bool hasCursor = false;
+        for (int i = all.Length - take; i < all.Length; i++)
+            if (all[i].Contains('❯') || all[i].Contains('›')) { hasCursor = true; break; }
 
-        // 마지막 옵션 줄까지, 그 앞 질문 몇 줄을 포함해 묶는다.
-        int lastOpt = -1;
-        for (int i = tail.Count - 1; i >= 0; i--) if (ClaudeOptionLine.IsMatch(tail[i])) { lastOpt = i; break; }
-        if (lastOpt < 0) return null;
-        int start = Math.Max(0, lastOpt - 12);
+        // 옵션 줄 인덱스 수집.
+        var optIdx = new List<int>();
+        for (int i = 0; i < lines.Count; i++) if (ClaudeOptionLine.IsMatch(lines[i])) optIdx.Add(i);
+        if (optIdx.Count == 0) return null;
+        if (!(hasCursor && optIdx.Count >= 1) && optIdx.Count < 2) return null; // 오탐 최소화
 
-        var block = new List<string>();
-        for (int i = start; i <= lastOpt; i++)
-            if (tail[i].Length > 0) block.Add(tail[i]);
+        int firstOpt = optIdx[0], lastOpt = optIdx[^1];
 
-        var text = string.Join("\n", block).Trim();
-        if (text.Length > 1500) text = text[^1500..];
-        return text.Length == 0 ? null : text;
+        // 헤더(질문): firstOpt 바로 위에서 연속된 의미있는 줄만 위로 수집(빈줄/노이즈 만나면 중단).
+        var header = new List<string>();
+        for (int i = firstOpt - 1; i >= 0 && header.Count < 3; i--)
+        {
+            var l = lines[i];
+            if (l.Length == 0 || MenuNoise.IsMatch(l)) break;
+            if (ClaudeOptionLine.IsMatch(l)) break;
+            header.Insert(0, l);
+        }
+
+        // 옵션: firstOpt..lastOpt. 옵션 줄은 그대로, 사이 비-옵션 줄은 직전 옵션의 설명으로 합친다.
+        var opts = new List<string>();
+        int maxOpt = 0;
+        for (int i = firstOpt; i <= lastOpt; i++)
+        {
+            var l = lines[i];
+            if (l.Length == 0 || MenuNoise.IsMatch(l)) continue;
+            var mm = ClaudeOptionLine.Match(l);
+            if (mm.Success)
+            {
+                opts.Add(l);
+                if (int.TryParse(mm.Groups[1].Value, out var n) && n > maxOpt) maxOpt = n;
+            }
+            else if (opts.Count > 0)
+            {
+                opts[^1] += " " + l; // 줄바꿈된 설명을 직전 옵션에 붙임
+            }
+        }
+        if (opts.Count == 0) return null;
+
+        var sb = new StringBuilder();
+        sb.Append("```\n");
+        foreach (var h in header) sb.Append(h).Append('\n');
+        if (header.Count > 0) sb.Append('\n');
+        foreach (var o in opts) sb.Append(o).Append('\n');
+        sb.Append("```");
+        var text = sb.ToString();
+        if (text.Length > 1800) text = text[..1800] + "\n```";
+        return (text, maxOpt);
     }
 
     /// <summary>세션 스레드의 키 컨트롤 버튼 클릭을 받아 해당 키스트로크를 터미널 stdin 으로 전달한다.</summary>
@@ -505,20 +544,22 @@ public sealed class DiscordBotService : IDisposable
         "right" => "\x1b[C",
         "enter" => "\r",
         "esc" => "\x1b",
-        "1" or "2" or "3" or "4" or "5" => key, // 번호 직접 선택(대부분 TUI 는 숫자 입력 즉시 선택)
+        "1" or "2" or "3" or "4" or "5" or "6" or "7" or "8" or "9" => key, // 번호 직접 선택
         _ => null,
     };
 
-    /// <summary>세션 스레드용 키 컨트롤(방향/선택/취소/번호) 버튼 메시지 컴포넌트.</summary>
-    private static MessageComponent BuildKeyControls()
+    /// <summary>세션 스레드용 키 컨트롤(방향/선택/취소/번호) 버튼 메시지 컴포넌트.
+    /// <paramref name="maxOpt"/> 만큼 번호 버튼을 만든다(1~9, 행당 5개). 기본 5.</summary>
+    private static MessageComponent BuildKeyControls(int maxOpt = 5)
     {
+        var n = Math.Clamp(maxOpt, 1, 9);
         var b = new ComponentBuilder();
         b.WithButton("위", "dc:key:up", ButtonStyle.Secondary, new Emoji("⬆️"), row: 0);
         b.WithButton("아래", "dc:key:down", ButtonStyle.Secondary, new Emoji("⬇️"), row: 0);
         b.WithButton("선택(Enter)", "dc:key:enter", ButtonStyle.Success, row: 0);
         b.WithButton("취소(Esc)", "dc:key:esc", ButtonStyle.Danger, row: 0);
-        for (var i = 1; i <= 5; i++)
-            b.WithButton(i.ToString(), $"dc:key:{i}", ButtonStyle.Secondary, row: 1);
+        for (var i = 1; i <= n; i++)
+            b.WithButton(i.ToString(), $"dc:key:{i}", ButtonStyle.Secondary, row: 1 + (i - 1) / 5);
         return b.Build();
     }
 
