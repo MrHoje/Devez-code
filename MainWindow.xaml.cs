@@ -1951,6 +1951,9 @@ public partial class MainWindow : Window
         if (!_splitActive) return;
         _splitActive = false;
 
+        // 분할을 닫으면 너비 비율을 초기화 → 다음에 다시 열 때 1:1 로 시작.
+        SettingsService.SaveSplitBStar(1.0);
+
         // 좌측(주) 패널 콘텐츠를 유지, 우측은 버린다. 스왑 상태에서는 유지 콘텐츠가 PaneB 에 있을 수 있다.
         var keep = LeftPane;
         var drop = RightPane;
