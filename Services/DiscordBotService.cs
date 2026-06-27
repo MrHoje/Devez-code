@@ -33,6 +33,8 @@ public sealed class DiscordBotService : IDisposable
     private readonly HashSet<string> _promptActive = new(StringComparer.Ordinal);
     // 세션별 마지막으로 보낸 선택지 메뉴 텍스트 — 버튼 클릭 시 고른 옵션 라벨을 되살려 "내 메시지"로 표시.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastMenu = new(StringComparer.Ordinal);
+    // 메뉴 답변(버튼/팝업) 후 claude 응답을 기다리는 중인 세션 — 중복 폴링 방지.
+    private readonly HashSet<string> _awaitingReply = new(StringComparer.Ordinal);
 
     public bool IsConnected { get; private set; }
 
@@ -482,6 +484,10 @@ public sealed class DiscordBotService : IDisposable
         if (project != null && component.Channel is IMessageChannel ch && int.TryParse(keyName, out var num))
             await SendAsUserAsync(project, ch, component.User, ChoiceText(sessionId, num));
         await RemovePromptButtonsAsync(project, component.Channel as IMessageChannel, component.Message.Id, threadId);
+
+        // 메뉴 답변 완료 알림(busy 전환이 없으므로 lastreply 폴링으로 직접 전송).
+        var sItem = project?.Sessions.FirstOrDefault(s => s.Id == sessionId);
+        if (project != null && sItem != null) _ = WaitAndPostReplyAsync(project, sItem);
     }
 
     /// <summary>웹훅(Claude)으로 보낸 메뉴 메시지의 버튼을 제거(중복 선택 방지). 봇 메시지면 봇으로 폴백.</summary>
@@ -539,6 +545,34 @@ public sealed class DiscordBotService : IDisposable
         await SafeSendAsync(thread, $"**{name}**: {text}");
     }
 
+    /// <summary>메뉴 답변(버튼/팝업)을 주입한 뒤 claude 응답을 기다려 완료 알림을 보낸다.
+    /// AskUserQuestion 답변은 같은 턴의 연속이라 busy(true→false) 전환이 안 생겨 일반 완료 알림이
+    /// 안 뜬다 → lastreply 변화를 폴링해 직접 NotifySessionDoneAsync 를 호출한다.</summary>
+    private async Task WaitAndPostReplyAsync(ProjectItem project, SessionItem sessionItem)
+    {
+        var roomId = sessionItem.Id;
+        lock (_sync) { if (!_awaitingReply.Add(roomId)) return; } // 이미 대기 중이면 스킵
+        try
+        {
+            var agentId = string.IsNullOrWhiteSpace(sessionItem.AgentId) ? AgentRegistry.DefaultAgentId : sessionItem.AgentId;
+            var baseline = AgentReplyService.TryGetLastAssistantReply(roomId, agentId) ?? "";
+            for (int i = 0; i < 80; i++) // 최대 ~120초
+            {
+                await Task.Delay(1500);
+                var sess = TerminalSessionManager.Instance.Get(roomId);
+                if (sess is not { IsAlive: true }) return;
+                var cur = AgentReplyService.TryGetLastAssistantReply(roomId, agentId) ?? "";
+                if (!string.IsNullOrWhiteSpace(cur) && cur != baseline)
+                {
+                    await NotifySessionDoneAsync(project, sessionItem);
+                    return;
+                }
+            }
+        }
+        catch { /* 폴링 실패는 무시 */ }
+        finally { lock (_sync) _awaitingReply.Remove(roomId); }
+    }
+
     /// <summary>"직접 입력" 모달 제출 처리 — 옵션 선택(자유입력 진입) → 입력 텍스트 → Enter 를 터미널에 주입.</summary>
     private async Task OnModalSubmitted(SocketModal modal)
     {
@@ -572,6 +606,10 @@ public sealed class DiscordBotService : IDisposable
             await SendAsUserAsync(project, uch, modal.User, text);
         try { await modal.DeleteOriginalResponseAsync(); } catch { }
         await RemovePromptButtonsAsync(project, modal.Channel as IMessageChannel, msgId, threadId);
+
+        // 메뉴 답변 완료 알림(busy 전환이 없으므로 lastreply 폴링으로 직접 전송).
+        var sItem = project?.Sessions.FirstOrDefault(s => s.Id == sessionId);
+        if (project != null && sItem != null) _ = WaitAndPostReplyAsync(project, sItem);
     }
 
     /// <summary>버튼 customId 의 키 이름을 터미널이 이해하는 입력 바이트열로 변환한다.</summary>

@@ -142,11 +142,12 @@
                         <!-- 입력 대기(선택지 메뉴) — 스피너 정지 + 느낌표.
                              Margin 으로 12x12 박스 안쪽에 그려 stretch 시 뾰족한 꼭짓점 stroke 가 잘리지 않게. -->
                         <Path x:Name="WaitingIcon" Visibility="Collapsed"
-                              Data="{StaticResource IconAlertTriangle}"
+                              Data="{StaticResource IconExclamation}"
                               Margin="1" Stretch="Uniform"
                               HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                              Stroke="{DynamicResource WarningBrush}" StrokeThickness="1.6"
-                              Fill="Transparent" SnapsToDevicePixels="True"/>
+                              Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Fill="Transparent"/>
                     </Grid>
                     <TextBlock Grid.Column="2" Text="{Binding Name}" Margin="10,0,0,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"

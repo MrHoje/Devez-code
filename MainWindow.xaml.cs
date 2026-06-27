@@ -2037,6 +2037,7 @@ public partial class MainWindow : Window
         };
         _choicePoll.Tick += (_, _) =>
         {
+            bool changed = false;
             foreach (var p in _projects)
             {
                 if (!p.IsActive) continue;
@@ -2044,13 +2045,15 @@ public partial class MainWindow : Window
                 {
                     // 선택지 UI 패턴이 에이전트마다 달라 우선 claude 만(Discord 폴링과 동일 기준).
                     var agentId = string.IsNullOrWhiteSpace(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
-                    if (agentId != "claude") { if (s.IsWaitingChoice) s.IsWaitingChoice = false; continue; }
+                    if (agentId != "claude") { if (s.IsWaitingChoice) { s.IsWaitingChoice = false; changed = true; } continue; }
 
                     var session = TerminalSessionManager.Instance.Get(s.Id);
                     bool waiting = session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());
-                    if (s.IsWaitingChoice != waiting) s.IsWaitingChoice = waiting;
+                    if (s.IsWaitingChoice != waiting) { s.IsWaitingChoice = waiting; changed = true; }
                 }
             }
+            // 응답 대기 개수 변화 → 세션 완료 기록 헤더의 "응답 대기 중 N개" 줄 갱신.
+            if (changed) UpdateSessionBusyDisplay();
         };
         _choicePoll.Start();
     }
@@ -2091,10 +2094,14 @@ public partial class MainWindow : Window
 
     private void UpdateSessionBusyDisplay()
     {
-        int count = 0;
+        int count = 0, waiting = 0;
         foreach (var p in _projects)
             foreach (var t in p.Tabs)
-                if (t is SessionItem { IsBusy: true }) count++;
+                if (t is SessionItem s && s.IsBusy)
+                {
+                    count++;
+                    if (s.IsWaitingChoice) waiting++;
+                }
         if (count > 0)
         {
             SessionBusySpinner.Visibility = Visibility.Visible;
@@ -2104,6 +2111,17 @@ public partial class MainWindow : Window
         {
             SessionBusySpinner.Visibility = Visibility.Collapsed;
             SessionBusyLabel.Text = "진행중인 세션 없음.";
+        }
+
+        // 응답 대기(선택지) 세션이 있을 때만 둘째 줄 노출 → 이때만 헤더 높이가 늘어난다.
+        if (waiting > 0)
+        {
+            SessionWaitingLabel.Text = $"응답 대기 중 {waiting}개";
+            SessionWaitingLabel.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            SessionWaitingLabel.Visibility = Visibility.Collapsed;
         }
     }
 
