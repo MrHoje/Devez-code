@@ -324,6 +324,7 @@ public sealed class DiscordBotService : IDisposable
                 break;
 
             case "status":
+                await EnsureAgentEmotesAsync(); // 세션 목록 아이콘(커스텀 이모지) 보장
                 try { await command.RespondAsync(text: null, components: BuildStatusComponent(), ephemeral: true, flags: MessageFlags.ComponentsV2); } catch { }
                 break;
 
@@ -644,8 +645,8 @@ public sealed class DiscordBotService : IDisposable
         string om = op.Length > 0 ? op[0] : "", oe = op.Length > 1 ? op[1] : "";
         string nm = np.Length > 0 ? np[0] : "", ne = np.Length > 1 ? np[1] : "";
         var lines = new List<string>();
-        if (nm.Length > 0 && nm != om) lines.Add($"Set model: {ModelIdToLabel(nm)}");
-        if (ne.Length > 0 && ne != oe) lines.Add($"Set effort: {ne}");
+        if (nm.Length > 0 && nm != om) lines.Add($"model: {ModelIdToLabel(nm)}");
+        if (ne.Length > 0 && ne != oe) lines.Add($"effort: {ne}");
         if (lines.Count == 0) return;
         var thread = await EnsureSessionThreadAsync(project, session);
         if (thread == null) return;
@@ -1124,8 +1125,55 @@ public sealed class DiscordBotService : IDisposable
             .AddComponent(new TextDisplayBuilder().WithContent(BuildConnectionAnsi()))
             .AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Large))
             .AddComponent(new TextDisplayBuilder().WithContent("### 세션 상태"))
-            .AddComponent(new TextDisplayBuilder().WithContent(BuildSessionAnsi()));
+            .AddComponent(new TextDisplayBuilder().WithContent(BuildSessionLines()));
         return new ComponentBuilderV2().AddComponent(container).Build();
+    }
+
+    /// <summary>에이전트 아이콘을 길드 커스텀 이모지로 보장(없으면 업로드)하고 멘션을 캐시한다.
+    /// 권한/슬롯 부족 등 실패 시 해당 에이전트는 아이콘 없이 표시.</summary>
+    private async Task EnsureAgentEmotesAsync()
+    {
+        var client = _client;
+        var guild = client?.GetGuild(SettingsService.LoadDiscordGuildId());
+        if (guild == null) return;
+        foreach (var agentId in new[] { "claude", "codex", "opencode", "gajae" })
+        {
+            if (_agentEmotes.ContainsKey(agentId)) continue;
+            var emoteName = "devez_" + agentId;
+            var existing = guild.Emotes.FirstOrDefault(e => e.Name == emoteName);
+            if (existing != null) { _agentEmotes[agentId] = existing.ToString(); continue; }
+            try
+            {
+                var icon = OpenAgentIcon(agentId);
+                if (icon == null) continue;
+                using var st = icon.Value.stream;
+                var created = await guild.CreateEmoteAsync(emoteName, new Image(st));
+                _agentEmotes[agentId] = created.ToString();
+            }
+            catch { /* 권한(이모지 관리)·슬롯 부족 → 아이콘 생략 */ }
+        }
+    }
+
+    /// <summary>세션 상태(일반 텍스트): 줄마다 [에이전트 이모지] [🟢/🔴] 세션명.</summary>
+    private string BuildSessionLines()
+    {
+        var projects = _projects;
+        if (projects == null || !projects.Any(p => p.IsActive)) return "등록된 프로젝트가 없습니다.";
+
+        var sb = new StringBuilder();
+        foreach (var project in projects.Where(p => p.IsActive))
+        {
+            sb.AppendLine($"**{project.Name}**");
+            foreach (var session in project.Sessions)
+            {
+                var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+                var emote = _agentEmotes.TryGetValue(agentId, out var em) ? em + " " : "";
+                var dot = session.IsAlive || session.IsBusy ? "🟢" : "🔴";
+                sb.AppendLine($"{emote}{dot} {session.Name}");
+            }
+            sb.AppendLine();
+        }
+        return TrimForDiscord(sb.ToString().Trim(), 3500);
     }
 
     /// <summary>연결 상태를 ```ansi 코드블록으로(연결됨=초록/끊김=빨강).</summary>
@@ -1145,28 +1193,6 @@ public sealed class DiscordBotService : IDisposable
         sb.AppendLine($"지연: {lat}");
         sb.Append("```");
         return sb.ToString();
-    }
-
-    /// <summary>세션 상태를 ```ansi 코드블록으로(실행중/작업중=초록, 중지=빨강).</summary>
-    private string BuildSessionAnsi()
-    {
-        var projects = _projects;
-        if (projects == null || !projects.Any(p => p.IsActive)) return "등록된 프로젝트가 없습니다.";
-
-        var sb = new StringBuilder("```ansi\n");
-        foreach (var project in projects.Where(p => p.IsActive))
-        {
-            sb.AppendLine(project.Name);
-            foreach (var session in project.Sessions)
-            {
-                // 세션명 왼쪽에 상태 점: 실행중/작업중=초록(●), 중지=빨강(●).
-                var dot = session.IsAlive || session.IsBusy ? $"{AnsiGreen}●{AnsiReset}" : $"{AnsiRed}●{AnsiReset}";
-                var agent = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-                sb.AppendLine($"  {dot} {session.Name} · {agent}");
-            }
-        }
-        sb.Append("```");
-        return TrimForDiscord(sb.ToString(), 3500);
     }
 
     /// <summary>봇이 만든 모든 채널·카테고리·세션 스레드를 삭제하고 매핑을 비운 뒤 새로 구성한다(!dc reset confirm).
