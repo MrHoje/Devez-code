@@ -524,8 +524,9 @@ public sealed class DiscordBotService : IDisposable
         {
             var thread = await EnsureSessionThreadAsync(project, session);
             if (thread == null) { lock (_sync) _promptActive.Remove(session.Id); return; }
-            menu = ForceSpacing(menu);
-            _lastMenu[session.Id] = menu; // 버튼 클릭 시 고른 옵션 라벨 복원용
+            var (question, options) = ParseMenu(ForceSpacing(menu));
+            // _lastMenu 는 ChoiceText(번호→라벨)·버튼 제거 표시에 쓰는 평문 버전으로 저장.
+            _lastMenu[session.Id] = string.Join("\n", options);
             var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
 
             var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
@@ -534,9 +535,7 @@ public sealed class DiscordBotService : IDisposable
             {
                 try
                 {
-                    var container = new ContainerBuilder()
-                        .AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord($"{PromptHeader}\n{menu}", 3500)));
-                    foreach (var row in BuildKeyRows(maxOpt, typeOpt)) container.AddComponent(row);
+                    var container = BuildPromptContainer(question, options, withButtons: true, maxOpt, typeOpt);
                     var comp = new ComponentBuilderV2().AddComponent(container).Build();
                     await hook.SendMessageAsync(text: null, username: AgentDisplayName(agentId), avatarUrl: AgentAvatarUrl(agentId),
                         components: comp, flags: MessageFlags.ComponentsV2, threadId: thread.Id);
@@ -544,9 +543,44 @@ public sealed class DiscordBotService : IDisposable
                 }
                 catch { /* V2/웹훅 실패 → 폴백 */ }
             }
-            await SendAsAgentAsync(project, thread, agentId, $"{PromptHeader}\n{menu}", BuildKeyControls(maxOpt, typeOpt));
+            var flat = question.Length > 0 ? $"{PromptHeader}\n{question}\n" + string.Join("\n", options) : $"{PromptHeader}\n" + string.Join("\n", options);
+            await SendAsAgentAsync(project, thread, agentId, flat, BuildKeyControls(maxOpt, typeOpt));
         }
         catch { lock (_sync) _promptActive.Remove(session.Id); }
+    }
+
+    /// <summary>메뉴 텍스트(```펜스/질문/번호옵션)를 (질문, 옵션줄 목록)으로 파싱.</summary>
+    private static (string question, List<string> options) ParseMenu(string menu)
+    {
+        var optRe = new Regex(@"^\d+[\.\)]\s");
+        var qLines = new List<string>();
+        var options = new List<string>();
+        bool started = false;
+        foreach (var raw in menu.Replace("```", "").Split('\n'))
+        {
+            var l = raw.Trim();
+            if (l.Length == 0) continue;
+            if (optRe.IsMatch(l)) { options.Add(l); started = true; }
+            else if (!started) qLines.Add(l);
+            else if (options.Count > 0) options[^1] += " " + l; // 줄바꿈된 설명 합치기
+        }
+        return (string.Join(" ", qLines).Trim(), options);
+    }
+
+    /// <summary>선택지 메뉴 V2 컨테이너: 헤더+질문, 옵션마다 Separator 로 구분, (옵션) 버튼.</summary>
+    private static ContainerBuilder BuildPromptContainer(string question, List<string> options, bool withButtons, int maxOpt, int typeOpt)
+    {
+        var container = new ContainerBuilder()
+            .AddComponent(new TextDisplayBuilder().WithContent(
+                question.Length > 0 ? $"{PromptHeader}\n{question}" : PromptHeader));
+        foreach (var opt in options)
+        {
+            container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
+            container.AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord(opt, 1000)));
+        }
+        if (withButtons)
+            foreach (var row in BuildKeyRows(maxOpt, typeOpt)) container.AddComponent(row);
+        return container;
     }
 
     /// <summary>번호 선택 버튼을 ActionRow 목록으로 만든다(행당 5개). typeOpt 번은 ✏️ 직접 입력 버튼.</summary>
@@ -572,10 +606,10 @@ public sealed class DiscordBotService : IDisposable
         var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
         if (hook == null) return;
         var menu = sessionId != null && _lastMenu.TryGetValue(sessionId, out var mm) ? mm : "";
+        var options = menu.Split('\n').Where(x => x.Trim().Length > 0).ToList();
         try
         {
-            var container = new ContainerBuilder()
-                .AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord($"{PromptHeader}\n{menu}", 3500)));
+            var container = BuildPromptContainer("", options, withButtons: false, 0, 0);
             var comp = new ComponentBuilderV2().AddComponent(container).Build();
             await hook.ModifyMessageAsync(messageId, m => m.Components = comp, threadId: threadId);
         }
