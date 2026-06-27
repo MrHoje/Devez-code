@@ -423,7 +423,8 @@
                                                            Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
                                                            RenderOptions.BitmapScalingMode="HighQuality">
                                                         <Image.RenderTransform>
-                                                            <TranslateTransform Y="-2"/>
+                                                            <!-- 텍스트는 Y=-2 유지, 아이콘만 2px 내림(=0). -->
+                                                            <TranslateTransform Y="0"/>
                                                         </Image.RenderTransform>
                                                     </Image>
                                                     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
