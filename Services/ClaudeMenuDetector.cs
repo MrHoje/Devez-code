@@ -3,7 +3,8 @@ using System.Text.RegularExpressions;
 
 namespace DevezCode.Services;
 
-/// <summary>claude 의 입력 대기 선택지 메뉴(1·2·3… 번호 옵션)를 터미널 화면 텍스트에서 감지한다.
+/// <summary>입력 대기 선택지 메뉴(1·2·3… 번호 옵션)를 터미널 화면 텍스트에서 감지한다.
+/// claude / gjc(가재) / opencode 의 번호 메뉴를 모두 처리(박스 문자 │·┃, 푸터 힌트 차이를 흡수).
 /// Discord 자동 전송과 좌측/패널 "입력 대기 ❗" 표시가 동일한 로직을 공유하도록 분리.
 /// alt-screen 은 시각적 줄바꿈이 사라져 텍스트가 들러붙으므로, 연속 번호 마커로 직접 쪼갠다.</summary>
 public static class ClaudeMenuDetector
@@ -34,7 +35,7 @@ public static class ClaudeMenuDetector
         {
             var line = all[i];
             if (line.Contains('❯') || line.Contains('›')) hasCursor = true;
-            var c = line.Replace('│', ' ')
+            var c = line.Replace('│', ' ').Replace('┃', ' ') // ┃ = opencode 박스 세로선
                 .Replace('╮', ' ').Replace('╭', ' ').Replace('╯', ' ').Replace('╰', ' ')
                 .Replace('┌', ' ').Replace('┐', ' ').Replace('└', ' ').Replace('┘', ' ')
                 .Replace('├', ' ').Replace('┤', ' ').Replace('|', ' ')
@@ -48,7 +49,8 @@ public static class ClaudeMenuDetector
         // 푸터 힌트("Enter to select · ↑/↓ to navigate · Esc to cancel" 등)는 마지막 옵션에 들러붙으므로
         // 가장 먼저 나오는 힌트 위치에서 잘라낸다(힌트는 항상 옵션 뒤에 온다).
         int cut = flat.Length;
-        foreach (var kw in new[] { "Enter to select", "↑/↓", "↑ /↓", "to navigate", "Esc to cancel", "esc to interrupt", "to interrupt" })
+        foreach (var kw in new[] { "Enter to select", "↑/↓", "↑ /↓", "↑↓", "to navigate", "Esc to cancel", "esc to interrupt", "to interrupt",
+                                   "enter submit", "esc dismiss" }) // opencode 푸터
         {
             var idx = flat.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
             if (idx >= 0 && idx < cut) cut = idx;
