@@ -1108,8 +1108,26 @@ public sealed class DiscordBotService : IDisposable
         return (string.Join(" | ", segs.Take(ctx + 1)), string.Join(" | ", segs.Skip(ctx + 1)));
     }
 
-    /// <summary>연결 상태 행 목록(이모지 없음). /connection·/status 공용.</summary>
-    private List<string> ConnectionRows()
+    // ANSI 색(Discord ```ansi 코드블록 전용). 1=bold.
+    private const string AnsiGreen = "[1;32m";
+    private const string AnsiRed = "[1;31m";
+    private const string AnsiReset = "[0m";
+
+    /// <summary>/status: 연결 상태(위) + 세션 상태(아래)를 Components V2 로 합쳐 구성.
+    /// 색상은 ```ansi 코드블록으로 표현(연결됨/실행중=초록, 끊김/중지=빨강). 코드블록이라 채널 멘션 대신 채널명 표시.</summary>
+    private MessageComponent BuildStatusComponent()
+    {
+        var container = new ContainerBuilder()
+            .AddComponent(new TextDisplayBuilder().WithContent("### 연결 상태"))
+            .AddComponent(new TextDisplayBuilder().WithContent(BuildConnectionAnsi()))
+            .AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Large))
+            .AddComponent(new TextDisplayBuilder().WithContent("### 세션 상태"))
+            .AddComponent(new TextDisplayBuilder().WithContent(BuildSessionAnsi()));
+        return new ComponentBuilderV2().AddComponent(container).Build();
+    }
+
+    /// <summary>연결 상태를 ```ansi 코드블록으로(연결됨=초록/끊김=빨강).</summary>
+    private string BuildConnectionAnsi()
     {
         var client = _client;
         var guild = client?.GetGuild(SettingsService.LoadDiscordGuildId());
@@ -1117,47 +1135,43 @@ public sealed class DiscordBotService : IDisposable
         var projects = _projects;
         int pc = projects?.Count(p => p.IsActive) ?? 0;
         int sc = projects?.Where(p => p.IsActive).Sum(p => p.Sessions.Count) ?? 0;
-        return new List<string>
-        {
-            $"**게이트웨이**  {(IsConnected && client != null ? "연결됨" : "끊김")}",
-            $"**서버**  {(guild != null ? guild.Name : "접근 불가")}",
-            $"**지연**  {(client != null ? client.Latency + " ms" : "-")}",
-            $"**명령어 채널**  {(cmdId != 0 ? $"<#{cmdId}>" : "미설정")}",
-            $"**동기화**  프로젝트 {pc} · 세션 {sc}",
-        };
+
+        var gw = IsConnected && client != null ? $"{AnsiGreen}연결됨{AnsiReset}" : $"{AnsiRed}끊김{AnsiReset}";
+        var srv = guild != null ? guild.Name : $"{AnsiRed}접근 불가{AnsiReset}";
+        var lat = client != null ? client.Latency + " ms" : "-";
+        var ch = cmdId != 0 ? ("#" + (guild?.GetTextChannel(cmdId)?.Name ?? cmdId.ToString())) : "미설정";
+
+        var sb = new StringBuilder("```ansi\n");
+        sb.AppendLine($"게이트웨이   {gw}");
+        sb.AppendLine($"서버         {srv}");
+        sb.AppendLine($"지연         {lat}");
+        sb.AppendLine($"명령어 채널  {ch}");
+        sb.AppendLine($"동기화       프로젝트 {pc} · 세션 {sc}");
+        sb.Append("```");
+        return sb.ToString();
     }
 
-    /// <summary>/status: 연결 상태(위) + 세션 상태(아래)를 Components V2 로 합쳐 구성.</summary>
-    private MessageComponent BuildStatusComponent()
-    {
-        var container = new ContainerBuilder()
-            .AddComponent(new TextDisplayBuilder().WithContent("### 연결 상태"))
-            .AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small))
-            .AddComponent(new TextDisplayBuilder().WithContent(string.Join("\n", ConnectionRows())))
-            .AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Large))
-            .AddComponent(new TextDisplayBuilder().WithContent("### 세션 상태"))
-            .AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small))
-            .AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord(BuildSessionStatusText(), 3500)));
-        return new ComponentBuilderV2().AddComponent(container).Build();
-    }
-
-    private string BuildSessionStatusText()
+    /// <summary>세션 상태를 ```ansi 코드블록으로(실행중/작업중=초록, 중지=빨강).</summary>
+    private string BuildSessionAnsi()
     {
         var projects = _projects;
-        if (projects == null || projects.Count == 0) return "등록된 프로젝트가 없습니다.";
+        if (projects == null || !projects.Any(p => p.IsActive)) return "등록된 프로젝트가 없습니다.";
 
-        var sb = new StringBuilder();
+        var sb = new StringBuilder("```ansi\n");
         foreach (var project in projects.Where(p => p.IsActive))
         {
-            sb.AppendLine($"\n**{project.Name}**");
+            sb.AppendLine(project.Name);
             foreach (var session in project.Sessions)
             {
-                var state = session.IsBusy ? "작업중" : session.IsAlive ? "실행중" : "중지";
+                var st = session.IsBusy ? $"{AnsiGreen}작업중{AnsiReset}"
+                       : session.IsAlive ? $"{AnsiGreen}실행중{AnsiReset}"
+                       : $"{AnsiRed}중지{AnsiReset}";
                 var agent = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-                sb.AppendLine($"- {session.Name} · {agent} · {state}");
+                sb.AppendLine($"  {session.Name} · {agent} · {st}");
             }
         }
-        return TrimForDiscord(sb.ToString().Trim(), 1900);
+        sb.Append("```");
+        return TrimForDiscord(sb.ToString(), 3500);
     }
 
     /// <summary>봇이 만든 모든 채널·카테고리·세션 스레드를 삭제하고 매핑을 비운 뒤 새로 구성한다(!dc reset confirm).

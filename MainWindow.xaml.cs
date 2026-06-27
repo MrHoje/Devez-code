@@ -2056,7 +2056,6 @@ public partial class MainWindow : Window
         };
         _choicePoll.Tick += (_, _) =>
         {
-            bool changed = false;
             foreach (var p in _projects)
             {
                 if (!p.IsActive) continue;
@@ -2072,11 +2071,12 @@ public partial class MainWindow : Window
                     // busy 일 때만 본다 → 잔상으로 ❗ 가 안 꺼지는 문제 방지.
                     var session = TerminalSessionManager.Instance.Get(s.Id);
                     bool waiting = s.IsBusy && session is { IsAlive: true } && ClaudeMenuDetector.HasMenu(session.GetRecentText());
-                    if (s.IsWaitingChoice != waiting) { s.IsWaitingChoice = waiting; changed = true; }
+                    if (s.IsWaitingChoice != waiting) s.IsWaitingChoice = waiting;
                 }
             }
-            // 응답 대기 개수 변화 → 세션 완료 기록 헤더의 "응답 대기 중 N개" 줄 갱신.
-            if (changed) UpdateSessionBusyDisplay();
+            // 매 tick 무조건 헤더 갱신 — InterruptRequested/SessionExited 등 폴링 밖에서 IsWaitingChoice 가
+            // 꺼지면 "변화 없음"이라 안 불려 헤더 "응답 대기 중" 줄이 잔류하던 문제 방지(셋팅 동일값은 no-op).
+            UpdateSessionBusyDisplay();
         };
         _choicePoll.Start();
     }
