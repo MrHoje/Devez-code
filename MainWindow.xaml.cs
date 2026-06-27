@@ -1066,6 +1066,9 @@ public partial class MainWindow : Window
         _sessionHistoryOpen = open;
         double targetWidth = open ? SettingsService.LoadSessionHistoryWidth() : 0;
 
+        // 닫힘 시 스플리터를 숨겨 잡아끌어 다시 펼치는 것을 막는다(폭 0 이어도 히트 가능 방지).
+        SessionHistorySplitter.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+
         // 닫을 때 MinWidth(150)가 남아 폭 0 으로 줘도 완전히 안 닫힘 → 닫힘 시 0.
         // 열 때 즉시 150 주면 애니 시작 전 0→150 으로 툭 점프하므로, 애니 완료 후 복원한다.
         // 드래그 클램프(MinWidth 사용)는 열린 상태에서만 동작하므로 리사이즈 동작엔 영향 없음.

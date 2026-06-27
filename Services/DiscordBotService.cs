@@ -324,6 +324,8 @@ public sealed class DiscordBotService : IDisposable
 
     public async Task NotifySessionDoneAsync(ProjectItem? project, SessionItem session)
     {
+        var ag = string.IsNullOrWhiteSpace(session.AgentId) ? "claude" : session.AgentId;
+        DiscordInjectLog($"done? session={session.Id} agent={ag} notifyEnabled={SettingsService.LoadDiscordNotifySessionDone()} project={(project!=null)} configured={IsConfigured} pending={_pendingInput.ContainsKey(session.Id)}");
         if (!SettingsService.LoadDiscordNotifySessionDone()) return;
         if (project == null || !IsConfigured) return;
         // 자동 시작으로 세션을 깨우는 중(주입 전/직후)이면 resume 직후의 가짜 idle 이다 —
@@ -331,6 +333,7 @@ public sealed class DiscordBotService : IDisposable
         lock (_sync) { if (_pendingInput.ContainsKey(session.Id)) return; }
 
         var thread = await EnsureSessionThreadAsync(project, session);
+        DiscordInjectLog($"done thread session={session.Id} thread={(thread?.Id.ToString() ?? "<null>")}");
         if (thread == null) return;
 
         // 카드 본문(첫 메시지)을 방금 보낸 프롬프트로 갱신(웹훅).
@@ -350,6 +353,7 @@ public sealed class DiscordBotService : IDisposable
             body = string.IsNullOrWhiteSpace(question) ? HeadForDiscord(reply, 1500) : $"{question}\n\n{HeadForDiscord(reply, 1500)}";
         else
             body = string.IsNullOrWhiteSpace(question) ? "응답 완료" : question;
+        DiscordInjectLog($"done send session={session.Id} replyLen={(reply?.Length ?? 0)} bodyLen={body.Length}");
         await SendAsAgentAsync(project, thread, agentId, body); // 작성자명 = 에이전트(웹훅)
     }
 
@@ -363,9 +367,11 @@ public sealed class DiscordBotService : IDisposable
         // 세션 채널의 일반 메시지만 터미널로 전달.
         if (message.Channel is not ITextChannel ch) return;
         var sessionId = SettingsService.FindDiscordSessionByThread(ch.Id);
+        DiscordInjectLog($"recv ch={ch.Id} session={sessionId ?? "<null>"} len={content.Length}");
         if (string.IsNullOrWhiteSpace(sessionId)) return;
 
         var session = TerminalSessionManager.Instance.Get(sessionId);
+        DiscordInjectLog($"lookup session={sessionId} found={(session != null)} alive={(session?.IsAlive == true)} agent={AgentIdForSession(sessionId) ?? "<null>"}");
         if (session is not { IsAlive: true })
         {
             await RequestAutoStartAsync(ch, sessionId, content);
@@ -378,6 +384,18 @@ public sealed class DiscordBotService : IDisposable
         session.Write(content);
         await Task.Delay(inline ? 500 : 250);
         session.Write("\r");
+        DiscordInjectLog($"wrote session={sessionId} inline={inline}");
+    }
+
+    /// <summary>디스코드→터미널 주입 진단 로그. %TEMP%\devezcode-discord-inject.log 에 누적.</summary>
+    private static void DiscordInjectLog(string line)
+    {
+        try
+        {
+            var p = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "devezcode-discord-inject.log");
+            System.IO.File.AppendAllText(p, $"[{DateTime.Now:HH:mm:ss.fff}] {line}\n");
+        }
+        catch { }
     }
 
     /// <summary>세션 스레드의 키 컨트롤 버튼 클릭을 받아 해당 키스트로크를 터미널 stdin 으로 전달한다.</summary>
