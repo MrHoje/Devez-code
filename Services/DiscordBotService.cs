@@ -414,15 +414,42 @@ public sealed class DiscordBotService : IDisposable
             _lastPostedBody[session.Id] = body;
         }
 
-        // 마지막에 현재 모델·effort·컨텍스트(claude) 정보를 작은 글씨(subtext) 두 줄로 추가(푸터처럼 구분).
+        // 답변 + (구분선) + 모델·effort·ctx / 5h·week 정보를 Components V2(Container+Separator)로 전송.
         var info = SessionInfoLine(session.Id);
-        var sendText = body;
-        if (info != null)
+        string? a = null, b = null;
+        if (info != null) { var split = SplitInfo(info); a = split.a; b = split.b; }
+        await SendDoneV2Async(project, thread, agentId, body, a, b);
+    }
+
+    /// <summary>완료 응답을 Components V2(Container + Separator + subtext 정보)로 전송. 작성자=에이전트(웹훅).
+    /// V2 전송 실패 시 기존 텍스트(subtext 2줄) 방식으로 폴백.</summary>
+    private async Task SendDoneV2Async(ProjectItem project, IMessageChannel thread, string? agentId, string body, string? infoA, string? infoB)
+    {
+        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
+        var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
+        if (hook != null)
         {
-            var (a, b) = SplitInfo(info);
-            sendText = b.Length > 0 ? $"{body}\n-# {a}\n-# {b}" : $"{body}\n-# {a}";
+            try
+            {
+                var container = new ContainerBuilder()
+                    .AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord(body, 3500)));
+                if (!string.IsNullOrEmpty(infoA))
+                {
+                    container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
+                    var infoText = !string.IsNullOrEmpty(infoB) ? $"-# {infoA}\n-# {infoB}" : $"-# {infoA}";
+                    container.AddComponent(new TextDisplayBuilder().WithContent(infoText));
+                }
+                var comp = new ComponentBuilderV2().AddComponent(container).Build();
+                await hook.SendMessageAsync(text: null, username: AgentDisplayName(agentId), avatarUrl: AgentAvatarUrl(agentId),
+                    components: comp, flags: MessageFlags.ComponentsV2, threadId: thread.Id);
+                return;
+            }
+            catch { /* V2/웹훅 실패 → 텍스트 폴백 */ }
         }
-        await SendAsAgentAsync(project, thread, agentId, sendText); // 작성자명 = 에이전트(웹훅)
+        var fallback = !string.IsNullOrEmpty(infoA)
+            ? (!string.IsNullOrEmpty(infoB) ? $"{body}\n-# {infoA}\n-# {infoB}" : $"{body}\n-# {infoA}")
+            : body;
+        await SendAsAgentAsync(project, thread, agentId, fallback);
     }
 
     private async Task OnMessageReceived(SocketMessage message)
