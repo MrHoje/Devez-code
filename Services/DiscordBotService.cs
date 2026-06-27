@@ -576,7 +576,8 @@ public sealed class DiscordBotService : IDisposable
                 }
 
                 // 생각 중(스피너)에는 화면이 불안정해 스피너·토큰 카운트가 가짜 메뉴로 잡힌다 → 감지 안 함.
-                if (s.IsBusy) { lock (_sync) _promptActive.Remove(s.Id); continue; }
+                // 단, 선택지/권한 메뉴는 턴 도중(busy=true)에 뜨므로 IsWaitingChoice(Notification 훅) 면 통과시킨다.
+                if (s.IsBusy && !s.IsWaitingChoice) { lock (_sync) _promptActive.Remove(s.Id); continue; }
 
                 var recent = session.GetRecentText();
                 var menu = ClaudeMenuDetector.Extract(recent);
