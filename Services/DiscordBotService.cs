@@ -817,10 +817,11 @@ public sealed class DiscordBotService : IDisposable
                             var s2 = TerminalSessionManager.Instance.Get(sidL);
                             if (s2 is { IsAlive: true })
                             {
+                                // 스크롤백 잔상(이전 변경의 "Switch model")에 오탐하지 않도록 화면 끝부분만 검사.
                                 var txt = s2.GetRecentText();
-                                if (txt.IndexOf("Switch model", StringComparison.OrdinalIgnoreCase) >= 0
-                                    || txt.IndexOf("Change effort", StringComparison.OrdinalIgnoreCase) >= 0
-                                    || txt.IndexOf("switch to", StringComparison.OrdinalIgnoreCase) >= 0)
+                                var tail = txt.Length > 400 ? txt[^400..] : txt;
+                                if (tail.IndexOf("Switch model", StringComparison.OrdinalIgnoreCase) >= 0
+                                    || tail.IndexOf("Change effort", StringComparison.OrdinalIgnoreCase) >= 0)
                                 { s2.Write("1"); await Task.Delay(250); s2.Write("\r"); }
                             }
                         }
