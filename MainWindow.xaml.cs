@@ -2117,11 +2117,11 @@ public partial class MainWindow : Window
         if (waiting > 0)
         {
             SessionWaitingLabel.Text = $"응답 대기 중 {waiting}개";
-            SessionWaitingLabel.Visibility = Visibility.Visible;
+            SessionWaitingRow.Visibility = Visibility.Visible;
         }
         else
         {
-            SessionWaitingLabel.Visibility = Visibility.Collapsed;
+            SessionWaitingRow.Visibility = Visibility.Collapsed;
         }
     }
 

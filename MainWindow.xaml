@@ -292,21 +292,29 @@
                         <!-- 세션 타이틀 영역과 동일 사이즈 패널 -->
                         <Border Grid.Row="1" MinHeight="35"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="9,6,12,6">
-                                <Ellipse x:Name="SessionBusySpinner" Width="12" Height="12"
-                                         VerticalAlignment="Center" Margin="0,0,7,0" Visibility="Collapsed"
-                                         Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
-                                         StrokeDashArray="15 100" StrokeDashCap="Round"
-                                         RenderTransformOrigin="0.5,0.5">
-                                    <Ellipse.RenderTransform>
-                                        <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                                    </Ellipse.RenderTransform>
-                                </Ellipse>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock x:Name="SessionBusyLabel" Text="진행중인 세션 없음."
+                            <StackPanel VerticalAlignment="Center" Margin="9,6,12,6">
+                                <!-- 진행중 줄: 스피너 + 텍스트 -->
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse x:Name="SessionBusySpinner" Width="12" Height="12"
+                                             VerticalAlignment="Center" Margin="0,0,7,0" Visibility="Collapsed"
+                                             Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                             StrokeDashArray="15 100" StrokeDashCap="Round"
+                                             RenderTransformOrigin="0.5,0.5">
+                                        <Ellipse.RenderTransform>
+                                            <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                        </Ellipse.RenderTransform>
+                                    </Ellipse>
+                                    <TextBlock x:Name="SessionBusyLabel" Text="진행중인 세션 없음." VerticalAlignment="Center"
                                                FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <!-- 응답 대기(선택지) 세션이 있을 때만 둘째 줄로 노출 → 이때만 높이가 늘어난다. -->
-                                    <TextBlock x:Name="SessionWaitingLabel" Visibility="Collapsed" Margin="0,3,0,0"
+                                </StackPanel>
+                                <!-- 응답 대기 줄: 느낌표 + 텍스트. 대기 세션이 있을 때만 노출 → 이때만 높이가 늘어난다. -->
+                                <StackPanel x:Name="SessionWaitingRow" Orientation="Horizontal"
+                                            Visibility="Collapsed" Margin="0,4,0,0">
+                                    <Path Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,7,0"
+                                          Data="{StaticResource IconExclamation}" Stretch="Uniform"
+                                          Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent"/>
+                                    <TextBlock x:Name="SessionWaitingLabel" VerticalAlignment="Center"
                                                FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource WarningBrush}"/>
                                 </StackPanel>
                             </StackPanel>
