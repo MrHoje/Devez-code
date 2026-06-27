@@ -1048,9 +1048,12 @@ public sealed class TerminalSessionManager
     }
 
     /// <summary>앱 종료 시: 모든 세션을 동시에 graceful 종료(Ctrl+C×2 + exit)해 claude/codex 가
-    /// transcript 를 flush 할 틈을 준 뒤, 잔여를 Dispose 로 하드 정리한다.
-    /// 병렬 처리라 벽시계 시간은 가장 느린 세션 1개 기준(perGraceMs).</summary>
-    public async Task GracefulShutdownAllAsync(int perGraceMs = 1500)
+    /// transcript 를 flush 하고 Stop/SessionEnd 훅을 기록할 틈을 준 뒤, 잔여를 Dispose 로 하드 정리한다.
+    /// 병렬 처리라 벽시계 시간은 가장 느린 세션 1개 기준(perGraceMs).
+    /// WaitForExit 기반이라 빠르게 끝나는 세션은 즉시 통과 — timeout 을 키워도 정상 종료는 안 느려진다.
+    /// 에이전트 프로세스가 죽은 직후에도 훅(별도 powershell)이 디스크에 마저 쓰는 텀이 있어,
+    /// conpty 를 닫기 전 postFlushMs 만큼 추가로 기다려 종료 시 훅 기록 누락을 막는다.</summary>
+    public async Task GracefulShutdownAllAsync(int perGraceMs = 2500, int postFlushMs = 300)
     {
         List<KeyValuePair<string, TerminalSession>> snapshot;
         lock (_lock) snapshot = _sessions.ToList();
@@ -1058,6 +1061,9 @@ public sealed class TerminalSessionManager
 
         try { await Task.WhenAll(snapshot.Select(kv => kv.Value.TryGracefulExitAsync(perGraceMs))); }
         catch { /* best effort */ }
+
+        // 프로세스 종료 후 별도 훅 프로세스가 파일을 마저 쓸 여유(짧은 고정 지연).
+        if (postFlushMs > 0) { try { await Task.Delay(postFlushMs); } catch { /* best effort */ } }
 
         lock (_lock)
         {

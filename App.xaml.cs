@@ -151,7 +151,7 @@ public partial class App : Application
         // 종료시켜 마지막 대화를 보존한다. (예전엔 DisposeAll 로 즉시 kill → 대화가 디스크에 안 남아
         // 재실행 시 그 세션을 복원하지 못했다. opencode/gjc 는 실시간 추적이라 무관 → claude 만 증상이었다.)
         // UI 스레드 데드락을 피하려 Task.Run 으로 실행 후 상한 대기, 잔여는 DisposeAll 로 하드 정리.
-        try { System.Threading.Tasks.Task.Run(() => TerminalSessionManager.Instance.GracefulShutdownAllAsync(1500)).Wait(4000); }
+        try { System.Threading.Tasks.Task.Run(() => TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500)).Wait(6000); }
         catch { /* best-effort */ }
         try { TerminalSessionManager.Instance.DisposeAll(); } catch { /* 종료 정리 best-effort */ }
         try { _singleInstanceMutex?.ReleaseMutex(); } catch { /* 소유 안 한 경우 무시 */ }

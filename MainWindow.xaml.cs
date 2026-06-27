@@ -386,7 +386,7 @@ public partial class MainWindow : Window
         // 스냅샷이 실제로 한 프레임 그려진 뒤 오버레이를 올린다 → WebView 가 사라진 직후 빈 배경이 비치는 깜빡임 제거.
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
         ShutdownOverlay.Visibility = Visibility.Visible;
-        try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(1500); }
+        try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500); }
         catch { /* best effort */ }
         Close(); // _shuttingDown=true 라 재진입 시 즉시 종료
     }
