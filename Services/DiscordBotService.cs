@@ -1139,16 +1139,21 @@ public sealed class DiscordBotService : IDisposable
         foreach (var agentId in new[] { "claude", "codex", "opencode", "gajae" })
         {
             if (_agentEmotes.ContainsKey(agentId)) continue;
-            var emoteName = "devez_" + agentId;
+            var emoteName = "dz_" + agentId; // 꽉 찬 버전(v2). 레거시 devez_* 는 여백이 커서 폐기.
             var existing = guild.Emotes.FirstOrDefault(e => e.Name == emoteName);
             if (existing != null) { _agentEmotes[agentId] = existing.ToString(); continue; }
+            // 레거시(여백 큰) 이모지 정리 — 슬롯 회수.
+            var legacy = guild.Emotes.FirstOrDefault(e => e.Name == "devez_" + agentId);
+            if (legacy != null) { try { await guild.DeleteEmoteAsync(legacy); } catch { } }
             try
             {
-                var icon = OpenAgentIcon(agentId);
-                if (icon == null) continue;
-                using var st = icon.Value.stream;
-                var created = await guild.CreateEmoteAsync(emoteName, new Image(st));
-                _agentEmotes[agentId] = created.ToString();
+                var st = OpenAgentEmoteImage(agentId);
+                if (st == null) continue;
+                using (st)
+                {
+                    var created = await guild.CreateEmoteAsync(emoteName, new Image(st));
+                    _agentEmotes[agentId] = created.ToString();
+                }
             }
             catch { /* 권한(이모지 관리)·슬롯 부족 → 아이콘 생략 */ }
         }
@@ -1624,6 +1629,50 @@ public sealed class DiscordBotService : IDisposable
     }
 
     /// <summary>에이전트 아이콘 리소스를 절반 여백 캔버스로 만들어 스트림으로 연다(포럼 Gallery 썸네일용).</summary>
+    /// <summary>커스텀 이모지용 에이전트 아이콘 — 128px 정사각에 여백 없이 꽉 채워 렌더(이모지가 작게 보이지 않게).</summary>
+    private static System.IO.Stream? OpenAgentEmoteImage(string? agentId)
+    {
+        var file = (agentId ?? "").ToLowerInvariant() switch
+        {
+            "codex" => "codex.png",
+            "opencode" => "opencode_icon_white_50.png",
+            "gajae" => "gajae_code.png",
+            _ => "claude_code.png",
+        };
+        try
+        {
+            var app = System.Windows.Application.Current;
+            if (app == null) return null;
+            System.IO.MemoryStream? result = null;
+            app.Dispatcher.Invoke(() =>
+            {
+                var uri = new Uri($"pack://application:,,,/Resources/Images/ShellPresets/{file}", UriKind.Absolute);
+                var info = System.Windows.Application.GetResourceStream(uri);
+                if (info == null) return;
+                using var src = info.Stream;
+                var frame = System.Windows.Media.Imaging.BitmapFrame.Create(src,
+                    System.Windows.Media.Imaging.BitmapCreateOptions.None,
+                    System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+                const int canvas = 128; // 여백 없이 가장 긴 변을 캔버스에 맞춤(꽉 채움)
+                double scale = canvas / (double)Math.Max(frame.PixelWidth, frame.PixelHeight);
+                double w = frame.PixelWidth * scale, h = frame.PixelHeight * scale;
+                var dv = new System.Windows.Media.DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                    dc.DrawImage(frame, new System.Windows.Rect((canvas - w) / 2.0, (canvas - h) / 2.0, w, h));
+                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(canvas, canvas, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+                var ms = new System.IO.MemoryStream();
+                enc.Save(ms);
+                ms.Position = 0;
+                result = ms;
+            });
+            return result;
+        }
+        catch { return null; }
+    }
+
     private static (System.IO.Stream stream, string fileName)? OpenAgentIcon(string? agentId)
     {
         var file = (agentId ?? "").ToLowerInvariant() switch
