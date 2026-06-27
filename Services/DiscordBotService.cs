@@ -893,7 +893,7 @@ public sealed class DiscordBotService : IDisposable
     {
         "codex" => "Codex",
         "opencode" => "OpenCode",
-        "gajae" => "gjc",
+        "gajae" => "Gajae",
         "claude" => "Claude",
         _ => "Agent",
     };
