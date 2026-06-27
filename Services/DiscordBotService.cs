@@ -37,6 +37,11 @@ public sealed class DiscordBotService : IDisposable
     private readonly HashSet<string> _awaitingReply = new(StringComparer.Ordinal);
     // 세션별 마지막으로 디스코드에 보낸 완료 본문 — busy 경로와 폴링 경로가 같은 답을 두 번 보내는 것 방지.
     private readonly Dictionary<string, string> _lastPostedBody = new(StringComparer.Ordinal);
+    // /model·/effort 선택지(메타바 콤보와 동일). 클릭 시 "/model <value>" / "/effort <value>" 주입.
+    private static readonly (string label, string value)[] ModelChoices =
+        { ("Opus 4.8", "opus"), ("Sonnet 4.6", "sonnet"), ("Haiku 4.5", "haiku"), ("Fable 5", "fable") };
+    private static readonly (string label, string value)[] EffortChoices =
+        { ("low", "low"), ("medium", "medium"), ("high", "high"), ("xhigh", "xhigh"), ("max", "max") };
 
     public bool IsConnected { get; private set; }
 
@@ -252,6 +257,10 @@ public sealed class DiscordBotService : IDisposable
                     .WithDescription("세션 스레드 조작용 키 컨트롤 버튼을 표시합니다.").Build(),
                 new SlashCommandBuilder().WithName("info")
                     .WithDescription("이 세션의 모델·effort·컨텍스트 사용량을 표시합니다(claude).").Build(),
+                new SlashCommandBuilder().WithName("model")
+                    .WithDescription("이 세션의 claude 모델을 번호로 선택합니다.").Build(),
+                new SlashCommandBuilder().WithName("effort")
+                    .WithDescription("이 세션의 claude effort 를 번호로 선택합니다.").Build(),
                 new SlashCommandBuilder().WithName("reset")
                     .WithDescription("봇이 만든 모든 채널을 삭제하고 새로 구성합니다(되돌릴 수 없음).")
                     .AddOption("confirm", ApplicationCommandOptionType.Boolean, "정말 초기화하려면 True 를 선택", isRequired: true)
@@ -269,8 +278,8 @@ public sealed class DiscordBotService : IDisposable
     {
         var name = command.Data.Name;
 
-        // /keys·/info 외 관리 명령은 #명령어 채널에서만 받는다(세션 스레드에서 쓰는 명령은 예외).
-        if (name != "keys" && name != "info")
+        // 세션 스레드에서 쓰는 명령(keys/info/model/effort)은 #명령어 채널 제한에서 예외.
+        if (name is not ("keys" or "info" or "model" or "effort"))
         {
             var cmdId = SettingsService.LoadDiscordCommandChannel();
             if (cmdId != 0 && command.ChannelId != cmdId)
@@ -298,6 +307,24 @@ public sealed class DiscordBotService : IDisposable
                 var line = string.IsNullOrWhiteSpace(sid) ? null : SessionInfoLine(sid!);
                 var msg = line ?? "이 세션의 상태 정보를 찾을 수 없습니다. (세션 스레드에서, claude 가 한 번 이상 응답한 뒤 사용하세요.)";
                 try { await command.RespondAsync(msg, ephemeral: true); } catch { }
+                break;
+            }
+
+            case "model":
+            case "effort":
+            {
+                var sid = SettingsService.FindDiscordSessionByThread(command.ChannelId ?? 0);
+                if (string.IsNullOrWhiteSpace(sid))
+                {
+                    try { await command.RespondAsync("세션 스레드에서 사용하세요.", ephemeral: true); } catch { }
+                    break;
+                }
+                bool isModel = name == "model";
+                var choices = isModel ? ModelChoices : EffortChoices;
+                var b = new ComponentBuilder();
+                for (int i = 0; i < choices.Length; i++)
+                    b.WithButton($"{i + 1}. {choices[i].label}", $"dc:{name}:{choices[i].value}", ButtonStyle.Secondary, row: i / 5);
+                try { await command.RespondAsync(isModel ? "모델을 선택하세요:" : "effort 를 선택하세요:", components: b.Build()); } catch { }
                 break;
             }
 
@@ -489,6 +516,28 @@ public sealed class DiscordBotService : IDisposable
                 .AddTextInput("내용", "dc:typeinput", TextInputStyle.Paragraph, "여기에 입력하세요", required: true)
                 .Build();
             try { await component.RespondWithModalAsync(modal); } catch { }
+            return;
+        }
+
+        // /model·/effort 선택 버튼 → claude 에 "/model <v>" / "/effort <v>" 주입 + 설정 저장.
+        if (id.StartsWith("dc:model:", StringComparison.Ordinal) || id.StartsWith("dc:effort:", StringComparison.Ordinal))
+        {
+            try { await component.DeferAsync(); } catch { }
+            bool isModel = id.StartsWith("dc:model:", StringComparison.Ordinal);
+            var value = id[(isModel ? "dc:model:".Length : "dc:effort:".Length)..];
+            var choices = isModel ? ModelChoices : EffortChoices;
+            var match = choices.FirstOrDefault(c => c.value == value);
+            if (match.value == null) return; // 화이트리스트 외 무시
+            var tid = component.Channel?.Id ?? component.ChannelId ?? 0;
+            var sid = SettingsService.FindDiscordSessionByThread(tid);
+            var sess = string.IsNullOrWhiteSpace(sid) ? null : TerminalSessionManager.Instance.Get(sid);
+            if (sess is { IsAlive: true })
+            {
+                sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
+                if (isModel) SettingsService.SaveClaudeCodeRoomModel(sid!, value);
+                else SettingsService.SaveClaudeCodeRoomEffort(sid!, value);
+            }
+            try { await component.Message.ModifyAsync(m => { m.Content = (isModel ? "✅ 모델: " : "✅ effort: ") + match.label; m.Components = new ComponentBuilder().Build(); }); } catch { }
             return;
         }
 
