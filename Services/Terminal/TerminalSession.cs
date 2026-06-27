@@ -20,6 +20,35 @@ public sealed class TerminalSession : IDisposable
 
     public bool IsAlive { get; private set; }
 
+    // 최근 출력(원본 ANSI 포함) 롤링 버퍼 — Discord 가 입력 대기 시 화면(선택지 메뉴 등)을 읽는 데 사용.
+    private readonly object _recentLock = new();
+    private readonly StringBuilder _recent = new();
+    private const int RecentCap = 16384;
+
+    /// <summary>최근 터미널 출력 텍스트(ANSI 이스케이프 제거). 화면에 보이는 마지막 내용 일부.</summary>
+    public string GetRecentText()
+    {
+        string raw;
+        lock (_recentLock) raw = _recent.ToString();
+        return StripAnsi(raw);
+    }
+
+    private void AppendRecent(string text)
+    {
+        lock (_recentLock)
+        {
+            _recent.Append(text);
+            if (_recent.Length > RecentCap) _recent.Remove(0, _recent.Length - RecentCap);
+        }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex AnsiRegex =
+        new(@"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f]",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>ANSI 이스케이프·제어문자를 제거해 사람이 읽을 수 있는 텍스트만 남긴다.</summary>
+    private static string StripAnsi(string s) => AnsiRegex.Replace(s, "");
+
     /// <summary>셸(직속) 프로세스 ID — graceful 종료 대기에 사용.</summary>
     public int ProcessId { get; private set; }
 
@@ -146,6 +175,7 @@ public sealed class TerminalSession : IDisposable
                         try { using var fs = new FileStream(logPath, FileMode.Append); fs.Write(chunk, 0, n); }
                         catch (Exception) { }
                     }
+                    try { AppendRecent(Encoding.UTF8.GetString(chunk)); } catch { }
                     OutputReceived?.Invoke(chunk);
                 }
             }
