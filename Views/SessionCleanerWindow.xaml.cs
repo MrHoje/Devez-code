@@ -94,6 +94,7 @@ public partial class SessionCleanerWindow : Window
             ? new BitmapImage(uri)
             : null;
         AgentDescription.Text = "DevezCode에서 관리중이지 않은 세션을 표시합니다.";
+        VacuumSection.Visibility = kind == CleanerAgentKind.OpenCode ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static void ApplyCat(Button button, bool selected, Brush active, Brush primary, Brush text)
