@@ -90,15 +90,50 @@ public static class SessionCleanerService
         public static ManagedSnapshot Load()
         {
             var (claude, opencode, gajae, rooms) = SettingsService.LoadManagedSessionSnapshot();
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var claudeIds = ToSet(claude);
+            var openCodeIds = ToSet(opencode);
+            var gajaeIds = ToSet(gajae);
+
+            AddTrackedFileIds(claudeIds, Path.Combine(appData, "DevezCode", "claude", "sessions"), GuidRegex);
+            AddTrackedFileIds(openCodeIds, Path.Combine(appData, "DevezCode", "opencode", "sessions"), new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled));
+            AddTrackedFileIds(gajaeIds, Path.Combine(appData, "DevezCode", "gajae", "sessions"), GuidRegex, fromGajaeRoomDir: true);
+
             return new ManagedSnapshot(
-                ToSet(claude),
-                ToSet(opencode),
-                ToSet(gajae),
+                claudeIds,
+                openCodeIds,
+                gajaeIds,
                 ToSet(rooms));
         }
 
         private static HashSet<string> ToSet(IEnumerable<string> values)
             => values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        private static void AddTrackedFileIds(HashSet<string> target, string dir, Regex valid, bool fromGajaeRoomDir = false)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) return;
+                if (fromGajaeRoomDir)
+                {
+                    foreach (var f in Directory.EnumerateFiles(dir, "*.jsonl", SearchOption.AllDirectories))
+                    {
+                        var id = ExtractGajaeId(f);
+                        if (id != null && valid.IsMatch(id)) target.Add(id);
+                    }
+                    return;
+                }
+
+                foreach (var f in Directory.EnumerateFiles(dir, "*.txt", SearchOption.TopDirectoryOnly))
+                {
+                    string id;
+                    try { id = File.ReadAllText(f).Trim(); }
+                    catch { continue; }
+                    if (valid.IsMatch(id)) target.Add(id);
+                }
+            }
+            catch { }
+        }
     }
     private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae)
     {
