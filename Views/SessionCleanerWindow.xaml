@@ -1,0 +1,133 @@
+<Window x:Class="DevezCode.Views.SessionCleanerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="세션 클리너"
+        Width="720" Height="500"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        PreviewKeyDown="Window_KeyDown"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        FontFamily="{StaticResource PretendardFont}">
+    <Grid Margin="{DynamicResource WindowShadowOuterMargin}">
+        <Border Background="{DynamicResource BgBrush}" CornerRadius="{DynamicResource WindowShadowCornerRadius}"
+                Margin="{DynamicResource WindowShadowInnerMargin}" SnapsToDevicePixels="True">
+            <Border.Effect>
+                <DropShadowEffect ShadowDepth="0" BlurRadius="{DynamicResource WindowShadowBlurRadius}" Direction="270"
+                                  Color="{DynamicResource ShadowColor}" Opacity="{DynamicResource ShadowOpacity}"/>
+            </Border.Effect>
+        </Border>
+
+        <Border CornerRadius="14" Background="{DynamicResource BgBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                ClipToBounds="True" SnapsToDevicePixels="True">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="48"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                        MouseLeftButtonDown="Header_DragMove">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBroom}"
+                                  Width="16" Height="16" VerticalAlignment="Center"
+                                  Stroke="{DynamicResource TextBrush}" Margin="0,-1,11,0"/>
+                            <TextBlock Text="세션 클리너" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
+                        <Button Click="CloseBtn_Click" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Width="40" Height="32" Margin="0,0,8,0" Style="{StaticResource WinCloseBtn}">
+                            <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="170"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Background="{DynamicResource PanelSoftBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
+                        <StackPanel Margin="10,16,10,16">
+                            <Button x:Name="ClaudeCatBtn" Tag="claude" Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconMessageSquare}" Width="15" Height="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="Claude" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="OpenCodeCatBtn" Tag="opencode" Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconTerminal}" Width="15" Height="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="opencode" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="GajaeCatBtn" Tag="gajae" Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconCode}" Width="15" Height="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="gajae-code" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Grid.Column="1" Margin="28,24,28,22">
+                        <StackPanel x:Name="EmptyPanel" Visibility="Collapsed" VerticalAlignment="Center">
+                            <TextBlock Text="설정 &gt; 에이전트에서 켜진 클리너 대상 에이전트가 없습니다."
+                                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}" TextAlignment="Center"/>
+                            <TextBlock Text="Claude, opencode, gajae-code 중 사용할 에이전트를 켜면 여기에 표시됩니다."
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
+                                       TextAlignment="Center" Margin="0,8,0,0"/>
+                        </StackPanel>
+
+                        <StackPanel x:Name="ContentPanel">
+                            <TextBlock x:Name="AgentTitle" FontSize="{DynamicResource Fs18}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock x:Name="AgentDescription" TextWrapping="Wrap" Margin="0,8,0,22"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+
+                            <Border Padding="18" CornerRadius="12" Background="{DynamicResource PanelSoftBrush}"
+                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="DevezCode에서 관리중이지 않은 세션" FontSize="{DynamicResource Fs12}"
+                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                        <TextBlock x:Name="AgentCountText" Text="-" Margin="0,4,0,0"
+                                                   FontSize="34" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="새로고침" Style="{StaticResource SecondaryButton}"
+                                            Height="34" Padding="14,0" VerticalAlignment="Center" Click="Refresh_Click"/>
+                                </Grid>
+                            </Border>
+
+                            <TextBlock Text="DevezCode가 현재 관리 중인 세션은 삭제 대상에서 제외됩니다. 이 작업은 PC에서 세션 기록을 완전 삭제하며 복구할 수 없습니다."
+                                       TextWrapping="Wrap" FontSize="{DynamicResource Fs11}"
+                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,18"/>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="닫기" Style="{StaticResource SecondaryButton}" Height="36" MinWidth="82" Margin="0,0,8,0" Click="CloseBtn_Click"/>
+                                <Button x:Name="DeleteBtn" Content="이 에이전트 삭제" Style="{StaticResource PrimaryButton}" Height="36" MinWidth="128" Click="DeleteCurrent_Click"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

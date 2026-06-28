@@ -2567,56 +2567,10 @@ public partial class MainWindow : Window
     // ── 세션 클리너 ───────────────────────────────────────────────
     private async void CleanerBtn_Click(object sender, RoutedEventArgs e)
     {
-        CleanerPopup.IsOpen = true;
-        await RefreshCleanerCountsAsync();
-    }
-
-    private async void CleanerRefresh_Click(object sender, RoutedEventArgs e)
-    {
-        await RefreshCleanerCountsAsync();
-    }
-
-    private async Task RefreshCleanerCountsAsync()
-    {
-        CleanerClaudeCount.Text = CleanerOpenCodeCount.Text = CleanerGajaeCount.Text = "…";
-        try
-        {
-            var c = await Task.Run(SessionCleanerService.GetCounts);
-            CleanerClaudeCount.Text = c.Claude.ToString();
-            CleanerOpenCodeCount.Text = c.OpenCode.ToString();
-            CleanerGajaeCount.Text = c.Gajae.ToString();
-        }
-        catch
-        {
-            CleanerClaudeCount.Text = CleanerOpenCodeCount.Text = CleanerGajaeCount.Text = "-";
-        }
-    }
-
-    private async void CleanerDelete_Click(object sender, RoutedEventArgs e)
-    {
-        var counts = await Task.Run(SessionCleanerService.GetCounts);
-        if (counts.Total <= 0)
-        {
-            ConfirmDialog.Alert("세션 클리너", "삭제할 관리되지 않은 세션이 없습니다.");
-            await RefreshCleanerCountsAsync();
-            return;
-        }
-
-        var ok = ConfirmDialog.Show("관리되지 않은 세션 삭제",
-            $"DevezCode가 추적하지 않는 세션 {counts.Total}개를 PC에서 완전 삭제합니다.\n\n" +
-            $"Claude {counts.Claude}개 · OpenCode {counts.OpenCode}개 · GJC {counts.Gajae}개\n\n" +
-            "현재 DevezCode가 관리 중인 세션 ID는 보호 목록으로 제외됩니다.",
-            okLabel: "일괄 삭제", danger: true, iconKey: "IconTrash2");
-        if (!ok) return;
-
-        CleanerClaudeCount.Text = CleanerOpenCodeCount.Text = CleanerGajaeCount.Text = "…";
-        var result = await Task.Run(SessionCleanerService.DeleteUnmanaged);
-        await RefreshCleanerCountsAsync();
-
-        var msg = result.FailedTotal == 0
-            ? $"관리되지 않은 세션 {result.DeletedTotal}개를 삭제했습니다."
-            : $"관리되지 않은 세션 {result.DeletedTotal}개를 삭제했습니다.\n삭제 실패 {result.FailedTotal}개는 파일 잠금 또는 에이전트 CLI 제한으로 남았습니다.";
-        ConfirmDialog.Alert("세션 클리너", msg);
+        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
+        var dlg = new Views.SessionCleanerWindow { Owner = this };
+        dlg.Closed += (_, _) => ResumeTerminal();
+        dlg.ShowDialog();
     }
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)

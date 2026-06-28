@@ -1,0 +1,150 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using DevezCode.Services;
+
+namespace DevezCode.Views;
+
+public partial class SessionCleanerWindow : Window
+{
+    private CleanerAgentKind _current;
+    private readonly List<CleanerAgentKind> _visibleAgents = new();
+
+    public SessionCleanerWindow()
+    {
+        InitializeComponent();
+        Loaded += async (_, _) =>
+        {
+            BuildVisibleAgents();
+            await RefreshCurrentAsync();
+        };
+    }
+
+    private void BuildVisibleAgents()
+    {
+        var enabled = SettingsService.LoadEnabledAgents().ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        SetAgentVisible(CleanerAgentKind.Claude, ClaudeCatBtn, enabled.Contains("claude"));
+        SetAgentVisible(CleanerAgentKind.OpenCode, OpenCodeCatBtn, enabled.Contains("opencode"));
+        SetAgentVisible(CleanerAgentKind.Gajae, GajaeCatBtn, enabled.Contains("gajae"));
+
+        EmptyPanel.Visibility = _visibleAgents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ContentPanel.Visibility = _visibleAgents.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (_visibleAgents.Count > 0) SetActive(_visibleAgents[0]);
+    }
+
+    private void SetAgentVisible(CleanerAgentKind kind, Button button, bool visible)
+    {
+        button.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (visible) _visibleAgents.Add(kind);
+    }
+
+    private async void Category_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button b || b.Tag is not string tag) return;
+        SetActive(tag switch
+        {
+            "opencode" => CleanerAgentKind.OpenCode,
+            "gajae" => CleanerAgentKind.Gajae,
+            _ => CleanerAgentKind.Claude,
+        });
+        await RefreshCurrentAsync();
+    }
+
+    private void SetActive(CleanerAgentKind kind)
+    {
+        _current = kind;
+        var active = (Brush)FindResource("PanelBrush");
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var text = (Brush)FindResource("TextBrush");
+
+        ApplyCat(ClaudeCatBtn, kind == CleanerAgentKind.Claude, active, primary, text);
+        ApplyCat(OpenCodeCatBtn, kind == CleanerAgentKind.OpenCode, active, primary, text);
+        ApplyCat(GajaeCatBtn, kind == CleanerAgentKind.Gajae, active, primary, text);
+
+        AgentTitle.Text = kind switch
+        {
+            CleanerAgentKind.OpenCode => "opencode",
+            CleanerAgentKind.Gajae => "gajae-code",
+            _ => "Claude",
+        };
+        AgentDescription.Text = kind switch
+        {
+            CleanerAgentKind.OpenCode => "opencode CLI 세션 목록에서 DevezCode에서 관리중이지 않은 세션을 찾습니다.",
+            CleanerAgentKind.Gajae => "gajae-code 기본 세션 저장소에서 DevezCode에서 관리중이지 않은 jsonl 세션을 찾습니다.",
+            _ => "Claude Code transcript 저장소에서 DevezCode에서 관리중이지 않은 jsonl 세션을 찾습니다.",
+        };
+    }
+
+    private static void ApplyCat(Button button, bool selected, Brush active, Brush primary, Brush text)
+    {
+        button.Background = selected ? active : Brushes.Transparent;
+        button.Foreground = selected ? primary : text;
+    }
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshCurrentAsync();
+
+    private async Task RefreshCurrentAsync()
+    {
+        if (_visibleAgents.Count == 0) return;
+        AgentCountText.Text = "…";
+        DeleteBtn.IsEnabled = false;
+        try
+        {
+            var count = await Task.Run(() => SessionCleanerService.GetCount(_current));
+            AgentCountText.Text = count.ToString();
+            DeleteBtn.IsEnabled = count > 0;
+        }
+        catch
+        {
+            AgentCountText.Text = "-";
+        }
+    }
+
+    private async void DeleteCurrent_Click(object sender, RoutedEventArgs e)
+    {
+        var count = await Task.Run(() => SessionCleanerService.GetCount(_current));
+        if (count <= 0)
+        {
+            await RefreshCurrentAsync();
+            return;
+        }
+
+        var name = AgentTitle.Text;
+        var ok = ConfirmDialog.Show("DevezCode에서 관리중이지 않은 세션 삭제",
+            $"{name}의 DevezCode에서 관리중이지 않은 세션 {count}개를 PC에서 완전 삭제합니다.\n\n" +
+            "DevezCode가 현재 관리 중인 세션은 삭제 대상에서 제외됩니다.",
+            okLabel: "삭제", danger: true, iconKey: "IconTrash2");
+        if (!ok) return;
+
+        AgentCountText.Text = "…";
+        DeleteBtn.IsEnabled = false;
+        var result = await Task.Run(() => SessionCleanerService.DeleteUnmanaged(_current));
+        await RefreshCurrentAsync();
+
+        var message = result.failed == 0
+            ? $"{name}의 DevezCode에서 관리중이지 않은 세션 {result.deleted}개를 삭제했습니다."
+            : $"{name}의 DevezCode에서 관리중이지 않은 세션 {result.deleted}개를 삭제했습니다.\n삭제 실패 {result.failed}개는 파일 잠금 또는 에이전트 CLI 제한으로 남았습니다.";
+        ConfirmDialog.Alert("세션 클리너", message);
+    }
+
+    private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void Header_DragMove(object sender, MouseButtonEventArgs e)
+    {
+        if (e.LeftButton == MouseButtonState.Pressed)
+        {
+            try { DragMove(); } catch { }
+        }
+    }
+
+    private void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            Close();
+        }
+    }
+}

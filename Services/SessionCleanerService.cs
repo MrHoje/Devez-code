@@ -15,38 +15,75 @@ public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCl
     public int DeletedTotal => Deleted.Total;
     public int FailedTotal => Failed.Total;
 }
+public enum CleanerAgentKind { Claude, OpenCode, Gajae }
+
+public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, bool ShowClaude, bool ShowOpenCode, bool ShowGajae)
+{
+    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0);
+}
+
 
 /// <summary>
-/// DevezCode 가 추적 중인 세션 ID 를 보호 목록으로 잡고, 그 밖의 에이전트 세션만 정리한다.
-/// 삭제 대상은 "관리되지 않음"이 확실한 파일/CLI 세션만 포함하며, 보호 목록에 걸리면 절대 삭제하지 않는다.
+/// DevezCode 가 관리 중인 세션 ID 를 보호 목록으로 잡고, 그 밖의 에이전트 세션만 정리한다.
+/// 삭제 대상은 "DevezCode에서 관리중이지 않음"이 확실한 파일/CLI 세션만 포함하며, 관리 중인 ID는 절대 삭제하지 않는다.
 /// </summary>
 public static class SessionCleanerService
 {
     private static readonly Regex GuidRegex = new(@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", RegexOptions.Compiled);
 
-    public static SessionCleanerCounts GetCounts()
+    public static SessionCleanerAgentCounts GetCounts()
     {
         var managed = ManagedSnapshot.Load();
-        return new SessionCleanerCounts(
-            Claude: EnumerateUnmanagedClaude(managed).Count,
-            OpenCode: EnumerateUnmanagedOpenCode(managed).Count,
-            Gajae: EnumerateUnmanagedGajae(managed).Count);
+        var enabled = EnabledSnapshot.Load();
+        return new SessionCleanerAgentCounts(
+            Claude: enabled.ShowClaude ? EnumerateUnmanagedClaude(managed).Count : 0,
+            OpenCode: enabled.ShowOpenCode ? EnumerateUnmanagedOpenCode(managed).Count : 0,
+            Gajae: enabled.ShowGajae ? EnumerateUnmanagedGajae(managed).Count : 0,
+            enabled.ShowClaude,
+            enabled.ShowOpenCode,
+            enabled.ShowGajae);
     }
+
+    public static int GetCount(CleanerAgentKind kind)
+    {
+        var managed = ManagedSnapshot.Load();
+        return kind switch
+        {
+            CleanerAgentKind.Claude => EnumerateUnmanagedClaude(managed).Count,
+            CleanerAgentKind.OpenCode => EnumerateUnmanagedOpenCode(managed).Count,
+            CleanerAgentKind.Gajae => EnumerateUnmanagedGajae(managed).Count,
+            _ => 0,
+        };
+    }
+
 
     public static SessionCleanerResult DeleteUnmanaged()
     {
         var before = GetCounts();
-        var managed = ManagedSnapshot.Load();
+        var enabled = EnabledSnapshot.Load();
 
-        var cd = DeleteFiles(EnumerateUnmanagedClaude(managed));
-        var gd = DeleteFiles(EnumerateUnmanagedGajae(managed));
-        var od = DeleteOpenCode(EnumerateUnmanagedOpenCode(managed));
+        (int deleted, int failed) cd = enabled.ShowClaude ? DeleteUnmanaged(CleanerAgentKind.Claude) : (0, 0);
+        (int deleted, int failed) od = enabled.ShowOpenCode ? DeleteUnmanaged(CleanerAgentKind.OpenCode) : (0, 0);
+        (int deleted, int failed) gd = enabled.ShowGajae ? DeleteUnmanaged(CleanerAgentKind.Gajae) : (0, 0);
 
         return new SessionCleanerResult(
-            before,
+            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae),
             new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted),
             new SessionCleanerCounts(cd.failed, od.failed, gd.failed));
     }
+
+    public static (int deleted, int failed) DeleteUnmanaged(CleanerAgentKind kind)
+    {
+        var managed = ManagedSnapshot.Load();
+        return kind switch
+        {
+            CleanerAgentKind.Claude => DeleteFiles(EnumerateUnmanagedClaude(managed)),
+            CleanerAgentKind.OpenCode => DeleteOpenCode(EnumerateUnmanagedOpenCode(managed)),
+            CleanerAgentKind.Gajae => DeleteFiles(EnumerateUnmanagedGajae(managed)),
+            _ => (0, 0),
+        };
+    }
+
 
     private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> RoomIds)
     {
@@ -63,6 +100,18 @@ public static class SessionCleanerService
         private static HashSet<string> ToSet(IEnumerable<string> values)
             => values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
+    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae)
+    {
+        public static EnabledSnapshot Load()
+        {
+            var enabled = SettingsService.LoadEnabledAgents().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return new EnabledSnapshot(
+                enabled.Contains("claude"),
+                enabled.Contains("opencode"),
+                enabled.Contains("gajae"));
+        }
+    }
+
 
     private static List<string> EnumerateUnmanagedClaude(ManagedSnapshot managed)
     {
@@ -190,8 +239,12 @@ public static class SessionCleanerService
             };
             using var p = Process.Start(psi);
             if (p == null) return null;
+            var outputTask = p.StandardOutput.ReadToEndAsync();
+            var errorTask = p.StandardError.ReadToEndAsync();
             if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch { } return null; }
-            return p.StandardOutput.ReadToEnd();
+            var output = outputTask.GetAwaiter().GetResult();
+            if (!string.IsNullOrWhiteSpace(output)) return output;
+            return errorTask.GetAwaiter().GetResult();
         }
         catch { return null; }
     }
