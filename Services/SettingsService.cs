@@ -375,6 +375,20 @@ public static class SettingsService
         if (changed) Save();
       }
     }
+    /// <summary>클리너 보호 목록용: DevezCode 가 현재 관리 중인 room/session ID 스냅샷.</summary>
+    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Rooms)
+        LoadManagedSessionSnapshot()
+    {
+        lock (_lock)
+        {
+            return (
+                Current.ClaudeCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                Current.OpenCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                Current.GajaeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                Current.ClaudeCodeRoomDirs.Keys.Where(v => !string.IsNullOrWhiteSpace(v)).ToList()
+            );
+        }
+    }
 
     // ── 방별 에이전트 ID (미설정 시 기본값 claude) ────────────────
     public static string LoadAgentForRoom(string roomId)
