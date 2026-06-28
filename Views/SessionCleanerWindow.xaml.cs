@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Globalization;
+using DevezCode.Models;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
@@ -63,18 +65,20 @@ public partial class SessionCleanerWindow : Window
         ApplyCat(OpenCodeCatBtn, kind == CleanerAgentKind.OpenCode, active, primary, text);
         ApplyCat(GajaeCatBtn, kind == CleanerAgentKind.Gajae, active, primary, text);
 
-        AgentTitle.Text = kind switch
+        var agentId = kind switch
         {
             CleanerAgentKind.OpenCode => "opencode",
-            CleanerAgentKind.Gajae => "gajae-code",
+            CleanerAgentKind.Gajae => "gajae",
+            _ => "claude",
+        };
+        AgentTitle.Text = kind switch
+        {
+            CleanerAgentKind.OpenCode => "OpenCode",
+            CleanerAgentKind.Gajae => "Gajae Code",
             _ => "Claude",
         };
-        AgentDescription.Text = kind switch
-        {
-            CleanerAgentKind.OpenCode => "opencode CLI 세션 목록에서 DevezCode에서 관리중이지 않은 세션을 찾습니다.",
-            CleanerAgentKind.Gajae => "gajae-code 기본 세션 저장소에서 DevezCode에서 관리중이지 않은 jsonl 세션을 찾습니다.",
-            _ => "Claude Code transcript 저장소에서 DevezCode에서 관리중이지 않은 jsonl 세션을 찾습니다.",
-        };
+        AgentTitleIcon.Source = AgentImageConverter.Instance.Convert(agentId, typeof(ImageSource), null, CultureInfo.CurrentCulture) as ImageSource;
+        AgentDescription.Text = "DevezCode에서 관리중이지 않은 세션을 표시합니다.";
     }
 
     private static void ApplyCat(Button button, bool selected, Brush active, Brush primary, Brush text)

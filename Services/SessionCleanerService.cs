@@ -172,21 +172,55 @@ public static class SessionCleanerService
 
     private static List<string> EnumerateUnmanagedOpenCode(ManagedSnapshot managed)
     {
-        var output = Run("opencode", "session list", 4000);
-        if (string.IsNullOrWhiteSpace(output)) return new();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
 
-        var list = new List<string>();
-        foreach (var line in output.Split('\n'))
+        var output = Run("opencode", "session list", 8000);
+        if (!string.IsNullOrWhiteSpace(output))
         {
-            var t = line.TrimStart();
-            if (!t.StartsWith("ses_", StringComparison.Ordinal)) continue;
-            var end = t.IndexOfAny(new[] { ' ', '\t', '\r' });
-            var id = end > 0 ? t[..end] : t.Trim();
-            if (id.Length <= 4) continue;
-            if (managed.OpenCodeIds.Contains(id)) continue;
-            list.Add(id);
+            foreach (var line in output.Split('\n'))
+            {
+                var t = line.TrimStart();
+                if (!t.StartsWith("ses_", StringComparison.Ordinal)) continue;
+                var end = t.IndexOfAny(new[] { ' ', '\t', '\r' });
+                var id = end > 0 ? t[..end] : t.Trim();
+                if (id.Length > 4) ids.Add(id);
+            }
         }
-        return list.Distinct(StringComparer.Ordinal).ToList();
+
+        foreach (var id in EnumerateOpenCodeIdsFromDb())
+            ids.Add(id);
+
+        return ids
+            .Where(id => !managed.OpenCodeIds.Contains(id))
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static IEnumerable<string> EnumerateOpenCodeIdsFromDb()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var candidates = new[]
+        {
+            Path.Combine(home, ".local", "share", "opencode", "opencode.db"),
+            Path.Combine(appData, "opencode", "opencode.db"),
+        };
+
+        var rx = new Regex(@"ses_[A-Za-z0-9]+", RegexOptions.Compiled);
+        foreach (var db in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(db)) continue;
+            List<string> found;
+            try
+            {
+                var text = Encoding.UTF8.GetString(File.ReadAllBytes(db));
+                found = rx.Matches(text).Select(m => m.Value).ToList();
+            }
+            catch { continue; }
+
+            foreach (var id in found)
+                yield return id;
+        }
     }
 
     private static (int deleted, int failed) DeleteFiles(IEnumerable<string> files)
@@ -223,13 +257,21 @@ public static class SessionCleanerService
             || RunExit("opencode", $"session remove {id}", 8000) == 0;
     }
 
+    private static string ResolveCommand(string file)
+    {
+        if (file.Equals("opencode", StringComparison.OrdinalIgnoreCase)
+            && AgentRegistry.Find("opencode") is { } agent
+            && AgentRegistry.ResolvePath(agent) is { } path)
+            return path;
+        return file;
+    }
     private static string? Run(string file, string args, int timeoutMs)
     {
         try
         {
             var psi = new ProcessStartInfo
             {
-                FileName = file,
+                FileName = ResolveCommand(file),
                 Arguments = args,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -255,7 +297,7 @@ public static class SessionCleanerService
         {
             var psi = new ProcessStartInfo
             {
-                FileName = file,
+                FileName = ResolveCommand(file),
                 Arguments = args,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
