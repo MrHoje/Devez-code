@@ -716,9 +716,10 @@ public sealed class TerminalSessionManager
 
             const string script = """
                 # DevezCode claude room session tracker (SessionStart hook)
-                # 세션 ID 추적은 UserPromptSubmit(busy 'running')에서만 한다 — 사용자가 실제로 메시지를 보낸
-                # 세션만 기록해, 방을 열고 대화하지 않은 빈 세션(--session-id 시작 등)이 직전의 실제 대화 ID 를
-                # 덮어써 영구 소실시키는 것을 막는다. SessionStart 는 /clear 전환만 처리한다.
+                # 세션 ID 추적은 다음 시점에 기록한다:
+                #  - SessionStart 에서 source 가 resume(명시적 세션 전환), clear(/clear), compact(내부 재구성) → 즉시 기록
+                #  - UserPromptSubmit(busy 'running') 에서 사용자가 메시지를 보낸 세션 → 추가 기록
+                # startup(앱 시작 시 --session-id)은 빈 세션 ID가 기존 대화를 덮는 것을 방지하기 위해 제외.
                 # roomId 는 settings command 인자(우선) 또는 env 로 받는다(claude 가 env 를 자식에 못 넘기는
                 # 환경 대비 — 인자가 1차, env 는 폴백).
                 param([string]$roomArg = '')
@@ -728,9 +729,9 @@ public sealed class TerminalSessionManager
                   # session_id 가 비면(claude stdin 포맷/필드명 변경 대비) transcript_path 파일명(<sid>.jsonl)에서 복구한다.
                   $sid = '' + $j.session_id
                   if (-not $sid) { try { $sid = [System.IO.Path]::GetFileNameWithoutExtension('' + $j.transcript_path) } catch { } }
-                  # /clear: 새 (빈) 세션으로 명시 전환. 이전 대화는 복원하지 않는다(정책). 새 session_id 를 추적에
-                  # 박아 다음 실행이 빈 새 세션으로 시작하게 하고, 헤더 lastmsg 를 비워 세션 타이틀로 복귀시킨다.
-                  if ($room -and $sid -and $j.source -eq 'clear') {
+                  # /clear·/resume·compact: 세션 전환 발생. 새 session_id 를 추적에 박아 다음 실행 시
+                  # 해당 세션으로 바로 복원되게 한다. /clear 는 lastmsg 도 비워 세션 타이틀로 복귀.
+                  if ($room -and $sid -and ($j.source -eq 'clear' -or $j.source -eq 'resume' -or $j.source -eq 'compact')) {
                     $room = $room -replace '[^\w\-]', ''
                     $dir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
                     New-Item -ItemType Directory -Force -Path $dir | Out-Null
