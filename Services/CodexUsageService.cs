@@ -12,6 +12,7 @@ namespace DevezCode.Services;
 public sealed class CodexUsageService : IDisposable
 {
     private const string UsageUrl = "https://chatgpt.com/backend-api/wham/usage";
+    private const string CreditsUrl = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
     private const int PollMs = 3 * 60 * 1000;
     private static readonly string[] AuthKeys = { "openai", "codex", "chatgpt", "opencode" };
 
@@ -102,7 +103,11 @@ public sealed class CodexUsageService : IDisposable
 
             string? plan = root.TryGetProperty("plan_type", out var pt) && pt.ValueKind == JsonValueKind.String
                 ? DerivePlanLabel(pt.GetString()) : null;
-            Updated?.Invoke(new ProviderUsage { Provider = "codex", Primary = primary, Weekly = weekly, PlanLabel = plan });
+
+            // 초기화권 정보는 별도 엔드포인트 — 실패해도 사용량은 정상 전달
+            var credits = await FetchResetCreditsAsync(token, accountId, _http).ConfigureAwait(false);
+
+            Updated?.Invoke(new ProviderUsage { Provider = "codex", Primary = primary, Weekly = weekly, PlanLabel = plan, ResetCredits = credits });
         }
         catch { /* 일시 오류 — 직전 값 유지 */ }
     }
@@ -126,6 +131,53 @@ public sealed class CodexUsageService : IDisposable
         if (raw.Contains("pro"))  return "OpenAI (Pro)";
         if (raw.Contains("plus")) return "OpenAI (Plus)";
         return string.IsNullOrEmpty(planType) ? "OpenAI" : $"OpenAI ({planType})";
+    }
+
+    /// <summary>/wham/rate-limit-reset-credits 를 호출해 초기화권 목록을 읽는다. 실패 시 빈 배열.</summary>
+    private static async Task<IReadOnlyList<ResetCredit>> FetchResetCreditsAsync(string token, string? accountId, HttpClient http)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, CreditsUrl);
+            req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+            req.Headers.TryAddWithoutValidation("User-Agent", "OpenCode-Quota-Toast/1.0");
+            req.Headers.TryAddWithoutValidation("OpenAI-Beta", "codex-1");
+            if (accountId != null) req.Headers.TryAddWithoutValidation("ChatGPT-Account-Id", accountId);
+
+            using var res = await http.SendAsync(req).ConfigureAwait(false);
+            if (!res.IsSuccessStatusCode) return Array.Empty<ResetCredit>();
+
+            await using var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("credits", out var arr) || arr.ValueKind != JsonValueKind.Array)
+                return Array.Empty<ResetCredit>();
+
+            var list = new List<ResetCredit>(arr.GetArrayLength());
+            foreach (var item in arr.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "초기화권" : "초기화권";
+                DateTimeOffset? granted = TryParseTimestamp(item, "granted_at");
+                DateTimeOffset? expires = TryParseTimestamp(item, "expires_at");
+                list.Add(new ResetCredit { Title = title, GrantedAt = granted, ExpiresAt = expires });
+            }
+            return list;
+        }
+        catch
+        {
+            return Array.Empty<ResetCredit>();
+        }
+    }
+
+    private static DateTimeOffset? TryParseTimestamp(JsonElement obj, string key)
+    {
+        if (!obj.TryGetProperty(key, out var v) || v.ValueKind != JsonValueKind.String) return null;
+        var s = v.GetString();
+        if (string.IsNullOrEmpty(s)) return null;
+        if (DateTimeOffset.TryParse(s.Replace("Z", "+00:00"), out var dt)) return dt;
+        return null;
     }
 
     /// <summary>auth.json 에서 (accessToken, accountId, 만료여부). 없으면 (null,null,false).</summary>

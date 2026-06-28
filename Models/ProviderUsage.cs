@@ -7,6 +7,17 @@ public sealed class UsageWindow
     public DateTimeOffset? ResetsAt { get; init; }
 }
 
+/// <summary>codex 초기화권(뱅크드 리셋) 1개 정보.</summary>
+public sealed class ResetCredit
+{
+    /// <summary>"Full reset (Weekly + 5 hr)"</summary>
+    public required string Title { get; init; }
+    /// <summary>지급 시각.</summary>
+    public DateTimeOffset? GrantedAt { get; init; }
+    /// <summary>만료 시각. null 이면 만료 정보 없음.</summary>
+    public DateTimeOffset? ExpiresAt { get; init; }
+}
+
 /// <summary>codex(openai)·opencode-go 등 비-Claude provider 의 사용량 스냅샷.
 /// Claude 는 <see cref="RateLimitSnapshot"/> 를 따로 쓰고, 이건 푸터의 추가 provider 칸에 쓴다.</summary>
 public sealed class ProviderUsage
@@ -23,5 +34,7 @@ public sealed class ProviderUsage
     /// <summary>오류/재로그인 안내 메시지. 정상이면 null.</summary>
     public string? Error { get; init; }
 
+    /// <summary>초기화권(뱅크드 리셋) 목록. codex 만 채워짐.</summary>
+    public IReadOnlyList<ResetCredit> ResetCredits { get; init; } = Array.Empty<ResetCredit>();
     public bool HasData => Primary != null || Weekly != null || Monthly != null;
 }

@@ -50,7 +50,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.8.0", "2026-06-28", true, new[]
+        ("v1.8.1", "2026-06-28", true, new[]
+        {
+            "계정 사용량 패널에 OpenAI Codex 초기화권 개수와 유효기간을 표시합니다.",
+            "기타 사소한 오류를 수정했습니다.",
+        }),
+        ("v1.8.0", "2026-06-28", false, new[]
         {
             "사용하지 않는 세션을 한 번에 정리하는 세션 클리너 기능을 추가했습니다.",
             "OpenCode 데이터베이스 용량을 정리(VACUUM)하는 기능을 추가했습니다.",

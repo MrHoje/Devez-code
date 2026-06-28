@@ -586,7 +586,60 @@ public partial class MainWindow : Window
         AddRow(rows, "5시간", u.Primary?.UsedPercent, u.Primary?.ResetsAt, isShortWindow: true);
         AddRow(rows, "주간", u.Weekly?.UsedPercent, u.Weekly?.ResetsAt, isShortWindow: false);
         AddRow(rows, "월간", u.Monthly?.UsedPercent, u.Monthly?.ResetsAt, isShortWindow: false);
-        cards.Add(new Models.UsageCardVM { Name = name, Plan = u.PlanLabel, IconPath = iconPath, Rows = rows });
+
+        // codex 초기화권 정보
+        var credits = u.ResetCredits.Count > 0
+            ? u.ResetCredits.Select(ToResetCreditRow).ToArray()
+            : Array.Empty<Models.ResetCreditRowVM>();
+
+        cards.Add(new Models.UsageCardVM
+        {
+            Name = name,
+            Plan = u.PlanLabel,
+            IconPath = iconPath,
+            Rows = rows,
+            ResetCredits = credits,
+        });
+    }
+
+    private static Models.ResetCreditRowVM ToResetCreditRow(Models.ResetCredit c)
+    {
+        DateTimeOffset? expires = c.ExpiresAt;
+        if (expires == null) return new Models.ResetCreditRowVM { ExpiryText = "—", DaysLeftText = "", IsExpiringSoon = false };
+
+        var local = expires.Value.ToLocalTime();
+        var expiry = local.ToString("M월 d일 HH:mm");
+
+        var span = local - DateTimeOffset.Now;
+        string daysText;
+        bool soon;
+        if (span.TotalHours < 0)
+        {
+            daysText = "만료됨";
+            soon = true;
+        }
+        else if (span.TotalDays < 1)
+        {
+            daysText = "오늘 만료";
+            soon = true;
+        }
+        else if (span.TotalDays < 2)
+        {
+            daysText = "내일 만료";
+            soon = true;
+        }
+        else
+        {
+            daysText = $"{(int)Math.Ceiling(span.TotalDays)}일 남음";
+            soon = span.TotalDays <= 3;
+        }
+
+        return new Models.ResetCreditRowVM
+        {
+            ExpiryText = $"~ {expiry}",
+            DaysLeftText = daysText,
+            IsExpiringSoon = soon,
+        };
     }
 
     /// <summary>사용률 값이 있을 때만 행을 추가. 단기 윈도우는 "남은 시간", 그 외는 "초기화 일시"로 안내.</summary>
@@ -735,6 +788,22 @@ public partial class MainWindow : Window
         if (u.Monthly?.UsedPercent is double m)
             sb.Append($"\n월간 한도 {m:F0}%  ·  초기화 {FormatResetDate(u.Monthly.ResetsAt)}");
         if (u.Error != null) sb.Append('\n').Append(u.Error);
+
+        // 초기화권 — codex 전용
+        if (u.ResetCredits.Count > 0)
+        {
+            sb.Append($"\n\n초기화 {u.ResetCredits.Count}회 가능");
+            var now = DateTimeOffset.Now;
+            foreach (var c in u.ResetCredits)
+            {
+                var expiry = c.ExpiresAt?.ToLocalTime();
+                var daysLeft = expiry != null ? (int)Math.Ceiling((expiry.Value - now).TotalDays) : 0;
+                var expiryStr = expiry != null ? expiry.Value.ToString("M월 d일 HH:mm") : "—";
+                var daysStr = expiry == null ? "" : daysLeft < 0 ? "만료됨" : daysLeft == 0 ? "오늘 만료" : $"{daysLeft}일 남음";
+                sb.Append($"\n  ~ {expiryStr}  {daysStr}");
+            }
+        }
+
         return sb.ToString();
     }
 

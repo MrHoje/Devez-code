@@ -637,7 +637,43 @@
                                                                 </Grid>
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>
+
                                                     </ItemsControl>
+                                                    <!-- ── 초기화권 (codex 전용) ── -->
+                                                    <StackPanel Visibility="{Binding ResetCreditsVisibility}" Margin="0,8,0,0">
+                                                        <TextBlock Text="{Binding ResetHeaderText}" 
+                                                                   FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,6"/>
+                                                        <ItemsControl ItemsSource="{Binding ResetCredits}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate DataType="{x:Type models:ResetCreditRowVM}">
+                                                                    <Grid Margin="0,0,0,3">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <TextBlock Text="{Binding ExpiryText}"
+                                                                                   FontSize="{DynamicResource Fs11}"
+                                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                                                        <TextBlock Grid.Column="1" Text="{Binding DaysLeftText}"
+                                                                                   Margin="8,0,0,0"
+                                                                                   FontSize="{DynamicResource Fs11}" FontWeight="SemiBold">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock">
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding IsExpiringSoon}" Value="True">
+                                                                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>
