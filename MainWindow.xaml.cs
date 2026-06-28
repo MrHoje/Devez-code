@@ -73,6 +73,19 @@ public partial class MainWindow : Window
     private readonly GajaeLastMessageService _gajaeLastMsg = new();
     private readonly DiscordBotService _discordBot = DiscordBotService.Instance;
 
+    static MainWindow()
+    {
+        // 모든 Button 이 키보드 포커스를 가지지 못하게 한다.
+        // 버튼을 클릭하면 포커스가 그대로 남아 Enter 를 누를 때마다 다시 클릭되는 문제 방지.
+        // (상단바/탭/하단 설정/클리너 등 모든 버튼에 일괄 적용. IsDefault/IsCancel 동작에는 영향 없음.)
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.Button),
+            System.Windows.FrameworkElement.LoadedEvent,
+            new RoutedEventHandler((s, e) =>
+            {
+                if (s is System.Windows.Controls.Button b) b.Focusable = false;
+            }));
+    }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -2229,6 +2242,17 @@ public partial class MainWindow : Window
         var s = FindSession(r.SessionId);
         if (s == null) return;
         try { Activate(); OpenSession(s); } catch { /* best effort */ }
+    }
+
+    /// <summary>완료기록 카드의 x 버튼 → 해당 기록 한 건만 제거하고 저장. (카드 클릭=세션 열기와 분리)</summary>
+    private void HistoryDelete_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true; // 카드 MouseLeftButtonUp(세션 열기)로 버블링 방지
+        if ((sender as FrameworkElement)?.DataContext is not SessionCompletionRecord r) return;
+        _sessionDoneRecords.Remove(r);
+        SettingsService.SaveSessionHistoryRecords(
+            new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+        UpdateSessionHistoryEmpty();
     }
 
     /// <summary>응답 대기 카드 클릭 → 해당 세션을 열어 선택지에 답할 수 있게 한다.</summary>

@@ -359,11 +359,15 @@
                                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                                    FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource TextBrush}"/>
-                                                        <!-- 완료카드의 시간 위치에 노란색 '대기' 표시 -->
+                                                        <!-- 완료카드의 시간 위치에 노란색 '대기' 표시. 위로 3px 올림. -->
                                                         <TextBlock Grid.Row="0" Grid.Column="2" Text="대기" Margin="8,0,0,0"
                                                                    VerticalAlignment="Center"
-                                                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource WarningBrush}"/>
+                                                                   FontSize="{DynamicResource Fs10}" FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource WarningBrush}">
+                                                            <TextBlock.RenderTransform>
+                                                                <TranslateTransform Y="-3"/>
+                                                            </TextBlock.RenderTransform>
+                                                        </TextBlock>
                                                         <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
                                                                    Text="{Binding LastMessage}" Margin="0,5,0,0"
                                                                    FontSize="{DynamicResource Fs12}"
@@ -383,10 +387,10 @@
                                                         </TextBlock>
                                                     </Grid>
                                                 </Border>
-                                                <!-- 좌측 강조 strip(warning) — 대기 카드 표식 -->
-                                                <Border Width="3" VerticalAlignment="Stretch"
-                                                        HorizontalAlignment="Left" Margin="-1,21,0,19"
-                                                        Background="{DynamicResource WarningBrush}" CornerRadius="1"/>
+                                                <!-- 토스트 스택 좌측 액센트(warning) — 대기 카드 표식.
+                                                     완료기록과 동일하게 카드 라운드(10)의 '좌측만 두꺼운' 보더로 모서리를 따라 가늘어지게. -->
+                                                <Border IsHitTestVisible="False" CornerRadius="10"
+                                                        BorderThickness="2.5,0,0,0" BorderBrush="{DynamicResource WarningBrush}"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -444,10 +448,36 @@
                                                             </TextBlock.RenderTransform>
                                                         </TextBlock>
                                                     </StackPanel>
-                                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding TimeText}" Margin="8,0,0,0"
-                                                               VerticalAlignment="Center"
-                                                               FontSize="{DynamicResource Fs12}"
-                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    <!-- 시간 + 카드 제거(x) 버튼. 위로 3px 올림(TranslateTransform). -->
+                                                    <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal"
+                                                                Margin="8,0,0,0" VerticalAlignment="Center">
+                                                        <StackPanel.RenderTransform>
+                                                            <TranslateTransform Y="-2"/>
+                                                        </StackPanel.RenderTransform>
+                                                        <TextBlock Text="{Binding TimeText}" VerticalAlignment="Center"
+                                                                   FontSize="{DynamicResource Fs10}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                                        <Button Width="16" Height="16" Margin="6,0,-2,0" VerticalAlignment="Center"
+                                                                Click="HistoryDelete_Click" Cursor="Arrow"
+                                                                Background="Transparent" BorderThickness="0"
+                                                                FocusVisualStyle="{x:Null}" ToolTip="기록 제거">
+                                                            <Button.Template>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border x:Name="Bd" Background="Transparent" CornerRadius="4">
+                                                                        <Path Width="8" Height="8" Stretch="Uniform" StrokeThickness="1.4"
+                                                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                                              Stroke="{DynamicResource TextMutedBrush}"
+                                                                              Data="M18 6 6 18 M6 6 l12 12"/>
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Button.Template>
+                                                        </Button>
+                                                    </StackPanel>
                                                     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
                                                                Text="{Binding SessionName}" Margin="0,5,0,0"
                                                                TextTrimming="CharacterEllipsis"
@@ -473,10 +503,10 @@
                                                     </TextBlock>
                                                 </Grid>
                                             </Border>
-                                                <!-- strip: 카드 Border 바깥에 배치, CornerRadius 클리핑 없음 -->
-                                                <Border Width="3" VerticalAlignment="Stretch"
-                                                        HorizontalAlignment="Left" Margin="-1,21,0,19"
-                                                        Background="{DynamicResource PrimaryBrush}" CornerRadius="1"
+                                                <!-- 토스트 스택 좌측 액센트: 카드와 동일한 라운드(10)의 '좌측만 두꺼운' 보더로 그려
+                                                     모서리를 따라 자연스럽게 가늘어지게 한다(오른쪽 세로선이 뚝 떨어지지 않음). -->
+                                                <Border IsHitTestVisible="False" CornerRadius="10"
+                                                        BorderThickness="2.5,0,0,0" BorderBrush="{DynamicResource PrimaryBrush}"
                                                         Visibility="{Binding IsRead, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}"/>
                                             </Grid>
                                         </DataTemplate>
