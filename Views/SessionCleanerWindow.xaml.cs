@@ -13,7 +13,7 @@ public partial class SessionCleanerWindow : Window
 {
     private CleanerAgentKind _current;
     private readonly List<CleanerAgentKind> _visibleAgents = new();
-    private readonly Dictionary<CleanerAgentKind, int?> _counts = new();
+    private readonly Dictionary<CleanerAgentKind, CleanerScanInfo?> _counts = new();
     private readonly HashSet<CleanerAgentKind> _loading = new();
 
     public SessionCleanerWindow()
@@ -114,8 +114,8 @@ public partial class SessionCleanerWindow : Window
         if (kind == _current) ApplyCurrentCount();
         try
         {
-            var count = await Task.Run(() => SessionCleanerService.GetCount(kind));
-            _counts[kind] = count;
+            var info = await Task.Run(() => SessionCleanerService.GetScanInfo(kind));
+            _counts[kind] = info;
         }
         catch
         {
@@ -139,12 +139,12 @@ public partial class SessionCleanerWindow : Window
             return;
         }
 
-        if (_counts.TryGetValue(_current, out var count) && count is int c)
+        if (_counts.TryGetValue(_current, out var info) && info is { } scan)
         {
             CountSpinner.Visibility = Visibility.Collapsed;
             AgentCountText.Visibility = Visibility.Visible;
-            AgentCountText.Text = c.ToString();
-            DeleteBtn.IsEnabled = c > 0;
+            AgentCountText.Text = $"{scan.Count}개 ({FormatBytes(scan.Bytes)})";
+            DeleteBtn.IsEnabled = scan.Count > 0;
             return;
         }
 
@@ -156,17 +156,30 @@ public partial class SessionCleanerWindow : Window
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAgentAsync(_current);
 
-    private async Task<int> EnsureCurrentCountAsync()
+    private static string FormatBytes(long bytes)
     {
-        if (_counts.TryGetValue(_current, out var cached) && cached is int c) return c;
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        double value = Math.Max(0, bytes);
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.#} {units[unit]}";
+    }
+
+    private async Task<CleanerScanInfo> EnsureCurrentScanAsync()
+    {
+        if (_counts.TryGetValue(_current, out var cached) && cached is { } scan) return scan;
         await RefreshAgentAsync(_current);
-        return _counts.TryGetValue(_current, out var count) && count is int v ? v : 0;
+        return _counts.TryGetValue(_current, out var count) && count is { } v ? v : new CleanerScanInfo(0, 0);
     }
 
     private async void DeleteCurrent_Click(object sender, RoutedEventArgs e)
     {
-        var count = await EnsureCurrentCountAsync();
-        if (count <= 0)
+        var scan = await EnsureCurrentScanAsync();
+        if (scan.Count <= 0)
         {
             await RefreshAgentAsync(_current);
             return;
@@ -174,7 +187,7 @@ public partial class SessionCleanerWindow : Window
 
         var name = AgentTitle.Text;
         var ok = ConfirmDialog.Show("DevezCode에서 관리중이지 않은 세션 삭제",
-            $"{name}의 DevezCode에서 관리중이지 않은 세션 {count}개를 PC에서 완전 삭제합니다.\n\n" +
+            $"{name}의 DevezCode에서 관리중이지 않은 세션 {scan.Count}개를 PC에서 완전 삭제합니다.\n\n" +
             "DevezCode가 현재 관리 중인 세션은 삭제 대상에서 제외됩니다.",
             okLabel: "삭제", danger: true, iconKey: "IconTrash2");
         if (!ok) return;

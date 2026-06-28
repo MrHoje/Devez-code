@@ -16,6 +16,7 @@ public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCl
     public int FailedTotal => Failed.Total;
 }
 public enum CleanerAgentKind { Claude, OpenCode, Gajae }
+public sealed record CleanerScanInfo(int Count, long Bytes);
 
 public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, bool ShowClaude, bool ShowOpenCode, bool ShowGajae)
 {
@@ -44,17 +45,30 @@ public static class SessionCleanerService
             enabled.ShowGajae);
     }
 
-    public static int GetCount(CleanerAgentKind kind)
+    public static int GetCount(CleanerAgentKind kind) => GetScanInfo(kind).Count;
+
+    public static CleanerScanInfo GetScanInfo(CleanerAgentKind kind)
     {
         var managed = ManagedSnapshot.Load();
         return kind switch
         {
-            CleanerAgentKind.Claude => EnumerateUnmanagedClaude(managed).Count,
-            CleanerAgentKind.OpenCode => EnumerateUnmanagedOpenCode(managed).Count,
-            CleanerAgentKind.Gajae => EnumerateUnmanagedGajae(managed).Count,
-            _ => 0,
+            CleanerAgentKind.Claude => FromFiles(EnumerateUnmanagedClaude(managed)),
+            CleanerAgentKind.OpenCode => new CleanerScanInfo(EnumerateUnmanagedOpenCode(managed).Count, OpenCodeStoreBytes()),
+            CleanerAgentKind.Gajae => FromFiles(EnumerateUnmanagedGajae(managed)),
+            _ => new CleanerScanInfo(0, 0),
         };
     }
+
+    private static CleanerScanInfo FromFiles(IReadOnlyCollection<string> files)
+    {
+        long bytes = 0;
+        foreach (var f in files)
+        {
+            try { if (File.Exists(f)) bytes += new FileInfo(f).Length; } catch { }
+        }
+        return new CleanerScanInfo(files.Count, bytes);
+    }
+
 
 
     public static SessionCleanerResult DeleteUnmanaged()
@@ -256,6 +270,22 @@ public static class SessionCleanerService
             foreach (var id in found)
                 yield return id;
         }
+    }
+
+    private static long OpenCodeStoreBytes()
+    {
+        long bytes = 0;
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        foreach (var p in new[]
+        {
+            Path.Combine(home, ".local", "share", "opencode", "opencode.db"),
+            Path.Combine(home, ".local", "share", "opencode", "opencode.db-wal"),
+            Path.Combine(home, ".local", "share", "opencode", "opencode.db-shm"),
+        })
+        {
+            try { if (File.Exists(p)) bytes += new FileInfo(p).Length; } catch { }
+        }
+        return bytes;
     }
 
     private static (int deleted, int failed) DeleteFiles(IEnumerable<string> files)
