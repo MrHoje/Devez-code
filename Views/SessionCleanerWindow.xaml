@@ -71,7 +71,7 @@
                         MouseLeftButtonDown="Header_DragMove">
                     <Grid>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEraser}"
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBrushCleaning}"
                                   Width="16" Height="16" VerticalAlignment="Center"
                                   Stroke="{DynamicResource TextBrush}" Margin="0,-1,11,0"/>
                             <TextBlock Text="세션 클리너" VerticalAlignment="Center"
@@ -131,53 +131,60 @@
                                        TextAlignment="Center" Margin="0,8,0,0"/>
                         </StackPanel>
 
-                        <StackPanel x:Name="ContentPanel">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <Image x:Name="AgentTitleIcon" Width="24" Height="24" Margin="0,0,10,0" VerticalAlignment="Center"
-                                       RenderOptions.BitmapScalingMode="HighQuality"/>
-                                <TextBlock x:Name="AgentTitle" FontSize="{DynamicResource Fs18}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                        <Grid x:Name="ContentPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Image x:Name="AgentTitleIcon" Width="24" Height="24" Margin="0,0,10,0" VerticalAlignment="Center"
+                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                    <TextBlock x:Name="AgentTitle" FontSize="{DynamicResource Fs18}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock x:Name="AgentDescription" Text="DevezCode에서 관리중이지 않은 세션을 표시합니다."
+                                           TextWrapping="Wrap" Margin="0,0,0,22"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+
+                                <Border Padding="18" CornerRadius="12" Background="{DynamicResource PanelSoftBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Margin="0,0,0,16">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid VerticalAlignment="Center" HorizontalAlignment="Left">
+                                            <Ellipse x:Name="CountSpinner" Width="28" Height="28" Visibility="Collapsed"
+                                                     HorizontalAlignment="Left"
+                                                     Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2.4"
+                                                     StrokeDashArray="22 100" StrokeDashCap="Round"
+                                                     RenderTransformOrigin="0.5,0.5">
+                                                <Ellipse.RenderTransform>
+                                                    <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                                </Ellipse.RenderTransform>
+                                            </Ellipse>
+                                            <TextBlock x:Name="AgentCountText" Text="-"
+                                                       FontSize="34" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                        </Grid>
+                                        <Button Grid.Column="1" Content="새로고침" Style="{StaticResource SecondaryButton}"
+                                                Height="34" Padding="14,0" VerticalAlignment="Center" Click="Refresh_Click"/>
+                                    </Grid>
+                                </Border>
+
+                                <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}">
+                                    <Run Text="DevezCode가 현재 관리 중인 세션은 삭제 대상에서 제외됩니다."/>
+                                    <LineBreak/>
+                                    <Run Text="이 작업은 PC에서 세션 기록을 완전 삭제하며 복구할 수 없습니다."/>
+                                </TextBlock>
                             </StackPanel>
-                            <TextBlock x:Name="AgentDescription" Text="DevezCode에서 관리중이지 않은 세션을 표시합니다."
-                                       TextWrapping="Wrap" Margin="0,0,0,22"
-                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
 
-                            <Border Padding="18" CornerRadius="12" Background="{DynamicResource PanelSoftBrush}"
-                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Margin="0,0,0,16">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <Ellipse x:Name="CountSpinner" Width="28" Height="28" Visibility="Collapsed"
-                                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2.4"
-                                                 StrokeDashArray="22 100" StrokeDashCap="Round"
-                                                 RenderTransformOrigin="0.5,0.5" Margin="0,4,0,3">
-                                            <Ellipse.RenderTransform>
-                                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                                            </Ellipse.RenderTransform>
-                                        </Ellipse>
-                                        <TextBlock x:Name="AgentCountText" Text="-"
-                                                   FontSize="34" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
-                                    </StackPanel>
-                                    <Button Grid.Column="1" Content="새로고침" Style="{StaticResource SecondaryButton}"
-                                            Height="34" Padding="14,0" VerticalAlignment="Center" Click="Refresh_Click"/>
-                                </Grid>
-                            </Border>
-
-                            <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,18">
-                                <Run Text="DevezCode가 현재 관리 중인 세션은 삭제 대상에서 제외됩니다."/>
-                                <LineBreak/>
-                                <Run Text="이 작업은 PC에서 세션 기록을 완전 삭제하며 복구할 수 없습니다."/>
-                            </TextBlock>
-
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Content="닫기" Style="{StaticResource SecondaryButton}" Height="36" MinWidth="82" Margin="0,0,8,0" Click="CloseBtn_Click"/>
-                                <Button x:Name="DeleteBtn" Content="세션 삭제" Style="{StaticResource PrimaryButton}" Height="36" MinWidth="128" Click="DeleteCurrent_Click"/>
-                            </StackPanel>
-                        </StackPanel>
+                            <Button Grid.Row="2" x:Name="DeleteBtn" Content="세션 삭제" Style="{StaticResource PrimaryButton}"
+                                    Height="36" MinWidth="128" HorizontalAlignment="Right" Click="DeleteCurrent_Click"/>
+                        </Grid>
                     </Grid>
                 </Grid>
             </Grid>
