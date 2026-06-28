@@ -13,14 +13,16 @@ public partial class SessionCleanerWindow : Window
 {
     private CleanerAgentKind _current;
     private readonly List<CleanerAgentKind> _visibleAgents = new();
+    private readonly Dictionary<CleanerAgentKind, int?> _counts = new();
+    private readonly HashSet<CleanerAgentKind> _loading = new();
 
     public SessionCleanerWindow()
     {
         InitializeComponent();
-        Loaded += async (_, _) =>
+        Loaded += (_, _) =>
         {
             BuildVisibleAgents();
-            await RefreshCurrentAsync();
+            StartRefreshAll();
         };
         SizeChanged += (_, _) => ApplyRoundedClip();
     }
@@ -49,10 +51,10 @@ public partial class SessionCleanerWindow : Window
     private void SetAgentVisible(CleanerAgentKind kind, Button button, bool visible)
     {
         button.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        if (visible) _visibleAgents.Add(kind);
+        if (visible) { _visibleAgents.Add(kind); _counts[kind] = null; }
     }
 
-    private async void Category_Click(object sender, RoutedEventArgs e)
+    private void Category_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button b || b.Tag is not string tag) return;
         SetActive(tag switch
@@ -61,7 +63,7 @@ public partial class SessionCleanerWindow : Window
             "gajae" => CleanerAgentKind.Gajae,
             _ => CleanerAgentKind.Claude,
         });
-        await RefreshCurrentAsync();
+        ApplyCurrentCount();
     }
 
     private void SetActive(CleanerAgentKind kind)
@@ -99,31 +101,74 @@ public partial class SessionCleanerWindow : Window
         button.Foreground = selected ? primary : text;
     }
 
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshCurrentAsync();
-
-    private async Task RefreshCurrentAsync()
+    private void StartRefreshAll()
     {
-        if (_visibleAgents.Count == 0) return;
-        AgentCountText.Text = "…";
-        DeleteBtn.IsEnabled = false;
+        foreach (var kind in _visibleAgents)
+            _ = RefreshAgentAsync(kind);
+        ApplyCurrentCount();
+    }
+
+    private async Task RefreshAgentAsync(CleanerAgentKind kind)
+    {
+        _loading.Add(kind);
+        if (kind == _current) ApplyCurrentCount();
         try
         {
-            var count = await Task.Run(() => SessionCleanerService.GetCount(_current));
-            AgentCountText.Text = count.ToString();
-            DeleteBtn.IsEnabled = count > 0;
+            var count = await Task.Run(() => SessionCleanerService.GetCount(kind));
+            _counts[kind] = count;
         }
         catch
         {
-            AgentCountText.Text = "-";
+            _counts[kind] = null;
         }
+        finally
+        {
+            _loading.Remove(kind);
+            if (kind == _current) ApplyCurrentCount();
+        }
+    }
+
+    private void ApplyCurrentCount()
+    {
+        if (_visibleAgents.Count == 0) return;
+        if (_loading.Contains(_current))
+        {
+            AgentCountText.Visibility = Visibility.Collapsed;
+            CountSpinner.Visibility = Visibility.Visible;
+            DeleteBtn.IsEnabled = false;
+            return;
+        }
+
+        if (_counts.TryGetValue(_current, out var count) && count is int c)
+        {
+            CountSpinner.Visibility = Visibility.Collapsed;
+            AgentCountText.Visibility = Visibility.Visible;
+            AgentCountText.Text = c.ToString();
+            DeleteBtn.IsEnabled = c > 0;
+            return;
+        }
+
+        CountSpinner.Visibility = Visibility.Collapsed;
+        AgentCountText.Visibility = Visibility.Visible;
+        AgentCountText.Text = "-";
+        DeleteBtn.IsEnabled = false;
+    }
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAgentAsync(_current);
+
+    private async Task<int> EnsureCurrentCountAsync()
+    {
+        if (_counts.TryGetValue(_current, out var cached) && cached is int c) return c;
+        await RefreshAgentAsync(_current);
+        return _counts.TryGetValue(_current, out var count) && count is int v ? v : 0;
     }
 
     private async void DeleteCurrent_Click(object sender, RoutedEventArgs e)
     {
-        var count = await Task.Run(() => SessionCleanerService.GetCount(_current));
+        var count = await EnsureCurrentCountAsync();
         if (count <= 0)
         {
-            await RefreshCurrentAsync();
+            await RefreshAgentAsync(_current);
             return;
         }
 
@@ -134,10 +179,11 @@ public partial class SessionCleanerWindow : Window
             okLabel: "삭제", danger: true, iconKey: "IconTrash2");
         if (!ok) return;
 
-        AgentCountText.Text = "…";
+        AgentCountText.Visibility = Visibility.Collapsed;
+        CountSpinner.Visibility = Visibility.Visible;
         DeleteBtn.IsEnabled = false;
         var result = await Task.Run(() => SessionCleanerService.DeleteUnmanaged(_current));
-        await RefreshCurrentAsync();
+        await RefreshAgentAsync(_current);
 
         var message = result.failed == 0
             ? $"{name}의 DevezCode에서 관리중이지 않은 세션 {result.deleted}개를 삭제했습니다."

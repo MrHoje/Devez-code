@@ -150,6 +150,14 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center">
+                                        <Ellipse x:Name="CountSpinner" Width="28" Height="28" Visibility="Collapsed"
+                                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2.4"
+                                                 StrokeDashArray="22 100" StrokeDashCap="Round"
+                                                 RenderTransformOrigin="0.5,0.5" Margin="0,4,0,3">
+                                            <Ellipse.RenderTransform>
+                                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                            </Ellipse.RenderTransform>
+                                        </Ellipse>
                                         <TextBlock x:Name="AgentCountText" Text="-"
                                                    FontSize="34" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                     </StackPanel>
