@@ -166,8 +166,8 @@
                                                     <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
                                                 </Ellipse.RenderTransform>
                                             </Ellipse>
-                                            <TextBlock x:Name="AgentCountText" Text="-"
-                                                       FontSize="34" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock x:Name="AgentCountText"
+                                                       FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                         </Grid>
                                         <Button Grid.Column="1" Content="새로고침" Style="{StaticResource SecondaryButton}"
                                                 Height="34" Padding="14,0" VerticalAlignment="Center" Click="Refresh_Click"/>

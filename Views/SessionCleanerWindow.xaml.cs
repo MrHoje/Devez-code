@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Documents;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -143,14 +144,17 @@ public partial class SessionCleanerWindow : Window
         {
             CountSpinner.Visibility = Visibility.Collapsed;
             AgentCountText.Visibility = Visibility.Visible;
-            AgentCountText.Text = $"{scan.Count}개 ({FormatBytes(scan.Bytes)})";
+            AgentCountText.Inlines.Clear();
+            AgentCountText.Inlines.Add(new Run($"{scan.Count} ") { FontSize = 34, FontWeight = FontWeights.SemiBold });
+            AgentCountText.Inlines.Add(new Run($"({FormatBytes(scan.Bytes)})") { FontSize = 17, FontWeight = FontWeights.SemiBold });
             DeleteBtn.IsEnabled = scan.Count > 0;
             return;
         }
 
         CountSpinner.Visibility = Visibility.Collapsed;
         AgentCountText.Visibility = Visibility.Visible;
-        AgentCountText.Text = "-";
+        AgentCountText.Inlines.Clear();
+        AgentCountText.Inlines.Add(new Run("-") { FontSize = 34, FontWeight = FontWeights.SemiBold });
         DeleteBtn.IsEnabled = false;
     }
 
