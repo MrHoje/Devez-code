@@ -284,7 +284,7 @@
                                         Style="{StaticResource IconButton}"
                                         ToolTip="모든 기록 지우기">
                                     <Path Style="{StaticResource LucideButtonIcon}"
-                                          Data="{StaticResource IconTrash2}" Width="12" Height="12"/>
+                                          Data="{StaticResource IconBrushCleaning}" Width="12" Height="12"/>
                                 </Button>
                                 </StackPanel>
                             </Grid>
