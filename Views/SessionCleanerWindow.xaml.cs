@@ -160,6 +160,23 @@ public partial class SessionCleanerWindow : Window
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAgentAsync(_current);
 
+    private async void VacuumBtn_Click(object sender, RoutedEventArgs e)
+    {
+        VacuumBtn.IsEnabled = false;
+        VacuumBtn.Content = "정리 중...";
+        try
+        {
+            var result = await Task.Run(() => SessionCleanerService.VacuumOpenCodeDb());
+            ConfirmDialog.Alert("OpenCode DB 정리", result);
+            await RefreshAgentAsync(CleanerAgentKind.OpenCode);
+        }
+        finally
+        {
+            VacuumBtn.IsEnabled = true;
+            VacuumBtn.Content = "OpenCode DB 정리";
+        }
+    }
+
     private static string FormatBytes(long bytes)
     {
         string[] units = { "B", "KB", "MB", "GB", "TB" };

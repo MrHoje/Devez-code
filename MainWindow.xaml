@@ -71,7 +71,7 @@
                                VerticalAlignment="Center" Margin="3,1,0,0"/>
                     <!-- 왼쪽 패널 접기/펼치기 — 타이틀 바로 옆에 배치(원위치) -->
                     <Button x:Name="LeftPanelBtn" Click="LeftPanelBtn_Click" Margin="8,0,0,0"
-                            Style="{StaticResource TitleBarChipButton}" ToolTip="왼쪽 패널 접기/펼치기">
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="왼쪽 패널 접기/펼치기 (F1)">
                         <Path x:Name="LeftPanelIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
@@ -113,7 +113,7 @@
 
                     <!-- ── 우 패널 접기/펼치기 (좌측 패널 버튼은 타이틀 로고 블록으로 이동) ──── -->
                     <Button x:Name="RightPanelBtn" Click="RightPanelBtn_Click"
-                            Style="{StaticResource TitleBarChipButton}" ToolTip="오른쪽 패널 접기/펼치기">
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="오른쪽 패널 접기/펼치기 (F2)">
                         <Path x:Name="RightPanelIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconPanelRight}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
@@ -123,13 +123,13 @@
 
                     <!-- ── 세션 완료 기록 패널 접기/펼치기 (우측 패널 → 계정 사용량 순) ──── -->
                     <Button x:Name="SessionHistoryPanelBtn" Click="SessionHistoryPanelBtn_Click"
-                            Style="{StaticResource TitleBarChipButton}" ToolTip="세션 완료 기록 패널 접기/펼치기">
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="세션 완료 기록 패널 접기/펼치기 (F3)">
                         <Path x:Name="SessionHistoryPanelIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconClock}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
                     <Button x:Name="UsagePanelBtn" Click="UsagePanelBtn_Click" Margin="2,0,0,0"
-                            Style="{StaticResource TitleBarChipButton}" ToolTip="계정 사용량 패널 접기/펼치기">
+                            Style="{StaticResource TitleBarChipButton}" ToolTip="계정 사용량 패널 접기/펼치기 (F4)">
                         <Path x:Name="UsagePanelIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconChartBar}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>

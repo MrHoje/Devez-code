@@ -155,6 +155,7 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid VerticalAlignment="Center" HorizontalAlignment="Left">
                                             <Ellipse x:Name="CountSpinner" Width="28" Height="28" Visibility="Collapsed"
@@ -171,6 +172,9 @@
                                         </Grid>
                                         <Button Grid.Column="1" Content="새로고침" Style="{StaticResource SecondaryButton}"
                                                 Height="34" Padding="14,0" VerticalAlignment="Center" Click="Refresh_Click"/>
+                                        <Button Grid.Column="2" x:Name="VacuumBtn" Content="OpenCode DB 정리"
+                                                Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0"
+                                                VerticalAlignment="Center" Margin="8,0,0,0" Click="VacuumBtn_Click"/>
                                     </Grid>
                                 </Border>
 

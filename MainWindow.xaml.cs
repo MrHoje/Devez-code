@@ -1071,10 +1071,28 @@ public partial class MainWindow : Window
     private void SessionHistoryPanelBtn_Click(object sender, RoutedEventArgs e)
         => SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true, animate: true);
 
-    /// <summary>F1 — 계정 사용량 사이드바 토글.</summary>
+    /// <summary>F1~F4 — 패널 토글 단축키.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == System.Windows.Input.Key.F1)
+        {
+            LeftPanelBtn_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == System.Windows.Input.Key.F2)
+        {
+            RightPanelBtn_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == System.Windows.Input.Key.F3)
+        {
+            SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true, animate: true);
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == System.Windows.Input.Key.F4)
         {
             SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
             e.Handled = true;

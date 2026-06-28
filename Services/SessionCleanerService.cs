@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Data.Sqlite;
 
 namespace DevezCode.Services;
 
@@ -375,5 +376,62 @@ public static class SessionCleanerService
             return p.ExitCode;
         }
         catch { return -1; }
+    }
+
+    public static string VacuumOpenCodeDb()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var dbPath = Path.Combine(home, ".local", "share", "opencode", "opencode.db");
+        if (!File.Exists(dbPath)) return "DB 파일이 없습니다.";
+
+        var before = OpenCodeStoreBytes();
+
+        // 실행 중인 opencode 프로세스 종료
+        var killed = false;
+        foreach (var proc in Process.GetProcessesByName("opencode"))
+        {
+            try { proc.Kill(); proc.WaitForExit(5000); killed = true; }
+            catch { }
+        }
+
+        try
+        {
+            using var conn = new SqliteConnection($"Data Source={dbPath};Pooling=False");
+            conn.Open();
+
+            // WAL 체크포인트 + VACUUM
+            using var cmd1 = conn.CreateCommand();
+            cmd1.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            cmd1.ExecuteNonQuery();
+
+            using var cmd2 = conn.CreateCommand();
+            cmd2.CommandText = "VACUUM;";
+            cmd2.ExecuteNonQuery();
+
+            var after = OpenCodeStoreBytes();
+            var saved = before - after;
+
+            var parts = new List<string>();
+            if (killed) parts.Add("OpenCode를 종료했습니다.");
+            parts.Add($"DB를 정리했습니다: {FormatBytes(saved)} 확보 (이전 {FormatBytes(before)} → 이후 {FormatBytes(after)})");
+            return string.Join(" ", parts);
+        }
+        catch (Exception ex)
+        {
+            return $"DB 정리 실패: {ex.Message}";
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        double value = Math.Max(0, bytes);
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.#} {units[unit]}";
     }
 }
