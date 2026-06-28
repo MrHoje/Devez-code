@@ -733,12 +733,12 @@
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
                         -->
-                        <Button x:Name="CleanerBtn" Style="{StaticResource WinCtrlBtn}" Click="CleanerBtn_Click"
-                                ToolTip="세션 클리너" Margin="0,0,2,0">
+                        <Button x:Name="CleanerBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
+                                Click="CleanerBtn_Click" ToolTip="세션 클리너" Margin="0,0,2,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBrushCleaning}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
-                        <Button Style="{StaticResource WinCtrlBtn}" Click="SettingsBtn_Click"
+                        <Button Style="{StaticResource WinCtrlBtn}" Width="30" Click="SettingsBtn_Click"
                                 ToolTip="설정" Margin="0,0,4,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
