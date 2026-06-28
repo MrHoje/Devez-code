@@ -99,20 +99,6 @@
     font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
   }
   @keyframes dz-spin { to { transform: rotate(360deg); } }
-  /* ── 스크롤 맨 아래로 버튼 (우측 하단, 세션이 스크롤 위에 있을 때만 표시) ── */
-  #scroll-bottom-btn {
-    position: absolute; bottom: 10px; right: 10px; z-index: 20;
-    width: 30px; height: 30px; padding: 0;
-    display: flex; align-items: center; justify-content: center;
-    border: none; border-radius: 8px;
-    background: rgba(255,255,255,0.09);
-    color: var(--term-fg, #CCCCCC);
-    cursor: pointer; opacity: 0; transition: opacity 0.2s ease;
-    pointer-events: none;
-  }
-  #scroll-bottom-btn.visible { opacity: 1; pointer-events: auto; }
-  #scroll-bottom-btn:hover { background: rgba(255,255,255,0.16); }
-  #scroll-bottom-btn svg { width: 20px; height: 20px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
@@ -127,7 +113,6 @@
   <button id="search-next" title="다음 (Enter)">&#8595;</button>
   <button id="search-close" title="닫기 (Esc)">&#10005;</button>
 </div>
-<button id="scroll-bottom-btn" title="맨 아래로 스크롤 (Ctrl+Shift+End)"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></button>
 <script>
 (function () {
   'use strict';
@@ -136,19 +121,8 @@
   const terms = {};
   let cfg = { theme: {}, fontFamily: 'Cascadia Mono', fontSize: 16 };
   let activeRoomId = null;
-let _scrollSuppress = 0; // >0이면 출력 쓰기 후 스크롤 복원
-let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
-let _atBottom = true;    // 현재 활성 세션의 viewport 가 맨 아래인지 여부
-const _scrollBtn = document.getElementById('scroll-bottom-btn');
-function updateScrollBtn() {
-  const visible = !_atBottom && activeRoomId != null && terms[activeRoomId] && !terms[activeRoomId].dead;
-  _scrollBtn.classList.toggle('visible', visible);
-}
-_scrollBtn.addEventListener('click', function () {
-  const t = activeRoomId ? terms[activeRoomId] : null;
-  if (!t || t.dead) return;
-  try { t.term.scrollToBottom(); } catch (e) {}
-});
+  let _scrollSuppress = 0; // >0이면 출력 쓰기 후 스크롤 복원
+  let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
@@ -233,18 +207,20 @@ _scrollBtn.addEventListener('click', function () {
     }
   }
 
-// 출력 쓰기 — 맨 아래 보고 있으면 자동으로 따라 내리고, 위를 보고 있으면 현재 위치 유지.
-function writeOut(t, bytes) {
-  if (Date.now() < _pinBottomUntil || _atBottom) {
-    t.term.write(bytes);
-    requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
-  } else {
-    const vp = t.term.element.querySelector('.xterm-viewport');
-    const saved = vp ? vp.scrollTop : 0;
-    t.term.write(bytes);
-    if (vp) requestAnimationFrame(function () { vp.scrollTop = saved; });
-  }
-}
+  // pin/suppress 정책을 적용해 실제 term 에 쓴다(기존 output 분기 로직을 함수화).
+  function writeOut(t, bytes) {
+    if (Date.now() < _pinBottomUntil) {
+      t.term.write(bytes);
+      requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
+    } else if (_scrollSuppress > 0) {
+      _scrollSuppress--;
+      const vp = t.term.element.querySelector('.xterm-viewport');
+      const saved = vp ? vp.scrollTop : 0;
+      t.term.write(bytes);
+      if (vp) requestAnimationFrame(function () { vp.scrollTop = saved; });
+    } else {
+      t.term.write(bytes);
+    }
   }
 
   // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
@@ -600,12 +576,6 @@ function writeOut(t, bytes) {
       // 동안엔 리사이즈 후에도 맨 아래로 고정해 위/아래 튐을 막는다.
       if (Date.now() < _pinBottomUntil)
         requestAnimationFrame(function () { try { term.scrollToBottom(); } catch (e) {} });
-    });
-    // ── 스크롤 위치 추적 ──────────────────────────────────────────────
-    term.onScroll(function () {
-      const buf = term.buffer.active;
-      _atBottom = buf.viewportY >= Math.max(0, buf.baseY - 1);
-      if (roomId === activeRoomId) updateScrollBtn();
     });
     return entry;
   }
