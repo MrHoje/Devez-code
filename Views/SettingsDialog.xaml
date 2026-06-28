@@ -222,15 +222,6 @@
                                         <TextBlock Text="알림" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="CatDiscordBtn" Tag="discord"
-                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconServer}" Width="15" Height="15"
-                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="Discord" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
                                 <Button x:Name="CatProjectBtn" Tag="project"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -283,6 +274,15 @@
                                               Data="{StaticResource IconZap}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="단축키" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CatDiscordBtn" Tag="discord"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconServer}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Discord" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="CatChangelogBtn" Tag="changelog"
