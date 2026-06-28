@@ -91,8 +91,6 @@ public static class SettingsService
         public double? WindowWidth  { get; set; }
         public double? WindowHeight { get; set; }
         public bool    WindowMaximized { get; set; }
-        // 창 투명도 (0.3~1.0). 기본 1.0(불투명).
-        public double WindowOpacity { get; set; } = 1.0;
         // 우측 패널 마지막 활성 탭 (0=탐색기, 1=브라우저, 2=DIFF, 3=작업 큐). 기본=3.
         public int FileExpActiveTab { get; set; } = 3;
         // 사이드 패널 뷰 전환 버튼 표시 여부. 기본=모두 표시.
@@ -594,15 +592,6 @@ public static class SettingsService
         Current.WindowMaximized = maximized;
         Save();
     }
-    // ── 창 투명도 ────────────────────────────────────────────
-    public static double LoadWindowOpacity() => Current.WindowOpacity;
-    public static void SaveWindowOpacity(double v)
-    {
-        v = Math.Clamp(v, 0.3, 1.0);
-        Current.WindowOpacity = v;
-        Save();
-    }
-
 
     // ── 방이 한 번이라도 실행됐는지 (resume 판단용) ──────────────
     public static bool IsClaudeCodeRoomLaunched(string roomId)

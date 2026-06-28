@@ -723,20 +723,16 @@
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
                     </StackPanel>
-                    <!-- 우측: 설정 버튼 / 투명도 슬라이더 (우측 패널 접힘과 무관하게 항상 노출). -->
+                    <!-- 우측: 설정 버튼 (MCP 서버 버튼은 보류 — 2026-06 보류, 재활성 시 Visibility 제거 + Uncomment).
+                         컬럼은 FooterFileExpCol(FooterActionsCol)이 아닌 별도 고정폭 컬럼에 둔다 — 우측 패널 접힘과 무관하게 항상 노출. -->
                     <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <!-- 투명도 슬라이더 -->
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEye}"
-                              Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"
-                              VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <Slider x:Name="OpacitySlider" Minimum="0.3" Maximum="1.0" SmallChange="0.05" LargeChange="0.1"
-                                Width="70" Height="20"
-                                ValueChanged="OpacitySlider_ValueChanged"
-                                VerticalAlignment="Center" Margin="0,0,8,0"
-                                Foreground="{DynamicResource PrimaryBrush}"
-                                Background="{DynamicResource LineBrush}"
-                                IsDirectionReversed="False"
-                                ToolTip="창 투명도 조절"/>
+                        <!--
+                        <Button Style="{StaticResource WinCtrlBtn}" Click="McpBtn_Click"
+                                ToolTip="MCP 서버" Margin="0,0,2,0">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
+                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
+                        -->
                         <Button Style="{StaticResource WinCtrlBtn}" Click="SettingsBtn_Click"
                                 ToolTip="설정" Margin="0,0,4,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"

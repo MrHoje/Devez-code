@@ -348,10 +348,6 @@ public partial class MainWindow : Window
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
             ApplySidePanelButtonVisibility();
-            // 저장된 창 투명도 복원 (Win32 layered window API — WindowChrome 호환)
-            var savedOpacity = SettingsService.LoadWindowOpacity();
-            OpacitySlider.Value = savedOpacity;
-            ApplyWindowOpacity(savedOpacity);
             // 전역 단축키: (기본)한자 + 좌/우 방향키 → 포커스 패널의 세션 탭 이전/다음 이동.
             // 우리 앱이 포그라운드가 아니어도(다른 앱/터미널 점유 중에도) 동작 — 전환 후 창을 앞으로.
             var (hkMod, hkPrev, hkNext) = SettingsService.LoadTabHotkey();
@@ -2568,29 +2564,6 @@ public partial class MainWindow : Window
         ApplyFooterUsageVisibility();
     }));
 
-    // ── Win32 레이어드 윈도우로 진짜 투명도 적용 ──────────────
-    /// <summary>WindowChrome 과 호환되는 Win32 SetLayeredWindowAttributes 로 창 투명도를 설정한다.</summary>
-    private void ApplyWindowOpacity(double opacity)
-    {
-        opacity = Math.Clamp(opacity, 0.3, 1.0);
-        if (_mainHwnd == IntPtr.Zero) return;
-        // WS_EX_LAYERED 확장 스타일을 추가 (한 번만 하면 유지)
-        int exStyle = GetWindowLong(_mainHwnd, GWL_EXSTYLE);
-        if ((exStyle & WS_EX_LAYERED) == 0)
-            SetWindowLong(_mainHwnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
-        byte alpha = (byte)(opacity * 255);
-        SetLayeredWindowAttributes(_mainHwnd, 0, alpha, LWA_ALPHA);
-    }
-
-    // ── 창 투명도 슬라이더 ─────────────────────────────────────
-    private void OpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        var val = Math.Clamp(e.NewValue, 0.3, 1.0);
-        ApplyWindowOpacity(val);
-        SettingsService.SaveWindowOpacity(val);
-    }
-
-
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
@@ -3126,8 +3099,6 @@ public partial class MainWindow : Window
     // 생략한다(즉시 변함). 캡션 스타일을 Win32 레벨에서 다시 부여하면 DWM 이 "일반 창"으로 보고
     // 부드러운 전환을 그려준다. 시각적 캡션/테두리는 WindowChrome 의 NCCALCSIZE 가 덮어 안 보인다.
     private const int GWL_STYLE   = -16;
-    private const int GWL_EXSTYLE = -20;
-    private const int WS_EX_LAYERED = 0x80000;
     private const int WS_CAPTION  = 0x00C00000;
 
     private void EnableDwmTransitions(IntPtr hwnd)
@@ -3135,9 +3106,6 @@ public partial class MainWindow : Window
         int style = GetWindowLong(hwnd, GWL_STYLE);
         SetWindowLong(hwnd, GWL_STYLE, style | WS_CAPTION);
     }
-
-    private const int LWA_ALPHA = 0x2;
-    [DllImport("user32.dll")] private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
     [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
