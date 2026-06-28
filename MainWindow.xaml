@@ -76,9 +76,9 @@
                               Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
-                    <Border Width="1" Height="16" Margin="6,0,6,0" VerticalAlignment="Center"
+                    <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
                             Background="{DynamicResource LineBrush}" Opacity="0.5"/>
-                    <Button x:Name="SplitToggleBtn" Click="SplitToggleBtn_Click" Margin="2,0,0,0"
+                    <Button x:Name="SplitToggleBtn" Click="SplitToggleBtn_Click" Margin="0,0,0,0"
                             Style="{StaticResource TitleBarChipButton}" ToolTip="패널 분할">
                         <Path x:Name="SplitToggleIcon" Style="{StaticResource LucideIcon}"
                               Data="{StaticResource IconPanelLeftOpen}" Width="16" Height="16"
@@ -90,7 +90,7 @@
                 <StackPanel Orientation="Horizontal" Margin="0,0,4,0" HorizontalAlignment="Right"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <!-- 성능 모니터 칩(CPU/RAM) — 상단 타이틀바. -->
-                    <StackPanel x:Name="PerfChipGroup" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <StackPanel x:Name="PerfChipGroup" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,0">
                         <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
                                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
                                 Style="{StaticResource PerfChipButton}">
@@ -108,7 +108,7 @@
                             </StackPanel>
                         </Button>
                     </StackPanel>
-                    <Border Width="1" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"
+                    <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
                             Background="{DynamicResource LineBrush}" Opacity="0.5"/>
 
                     <!-- ── 우 패널 접기/펼치기 (좌측 패널 버튼은 타이틀 로고 블록으로 이동) ──── -->
@@ -118,7 +118,7 @@
                               Data="{StaticResource IconPanelRight}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
-                    <Border Width="1" Height="16" Margin="6,0,8,0" VerticalAlignment="Center"
+                    <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
                             Background="{DynamicResource LineBrush}" Opacity="0.5"/>
 
                     <!-- ── 세션 완료 기록 패널 접기/펼치기 (우측 패널 → 계정 사용량 순) ──── -->
@@ -134,7 +134,7 @@
                               Data="{StaticResource IconChartBar}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
-                    <Border Width="1" Height="16" Margin="6,0,8,0" VerticalAlignment="Center"
+                    <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
                             Background="{DynamicResource LineBrush}" Opacity="0.5"/>
 
                     <Button Style="{StaticResource WinCtrlBtn}" Click="MinBtn_Click">

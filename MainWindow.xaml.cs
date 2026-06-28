@@ -75,14 +75,21 @@ public partial class MainWindow : Window
 
     static MainWindow()
     {
-        // 모든 Button 이 키보드 포커스를 가지지 못하게 한다.
-        // 버튼을 클릭하면 포커스가 그대로 남아 Enter 를 누를 때마다 다시 클릭되는 문제 방지.
-        // (상단바/탭/하단 설정/클리너 등 모든 버튼에 일괄 적용. IsDefault/IsCancel 동작에는 영향 없음.)
-        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.Button),
+        // 모든 버튼류(Button/ToggleButton/RadioButton 등 ButtonBase)가 키보드 포커스를
+        // 절대 가지지 못하게 한다. 버튼을 마우스로 클릭하면 포커스가 그대로 남아
+        // 이후 Enter/Space 를 누를 때마다 같은 버튼이 계속 클릭되는 문제 방지.
+        // (상단바/탭/하단 설정/클리너 등 모든 버튼 일괄. 마우스 클릭과 IsDefault/IsCancel 동작에는 영향 없음.)
+        var buttonBase = typeof(System.Windows.Controls.Primitives.ButtonBase);
+        // ① 포커스가 들어오려는 순간 취소 → 어떤 경로로도 키보드 포커스를 못 받음.
+        EventManager.RegisterClassHandler(buttonBase,
+            System.Windows.Input.Keyboard.PreviewGotKeyboardFocusEvent,
+            new System.Windows.Input.KeyboardFocusChangedEventHandler((s, e) => e.Handled = true));
+        // ② 보조: Focusable 자체도 끔(Tab 이동 대상에서도 제외).
+        EventManager.RegisterClassHandler(buttonBase,
             System.Windows.FrameworkElement.LoadedEvent,
             new RoutedEventHandler((s, e) =>
             {
-                if (s is System.Windows.Controls.Button b) b.Focusable = false;
+                if (s is System.Windows.Controls.Primitives.ButtonBase b) b.Focusable = false;
             }));
     }
 
@@ -653,7 +660,7 @@ public partial class MainWindow : Window
         RateLimitPanel.Visibility = Visibility.Visible;
         UpdateFooterDivider();
         SetBar(RlFiveLabel, RlFiveBar, RlFivePct,
-               FormatRemainingShort(snap.FiveHourResetsAt) ?? "5시간", snap.FiveHourPercent);
+               FormatRemainingShort(snap.FiveHourResetsAt) ?? "5h", snap.FiveHourPercent);
         SetBar(RlSevenLabel, RlSevenBar, RlSevenPct, "주간", snap.SevenDayPercent);
         RateLimitPanel.ToolTip = BuildRlTooltip(snap);
     }
@@ -737,7 +744,7 @@ public partial class MainWindow : Window
         if (resetsAt is not DateTimeOffset r) return null;
         var span = r.ToLocalTime() - DateTimeOffset.Now;
         if (span <= TimeSpan.Zero) return "곧";
-        return span.TotalHours >= 1 ? $"{(int)span.TotalHours}시간{span.Minutes}분" : $"{span.Minutes}분";
+        return span.TotalHours >= 1 ? $"{(int)span.TotalHours}h{span.Minutes}m" : $"{span.Minutes}m";
     }
 
     /// <summary>opencode.ai 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>

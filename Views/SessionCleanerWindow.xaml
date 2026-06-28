@@ -156,7 +156,7 @@
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Grid VerticalAlignment="Center" HorizontalAlignment="Left">
+                                        <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
                                             <Ellipse x:Name="CountSpinner" Width="28" Height="28" Visibility="Collapsed"
                                                      HorizontalAlignment="Left"
                                                      Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2.4"
@@ -166,9 +166,11 @@
                                                     <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
                                                 </Ellipse.RenderTransform>
                                             </Ellipse>
-                                            <TextBlock x:Name="AgentCountText"
+                                            <TextBlock x:Name="AgentCountText" VerticalAlignment="Center"
                                                        FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
-                                        </Grid>
+                                            <TextBlock x:Name="AgentCapacityText" Margin="20,0,0,0" VerticalAlignment="Center"
+                                                       FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                        </StackPanel>
                                         <Button Grid.Column="1" Content="새로고침" Style="{StaticResource SecondaryButton}"
                                                 Height="34" Padding="14,0" VerticalAlignment="Center" Click="Refresh_Click"/>
                                     </Grid>
