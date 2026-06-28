@@ -145,7 +145,7 @@ public partial class SessionCleanerWindow : Window
             CountSpinner.Visibility = Visibility.Collapsed;
             AgentCountText.Visibility = Visibility.Visible;
             AgentCountText.Inlines.Clear();
-            AgentCountText.Inlines.Add(new Run($"{scan.Count} ") { FontSize = 34, FontWeight = FontWeights.SemiBold });
+            AgentCountText.Inlines.Add(new Run($"{scan.Count} ") { FontSize = 32, FontWeight = FontWeights.SemiBold });
             AgentCountText.Inlines.Add(new Run($"({FormatBytes(scan.Bytes)})") { FontSize = 17, FontWeight = FontWeights.SemiBold });
             DeleteBtn.IsEnabled = scan.Count > 0;
             return;
@@ -154,7 +154,7 @@ public partial class SessionCleanerWindow : Window
         CountSpinner.Visibility = Visibility.Collapsed;
         AgentCountText.Visibility = Visibility.Visible;
         AgentCountText.Inlines.Clear();
-        AgentCountText.Inlines.Add(new Run("-") { FontSize = 34, FontWeight = FontWeights.SemiBold });
+        AgentCountText.Inlines.Add(new Run("-") { FontSize = 32, FontWeight = FontWeights.SemiBold });
         DeleteBtn.IsEnabled = false;
     }
 
