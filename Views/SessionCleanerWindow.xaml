@@ -183,7 +183,7 @@
                                 </TextBlock>
 
                                 <StackPanel x:Name="VacuumSection" Margin="0,4,0,12" Visibility="Collapsed">
-                                    <Separator Margin="0,0,0,14" Background="{DynamicResource LineBrush}"/>
+                                    <Separator Margin="0,14,0,14" Background="{DynamicResource LineBrush}"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource Fs11}"
                                                Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10">
                                         <Run Text="OpenCode는 SQLite를 사용하여 세션을 저장합니다. "/>

@@ -246,7 +246,7 @@ public static class SessionCleanerService
             .ToList();
     }
 
-    private static IEnumerable<string> EnumerateOpenCodeIdsFromDb()
+    private static List<string> EnumerateOpenCodeIdsFromDb()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -256,21 +256,30 @@ public static class SessionCleanerService
             Path.Combine(appData, "opencode", "opencode.db"),
         };
 
-        var rx = new Regex(@"ses_[A-Za-z0-9]+", RegexOptions.Compiled);
+        var results = new List<string>();
         foreach (var db in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (!File.Exists(db)) continue;
-            List<string> found;
             try
             {
-                var text = Encoding.UTF8.GetString(File.ReadAllBytes(db));
-                found = rx.Matches(text).Select(m => m.Value).ToList();
+                using var conn = new SqliteConnection($"Data Source={db};Pooling=False;Mode=ReadOnly");
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT id FROM sessions WHERE id IS NOT NULL AND id != ''";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var id = reader.GetString(0);
+                    if (!string.IsNullOrEmpty(id))
+                        results.Add(id);
+                }
             }
-            catch { continue; }
-
-            foreach (var id in found)
-                yield return id;
+            catch
+            {
+                // fallback: DB 잠김 등으로 읽을 수 없으면 skip
+            }
         }
+        return results;
     }
 
     private static long OpenCodeStoreBytes()
