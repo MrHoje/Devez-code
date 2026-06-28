@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Globalization;
+using System.Windows.Media.Imaging;
 using DevezCode.Models;
 using DevezCode.Services;
 
@@ -21,6 +22,15 @@ public partial class SessionCleanerWindow : Window
             BuildVisibleAgents();
             await RefreshCurrentAsync();
         };
+        SizeChanged += (_, _) => ApplyRoundedClip();
+    }
+
+    private void ApplyRoundedClip()
+    {
+        var w = ContentBorder.ActualWidth;
+        var h = ContentBorder.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        ContentRoot.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 13, 13);
     }
 
     private void BuildVisibleAgents()
@@ -77,7 +87,9 @@ public partial class SessionCleanerWindow : Window
             CleanerAgentKind.Gajae => "Gajae Code",
             _ => "Claude",
         };
-        AgentTitleIcon.Source = AgentImageConverter.Instance.Convert(agentId, typeof(ImageSource), null, CultureInfo.CurrentCulture) as ImageSource;
+        AgentTitleIcon.Source = AgentImageConverter.Instance.Convert(agentId, typeof(ImageSource), null, CultureInfo.CurrentCulture) is Uri uri
+            ? new BitmapImage(uri)
+            : null;
         AgentDescription.Text = "DevezCode에서 관리중이지 않은 세션을 표시합니다.";
     }
 
