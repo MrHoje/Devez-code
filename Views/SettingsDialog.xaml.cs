@@ -38,6 +38,9 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedHideProjectInfoHeader;
     private bool   _selectedUseFullScreen;
     private int    _selectedProjectColumns;
+    // DeepSeek 연결 토글 — 다른 설정과 동일하게 [저장] 시점에만 디스크 반영(끄고 저장 시 키 삭제).
+    private bool   _originalDeepSeekEnabled;
+    private bool   _selectedDeepSeekEnabled;
 
     // 탭 이동 단축키(가상키코드). 디스크 저장은 [저장] 버튼에서만 — 다른 설정과 동일.
     private int _originalHkMod, _originalHkPrev, _originalHkNext;
@@ -368,6 +371,7 @@ public partial class SettingsDialog : UserControl
             SetActiveCategory(_activeCategoryKey);
             UpdateThemeSelectionVisual();
             UpdateFontSelectionVisual();
+            OpenCodeLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
         }));
     }
 
@@ -412,8 +416,17 @@ public partial class SettingsDialog : UserControl
         ShowFooterClaudeToggle.IsChecked = SettingsService.LoadShowFooterClaude();
         ShowFooterCodexToggle.IsChecked  = SettingsService.LoadShowFooterCodex();
         ShowFooterGoToggle.IsChecked     = SettingsService.LoadShowFooterGo();
+        ShowFooterDeepSeekToggle.IsChecked = SettingsService.LoadShowFooterDeepSeek();
         _loadingFooterUsage = false;
         UpdateConnectionBadges();
+
+        // DeepSeek 연결 토글 상태 복원 — 키가 이미 저장되어 있으면 입력 영역은 숨김
+        bool hasKey = DeepSeekCredentialStore.IsConnected();
+        _originalDeepSeekEnabled = hasKey;
+        _selectedDeepSeekEnabled = hasKey;
+        DeepSeekEnabledToggle.IsChecked = hasKey;
+        DeepSeekKeyArea.Visibility = Visibility.Collapsed;
+        DeepSeekKeyStatus.Visibility = Visibility.Collapsed;
     }
 
     private void FooterUsageToggle_Changed(object sender, RoutedEventArgs e)
@@ -422,6 +435,7 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveShowFooterClaude(ShowFooterClaudeToggle.IsChecked == true);
         SettingsService.SaveShowFooterCodex(ShowFooterCodexToggle.IsChecked == true);
         SettingsService.SaveShowFooterGo(ShowFooterGoToggle.IsChecked == true);
+        SettingsService.SaveShowFooterDeepSeek(ShowFooterDeepSeekToggle.IsChecked == true);
         (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
     }
 
@@ -444,12 +458,53 @@ public partial class SettingsDialog : UserControl
         UpdateConnectionBadges();
     }
 
+    // ── DeepSeek API 키 토글/저장 ─────────────────────────────────
+
+    private void DeepSeekToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        // 디스크 반영은 [저장] 시점에만 — 여기선 선택값과 입력 영역 표시만 토글.
+        _selectedDeepSeekEnabled = DeepSeekEnabledToggle.IsChecked == true;
+        DeepSeekKeyStatus.Visibility = Visibility.Collapsed;
+        // ON + 키 없음 → 키 입력 영역 노출, 그 외(ON+연결됨 / OFF)는 숨김
+        DeepSeekKeyArea.Visibility =
+            _selectedDeepSeekEnabled && !DeepSeekCredentialStore.IsConnected()
+                ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void DeepSeekKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+        => DeepSeekKeyHint.Visibility = string.IsNullOrEmpty(DeepSeekKeyBox.Password)
+            ? Visibility.Visible : Visibility.Collapsed;
+
+    private void DeepSeekSaveKey_Click(object sender, RoutedEventArgs e)
+    {
+        var key = DeepSeekKeyBox.Password?.Trim();
+        if (string.IsNullOrEmpty(key))
+        {
+            DeepSeekKeyStatus.Text = "API 키를 입력하세요.";
+            DeepSeekKeyStatus.Foreground = (Brush)FindResource("DangerBrush");
+            DeepSeekKeyStatus.Visibility = Visibility.Visible;
+            return;
+        }
+
+        DeepSeekCredentialStore.SaveApiKey(key);
+        _originalDeepSeekEnabled = true;   // 즉시 연결 — [저장] 기준값도 갱신
+        _selectedDeepSeekEnabled = true;
+        DeepSeekConnectedBadge.Visibility = Visibility.Visible;
+        DeepSeekKeyBox.Clear();
+        // 저장 직후 입력 영역 숨김 — 토글만 켜진 상태 유지
+        DeepSeekKeyArea.Visibility = Visibility.Collapsed;
+        DeepSeekKeyStatus.Visibility = Visibility.Collapsed;
+
+        (Application.Current.MainWindow as MainWindow)?.RefreshDeepSeekUsage();
+    }
+
     /// <summary>provider 별 "연결됨" 배지를 현재 토큰/자격증명 상태로 갱신.</summary>
     private void UpdateConnectionBadges()
     {
         ClaudeConnectedBadge.Visibility = UsageApiService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
         CodexConnectedBadge.Visibility = CodexUsageService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
         GoConnectedBadge.Visibility = OpenCodeGoCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
+        DeepSeekConnectedBadge.Visibility = DeepSeekCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── 알림 설정 (sidepanel 과 동일하게 즉시 저장 — 테스트가 선택값을 바로 반영) ──
@@ -695,6 +750,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
         if (_selectedProjectColumns != _originalProjectColumns) return true;
+        if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled) return true;
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
@@ -726,6 +782,17 @@ public partial class SettingsDialog : UserControl
             (Application.Current.MainWindow as MainWindow)?.ApplyProjectColumns(_selectedProjectColumns);
         }
         UpdateAgentEnabledInSettings();
+
+        // DeepSeek: 토글 OFF로 저장 → 저장된 키 삭제. (ON은 키 입력 영역의 [저장]에서 이미 반영됨)
+        if (!_selectedDeepSeekEnabled && _originalDeepSeekEnabled)
+        {
+            DeepSeekCredentialStore.SaveApiKey(null);
+            DeepSeekConnectedBadge.Visibility = Visibility.Collapsed;
+            DeepSeekKeyArea.Visibility = Visibility.Collapsed;
+            (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
+            (Application.Current.MainWindow as MainWindow)?.RefreshDeepSeekUsage();
+        }
+        _originalDeepSeekEnabled = _selectedDeepSeekEnabled;
 
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext)
         {
@@ -786,6 +853,12 @@ public partial class SettingsDialog : UserControl
         {
             _selectedProjectColumns = _originalProjectColumns; // 라이브 미적용이라 선택값만 복원
             UpdateProjectColumnsVisual();
+        }
+        if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled)
+        {
+            _selectedDeepSeekEnabled = _originalDeepSeekEnabled; // 미적용 — 선택값만 복원(키는 건드리지 않음)
+            DeepSeekEnabledToggle.IsChecked = _originalDeepSeekEnabled;
+            DeepSeekKeyArea.Visibility = Visibility.Collapsed;
         }
         // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)
         CancelShortcutCapture();

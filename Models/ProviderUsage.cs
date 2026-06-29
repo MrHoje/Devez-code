@@ -36,5 +36,20 @@ public sealed class ProviderUsage
 
     /// <summary>초기화권(뱅크드 리셋) 목록. codex 만 채워짐.</summary>
     public IReadOnlyList<ResetCredit> ResetCredits { get; init; } = Array.Empty<ResetCredit>();
-    public bool HasData => Primary != null || Weekly != null || Monthly != null;
+    /// <summary>통화 잔액(DeepSeek 등 monetary-balance provider). 빈 배열이면 없음.</summary>
+    public IReadOnlyList<BalanceInfo> Balances { get; init; } = Array.Empty<BalanceInfo>();
+    public bool HasData => Primary != null || Weekly != null || Monthly != null || Balances.Count > 0;
+}
+
+/// <summary>통화 잔액 1개 통화 단위(DeepSeek).</summary>
+public sealed class BalanceInfo
+{
+    /// <summary>"CNY" | "USD"</summary>
+    public required string Currency { get; init; }
+    /// <summary>총 잔액 문자열 ("110.00").</summary>
+    public required string TotalBalance { get; init; }
+    /// <summary>무료/프로모션 잔액 ("10.00").</summary>
+    public required string GrantedBalance { get; init; }
+    /// <summary>충전 잔액 ("100.00").</summary>
+    public required string ToppedUpBalance { get; init; }
 }

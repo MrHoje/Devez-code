@@ -713,7 +713,7 @@
                                     <TextBlock Text="계정 사용량" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="계정을 연결하면 사용량 탭과 하단 푸터에서 사용량(5시간/주간 등 한도)을 확인할 수 있습니다."
+                                <TextBlock Text="계정을 연결하면 사용량 탭과 하단 푸터에서 사용량(5시간/주간/크레딧 등 한도)을 확인할 수 있습니다."
                                            FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
 
@@ -721,7 +721,7 @@
                                 <TextBlock Text="계정 연결" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,24,0,12"/>
 
-                                <Grid Margin="0,0,0,14">
+                                <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -748,7 +748,7 @@
                                     </Button>
                                 </Grid>
 
-                                <Grid Margin="0,0,0,14">
+                                <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -775,7 +775,7 @@
                                     </Button>
                                 </Grid>
 
-                                <Grid>
+                                <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -793,13 +793,79 @@
                                     <Button Grid.Column="1" Click="OpenCodeLogin_Click" Style="{StaticResource UsageLoginButton}"
                                             ToolTip="opencode.ai 계정으로 로그인해 사용량 연결">
                                         <StackPanel Orientation="Horizontal">
-                                            <Image Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
+                                            <Image x:Name="OpenCodeLoginIcon" Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
                                                    Width="13" Height="13" VerticalAlignment="Center"
                                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                                             <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
                                                        FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
                                         </StackPanel>
                                     </Button>
+                                </Grid>
+
+                                <!-- DeepSeek (API 키) -->
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="DeepSeek" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                            <StackPanel x:Name="DeepSeekConnectedBadge" Orientation="Horizontal" Visibility="Collapsed"
+                                                        Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <Ellipse Width="6" Height="6" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="연결됨" Margin="5,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <CheckBox x:Name="DeepSeekEnabledToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="DeepSeekToggle_Changed" Unchecked="DeepSeekToggle_Changed"/>
+                                    </Grid>
+                                    <!-- API 키 입력 영역 (토글 ON 일 때만 표시) -->
+                                    <Border x:Name="DeepSeekKeyArea" Grid.Row="1" Margin="0,10,0,0" Padding="12,10"
+                                            CornerRadius="10" Background="{DynamicResource PanelSoftBrush}"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                            Visibility="Collapsed">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Style="{StaticResource DiscordFieldBox}">
+                                                    <Grid>
+                                                        <PasswordBox x:Name="DeepSeekKeyBox"
+                                                                     FontSize="{DynamicResource Fs12}"
+                                                                     Foreground="{DynamicResource TextBrush}"
+                                                                     CaretBrush="{DynamicResource TextBrush}"
+                                                                     Background="Transparent"
+                                                                     BorderThickness="0" Padding="0"
+                                                                     VerticalContentAlignment="Center"
+                                                                     IsTabStop="True"
+                                                                     PasswordChanged="DeepSeekKeyBox_PasswordChanged"/>
+                                                        <TextBlock x:Name="DeepSeekKeyHint" Text="DeepSeek API 키"
+                                                                   FontSize="{DynamicResource Fs12}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                                    </Grid>
+                                                </Border>
+                                                <Button Grid.Column="1" x:Name="DeepSeekSaveKeyBtn" Click="DeepSeekSaveKey_Click"
+                                                        Margin="10,0,0,0" Height="38" Padding="16,0"
+                                                        Style="{StaticResource PrimaryButton}">
+                                                    <TextBlock Text="저장" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                                </Button>
+                                            </Grid>
+                                            <TextBlock x:Name="DeepSeekKeyStatus" Margin="0,6,0,0"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"
+                                                       Visibility="Collapsed"/>
+                                        </StackPanel>
+                                    </Border>
                                 </Grid>
 
                                 <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
@@ -840,7 +906,7 @@
                                               Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
                                 </Grid>
 
-                                <Grid>
+                                <Grid Margin="0,0,0,14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -852,6 +918,22 @@
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <CheckBox x:Name="ShowFooterGoToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                </Grid>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="DeepSeek" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="DeepSeek API 잔액" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowFooterDeepSeekToggle" Grid.Column="1"
                                               Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                               Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
                                 </Grid>

@@ -15,6 +15,10 @@ public partial class App : Application
 
     /// <summary>현재 적용된 테마 ("minimal" | "soft" | "dark").</summary>
     public static string CurrentTheme { get; private set; } = "dark";
+
+    /// <summary>테마별 OpenCode 아이콘 pack URI (dark=흰색, light=검정). 푸터/사용량 패널 공용 소스.</summary>
+    public static string OpenCodeIconUri =>
+        $"pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
     /// <summary>테마 변경 시 발생.</summary>
     public static event Action<string>? ThemeChanged;
     public static event Action<int>? FontScaleChanged;

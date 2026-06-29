@@ -621,12 +621,13 @@
                                                                     <Border Grid.Row="0" Grid.Column="1" Width="102" Height="6"
                                                                             Margin="6,0,0,0" CornerRadius="3"
                                                                             Background="{DynamicResource LineBrush}"
+                                                                            Visibility="{Binding BarVisibility}"
                                                                             VerticalAlignment="Center">
                                                                         <Border Width="{Binding BarWidth}" HorizontalAlignment="Left"
                                                                                 CornerRadius="3" Background="{Binding BarBrush}"/>
                                                                     </Border>
                                                                     <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding PercentText}"
-                                                                               Margin="10,0,0,0" VerticalAlignment="Center"
+                                                                               Margin="{Binding PercentMargin}" VerticalAlignment="Center"
                                                                                FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                                                                Foreground="{DynamicResource TextBrush}"/>
                                                                     <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
@@ -760,7 +761,7 @@
                                     Background="Transparent" Cursor="Arrow">
                             <Border x:Name="GoLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
                                     Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-                            <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
+                            <Image x:Name="GoFooterIcon" Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                             <TextBlock x:Name="GoFiveLabel" VerticalAlignment="Center"
@@ -786,6 +787,17 @@
                                 <Border x:Name="GoMonthBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
                             </Border>
                             <TextBlock x:Name="GoMonthPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
+                        <!-- DeepSeek (API 키 잔액) -->
+                        <StackPanel x:Name="DeepSeekPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
+                                    Background="Transparent" Cursor="Arrow">
+                            <Border x:Name="DeepSeekLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                            <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
+                                   Source="pack://application:,,,/Resources/Images/ShellPresets/deepseek.png"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <TextBlock x:Name="DeepSeekBalanceLabel" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
                     </StackPanel>

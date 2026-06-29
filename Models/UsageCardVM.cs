@@ -11,6 +11,10 @@ public sealed class UsageRowVM
     public string ResetText { get; init; } = "";          // "↻ 1시간23분 후" / "↻ 6월 27일 09:00"
     public double BarWidth { get; init; }                  // 트랙(고정폭) 안 채움 너비 px
     public Brush? BarBrush { get; init; }
+    public bool ShowBar { get; init; } = true;             // false=막대 트랙 자체 숨김(DeepSeek 잔액 행)
+    public System.Windows.Visibility BarVisibility
+        => ShowBar ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    public System.Windows.Thickness PercentMargin { get; init; } = new(10, 0, 0, 0); // %/잔액 텍스트 좌측 여백
     public System.Windows.Visibility ResetVisibility
         => string.IsNullOrEmpty(ResetText) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
 }

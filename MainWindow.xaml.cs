@@ -54,9 +54,11 @@ public partial class MainWindow : Window
     // 추가 provider 사용량(푸터): codex(openai) + opencode-go.
     private readonly CodexUsageService _codex = new();
     private readonly OpenCodeGoUsageService _openCodeGo = new();
+    private readonly DeepSeekUsageService _deepSeek = new();
     // 사용량 팝오버(우측 사이드바)용 최신 스냅샷 보관 — 데이터 있는 provider 만 카드로 노출.
     private Models.ProviderUsage? _lastCodex;
     private Models.ProviderUsage? _lastGo;
+    private Models.ProviderUsage? _lastDeepSeek;
     private readonly SessionBusyService _sessionBusy = new();
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
@@ -397,6 +399,7 @@ public partial class MainWindow : Window
             _usageApi.Dispose();
             _codex.Dispose();
             _openCodeGo.Dispose();
+            _deepSeek.Dispose();
             _sessionBusy.Dispose();
             _modelEffort.Dispose();
             _sessionLastMsg.Dispose();
@@ -549,10 +552,12 @@ public partial class MainWindow : Window
         _usageApi.Start();
 
         // codex·opencode-go 사용량 폴링 → 푸터 패널(데이터 오면 CodexPanel/GoPanel 자동 표시).
-        _codex.Updated      += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
-        _openCodeGo.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _codex.Updated       += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _openCodeGo.Updated  += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _deepSeek.Updated    += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _codex.Start();
         _openCodeGo.Start();
+        _deepSeek.Start();
 
     }
 
@@ -577,10 +582,37 @@ public partial class MainWindow : Window
 
         AddProviderCard(cards, _lastCodex, "Codex",
             "pack://application:,,,/Resources/Images/ShellPresets/codex.png");
-        AddProviderCard(cards, _lastGo, "OpenCode Go",
-            "pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png");
+        AddProviderCard(cards, _lastGo, "OpenCode Go", App.OpenCodeIconUri);
+        AddDeepSeekCard(cards);
 
         return cards;
+    }
+
+    /// <summary>DeepSeek 잔액 텍스트를 사이드바에 추가. 프로그래스바 없이 잔액만 표시.</summary>
+    private void AddDeepSeekCard(List<Models.UsageCardVM> cards)
+    {
+        if (_lastDeepSeek is not { HasData: true } u || u.Balances.Count == 0) return;
+        var b = u.Balances[0];
+        var symbol = b.Currency switch { "CNY" => "¥", "USD" => "$", _ => b.Currency + " " };
+        var rows = new List<Models.UsageRowVM>
+        {
+            new()
+            {
+                Label = "잔액",
+                PercentText = $"{symbol}{b.TotalBalance}",
+                BarWidth = 0,
+                ShowBar = false,
+                PercentMargin = new System.Windows.Thickness(-8, 0, 0, 0), // 막대 없음 — 잔액 라벨 바로 옆(한 칸 띄어쓰기)으로 당김
+                ResetText = "",
+            },
+        };
+        cards.Add(new Models.UsageCardVM
+        {
+            Name = "DeepSeek",
+            Plan = null,
+            IconPath = "pack://application:,,,/Resources/Images/ShellPresets/deepseek.png",
+            Rows = rows,
+        });
     }
 
     /// <summary>ProviderUsage(codex/go) → 카드. 데이터 없으면(미연결/오류) 건너뛴다.</summary>
@@ -692,18 +724,61 @@ public partial class MainWindow : Window
     /// <summary>codex/opencode-go 스냅샷 저장 후 하단 푸터 + 우측 사이드바 갱신.</summary>
     private void ApplyProviderUsage(Models.ProviderUsage u)
     {
-        if (u.Provider == "codex")
+        switch (u.Provider)
         {
-            _lastCodex = u;
-            SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct, CxSevenBar, CxSevenPct, u, "Codex");
-        }
-        else if (u.Provider == "opencode-go")
-        {
-            _lastGo = u;
-            SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go", GoMonthBar, GoMonthPct);
+            case "codex":
+                _lastCodex = u;
+                SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct, CxSevenBar, CxSevenPct, u, "Codex");
+                break;
+            case "opencode-go":
+                _lastGo = u;
+                SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go", GoMonthBar, GoMonthPct);
+                break;
+            case "deepseek":
+                _lastDeepSeek = u;
+                ApplyDeepSeekFooter(u);
+                break;
         }
         RefreshUsagePanelIfVisible();
     }
+
+    /* ── DeepSeek 잔액 푸터 ──────────────────────────────────── */
+
+    /// <summary>DeepSeek 잔액을 하단 푸터에 반영. percent 막대 대신 잔액 텍스트로 표시.</summary>
+    private void ApplyDeepSeekFooter(Models.ProviderUsage u)
+    {
+        bool show = SettingsService.LoadShowFooterDeepSeek();
+        if (!u.HasData || !show || u.Balances.Count == 0)
+        { DeepSeekPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
+
+        DeepSeekPanel.Visibility = Visibility.Visible;
+        UpdateFooterDivider();
+
+        var balance = u.Balances[0];
+        // 통화 기호 매핑
+        var symbol = balance.Currency switch
+        {
+            "CNY" => "¥",
+            "USD" => "$",
+            _ => balance.Currency + " ",
+        };
+        DeepSeekBalanceLabel.Text = $"잔액 {symbol}{balance.TotalBalance}";
+        DeepSeekPanel.ToolTip = BuildDeepSeekTooltip(u);
+    }
+
+    private static string BuildDeepSeekTooltip(Models.ProviderUsage u)
+    {
+        if (u.Balances.Count == 0) return "DeepSeek";
+        var b = u.Balances[0];
+        var sb = new System.Text.StringBuilder();
+        sb.Append("DeepSeek  ·  ").Append(b.Currency == "CNY" ? "위안" : "USD");
+        sb.Append($"\n총 잔액: {b.TotalBalance}");
+        if (u.Error != null) sb.Append('\n').Append(u.Error);
+        return sb.ToString();
+    }
+
+    /// <summary>API 키 저장 직후 MainWindow 에서 즉시 폴링 (SettingsDialog 에서 호출).</summary>
+    public void RefreshDeepSeekUsage() => _deepSeek.RefreshNow();
 
     /* ── 하단 푸터 계정 사용량 (우측 사이드바와 별개; 설정의 '하단 푸터 표시' 토글로 provider별 on/off) ── */
 
@@ -764,8 +839,10 @@ public partial class MainWindow : Window
     {
         bool claude = RateLimitPanel.Visibility == Visibility.Visible;
         bool codex = CodexPanel.Visibility == Visibility.Visible;
+        bool go = GoPanel.Visibility == Visibility.Visible;
         if (CxLeadDivider != null) CxLeadDivider.Visibility = claude ? Visibility.Visible : Visibility.Collapsed;
         if (GoLeadDivider != null) GoLeadDivider.Visibility = (claude || codex) ? Visibility.Visible : Visibility.Collapsed;
+        if (DeepSeekLeadDivider != null) DeepSeekLeadDivider.Visibility = (claude || codex || go) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static string BuildRlTooltip(Models.RateLimitSnapshot snap)
@@ -852,7 +929,8 @@ public partial class MainWindow : Window
         if (_rlMerged != null) ApplyRateLimit(_rlMerged);
         else { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastCodex != null) ApplyProviderUsage(_lastCodex); else { CodexPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
-        if (_lastGo != null)    ApplyProviderUsage(_lastGo);    else { GoPanel.Visibility    = Visibility.Collapsed; UpdateFooterDivider(); }
+        if (_lastGo != null)       ApplyProviderUsage(_lastGo);       else { GoPanel.Visibility       = Visibility.Collapsed; UpdateFooterDivider(); }
+        if (_lastDeepSeek != null) ApplyProviderUsage(_lastDeepSeek); else { DeepSeekPanel.Visibility  = Visibility.Collapsed; UpdateFooterDivider(); }
         RefreshUsagePanelIfVisible();
     }
 
@@ -2690,6 +2768,8 @@ public partial class MainWindow : Window
     {
         UpdatePanelToggleVisual();
         ApplyFooterUsageVisibility();
+        GoFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
+        RefreshUsagePanelIfVisible();                                                                      // 사용량 카드 아이콘도 재빌드
     }));
 
     // ── 세션 클리너 ───────────────────────────────────────────────
