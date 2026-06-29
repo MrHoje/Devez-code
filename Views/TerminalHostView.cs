@@ -71,12 +71,16 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>TerminalReady 를 이미 통지한 방(중복 통지 방지). UI 스레드.</summary>
     private readonly HashSet<string> _readyNotified = new();
     /// <summary>alt-screen 진입 후 이만큼 추가 출력이 없으면 "준비 완료"로 본다.</summary>
-    private static readonly TimeSpan SettleQuiet = TimeSpan.FromMilliseconds(600);
+    private static readonly TimeSpan SettleQuiet = TimeSpan.FromMilliseconds(300);
     /// <summary>alt-screen 진입 시각(Environment.TickCount). UI 스레드.</summary>
     private readonly Dictionary<string, int> _altSeenTick = new();
     /// <summary>alt-screen 진입 후 출력이 계속 흘러도(스피너/시계 등 끊임없는 redraw) 이 시각이 지나면
     /// 무조건 준비 완료로 본다 — settle 이 영원히 안 떨어져 오버레이가 20s 타임아웃까지 남는 것 방지.</summary>
-    private const int MaxSettleAfterAltMs = 1500;
+    private const int MaxSettleAfterAltMs = 700;
+    /// <summary>인라인 TUI(gjc): 첫 출력 시각. 준비 마커가 안 올 때 폴백 타임아웃 기준.</summary>
+    private readonly Dictionary<string, int> _inlineFirstOutTick = new();
+    /// <summary>인라인 TUI 준비 마커(\e[?2004h/\e[?2026h)가 안 와도 이만큼 지나면 준비로 본다(무한 스피너 방지).</summary>
+    private const int InlineReadyFallbackMs = 8000;
 
     private static readonly JsonSerializerOptions CamelCase = new()
     {
@@ -136,20 +140,35 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             BumpSettle(roomId);
             return;
         }
-        // 인라인 렌더 에이전트(gjc 등)는 alt-screen 시퀀스가 없어 첫 출력을 준비 시작으로 본다.
-        // (안 그러면 로딩 오버레이가 20초 타임아웃까지 스피너만 돌고 터미널을 가린다.)
-        if (bytes.Length > 0 &&
-            DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
-        {
-            _ready.Add(roomId);
-            _readyScan.Remove(roomId);
-            _altSeenTick[roomId] = Environment.TickCount;
-            BumpSettle(roomId);
-            return;
-        }
         // 찾는 시퀀스는 모두 ASCII 제어/문자라 ASCII 디코드로 충분
         var text = (_readyScan.TryGetValue(roomId, out var prev) ? prev : string.Empty)
                    + System.Text.Encoding.ASCII.GetString(bytes);
+
+        // 인라인 렌더 에이전트(gjc 등)는 alt-screen 시퀀스가 없다. 단 첫 출력을 준비로 보면
+        // cmd/ConPTY 초기화 노이즈(\e[?9001h\e[?1004h 등)가 gjc 본체보다 먼저 나와, 스피너가 빈 화면에서
+        // 꺼진 뒤 gjc 가 수백ms~수초 후 실제 페인트하는 갭이 보인다. gjc 가 입력/첫 프레임을 그릴 때 내는
+        // 마커로 실제 준비를 판정한다: \e[?2004h(bracketed paste=입력 준비) / \e[?2026h(synchronized update=프레임).
+        // (cmd 초기화는 ?9001/?1004 만 써서 안 걸린다.)
+        if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
+        {
+            bool marker = text.Contains("[?2004h") || text.Contains("[?2026h");
+            // 폴백: 마커가 안 오는 변종/환경에서도 첫 출력 후 일정 시간 지나면 준비로(무한 스피너 방지).
+            if (!_inlineFirstOutTick.TryGetValue(roomId, out var first))
+                _inlineFirstOutTick[roomId] = first = Environment.TickCount;
+            bool fallback = unchecked(Environment.TickCount - first) >= InlineReadyFallbackMs;
+            if (marker || fallback)
+            {
+                _ready.Add(roomId);
+                _readyScan.Remove(roomId);
+                _inlineFirstOutTick.Remove(roomId);
+                _altSeenTick[roomId] = Environment.TickCount;
+                BumpSettle(roomId);
+                return;
+            }
+            _readyScan[roomId] = text.Length > 512 ? text[^512..] : text;
+            return;
+        }
+
         if (text.Contains("[?1049h") || text.Contains("[?47h")) // 풀스크린 TUI(claude 등) 시작
         {
             _ready.Add(roomId);
@@ -640,6 +659,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _readyScan.Remove(roomId);
         _readyNotified.Remove(roomId);
         _altSeenTick.Remove(roomId);
+        _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         _pendingPreload.Remove(roomId);
         if (_activeRoomId == roomId) _activeRoomId = null;
