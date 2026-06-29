@@ -137,6 +137,7 @@
   let cfg = { theme: {}, fontFamily: 'Cascadia Mono', fontSize: 16 };
   let activeRoomId = null;
   let _scrollSuppress = 0; // >0이면 출력 쓰기 후 스크롤 복원
+  let _scrollSuppressTimer = 0; // suppress 잔여 누수 방지용 타임아웃
   let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
@@ -234,7 +235,18 @@
       t.term.write(bytes);
       if (vp) requestAnimationFrame(function () { vp.scrollTop = saved; });
     } else {
+      // near-bottom sticky follow — 쓰기 직전 바닥에서 2줄 이내면 쓴 뒤 맨 아래로 붙인다.
+      // xterm 은 "정확히 바닥"일 때만 새 출력을 자동 추종하는데, gjc 고빈도 재페인트 중 사용자가
+      // 위로 올렸다 바닥 근처까지 내리면 몇 줄 모자라 추종이 끊긴다(맨 아래로 안 붙고 PageDown 필요).
+      // 바닥 근처면 추종을 재개해 일반 터미널처럼 동작. 위로 올려 읽는 중(임계값 밖)엔 개입 안 함.
+      const vp = t.term.element && t.term.element.querySelector('.xterm-viewport');
+      let stick = false;
+      if (vp) {
+        const cell = (vp.clientHeight / t.term.rows) || 16;
+        stick = (vp.scrollHeight - vp.clientHeight - vp.scrollTop) <= cell * 2 + 2;
+      }
       t.term.write(bytes);
+      if (stick) requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
     }
   }
 
@@ -517,6 +529,9 @@
       post({ type: 'action', name: e.deltaY < 0 ? 'fontInc' : 'fontDec' });
       return;
     }
+    // 사용자가 휠로 직접 스크롤 → 프로그램적 스크롤 억제(_scrollSuppress)를 즉시 해제.
+    // (/model·/effort 후 남은 잔여 suppress 카운트가 사용자의 스크롤을 되돌리는 것 방지.)
+    _scrollSuppress = 0;
     // 일반 휠은 xterm 기본 동작(스크롤백 스크롤)에 맡긴다. gjc 는 멀티플렉서 모드(STY)로
     // 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.
   }, { passive: false, capture: true });
@@ -733,7 +748,11 @@
         if (msg.accent) document.documentElement.style.setProperty('--term-accent', msg.accent);
         break;
       case 'suppressScroll':
+        // 프로그램적 입력(/model·/effort) 후 몇 번의 출력 쓰기 동안 스크롤 위치 유지.
+        // 출력이 카운트보다 적게 와 잔여가 남으면 나중 스크롤을 되돌리므로 1.5s 후 강제 0.
         _scrollSuppress = msg.count || 5;
+        clearTimeout(_scrollSuppressTimer);
+        _scrollSuppressTimer = setTimeout(function () { _scrollSuppress = 0; }, 1500);
         break;
       case 'pinBottom':
         _pinBottomUntil = Date.now() + (msg.ms || 2000);
