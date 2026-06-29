@@ -2695,6 +2695,12 @@ public partial class MainWindow : Window
     {
         await SuspendTerminalWithSnapshotAsync(blankCurtain: true);   // 터미널을 숨기고 단색 커튼(배경색)만 보이게.
         var dlg = new Views.SettingsWindow { Owner = this };
+        dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+        dlg.Loaded += (_, _) =>
+        {
+            dlg.Left = Left + (Width - dlg.Width) / 2;
+            dlg.Top = Top + (Height - dlg.Height) / 2;
+        };
         dlg.Closed += (_, _) =>
         {
             ResumeTerminal();
@@ -2710,6 +2716,12 @@ public partial class MainWindow : Window
     {
         await SuspendTerminalWithSnapshotAsync();
         var dlg = new Views.McpManagerWindow { Owner = this };
+        dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+        dlg.Loaded += (_, _) =>
+        {
+            dlg.Left = Left + (Width - dlg.Width) / 2;
+            dlg.Top = Top + (Height - dlg.Height) / 2;
+        };
         dlg.Closed += (_, _) => ResumeTerminal();
         dlg.ShowDialog();
     }

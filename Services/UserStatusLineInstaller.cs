@@ -32,6 +32,17 @@ public static class UserStatusLineInstaller
     /// false 면 node 미설치/PATH 부재로 원클릭 설정이 불가(사용자가 직접 Node.js 설치 필요).</summary>
     public static bool HasNode() => FindNodePath() != null;
 
+    private static string? _cachedNode;
+    private static bool _nodeResolved;
+    /// <summary>node.exe 절대경로(캐시). 못 찾으면 null. 매 호출 where.exe 재실행 방지.</summary>
+    public static string? ResolveNodePath()
+    {
+        if (_nodeResolved) return _cachedNode;
+        _cachedNode = FindNodePath();
+        _nodeResolved = true;
+        return _cachedNode;
+    }
+
     /// <summary>statusline.js 가 설치돼 있고 settings.json 의 statusLine 이 그 스크립트를 가리키는지.</summary>
     public static bool IsInstalled()
     {

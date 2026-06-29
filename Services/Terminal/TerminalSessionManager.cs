@@ -617,6 +617,9 @@ public sealed class TerminalSessionManager
     private static string RoomSettingsPath(string roomId) => Path.Combine(ClaudeTrackDir, "room-settings", SafeRoomFileName(roomId) + ".json");
     // statusLine 훅: stdin 으로 받은 statusLine JSON 을 그대로 파일에 떨군다(계정 rate_limits 추출용).
     private static string StatusLineScriptPath => Path.Combine(ClaudeTrackDir, "statusline-hook.ps1");
+    // statusLine 렌더용 node 스크립트(powershell 체인 대체, ~150ms). 캡처(ratelimit/modeleffort) +
+    // 사용자 statusline.js 스폰 렌더를 한 번의 node 프로세스로 처리한다. node 있을 때만 사용.
+    private static string RoomStatusLineJsPath => Path.Combine(ClaudeTrackDir, "room-statusline.js");
     // busy 훅: UserPromptSubmit(running)/Stop(idle) 시 방별 상태 파일을 써 좌측 트리 스피너를 켜고 끈다.
     private static string BusyHookScriptPath => Path.Combine(ClaudeTrackDir, "busy-hook.ps1");
 
@@ -806,6 +809,50 @@ public sealed class TerminalSessionManager
                 """;
             File.WriteAllText(StatusLineScriptPath, statusScript);
 
+            // statusLine 렌더 node 스크립트: powershell→cmd→node 체인(1.4~2초) 대신 node 한 번(~150ms)으로
+            // ① rate_limits 캡처(ratelimit.json) ② 방별 model/effort 기록 ③ 사용자 statusline.js 스폰 렌더.
+            // DevezCode 내부 세션이 일반 터미널과 동일하게 빠르게 statusLine 을 그리게 한다(resume 빈 줄 해소).
+            const string roomStatusJs = """
+                // DEVEZCODE-ROOM-STATUSLINE v1
+                const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process");
+                const roomArg = (process.argv[2] || process.env.DEVEZCODE_ROOM_ID || "").replace(/[^\w\-]/g, "");
+                let raw = "";
+                process.stdin.on("data", c => raw += c);
+                process.stdin.on("end", () => {
+                  let o = null;
+                  try { o = JSON.parse(raw); } catch (e) {}
+                  const appData = process.env.APPDATA;
+                  // 1) 계정 rate_limits 캡처(앱 푸터용). 마지막으로 쓴 값이 최신.
+                  try {
+                    if (appData) {
+                      const dir = path.join(appData, "DevezCode", "claude");
+                      fs.mkdirSync(dir, { recursive: true });
+                      fs.writeFileSync(path.join(dir, "ratelimit.json"), raw);
+                    }
+                  } catch (e) {}
+                  // 2) 방별 실제 model/effort 기록(콤보 라이브 연동).
+                  try {
+                    if (appData && roomArg && o) {
+                      const md = path.join(appData, "DevezCode", "claude", "modeleffort");
+                      fs.mkdirSync(md, { recursive: true });
+                      const mid = (o.model && o.model.id) || "";
+                      const eff = (o.effort && o.effort.level) || "";
+                      fs.writeFileSync(path.join(md, roomArg + ".txt"), mid + "\n" + eff);
+                    }
+                  } catch (e) {}
+                  // 3) 사용자 statusline.js 로 렌더 위임(사용자 커스터마이즈 보존). 같은 node 재사용.
+                  try {
+                    const js = path.join(os.homedir(), ".claude", "statusline.js");
+                    if (fs.existsSync(js)) {
+                      const r = cp.spawnSync(process.execPath, [js], { input: raw, encoding: "utf8", timeout: 4000 });
+                      if (r && r.stdout) process.stdout.write(r.stdout);
+                    }
+                  } catch (e) {}
+                  process.exit(0);
+                });
+                """;
+            File.WriteAllText(RoomStatusLineJsPath, roomStatusJs, new System.Text.UTF8Encoding(false));
+
             // busy 훅(clude-blinker 방식): claude 가 한 턴을 처리하는 동안만 좌측 스피너를 켠다.
             // UserPromptSubmit 에서 running, Stop(턴 종료)에서 idle 을 방별 파일로 기록한다.
             // 방 ID는 SessionStart 훅과 동일하게 $env:DEVEZCODE_ROOM_ID (claude 자식이 상속)로 구분.
@@ -965,12 +1012,20 @@ public sealed class TerminalSessionManager
         var arg = SafeRoomFileName(roomId); // 영숫자/-/_ 만 → 공백·특수문자 없음(명령 인자 안전)
 
         var command         = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{HookScriptPath}\" {arg}";
-        var statusCommand   = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{StatusLineScriptPath}\" {arg}";
+        // statusLine: node 가 있으면 node 직접 호출(~150ms)로 일반 터미널과 동일 속도 — DevezCode 내부
+        // 세션(특히 무거운 resume)의 statusLine 빈 줄 해소. node 미발견 시에만 기존 powershell 체인 폴백.
+        var nodePath = UserStatusLineInstaller.ResolveNodePath();
+        var statusCommand = nodePath != null
+            ? $"\"{nodePath}\" \"{RoomStatusLineJsPath}\" {arg}"
+            : $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{StatusLineScriptPath}\" {arg}";
         var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running {arg}";
         var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle {arg}";
         var busyNotifyCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notify {arg}";
-        // refreshInterval 은 의도적으로 생략 — statusLine 은 event-driven 갱신으로 충분(idle 중 CPU 튐 방지).
-        var statusLine = new { type = "command", command = statusCommand };
+        // refreshInterval: 전역 settings 와 달리 room 은 event-driven 만으로는 1회 렌더 실패(느린 시작/타임아웃)
+        // 시 빈 줄이 고착됐다(resume 세션 statusLine 안 뜨던 원인). 주기 재렌더로 자동 복구한다.
+        // 3초 주기 절충: 빈 줄 자동 복구는 유지하되 다세션 idle 부하를 낮춘다(타임아웃이 없어
+        // 느린 렌더도 죽지 않으므로 공격적 주기 불필요).
+        var statusLine = new { type = "command", command = statusCommand, refreshInterval = 3000 };
         var settings = new
         {
             // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를 자동 삭제(resume 불가). 30일.

@@ -5,7 +5,7 @@
         Title="MCP 서버"
         Width="940" Height="640"
         MinWidth="780" MinHeight="520"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         WindowStyle="None"
         ResizeMode="CanResize"
         AllowsTransparency="True"

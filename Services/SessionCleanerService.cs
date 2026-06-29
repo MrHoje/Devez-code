@@ -246,18 +246,21 @@ public static class SessionCleanerService
             .ToList();
     }
 
-    private static List<string> EnumerateOpenCodeIdsFromDb()
+    private static IEnumerable<string> OpenCodeDbCandidates()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var candidates = new[]
+        return new[]
         {
             Path.Combine(home, ".local", "share", "opencode", "opencode.db"),
             Path.Combine(appData, "opencode", "opencode.db"),
-        };
+        }.Distinct(StringComparer.OrdinalIgnoreCase);
+    }
 
+    private static List<string> EnumerateOpenCodeIdsFromDb()
+    {
         var results = new List<string>();
-        foreach (var db in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var db in OpenCodeDbCandidates())
         {
             if (!File.Exists(db)) continue;
             try
@@ -265,7 +268,7 @@ public static class SessionCleanerService
                 using var conn = new SqliteConnection($"Data Source={db};Pooling=False;Mode=ReadOnly");
                 conn.Open();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SELECT id FROM sessions WHERE id IS NOT NULL AND id != ''";
+                cmd.CommandText = "SELECT id FROM session WHERE id IS NOT NULL AND id != ''";
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
@@ -313,23 +316,79 @@ public static class SessionCleanerService
         return (deleted, failed);
     }
 
+    // CLI(session delete) 는 세션마다 opencode 프로세스를 새로 띄워 매우 느리다(startup 1~3초 × N).
+    // 세션 데이터는 전부 SQLite(opencode.db)에 있고 message/part/todo/session_share 가 session 에
+    // ON DELETE CASCADE FK 로 묶여 있으므로, 실행 중 opencode 를 종료해 DB 잠금을 풀고 한 번의
+    // DELETE FROM session 으로 자식 행까지 일괄 삭제한다. 삭제 후 WAL 체크포인트 + VACUUM 으로 용량 회수.
     private static (int deleted, int failed) DeleteOpenCode(IEnumerable<string> ids)
     {
-        int deleted = 0, failed = 0;
-        foreach (var id in ids)
-        {
-            if (TryDeleteOpenCode(id)) deleted++;
-            else failed++;
-        }
-        return (deleted, failed);
-    }
+        var idList = ids.Distinct(StringComparer.Ordinal).ToList();
+        if (idList.Count == 0) return (0, 0);
 
-    private static bool TryDeleteOpenCode(string id)
-    {
-        // opencode 버전별 명령 차이를 흡수한다. 보호 목록 검사 후에만 호출된다.
-        return RunExit("opencode", $"session delete {id}", 8000) == 0
-            || RunExit("opencode", $"session rm {id}", 8000) == 0
-            || RunExit("opencode", $"session remove {id}", 8000) == 0;
+        // 실행 중 opencode 전부 종료(활성 세션 포함) — DB 잠금 해제 목적.
+        foreach (var proc in Process.GetProcessesByName("opencode"))
+        {
+            try { proc.Kill(); proc.WaitForExit(5000); }
+            catch { }
+        }
+
+        var remaining = new HashSet<string>(idList, StringComparer.Ordinal);
+        foreach (var db in OpenCodeDbCandidates())
+        {
+            if (remaining.Count == 0) break;
+            if (!File.Exists(db)) continue;
+            try
+            {
+                using var conn = new SqliteConnection($"Data Source={db};Pooling=False");
+                conn.Open();
+
+                using (var pragma = conn.CreateCommand())
+                {
+                    pragma.CommandText = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
+                    pragma.ExecuteNonQuery();
+                }
+
+                // 파라미터 바인딩으로 한 번에 삭제 (CASCADE 가 자식 테이블 정리).
+                using var tx = conn.BeginTransaction();
+                using var cmd = conn.CreateCommand();
+                cmd.Transaction = tx;
+                var names = remaining.Select((_, i) => "@p" + i).ToList();
+                cmd.CommandText = $"DELETE FROM session WHERE id IN ({string.Join(",", names)})";
+                int idx = 0;
+                foreach (var id in remaining) cmd.Parameters.AddWithValue("@p" + idx++, id);
+                cmd.ExecuteNonQuery();
+                tx.Commit();
+
+                // 실제 삭제된 id 만 remaining 에서 제거(남은 db 후보 대상으로 재시도 불필요화).
+                var beforeCount = remaining.Count;
+                using (var check = conn.CreateCommand())
+                {
+                    check.CommandText = "SELECT id FROM session";
+                    using var reader = check.ExecuteReader();
+                    var stillThere = new HashSet<string>(StringComparer.Ordinal);
+                    while (reader.Read()) stillThere.Add(reader.GetString(0));
+                    remaining.RemoveWhere(id => !stillThere.Contains(id));
+                }
+
+                // 이 DB 에서 실제 삭제가 있었으면 WAL 체크포인트 + VACUUM 으로 용량 회수.
+                if (remaining.Count < beforeCount)
+                {
+                    using var ck = conn.CreateCommand();
+                    ck.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                    ck.ExecuteNonQuery();
+                    using var vac = conn.CreateCommand();
+                    vac.CommandText = "VACUUM;";
+                    vac.ExecuteNonQuery();
+                }
+            }
+            catch
+            {
+                // 잠김/스키마 차이 등 → 다음 후보로
+            }
+        }
+
+        int deleted = idList.Count - remaining.Count;
+        return (deleted, remaining.Count);
     }
 
     private static string ResolveCommand(string file)
@@ -364,27 +423,6 @@ public static class SessionCleanerService
             return errorTask.GetAwaiter().GetResult();
         }
         catch { return null; }
-    }
-
-    private static int RunExit(string file, string args, int timeoutMs)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = ResolveCommand(file),
-                Arguments = args,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            using var p = Process.Start(psi);
-            if (p == null) return -1;
-            if (!p.WaitForExit(timeoutMs)) { try { p.Kill(); } catch { } return -1; }
-            return p.ExitCode;
-        }
-        catch { return -1; }
     }
 
     public static string VacuumOpenCodeDb()

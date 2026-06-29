@@ -4,7 +4,7 @@
         xmlns:views="clr-namespace:DevezCode.Views"
         Title="설정"
         Width="900" Height="700"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         WindowStyle="None"
         ResizeMode="NoResize"
         AllowsTransparency="True"

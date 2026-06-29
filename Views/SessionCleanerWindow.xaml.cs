@@ -209,9 +209,12 @@ public partial class SessionCleanerWindow : Window
         }
 
         var name = AgentTitle.Text;
-        var ok = ConfirmDialog.Show("DevezCode에서 관리중이지 않은 세션 삭제",
-            $"{name}의 DevezCode에서 관리중이지 않은 세션 {scan.Count}개를 PC에서 완전 삭제합니다.\n\n" +
-            "DevezCode가 현재 관리 중인 세션은 삭제 대상에서 제외됩니다.",
+        var extra = _current == CleanerAgentKind.OpenCode
+            ? "\n\n⚠ 빠른 삭제를 위해 실행 중인 OpenCode가 모두 종료됩니다. 진행 중인 OpenCode 작업이 중단될 수 있습니다."
+            : "";
+        var ok = ConfirmDialog.Show("관리중이지 않은 세션 삭제",
+            $"{name}의 DevezCode에서 관리중이지 않은 세션 {scan.Count}개를 PC에서 완전 삭제합니다.\n" +
+            "DevezCode가 현재 관리 중인 세션은 삭제 대상에서 제외됩니다." + extra,
             okLabel: "삭제", danger: true, iconKey: "IconTrash2");
         if (!ok) return;
 
