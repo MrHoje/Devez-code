@@ -178,9 +178,20 @@
                                       Width="16" Height="16" VerticalAlignment="Center"
                                       Stroke="{DynamicResource TextBrush}"
                                       Margin="0,-1,11,0"/>
-                                <TextBlock Text="설정" VerticalAlignment="Center"
-                                           FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"/>
+								<TextBlock x:Name="SettingsTitle" Text="설정" VerticalAlignment="Center"
+								           FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+								           Foreground="{DynamicResource TextBrush}"
+								           MouseLeftButtonDown="SettingsTitle_MouseDown"/>
+								<Button x:Name="DiscordRevealBtn" Click="DiscordRevealBtn_Click"
+								        Visibility="Collapsed" Cursor="Hand"
+								        Background="Transparent" BorderThickness="0"
+								        Padding="4,2" Margin="6,0,0,0"
+								        ToolTip="Discord 설정 열기">
+									<Path Style="{StaticResource LucideIcon}"
+									      Data="{StaticResource IconServer}"
+									      Width="16" Height="16" VerticalAlignment="Center"
+									      Stroke="{DynamicResource TextBrush}"/>
+								</Button>
                             </StackPanel>
                             <Button Click="CancelBtn_Click"
                                     HorizontalAlignment="Right" VerticalAlignment="Center"

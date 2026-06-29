@@ -49,6 +49,7 @@ public partial class SettingsDialog : UserControl
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
+    private int _titleClickCount;
 
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
@@ -239,6 +240,21 @@ public partial class SettingsDialog : UserControl
         if (key == "notify") LoadNotifySettings();
         if (key == "discord") LoadDiscordSettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
+    }
+    // ── 타이틀 10번 클릭 → Discord 버튼 표시 ─────────────────────────
+    private void SettingsTitle_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _titleClickCount++;
+        if (_titleClickCount >= 10)
+        {
+            _titleClickCount = 10; // 고정
+            DiscordRevealBtn.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void DiscordRevealBtn_Click(object sender, RoutedEventArgs e)
+    {
+        SetActiveCategory("discord");
     }
 
     private void PreloadAllSessionsToggle_Changed(object sender, RoutedEventArgs e)
