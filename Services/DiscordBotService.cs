@@ -624,26 +624,30 @@ public sealed class DiscordBotService : IDisposable
             if (!string.IsNullOrWhiteSpace(hookReply)) toSend.Add(hookReply!);
         }
 
-        // 모델·effort·ctx 정보 푸터는 턴당 한 번만.
-        bool sendInfo;
-        lock (_sync)
-        {
-            sendInfo = !_lastInfoTurn.TryGetValue(session.Id, out var it) || it != (turnKey ?? "");
-            if (sendInfo) _lastInfoTurn[session.Id] = turnKey ?? "";
-        }
-
-        if (toSend.Count == 0 && !sendInfo) return; // 보낼 것 없음(이미 다 보냄)
+        // 모델·effort·ctx 정보 푸터는 턴당 한 번만. 단, 상태줄이 아직 안 써져(a==null) 못 보낸 경우엔
+        // "보냄" 표시를 하지 않아 다음 완료 알림 경로(idle / AskUserQuestion 폴링)가 재시도하게 한다.
+        // (플래그를 전송 전에 세팅하면, 상태줄이 안 준비된 첫 호출이 플래그만 세우고 info 를 영구 누락시킨다.)
+        bool infoPending;
+        lock (_sync) infoPending = !_lastInfoTurn.TryGetValue(session.Id, out var it) || it != (turnKey ?? "");
 
         string? a = null, b = null;
-        if (sendInfo) { var info = SessionInfoLine(session.Id); if (info != null) { var split = SplitInfo(info); a = split.a; b = split.b; } }
+        if (infoPending) { var info = SessionInfoLine(session.Id); if (info != null) { var split = SplitInfo(info); a = split.a; b = split.b; } }
+        bool willSendInfo = infoPending && a != null;
+        if (willSendInfo) lock (_sync) _lastInfoTurn[session.Id] = turnKey ?? "";
+
+        DiscordLog($"done s={session.Id} toSend={toSend.Count} infoPending={infoPending} a={(a == null ? "null" : "ok")} willSendInfo={willSendInfo}");
+
+        if (toSend.Count == 0 && !willSendInfo) return; // 보낼 것 없음(이미 다 보냈거나 정보 미준비 → 다음 경로가 재시도)
 
         if (toSend.Count == 0)
         {
             // 텍스트는 이미 스트리밍됨 → 정보 푸터 카드만 전송.
-            if (a != null) await SendInfoOnlyAsync(project, thread, agentId, a, b);
+            await SendInfoOnlyAsync(project, thread, agentId, a!, b);
             return;
         }
-        await SendDoneV2Async(project, thread, agentId, string.Join("\n\n", toSend), a, b);
+        // 본문이 남아 있으면 함께 보낸다(정보 미준비면 정보 없이 본문만 — 다음 경로가 정보 재시도).
+        await SendDoneV2Async(project, thread, agentId, string.Join("\n\n", toSend),
+            willSendInfo ? a : null, willSendInfo ? b : null);
     }
 
     /// <summary>진행 중인 턴에서 새로 나타난 assistant 텍스트 블록을 그때그때(실시간) 스레드로 흘려보낸다.

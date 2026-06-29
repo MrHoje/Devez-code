@@ -813,7 +813,7 @@ public sealed class TerminalSessionManager
             // ① rate_limits 캡처(ratelimit.json) ② 방별 model/effort 기록 ③ 사용자 statusline.js 스폰 렌더.
             // DevezCode 내부 세션이 일반 터미널과 동일하게 빠르게 statusLine 을 그리게 한다(resume 빈 줄 해소).
             const string roomStatusJs = """
-                // DEVEZCODE-ROOM-STATUSLINE v1
+                // DEVEZCODE-ROOM-STATUSLINE v2 (방별 statusline 캐시 기록 추가)
                 const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process");
                 const roomArg = (process.argv[2] || process.env.DEVEZCODE_ROOM_ID || "").replace(/[^\w\-]/g, "");
                 let raw = "";
@@ -841,11 +841,25 @@ public sealed class TerminalSessionManager
                     }
                   } catch (e) {}
                   // 3) 사용자 statusline.js 로 렌더 위임(사용자 커스터마이즈 보존). 같은 node 재사용.
+                  //    렌더 결과를 방별 캐시(statusline-cache-<room>-<sig>.txt)에도 떨군다 —
+                  //    앱 사이드바 푸터 + Discord 완료 푸터가 이 파일을 읽는다(sig=model-effort 라 모델/강도 변경 즉시 반영).
                   try {
                     const js = path.join(os.homedir(), ".claude", "statusline.js");
                     if (fs.existsSync(js)) {
                       const r = cp.spawnSync(process.execPath, [js], { input: raw, encoding: "utf8", timeout: 4000 });
-                      if (r && r.stdout) process.stdout.write(r.stdout);
+                      if (r && r.stdout) {
+                        process.stdout.write(r.stdout);
+                        try {
+                          if (appData && o) {
+                            const dir = path.join(appData, "DevezCode", "claude");
+                            const mid = (o.model && o.model.id) || "";
+                            const eff = (o.effort && o.effort.level) || "";
+                            const sig = (mid + "-" + eff).replace(/[^\w\-]/g, "");
+                            const room = roomArg || "global";
+                            fs.writeFileSync(path.join(dir, "statusline-cache-" + room + "-" + sig + ".txt"), r.stdout);
+                          }
+                        } catch (e) {}
+                      }
                     }
                   } catch (e) {}
                   process.exit(0);
