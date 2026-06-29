@@ -286,19 +286,6 @@ public partial class SettingsDialog : UserControl
         }
     }
 
-    // 테스트용: 실제 업데이트 노트 팝업과 동일 경로(ConfirmDialog autoWidth)로 미리보기.
-    private void TestUpdatePopupBtn_Click(object sender, RoutedEventArgs e)
-    {
-        var (version, _, _, notes) = _changelog[0];
-        var noteLines = "\n\n" + string.Join("\n", notes.Select(n => "· " + n));
-        ConfirmDialog.Show(
-            $"새 버전 {version}",
-            $"새 버전이 있습니다. 지금 업데이트할까요?{noteLines}",
-            okLabel: "업데이트",
-            iconKey: "IconDownload",
-            autoWidth: true);
-    }
-
     // ── 업데이트 내역 렌더링/페이지네이션 (devez 정합) ──
     private void RenderChangelogPage()
     {
