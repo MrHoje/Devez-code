@@ -2648,10 +2648,21 @@ public partial class MainWindow : Window
     private void HidePanePick() => _projectTargetPickerWindow?.Close();
 
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
-    private void RenameSession(SessionItem session) => PaneFor(session).RenameSession(session);
+    private void RenameSession(SessionItem session) { PaneFor(session).RenameSession(session); SyncRecordsForSessionRename(session); }
     private void DeleteSession(SessionItem session) => PaneFor(session).DeleteSession(session);
     public void RemoveSessionSilent(SessionItem session) => PaneFor(session).RemoveSessionSilent(session);
-    public void RenameSessionSilent(SessionItem session, string newName) => PaneFor(session).RenameSessionSilent(session, newName);
+    public void RenameSessionSilent(SessionItem session, string newName) { PaneFor(session).RenameSessionSilent(session, newName); SyncRecordsForSessionRename(session); }
+
+    /// <summary>세션 이름 변경 → 동일 SessionId 의 완료 기록 카드 이름도 동기화하고 저장.</summary>
+    private void SyncRecordsForSessionRename(SessionItem session)
+    {
+        bool changed = false;
+        foreach (var r in _sessionDoneRecords)
+            if (r.SessionId == session.Id && r.SessionName != session.Name) { r.SessionName = session.Name; changed = true; }
+        if (changed)
+            SettingsService.SaveSessionHistoryRecords(
+                new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+    }
 
     /// <summary>Discord 새 포스트 → claude 세션 생성 + 본문을 첫 메시지로 전송. 매핑을 먼저 저장해
     /// 세션 추가(OnSessionsChanged)가 새 스레드를 또 만들지 않게 한다.</summary>
@@ -2724,8 +2735,17 @@ public partial class MainWindow : Window
         var name = PromptDialog.Show("프로젝트 이름 변경", "새 이름을 입력하세요.",
                                      defaultValue: proj.Name, maxLength: 60);
         if (string.IsNullOrWhiteSpace(name) || name == proj.Name) return;
+        var oldName = proj.Name;
         proj.Name = name;
         WorkspaceStore.Save(_projects, _archivedProjects);
+
+        // 동일 프로젝트명의 완료 기록 카드도 새 이름으로 동기화.
+        bool changed = false;
+        foreach (var r in _sessionDoneRecords)
+            if (r.ProjectName == oldName) { r.ProjectName = name; changed = true; }
+        if (changed)
+            SettingsService.SaveSessionHistoryRecords(
+                new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
     }
 
     /// <summary>프로젝트 보관 — 활성 목록에서 빼 보관함으로. 세션 프로세스는 정지하되 기록은 보존(devez 정합).</summary>

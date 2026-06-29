@@ -13,6 +13,8 @@ public static class WorkspaceStore
     private sealed class ProjectDto
     {
         public string Path { get; set; } = "";
+        // 사용자 지정 표시 이름. null/빈값이면 폴더명(FromPath) 사용. 이름 변경 시 재시작 복원.
+        public string? Name { get; set; }
         // 좌측 카드 접힘/펼침 상태 (기본 펼침). 재시작 시 복원.
         public bool IsExpanded { get; set; } = true;
         // 보관 시각(ISO-8601). null=활성, 값 있으면 보관함. devez archived_at 정합(로컬).
@@ -82,6 +84,7 @@ public static class WorkspaceStore
             foreach (var p in dto.Projects)
             {
                 var proj = ProjectItem.FromPath(p.Path);
+                if (!string.IsNullOrWhiteSpace(p.Name)) proj.Name = p.Name; // 사용자 지정 이름 복원
                 proj.IsExpanded = p.IsExpanded;
                 proj.ArchivedAt = p.ArchivedAt;
                 proj.Column = p.Column;
@@ -123,6 +126,7 @@ public static class WorkspaceStore
     private static ProjectDto ToDto(ProjectItem p) => new ProjectDto
     {
         Path = p.Path,
+        Name = p.Name,
         IsExpanded = p.IsExpanded,
         ArchivedAt = p.ArchivedAt,
         Column = p.Column,

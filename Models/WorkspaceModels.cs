@@ -91,8 +91,15 @@ public sealed class SessionItem : TabItemBase
 public sealed class SessionCompletionRecord : NotifyBase
 {
     public required string SessionId { get; init; }
-    public required string SessionName { get; init; }
-    public required string ProjectName { get; init; }
+    // 이름 변경 시 완료기록 라이브 갱신 위해 settable + 알림. (폴더/세션 rename → 기록에도 반영)
+    private string _sessionName = "";
+    public required string SessionName { get => _sessionName; set => Set(ref _sessionName, value); }
+    private string _projectName = "";
+    public required string ProjectName
+    {
+        get => _projectName;
+        set { if (Set(ref _projectName, value)) OnPropertyChanged(nameof(ProjectVisibility)); }
+    }
     public required string AgentId { get; init; }
     public string LastMessage { get; init; } = "";
     public DateTime CompletedAt { get; init; } = DateTime.Now;
