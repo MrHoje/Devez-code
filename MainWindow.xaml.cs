@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private WorkspacePaneView RightPane => _panesSwapped ? PaneA : PaneB;
     private string? _explorerDir;                      // 우측 파일탐색기가 보고 있는 경로(중복 ShowDirectory 방지)
     private readonly PerfMonitorService _perfMonitor = new();
+    private readonly ThermalMonitorService _thermalMonitor = new();
     // 계정 사용량: statusLine 훅(세션 활성 시 거의 실시간) + OAuth API(세션 없어도 3분 주기) 두 소스를 병합.
     private readonly StatusLineService _statusLine = new();
     private readonly UsageApiService _usageApi = new();
@@ -395,6 +396,7 @@ public partial class MainWindow : Window
             App.ThemeChanged -= OnThemeChanged_UpdatePanels;
             foreach (var pane in _panes) pane.DisposeTerminal();
             _perfMonitor.Dispose();
+            _thermalMonitor.Dispose();
             _statusLine.Dispose();
             _usageApi.Dispose();
             _codex.Dispose();
@@ -540,6 +542,32 @@ public partial class MainWindow : Window
         _perfMonitor.SnapshotUpdated += snap =>
             Dispatcher.InvokeAsync(() => ApplyPerfSnapshot(snap));
         _perfMonitor.Start();
+
+        // 온도 모니터 — 하드웨어 스캔을 비동기로 실행(스캔 중 UI 논블로킹).
+        _ = InitThermalAsync();
+    }
+
+    private async Task InitThermalAsync()
+    {
+        await _thermalMonitor.InitializeAsync().ConfigureAwait(false);
+        _thermalMonitor.SnapshotUpdated += snap =>
+            Dispatcher.InvokeAsync(() => ApplyThermalSnapshot(snap));
+        _thermalMonitor.Start();
+    }
+
+    private void ApplyThermalSnapshot(Models.ThermalSnapshot snap)
+    {
+        if (snap.CpuTemperature is float cpu)
+        {
+            PerfTempText.Text = $"{cpu:F0}°";
+            PerfTempText.Foreground = cpu >= 85 ? (Brush)FindResource("DangerBrush")
+                                     : cpu >= 70 ? (Brush)FindResource("WarningBrush")
+                                     : (Brush)FindResource("TextBrush");
+        }
+        else
+        {
+            PerfTempText.Text = "--";
+        }
     }
 
     // ── 계정 사용량 (statusLine 훅 + OAuth API 병합 → 푸터) ─────────────
