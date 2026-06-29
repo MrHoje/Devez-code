@@ -1,7 +1,10 @@
+using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Globalization;
 using System.Windows.Media.Imaging;
 using DevezCode.Models;
@@ -19,12 +22,22 @@ public partial class SessionCleanerWindow : Window
     public SessionCleanerWindow()
     {
         InitializeComponent();
+        Opacity = 0;
         Loaded += (_, _) =>
         {
             BuildVisibleAgents();
             StartRefreshAll();
         };
         SizeChanged += (_, _) => ApplyRoundedClip();
+        ContentRendered += async (_, _) => await AnimateOpenAsync();
+    }
+
+    private async Task AnimateOpenAsync()
+    {
+        var dur  = new Duration(TimeSpan.FromMilliseconds(220));
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
+        await Task.Delay(220);
     }
 
     private void ApplyRoundedClip()

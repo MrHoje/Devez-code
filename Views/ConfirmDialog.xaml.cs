@@ -50,6 +50,7 @@ public partial class ConfirmDialog : Window
         {
             try
             {
+                WindowCenter.CenterOverOwner(this); // 가짜 전체화면/보조 모니터 배율에서 CenterOwner 가 어긋나는 것 보정
                 if (OkBtn.IsVisible) OkBtn.Focus();
             }
             catch { }

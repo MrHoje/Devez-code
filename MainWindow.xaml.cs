@@ -500,10 +500,14 @@ public partial class MainWindow : Window
         if (SettingsService.LoadAutoLoadLastProject())
         {
             var (projPath, sessId) = SettingsService.LoadLastActive();
-            var proj = projPath != null ? _projects.FirstOrDefault(p => p.Path == projPath) : null;
+            // 세션ID(전역 유일) 우선 — 같은 경로 중복 프로젝트도 정확히 그 세션의 소속을 찾는다.
+            var sess = sessId != null
+                ? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == sessId)
+                : null;
+            var proj = sess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(sess))
+                     : projPath != null ? _projects.FirstOrDefault(p => p.Path == projPath) : null;
             if (proj != null)
             {
-                var sess = sessId != null ? proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == sessId) : null;
                 if (sess != null) _focusedPane.OpenSession(sess);
                 else _focusedPane.SelectProject(proj);
             }
@@ -1700,11 +1704,8 @@ public partial class MainWindow : Window
         var picker = new Microsoft.Win32.OpenFolderDialog { Title = "프로젝트 디렉터리 선택" };
         if (picker.ShowDialog(this) != true) return;
         var path = picker.FolderName;
-        if (_projects.Any(p => string.Equals(p.Path, path, StringComparison.OrdinalIgnoreCase)))
-        {
-            ConfirmDialog.Alert("알림", "이미 추가된 프로젝트입니다.");
-            return;
-        }
+        // 같은 경로 중복 등록 허용 — 경로키 설정(작업큐/브라우저URL/Discord)은 중복끼리 공유.
+        // 복원/조회는 전역 유일한 세션ID 기준이라 충돌 없음.
         var proj = ProjectItem.FromPath(path);
         // 프로젝트 연결 시 기본 세션 1개 자동 생성. 사용 가능한 에이전트가 1개면 그걸로, 아니면(2개+) 피커 표시.
         var available = AgentRegistry.GetEnabledAndInstalled();
@@ -1714,9 +1715,14 @@ public partial class MainWindow : Window
                 "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
             return;
         }
-        string defaultAgentId = available.Count == 1
-            ? available[0].Id
-            : (AgentPickerDialog.Pick(this, available, proj.Path) ?? AgentRegistry.DefaultAgentId);
+        string defaultAgentId;
+        if (available.Count == 1) defaultAgentId = available[0].Id;
+        else
+        {
+            var picked = AgentPickerDialog.Pick(this, available, proj.Path);
+            if (picked == null) return;   // 에이전트 피커 취소/X → 프로젝트 추가 자체 취소
+            defaultAgentId = picked;
+        }
         var session = new SessionItem { Name = "세션 1", AgentId = defaultAgentId };
         proj.Tabs.Add(session);
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
@@ -2073,11 +2079,13 @@ public partial class MainWindow : Window
         SessionItem? aSess = null, bSess = null;
         if (SettingsService.LoadAutoLoadLastProject())
         {
-            aProj = _projects.FirstOrDefault(p => p.Path == aProjPath);
-            aSess = aProj?.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == aSessId);
-            bProj = _projects.FirstOrDefault(p => p.Path == bProjPath);
-            bSess = bProj?.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId)
-                    ?? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId);
+            // 세션ID(전역 유일) 우선 조회 → 프로젝트는 그 세션의 소속으로 역산. 경로는 폴백.
+            aSess = aSessId != null ? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == aSessId) : null;
+            aProj = aSess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(aSess))
+                  : _projects.FirstOrDefault(p => p.Path == aProjPath);
+            bSess = bSessId != null ? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId) : null;
+            bProj = bSess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(bSess))
+                  : _projects.FirstOrDefault(p => p.Path == bProjPath);
         }
 
         // EnableSplit: 레이아웃만 생성(persist=false로 PersistSplitState/SyncShellToFocusedPane 스킵)
@@ -2688,6 +2696,8 @@ public partial class MainWindow : Window
     {
         await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
         var dlg = new Views.SessionCleanerWindow { Owner = this };
+        dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+        dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
         dlg.Closed += (_, _) => ResumeTerminal();
         dlg.ShowDialog();
     }
@@ -2697,11 +2707,7 @@ public partial class MainWindow : Window
         await SuspendTerminalWithSnapshotAsync(blankCurtain: true);   // 터미널을 숨기고 단색 커튼(배경색)만 보이게.
         var dlg = new Views.SettingsWindow { Owner = this };
         dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
-        dlg.Loaded += (_, _) =>
-        {
-            dlg.Left = Left + (Width - dlg.Width) / 2;
-            dlg.Top = Top + (Height - dlg.Height) / 2;
-        };
+        dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
         dlg.Closed += (_, _) =>
         {
             ResumeTerminal();
@@ -2718,11 +2724,7 @@ public partial class MainWindow : Window
         await SuspendTerminalWithSnapshotAsync();
         var dlg = new Views.McpManagerWindow { Owner = this };
         dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
-        dlg.Loaded += (_, _) =>
-        {
-            dlg.Left = Left + (Width - dlg.Width) / 2;
-            dlg.Top = Top + (Height - dlg.Height) / 2;
-        };
+        dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
         dlg.Closed += (_, _) => ResumeTerminal();
         dlg.ShowDialog();
     }
