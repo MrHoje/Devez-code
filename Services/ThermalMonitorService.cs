@@ -32,7 +32,7 @@ public sealed class ThermalMonitorService : IDisposable
                 {
                     IsCpuEnabled = true,
                     IsGpuEnabled = true,
-                    IsMotherboardEnabled = false,
+                    IsMotherboardEnabled = true,   // AMD 보드 일부는 CPU 온도를 Super I/O 로 보고
                     IsControllerEnabled = false,
                     IsNetworkEnabled = false,
                     IsStorageEnabled = false,
@@ -72,31 +72,19 @@ public sealed class ThermalMonitorService : IDisposable
         {
             float? cpuTemp = null, gpuTemp = null;
 
+            // 재귀적으로 모든 hardware + subHardware 의 센서를 읽는다
             foreach (var hardware in _computer!.Hardware)
             {
-                // 최신 센서값으로 갱신
-                hardware.Update();
-
-                foreach (var sensor in hardware.Sensors)
-                {
-                    if (sensor.SensorType != SensorType.Temperature || sensor.Value == null)
-                        continue;
-
-                    var temp = (float)sensor.Value;
-                    if (hardware.HardwareType == HardwareType.Cpu)
-                    {
-                        // CPU는 여러 코어 센서 중 최고 온도를 사용
-                        if (cpuTemp == null || temp > cpuTemp)
-                            cpuTemp = temp;
-                    }
-                    else if (hardware.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
-                    {
-                        if (gpuTemp == null || temp > gpuTemp)
-                            gpuTemp = temp;
-                    }
-                }
+                WalkHardware(hardware, ref cpuTemp, ref gpuTemp);
             }
 
+            // 실패 3회 연속이면 initFailed 처리(0도만 반환되는 경우 방지)
+            if (cpuTemp == null && gpuTemp == null) return;
+
+            // 0.0 도는 유효값이 아니므로 건너뜀 — LibreHardwareMonitor 가
+            // 관리자 권한 없이 센서를 못 읽으면 0을 반환하는 경우가 있음
+            if (cpuTemp is <= 0f) cpuTemp = null;
+            if (gpuTemp is <= 0f) gpuTemp = null;
             if (cpuTemp == null && gpuTemp == null) return;
 
             SnapshotUpdated?.Invoke(new ThermalSnapshot
@@ -117,3 +105,44 @@ public sealed class ThermalMonitorService : IDisposable
         try { _computer?.Close(); } catch { }
     }
 }
+    /// <summary>hardware + 모든 subHardware 를 재귀적으로 탐색하며 온도 센서 수집.
+    /// AMD CPU/GPU 는 subHardware 계층에 실제 센서가 있는 경우가 많다.</summary>
+    private static void WalkHardware(IHardware hw, ref float? cpuTemp, ref float? gpuTemp)
+    {
+        hw.Update();
+        foreach (var sensor in hw.Sensors)
+        {
+            if (sensor.SensorType != SensorType.Temperature || sensor.Value == null)
+                continue;
+
+            var temp = (float)sensor.Value;
+
+            // AMD CPU Package 온도 등 — CPU 온도로 간주
+            if (hw.HardwareType == HardwareType.Cpu)
+            {
+                if (cpuTemp == null || temp > cpuTemp)
+                    cpuTemp = temp;
+            }
+            // GPU(NVIDIA/AMD/Intel)
+            else if (hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
+            {
+                if (gpuTemp == null || temp > gpuTemp)
+                    gpuTemp = temp;
+            }
+            // 일부 AMD 보드는 CPU 온도를 Super I/O 칩셋( motherboard )으로 보고함
+            else if (hw.HardwareType == HardwareType.Motherboard && cpuTemp == null)
+            {
+                // 센서명에 "CPU" 또는 "Core" 가 포함된 것만 CPU 온도로 추정
+                var name = sensor.Name?.ToLowerInvariant() ?? "";
+                if (name.Contains("cpu") || name.Contains("core") || name.Contains("socket") || name.Contains("tctl"))
+                {
+                    if (cpuTemp == null || temp > cpuTemp)
+                        cpuTemp = temp;
+                }
+            }
+        }
+
+        // subHardware 재귀 탐색
+        foreach (var sub in hw.SubHardware)
+            WalkHardware(sub, ref cpuTemp, ref gpuTemp);
+    }
