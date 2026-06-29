@@ -99,6 +99,20 @@
     font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
   }
   @keyframes dz-spin { to { transform: rotate(360deg); } }
+
+  /* 복사 토스트 — 우리가 직접 복사(copy-on-select/Ctrl+C/우클릭)할 때 우측 하단에 잠깐.
+     claude 의 자체 "copied N chars" 와 동일 위치/문구. (claude 는 OSC52 라 이 토스트 안 탐) */
+  #copy-toast {
+    position: absolute; right: 16px; bottom: 14px; z-index: 60;
+    padding: 9px 17px; border-radius: 9px;
+    background: var(--term-bg, #1b1b1b); color: var(--term-fg, #CCCCCC);
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+    font-family: 'Pretendard', 'Malgun Gothic', sans-serif; font-size: 16px;
+    opacity: 0; transform: translateY(6px);
+    transition: opacity 0.15s ease, transform 0.15s ease; pointer-events: none;
+  }
+  #copy-toast.on { opacity: 1; transform: translateY(0); }
 </style>
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
@@ -106,6 +120,7 @@
 </head>
 <body>
 <div id="loading-overlay"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div>
+<div id="copy-toast"></div>
 <div id="search-bar">
   <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
   <span id="search-count"></span>
@@ -225,9 +240,10 @@
 
   // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
   // claude 등 TUI 가 켜는 마우스 트래킹(DECSET ?1000/1002/1003/1006)을 막지 않는다
-  // → xterm 이 마우스 모드로 들어가 휠 스크롤/클릭이 앱으로 직접 전달(일반 WT 정합).
-  // 텍스트 선택은 Shift+드래그(마우스 모드 중 xterm 기본 동작). 마우스 모드를 안 쓰는
-  // 일반 셸에서는 그냥 드래그로 선택된다.
+  // → xterm 이 마우스 모드로 들어가 휠 스크롤/클릭/드래그가 앱으로 직접 전달(일반 WT 정합).
+  // 마우스 모드 중 드래그하면 claude 가 자체 선택 후 OSC 52 로 복사한다 — 이를 클립보드에
+  // 반영하는 처리는 createTerm 의 registerOscHandler(52) 참고. 마우스 모드를 안 쓰는 일반
+  // 셸/화면에서는 xterm 로컬 드래그 선택 + copy-on-select(mouseup) 로 복사된다.
   // WT 스킴 → xterm ITheme (WT의 purple == ANSI magenta)
   function toXtermTheme(s) {
     const t = {
@@ -241,6 +257,22 @@
       brightCyan: s.brightCyan, brightWhite: s.brightWhite,
     };
     if (s.selectionBackground) t.selectionBackground = s.selectionBackground;
+    return t;
+  }
+
+  // gjc 전용 드래그 선택색 — claude 선택색(#267F78)과 동일하게. gjc 는 xterm 로컬 선택을
+  // 쓰므로(마우스 모드 swallow) 방별로 selectionBackground 만 덮어쓴다. selectionForeground 는
+  // 안 건다(단색 고정 시 색-기반 볼드 사라짐) — 원래 글자색/볼드 유지. 셸/타 에이전트는 기본색.
+  // 테마별 gjc 선택색(배경색으로 현재 테마 판별 — soft/minimal 은 라이트, 기본은 dark).
+  function gjcSelectionBg() {
+    const bg = ((cfg.theme && cfg.theme.background) || '').toLowerCase();
+    if (bg === '#f2ede6') return '#C2D8B0'; // soft
+    if (bg === '#f8fafc') return '#C5D8F8'; // minimal(심플)
+    return '#264F78';                        // dark
+  }
+  function themeFor(agent) {
+    const t = toXtermTheme(cfg.theme);
+    if (agent === 'gajae') t.selectionBackground = gjcSelectionBg();
     return t;
   }
 
@@ -403,16 +435,28 @@
     return true;
   }
 
+  // 복사 토스트 — claude 의 "copied N chars to clipboard" 와 동일 문구/위치. gjc·셸 등 우리가
+  // 직접 복사하는 경로에서만 표시(claude 네이티브 복사는 OSC52 라 여기 안 탐 → 중복 없음).
+  const copyToastEl = document.getElementById('copy-toast');
+  let copyToastTimer = 0;
+  function showCopyToast(n) {
+    if (!copyToastEl || !n) return;
+    copyToastEl.textContent = 'copied ' + n + ' chars to clipboard';
+    copyToastEl.classList.add('on');
+    clearTimeout(copyToastTimer);
+    copyToastTimer = setTimeout(function () { copyToastEl.classList.remove('on'); }, 1400);
+  }
+
   function doCopy(term) {
     const sel = term.getSelection();
-    if (sel) post({ type: 'copy', data: sel });
+    if (sel) { post({ type: 'copy', data: sel }); showCopyToast(Array.from(sel).length); }
     term.clearSelection();
   }
 
   // copy-on-select: 선택이 있으면 복사하되 선택은 유지(무엇을 복사했는지 보이게). Ctrl+C 와 달리 clear 안 함.
   function doCopyKeep(term) {
     const sel = term.getSelection();
-    if (sel) post({ type: 'copy', data: sel });
+    if (sel) { post({ type: 'copy', data: sel }); showCopyToast(Array.from(sel).length); }
   }
 
   // ── 검색바 ──────────────────────────────────────────────────────────
@@ -498,7 +542,7 @@
     document.body.appendChild(el);
 
     const term = new Terminal({
-      theme: toXtermTheme(cfg.theme),
+      theme: themeFor(agent),
       // 한글 폴백: 기본 모노스페이스 폰트에는 한글 글리프가 없어 IME 조합 표시가 깨진다
       fontFamily: cfg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",
       fontSize: cfg.fontSize,
@@ -516,6 +560,45 @@
 
     const entry = { term, fit, el, search, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null };
     terms[roomId] = entry;
+
+    // OSC 52 클립보드 쓰기 — claude/gjc 등 TUI 가 마우스 선택 후 "ESC]52;c;<base64>" 로 복사하면
+    // (우측 하단 "copied N chars" 토스트) 이를 실제 Windows 클립보드에 반영한다. 번들 xterm 은
+    // OSC 52 를 기본 무시(토스트만 뜨고 클립보드 미기록 = WT 와 달리 복사 안 됨)하므로 직접 처리.
+    // 클립보드 '읽기' 질의(payload '?')는 보안상 무시하고 '쓰기'만 honor 한다.
+    try {
+      term.parser.registerOscHandler(52, function (raw) {
+        const semi = raw.indexOf(';');
+        const payload = semi === -1 ? raw : raw.slice(semi + 1);
+        if (!payload || payload === '?') return true;
+        try {
+          const bin = atob(payload);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const text = new TextDecoder('utf-8').decode(bytes);
+          if (text) post({ type: 'copy', data: text });
+        } catch (e) { /* base64/디코드 실패 무시 */ }
+        return true; // 처리됨 — xterm 기본 무시 동작 차단
+      });
+    } catch (e) { /* 구버전 등 parser 미지원 시 무시 */ }
+
+    // gjc 드래그 선택/복사 — gjc(tui)는 마우스 트래킹(?1000;?1006)을 무조건 켜는데 자체 텍스트
+    // 선택 렌더는 없다(WT 의 하이라이트는 WT 자체 로컬 선택). xterm 은 앱 마우스 모드면 드래그를
+    // 앱으로 넘기고 로컬 선택을 안 해 → gjc 에선 하이라이트도 복사도 안 된다. gjc 방에 한해 마우스
+    // 모드 진입 DECSET 을 파서 단계에서 삼켜(xterm 이 무시) 항상 xterm 로컬 선택을 쓰게 한다
+    // → 드래그 하이라이트 + copy-on-select 복사. 휠 스크롤은 xterm 스크롤백(STY 가 보존)이 처리.
+    if ((agent || '') === 'gajae') {
+      const MOUSE_MODES = [1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016];
+      const swallowMouse = function (params) {
+        const arr = params && params.params ? params.params : params;
+        const len = params && params.length !== undefined ? params.length : (arr ? arr.length : 0);
+        for (let i = 0; i < len; i++) if (MOUSE_MODES.indexOf(arr[i]) !== -1) return true; // 삼킴
+        return false; // 마우스 외 DECSET(?2004/?2026/?25/?1049 등)은 xterm 기본 처리로 통과
+      };
+      try {
+        term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, swallowMouse);
+        term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, swallowMouse);
+      } catch (e) { /* parser 미지원 무시 */ }
+    }
 
     // 컨테이너 실제 픽셀 박스가 바뀔 때마다 재-fit. window resize 만으로는
     // WebView2 HWND 크기는 그대로인데 CSS 박스만 변하는 경우(시작 시 레이아웃이
@@ -635,10 +718,10 @@
       case 'theme':
         // 라이브 테마 전환 — 열린 모든 xterm 의 색을 갱신하고 CSS 변수·body 배경도 맞춘다
         cfg.theme = msg.theme;
-        const tObj = toXtermTheme(msg.theme);
         for (const id in terms) {
           const ent = terms[id];
           if (ent && ent.term) {
+            const tObj = themeFor(ent.agent); // gjc 는 selectionBackground 오버라이드 유지
             try { ent.term.setOption('theme', tObj); } catch (e) { ent.term.options.theme = tObj; }
             // 기존 셀까지 새 색으로 다시 칠하도록 강제 리프레시
             try { ent.term.refresh(0, ent.term.rows - 1); } catch (e) {}
