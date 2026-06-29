@@ -534,6 +534,19 @@
     _scrollSuppress = 0;
     // 일반 휠은 xterm 기본 동작(스크롤백 스크롤)에 맡긴다. gjc 는 멀티플렉서 모드(STY)로
     // 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.
+
+    // 아래로 굴려 바닥 근처까지 내려오면 ybase 로 스냅 — idle 상태에서 위로 올렸다 내려올 때
+    // xterm 줄 스냅이 1~3줄 모자라 입력창이 잘리는 현상 방지(휠론 ybase 에 정확히 못 닿음).
+    // 아래 방향(deltaY>0)일 때만 개입 → 위로 읽는 중엔 절대 끌어내리지 않는다.
+    if (e.deltaY > 0) {
+      const t = activeRoomId ? terms[activeRoomId] : null;
+      const vp = t && t.term.element && t.term.element.querySelector('.xterm-viewport');
+      if (vp) requestAnimationFrame(function () {
+        const cell = (vp.clientHeight / t.term.rows) || 16;
+        const rest = vp.scrollHeight - vp.clientHeight - vp.scrollTop;
+        if (rest > 0 && rest <= cell * 3) { try { t.term.scrollToBottom(); } catch (e) {} }
+      });
+    }
   }, { passive: false, capture: true });
 
   // WebView2 는 별도 HWND 라 WPF 부모의 PreviewMouseDown 이 터미널 클릭을 보지 못한다.
