@@ -54,6 +54,9 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionStopTrackingRequested;
 
     // 프로젝트 목록 열 수(1/2). 2면 카드 2열 그리드 + 가로 드래그. 기본 1.
+    /// <summary>숨김 세션 표시 토글 변경 → 영속 저장 트리거.</summary>
+    public event Action? HiddenSessionVisibilityChanged;
+
     private int _projectColumns = 1;
 
     /// <summary>프로젝트/보관함 목록을 1열(세로) 또는 2열(좌/우 독립 컬럼)로 전환. MainWindow 가 설정값으로 호출.
@@ -274,6 +277,7 @@ public partial class SidebarView : UserControl
             p.ShowHiddenSessions = !p.ShowHiddenSessions;
             if (sender is Button btn)
                 btn.ToolTip = p.ShowHiddenSessions ? "숨김 세션 숨기기" : "숨김 세션 표시";
+            HiddenSessionVisibilityChanged?.Invoke();
     }
         e.Handled = true;
     }

@@ -158,6 +158,7 @@ public partial class MainWindow : Window
         Sidebar.ProjectFileRenameRequested += RenameProjectFile;
         Sidebar.ProjectsReordered += () => WorkspaceStore.Save(_projects);
         Sidebar.ProjectExpandChanged += () => WorkspaceStore.Save(_projects);
+        Sidebar.HiddenSessionVisibilityChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
         Sidebar.SessionSelected        += OpenSession;
         Sidebar.SessionDeleteRequested += DeleteSession;
