@@ -217,8 +217,6 @@ public partial class SettingsDialog : UserControl
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
         CatNotifyBtn.Background    = key == "notify"     ? active : Brushes.Transparent;
         CatNotifyBtn.Foreground    = key == "notify"     ? primary : text;
-        CatDiscordBtn.Background   = key == "discord"    ? active : Brushes.Transparent;
-        CatDiscordBtn.Foreground   = key == "discord"    ? primary : text;
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
