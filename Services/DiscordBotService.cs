@@ -52,8 +52,14 @@ public sealed class DiscordBotService : IDisposable
     private readonly HashSet<string> _mePending = new(StringComparer.Ordinal);
     // 세션별 마지막으로 카드로 보낸 (modelId|effort) — 동일 상태 중복 전송 방지.
     private readonly Dictionary<string, string> _meLastPosted = new(StringComparer.Ordinal);
-    // 세션별 마지막으로 디스코드에 보낸 완료 본문 — busy 경로와 폴링 경로가 같은 답을 두 번 보내는 것 방지.
-    private readonly Dictionary<string, string> _lastPostedBody = new(StringComparer.Ordinal);
+    // 스트리밍: 세션별 이번 턴에 이미 디스코드로 보낸 assistant 텍스트 블록(중복 전송 방지).
+    private readonly Dictionary<string, HashSet<string>> _streamedBlocks = new(StringComparer.Ordinal);
+    // 세션별 현재 턴 키(턴을 시작한 사용자 입력 텍스트) — 바뀌면 새 턴으로 보고 스트리밍 상태 리셋.
+    private readonly Dictionary<string, string> _streamTurnKey = new(StringComparer.Ordinal);
+    // 스트리밍 전송 진행 중인 세션(같은 세션 폴링 재진입 방지).
+    private readonly HashSet<string> _streaming = new(StringComparer.Ordinal);
+    // 세션별 정보 푸터(모델·effort·ctx)를 이미 보낸 턴 키 — 턴당 1회만 전송.
+    private readonly Dictionary<string, string> _lastInfoTurn = new(StringComparer.Ordinal);
     // /model 선택지(선택 가능). fable 은 비활성이라 별도(비활성 버튼)로 표시.
     private static readonly (string label, string value)[] ModelChoices =
         { ("Opus 4.8", "opus"), ("Sonnet 4.6", "sonnet"), ("Haiku 4.5", "haiku") };
@@ -382,7 +388,7 @@ public sealed class DiscordBotService : IDisposable
         IsConnected = false;
         try { _promptPoll?.Dispose(); } catch { }
         _promptPoll = null;
-        lock (_sync) _promptActive.Clear();
+        lock (_sync) { _promptActive.Clear(); _streaming.Clear(); _streamedBlocks.Clear(); _streamTurnKey.Clear(); _lastInfoTurn.Clear(); }
         foreach (var wh in _webhooks.Values) { try { wh.Dispose(); } catch { } }
         _webhooks.Clear();
         if (client == null) return;
@@ -590,40 +596,130 @@ public sealed class DiscordBotService : IDisposable
         // 카드 본문(첫 메시지)을 방금 보낸 프롬프트로 갱신(웹훅).
         await UpdatePostStarterAsync(project, thread.Id, session);
 
-        // 작성자(에이전트 이름·아바타)로 누구 응답인지 보이므로 "프로젝트/세션 응답 완료" 머리글은 생략.
-        // 어떤 질문에 대한 답인지 구분되도록 "내 질문 + 답변"만 보낸다.
-        var question = string.IsNullOrWhiteSpace(session.LastMessage)
-            ? "" : $"> {HeadForDiscord(session.LastMessage, 300)}";
-
-        // 에이전트의 최종 답변 텍스트. 추출 불가(codex/opencode 등)면 질문만.
+        // 이번 턴의 assistant 텍스트 블록들. 대부분은 스트리밍 폴링(StreamTurnBlocksAsync)이 이미
+        // 그때그때 보냈으므로, 여기서는 아직 안 보낸 블록(주로 마지막 답변)만 추려 보낸다 — 중복 방지.
         var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
-        var reply = AgentReplyService.TryGetLastAssistantReply(session.Id, agentId);
+        var (turnKey, blocks) = AgentReplyService.GetTurnAssistantBlocks(session.Id, agentId);
 
-        string body;
-        if (!string.IsNullOrWhiteSpace(reply))
-            body = string.IsNullOrWhiteSpace(question) ? HeadForDiscord(reply, 1500) : $"{question}\n\n{HeadForDiscord(reply, 1500)}";
-        else
-            body = string.IsNullOrWhiteSpace(question) ? "응답 완료" : question;
-
-        // 중복 방지: 같은 본문을 직전에 보냈으면(busy 경로 + 폴링 경로 동시 발동) 한 번만 보낸다.
-        // dedup 키는 정보줄(아래)을 제외한 본문으로 비교 — ctx 가 미세하게 달라도 중복 전송되지 않게.
-        lock (_sync)
+        var toSend = new List<string>();
+        if (blocks.Count > 0)
         {
-            if (_lastPostedBody.TryGetValue(session.Id, out var prev) && prev == body) return;
-            _lastPostedBody[session.Id] = body;
+            lock (_sync)
+            {
+                // 턴이 바뀌었으면(새 사용자 입력) 스트리밍 상태 초기화.
+                if (!_streamTurnKey.TryGetValue(session.Id, out var pk) || pk != (turnKey ?? ""))
+                {
+                    _streamTurnKey[session.Id] = turnKey ?? "";
+                    _streamedBlocks[session.Id] = new HashSet<string>(StringComparer.Ordinal);
+                    _lastInfoTurn.Remove(session.Id);
+                }
+                var set = _streamedBlocks[session.Id];
+                foreach (var bl in blocks) if (set.Add(bl)) toSend.Add(bl); // 아직 스트리밍 안 된 것만
+            }
+        }
+        else
+        {
+            // transcript 추출 불가(codex/opencode 등) → hook 의 마지막 답변 하나로 폴백.
+            var hookReply = AgentReplyService.TryGetLastAssistantReply(session.Id, agentId);
+            if (!string.IsNullOrWhiteSpace(hookReply)) toSend.Add(hookReply!);
         }
 
-        // 답변 + (구분선) + 모델·effort·ctx / 5h·week 정보를 Components V2(Container+Separator)로 전송.
-        var info = SessionInfoLine(session.Id);
+        // 모델·effort·ctx 정보 푸터는 턴당 한 번만.
+        bool sendInfo;
+        lock (_sync)
+        {
+            sendInfo = !_lastInfoTurn.TryGetValue(session.Id, out var it) || it != (turnKey ?? "");
+            if (sendInfo) _lastInfoTurn[session.Id] = turnKey ?? "";
+        }
+
+        if (toSend.Count == 0 && !sendInfo) return; // 보낼 것 없음(이미 다 보냄)
+
         string? a = null, b = null;
-        if (info != null) { var split = SplitInfo(info); a = split.a; b = split.b; }
-        await SendDoneV2Async(project, thread, agentId, body, a, b);
+        if (sendInfo) { var info = SessionInfoLine(session.Id); if (info != null) { var split = SplitInfo(info); a = split.a; b = split.b; } }
+
+        if (toSend.Count == 0)
+        {
+            // 텍스트는 이미 스트리밍됨 → 정보 푸터 카드만 전송.
+            if (a != null) await SendInfoOnlyAsync(project, thread, agentId, a, b);
+            return;
+        }
+        await SendDoneV2Async(project, thread, agentId, string.Join("\n\n", toSend), a, b);
+    }
+
+    /// <summary>진행 중인 턴에서 새로 나타난 assistant 텍스트 블록을 그때그때(실시간) 스레드로 흘려보낸다.
+    /// 앱 시작 직후 첫 관측 시의 기존 대화는 보내지 않고, 그 이후 새로 생기는 블록만 스트리밍한다.</summary>
+    private async Task StreamTurnBlocksAsync(ProjectItem project, SessionItem session)
+    {
+        var agentId = string.IsNullOrWhiteSpace(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+        lock (_sync) { if (!_streaming.Add(session.Id)) return; } // 같은 세션 중복 스트리밍 방지
+        try
+        {
+            var (turnKey, blocks) = AgentReplyService.GetTurnAssistantBlocks(session.Id, agentId);
+
+            var fresh = new List<string>();
+            lock (_sync)
+            {
+                bool seen = _streamTurnKey.TryGetValue(session.Id, out var pk);
+                if (!seen || pk != (turnKey ?? ""))
+                {
+                    _streamTurnKey[session.Id] = turnKey ?? "";
+                    var ns = new HashSet<string>(StringComparer.Ordinal);
+                    // 첫 관측이면 기존 블록을 "이미 보낸 것"으로 표시해 과거 대화를 흘리지 않는다.
+                    if (!seen) foreach (var bl in blocks) ns.Add(bl);
+                    _streamedBlocks[session.Id] = ns;
+                    _lastInfoTurn.Remove(session.Id);
+                }
+                var set = _streamedBlocks[session.Id];
+                foreach (var bl in blocks) if (!set.Contains(bl)) fresh.Add(bl);
+            }
+            if (fresh.Count == 0) return;
+
+            var thread = await EnsureSessionThreadAsync(project, session);
+            if (thread == null) return;
+            foreach (var bl in fresh)
+            {
+                bool go; lock (_sync) { go = _streamedBlocks[session.Id].Add(bl); } // 완료 경로와의 경합 방지
+                if (!go) continue;
+                foreach (var c in ChunkForDiscord(bl, 1900))
+                    await SendAsAgentAsync(project, thread, agentId, c);
+            }
+        }
+        catch { /* 스트리밍 실패는 무시 — 완료 알림이 폴백 */ }
+        finally { lock (_sync) _streaming.Remove(session.Id); }
+    }
+
+    /// <summary>모델·effort·ctx 정보 푸터만 단독 카드(웹훅, 에이전트 작성자)로 전송. 실패 시 봇 텍스트 폴백.</summary>
+    private async Task SendInfoOnlyAsync(ProjectItem project, IMessageChannel thread, string? agentId, string infoA, string? infoB)
+    {
+        var infoText = !string.IsNullOrEmpty(infoB) ? $"-# {infoA}\n-# {infoB}" : $"-# {infoA}";
+        var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
+        var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
+        if (hook != null)
+        {
+            try
+            {
+                var container = new ContainerBuilder().AddComponent(new TextDisplayBuilder().WithContent(infoText));
+                var comp = new ComponentBuilderV2().AddComponent(container).Build();
+                await hook.SendMessageAsync(text: null, username: AgentDisplayName(agentId), avatarUrl: AgentAvatarUrl(agentId),
+                    components: comp, flags: MessageFlags.ComponentsV2, threadId: thread.Id);
+                return;
+            }
+            catch { /* V2/웹훅 실패 → 봇 폴백 */ }
+        }
+        await SafeSendAsync(thread, infoText);
     }
 
     /// <summary>완료 응답을 Components V2(Container + Separator + subtext 정보)로 전송. 작성자=에이전트(웹훅).
     /// V2 전송 실패 시 기존 텍스트(subtext 2줄) 방식으로 폴백.</summary>
     private async Task SendDoneV2Async(ProjectItem project, IMessageChannel thread, string? agentId, string body, string? infoA, string? infoB)
     {
+        // 본문이 길면 여러 메시지로 나눠 전부 보낸다(잘라내지 않음).
+        // 앞 청크들은 평문(에이전트 작성자)으로 먼저 보내고, 마지막 청크에만 정보 푸터(V2 카드)를 붙인다.
+        var chunks = ChunkForDiscord(body, 1900);
+        for (int i = 0; i < chunks.Count - 1; i++)
+            await SendAsAgentAsync(project, thread, agentId, chunks[i]);
+        var lastBody = chunks.Count > 0 ? chunks[^1] : body;
+
         var forumId = SettingsService.LoadDiscordProjectChannel(project.Path);
         var hook = forumId != 0 ? await GetWebhookAsync(forumId) : null;
         if (hook != null)
@@ -631,7 +727,7 @@ public sealed class DiscordBotService : IDisposable
             try
             {
                 var container = new ContainerBuilder()
-                    .AddComponent(new TextDisplayBuilder().WithContent(TrimForDiscord(body, 3500)));
+                    .AddComponent(new TextDisplayBuilder().WithContent(lastBody));
                 if (!string.IsNullOrEmpty(infoA))
                 {
                     container.AddComponent(new SeparatorBuilder().WithIsDivider(true).WithSpacing(SeparatorSpacingSize.Small));
@@ -646,26 +742,32 @@ public sealed class DiscordBotService : IDisposable
             catch { /* V2/웹훅 실패 → 텍스트 폴백 */ }
         }
         var fallback = !string.IsNullOrEmpty(infoA)
-            ? (!string.IsNullOrEmpty(infoB) ? $"{body}\n-# {infoA}\n-# {infoB}" : $"{body}\n-# {infoA}")
-            : body;
+            ? (!string.IsNullOrEmpty(infoB) ? $"{lastBody}\n-# {infoA}\n-# {infoB}" : $"{lastBody}\n-# {infoA}")
+            : lastBody;
         await SendAsAgentAsync(project, thread, agentId, fallback);
     }
 
     private async Task OnMessageReceived(SocketMessage message)
     {
-        if (message.Author.IsBot) return;
+        // 진단: 메시지 수신 자체가 일어나는지 + 어디서 드롭되는지 파일 로그로 추적.
+        var chId = message.Channel?.Id ?? 0;
+        var chType = message.Channel?.GetType().Name ?? "null";
+        if (message.Author.IsBot) { DiscordLog($"recv ch={chId}({chType}) skip: author is bot"); return; }
         var content = message.Content?.Trim() ?? "";
-        if (content.Length == 0) return;
+        DiscordLog($"recv ch={chId}({chType}) author={message.Author?.Username} len={content.Length} text='{(content.Length > 40 ? content[..40] : content)}'");
+        if (content.Length == 0) { DiscordLog("  drop: empty content (Message Content Intent 미설정 의심)"); return; }
 
         // 명령은 모두 슬래시 명령(/refresh, /status, /keys, /reset)으로 처리한다.
         // 세션 채널의 일반 메시지만 터미널로 전달.
-        if (message.Channel is not ITextChannel ch) return;
+        // 포럼 스레드/텍스트채널 모두 IMessageChannel 로 받는다(ITextChannel 캐스팅이 일부 채널을 누락시키지 않도록).
+        if (message.Channel is not IMessageChannel ch) { DiscordLog($"  drop: channel not IMessageChannel ({chType})"); return; }
         var sessionId = SettingsService.FindDiscordSessionByThread(ch.Id);
-        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        if (string.IsNullOrWhiteSpace(sessionId)) { DiscordLog($"  drop: no session mapped for thread {ch.Id}"); return; }
 
         var session = TerminalSessionManager.Instance.Get(sessionId);
         if (session is not { IsAlive: true })
         {
+            DiscordLog($"  session {sessionId} not alive → auto-start");
             await RequestAutoStartAsync(ch, sessionId, content);
             return;
         }
@@ -673,9 +775,23 @@ public sealed class DiscordBotService : IDisposable
         // 텍스트 입력과 Enter 를 분리해 TUI 가 붙여넣은 텍스트를 입력란에 등록한 뒤 제출하게 한다.
         // (opencode 등 alt-screen TUI 는 즉시 \r 을 보내면 텍스트가 등록되기 전에 빈 제출이 되어 메시지가 누락됨.)
         bool inline = AgentRegistry.Find(AgentIdForSession(sessionId))?.InlineTui == true;
+        DiscordLog($"  → write to session {sessionId} (alive)");
         session.Write(content);
         await Task.Delay(inline ? 500 : 250);
         session.Write("\r");
+    }
+
+    /// <summary>Discord 연동 진단 로그(%AppData%\DevezCode\discord-debug.log).</summary>
+    private static void DiscordLog(string msg)
+    {
+        try
+        {
+            var dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "discord-debug.log"), $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\n");
+        }
+        catch { }
     }
 
     /// <summary>alive 한 claude 세션의 터미널 화면을 폴링해, 입력 대기 선택지 메뉴가 새로 뜨면
@@ -697,6 +813,9 @@ public sealed class DiscordBotService : IDisposable
                 var session = TerminalSessionManager.Instance.Get(s.Id);
                 if (session is not { IsAlive: true }) { lock (_sync) _promptActive.Remove(s.Id); continue; }
                 lock (_sync) { if (_pendingInput.ContainsKey(s.Id)) continue; } // 자동시작 주입 중이면 스킵
+
+                // 진행 중인 턴의 새 응답 텍스트 블록을 그때그때(실시간) 스트리밍한다(busy 여부와 무관).
+                { var pj = p; var ss = s; _ = StreamTurnBlocksAsync(pj, ss); }
 
                 // 모델/effort 변경 감지 → 디바운스(~2초 모아 최종 상태 1장만 전송). 선택지·확인 메뉴는 안 보냄.
                 // statusline 훅이 매 렌더마다 파일을 truncate 후 다시 쓰므로, 그 찰나에 한 줄만 읽히면
@@ -1990,6 +2109,23 @@ public sealed class DiscordBotService : IDisposable
 
     private static string TrimForDiscord(string text, int max)
         => text.Length <= max ? text : text[^max..];
+
+    /// <summary>긴 텍스트를 max 자 이하 청크들로 나눈다(가능하면 줄바꿈 경계에서 자름). 자르지 않고 전부 보존.</summary>
+    private static List<string> ChunkForDiscord(string text, int max)
+    {
+        var chunks = new List<string>();
+        if (string.IsNullOrEmpty(text)) { chunks.Add(""); return chunks; }
+        var remaining = text;
+        while (remaining.Length > max)
+        {
+            int cut = remaining.LastIndexOf('\n', max - 1);
+            if (cut < max / 2) cut = max; // 줄바꿈이 너무 앞쪽이면 그냥 max 에서 자름
+            chunks.Add(remaining[..cut].TrimEnd());
+            remaining = remaining[cut..].TrimStart('\n');
+        }
+        if (remaining.Length > 0) chunks.Add(remaining);
+        return chunks;
+    }
 
     /// <summary>앞에서부터 max 자 유지(답변 본문용 — 끝이 아니라 앞이 중요). 잘리면 말줄임 표시.</summary>
     private static string HeadForDiscord(string text, int max)

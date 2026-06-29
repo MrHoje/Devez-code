@@ -67,6 +67,35 @@ public static class AgentReplyService
         catch { return null; }
     }
 
+    /// <summary>현재 턴(마지막 실제 사용자 입력 이후)의 assistant 텍스트 블록들을 시간순 목록으로 반환한다.
+    /// 함께 그 턴을 시작한 사용자 입력 텍스트(turnKey)도 돌려준다 — 턴 경계 변화 감지용(스트리밍 리셋).
+    /// tool_use(bash 등 명령)·tool_result·thinking 은 파싱 단계에서 빠지므로 자연히 제외된다.
+    /// transcript 가 없는 에이전트(codex/opencode 등)는 (null, 빈 목록)을 반환(호출부가 폴백).</summary>
+    public static (string? turnKey, List<string> blocks) GetTurnAssistantBlocks(string roomId, string agentId)
+    {
+        try
+        {
+            var path = TranscriptPath(roomId, agentId);
+            if (path == null) return (null, new());
+            var lines = ReadLines(path);
+            if (lines == null) return (null, new());
+
+            string? turnKey = null;
+            var parts = new List<string>();
+            for (int i = lines.Length - 1; i >= 0; i--)
+            {
+                if (!TryParseMessage(lines[i], out var role, out var text)) continue;
+                // 실제 사용자 입력(text 있음)을 만나면 현재 턴의 시작 — 거기서 멈춘다.
+                // tool_result 는 role=="user"지만 text==null 이라 통과(턴 경계로 보지 않음).
+                if (role == "user" && text != null) { turnKey = text; break; }
+                if (role == "assistant" && text != null) parts.Add(text);
+            }
+            parts.Reverse(); // 오래된 → 최신
+            return (turnKey, parts);
+        }
+        catch { return (null, new()); }
+    }
+
     /// <summary>세션의 최근 대화를 시간순(오래된→최신)으로 최대 maxMessages 개 반환한다.
     /// 각 항목은 (role: "user"|"assistant", text). 실제 사용자/어시스턴트 텍스트만 — tool_use/tool_result 제외.</summary>
     public static List<(string role, string text)> GetRecentConversation(string roomId, string agentId, int maxMessages)
