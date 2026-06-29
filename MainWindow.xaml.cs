@@ -572,9 +572,11 @@ public partial class MainWindow : Window
             var rows = new List<Models.UsageRowVM>();
             AddRow(rows, "5시간", rl.FiveHourPercent, rl.FiveHourResetsAt, isShortWindow: true);
             AddRow(rows, "주간", rl.SevenDayPercent, rl.SevenDayResetsAt, isShortWindow: false);
+            var claudePlan = UsageApiService.FormatPlanLabel(UsageApiService.ReadSubscriptionType());
             cards.Add(new Models.UsageCardVM
             {
                 Name = "Claude",
+                Plan = claudePlan,
                 IconPath = "pack://application:,,,/Resources/Images/ShellPresets/claude_code.png",
                 Rows = rows,
             });
@@ -847,14 +849,13 @@ public partial class MainWindow : Window
 
     private static string BuildRlTooltip(Models.RateLimitSnapshot snap)
     {
+        var planLabel = UsageApiService.FormatPlanLabel(UsageApiService.ReadSubscriptionType());
         var sb = new System.Text.StringBuilder();
+        sb.Append(planLabel);
         if (snap.FiveHourPercent is double f)
-            sb.Append($"5시간 한도 {f:F0}%  ·  초기화까지 {FormatRemaining(snap.FiveHourResetsAt)}");
+            sb.Append($"\n5시간 한도 {f:F0}%  ·  초기화까지 {FormatRemaining(snap.FiveHourResetsAt)}");
         if (snap.SevenDayPercent is double w)
-        {
-            if (sb.Length > 0) sb.Append('\n');
-            sb.Append($"주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(snap.SevenDayResetsAt)}");
-        }
+            sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(snap.SevenDayResetsAt)}");
         return sb.ToString();
     }
 

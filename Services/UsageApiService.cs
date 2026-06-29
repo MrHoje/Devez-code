@@ -146,6 +146,47 @@ public sealed class UsageApiService : IDisposable
         w.WriteEndObject();
     }
 
+    /// <summary>credentials.json 에서 subscriptionType(claude plan)을 추출.
+    /// 후보 경로를 순서대로 시도. 없으면 null.</summary>
+    public static string? ReadSubscriptionType()
+    {
+        foreach (var path in CredentialPaths())
+        {
+            try
+            {
+                if (!File.Exists(path)) continue;
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var doc = JsonDocument.Parse(fs);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("claudeAiOauth", out var oauth)
+                    && oauth.TryGetProperty("subscriptionType", out var st)
+                    && st.ValueKind == JsonValueKind.String)
+                {
+                    var raw = st.GetString();
+                    if (!string.IsNullOrEmpty(raw)) return raw;
+                }
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    /// <summary>subscriptionType 문자열을 표시용 라벨로 변환("pro" → "Claude (Pro)").</summary>
+    public static string FormatPlanLabel(string? subscriptionType)
+    {
+        if (string.IsNullOrEmpty(subscriptionType)) return "Claude";
+        var lower = subscriptionType.ToLowerInvariant();
+        var plan = lower switch
+        {
+            "pro" => "Pro",
+            "max" => "Max",
+            "team" => "Team",
+            "enterprise" => "Enterprise",
+            _ => subscriptionType, // 그대로 표시
+        };
+        return $"Claude ({plan})";
+    }
+
     /// <summary>credentials.json 에서 OAuth 액세스 토큰 추출(느슨한 매칭). 후보 경로를 순서대로 시도.</summary>
     private static string? ReadToken()
     {
