@@ -635,8 +635,6 @@ public sealed class DiscordBotService : IDisposable
         bool willSendInfo = infoPending && a != null;
         if (willSendInfo) lock (_sync) _lastInfoTurn[session.Id] = turnKey ?? "";
 
-        DiscordLog($"done s={session.Id} toSend={toSend.Count} infoPending={infoPending} a={(a == null ? "null" : "ok")} willSendInfo={willSendInfo}");
-
         if (toSend.Count == 0 && !willSendInfo) return; // 보낼 것 없음(이미 다 보냈거나 정보 미준비 → 다음 경로가 재시도)
 
         if (toSend.Count == 0)
@@ -753,25 +751,20 @@ public sealed class DiscordBotService : IDisposable
 
     private async Task OnMessageReceived(SocketMessage message)
     {
-        // 진단: 메시지 수신 자체가 일어나는지 + 어디서 드롭되는지 파일 로그로 추적.
-        var chId = message.Channel?.Id ?? 0;
-        var chType = message.Channel?.GetType().Name ?? "null";
-        if (message.Author.IsBot) { DiscordLog($"recv ch={chId}({chType}) skip: author is bot"); return; }
+        if (message.Author.IsBot) return;
         var content = message.Content?.Trim() ?? "";
-        DiscordLog($"recv ch={chId}({chType}) author={message.Author?.Username} len={content.Length} text='{(content.Length > 40 ? content[..40] : content)}'");
-        if (content.Length == 0) { DiscordLog("  drop: empty content (Message Content Intent 미설정 의심)"); return; }
+        if (content.Length == 0) return;
 
         // 명령은 모두 슬래시 명령(/refresh, /status, /keys, /reset)으로 처리한다.
         // 세션 채널의 일반 메시지만 터미널로 전달.
         // 포럼 스레드/텍스트채널 모두 IMessageChannel 로 받는다(ITextChannel 캐스팅이 일부 채널을 누락시키지 않도록).
-        if (message.Channel is not IMessageChannel ch) { DiscordLog($"  drop: channel not IMessageChannel ({chType})"); return; }
+        if (message.Channel is not IMessageChannel ch) return;
         var sessionId = SettingsService.FindDiscordSessionByThread(ch.Id);
-        if (string.IsNullOrWhiteSpace(sessionId)) { DiscordLog($"  drop: no session mapped for thread {ch.Id}"); return; }
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
 
         var session = TerminalSessionManager.Instance.Get(sessionId);
         if (session is not { IsAlive: true })
         {
-            DiscordLog($"  session {sessionId} not alive → auto-start");
             await RequestAutoStartAsync(ch, sessionId, content);
             return;
         }
@@ -779,23 +772,9 @@ public sealed class DiscordBotService : IDisposable
         // 텍스트 입력과 Enter 를 분리해 TUI 가 붙여넣은 텍스트를 입력란에 등록한 뒤 제출하게 한다.
         // (opencode 등 alt-screen TUI 는 즉시 \r 을 보내면 텍스트가 등록되기 전에 빈 제출이 되어 메시지가 누락됨.)
         bool inline = AgentRegistry.Find(AgentIdForSession(sessionId))?.InlineTui == true;
-        DiscordLog($"  → write to session {sessionId} (alive)");
         session.Write(content);
         await Task.Delay(inline ? 500 : 250);
         session.Write("\r");
-    }
-
-    /// <summary>Discord 연동 진단 로그(%AppData%\DevezCode\discord-debug.log).</summary>
-    private static void DiscordLog(string msg)
-    {
-        try
-        {
-            var dir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode");
-            System.IO.Directory.CreateDirectory(dir);
-            System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "discord-debug.log"), $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\n");
-        }
-        catch { }
     }
 
     /// <summary>alive 한 claude 세션의 터미널 화면을 폴링해, 입력 대기 선택지 메뉴가 새로 뜨면
