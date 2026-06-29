@@ -54,7 +54,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.8.2", "2026-06-29", true, new[]
+        ("v1.9.0", "2026-06-29", true, new[]
+        {
+            "같은 프로젝트(폴더)를 여러 개 등록할 수 있습니다.",
+            "세션 터미널에서 마우스로 드래그해 텍스트를 선택·복사할 수 있습니다.",
+            "계정 사용량 패널에 DeepSeek API 잔액을 표시합니다.",
+            "그 외 사소한 오류를 수정했습니다.",
+        }),
+        ("v1.8.2", "2026-06-29", false, new[]
         {
             "Claude 세션 상태줄(statusLine)이 간헐적으로 불러와지지 않던 문제를 수정했습니다.",
         }),
