@@ -1644,7 +1644,8 @@ public partial class MainWindow : Window
                 $"{prefix}새 버전 {info.Version}",
                 $"새 버전이 있습니다. 지금 업데이트할까요?{noteLines}",
                 okLabel: "업데이트",
-                iconKey: "IconDownload"))
+                iconKey: "IconDownload",
+                autoWidth: true))
             return;
 
         _ = ApplyUpdateAsync(info);

@@ -14,7 +14,7 @@ public partial class ConfirmDialog : Window
     private string? _confirmText;
     private ConfirmChoice _choice = ConfirmChoice.Cancel;
 
-    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout)
+    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false)
     {
         InitializeComponent();
         Title = title;
@@ -30,8 +30,18 @@ public partial class ConfirmDialog : Window
             OkBtn.IsEnabled = false;
             Loaded += (_, _) => ConfirmInputBox.Focus();
         }
-        // 본문 가장 긴 줄의 실제 렌더 폭을 측정해 최소 500 에서 딱 필요한 만큼만 확장(상한 720).
-        Width = MeasureWidth(message);
+        if (autoWidth)
+        {
+            // 업데이트 노트 전용: 텍스트 길이에 따라 폭을 자동 조절(상한 660), 짧으면 360.
+            SizeToContent = SizeToContent.WidthAndHeight;
+            MinWidth = 360;
+            MaxWidth = 660;
+        }
+        else
+        {
+            // 본문 가장 긴 줄의 실제 렌더 폭을 측정해 최소 360 에서 딱 필요한 만큼만 확장(상한 720).
+            Width = MeasureWidth(message);
+        }
 
         KeyDown += OnKeyDown;
         PreviewKeyDown += OnPreviewKeyDown;
@@ -54,9 +64,10 @@ public partial class ConfirmDialog : Window
         bool danger = false,
         string? confirmText = null,
         bool topMost = false,
-        bool wideLayout = false)
+        bool wideLayout = false,
+        bool autoWidth = false)
     {
-        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger, confirmText, wideLayout);
+        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger, confirmText, wideLayout, autoWidth);
 
         if (Application.Current.MainWindow != null
             && Application.Current.MainWindow.IsLoaded
