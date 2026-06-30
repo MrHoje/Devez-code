@@ -580,22 +580,34 @@ public partial class MainWindow : Window
 
     private void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
     {
-        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
-        if (string.IsNullOrEmpty(exePath)) return;
+        var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+        if (string.IsNullOrEmpty(exePath))
+        {
+            System.Diagnostics.Debug.WriteLine("ThermalDriverInstall: exePath null");
+            return;
+        }
+
+        System.Diagnostics.Debug.WriteLine($"ThermalDriverInstall: launching {exePath} --install-thermal-driver");
 
         try
         {
-            using var proc = new System.Diagnostics.Process();
-            proc.StartInfo.FileName = exePath;
-            proc.StartInfo.Arguments = "--install-thermal-driver";
-            proc.StartInfo.Verb = "runas";
-            proc.StartInfo.UseShellExecute = true;
-            if (proc.Start())
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = "--install-thermal-driver",
+                Verb = "runas",
+                UseShellExecute = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc != null)
+            {
                 ThermalDriverBanner.Visibility = Visibility.Collapsed;
+                System.Diagnostics.Debug.WriteLine("ThermalDriverInstall: process started OK");
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // 사용자가 UAC 취소함 → 배너 유지
+            System.Diagnostics.Debug.WriteLine($"ThermalDriverInstall: failed - {ex.Message}");
         }
     }
 
