@@ -62,6 +62,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>roomId → 현재 JS와 배선된 세션 (재시작 시 교체 감지용).</summary>
     private readonly Dictionary<string, TerminalSession> _wired = new();
 
+    // ── 출력 배칭(coalescing) ──────────────────────────────────────
+    // ConPTY-Read 백그라운드 스레드가 청크마다 OutputReceived 를 때리는데, 매 청크 BeginInvoke 하면
+    // 다세션 동시 출력 시 UI 스레드 디스패처 큐가 폭증한다. roomId 별로 청크를 모아 한 번만 flush 를
+    // 예약(coalesce)하면, UI 가 바쁠 때 여러 청크가 한 틱에 합쳐져 ScanForReady·PostJson·JS write 가
+    // 1회로 줄어든다. UI 가 한가하면 거의 즉시 비워져 지연은 사실상 없다. _outLock 으로 BG/UI 동기화.
+    private readonly object _outLock = new();
+    private readonly Dictionary<string, List<byte[]>> _outPending = new();
+    private readonly HashSet<string> _outScheduled = new();
+
     /// <summary>claude 등 풀스크린 TUI가 떠서(alt-screen 진입) 준비된 방. UI 스레드에서만 접근.</summary>
     private readonly HashSet<string> _ready = new();
     /// <summary>alt-screen 시퀀스 감지용 방별 누적 버퍼 (청크 경계 분할 대비). UI 스레드에서만 접근.</summary>
@@ -411,6 +420,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             fontFamily = cfg.FontFamily,
             fontSize = fontSizePx,
             windowsBuild = Environment.OSVersion.Version.Build, // xterm windowsPty 휴리스틱 판정용
+            // WebGL(GPU) 렌더러 사용 여부 — 원격/CRD 세션은 App.OnStartup 이 SoftwareOnly 로 강제하므로
+            // 그 경우 끈다(SwiftShader 소프트 GL 은 DOM 보다 느림). 로컬에선 GPU 렌더로 활성 탭 비용 절감.
+            enableWebgl = System.Windows.Media.RenderOptions.ProcessRenderMode != System.Windows.Interop.RenderMode.SoftwareOnly,
         });
         var pending = _pendingShowRoomId ?? _activeRoomId;
         _pendingShowRoomId = null;
@@ -472,12 +484,16 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 cmdSent = true;
                 session.Write(initialCmd!);
             }
-            var b64 = Convert.ToBase64String(bytes);
-            Dispatcher.BeginInvoke(() =>
+            // 청크를 roomId 큐에 모으고, flush 가 아직 예약 안 됐을 때만 1회 예약(coalesce).
+            bool schedule;
+            lock (_outLock)
             {
-                ScanForReady(roomId, bytes); // claude 화면이 뜨면 로딩 스피너 종료
-                PostJson(new { type = "output", roomId, data = b64 });
-            });
+                if (!_outPending.TryGetValue(roomId, out var list))
+                    _outPending[roomId] = list = new List<byte[]>();
+                list.Add(bytes);
+                schedule = _outScheduled.Add(roomId); // 이미 있으면 false → 중복 예약 안 함
+            }
+            if (schedule) Dispatcher.BeginInvoke(() => FlushOutput(roomId));
         };
         session.Exited += () =>
         {
@@ -490,6 +506,28 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 SessionExited?.Invoke(roomId); // 끊김/죽음 → 회색 점
             });
         };
+    }
+
+    /// <summary>UI 스레드: roomId 큐에 모인 청크들을 하나로 합쳐 ScanForReady·PostJson 을 1회만 수행.</summary>
+    private void FlushOutput(string roomId)
+    {
+        byte[] merged;
+        lock (_outLock)
+        {
+            _outScheduled.Remove(roomId);
+            if (!_outPending.Remove(roomId, out var list) || list.Count == 0) return;
+            if (list.Count == 1) merged = list[0];
+            else
+            {
+                int total = 0;
+                foreach (var b in list) total += b.Length;
+                merged = new byte[total];
+                int off = 0;
+                foreach (var b in list) { Buffer.BlockCopy(b, 0, merged, off, b.Length); off += b.Length; }
+            }
+        }
+        ScanForReady(roomId, merged); // claude 화면이 뜨면 로딩 스피너 종료(누적 버퍼라 합쳐도 동일 판정)
+        PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
     }
 
     /// <summary>현재 활성 방의 xterm.js 폰트 크기만 즉시 변경. Devez 설정에 영구 저장.</summary>
@@ -662,6 +700,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         _pendingPreload.Remove(roomId);
+        lock (_outLock) { _outPending.Remove(roomId); _outScheduled.Remove(roomId); }
         if (_activeRoomId == roomId) _activeRoomId = null;
         if (_pendingShowRoomId == roomId) _pendingShowRoomId = null;
         PostJson(new { type = "dispose", roomId }); // JS xterm 인스턴스·DOM 해제
@@ -752,5 +791,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _altSeenTick.Clear();
         foreach (var t in _settleTimers.Values) t.Stop();
         _settleTimers.Clear();
+        lock (_outLock) { _outPending.Clear(); _outScheduled.Clear(); }
     }
 }

@@ -117,6 +117,7 @@
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
 <script src="addon-search.min.js"></script>
+<script src="addon-webgl.min.js"></script>
 </head>
 <body>
 <div id="loading-overlay"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div>
@@ -225,6 +226,9 @@
 
   // pin/suppress 정책을 적용해 실제 term 에 쓴다(기존 output 분기 로직을 함수화).
   function writeOut(t, bytes) {
+    // 비활성(display:none) 탭은 스크롤 위치 계산이 무의미하고, scrollHeight 읽기가 강제 레이아웃을
+    // 유발해 5세션 동시 출력 시 큰 비용이 된다. write 만 하고 끝낸다(탭 전환 show 시 scrollToBottom 처리).
+    if (!activeRoomId || terms[activeRoomId] !== t) { t.term.write(bytes); return; }
     if (Date.now() < _pinBottomUntil) {
       t.term.write(bytes);
       requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
@@ -601,8 +605,20 @@
     term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0 };
+    const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0 };
     terms[roomId] = entry;
+
+    // WebGL 렌더러(GPU) — 글자 그리기를 CPU(DOM) 대신 GPU 로 올려 활성 탭 렌더 비용을 낮춘다(WT 정합).
+    // 원격/소프트웨어 렌더링(enableWebgl=false)에선 SwiftShader 로 오히려 느려져 비활성화한다.
+    // GPU 컨텍스트 로스(드라이버 리셋/탭 과다) 시 dispose → xterm 기본 DOM 렌더러로 자동 폴백.
+    if (cfg.enableWebgl && typeof WebglAddon !== 'undefined') {
+      try {
+        const webgl = new WebglAddon.WebglAddon();
+        webgl.onContextLoss(function () { try { webgl.dispose(); } catch (e) {} entry.webgl = null; });
+        term.loadAddon(webgl);
+        entry.webgl = webgl;
+      } catch (e) { /* WebGL 미지원 환경 → DOM 렌더러 유지 */ }
+    }
 
     // OSC 52 클립보드 쓰기 — claude/gjc 등 TUI 가 마우스 선택 후 "ESC]52;c;<base64>" 로 복사하면
     // (우측 하단 "copied N chars" 토스트) 이를 실제 Windows 클립보드에 반영한다. 번들 xterm 은
@@ -767,7 +783,7 @@
     const msg = e.data;
     switch (msg.type) {
       case 'init':
-        cfg = { theme: msg.theme, fontFamily: msg.fontFamily, fontSize: msg.fontSize, windowsBuild: msg.windowsBuild };
+        cfg = { theme: msg.theme, fontFamily: msg.fontFamily, fontSize: msg.fontSize, windowsBuild: msg.windowsBuild, enableWebgl: !!msg.enableWebgl };
         document.body.style.background = msg.theme.background || '#0C0C0C';
         // IME 조합 글자(composition-view)가 body 폰트를 상속 — 명시적으로 일치시킴
         document.body.style.fontFamily = msg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace";
@@ -879,6 +895,7 @@
         const t = terms[msg.roomId];
         if (t) {
           try { t.ro && t.ro.disconnect(); } catch (e) {}
+          try { t.webgl && t.webgl.dispose(); } catch (e) {} // GPU 컨텍스트 즉시 반납
           try { t.term.dispose(); } catch (e) {}
           try { t.el.remove(); } catch (e) {}
           delete terms[msg.roomId];

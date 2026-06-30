@@ -39,10 +39,14 @@ public sealed class GajaeLastMessageService : IDisposable
     public event Action<string, bool>? WaitingChoiceChanged;
     private bool _started;
 
+    // 적응형 폴링 주기: 처리중인 방이 있으면 스피너 종료를 빨리 감지하도록 BusyInterval(1s),
+    // 전부 idle 이면 IdleInterval(2.5s)로 늦춰 다세션 시 디렉터리 열거·파일 open 부하를 낮춘다.
+    private static readonly TimeSpan BusyInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan IdleInterval = TimeSpan.FromSeconds(2.5);
+
     public GajaeLastMessageService()
     {
-        // 스피너 반응성을 위해 1초 폴링(파일 작고 mtime 게이트라 비용 낮음).
-        _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+        _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = BusyInterval };
         _poll.Tick += (_, _) => Scan();
     }
 
@@ -61,6 +65,10 @@ public sealed class GajaeLastMessageService : IDisposable
             _started = true;
         }
         catch { /* 다음 폴링 */ }
+
+        // 처리중/대기 방이 하나라도 있으면 빠른 주기, 전부 idle 이면 느린 주기로 전환.
+        var want = (_busy.Values.Any(b => b) || _waiting.Values.Any(w => w)) ? BusyInterval : IdleInterval;
+        if (_poll.Interval != want) _poll.Interval = want;
     }
 
     private void ScanRoom(string roomDir)
