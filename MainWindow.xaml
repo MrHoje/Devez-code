@@ -67,7 +67,7 @@
                               Stroke="{DynamicResource DangerBrush}"/>
                         <TextBlock x:Name="ThermalBannerText" Margin="9,0,0,0" VerticalAlignment="Center"
                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"
-                                   Text="CPU 온도 센서 드라이버가 설치되지 않았습니다. 한 번만 관리자 권한으로 실행하면 설치됩니다."/>
+                                   Text="CPU 온도 센서 드라이버가 설치되지 않았습니다."/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <Button x:Name="ThermalDriverInstallBtn" Click="ThermalDriverInstallBtn_Click" Height="28" Padding="14,0" Cursor="Arrow"

@@ -81,12 +81,11 @@ public sealed class ThermalMonitorService : IDisposable
             // 실패 3회 연속이면 initFailed 처리(0도만 반환되는 경우 방지)
             if (cpuTemp == null && gpuTemp == null) return;
 
-            // 0.0 도는 유효값이 아니므로 건너뜀 — LibreHardwareMonitor 가
-            // 관리자 권한 없이 센서를 못 읽으면 0을 반환하는 경우가 있음
+            // 0.0 도는 유효값이 아니므로 null 처리
             if (cpuTemp is <= 0f) cpuTemp = null;
             if (gpuTemp is <= 0f) gpuTemp = null;
-            if (cpuTemp == null && gpuTemp == null) return;
 
+            // 데이터가 없어도 항상 이벤트 발생 — MainWindow 에서 fail count + 배너 표시 가능
             SnapshotUpdated?.Invoke(new ThermalSnapshot
             {
                 CpuTemperature = cpuTemp,

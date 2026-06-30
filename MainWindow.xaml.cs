@@ -580,16 +580,18 @@ public partial class MainWindow : Window
 
     private void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
     {
+        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+        if (string.IsNullOrEmpty(exePath)) return;
+
         try
         {
-            // --install-thermal-driver 인자로 관리자 권한 프로세스 실행 (드라이버만 설치 후 종료)
             using var proc = new System.Diagnostics.Process();
-            proc.StartInfo.FileName = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+            proc.StartInfo.FileName = exePath;
             proc.StartInfo.Arguments = "--install-thermal-driver";
             proc.StartInfo.Verb = "runas";
             proc.StartInfo.UseShellExecute = true;
-            proc.Start();
-            ThermalDriverBanner.Visibility = Visibility.Collapsed;
+            if (proc.Start())
+                ThermalDriverBanner.Visibility = Visibility.Collapsed;
         }
         catch
         {
