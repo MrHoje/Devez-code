@@ -10,7 +10,9 @@ public sealed class ThermalMonitorService : IDisposable
     private System.Threading.Timer? _poll;
     private int _failCount;
     private bool _stopped;
+    private float _smoothedTemp = float.NaN;
     private const int MaxFailures = 6;
+    private const float SmoothFactor = 0.25f;
 
     /// <summary>snapshot != null: 온도 값, snapshot == null: 중지(숨김) 신호</summary>
     public event Action<Models.ThermalSnapshot?>? SnapshotUpdated;
@@ -21,6 +23,7 @@ public sealed class ThermalMonitorService : IDisposable
     {
         Stop();
         _failCount = 0;
+        _smoothedTemp = float.NaN;
         _stopped = false;
         _poll = new System.Threading.Timer(_ => Capture(), null, 1000, 3000);
     }
@@ -47,7 +50,15 @@ public sealed class ThermalMonitorService : IDisposable
         {
             _failCount = 0;
             HasTemperature = true;
-            SnapshotUpdated?.Invoke(new Models.ThermalSnapshot { CpuTemperature = cpuTemp });
+
+            // EMA smoothing — 급격한 온도 튐 완화
+            if (float.IsNaN(_smoothedTemp))
+                _smoothedTemp = cpuTemp.Value;
+            else
+                _smoothedTemp = _smoothedTemp * (1f - SmoothFactor) + cpuTemp.Value * SmoothFactor;
+
+            float display = MathF.Round(_smoothedTemp);
+            SnapshotUpdated?.Invoke(new Models.ThermalSnapshot { CpuTemperature = display });
         }
         else
         {
