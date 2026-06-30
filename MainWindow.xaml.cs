@@ -556,7 +556,7 @@ public partial class MainWindow : Window
 
         // 15초 후에도 온도 안 읽히면 Ring0 드라이버 자동 설치 시도
         await Task.Delay(15000).ConfigureAwait(false);
-        if (_thermalMonitor.HasTemperature) return; // 이미 온도 들어옴
+        if (_thermalMonitor.HasTemperature) return;
 
         var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
         if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
@@ -565,22 +565,34 @@ public partial class MainWindow : Window
             if (!string.IsNullOrEmpty(dll))
                 exePath = System.IO.Path.ChangeExtension(dll, ".exe");
         }
-        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
-            return;
-
-        try
+        if (!string.IsNullOrEmpty(exePath) && System.IO.File.Exists(exePath))
         {
-            using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            try
             {
-                FileName = exePath,
-                Arguments = "--install-thermal-driver",
-                Verb = "runas",
-                UseShellExecute = true,
-            });
-            if (proc != null) await proc.WaitForExitAsync().ConfigureAwait(false);
-            await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
+                using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = "--install-thermal-driver",
+                    Verb = "runas",
+                    UseShellExecute = true,
+                });
+                if (proc != null) await proc.WaitForExitAsync().ConfigureAwait(false);
+                await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
+            }
+            catch { }
         }
-        catch { /* UAC 취소 등 */ }
+
+        // 다시 15초 대기
+        await Task.Delay(15000).ConfigureAwait(false);
+        if (!_thermalMonitor.HasTemperature)
+        {
+            // 이 시스템에서는 온도를 읽을 수 없음 → TMP 영역 숨김
+            await Dispatcher.InvokeAsync(() =>
+            {
+                PerfTempLabel.Visibility = Visibility.Collapsed;
+                PerfTempText.Visibility  = Visibility.Collapsed;
+            });
+        }
     }
 
     private void ApplyThermalSnapshot(Models.ThermalSnapshot snap)
