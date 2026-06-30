@@ -553,6 +553,34 @@ public partial class MainWindow : Window
         _thermalMonitor.SnapshotUpdated += snap =>
             Dispatcher.InvokeAsync(() => ApplyThermalSnapshot(snap));
         _thermalMonitor.Start();
+
+        // 15초 후에도 온도 안 읽히면 Ring0 드라이버 자동 설치 시도
+        await Task.Delay(15000).ConfigureAwait(false);
+        if (_thermalMonitor.HasTemperature) return; // 이미 온도 들어옴
+
+        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
+        {
+            var dll = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+            if (!string.IsNullOrEmpty(dll))
+                exePath = System.IO.Path.ChangeExtension(dll, ".exe");
+        }
+        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
+            return;
+
+        try
+        {
+            using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = "--install-thermal-driver",
+                Verb = "runas",
+                UseShellExecute = true,
+            });
+            if (proc != null) await proc.WaitForExitAsync().ConfigureAwait(false);
+            await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
+        }
+        catch { /* UAC 취소 등 */ }
     }
 
     private void ApplyThermalSnapshot(Models.ThermalSnapshot snap)

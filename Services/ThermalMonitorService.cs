@@ -18,6 +18,8 @@ public sealed class ThermalMonitorService : IDisposable
     private bool _initFailed;
 
     public event Action<ThermalSnapshot>? SnapshotUpdated;
+    /// <summary>한 번이라도 온도 센서 값을 읽었는지 (자동 설치 시도 여부 판단용).</summary>
+    public bool HasTemperature { get; private set; }
 
     /// <summary>하드웨어 스캔을 백그라운드에서 비동기 실행.
     /// 스캔이 끝나기 전까지 SnapshotUpdated 는 발생하지 않으며, 모든 코드는 안전하게
@@ -113,6 +115,8 @@ public sealed class ThermalMonitorService : IDisposable
             // 0.0 도는 유효값이 아니므로 null 처리
             if (cpuTemp is <= 0f) cpuTemp = null;
             if (gpuTemp is <= 0f) gpuTemp = null;
+
+            if (cpuTemp > 0f || gpuTemp > 0f) HasTemperature = true;
 
             _pollCount++;
 
