@@ -555,6 +555,7 @@ public partial class MainWindow : Window
         _thermalMonitor.Start();
     }
 
+    private int _thermalFailCount;
     private void ApplyThermalSnapshot(Models.ThermalSnapshot snap)
     {
         if (snap.CpuTemperature is float cpu)
@@ -563,10 +564,42 @@ public partial class MainWindow : Window
             PerfTempText.Foreground = cpu >= 85 ? (Brush)FindResource("DangerBrush")
                                      : cpu >= 70 ? (Brush)FindResource("WarningBrush")
                                      : (Brush)FindResource("TextBrush");
+            _thermalFailCount = 0;
+            if (ThermalDriverBanner.Visibility == Visibility.Visible)
+                ThermalDriverBanner.Visibility = Visibility.Collapsed; // 드라이버 정상 작동 중
         }
         else
         {
             PerfTempText.Text = "--";
+            _thermalFailCount++;
+            // 3회 연속 실패(약 9초 후) → 드라이버 미설치 배너 표시
+            if (_thermalFailCount >= 3 && HookSetupBanner.Visibility != Visibility.Visible)
+                ThermalDriverBanner.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 관리자 권한으로 재시작 (runas)
+            using var proc = new System.Diagnostics.Process();
+            proc.StartInfo.FileName = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+            proc.StartInfo.Verb = "runas";
+            proc.StartInfo.UseShellExecute = true;
+            proc.Start();
+        }
+        catch
+        {
+            // 사용자가 UAC 취소함 → 아무 일도 안 함
+            return;
+        }
+        Application.Current.Shutdown();
+    }
+
+    private void ThermalBannerDismiss_Click(object sender, RoutedEventArgs e)
+    {
+        ThermalDriverBanner.Visibility = Visibility.Collapsed;
         }
     }
 
