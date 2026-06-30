@@ -15,7 +15,7 @@ public sealed class ThermalMonitorService : IDisposable
 {
     private Computer? _computer;
     private System.Threading.Timer? _poll;
-    private bool _ready, _initFailed, _useWmi;
+    private bool _ready, _initFailed;
 
     public event Action<ThermalSnapshot>? SnapshotUpdated;
     /// <summary>한 번이라도 온도 센서 값을 읽었는지 (자동 설치 시도 여부 판단용).</summary>
@@ -27,9 +27,6 @@ public sealed class ThermalMonitorService : IDisposable
     /// <summary>온도 센서를 가진 Hardware 수.</summary>
     public int TempSensorCount { get; private set; }
 
-    /// <summary>하드웨어 스캔을 백그라운드에서 비동기 실행.
-    /// 스캔이 끝나기 전까지 SnapshotUpdated 는 발생하지 않으며, 모든 코드는 안전하게
-    /// 데이터 없음 상태를 처리한다. 실패 시 _initFailed=true 로 다시 시도하지 않는다.</summary>
     public async Task InitializeAsync()
     {
         await Task.Run(() =>
@@ -40,7 +37,7 @@ public sealed class ThermalMonitorService : IDisposable
                 {
                     IsCpuEnabled = true,
                     IsGpuEnabled = true,
-                    IsMotherboardEnabled = true,   // AMD 보드 일부는 CPU 온도를 Super I/O 로 보고
+                    IsMotherboardEnabled = true,
                     IsControllerEnabled = false,
                     IsNetworkEnabled = false,
                     IsStorageEnabled = false,
@@ -49,34 +46,20 @@ public sealed class ThermalMonitorService : IDisposable
                 };
                 _computer.Open();
                 _ready = true;
-                // 한 번 샘플 읽기 — 하드웨어/센서가 없으면 WMI 폴백
-                int hwCheck = _computer.Hardware.Count;
-                if (hwCheck == 0) throw new InvalidOperationException("No hardware detected");
-                float? testCpu = null, testGpu = null;
-                int testTemp = 0;
-                foreach (var hw in _computer.Hardware)
-                    WalkHardware(hw, ref testCpu, ref testGpu, ref testTemp);
-                if (testCpu == null && testGpu == null && testTemp == 0)
-                    throw new InvalidOperationException("No temperature sensors detected");
             }
             catch
             {
                 _initFailed = true;
-                _useWmi = true; // LibreHW 실패 → WMI 폴백 시도
-                // LibreHardwareMonitor 미설치/차단 등 — 자동 복구 불가, 조용히 실패
             }
         }).ConfigureAwait(false);
     }
 
-    /// <summary>3초 주기 폴링 시작. InitializeAsync 호출 전에 실행되면 타이머는 돌지만
-    /// _ready=false 라 Capture 가 skip 된다(_ready 이후 첫 tick 에서 데이터 수집 시작).</summary>
     public void Start()
     {
         _poll?.Dispose();
         _poll = new System.Threading.Timer(_ => Capture(), null, 1000, 3000);
     }
 
-    /// <summary>드라이버 설치 후 Computer 를 다시 열어 센서를 재인식한다.</summary>
     public void Reopen()
     {
         _ready = false;
@@ -90,7 +73,6 @@ public sealed class ThermalMonitorService : IDisposable
                 IsMotherboardEnabled = true,
             };
             c.Open();
-            // 새 Computer 열기 성공 → 기존 닫고 교체
             try { old?.Close(); } catch { }
             _computer = c;
             _initFailed = false;
@@ -98,7 +80,6 @@ public sealed class ThermalMonitorService : IDisposable
         }
         catch
         {
-            // 새 Computer 열기 실패 → 기존 그대로 유지
             _computer = old;
             _ready = old != null;
         }
@@ -112,41 +93,40 @@ public sealed class ThermalMonitorService : IDisposable
 
     private void Capture()
     {
-        if (_initFailed && !_useWmi) return;
-        if (_useWmi) { CaptureWmi(); return; }
-        if (!_ready) return;
-
         try
         {
             float? cpuTemp = null, gpuTemp = null;
 
-            // 재귀적으로 모든 hardware + subHardware 의 센서를 읽는다
-            int hwCount = 0, tempCount = 0;
-            foreach (var hardware in _computer!.Hardware)
+            // 1) LibreHardwareMonitor
+            if (_ready && _computer != null)
             {
-                hwCount++;
-                WalkHardware(hardware, ref cpuTemp, ref gpuTemp, ref tempCount);
+                int hwCount = 0, tempCount = 0;
+                foreach (var hardware in _computer.Hardware)
+                {
+                    hwCount++;
+                    WalkHardware(hardware, ref cpuTemp, ref gpuTemp, ref tempCount);
+                }
+                HardwareCount = hwCount;
+                TempSensorCount = tempCount;
             }
-            HardwareCount = hwCount;
-            TempSensorCount = tempCount;
 
-            // 0.0 도는 유효값이 아니므로 null 처리
-            if (cpuTemp is <= 0f) cpuTemp = null;
-            if (gpuTemp is <= 0f) gpuTemp = null;
+            // 2) WMI 폴백 (LibreHW가 유효 온도 못 찾았을 때)
+            if (cpuTemp == null || cpuTemp <= 0f)
+            {
+                var wmiTemp = CaptureWmi();
+                if (wmiTemp > 0f) cpuTemp = wmiTemp;
+            }
 
-            if (cpuTemp > 0f || gpuTemp > 0f) HasTemperature = true;
+            if (gpuTemp <= 0f) gpuTemp = null;
+            if (cpuTemp > 0f || (gpuTemp.HasValue && gpuTemp > 0f)) HasTemperature = true;
 
-            // null 이어도 항상 이벤트 발생 → MainWindow 에서 상태 텍스트 갱신 가능
             SnapshotUpdated?.Invoke(new ThermalSnapshot
             {
                 CpuTemperature = cpuTemp,
                 GpuTemperature = gpuTemp,
             });
         }
-        catch
-        {
-            // 일시 오류 — 직전 값 유지
-        }
+        catch { }
     }
 
     public void Dispose()
@@ -155,8 +135,6 @@ public sealed class ThermalMonitorService : IDisposable
         try { _computer?.Close(); } catch { }
     }
 
-    /// <summary>hardware + 모든 subHardware 를 재귀적으로 탐색하며 온도 센서 수집.
-    /// AMD CPU/GPU 는 subHardware 계층에 실제 센서가 있는 경우가 많다.</summary>
     private static void WalkHardware(IHardware hw, ref float? cpuTemp, ref float? gpuTemp, ref int tempCount)
     {
         hw.Update();
@@ -165,61 +143,48 @@ public sealed class ThermalMonitorService : IDisposable
             if (sensor.SensorType != SensorType.Temperature || sensor.Value == null)
                 continue;
 
-                    tempCount++;
+            tempCount++;
             var temp = (float)sensor.Value;
 
-            // AMD CPU Package 온도 등 — CPU 온도로 간주
             if (hw.HardwareType == HardwareType.Cpu)
             {
-                if (cpuTemp == null || temp > cpuTemp)
-                    cpuTemp = temp;
+                if (cpuTemp == null || temp > cpuTemp) cpuTemp = temp;
             }
-            // GPU(NVIDIA/AMD/Intel)
             else if (hw.HardwareType is HardwareType.GpuNvidia or HardwareType.GpuAmd or HardwareType.GpuIntel)
             {
-                if (gpuTemp == null || temp > gpuTemp)
-                    gpuTemp = temp;
+                if (gpuTemp == null || temp > gpuTemp) gpuTemp = temp;
             }
-            // 일부 AMD 보드는 CPU 온도를 Super I/O 칩셋( motherboard )으로 보고함
             else if (hw.HardwareType == HardwareType.Motherboard && cpuTemp == null)
             {
-                // 센서명에 "CPU" 또는 "Core" 가 포함된 것만 CPU 온도로 추정
                 var name = sensor.Name?.ToLowerInvariant() ?? "";
                 if (name.Contains("cpu") || name.Contains("core") || name.Contains("socket") || name.Contains("tctl"))
                 {
-                    if (cpuTemp == null || temp > cpuTemp)
-                        cpuTemp = temp;
+                    if (cpuTemp == null || temp > cpuTemp) cpuTemp = temp;
                 }
             }
         }
 
-        // subHardware 재귀 탐색
         foreach (var sub in hw.SubHardware)
             WalkHardware(sub, ref cpuTemp, ref gpuTemp, ref tempCount);
     }
 
-    /// <summary>WMI MSAcpi_ThermalZoneTemperature 폴백 (노트북에서 LibreHW 실패 시).</summary>
-    private void CaptureWmi()
+    /// <summary>WMI MSAcpi_ThermalZoneTemperature 폴백. 온도(°C) 반환, 실패 시 -1.</summary>
+    private static float CaptureWmi()
     {
         try
         {
             using var s = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM MSAcpi_ThermalZoneTemperature");
             foreach (var o in s.Get())
             {
-                var temp = o["Temperature"] as uint?;
-                if (temp != null)
+                var raw = o["Temperature"] as uint?;
+                if (raw != null)
                 {
-                    // 온도 = (value - 2732) / 10 (켈빈*10 → 섭씨)
-                    var celsius = (temp.Value - 2732f) / 10f;
-                    if (celsius > 0 && celsius < 150)
-                    {
-                        HasTemperature = true;
-                        SnapshotUpdated?.Invoke(new ThermalSnapshot { CpuTemperature = celsius });
-                        return;
-                    }
+                    var celsius = (raw.Value - 2732f) / 10f;
+                    if (celsius > 0 && celsius < 150) return celsius;
                 }
             }
         }
         catch { }
+        return -1f;
     }
 }

@@ -611,11 +611,8 @@ public partial class MainWindow : Window
         }
         else
         {
-            // 온도 미감지 — 하드웨어/초기화 상태 표시
-            var text = _thermalMonitor.InitFailed
-                ? "초기화실패"
-                : $"H{_thermalMonitor.HardwareCount}T{_thermalMonitor.TempSensorCount}";
-            SetThermalStatus(text, (Brush)FindResource("TextMutedBrush"));
+            // LibreHW + WMI 둘 다 실패
+            SetThermalStatus("오류", (Brush)FindResource("DangerBrush"));
         }
     }
 
