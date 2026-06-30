@@ -1,4 +1,5 @@
 using System.Timers;
+using System.Management;
 using DevezCode.Models;
 using LibreHardwareMonitor.Hardware;
 
@@ -14,8 +15,7 @@ public sealed class ThermalMonitorService : IDisposable
 {
     private Computer? _computer;
     private System.Threading.Timer? _poll;
-    private bool _ready;
-    private bool _initFailed;
+    private bool _ready, _initFailed, _useWmi;
 
     public event Action<ThermalSnapshot>? SnapshotUpdated;
     /// <summary>한 번이라도 온도 센서 값을 읽었는지 (자동 설치 시도 여부 판단용).</summary>
@@ -49,6 +49,15 @@ public sealed class ThermalMonitorService : IDisposable
                 };
                 _computer.Open();
                 _ready = true;
+                // 한 번 샘플 읽기 — 하드웨어/센서가 없으면 WMI 폴백
+                int hwCheck = _computer.Hardware.Count;
+                if (hwCheck == 0) throw new InvalidOperationException("No hardware detected");
+                float? testCpu = null, testGpu = null;
+                int testTemp = 0;
+                foreach (var hw in _computer.Hardware)
+                    WalkHardware(hw, ref testCpu, ref testGpu, ref testTemp);
+                if (testCpu == null && testGpu == null && testTemp == 0)
+                    throw new InvalidOperationException("No temperature sensors detected");
             }
             catch
             {
@@ -102,7 +111,9 @@ public sealed class ThermalMonitorService : IDisposable
 
     private void Capture()
     {
-        if (!_ready || _initFailed) return;
+        if (_initFailed && !_useWmi) return;
+        if (_useWmi) { CaptureWmi(); return; }
+        if (!_ready) return;
 
         try
         {
@@ -186,3 +197,28 @@ public sealed class ThermalMonitorService : IDisposable
             WalkHardware(sub, ref cpuTemp, ref gpuTemp, ref tempCount);
     }
 }
+    /// <summary>WMI MSAcpi_ThermalZoneTemperature 폴백 (노트북에서 LibreHW 실패 시).</summary>
+    private void CaptureWmi()
+    {
+        try
+        {
+            using var s = new ManagementObjectSearcher(@"root\WMI", "SELECT * FROM MSAcpi_ThermalZoneTemperature");
+            foreach (var o in s.Get())
+            {
+                var temp = o["Temperature"] as uint?;
+                if (temp != null)
+                {
+                    // 온도 = (value - 2732) / 10 (켈빈*10 → 섭씨)
+                    var celsius = (temp.Value - 2732f) / 10f;
+                    if (celsius > 0 && celsius < 150)
+                    {
+                        HasTemperature = true;
+                        SnapshotUpdated?.Invoke(new ThermalSnapshot { CpuTemperature = celsius });
+                        return;
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+
