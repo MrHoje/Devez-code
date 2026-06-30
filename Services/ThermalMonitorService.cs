@@ -62,6 +62,7 @@ public sealed class ThermalMonitorService : IDisposable
             catch
             {
                 _initFailed = true;
+                _useWmi = true; // LibreHW 실패 → WMI 폴백 시도
                 // LibreHardwareMonitor 미설치/차단 등 — 자동 복구 불가, 조용히 실패
             }
         }).ConfigureAwait(false);
