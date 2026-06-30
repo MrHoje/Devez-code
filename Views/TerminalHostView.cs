@@ -106,6 +106,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>해당 방의 claude 화면이 이미 떠서 안정화까지 끝났는지(로딩 불필요).</summary>
     public bool IsReady(string roomId) => _readyNotified.Contains(roomId);
+    /// <summary>세션 생성 없이 WebView2/xterm 페이지만 미리 띄워 첫 세션 클릭의 콜드스타트 비용을 앞당긴다.</summary>
+    public void PrewarmWebView()
+    {
+        if (_disposed || _initStarted) return;
+        _initStarted = true;
+        _ = InitWebViewAsync();
+    }
 
     /// <summary>방의 에이전트 ID(opencode 등) — JS 가 컨테이너 패딩 등 에이전트별 스타일에 사용.</summary>
     private static string AgentFor(string roomId) => DevezCode.Services.SettingsService.LoadAgentForRoom(roomId);
