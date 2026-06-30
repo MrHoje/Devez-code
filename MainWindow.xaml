@@ -134,10 +134,11 @@
                                            FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
                                            Foreground="{DynamicResource TextBrush}"/>
                                 <TextBlock x:Name="PerfTempLabel" Text="TMP  " Margin="14,0,0,0" FontSize="{DynamicResource PerfChipLblFs}"
-                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"
+                                           Visibility="Collapsed"/>
                                 <TextBlock x:Name="PerfTempText" Text="--" TextAlignment="Left"
                                            FontSize="{DynamicResource PerfChipValFs}" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource TextBrush}"/>
+                                           Foreground="{DynamicResource TextBrush}" Visibility="Collapsed"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
