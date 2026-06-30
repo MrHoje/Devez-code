@@ -555,7 +555,6 @@ public partial class MainWindow : Window
         _thermalMonitor.Start();
     }
 
-    private int _thermalFailCount;
     private void ApplyThermalSnapshot(Models.ThermalSnapshot snap)
     {
         if (snap.CpuTemperature is float cpu)
@@ -564,18 +563,8 @@ public partial class MainWindow : Window
             PerfTempText.Foreground = cpu >= 85 ? (Brush)FindResource("DangerBrush")
                                      : cpu >= 70 ? (Brush)FindResource("WarningBrush")
                                      : (Brush)FindResource("TextBrush");
-            _thermalFailCount = 0;
-            if (ThermalDriverBanner.Visibility == Visibility.Visible)
-                ThermalDriverBanner.Visibility = Visibility.Collapsed; // 드라이버 정상 작동 중
         }
-        else
-        {
-            PerfTempText.Text = "--";
-            _thermalFailCount++;
-            // 3회 연속 실패(약 9초 후) → 드라이버 미설치 배너 표시
-            if (_thermalFailCount >= 3 && HookSetupBanner.Visibility != Visibility.Visible)
-                ThermalDriverBanner.Visibility = Visibility.Visible;
-        }
+        // 센서 없음/미지원 → "--" 유지, 배너는 표시하지 않음 (Ring0 설치 불가 시스템)
     }
 
     private async void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)

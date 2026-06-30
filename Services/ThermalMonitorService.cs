@@ -92,6 +92,7 @@ public sealed class ThermalMonitorService : IDisposable
         _poll = null;
     }
 
+    private int _pollCount;
     private void Capture()
     {
         if (!_ready || _initFailed) return;
@@ -113,7 +114,21 @@ public sealed class ThermalMonitorService : IDisposable
             if (cpuTemp is <= 0f) cpuTemp = null;
             if (gpuTemp is <= 0f) gpuTemp = null;
 
-            // 데이터가 없어도 항상 이벤트 발생 — MainWindow 에서 fail count + 배너 표시 가능
+            _pollCount++;
+
+            // 10회(30초) 연속 null 이면 이 시스템에서는 온도 센서를 읽을 수 없는 것으로 판단.
+            // Ring0 드라이버가 필요하지만 Windows 11 Secure Boot 에서 차단됨.
+            if (cpuTemp == null && gpuTemp == null && _pollCount >= 10)
+            {
+                _initFailed = true;
+                SnapshotUpdated?.Invoke(new ThermalSnapshot
+                {
+                    CpuTemperature = null,
+                    GpuTemperature = null,
+                });
+                return;
+            }
+
             SnapshotUpdated?.Invoke(new ThermalSnapshot
             {
                 CpuTemperature = cpuTemp,
