@@ -561,10 +561,11 @@ public partial class MainWindow : Window
             Dispatcher.InvokeAsync(() => ApplyThermalSnapshot(snap));
         _thermalMonitor.Start();
 
-        // 15초 대기 — 온도 오면 return
+        // 15초 대기 (5회 폴링). 매 폴링마다 ApplyThermalSnapshot 에서 정보 갱신.
         await Task.Delay(15000).ConfigureAwait(false);
         if (_thermalMonitor.HasTemperature) return;
-        await Dispatcher.InvokeAsync(() => SetThermalStatus("센서없음", (Brush)FindResource("TextMutedBrush")));
+        var info = $"Hw{_thermalMonitor.HardwareCount} Temp{_thermalMonitor.TempSensorCount}";
+        await Dispatcher.InvokeAsync(() => SetThermalStatus(info, (Brush)FindResource("TextMutedBrush")));
 
         // 드라이버 설치 시도
         var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
@@ -608,6 +609,12 @@ public partial class MainWindow : Window
             SetThermalStatus($"{cpu:F0}°", cpu >= 85 ? (Brush)FindResource("DangerBrush")
                                          : cpu >= 70 ? (Brush)FindResource("WarningBrush")
                                          : (Brush)FindResource("SuccessBrush"));
+        }
+        else
+        {
+            // 온도 미감지 — 폴링마다 하드웨어/센서 현황 갱신
+            SetThermalStatus($"H{_thermalMonitor.HardwareCount}T{_thermalMonitor.TempSensorCount}",
+                             (Brush)FindResource("TextMutedBrush"));
         }
     }
 

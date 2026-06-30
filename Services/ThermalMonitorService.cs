@@ -20,6 +20,10 @@ public sealed class ThermalMonitorService : IDisposable
     public event Action<ThermalSnapshot>? SnapshotUpdated;
     /// <summary>한 번이라도 온도 센서 값을 읽었는지 (자동 설치 시도 여부 판단용).</summary>
     public bool HasTemperature { get; private set; }
+    /// <summary>LibreHardwareMonitor 가 감지한 Hardware 수 (0이면 아예 인식 실패).</summary>
+    public int HardwareCount { get; private set; }
+    /// <summary>온도 센서를 가진 Hardware 수.</summary>
+    public int TempSensorCount { get; private set; }
 
     /// <summary>하드웨어 스캔을 백그라운드에서 비동기 실행.
     /// 스캔이 끝나기 전까지 SnapshotUpdated 는 발생하지 않으며, 모든 코드는 안전하게
@@ -103,10 +107,14 @@ public sealed class ThermalMonitorService : IDisposable
             float? cpuTemp = null, gpuTemp = null;
 
             // 재귀적으로 모든 hardware + subHardware 의 센서를 읽는다
+            int hwCount = 0, tempCount = 0;
             foreach (var hardware in _computer!.Hardware)
             {
-                WalkHardware(hardware, ref cpuTemp, ref gpuTemp);
+                hwCount++;
+                WalkHardware(hardware, ref cpuTemp, ref gpuTemp, ref tempCount);
             }
+            HardwareCount = hwCount;
+            TempSensorCount = tempCount;
 
             // 0.0 도는 유효값이 아니므로 null 처리
             if (cpuTemp is <= 0f) cpuTemp = null;
@@ -135,7 +143,7 @@ public sealed class ThermalMonitorService : IDisposable
 
     /// <summary>hardware + 모든 subHardware 를 재귀적으로 탐색하며 온도 센서 수집.
     /// AMD CPU/GPU 는 subHardware 계층에 실제 센서가 있는 경우가 많다.</summary>
-    private static void WalkHardware(IHardware hw, ref float? cpuTemp, ref float? gpuTemp)
+    private static void WalkHardware(IHardware hw, ref float? cpuTemp, ref float? gpuTemp, ref int tempCount)
     {
         hw.Update();
         foreach (var sensor in hw.Sensors)
@@ -143,6 +151,7 @@ public sealed class ThermalMonitorService : IDisposable
             if (sensor.SensorType != SensorType.Temperature || sensor.Value == null)
                 continue;
 
+                    tempCount++;
             var temp = (float)sensor.Value;
 
             // AMD CPU Package 온도 등 — CPU 온도로 간주
@@ -172,6 +181,6 @@ public sealed class ThermalMonitorService : IDisposable
 
         // subHardware 재귀 탐색
         foreach (var sub in hw.SubHardware)
-            WalkHardware(sub, ref cpuTemp, ref gpuTemp);
+            WalkHardware(sub, ref cpuTemp, ref gpuTemp, ref tempCount);
     }
 }
