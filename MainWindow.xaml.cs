@@ -580,11 +580,16 @@ public partial class MainWindow : Window
 
     private void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
     {
-        // GetEntryAssembly()?.Location 은 DLL 경로. runas 는 EXE 여야 하므로 확장자 변경.
-        var dllPath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
-        if (string.IsNullOrEmpty(dllPath)) return;
-        var exePath = System.IO.Path.ChangeExtension(dllPath, ".exe");
-        if (!System.IO.File.Exists(exePath)) return;
+        // 1) MainModule (native exe) 우선, 2) 없으면 DLL→.exe 변환
+        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
+        {
+            var dll = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+            if (!string.IsNullOrEmpty(dll))
+                exePath = System.IO.Path.ChangeExtension(dll, ".exe");
+        }
+        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
+            return;
 
         try
         {
