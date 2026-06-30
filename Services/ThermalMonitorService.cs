@@ -61,27 +61,27 @@ public sealed class ThermalMonitorService : IDisposable
     /// <summary>드라이버 설치 후 Computer 를 다시 열어 센서를 재인식한다.</summary>
     public void Reopen()
     {
+        _ready = false;
+        var old = _computer;
         try
         {
-            _ready = false;
-            var old = _computer;
-            _computer = new Computer
+            var c = new Computer
             {
                 IsCpuEnabled = true,
                 IsGpuEnabled = true,
                 IsMotherboardEnabled = true,
             };
-            _computer.Open();
+            c.Open();
+            _computer = c;
             try { old?.Close(); } catch { }
-            _ready = true;
             _initFailed = false;
+            _ready = true;
         }
         catch
         {
-            // 재오픈 실패 — 기존 상태 유지
-            if (_computer != null) { try { _computer.Close(); } catch { } }
-            _computer = old;
-            _ready = old != null;
+            // 새 Computer 열기 실패 → 기존 상태 유지
+            _computer = old ?? new Computer();
+            _ready = _computer != null;
         }
     }
 
