@@ -845,6 +845,10 @@
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBrush}"/>
                             <Setter Property="Foreground" Value="White"/>
                         </MultiTrigger>
+                        <!-- 비활성: 흐리게 표시(커스텀 템플릿이라 기본 disabled 비주얼이 없어 직접 처리). -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.35"/>
+                        </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>

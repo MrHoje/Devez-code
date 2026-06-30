@@ -20,6 +20,18 @@ public partial class BrowserHostView : UserControl
 
     private readonly Action<string> _themeChangedHandler;
 
+    // ── 가상 히스토리 ────────────────────────────────────────────────
+    // WebView2(Chromium) 네이티브 뒤로/앞으로 스택은 외부 주입 API 가 없어,
+    // 앱이 방문 URL 스택(_history) + 현재 위치(_index)를 직접 관리한다.
+    // 뒤로/앞으로 버튼은 네이티브 GoBack/GoForward 대신 이 스택을 navigate → 프로젝트 전환 후에도 동작.
+    private readonly List<string> _history = new();
+    private int _index = -1;
+
+    /// <summary>다음 SourceChanged 가 무엇 때문에 발생했는지. User=자발적 탐색(스택에 기록),
+    /// History=뒤/앞 버튼, Restore=프로젝트 전환/초기 복원(둘 다 스택 기록 안 함).</summary>
+    private enum NavCause { User, History, Restore }
+    private NavCause _pendingCause = NavCause.User;
+
     /// <summary>현재 브라우저가 속한 프로젝트 절대경로. null/empty 면 전역(미배정).
     /// 값이 바뀌면 해당 프로젝트의 저장된 URL 로 즉시 이동. 프로젝트별 독립 상태 유지의 핵심.</summary>
     public string? ProjectPath
@@ -41,13 +53,69 @@ public partial class BrowserHostView : UserControl
         App.ThemeChanged += _themeChangedHandler;
     }
 
-    /// <summary>프로젝트 전환 시 — 이미 초기화된 경우 해당 프로젝트의 마지막 URL 로 이동.
-    /// 초기화 전이면 EnsureStarted 가 현재 ProjectPath 를 사용한다.</summary>
+    /// <summary>프로젝트 전환 시 — 이미 초기화된 경우 해당 프로젝트의 저장된 히스토리를 불러와
+    /// 현재 위치 URL 로 이동. 초기화 전이면 EnsureStarted 가 현재 ProjectPath 를 사용한다.</summary>
     private void OnProjectPathChanged()
     {
         if (!_initStarted || _view?.CoreWebView2 == null) return;
-        var target = SettingsService.LoadBrowserLastUrl(_projectPath) ?? HomeUrl;
-        try { _view.CoreWebView2.Navigate(target); } catch { }
+        LoadHistoryForCurrentProject();
+        NavigateToCurrentOrHome();
+        SyncToolbar();
+    }
+
+    /// <summary>저장된 히스토리가 있으면 현재 위치로 복원(기록 안 함),
+    /// 비어 있으면 홈을 첫 방문(User)으로 열어 스택에 기록되게 한다.</summary>
+    private void NavigateToCurrentOrHome()
+    {
+        if (CurrentHistoryUrl is { } cur)
+            NavigateInternal(cur, NavCause.Restore);
+        else
+            NavigateInternal(HomeUrl, NavCause.User);
+    }
+
+    /// <summary>현재 _index 가 가리키는 URL. 스택이 비었으면 null.</summary>
+    private string? CurrentHistoryUrl =>
+        _index >= 0 && _index < _history.Count ? _history[_index] : null;
+
+    /// <summary>현재 프로젝트의 저장된 히스토리를 _history/_index 로 적재. 없으면 빈 스택.</summary>
+    private void LoadHistoryForCurrentProject()
+    {
+        _history.Clear();
+        _index = -1;
+        var loaded = SettingsService.LoadBrowserHistory(_projectPath);
+        if (loaded is { } h && h.Urls.Count > 0)
+        {
+            _history.AddRange(h.Urls);
+            _index = Math.Clamp(h.Index, 0, _history.Count - 1);
+        }
+    }
+
+    /// <summary>지정 cause 로 표시 후 navigate. SourceChanged 가 이 cause 를 보고 기록 여부를 정한다.</summary>
+    private void NavigateInternal(string url, NavCause cause)
+    {
+        var core = _view?.CoreWebView2;
+        if (core == null) return;
+        _pendingCause = cause;
+        try { core.Navigate(url); }
+        catch { _pendingCause = NavCause.User; }
+    }
+
+    /// <summary>자발적 탐색 1건을 스택에 기록(브라우저 표준: 현재 위치 앞쪽은 버림).</summary>
+    private void RecordVisit(string url)
+    {
+        // 동일 URL 연속(새로고침/같은주소 리다이렉트)은 중복 기록 안 함
+        if (CurrentHistoryUrl == url) return;
+        if (_index < _history.Count - 1)
+            _history.RemoveRange(_index + 1, _history.Count - _index - 1);
+        _history.Add(url);
+        _index = _history.Count - 1;
+    }
+
+    /// <summary>현재 스택+위치를 프로젝트별로 영속.</summary>
+    private void PersistHistory()
+    {
+        if (_history.Count > 0)
+            SettingsService.SaveBrowserHistory(_projectPath, _history, _index);
     }
 
     private static CoreWebView2PreferredColorScheme PreferredScheme =>
@@ -82,17 +150,31 @@ public partial class BrowserHostView : UserControl
 
             core.SourceChanged += (_, _) =>
             {
-                SyncToolbar();
                 var src = core.Source;
-                if (!string.IsNullOrEmpty(src) && src != "about:blank")
-                    SettingsService.SaveBrowserLastUrl(_projectPath, src);
-            };
-            core.HistoryChanged += (_, _) => SyncToolbar();
-            // 새 창 요청은 같은 뷰에서 열기(팝업 차단 대신 인라인 이동)
-            core.NewWindowRequested += (_, e) => { e.Handled = true; core.Navigate(e.Uri); };
+                var cause = _pendingCause;
+                _pendingCause = NavCause.User; // 다음 탐색 기본값으로 즉시 리셋
 
-            var start = SettingsService.LoadBrowserLastUrl(_projectPath) ?? HomeUrl;
-            core.Navigate(start);
+                if (string.IsNullOrEmpty(src) || src == "about:blank")
+                { SyncToolbar(); return; }
+
+                if (cause == NavCause.User)
+                {
+                    RecordVisit(src);
+                    PersistHistory();
+                }
+                else if (CurrentHistoryUrl != null && CurrentHistoryUrl != src)
+                {
+                    // 뒤/앞·복원 도중 리다이렉트로 실제 URL 이 달라졌으면 현재 칸을 실제값으로 보정
+                    _history[_index] = src;
+                    PersistHistory();
+                }
+                SyncToolbar();
+            };
+            // 새 창 요청은 같은 뷰에서 열기(팝업 차단 대신 인라인 이동) — 자발적 탐색으로 기록
+            core.NewWindowRequested += (_, e) => { e.Handled = true; NavigateInternal(e.Uri, NavCause.User); };
+
+            LoadHistoryForCurrentProject();
+            NavigateToCurrentOrHome();
             SyncToolbar();
         }
         catch (Exception ex)
@@ -109,21 +191,33 @@ public partial class BrowserHostView : UserControl
         }
     }
 
-    /// <summary>주소창·네비게이션 버튼을 현재 상태로 동기화.</summary>
+    /// <summary>주소창·네비게이션 버튼을 가상 히스토리 기준으로 동기화.</summary>
     private void SyncToolbar()
     {
         var core = _view?.CoreWebView2;
-        BackBtn.IsEnabled = core?.CanGoBack == true;
-        ForwardBtn.IsEnabled = core?.CanGoForward == true;
+        BackBtn.IsEnabled = _index > 0;
+        ForwardBtn.IsEnabled = _index >= 0 && _index < _history.Count - 1;
         if (core != null && !AddressBox.IsKeyboardFocused)
             AddressBox.Text = core.Source;
     }
 
     private void BackBtn_Click(object sender, RoutedEventArgs e)
-    { if (_view?.CoreWebView2?.CanGoBack == true) _view.CoreWebView2.GoBack(); }
+    {
+        if (_view?.CoreWebView2 == null || _index <= 0) return;
+        _index--;
+        NavigateInternal(_history[_index], NavCause.History);
+        PersistHistory();
+        SyncToolbar();
+    }
 
     private void ForwardBtn_Click(object sender, RoutedEventArgs e)
-    { if (_view?.CoreWebView2?.CanGoForward == true) _view.CoreWebView2.GoForward(); }
+    {
+        if (_view?.CoreWebView2 == null || _index >= _history.Count - 1) return;
+        _index++;
+        NavigateInternal(_history[_index], NavCause.History);
+        PersistHistory();
+        SyncToolbar();
+    }
 
     private void RefreshBtn_Click(object sender, RoutedEventArgs e)
         => _view?.CoreWebView2?.Reload();
@@ -145,8 +239,7 @@ public partial class BrowserHostView : UserControl
         if (e.Key != Key.Enter) return;
         var input = AddressBox.Text.Trim();
         if (input.Length == 0) return;
-        try { _view?.CoreWebView2?.Navigate(ToNavigationTarget(input)); }
-        catch { /* 잘못된 주소 무시 */ }
+        NavigateInternal(ToNavigationTarget(input), NavCause.User);
         _view?.Focus();
         e.Handled = true;
     }

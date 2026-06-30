@@ -67,7 +67,12 @@ public static class SettingsService
         public bool SplitSwapped { get; set; } = false;
         // 우측 패널 브라우저 — 프로젝트별 마지막 방문 URL(재시작 시 복원).
         // 키 = 프로젝트 절대경로. 프로젝트가 없거나 저장된 적 없으면 HomeUrl 로 폴백.
+        // (하위호환 유지용. 신규 코드는 BrowserHistoryByProject 사용 — 단 마이그레이션 소스로 계속 읽힘.)
         public Dictionary<string, string> BrowserLastUrlByProject { get; set; } = new();
+        // 우측 패널 브라우저 — 프로젝트별 가상 히스토리(뒤로/앞으로 복원).
+        // WebView2 네이티브 히스토리는 외부 주입 불가하므로 앱이 방문 URL 스택+현재 위치를 직접 관리.
+        // 키 = 프로젝트 절대경로.
+        public Dictionary<string, BrowserHistoryEntry> BrowserHistoryByProject { get; set; } = new();
         // 우측 패널 작업 큐 — 프로젝트 경로별로 저장. 키 = 프로젝트 절대경로, 값 = 큐 항목 목록.
         // 로컬 전용 — 재시작 시 그대로 복원. 프로젝트 경로가 null/empty 면 "전역" 큐 (실제론 잘 안 씀).
         public Dictionary<string, List<TaskQueueEntry>> TaskQueueItemsByProject { get; set; } = new();
@@ -511,28 +516,59 @@ public static class SettingsService
     public static bool LoadCleanShutdown() => Current.CleanShutdown;
     public static void SaveCleanShutdown(bool v) { Current.CleanShutdown = v; Save(); }
 
-    // ── 우측 패널 브라우저 마지막 URL (프로젝트별) ───────────────────
-    /// <summary>지정 프로젝트의 저장된 마지막 URL. 없거나 프로젝트가 비었으면 null.</summary>
-    public static string? LoadBrowserLastUrl(string? projectPath)
+    // ── 우측 패널 브라우저 히스토리 (프로젝트별) ─────────────────────
+    /// <summary>프로젝트당 보관하는 최대 방문 기록 수. 초과 시 오래된 항목부터 버림.</summary>
+    private const int BrowserHistoryCap = 100;
+
+    /// <summary>지정 프로젝트의 저장된 가상 히스토리(URL 스택 + 현재 위치).
+    /// 없으면 기존 단일 URL(BrowserLastUrlByProject)을 1개짜리 히스토리로 마이그레이션.
+    /// 그것도 없으면 null. Index 는 항상 [0, Urls.Count-1] 로 보정해 반환.</summary>
+    public static (List<string> Urls, int Index)? LoadBrowserHistory(string? projectPath)
     {
         if (string.IsNullOrEmpty(projectPath)) return null;
-        return Current.BrowserLastUrlByProject.TryGetValue(projectPath, out var u) ? u : null;
+        if (Current.BrowserHistoryByProject.TryGetValue(projectPath, out var e)
+            && e.Urls is { Count: > 0 })
+        {
+            int idx = Math.Clamp(e.Index, 0, e.Urls.Count - 1);
+            return (new List<string>(e.Urls), idx);
+        }
+        // 마이그레이션 — 구버전 단일 URL → 1개짜리 히스토리
+        if (Current.BrowserLastUrlByProject.TryGetValue(projectPath, out var u)
+            && !string.IsNullOrWhiteSpace(u))
+            return (new List<string> { u }, 0);
+        return null;
     }
 
-    /// <summary>지정 프로젝트의 마지막 URL 저장. 빈 문자열/공백은 무시.</summary>
-    public static void SaveBrowserLastUrl(string? projectPath, string url)
+    /// <summary>지정 프로젝트의 가상 히스토리 저장. 빈 목록은 무시.
+    /// 상한(BrowserHistoryCap) 초과 시 오래된 앞쪽을 잘라내고 Index 를 함께 보정.
+    /// 하위호환을 위해 현재 위치 URL 을 BrowserLastUrlByProject 에도 기록.</summary>
+    public static void SaveBrowserHistory(string? projectPath, IReadOnlyList<string> urls, int index)
     {
         if (string.IsNullOrEmpty(projectPath)) return;
-        if (string.IsNullOrWhiteSpace(url)) return;
-        Current.BrowserLastUrlByProject[projectPath] = url;
+        if (urls is null || urls.Count == 0) return;
+
+        var list = new List<string>(urls);
+        int idx = index;
+        if (list.Count > BrowserHistoryCap)
+        {
+            int drop = list.Count - BrowserHistoryCap;
+            list.RemoveRange(0, drop);
+            idx -= drop;
+        }
+        idx = Math.Clamp(idx, 0, list.Count - 1);
+
+        Current.BrowserHistoryByProject[projectPath] = new BrowserHistoryEntry { Urls = list, Index = idx };
+        Current.BrowserLastUrlByProject[projectPath] = list[idx]; // 하위호환
         Save();
     }
 
-    /// <summary>프로젝트 삭제 시 해당 프로젝트의 저장된 URL 도 정리.</summary>
+    /// <summary>프로젝트 삭제 시 해당 프로젝트의 저장된 URL/히스토리 정리.</summary>
     public static void RemoveBrowserLastUrl(string? projectPath)
     {
         if (string.IsNullOrEmpty(projectPath)) return;
-        if (Current.BrowserLastUrlByProject.Remove(projectPath)) Save();
+        bool changed = Current.BrowserLastUrlByProject.Remove(projectPath);
+        changed |= Current.BrowserHistoryByProject.Remove(projectPath);
+        if (changed) Save();
     }
 
     // ── 우측 패널 작업 큐 (버블 항목, 프로젝트별) ────────────────────
@@ -680,4 +716,12 @@ public sealed class TaskQueueEntry
 {
     public string Text { get; set; } = "";
     public long SortOrder { get; set; }
+}
+
+/// <summary>우측 패널 브라우저의 프로젝트별 가상 히스토리.
+/// Urls = 방문 순서대로의 URL 스택, Index = 현재 위치(뒤로/앞으로 기준점).</summary>
+public sealed class BrowserHistoryEntry
+{
+    public List<string> Urls { get; set; } = new();
+    public int Index { get; set; }
 }
