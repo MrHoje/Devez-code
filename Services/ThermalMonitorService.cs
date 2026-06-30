@@ -197,7 +197,7 @@ public sealed class ThermalMonitorService : IDisposable
         foreach (var sub in hw.SubHardware)
             WalkHardware(sub, ref cpuTemp, ref gpuTemp, ref tempCount);
     }
-}
+
     /// <summary>WMI MSAcpi_ThermalZoneTemperature 폴백 (노트북에서 LibreHW 실패 시).</summary>
     private void CaptureWmi()
     {
@@ -222,4 +222,4 @@ public sealed class ThermalMonitorService : IDisposable
         }
         catch { }
     }
-
+}
