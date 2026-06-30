@@ -107,6 +107,7 @@ process.stdin.on("end", () => {
     const HAIKU  = fg(0, 255, 255);
     const OPUS   = fg(248, 113, 113);
     const SONNET = fg(250, 204, 21);
+    const FABLE  = fg(232, 121, 249);
     const CTX    = fg(52, 211, 153);
     const TIME   = fg(96, 165, 250);
     const WEEK   = fg(167, 139, 250);
@@ -125,6 +126,7 @@ process.stdin.on("end", () => {
     if (id.includes("haiku"))       { mc = HAIKU;  const hv = verRe("haiku");  ml = hv ? "Haiku "  + hv[1] + (hv[2] ? "." + hv[2] : "") : "Haiku"; }
     else if (id.includes("sonnet")) { mc = SONNET; const sv = verRe("sonnet"); ml = sv ? "Sonnet " + sv[1] + (sv[2] ? "." + sv[2] : "") : "Sonnet"; }
     else if (id.includes("opus"))   { mc = OPUS;   const ov = verRe("opus");   const ovStr = ov ? ov[1] + (ov[2] ? "." + ov[2] : "") : ""; ml = (total >= 900 ? "Opus " + ovStr + " 1M" : "Opus " + ovStr).trim(); }
+    else if (id.includes("fable"))  { mc = FABLE;  const fv = verRe("fable");  ml = fv ? "Fable "  + fv[1] + (fv[2] ? "." + fv[2] : "") : "Fable"; }
     else                            { mc = MAIN;   ml = id || "unknown"; }
 
     const parts = [];
