@@ -118,10 +118,13 @@ process.stdin.on("end", () => {
     const E_MAX  = fg(248, 113, 113);
     const PIPE   = SEP + " | " + R;
 
+    // 버전 정규식: 메이저(-마이너)? 만 잡고 날짜 접미사(-20250929 등)는 제외.
+    // (?!\d) 로 마이너 뒤에 숫자가 더 붙으면(=날짜) 마이너로 인정하지 않음.
+    const verRe = (name) => id.match(new RegExp(name + "-(\\d{1,2})(?!\\d{6})(?:-(\\d{1,2})(?!\\d))?"));
     let mc, ml;
-    if (id.includes("haiku"))       { mc = HAIKU;  ml = "Haiku 4.5"; }
-    else if (id.includes("sonnet")) { mc = SONNET; const sv = id.match(/sonnet-(\d+)-(\d+)/); ml = sv ? "Sonnet " + sv[1] + "." + sv[2] : "Sonnet"; }
-    else if (id.includes("opus"))   { mc = OPUS;   const ov = id.match(/opus-(\d+)-(\d+)/); const ovStr = ov ? ov[1] + "." + ov[2] : ""; ml = (total >= 900 ? "Opus " + ovStr + " 1M" : "Opus " + ovStr).trim(); }
+    if (id.includes("haiku"))       { mc = HAIKU;  const hv = verRe("haiku");  ml = hv ? "Haiku "  + hv[1] + (hv[2] ? "." + hv[2] : "") : "Haiku"; }
+    else if (id.includes("sonnet")) { mc = SONNET; const sv = verRe("sonnet"); ml = sv ? "Sonnet " + sv[1] + (sv[2] ? "." + sv[2] : "") : "Sonnet"; }
+    else if (id.includes("opus"))   { mc = OPUS;   const ov = verRe("opus");   const ovStr = ov ? ov[1] + (ov[2] ? "." + ov[2] : "") : ""; ml = (total >= 900 ? "Opus " + ovStr + " 1M" : "Opus " + ovStr).trim(); }
     else                            { mc = MAIN;   ml = id || "unknown"; }
 
     const parts = [];
