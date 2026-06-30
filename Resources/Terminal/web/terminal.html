@@ -532,8 +532,8 @@
     // 사용자가 휠로 직접 스크롤 → 프로그램적 스크롤 억제(_scrollSuppress)를 즉시 해제.
     // (/model·/effort 후 남은 잔여 suppress 카운트가 사용자의 스크롤을 되돌리는 것 방지.)
     _scrollSuppress = 0;
-    // 일반 휠은 xterm 기본 동작(스크롤백 스크롤)에 맡긴다. gjc 는 멀티플렉서 모드(STY)로
-    // 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.
+    // 일반 휠은 xterm 기본 동작(스크롤백 스크롤)에 맡긴다. gjc 는 풀 재페인트의 스크롤백
+    // 클리어(CSI 3 J)를 파서에서 삼켜 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.
 
     // 아래로 굴려 바닥 근처까지 내려오면 ybase 로 스냅 — idle 상태에서 위로 올렸다 내려올 때
     // xterm 줄 스냅이 1~3줄 모자라 입력창이 잘리는 현상 방지(휠론 ybase 에 정확히 못 닿음).
@@ -618,7 +618,7 @@
     // 선택 렌더는 없다(WT 의 하이라이트는 WT 자체 로컬 선택). xterm 은 앱 마우스 모드면 드래그를
     // 앱으로 넘기고 로컬 선택을 안 해 → gjc 에선 하이라이트도 복사도 안 된다. gjc 방에 한해 마우스
     // 모드 진입 DECSET 을 파서 단계에서 삼켜(xterm 이 무시) 항상 xterm 로컬 선택을 쓰게 한다
-    // → 드래그 하이라이트 + copy-on-select 복사. 휠 스크롤은 xterm 스크롤백(STY 가 보존)이 처리.
+    // → 드래그 하이라이트 + copy-on-select 복사. 휠 스크롤은 xterm 스크롤백이 처리.
     if ((agent || '') === 'gajae') {
       const MOUSE_MODES = [1000, 1001, 1002, 1003, 1005, 1006, 1015, 1016];
       const swallowMouse = function (params) {
@@ -627,9 +627,19 @@
         for (let i = 0; i < len; i++) if (MOUSE_MODES.indexOf(arr[i]) !== -1) return true; // 삼킴
         return false; // 마우스 외 DECSET(?2004/?2026/?25/?1049 등)은 xterm 기본 처리로 통과
       };
+      // 스크롤백 클리어(CSI 3 J) 삼킴 — gjc 는 멀티플렉서가 아니면 풀 재페인트 때 \x1b[3J 로
+      // 스크롤백을 비운다. 이게 첫 휠 시 뷰포트를 맨 위로 튕기고 과거 대화 스크롤을 지운다.
+      // param==3 만 삼키고 ED 0/1/2(화면 지움)는 xterm 기본 처리로 통과 → 스크롤백 보존.
+      const swallowScrollbackClear = function (params) {
+        const arr = params && params.params ? params.params : params;
+        const len = params && params.length !== undefined ? params.length : (arr ? arr.length : 0);
+        for (let i = 0; i < len; i++) if (arr[i] === 3) return true; // 삼킴
+        return false; // ED 0/1/2 통과
+      };
       try {
         term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, swallowMouse);
         term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, swallowMouse);
+        term.parser.registerCsiHandler({ final: 'J' }, swallowScrollbackClear);
       } catch (e) { /* parser 미지원 무시 */ }
     }
 

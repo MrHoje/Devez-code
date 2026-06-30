@@ -480,11 +480,10 @@ public sealed class TerminalSessionManager
             var dir = GajaeLaunchDir();
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
-            // STY(멀티플렉서 감지용) 를 세팅해 gjc 가 "멀티플렉서 모드" 로 렌더하게 한다:
-            //  · 전체 재페인트 시 스크롤백 비우기(\x1b[3J)를 생략 → xterm 스크롤백 보존(휠로 과거 대화 스크롤 가능)
-            //  · 전체 클리어(\x1b[2J) 대신 동기화 viewport 재페인트(\x1b[?2026h + 줄별 \x1b[2K) → 스크롤 튐 제거
-            // (gjc tui.ts isMultiplexerSession = TMUX||STY||ZELLIJ. STY 는 그 외 분기가 없어 부작용 없음.)
-            File.WriteAllText(batchPath, "@echo off\r\nset \"STY=devezcode\"\r\n" + cmd + "\r\n");
+            // gjc 일반(비멀티플렉서) 모드로 실행 — 멀티플렉서 모드(STY)는 입력창 하단에 빈 줄을
+            // 더 그려서 제외했다. 일반 모드가 풀 재페인트마다 보내는 스크롤백 클리어(\x1b[3J)는
+            // terminal.html 파서에서 gjc 방 한정으로 삼켜 스크롤백/휠 스크롤을 보존한다.
+            File.WriteAllText(batchPath, "@echo off\r\n" + cmd + "\r\n");
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
