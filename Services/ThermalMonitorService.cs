@@ -72,16 +72,17 @@ public sealed class ThermalMonitorService : IDisposable
                 IsMotherboardEnabled = true,
             };
             c.Open();
-            _computer = c;
+            // 새 Computer 열기 성공 → 기존 닫고 교체
             try { old?.Close(); } catch { }
+            _computer = c;
             _initFailed = false;
             _ready = true;
         }
         catch
         {
-            // 새 Computer 열기 실패 → 기존 상태 유지
-            _computer = old ?? new Computer();
-            _ready = _computer != null;
+            // 새 Computer 열기 실패 → 기존 그대로 유지
+            _computer = old;
+            _ready = old != null;
         }
     }
 
