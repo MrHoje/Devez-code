@@ -54,7 +54,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.9.1", "2026-06-30", true, new[]
+        ("v1.9.2", "2026-07-01", true, new[]
+        {
+            "전반적인 성능개선 작업을 진행했습니다.",
+        }),
+        ("v1.9.1", "2026-06-30", false, new[]
         {
             "프로젝트 이름을 변경한 뒤 재실행해도 변경한 이름이 유지됩니다.",
             "프로젝트·세션 이름을 변경하면 세션 완료 기록 카드에도 즉시 반영됩니다.",
