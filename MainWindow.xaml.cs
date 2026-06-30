@@ -2789,16 +2789,23 @@ public partial class MainWindow : Window
     {
         if (!_projects.Contains(proj)) return;
 
-        foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
-            foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);
+        // 열려있는(활성) 프로젝트면 세션 유지·선택 전환 없이 카드만 보관함으로 옮긴다.
+        bool isOpen = _panes.Any(p => ReferenceEquals(p.ActiveProject, proj));
+
+        if (!isOpen)
+            foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
+                foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);
 
         proj.ArchivedAt = DateTime.UtcNow.ToString("o");
         _projects.Remove(proj);
         if (!_archivedProjects.Contains(proj)) _archivedProjects.Add(proj);
         WorkspaceStore.Save(_projects, _archivedProjects);
 
-        var next = _projects.FirstOrDefault();
-        foreach (var pane in _panes) pane.OnProjectRemoved(proj, next);
+        if (!isOpen)
+        {
+            var next = _projects.FirstOrDefault();
+            foreach (var pane in _panes) pane.OnProjectRemoved(proj, next);
+        }
         UpdateStatus();
     }
 
