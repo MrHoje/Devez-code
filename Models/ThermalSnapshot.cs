@@ -1,12 +1,8 @@
 namespace DevezCode.Models;
 
-/// <summary>시스템 온도 스냅샷(CPU/GPU). 읽기 전용.</summary>
+/// <summary>CPU 온도 스냅샷. null = 중지(숨김) 신호.</summary>
 public sealed class ThermalSnapshot
 {
-    /// <summary>CPU 온도(°C). 센서가 없으면 null.</summary>
     public float? CpuTemperature { get; init; }
-    /// <summary>GPU 온도(°C). 센서가 없으면 null.</summary>
-    public float? GpuTemperature { get; init; }
-
-    public bool HasData => CpuTemperature.HasValue || GpuTemperature.HasValue;
+    public bool HasData => CpuTemperature.HasValue;
 }

@@ -56,33 +56,6 @@
                 </Grid>
             </Border>
 
-            <!-- ── 온도 모니터 드라이버 설치 배너 (Ring0 드라이버 없을 때) ────── -->
-            <Border x:Name="ThermalDriverBanner" Grid.Row="1" Visibility="Collapsed"
-                    Background="{DynamicResource PanelSoftBrush}"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                <Grid Margin="14,8,8,8">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconThermometer}"
-                              Width="15" Height="15" VerticalAlignment="Center"
-                              Stroke="{DynamicResource DangerBrush}"/>
-                        <TextBlock x:Name="ThermalBannerText" Margin="9,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"
-                                   Text="CPU 온도 센서 드라이버가 설치되지 않았습니다."/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Button x:Name="ThermalDriverInstallBtn" Click="ThermalDriverInstallBtn_Click" Height="28" Padding="14,0" Cursor="Arrow"
-                                Style="{StaticResource PrimaryButton}" FontSize="{DynamicResource Fs12}">
-                            <TextBlock Text="드라이버 설치" Foreground="White"/>
-                        </Button>
-                        <Button x:Name="ThermalBannerDismiss" Click="ThermalBannerDismiss_Click"
-                                Width="30" Height="28" Margin="6,0,0,0" Cursor="Arrow"
-                                Style="{StaticResource WinCtrlBtn}" ToolTip="닫기">
-                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
-                                  Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
-                        </Button>
-                    </StackPanel>
-                </Grid>
-            </Border>
 
             <!-- ── Title bar ───────────────────────────────────────────── -->
             <!-- 타이틀 바 컬럼은 메인 영역과 SharedSizeGroup 으로 묶여 스플리터 조절 시에도

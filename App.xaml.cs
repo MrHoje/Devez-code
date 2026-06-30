@@ -35,15 +35,6 @@ public partial class App : Application
         // 자동 업데이트 재실행 플래그(단일 인스턴스 분기보다 먼저 읽어 둔다).
         UpdateFailedRelaunch = e.Args.Contains("--update-failed");
 
-        // ─── 온도 모니터 드라이버 설치 모드 ────────────────────────────
-        // runas로 실행된 프로세스가 Ring0 드라이버만 설치하고 종료.
-        // 단일 인스턴스 뮤텍스를 우회(메인 앱 실행 중에도 설치 가능해야 함).
-        if (e.Args.Contains("--install-thermal-driver"))
-        {
-            InstallThermalDriver();
-            Shutdown();
-            return;
-        }
 
         // 단일 인스턴스: 이미 떠 있으면 기존 창을 앞으로 가져오고 종료한다.
         // (여러 인스턴스가 동시에 떠 있으면 workspace.json 을 서로 덮어써 등록한 프로젝트/세션이 사라진다.)
@@ -484,24 +475,4 @@ public partial class App : Application
         ThemeChanged?.Invoke(theme);
     }
 
-    /// <summary>LibreHardwareMonitor Ring0 드라이버 설치. --install-thermal-driver 인자로 실행 시 호출.</summary>
-    internal static void InstallThermalDriver()
-    {
-        try
-        {
-            var computer = new LibreHardwareMonitor.Hardware.Computer
-            {
-                IsCpuEnabled = true,
-                IsGpuEnabled = true,
-                IsMotherboardEnabled = true,
-            };
-            computer.Open();
-            // Open() 시 Ring0 드라이버가 없으면 자동 설치 시도(관리자 권한 필요).
-            computer.Close();
-        }
-        catch
-        {
-            // 실패(사용자가 UAC 취소 등) — 조용히 종료
-        }
-    }
 }

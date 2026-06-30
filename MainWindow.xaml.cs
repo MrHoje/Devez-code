@@ -543,116 +543,28 @@ public partial class MainWindow : Window
             Dispatcher.InvokeAsync(() => ApplyPerfSnapshot(snap));
         _perfMonitor.Start();
 
-        // 온도 모니터 — 하드웨어 스캔을 비동기로 실행(스캔 중 UI 논블로킹).
-        _ = InitThermalAsync();
-    }
-
-    /// <summary>TMP 상태 텍스트 임시 표시 ("--" / "센서없음" / "설치중" / "설치OK" / "오류" / "56°")</summary>
-    private void SetThermalStatus(string text, Brush? fg = null)
-    {
-        PerfTempText.Text = text;
-        if (fg != null) PerfTempText.Foreground = fg;
-    }
-
-    private async Task InitThermalAsync()
-    {
-        await _thermalMonitor.InitializeAsync().ConfigureAwait(false);
+        // 온도 모니터 — PerformanceCounter 로 CPU 온도 읽기. 실패 시 TMP 숨김.
         _thermalMonitor.SnapshotUpdated += snap =>
-            Dispatcher.InvokeAsync(() => ApplyThermalSnapshot(snap));
+            Dispatcher.InvokeAsync(() => ApplyThermalSnap(snap));
         _thermalMonitor.Start();
-
-        // 15초 대기 (5회 폴링). 매 폴링마다 ApplyThermalSnapshot 에서 정보 갱신.
-        await Task.Delay(15000).ConfigureAwait(false);
-        if (_thermalMonitor.HasTemperature) return;
-        // ApplyThermalSnapshot 에서 이미 3초마다 H{x}T{y} 표시 중이라 여기서는 생략
-
-        // 드라이버 설치 시도
-        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
-        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
-        {
-            var dll = System.Reflection.Assembly.GetEntryAssembly()?.Location;
-            if (!string.IsNullOrEmpty(dll))
-                exePath = System.IO.Path.ChangeExtension(dll, ".exe");
-        }
-        bool installAttempted = false;
-        if (!string.IsNullOrEmpty(exePath) && System.IO.File.Exists(exePath))
-        {
-            await Dispatcher.InvokeAsync(() => SetThermalStatus("설치중", (Brush)FindResource("WarningBrush")));
-            try
-            {
-                using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = exePath,
-                    Arguments = "--install-thermal-driver",
-                    Verb = "runas",
-                    UseShellExecute = true,
-                });
-                if (proc != null) { await proc.WaitForExitAsync().ConfigureAwait(false); installAttempted = true; }
-                await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
-            }
-            catch { /* UAC 취소 */ }
-        }
-
-        // 15초 더 대기
-        await Task.Delay(15000).ConfigureAwait(false);
-        if (_thermalMonitor.HasTemperature)
-            await Dispatcher.InvokeAsync(() => SetThermalStatus("설치OK", (Brush)FindResource("SuccessBrush")));
-        else if (installAttempted)
-            await Dispatcher.InvokeAsync(() => SetThermalStatus("오류", (Brush)FindResource("DangerBrush")));
     }
 
-    private void ApplyThermalSnapshot(Models.ThermalSnapshot snap)
+    private void ApplyThermalSnap(Models.ThermalSnapshot? snap)
     {
-        if (snap.CpuTemperature is float cpu)
+        if (snap?.CpuTemperature is float cpu)
         {
-            SetThermalStatus($"{cpu:F0}°", cpu >= 85 ? (Brush)FindResource("DangerBrush")
-                                         : cpu >= 70 ? (Brush)FindResource("WarningBrush")
-                                         : (Brush)FindResource("SuccessBrush"));
+            PerfTempLabel.Visibility = Visibility.Visible;
+            PerfTempText.Visibility = Visibility.Visible;
+            PerfTempText.Text = $"{cpu:F0}°";
+            PerfTempText.Foreground = cpu >= 85 ? (Brush)FindResource("DangerBrush")
+                                    : cpu >= 70 ? (Brush)FindResource("WarningBrush")
+                                    : (Brush)FindResource("SuccessBrush");
         }
         else
         {
-            // LibreHW + WMI 둘 다 실패
-            SetThermalStatus("오류", (Brush)FindResource("DangerBrush"));
+            PerfTempLabel.Visibility = Visibility.Collapsed;
+            PerfTempText.Visibility = Visibility.Collapsed;
         }
-    }
-
-    private async void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
-    {
-        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
-        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
-        {
-            var dll = System.Reflection.Assembly.GetEntryAssembly()?.Location;
-            if (!string.IsNullOrEmpty(dll))
-                exePath = System.IO.Path.ChangeExtension(dll, ".exe");
-        }
-        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
-            return;
-
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = exePath,
-                Arguments = "--install-thermal-driver",
-                Verb = "runas",
-                UseShellExecute = true,
-            };
-            using var proc = System.Diagnostics.Process.Start(psi);
-            if (proc == null) return;
-
-            await proc.WaitForExitAsync();
-
-            await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
-        }
-        catch
-        {
-            ThermalDriverBanner.Visibility = Visibility.Visible;
-        }
-    }
-
-    private void ThermalBannerDismiss_Click(object sender, RoutedEventArgs e)
-    {
-        ThermalDriverBanner.Visibility = Visibility.Collapsed;
     }
 
     // ── 계정 사용량 (statusLine 훅 + OAuth API 병합 → 푸터) ─────────────
