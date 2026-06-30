@@ -100,24 +100,27 @@ public static class SessionCleanerService
     }
 
 
-    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> RoomIds)
+    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> Gpt55Ids, HashSet<string> RoomIds)
     {
         public static ManagedSnapshot Load()
         {
-            var (claude, opencode, gajae, rooms) = SettingsService.LoadManagedSessionSnapshot();
+            var (claude, opencode, gajae, gpt55, rooms) = SettingsService.LoadManagedSessionSnapshot();
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             var claudeIds = ToSet(claude);
             var openCodeIds = ToSet(opencode);
             var gajaeIds = ToSet(gajae);
+            var gpt55Ids = ToSet(gpt55);
 
             AddTrackedFileIds(claudeIds, Path.Combine(appData, "DevezCode", "claude", "sessions"), GuidRegex);
             AddTrackedFileIds(openCodeIds, Path.Combine(appData, "DevezCode", "opencode", "sessions"), new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled));
             AddTrackedFileIds(gajaeIds, Path.Combine(appData, "DevezCode", "gajae", "sessions"), GuidRegex, fromGajaeRoomDir: true);
+            AddTrackedFileIds(gpt55Ids, Path.Combine(appData, "DevezCode", "gpt55", "sessions"), new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled));
 
             return new ManagedSnapshot(
                 claudeIds,
                 openCodeIds,
                 gajaeIds,
+                gpt55Ids,
                 ToSet(rooms));
         }
 
