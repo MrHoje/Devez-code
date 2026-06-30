@@ -595,8 +595,6 @@ public partial class MainWindow : Window
 
             await proc.WaitForExitAsync();
 
-            // 드라이버 설치 후 Computer 재오픈 → 새 드라이버 인식
-            _thermalFailCount = 0;
             await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
         }
         catch
