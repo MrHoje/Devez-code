@@ -72,7 +72,7 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <Button x:Name="ThermalDriverInstallBtn" Click="ThermalDriverInstallBtn_Click" Height="28" Padding="14,0" Cursor="Arrow"
                                 Style="{StaticResource PrimaryButton}" FontSize="{DynamicResource Fs12}">
-                            <TextBlock Text="관리자 권한으로 재시작" Foreground="White"/>
+                            <TextBlock Text="드라이버 설치" Foreground="White"/>
                         </Button>
                         <Button x:Name="ThermalBannerDismiss" Click="ThermalBannerDismiss_Click"
                                 Width="30" Height="28" Margin="6,0,0,0" Cursor="Arrow"

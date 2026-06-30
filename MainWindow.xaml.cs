@@ -582,19 +582,19 @@ public partial class MainWindow : Window
     {
         try
         {
-            // 관리자 권한으로 재시작 (runas)
+            // --install-thermal-driver 인자로 관리자 권한 프로세스 실행 (드라이버만 설치 후 종료)
             using var proc = new System.Diagnostics.Process();
             proc.StartInfo.FileName = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+            proc.StartInfo.Arguments = "--install-thermal-driver";
             proc.StartInfo.Verb = "runas";
             proc.StartInfo.UseShellExecute = true;
             proc.Start();
+            ThermalDriverBanner.Visibility = Visibility.Collapsed;
         }
         catch
         {
-            // 사용자가 UAC 취소함 → 아무 일도 안 함
-            return;
+            // 사용자가 UAC 취소함 → 배너 유지
         }
-        Application.Current.Shutdown();
     }
 
     private void ThermalBannerDismiss_Click(object sender, RoutedEventArgs e)
