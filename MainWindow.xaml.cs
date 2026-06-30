@@ -547,24 +547,79 @@ public partial class MainWindow : Window
         _ = InitThermalAsync();
     }
 
+    private bool _thermalStopped; // hide TMP permanently
     private async Task InitThermalAsync()
     {
         await _thermalMonitor.InitializeAsync().ConfigureAwait(false);
         _thermalMonitor.SnapshotUpdated += snap =>
             Dispatcher.InvokeAsync(() => ApplyThermalSnapshot(snap));
         _thermalMonitor.Start();
+
+        // 15초간 데이터가 안 오면 자동 드라이버 설치 시도
+        await Task.Delay(15000).ConfigureAwait(false);
+        if (_thermalStopped) return;
+
+        // 아직 온도 안 읽히면 → Ring0 드라이버 자동 설치
+        await TryInstallDriverAsync().ConfigureAwait(false);
+
+        // 재시도 15초
+        await Task.Delay(15000).ConfigureAwait(false);
+        if (_thermalStopped) return;
+
+        // 그래도 안 되면 TMP 영역 숨김
+        Dispatcher.InvokeAsync(() =>
+        {
+            PerfTempLabel.Visibility = Visibility.Collapsed;
+            PerfTempText.Visibility  = Visibility.Collapsed;
+        });
+    }
+
+    private async Task TryInstallDriverAsync()
+    {
+        var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
+        {
+            var dll = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+            if (!string.IsNullOrEmpty(dll))
+                exePath = System.IO.Path.ChangeExtension(dll, ".exe");
+        }
+        if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
+            return;
+
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = "--install-thermal-driver",
+                Verb = "runas",
+                UseShellExecute = true,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc != null)
+            {
+                await proc.WaitForExitAsync().ConfigureAwait(false);
+                await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // UAC 취소 등 — 조용히 무시
+        }
     }
 
     private void ApplyThermalSnapshot(Models.ThermalSnapshot snap)
     {
         if (snap.CpuTemperature is float cpu)
         {
+            _thermalStopped = true;
+            PerfTempLabel.Visibility = Visibility.Visible;
+            PerfTempText.Visibility  = Visibility.Visible;
             PerfTempText.Text = $"{cpu:F0}°";
             PerfTempText.Foreground = cpu >= 85 ? (Brush)FindResource("DangerBrush")
                                      : cpu >= 70 ? (Brush)FindResource("WarningBrush")
                                      : (Brush)FindResource("TextBrush");
         }
-        // 센서 없음/미지원 → "--" 유지, 배너는 표시하지 않음 (Ring0 설치 불가 시스템)
     }
 
     private async void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
@@ -578,8 +633,6 @@ public partial class MainWindow : Window
         }
         if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
             return;
-
-                ThermalDriverBanner.Visibility = Visibility.Collapsed;
 
         try
         {
