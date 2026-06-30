@@ -94,7 +94,6 @@ public sealed class ThermalMonitorService : IDisposable
         _poll = null;
     }
 
-    private int _pollCount;
     private void Capture()
     {
         if (!_ready || _initFailed) return;
