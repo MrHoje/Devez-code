@@ -114,8 +114,6 @@ public sealed class ThermalMonitorService : IDisposable
 
             if (cpuTemp > 0f || gpuTemp > 0f) HasTemperature = true;
 
-            _pollCount++;
-
             // null 이어도 항상 이벤트 발생 → MainWindow 에서 상태 텍스트 갱신 가능
             SnapshotUpdated?.Invoke(new ThermalSnapshot
             {
