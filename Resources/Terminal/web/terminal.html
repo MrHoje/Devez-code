@@ -268,7 +268,7 @@
       t.term.write(bytes);
       if (stick) requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
     }
-    requestAnimationFrame(updateScrollBtn);
+    updateScrollBtn(); // 디바운스 — 출력 멎은 뒤 1회 계산
   }
 
   // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
@@ -506,20 +506,27 @@
   // PageDown 없는 노트북 등에서 위로 스크롤해 둔 뒤 바닥으로 복귀하는 수단.
   // gjc 방이고 바닥에서 2줄 이상 떨어졌을 때만 노출.
   const scrollBtn = document.getElementById('scroll-bottom-btn');
-  function updateScrollBtn() {
+  // 즉시 계산: 바닥이면 viewportY===baseY → 숨김, 위로 올리면 viewportY<baseY → 표시.
+  function computeScrollBtn() {
     const t = terms[activeRoomId];
     let show = false;
     if (t && (t.agent || '') === 'gajae' && !t.dead) {
-      // 버퍼 기준: 바닥이면 viewportY===baseY. 한 줄이라도 올리면 viewportY<baseY → 표시.
       try { const b = t.term.buffer.active; show = (b.baseY - b.viewportY) >= 1; } catch (e) {}
     }
     if (scrollBtn) scrollBtn.classList.toggle('on', show);
+  }
+  // 디바운스 갱신: gjc 는 매 출력마다 비동기 재페인트라, write 직후 프레임에 읽으면
+  // baseY/viewportY 가 파싱 중간값이라 엉뚱하게 latch 된다. 출력이 멎은 뒤 한 번만 계산.
+  let _scrollBtnTimer = 0;
+  function updateScrollBtn() {
+    clearTimeout(_scrollBtnTimer);
+    _scrollBtnTimer = setTimeout(computeScrollBtn, 120);
   }
   if (scrollBtn) scrollBtn.addEventListener('click', function () {
     const t = terms[activeRoomId];
     if (!t) return;
     try { t.term.scrollToBottom(); } catch (e) {}
-    updateScrollBtn();
+    computeScrollBtn();
     try { t.term.focus(); } catch (e) {}
   });
 
@@ -781,7 +788,7 @@
 
     entry.fit.fit();
     entry.term.focus();
-    requestAnimationFrame(updateScrollBtn); // 방 전환 시 버튼 상태 재평가
+    requestAnimationFrame(computeScrollBtn); // 방 전환 시 즉시 재평가
     if (isNew) {
       // C#이 이 크기로 ConPTY 세션을 만든다
       post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
