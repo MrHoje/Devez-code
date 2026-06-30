@@ -113,25 +113,6 @@
     transition: opacity 0.15s ease, transform 0.15s ease; pointer-events: none;
   }
   #copy-toast.on { opacity: 1; transform: translateY(0); }
-
-  /* ── 맨 아래로 버튼 — PageDown 없는 환경용. gjc 방에서 바닥이 아닐 때만 우하단에 표시. ── */
-  #scroll-bottom-btn {
-    position: absolute; right: 16px; bottom: 20px; z-index: 55;
-    width: 34px; height: 34px; padding: 0; cursor: pointer;
-    display: none; align-items: center; justify-content: center;
-    box-sizing: border-box;
-    border-radius: 50%;
-    background: var(--term-accent, #2563eb); color: #fff;
-    border: 1px solid rgba(255,255,255,0.18);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
-    font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
-    font-size: 17px; line-height: 1; text-align: center; opacity: 0.9;
-    transition: opacity 0.12s ease, transform 0.12s ease;
-  }
-  /* 화살표 글리프 자체 여백(아래쪽 베이스라인 공간) 보정 — 시각적 중앙 정렬 */
-  #scroll-bottom-btn > span { display: block; transform: translateY(-1px); }
-  #scroll-bottom-btn.on { display: flex; }
-  #scroll-bottom-btn:hover { opacity: 1; transform: translateY(-1px); }
 </style>
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
@@ -140,7 +121,6 @@
 <body>
 <div id="loading-overlay"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div>
 <div id="copy-toast"></div>
-<button id="scroll-bottom-btn" title="맨 아래로"><span>&#8595;</span></button>
 <div id="search-bar">
   <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
   <span id="search-count"></span>
@@ -268,7 +248,6 @@
       t.term.write(bytes);
       if (stick) requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
     }
-    updateScrollBtn(); // 디바운스 — 출력 멎은 뒤 1회 계산
   }
 
   // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
@@ -502,34 +481,6 @@
     if (sel) { post({ type: 'copy', data: sel }); showCopyToast(Array.from(sel).length); }
   }
 
-  // ── 맨 아래로 버튼 ──────────────────────────────────────────────────
-  // PageDown 없는 노트북 등에서 위로 스크롤해 둔 뒤 바닥으로 복귀하는 수단.
-  // gjc 방이고 바닥에서 2줄 이상 떨어졌을 때만 노출.
-  const scrollBtn = document.getElementById('scroll-bottom-btn');
-  // 즉시 계산: 바닥이면 viewportY===baseY → 숨김, 위로 올리면 viewportY<baseY → 표시.
-  function computeScrollBtn() {
-    const t = terms[activeRoomId];
-    let show = false;
-    if (t && (t.agent || '') === 'gajae' && !t.dead) {
-      try { const b = t.term.buffer.active; show = (b.baseY - b.viewportY) >= 1; } catch (e) {}
-    }
-    if (scrollBtn) scrollBtn.classList.toggle('on', show);
-  }
-  // 디바운스 갱신: gjc 는 매 출력마다 비동기 재페인트라, write 직후 프레임에 읽으면
-  // baseY/viewportY 가 파싱 중간값이라 엉뚱하게 latch 된다. 출력이 멎은 뒤 한 번만 계산.
-  let _scrollBtnTimer = 0;
-  function updateScrollBtn() {
-    clearTimeout(_scrollBtnTimer);
-    _scrollBtnTimer = setTimeout(computeScrollBtn, 120);
-  }
-  if (scrollBtn) scrollBtn.addEventListener('click', function () {
-    const t = terms[activeRoomId];
-    if (!t) return;
-    try { t.term.scrollToBottom(); } catch (e) {}
-    computeScrollBtn();
-    try { t.term.focus(); } catch (e) {}
-  });
-
   // ── 검색바 ──────────────────────────────────────────────────────────
   const searchBar   = document.getElementById('search-bar');
   const searchInput = document.getElementById('search-input');
@@ -724,9 +675,6 @@
     setupImeCaretFix(term, el);
     term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
 
-    // 스크롤 위치 변할 때 "맨 아래로" 버튼 노출 갱신(활성 방일 때만 의미 있음).
-    try { term.onScroll(function () { if (roomId === activeRoomId) updateScrollBtn(); }); } catch (e) {}
-
     // 마지막 비어있지 않은 선택을 기억(텍스트+시각) — gjc 재페인트가 선택을 지운 직후의
     // Ctrl+C 복사 grace 판정에 쓴다(handleKey 참고). 빈 선택(clear)일 땐 갱신 안 해 보존.
     try {
@@ -788,7 +736,6 @@
 
     entry.fit.fit();
     entry.term.focus();
-    requestAnimationFrame(computeScrollBtn); // 방 전환 시 즉시 재평가
     if (isNew) {
       // C#이 이 크기로 ConPTY 세션을 만든다
       post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
