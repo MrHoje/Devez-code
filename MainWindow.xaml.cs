@@ -2418,7 +2418,8 @@ public partial class MainWindow : Window
         bool bottom = sv.VerticalOffset < sv.ScrollableHeight;
         SessionHistoryFadeTop.Visibility = top ? Visibility.Visible : Visibility.Collapsed;
         SessionHistoryFadeBottom.Visibility = bottom ? Visibility.Visible : Visibility.Collapsed;
-        sv.Padding = new Thickness(8, top ? 0 : 8, 8, bottom ? 0 : 8);
+        // Padding 을 스크롤 상태 따라 바꾸면 content extent 가 변해 스크롤바가 토글되고
+        // ScrollChanged 가 재발생하는 피드백 루프(경계 높이에서 꿈틀)가 생긴다 → 상수 패딩 유지.
     }
 
     private void UpdateSessionHistoryEmpty()
@@ -2430,7 +2431,17 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.DataContext is not SessionCompletionRecord r) return;
         var s = FindSession(r.SessionId);
-        if (s == null) return;
+        if (s == null)
+        {
+            // 세션 삭제됨 → 열 수 없으니 클릭만으로 읽음 처리(하이라이트 제거)
+            if (!r.IsRead)
+            {
+                r.IsRead = true;
+                SettingsService.SaveSessionHistoryRecords(
+                    new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+            }
+            return;
+        }
         try { Activate(); OpenSession(s); } catch { /* best effort */ }
     }
 
