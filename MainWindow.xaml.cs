@@ -462,7 +462,7 @@ public partial class MainWindow : Window
         SaveWindowPlacement();
 
         if (_shuttingDown) return; // 2차 진입(graceful 완료 후 Close()) — 그대로 종료 허용
-        if (!TerminalSessionManager.Instance.HasLiveSessions()) return; // 닫을 세션 없음
+        if (!TerminalSessionManager.Instance.HasSessionsToClose()) return; // 닫을 세션 없음(ConPTY 미생성)
 
         e.Cancel = true;
         _shuttingDown = true;

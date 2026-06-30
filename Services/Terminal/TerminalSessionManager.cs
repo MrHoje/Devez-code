@@ -1136,10 +1136,13 @@ public sealed class TerminalSessionManager
     /// <summary>채팅방 삭제 시 호출 — 해당 방의 셸 프로세스 정리.
     /// <paramref name="purgeTracking"/> 이 false 면 추적 파일(sessions/*.txt, launch batch)을 보존한다.
     /// 재시작 경로에서 resume 에 필요한 session id 추적 파일이 지워지면 대화가 날아가므로 보존.</summary>
-    /// <summary>현재 살아있는(셸 실행 중) 세션이 하나라도 있는지 — 종료 시 graceful 오버레이 표시 판단.</summary>
-    public bool HasLiveSessions()
+    /// <summary>닫을 세션이 하나라도 등록돼 있는지(살았든 죽었든) — 종료 시 안전종료 오버레이 + graceful 정리 판단.
+    /// 죽은 세션도 graceful 경로에서 훅 기록 flush·Dispose 를 거치므로, IsAlive 가 아니라 세션 등록 유무로 본다.
+    /// (이전엔 IsAlive 기준이라, 죽은 탭만 남으면 — 예: 터미널에서 exit·크래시·외부 kill — 안전종료가 통째로
+    /// 스킵돼 그냥 꺼졌다. ConPTY 가 아직 안 만들어진 세션(_sessions 미등록)은 닫을 프로세스가 없어 제외.)</summary>
+    public bool HasSessionsToClose()
     {
-        lock (_lock) return _sessions.Values.Any(s => s.IsAlive);
+        lock (_lock) return _sessions.Count > 0;
     }
 
     /// <summary>앱 종료 시: 모든 세션을 동시에 graceful 종료(Ctrl+C×2 + exit)해 claude/codex 가
