@@ -580,14 +580,11 @@ public partial class MainWindow : Window
 
     private void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
     {
-        var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
-        if (string.IsNullOrEmpty(exePath))
-        {
-            System.Diagnostics.Debug.WriteLine("ThermalDriverInstall: exePath null");
-            return;
-        }
-
-        System.Diagnostics.Debug.WriteLine($"ThermalDriverInstall: launching {exePath} --install-thermal-driver");
+        // GetEntryAssembly()?.Location 은 DLL 경로. runas 는 EXE 여야 하므로 확장자 변경.
+        var dllPath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+        if (string.IsNullOrEmpty(dllPath)) return;
+        var exePath = System.IO.Path.ChangeExtension(dllPath, ".exe");
+        if (!System.IO.File.Exists(exePath)) return;
 
         try
         {
@@ -600,14 +597,11 @@ public partial class MainWindow : Window
             };
             using var proc = System.Diagnostics.Process.Start(psi);
             if (proc != null)
-            {
                 ThermalDriverBanner.Visibility = Visibility.Collapsed;
-                System.Diagnostics.Debug.WriteLine("ThermalDriverInstall: process started OK");
-            }
         }
-        catch (Exception ex)
+        catch
         {
-            System.Diagnostics.Debug.WriteLine($"ThermalDriverInstall: failed - {ex.Message}");
+            // 사용자가 UAC 취소 → 배너 유지
         }
     }
 
