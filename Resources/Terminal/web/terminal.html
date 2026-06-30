@@ -544,7 +544,12 @@
       if (vp) requestAnimationFrame(function () {
         const cell = (vp.clientHeight / t.term.rows) || 16;
         const rest = vp.scrollHeight - vp.clientHeight - vp.scrollTop;
-        if (rest > 0 && rest <= cell * 3) { try { t.term.scrollToBottom(); } catch (e) {} }
+        // 바닥 근처면 nudge(위 1줄→맨 아래)로 스냅 — 단순 scrollToBottom 은 gjc 인라인
+        // TUI 에서 ybase 에 1~3줄 못 닿아 입력창이 잘림. 위로 1줄 굴려 강제 리렌더 후 붙인다.
+        if (rest > 0 && rest <= cell * 6) {
+          try { t.term.scrollLines(-1); } catch (e) {}
+          requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
+        }
       });
     }
   }, { passive: false, capture: true });
