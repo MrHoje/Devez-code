@@ -578,7 +578,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
     private async void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
     {
         var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
