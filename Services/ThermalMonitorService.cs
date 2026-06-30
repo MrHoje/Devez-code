@@ -20,7 +20,9 @@ public sealed class ThermalMonitorService : IDisposable
     public event Action<ThermalSnapshot>? SnapshotUpdated;
     /// <summary>한 번이라도 온도 센서 값을 읽었는지 (자동 설치 시도 여부 판단용).</summary>
     public bool HasTemperature { get; private set; }
-    /// <summary>LibreHardwareMonitor 가 감지한 Hardware 수 (0이면 아예 인식 실패).</summary>
+    /// <summary>초기화 실패 여부 (Computer.Open() 예외 발생 등).</summary>
+    public bool InitFailed => _initFailed;
+    /// <summary>LibreHardwareMonitor 가 감지한 Hardware 수.</summary>
     public int HardwareCount { get; private set; }
     /// <summary>온도 센서를 가진 Hardware 수.</summary>
     public int TempSensorCount { get; private set; }
