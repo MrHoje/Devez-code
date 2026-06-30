@@ -579,8 +579,8 @@ public partial class MainWindow : Window
     }
 
     private void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
+    private async void ThermalDriverInstallBtn_Click(object sender, RoutedEventArgs e)
     {
-        // 1) MainModule (native exe) 우선, 2) 없으면 DLL→.exe 변환
         var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
         if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
         {
@@ -590,6 +590,8 @@ public partial class MainWindow : Window
         }
         if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
             return;
+
+                ThermalDriverBanner.Visibility = Visibility.Collapsed;
 
         try
         {
@@ -601,12 +603,17 @@ public partial class MainWindow : Window
                 UseShellExecute = true,
             };
             using var proc = System.Diagnostics.Process.Start(psi);
-            if (proc != null)
-                ThermalDriverBanner.Visibility = Visibility.Collapsed;
+            if (proc == null) return;
+
+            await proc.WaitForExitAsync();
+
+            // 드라이버 설치 후 Computer 재오픈 → 새 드라이버 인식
+            _thermalFailCount = 0;
+            await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
         }
         catch
         {
-            // 사용자가 UAC 취소 → 배너 유지
+            ThermalDriverBanner.Visibility = Visibility.Visible;
         }
     }
 
