@@ -489,7 +489,7 @@ public partial class App : Application
     {
         try
         {
-            using var computer = new LibreHardwareMonitor.Hardware.Computer
+            var computer = new LibreHardwareMonitor.Hardware.Computer
             {
                 IsCpuEnabled = true,
                 IsGpuEnabled = true,

@@ -600,7 +600,6 @@ public partial class MainWindow : Window
     private void ThermalBannerDismiss_Click(object sender, RoutedEventArgs e)
     {
         ThermalDriverBanner.Visibility = Visibility.Collapsed;
-        }
     }
 
     // ── 계정 사용량 (statusLine 훅 + OAuth API 병합 → 푸터) ─────────────

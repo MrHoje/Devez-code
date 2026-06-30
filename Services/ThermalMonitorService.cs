@@ -104,7 +104,7 @@ public sealed class ThermalMonitorService : IDisposable
         Stop();
         try { _computer?.Close(); } catch { }
     }
-}
+
     /// <summary>hardware + 모든 subHardware 를 재귀적으로 탐색하며 온도 센서 수집.
     /// AMD CPU/GPU 는 subHardware 계층에 실제 센서가 있는 경우가 많다.</summary>
     private static void WalkHardware(IHardware hw, ref float? cpuTemp, ref float? gpuTemp)
@@ -146,3 +146,4 @@ public sealed class ThermalMonitorService : IDisposable
         foreach (var sub in hw.SubHardware)
             WalkHardware(sub, ref cpuTemp, ref gpuTemp);
     }
+}
