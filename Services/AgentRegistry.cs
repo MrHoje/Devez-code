@@ -63,14 +63,6 @@ public static class AgentRegistry
             ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
             Command = "gjc", InlineTui = true,
         },
-        new()
-        {
-            // GPT-5.5: OpenAI 기반 범용 AI CLI 에이전트. 훅 미지원, 범용 fallback 경로 사용.
-            Id = "gpt55", DisplayName = "GPT-5.5", Provider = "OpenAI",
-            ExeNames = new[] { "gpt55.exe", "gpt55.cmd", "gpt55.bat", "gpt55.ps1", "gpt55" },
-            Command = "gpt55",
-            ResumeFlag = "-c",
-        },
     };
 
     public static AgentDef? Find(string? id)
