@@ -547,6 +547,13 @@ public partial class MainWindow : Window
         _ = InitThermalAsync();
     }
 
+    /// <summary>TMP 상태 텍스트 임시 표시 ("--" / "센서없음" / "설치중" / "설치OK" / "오류" / "56°")</summary>
+    private void SetThermalStatus(string text, Brush? fg = null)
+    {
+        PerfTempText.Text = text;
+        if (fg != null) PerfTempText.Foreground = fg;
+    }
+
     private async Task InitThermalAsync()
     {
         await _thermalMonitor.InitializeAsync().ConfigureAwait(false);
@@ -554,10 +561,12 @@ public partial class MainWindow : Window
             Dispatcher.InvokeAsync(() => ApplyThermalSnapshot(snap));
         _thermalMonitor.Start();
 
-        // 15초 후에도 온도 안 읽히면 Ring0 드라이버 자동 설치 시도
+        // 15초 대기 — 온도 오면 return
         await Task.Delay(15000).ConfigureAwait(false);
         if (_thermalMonitor.HasTemperature) return;
+        await Dispatcher.InvokeAsync(() => SetThermalStatus("센서없음", (Brush)FindResource("TextMutedBrush")));
 
+        // 드라이버 설치 시도
         var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
         if (string.IsNullOrEmpty(exePath) || !System.IO.File.Exists(exePath))
         {
@@ -565,8 +574,10 @@ public partial class MainWindow : Window
             if (!string.IsNullOrEmpty(dll))
                 exePath = System.IO.Path.ChangeExtension(dll, ".exe");
         }
+        bool installAttempted = false;
         if (!string.IsNullOrEmpty(exePath) && System.IO.File.Exists(exePath))
         {
+            await Dispatcher.InvokeAsync(() => SetThermalStatus("설치중", (Brush)FindResource("WarningBrush")));
             try
             {
                 using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -576,35 +587,27 @@ public partial class MainWindow : Window
                     Verb = "runas",
                     UseShellExecute = true,
                 });
-                if (proc != null) await proc.WaitForExitAsync().ConfigureAwait(false);
+                if (proc != null) { await proc.WaitForExitAsync().ConfigureAwait(false); installAttempted = true; }
                 await Task.Run(() => _thermalMonitor.Reopen()).ConfigureAwait(false);
             }
-            catch { }
+            catch { /* UAC 취소 */ }
         }
 
-        // 다시 15초 대기
+        // 15초 더 대기
         await Task.Delay(15000).ConfigureAwait(false);
-        if (!_thermalMonitor.HasTemperature)
-        {
-            // 이 시스템에서는 온도를 읽을 수 없음 → TMP 영역 숨김
-            await Dispatcher.InvokeAsync(() =>
-            {
-                PerfTempLabel.Visibility = Visibility.Collapsed;
-                PerfTempText.Visibility  = Visibility.Collapsed;
-            });
-        }
+        if (_thermalMonitor.HasTemperature)
+            await Dispatcher.InvokeAsync(() => SetThermalStatus("설치OK", (Brush)FindResource("SuccessBrush")));
+        else if (installAttempted)
+            await Dispatcher.InvokeAsync(() => SetThermalStatus("오류", (Brush)FindResource("DangerBrush")));
     }
 
     private void ApplyThermalSnapshot(Models.ThermalSnapshot snap)
     {
         if (snap.CpuTemperature is float cpu)
         {
-            PerfTempLabel.Visibility = Visibility.Visible;
-            PerfTempText.Visibility  = Visibility.Visible;
-            PerfTempText.Text = $"{cpu:F0}°";
-            PerfTempText.Foreground = cpu >= 85 ? (Brush)FindResource("DangerBrush")
-                                     : cpu >= 70 ? (Brush)FindResource("WarningBrush")
-                                     : (Brush)FindResource("TextBrush");
+            SetThermalStatus($"{cpu:F0}°", cpu >= 85 ? (Brush)FindResource("DangerBrush")
+                                         : cpu >= 70 ? (Brush)FindResource("WarningBrush")
+                                         : (Brush)FindResource("SuccessBrush"));
         }
     }
 
