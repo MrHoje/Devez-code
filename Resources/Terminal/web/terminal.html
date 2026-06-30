@@ -387,6 +387,16 @@
     // Ctrl+C: 선택이 있으면 복사(+선택 해제), 없으면 그대로 SIGINT 전달 (WT 동작)
     if (ctrl && !shift && !alt && (key === 'c' || key === 'C')) {
       if (hasSel) { e.preventDefault(); doCopy(term); return false; }
+      // gjc 는 생성 중 고빈도 풀 재페인트(\x1b[2J)가 xterm 선택을 지운다 → 드래그 직후 Ctrl+C 가
+      // 선택을 못 보고 \x03(SIGINT)로 빠져 gjc 가 중단됨. 최근 선택(grace)이 있으면 그걸 복사하고
+      // SIGINT 를 억제한다. 한 번 더(또는 grace 밖) 누르면 lastSel 이 비어 정상 인터럽트.
+      if (entry.agent === 'gajae' && entry.lastSelText && (Date.now() - entry.lastSelAt) < 800) {
+        e.preventDefault();
+        post({ type: 'copy', data: entry.lastSelText });
+        showCopyToast(Array.from(entry.lastSelText).length);
+        entry.lastSelText = '';
+        return false;
+      }
       return true; // 선택 없음 → \x03(인터럽트) 통과
     }
     // Ctrl+Shift+C / Ctrl+Insert: 복사 (선택이 없으면 가로채지 않고 PTY 로 통과)
@@ -591,7 +601,7 @@
     term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null };
+    const entry = { term, fit, el, search, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0 };
     terms[roomId] = entry;
 
     // OSC 52 클립보드 쓰기 — claude/gjc 등 TUI 가 마우스 선택 후 "ESC]52;c;<base64>" 로 복사하면
@@ -664,6 +674,15 @@
 
     setupImeCaretFix(term, el);
     term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
+
+    // 마지막 비어있지 않은 선택을 기억(텍스트+시각) — gjc 재페인트가 선택을 지운 직후의
+    // Ctrl+C 복사 grace 판정에 쓴다(handleKey 참고). 빈 선택(clear)일 땐 갱신 안 해 보존.
+    try {
+      term.onSelectionChange(function () {
+        const s = term.getSelection();
+        if (s) { entry.lastSelText = s; entry.lastSelAt = Date.now(); }
+      });
+    } catch (e) {}
 
     // copy-on-select: 드래그 선택(마우스 뗄 때) 자동 복사 → Ctrl+C 없이 복사. xterm 이 선택을
     // 확정한 뒤 읽도록 다음 프레임에 조회. (TUI 마우스 모드에선 Shift+드래그로 선택해야 함)
