@@ -189,6 +189,7 @@
                                     <Ellipse Grid.Column="0" x:Name="TabBusySpinner" Width="12" Height="12"
                                              Margin="0,0,6,0" VerticalAlignment="Center"
                                              Visibility="Collapsed"
+                                             models:SpinnerActivator.Track="True"
                                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
                                              StrokeDashArray="15 100" StrokeDashCap="Round"
                                              RenderTransformOrigin="0.5,0.5">
@@ -399,6 +400,7 @@
                              Stroke="{DynamicResource PrimaryBrush}"
                              StrokeDashArray="28 10"
                              HorizontalAlignment="Center"
+                             models:SpinnerActivator.Track="True"
                              RenderTransformOrigin="0.5,0.5">
                         <Ellipse.RenderTransform>
                             <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
