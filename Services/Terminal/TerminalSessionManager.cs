@@ -910,9 +910,14 @@ public sealed class TerminalSessionManager
                     } catch { return 0 }
                   }
 
-                  # 입력 대기 ❗ 진입 신호(PermissionRequest 즉시 / Notification 폴백 둘 다 'notify'로 들어옴).
-                  # busy=running 일 때만 기록(60초 idle 알림 제외). 두 번째 연속 선택지도 매번 재무장.
-                  if ($status -eq 'notify') {
+                  # 입력 대기 ❗ 진입 신호.
+                  #  • notify(PermissionRequest): 실제 권한창 → 서브 실행중이라도 항상 무장(서브가 툴 권한 대기).
+                  #  • notifyidle(Notification 폴백): 살아있는 서브>0 이면 무장 안 함 — 이건 서브 완료를 기다리는
+                  #    동안 뜨는 '60초 idle' 알림이라 유저 블로킹이 아니다(Task 가 메인 턴을 블로킹하므로 서브 실행중
+                  #    메인이 유저에게 물을 수 없다 → 이때 Notification 은 오탐). 서브 없으면 메인이 진짜 유저 대기 → 무장.
+                  # 둘 다 busy=running 일 때만 기록(완전 idle 알림 제외). 두 번째 연속 선택지도 매번 재무장.
+                  if ($status -eq 'notify' -or $status -eq 'notifyidle') {
+                    if ($status -eq 'notifyidle' -and (Get-LiveSubCount $runDir) -gt 0) { exit 0 }
                     $b = ''; try { if (Test-Path -LiteralPath $busyFile) { $b = (Get-Content -LiteralPath $busyFile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
                     if ($b -eq 'running') { Set-Content -LiteralPath $waitFile -Value 'waiting' -Encoding Ascii -Force }
                     exit 0
@@ -1031,6 +1036,7 @@ public sealed class TerminalSessionManager
         var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running {arg}";
         var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle {arg}";
         var busyNotifyCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notify {arg}";
+        var busyNotifyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notifyidle {arg}";
         var busySubStartCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" substart {arg}";
         var busySubStopCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" substop {arg}";
         // refreshInterval: 전역 settings 와 달리 room 은 event-driven 만으로는 1회 렌더 실패(느린 시작/타임아웃)
@@ -1054,9 +1060,11 @@ public sealed class TerminalSessionManager
                 // 선택지/권한 입력 대기 ❗ — 진입 신호 둘:
                 //  • PermissionRequest: 툴 권한 대화창이 뜨는 '즉시' 발화(matcher * = 모든 툴) → 지연 없음.
                 //  • Notification: 그 외 입력 대기(AskUserQuestion 등) 폴백(claude 측 타이밍상 수 초 지연 가능).
+                //    단 살아있는 서브에이전트가 있으면 이 Notification 은 '서브 완료 대기중 60초 idle' 오탐이므로
+                //    notifyidle 로 보내 subcount>0 일 때 무장하지 않는다(서브 도는 동안 ❗ 대신 스피너만 유지).
                 // 해제는 UserPromptSubmit/Stop(파일) + 답변 입력(즉시 UI).
                 PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
-                Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
+                Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyIdleCommand } } } },
                 // 서브에이전트 생존 추적(스피너 조기소멸 방지): Start=run 파일 생성, Stop=삭제 → busy 재평가.
                 SubagentStart    = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStartCommand } } } },
                 SubagentStop     = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStopCommand } } } },
