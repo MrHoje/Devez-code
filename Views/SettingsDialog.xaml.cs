@@ -54,7 +54,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.9.3", "2026-07-01", true, new[]
+        ("v1.9.4", "2026-07-01", true, new[]
+        {
+            "업데이트 누락으로 회귀되던 문제를 수정했습니다.",
+        }),
+        ("v1.9.3", "2026-07-01", false, new[]
         {
             "일부 PC에서 발생하던 클립보드 충돌 문제를 해결했습니다.",
         }),

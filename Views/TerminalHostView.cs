@@ -381,8 +381,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     // 결과 post 만 UI 스레드로 되돌린다(붙여넣기는 사용자 조작이라 약간의 비동기 무해).
                     RunClipboardSta(() =>
                     {
-                        var imagePath = SaveClipboardImage();
-                        var text = imagePath == null ? GetClipboardText() : null;
+                        var (imagePath, text) = ReadClipboardForPaste();
                         Dispatcher.BeginInvoke(() =>
                         {
                             if (imagePath != null)
@@ -601,41 +600,56 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         t.Start();
     }
 
-    private static string GetClipboardText()
+    /// <summary>붙여넣기용 클립보드 읽기. 클립보드를 1회만 열고(OLE GetDataObject) 그 스냅샷에서
+    /// 이미지→텍스트 순으로 읽는다. 기존엔 ContainsText+GetText / ContainsImage+GetImage 로 매번
+    /// 2회씩 열어 클립보드 매니저·백신·RDP 리디렉션이 물린 PC 에서 두 번째 열기가 실패 → 빈값 →
+    /// Ctrl+V 먹통이 잦았다. 열기 횟수를 절반으로 줄이고 재시도를 넉넉히(STA 스레드라 대기 무해).
+    /// 이미지면 (파일경로, null), 텍스트면 (null, 텍스트), 없으면 (null, null).</summary>
+    private static (string? imagePath, string? text) ReadClipboardForPaste()
     {
-        for (int i = 0; i < 5; i++)
-        {
-            try { return System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : ""; }
-            catch { System.Threading.Thread.Sleep(20); }
-        }
-        return "";
-    }
-
-    /// <summary>클립보드에 이미지가 있으면 %TEMP%\DevezCode\clipboard\ 에 저장 후 파일 경로 반환.
-    /// 이미지가 없거나 저장 실패 시 null.</summary>
-    private static string? SaveClipboardImage()
-    {
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 8; i++)
         {
             try
             {
-                if (!System.Windows.Clipboard.ContainsImage()) return null;
-                using var ms = new System.IO.MemoryStream();
-                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(
-                    System.Windows.Clipboard.GetImage()));
-                encoder.Save(ms);
-                var dir = System.IO.Path.Combine(
-                    System.IO.Path.GetTempPath(), "DevezCode", "clipboard");
-                System.IO.Directory.CreateDirectory(dir);
-                var path = System.IO.Path.Combine(dir,
-                    $"clip_{DateTime.Now:yyyyMMddHHmmssfff}.png");
-                System.IO.File.WriteAllBytes(path, ms.ToArray());
-                return path;
+                var data = System.Windows.Clipboard.GetDataObject();
+                if (data == null) return (null, null);
+
+                // 이미지 우선(claude 이미지 첨부) — 저장 성공 시 파일 경로 반환
+                if (data.GetDataPresent(System.Windows.DataFormats.Bitmap)
+                    && data.GetData(System.Windows.DataFormats.Bitmap) is System.Windows.Media.Imaging.BitmapSource img)
+                {
+                    var path = SaveBitmap(img);
+                    if (path != null) return (path, null);
+                }
+
+                if (data.GetDataPresent(System.Windows.DataFormats.UnicodeText))
+                    return (null, data.GetData(System.Windows.DataFormats.UnicodeText) as string ?? "");
+                if (data.GetDataPresent(System.Windows.DataFormats.Text))
+                    return (null, data.GetData(System.Windows.DataFormats.Text) as string ?? "");
+
+                return (null, null); // 열기는 됐으나 텍스트·이미지 없음 → 재시도 불필요
             }
-            catch { System.Threading.Thread.Sleep(20); }
+            catch { System.Threading.Thread.Sleep(30); } // 경합 — 잠깐 뒤 재시도
         }
-        return null;
+        return (null, null);
+    }
+
+    /// <summary>BitmapSource 를 %TEMP%\DevezCode\clipboard\ 에 PNG 로 저장 후 경로 반환. 실패 시 null.</summary>
+    private static string? SaveBitmap(System.Windows.Media.Imaging.BitmapSource img)
+    {
+        try
+        {
+            using var ms = new System.IO.MemoryStream();
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(img));
+            encoder.Save(ms);
+            var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "DevezCode", "clipboard");
+            System.IO.Directory.CreateDirectory(dir);
+            var path = System.IO.Path.Combine(dir, $"clip_{DateTime.Now:yyyyMMddHHmmssfff}.png");
+            System.IO.File.WriteAllBytes(path, ms.ToArray());
+            return path;
+        }
+        catch { return null; }
     }
 
     /// <summary>다음 N회의 출력 쓰기에서 xterm.js 스크롤을 억제(슬래시 명령 자동주입 시 사용).</summary>
