@@ -13,12 +13,18 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollViewer">
-                        <!-- 스크롤바를 컬럼으로 두면 표시/숨김에 따라 폭이 토글돼 콘텐츠가 흔들린다.
-                             오버레이(우측 8px 패딩 위에 겹침)로 두면 콘텐츠 폭이 스크롤 유무와 무관하게 고정. -->
+                        <!-- 스크롤바는 Auto 컬럼: 숨김이면 폭 0(우측 여백 = 좌측과 동일 8px),
+                             표시면 폭 8을 차지하되 콘텐츠는 우측 패딩 8을 유지 → 카드~스크롤바 간격 8px 확보.
+                             폭 토글은 세로 스택에서 콘텐츠 높이를 줄이지 못해(좁아지면 같거나 커짐) 진동 없음.
+                             과거 꿈틀거림의 실제 원인은 ProjectScrollChanged의 패딩 토글이었고 제거됨. -->
                         <Grid>
-                            <ScrollContentPresenter Margin="{TemplateBinding Padding}"/>
-                            <ScrollBar x:Name="PART_VerticalScrollBar" Orientation="Vertical"
-                                       HorizontalAlignment="Right" Width="8" Cursor="Arrow"
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ScrollContentPresenter Grid.Column="0" Margin="{TemplateBinding Padding}"/>
+                            <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1" Orientation="Vertical"
+                                       Cursor="Arrow"
                                        Minimum="0" Maximum="{TemplateBinding ScrollableHeight}"
                                        ViewportSize="{TemplateBinding ViewportHeight}"
                                        Value="{Binding VerticalOffset, RelativeSource={RelativeSource TemplatedParent}, Mode=OneWay}"
