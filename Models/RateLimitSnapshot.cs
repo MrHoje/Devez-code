@@ -34,20 +34,26 @@ public class RateLimitSnapshot
         };
     }
 
-    /// <summary>한 윈도우 병합. resets_at 은 새 윈도우에서만 앞으로 이동하므로 next.reset 이 더 과거면
-    /// 낡은 스냅샷으로 보고 통째로 무시(이전 pct+reset 유지) — reset 시각이 앞뒤로 튀어 진행바가
-    /// 꿈틀대는 것 방지. 같은 윈도우면 사용률 비후퇴(높은 값 유지).</summary>
+    /// <summary>두 소스(statusLine 훅 unix초 · OAuth API ISO)가 같은 윈도우를 살짝 다른 reset 시각으로
+    /// 보고하므로 이 오차 이내는 동일 윈도우로 본다. 이 값이 없으면 3분마다 오는 API 폴이 statusLine 의
+    /// 미세하게 늦은 reset 에 밀려 통째로 무시돼 Claude 값이 얼어붙었다.</summary>
+    private static readonly TimeSpan WindowTolerance = TimeSpan.FromMinutes(5);
+
+    /// <summary>한 윈도우 병합. reset 이 오차(WindowTolerance)를 넘어 앞서면 새 윈도우로 채택,
+    /// 뒤처지면 낡은 스냅샷으로 무시. 오차 이내(같은 윈도우)면 방금 들어온(더 최신) 값을 채택하되
+    /// reset 은 더 늦은 쪽을 유지해 진행바 꿈틀 방지. 계정 전역값이라 "마지막 갱신 = 최신".</summary>
     public static (double? pct, DateTimeOffset? reset) PickWindow(
         double? oldPct, DateTimeOffset? oldReset, double? newPct, DateTimeOffset? newReset)
     {
         if (newPct is not double n) return (oldPct, oldReset); // next 데이터 없음 → 이전 유지
-        if (oldPct is not double o) return (newPct, newReset);
+        if (oldPct is not double) return (newPct, newReset);
         if (oldReset is DateTimeOffset orr && newReset is DateTimeOffset nrr)
         {
-            if (nrr < orr) return (oldPct, oldReset);          // next 가 낡은 윈도우 → 무시
-            if (nrr > orr) return (newPct, newReset);          // 새 윈도우 → 채택
-            return (n < o ? o : n, newReset);                  // 같은 윈도우 → 사용률 비후퇴
+            var diff = nrr - orr;
+            if (diff > WindowTolerance) return (newPct, newReset);   // 새 윈도우 → 채택
+            if (diff < -WindowTolerance) return (oldPct, oldReset);  // 낡은 윈도우 → 무시
+            return (n, nrr > orr ? nrr : orr);                       // 같은 윈도우 → 최신 pct, 더 늦은 reset 유지
         }
-        return (n < o ? o : n, newReset ?? oldReset);          // reset 정보 부족 → 기존 비후퇴 동작
+        return (n, newReset ?? oldReset);                            // reset 정보 부족 → 최신 pct 채택
     }
 }
