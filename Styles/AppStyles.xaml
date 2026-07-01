@@ -1862,14 +1862,14 @@
                             MinWidth="160">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <ContentPresenter Grid.Column="0" ContentSource="Icon"
+                            <ContentPresenter x:Name="IconHost" Grid.Column="0" ContentSource="Icon"
                                               Width="16" Height="16"
                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <ContentPresenter Grid.Column="1"
+                            <ContentPresenter x:Name="HeaderHost" Grid.Column="1"
                                               ContentSource="Header"
                                               RecognizesAccessKey="True"
                                               VerticalAlignment="Center"
@@ -1885,6 +1885,10 @@
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="Icon" Value="{x:Null}">
+                            <Setter TargetName="IconHost" Property="Visibility" Value="Collapsed"/>
+                            <Setter TargetName="HeaderHost" Property="Margin" Value="0"/>
+                        </Trigger>
                         <Trigger Property="IsHighlighted" Value="True">
                             <Setter TargetName="Bd" Property="Background"
                                     Value="{DynamicResource PanelSoftBrush}"/>

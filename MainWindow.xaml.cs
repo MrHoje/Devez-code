@@ -1770,7 +1770,7 @@ public partial class MainWindow : Window
     {
         _updateInProgress = true;
         Sidebar.HideUpdateButton(); // 설치 진행 중에는 버튼 숨김
-        if (!_usageOpen) SetUsagePanelOpen(true, persist: false); // 진행률은 사용량 사이드바에 표시 — 보이도록 펼침
+        // 진행률은 타이틀바 SplitToggleBtn 오른쪽에 표시
         UsageUpdateProgress.Visibility = Visibility.Visible;
         var progress = new Progress<double>(v =>
         {
@@ -1797,6 +1797,7 @@ public partial class MainWindow : Window
                     new System.Diagnostics.ProcessStartInfo(info.Url) { UseShellExecute = true });
         }
     }
+
 
     private void ShowUpdateFailedNotice()
     {

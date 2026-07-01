@@ -349,7 +349,7 @@
                     <Ellipse x:Name="FileDirtyDot" Width="7" Height="7" Margin="8,1,0,0"
                              VerticalAlignment="Center" Visibility="Collapsed"
                              Fill="{DynamicResource PrimaryBrush}"/>
-                    <TextBlock x:Name="FileHeaderPathText" Margin="12,0,0,0" VerticalAlignment="Center"
+                    <TextBlock x:Name="FileHeaderPathText" Margin="12,0,0,1" VerticalAlignment="Bottom"
                                FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
                                TextTrimming="CharacterEllipsis" Visibility="Collapsed"/>
                 </StackPanel>

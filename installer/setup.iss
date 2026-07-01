@@ -43,6 +43,11 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{#AppName} 실행"; Flags: nowait postinstall skipifsilent
 
+[UninstallRun]
+; CPU 온도 헬퍼용 작업 스케줄러 항목 제거(best-effort). 비관리자 제거 시 실패해도 무해
+; (제거된 exe 를 가리키는 작업은 실행돼도 그냥 실패). runhidden 로 콘솔창 숨김.
+Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn DevezCodeThermalHelper /f"; Flags: runhidden; RunOnceId: "DelThermalTask"
+
 [Code]
 function IsDotNet9Installed: Boolean;
 var

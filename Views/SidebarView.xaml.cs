@@ -180,6 +180,7 @@ public partial class SidebarView : UserControl
     /// <summary>업데이트 버튼 숨김(설치 진행 중 등).</summary>
     public void HideUpdateButton() => UpdateButton.Visibility = Visibility.Collapsed;
 
+
     private void AddProject_Click(object sender, RoutedEventArgs e) => AddProjectRequested?.Invoke();
 
     // ── 검색 행 토글 (돋보기 버튼) — Height 0↔43 애니메이션으로 프로젝트 카드를 아래로 밀어냄 ──
