@@ -377,17 +377,20 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "requestPaste":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;
-                    var imagePath = SaveClipboardImage();
-                    if (imagePath != null)
+                    // 클립보드 읽기도 후킹 앱 환경에서 블록될 수 있으므로 STA 스레드에서 수행하고,
+                    // 결과 post 만 UI 스레드로 되돌린다(붙여넣기는 사용자 조작이라 약간의 비동기 무해).
+                    RunClipboardSta(() =>
                     {
-                        PostJson(new { type = "paste", roomId, data = imagePath });
-                    }
-                    else
-                    {
-                        var text = GetClipboardText();
-                        if (!string.IsNullOrEmpty(text))
-                            PostJson(new { type = "paste", roomId, data = text });
-                    }
+                        var imagePath = SaveClipboardImage();
+                        var text = imagePath == null ? GetClipboardText() : null;
+                        Dispatcher.BeginInvoke(() =>
+                        {
+                            if (imagePath != null)
+                                PostJson(new { type = "paste", roomId, data = imagePath });
+                            else if (!string.IsNullOrEmpty(text))
+                                PostJson(new { type = "paste", roomId, data = text });
+                        });
+                    });
                     break;
                 }
                 case "action":
@@ -572,11 +575,30 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// SetDataObject(text, true) 로 기록한다(OleFlushClipboard).</summary>
     private static void SetClipboardText(string text)
     {
-        for (int i = 0; i < 10; i++)
+        // 클립보드 매니저/백신/RDP 리디렉션이 붙은 PC에서 OleFlushClipboard(copy=true) 가
+        // 뷰어 체인 응답을 동기 대기하며 수백ms~수초 블록될 수 있다. copy-on-select 는
+        // 드래그 선택할 때마다 발동하므로 UI 스레드에서 하면 드래그가 통째로 멈춘다.
+        // 전용 STA 스레드로 오프로드해 UI 스레드는 즉시 반환(재시도 sleep 도 여기서 소화).
+        RunClipboardSta(() =>
         {
-            try { System.Windows.Clipboard.SetDataObject(text, true); return; }
-            catch { System.Threading.Thread.Sleep(40); }
-        }
+            for (int i = 0; i < 10; i++)
+            {
+                try { System.Windows.Clipboard.SetDataObject(text, true); return; }
+                catch { System.Threading.Thread.Sleep(40); }
+            }
+        });
+    }
+
+    /// <summary>클립보드 조작을 전용 STA 백그라운드 스레드에서 실행(UI 스레드 블로킹 방지).
+    /// 클립보드 API 는 STA 를 요구하므로 ApartmentState.STA 로 띄운다.</summary>
+    private static void RunClipboardSta(Action action)
+    {
+        var t = new System.Threading.Thread(() => { try { action(); } catch { } })
+        {
+            IsBackground = true,
+        };
+        t.SetApartmentState(System.Threading.ApartmentState.STA);
+        t.Start();
     }
 
     private static string GetClipboardText()
