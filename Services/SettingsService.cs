@@ -127,9 +127,6 @@ public static class SettingsService
         public string DiscordBotToken { get; set; } = "";
         public ulong DiscordGuildId { get; set; }
         public bool DiscordNotifySessionDone { get; set; } = true;
-        // CPU 온도 판독 능력 캐시: "unknown"(미판별) | "helper"(LHM 관리자 헬퍼) | "acpi"(써멀존 근사) | "none"(불가).
-        // 최초 1회만 헬퍼 프로브(UAC) → 이후 이 값으로 분기. none 이면 다시는 헬퍼를 띄우지 않는다.
-        public string ThermalCapability { get; set; } = "unknown";
         public ulong DiscordCommandChannel { get; set; }
         public Dictionary<string, ulong> DiscordProjectCategories { get; set; } = new();
         public Dictionary<string, ulong> DiscordProjectChannels { get; set; } = new();
@@ -297,10 +294,6 @@ public static class SettingsService
     }
     public static void SaveNotifyAutoCloseSeconds(int v) { Current.NotifyAutoCloseSeconds = v < 0 ? 0 : (v > 10 ? 10 : v); Save(); }
 
-
-    // ── CPU 온도 판독 능력 캐시 ──────────────────────────────────
-    public static string LoadThermalCapability() => Current.ThermalCapability ?? "unknown";
-    public static void SaveThermalCapability(string v) { Current.ThermalCapability = v; Save(); }
 
     // ── Discord 연동 ─────────────────────────────────────────────
     public static bool LoadDiscordEnabled() => Current.DiscordEnabled;

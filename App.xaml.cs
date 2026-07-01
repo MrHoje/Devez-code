@@ -32,16 +32,6 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // 온도 헬퍼 모드(--thermal-helper): 스케줄러가 최고 권한으로 띄운 헬프리스 프로세스.
-        // 창/단일 인스턴스/테마 없이 CPU 온도만 읽어 파일 IPC 로 넘기고, GUI 종료 시 스스로 끝난다.
-        // 단일 인스턴스 뮤텍스보다 먼저 분기해야 GUI 와 공존할 수 있다.
-        if (e.Args.Contains("--thermal-helper"))
-        {
-            int code = Services.Thermal.ThermalHelper.Run();
-            Shutdown(code);
-            return;
-        }
-
         // 자동 업데이트 재실행 플래그(단일 인스턴스 분기보다 먼저 읽어 둔다).
         UpdateFailedRelaunch = e.Args.Contains("--update-failed");
 
