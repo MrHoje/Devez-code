@@ -160,6 +160,22 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         var text = (_readyScan.TryGetValue(roomId, out var prev) ? prev : string.Empty)
                    + System.Text.Encoding.ASCII.GetString(bytes);
 
+        // 신뢰 프롬프트("이 폴더를 신뢰?", 사용자 입력 대기)는 alt-screen(\e[?1049h) 진입 '전' 인라인으로
+        // 떠서 [?1049h 기반 준비 판정에 안 걸린다 → 스피너 오버레이가 프롬프트를 덮어 1/2 입력을 막고
+        // claude 타임아웃까지 회전한다. 시그니처가 보이면 즉시 준비로 간주해 오버레이를 내린다(입력 대기
+        // 상태라 더 흐를 출력 없음. 응답 후 뜨는 실제 alt-screen TUI 는 이미 ready 라 재통지 없이 정상 렌더).
+        // 문자열은 claude 2.1.x 실측값(버전따라 문구 변경 가능 — 둘 중 하나만 걸려도 동작).
+        if (text.Contains("Is this a directory you created or one you trust?")
+            || text.Contains("Yes, I trust this folder"))
+        {
+            _ready.Add(roomId);
+            _readyScan.Remove(roomId);
+            _inlineFirstOutTick.Remove(roomId);
+            _altSeenTick[roomId] = Environment.TickCount;
+            NotifyReady(roomId);
+            return;
+        }
+
         // 인라인 렌더 에이전트(gjc 등)는 alt-screen 시퀀스가 없다. 단 첫 출력을 준비로 보면
         // cmd/ConPTY 초기화 노이즈(\e[?9001h\e[?1004h 등)가 gjc 본체보다 먼저 나와, 스피너가 빈 화면에서
         // 꺼진 뒤 gjc 가 수백ms~수초 후 실제 페인트하는 갭이 보인다. gjc 가 입력/첫 프레임을 그릴 때 내는

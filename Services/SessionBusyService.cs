@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 
 namespace DevezCode.Services;
@@ -11,9 +12,20 @@ public sealed class SessionBusyService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude", "busy");
     private static string WaitingDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude", "waiting");
+    private static string SubrunsDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude", "subruns");
+    private static string StateDir => Path.Combine(Dir, "_state");
+
+    // 서브에이전트 run 파일이 이보다 오래되면 SubagentStop 을 못 받은 유령으로 보고 prune(스피너 stuck-ON 방지).
+    private static readonly TimeSpan SubMaxAge = TimeSpan.FromMinutes(30);
+    // reconcile 재예약 간격: 활성(진행중 턴/서브 有)이면 촘촘, 완전 유휴면 느슨(유휴 CPU wake 최소화).
+    private const int ReconcileActiveMs = 4000;
+    private const int ReconcileIdleMs = 30000;
+    private const int ReconcileWakeMs = 500;
 
     private FileSystemWatcher? _watcher;
     private FileSystemWatcher? _waitingWatcher;
+    private System.Threading.Timer? _reconcileTimer;
 
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중.</summary>
     public event Action<string, bool>? BusyChanged;
@@ -35,6 +47,15 @@ public sealed class SessionBusyService : IDisposable
             // 재오픈 시 스피너 안 멈춤). 새 세션은 hook 이 fresh 상태를 다시 쓸 때까지는 IsBusy=false 유지.
             foreach (var f in Directory.EnumerateFiles(Dir, "*.txt"))
                 try { File.Delete(f); } catch { /* hook write 와 경합 가능, 무시 */ }
+            // 서브에이전트 생존 추적 상태도 stale 제거: 종료 시 SubagentStop 을 못 받은 run 파일이나
+            // 메인 턴 플래그가 남아있으면, 재시작 후 첫 Stop 에서 유령 서브로 오판돼 스피너가 안 꺼진다.
+            var subruns = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude", "subruns");
+            if (Directory.Exists(subruns)) try { Directory.Delete(subruns, true); } catch { /* 경합/사용중 무시 */ }
+            var stateDir = Path.Combine(Dir, "_state");
+            if (Directory.Exists(stateDir))
+                foreach (var f in Directory.EnumerateFiles(stateDir, "main_*.flag"))
+                    try { File.Delete(f); } catch { /* hook write 와 경합 가능, 무시 */ }
             _watcher?.Dispose();
             _watcher = new FileSystemWatcher(Dir, "*.txt")
             {
@@ -52,8 +73,80 @@ public sealed class SessionBusyService : IDisposable
             };
             _waitingWatcher.Changed += (_, e) => EmitWaiting(e.FullPath);
             _waitingWatcher.Created += (_, e) => EmitWaiting(e.FullPath);
+
+            // 주기 reconcile: 훅의 단발 busy 쓰기가 레이스/누락으로 진실과 어긋나도 지속 수렴시킨다.
+            // (재현 안 되는 간헐 조기소멸의 실질 방어 — 원인 무관하게 run 파일이 살아있으면 스피너 재무장,
+            //  유령 run 파일은 prune 해 stuck-ON 도 자동 해제.) FileSystemWatcher 는 일회성이라 놓친 뒤 못 고침.
+            // 부하 최소화: 자기 재예약 방식으로, 활성(진행중 턴/서브 존재) 시에만 촘촘히, 완전 유휴면 느슨히 돈다.
+            // busy 파일 변경(Emit) 시엔 즉시 wake 해 방금 쓰인 idle 이 잘못됐는지 곧바로 교차확인한다.
+            _reconcileTimer?.Dispose();
+            _reconcileTimer = new System.Threading.Timer(_ => Reconcile(), null, ReconcileActiveMs, System.Threading.Timeout.Infinite);
         }
         catch { /* 감시 실패해도 앱은 계속 — 스피너만 안 뜸 */ }
+    }
+
+    /// <summary>방별 busy 파일을 "진실"(메인 턴 진행중 OR 살아있는 서브에이전트&gt;0)로 재평가해
+    /// 어긋난 경우에만 정정 기록 + BusyChanged emit. 훅이 놓치거나 레이스로 틀리게 쓴 상태를 복구한다.</summary>
+    private void Reconcile()
+    {
+        bool anyActive = false;
+        try
+        {
+            var rooms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try { foreach (var f in Directory.EnumerateFiles(Dir, "*.txt")) rooms.Add(Path.GetFileNameWithoutExtension(f)); } catch { }
+            try
+            {
+                if (Directory.Exists(StateDir))
+                    foreach (var f in Directory.EnumerateFiles(StateDir, "main_*.flag"))
+                    {
+                        var n = Path.GetFileNameWithoutExtension(f); // main_<room>
+                        if (n.StartsWith("main_")) rooms.Add(n.Substring(5));
+                    }
+            }
+            catch { }
+            try { if (Directory.Exists(SubrunsDir)) foreach (var d in Directory.EnumerateDirectories(SubrunsDir)) rooms.Add(Path.GetFileName(d)); } catch { }
+
+            foreach (var room in rooms)
+            {
+                if (string.IsNullOrEmpty(room)) continue;
+                bool truth = ComputeBusyTruth(room);
+                if (truth) anyActive = true; // 활성 방 있으면 다음 tick 을 촘촘히.
+                var busyFile = Path.Combine(Dir, room + ".txt");
+                var cur = TryRead(busyFile);
+                // 파일 없고 idle 이 진실이면 그대로 둔다(앱 시작 시 stale 방지 정책과 일관 — 새 파일 안 만듦).
+                if (cur == null && !truth) continue;
+                bool curBusy = string.Equals(cur, "running", StringComparison.OrdinalIgnoreCase);
+                if (curBusy == truth) continue; // 이미 일치 → 훅과 안 싸운다.
+                try { File.WriteAllText(busyFile, truth ? "running" : "idle"); } catch { /* 훅 쓰기와 경합 가능, 무시 */ }
+                BusyChanged?.Invoke(room, truth);
+            }
+        }
+        catch { /* reconcile 실패해도 앱은 계속 */ }
+        // 활성이면 촘촘히, 완전 유휴면 느슨히 다음 tick 예약(유휴 시 CPU wake 최소화).
+        try { _reconcileTimer?.Change(anyActive ? ReconcileActiveMs : ReconcileIdleMs, System.Threading.Timeout.Infinite); } catch { }
+    }
+
+    /// <summary>방의 실제 busy 여부 = 메인 턴 진행중(main 플래그) OR 살아있는 서브에이전트 run 파일&gt;0.
+    /// 카운트 전 30분 초과 stale run 파일(SubagentStop 누락분)을 prune 한다.</summary>
+    private static bool ComputeBusyTruth(string room)
+    {
+        if (File.Exists(Path.Combine(StateDir, "main_" + room + ".flag"))) return true;
+        var rd = Path.Combine(SubrunsDir, room);
+        if (!Directory.Exists(rd)) return false;
+        bool anyLive = false;
+        try
+        {
+            var cut = DateTime.Now - SubMaxAge;
+            foreach (var f in Directory.EnumerateFiles(rd, "*.run"))
+            {
+                DateTime lw;
+                try { lw = File.GetLastWriteTime(f); } catch { continue; }
+                if (lw < cut) { try { File.Delete(f); } catch { /* 경합 무시 */ } }
+                else anyLive = true;
+            }
+        }
+        catch { }
+        return anyLive;
     }
 
     private void EmitWaiting(string path)
@@ -96,6 +189,8 @@ public sealed class SessionBusyService : IDisposable
         // "응답 완료" 알림이 뜬다(서브에이전트 작업 중 매 상태 기록마다 깜빡임). 빈 읽기는 쓰기 중 과도상태이므로 무시.
         if (string.IsNullOrWhiteSpace(status)) return;
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
+        // busy 파일이 방금 바뀜 → 곧바로 reconcile 해 (특히 잘못 쓰인 idle 인지) 교차확인. 유휴 모드여도 즉시 깨움.
+        try { _reconcileTimer?.Change(ReconcileWakeMs, System.Threading.Timeout.Infinite); } catch { }
     }
 
     /// <summary>상태 파일 내용("running"/"idle")을 읽는다. 쓰기 경합 시 짧게 재시도.</summary>
@@ -118,6 +213,8 @@ public sealed class SessionBusyService : IDisposable
 
     public void Dispose()
     {
+        _reconcileTimer?.Dispose();
+        _reconcileTimer = null;
         _watcher?.Dispose();
         _watcher = null;
         _waitingWatcher?.Dispose();

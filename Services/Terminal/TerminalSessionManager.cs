@@ -867,31 +867,20 @@ public sealed class TerminalSessionManager
             File.WriteAllText(RoomStatusLineJsPath, roomStatusJs, new System.Text.UTF8Encoding(false));
 
             // busy 훅(clude-blinker 방식): claude 가 한 턴을 처리하는 동안만 좌측 스피너를 켠다.
-            // UserPromptSubmit 에서 running, Stop(턴 종료)에서 idle 을 방별 파일로 기록한다.
-            // 방 ID는 SessionStart 훅과 동일하게 $env:DEVEZCODE_ROOM_ID (claude 자식이 상속)로 구분.
+            // 방 ID는 SessionStart 훅과 동일하게 인자(roomArg)/$env:DEVEZCODE_ROOM_ID 로 구분.
             //
-            // 백그라운드 서브에이전트 보정: 메인이 Agent 도구로 백그라운드 서브에이전트를 띄우면 메인 턴이
-            // 즉시 끝나 Stop 이 발화한다. 이때 그대로 idle 을 쓰면 서브에이전트들이 아직 도는데도 "응답 완료"
-            // 알림이 조기에(그리고 각 서브 완료 재주입마다 반복) 뜬다. 그래서 idle(Stop) 시점에 세션
-            // transcript 를 읽어 미완료 백그라운드 작업 수를 센다:
-            //   pending = (Agent tool_use launch 수) - (재주입된 <task-notification> 의 distinct <task-id> 수)
-            // pending>0 이면 idle 대신 running 을 유지해 스피너를 켜두고 완료 알림을 보류한다. 모든 서브가
-            // 끝나(pending=0) 메인이 최종 응답 후 Stop 할 때 단 한 번 idle→알림이 뜬다. SessionEnd 는 세션
-            // 종료이므로 무조건 idle.
+            // 스피너 = (메인 턴 진행중) OR (살아있는 서브에이전트 >=1). 둘 다 room 키(session_id 아님)로
+            // 판정하므로 resume 로 세션ID 가 바뀌어도 추적이 끊기지 않는다. (구버전은 Stop 시점에
+            // agent-*.meta.json 개수 델타 - <task-notification> 완료수 로 pending 을 '추론'했는데,
+            // baseline 이 session_id 키라 resume 시 미스매치→pending=0→스피너 조기소멸했다.)
+            //   • 메인 턴: UserPromptSubmit=running(main 플래그 set) / Stop·SessionEnd=idle(main 플래그 clear).
+            //   • 서브에이전트: SubagentStart=substart(run 파일 생성) / SubagentStop=substop(run 파일 삭제).
+            //     busy 는 substop·Stop 시점에 (main 플래그 존재 OR run 파일 개수>0)로 재평가한다.
+            // ghost 방어: SubagentStop 누락(크래시/kill) 대비 30분 초과 run 파일은 카운트 전 prune,
+            // SessionEnd 시 방 run 디렉터리 전량 제거, 앱 시작 시 subruns/main 플래그 wipe(C# SessionBusyService).
             const string busyScript = """
-                # DevezCode busy-state hook. Arg1 = running|idle. Writes per-room state for the sidebar spinner.
-                # On 'running' (UserPromptSubmit): record the last submitted prompt for the header title.
-                #   백그라운드 서브에이전트가 완료되면 그 결과가 <task-notification> 프롬프트로 재주입돼 다시
-                #   running→idle 사이클이 돈다. 메인 턴이 서브에이전트를 띄우고 끝나면(또는 각 서브 완료 재주입마다)
-                #   Stop 이 발화하는데, 그대로 idle 을 쓰면 서브가 아직 도는데도 "응답 완료" 알림이 조기에/반복해서 뜬다.
-                # On 'idle' (Stop): 미완료 백그라운드 작업 수(pending)를 계산해 0 일 때만 idle 을 쓴다.
-                #   pending = (이번 루트턴에서 새로 뜬 서브에이전트 수) - (그 사이 완료된 수)
-                #   • 새 launch 수: 세션 subagents 디렉터리의 agent-*.meta.json 개수(launch 즉시 생성 — 메인
-                #     transcript 는 resume/버퍼링으로 Stop 시점에 stale 할 수 있어 신뢰 불가). 단 누적이므로
-                #     실제 사용자 프롬프트(루트턴 시작) 때 현재 개수를 baseline 으로 떠 과거분을 제외한다.
-                #   • 완료 수: <task-notification> 재주입 프롬프트의 distinct <task-id> — 훅이 직접 누적 기록.
-                #     (메인 transcript 엔 Stop 시점에 아직 안 박혀있을 수 있어 훅이 직접 센다.)
-                # SessionEnd 는 세션 종료이므로 무조건 idle.
+                # DevezCode busy-state hook. Arg1 = running|idle|notify|unwait|substart|substop. Per-room sidebar spinner state.
+                # 스피너 = (메인 턴 진행중) OR (살아있는 서브에이전트 >=1). 둘 다 room 키 → resume 로 session_id 바뀌어도 안 깨짐.
                 param([string]$status = 'idle', [string]$roomArg = '')
                 try {
                   $room = if ($roomArg) { $roomArg } else { $env:DEVEZCODE_ROOM_ID }
@@ -903,10 +892,26 @@ public sealed class TerminalSessionManager
                   $wdir = Join-Path $env:APPDATA 'DevezCode\claude\waiting'
                   New-Item -ItemType Directory -Force -Path $wdir | Out-Null
                   $waitFile = Join-Path $wdir ($room + '.txt')
+                  $runDir = Join-Path (Join-Path $env:APPDATA 'DevezCode\claude\subruns') $room
+                  $sdir = Join-Path $dir '_state'
+                  $mainFile = Join-Path $sdir ('main_' + $room + '.flag')
+
+                  # 살아있는 서브에이전트 수. 30분 초과 stale run 파일(SubagentStop 누락분)은 prune 후 제외.
+                  function Get-LiveSubCount($rd) {
+                    try {
+                      if (-not (Test-Path -LiteralPath $rd)) { return 0 }
+                      $cut = (Get-Date).AddMinutes(-30)
+                      $live = 0
+                      foreach ($f in @(Get-ChildItem -LiteralPath $rd -Filter '*.run' -ErrorAction SilentlyContinue)) {
+                        if ($f.LastWriteTime -lt $cut) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue }
+                        else { $live++ }
+                      }
+                      return $live
+                    } catch { return 0 }
+                  }
 
                   # 입력 대기 ❗ 진입 신호(PermissionRequest 즉시 / Notification 폴백 둘 다 'notify'로 들어옴).
-                  # busy=running 일 때만 기록(60초 idle 알림 제외). 두 번째 연속 선택지도 매번 재무장해야 하므로
-                  # 별도 중복 차단은 두지 않는다(차단하면 답변 직후 뜨는 정상 두 번째 선택지를 놓친다).
+                  # busy=running 일 때만 기록(60초 idle 알림 제외). 두 번째 연속 선택지도 매번 재무장.
                   if ($status -eq 'notify') {
                     $b = ''; try { if (Test-Path -LiteralPath $busyFile) { $b = (Get-Content -LiteralPath $busyFile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
                     if ($b -eq 'running') { Set-Content -LiteralPath $waitFile -Value 'waiting' -Encoding Ascii -Force }
@@ -922,44 +927,45 @@ public sealed class TerminalSessionManager
                   try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
                   $j = $null
                   try { $j = $raw | ConvertFrom-Json } catch { }
+
+                  # ── SubagentStart: run 파일 생성 → 즉시 busy=running (agent_id 로 개별 추적) ──
+                  if ($status -eq 'substart') {
+                    $aid = ''; try { $aid = ('' + $j.agent_id) -replace '[^\w\-]', '' } catch { }
+                    if ($aid) {
+                      New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+                      Set-Content -LiteralPath (Join-Path $runDir ($aid + '.run')) -Value ((Get-Date).ToString('o')) -Encoding Ascii -Force
+                      Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
+                    }
+                    exit 0
+                  }
+                  # ── SubagentStop: run 파일 삭제 → (메인 진행중 OR 남은 서브>0)로 busy 재평가 ──
+                  if ($status -eq 'substop') {
+                    $aid = ''; try { $aid = ('' + $j.agent_id) -replace '[^\w\-]', '' } catch { }
+                    if ($aid) { Remove-Item -LiteralPath (Join-Path $runDir ($aid + '.run')) -Force -ErrorAction SilentlyContinue }
+                    if ((Test-Path -LiteralPath $mainFile) -or ((Get-LiveSubCount $runDir) -gt 0)) {
+                      Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
+                    } else {
+                      Set-Content -LiteralPath $busyFile -Value 'idle' -Encoding Ascii -Force
+                    }
+                    exit 0
+                  }
+
                   $sid = ''; try { $sid = ('' + $j.session_id) -replace '[^\w\-]', '' } catch { }
                   $tp = '';  try { $tp = '' + $j.transcript_path } catch { }
                   # session_id 가 비면(claude stdin 포맷/필드명 변경 대비) transcript_path 파일명(<sid>.jsonl)에서 복구한다.
                   if (-not $sid -and $tp) { try { $sid = ([System.IO.Path]::GetFileNameWithoutExtension($tp)) -replace '[^\w\-]', '' } catch { } }
 
-                  # 세션 subagents 디렉터리의 agent-*.meta.json 개수 = 그 세션에서 launch 된 누적 서브에이전트 수.
-                  function Get-MetaCount($transcriptPath) {
-                    try {
-                      if (-not $transcriptPath) { return 0 }
-                      $sub = Join-Path (Join-Path ([System.IO.Path]::GetDirectoryName($transcriptPath)) ([System.IO.Path]::GetFileNameWithoutExtension($transcriptPath))) 'subagents'
-                      if (Test-Path -LiteralPath $sub) { return @(Get-ChildItem -LiteralPath $sub -Filter 'agent-*.meta.json' -ErrorAction SilentlyContinue).Count }
-                    } catch { }
-                    return 0
-                  }
-                  $sdir = Join-Path $dir '_state'
-                  New-Item -ItemType Directory -Force -Path $sdir | Out-Null
-                  $baseFile = Join-Path $sdir ('base_' + $sid + '.txt')
-                  $doneFile = Join-Path $sdir ('done_' + $sid + '.txt')
-
                   if ($status -eq 'running') {
+                    New-Item -ItemType Directory -Force -Path $sdir | Out-Null
+                    Set-Content -LiteralPath $mainFile -Value 'running' -Encoding Ascii -Force  # 메인 턴 진행중 마킹
                     Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
                     Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force  # 새 턴 → 대기 해제
                     $prompt = ''
                     try { $prompt = '' + $j.prompt } catch { }
-                    if ($prompt -and $prompt.StartsWith('<task-notification>')) {
-                      # 백그라운드 서브에이전트 1건 완료 재주입 → distinct task-id 를 세션별 완료목록에 누적(헤더엔 안 씀).
-                      if ($sid -and ($prompt -match '<task-id>\s*([A-Za-z0-9]+)')) {
-                        $tid = $matches[1]
-                        $have = @(); if (Test-Path -LiteralPath $doneFile) { $have = @(Get-Content -LiteralPath $doneFile -ErrorAction SilentlyContinue) }
-                        if ($have -notcontains $tid) { Add-Content -LiteralPath $doneFile -Value $tid -Encoding Ascii }
-                      }
-                    } elseif ($prompt) {
-                      # 실제 사용자 프롬프트 = 새 루트턴 시작 → baseline(현재 meta 수) 스냅샷 + 완료목록 리셋.
+                    # <task-notification> 재주입도 메인 턴이므로 running 유지. 실제 사용자 프롬프트만 세션추적/헤더 기록.
+                    if ($prompt -and -not $prompt.StartsWith('<task-notification>')) {
                       if ($sid) {
-                        Set-Content -LiteralPath $baseFile -Value ([string](Get-MetaCount $tp)) -Encoding Ascii -Force
-                        if (Test-Path -LiteralPath $doneFile) { Remove-Item -LiteralPath $doneFile -Force -ErrorAction SilentlyContinue }
-                        # 사용자가 실제로 메시지를 보낸 세션 = 이 방의 진짜 현재 대화. 추적파일에 확정 기록한다.
-                        # (SessionStart 가 아닌 여기서만 기록 → 대화 없는 빈 세션이 직전 대화 ID 를 덮지 않는다.)
+                        # 사용자가 실제로 메시지를 보낸 세션 = 이 방의 진짜 현재 대화. 추적파일에 확정 기록(resume 용).
                         $tdir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
                         New-Item -ItemType Directory -Force -Path $tdir | Out-Null
                         Set-Content -LiteralPath (Join-Path $tdir ($room + '.txt')) -Value $sid -Encoding Ascii -Force
@@ -973,39 +979,30 @@ public sealed class TerminalSessionManager
                     exit 0
                   }
 
-                  # status = idle (Stop/SessionEnd) — 턴 종료/중단이므로 선택지 대기도 해제.
+                  # status = idle (Stop/SessionEnd) — 메인 턴 종료. 선택지 대기 해제 + main 플래그 clear.
                   Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force
+                  Remove-Item -LiteralPath $mainFile -Force -ErrorAction SilentlyContinue
                   $evt = ''; try { $evt = '' + $j.hook_event_name } catch { }
-                  $pending = 0
-                  if ($evt -ne 'SessionEnd' -and $sid) {
-                    try {
-                      $meta = Get-MetaCount $tp
-                      # baseline 미존재(훅 배포 직후 중간턴 등)면 현재 meta 를 기준으로 삼아 newLaunched=0 → idle(스피너 영구 회전 방지).
-                      $base = $meta; if (Test-Path -LiteralPath $baseFile) { [int]::TryParse((Get-Content -LiteralPath $baseFile -Raw -ErrorAction SilentlyContinue).Trim(), [ref]$base) | Out-Null }
-                      $newLaunched = $meta - $base
-                      if ($newLaunched -lt 0) { $newLaunched = 0 }
-                      $completed = 0; if (Test-Path -LiteralPath $doneFile) { $completed = @(Get-Content -LiteralPath $doneFile -ErrorAction SilentlyContinue | Sort-Object -Unique).Count }
-                      $pending = $newLaunched - $completed
-                      if ($pending -lt 0) { $pending = 0 }
-                    } catch { $pending = 0 }
+                  if ($evt -eq 'SessionEnd') {
+                    # 세션 종료 → 이 방 서브에이전트도 모두 소멸.
+                    try { if (Test-Path -LiteralPath $runDir) { Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
+                    Set-Content -LiteralPath $busyFile -Value 'idle' -Encoding Ascii -Force
+                    exit 0
                   }
-
-                  if ($pending -gt 0) {
+                  # Stop: 살아있는 서브가 있으면 running 유지(스피너 조기소멸 방지), 없으면 idle + 마지막 답변 기록.
+                  if ((Get-LiveSubCount $runDir) -gt 0) {
                     Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
                   } else {
                     Set-Content -LiteralPath $busyFile -Value 'idle' -Encoding Ascii -Force
-                    # 진짜 응답 완료(pending=0) → claude 가 stdin 으로 준 마지막 답변을 방별로 기록한다.
-                    # Discord reply 가 이 파일을 바로 읽으므로 transcript 경로/세션ID 추적이 필요 없다.
-                    if ($evt -ne 'SessionEnd') {
-                      try {
-                        $lastMsg = '' + $j.last_assistant_message
-                        if ($lastMsg) {
-                          $rdir = Join-Path $env:APPDATA 'DevezCode\claude\lastreply'
-                          New-Item -ItemType Directory -Force -Path $rdir | Out-Null
-                          Set-Content -LiteralPath (Join-Path $rdir ($room + '.txt')) -Value $lastMsg -Encoding UTF8 -Force
-                        }
-                      } catch { }
-                    }
+                    # 진짜 응답 완료 → claude 가 stdin 으로 준 마지막 답변을 방별로 기록(Discord reply 가 읽음).
+                    try {
+                      $lastMsg = '' + $j.last_assistant_message
+                      if ($lastMsg) {
+                        $rdir = Join-Path $env:APPDATA 'DevezCode\claude\lastreply'
+                        New-Item -ItemType Directory -Force -Path $rdir | Out-Null
+                        Set-Content -LiteralPath (Join-Path $rdir ($room + '.txt')) -Value $lastMsg -Encoding UTF8 -Force
+                      }
+                    } catch { }
                   }
                 } catch { }
                 exit 0
@@ -1034,6 +1031,8 @@ public sealed class TerminalSessionManager
         var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running {arg}";
         var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle {arg}";
         var busyNotifyCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notify {arg}";
+        var busySubStartCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" substart {arg}";
+        var busySubStopCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" substop {arg}";
         // refreshInterval: 전역 settings 와 달리 room 은 event-driven 만으로는 1회 렌더 실패(느린 시작/타임아웃)
         // 시 빈 줄이 고착됐다(resume 세션 statusLine 안 뜨던 원인). 주기 재렌더로 자동 복구한다.
         // 3초 주기 절충: 빈 줄 자동 복구는 유지하되 다세션 idle 부하를 낮춘다(타임아웃이 없어
@@ -1058,6 +1057,9 @@ public sealed class TerminalSessionManager
                 // 해제는 UserPromptSubmit/Stop(파일) + 답변 입력(즉시 UI).
                 PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
                 Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
+                // 서브에이전트 생존 추적(스피너 조기소멸 방지): Start=run 파일 생성, Stop=삭제 → busy 재평가.
+                SubagentStart    = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStartCommand } } } },
+                SubagentStop     = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStopCommand } } } },
             }
         };
         var path = RoomSettingsPath(roomId);
@@ -1243,11 +1245,10 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".txt"));
         TryDeleteFiles(ClaudeTrackDir, "statusline-cache-" + roomFile + "-*.txt");
 
-        foreach (var id in sessionIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            TryDeleteFile(Path.Combine(ClaudeTrackDir, "busy", "_state", $"base_{id}.txt"));
-            TryDeleteFile(Path.Combine(ClaudeTrackDir, "busy", "_state", $"done_{id}.txt"));
-        }
+        // 서브에이전트 추적 상태(신규): 메인 턴 플래그 + 방별 run 파일 디렉터리.
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "busy", "_state", $"main_{roomFile}.flag"));
+        var runDir = Path.Combine(ClaudeTrackDir, "subruns", roomFile);
+        if (Directory.Exists(runDir)) { try { Directory.Delete(runDir, true); } catch { } }
 
         var codexDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "codex");
         TryDeleteFile(Path.Combine(codexDir, "sessions", roomFile + ".txt"));
