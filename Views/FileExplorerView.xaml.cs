@@ -331,6 +331,12 @@ public partial class FileExplorerView : UserControl
         _fileSearchDebounceTimer.Start();
     }
 
+    private void FileSearchClear_Click(object sender, RoutedEventArgs e)
+    {
+        FileSearchBox.Clear();
+        FileSearchBox.Focus();
+    }
+
     private void ApplyFileSearchFilter()
     {
         var q = FileSearchBox?.Text?.Trim() ?? "";

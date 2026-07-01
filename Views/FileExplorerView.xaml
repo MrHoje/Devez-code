@@ -134,6 +134,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconSearch}"
@@ -142,7 +143,7 @@
                           Margin="10,0,0,0" VerticalAlignment="Center"/>
                     <Grid Grid.Column="1">
                         <TextBox x:Name="FileSearchBox"
-                                 Margin="6,0,0,0" Padding="0,0,10,0" VerticalContentAlignment="Center"
+                                 Margin="6,0,0,0" Padding="0,0,0,0" VerticalContentAlignment="Center"
                                  Background="Transparent" BorderThickness="0"
                                  FocusVisualStyle="{x:Null}"
                                  Foreground="{DynamicResource TextBrush}"
@@ -156,7 +157,7 @@
                         </TextBox>
                         <TextBlock Text="파일 검색"
                                    IsHitTestVisible="False"
-                                   Margin="8,0,10,0" Padding="0" VerticalAlignment="Center"
+                                   Margin="6,0,0,0" Padding="0" VerticalAlignment="Center"
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    FontSize="{DynamicResource Fs13}"
                                    FontFamily="{StaticResource PretendardFont}">
@@ -172,6 +173,33 @@
                             </TextBlock.Style>
                         </TextBlock>
                     </Grid>
+                    <!-- 텍스트 지울 X 버튼: 검색어 있을 때만 노출, 클릭 시 텍스트 비워 필터 해제 -->
+                    <Button x:Name="FileSearchClearBtn" Grid.Column="2"
+                            Width="20" Height="20" Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Click="FileSearchClear_Click" Cursor="Arrow"
+                            Background="Transparent" BorderThickness="0"
+                            IsTabStop="False" FocusVisualStyle="{x:Null}"
+                            ToolTip="지우기">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Width="20" Height="20" CornerRadius="4"
+                                        Background="{TemplateBinding Background}">
+                                    <Path Style="{StaticResource LucideButtonIcon}"
+                                          Data="{StaticResource IconX}"
+                                          Width="11" Height="11"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Stretch="Uniform"
+                                          Stroke="{DynamicResource TextMutedBrush}"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
                 </Grid>
             </Border>
         </Border>

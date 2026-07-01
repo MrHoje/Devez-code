@@ -126,6 +126,11 @@ public sealed class SessionBusyService : IDisposable
         try { _reconcileTimer?.Change(anyActive ? ReconcileActiveMs : ReconcileIdleMs, System.Threading.Timeout.Infinite); } catch { }
     }
 
+    /// <summary>방이 실제로 활성인가(메인 턴 진행중 OR 살아있는 서브에이전트&gt;0) — 파일시스템 진실 직접 조회.
+    /// 완료 판정 레이스(메인 Stop 이 SubagentStart 보다 먼저 idle emit) 확정용. roomId 는 훅과 동일한 sanitized 키.</summary>
+    public bool IsRoomActive(string roomId)
+        => !string.IsNullOrEmpty(roomId) && ComputeBusyTruth(roomId);
+
     /// <summary>방의 실제 busy 여부 = 메인 턴 진행중(main 플래그) OR 살아있는 서브에이전트 run 파일&gt;0.
     /// 카운트 전 30분 초과 stale run 파일(SubagentStop 누락분)을 prune 한다.</summary>
     private static bool ComputeBusyTruth(string room)

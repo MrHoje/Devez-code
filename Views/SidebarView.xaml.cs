@@ -244,6 +244,12 @@ public partial class SidebarView : UserControl
         CurrentHost.ItemsSource = filtered;
     }
 
+    private void SidebarSearchClear_Click(object sender, RoutedEventArgs e)
+    {
+        SidebarSearchBox.Clear();
+        SidebarSearchBox.Focus();
+    }
+
     private void ProjectScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         var sv = (ScrollViewer)sender;

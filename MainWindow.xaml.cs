@@ -182,7 +182,7 @@ public partial class MainWindow : Window
                     // waiting 파일의 단발 idle 쓰기가 truncate 경합으로 watcher 에서 누락돼도 여기서 보강(완료까지 ❗ 박힘 방지).
                     if (!busy) s.IsWaitingChoice = false;
                 }
-                NotifyIfSessionFinished(s, was, busy);
+                NotifyIfSessionFinished(s, was, busy, () => _sessionBusy.IsRoomActive(id));
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
             });
@@ -2507,9 +2507,45 @@ public partial class MainWindow : Window
 
     /// <summary>세션이 busy(true)→idle(false)로 바뀐 순간(=스피너 멈춤=응답 완료)에 종료 토스트를 띄운다.
     /// 설정에서 꺼져 있으면 무시. 클릭 시 해당 세션을 포커스 패널에 연다.</summary>
-    private void NotifyIfSessionFinished(SessionItem? s, bool wasBusy, bool nowBusy)
+    // busy→idle 전이 완료기록 디바운스: 메인 Stop 훅이 SubagentStart 보다 먼저 발화하면 순간 idle 이
+    // emit 돼 가짜 완료기록이 찍힌다(직후 substart 가 running 재무장 → 스피너 재진입). 짧게 정착 대기 후
+    // 그때도 여전히 idle 이면 진짜 완료로 기록한다. 정착 창 내 running 재무장 시 취소(레이스는 완료 아님).
+    private readonly Dictionary<SessionItem, System.Windows.Threading.DispatcherTimer> _finishDebounce = new();
+    // 정착 창: 메인 Stop 훅 프로세스와 SubagentStart 훅 프로세스 발화 간극(보통 <1s)을 덮는다.
+    // 이 시간이 지나면 SubagentStart 가 run 파일을 이미 썼을 것이므로 만료 시점의 파일시스템 진실이 확정적.
+    private const int FinishSettleMs = 1200;
+
+    /// <param name="isStillActive">만료 시점에 방이 실제로 활성인지 파일시스템 진실로 재확인하는 함수(claude 전용).
+    /// null 이면 IsBusy 플래그만 사용. BusyChanged(true) 이벤트가 누락돼도 원본을 직접 봐서 오판을 막는다.</param>
+    private void NotifyIfSessionFinished(SessionItem? s, bool wasBusy, bool nowBusy, Func<bool>? isStillActive = null)
     {
-        if (s == null || !wasBusy || nowBusy) return;
+        if (s == null) return;
+        if (nowBusy)
+        {
+            // running 재무장 → 대기중이던(레이스성) 완료기록 취소.
+            if (_finishDebounce.TryGetValue(s, out var pending)) { pending.Stop(); _finishDebounce.Remove(s); }
+            return;
+        }
+        if (!wasBusy) return; // busy→idle 전이 아님
+        // claude 만 서브에이전트 훅 순서 경합(Stop↔SubagentStart)으로 가짜 idle 이 튄다 → 정착 창 적용.
+        // opencode/gjc/codex 는 busy 소스가 단일(플러그인/ jsonl 스냅샷)이라 플랩이 없다 → 즉시 확정.
+        if (isStillActive == null) { EmitSessionFinished(s); return; }
+        if (_finishDebounce.TryGetValue(s, out var ex)) ex.Stop();
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FinishSettleMs) };
+        timer.Tick += (_, __) =>
+        {
+            timer.Stop();
+            _finishDebounce.Remove(s);
+            // 재무장 OR 파일시스템상 아직 활성(서브 run 파일/메인 플래그 존재) → 실제 완료 아님.
+            if (s.IsBusy || (isStillActive?.Invoke() ?? false)) return;
+            EmitSessionFinished(s);
+        };
+        _finishDebounce[s] = timer;
+        timer.Start();
+    }
+
+    private void EmitSessionFinished(SessionItem s)
+    {
         AddSessionCompletionRecord(s);
         var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
         _ = _discordBot.NotifySessionDoneAsync(proj, s);
