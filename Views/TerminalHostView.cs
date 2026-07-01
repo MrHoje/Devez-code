@@ -160,20 +160,24 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         var text = (_readyScan.TryGetValue(roomId, out var prev) ? prev : string.Empty)
                    + System.Text.Encoding.ASCII.GetString(bytes);
 
-        // 신뢰 프롬프트("이 폴더를 신뢰?", 사용자 입력 대기)는 alt-screen(\e[?1049h) 진입 '전' 인라인으로
-        // 떠서 [?1049h 기반 준비 판정에 안 걸린다 → 스피너 오버레이가 프롬프트를 덮어 1/2 입력을 막고
-        // claude 타임아웃까지 회전한다. 시그니처가 보이면 즉시 준비로 간주해 오버레이를 내린다(입력 대기
-        // 상태라 더 흐를 출력 없음. 응답 후 뜨는 실제 alt-screen TUI 는 이미 ready 라 재통지 없이 정상 렌더).
-        // 문자열은 claude 2.1.x 실측값(버전따라 문구 변경 가능 — 둘 중 하나만 걸려도 동작).
-        if (text.Contains("Is this a directory you created or one you trust?")
-            || text.Contains("Yes, I trust this folder"))
+        // 신뢰 프롬프트("이 폴더를 신뢰?", 사용자 입력 대기)는 alt-screen(\e[?1049h) 없이 커서 위치지정으로
+        // 인라인 렌더된다 → [?1049h 기반 준비 판정에 안 걸려 스피너 오버레이가 프롬프트를 덮고 오래 회전한다.
+        // 게다가 단어 사이 공백이 \e[1C(커서 전진) escape 라 원시 스트림엔 "trust this folder" 같은 연속
+        // 문자열이 없다(실측). 그래서 escape 를 정규화(커서전진→공백, 나머지 제거)한 뒤 매칭한다.
+        // 시그니처가 보이면 즉시 준비로 간주해 오버레이를 내린다(입력 대기라 더 흐를 출력 없음. 응답 후 뜨는
+        // 실제 TUI 는 이미 ready 라 재통지 없이 정상 렌더). 문구는 claude 2.1.x 실측(둘 중 하나만 걸려도 동작).
+        if (text.Contains("trust")) // 값싼 사전필터 — 콜드스타트 초기 구간에만 도달
         {
-            _ready.Add(roomId);
-            _readyScan.Remove(roomId);
-            _inlineFirstOutTick.Remove(roomId);
-            _altSeenTick[roomId] = Environment.TickCount;
-            NotifyReady(roomId);
-            return;
+            var norm = StripAnsi(text);
+            if (norm.Contains("trust this folder") || norm.Contains("one you trust"))
+            {
+                _ready.Add(roomId);
+                _readyScan.Remove(roomId);
+                _inlineFirstOutTick.Remove(roomId);
+                _altSeenTick[roomId] = Environment.TickCount;
+                NotifyReady(roomId);
+                return;
+            }
         }
 
         // 인라인 렌더 에이전트(gjc 등)는 alt-screen 시퀀스가 없다. 단 첫 출력을 준비로 보면
@@ -210,6 +214,22 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             return;
         }
         _readyScan[roomId] = text.Length > 512 ? text[^512..] : text; // 버퍼 과다 방지
+    }
+
+    // 신뢰 프롬프트 매칭용 ANSI 정규화. 커서 전진(\e[nC)은 화면상 공백이므로 공백으로, OSC/그 외 CSI 는 제거.
+    // 커서 전진을 '먼저' 공백 치환해야 한다(일반 CSI 제거가 종결바이트 C 를 먼저 먹으면 공백이 사라져 단어가 붙는다).
+    private static readonly System.Text.RegularExpressions.Regex _reOsc =
+        new(@"\x1b\][^\x1b\x07]*(?:\x07|\x1b\\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex _reCursorFwd =
+        new(@"\x1b\[[0-9]*C", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex _reCsi =
+        new(@"\x1b\[[0-9;?]*[ -/]*[@-~]", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static string StripAnsi(string s)
+    {
+        s = _reOsc.Replace(s, string.Empty);
+        s = _reCursorFwd.Replace(s, " ");
+        s = _reCsi.Replace(s, string.Empty);
+        return s;
     }
 
     /// <summary>alt-screen 진입 후 출력이 올 때마다 안정화 타이머를 리셋. 만료되면(출력이 멎으면) TerminalReady 통지.</summary>
