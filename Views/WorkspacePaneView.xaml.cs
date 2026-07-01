@@ -1302,23 +1302,21 @@ public partial class WorkspacePaneView : UserControl
             {
                 var msg = sess.LastMessage;
                 var hasMsg = !string.IsNullOrEmpty(msg);
-                SessionHeaderTitle.Text = hasMsg ? msg : sess.Name;
+                SessionHeaderTitleRun.Text = hasMsg ? msg : sess.Name;
                 SessionHeaderTitle.ToolTip = hasMsg ? msg : null;
                 LastMessageSep.Visibility = hasMsg ? Visibility.Visible : Visibility.Collapsed;
                 FileHeaderIcon.Visibility = Visibility.Collapsed;
-                FileHeaderPathText.Visibility = Visibility.Collapsed;
+                FileHeaderPathRun.Text = string.Empty;
                 FileDirtyDot.Visibility = Visibility.Collapsed;
                 FileHeaderActions.Visibility = Visibility.Collapsed;
             }
             else if (_activeTab is FileTabItem file)
             {
-                SessionHeaderTitle.Text = file.Title;
+                SessionHeaderTitleRun.Text = file.Title;
                 SessionHeaderTitle.ToolTip = file.FilePath;
                 LastMessageSep.Visibility = Visibility.Collapsed;
                 FileHeaderIcon.Visibility = Visibility.Visible;
-                FileHeaderPathText.Text = file.FilePath;
-                FileHeaderPathText.ToolTip = file.FilePath;
-                FileHeaderPathText.Visibility = Visibility.Visible;
+                FileHeaderPathRun.Text = "   " + file.FilePath;
                 FileHeaderActions.Visibility = Visibility.Visible;
                 RefreshFileHeaderState(file);
             }

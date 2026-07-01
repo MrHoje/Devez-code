@@ -339,19 +339,25 @@
                                 FontSize="{DynamicResource Fs13}"
                                 Foreground="{DynamicResource TextMutedBrush}"
                                Visibility="Collapsed"/>
+                     <!-- 파일명·dirty점·경로를 한 TextBlock의 inline으로 두어 폰트 크기가 달라도
+                          글자 밑선(baseline)이 항상 맞도록 한다. (박스 하단 정렬로는 descent 차이로 어긋남) -->
                      <TextBlock x:Name="SessionHeaderTitle"
                                 VerticalAlignment="Center"
-                                FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                FontSize="{DynamicResource Fs13}"
                                 Foreground="{DynamicResource TextBrush}"
                                 TextOptions.TextFormattingMode="Ideal"
                                 TextOptions.TextRenderingMode="ClearType"
-                                TextTrimming="CharacterEllipsis"/>
-                    <Ellipse x:Name="FileDirtyDot" Width="7" Height="7" Margin="8,1,0,0"
-                             VerticalAlignment="Center" Visibility="Collapsed"
-                             Fill="{DynamicResource PrimaryBrush}"/>
-                    <TextBlock x:Name="FileHeaderPathText" Margin="12,0,0,1" VerticalAlignment="Bottom"
-                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
-                               TextTrimming="CharacterEllipsis" Visibility="Collapsed"/>
+                                TextTrimming="CharacterEllipsis">
+                         <Run x:Name="SessionHeaderTitleRun" FontWeight="SemiBold"/>
+                         <InlineUIContainer BaselineAlignment="Center">
+                             <Ellipse x:Name="FileDirtyDot" Width="7" Height="7" Margin="8,0,0,0"
+                                      Visibility="Collapsed"
+                                      Fill="{DynamicResource PrimaryBrush}"/>
+                         </InlineUIContainer>
+                         <Run x:Name="FileHeaderPathRun" BaselineAlignment="Baseline"
+                              FontSize="{DynamicResource Fs11}" FontWeight="Normal"
+                              Foreground="{DynamicResource TextMutedBrush}"/>
+                     </TextBlock>
                 </StackPanel>
                 <StackPanel x:Name="FileHeaderActions" Grid.Column="1" Orientation="Horizontal"
                             VerticalAlignment="Center" Visibility="Collapsed">
