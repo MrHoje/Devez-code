@@ -247,11 +247,13 @@ public partial class SidebarView : UserControl
     private void ProjectScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         var sv = (ScrollViewer)sender;
-        bool top = sv.VerticalOffset > 0;
-        bool bottom = sv.VerticalOffset < sv.ScrollableHeight;
+        // 패딩을 스크롤 상태로 토글하면 콘텐츠 높이가 바뀌어 오버플로 여부가 뒤집히고,
+        // 그 결과 스크롤/페이드가 무한히 켜졌다 꺼져 맨 아래 카드 보더가 깜빡인다 → 패딩 고정.
+        // 0.5px 여유로 서브픽셀 오프셋에 의한 페이드 깜빡임도 방지.
+        bool top = sv.VerticalOffset > 0.5;
+        bool bottom = sv.VerticalOffset < sv.ScrollableHeight - 0.5;
         ProjectFadeTop.Visibility = top ? Visibility.Visible : Visibility.Collapsed;
         ProjectFadeBottom.Visibility = bottom ? Visibility.Visible : Visibility.Collapsed;
-        sv.Padding = new Thickness(8, top ? 0 : 8, 8, bottom ? 0 : 8);
     }
 
     private void Project_Click(object sender, MouseButtonEventArgs e)

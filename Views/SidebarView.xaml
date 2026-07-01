@@ -13,14 +13,12 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollViewer">
+                        <!-- 스크롤바를 컬럼으로 두면 표시/숨김에 따라 폭이 토글돼 콘텐츠가 흔들린다.
+                             오버레이(우측 8px 패딩 위에 겹침)로 두면 콘텐츠 폭이 스크롤 유무와 무관하게 고정. -->
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <ScrollContentPresenter Grid.Column="0" Margin="{TemplateBinding Padding}"/>
-                            <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1" Orientation="Vertical"
-                                       Cursor="Arrow"
+                            <ScrollContentPresenter Margin="{TemplateBinding Padding}"/>
+                            <ScrollBar x:Name="PART_VerticalScrollBar" Orientation="Vertical"
+                                       HorizontalAlignment="Right" Width="8" Cursor="Arrow"
                                        Minimum="0" Maximum="{TemplateBinding ScrollableHeight}"
                                        ViewportSize="{TemplateBinding ViewportHeight}"
                                        Value="{Binding VerticalOffset, RelativeSource={RelativeSource TemplatedParent}, Mode=OneWay}"
