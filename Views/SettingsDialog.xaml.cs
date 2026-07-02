@@ -54,7 +54,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.9.5", "2026-07-01", true, new[]
+        ("v1.9.6", "2026-07-02", true, new[]
+        {
+            "계정 사용량 패널에 Fable 사용량 정보를 표시합니다.",
+            "프로젝트 카드 우클릭 메뉴에서 디렉토리 열기를 할 수 있습니다.",
+            "클립보드 처리 방식을 개선해 다른 프로그램에 영향을 주지 않도록 했습니다.",
+            "특정 환경에서 Claude 세션에 들어갈 때마다 로딩 스피너가 표시되던 문제를 수정했습니다.",
+        }),
+        ("v1.9.5", "2026-07-01", false, new[]
         {
             "Claude 세션에서 서브에이전트 작업 지시 후 작업 완료 신호가 잘못 수신되던 문제를 수정했습니다.",
         }),
