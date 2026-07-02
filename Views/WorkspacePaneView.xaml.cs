@@ -906,16 +906,31 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
-    /// <summary>닫힌 탭(원래 idx) 기준 왼쪽 우선, 없으면 오른쪽에서 표시 가능한 탭 선택.</summary>
+    /// <summary>닫힌 탭(원래 idx) 기준 왼쪽 우선, 없으면 오른쪽에서 표시 가능한 탭 선택.
+    /// FilterTab 을 함께 봐 "이 패널에 실제로 보이는" 탭만 고른다 — 분할 시 반대쪽 패널로 넘긴(이 패널에선
+    /// 숨겨진/격리 밖) 탭이 선택돼 엉뚱하게 딸려오는 것을 막는다. 비분할이면 필터가 항상 통과라 기존 동작 유지.</summary>
     private TabItemBase? PickNeighborTab(ProjectItem? parent, int removedIdx)
     {
         if (parent == null || removedIdx < 0) return null;
-        bool Visible(TabItemBase t) => !(t is SessionItem s && s.Hidden);
+        bool Visible(TabItemBase t) => !(t is SessionItem s && s.Hidden) && FilterTab(t);
         for (int i = removedIdx - 1; i >= 0; i--)
             if (Visible(parent.Tabs[i])) return parent.Tabs[i];
         for (int i = removedIdx; i < parent.Tabs.Count; i++)
             if (Visible(parent.Tabs[i])) return parent.Tabs[i];
         return null;
+    }
+
+    /// <summary>세션을 숨긴 뒤(그 세션이 이 패널의 활성이었다면) 같은 패널에서 왼쪽 우선으로 이웃 탭을 활성화.
+    /// PickNeighborTab 이 FilterTab 을 보므로 분할 시 반대쪽 패널 탭은 고르지 않는다. 이웃이 없으면 비운다.</summary>
+    private void ActivateNeighborAfterHide(SessionItem s)
+    {
+        if (!ReferenceEquals(_activeSession, s)) return;
+        var parent = ParentOf(s);
+        int idx = parent?.Tabs.IndexOf(s) ?? -1;
+        var next = PickNeighborTab(parent, idx);
+        if (next is SessionItem ns) ActivateSession(ns);
+        else if (next is FileTabItem nf) ActivateFileTab(nf);
+        else ClearActiveSession();
     }
 
     private void RemoveFileTab(FileTabItem tab)
@@ -1079,13 +1094,7 @@ public partial class WorkspacePaneView : UserControl
             {
                 s.Hidden = true;
                 WorkspaceStore.Save(Projects);
-                if (ReferenceEquals(_activeSession, s))
-                {
-                    var parent = ParentOf(s);
-                    var next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(x => x != s && !x.Hidden);
-                    if (next != null) ActivateSession(next);
-                    else ClearActiveSession();
-                }
+                ActivateNeighborAfterHide(s); // 같은 패널의 왼쪽 이웃 우선(분할 시 반대쪽 패널 탭 제외)
             };
             cm.Items.Add(hideItem);
 
@@ -1159,13 +1168,7 @@ public partial class WorkspacePaneView : UserControl
         {
             s.Hidden = true;
             WorkspaceStore.Save(Projects);
-            if (ReferenceEquals(_activeSession, s))
-            {
-                var parent = ParentOf(s);
-                var next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(x => x != s && !x.Hidden);
-                if (next != null) ActivateSession(next);
-                else ClearActiveSession();
-            }
+            ActivateNeighborAfterHide(s); // 같은 패널의 왼쪽 이웃 우선(분할 시 반대쪽 패널 탭 제외)
         }
         else if (tab is FileTabItem f)
         {
