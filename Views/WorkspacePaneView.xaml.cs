@@ -780,6 +780,9 @@ public partial class WorkspacePaneView : UserControl
                 DisposeSessionProcess(s, purge: false);
                 TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
                 TerminalSessionManager.Instance.GetOrCreate(s.Id, 120, 30);
+                // 곧바로 xterm 재생성+배선 — 배선 없이 세션만 만들면 시작 출력(alt-screen 신호)이
+                // 버려져 그 방은 ready 를 못 찍고, 이후 진입할 때마다 로딩 스피너가 타임아웃까지 돈다.
+                _terminal.PreloadTerminal(s.Id);
             }
             catch { /* ignore */ }
         }

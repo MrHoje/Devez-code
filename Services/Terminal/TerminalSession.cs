@@ -25,6 +25,10 @@ public sealed class TerminalSession : IDisposable
     private readonly StringBuilder _recent = new();
     private const int RecentCap = 16384;
 
+    /// <summary>이 세션이 이미 출력을 내보낸 적 있는지 — 배선 전에 출력이 흘렀다면(재배선)
+    /// 시작 신호(alt-screen 등)를 다시 감지할 수 없으므로 호출부가 준비 상태를 직접 복원해야 한다.</summary>
+    public bool HasPriorOutput { get { lock (_recentLock) return _recent.Length > 0; } }
+
     /// <summary>최근 터미널 출력 텍스트(ANSI 이스케이프 제거). 화면에 보이는 마지막 내용 일부.</summary>
     public string GetRecentText()
     {

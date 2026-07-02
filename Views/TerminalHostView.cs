@@ -1,7 +1,10 @@
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using DevezCode.Services.Terminal;
@@ -81,6 +84,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly HashSet<string> _readyNotified = new();
     /// <summary>alt-screen 진입 후 이만큼 추가 출력이 없으면 "준비 완료"로 본다.</summary>
     private static readonly TimeSpan SettleQuiet = TimeSpan.FromMilliseconds(300);
+    private static readonly object ClipboardWriteLock = new();
     /// <summary>alt-screen 진입 시각(Environment.TickCount). UI 스레드.</summary>
     private readonly Dictionary<string, int> _altSeenTick = new();
     /// <summary>alt-screen 진입 후 출력이 계속 흘러도(스피너/시계 등 끊임없는 redraw) 이 시각이 지나면
@@ -551,6 +555,21 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 SessionExited?.Invoke(roomId); // 끊김/죽음 → 회색 점
             });
         };
+
+        // 재배선(이미 돌던 세션에 새 xterm 연결 — 전체 재시작 직후 클릭·패널 이동·배선 유실 등):
+        // 시작 시 지나간 alt-screen 신호는 다시 오지 않으므로 여기서 준비 상태를 복원하고,
+        // 리사이즈 킥으로 ConPTY 가 화면 전체를 다시 그리게 한다. 안 하면 그 방은 영영 ready 가
+        // 못 돼 진입할 때마다 로딩 스피너가 타임아웃까지 돌고, 화면도 우연한 리사이즈 전까지 빈 채 남는다.
+        if (session.HasPriorOutput && !_readyNotified.Contains(roomId))
+        {
+            _ready.Add(roomId);
+            _readyScan.Remove(roomId);
+            _inlineFirstOutTick.Remove(roomId);
+            _altSeenTick[roomId] = Environment.TickCount;
+            BumpSettle(roomId); // 킥 리페인트 출력이 잠잠해지면(무출력이어도 SettleQuiet 후) 통지
+            session.Resize(Math.Max(2, cols - 1), rows);
+            session.Resize(cols, rows);
+        }
     }
 
     /// <summary>UI 스레드: roomId 큐에 모인 청크들을 하나로 합쳐 ScanForReady·PostJson 을 1회만 수행.</summary>
@@ -605,23 +624,91 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     }
 
     /// <summary>클립보드에 텍스트 기록 (잠금 충돌 대비 재시도).
-    /// SetText 는 지연 렌더링(copy=false)이라 WebView2(별도 Edge 프로세스) 환경에서
-    /// 실제 데이터가 클립보드에 안 올라오는 경우가 있어, 즉시 flush 하는
-    /// SetDataObject(text, true) 로 기록한다(OleFlushClipboard).</summary>
+    /// WPF Clipboard.SetDataObject(text, true) 는 OleFlushClipboard 경로라 clipboard viewer chain 을
+    /// 동기 호출해 RDP/클립보드 매니저/백신 프로세스와 교착될 수 있다. 텍스트는 Win32
+    /// CF_UNICODETEXT 로 직접 기록해 OLE flush 를 피한다.</summary>
     private static void SetClipboardText(string text)
     {
-        // 클립보드 매니저/백신/RDP 리디렉션이 붙은 PC에서 OleFlushClipboard(copy=true) 가
-        // 뷰어 체인 응답을 동기 대기하며 수백ms~수초 블록될 수 있다. copy-on-select 는
-        // 드래그 선택할 때마다 발동하므로 UI 스레드에서 하면 드래그가 통째로 멈춘다.
-        // 전용 STA 스레드로 오프로드해 UI 스레드는 즉시 반환(재시도 sleep 도 여기서 소화).
+        var owner = GetClipboardOwnerHandle();
+
+        // 클립보드가 다른 프로세스에 점유돼 있으면 OpenClipboard 가 실패한다. UI 스레드는 즉시 반환하고
+        // 백그라운드 STA 에서 짧게만 재시도한다. DevezCode 내부 copy-on-select 연타끼리는 직렬화해
+        // 우리 프로세스가 스스로 클립보드 점유 경쟁을 만들지 않게 한다.
         RunClipboardSta(() =>
         {
-            for (int i = 0; i < 10; i++)
+            lock (ClipboardWriteLock)
             {
-                try { System.Windows.Clipboard.SetDataObject(text, true); return; }
-                catch { System.Threading.Thread.Sleep(40); }
+                for (int i = 0; i < 6; i++)
+                {
+                    if (TrySetClipboardUnicodeText(text, owner)) return;
+                    System.Threading.Thread.Sleep(25 + i * 15);
+                }
             }
         });
+    }
+
+    private static IntPtr GetClipboardOwnerHandle()
+    {
+        try
+        {
+            var app = Application.Current;
+            if (app?.MainWindow != null)
+            {
+                if (app.Dispatcher.CheckAccess())
+                    return new WindowInteropHelper(app.MainWindow).Handle;
+
+                return app.Dispatcher.Invoke(() => new WindowInteropHelper(app.MainWindow).Handle);
+            }
+        }
+        catch { }
+
+        try { return System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle; }
+        catch { return IntPtr.Zero; }
+    }
+
+    private const uint CF_UNICODETEXT = 13;
+    private const uint GMEM_MOVEABLE = 0x0002;
+
+    private static bool TrySetClipboardUnicodeText(string text, IntPtr owner)
+    {
+        if (owner == IntPtr.Zero) return false;
+
+        var bytes = Encoding.Unicode.GetBytes(text + '\0');
+        var hGlobal = IntPtr.Zero;
+        var locked = IntPtr.Zero;
+        var opened = false;
+
+        try
+        {
+            hGlobal = GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)bytes.Length);
+            if (hGlobal == IntPtr.Zero) return false;
+
+            locked = GlobalLock(hGlobal);
+            if (locked == IntPtr.Zero) return false;
+
+            Marshal.Copy(bytes, 0, locked, bytes.Length);
+            GlobalUnlock(hGlobal);
+            locked = IntPtr.Zero;
+
+            if (!OpenClipboard(owner)) return false;
+            opened = true;
+
+            if (!EmptyClipboard()) return false;
+            if (SetClipboardData(CF_UNICODETEXT, hGlobal) == IntPtr.Zero) return false;
+
+            hGlobal = IntPtr.Zero; // ownership transferred to the clipboard
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (locked != IntPtr.Zero) GlobalUnlock(hGlobal);
+            if (opened) CloseClipboard();
+            if (hGlobal != IntPtr.Zero) GlobalFree(hGlobal);
+        }
     }
 
     /// <summary>클립보드 조작을 전용 STA 백그라운드 스레드에서 실행(UI 스레드 블로킹 방지).
@@ -635,6 +722,30 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         t.SetApartmentState(System.Threading.ApartmentState.STA);
         t.Start();
     }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EmptyClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool CloseClipboard();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalLock(IntPtr hMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GlobalUnlock(IntPtr hMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalFree(IntPtr hMem);
 
     /// <summary>붙여넣기용 클립보드 읽기. 클립보드를 1회만 열고(OLE GetDataObject) 그 스냅샷에서
     /// 이미지→텍스트 순으로 읽는다. 기존엔 ContainsText+GetText / ContainsImage+GetImage 로 매번
