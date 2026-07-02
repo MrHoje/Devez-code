@@ -89,18 +89,28 @@ public static class OpenCodePluginInstaller
         if (string.IsNullOrWhiteSpace(workingDir)) return null;
         try
         {
+            // 전체 예산: 세션이 아무리 많아도 조회가 앱 진입을 수 분씩 잡아먹지 않게 시간·개수 상한을 둔다.
+            // (session list 는 최근 세션이 위 — 상한에 걸려도 최근 후보는 이미 검사됨.)
+            const int budgetMs = 4000, maxExports = 10;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            int exports = 0;
+
             var used = LoadOtherRoomSessionIds(exceptRoomId);
             var norm = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
             var listOutput = RunOpenCode("session list");
             if (string.IsNullOrEmpty(listOutput)) return null;
             foreach (var line in listOutput.Split('\n'))
             {
+                if (sw.ElapsedMilliseconds > budgetMs || exports >= maxExports) break;
                 var trimmed = line.TrimStart();
                 if (!trimmed.StartsWith("ses_")) continue;
                 var idEnd = trimmed.IndexOfAny(new[] { ' ', '\t' });
                 if (idEnd <= 0) continue;
                 var sid = trimmed.Substring(0, idEnd);
+                // cmd /c 경유 실행이므로 ID 형식을 엄격 검증 — 메타문자(&|<> 등) 주입 원천 차단.
+                if (!System.Text.RegularExpressions.Regex.IsMatch(sid, @"^ses_[A-Za-z0-9]+$")) continue;
                 if (used.Contains(sid)) continue; // 다른 방이 이미 쓰는 세션 — 가로채지 않음
+                exports++;
                 var exported = RunOpenCode($"export {sid}");
                 if (string.IsNullOrEmpty(exported)) continue;
                 // JSON 내 "directory": "..." 매칭 — 백슬래시·따옴표 변형 모두 허용.
@@ -138,28 +148,34 @@ public static class OpenCodePluginInstaller
         return set;
     }
 
-    private static string? RunOpenCode(string args)
+    private static string? RunOpenCode(string args, int timeoutMs = 3000)
     {
         try
         {
+            // cmd 경유: npm 설치본은 opencode.cmd 라 CreateProcess 직접 실행이 안 된다(.exe 만 가능).
             var psi = new ProcessStartInfo
             {
-                FileName = "opencode",
-                Arguments = args,
+                FileName = "cmd.exe",
+                Arguments = "/c opencode " + args,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             };
             using var p = Process.Start(psi);
             if (p == null) return null;
-            if (!p.WaitForExit(3000))
+            // 읽기를 먼저 시작해야 한다 — 출력이 파이프 버퍼(~4KB)를 넘으면 자식이 write 에서 블록되어
+            // WaitForExit 가 영원히(→타임아웃) 기다리는 데드락이 된다. export JSON 은 거의 항상 4KB 초과.
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            _ = p.StandardError.ReadToEndAsync(); // stderr 도 드레인(같은 블록 요인)
+            if (!p.WaitForExit(timeoutMs))
             {
-                try { p.Kill(); } catch { }
+                try { p.Kill(entireProcessTree: true); } catch { }
                 return null;
             }
-            return p.StandardOutput.ReadToEnd();
+            return stdout.Wait(1000) ? stdout.Result : null;
         }
         catch { return null; }
     }

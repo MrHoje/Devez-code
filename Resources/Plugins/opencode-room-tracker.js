@@ -15,9 +15,18 @@ export const DevezCodeRoomTracker = async () => {
   const safe = String(room || "").replace(/[^\w\-]/g, "");
   const logPath = path.join(base, "DevezCode", "opencode", "plugin-debug.log");
 
+  // 로그 상한 1MB — message.part.updated 가 스트리밍 청크마다 발화해 무한 증식하므로
+  // 초과 시 .1 로 로테이션(직전 1MB 는 진단용으로 보존, 그 이전은 폐기).
+  const MAX_LOG_BYTES = 1024 * 1024;
   const debug = (msg) => {
     try {
       fs.mkdirSync(path.dirname(logPath), { recursive: true });
+      try {
+        if (fs.existsSync(logPath) && fs.statSync(logPath).size > MAX_LOG_BYTES) {
+          fs.rmSync(logPath + ".1", { force: true });
+          fs.renameSync(logPath, logPath + ".1");
+        }
+      } catch (e) {}
       fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
     } catch (e) {}
   };
@@ -139,8 +148,10 @@ export const DevezCodeRoomTracker = async () => {
     } catch (e) { debug(`writeTodos failed: ${e.message}`); }
   };
 
-  // 어떤 event 가 오는지 + role 필드 위치를 파악하기 위한 카운터
-  let eventCount = 0;
+  // part 이벤트 진단 로그 상한 — 스트리밍 청크마다 오는 message.part.updated 는
+  // 처음 50건만 로깅(구조 파악엔 충분, 이후는 디스크 churn 만 유발).
+  let partEvLogged = 0;
+  const PART_EV_LOG_MAX = 50;
 
   return {
     event: async ({ event }) => {
@@ -155,7 +166,9 @@ export const DevezCodeRoomTracker = async () => {
         // [진단] session.* / message.updated / message.part.updated 만 항상 로깅(노이즈 제외).
         // 실제 한 턴 동안 어떤 event 가 어떤 순서/sessionID/role/completed 로 흐르는지 확보용.
         const t = event.type;
-        if (t.startsWith("session.") || t === "message.updated" || t === "message.part.updated") {
+        const logPart = t === "message.part.updated" && partEvLogged < PART_EV_LOG_MAX;
+        if (t.startsWith("session.") || t === "message.updated" || logPart) {
+          if (logPart) partEvLogged++;
           const info = props.info || {};
           const part = props.part || {};
           const sid = props.sessionID || info.sessionID || part.sessionID || "?";
@@ -173,6 +186,21 @@ export const DevezCodeRoomTracker = async () => {
         if (event.type === "session.idle" || event.type === "session.error") {
           scheduleIdle();
           clearWaiting(); // 턴 종료 = 더 이상 선택지 대기 아님
+        }
+        // 세션 삭제 — 추적 중인 세션이 지워졌으면 추적 파일을 비운다.
+        // 그대로 두면 다음 실행이 `--session <삭제된 id>` 로 실패 후에야 폴백해 오류가 스치고,
+        // 비워두면 launch 가 cwd 매칭 폴백으로 같은 폴더의 남은 최신 대화를 바로 복원한다.
+        if (event.type === "session.deleted") {
+          try {
+            const delId = props.info && props.info.id;
+            if (safe && delId) {
+              const p = path.join(base, "DevezCode", "opencode", "sessions", safe + ".txt");
+              if (fs.existsSync(p) && fs.readFileSync(p, "utf8").trim() === String(delId)) {
+                fs.writeFileSync(p, "");
+                debug(`tracked session cleared (deleted: ${delId})`);
+              }
+            }
+          } catch (e) { debug(`session.deleted handling failed: ${e.message}`); }
         }
         // 세션 생성/갱신 이벤트 — 최신 ID 덮어씀 (--clear·새 대화 시작 시 자동 갱신).
         if (event.type === "session.created" || event.type === "session.updated") {

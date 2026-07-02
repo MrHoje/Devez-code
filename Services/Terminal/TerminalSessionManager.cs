@@ -76,9 +76,23 @@ public sealed class TerminalSessionManager
     {
         lock (_lock)
         {
+            // 빠른 경로: 살아있는 세션 재사용. 프리페치(느릴 수 있음)를 타지 않게 먼저 확인.
+            if (_sessions.TryGetValue(roomId, out var alive) && alive.IsAlive)
+            {
+                _pendingInitial[roomId] = null; // 이미 실행 중 — 재주입 금지
+                return alive;
+            }
+        }
+
+        // opencode cwd 폴백 조회는 외부 CLI 실행이라 느릴 수 있다 — _lock 밖에서 미리 끝내
+        // 다른 방의 터미널 생성/조회가 함께 블록되지 않게 한다(대상 아니면 즉시 null).
+        var opencodeCwdSession = PrefetchOpenCodeSessionByCwd(roomId);
+
+        lock (_lock)
+        {
             if (_sessions.TryGetValue(roomId, out var existing))
             {
-                if (existing.IsAlive) { _pendingInitial[roomId] = null; return existing; } // 이미 실행 중 — 재주입 금지
+                if (existing.IsAlive) { _pendingInitial[roomId] = null; return existing; } // 프리페치 사이 다른 호출이 생성 — 재주입 금지
                 existing.Dispose();
                 _sessions.Remove(roomId);
             }
@@ -109,7 +123,7 @@ public sealed class TerminalSessionManager
                 // opencode: Devez 패턴 — 플러그인이 sessions\<room>.txt 에 기록한 session_id 로 --session <id> 로 정확히 복원.
                 // 같은 폴더의 여러 방이 있어도 플러그인 $env:DEVEZCODE_ROOM_ID 로 분리됨.
                 startDir = ccDir;
-                var direct = TryBuildOpenCodeDirectLaunch(roomId, out inject);
+                var direct = TryBuildOpenCodeDirectLaunch(roomId, opencodeCwdSession, out inject);
                 if (direct != null) commandLine = direct;
             }
             else if (ccDir != null && agent.Id == "gajae")
@@ -347,6 +361,25 @@ public sealed class TerminalSessionManager
         }
     }
 
+    /// <summary>opencode 방에서 추적파일·settings 모두 비었을 때만 cwd 매칭 세션을 조회한다.
+    /// 외부 CLI(session list/export) 실행이라 느릴 수 있어 GetOrCreate 가 _lock 밖에서 호출한다.
+    /// 대상이 아니거나(비-opencode 방, 이미 추적값 있음) 실패하면 null — 호출부는 새 세션으로 진행.</summary>
+    private static string? PrefetchOpenCodeSessionByCwd(string roomId)
+    {
+        try
+        {
+            var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+            if (ccDir == null) return null;
+            // GetOrCreate 의 에이전트 판별과 동일 규칙(Find 실패 시 기본 에이전트).
+            var agent = AgentRegistry.Find(SettingsService.LoadAgentForRoom(roomId)) ?? AgentRegistry.GetDefault();
+            if (agent.Id != "opencode") return null;
+            if (OpenCodePluginInstaller.LoadTrackedSessionId(roomId) != null) return null;
+            if (SettingsService.LoadOpenCodeRoomSession(roomId) != null) return null;
+            return OpenCodePluginInstaller.FindSessionIdByCwd(ccDir, roomId);
+        }
+        catch { return null; }
+    }
+
     /// <summary>opencode 방의 opencode 를 cmd /k 배치로 직접 실행 (Devez 패턴 이식).
     /// 첫 실행은 <c>opencode</c> (시작 디렉터리에서 새 세션), 재진입은 <c>opencode --session &lt;id&gt;</c> 로
     /// 같은 대화 복원. 플러그인(opencode-room-tracker.js) 이 <c>session.created</c>/<c>session.updated</c>
@@ -356,7 +389,7 @@ public sealed class TerminalSessionManager
     /// <para>세션 ID 는 3단 폴백으로 결정: (1) 플러그인이 기록한 최신 ID (2) settings 의 저장값
     /// (3) <c>opencode session list</c> 에서 workingDir 매칭 ID. 플러그인 콜백이 어떤 이유로
     /// 호출되지 않는 환경에서도 (3) 이 마지막 대화 를 복원한다.</para></summary>
-    private string? TryBuildOpenCodeDirectLaunch(string roomId, out string? injectFallback)
+    private string? TryBuildOpenCodeDirectLaunch(string roomId, string? cwdFallbackSessionId, out string? injectFallback)
     {
         injectFallback = null;
         OpenCodePluginInstaller.EnsureInstalled();
@@ -369,18 +402,13 @@ public sealed class TerminalSessionManager
             SettingsService.SaveOpenCodeRoomSession(roomId, tracked);
         }
 
-        // (3) 플러그인도 settings 도 비어있으면 opencode session list 에서 workingDir 매칭 ID 찾기.
-        // 플러그인 콜백 미작동·환경변수 누락 등 어떤 이유로든 (1)(2) 가 비어도 같은 폴더의
-        // 마지막 대화를 정확히 복원 — 새 세션이 매번 만들어지는 현상 방지.
-        if (sessionId == null)
+        // (3) 플러그인도 settings 도 비어있으면 cwd 매칭 ID(프리페치 — GetOrCreate 가 _lock 밖에서
+        // 미리 조회해 전달; CLI 실행이라 lock 안에서 돌리면 모든 방이 함께 멈춘다). 플러그인 콜백
+        // 미작동·환경변수 누락 등 어떤 이유로든 (1)(2) 가 비어도 같은 폴더의 마지막 대화를 복원.
+        if (sessionId == null && cwdFallbackSessionId != null)
         {
-            var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-            var byCwd = OpenCodePluginInstaller.FindSessionIdByCwd(ccDir, roomId);
-            if (byCwd != null)
-            {
-                sessionId = byCwd;
-                SettingsService.SaveOpenCodeRoomSession(roomId, byCwd);
-            }
+            sessionId = cwdFallbackSessionId;
+            SettingsService.SaveOpenCodeRoomSession(roomId, cwdFallbackSessionId);
         }
 
         // body: opencode 실행 라인. 실패 시 fresh 폴백.
@@ -567,14 +595,17 @@ public sealed class TerminalSessionManager
             sessionId = null;
         }
 
-        // 배치 본문: 세션 없으면 단발(새 세션), 있으면(=transcript 확인됨) resume → 실패(외부 삭제 등) 시 fresh 폴백.
+        // 배치 본문: 세션 없으면 단발(새 세션), 있으면(=transcript 확인됨) resume → 실패(외부 삭제 등) 시
+        // --session-id 폴백(추적 ID 보존) → 그마저 실패(손상/타 인스턴스 점유로 "already in use" 등) 시
+        // plain 새 세션. 3단이 없으면 이중 실패 때 cmd 프롬프트만 남아 방이 죽는다.
         // claude 가 정상 시작하면 인터랙티브로 유지되어 뒤 폴백 줄은 실행되지 않는다.
         string body;
         if (sessionId == null)
             body = $"claude {flags}";
         else
             body = $"claude --resume {sessionId} {flags}\r\n"
-                 + $"if errorlevel 1 claude --session-id {sessionId} {flags}";
+                 + $"if errorlevel 1 claude --session-id {sessionId} {flags}\r\n"
+                 + $"if errorlevel 1 claude {flags}";
 
         try
         {
@@ -597,13 +628,14 @@ public sealed class TerminalSessionManager
         if (!resume) return $"claude --session-id {sessionId} {flags}\r";
         var r = $"claude --resume {sessionId} {flags}";
         var f = $"claude --session-id {sessionId} {flags}";
+        var n = $"claude {flags}"; // 3단: --session-id 도 실패("already in use" 등) 시 plain 새 세션
         // cmd.exe 는 `a || b`, PowerShell 은 `a; if ($LASTEXITCODE -ne 0) { b }`.
         bool isCmd = shellCommandLine.Contains("cmd", StringComparison.OrdinalIgnoreCase)
                      && !shellCommandLine.Contains("powershell", StringComparison.OrdinalIgnoreCase)
                      && !shellCommandLine.Contains("pwsh", StringComparison.OrdinalIgnoreCase);
         return isCmd
-            ? $"{r} || {f}\r"
-            : $"{r}; if ($LASTEXITCODE -ne 0) {{ {f} }}\r";
+            ? $"{r} || {f} || {n}\r"
+            : $"{r}; if ($LASTEXITCODE -ne 0) {{ {f} }}; if ($LASTEXITCODE -ne 0) {{ {n} }}\r";
     }
 
     // ── Claude 세션 ID 추적 (%APPDATA%\DevezCode\claude\) ──────────────
@@ -732,15 +764,24 @@ public sealed class TerminalSessionManager
                   $sid = '' + $j.session_id
                   if (-not $sid) { try { $sid = [System.IO.Path]::GetFileNameWithoutExtension('' + $j.transcript_path) } catch { } }
                   # /clear·/resume·compact: 세션 전환 발생. 새 session_id 를 추적에 박아 다음 실행 시
-                  # 해당 세션으로 바로 복원되게 한다. /clear 는 lastmsg 도 비워 세션 타이틀로 복귀.
+                  # 해당 세션으로 바로 복원되게 한다.
                   if ($room -and $sid -and ($j.source -eq 'clear' -or $j.source -eq 'resume' -or $j.source -eq 'compact')) {
                     $room = $room -replace '[^\w\-]', ''
                     $dir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
                     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-                    Set-Content -LiteralPath (Join-Path $dir ($room + '.txt')) -Value $sid -Encoding Ascii -Force
-                    $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
-                    New-Item -ItemType Directory -Force -Path $mdir | Out-Null
-                    Set-Content -LiteralPath (Join-Path $mdir ($room + '.txt')) -Value '' -Encoding UTF8 -Force
+                    # lastmsg(헤더 타이틀의 마지막 프롬프트)는 "다른 대화로 바뀔 때만" 비운다.
+                    # 판정 = 새 sid 가 기존 추적 sid 와 다른가. /clear(새 sid)·다른 세션 /resume 전환 → 비움,
+                    # 앱 재실행의 --resume(같은 sid)·compact(같은 sid) → 유지.
+                    # (예전엔 source 만 보고 무조건 비워서, 재실행할 때마다 타이틀이 세션명으로 돌아갔다.)
+                    $tfile = Join-Path $dir ($room + '.txt')
+                    $prev = ''
+                    try { if (Test-Path -LiteralPath $tfile) { $prev = (Get-Content -LiteralPath $tfile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
+                    Set-Content -LiteralPath $tfile -Value $sid -Encoding Ascii -Force
+                    if ($sid -ne $prev) {
+                      $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
+                      New-Item -ItemType Directory -Force -Path $mdir | Out-Null
+                      Set-Content -LiteralPath (Join-Path $mdir ($room + '.txt')) -Value '' -Encoding UTF8 -Force
+                    }
                   }
                 } catch { }
                 exit 0
@@ -1046,8 +1087,9 @@ public sealed class TerminalSessionManager
         var statusLine = new { type = "command", command = statusCommand, refreshInterval = 3000 };
         var settings = new
         {
-            // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를 자동 삭제(resume 불가). 30일.
-            cleanupPeriodDays = 30,
+            // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를 자동 삭제(resume 불가).
+            // 방은 오래 두고 다시 여는 물건이라 90일로 넉넉히(30일이었을 땐 한 달 방치한 방 대화가 증발했다). 비용은 텍스트 디스크뿐.
+            cleanupPeriodDays = 90,
             // theme 을 command-line scope(최우선)에 박아 auto(배경 자동감지) 경로를 제거 — ConPTY 에서 흰 화면 고착 방지.
             theme = ClaudeCustomThemes.MapToClaudeTheme(DevezCode.App.CurrentTheme),
             statusLine,
@@ -1164,7 +1206,7 @@ public sealed class TerminalSessionManager
     /// 특히 "/clear 직후 요청 → 받자마자 종료" 처럼 새 세션이 transcript(.jsonl)를 미처 다 쓰기
     /// 전에 종료 신호를 받으면, WaitForExit 가 빨리 통과해버려 그 세션을 못 불러왔다 →
     /// 프로세스가 빨리 죽어도 무조건 postFlushMs(기본 3s) 만큼은 기다려 기록을 보존한다.</summary>
-    public async Task GracefulShutdownAllAsync(int perGraceMs = 2500, int postFlushMs = 3000)
+    public async Task GracefulShutdownAllAsync(int perGraceMs = 2500, int postFlushMs = 5000)
     {
         List<KeyValuePair<string, TerminalSession>> snapshot;
         lock (_lock) snapshot = _sessions.ToList();
@@ -1173,8 +1215,16 @@ public sealed class TerminalSessionManager
         try { await Task.WhenAll(snapshot.Select(kv => kv.Value.TryGracefulExitAsync(perGraceMs))); }
         catch { /* best effort */ }
 
-        // 프로세스 종료 후 별도 훅 프로세스가 파일을 마저 쓸 여유(짧은 고정 지연).
-        if (postFlushMs > 0) { try { await Task.Delay(postFlushMs); } catch { /* best effort */ } }
+        // 프로세스 종료 후 별도 훅 프로세스(powershell)가 파일을 마저 쓸 여유.
+        // 고정 3s 대기 → 폴링으로 개선: claude 방들의 busy 가 전부 running 이 아니면
+        // (= Stop/SessionEnd 훅이 기록을 마침) 짧은 정착 후 조기 종료. 훅이 늦으면 cap(5s)까지
+        // 기다려 종전(3s)보다 마진도 커졌다. 판정 불가(claude 방 없음)면 종전과 같은 3s 고정.
+        if (postFlushMs > 0) { try { await WaitForHookFlushAsync(snapshot.Select(kv => kv.Key), postFlushMs); } catch { /* best effort */ } }
+
+        // 종료 직전 최종 스냅샷 — 훅/플러그인이 마지막에 남긴 세션 ID(gjc 는 최신 .jsonl)를 settings 에
+        // 확정 기록한다. 세션 도중 추적 파일만 갱신되고 settings 반영 전에 앱이 꺼지는 틈을 봉합.
+        foreach (var kv in snapshot)
+            TrySnapshotRoomSession(kv.Key);
 
         lock (_lock)
         {
@@ -1184,6 +1234,83 @@ public sealed class TerminalSessionManager
                 _sessions.Remove(kv.Key);
             }
         }
+    }
+
+    /// <summary>종료 훅 flush 대기. claude 방들의 busy 파일이 전부 running 이 아니게 되면
+    /// (Stop/SessionEnd 훅이 마지막 기록까지 완료) 500ms 정착 후 반환, 아니면 capMs 까지 대기.
+    /// 최소 1.5s 는 무조건 기다린다 — 프로세스가 즉사해도 훅 powershell 스폰·기록 시간이 필요하고,
+    /// codex 등 다른 훅 에이전트의 잔여 기록 여유도 겸한다. claude 방이 없으면 종전 동작(3s 고정).</summary>
+    private static async Task WaitForHookFlushAsync(IEnumerable<string> roomIds, int capMs)
+    {
+        var claudeRooms = new List<string>();
+        foreach (var roomId in roomIds)
+        {
+            try
+            {
+                var agent = AgentRegistry.Find(SettingsService.LoadAgentForRoom(roomId)) ?? AgentRegistry.GetDefault();
+                if (agent.Id == "claude") claudeRooms.Add(roomId);
+            }
+            catch { }
+        }
+        if (claudeRooms.Count == 0)
+        {
+            await Task.Delay(Math.Min(capMs, 3000));
+            return;
+        }
+
+        const int floorMs = 1500, pollMs = 250, settleMs = 500;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await Task.Delay(floorMs);
+        while (sw.ElapsedMilliseconds < capMs)
+        {
+            if (claudeRooms.All(r => !IsClaudeBusyRunning(r)))
+            {
+                await Task.Delay(settleMs); // 파일 flush 정착 여유
+                return;
+            }
+            await Task.Delay(pollMs);
+        }
+    }
+
+    /// <summary>busy 훅 파일이 'running' 인가. 파일 없음/판독 실패 = 진행 중 턴 없음으로 간주.</summary>
+    private static bool IsClaudeBusyRunning(string roomId)
+    {
+        try
+        {
+            var path = Path.Combine(ClaudeTrackDir, "busy", SafeRoomFileName(roomId) + ".txt");
+            if (!File.Exists(path)) return false;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var sr = new StreamReader(fs);
+            return sr.ReadToEnd().Trim() == "running";
+        }
+        catch { return false; }
+    }
+
+    /// <summary>방의 최신 세션 추적값을 settings 에 확정 기록(종료 스냅샷). best-effort — 실패해도 종료 계속.
+    /// claude 는 훅 기록 파일, opencode 는 플러그인 기록 파일, gjc 는 방 session-dir 의 최신 .jsonl 이 원천.</summary>
+    private static void TrySnapshotRoomSession(string roomId)
+    {
+        try
+        {
+            var agent = AgentRegistry.Find(SettingsService.LoadAgentForRoom(roomId)) ?? AgentRegistry.GetDefault();
+            switch (agent.Id)
+            {
+                case "claude":
+                    SyncTrackedClaudeSessionId(roomId);
+                    break;
+                case "opencode":
+                    var oc = OpenCodePluginInstaller.LoadTrackedSessionId(roomId);
+                    if (oc != null && oc != SettingsService.LoadOpenCodeRoomSession(roomId))
+                        SettingsService.SaveOpenCodeRoomSession(roomId, oc);
+                    break;
+                case "gajae":
+                    var gj = FindLatestGajaeSessionId(GajaeSessionDir(roomId));
+                    if (gj != null && gj != SettingsService.LoadGajaeRoomSession(roomId))
+                        SettingsService.SaveGajaeRoomSession(roomId, gj);
+                    break;
+            }
+        }
+        catch (Exception) { /* 스냅샷 실패 — 종료는 계속 */ }
     }
 
     public void DisposeRoom(string roomId, bool purgeTracking = true)
@@ -1225,20 +1352,17 @@ public sealed class TerminalSessionManager
 
         PurgeAppOwnedRoomArtifacts(roomId, ids);
 
-        if (string.IsNullOrWhiteSpace(workingDir)) return;
-        try
+        // claude transcript(.jsonl) 삭제 — FindClaudeTranscriptPath 로 위치 확정(빠른 경로 + 전역 스캔 폴백).
+        // 예전엔 workingDir 인코딩을 직접 계산해 그 폴더만 지웠는데, 폴더 이동/인코딩 엣지면 못 지워
+        // 대화가 디스크에 잔존했다. GUID 는 projects 전역에서 유일하므로 스캔 결과가 곧 이 방의 기록.
+        // (GUID 검증은 FindClaudeTranscriptPath 내부에서 수행 — opencode ses_* 등은 null 로 걸러짐.)
+        foreach (var id in ids)
         {
-            var full = Path.GetFullPath(workingDir);
-            if (full.Length > 3) full = full.TrimEnd('\\', '/'); // 드라이브 루트(C:\)는 백슬래시 유지 — claude 인코딩(C--)과 일치
-            var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".claude", "projects", encoded);
-            foreach (var id in ids)
-                if (!string.IsNullOrWhiteSpace(id) && Guid.TryParse(id, out _))
-                    try { File.Delete(Path.Combine(dir, id + ".jsonl")); } catch (Exception) { }
+            if (string.IsNullOrWhiteSpace(id)) continue;
+            var tp = FindClaudeTranscriptPath(workingDir, id);
+            if (tp != null)
+                try { File.Delete(tp); } catch (Exception) { }
         }
-        catch (Exception) { }
     }
 
     private static void PurgeAppOwnedRoomArtifacts(string roomId, IEnumerable<string?> sessionIds)
