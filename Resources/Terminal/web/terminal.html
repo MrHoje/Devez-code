@@ -940,6 +940,17 @@
         }, 2000);
         break;
       }
+      case 'fadeNow': {
+        // C# 이 좌우 모두 준비됨을 확인하고 동시에 커튼을 걷으라고 지시(synced reveal). 세대 무관하게 현재 커버를 fade.
+        const cov = document.getElementById('xfer-cover');
+        clearTimeout(_xferCoverTimer);
+        requestAnimationFrame(function () {
+          cov.style.transition = 'opacity 0.14s ease';
+          cov.style.opacity = '0';
+          setTimeout(function () { cov.style.display = 'none'; }, 200);
+        });
+        break;
+      }
       case 'xferReveal': {
         // 폭이 '안정된 최종 값'이 될 때까지 기다렸다가(=전체→절반 전환의 중간 전체폭은 건너뜀) fit 억제를
         // 풀고 한 번만 fit 한다 → TUI 가 최종 폭에서만 그려 리플로우 깨짐이 없다. 이후 커튼 fade-out.
@@ -949,6 +960,7 @@
         const cov = document.getElementById('xfer-cover');
         const room = msg.roomId;
         const kick = !!msg.kick;
+        const synced = !!msg.synced; // true 면 fade 하지 않고 준비 완료만 C# 에 보고 → C# 이 양쪽 준비 후 fadeNow 로 동시 걷음
         const expectW = msg.expectWidth || 0; // C# 이 확정한 최종 목표 폭(px). clientWidth 가 여기 근접할 때까지 대기.
         const fadeOut = function () {
           if (gen !== _xferGen) return;
@@ -971,16 +983,18 @@
             // 리플로우 없음). 늦게 오는 WireSession resize 와의 경쟁에서 이 값이 마지막이 되고 SIGWINCH 로 재렌더.
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
           }
-          setTimeout(fadeOut, 80);
+          if (synced) post({ type: 'revealPrepared' }); // 커버 유지 — C# 이 양쪽 준비되면 fadeNow 로 동시 걷음
+          else setTimeout(fadeOut, 80);
         };
         let waited = 0;
         const step = function () {
           if (gen !== _xferGen) return;                             // 더 최근 전환 시작 — 폐기(커버 유지)
           const e = room ? terms[room] : null;
-          if (!e || room !== activeRoomId) {                        // 세션없음/방전환 — 억제 풀고 걷기
+          if (!e || room !== activeRoomId) {                        // 세션없음/방전환 — 억제 풀고 걷기/보고
             _fitSuppressed = false;
             if (e && e.needCreate) { e.needCreate = false; try { e.fit.fit(); } catch (err) {} post({ type: 'created', roomId: room, cols: e.term.cols, rows: e.term.rows }); } // 미생성 세션 폴백 생성
-            fadeOut(); return;
+            if (synced) post({ type: 'revealPrepared' }); else fadeOut();
+            return;
           }
           const w = e.el.clientWidth;
           // clientWidth 가 C# 목표 폭(expectW)에 근접(±20%)했는지 — 근접해야 '최종 폭 도달'로 본다.

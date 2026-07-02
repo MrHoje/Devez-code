@@ -92,6 +92,8 @@ public partial class WorkspacePaneView : UserControl
         _terminal.FontSizePxChanged += ApplyHeaderFontSize;
         // 터미널 → 파일 경로 Ctrl+클릭 → 에디터 탭으로 열기
         _terminal.FileOpenRequested += OnTerminalFileOpenRequested;
+        // synced reveal 준비 완료 → 셸로 전달(셸이 좌우를 모아 동시에 fade)
+        _terminal.RevealPrepared += () => RevealPrepared?.Invoke(this);
         Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);
 
         App.ThemeChanged += OnThemeChanged_UpdateSeam;
@@ -322,6 +324,22 @@ public partial class WorkspacePaneView : UserControl
 
     /// <summary>분할 열림/닫힘으로 이 패널이 리사이즈될 전환 직전 — 터미널을 단색 커튼으로 덮어 리플로우를 감춘다.</summary>
     public void CoverForTransition() => _terminal.CoverForTransition();
+
+    /// <summary>synced reveal 준비 완료(양쪽 조율용). 셸이 좌우 준비를 모아 FadeRevealNow 로 동시에 걷는다.</summary>
+    public event Action<WorkspacePaneView>? RevealPrepared;
+
+    /// <summary>동시 reveal 준비 — 폭 안정·fit·재동기까지만 하고 커튼은 유지, 완료 시 RevealPrepared 발생.
+    /// 활성 세션이 없으면(파일/빈 패널) 터미널 커튼과 무관하므로 즉시 준비 완료로 보고한다.</summary>
+    public void PrepareRevealSynced(bool kick)
+    {
+        if (_activeSession == null) { RevealPrepared?.Invoke(this); return; }
+        UpdateLayout();
+        double target = TerminalHostContainer?.ActualWidth ?? 0;
+        _terminal.PrepareRevealSynced(_activeSession.Id, kick, target);
+    }
+
+    /// <summary>synced reveal 의 최종 단계 — 커튼을 즉시 fade-out.</summary>
+    public void FadeRevealNow() => _terminal.FadeNow();
 
     /// <summary>전환 후 — 최종 폭으로 fit 재측정 후 커튼을 fade-out(활성 세션 기준). 세션이 없으면 커튼만 걷는다.
     /// kick=true 면 fit 후 resize-kick(cols-1→cols)으로 SIGWINCH 를 내 TUI 를 강제 리페인트한다 — 처음 표시되며

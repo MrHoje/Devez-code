@@ -20,9 +20,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 {
     private const string VirtualHost = "terminal.devezcode.local";
 
-    /// <summary>진단 로그용 패널 식별자("A"/"B"). MainWindow 가 설정. 좌/우 패널 구분에만 쓰인다.</summary>
-    public string DiagTag = "?";
-
     /// <summary>해당 방의 셸이 첫 출력을 내보내(=터미널이 그려질 준비) 발생. roomId 전달.</summary>
     public event Action<string>? TerminalReady;
     /// <summary>방의 ConPTY 세션이 생성/배선되어 살아있음. roomId 전달.</summary>
@@ -42,6 +39,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action? UserInteracted;
     /// <summary>터미널 출력에서 파일 경로를 Ctrl+클릭 → 에디터 탭으로 열기 요청.</summary>
     public event Action<string>? FileOpenRequested;
+    /// <summary>synced reveal 준비 완료(폭 안정·fit·재동기 끝, 커튼은 아직 유지) — 셸이 양쪽 준비를 모아 동시에 걷는다.</summary>
+    public event Action? RevealPrepared;
 
     private WebView2? _webView;
     private bool _initStarted;
@@ -139,7 +138,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
     public async void ShowTerminal(string roomId)
     {
-        DevezCode.Services.DiagLog.Write($"[{DiagTag}] ShowTerminal room={roomId} pageReady={_pageReady} readyNotified={_readyNotified.Contains(roomId)}");
+        DevezCode.Services.DiagLog.Write($"ShowTerminal room={roomId} pageReady={_pageReady} readyNotified={_readyNotified.Contains(roomId)}");
         _activeRoomId = roomId;
         if (!_initStarted)
         {
@@ -415,18 +414,18 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "interact":
                     UserInteracted?.Invoke();
                     break;
+                case "revealPrepared":
+                    RevealPrepared?.Invoke();
+                    break;
                 case "pageReady":
                     OnPageReady();
                     break;
                 case "created":
-                {
-                    var cRoom = root.GetProperty("roomId").GetString()!;
-                    var cCols = root.GetProperty("cols").GetInt32();
-                    var cRows = root.GetProperty("rows").GetInt32();
-                    DevezCode.Services.DiagLog.Write($"[{DiagTag}] created room={cRoom} cols={cCols} rows={cRows}");
-                    WireSession(cRoom, cCols, cRows);
+                    WireSession(
+                        root.GetProperty("roomId").GetString()!,
+                        root.GetProperty("cols").GetInt32(),
+                        root.GetProperty("rows").GetInt32());
                     break;
-                }
                 case "input":
                 {
                     var data = root.GetProperty("data").GetString() ?? "";
@@ -456,14 +455,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     break;
                 }
                 case "resize":
-                {
-                    var rRoom = root.GetProperty("roomId").GetString()!;
-                    var rCols = root.GetProperty("cols").GetInt32();
-                    var rRows = root.GetProperty("rows").GetInt32();
-                    DevezCode.Services.DiagLog.Write($"[{DiagTag}] resize room={rRoom} cols={rCols} rows={rRows}");
-                    TerminalSessionManager.Instance.Get(rRoom)?.Resize(rCols, rRows);
+                    TerminalSessionManager.Instance
+                        .Get(root.GetProperty("roomId").GetString()!)
+                        ?.Resize(root.GetProperty("cols").GetInt32(), root.GetProperty("rows").GetInt32());
                     break;
-                }
                 case "restart":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;
@@ -905,6 +900,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 이 목표에 근접할 때까지 기다렸다 fit 한다 — 전체폭→절반 전환의 중간 전체폭 plateau(HWND 지연)를 건너뛰기 위함.</summary>
     public void RevealAfterTransition(string? roomId, bool kick = false, double expectWidth = 0)
         => PostJson(new { type = "xferReveal", roomId, kick, expectWidth });
+
+    /// <summary>동시(synced) reveal 준비 — 폭 안정·fit·재동기까지만 하고 커튼은 유지한 채 RevealPrepared 를 낸다.
+    /// 셸이 좌우 모두의 준비를 받으면 FadeNow 로 동시에 걷는다(느린 쪽 기준으로 함께 표시).</summary>
+    public void PrepareRevealSynced(string? roomId, bool kick, double expectWidth)
+        => PostJson(new { type = "xferReveal", roomId, kick, expectWidth, synced = true });
+
+    /// <summary>커튼을 즉시 fade-out(synced reveal 의 최종 단계).</summary>
+    public void FadeNow() => PostJson(new { type = "fadeNow" });
 
     /// <summary>ms 동안 출력 쓰기 후 맨 아래로 고정 — 인라인 TUI(gjc) open 직후 최신 화면을 보이게(짧은 창).</summary>
     public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });

@@ -141,7 +141,6 @@ public partial class MainWindow : Window
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
         SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
-        PaneA.Terminal.DiagTag = "A"; PaneB.Terminal.DiagTag = "B"; // 진단 로그 좌/우 구분
         PaneB.IsRightPane = true;   // 분할 시 우측 패널 — 탭바 버튼이 X(분할 닫기)로 표시됨.
         CenterSplit.SizeChanged += (_, _) => UpdatePaneFocusVisual(animate: false);
         _focusedPane = PaneA;
@@ -2029,6 +2028,7 @@ public partial class MainWindow : Window
         pane.ActiveChanged += OnPaneActiveChanged;
         pane.SplitToggleRequested += OnPaneSplitToggle;
         pane.SplitViewRequested += OnPaneSplitViewRequested;
+        pane.RevealPrepared += OnPaneRevealPrepared;
         _panes.Add(pane);
     }
 
@@ -2105,7 +2105,6 @@ public partial class MainWindow : Window
 
     private void PersistSplitState()
     {
-        DevezCode.Services.DiagLog.Write($"PersistSplitState split={_splitActive} swapped={_panesSwapped}\n  LEFT  {LeftPane.DebugFilterState()}\n  RIGHT {RightPane.DebugFilterState()}");
         SettingsService.SaveFullSplitState(
             _splitActive,
             LeftPane.ActiveProject?.Path, LeftPane.ActiveSession?.Id,
@@ -2265,10 +2264,7 @@ public partial class MainWindow : Window
         // 세션·다른프로젝트 파트너는 EnableSplit 이 바로 우측에 띄운다. 파일 파트너는 빈 우측으로 연 뒤 아래에서 연다.
         EnableSplit(bProject: partnerProj, bSession: partnerSession, animate: animate);
         if (!RestoreSameProjectSplit(proj, rightRefs, rightActive, leftActive)) RestorePartner(proj, partnerSession, partnerFile);
-        // 다른(비분할) 프로젝트에 갔다 이 분할로 돌아오는 경로 — 우측(PaneB) 터미널은 보존돼(스피너/리로드
-        // 없음) 즉시 재활성화되지만, Collapsed(0폭)→최종폭 전환 중 첫 프레임이 잠깐 틀어져 보인다. JS 가
-        // 컨테이너를 투명하게 덮은 뒤 폭 확정·재동기 후 fade-in 해 그 과정을 감춘다(preserve/ready 세션만).
-        RightPane.ResyncActiveSessionOnReturn();
+        // 우측 reveal 은 호출부(SelectProjectIntoPane/OpenSessionIntoPane)가 좌측과 함께 동시(synced)로 처리한다.
     }
 
     /// <summary>이미 분할된 상태에서 좌측 프로젝트가 다른 "분할 사용" 프로젝트로 바뀔 때, 우측 패널
@@ -2588,9 +2584,8 @@ public partial class MainWindow : Window
         _focusedPane = PaneA;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
-        // 폭이 절반으로 안정되면 fit 억제 해제 + ConPTY 재동기 후 커튼 fade-out(양쪽 패널).
-        PaneA.RevealAfterTransition(kick: true);
-        PaneB.RevealAfterTransition(kick: true);
+        // 좌우가 각자 다른 타이밍에 뜨지 않게, 둘 다 준비되면 동시에 커튼을 걷는다(느린 쪽 기준).
+        RevealPanesSynced();
         // 복원 완료 시점에 분할 상태 저장(Loaded 이후 올바른 내용물로 PersistSplitState가 불리게)
         PersistSplitState();
     }
@@ -2994,16 +2989,22 @@ public partial class MainWindow : Window
     private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session, bool isNewProjectLoad)
     {
         _focusedPane = pane;
-        // 새 프로젝트를 좌측에 여는 경우만 SelectProjectIntoPane 과 동일하게 커튼으로 덮는다(전환 페이드 균일화).
-        // 이미 열린 프로젝트의 세션 탭 전환(isNewProjectLoad=false)은 즉시 — 탭 전환까지 페이드하면 답답하다.
+        // 새 프로젝트를 좌측에 여는 경우만 커튼으로 덮는다. 이미 열린 프로젝트의 세션 탭 전환은 즉시(페이드 X).
         bool cover = isNewProjectLoad && ReferenceEquals(pane, LeftPane);
+        var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
+        bool willSplit = cover && parent != null && parent.SplitEnabled;
         if (cover) pane.CoverForTransition();
+        if (willSplit) RightPane.CoverForTransition();
         pane.OpenSession(session);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
         if (ReferenceEquals(pane, LeftPane) && pane.ActiveProject != null)
             ApplyProjectSplitForMainPane(pane.ActiveProject);
-        if (cover) pane.RevealAfterTransition();
+        if (cover)
+        {
+            if (_splitActive) RevealPanesSynced();
+            else pane.RevealAfterTransition();
+        }
         PaneA.RefreshSplitIndicator();
         PaneB.RefreshSplitIndicator();
     }
@@ -3028,16 +3029,60 @@ public partial class MainWindow : Window
     private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
     {
         _focusedPane = pane;
-        // 프로젝트 전환은 항상 커튼으로 덮었다 fade-in — 분할 열림/닫힘 리사이즈 리플로우를 감추고,
-        // 리사이즈가 없는 전환(비분할↔비분할, 파트너 교체)에도 같은 페이드를 줘 전환 느낌을 균일하게 한다.
-        if (ReferenceEquals(pane, LeftPane)) pane.CoverForTransition();
+        // 프로젝트 전환은 항상 커튼으로 덮었다 fade-in — 리사이즈 리플로우를 감추고 전환 페이드를 균일하게.
+        // 분할 프로젝트면 우측도 미리 덮어, 좌우가 각자 다른 타이밍에 뜨지 않고 느린 쪽 기준으로 함께 나타난다.
+        bool leftMain = ReferenceEquals(pane, LeftPane);
+        bool willSplit = leftMain && proj.SplitEnabled;
+        if (leftMain) pane.CoverForTransition();
+        if (willSplit) RightPane.CoverForTransition();
         pane.SelectProject(proj);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
-        if (ReferenceEquals(pane, LeftPane)) ApplyProjectSplitForMainPane(proj);
-        if (ReferenceEquals(pane, LeftPane)) pane.RevealAfterTransition();
+        if (leftMain) ApplyProjectSplitForMainPane(proj);
+        if (leftMain)
+        {
+            if (_splitActive) RevealPanesSynced();       // 좌우 동시(느린 쪽 기준)
+            else pane.RevealAfterTransition();           // 단일 패널
+        }
         PaneA.RefreshSplitIndicator();
         PaneB.RefreshSplitIndicator();
+    }
+
+    // ── synced reveal 조율: 좌우 패널이 각자 다른 시점에 뜨지 않게, 둘 다 준비되면 동시에 커튼을 걷는다 ──
+    private readonly HashSet<WorkspacePaneView> _revealPending = new();
+    private System.Windows.Threading.DispatcherTimer? _revealTimeout;
+
+    /// <summary>좌우 패널을 동시에 reveal — 각 패널이 폭 안정·fit·재동기까지 준비하고(커튼 유지), 둘 다 준비되면
+    /// FadeAllRevealNow 로 함께 걷는다. 한쪽이 보고 안 해도 타임아웃(2.5s)에 강제로 함께 걷는다.</summary>
+    private void RevealPanesSynced()
+    {
+        _revealPending.Clear();
+        _revealPending.Add(LeftPane);
+        _revealPending.Add(RightPane);
+        LeftPane.PrepareRevealSynced(kick: true);
+        RightPane.PrepareRevealSynced(kick: true);
+        if (_revealPending.Count == 0) return; // 둘 다 즉시 준비 완료(파일/빈 패널) — 이미 함께 걷음
+        _revealTimeout ??= new System.Windows.Threading.DispatcherTimer();
+        _revealTimeout.Stop();
+        _revealTimeout.Interval = TimeSpan.FromMilliseconds(2500);
+        _revealTimeout.Tick -= RevealTimeout_Tick;
+        _revealTimeout.Tick += RevealTimeout_Tick;
+        _revealTimeout.Start();
+    }
+
+    private void RevealTimeout_Tick(object? s, EventArgs e) { _revealTimeout?.Stop(); FadeAllRevealNow(); }
+
+    private void OnPaneRevealPrepared(WorkspacePaneView pane)
+    {
+        if (!_revealPending.Remove(pane)) return;
+        if (_revealPending.Count == 0) { _revealTimeout?.Stop(); FadeAllRevealNow(); }
+    }
+
+    private void FadeAllRevealNow()
+    {
+        _revealPending.Clear();
+        LeftPane.FadeRevealNow();
+        RightPane.FadeRevealNow();
     }
 
     /// <summary>메인(좌측) 패널의 프로젝트가 바뀌었을 때 그 프로젝트의 분할 설정을 반영한다.
