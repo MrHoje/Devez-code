@@ -280,7 +280,15 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>전환 후 — 최종 폭으로 fit 재측정 후 커튼을 fade-out(활성 세션 기준). 세션이 없으면 커튼만 걷는다.
     /// kick=true 면 fit 후 resize-kick(cols-1→cols)으로 SIGWINCH 를 내 TUI 를 강제 리페인트한다 — 처음 표시되며
     /// 재배선된 세션(분할 보기 등)이 스크롤/뷰포트 정지 프레임으로 남는 것을 막는다(스플리터 nudge 자동화).</summary>
-    public void RevealAfterTransition(bool kick = false) => _terminal.RevealAfterTransition(_activeSession?.Id, kick);
+    public void RevealAfterTransition(bool kick = false)
+    {
+        // 전환 컬럼 변경을 즉시 레이아웃에 반영해 '최종 목표 폭'을 읽는다. WPF 레이아웃은 동기라 여기서
+        // ActualWidth 는 이미 최종(절반)이다 — WebView2 HWND 만 지연되므로, 이 목표를 JS 에 넘겨 clientWidth 가
+        // 거기 근접할 때까지 기다리게 하면 중간 전체폭 plateau 를 확실히 건너뛴다.
+        UpdateLayout();
+        double target = TerminalHostContainer?.ActualWidth ?? 0;
+        _terminal.RevealAfterTransition(_activeSession?.Id, kick, target);
+    }
 
     /// <summary>분할 해제 시 — 이 패널의 프로젝트/세션 상태를 비운다(ConPTY·기록 보존).
     /// <paramref name="disposeTerminal"/>=true 면 보여주던 세션의 xterm 배선까지 끊는다(스왑 재부착처럼

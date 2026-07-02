@@ -20,6 +20,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 {
     private const string VirtualHost = "terminal.devezcode.local";
 
+    /// <summary>진단 로그용 패널 식별자("A"/"B"). MainWindow 가 설정. 좌/우 패널 구분에만 쓰인다.</summary>
+    public string DiagTag = "?";
+
     /// <summary>해당 방의 셸이 첫 출력을 내보내(=터미널이 그려질 준비) 발생. roomId 전달.</summary>
     public event Action<string>? TerminalReady;
     /// <summary>방의 ConPTY 세션이 생성/배선되어 살아있음. roomId 전달.</summary>
@@ -136,7 +139,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
     public async void ShowTerminal(string roomId)
     {
-        DevezCode.Services.DiagLog.Write($"ShowTerminal room={roomId} pageReady={_pageReady} readyNotified={_readyNotified.Contains(roomId)}");
+        DevezCode.Services.DiagLog.Write($"[{DiagTag}] ShowTerminal room={roomId} pageReady={_pageReady} readyNotified={_readyNotified.Contains(roomId)}");
         _activeRoomId = roomId;
         if (!_initStarted)
         {
@@ -416,11 +419,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     OnPageReady();
                     break;
                 case "created":
-                    WireSession(
-                        root.GetProperty("roomId").GetString()!,
-                        root.GetProperty("cols").GetInt32(),
-                        root.GetProperty("rows").GetInt32());
+                {
+                    var cRoom = root.GetProperty("roomId").GetString()!;
+                    var cCols = root.GetProperty("cols").GetInt32();
+                    var cRows = root.GetProperty("rows").GetInt32();
+                    DevezCode.Services.DiagLog.Write($"[{DiagTag}] created room={cRoom} cols={cCols} rows={cRows}");
+                    WireSession(cRoom, cCols, cRows);
                     break;
+                }
                 case "input":
                 {
                     var data = root.GetProperty("data").GetString() ?? "";
@@ -450,10 +456,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     break;
                 }
                 case "resize":
-                    TerminalSessionManager.Instance
-                        .Get(root.GetProperty("roomId").GetString()!)
-                        ?.Resize(root.GetProperty("cols").GetInt32(), root.GetProperty("rows").GetInt32());
+                {
+                    var rRoom = root.GetProperty("roomId").GetString()!;
+                    var rCols = root.GetProperty("cols").GetInt32();
+                    var rRows = root.GetProperty("rows").GetInt32();
+                    DevezCode.Services.DiagLog.Write($"[{DiagTag}] resize room={rRoom} cols={rCols} rows={rRows}");
+                    TerminalSessionManager.Instance.Get(rRoom)?.Resize(rCols, rRows);
                     break;
+                }
                 case "restart":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;
@@ -891,7 +901,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>전환 후 호출 — 레이아웃이 최종 폭으로 확정되면 fit 으로 재측정(→ConPTY resize→TUI 재렌더)한
     /// 뒤 커튼을 fade-out 한다. roomId 는 fit 대상(활성 세션). 없으면 그냥 커튼만 걷는다.</summary>
-    public void RevealAfterTransition(string? roomId, bool kick = false) => PostJson(new { type = "xferReveal", roomId, kick });
+    /// <summary>expectWidth: C# 이 UpdateLayout 으로 확정한 전환 후 최종 폭(px). JS 는 컨테이너 clientWidth 가
+    /// 이 목표에 근접할 때까지 기다렸다 fit 한다 — 전체폭→절반 전환의 중간 전체폭 plateau(HWND 지연)를 건너뛰기 위함.</summary>
+    public void RevealAfterTransition(string? roomId, bool kick = false, double expectWidth = 0)
+        => PostJson(new { type = "xferReveal", roomId, kick, expectWidth });
 
     /// <summary>ms 동안 출력 쓰기 후 맨 아래로 고정 — 인라인 TUI(gjc) open 직후 최신 화면을 보이게(짧은 창).</summary>
     public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });

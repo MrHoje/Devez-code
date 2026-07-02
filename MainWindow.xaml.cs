@@ -141,6 +141,7 @@ public partial class MainWindow : Window
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
         SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
+        PaneA.Terminal.DiagTag = "A"; PaneB.Terminal.DiagTag = "B"; // 진단 로그 좌/우 구분
         PaneB.IsRightPane = true;   // 분할 시 우측 패널 — 탭바 버튼이 X(분할 닫기)로 표시됨.
         CenterSplit.SizeChanged += (_, _) => UpdatePaneFocusVisual(animate: false);
         _focusedPane = PaneA;
@@ -2330,14 +2331,16 @@ public partial class MainWindow : Window
         // 리사이즈된다. 그 세션 전환 + 리사이즈 리플로우(줄 깨짐)를 커튼으로 감췄다 최종 폭에서 재동기·fade-in.
         pane.CoverForTransition();
         pane.HideTabInPane(tab);
+        // animate:false — 커튼으로 가려 슬라이드 애니메이션이 안 보이므로 즉시 분할해 최종 폭을 확정한다
+        // (RevealAfterTransition 의 UpdateLayout 이 정확한 목표 폭을 읽어야 중간 전체폭 plateau 를 건너뛴다).
         if (tab is SessionItem s)
         {
-            EnableSplit(bSession: s);
+            EnableSplit(bSession: s, animate: false);
             PaneB.IsolateTab(s);
         }
         else if (tab is FileTabItem f)
         {
-            EnableSplit();
+            EnableSplit(animate: false);
             PaneB.OpenFileTab(f);
             PaneB.IsolateTab(f);
         }
@@ -2457,6 +2460,10 @@ public partial class MainWindow : Window
     /// <summary>레이아웃 적용 후 내용물과 스왑을 복원한다.</summary>
     private void RestoreSplitState_AfterLayout(ProjectItem? aProj, SessionItem? aSess, ProjectItem? bProj, SessionItem? bSess, bool swapped)
     {
+        // 복원 시 좌측 패널(기존 메인 웹뷰)은 세션을 전체폭으로 fit 했다가 절반으로 줄어 리플로우돼 깨진다.
+        // 두 패널을 커튼으로 덮어 전환 중 중간(전체) 폭 fit 을 억제하고, 폭이 절반으로 안정된 뒤 fit·재동기·fade.
+        PaneA.CoverForTransition();
+        PaneB.CoverForTransition();
         if (!swapped)
         {
             // 기본: PaneA=좌(저장된 left 내용), PaneB=우(저장된 right 내용)
@@ -2498,6 +2505,9 @@ public partial class MainWindow : Window
         _focusedPane = PaneA;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
+        // 폭이 절반으로 안정되면 fit 억제 해제 + ConPTY 재동기 후 커튼 fade-out(양쪽 패널).
+        PaneA.RevealAfterTransition(kick: true);
+        PaneB.RevealAfterTransition(kick: true);
         // 복원 완료 시점에 분할 상태 저장(Loaded 이후 올바른 내용물로 PersistSplitState가 불리게)
         PersistSplitState();
     }
