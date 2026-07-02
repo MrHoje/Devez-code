@@ -95,6 +95,13 @@ public partial class WorkspacePaneView : UserControl
         // synced reveal 준비 완료 → 셸로 전달(셸이 좌우를 모아 동시에 fade)
         _terminal.RevealPrepared += () => RevealPrepared?.Invoke(this);
         Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);
+        // 로딩 중 레이아웃이 바뀌면(예: 시작 시 전체폭으로 세션 복원 → 곧바로 분할 적용) 웹 스피너의
+        // px 앵커 좌표를 재전송해 카드가 항상 최종 중앙에 있게 한다.
+        TerminalLoadingOverlay.SizeChanged += (_, e) =>
+        {
+            if (_loadingRoomId != null && TerminalLoadingOverlay.Visibility == Visibility.Visible)
+                _terminal.SetLoading(true, e.NewSize.Width, e.NewSize.Height);
+        };
 
         App.ThemeChanged += OnThemeChanged_UpdateSeam;
         Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged_UpdateSeam;
@@ -978,7 +985,11 @@ public partial class WorkspacePaneView : UserControl
         DiagLog.Write($"ShowSessionLoading room={roomId}");
         _loadingRoomId = roomId;
         TerminalLoadingOverlay.Visibility = Visibility.Visible;
-        _terminal.SetLoading(true);
+        // 기대 크기(px 앵커) 전달 — 웹 스피너를 최종 레이아웃 중앙 px 에 고정해, HWND 리사이즈 지연으로
+        // 뷰포트가 stale 인 동안 스피너가 옆/아래로 튀는 것을 막는다. TerminalLoadingOverlay 는 콘텐츠
+        // 그리드를 가득 채우므로(주차된 터미널 컨테이너와 달리) 그 크기 = 터미널 최종 크기다.
+        UpdateLayout();
+        _terminal.SetLoading(true, TerminalLoadingOverlay.ActualWidth, TerminalLoadingOverlay.ActualHeight);
 
         _loadingTimeout?.Stop();
         _loadingTimeout ??= new System.Windows.Threading.DispatcherTimer();

@@ -45,7 +45,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private WebView2? _webView;
     private bool _initStarted;
     private bool _pageReady;
-    private bool _pendingLoading; // pageReady 전 SetLoading(true) 요청 보류 (콜드스타트 첫 세션 스피너)
+    private (double w, double h)? _pendingLoading; // pageReady 전 SetLoading(true) 보류(기대 크기 포함, 콜드스타트 첫 세션 스피너)
     private string? _pendingShowRoomId;
     private readonly List<string> _pendingPreload = new(); // pageReady 전에 들어온 백그라운드 로드 요청
     private string? _activeRoomId;
@@ -542,8 +542,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _pendingShowRoomId = null;
         if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending) }); PinBottomIfInline(pending); }
 
-        // 콜드스타트 동안 보류된 로딩 스피너 적용
-        if (_pendingLoading) { _pendingLoading = false; PostJson(new { type = "loading", on = true }); }
+        // 콜드스타트 동안 보류된 로딩 스피너 적용(기대 크기 포함 — px 앵커로 위치 튐 방지)
+        if (_pendingLoading is { } pl)
+        {
+            _pendingLoading = null;
+            PostJson(new { type = "loading", on = true, expectW = pl.w, expectH = pl.h });
+        }
 
         // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
         foreach (var r in _pendingPreload)
@@ -1008,12 +1012,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     }
 
     /// <summary>세션 로딩 스피너(웹 레이어) 표시/숨김. WebView2 는 HwndHost 라 WPF 오버레이로는
-    /// 터미널을 못 덮으므로 스피너를 웹 안에서 띄운다(터미널 위에 항상 보임).</summary>
-    public void SetLoading(bool on)
+    /// 터미널을 못 덮으므로 스피너를 웹 안에서 띄운다(터미널 위에 항상 보임).
+    /// expectW/H: 셸이 확정한 최종 레이아웃 크기(DIP=CSS px). JS 가 스피너 카드를 그 중앙 px 에
+    /// 앵커해, HWND 리사이즈 지연으로 뷰포트가 stale 인 동안에도 스피너가 옆/아래로 튀지 않는다.</summary>
+    public void SetLoading(bool on, double expectW = 0, double expectH = 0)
     {
         // 콜드스타트: pageReady 전이면 보류했다가 OnPageReady 에서 flush (web 스피너 유실 방지)
-        if (!_pageReady) { _pendingLoading = on; return; }
-        PostJson(new { type = "loading", on });
+        if (!_pageReady) { _pendingLoading = on ? (expectW, expectH) : null; return; }
+        PostJson(new { type = "loading", on, expectW, expectH });
     }
 
     /// <summary>방 삭제 시 호출 — 방별 배선·준비 상태와 JS 쪽 xterm 인스턴스를 정리.

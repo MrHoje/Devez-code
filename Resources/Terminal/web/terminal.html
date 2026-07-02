@@ -74,14 +74,22 @@
 
   /* ── 세션 로딩 스피너 (테마 변경 재시작·세션 진입 중) ──────────────
      WebView2 는 HwndHost 라 항상 WPF 위에 그려진다 → WPF 오버레이로는 터미널을
-     덮을 수 없으므로 스피너를 웹 레이어 안에 둔다. 배경은 --term-bg 라 테마를 따라간다. */
+     덮을 수 없으므로 스피너를 웹 레이어 안에 둔다. 배경은 --term-bg 라 테마를 따라간다.
+     스피너 카드(.box)는 %-중앙이 아니라 C# 이 준 최종 레이아웃 크기의 px 좌표에 앵커한다 —
+     HWND 리사이즈가 렌더러에 늦게 반영되는 동안(stale 뷰포트, 좌상단 고정 클리핑) %-중앙은
+     '옛 크기의 중앙'에 그려져 스피너가 옆/아래로 튀었다 돌아온다. px 앵커는 stale 프레임에서도
+     화면상 같은 지점이라 안 튄다. */
   #loading-overlay {
     position: absolute; inset: 0; z-index: 50;
-    display: none; flex-direction: column;
-    align-items: center; justify-content: center;
+    display: none;
     background: var(--term-bg, #0C0C0C);
   }
-  #loading-overlay.on { display: flex; }
+  #loading-overlay.on { display: block; }
+  #loading-overlay .box {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center;
+  }
 
   /* 전환 커튼 — 분할 열림/닫힘으로 패널이 리사이즈될 때 그 리플로우를 감추는 단색(터미널 배경색) 덮개.
      WebView2 는 HwndHost 라 WPF 오버레이로 못 덮으므로 웹 레이어 안에서 처리한다. 커버 즉시 → 레이아웃
@@ -129,7 +137,7 @@
 <script src="addon-webgl.min.js"></script>
 </head>
 <body>
-<div id="loading-overlay"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div>
+<div id="loading-overlay"><div class="box"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div></div>
 <div id="xfer-cover"></div>
 <div id="copy-toast"></div>
 <div id="search-bar">
@@ -1104,7 +1112,16 @@
       }
       case 'loading': {
         // 세션 로딩 스피너 토글(테마 재시작·세션 진입 중). 웹 레이어라 터미널 위에 항상 보인다.
-        document.getElementById('loading-overlay').classList.toggle('on', !!msg.on);
+        // expectW/H: C# 이 확정한 최종 레이아웃 크기 — 카드(.box)를 그 중앙 px 에 앵커해,
+        // 뷰포트가 stale(옛 크기) 인 동안에도 화면상 올바른 위치에 뜬다(레이아웃 변경 시 C# 이 재전송).
+        const ov = document.getElementById('loading-overlay');
+        if (msg.on) {
+          const box = ov.querySelector('.box');
+          const ew = msg.expectW || 0, eh = msg.expectH || 0;
+          box.style.left = ew > 2 ? (ew / 2) + 'px' : '50%';
+          box.style.top = eh > 2 ? (eh / 2) + 'px' : '50%';
+        }
+        ov.classList.toggle('on', !!msg.on);
         break;
       }
       case 'focus': {
