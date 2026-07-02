@@ -54,7 +54,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.9.6", "2026-07-02", true, new[]
+        ("v1.9.7", "2026-07-02", true, new[]
+        {
+            "세션 로드 폴백 상황을 진단 로그에 기록하도록 개선했습니다.",
+        }),
+        ("v1.9.6", "2026-07-02", false, new[]
         {
             "계정 사용량 패널에 Fable 사용량 정보를 표시합니다.",
             "프로젝트 카드 우클릭 메뉴에서 디렉토리 열기를 할 수 있습니다.",

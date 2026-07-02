@@ -143,6 +143,7 @@ public sealed class TerminalSessionManager
                 EnsureClaudeSessionWatcher();
                 var direct = TryBuildDirectLaunch(roomId, cfg.CommandLine, out inject);
                 if (direct != null) commandLine = direct; // 성공 시 inject == null
+                else DiagLog.Write($"claude direct launch 실패 → 셸 폴백(첫 출력 후 주입) room={roomId}");
             }
             else if (ccDir != null)
             {
