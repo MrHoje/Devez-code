@@ -296,6 +296,12 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="디렉토리 열기" Tag="{Binding}" Click="OpenProjectDirectory_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolderOpen}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <Separator/>
                         <MenuItem Header="이름 변경" Tag="{Binding}" Click="ProjectRename_Click">
                             <MenuItem.Icon>

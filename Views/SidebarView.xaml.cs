@@ -338,6 +338,19 @@ public partial class SidebarView : UserControl
         if (ItemOf<ProjectItem>(sender) is { } p) AddProjectFileRequested?.Invoke(p);
     }
 
+    /// <summary>프로젝트 카드 우클릭 → 디렉토리 열기 — 탐색기에서 프로젝트 폴더를 연다.</summary>
+    private void OpenProjectDirectory_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is not { } p) return;
+        if (string.IsNullOrEmpty(p.Path) || !System.IO.Directory.Exists(p.Path))
+        {
+            ConfirmDialog.Alert("디렉토리 열기", "대상 디렉토리를 찾을 수 없습니다.");
+            return;
+        }
+        try { System.Diagnostics.Process.Start("explorer.exe", p.Path); }
+        catch { ConfirmDialog.Alert("디렉토리 열기", "탐색기를 열 수 없습니다."); }
+    }
+
     private void ProjectFileOpen_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectFile>(sender) is { } f) ProjectFileSelected?.Invoke(f);
