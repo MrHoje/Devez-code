@@ -1261,7 +1261,9 @@ public partial class MainWindow : Window
         {
             _leftCollapsed = false;
             Sidebar.Visibility = Visibility.Visible;
-            SetMinWidth(_sidebarMinWidth, SidebarCol, FooterSidebarCol);
+            // 우측 패널과 동일: 시작 전엔 MinWidth 0 으로 두어 폭 0 부터 부드럽게 보간하고,
+            // 완료 후 최소폭을 복원한다. (시작 전에 걸면 첫 프레임부터 최소폭으로 점프해 "확 뜬다".)
+            SetMinWidth(0, SidebarCol, FooterSidebarCol);
             _leftAnimCancel = AnimatePanelAndSplitter(
                 SidebarCol, _sidebarWidth,
                 SidebarSplitterCol, 4,
@@ -1269,7 +1271,12 @@ public partial class MainWindow : Window
                 colMirrors: new[] { FooterSidebarCol },
                 splitterMirrors: Array.Empty<ColumnDefinition>(),
                 cacheTarget: Sidebar,
-                onComplete: () => { _leftAnimCancel = null; UnfreezeWorkspaceTerminals(); });
+                onComplete: () =>
+                {
+                    SetMinWidth(_sidebarMinWidth, SidebarCol, FooterSidebarCol);
+                    _leftAnimCancel = null;
+                    UnfreezeWorkspaceTerminals();
+                });
         }
         else
         {
@@ -2232,17 +2239,9 @@ public partial class MainWindow : Window
         EnableSplit(bProject: partnerProj, bSession: partnerSession, animate: animate);
         RestorePartner(proj, partnerSession, partnerFile);
         // 다른(비분할) 프로젝트에 갔다 이 분할로 돌아오는 경로 — 우측(PaneB) 터미널은 보존돼(스피너/리로드
-        // 없음) 있지만 Collapsed(0폭)에서 되살아나며 폭이 접기 전과 같으면 풀스크린 TUI 가 정지 프레임으로
-        // 남는다. refitSoon(terminal.html, ≈180ms) 이 최종 폭으로 fit 을 끝낸 뒤 강제 리페인트 킥.
-        RepaintPaneAfterReturn(RightPane);
-    }
-
-    /// <summary>Collapsed 였다 되살아난 패널의 풀스크린 TUI 정지 프레임을 강제 리페인트로 되살린다.
-    /// terminal.html 의 refitSoon(rAF²+60+180ms)이 최종 폭으로 fit 을 끝낼 시간을 준 뒤 킥한다.</summary>
-    private async void RepaintPaneAfterReturn(WorkspacePaneView pane)
-    {
-        await Task.Delay(260);
-        pane.ForceRepaintActiveSession();
+        // 없음) 즉시 재활성화되지만, Collapsed(0폭)→최종폭 전환 중 첫 프레임이 잠깐 틀어져 보인다. JS 가
+        // 컨테이너를 투명하게 덮은 뒤 폭 확정·재동기 후 fade-in 해 그 과정을 감춘다(preserve/ready 세션만).
+        RightPane.ResyncActiveSessionOnReturn();
     }
 
     /// <summary>이미 분할된 상태에서 좌측 프로젝트가 다른 "분할 사용" 프로젝트로 바뀔 때, 우측 패널

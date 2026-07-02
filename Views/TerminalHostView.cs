@@ -878,13 +878,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>다음 N회의 출력 쓰기에서 xterm.js 스크롤을 억제(슬래시 명령 자동주입 시 사용).</summary>
     public void SuppressScroll(int count = 5) => PostJson(new { type = "suppressScroll", count });
 
-    /// <summary>Collapsed(0폭) 였다 되살아난 패널의 풀스크린 TUI 를 강제 리페인트 + xterm↔ConPTY 크기 재동기.
-    /// preserve 경로(WireSession 미경유)는 "xterm 의 실제 cols 에 ConPTY 를 맞추는" 재동기가 없어, 폭이
-    /// 어긋나면 claude 등이 넓은 폭으로 보낸 줄을 xterm 이 좁게 되접어 줄바꿈이 깨진다. JS 에서 fit 으로
-    /// xterm 을 컨테이너에 맞춘 뒤 xterm resize-kick(cols-1→cols)으로 SIGWINCH 를 내 ConPTY 를 xterm 의
-    /// 실제 cols 로 맞추고 TUI 가 다시 그리게 한다(스플리터 살짝 nudge 와 동일한 효과). C# 이 ConPTY 크기를
-    /// 직접 만지면 xterm 표시 폭과 어긋날 수 있어 반드시 xterm 주도로 재동기한다.</summary>
-    public void RepaintTerminal(string roomId) => PostJson(new { type = "resyncKick", roomId });
+    /// <summary>Collapsed(0폭) 였다 되살아난(preserve) 패널을 자연스럽게 복원한다. JS 에서 컨테이너를 잠깐
+    /// 투명(opacity:0, 아래 터미널 배경색만 노출)으로 덮은 뒤, 폭이 최종값으로 확정될 때까지 기다려 fit +
+    /// resize-kick(cols-1→cols)으로 ConPTY 를 xterm 의 실제 cols 로 재동기(SIGWINCH→TUI 재렌더)하고,
+    /// 안정되면 부드럽게 fade-in 한다. → 틀어진 중간 프레임이 안 보이고 최종 화면만 나타난다.
+    /// (WebView2 는 HwndHost 라 WPF 오버레이로 못 덮으므로 반드시 웹 레이어 안에서 가린다.)</summary>
+    public void ResyncOnReturn(string roomId) => PostJson(new { type = "returnResync", roomId });
 
     /// <summary>ms 동안 출력 쓰기 후 맨 아래로 고정 — 인라인 TUI(gjc) open 직후 최신 화면을 보이게(짧은 창).</summary>
     public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });

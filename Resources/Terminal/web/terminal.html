@@ -779,6 +779,9 @@
     if (searchBar.classList.contains('open')) closeSearch(); // 방 전환 시 검색바 닫기
     for (const id in terms) terms[id].el.classList.toggle('active', id === roomId);
     activeRoomId = roomId;
+    // returnResync 가 다른 방 전환으로 중단돼 투명(opacity:0)하게 남았을 수 있음 — 표시 시 복원.
+    entry.el.style.transition = 'none';
+    entry.el.style.opacity = '';
 
     entry.fit.fit();
     entry.term.focus();
@@ -894,25 +897,39 @@
       case 'pinBottom':
         _pinBottomUntil = Date.now() + (msg.ms || 2000);
         break;
-      case 'resyncKick': {
-        // Collapsed 였다 되살아난 패널: fit 으로 xterm 을 현재 컨테이너 폭에 맞춘 뒤, xterm 을 cols-1→cols 로
-        // 리사이즈해 onResize(→ConPTY resize)를 강제한다. 이 두 resize 는 각각 C# 으로 전파돼 ConPTY 가
-        // xterm 의 실제 cols 로 재동기되고(줄바꿈 깨짐 해소), 중간의 cols-1 이 SIGWINCH 를 내 TUI(claude 등)가
-        // 그 폭으로 다시 그린다(스플리터 nudge 자동화). WebView2 HwndHost 리사이즈가 지연돼 첫 시도 때
-        // 폭이 아직 최종값이 아닐 수 있으므로 짧은 간격으로 한 번 더 재측정한다(마지막이 최종 폭으로 확정).
-        const kickRoom = msg.roomId || activeRoomId;
-        const doKick = function () {
-          const t = terms[kickRoom];
-          if (!t || kickRoom !== activeRoomId) return;
-          if (t.el.clientWidth < 2 || t.el.clientHeight < 2) return; // 아직 0폭 — 레이아웃 미정
-          try { t.fit.fit(); } catch (e) {}
-          const c = t.term.cols, r = t.term.rows;
-          if (c > 2 && r > 1) {
-            try { t.term.resize(Math.max(2, c - 1), r); t.term.resize(c, r); } catch (e) {}
-          }
+      case 'returnResync': {
+        // Collapsed 였다 되살아난(preserve) 패널: 틀어진 중간 프레임을 안 보이게 컨테이너를 잠깐 투명
+        // (opacity:0, 아래 body 배경색=--term-bg 만 노출)으로 덮은 뒤, 폭이 최종값으로 확정될 때까지 기다려
+        // fit + resize-kick(cols-1→cols)으로 ConPTY 를 xterm 의 실제 cols 로 재동기(SIGWINCH→TUI 재렌더)하고,
+        // 안정되면 부드럽게 fade-in 한다. → 사용자는 "틀어짐→교정" 과정 없이 최종 화면만 본다.
+        // (WebView2 는 HwndHost 라 WPF 오버레이로 못 덮으므로 웹 레이어 안에서 opacity 로 가린다.)
+        const room = msg.roomId || activeRoomId;
+        const first = terms[room];
+        if (!first) break;
+        first.el.style.transition = 'none';
+        first.el.style.opacity = '0';
+        const reveal = function (e) {
+          requestAnimationFrame(function () {
+            e.el.style.transition = 'opacity 0.12s ease';
+            e.el.style.opacity = '1';
+          });
         };
-        doKick();
-        setTimeout(doKick, 160);
+        let waited = 0, kicks = 0;
+        const step = function () {
+          const e = terms[room];
+          if (!e || room !== activeRoomId) return;              // 그 사이 다른 방으로 전환 — 중단(show 가 opacity 복원)
+          if (e.el.clientWidth < 2 || e.el.clientHeight < 2) {  // 아직 최종 폭 미확정 — 잠깐 더 대기
+            if (waited < 800) { waited += 40; setTimeout(step, 40); } else reveal(e);
+            return;
+          }
+          try { e.fit.fit(); } catch (err) {}
+          const c = e.term.cols, r = e.term.rows;
+          if (c > 2 && r > 1) { try { e.term.resize(Math.max(2, c - 1), r); e.term.resize(c, r); } catch (err) {} }
+          kicks++;
+          if (kicks < 3) { setTimeout(step, 70); } // 폭 확정 후 몇 번 재확정(TUI 재렌더 안정)
+          else setTimeout(function () { reveal(e); }, 70);
+        };
+        step();
         break;
       }
       case 'nudgeScroll': {

@@ -265,11 +265,13 @@ public partial class WorkspacePaneView : UserControl
         else ClearActiveSession();
     }
 
-    /// <summary>활성 세션의 ConPTY 를 강제 리페인트(SIGWINCH 킥) — Collapsed 였던 패널이 다시 보일 때
-    /// 폭이 접기 전과 같으면 정지 프레임으로 남는 풀스크린 TUI 를 다시 그리게 한다(스플리터 nudge 자동화).</summary>
-    public void ForceRepaintActiveSession()
+    /// <summary>Collapsed 였다 되살아난 패널의 활성 세션을 자연스럽게 복원(cover→재동기→fade-in).
+    /// preserve 로 이미 준비(ready)된 세션에만 적용한다 — 처음 여는(미준비) 세션은 기존 로딩 스피너 +
+    /// WireSession 경로가 크기를 맞추므로 여기서 건드리면 이중 처리가 된다.</summary>
+    public void ResyncActiveSessionOnReturn()
     {
-        if (_activeSession != null) _terminal.RepaintTerminal(_activeSession.Id);
+        if (_activeSession != null && _terminal.IsReady(_activeSession.Id))
+            _terminal.ResyncOnReturn(_activeSession.Id);
     }
 
     /// <summary>분할 해제 시 — 이 패널의 프로젝트/세션 상태를 비운다(ConPTY·기록 보존).
