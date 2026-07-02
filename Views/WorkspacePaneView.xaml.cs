@@ -73,6 +73,11 @@ public partial class WorkspacePaneView : UserControl
     {
         InitializeComponent();
         TerminalHostContainer.Content = _terminal;
+        // 빈 패널로 시작(자동복원 off 가 기본)하면 UpdateEmptyState 가 안 불려 컨테이너가 XAML 기본값(풀사이즈)로
+        // 방치된다. 그 상태에서 PrewarmWebView 가 WebView2(#0C0C0C)를 만들면 airspace HWND 가 풀사이즈로 떠
+        // EmptyState 위를 덮어 시작 시 검정이 한 번 번쩍인다. 초기 상태를 0×0 주차로 맞춰 prewarm 이 안 보이게
+        // 워밍되도록 한다(세션 열 때 UnparkTerminalHost 가 어두운 HWND 를 리사이즈 → 번쩍 없음).
+        ParkTerminalHost();
 
         TabsHost.PreviewMouseMove += TabsHost_PreviewMouseMove;
         TabsHost.PreviewMouseLeftButtonUp += async (_, _) => await EndTabDragAsync();
