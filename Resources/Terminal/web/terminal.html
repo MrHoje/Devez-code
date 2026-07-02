@@ -794,6 +794,24 @@
         if (roomId === activeRoomId && terms[roomId]) { try { terms[roomId].fit.fit(); } catch (e) {} }
       });
     }
+    // 지연 재-fit: 분할 패널 재진입/토글처럼 show 시점엔 WebView2 컨테이너가 아직 최종
+    // 픽셀 폭에 도달하지 않은 경우, 위 첫 fit 은 잘못된(좁은) cols 로 굳어 내용이 오른쪽에서
+    // 잘려 보인다. 레이아웃이 안정된 다음 프레임/짧은 지연 후 다시 측정해 fit 하면 실제 폭으로
+    // 교정되고, onResize 가 정확한 크기를 ConPTY 로 보내 alt-screen TUI(claude 등)가 풀폭 재렌더한다.
+    refitSoon(roomId);
+  }
+
+  // show/재진입 직후 레이아웃이 안정되길 기다려 여러 번 재측정 fit. 활성 방일 때만.
+  function refitSoon(roomId) {
+    function tryFit() {
+      const t = terms[roomId];
+      if (!t || roomId !== activeRoomId) return;
+      if (t.el.clientWidth < 2 || t.el.clientHeight < 2) return; // 아직 0폭이면 다음 타이밍에
+      try { t.fit.fit(); } catch (e) {}
+    }
+    requestAnimationFrame(function () { requestAnimationFrame(tryFit); });
+    setTimeout(tryFit, 60);
+    setTimeout(tryFit, 180);
   }
 
   // 화면에 표시하지 않고 xterm 인스턴스+ConPTY 세션만 미리 생성(백그라운드 로드).

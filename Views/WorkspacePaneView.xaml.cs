@@ -655,12 +655,26 @@ public partial class WorkspacePaneView : UserControl
         HideSessionLoading();
         if (!ReferenceEquals(FileEditorHostContainer.Content, tab.Editor.AsControl()))
             FileEditorHostContainer.Content = tab.Editor.AsControl();
+        HookEditorInteract(tab); // 이 패널이 이 에디터를 표시하게 됐으니 포커스 통지 구독(가드로 표시 중일 때만 발화)
         UpdateEmptyState();
         EnsureSelectedTabVisible(tab);
         tab.Editor.Focus();
         RefreshModelEffortDock();
         ActiveChanged?.Invoke(this);
     }
+
+    /// <summary>에디터 표면 클릭 → 포커스 패널 전환 구독. 에디터는 공유 단일 인스턴스라 여러 패널이
+    /// 구독할 수 있으므로, 핸들러는 "이 패널이 지금 그 탭을 활성 표시 중일 때"만 FocusRequested 를 낸다
+    /// (엉뚱한 패널이 포커스를 가져가는 것 방지). 패널당 에디터당 1회만 구독(중복 방지).</summary>
+    private void HookEditorInteract(FileTabItem tab)
+    {
+        if (!_interactHooked.Add(tab.Editor)) return;
+        tab.Editor.Interacted += (_, _) =>
+        {
+            if (ReferenceEquals(_activeTab, tab)) FocusRequested?.Invoke(this);
+        };
+    }
+    private readonly HashSet<IFileTabEditor> _interactHooked = new();
 
     // ── 메타바 model/effort dock ─────────────────────────────────
     private static readonly ModelEffortOption[] ModelOptions =
@@ -890,6 +904,7 @@ public partial class WorkspacePaneView : UserControl
         int idx = parent?.Tabs.IndexOf(tab) ?? -1;
         if (FileEditorHostContainer.Content == tab.Editor.AsControl())
             FileEditorHostContainer.Content = null;
+        _interactHooked.Remove(tab.Editor); // 포커스 구독 추적에서 제거(닫힌 에디터 참조 누수 방지)
         if (tab.Editor is IDisposable disposable) disposable.Dispose();
         parent?.Tabs.Remove(tab);
         PersistWorkspace(); // 닫은 파일 탭을 workspace.json 에서 제거(재시작 시 다시 안 열리도록)
@@ -1630,8 +1645,8 @@ public partial class WorkspacePaneView : UserControl
         if (!tab.Editor.LoadFile(path)) return null;
         tab.Editor.CloseRequested += (_, _) => RemoveFileTab(tab);
         tab.Editor.DirtyChanged += (_, _) => { if (ReferenceEquals(_activeTab, tab)) RefreshFileHeaderState(tab); };
-        // 에디터 표면 클릭 → 이 패널을 포커스 패널로(분할 시 테두리 이동). 터미널 UserInteracted 와 동일.
-        tab.Editor.Interacted += (_, _) => FocusRequested?.Invoke(this);
+        // Interacted(포커스 통지) 구독은 CreateFileTab(생성 패널)이 아니라 ActivateFileTab(표시 패널)에서
+        // 가드와 함께 건다 — 에디터가 공유 단일 인스턴스라 다른 패널에서 표시될 때 생성 패널이 잘못 포커스되던 문제.
         proj.Tabs.Add(tab);
         return tab;
     }
