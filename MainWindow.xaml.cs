@@ -516,7 +516,11 @@ public partial class MainWindow : Window
     private void RestoreLastSession()
     {
         // 옵션이 켜져 있으면 마지막으로 보던 프로젝트(가능하면 세션까지)를 자동으로 복원한다. 기본 false.
-        if (SettingsService.LoadAutoLoadLastProject())
+        // 분할 복원이 예정돼 있으면 여기서 열지 않는다 — 세션을 전체폭으로 열었다가 곧바로 분할(절반)로
+        // 줄며 로딩 스피너 재타깃(중간에 한 번 깜빡)·전체폭 fit 리플로우가 생긴다.
+        // RestoreSplitState_AfterLayout 이 좌/우 내용을 처음부터 최종(절반) 폭에서 모두 복원한다.
+        var (splitActive, _, _, _, _, _) = SettingsService.LoadFullSplitState();
+        if (SettingsService.LoadAutoLoadLastProject() && !splitActive)
         {
             var (projPath, sessId) = SettingsService.LoadLastActive();
             // 세션ID(전역 유일) 우선 — 같은 경로 중복 프로젝트도 정확히 그 세션의 소속을 찾는다.
