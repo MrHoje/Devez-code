@@ -1889,6 +1889,9 @@ public partial class WorkspacePaneView : UserControl
     {
                 TerminalSnapshot.Source = fileSnap;
                 TerminalSnapshot.Visibility = Visibility.Visible;
+                // 스냅샷이 실제 프레임에 present 된 뒤 HWND(md 에디터)를 숨긴다 — 동시에 바꾸면 HWND 가
+                // 먼저 사라져 빈 배경이 한 프레임 노출되며 종료 오버레이 직전 깜빡인다(SuspendTerminalOnlyAsync 와 동일 기법).
+                await WaitForFramesAsync(2);
                 FileEditorHostContainer.Visibility = Visibility.Collapsed;
             }
             return;
@@ -1898,6 +1901,7 @@ public partial class WorkspacePaneView : UserControl
         if (blankCurtain)
         {
             TerminalCurtain.Visibility = Visibility.Visible;
+            await WaitForFramesAsync(2); // 커튼이 (HWND 뒤에서) 그려진 뒤 HWND 숨김 → 전환 프레임 빈 배경 방지
         }
         else
         {
@@ -1906,6 +1910,7 @@ public partial class WorkspacePaneView : UserControl
             {
                 TerminalSnapshot.Source = snap;
                 TerminalSnapshot.Visibility = Visibility.Visible;
+                await WaitForFramesAsync(2); // 스냅샷 present 후 HWND 숨김 → 빈 배경 한 프레임 노출 방지(종료 오버레이 깜빡임 제거)
             }
         }
         TerminalHostContainer.Visibility = Visibility.Collapsed;

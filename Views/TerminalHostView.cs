@@ -335,6 +335,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         // 지역 참조 사용 — 초기화 도중 Dispose 가 _webView 를 null 로 만들어도 NRE 없이 안전하게 진행.
         var webView = new WebView2();
+        // 콜드스타트 흰 배경 제거: WebView2 는 CoreWebView2 초기화·terminal.html 페인트 전까지 기본 흰색을
+        // 렌더한다(다크테마에서도). 컨트롤을 화면(Content)에 붙이기 '전에' 기본 배경을 터미널 배경(#0C0C0C)으로
+        // 맞춰, md 파일만 보던 우측 패널에서 첫 세션을 열 때(=여기서 lazy init) 흰 배경이 팍 튀지 않게 한다.
+        webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, 0x0C, 0x0C, 0x0C);
         try
         {
             _webView = webView;
@@ -347,9 +351,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             if (_disposed) return; // 초기화 중 앱 종료 — Dispose 가 webView 를 정리하므로 더 진행하지 않음
             await webView.EnsureCoreWebView2Async(env);
             if (_disposed) return;
-            // 리사이즈(패널 접기/펴기) 중 WebView2 가 흰색으로 클리어했다 다시 그리며
-            // 깜빡이는 것을 막는다 — 페인트 전 기본 배경을 터미널 배경(#0C0C0C)에 맞춤.
-            webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, 0x0C, 0x0C, 0x0C);
+            // (DefaultBackgroundColor/Background 는 생성 직후 이미 #0C0C0C 로 설정됨 — 콜드스타트 흰 배경 방지)
             // 초기화 완료 시 호스트가 숨겨진 상태라면 WPF 렌더 큐를 비워
             // 새로 생성된 HWND에 Collapsed 상태가 반영되기 전 한 프레임 튀는 현상을 방지한다.
             if (!IsVisible)
