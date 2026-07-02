@@ -103,12 +103,34 @@ public sealed class UsageApiService : IDisposable
             using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
             var root = doc.RootElement;
 
+            // Fable 주간 전용 한도: limits 배열에서 weekly_scoped + scope.model.display_name == "Fable" 찾기
+            double? fableWeeklyPct = null;
+            DateTimeOffset? fableWeeklyReset = null;
+            if (root.TryGetProperty("limits", out var limits) && limits.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in limits.EnumerateArray())
+                {
+                    if (!item.TryGetProperty("kind", out var kind) || kind.GetString() != "weekly_scoped") continue;
+                    if (!item.TryGetProperty("scope", out var scope) || scope.ValueKind != JsonValueKind.Object) continue;
+                    if (!scope.TryGetProperty("model", out var model) || model.ValueKind != JsonValueKind.Object) continue;
+                    if (!model.TryGetProperty("display_name", out var dn) || dn.GetString() != "Fable") continue;
+                    if (item.TryGetProperty("percent", out var pct) && pct.ValueKind == JsonValueKind.Number)
+                        fableWeeklyPct = pct.GetDouble();
+                    if (item.TryGetProperty("resets_at", out var rs) && rs.ValueKind == JsonValueKind.String
+                        && DateTimeOffset.TryParse(rs.GetString(), out var dt))
+                        fableWeeklyReset = dt;
+                    break;
+                }
+            }
+
             var snap = new RateLimitSnapshot
             {
                 FiveHourPercent  = ReadPct(root, "five_hour"),
                 SevenDayPercent  = ReadPct(root, "seven_day"),
                 FiveHourResetsAt = ReadReset(root, "five_hour"),
                 SevenDayResetsAt = ReadReset(root, "seven_day"),
+                FableWeeklyPercent = fableWeeklyPct,
+                FableWeeklyResetsAt = fableWeeklyReset,
             };
             if (!snap.HasData) return;
             WriteFallback(snap); // statusline.js 폴백용

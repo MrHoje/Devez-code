@@ -603,6 +603,7 @@ public partial class MainWindow : Window
             var rows = new List<Models.UsageRowVM>();
             AddRow(rows, "5시간", rl.FiveHourPercent, rl.FiveHourResetsAt, isShortWindow: true);
             AddRow(rows, "주간", rl.SevenDayPercent, rl.SevenDayResetsAt, isShortWindow: false);
+            AddRow(rows, "Fable", rl.FableWeeklyPercent, rl.FableWeeklyResetsAt, isShortWindow: false);
             var claudePlan = UsageApiService.FormatPlanLabel(UsageApiService.ReadSubscriptionType());
             cards.Add(new Models.UsageCardVM
             {

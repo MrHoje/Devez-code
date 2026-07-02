@@ -5,6 +5,7 @@ namespace DevezCode.Models;
 public class RateLimitSnapshot
 {
     public DateTime CapturedAt { get; init; } = DateTime.Now;
+
     /// <summary>5시간 한도 사용률(%). 데이터 없으면 null.</summary>
     public double? FiveHourPercent  { get; init; }
     /// <summary>7일(주간) 한도 사용률(%). 데이터 없으면 null.</summary>
@@ -15,8 +16,13 @@ public class RateLimitSnapshot
     /// <summary>주간 한도 초기화 시각. 없으면 null.</summary>
     public DateTimeOffset? SevenDayResetsAt { get; init; }
 
+    /// <summary>Fable 모델 주간 전용 한도 사용률(%). API 의 limits[weekly_scoped scope=Fable]. 없으면 null.</summary>
+    public double? FableWeeklyPercent { get; init; }
+    /// <summary>Fable 주간 한도 초기화 시각. 없으면 null.</summary>
+    public DateTimeOffset? FableWeeklyResetsAt { get; init; }
+
     /// <summary>표시할 값이 하나라도 있는지.</summary>
-    public bool HasData => FiveHourPercent.HasValue || SevenDayPercent.HasValue;
+    public bool HasData => FiveHourPercent.HasValue || SevenDayPercent.HasValue || FableWeeklyPercent.HasValue;
 
     /// <summary>두 스냅샷(예: statusLine 훅 + OAuth API, 또는 여러 세션)을 병합. next 가 null 이면 last 유지.</summary>
     public static RateLimitSnapshot? Merge(RateLimitSnapshot? last, RateLimitSnapshot? next)
@@ -27,10 +33,13 @@ public class RateLimitSnapshot
                                     next.FiveHourPercent, next.FiveHourResetsAt);
         var (w7p, w7r) = PickWindow(last.SevenDayPercent, last.SevenDayResetsAt,
                                     next.SevenDayPercent, next.SevenDayResetsAt);
+        var (fwp, fwr) = PickWindow(last.FableWeeklyPercent, last.FableWeeklyResetsAt,
+                                    next.FableWeeklyPercent, next.FableWeeklyResetsAt);
         return new RateLimitSnapshot
         {
             FiveHourPercent = f5p, FiveHourResetsAt = f5r,
             SevenDayPercent = w7p, SevenDayResetsAt = w7r,
+            FableWeeklyPercent = fwp, FableWeeklyResetsAt = fwr,
         };
     }
 
