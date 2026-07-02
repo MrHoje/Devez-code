@@ -10,8 +10,7 @@ public static class DiagLog
     private static readonly object Lock = new();
     private const long MaxBytes = 2 * 1024 * 1024; // 초과 시 .1 로 로테이션
 
-    private static readonly string LogPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "diag.log");
+    private static readonly string LogPath = Path.Combine(@"C:\devezLog", "diag.log");
 
     public static void Write(string msg)
     {
