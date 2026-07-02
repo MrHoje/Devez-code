@@ -316,8 +316,16 @@ public partial class WorkspacePaneView : UserControl
         if (ProjectPathText != null) { ProjectPathText.Text = proj.Path; ProjectPathText.ToolTip = proj.Path; }
         if (ProjectNameText != null) { ProjectNameText.Text = proj.Name; ProjectNameText.ToolTip = proj.Name; }
         UpdateProjectBranchBubble(proj);
+        // 프리로드를 활성화 이후로 미룬다(Background). 지금 즉시 하면 곧 활성화될 세션까지 프리로드가
+        // 기본(전체) 폭으로 ConPTY 를 먼저 만들어, 이후 절반 폭으로 리사이즈될 때 claude 히스토리가
+        // 리플로우돼 깨진다(분할 좌측 세션 깨짐의 실제 원인). 활성화(show)가 최종 폭에서 세션을 만든 뒤,
+        // 미뤄진 프리로드는 그 활성 세션을 제외하고 나머지만 배경 생성한다.
         if (SettingsService.LoadPreloadAllProjectSessions())
-            PreloadProjectSessions(proj, except: null);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (ReferenceEquals(_activeProject, proj))
+                    PreloadProjectSessions(proj, except: _activeSession);
+            }), System.Windows.Threading.DispatcherPriority.Background);
         RefreshSplitIndicator();
     }
 
