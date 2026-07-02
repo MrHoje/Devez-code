@@ -1250,7 +1250,9 @@ public partial class MainWindow : Window
 
     private void UnfreezeWorkspaceTerminals()
     {
-        foreach (var p in _panes) p.ResumeTerminalOnly(webCover: true);
+        // freeze 와 동일하게 '보이는' 패널만 reveal — 숨긴 패널에 불필요한 fit/재동기를 걸지 않는다.
+        foreach (var p in _panes.Where(p => p.Visibility == Visibility.Visible))
+            p.ResumeTerminalOnly(webCover: true);
     }
 
     private async void LeftPanelBtn_Click(object sender, RoutedEventArgs e)

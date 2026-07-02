@@ -1928,8 +1928,25 @@ public partial class WorkspacePaneView : UserControl
     {
         if (_activeSession == null) return;
         double cw = TerminalHostContainer.ActualWidth, ch = TerminalHostContainer.ActualHeight;
-        var png = await _terminal.CapturePngAsync();
-        if (png != null)
+
+        if (webCover)
+        {
+            // 웹 레이어 커버 전용 경로 — HWND 를 Collapsed 하지 않는다.
+            // 핵심: Collapsed→Visible 재표시 자체가 네이티브 HWND 재합성 플래시(빈/흰 프레임)를 내므로,
+            // DOM 에 커버 이미지가 있어도 되살아나는 첫 프레임엔 그 플래시가 보인다. 따라서 애초에 숨기지 않고,
+            // 사용자 제안대로 터미널 위(#xfer-cover, z-index 45)를 캡처 이미지로 덮은 채 애니메이션한다.
+            // fit 은 억제되고(리플로우 없음) 커버가 정지 화면을 보여주므로 라이브가 비쳐 깜빡이지 않는다.
+            // resume(RevealAfterTransition)이 최종 폭에서 fit 후 커버→라이브 크로스페이드. HWND 전환 0회 = 무플래시.
+            var png = await _terminal.CapturePngAsync();
+            if (png != null) _terminal.CoverForTransitionImage(png, cw, ch);
+            else _terminal.CoverForTransition(); // 폴백: 단색 커버
+            await WaitForFramesAsync(2); // 커버가 올라온 뒤 애니메이션 시작(가리기 전 리플로우 프레임 방지)
+            return;
+        }
+
+        // 기존 스냅샷 + Collapsed 경로 (분할 슬라이드 애니메이션·좁은 창 오버레이 전용).
+        var snapPng = await _terminal.CapturePngAsync();
+        if (snapPng != null)
         {
             if (anchorTopLeft)
             {
@@ -1938,24 +1955,17 @@ public partial class WorkspacePaneView : UserControl
                 TerminalSnapshot.Width = cw;
                 TerminalSnapshot.Height = ch;
             }
-            TerminalSnapshot.Source = TerminalHostView.BitmapFromPng(png);
+            TerminalSnapshot.Source = TerminalHostView.BitmapFromPng(snapPng);
             TerminalSnapshot.Visibility = Visibility.Visible;
             // 스냅샷이 실제 화면 프레임에 present 된 것을 확인한 뒤에 WebView2 HWND 를 숨긴다.
             // 같은 블록에서 동시에 바꾸면 네이티브 HWND(별도 렌더 파이프라인)가 스냅샷보다
             // 먼저 사라져, 그 아래 배경이 한 프레임 노출되며 "확 깜빡"인다. 두 렌더 프레임을
             // 기다리면 스냅샷이 확실히 올라온 뒤 HWND 가 사라져 빈 프레임이 없다.
-            // (WebView2 가 위에 떠 있는 동안 보이는 건 정지될 화면과 동일한 라이브 터미널이고,
-            //  이 대기는 애니메이션 시작 전이라 체감 지연이 없다.)
             await WaitForFramesAsync(2);
         }
         // Collapsed 로 숨긴다 → WebView2(HwndHost)의 네이티브 HWND 가 실제로 가려진다.
         // (Hidden 은 레이아웃 슬롯을 남겨 HwndHost HWND 가 그대로 보이므로 금지 — 애니메이션 중 라이브 터미널이 비쳐 깜빡인다.)
         TerminalHostContainer.Visibility = Visibility.Collapsed;
-        // webCover: HWND 를 숨긴 직후 같은 PNG 를 웹 레이어 커버(#xfer-cover) 배경으로 올린다. 숨긴 상태에서
-        // 올리므로 suspend 시작엔 라이브(=스냅샷과 동일)만 보여 무깜빡이고, 애니메이션 동안(~200ms) 이미지가
-        // 디코드된다. resume 으로 HWND 가 되살아나는 순간엔 이 커버 이미지(직전 스냅샷과 동일 내용)가 보여
-        // handoff 가 무깜빡이며, 최종 폭 fit 후 라이브 터미널로 크로스페이드된다. 폭 정보(cw/ch)로 좌상단 고정.
-        if (webCover && png != null) _terminal.CoverForTransitionImage(png, cw, ch);
     }
 
     /// <summary>지정한 수만큼 컴포지션 렌더 프레임이 지나갈 때까지 대기. HwndHost 를 숨기기 전에
@@ -1978,16 +1988,22 @@ public partial class WorkspacePaneView : UserControl
 
     public void ResumeTerminalOnly(bool webCover = false)
     {
-        if (_activeSession != null)
-            TerminalHostContainer.Visibility = Visibility.Visible; // HWND 되살아남 → 웹 커버 이미지(직전 스냅샷과 동일)가 보임
-        // webCover: 최종 폭을 확정(UpdateLayout)해 JS 에 넘겨, clientWidth 가 거기 근접하면 fit + ConPTY 재동기 후
-        // 커버 이미지를 라이브 터미널로 크로스페이드한다 → resume 리플로우가 커버 아래서 일어나 안 보인다.
-        if (webCover && _activeSession != null)
+        // webCover: HWND 를 숨긴 적이 없으므로 되살릴 것도, WPF 스냅샷도 없다. 최종 폭을 확정(UpdateLayout)해
+        // JS 에 넘겨, clientWidth 가 거기 근접하면 fit 억제 해제 + fit + ConPTY 재동기 후 커버 이미지를
+        // 라이브 터미널로 크로스페이드한다 → resume 리플로우가 커버 아래서 일어나 안 보이고, HWND 전환 플래시도 없다.
+        if (webCover)
         {
-            UpdateLayout();
-            double target = TerminalHostContainer?.ActualWidth ?? 0;
-            _terminal.RevealAfterTransition(_activeSession.Id, kick: true, expectWidth: target);
+            if (_activeSession != null)
+            {
+                UpdateLayout();
+                double target = TerminalHostContainer?.ActualWidth ?? 0;
+                _terminal.RevealAfterTransition(_activeSession.Id, kick: true, expectWidth: target);
+            }
+            return;
         }
+
+        if (_activeSession != null)
+            TerminalHostContainer.Visibility = Visibility.Visible;
         TerminalSnapshot.Visibility = Visibility.Collapsed;
         TerminalSnapshot.Source = null;
         // 고정 크기/정렬 원복(다음 사용에서 기본 Fill 동작으로).
