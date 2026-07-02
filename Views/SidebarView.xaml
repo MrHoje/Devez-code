@@ -255,34 +255,6 @@
                 <Border.ContextMenu>
                     <!-- 카드 어디서든 우클릭하면 프로젝트 메뉴가 뜨도록 outer Border로 이동 -->
                     <ContextMenu Opened="ProjectMenu_Opened">
-                        <!-- 분할 시에만 노출: 이 프로젝트를 좌/우 패널에 표시. 이미 떠 있는 쪽은 비활성(반대쪽=좌우 변경). -->
-                        <MenuItem Header="왼쪽 패널에 표시" Tag="{Binding}" Click="ShowInLeftPane_Click" Visibility="Collapsed">
-                            <MenuItem.Icon>
-                                <!-- panel-right + 좌측 큰 칸(x3~15) 테마색 채움 -->
-                                <Viewbox Width="16" Height="16">
-                                    <Grid Width="24" Height="24">
-                                        <Rectangle HorizontalAlignment="Left" Width="12.8" Margin="2.2,2.2,0,2.2"
-                                                   RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource PrimaryBrush}"/>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelRight}"
-                                              Width="24" Height="24" Stroke="{DynamicResource TextMutedBrush}"/>
-                                    </Grid>
-                                </Viewbox>
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="오른쪽 패널에 표시" Tag="{Binding}" Click="ShowInRightPane_Click" Visibility="Collapsed">
-                            <MenuItem.Icon>
-                                <!-- panel-left + 우측 큰 칸(x9~21) 테마색 채움 -->
-                                <Viewbox Width="16" Height="16">
-                                    <Grid Width="24" Height="24">
-                                        <Rectangle HorizontalAlignment="Right" Width="12.8" Margin="0,2.2,2.2,2.2"
-                                                   RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource PrimaryBrush}"/>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelLeft}"
-                                              Width="24" Height="24" Stroke="{DynamicResource TextMutedBrush}"/>
-                                    </Grid>
-                                </Viewbox>
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <Separator Tag="PaneSep" Visibility="Collapsed"/>
                         <MenuItem Header="세션 추가" Tag="{Binding}" Click="AddSession_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
@@ -371,20 +343,9 @@
                                     </TextBlock.RenderTransform>
                                 </TextBlock>
                             </StackPanel>
-                            <!-- 우상단 액션: [패널 배지] + [chevron]. 배지는 분할 시 이 프로젝트가 떠 있는 패널(좌/우)을 칸 하이라이트로 표시. -->
+                            <!-- 우상단 액션: [chevron 등]. (분할은 이제 프로젝트 단위 토글로 관리 — 카드 패널 배지 제거) -->
                             <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
                                         VerticalAlignment="Center" Margin="4,-4,0,0">
-                            <!-- 패널 배지: lucide panel + 반대쪽 칸 테마색 채움. 기본 숨김, PaneRole 로 노출/방향 결정.
-                                 상단 좌/우 패널접기 버튼과 동일하게 16px Path 직접 렌더(Viewbox 스케일 제거 → SnapsToDevicePixels 가
-                                 디바이스 격자에 정확히 맞아 stroke 흐림 없음 → 심플/소프트에서도 보더색 일치). -->
-                            <Grid x:Name="PaneBadge" Width="16" Height="16"
-                                  VerticalAlignment="Center" Margin="0,-1,6,1"
-                                  Visibility="Collapsed" ToolTip="열려 있는 패널">
-                                <Rectangle x:Name="PaneBadgeFill" RadiusX="1" RadiusY="1"
-                                           Fill="{DynamicResource PrimaryBrush}"/>
-                                <Path x:Name="PaneBadgeIcon" Style="{StaticResource LucideIcon}"
-                                      Width="16" Height="16" Stroke="{DynamicResource TextMutedBrush}"/>
-                            </Grid>
                             <!-- 숨김 세션 보기/숨기기 토글 -->
                             <Button Tag="{Binding}"
                                     Click="HiddenToggle_Click" Cursor="Arrow"
@@ -490,22 +451,6 @@
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="ProjectBusySpinner" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
-                <!-- 분할 좌 패널(PaneA): 배지 노출 + 왼쪽 칸 테마색 하이라이트 -->
-                <DataTrigger Binding="{Binding PaneRole}" Value="Left">
-                    <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
-                    <Setter TargetName="PaneBadgeIcon" Property="Data" Value="{StaticResource IconPanelRight}"/>
-                    <Setter TargetName="PaneBadgeFill" Property="HorizontalAlignment" Value="Left"/>
-                    <Setter TargetName="PaneBadgeFill" Property="Width" Value="8.53"/>
-                    <Setter TargetName="PaneBadgeFill" Property="Margin" Value="1.47,1.47,0,1.47"/>
-                </DataTrigger>
-                <!-- 분할 우 패널(PaneB) -->
-                <DataTrigger Binding="{Binding PaneRole}" Value="Right">
-                    <Setter TargetName="PaneBadge" Property="Visibility" Value="Visible"/>
-                    <Setter TargetName="PaneBadgeIcon" Property="Data" Value="{StaticResource IconPanelLeft}"/>
-                    <Setter TargetName="PaneBadgeFill" Property="HorizontalAlignment" Value="Right"/>
-                    <Setter TargetName="PaneBadgeFill" Property="Width" Value="8.53"/>
-                    <Setter TargetName="PaneBadgeFill" Property="Margin" Value="0,1.47,1.47,1.47"/>
-                </DataTrigger>
                 <!-- 일반 프로젝트 카드 호버: 보더색 변경 (스타일 레벨에서 제거 후 템플릿 레벨로 이동) -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>

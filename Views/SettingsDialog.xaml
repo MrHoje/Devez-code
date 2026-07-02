@@ -881,7 +881,26 @@
 
                                 <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
 
-                                <!-- 그룹 2: 하단 푸터 표시 -->
+                                <!-- 그룹 2: 한도 도달 예상 표시 -->
+                                <Grid Margin="0,20,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="한도 도달 예상 표시" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="사이드바와 툴팁에 예상 소진 시각 표시" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                            </StackPanel>
+                                    <CheckBox x:Name="ShowEstimateToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="EstimateToggle_Changed" Unchecked="EstimateToggle_Changed"/>
+                                </Grid>
+
+                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
+
+                                <!-- 그룹 3: 하단 푸터 표시 -->
                                 <TextBlock Text="하단 푸터 표시" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,20,0,12"/>
 
@@ -948,6 +967,7 @@
                                               Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                               Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
                                 </Grid>
+
                             </StackPanel>
 
                             <!-- 단축키 패널 — 탭 이동 전역 단축키 수식키 리바인드 -->

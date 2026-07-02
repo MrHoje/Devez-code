@@ -30,6 +30,11 @@ public static class WorkspaceStore
         public List<string> OpenFiles { get; set; } = new();
         // 마지막으로 활성화했던 탭 참조("S:<세션ID>"/"F:<파일경로>"). 프로젝트 재선택 시 복원.
         public string? LastActiveTab { get; set; }
+        // 이 프로젝트를 메인 패널에 열 때 분할을 함께 켤지 + 분할 파트너. 재시작/재선택 시 복원.
+        public bool SplitEnabled { get; set; }
+        public string? SplitPartnerProjectPath { get; set; }
+        public string? SplitPartnerSessionId { get; set; }
+        public string? SplitPartnerFilePath { get; set; }
     }
     private sealed class WorkspaceDto { public List<ProjectDto> Projects { get; set; } = new(); }
 
@@ -95,6 +100,10 @@ public static class WorkspaceStore
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 proj.PendingOpenFiles = p.OpenFiles ?? new();   // 시작 시 RestoreFileTabs 가 1회 소비
                 proj.LastActiveTabRef = p.LastActiveTab;
+                proj.SplitEnabled = p.SplitEnabled;
+                proj.SplitPartnerProjectPath = p.SplitPartnerProjectPath;
+                proj.SplitPartnerSessionId = p.SplitPartnerSessionId;
+                proj.SplitPartnerFilePath = p.SplitPartnerFilePath;
                 (proj.IsArchived ? archived : active).Add(proj);
             }
         }
@@ -142,6 +151,10 @@ public static class WorkspaceStore
         // 열린 파일 탭 경로 → 재시작 시 복원(Tabs 순서 그대로).
         OpenFiles = p.Tabs.OfType<FileTabItem>().Select(f => f.FilePath).ToList(),
         LastActiveTab = p.LastActiveTabRef,
+        SplitEnabled = p.SplitEnabled,
+        SplitPartnerProjectPath = p.SplitPartnerProjectPath,
+        SplitPartnerSessionId = p.SplitPartnerSessionId,
+        SplitPartnerFilePath = p.SplitPartnerFilePath,
     };
 
     private static void SaveCore(ICollection<ProjectItem> list)

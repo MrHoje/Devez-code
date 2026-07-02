@@ -25,11 +25,23 @@ public partial class WorkspacePaneView : UserControl
 
     private ProjectItem? _activeProject;
     private SessionItem? _activeSession;
-    private TabItemBase? _activeTab;
+    private TabItemBase? _activeTab
+    {
+        get => (TabItemBase?)GetValue(SelectedTabProperty);
+        set => SetValue(SelectedTabProperty, value);
+    }
 
     public ProjectItem? ActiveProject => _activeProject;
     public SessionItem? ActiveSession => _activeSession;
     public TabItemBase? ActiveTab => _activeTab;
+
+    /// <summary>이 패널에서 현재 선택된 탭. 탭 스트립 DataTemplate 이 MultiBinding(item vs SelectedTab)으로
+    /// "이 패널에서 선택됨"을 판정한다 — 두 패널이 같은 프로젝트를 보여줘도 각자 독립적으로 강조된다.
+    /// (기존 TabItemBase.IsSelected 공유 bool 은 상대 패널 선택을 덮어써 폐기.)</summary>
+    public static readonly DependencyProperty SelectedTabProperty =
+        DependencyProperty.Register(nameof(SelectedTab), typeof(TabItemBase), typeof(WorkspacePaneView),
+            new PropertyMetadata(null));
+    public TabItemBase? SelectedTab => (TabItemBase?)GetValue(SelectedTabProperty);
 
     /// <summary>MainWindow 가 소유한 공유 프로젝트 컬렉션. 생성 후 한 번 주입한다.</summary>
     public ObservableCollection<ProjectItem> Projects { get; set; } = new();
@@ -48,9 +60,9 @@ public partial class WorkspacePaneView : UserControl
     public event Action<WorkspacePaneView>? ActiveChanged;
     /// <summary>분할 토글 버튼 클릭 → 셸이 분할/해제 처리.</summary>
     public event Action<WorkspacePaneView>? SplitToggleRequested;
-    /// <summary>탭 헤더를 콘텐츠 영역(좌/우 반쪽)으로 드래그해 놓음 → 셸이 분할 생성/이동 처리.
-    /// dropRight: true=오른쪽 절반, false=왼쪽 절반에 드롭.</summary>
-    public event Action<WorkspacePaneView, SessionItem, bool>? SplitDropRequested;
+    /// <summary>탭 헤더 우클릭 → "분할 보기" 클릭 → 셸이 분할 생성/반대쪽 패널로 이동 처리.
+    /// 세션 탭·파일 탭 모두 지원.</summary>
+    public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
 
     public TerminalHostView Terminal => _terminal;
 
@@ -75,14 +87,15 @@ public partial class WorkspacePaneView : UserControl
         _terminal.UserInteracted += () => FocusRequested?.Invoke(this);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
         _terminal.FontSizePxChanged += ApplyHeaderFontSize;
+        // 터미널 → 파일 경로 Ctrl+클릭 → 에디터 탭으로 열기
+        _terminal.FileOpenRequested += OnTerminalFileOpenRequested;
         Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);
 
         App.ThemeChanged += OnThemeChanged_UpdateSeam;
         Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged_UpdateSeam;
-        Unloaded += (_, _) => DisarmSplitDrop();
-        Unloaded += (_, _) => HideDragGhostWindow();
 
         ApplyProjectInfoHeaderVisibility();
+        RefreshSplitIndicator(); // 시작 시 프로젝트 미선택 상태면 분할 버튼도 처음부터 숨김
     }
 
     /// <summary>설정(프로젝트 정보 헤더 숨기기) + 프로젝트 선택 여부에 따라 메타바(MetaBar) 표시 반영.
@@ -101,7 +114,7 @@ public partial class WorkspacePaneView : UserControl
 
     private bool _split;
 
-    /// <summary>분할 상태 저장. 분할 토글 버튼은 상단 타이틀바로 이동해 패널 탭바에는 버튼이 없다.</summary>
+    /// <summary>분할 상태 저장. 탭바 분할 토글 버튼(SplitDockBtn) 표시 여부 계산에 쓰인다.</summary>
     public void SetSplitActive(bool active) => _split = active;
 
     // ── 탭바 표시 필터(패널별 숨김) ──────────────────────────────────
@@ -110,22 +123,111 @@ public partial class WorkspacePaneView : UserControl
     // ListCollectionView 필터로 숨긴다(다른 패널 탭바엔 그대로 보임).
     private readonly HashSet<TabItemBase> _hiddenFromThisPane = new();
     private ListCollectionView? _tabsView;
+    // "분할 보기/이동"으로 이 패널에 들어온 탭들의 화이트리스트(null=일반 모드=전체 표시).
+    // 여러 번 이동해오면 계속 누적되어 쌓인다(마지막 하나만 남기지 않음).
+    private HashSet<TabItemBase>? _isolatedTabs;
 
     private void ApplyTabsSource(ObservableCollection<TabItemBase>? tabs)
     {
         _hiddenFromThisPane.Clear();
+        _isolatedTabs = null;
         if (tabs == null) { _tabsView = null; TabsHost.ItemsSource = null; return; }
         var view = new ListCollectionView(tabs) { Filter = FilterTab };
         _tabsView = view;
         TabsHost.ItemsSource = view;
     }
 
-    private bool FilterTab(object o) => o is not TabItemBase t || !_hiddenFromThisPane.Contains(t);
+    private bool FilterTab(object o)
+    {
+        if (o is not TabItemBase t) return false;
+        if (_isolatedTabs != null) return _isolatedTabs.Contains(t);
+        return !_hiddenFromThisPane.Contains(t);
+    }
 
-    /// <summary>드래그로 다른 패널에 넘긴 탭을 이 패널의 탭바에서만 숨긴다(세션/ConPTY 는 유지).</summary>
+    /// <summary>드래그로 다른 패널에 넘긴 탭을 이 패널의 탭바에서만 숨긴다(세션/ConPTY 는 유지).
+    /// 이 패널이 격리(화이트리스트) 중이면 블랙리스트는 무의미하므로 화이트리스트에서 빼는 쪽으로
+    /// 처리한다. 화이트리스트가 비어도 절대 null(=전체 목록 모드)로 되돌리지 않는다 — null 로
+    /// 되돌리면 같은 프로젝트를 공유하는 반대쪽 패널의 탭 전체가 갑자기 이 패널에도 다 보이는
+    /// 사고가 난다(격리 중이던 패널의 "마지막 탭"까지 이동했다면 그냥 빈 탭바가 맞다).
+    /// 숨긴 탭이 이 패널에서 활성 중이었으면 다른 탭으로 교체(없으면 비움) — 안 그러면 이 패널의
+    /// _activeTab 이 넘어간 탭을 계속 가리켜서, 그 탭을 다시 이 패널로 "이동"시키려 할 때
+    /// target.ActiveTab==tab 으로 오판돼 조기 반환된다(파일 탭은 세션과 달리 소유권 라우팅이
+    /// 없어 이 문제에 특히 취약함).</summary>
     public void HideTabInPane(TabItemBase tab)
     {
-        if (_hiddenFromThisPane.Add(tab)) _tabsView?.Refresh();
+        bool changed = _isolatedTabs != null ? _isolatedTabs.Remove(tab) : _hiddenFromThisPane.Add(tab);
+        if (!changed) return;
+        _tabsView?.Refresh();
+
+        if (!ReferenceEquals(_activeTab, tab)) return;
+        var next = _activeProject?.Tabs.FirstOrDefault(t => !ReferenceEquals(t, tab) && FilterTab(t));
+        if (next is SessionItem ns) ActivateSession(ns);
+        else if (next is FileTabItem nf) ActivateFileTab(nf);
+        else ClearActiveSession();
+    }
+
+    /// <summary>분할 해제 준비 — 이 패널이 "분할 보기"로 숨긴 탭 목록 + 격리 중이었는지 스냅샷.
+    /// 좌우 스왑 상태에서 분할을 닫을 땐 이 패널 자체가 사라지고 내용이 PaneA 로 옮겨가므로,
+    /// 옮겨갈 새 홈에 ApplySplitCloseState 로 전달해 이어붙인다.</summary>
+    public (List<TabItemBase> hidden, bool wasIsolated) CaptureSplitCloseState()
+        => (_hiddenFromThisPane.ToList(), _isolatedTabs != null);
+
+    /// <summary>분할 해제 후 이 패널(분할 종료 시 최종 홈)에서 호출 — 격리 모드를 풀고,
+    /// 캡처된 숨김 탭들을 원래 위치가 아니라 탭바 맨 끝에 이어붙인다(순서 복원 아님, append).</summary>
+    public void ApplySplitCloseState(List<TabItemBase> hiddenFromSource, bool wasIsolated)
+    {
+        bool changed = wasIsolated && _isolatedTabs != null;
+        if (wasIsolated) _isolatedTabs = null;
+        _hiddenFromThisPane.Clear();
+
+        if (_activeProject != null)
+        {
+            foreach (var t in hiddenFromSource)
+            {
+                int idx = _activeProject.Tabs.IndexOf(t);
+                if (idx < 0) continue;
+                if (idx != _activeProject.Tabs.Count - 1) _activeProject.Tabs.Move(idx, _activeProject.Tabs.Count - 1);
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            _tabsView?.Refresh();
+            WorkspaceStore.Save(Projects);
+        }
+    }
+
+    /// <summary>"분할 보기/이동"으로 들어온 탭을 이 패널의 화이트리스트에 추가한다(누적 — 기존에
+    /// 이미 보이던 탭들은 그대로 두고 새 탭만 더해져 쌓인다). 이 패널에서 화이트리스트 밖의 탭이
+    /// 활성화되면(ActivateSession/ActivateFileTab) 자동 해제되어 전체 목록으로 돌아간다.</summary>
+    public void IsolateTab(TabItemBase tab)
+    {
+        _isolatedTabs ??= new HashSet<TabItemBase>();
+        _isolatedTabs.Add(tab);
+        _tabsView?.Refresh();
+    }
+
+    /// <summary>현재 화이트리스트 스냅샷(격리 중이 아니면 null). OpenSession/OpenFileTab 내부의
+    /// ActivateSession→ClearIsolationIfMismatch 가 격리를 풀어버릴 수 있어, 호출 전에 미리
+    /// 떠서 이동 후 IsolateTab 으로 다시 얹는 용도(누적 유지).</summary>
+    public List<TabItemBase>? CurrentIsolatedTabs() => _isolatedTabs?.ToList();
+
+    /// <summary>이 패널 탭바에서 이 탭이 확실히 보이게 한다 — 격리 중이면 화이트리스트에 추가,
+    /// 전체 모드면 블랙리스트에서 제거. "이동"으로 탭이 들어왔는데, 과거에 이 패널이 그 탭을
+    /// 블랙리스트에 넣어둔 상태(원래 이 패널에서 반대쪽으로 처음 보냈던 탭)면 활성화해도 필터에
+    /// 걸려 안 보이는 "사라짐" 버그를 막는다.</summary>
+    public void UnhideTabInPane(TabItemBase tab)
+    {
+        bool changed = _isolatedTabs != null ? _isolatedTabs.Add(tab) : _hiddenFromThisPane.Remove(tab);
+        if (changed) _tabsView?.Refresh();
+    }
+
+    private void ClearIsolationIfMismatch(TabItemBase active)
+    {
+        if (_isolatedTabs == null || _isolatedTabs.Contains(active)) return;
+        _isolatedTabs = null;
+        _tabsView?.Refresh();
     }
 
     /// <summary>이 패널의 우측 보더(우측 채널 세퍼레이터) 표시 여부. 우측에 아무 패널도
@@ -171,6 +273,7 @@ public partial class WorkspacePaneView : UserControl
         _activeProject = null;
         ClearActiveSession();
         ApplyTabsSource(null);
+        RefreshSplitIndicator();
     }
 
     // ── 프로젝트 ─────────────────────────────────────────────────
@@ -184,6 +287,26 @@ public partial class WorkspacePaneView : UserControl
         UpdateProjectBranchBubble(proj);
         if (SettingsService.LoadPreloadAllProjectSessions())
             PreloadProjectSessions(proj, except: null);
+        RefreshSplitIndicator();
+    }
+
+    private void SplitDockBtn_Click(object sender, RoutedEventArgs e) => SplitToggleRequested?.Invoke(this);
+
+    /// <summary>탭바 분할 토글 버튼 아이콘/툴팁/표시 여부를 실제 분할 상태(_split)에 맞춰 갱신.
+    /// 아이콘/툴팁은 영속 플래그(SplitEnabled)가 아니라 현재 분할됐는지(_split)로 판단해야 한다
+    /// — 컨텍스트 메뉴 "분할 보기"로 켜도 즉시 "닫기"로 바뀌고, 파트너 없이 재오픈된 빈 우측
+    /// 패널에서도 닫기 버튼이 보인다.
+    /// 가시성: 분할 중이면 우측 패널에만(빈 우측이어도 닫기용으로 보임), 비분할이면 프로젝트가
+    /// 선택된 단일 패널에만(첫 실행 등 빈 패널은 숨김).</summary>
+    public void RefreshSplitIndicator()
+    {
+        if (SplitDockBtn == null) return;
+        bool visible = _split ? IsRightPane : (_activeProject != null);
+        SplitDockBtn.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (SplitDockIcon == null) return;
+        SplitDockIcon.Data = (System.Windows.Media.Geometry)FindResource(_split ? "IconPanelLeftClose" : "IconPanelLeftOpen");
+        SplitDockIcon.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, _split ? "PrimaryBrush" : "TextMutedBrush");
+        SplitDockBtn.ToolTip = _split ? "분할 닫기" : "분할 보기";
     }
 
     private System.Threading.CancellationTokenSource? _projectCts;
@@ -385,9 +508,19 @@ public partial class WorkspacePaneView : UserControl
         ActivateSession(session);
     }
 
+    /// <summary>다른 패널로 "분할 보기" 이동된 파일 탭을 이 패널에서 연다(필요 시 프로젝트 전환).</summary>
+    public void OpenFileTab(FileTabItem tab)
+    {
+        var parent = ParentOfTab(tab);
+        if (parent == null) return;
+        if (!ReferenceEquals(_activeProject, parent)) SetActiveProject(parent);
+        ActivateFileTab(tab);
+    }
+
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
         if (ReferenceEquals(_activeSession, session)) return;
+        ClearIsolationIfMismatch(session);
         DiagLog.Write($"ActivateSession begin: '{session.Name}' room={session.Id} isReady={_terminal.IsReady(session.Id)} alive={session.IsAlive}");
         using var _diag = DiagLog.Time($"ActivateSession '{session.Name}'");
         if (_activeSession != null) _activeSession.IsActive = false;
@@ -399,11 +532,10 @@ public partial class WorkspacePaneView : UserControl
         if (!parent.IsExpanded) parent.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
 
-        _activeTab = session;
+        _activeTab = session; // SelectedTab DP 갱신 → 이 패널 탭바만 이 탭을 선택 강조(패널별 독립)
         _activeSession = session;
         session.IsActive = true;
         RecordActiveTab(parent, "S:" + session.Id);
-        foreach (var t in parent.Tabs) t.IsSelected = ReferenceEquals(t, session);
 
         session.IsAlive = true;
         var sessionAgentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
@@ -513,12 +645,12 @@ public partial class WorkspacePaneView : UserControl
     {
         var parent = ParentOfTab(tab);
         if (parent == null) return;
+        ClearIsolationIfMismatch(tab);
 
-        _activeTab = tab;
+        _activeTab = tab; // SelectedTab DP 갱신 → 이 패널 탭바만 이 탭을 선택 강조(패널별 독립)
         if (_activeSession != null) _activeSession.IsActive = false;
         _activeSession = null;
         RecordActiveTab(parent, "F:" + tab.FilePath);
-        foreach (var t in parent.Tabs) t.IsSelected = ReferenceEquals(t, tab);
 
         HideSessionLoading();
         if (!ReferenceEquals(FileEditorHostContainer.Content, tab.Editor.AsControl()))
@@ -672,11 +804,9 @@ public partial class WorkspacePaneView : UserControl
     {
         if (_activeSession != null) _activeSession.IsActive = false;
         _activeSession = null;
-        _activeTab = null;
+        _activeTab = null; // SelectedTab DP=null → 이 패널 탭바 선택 강조 해제
         if (FileEditorHostContainer != null) FileEditorHostContainer.Content = null;
         HideSessionLoading();
-        if (_activeProject != null)
-            foreach (var t in _activeProject.Tabs) t.IsSelected = false;
         UpdateEmptyState();
         UpdateSelectedTabSeam();
         ActiveChanged?.Invoke(this);
@@ -889,11 +1019,11 @@ public partial class WorkspacePaneView : UserControl
 
         if (tab is FileTabItem file)
         {
-            var closeItem = new MenuItem { Header = "닫기" };
+            var closeItem = new MenuItem { Header = "닫기", Icon = BuildMenuIcon("IconX") };
             closeItem.Click += (_, _) => file.Editor.RequestClose();
             cm.Items.Add(closeItem);
 
-            var closeOthers = new MenuItem { Header = "다른 파일 모두 닫기" };
+            var closeOthers = new MenuItem { Header = "다른 파일 모두 닫기", Icon = BuildMenuIcon("IconX") };
             closeOthers.Click += (_, _) =>
             {
                 var parent = ParentOfTab(file);
@@ -902,10 +1032,13 @@ public partial class WorkspacePaneView : UserControl
                     if (t != file) t.Editor.RequestClose();
             };
             cm.Items.Add(closeOthers);
+
+            cm.Items.Add(new Separator());
+            cm.Items.Add(BuildSplitMoveItem(file));
         }
         else if (tab is SessionItem s)
         {
-            var hideItem = new MenuItem { Header = "숨기기" };
+            var hideItem = new MenuItem { Header = "숨기기", Icon = BuildMenuIcon("IconEyeOff") };
             hideItem.Click += (_, _) =>
             {
                 s.Hidden = true;
@@ -920,7 +1053,7 @@ public partial class WorkspacePaneView : UserControl
             };
             cm.Items.Add(hideItem);
 
-            var hideOthers = new MenuItem { Header = "다른 세션 모두 숨기기" };
+            var hideOthers = new MenuItem { Header = "다른 세션 모두 숨기기", Icon = BuildMenuIcon("IconEyeOff") };
             hideOthers.Click += (_, _) =>
             {
                 var parent = ParentOf(s);
@@ -939,10 +1072,47 @@ public partial class WorkspacePaneView : UserControl
                 }
             };
             cm.Items.Add(hideOthers);
+
+            cm.Items.Add(new Separator());
+            cm.Items.Add(BuildSplitMoveItem(s));
         }
 
         cm.PlacementTarget = sender as UIElement;
         cm.IsOpen = true;
+    }
+
+    /// <summary>탭 우클릭 메뉴의 "분할 보기/이동" 항목. 비분할이면 "분할 보기"(새 분할 생성),
+    /// 분할 중이면 이 패널이 좌/우 어느 쪽인지에 따라 "오른쪽/왼쪽으로 이동"으로 방향 표시.</summary>
+    private MenuItem BuildSplitMoveItem(TabItemBase tab)
+    {
+        string header, iconKey;
+        if (_split)
+        {
+            header = IsRightPane ? "왼쪽으로 이동" : "오른쪽으로 이동";
+            iconKey = IsRightPane ? "IconChevronLeft" : "IconChevronRight";
+        }
+        else
+        {
+            header = "분할 보기";
+            iconKey = "IconPanelRightOpen";
+        }
+        var item = new MenuItem { Header = header, Icon = BuildMenuIcon(iconKey) };
+        item.Click += (_, _) => SplitViewRequested?.Invoke(this, tab);
+        return item;
+    }
+
+    private System.Windows.Shapes.Path BuildMenuIcon(string iconKey)
+    {
+        var path = new System.Windows.Shapes.Path
+        {
+            Width = 13,
+            Height = 13,
+            Stretch = Stretch.Uniform,
+            Style = (Style)FindResource("LucideIcon"),
+            Data = (System.Windows.Media.Geometry)FindResource(iconKey),
+        };
+        path.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "TextMutedBrush");
+        return path;
     }
 
     private void TabHide_Click(object sender, RoutedEventArgs e)
@@ -975,17 +1145,6 @@ public partial class WorkspacePaneView : UserControl
     private readonly List<FrameworkElement> _hiddenTabFeet = new();
     private bool _tabDragHidSeam;
 
-    // ── 탭 드래그 → 분할 드롭존 ────────────────────────────────────
-    private SplitDropOverlayWindow? _splitDropOverlay;
-    private bool _splitDropArmed;
-    private bool _splitDropRight;
-
-    // ── 탭 드래그 고스트(콘텐츠 영역=WebView2 위로 넘어갈 때 airspace 우회용 대체 고스트) ──
-    private DragGhostWindow? _dragGhostWindow;
-    private Brush? _dragGhostBrush;
-    private Size _dragGhostSize;
-    private Point _dragGhostGrab;
-
     private void Tab_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _tabPressOrigin = e.GetPosition(TabsHost);
@@ -995,7 +1154,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void TabsHost_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_tabDrag != null) { _tabDrag.Update(e); UpdateDragGhost(e); UpdateSplitDropZone(e); return; }
+        if (_tabDrag != null) { _tabDrag.Update(e); return; }
         if (e.LeftButton != MouseButtonState.Pressed || _pendingTab == null) return;
         var diff = _tabPressOrigin - e.GetPosition(TabsHost);
         if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
@@ -1007,108 +1166,10 @@ public partial class WorkspacePaneView : UserControl
     {
         var td = _tabDrag;
         _tabDrag = null;
-        var draggedTab = _pendingTab;
-        bool armed = _splitDropArmed;
-        bool dropRight = _splitDropRight;
-        DisarmSplitDrop();
-        HideDragGhostWindow();
-        _dragGhostBrush = null;
         _pendingTab = null;
         if (Mouse.Captured == TabsHost) TabsHost.ReleaseMouseCapture();
         RestoreTabFeet();
-        if (td == null) return;
-        if (armed && draggedTab is SessionItem session)
-        {
-            await td.FinishAsync(commit: false); // 재정렬 취소 — 분할 드롭으로 처리
-            SplitDropRequested?.Invoke(this, session, dropRight);
-        }
-        else
-        {
-            await td.FinishAsync(commit: true);
-        }
-    }
-
-    /// <summary>드래그 고스트가 콘텐츠 영역(WebView2)에 걸치면 원래 고스트(Adorner) 대신 최상위 창으로
-    /// 대체 표시한다. Adorner 는 같은 창 안 WPF 요소라 airspace 에 걸려 WebView2 뒤로 숨기 때문.
-    /// 탭바 영역으로 돌아오면(webview 없는 순수 WPF 영역) 대체 창을 치우고 원래 Adorner 만 보인다.</summary>
-    private void UpdateDragGhost(MouseEventArgs e)
-    {
-        if (ContentArea == null || _dragGhostBrush == null) return;
-
-        var p = e.GetPosition(ContentArea);
-        bool overContent = p.Y >= 0 && p.Y <= ContentArea.ActualHeight;
-        if (!overContent) { HideDragGhostWindow(); return; }
-
-        var screenPx = PointToScreen(e.GetPosition(this));
-        var m = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice
-                ?? Matrix.Identity;
-        var cursorDip = m.Transform(screenPx);
-
-        _dragGhostWindow ??= CreateDragGhostWindow();
-        _dragGhostWindow.Left = cursorDip.X - _dragGhostGrab.X;
-        _dragGhostWindow.Top = cursorDip.Y - _dragGhostGrab.Y;
-        if (!_dragGhostWindow.IsVisible) _dragGhostWindow.Show();
-    }
-
-    private DragGhostWindow CreateDragGhostWindow()
-    {
-        var win = new DragGhostWindow { Owner = Window.GetWindow(this) };
-        win.SetSnapshot(_dragGhostBrush!, _dragGhostSize);
-        return win;
-    }
-
-    private void HideDragGhostWindow()
-    {
-        if (_dragGhostWindow == null) return;
-        _dragGhostWindow.Close();
-        _dragGhostWindow = null;
-    }
-
-    /// <summary>드래그 중인 탭이 탭바를 벗어나 콘텐츠 영역(좌/우 반쪽)에 들어오면 분할 드롭존을 무장한다.
-    /// 이미 분할된 패널이거나 파일 탭이면(=EnableSplit/OpenSession 이 세션만 받음) 대상에서 제외한다.</summary>
-    private void UpdateSplitDropZone(MouseEventArgs e)
-    {
-        if (_split || ContentArea == null || _pendingTab is not SessionItem)
-        {
-            DisarmSplitDrop();
-            return;
-        }
-
-        var p = e.GetPosition(ContentArea);
-        const double cushion = 40; // 드래그 고스트 여백(DragHelper)과 동일한 감도
-        bool overContent = p.Y >= 0 && p.Y <= ContentArea.ActualHeight
-                            && p.X >= -cushion && p.X <= ContentArea.ActualWidth + cushion;
-        if (!overContent) { DisarmSplitDrop(); return; }
-
-        bool right = p.X >= ContentArea.ActualWidth / 2;
-        if (!_splitDropArmed || _splitDropRight != right) ArmSplitDrop(right);
-    }
-
-    private void ArmSplitDrop(bool right)
-    {
-        _splitDropArmed = true;
-        _splitDropRight = right;
-
-        double halfWidth = ContentArea.ActualWidth / 2;
-        var topLeftScreen = ContentArea.PointToScreen(new Point(right ? halfWidth : 0, 0));
-        var m = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice
-                ?? Matrix.Identity;
-        var dip = m.Transform(topLeftScreen);
-
-        _splitDropOverlay ??= new SplitDropOverlayWindow { Owner = Window.GetWindow(this) };
-        _splitDropOverlay.Left = dip.X;
-        _splitDropOverlay.Top = dip.Y;
-        _splitDropOverlay.Width = halfWidth;
-        _splitDropOverlay.Height = ContentArea.ActualHeight;
-        if (!_splitDropOverlay.IsVisible) _splitDropOverlay.Show();
-    }
-
-    private void DisarmSplitDrop()
-    {
-        _splitDropArmed = false;
-        if (_splitDropOverlay == null) return;
-        _splitDropOverlay.Close();
-        _splitDropOverlay = null;
+        if (td != null) await td.FinishAsync(commit: true);
     }
 
     private void TryStartTabDrag(TabItemBase s)
@@ -1153,9 +1214,6 @@ public partial class WorkspacePaneView : UserControl
             TabsHost.CaptureMouse();
             HideTabFeet(sourceBorder);
             SetupDragSeam(s, selectedRoot);
-            _dragGhostBrush = DragHelper.CaptureSnapshot(sourceBorder);
-            _dragGhostSize = new Size(Math.Max(1, sourceBorder.ActualWidth), Math.Max(1, sourceBorder.ActualHeight));
-            _dragGhostGrab = Mouse.GetPosition(sourceBorder);
         }
         else
         {
@@ -1394,6 +1452,10 @@ public partial class WorkspacePaneView : UserControl
         try { win.DragMove(); } catch { /* 이미 캡처 중 등 */ }
     }
 
+    /// <summary>탭바가 넘쳐서 해당 탭이 스크롤 밖에 있으면 보이는 위치로 스크롤한다.
+    /// "이동"으로 다른 패널에 새로 추가된 탭이 안 보일 수 있어(격리/재정렬 직후) 외부에서 명시 호출용.</summary>
+    public void ScrollTabIntoView(TabItemBase tab) => EnsureSelectedTabVisible(tab);
+
     private void EnsureSelectedTabVisible(TabItemBase tab)
     {
         if (TabScroller == null) return;
@@ -1544,6 +1606,17 @@ public partial class WorkspacePaneView : UserControl
         PersistWorkspace(); // 열린 파일 탭 목록을 workspace.json 에 영속(재시작 복원용)
     }
 
+    /// <summary>분할 파트너 복원용 — 지정 프로젝트를 이 패널에 띄우고 그 프로젝트의 파일 하나를 열어 활성화한 뒤 반환.
+    /// 파일을 못 열면 null. (세션 파트너의 OpenSession 에 대응하는 파일 버전.)</summary>
+    public FileTabItem? OpenFileTabForPartner(ProjectItem proj, string path)
+    {
+        if (!ReferenceEquals(_activeProject, proj)) SetActiveProject(proj);
+        var tab = CreateFileTab(proj, path);
+        if (tab == null) return null;
+        ActivateFileTab(tab);
+        return tab;
+    }
+
     /// <summary>지정 프로젝트에 파일 편집기 탭을 만들어 Tabs 에 추가하고 반환(활성화는 호출부 담당).
     /// 같은 경로 탭이 이미 있으면 그것을 반환, 경로가 비었거나 로드 실패면 null.</summary>
     private FileTabItem? CreateFileTab(ProjectItem proj, string path)
@@ -1557,6 +1630,8 @@ public partial class WorkspacePaneView : UserControl
         if (!tab.Editor.LoadFile(path)) return null;
         tab.Editor.CloseRequested += (_, _) => RemoveFileTab(tab);
         tab.Editor.DirtyChanged += (_, _) => { if (ReferenceEquals(_activeTab, tab)) RefreshFileHeaderState(tab); };
+        // 에디터 표면 클릭 → 이 패널을 포커스 패널로(분할 시 테두리 이동). 터미널 UserInteracted 와 동일.
+        tab.Editor.Interacted += (_, _) => FocusRequested?.Invoke(this);
         proj.Tabs.Add(tab);
         return tab;
     }
@@ -1669,4 +1744,25 @@ public partial class WorkspacePaneView : UserControl
     }
 
     public void DisposeTerminal() => _terminal.Dispose();
+
+    private void OnTerminalFileOpenRequested(string rawPath)
+    {
+        if (string.IsNullOrEmpty(rawPath)) return;
+
+        // 절대경로(C:\... 또는 /...) → 그대로, 상대경로 → 프로젝트 루트와 조합
+        string fullPath;
+        if (System.IO.Path.IsPathRooted(rawPath))
+        {
+            fullPath = rawPath;
+        }
+        else
+        {
+            var proj = _activeProject;
+            if (proj == null) return;
+            fullPath = System.IO.Path.Combine(proj.Path, rawPath);
+        }
+
+        if (!System.IO.File.Exists(fullPath)) return;
+        OpenFileAsTab(fullPath);
+    }
 }

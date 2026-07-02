@@ -117,12 +117,15 @@ public sealed class CodexUsageService : IDisposable
     {
         if (!rl.TryGetProperty(key, out var w) || w.ValueKind != JsonValueKind.Object) return null;
         if (!w.TryGetProperty("used_percent", out var up) || up.ValueKind != JsonValueKind.Number) return null;
+        var rawPct = up.GetDouble();
+        // ChatGPT API는 미사용 상태에서도 used_percent=1을 최소값으로 반환하는 경우가 있음 → 0으로
+        if (rawPct <= 1) rawPct = 0;
         DateTimeOffset? reset = null;
         if (w.TryGetProperty("reset_at", out var ra) && ra.ValueKind == JsonValueKind.Number && ra.GetDouble() > 0)
             reset = DateTimeOffset.FromUnixTimeSeconds(ra.GetInt64());
         else if (w.TryGetProperty("reset_after_seconds", out var rs) && rs.ValueKind == JsonValueKind.Number && rs.GetDouble() > 0)
             reset = DateTimeOffset.Now.AddSeconds(rs.GetDouble());
-        return new UsageWindow { UsedPercent = up.GetDouble(), ResetsAt = reset };
+        return new UsageWindow { UsedPercent = rawPct, ResetsAt = reset };
     }
 
     private static string DerivePlanLabel(string? planType)

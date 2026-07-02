@@ -16,6 +16,8 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
     public event Action<string>? BaselineReady;
     public event Action? SaveRequested;
     public event Action? EditorReady;
+    /// <summary>에디터 표면 클릭/포커스 — 분할 시 이 패널을 포커스 패널로 지정하는 데 사용.</summary>
+    public event Action? Interacted;
 
     private WebView2? _webView;
     private bool _initStarted;
@@ -69,7 +71,11 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
                 VirtualHost, webRoot, CoreWebView2HostResourceAccessKind.Allow);
 
             core.WebMessageReceived += OnWebMessageReceived;
-            core.Navigate($"https://{VirtualHost}/editor.html");
+            // bridge.js 가 바뀔 때마다 새로 로드되도록 캐시 무력화(?v=<ticks>). editor.html 이 이 쿼리를
+            // 그대로 bridge.js 로 전파한다 → WebView2 HTTP 캐시가 옛 스크립트를 서빙하는 것 방지.
+            long ver = 0;
+            try { ver = File.GetLastWriteTimeUtc(Path.Combine(webRoot, "bridge.js")).Ticks; } catch { }
+            core.Navigate($"https://{VirtualHost}/editor.html?v={ver}");
         }
         catch (Exception ex)
         {
@@ -109,6 +115,9 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
                     break;
                 case "saveRequested":
                     SaveRequested?.Invoke();
+                    break;
+                case "interact":
+                    Interacted?.Invoke();
                     break;
                 case "zoom":
                     if (_webView != null && root.TryGetProperty("factor", out var zf))

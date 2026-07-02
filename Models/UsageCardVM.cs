@@ -9,6 +9,10 @@ public sealed class UsageRowVM
     public required string Label { get; init; }
     public required string PercentText { get; init; }   // "62%" 또는 "--"
     public string ResetText { get; init; } = "";          // "↻ 1시간23분 후" / "↻ 6월 27일 09:00"
+    /// <summary>예상 한도 소진 시각 ("약 2시간 34분 후"). 설정 꺼졌거나 예측 불가면 빈 문자열.</summary>
+    public string EstimateText { get; init; } = "";
+    /// <summary>예상 소진 색상. 여유=SuccessBrush(초록), 부족=DangerBrush(빨강). null 이면 기본 표시 안 함.</summary>
+    public Brush? EstimateBrush { get; init; }
     public double BarWidth { get; init; }                  // 트랙(고정폭) 안 채움 너비 px
     public Brush? BarBrush { get; init; }
     public bool ShowBar { get; init; } = true;             // false=막대 트랙 자체 숨김(DeepSeek 잔액 행)
@@ -17,6 +21,9 @@ public sealed class UsageRowVM
     public System.Windows.Thickness PercentMargin { get; init; } = new(10, 0, 0, 0); // %/잔액 텍스트 좌측 여백
     public System.Windows.Visibility ResetVisibility
         => string.IsNullOrEmpty(ResetText) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+    /// <summary>예상 소진 표시 — 설정 on 이고 예측값이 있을 때만 보임.</summary>
+    public System.Windows.Visibility EstimateVisibility
+        => string.IsNullOrEmpty(EstimateText) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
 }
 
 /// <summary>초기화권 1개 표시 정보(만료일 + 잔여기간).</summary>

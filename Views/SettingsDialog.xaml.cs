@@ -475,6 +475,9 @@ public partial class SettingsDialog : UserControl
         _loadingFooterUsage = false;
         UpdateConnectionBadges();
 
+        // 한도 도달 예상 표시 토글
+        ShowEstimateToggle.IsChecked = SettingsService.LoadShowEstimate();
+
         // DeepSeek 연결 토글 상태 복원 — 키가 이미 저장되어 있으면 입력 영역은 숨김
         bool hasKey = DeepSeekCredentialStore.IsConnected();
         _originalDeepSeekEnabled = hasKey;
@@ -492,6 +495,12 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveShowFooterGo(ShowFooterGoToggle.IsChecked == true);
         SettingsService.SaveShowFooterDeepSeek(ShowFooterDeepSeekToggle.IsChecked == true);
         (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
+    }
+
+    private void EstimateToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        SettingsService.SaveShowEstimate(ShowEstimateToggle.IsChecked == true);
+        (Application.Current.MainWindow as MainWindow)?.RefreshUsagePanelIfVisible();
     }
 
     // ── 계정 사용량 로그인/재연결 — OAuth 창을 띄운다(갱신은 설정 닫힐 때 MainWindow 가 RefreshNow). ──

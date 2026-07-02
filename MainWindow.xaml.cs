@@ -151,8 +151,6 @@ public partial class MainWindow : Window
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
         Sidebar.ProjectRenameRequested += RenameProject;
-        Sidebar.ShowInLeftPaneRequested  += p => ShowProjectInPane(p, left: true);
-        Sidebar.ShowInRightPaneRequested += p => ShowProjectInPane(p, left: false);
         Sidebar.ProjectArchiveRequested += ArchiveProject;
         Sidebar.ProjectUnarchiveRequested += UnarchiveProject;
         Sidebar.AddProjectFileRequested += AddProjectFile;
@@ -472,7 +470,6 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
-        HidePanePick();
         // WebView2(터미널/md 에디터/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
         // 종료 직전 화면을 스냅샷으로 캡처해 깔고 WebView 를 치운 뒤 "세션 닫는 중" 오버레이를 그 위에 띄운다.
         try { await SuspendTerminalWithSnapshotAsync(blankCurtain: false); }
@@ -601,9 +598,10 @@ public partial class MainWindow : Window
         if (_rlMerged is { HasData: true } rl)
         {
             var rows = new List<Models.UsageRowVM>();
-            AddRow(rows, "5시간", rl.FiveHourPercent, rl.FiveHourResetsAt, isShortWindow: true);
-            AddRow(rows, "주간", rl.SevenDayPercent, rl.SevenDayResetsAt, isShortWindow: false);
-            AddRow(rows, "Fable", rl.FableWeeklyPercent, rl.FableWeeklyResetsAt, isShortWindow: false);
+            var showEst = SettingsService.LoadShowEstimate();
+            AddRow(rows, "5시간", rl.FiveHourPercent, rl.FiveHourResetsAt, isShortWindow: true, showEstimate: showEst);
+            AddRow(rows, "주간", rl.SevenDayPercent, rl.SevenDayResetsAt, isShortWindow: false, showEstimate: showEst);
+            AddRow(rows, "Fable", rl.FableWeeklyPercent, rl.FableWeeklyResetsAt, isShortWindow: false, showEstimate: showEst);
             var claudePlan = UsageApiService.FormatPlanLabel(UsageApiService.ReadSubscriptionType());
             cards.Add(new Models.UsageCardVM
             {
@@ -654,9 +652,10 @@ public partial class MainWindow : Window
     {
         if (u is not { HasData: true }) return;
         var rows = new List<Models.UsageRowVM>();
-        AddRow(rows, "5시간", u.Primary?.UsedPercent, u.Primary?.ResetsAt, isShortWindow: true);
-        AddRow(rows, "주간", u.Weekly?.UsedPercent, u.Weekly?.ResetsAt, isShortWindow: false);
-        AddRow(rows, "월간", u.Monthly?.UsedPercent, u.Monthly?.ResetsAt, isShortWindow: false);
+        var showEst = SettingsService.LoadShowEstimate();
+        AddRow(rows, "5시간", u.Primary?.UsedPercent, u.Primary?.ResetsAt, isShortWindow: true, showEstimate: showEst);
+        AddRow(rows, "주간", u.Weekly?.UsedPercent, u.Weekly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
+        AddRow(rows, "월간", u.Monthly?.UsedPercent, u.Monthly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
 
         // codex 초기화권 정보
         var credits = u.ResetCredits.Count > 0
@@ -714,22 +713,54 @@ public partial class MainWindow : Window
     }
 
     /// <summary>사용률 값이 있을 때만 행을 추가. 단기 윈도우는 "남은 시간", 그 외는 "초기화 일시"로 안내.</summary>
-    private void AddRow(List<Models.UsageRowVM> rows, string label, double? percent, DateTimeOffset? resetsAt, bool isShortWindow)
+    private void AddRow(List<Models.UsageRowVM> rows, string label, double? percent, DateTimeOffset? resetsAt, bool isShortWindow, bool showEstimate = false)
     {
         if (percent is not double p) return;
         var c = Math.Clamp(p, 0, 100);
         string reset = isShortWindow
             ? (resetsAt != null ? $"↻ {FormatRemaining(resetsAt)}" : "")
             : (resetsAt != null ? $"↻ {FormatResetDate(resetsAt)}" : "");
-        rows.Add(new Models.UsageRowVM
+        string estimateText = "";
+        System.Windows.Media.Brush? estimateBrush = null;
+        if (showEstimate)
         {
+            // label로 윈도우 길이 추정
+            var duration = label switch
+        {
+                "5시간" => TimeSpan.FromHours(5),
+                "주간" or "Fable" => TimeSpan.FromDays(7),
+                "월간" => TimeSpan.FromDays(30),
+                _ => TimeSpan.Zero,
+            };
+            if (duration > TimeSpan.Zero)
+            {
+                var est = EstimateLimitReached(percent, resetsAt, duration);
+                var fmt = FormatEstimate(est, useDate: !isShortWindow);
+                if (fmt != null)
+       {
+                    estimateText = fmt;
+                    // 예상 소진 시각이 초기화 시각보다 이후면 여유(초록), 이전이면 부족(빨강)
+                    if (resetsAt is DateTimeOffset resetTime && est is DateTimeOffset e)
+                    {
+                        try { estimateBrush = e >= resetTime
+                            ? (System.Windows.Media.Brush)Application.Current.FindResource("SuccessBrush")
+                            : (System.Windows.Media.Brush)Application.Current.FindResource("DangerBrush"); }
+                        catch { /* 리소스 없으면 기본색 유지 */ }
+    }
+    }
+    }
+        }
+        rows.Add(new Models.UsageRowVM
+      {
             Label = label,
             PercentText = $"{p:F0}%",
             ResetText = reset,
+            EstimateText = estimateText,
+            EstimateBrush = estimateBrush,
             BarWidth = UsageBarTrack * c / 100.0,
             BarBrush = RlBrush(c),
         });
-    }
+   }
 
     private const double UsageBarTrack = 102; // 사용량 패널 막대 트랙 폭(XAML 과 일치)
 
@@ -742,7 +773,7 @@ public partial class MainWindow : Window
         });
 
     /// <summary>사용량 사이드바가 열려 있으면 최신 스냅샷으로 카드를 다시 빌드 — 시작 시/폴링 시 자동 반영.</summary>
-    private void RefreshUsagePanelIfVisible()
+    internal void RefreshUsagePanelIfVisible()
     {
         if (_usageOpen) SetSidebarUsageCards(BuildUsageCards());
     }
@@ -883,13 +914,23 @@ public partial class MainWindow : Window
     {
         var planLabel = UsageApiService.FormatPlanLabel(UsageApiService.ReadSubscriptionType());
         var sb = new System.Text.StringBuilder();
-        sb.Append(planLabel);
+       sb.Append(planLabel);
         if (snap.FiveHourPercent is double f)
+       {
             sb.Append($"\n5시간 한도 {f:F0}%  ·  초기화까지 {FormatRemaining(snap.FiveHourResetsAt)}");
+            var est5h = EstimateLimitReached(f, snap.FiveHourResetsAt, TimeSpan.FromHours(5));
+            var fmt5h = FormatEstimate(est5h);
+            if (fmt5h != null) sb.Append($"  ·  예상 소진 {fmt5h}");
+       }
         if (snap.SevenDayPercent is double w)
+       {
             sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(snap.SevenDayResetsAt)}");
+            var est7d = EstimateLimitReached(w, snap.SevenDayResetsAt, TimeSpan.FromDays(7));
+            var fmt7d = FormatEstimate(est7d, useDate: true);
+            if (fmt7d != null) sb.Append($"  ·  예상 소진 {fmt7d}");
+       }
         return sb.ToString();
-    }
+       }
 
     private static string BuildProviderTooltip(Models.ProviderUsage u, string name)
     {
@@ -897,11 +938,26 @@ public partial class MainWindow : Window
         sb.Append(name);
         if (u.PlanLabel != null) sb.Append("  ·  ").Append(u.PlanLabel);
         if (u.Primary?.UsedPercent is double p)
+        {
             sb.Append($"\n5시간 한도 {p:F0}%  ·  초기화까지 {FormatRemaining(u.Primary.ResetsAt)}");
+            var estP = EstimateLimitReached(p, u.Primary.ResetsAt, TimeSpan.FromHours(5));
+            var fmtP = FormatEstimate(estP);
+            if (fmtP != null) sb.Append($"  ·  예상 소진 {fmtP}");
+        }
         if (u.Weekly?.UsedPercent is double w)
+        {
             sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(u.Weekly.ResetsAt)}");
+            var estW = EstimateLimitReached(w, u.Weekly.ResetsAt, TimeSpan.FromDays(7));
+            var fmtW = FormatEstimate(estW, useDate: true);
+            if (fmtW != null) sb.Append($"  ·  예상 소진 {fmtW}");
+        }
         if (u.Monthly?.UsedPercent is double m)
+        {
             sb.Append($"\n월간 한도 {m:F0}%  ·  초기화 {FormatResetDate(u.Monthly.ResetsAt)}");
+            var estM = EstimateLimitReached(m, u.Monthly.ResetsAt, TimeSpan.FromDays(30));
+            var fmtM = FormatEstimate(estM, useDate: true);
+            if (fmtM != null) sb.Append($"  ·  예상 소진 {fmtM}");
+        }
         if (u.Error != null) sb.Append('\n').Append(u.Error);
 
         // 초기화권 — codex 전용
@@ -981,6 +1037,46 @@ public partial class MainWindow : Window
     /// <summary>초기화 일자/시각 ("6월 24일 09:00").</summary>
     private static string FormatResetDate(DateTimeOffset? resetsAt)
         => resetsAt is DateTimeOffset r ? r.ToLocalTime().ToString("M월 d일 HH:mm") : "—";
+
+    /// <summary>현재 사용률과 초기화 시각으로, 지금까지의 평균 소비 속도가 유지된다고 가정할 때
+    /// 한도(100%)에 도달하는 예상 시각을 계산한다. 충분한 데이터가 없으면 null.</summary>
+    private static DateTimeOffset? EstimateLimitReached(double? usedPercent, DateTimeOffset? resetsAt, TimeSpan windowDuration)
+    {
+        if (usedPercent is not double p || p <= 0) return null;
+        if (resetsAt is not DateTimeOffset reset) return null;
+        var now = DateTimeOffset.Now;
+        if (now >= reset) return null;
+
+        var windowStart = reset - windowDuration;
+        var elapsed = now - windowStart;
+        if (elapsed <= TimeSpan.Zero) return null;
+
+        var ratePerHour = p / elapsed.TotalHours;
+        if (ratePerHour <= 0) return null;
+
+        var remainingPct = 100.0 - p;
+        var hoursToLimit = remainingPct / ratePerHour;
+        return now.AddHours(hoursToLimit);
+    }
+
+    /// <summary>예상 한도 도달 시각을 표시 문자열로 변환. 예측 불가거나 너무 먼 미래면 null.</summary>
+    /// <param name="useDate">true 면 날짜("7월 8일")로 표시, false 면 상대 시간("약 2시간 후").</param>
+    private static string? FormatEstimate(DateTimeOffset? estimated, bool useDate = false)
+    {
+        if (estimated is not DateTimeOffset e) return null;
+        var now = DateTimeOffset.Now;
+        if (e <= now) return null;
+        var remaining = e - now;
+        if (remaining.TotalDays > 30 && !useDate) return null;
+        if (remaining.TotalDays > 365) return null; // 1년 이상은 표시 안 함
+        if (useDate && remaining.TotalDays >= 1)
+            return "예상 " + e.ToLocalTime().ToString("M월 d일 H시 m분");
+        return remaining.TotalDays >= 1
+            ? $"예상 {(int)remaining.TotalDays}일 {remaining.Hours}시간 후"
+            : remaining.TotalHours >= 1
+                ? $"예상 {(int)remaining.TotalHours}시간 {remaining.Minutes}분 후"
+                : $"예상 {Math.Max(1, remaining.Minutes)}분 후";
+    }
 
     /// <summary>사용률 구간별 막대 색 — 기본(낮음) / 노랑 / 주황 / 빨강.</summary>
     private System.Windows.Media.Brush RlBrush(double pct)
@@ -1300,12 +1396,6 @@ public partial class MainWindow : Window
         if (e.Key == System.Windows.Input.Key.F4)
         {
             SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
-            e.Handled = true;
-            return;
-        }
-        if (e.Key == System.Windows.Input.Key.Escape && _projectTargetPickerWindow != null)
-        {
-            HidePanePick();
             e.Handled = true;
             return;
         }
@@ -1771,7 +1861,7 @@ public partial class MainWindow : Window
     {
         _updateInProgress = true;
         Sidebar.HideUpdateButton(); // 설치 진행 중에는 버튼 숨김
-        // 진행률은 타이틀바 SplitToggleBtn 오른쪽에 표시
+        // 진행률은 타이틀바에 표시
         UsageUpdateProgress.Visibility = Visibility.Visible;
         var progress = new Progress<double>(v =>
         {
@@ -1926,7 +2016,7 @@ public partial class MainWindow : Window
         pane.FocusRequested += OnPaneFocusRequested;
         pane.ActiveChanged += OnPaneActiveChanged;
         pane.SplitToggleRequested += OnPaneSplitToggle;
-        pane.SplitDropRequested += OnPaneSplitDropRequested;
+        pane.SplitViewRequested += OnPaneSplitViewRequested;
         _panes.Add(pane);
     }
 
@@ -1964,38 +2054,6 @@ public partial class MainWindow : Window
         UpdatePaneRoles();
     }
 
-    /// <summary>프로젝트 메뉴 "왼쪽/오른쪽 패널에 표시". 분할 시에만 동작.
-    /// 대상이 반대 패널에 떠 있으면 좌우를 맞바꾸고(swap), 아니면 해당 패널에 띄운다.</summary>
-    private void ShowProjectInPane(ProjectItem p, bool left)
-    {
-        if (!_splitActive) return;
-        var target = left ? LeftPane : RightPane;
-        var other  = left ? RightPane : LeftPane;
-        if (ReferenceEquals(target.ActiveProject, p)) return;   // 이미 그 패널 — 변화 없음(메뉴도 비활성)
-
-        if (ReferenceEquals(other.ActiveProject, p))
-        {
-            // 반대 패널에 이미 떠 있는 프로젝트 → 좌/우 위치만 교환(콘텐츠 이동 X = 세션 재로딩 없음).
-            // 목표 패널이 비어 있었으면 빈 패널이 반대로 넘어가 '이동', 차 있었으면 '맞바꿈'이 된다.
-            SwapPanePositions();
-            _focusedPane = other;   // p 가 들어 있던 패널 — 스왑 후 목표 슬롯으로 이동한다.
-            SyncShellToFocusedPane();
-            UpdatePaneRoles();
-            PersistSplitState();
-            // 컬럼 재배치 후 레이아웃이 반영된 뒤 포커스 라인을 갱신.
-            Dispatcher.BeginInvoke(() => UpdatePaneFocusVisual(), System.Windows.Threading.DispatcherPriority.Render);
-            return;
-        }
-
-        // 어느 패널에도 없던 프로젝트 → 목표 패널에 새로 연다(이건 실제 로딩이라 불가피).
-        target.SelectProject(p);
-        _focusedPane = target;
-        SyncShellToFocusedPane();
-        UpdatePaneFocusVisual();
-        UpdatePaneRoles();
-        PersistSplitState();
-    }
-
     /// <summary>두 패널의 물리 컬럼(좌 col0 / 우 col2)을 맞바꿔 좌/우 위치만 교환한다.
     /// 콘텐츠·터미널은 각 패널에 그대로 남으므로 세션 재로딩이 없다. 분할 중에만 호출.</summary>
     private void SwapPanePositions()
@@ -2010,6 +2068,8 @@ public partial class MainWindow : Window
         PaneB.IsRightPane = ReferenceEquals(RightPane, PaneB);
         foreach (var pn in _panes) pn.SetSplitActive(_splitActive);
         UpdateCenterRightBorder();   // 최우측 패널이 바뀌었으니 우측 보더 재배치
+        PaneA.RefreshSplitIndicator(); // 분할 토글 버튼은 우측 패널에만 보임 — 좌우 바뀌었으니 갱신
+        PaneB.RefreshSplitIndicator();
         PersistSplitState();
     }
 
@@ -2032,11 +2092,27 @@ public partial class MainWindow : Window
            ?? _focusedPane;
 
     private void PersistSplitState()
-        => SettingsService.SaveFullSplitState(
+    {
+        SettingsService.SaveFullSplitState(
             _splitActive,
             LeftPane.ActiveProject?.Path, LeftPane.ActiveSession?.Id,
             RightPane.ActiveProject?.Path, RightPane.ActiveSession?.Id,
             _panesSwapped);
+
+        // 프로젝트 단위 분할 기억 — 메인(좌측) 프로젝트가 분할 켬 상태면 현재 파트너를 계속 갱신해
+        // 다음에 이 프로젝트를 열 때(SelectProjectIntoPane) 같은 파트너로 분할이 되살아나게 한다.
+        var leftProj = LeftPane.ActiveProject;
+        if (_splitActive && leftProj != null && leftProj.SplitEnabled)
+        {
+            leftProj.SplitPartnerProjectPath = RightPane.ActiveProject?.Path;
+            leftProj.SplitPartnerSessionId = RightPane.ActiveSession?.Id;
+            // 우측이 파일 탭이면(ActiveSession=null) 파일 경로를 파트너로 저장 — 안 하면 복원 시
+            // 세션ID/파일 둘 다 없어 자기 프로젝트를 통째로 우측에 여는 중복 버그가 난다.
+            leftProj.SplitPartnerFilePath = RightPane.ActiveSession == null
+                ? (RightPane.ActiveTab as FileTabItem)?.FilePath : null;
+            WorkspaceStore.Save(_projects, _archivedProjects);
+        }
+    }
 
     /// <summary>포커스 패널의 활성 프로젝트/세션을 셸(파일탐색기·사이드바·last-active)에 반영.</summary>
     private void SyncShellToFocusedPane()
@@ -2096,40 +2172,183 @@ public partial class MainWindow : Window
         BeginAnimation(PaneSplitProgressProperty, anim);
     }
 
-    /// <summary>중앙 패널 분할/해제 토글. 분할 시 패널 B 노출 후 두 번째 프로젝트를 자동으로 연다.</summary>
+    /// <summary>탭바 분할 토글 버튼(양쪽 패널에 있음). 분할 중이면 어느 쪽에서 눌러도 분할 자체를 닫고,
+    /// 남는 프로젝트(LeftPane 이 될 콘텐츠)의 SplitEnabled 를 꺼서 "닫아도 유지" 상태를 반영한다.
+    /// 분할 전이면 이 패널의 활성 프로젝트 기준으로 분할을 켜고 SplitEnabled=true 로 기억한다.</summary>
     private void OnPaneSplitToggle(WorkspacePaneView pane)
     {
-        if (_splitActive) DisableSplit();
-        else EnableSplit();
+        if (_splitActive)
+        {
+            var keep = LeftPane.ActiveProject; // DisableSplit 이후 유지되는 프로젝트
+            DisableSplit();
+            if (keep != null)
+            {
+                keep.SplitEnabled = false;
+                keep.SplitPartnerProjectPath = null;
+                keep.SplitPartnerSessionId = null;
+                WorkspaceStore.Save(_projects, _archivedProjects);
+            }
+        }
+        else
+        {
+            var proj = pane.ActiveProject;
+            if (proj == null) return;
+            proj.SplitEnabled = true;
+            EnableSplitForProject(proj);
+            WorkspaceStore.Save(_projects, _archivedProjects);
+        }
+        PaneA.RefreshSplitIndicator();
+        PaneB.RefreshSplitIndicator();
     }
 
-    /// <summary>탭 헤더를 콘텐츠 영역(좌/우 반쪽)에 드롭 → 분할 생성. 원본 패널의 탭바에서는 세션을
-    /// 숨기고(HideTabInPane), 세션/ConPTY 자체는 그대로 둔 채 반대쪽 새 패널에 띄운다.
-    /// 이미 분할 중인 패널은 WorkspacePaneView.UpdateSplitDropZone 이 드롭존 자체를 무장하지 않으므로
-    /// 이 이벤트는 비분할(단일) 패널에서만 온다.</summary>
-    private void OnPaneSplitDropRequested(WorkspacePaneView pane, SessionItem session, bool dropRight)
+    /// <summary>proj 에 저장된 분할 파트너를 찾는다. 우선순위: 같은/다른 프로젝트의 세션 → 같은 프로젝트의 파일 →
+    /// 다른 프로젝트(통째). 같은 프로젝트 자신을 세션/파일 없이 가리키는 값은 무의미하므로 project=null 로 정규화.</summary>
+    private (ProjectItem? project, SessionItem? session, string? filePath) ResolveSplitPartner(ProjectItem proj)
     {
-        if (_splitActive) return;
-        pane.HideTabInPane(session);
-        EnableSplit(bSession: session);
-        if (!dropRight) SwapPanePositions(); // 드래그한 탭을 좌측에 두고 기존 내용을 우측으로 보낸다.
+        SessionItem? partnerSession = null;
+        if (!string.IsNullOrEmpty(proj.SplitPartnerSessionId))
+            partnerSession = _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs)
+                .OfType<SessionItem>().FirstOrDefault(s => s.Id == proj.SplitPartnerSessionId);
+        if (partnerSession != null) return (null, partnerSession, null);
+
+        // 세션이 없으면 같은 프로젝트의 파일 파트너(우측이 파일 탭이었던 경우) 시도.
+        if (!string.IsNullOrEmpty(proj.SplitPartnerFilePath) && System.IO.File.Exists(proj.SplitPartnerFilePath))
+            return (null, null, proj.SplitPartnerFilePath);
+
+        // 마지막으로 "다른" 프로젝트 통째 파트너. 자기 자신이면 무의미 → 무시.
+        ProjectItem? partnerProj = null;
+        if (!string.IsNullOrEmpty(proj.SplitPartnerProjectPath))
+            partnerProj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Path == proj.SplitPartnerProjectPath);
+        if (ReferenceEquals(partnerProj, proj)) partnerProj = null;
+        return (partnerProj, null, null);
     }
 
-    // 상단 타이틀바 분할 토글 버튼(좌측 패널 버튼 오른쪽).
-    private void SplitToggleBtn_Click(object sender, RoutedEventArgs e)
+    /// <summary>proj 의 저장된 분할 파트너를 찾아 분할을 켠다(비분할 상태에서 호출). 파트너를 못 찾으면 빈 우측으로 연다.
+    /// animate=false 면 펼침 슬라이드 없이 즉시 분할 레이아웃으로(다른 프로젝트로 전환 시).</summary>
+    private void EnableSplitForProject(ProjectItem proj, bool animate = true)
     {
-        if (_splitActive) DisableSplit();
-        else EnableSplit();
+        var (partnerProj, partnerSession, partnerFile) = ResolveSplitPartner(proj);
+        // 세션·다른프로젝트 파트너는 EnableSplit 이 바로 우측에 띄운다. 파일 파트너는 빈 우측으로 연 뒤 아래에서 연다.
+        EnableSplit(bProject: partnerProj, bSession: partnerSession, animate: animate);
+        RestorePartner(proj, partnerSession, partnerFile);
     }
 
-    /// <summary>분할 토글 버튼: 분할 중이면 테마색 강조 + '분할 닫기' 툴팁, 아니면 기본.</summary>
-    private void UpdateSplitToggleVisual()
+    /// <summary>이미 분할된 상태에서 좌측 프로젝트가 다른 "분할 사용" 프로젝트로 바뀔 때, 우측 패널
+    /// 내용을 새 프로젝트의 저장된 파트너로 교체한다.</summary>
+    private void ApplyPartnerToPaneB(ProjectItem proj)
     {
-        SplitToggleIcon.Data = (System.Windows.Media.Geometry)FindResource(_splitActive ? "IconPanelLeftClose" : "IconPanelLeftOpen");
-        // 구체 브러시를 박으면 DynamicResource 추적이 끊겨 테마 변경을 못 따라간다 → SetResourceReference 로 동적 연결 유지.
-        SplitToggleIcon.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, _splitActive ? "PrimaryBrush" : "TextMutedBrush");
-        SplitToggleBtn.ToolTip = _splitActive ? "분할 닫기" : "패널 분할";
+        var (partnerProj, partnerSession, partnerFile) = ResolveSplitPartner(proj);
+        if (partnerSession != null) RightPane.OpenSession(partnerSession);
+        else if (partnerProj != null) RightPane.SelectProject(partnerProj);
+        RestorePartner(proj, partnerSession, partnerFile);
     }
+
+    /// <summary>분할 파트너가 "같은 프로젝트(proj)"의 세션/파일이면 = "분할 보기"로 그 탭만 우측에 띄웠던 상태다.
+    /// 격리/숨김 필터는 휘발성이라 프로젝트를 떠나면 사라지므로 복원 시 재현한다:
+    /// 우측은 그 탭만 격리, 좌측은 그 탭 숨김. 파일 파트너는 우측 패널에 파일을 새로 열어 활성화한 뒤 격리한다.</summary>
+    private void RestorePartner(ProjectItem proj, SessionItem? partnerSession, string? partnerFile)
+    {
+        TabItemBase? partnerTab = null;
+        if (partnerSession != null)
+        {
+            var pp = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(partnerSession));
+            if (!ReferenceEquals(pp, proj)) return; // 다른 프로젝트 세션 파트너 → 통째 표시(격리 안 함)
+            partnerTab = partnerSession;
+        }
+        else if (partnerFile != null)
+        {
+            partnerTab = RightPane.OpenFileTabForPartner(proj, partnerFile);
+        }
+        if (partnerTab == null) return;
+
+        RightPane.IsolateTab(partnerTab);
+        LeftPane.HideTabInPane(partnerTab);
+    }
+
+    /// <summary>탭 헤더 우클릭 → "분할 보기"/"이동" → 분할 생성(비분할 시) 또는 반대쪽 패널로 이동(분할 중).
+    /// 원본 패널의 탭바에서는 탭을 숨기고(HideTabInPane), 세션/ConPTY·파일 에디터는 그대로 둔 채
+    /// 반대쪽 패널에 띄운다. 세션 탭·파일 탭 모두 지원.
+    /// 반대쪽이 이미 격리(화이트리스트) 중이었거나 프로젝트가 바뀌면, 원래 보이던 화이트리스트를
+    /// 스냅샷해뒀다가 이동 후 그대로 다시 얹고 새 탭을 더한다(누적 — 기존 탭들이 사라지지 않고
+    /// 뒤에 쌓임). 반대쪽이 이미 같은 프로젝트를 "격리 없이" 보여주던 중이면(전체 탭 목록 공유)
+    /// 그 목록에 이미 포함돼 있으므로 격리를 걸지 않는다.
+    /// 이동한 탭은 어느 경우든 그 프로젝트의 탭 목록 맨 끝으로 옮겨 반대쪽 탭바 가장 오른쪽에
+    /// 보이게 한다(이미 보여지고 있던 케이스도 포함 — 안 그러면 "이동"했는데 위치가 그대로라
+    /// 아무 변화도 없어 보인다).</summary>
+    private void OnPaneSplitViewRequested(WorkspacePaneView pane, TabItemBase tab)
+    {
+        if (_splitActive)
+        {
+            var target = ReferenceEquals(pane, LeftPane) ? RightPane : LeftPane;
+            if (ReferenceEquals(target, pane)) return;
+            var homeProject = pane.ActiveProject; // 탭이 실제로 속한 프로젝트(패널이 바뀌어도 그대로)
+            bool sameProject = ReferenceEquals(target.ActiveProject, homeProject);
+
+            // 원본 패널에서 이동 탭 제거(원본이 그 탭을 활성 중이었으면 다른 탭으로 대체).
+            pane.HideTabInPane(tab);
+
+            if (sameProject)
+            {
+                // 대상이 이미 이 프로젝트를 보여줌 → 대상의 "선택된 탭"은 건드리지 않고 탭만 노출한다.
+                // (격리 중이면 화이트리스트에 추가, 전체 모드면 블랙리스트 해제 — 활성 탭 변경 없음.)
+                // OpenSession/OpenFileTab 을 부르지 않으므로 대상 격리도 안 풀린다 → 스냅샷 복원 불필요.
+                target.UnhideTabInPane(tab);
+                // 포커스는 원본에 그대로 둔다(대상 활성 탭을 안 바꾸므로 포커스도 안 옮김).
+            }
+            else
+            {
+                // 대상이 다른 프로젝트/빈 패널 → 그 프로젝트로 전환이 불가피하고 이동 탭이 활성화된다.
+                // 이동 탭만 격리해 대상엔 그 탭만 보이게 한다(전체 목록 복사 방지).
+                if (tab is SessionItem session) target.OpenSession(session);
+                else if (tab is FileTabItem file) target.OpenFileTab(file);
+                else return;
+                target.IsolateTab(tab);
+                _focusedPane = target;
+            }
+
+            if (homeProject != null) MoveTabToEnd(tab, homeProject);
+            target.ScrollTabIntoView(tab);
+
+            SyncShellToFocusedPane();
+            UpdatePaneFocusVisual();
+            PersistSplitState();
+            return;
+        }
+
+        pane.HideTabInPane(tab);
+        if (tab is SessionItem s)
+        {
+            EnableSplit(bSession: s);
+            PaneB.IsolateTab(s);
+        }
+        else if (tab is FileTabItem f)
+        {
+            EnableSplit();
+            PaneB.OpenFileTab(f);
+            PaneB.IsolateTab(f);
+        }
+        if (pane.ActiveProject != null) MoveTabToEnd(tab, pane.ActiveProject);
+        PaneB.ScrollTabIntoView(tab);
+
+        // 버튼 토글로 켠 분할과 동일하게 영속 — 메인(좌측) 프로젝트를 "분할 사용"으로 표시하고
+        // 파트너를 기록(PersistSplitState가 갱신)해, 재선택/재시작 시 같은 분할이 복원되게 한다.
+        var mainProj = LeftPane.ActiveProject;
+        if (mainProj != null)
+        {
+            mainProj.SplitEnabled = true;
+            PersistSplitState();
+            PaneA.RefreshSplitIndicator();
+            PaneB.RefreshSplitIndicator();
+        }
+    }
+
+    /// <summary>탭을 그 프로젝트의 Tabs 컬렉션 맨 끝으로 옮긴다(탭바 가장 오른쪽에 보이게).</summary>
+    private static void MoveTabToEnd(TabItemBase tab, ProjectItem proj)
+    {
+        int idx = proj.Tabs.IndexOf(tab);
+        if (idx >= 0 && idx != proj.Tabs.Count - 1) proj.Tabs.Move(idx, proj.Tabs.Count - 1);
+    }
+
 
 
     private void EnableSplit(ProjectItem? bProject = null, SessionItem? bSession = null, bool animate = true, bool persist = true)
@@ -2160,8 +2379,8 @@ public partial class MainWindow : Window
         else if (bProject != null) PaneB.SelectProject(bProject);
         else if (persist) SyncShellToFocusedPane();   // 사용자 토글 시 B 는 빈 패널 — 직접 프로젝트를 고르게 한다.
         UpdatePaneRoles();
-        Sidebar.IsSplitActive = true;
-        UpdateSplitToggleVisual();
+        PaneA.RefreshSplitIndicator();
+        PaneB.RefreshSplitIndicator();
 
         if (animate)
         {
@@ -2194,27 +2413,22 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>시작 시 저장된 분할 상태 복원 — 양쪽 패널 프로젝트/세션 + 비율 + 스왑을 복원한다.</summary>
+    /// <summary>시작 시 저장된 분할 상태 복원 — 양쪽 패널 프로젝트/세션 + 비율 + 스왑을 복원한다.
+    /// "프로젝트 자동 로드" 옵션이 꺼져 있으면 분할 레이아웃 자체를 만들지 않고 단일 패널(미선택)로 시작한다.</summary>
     private void RestoreSplitState()
     {
-        // 분할(좌우 분리) 레이아웃은 옵션과 무관하게 항상 복원한다.
+        if (!SettingsService.LoadAutoLoadLastProject()) return;
+
         var (active, aProjPath, aSessId, bProjPath, bSessId, swapped) = SettingsService.LoadFullSplitState();
         if (!active) return;
 
-        // 단, 양쪽 패널의 프로젝트/세션 복원은 "프로젝트 자동 로드" 옵션이 켜진 경우에만.
-        // 옵션이 꺼져 있으면 빈 분할 패널로 시작한다(미선택 상태).
-        ProjectItem? aProj = null, bProj = null;
-        SessionItem? aSess = null, bSess = null;
-        if (SettingsService.LoadAutoLoadLastProject())
-        {
-            // 세션ID(전역 유일) 우선 조회 → 프로젝트는 그 세션의 소속으로 역산. 경로는 폴백.
-            aSess = aSessId != null ? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == aSessId) : null;
-            aProj = aSess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(aSess))
-                  : _projects.FirstOrDefault(p => p.Path == aProjPath);
-            bSess = bSessId != null ? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId) : null;
-            bProj = bSess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(bSess))
-                  : _projects.FirstOrDefault(p => p.Path == bProjPath);
-        }
+        // 세션ID(전역 유일) 우선 조회 → 프로젝트는 그 세션의 소속으로 역산. 경로는 폴백.
+        var aSess = aSessId != null ? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == aSessId) : null;
+        var aProj = aSess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(aSess))
+              : _projects.FirstOrDefault(p => p.Path == aProjPath);
+        var bSess = bSessId != null ? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId) : null;
+        var bProj = bSess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(bSess))
+              : _projects.FirstOrDefault(p => p.Path == bProjPath);
 
         // EnableSplit: 레이아웃만 생성(persist=false로 PersistSplitState/SyncShellToFocusedPane 스킵)
         EnableSplit(null, null, animate: false, persist: false);
@@ -2245,6 +2459,25 @@ public partial class MainWindow : Window
             SwapPanePositions(); // 컬럼 교환 + _panesSwapped=true
         }
 
+        // 좌/우가 같은 프로젝트면(= "분할 보기"로 한 탭만 우측에 띄웠던 상태) 우측은 그 탭만 격리,
+        // 좌측은 그 탭 숨김으로 복원한다. 안 하면 양쪽 다 전체 탭이 뜬다(격리는 휘발성이라 재시작 시 소실).
+        // FullSplitState 는 세션ID/프로젝트경로만 저장하므로, 우측이 파일이었던 경우(bSess=null &&
+        // 좌우 동일 프로젝트)는 프로젝트에 기억된 SplitPartnerFilePath 로 파일을 열어 격리한다.
+        if (aProj != null && ReferenceEquals(aProj, bProj))
+        {
+            if (bSess != null)
+            {
+                RightPane.IsolateTab(bSess);
+                LeftPane.HideTabInPane(bSess);
+            }
+            else if (!string.IsNullOrEmpty(aProj.SplitPartnerFilePath) && System.IO.File.Exists(aProj.SplitPartnerFilePath)
+                     && RightPane.OpenFileTabForPartner(aProj, aProj.SplitPartnerFilePath) is { } pf)
+            {
+                RightPane.IsolateTab(pf);
+                LeftPane.HideTabInPane(pf);
+            }
+        }
+
         _focusedPane = PaneA;
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
@@ -2252,7 +2485,7 @@ public partial class MainWindow : Window
         PersistSplitState();
     }
 
-    private void DisableSplit()
+    private void DisableSplit(bool animate = true)
     {
         if (!_splitActive) return;
         _splitActive = false;
@@ -2264,6 +2497,10 @@ public partial class MainWindow : Window
         var keep = LeftPane;
         var drop = RightPane;
         bool swapped = !ReferenceEquals(keep, PaneA);
+
+        // "분할 보기"로 keep 패널이 숨겼던 탭들 — 분할 해제 후 최종 홈(PaneA)의 탭바 맨 끝에 이어붙인다.
+        var (hiddenTabs, wasIsolated) = keep.CaptureSplitCloseState();
+
         if (swapped)
         {
             // 비분할의 주 패널은 PaneA 이므로, 스왑으로 PaneB 에 있던 유지 콘텐츠를 PaneA 로 되돌린다(애니메이션 동안 좌측에 보이도록 먼저 처리).
@@ -2283,24 +2520,25 @@ public partial class MainWindow : Window
         }
         // 비스왑일 땐 PaneB 의 콘텐츠를 접힘 애니메이션이 끝난 뒤 정리한다(축소되며 사라지는 인상).
 
+        PaneA.ApplySplitCloseState(hiddenTabs, wasIsolated);
+
         _focusedPane = PaneA;
         foreach (var p in _panes) p.SetSplitActive(false);
         UpdateCenterRightBorder();   // 최우측이 다시 PaneA 로 정규화됨
         SyncShellToFocusedPane();
         UpdatePaneRoles();
-        Sidebar.IsSplitActive = false;
-        UpdateSplitToggleVisual();
+        PaneA.RefreshSplitIndicator();
+        PaneB.RefreshSplitIndicator();
 
-        _ = AnimateSplitCloseAsync(swapped);
+        _ = AnimateSplitCloseAsync(swapped, animate);
     }
 
     /// <summary>분할 접힘: 두 패널 터미널을 스냅샷으로 정지한 뒤 PaneB 를 50%→0% 로 접고,
-    /// 완료 시 PaneB 숨김·세션 배선 해제·컬럼 정규화 후 PaneA 를 라이브로 복원한다.</summary>
-    private async Task AnimateSplitCloseAsync(bool swapped)
+    /// 완료 시 PaneB 숨김·세션 배선 해제·컬럼 정규화 후 PaneA 를 라이브로 복원한다.
+    /// animate=false 면 슬라이드 없이 즉시 최종 레이아웃으로 축소한다(다른 프로젝트로 전환 시).</summary>
+    private async Task AnimateSplitCloseAsync(bool swapped, bool animate = true)
     {
-        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
-        PaneB.SetEmptyTextWrapping(false); // 접힘 애니메이션 중 줄바꿈 방지
-        AnimatePaneSplit(1, 0, () =>
+        void Finish()
         {
             if (!swapped) PaneB.ClearForHide();   // 비스왑: 축소 완료 후 세션/터미널 배선 해제(컬렉션·ConPTY·기록은 보존).
             PaneB.Visibility = Visibility.Collapsed;
@@ -2312,7 +2550,13 @@ public partial class MainWindow : Window
             PaneA.ResumeTerminalOnly();
             UpdatePaneFocusVisual(animate: false);
             PersistSplitState();
-        });
+        }
+
+        if (!animate) { Finish(); return; }
+
+        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
+        PaneB.SetEmptyTextWrapping(false); // 접힘 애니메이션 중 줄바꿈 방지
+        AnimatePaneSplit(1, 0, Finish);
     }
 
     /// <summary>분할 중일 때 포커스된 패널을 4면 테마색 보더(각 패널의 FocusFrame)로 표시한다.
@@ -2607,58 +2851,31 @@ public partial class MainWindow : Window
 
     private void SelectProjectFromSidebar(ProjectItem proj)
     {
+        // 이미 어느 패널에 떠 있으면 그 패널로 포커스만(재로딩 없음).
         var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, proj));
-        if (existingPane != null)
-        {
-            FocusPaneOnly(existingPane);
-            return;
-        }
+        DevezCode.Services.DiagLog.Write($"SelectProjectFromSidebar proj={proj.Name} existingPane={(existingPane == null ? "none" : (ReferenceEquals(existingPane, PaneA) ? "PaneA" : "PaneB"))} PaneA={PaneA.ActiveProject?.Name ?? "null"} PaneB={PaneB.ActiveProject?.Name ?? "null"} _splitActive={_splitActive}");
+        if (existingPane != null) { FocusPaneOnly(existingPane); return; }
 
-        if (_splitActive)
-        {
-            if (PaneA.ActiveProject == null)
-            {
-                SelectProjectIntoPane(PaneA, proj);
-                return;
-            }
-
-            if (PaneB.ActiveProject == null)
-            {
-                SelectProjectIntoPane(PaneB, proj);
-                return;
-            }
-
-            ShowProjectTargetPicker(pane => SelectProjectIntoPane(pane, proj));
-            return;
-        }
-
-        SelectProjectIntoPane(_focusedPane, proj);
+        // 새 프로젝트는 항상 메인(좌측) 패널에 연다. 분할 여부는 그 프로젝트의 SplitEnabled 로
+        // SelectProjectIntoPane→ApplyProjectSplitForMainPane 이 결정한다(분할로 띄우거나 단일로).
+        SelectProjectIntoPane(LeftPane, proj);
     }
 
-    /// <summary>사이드바에서 세션 클릭 → 프로젝트 선택과 동일한 패널 타게팅 규칙을 따른다.
-    /// (이미 열린 패널 포커스 → 빈 패널 채움 → 둘 다 차 있으면 피커). 단 프로젝트 대신 세션을 활성화한다.</summary>
+    /// <summary>사이드바에서 세션 클릭 → 이미 떠 있는 패널이면 그 패널에서 활성화, 아니면 그 세션의
+    /// 프로젝트를 메인(좌측) 패널에 열고 세션을 활성화한다. 분할 여부는 프로젝트의 SplitEnabled 로 결정.</summary>
     private void OpenSession(SessionItem session)
     {
         MarkSessionRead(session.Id);
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
-        if (parent == null) { OpenSessionIntoPane(_focusedPane, session); return; }
 
-        var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent));
-        if (existingPane != null)
-        {
-            OpenSessionIntoPane(existingPane, session);
-            return;
-        }
+        // 이 세션의 프로젝트가 이미 어느 패널에 떠 있으면 그 패널에서 세션만 활성화(재로딩 없음).
+        var existingPane = parent != null
+            ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent))
+            : null;
+        if (existingPane != null) { OpenSessionIntoPane(existingPane, session); return; }
 
-        if (_splitActive)
-        {
-            if (PaneA.ActiveProject == null) { OpenSessionIntoPane(PaneA, session); return; }
-            if (PaneB.ActiveProject == null) { OpenSessionIntoPane(PaneB, session); return; }
-            ShowProjectTargetPicker(pane => OpenSessionIntoPane(pane, session));
-            return;
-        }
-
-        OpenSessionIntoPane(_focusedPane, session);
+        // 새 프로젝트는 메인(좌측) 패널에 연다.
+        OpenSessionIntoPane(LeftPane, session);
     }
 
     private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session)
@@ -2667,6 +2884,10 @@ public partial class MainWindow : Window
         pane.OpenSession(session);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
+        if (ReferenceEquals(pane, LeftPane) && pane.ActiveProject != null)
+            ApplyProjectSplitForMainPane(pane.ActiveProject);
+        PaneA.RefreshSplitIndicator();
+        PaneB.RefreshSplitIndicator();
     }
 
     /// <summary>세션 ID 로 완료 기록 중 미확인 항목을 읽음 처리하고 저장.</summary>
@@ -2692,6 +2913,25 @@ public partial class MainWindow : Window
         pane.SelectProject(proj);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
+        if (ReferenceEquals(pane, LeftPane)) ApplyProjectSplitForMainPane(proj);
+        PaneA.RefreshSplitIndicator();
+        PaneB.RefreshSplitIndicator();
+    }
+
+    /// <summary>메인(좌측) 패널의 프로젝트가 바뀌었을 때 그 프로젝트의 분할 설정을 반영한다.
+    /// SplitEnabled 면 분할로(이미 분할 중이면 우측을 저장된 파트너로 교체), 아니면 분할을 닫아 단일로.</summary>
+    private void ApplyProjectSplitForMainPane(ProjectItem proj)
+    {
+        DevezCode.Services.DiagLog.Write($"ApplyProjectSplitForMainPane proj={proj.Name} SplitEnabled={proj.SplitEnabled} _splitActive={_splitActive}");
+        if (proj.SplitEnabled)
+        {
+            if (_splitActive) ApplyPartnerToPaneB(proj);
+            else EnableSplitForProject(proj, animate: false); // 전환 — 펼침 슬라이드 없이 즉시 분할로.
+        }
+        else if (_splitActive)
+        {
+            DisableSplit(animate: false); // 다른(비분할) 프로젝트로 전환 — 슬라이드 없이 즉시 단일 패널로 축소.
+        }
     }
 
     private void FocusPaneOnly(WorkspacePaneView pane)
@@ -2700,47 +2940,6 @@ public partial class MainWindow : Window
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
     }
-
-    private ProjectTargetPickerWindow? _projectTargetPickerWindow;
-
-    // 별도 최상위 창으로 띄운다(터미널 WebView2 HWND 위에 합성). 중앙 패널(CenterSplit) 영역에
-    // 정확히 겹치도록 위치·크기를 잡고, 좌/우 컬럼 폭은 실제 PaneA/Gap/PaneB 폭으로 채운다.
-    private void ShowProjectTargetPicker(Action<WorkspacePaneView> onSelect)
-    {
-        _projectTargetPickerWindow?.Close();
-
-        var topLeft = CenterSplit.PointToScreen(new System.Windows.Point(0, 0));
-        var m = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice
-                ?? System.Windows.Media.Matrix.Identity;
-        var dip = m.Transform(topLeft); // 화면 픽셀 → DIP
-
-        var win = new ProjectTargetPickerWindow { Owner = this };
-        // CenterSplit 의 실제 컬럼 GridLength 를 그대로 복사 → 동일 폭에서 좌/우가 패널과 정확히 일치.
-        win.Configure(LeftPane.ActiveProject?.Name ?? "빈 패널", RightPane.ActiveProject?.Name ?? "빈 패널",
-                      LeftPane.ActiveProject?.Path ?? "", RightPane.ActiveProject?.Path ?? "",
-                      PaneACol.Width, PaneSplitterCol.Width, PaneBCol.Width);
-        win.Left = dip.X;
-        win.Top = dip.Y;
-        win.Width = CenterSplit.ActualWidth;
-        win.Height = CenterSplit.ActualHeight;
-        win.PaneSelected += pane => onSelect(pane == "A" ? LeftPane : RightPane);
-        win.Closed += PanePicker_Closed;
-        _projectTargetPickerWindow = win;
-        // picker 는 포커스를 안 가져가므로 취소(바깥 클릭·Esc)는 메인 창에서 감지한다.
-        PreviewMouseDown += PanePicker_OutsideMouseDown;
-        win.Show();
-    }
-
-    // 메인 창 영역(사이드바 등) 클릭 = picker 바깥 클릭 → 취소. picker 반쪽 클릭은 별도 창이라 여기로 안 온다.
-    private void PanePicker_OutsideMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e) => HidePanePick();
-
-    private void PanePicker_Closed(object? sender, EventArgs e)
-    {
-        PreviewMouseDown -= PanePicker_OutsideMouseDown;
-        if (ReferenceEquals(_projectTargetPickerWindow, sender)) _projectTargetPickerWindow = null;
-    }
-
-    private void HidePanePick() => _projectTargetPickerWindow?.Close();
 
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
     private void RenameSession(SessionItem session) { PaneFor(session).RenameSession(session); SyncRecordsForSessionRename(session); }
@@ -2986,7 +3185,7 @@ public partial class MainWindow : Window
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
         StateChanged += OnStateChangedForFullScreen;
         Activated   += (_, _) => UpdateFullScreenTopmost();
-        Deactivated += (_, _) => { UpdateFullScreenTopmost(); HidePanePick(); };
+        Deactivated += (_, _) => UpdateFullScreenTopmost();
         // 시작 시 전체화면 복원: 저장된 일반 bounds 위치(=올바른 모니터)에서 전체화면 진입.
         if (_restoreFullScreen) { _restoreFullScreen = false; EnterFullScreen(); }
         else if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
@@ -3145,10 +3344,6 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        // 상단바(비클라이언트 캡션) 클릭은 WPF PreviewMouseDown 으로 안 잡히므로 여기서 picker 를 닫는다.
-        if ((msg == WM_NCLBUTTONDOWN || msg == WM_NCLBUTTONDBLCLK) && _projectTargetPickerWindow != null)
-            HidePanePick();
-
         if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(lParam); handled = true; }
         // 전체화면 ON 이면 상단바 더블클릭(캡션 더블클릭)도 기본 최대화 대신 전체화면 토글.
         else if (msg == WM_NCLBUTTONDBLCLK && _useFullScreen) { ToggleMaximizeOrFullScreen(); handled = true; }

@@ -190,6 +190,45 @@
 
   /* 체크박스(태스크 리스트) 액센트 */
   .toastui-editor-contents .task-list-item::before { border-color: var(--ob-accent); }
+
+  /* ── 검색 오버레이 ────────────────────────────────────────── */
+  #md-search {
+    position: absolute; top: 4px; right: 12px; z-index: 9998;
+    display: none; align-items: center; gap: 6px;
+    background: var(--md-bg, #fff); border: 1px solid var(--ob-border);
+    border-radius: 8px; padding: 5px 8px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 12px; user-select: none;
+  }
+  #md-search.open { display: flex !important; }
+  #md-search input {
+    width: 160px; height: 24px; padding: 0 8px; margin: 0; border: none; outline: none;
+    background: transparent; color: var(--md-text, inherit);
+    font-size: 13px; font-family: inherit;
+  }
+  #md-search input::placeholder { color: var(--ob-muted); }
+  #md-search .count {
+    min-width: 32px; text-align: center;
+    color: var(--ob-muted); font-size: 11px; white-space: nowrap;
+  }
+  #md-search .btn {
+    width: 22px; height: 22px; padding: 0; margin: 0; border: none; border-radius: 4px;
+    background: transparent; color: var(--md-text, inherit);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; line-height: 1;
+  }
+  #md-search .btn:hover { background: rgba(128,128,128,0.15); }
+  #md-search .btn.close { font-size: 16px; color: var(--ob-muted); margin-left: 2px; }
+  #md-search .btn.close:hover { color: var(--md-text, inherit); }
+
+  /* 검색 하이라이트 */
+  ::highlight(search-match) {
+    background: rgba(255, 213, 0, 0.35);
+  }
+  ::highlight(search-current) {
+    background: rgba(255, 165, 0, 0.55);
+  }
 </style>
 <script src="toastui-editor-all.min.js"></script>
 <script src="ko-kr.js"></script>
@@ -199,6 +238,29 @@
 <div id="editor" spellcheck="false"></div>
 <div id="cover"></div>
 <div id="md-toast"></div>
-<script src="bridge.js"></script>
+<div id="md-search">
+  <input id="md-search-input" type="text" placeholder="검색…" autocomplete="off" spellcheck="false">
+  <span class="count" id="md-search-count">0/0</span>
+  <button class="btn" id="md-search-prev" title="이전 (Shift+Enter)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="18 15 12 9 6 15"/>
+    </svg>
+  </button>
+  <button class="btn" id="md-search-next" title="다음 (Enter)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </button>
+  <button class="btn close" id="md-search-close" title="닫기 (Esc)">&#x2715;</button>
+</div>
+<!-- bridge.js 는 페이지 쿼리(?v=<ticks>)를 그대로 붙여 로드 → WebView2 HTTP 캐시 무력화.
+     (editor.html 만 캐시버스팅하면 <script src="bridge.js"> 는 캐시본이 로드돼 코드 변경이 반영 안 됨) -->
+<script>
+  (function () {
+    var s = document.createElement('script');
+    s.src = 'bridge.js' + location.search;
+    document.body.appendChild(s);
+  })();
+</script>
 </body>
 </html>

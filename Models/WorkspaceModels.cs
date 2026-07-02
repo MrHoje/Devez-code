@@ -233,6 +233,16 @@ public sealed class ProjectItem : NotifyBase
     /// 프로젝트를 다시 선택할 때 이 탭을 복원한다(없거나 못 찾으면 기본 우선순위로 폴백). workspace.json 에 영속.</summary>
     public string? LastActiveTabRef { get; set; }
 
+    /// <summary>이 프로젝트가 메인 패널에 뜰 때 분할(2패널)을 함께 켜둘지. 탭바 분할 토글 버튼으로 설정.
+    /// 프로젝트를 다시 열면 이 값대로 분할 상태가 복원된다. workspace.json 에 영속.</summary>
+    public bool SplitEnabled { get; set; }
+    /// <summary>분할 파트너 프로젝트 경로(파트너 세션이 없을 때 폴백). workspace.json 에 영속.</summary>
+    public string? SplitPartnerProjectPath { get; set; }
+    /// <summary>분할 파트너 세션 ID(있으면 우선). workspace.json 에 영속.</summary>
+    public string? SplitPartnerSessionId { get; set; }
+    /// <summary>분할 파트너 파일 경로(우측 패널이 파일 탭이었을 때). 세션ID보다 우선순위 낮음. workspace.json 에 영속.</summary>
+    public string? SplitPartnerFilePath { get; set; }
+
     /// <summary>사이드바 호환을 위한 세션 전용 동기 뷰(ObservableCollection).
     /// Tabs.CollectionChanged 에서 SessionItem 만 추려 추가/제거한다 → 사이드바 바인딩이 즉시 갱신.</summary>
     public ObservableCollection<SessionItem> Sessions { get; } = new();

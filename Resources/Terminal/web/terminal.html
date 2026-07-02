@@ -621,6 +621,35 @@
       } catch (e) { /* WebGL 미지원 환경 → DOM 렌더러 유지 */ }
     }
 
+    // ── 파일경로 링크: 터미널 출력에서 파일 경로를 Ctrl+클릭 → 에디터 탭으로 열기 ──
+    try {
+      term.registerLinkProvider({
+        provideLinks: function (line, callback) {
+          var text = term.buffer.active.getLine(line)?.translateToString();
+          if (!text) { callback(undefined); return; }
+
+          var re = /[\w\-.]*(?:[\/\\][\w\-.]+)+\.(md|markdown|cs|ts|tsx|js|jsx|py|go|rs|java|kt|kts|swift|rb|php|c|cpp|cc|h|hpp|m|mm|dart|lua|r|pl|sh|bash|zsh|ps1|psm1|bat|cmd|sql|json|xml|yaml|yml|toml|ini|conf|cfg|config|properties|csv|log|txt|html|htm|css|scss|less|vue|svelte|xaml|razor|cshtml|vb|fs|gradle|groovy|scala|sln|csproj|props|targets|gitignore|editorconfig|env|dockerfile|makefile)/gi;
+          var links = [];
+          var match;
+          while ((match = re.exec(text)) !== null) {
+            let path = match[0];
+            if (/^[\s.]+$/.test(path)) continue;
+            let startCol = match.index;
+            let endCol = match.index + path.length - 1;
+            links.push({
+              range: [startCol, endCol],
+              text: path,
+              activate: function (e, uri) {
+                if (!e.ctrlKey && !e.metaKey) return;
+                post({ type: 'openFile', path: path });
+              }
+            });
+          }
+          callback(links.length > 0 ? { links: links } : undefined);
+        }
+      });
+    } catch (e) { /* linkProvider 미지원 xterm 버전 */ }
+
     // OSC 52 클립보드 쓰기 — claude/gjc 등 TUI 가 마우스 선택 후 "ESC]52;c;<base64>" 로 복사하면
     // (우측 하단 "copied N chars" 토스트) 이를 실제 Windows 클립보드에 반영한다. 번들 xterm 은
     // OSC 52 를 기본 무시(토스트만 뜨고 클립보드 미기록 = WT 와 달리 복사 안 됨)하므로 직접 처리.

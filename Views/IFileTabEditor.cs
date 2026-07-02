@@ -8,6 +8,8 @@ public interface IFileTabEditor
 {
     event EventHandler? CloseRequested;
     event EventHandler? DirtyChanged;
+    /// <summary>에디터 표면 클릭/포커스 — 분할 시 이 패널을 포커스 패널로 지정(airspace 우회).</summary>
+    event EventHandler? Interacted;
     string? FilePath { get; }
     bool IsDirty { get; }
     bool LoadFile(string path);

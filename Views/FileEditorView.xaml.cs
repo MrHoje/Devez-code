@@ -11,6 +11,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
 {
     public event EventHandler? CloseRequested;
     public event EventHandler? DirtyChanged;
+    public event EventHandler? Interacted;
 
     private string? _path;
     private bool _loading;
@@ -21,6 +22,8 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         _themeChangedHandler = _ => Dispatcher.BeginInvoke(new Action(RefreshHighlighting));
         Loaded += (_, _) => App.ThemeChanged += _themeChangedHandler;
         Unloaded += (_, _) => App.ThemeChanged -= _themeChangedHandler;
+        // WPF 네이티브 에디터라 클릭이 이미 CenterArea 로 버블링되지만, 인터페이스 일관성 + 명시적 포커스 통지.
+        PreviewMouseDown += (_, _) => Interacted?.Invoke(this, EventArgs.Empty);
     }
 
     public static bool IsEditable(string path)

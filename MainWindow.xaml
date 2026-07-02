@@ -77,14 +77,6 @@
                               Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
-                    <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
-                            Background="{DynamicResource LineBrush}" Opacity="0.5"/>
-                    <Button x:Name="SplitToggleBtn" Click="SplitToggleBtn_Click" Margin="0,0,0,0"
-                            Style="{StaticResource TitleBarChipButton}" ToolTip="패널 분할">
-                        <Path x:Name="SplitToggleIcon" Style="{StaticResource LucideIcon}"
-                              Data="{StaticResource IconPanelLeftOpen}" Width="16" Height="16"
-                            Stroke="{DynamicResource TextMutedBrush}"/>
-                        </Button>
                         <!-- 업데이트 진행률 (압축형, 타이틀바) -->
                         <StackPanel x:Name="UsageUpdateProgress" Orientation="Horizontal" Visibility="Collapsed" VerticalAlignment="Center"
                                     Margin="26,0,0,0" shell:WindowChrome.IsHitTestVisibleInChrome="True">
@@ -617,6 +609,7 @@
                                                                     <Grid.RowDefinitions>
                                                                         <RowDefinition Height="Auto"/>
                                                                         <RowDefinition Height="Auto"/>
+                                                                        <RowDefinition Height="Auto"/>
                                                                     </Grid.RowDefinitions>
                                                                     <Grid.ColumnDefinitions>
                                                                         <ColumnDefinition Width="34"/>
@@ -644,6 +637,11 @@
                                                                                Margin="6,3,0,0"
                                                                                FontSize="{DynamicResource Fs11}"
                                                                                Foreground="{DynamicResource TextMutedBrush}"/>
+                                                                    <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                                                                               Text="{Binding EstimateText}" Visibility="{Binding EstimateVisibility}"
+                                                                               Margin="6,1,0,0"
+                                                                               FontSize="{DynamicResource Fs10}"
+                                                                               Foreground="{Binding EstimateBrush}"/>
                                                                 </Grid>
                                                             </DataTemplate>
                                                         </ItemsControl.ItemTemplate>

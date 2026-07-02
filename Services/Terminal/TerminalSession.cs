@@ -20,6 +20,11 @@ public sealed class TerminalSession : IDisposable
 
     public bool IsAlive { get; private set; }
 
+    /// <summary>마지막으로 적용된 크기. 재배선 시 "정말 크기가 달라졌는지" 판단해 불필요한
+    /// -1/+1 리사이즈 킥(ConPTY 리플로우 부작용 有)을 피하는 데 쓴다.</summary>
+    public int Cols { get; private set; }
+    public int Rows { get; private set; }
+
     // 최근 출력(원본 ANSI 포함) 롤링 버퍼 — Discord 가 입력 대기 시 화면(선택지 메뉴 등)을 읽는 데 사용.
     private readonly object _recentLock = new();
     private readonly StringBuilder _recent = new();
@@ -89,7 +94,9 @@ public sealed class TerminalSession : IDisposable
         _outputRead = new SafeFileHandle(outputReadRaw, ownsHandle: true);
 
         // 2) pseudoconsole 생성 (자식 쪽 핸들 연결)
-        var size = new COORD { X = (short)Math.Max(cols, 2), Y = (short)Math.Max(rows, 2) };
+        Cols = Math.Max(cols, 2);
+        Rows = Math.Max(rows, 2);
+        var size = new COORD { X = (short)Cols, Y = (short)Rows };
         int hr = CreatePseudoConsole(size, inputRead, outputWrite, 0, out _hPC);
         // ConPTY가 핸들을 복제하므로 자식 쪽 원본은 닫는다
         CloseHandle(inputRead);
@@ -251,7 +258,9 @@ public sealed class TerminalSession : IDisposable
     public void Resize(int cols, int rows)
     {
         if (_disposed || _hPC == IntPtr.Zero) return;
-        var size = new COORD { X = (short)Math.Max(cols, 2), Y = (short)Math.Max(rows, 2) };
+        Cols = Math.Max(cols, 2);
+        Rows = Math.Max(rows, 2);
+        var size = new COORD { X = (short)Cols, Y = (short)Rows };
         ResizePseudoConsole(_hPC, size);
     }
 

@@ -37,6 +37,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<double>? FontSizePxChanged;
     /// <summary>사용자가 WebView2 터미널 표면을 클릭/조작함. WPF PreviewMouseDown 이 HWND 경계를 넘지 못해 별도 통지한다.</summary>
     public event Action? UserInteracted;
+    /// <summary>터미널 출력에서 파일 경로를 Ctrl+클릭 → 에디터 탭으로 열기 요청.</summary>
+    public event Action<string>? FileOpenRequested;
 
     private WebView2? _webView;
     private bool _initStarted;
@@ -64,6 +66,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>roomId → 현재 JS와 배선된 세션 (재시작 시 교체 감지용).</summary>
     private readonly Dictionary<string, TerminalSession> _wired = new();
+
+    /// <summary>roomId → (배선된 세션, OutputReceived 핸들러, Exited 핸들러). CloseTerminal/재배선 시
+    /// 반드시 이 핸들러를 detach 해야 한다. 안 하면 같은 세션에 핸들러가 누적돼(패널 이동 왕복 등)
+    /// 출력이 2·3배로 post → 화면에 글자가 여러 번 찍힌다("두 번 입력됨"의 실체).</summary>
+    private readonly Dictionary<string, (TerminalSession Session, Action<byte[]> OnOutput, Action OnExited)> _sessionHandlers = new();
 
     // ── 출력 배칭(coalescing) ──────────────────────────────────────
     // ConPTY-Read 백그라운드 스레드가 청크마다 OutputReceived 를 때리는데, 매 청크 BeginInvoke 하면
@@ -395,6 +402,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             var type = root.GetProperty("type").GetString();
             switch (type)
             {
+                case "openFile":
+                {
+                    var path = root.GetProperty("path").GetString() ?? "";
+                    if (!string.IsNullOrEmpty(path))
+                        FileOpenRequested?.Invoke(path);
+                    break;
+                }
                 case "interact":
                     UserInteracted?.Invoke();
                     break;
@@ -560,13 +574,17 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         SessionStarted?.Invoke(roomId); // ConPTY 프로세스 살아있음
         if (_wired.TryGetValue(roomId, out var prev) && ReferenceEquals(prev, session))
             return; // 이미 배선됨
+
+        // 이 방에 이전 핸들러가 남아있으면(다른 세션이었든 같은 세션이었든) 먼저 detach.
+        // 안 하면 OutputReceived 에 핸들러가 누적돼 출력이 2·3배로 중복 post 된다.
+        DetachSessionHandlers(roomId);
         _wired[roomId] = session;
 
         // 셸 첫 출력(준비 완료 신호) 이후에 claude 커맨드 전송 — PSReadLine 초기화 완료 보장
         var initialCmd = TerminalSessionManager.Instance.GetInitialCommand(roomId);
         bool cmdSent = initialCmd == null; // 커맨드 없으면 전송 불필요
 
-        session.OutputReceived += bytes =>
+        Action<byte[]> onOutput = bytes =>
         {
             if (!cmdSent)
             {
@@ -584,7 +602,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             }
             if (schedule) Dispatcher.BeginInvoke(() => FlushOutput(roomId));
         };
-        session.Exited += () =>
+        Action onExited = () =>
         {
             Dispatcher.BeginInvoke(() =>
             {
@@ -595,10 +613,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 SessionExited?.Invoke(roomId); // 끊김/죽음 → 회색 점
             });
         };
+        session.OutputReceived += onOutput;
+        session.Exited += onExited;
+        _sessionHandlers[roomId] = (session, onOutput, onExited);
 
         // 재배선(이미 돌던 세션에 새 xterm 연결 — 전체 재시작 직후 클릭·패널 이동·배선 유실 등):
         // 시작 시 지나간 alt-screen 신호는 다시 오지 않으므로 여기서 준비 상태를 복원하고,
-        // 리사이즈 킥으로 ConPTY 가 화면 전체를 다시 그리게 한다. 안 하면 그 방은 영영 ready 가
+        // 리사이즈로 ConPTY 가 화면 전체를 다시 그리게 한다. 안 하면 그 방은 영영 ready 가
         // 못 돼 진입할 때마다 로딩 스피너가 타임아웃까지 돌고, 화면도 우연한 리사이즈 전까지 빈 채 남는다.
         if (session.HasPriorOutput && !_readyNotified.Contains(roomId))
         {
@@ -608,8 +629,22 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _inlineFirstOutTick.Remove(roomId);
             _altSeenTick[roomId] = Environment.TickCount;
             BumpSettle(roomId); // 킥 리페인트 출력이 잠잠해지면(무출력이어도 SettleQuiet 후) 통지
-            session.Resize(Math.Max(2, cols - 1), rows);
-            session.Resize(cols, rows);
+            // 이 방으로 전환한 새 xterm(다른 패널 등)의 실제 크기가 세션의 마지막 크기와 다르면
+            // 그 자체가 진짜 리사이즈 이벤트라 ConPTY 가 자연히 리페인트한다.
+            // 크기가 같을 때만 "-1 후 원복" 킥으로 강제 신호를 만든다 — 이 트릭은 ConPTY 내부에서
+            // 스크롤백을 좁은 폭으로 한 번 리플로우했다 되돌리는 과정이라, 크기가 실제로 다른데도
+            // 매번 걸면 그 리플로우 왕복 자체가 줄바꿈이 어긋나거나 내용이 잘리는 부작용을 낸다
+            // (패널 간 이동을 반복하면 계속 걸려 누적됨 — 사용자 리포트: "이동하면 내용 잘리고
+            // 줄바꿈 이상해짐").
+            if (session.Cols == cols && session.Rows == rows)
+            {
+                session.Resize(Math.Max(2, cols - 1), rows);
+                session.Resize(cols, rows);
+            }
+            else
+            {
+                session.Resize(cols, rows);
+            }
         }
     }
 
@@ -925,6 +960,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public void CloseTerminal(string roomId)
     {
         DevezCode.Services.DiagLog.Write($"CloseTerminal room={roomId} (ready state dropped)");
+        DetachSessionHandlers(roomId); // OutputReceived/Exited 핸들러 detach (누적 중복 post 방지)
         _wired.Remove(roomId);
         _ready.Remove(roomId);
         _readyScan.Remove(roomId);
@@ -938,6 +974,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (_activeRoomId == roomId) _activeRoomId = null;
         if (_pendingShowRoomId == roomId) _pendingShowRoomId = null;
         PostJson(new { type = "dispose", roomId }); // JS xterm 인스턴스·DOM 해제
+    }
+
+    /// <summary>이 방에 배선돼 있던 OutputReceived/Exited 핸들러를 세션에서 detach.
+    /// 세션 자체(ConPTY)는 건드리지 않는다 — 이 TerminalHostView 의 구독만 끊는다.</summary>
+    private void DetachSessionHandlers(string roomId)
+    {
+        if (!_sessionHandlers.Remove(roomId, out var h)) return;
+        h.Session.OutputReceived -= h.OnOutput;
+        h.Session.Exited -= h.OnExited;
     }
 
     private bool _disposed;
@@ -1018,6 +1063,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         catch (Exception) { }
         try { _webView?.Dispose(); } catch (Exception) { }
         _webView = null;
+        // 모든 세션 핸들러 detach — 이 뷰가 죽어도 세션은 살아있을 수 있으므로(분할 등) 반드시 구독 해제.
+        foreach (var h in _sessionHandlers.Values)
+        {
+            try { h.Session.OutputReceived -= h.OnOutput; h.Session.Exited -= h.OnExited; } catch { }
+        }
+        _sessionHandlers.Clear();
         _wired.Clear();
         _ready.Clear();
         _readyScan.Clear();

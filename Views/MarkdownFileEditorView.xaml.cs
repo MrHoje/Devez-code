@@ -10,6 +10,7 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
 {
     public event EventHandler? CloseRequested;
     public event EventHandler? DirtyChanged;
+    public event EventHandler? Interacted;
 
     private string? _path;
     private string _currentMarkdown = "";
@@ -32,8 +33,11 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         MdHost.BaselineReady += OnBaselineReady;
         MdHost.SaveRequested += () => Save();
         MdHost.EditorReady += OnEditorReady;
+        MdHost.Interacted += () => Interacted?.Invoke(this, EventArgs.Empty);
         App.ThemeChanged += OnThemeChanged;
         Loaded += OnLoaded;
+        // 프로젝트 전환/탭 재선택 시 포커스 복귀 → 외부 변경 점검
+        PreviewGotKeyboardFocus += (_, _) => CheckExternalChange();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -148,12 +152,6 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         if (e.Key == Key.S && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
             Save();
-            e.Handled = true;
-            return;
-        }
-        if (e.Key == Key.Escape)
-        {
-            RequestClose();
             e.Handled = true;
             return;
         }

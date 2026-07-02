@@ -3,6 +3,10 @@
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
+  // 에디터 표면 클릭/포커스 → 호스트에 통지(분할 시 이 패널을 포커스 패널로). WebView2 는 HwndHost 라
+  // WPF PreviewMouseDown 이 경계를 못 넘어오므로 터미널과 동일하게 직접 통지한다.
+  document.addEventListener('pointerdown', function () { post({ type: 'interact' }); }, true);
+
   // 정규화 기준선 — setMarkdown(clean) 직후 editor.getMarkdown() 값.
   // Toast UI가 마크다운을 재정렬하므로 원본 파일 텍스트가 아니라 이 기준선과 비교해야
   // 포커스/주입만으로 dirty 오판이 나지 않는다.
@@ -29,6 +33,12 @@
   // baseline과 비교해 dirty 판정. 내용이 같으면(포커스/주입 에코 등) dirty=false → 오판 방지.
   function emitChange() {
     clearTimeout(timer);
+    // 검색 하이라이트(<mark>)가 DOM에 박힌 상태에서 getMarkdown()을 호출하면
+    // HTML→마크다운 변환 시 <mark> 잔여물이 저장 데이터로 들어간다.
+    // 또한 highlightText()로 <mark>를 재삽입하면 Toast UI의 change 이벤트가 재귀를 유발한다.
+    // → getMarkdown() 전에 하이라이트를 제거하고, 에디터 편집 중에는 재적용하지 않는다.
+    //   사용자가 검색창에 다시 입력하거나 Enter로 재검색 시 복원된다.
+    if (searchRanges.length > 0) clearHighlights();
     var md = currentMd();
     post({ type: 'markdownChanged', markdown: md, dirty: md !== baseline });
   }
@@ -46,6 +56,14 @@
       e.preventDefault();
       emitChange();
       post({ type: 'saveRequested' });
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+      e.preventDefault();
+      if (searchEl.classList.contains('open')) {
+        searchInput.select();
+      } else {
+        openSearch();
+      }
     }
   }, true);
 
@@ -72,6 +90,14 @@
     r.setProperty('--md-primary', m.primary || '#2563eb');
     r.setProperty('--md-code-bg', m.codeBg || 'rgba(140,140,140,0.18)');
     r.setProperty('--md-code-text', m.codeText || 'inherit');
+    // 검색창 보더/흐린텍스트 — #editor 밖(#md-search)에 정의돼 .toastui-editor-dark 상속 안 받음
+    if (m.dark) {
+      r.setProperty('--ob-border', 'rgba(160,160,170,0.18)');
+      r.setProperty('--ob-muted', 'rgba(180,180,190,0.65)');
+    } else {
+      r.setProperty('--ob-border', 'rgba(120,120,120,0.22)');
+      r.setProperty('--ob-muted', 'rgba(120,120,128,0.85)');
+    }
     document.body.style.background = m.bg || '#ffffff';
   }
 
@@ -83,6 +109,114 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 1400);
   }
+
+  // ── 검색 ──────────────────────────────────────────────────
+  var searchEl = document.getElementById('md-search');
+  var searchInput = document.getElementById('md-search-input');
+  var searchCount = document.getElementById('md-search-count');
+  // CSS Custom Highlight API — DOM을 건드리지 않고 Range만으로 형광펜.
+  // Toast UI v3(ProseMirror)는 DOM 변화에 반응해 상태를 재설정하므로,
+  // <mark>를 직접 박으면 제거된다. Highlight API는 DOM을 수정하지 않아 안전하다.
+  var searchRanges = [];    // 현재 검색 결과 Range[]
+  var searchIndex = -1;     // 현재 선택된 매치 인덱스
+
+  function getWysiwygRoot() {
+    // Toast UI Editor WYSIWYG 모드의 편집 가능 영역
+    return document.querySelector('.toastui-editor-ww-container .ProseMirror');
+  }
+
+  function clearHighlights() {
+    try { CSS.highlights.delete('search-match'); } catch (e) {}
+    try { CSS.highlights.delete('search-current'); } catch (e) {}
+    searchRanges = [];
+    searchIndex = -1;
+    searchCount.textContent = '0/0';
+  }
+
+  function scrollToCurrentMatch() {
+    if (searchIndex < 0 || searchIndex >= searchRanges.length) return;
+    var r = searchRanges[searchIndex];
+    if (!r) return;
+    try { r.startContainer.parentElement?.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+  }
+
+  function highlightText(query) {
+    clearHighlights();
+    if (!query) { searchCount.textContent = '0/0'; return; }
+
+    var root = getWysiwygRoot();
+    if (!root) return;
+
+    var lower = query.toLowerCase();
+    var ranges = [];
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    while (walker.nextNode()) {
+      var node = walker.currentNode;
+      var text = node.textContent;
+      var lowerText = text.toLowerCase();
+      var idx = 0;
+      while ((idx = lowerText.indexOf(lower, idx)) >= 0) {
+        var r = document.createRange();
+        r.setStart(node, idx);
+        r.setEnd(node, idx + query.length);
+        ranges.push(r);
+        idx += query.length;
+      }
+    }
+
+    searchRanges = ranges;
+    if (ranges.length > 0) {
+      try { CSS.highlights.set('search-match', new Highlight(...ranges)); } catch (e) {}
+      searchIndex = 0;
+      try { CSS.highlights.set('search-current', new Highlight(ranges[0])); } catch (e) {}
+      searchCount.textContent = '1/' + ranges.length;
+      scrollToCurrentMatch();
+    }
+  }
+
+  function selectMatch(delta) {
+    if (searchRanges.length === 0) {
+      // emitChange()가 하이라이트를 제거한 상태. 입력값으로 재검색.
+      var q = searchInput.value;
+      if (q) highlightText(q);
+      if (searchRanges.length === 0) return;
+    }
+    searchIndex = (searchIndex + delta + searchRanges.length) % searchRanges.length;
+    try { CSS.highlights.set('search-current', new Highlight(searchRanges[searchIndex])); } catch (e) {}
+    searchCount.textContent = (searchIndex + 1) + '/' + searchRanges.length;
+    scrollToCurrentMatch();
+  }
+
+  function openSearch() {
+    // 기존 하이라이트 정리
+    clearHighlights();
+    searchEl.classList.add('open');
+    searchInput.value = '';
+    searchCount.textContent = '0/0';
+    setTimeout(function () { searchInput.focus(); }, 0);
+  }
+
+  function closeSearch() {
+    searchEl.classList.remove('open');
+    clearHighlights();
+    editor.focus();
+  }
+
+  document.getElementById('md-search-close').addEventListener('click', closeSearch);
+  document.getElementById('md-search-prev').addEventListener('click', function () { selectMatch(-1); });
+  document.getElementById('md-search-next').addEventListener('click', function () { selectMatch(1); });
+  searchInput.addEventListener('input', function () {
+    highlightText(searchInput.value);
+  });
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) selectMatch(-1);
+      else selectMatch(1);
+    } else if (e.key === 'Escape') {
+      closeSearch();
+    }
+  });
 
   window.chrome.webview.addEventListener('message', function (e) {
     var m = e.data;
@@ -125,6 +259,10 @@
         // 커서를 맨 앞으로 이동 + 스크롤 재설정 — MD 파일 열었을 때 맨 아래 붙는 문제 수정.
         editor.moveCursorToStart();
         editor.setScrollTop(0);
+        break;
+      case 'toggleSearch':
+        if (searchEl.classList.contains('open')) closeSearch();
+        else openSearch();
         break;
     }
   });
