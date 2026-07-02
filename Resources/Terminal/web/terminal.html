@@ -91,28 +91,18 @@
     display: none; opacity: 0; pointer-events: none;
     background: var(--term-bg, #0C0C0C);
   }
-  /* 종료 베일 카드 — 앱 종료 시 WPF 오버레이가 airspace 로 터미널 위에 못 뜨므로
-     딤(xfer-cover 이미지+그라디언트)과 스피너 카드를 웹 레이어에서 그린다. 로딩 오버레이와
-     달리 배경이 투명(딤은 커버가 담당)이고 걷는 코드가 없다 — 곧 창이 닫힌다. */
-  #shutdown-card {
-    position: absolute; inset: 0; z-index: 60;
-    display: none; flex-direction: column;
-    align-items: center; justify-content: center;
-    pointer-events: auto;
-  }
   /* devez 최초 실행 스피너와 동일: PrimaryBrush 점선 링(28 10) 회전, 0.85s, 두께 3. */
-  #loading-overlay .ring, #shutdown-card .ring {
+  #loading-overlay .ring {
     width: 36px; height: 36px;
     animation: dz-spin 0.85s linear infinite;
   }
-  #shutdown-card .ring circle,
   #loading-overlay .ring circle {
     fill: none;
     stroke: var(--term-accent, #2563eb);
     stroke-width: 3;
     stroke-dasharray: 74 30;
   }
-  #loading-overlay .label, #shutdown-card .label {
+  #loading-overlay .label {
     margin-top: 14px; font-size: 13px; opacity: 0.85;
     color: var(--term-fg, #CCCCCC);
     font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
@@ -141,7 +131,6 @@
 <body>
 <div id="loading-overlay"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div>
 <div id="xfer-cover"></div>
-<div id="shutdown-card"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 닫는 중…</div></div>
 <div id="copy-toast"></div>
 <div id="search-bar">
   <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
@@ -971,31 +960,6 @@
         cov.style.opacity = '0';
         cov.style.display = 'none';
         cov.style.backgroundImage = ''; // 이미지 커버 잔류 방지(다음 단색 커버 오염 X)
-        break;
-      }
-      case 'shutdownVeil': {
-        // 앱 종료 — HWND 를 숨기지 않고(사이드패널 커버와 동일 개념) 웹 레이어에서 캡처 이미지+딤+
-        // 스피너 카드로 덮는다. WPF 종료 오버레이는 airspace 로 터미널 위에 못 뜨므로 터미널 영역의
-        // 딤/카드는 여기서 그린다. 걷는 코드는 없다 — 곧 창이 닫힌다.
-        _xferGen++;                    // 진행 중 전환의 지연 fade/step 타이머 무효화(베일을 걷지 못하게)
-        clearTimeout(_xferCoverTimer);
-        _fitSuppressed = true;         // 종료 중 리사이즈/리플로우 무시
-        const cov = document.getElementById('xfer-cover');
-        cov.style.transition = 'none';
-        const dim = 'linear-gradient(rgba(0,0,0,0.69),rgba(0,0,0,0.69))'; // WPF 스크림 #B0000000 과 동일 농도
-        if (msg.image) {
-          cov.style.backgroundImage = dim + ', url("' + msg.image + '")';
-          cov.style.backgroundRepeat = 'no-repeat';
-          cov.style.backgroundPosition = 'top left';
-          cov.style.backgroundSize = (msg.imgW > 0 && msg.imgH > 0) ? ('auto, ' + msg.imgW + 'px ' + msg.imgH + 'px') : 'auto';
-        } else {
-          cov.style.backgroundImage = dim; // 캡처 실패 폴백 — 라이브 터미널 위 딤만
-        }
-        cov.style.pointerEvents = 'auto'; // 종료 중 터미널 입력 차단
-        cov.style.display = 'block';
-        cov.style.opacity = '1';
-        document.getElementById('loading-overlay').classList.remove('on'); // 열리던 세션 스피너와 중복 방지
-        document.getElementById('shutdown-card').style.display = 'flex';
         break;
       }
       case 'xferReveal': {

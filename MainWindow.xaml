@@ -853,9 +853,7 @@
             <!-- 종료 중 오버레이 — 열린 세션을 graceful 종료하는 동안 표시 -->
             <Grid x:Name="ShutdownOverlay" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="300"
                   Visibility="Collapsed" Background="#B0000000">
-                <!-- 카드: 세션 패널이 있으면 웹 레이어 베일 카드가 대신 그린다(HWND 가 이 WPF 카드를
-                     반쯤 가리는 것 방지) — OnClosing 이 표시 여부를 정한다. -->
-                <Border x:Name="ShutdownCard" HorizontalAlignment="Center" VerticalAlignment="Center"
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                         CornerRadius="14" Padding="32,28"
                         Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">

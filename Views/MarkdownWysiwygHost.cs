@@ -207,21 +207,6 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
         catch { return null; }
     }
 
-    /// <summary>앱 종료 딤 — WPF 스크림은 airspace 로 md WebView2 위에 못 뜨므로 웹 레이어에 딤을 주입한다.
-    /// (HWND 를 숨기지 않아 스냅샷 전환 깜빡임이 없다. 걷지 않는다 — 곧 창이 닫힌다.)</summary>
-    public async Task DimForShutdownAsync()
-    {
-        if (_webView?.CoreWebView2 == null) return;
-        try
-        {
-            await _webView.CoreWebView2.ExecuteScriptAsync(
-                "(function(){var d=document.createElement('div');" +
-                "d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.69);z-index:2147483647';" + // WPF 스크림 #B0000000 과 동일 농도
-                "document.body.appendChild(d);})()");
-        }
-        catch { /* 종료 중 — best effort */ }
-    }
-
     private void PostJson(object message)
     {
         try { _webView?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message, CamelCase)); }

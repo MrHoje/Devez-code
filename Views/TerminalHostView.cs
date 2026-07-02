@@ -922,17 +922,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>커튼을 즉시 fade-out(synced reveal 의 최종 단계).</summary>
     public void FadeNow() => PostJson(new { type = "fadeNow" });
 
-    /// <summary>앱 종료 베일 — HWND 를 숨기지 않고 웹 레이어에서 캡처 이미지+딤+스피너 카드로 덮는다
-    /// (사이드패널 커버와 동일 개념: HWND 가시성 전환이 없어 깜빡임이 없다). 걷지 않는다 — 곧 창이 닫힌다.</summary>
-    public void ShowShutdownVeil(byte[]? png, double imgW, double imgH)
-        => PostJson(new
-        {
-            type = "shutdownVeil",
-            image = png != null ? "data:image/png;base64," + Convert.ToBase64String(png) : null,
-            imgW,
-            imgH,
-        });
-
     /// <summary>ms 동안 출력 쓰기 후 맨 아래로 고정 — 인라인 TUI(gjc) open 직후 최신 화면을 보이게(짧은 창).</summary>
     public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });
 
