@@ -2540,7 +2540,10 @@ public partial class MainWindow : Window
     {
         void Finish()
         {
-            if (!swapped) PaneB.ClearForHide();   // 비스왑: 축소 완료 후 세션/터미널 배선 해제(컬렉션·ConPTY·기록은 보존).
+            // 비스왑: 축소 완료 후 상태만 비우되 xterm/ready 는 보존(disposeTerminal:false) — 좌측 패널처럼
+            // 터미널을 살려두면 다른(비분할) 프로젝트에 갔다 이 분할로 돌아올 때 스피너·리로드·스크롤 튐 없이
+            // 즉시 재활성화된다. (스왑은 유지 콘텐츠를 PaneA 로 재부착하므로 더블 배선 방지 위해 위에서 dispose 함.)
+            if (!swapped) PaneB.ClearForHide(disposeTerminal: false);
             PaneB.Visibility = Visibility.Collapsed;
             PaneSplitter.Visibility = Visibility.Collapsed;
             PaneBCol.Width = new GridLength(0);

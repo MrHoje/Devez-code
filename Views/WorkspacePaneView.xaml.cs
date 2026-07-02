@@ -265,10 +265,16 @@ public partial class WorkspacePaneView : UserControl
         else ClearActiveSession();
     }
 
-    /// <summary>분할 해제 시 — 이 패널이 보여주던 세션의 xterm 배선을 끊고 상태를 비운다(ConPTY·기록 보존).</summary>
-    public void ClearForHide()
+    /// <summary>분할 해제 시 — 이 패널의 프로젝트/세션 상태를 비운다(ConPTY·기록 보존).
+    /// <paramref name="disposeTerminal"/>=true 면 보여주던 세션의 xterm 배선까지 끊는다(스왑 재부착처럼
+    /// 같은 세션이 다른 패널로 옮겨가 더블 배선될 수 있는 경우 필수).
+    /// false 면 xterm 인스턴스+준비(ready) 상태를 그대로 두고 상태만 비운다 — 비스왑 숨김(단순히 접혀
+    /// 사라지는 우측 패널)에서 쓴다. 좌측 패널이 프로젝트를 오갈 때 그렇듯 terminal 을 보존해두면,
+    /// 다시 분할로 돌아올 때 스피너·리로드·스크롤 튐 없이 즉시 재활성화된다(WebView2 는 Collapsed 로
+    /// 숨겨질 뿐 파괴되지 않으므로 hidden 상태로도 출력을 계속 받아 버퍼가 최신으로 유지된다).</summary>
+    public void ClearForHide(bool disposeTerminal = true)
     {
-        if (_activeSession != null)
+        if (disposeTerminal && _activeSession != null)
             try { _terminal.CloseTerminal(_activeSession.Id); } catch { /* ignore */ }
         _activeProject = null;
         ClearActiveSession();
