@@ -85,12 +85,19 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         }
     }
 
+    /// <summary>에디터 셸(WebView2+Toast UI) 준비 완료 여부 — 전환 reveal 이 md 콜드 로드를 기다릴 때 사용.
+    /// 준비 전에 커튼을 걷으면 md 영역이 빈(어두운) 채 보였다가 내용이 늦게 떠 "까매졌다 열리는" 것처럼 보인다.</summary>
+    public bool IsEditorShellReady { get; private set; }
+    public event Action? EditorShellReady;
+
     private void OnEditorReady()
     {
         LoadingOverlay.Visibility = Visibility.Collapsed;
         MdHost.ApplyTheme(App.CurrentTheme);
         if (_loaded) MdHost.SetMarkdown(_currentMarkdown, markClean: true);
         MdHost.FocusEditor();
+        IsEditorShellReady = true; // 테마·내용 반영을 큐에 올린 뒤 보고
+        EditorShellReady?.Invoke();
     }
 
     private void OnThemeChanged(string theme) => MdHost.ApplyTheme(theme);

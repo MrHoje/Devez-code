@@ -359,13 +359,48 @@ public partial class WorkspacePaneView : UserControl
     public event Action<WorkspacePaneView>? RevealPrepared;
 
     /// <summary>동시 reveal 준비 — 폭 안정·fit·재동기까지만 하고 커튼은 유지, 완료 시 RevealPrepared 발생.
-    /// 활성 세션이 없으면(파일/빈 패널) 폭 조정이 필요 없으므로 즉시 준비 완료로 보고한다(커튼은 FadeRevealNow 가 걷음).</summary>
+    /// 활성 세션이 없으면(파일/빈 패널) 폭 조정이 필요 없다. 단 md 에디터가 콜드 로드 중이면 준비될 때까지
+    /// 기다렸다 보고한다 — 즉시 보고하면 세션 쪽 준비만으로 커튼이 걷혀 md 영역이 빈(어두운) 채 보였다가
+    /// 내용이 늦게 떠 "까매졌다 열리는" 것처럼 보인다(재시작 분할 복원의 콜드 로드가 대표 케이스).</summary>
     public void PrepareRevealSynced(bool kick)
     {
-        if (_activeSession == null) { RevealPrepared?.Invoke(this); return; }
+        if (_activeSession == null)
+        {
+            if (_activeTab is FileTabItem { Editor: MarkdownFileEditorView md } tab && !md.IsEditorShellReady)
+            {
+                WhenMdReady(md, async () =>
+                {
+                    if (!ReferenceEquals(_activeTab, tab)) return; // 그 사이 탭/전환이 바뀜 — 낡은 보고 폐기
+                    await WaitForFramesAsync(2);                   // setMarkdown 반영이 페인트될 여유
+                    RevealPrepared?.Invoke(this);
+                });
+                return;
+            }
+            RevealPrepared?.Invoke(this);
+            return;
+        }
         UpdateLayout();
         double target = TerminalHostContainer?.ActualWidth ?? 0;
         _terminal.PrepareRevealSynced(_activeSession.Id, kick, target);
+    }
+
+    /// <summary>md 에디터 준비(EditorShellReady) 시 콜백 — 안전 타임아웃 2.5s(크래시 등) 후에도 진행.</summary>
+    private static void WhenMdReady(MarkdownFileEditorView md, Action then)
+    {
+        bool done = false;
+        System.Windows.Threading.DispatcherTimer? timer = null;
+        void Fire()
+        {
+            if (done) return;
+            done = true;
+            md.EditorShellReady -= Fire;
+            timer?.Stop();
+            then();
+        }
+        md.EditorShellReady += Fire;
+        timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(2500) };
+        timer.Tick += (_, _) => Fire();
+        timer.Start();
     }
 
     /// <summary>synced reveal 의 최종 단계 — 세션·파일 커버를 즉시(동시에) 걷는다. 파일(md=WebView2)은
@@ -401,6 +436,22 @@ public partial class WorkspacePaneView : UserControl
     /// kick=true 면 fit 후 resize-kick(cols-1→cols)으로 SIGWINCH 를 내 TUI 를 강제 리페인트한다 — 처음 표시되며
     /// 재배선된 세션(분할 보기 등)이 스크롤/뷰포트 정지 프레임으로 남는 것을 막는다(스플리터 nudge 자동화).</summary>
     public void RevealAfterTransition(bool kick = false)
+    {
+        // md 에디터가 콜드 로드 중이면 준비될 때까지 커튼을 유지(단일 패널 파일 전환의 "까매졌다 열림" 방지).
+        if (_activeSession == null && _activeTab is FileTabItem { Editor: MarkdownFileEditorView md } tab && !md.IsEditorShellReady)
+        {
+            WhenMdReady(md, async () =>
+            {
+                if (!ReferenceEquals(_activeTab, tab)) return; // 그 사이 탭/전환이 바뀜 — 낡은 reveal 폐기
+                await WaitForFramesAsync(2);
+                DoRevealAfterTransition(kick);
+            });
+            return;
+        }
+        DoRevealAfterTransition(kick);
+    }
+
+    private void DoRevealAfterTransition(bool kick)
     {
         // 전환 컬럼 변경을 즉시 레이아웃에 반영해 '최종 목표 폭'을 읽는다. WPF 레이아웃은 동기라 여기서
         // ActualWidth 는 이미 최종(절반)이다 — WebView2 HWND 만 지연되므로, 이 목표를 JS 에 넘겨 clientWidth 가
