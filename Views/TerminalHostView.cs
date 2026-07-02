@@ -124,6 +124,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
     public async void ShowTerminal(string roomId)
     {
+        DevezCode.Services.DiagLog.Write($"ShowTerminal room={roomId} pageReady={_pageReady} readyNotified={_readyNotified.Contains(roomId)}");
         _activeRoomId = roomId;
         if (!_initStarted)
         {
@@ -211,6 +212,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
         if (text.Contains("[?1049h") || text.Contains("[?47h")) // 풀스크린 TUI(claude 등) 시작
         {
+            DevezCode.Services.DiagLog.Write($"alt-screen detected room={roomId}");
             _ready.Add(roomId);
             _readyScan.Remove(roomId);
             _altSeenTick[roomId] = Environment.TickCount;
@@ -502,7 +504,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         TerminalSession session;
         try
         {
-            session = TerminalSessionManager.Instance.GetOrCreate(roomId, cols, rows);
+            using (DevezCode.Services.DiagLog.Time($"WireSession.GetOrCreate room={roomId}"))
+                session = TerminalSessionManager.Instance.GetOrCreate(roomId, cols, rows);
         }
         catch (Exception ex)
         {
@@ -562,6 +565,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 못 돼 진입할 때마다 로딩 스피너가 타임아웃까지 돌고, 화면도 우연한 리사이즈 전까지 빈 채 남는다.
         if (session.HasPriorOutput && !_readyNotified.Contains(roomId))
         {
+            DevezCode.Services.DiagLog.Write($"WireSession reattach room={roomId} — ready 복원 + resize kick");
             _ready.Add(roomId);
             _readyScan.Remove(roomId);
             _inlineFirstOutTick.Remove(roomId);
@@ -810,6 +814,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         if (_readyNotified.Add(roomId))
         {
+            DevezCode.Services.DiagLog.Write($"NotifyReady room={roomId}");
             TerminalReady?.Invoke(roomId);
             // 자동 시작으로 열린 세션이면 대기 중이던 Discord 메시지를 주입한다.
             DevezCode.Services.DiscordBotService.Instance.NotifySessionReady(roomId);
@@ -882,6 +887,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// ConPTY 셸 세션은 TerminalSessionManager.DisposeRoom 이 별도로 정리한다.</summary>
     public void CloseTerminal(string roomId)
     {
+        DevezCode.Services.DiagLog.Write($"CloseTerminal room={roomId} (ready state dropped)");
         _wired.Remove(roomId);
         _ready.Remove(roomId);
         _readyScan.Remove(roomId);

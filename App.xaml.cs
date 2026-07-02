@@ -54,6 +54,9 @@ public partial class App : Application
 
         base.OnStartup(e);
 
+        // 세션 열기 지연 진단 — UI 스레드 정지 감지 + 구간 로그 (%AppData%\DevezCode\diag.log)
+        DevezCode.Services.DiagLog.StartUiStallDetector();
+
         // ConPTY 자식(node 기반 claude/codex 등)이 색 지원을 간헐적으로 0(무색)으로 오판해 화면
         // 전체가 흰 글자로 렌더되던 문제 방지. node 의 supports-color 는 stdout.isTTY===false 면
         // WT_SESSION 이 있어도 색 레벨 0 을 반환하는데, ConPTY 초기화 타이밍에 따라 isTTY 가

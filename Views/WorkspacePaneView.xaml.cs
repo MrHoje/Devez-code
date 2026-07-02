@@ -358,6 +358,8 @@ public partial class WorkspacePaneView : UserControl
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
         if (ReferenceEquals(_activeSession, session)) return;
+        DiagLog.Write($"ActivateSession begin: '{session.Name}' room={session.Id} isReady={_terminal.IsReady(session.Id)} alive={session.IsAlive}");
+        using var _diag = DiagLog.Time($"ActivateSession '{session.Name}'");
         if (_activeSession != null) _activeSession.IsActive = false;
         var parent = ParentOf(session);
         if (parent == null) return;
@@ -607,6 +609,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void ShowSessionLoading(string roomId)
     {
+        DiagLog.Write($"ShowSessionLoading room={roomId}");
         _loadingRoomId = roomId;
         TerminalLoadingOverlay.Visibility = Visibility.Visible;
         _terminal.SetLoading(true);
@@ -623,6 +626,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void HideSessionLoading()
     {
+        if (_loadingRoomId != null) DiagLog.Write($"HideSessionLoading room={_loadingRoomId}");
         _loadingTimeout?.Stop();
         _loadingRoomId = null;
         TerminalLoadingOverlay.Visibility = Visibility.Collapsed;

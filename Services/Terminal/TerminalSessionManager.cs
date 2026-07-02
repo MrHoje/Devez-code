@@ -86,8 +86,11 @@ public sealed class TerminalSessionManager
 
         // opencode cwd 폴백 조회는 외부 CLI 실행이라 느릴 수 있다 — _lock 밖에서 미리 끝내
         // 다른 방의 터미널 생성/조회가 함께 블록되지 않게 한다(대상 아니면 즉시 null).
-        var opencodeCwdSession = PrefetchOpenCodeSessionByCwd(roomId);
+        string? opencodeCwdSession;
+        using (DiagLog.Time($"GetOrCreate.prefetch room={roomId}"))
+            opencodeCwdSession = PrefetchOpenCodeSessionByCwd(roomId);
 
+        using var _diagCreate = DiagLog.Time($"GetOrCreate.create room={roomId}");
         lock (_lock)
         {
             if (_sessions.TryGetValue(roomId, out var existing))
