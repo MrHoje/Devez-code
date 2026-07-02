@@ -696,8 +696,17 @@ public partial class WorkspacePaneView : UserControl
         RecordActiveTab(parent, "F:" + tab.FilePath);
 
         HideSessionLoading();
-        if (!ReferenceEquals(FileEditorHostContainer.Content, tab.Editor.AsControl()))
-            FileEditorHostContainer.Content = tab.Editor.AsControl();
+        // 에디터(md/텍스트 공통)는 패널 간 공유 단일 UserControl 이다. 반대 패널로 옮겼다 돌아오면 이 패널의
+        // Content 참조는 스테일(에디터를 가리키지만 실제 부모는 반대 패널)이라, Content 참조만 보는 가드는
+        // 재부착을 건너뛰어 내용이 안 보인다. 실제 Parent 로 판단해 다른 컨테이너에 붙어 있으면 떼어낸 뒤
+        // 이 패널에 부착한다(WPF: 한 요소는 부모가 하나뿐).
+        var ctrl = tab.Editor.AsControl();
+        if (!ReferenceEquals(ctrl.Parent, FileEditorHostContainer))
+        {
+            if (ctrl.Parent is ContentControl prevHost) prevHost.Content = null;                    // 반대 패널에서 떼기
+            if (ReferenceEquals(FileEditorHostContainer.Content, ctrl)) FileEditorHostContainer.Content = null; // 스테일 참조 해제
+            FileEditorHostContainer.Content = ctrl;
+        }
         HookEditorInteract(tab); // 이 패널이 이 에디터를 표시하게 됐으니 포커스 통지 구독(가드로 표시 중일 때만 발화)
         UpdateEmptyState();
         EnsureSelectedTabVisible(tab);
