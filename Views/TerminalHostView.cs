@@ -92,8 +92,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private const int MaxSettleAfterAltMs = 700;
     /// <summary>인라인 TUI(gjc): 첫 출력 시각. 준비 마커가 안 올 때 폴백 타임아웃 기준.</summary>
     private readonly Dictionary<string, int> _inlineFirstOutTick = new();
+    /// <summary>풀스크린 방별 준비 폴백 1회성 타이머(alt-screen 미감지 대비). UI 스레드.</summary>
+    private readonly Dictionary<string, System.Windows.Threading.DispatcherTimer> _fullscreenFallbackTimers = new();
     /// <summary>인라인 TUI 준비 마커(\e[?2004h/\e[?2026h)가 안 와도 이만큼 지나면 준비로 본다(무한 스피너 방지).</summary>
     private const int InlineReadyFallbackMs = 8000;
+    /// <summary>풀스크린 TUI(claude 등)에서 alt-screen 시퀀스가 안 걸려도 첫 출력 후 이만큼 지나면 준비로 본다.
+    /// 정상 환경은 alt-screen 이 수백ms~2초 내 잡혀 여기 도달 안 함. 감지 실패 환경에서만 트립 → 무한 재스피너 방지.</summary>
+    private const int FullscreenReadyFallbackMs = 6000;
 
     private static readonly JsonSerializerOptions CamelCase = new()
     {
@@ -215,11 +220,43 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             DevezCode.Services.DiagLog.Write($"alt-screen detected room={roomId}");
             _ready.Add(roomId);
             _readyScan.Remove(roomId);
+            _inlineFirstOutTick.Remove(roomId);
+            if (_fullscreenFallbackTimers.Remove(roomId, out var ftt)) ftt.Stop();
             _altSeenTick[roomId] = Environment.TickCount;
             BumpSettle(roomId); // 즉시 통지하지 않고, 출력이 멎을 때까지 대기(단 MaxSettleAfterAltMs 상한)
             return;
         }
+
+        // 폴백: 풀스크린인데 alt-screen 시퀀스가 안 걸리는 환경(청크 경계로 잘림·변종 시퀀스·배선 전
+        // 도착 등)에서도 준비로 확정한다. 이게 없으면 그 방은 영영 ready 를 못 찍어 20초 로딩 타임아웃으로만
+        // 스피너가 꺼지고, 재진입할 때마다 다시 스피너가 뜬다. (인라인 TUI 는 위에서 같은 보호를 받는다.)
+        // 첫 출력 시 1회성 타이머를 걸어, 이후 출력이 잠잠해져 ScanForReady 가 다시 안 불려도 발화하게 한다.
+        ArmFullscreenReadyFallback(roomId);
         _readyScan[roomId] = text.Length > 512 ? text[^512..] : text; // 버퍼 과다 방지
+    }
+
+    /// <summary>풀스크린 방에서 alt-screen 이 안 잡히는 경우를 대비한 1회성 준비 폴백 타이머(중복 무시).
+    /// FullscreenReadyFallbackMs 후에도 여전히 ready 가 아니면 강제로 준비 확정 → 무한 재스피너 방지.</summary>
+    private void ArmFullscreenReadyFallback(string roomId)
+    {
+        if (_fullscreenFallbackTimers.ContainsKey(roomId)) return; // 이미 무장됨
+        var t = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(FullscreenReadyFallbackMs),
+        };
+        t.Tick += (_, _) =>
+        {
+            t.Stop();
+            _fullscreenFallbackTimers.Remove(roomId);
+            if (_ready.Contains(roomId) || _readyNotified.Contains(roomId)) return; // 그 사이 정상 감지됨
+            DevezCode.Services.DiagLog.Write($"fullscreen ready FALLBACK room={roomId} (alt-screen 미감지 {FullscreenReadyFallbackMs}ms 경과)");
+            _ready.Add(roomId);
+            _readyScan.Remove(roomId);
+            _altSeenTick[roomId] = Environment.TickCount;
+            NotifyReady(roomId);
+        };
+        _fullscreenFallbackTimers[roomId] = t;
+        t.Start();
     }
 
     // 신뢰 프롬프트 매칭용 ANSI 정규화. 커서 전진(\e[nC)은 화면상 공백이므로 공백으로, OSC/그 외 CSI 는 제거.
@@ -895,6 +932,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _altSeenTick.Remove(roomId);
         _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
+        if (_fullscreenFallbackTimers.Remove(roomId, out var ft)) ft.Stop();
         _pendingPreload.Remove(roomId);
         lock (_outLock) { _outPending.Remove(roomId); _outScheduled.Remove(roomId); }
         if (_activeRoomId == roomId) _activeRoomId = null;
