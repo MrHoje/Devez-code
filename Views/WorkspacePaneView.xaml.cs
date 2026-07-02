@@ -1687,25 +1687,58 @@ public partial class WorkspacePaneView : UserControl
         t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
 
     // ── 상태/빈 화면 ─────────────────────────────────────────────
+    // ── 터미널 HWND 0×0 주차 ─────────────────────────────────────────
+    // 파일 탭/빈 패널일 때 터미널 컨테이너를 Collapsed 대신 0×0(Visible) 로 '주차'한다.
+    // Collapsed 로 두면 WebView2 HWND 생성/컨트롤러 부착이 '첫 세션 표시 순간'으로 밀리고,
+    // 그 순간 HwndHost 의 raw 자식 창이 컨트롤러가 붙기 전 잠깐 흰색으로 노출된다
+    // (DefaultBackgroundColor 는 브라우저 렌더에만 적용 — raw 창 흰색은 못 막음 = md→세션 흰 번쩍).
+    // 0×0 주차는 IsVisible=true 라 HWND·컨트롤러·페이지가 화면에 안 보인 채 미리 준비되고,
+    // 첫 표시는 '이미 어두운 HWND 의 리사이즈'가 되어 흰 프레임이 없다.
+    private bool _termParked;
+
+    private void ParkTerminalHost()
+    {
+        if (_termParked) return;
+        _termParked = true;
+        DiagLog.Write($"ParkTerminalHost pane={(IsRightPane ? "R" : "L")}");
+        TerminalHostContainer.Width = 0;
+        TerminalHostContainer.Height = 0;
+        TerminalHostContainer.HorizontalAlignment = HorizontalAlignment.Left;
+        TerminalHostContainer.VerticalAlignment = VerticalAlignment.Top;
+        TerminalHostContainer.Visibility = Visibility.Visible;
+    }
+
+    private void UnparkTerminalHost()
+    {
+        if (!_termParked) return;
+        _termParked = false;
+        DiagLog.Write($"UnparkTerminalHost pane={(IsRightPane ? "R" : "L")} pageReady={_terminal.IsPageReady}");
+        TerminalHostContainer.Width = double.NaN;
+        TerminalHostContainer.Height = double.NaN;
+        TerminalHostContainer.HorizontalAlignment = HorizontalAlignment.Stretch;
+        TerminalHostContainer.VerticalAlignment = VerticalAlignment.Stretch;
+    }
+
     private void UpdateEmptyState()
     {
         bool hasActive = _activeTab != null;
 
         if (_activeTab is SessionItem)
         {
+            UnparkTerminalHost();
             TerminalHostContainer.Visibility = Visibility.Visible;
             FileEditorHostContainer.Visibility = Visibility.Collapsed;
         }
         else if (_activeTab is FileTabItem)
         {
-            TerminalHostContainer.Visibility = Visibility.Collapsed;
+            ParkTerminalHost();
             // 전환 커버 중이면 파일 에디터(md=WebView2 는 airspace 로 WPF 커튼에 안 가려짐)를 숨기고
             // TerminalCurtain(단색)으로 대신 가린다 → reveal 동기화 시 함께 나타나게(파일이 먼저 뜨는 것 방지).
             FileEditorHostContainer.Visibility = _coverActive ? Visibility.Collapsed : Visibility.Visible;
         }
         else
         {
-            TerminalHostContainer.Visibility = Visibility.Collapsed;
+            ParkTerminalHost();
             FileEditorHostContainer.Visibility = Visibility.Collapsed;
         }
 
@@ -1973,9 +2006,50 @@ public partial class WorkspacePaneView : UserControl
         TerminalHostContainer.Visibility = Visibility.Collapsed;
     }
 
+    // ── 종료 오버레이용 2단계 suspend ──────────────────────────────────
+    // 기존(각 패널이 캡처→대기→hide 를 순차 수행)은 패널·에디터 HWND 가 서로 다른 프레임에 사라져
+    // 팝이 여러 번 어긋나 보였다(= 종료 시 깜빡임). 셸이 ①모든 패널 스냅샷 present → ②같은 프레임에
+    // 일괄 hide 하도록 준비/커밋을 분리한다.
+    private enum ShutdownHide { None, Terminal, FileEditor }
+    private ShutdownHide _shutdownHide;
+
+    /// <summary>①스냅샷만 올린다(HWND 유지). 숨길 대상은 기억해 뒀다 CommitShutdownHide 가 처리.</summary>
+    public async Task PrepareShutdownSnapshotAsync()
+    {
+        _shutdownHide = ShutdownHide.None;
+        if (_activeTab is FileTabItem file)
+        {
+            var snap = await file.Editor.CaptureSnapshotAsync();
+            if (snap == null) return; // 캡처 실패 — 에디터를 그대로 두면 최소한 내용은 보인다(기존 동작)
+            TerminalSnapshot.Source = snap;
+            TerminalSnapshot.Visibility = Visibility.Visible;
+            _shutdownHide = ShutdownHide.FileEditor;
+            return;
+        }
+        if (_activeSession == null) return;
+        var png = await _terminal.CapturePngAsync();
+        if (png != null)
+        {
+            TerminalSnapshot.Source = TerminalHostView.BitmapFromPng(png);
+            TerminalSnapshot.Visibility = Visibility.Visible;
+        }
+        _shutdownHide = ShutdownHide.Terminal; // 캡처 실패해도 HWND 는 숨겨야 오버레이가 보인다
+    }
+
+    /// <summary>②스냅샷 present 확인(셸이 WaitForFramesAsync) 후 — HWND 를 숨긴다. 모든 패널이 같은 프레임에.</summary>
+    public void CommitShutdownHide()
+    {
+        switch (_shutdownHide)
+        {
+            case ShutdownHide.FileEditor: FileEditorHostContainer.Visibility = Visibility.Collapsed; break;
+            case ShutdownHide.Terminal: TerminalHostContainer.Visibility = Visibility.Collapsed; break;
+        }
+        _shutdownHide = ShutdownHide.None;
+    }
+
     /// <summary>지정한 수만큼 컴포지션 렌더 프레임이 지나갈 때까지 대기. HwndHost 를 숨기기 전에
     /// WPF 스냅샷이 실제로 화면에 present 됐음을 보장해 airspace 전환 깜빡임을 없앤다.</summary>
-    private static async Task WaitForFramesAsync(int frames)
+    internal static async Task WaitForFramesAsync(int frames)
     {
         for (int i = 0; i < frames; i++)
         {

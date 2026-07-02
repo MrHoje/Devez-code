@@ -124,6 +124,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>해당 방의 claude 화면이 이미 떠서 안정화까지 끝났는지(로딩 불필요).</summary>
     public bool IsReady(string roomId) => _readyNotified.Contains(roomId);
+    /// <summary>terminal.html 페이지가 로드·초기화 완료됐는지(콜드스타트 진단용).</summary>
+    public bool IsPageReady => _pageReady;
     /// <summary>세션 생성 없이 WebView2/xterm 페이지만 미리 띄워 첫 세션 클릭의 콜드스타트 비용을 앞당긴다.</summary>
     public void PrewarmWebView()
     {
@@ -343,6 +345,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         {
             _webView = webView;
             Content = webView;
+            DevezCode.Services.DiagLog.Write($"InitWebView: start (IsVisible={IsVisible})");
 
             var userDataDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -351,6 +354,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             if (_disposed) return; // 초기화 중 앱 종료 — Dispose 가 webView 를 정리하므로 더 진행하지 않음
             await webView.EnsureCoreWebView2Async(env);
             if (_disposed) return;
+            DevezCode.Services.DiagLog.Write($"InitWebView: EnsureCore done (IsVisible={IsVisible})");
             // (DefaultBackgroundColor/Background 는 생성 직후 이미 #0C0C0C 로 설정됨 — 콜드스타트 흰 배경 방지)
             // 초기화 완료 시 호스트가 숨겨진 상태라면 WPF 렌더 큐를 비워
             // 새로 생성된 HWND에 Collapsed 상태가 반영되기 전 한 프레임 튀는 현상을 방지한다.
@@ -514,6 +518,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     private void OnPageReady()
     {
+        DevezCode.Services.DiagLog.Write($"InitWebView: pageReady (IsVisible={IsVisible})");
         _pageReady = true;
         var cfg = TerminalSessionManager.Instance.Config;
         var savedPt = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();

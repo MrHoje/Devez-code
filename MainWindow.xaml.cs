@@ -471,8 +471,18 @@ public partial class MainWindow : Window
         e.Cancel = true;
         _shuttingDown = true;
         // WebView2(터미널/md 에디터/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
-        // 종료 직전 화면을 스냅샷으로 캡처해 깔고 WebView 를 치운 뒤 "세션 닫는 중" 오버레이를 그 위에 띄운다.
-        try { await SuspendTerminalWithSnapshotAsync(blankCurtain: false); }
+        // 2단계 suspend: ①모든 패널이 스냅샷만 올리고(HWND 유지) → 스냅샷 present 대기 →
+        // ②모든 HWND 를 '같은 프레임'에 일괄 숨김. 패널별 순차(캡처→hide) 방식은 HWND 가
+        // 서로 다른 프레임에 사라져 팝이 여러 번 어긋나 보였다(종료 오버레이 직전 깜빡임).
+        try
+        {
+            DevezCode.Services.DiagLog.Write("Shutdown: prepare snapshots");
+            await FileExplorer.SuspendBrowserAsync();
+            await Task.WhenAll(_panes.Select(p => p.PrepareShutdownSnapshotAsync()));
+            await Views.WorkspacePaneView.WaitForFramesAsync(2); // 스냅샷 present 보장
+            foreach (var p in _panes) p.CommitShutdownHide();
+            DevezCode.Services.DiagLog.Write("Shutdown: HWNDs hidden");
+        }
         catch { /* best effort */ }
         // 스냅샷이 실제로 한 프레임 그려진 뒤 오버레이를 올린다 → WebView 가 사라진 직후 빈 배경이 비치는 깜빡임 제거.
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
