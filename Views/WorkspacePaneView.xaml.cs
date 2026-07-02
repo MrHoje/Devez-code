@@ -1754,10 +1754,35 @@ public partial class WorkspacePaneView : UserControl
             }
             TerminalSnapshot.Source = snap;
             TerminalSnapshot.Visibility = Visibility.Visible;
+            // 스냅샷이 실제 화면 프레임에 present 된 것을 확인한 뒤에 WebView2 HWND 를 숨긴다.
+            // 같은 블록에서 동시에 바꾸면 네이티브 HWND(별도 렌더 파이프라인)가 스냅샷보다
+            // 먼저 사라져, 그 아래 배경이 한 프레임 노출되며 "확 깜빡"인다. 두 렌더 프레임을
+            // 기다리면 스냅샷이 확실히 올라온 뒤 HWND 가 사라져 빈 프레임이 없다.
+            // (WebView2 가 위에 떠 있는 동안 보이는 건 정지될 화면과 동일한 라이브 터미널이고,
+            //  이 대기는 애니메이션 시작 전이라 체감 지연이 없다.)
+            await WaitForFramesAsync(2);
         }
         // Collapsed 로 숨긴다 → WebView2(HwndHost)의 네이티브 HWND 가 실제로 가려진다.
         // (Hidden 은 레이아웃 슬롯을 남겨 HwndHost HWND 가 그대로 보이므로 금지 — 애니메이션 중 라이브 터미널이 비쳐 깜빡인다.)
         TerminalHostContainer.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>지정한 수만큼 컴포지션 렌더 프레임이 지나갈 때까지 대기. HwndHost 를 숨기기 전에
+    /// WPF 스냅샷이 실제로 화면에 present 됐음을 보장해 airspace 전환 깜빡임을 없앤다.</summary>
+    private static async Task WaitForFramesAsync(int frames)
+    {
+        for (int i = 0; i < frames; i++)
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            EventHandler? h = null;
+            h = (_, _) =>
+            {
+                System.Windows.Media.CompositionTarget.Rendering -= h;
+                tcs.TrySetResult(true);
+            };
+            System.Windows.Media.CompositionTarget.Rendering += h;
+            await tcs.Task;
+        }
     }
 
     public void ResumeTerminalOnly()
