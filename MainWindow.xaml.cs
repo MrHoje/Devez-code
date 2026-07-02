@@ -2343,7 +2343,9 @@ public partial class MainWindow : Window
         }
         if (pane.ActiveProject != null) MoveTabToEnd(tab, pane.ActiveProject);
         PaneB.ScrollTabIntoView(tab);
-        pane.RevealAfterTransition();
+        // 남은 세션은 이 패널에 처음 표시되며 살아있는 ConPTY 에 재배선된다 → kick 으로 SIGWINCH 강제
+        // 리페인트해 스크롤/뷰포트 정지 프레임을 막는다.
+        pane.RevealAfterTransition(kick: true);
 
         // 버튼 토글로 켠 분할과 동일하게 영속 — 메인(좌측) 프로젝트를 "분할 사용"으로 표시하고
         // 파트너를 기록(PersistSplitState가 갱신)해, 재선택/재시작 시 같은 분할이 복원되게 한다.

@@ -277,8 +277,10 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>분할 열림/닫힘으로 이 패널이 리사이즈될 전환 직전 — 터미널을 단색 커튼으로 덮어 리플로우를 감춘다.</summary>
     public void CoverForTransition() => _terminal.CoverForTransition();
 
-    /// <summary>전환 후 — 최종 폭으로 fit 재측정 후 커튼을 fade-out(활성 세션 기준). 세션이 없으면 커튼만 걷는다.</summary>
-    public void RevealAfterTransition() => _terminal.RevealAfterTransition(_activeSession?.Id);
+    /// <summary>전환 후 — 최종 폭으로 fit 재측정 후 커튼을 fade-out(활성 세션 기준). 세션이 없으면 커튼만 걷는다.
+    /// kick=true 면 fit 후 resize-kick(cols-1→cols)으로 SIGWINCH 를 내 TUI 를 강제 리페인트한다 — 처음 표시되며
+    /// 재배선된 세션(분할 보기 등)이 스크롤/뷰포트 정지 프레임으로 남는 것을 막는다(스플리터 nudge 자동화).</summary>
+    public void RevealAfterTransition(bool kick = false) => _terminal.RevealAfterTransition(_activeSession?.Id, kick);
 
     /// <summary>분할 해제 시 — 이 패널의 프로젝트/세션 상태를 비운다(ConPTY·기록 보존).
     /// <paramref name="disposeTerminal"/>=true 면 보여주던 세션의 xterm 배선까지 끊는다(스왑 재부착처럼

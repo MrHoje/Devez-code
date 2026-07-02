@@ -933,6 +933,7 @@
         const gen = _xferGen; // 직전 xferCover 와 같은 세대
         const cov = document.getElementById('xfer-cover');
         const room = msg.roomId;
+        const kick = !!msg.kick; // fit 후 resize-kick 으로 강제 리페인트(재배선 세션 스크롤 정지 방지)
         const fadeOut = function () {
           if (gen !== _xferGen) return;
           requestAnimationFrame(function () {
@@ -952,6 +953,10 @@
             return;
           }
           try { e.fit.fit(); } catch (err) {}
+          if (kick) { // 재배선 세션: SIGWINCH 강제 리페인트로 정지된 스크롤/뷰포트 복원
+            const c = e.term.cols, r = e.term.rows;
+            if (c > 2 && r > 1) { try { e.term.resize(Math.max(2, c - 1), r); e.term.resize(c, r); } catch (err) {} }
+          }
           done++;
           if (done < 3) setTimeout(step, 80);  // 폭 확정 + TUI 재렌더(onResize→ConPTY→repaint) 안정 대기
           else setTimeout(fadeOut, 80);
