@@ -2982,9 +2982,10 @@ public partial class MainWindow : Window
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
 
         // 이 세션의 프로젝트가 이미 어느 패널에 떠 있으면 그 패널에서 세션만 활성화(재로딩 없음).
-        var existingPane = parent != null
-            ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent))
-            : null;
+        // 같은 프로젝트를 분할한 경우엔 세션이 실제로 보이는 패널(예: 우측 격리)을 우선 고른다 —
+        // 안 그러면 항상 좌측을 골라 우측 세션이 안 열린다.
+        var existingPane = _panes.FirstOrDefault(p => p.ShowsTab(session))
+            ?? (parent != null ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent)) : null);
         if (existingPane != null) { OpenSessionIntoPane(existingPane, session, isNewProjectLoad: false); return; }
 
         // 새 프로젝트는 메인(좌측) 패널에 연다.
@@ -2997,9 +2998,9 @@ public partial class MainWindow : Window
         // 새 프로젝트를 좌측에 여는 경우만 커튼으로 덮는다. 이미 열린 프로젝트의 세션 탭 전환은 즉시(페이드 X).
         bool cover = isNewProjectLoad && ReferenceEquals(pane, LeftPane);
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
-        bool willSplit = cover && parent != null && parent.SplitEnabled;
+        bool coverRight = cover && (_splitActive || (parent != null && parent.SplitEnabled));
         if (cover) pane.CoverForTransition();
-        if (willSplit) RightPane.CoverForTransition();
+        if (coverRight) RightPane.CoverForTransition();
         pane.OpenSession(session);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
@@ -3037,9 +3038,10 @@ public partial class MainWindow : Window
         // 프로젝트 전환은 항상 커튼으로 덮었다 fade-in — 리사이즈 리플로우를 감추고 전환 페이드를 균일하게.
         // 분할 프로젝트면 우측도 미리 덮어, 좌우가 각자 다른 타이밍에 뜨지 않고 느린 쪽 기준으로 함께 나타난다.
         bool leftMain = ReferenceEquals(pane, LeftPane);
-        bool willSplit = leftMain && proj.SplitEnabled;
+        // 우측도 커버: 지금 분할이라 우측 내용이 사라질 때(→ 좌측과 동시에 사라지게) 또는 대상이 분할이라 우측이 새로 뜰 때.
+        bool coverRight = leftMain && (_splitActive || proj.SplitEnabled);
         if (leftMain) pane.CoverForTransition();
-        if (willSplit) RightPane.CoverForTransition();
+        if (coverRight) RightPane.CoverForTransition();
         pane.SelectProject(proj);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();

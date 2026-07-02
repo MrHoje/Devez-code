@@ -239,6 +239,11 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>이 패널 활성 탭의 참조.</summary>
     public string? ActiveTabRef() => _activeTab == null ? null : RefOf(_activeTab);
 
+    /// <summary>이 탭이 이 패널의 탭바에 실제로 보이는지(활성 프로젝트 소속 + 필터 통과). 사이드바 클릭 시
+    /// 그 세션이 실제로 있는 패널을 골라 여는 데 쓴다 — 같은 프로젝트 분할에서 우측 격리 세션이 좌측에서
+    /// 안 열리던 문제 방지.</summary>
+    public bool ShowsTab(TabItemBase tab) => _activeProject != null && _activeProject.Tabs.Contains(tab) && FilterTab(tab);
+
     /// <summary>활성 프로젝트의 Tabs 에서 참조("S:id"/"F:path")에 해당하는 탭을 찾는다. 세션은 숨김 제외.</summary>
     public TabItemBase? FindTabByRef(string? @ref)
     {
@@ -390,6 +395,12 @@ public partial class WorkspacePaneView : UserControl
     /// 숨겨질 뿐 파괴되지 않으므로 hidden 상태로도 출력을 계속 받아 버퍼가 최신으로 유지된다).</summary>
     public void ClearForHide(bool disposeTerminal = true)
     {
+        // 커버 상태 정리 — 이 패널이 접히며 비워지므로 커튼/커버를 확실히 걷어 다음 사용 때 잔류하지 않게 한다.
+        _coverActive = false;
+        TerminalCurtain.BeginAnimation(UIElement.OpacityProperty, null);
+        TerminalCurtain.Opacity = 1;
+        TerminalCurtain.Visibility = Visibility.Collapsed;
+        _terminal.FadeNow(); // 웹 레이어 #xfer-cover 도 해제(보존된 터미널에 잔류 방지)
         if (disposeTerminal && _activeSession != null)
             try { _terminal.CloseTerminal(_activeSession.Id); } catch { /* ignore */ }
         _activeProject = null;
