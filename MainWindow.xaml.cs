@@ -2231,6 +2231,18 @@ public partial class MainWindow : Window
         // 세션·다른프로젝트 파트너는 EnableSplit 이 바로 우측에 띄운다. 파일 파트너는 빈 우측으로 연 뒤 아래에서 연다.
         EnableSplit(bProject: partnerProj, bSession: partnerSession, animate: animate);
         RestorePartner(proj, partnerSession, partnerFile);
+        // 다른(비분할) 프로젝트에 갔다 이 분할로 돌아오는 경로 — 우측(PaneB) 터미널은 보존돼(스피너/리로드
+        // 없음) 있지만 Collapsed(0폭)에서 되살아나며 폭이 접기 전과 같으면 풀스크린 TUI 가 정지 프레임으로
+        // 남는다. refitSoon(terminal.html, ≈180ms) 이 최종 폭으로 fit 을 끝낸 뒤 강제 리페인트 킥.
+        RepaintPaneAfterReturn(RightPane);
+    }
+
+    /// <summary>Collapsed 였다 되살아난 패널의 풀스크린 TUI 정지 프레임을 강제 리페인트로 되살린다.
+    /// terminal.html 의 refitSoon(rAF²+60+180ms)이 최종 폭으로 fit 을 끝낼 시간을 준 뒤 킥한다.</summary>
+    private async void RepaintPaneAfterReturn(WorkspacePaneView pane)
+    {
+        await Task.Delay(260);
+        pane.ForceRepaintActiveSession();
     }
 
     /// <summary>이미 분할된 상태에서 좌측 프로젝트가 다른 "분할 사용" 프로젝트로 바뀔 때, 우측 패널
