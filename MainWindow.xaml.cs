@@ -2652,16 +2652,19 @@ public partial class MainWindow : Window
     {
         void Finish()
         {
-            // 비스왑: 축소 완료 후 상태만 비우되 xterm/ready 는 보존(disposeTerminal:false) — 좌측 패널처럼
-            // 터미널을 살려두면 다른(비분할) 프로젝트에 갔다 이 분할로 돌아올 때 스피너·리로드·스크롤 튐 없이
-            // 즉시 재활성화된다. (스왑은 유지 콘텐츠를 PaneA 로 재부착하므로 더블 배선 방지 위해 위에서 dispose 함.)
-            if (!swapped) PaneB.ClearForHide(disposeTerminal: false);
+            // PaneB 를 먼저 숨긴다(커버가 올라온 채로). 순서가 중요: ClearForHide→FadeNow 가 커버를 먼저 걷으면
+            // collapse 전 한 프레임 동안 우측 라이브 터미널(전환 시 웹 커버로 덮여 있던 50% 폭)이 번쩍인다
+            // (= 분할 프로젝트를 처음 떠날 때의 깜빡임). 숨긴 뒤 커버를 걷으면 그 제거가 화면에 안 보인다.
             PaneB.Visibility = Visibility.Collapsed;
             PaneSplitter.Visibility = Visibility.Collapsed;
             PaneBCol.Width = new GridLength(0);
             PaneSplitterCol.Width = new GridLength(0);
             PaneACol.Width = new GridLength(1, GridUnitType.Star);
-            PaneB.ResumeTerminalOnly();   // 숨겨질 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록).
+            // 비스왑: 숨긴 뒤 상태만 비우되 xterm/ready 는 보존(disposeTerminal:false) — 좌측 패널처럼
+            // 터미널을 살려두면 다른(비분할) 프로젝트에 갔다 이 분할로 돌아올 때 스피너·리로드·스크롤 튐 없이
+            // 즉시 재활성화된다. (스왑은 유지 콘텐츠를 PaneA 로 재부착하므로 더블 배선 방지 위해 위에서 dispose 함.)
+            if (!swapped) PaneB.ClearForHide(disposeTerminal: false);
+            PaneB.ResumeTerminalOnly();   // 숨겨진 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록).
             PaneA.ResumeTerminalOnly();
             UpdatePaneFocusVisual(animate: false);
             PersistSplitState();
