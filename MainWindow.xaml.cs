@@ -2213,9 +2213,14 @@ public partial class MainWindow : Window
             DisableSplit();
             if (keep != null)
             {
+                // 사용자가 '분할 닫기' 버튼으로 직접 닫은 경우 — 다음에 다시 열 때 우측을 복원하지 않고 비운 채 연다.
+                // (다른 비분할 프로젝트로 전환해 자동으로 닫히는 경우는 복원돼야 하므로, 이 버튼 경로에서만 파트너/우측 집합을 지운다.)
                 keep.SplitEnabled = false;
                 keep.SplitPartnerProjectPath = null;
                 keep.SplitPartnerSessionId = null;
+                keep.SplitPartnerFilePath = null;
+                keep.SplitRightTabRefs = new();
+                keep.SplitRightActiveRef = null;
                 WorkspaceStore.Save(_projects, _archivedProjects);
             }
         }

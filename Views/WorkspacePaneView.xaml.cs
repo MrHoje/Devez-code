@@ -322,14 +322,22 @@ public partial class WorkspacePaneView : UserControl
             _terminal.ResyncOnReturn(_activeSession.Id);
     }
 
-    /// <summary>분할 열림/닫힘으로 이 패널이 리사이즈될 전환 직전 — 터미널을 단색 커튼으로 덮어 리플로우를 감춘다.</summary>
-    public void CoverForTransition() => _terminal.CoverForTransition();
+    private bool _coverActive; // 전환 커버 중(파일 에디터를 숨기고 TerminalCurtain 으로 가리는 상태 판정용)
+
+    /// <summary>분할 열림/닫힘·프로젝트 전환 직전 — 세션은 웹 레이어 커튼(#xfer-cover)으로, 파일 에디터는
+    /// 단색 커튼(TerminalCurtain, md=WebView2 는 airspace 라 에디터를 숨기고 덮음)으로 가려 리플로우/조기표시를 막는다.</summary>
+    public void CoverForTransition()
+    {
+        _coverActive = true;
+        _terminal.CoverForTransition();
+        UpdateEmptyState(); // 파일 탭이면 에디터 숨김 + 커튼 표시
+    }
 
     /// <summary>synced reveal 준비 완료(양쪽 조율용). 셸이 좌우 준비를 모아 FadeRevealNow 로 동시에 걷는다.</summary>
     public event Action<WorkspacePaneView>? RevealPrepared;
 
     /// <summary>동시 reveal 준비 — 폭 안정·fit·재동기까지만 하고 커튼은 유지, 완료 시 RevealPrepared 발생.
-    /// 활성 세션이 없으면(파일/빈 패널) 터미널 커튼과 무관하므로 즉시 준비 완료로 보고한다.</summary>
+    /// 활성 세션이 없으면(파일/빈 패널) 폭 조정이 필요 없으므로 즉시 준비 완료로 보고한다(커튼은 FadeRevealNow 가 걷음).</summary>
     public void PrepareRevealSynced(bool kick)
     {
         if (_activeSession == null) { RevealPrepared?.Invoke(this); return; }
@@ -338,8 +346,26 @@ public partial class WorkspacePaneView : UserControl
         _terminal.PrepareRevealSynced(_activeSession.Id, kick, target);
     }
 
-    /// <summary>synced reveal 의 최종 단계 — 커튼을 즉시 fade-out.</summary>
-    public void FadeRevealNow() => _terminal.FadeNow();
+    /// <summary>synced reveal 의 최종 단계 — 세션 커튼(#xfer-cover) fade + 파일 커튼(TerminalCurtain) fade + 에디터 노출.</summary>
+    public void FadeRevealNow()
+    {
+        _terminal.FadeNow();
+        EndCover();
+    }
+
+    /// <summary>커버 해제 — 파일 커튼을 fade-out 하고 파일 에디터를 다시 표시한다.</summary>
+    private void EndCover()
+    {
+        if (!_coverActive) return;
+        _coverActive = false;
+        UpdateEmptyState(); // 파일 에디터 다시 표시(md 는 WebView2 라 즉시, text 는 커튼 뒤에서 노출)
+        if (TerminalCurtain.Visibility == Visibility.Visible)
+        {
+            var anim = new DoubleAnimation(1, 0, TimeSpan.FromSeconds(0.14));
+            anim.Completed += (_, _) => { TerminalCurtain.Visibility = Visibility.Collapsed; TerminalCurtain.Opacity = 1; };
+            TerminalCurtain.BeginAnimation(UIElement.OpacityProperty, anim);
+        }
+    }
 
     /// <summary>전환 후 — 최종 폭으로 fit 재측정 후 커튼을 fade-out(활성 세션 기준). 세션이 없으면 커튼만 걷는다.
     /// kick=true 면 fit 후 resize-kick(cols-1→cols)으로 SIGWINCH 를 내 TUI 를 강제 리페인트한다 — 처음 표시되며
@@ -352,6 +378,7 @@ public partial class WorkspacePaneView : UserControl
         UpdateLayout();
         double target = TerminalHostContainer?.ActualWidth ?? 0;
         _terminal.RevealAfterTransition(_activeSession?.Id, kick, target);
+        EndCover(); // 파일 커튼도 함께 걷는다(단일 패널 파일 전환)
     }
 
     /// <summary>분할 해제 시 — 이 패널의 프로젝트/세션 상태를 비운다(ConPTY·기록 보존).
@@ -1632,13 +1659,20 @@ public partial class WorkspacePaneView : UserControl
         else if (_activeTab is FileTabItem)
         {
             TerminalHostContainer.Visibility = Visibility.Collapsed;
-            FileEditorHostContainer.Visibility = Visibility.Visible;
+            // 전환 커버 중이면 파일 에디터(md=WebView2 는 airspace 로 WPF 커튼에 안 가려짐)를 숨기고
+            // TerminalCurtain(단색)으로 대신 가린다 → reveal 동기화 시 함께 나타나게(파일이 먼저 뜨는 것 방지).
+            FileEditorHostContainer.Visibility = _coverActive ? Visibility.Collapsed : Visibility.Visible;
         }
         else
         {
             TerminalHostContainer.Visibility = Visibility.Collapsed;
             FileEditorHostContainer.Visibility = Visibility.Collapsed;
         }
+
+        // 파일 패널 커버: 커버 중 & 파일 탭일 때만 단색 커튼 노출(세션은 웹 레이어 #xfer-cover 가 담당).
+        // 숨김은 EndCover 가 처리(fade). (커튼은 다이얼로그 suspend 와도 공유하지만 프로젝트 전환과 시점이 안 겹침.)
+        if (_coverActive && _activeTab is FileTabItem)
+        { TerminalCurtain.Opacity = 1; TerminalCurtain.Visibility = Visibility.Visible; }
 
         EmptyState.Visibility = hasActive ? Visibility.Collapsed : Visibility.Visible;
 
