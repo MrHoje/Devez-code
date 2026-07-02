@@ -53,7 +53,10 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
     {
         try
         {
-            _webView = new WebView2 { DefaultBackgroundColor = System.Drawing.Color.Transparent };
+            // Transparent 는 페이지 첫 페인트 전까지 '검정'으로 렌더된다(WebView2 는 컴포지션 시작 전
+            // 투명을 지원 못 함) → md 에디터가 열릴 때 한 번 까매졌다 뜨는 원인. 테마 배경색으로 맞춰
+            // 페인트 전 구간이 주변(커튼/패널 배경)과 동일하게 보이도록 한다. 테마 변경 시 ApplyTheme 이 갱신.
+            _webView = new WebView2 { DefaultBackgroundColor = CurrentBgColor() };
             Content = _webView;
 
             var env = await SharedEnvironment.Value;
@@ -151,8 +154,18 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
         if (_pageReady) { _webView?.Focus(); PostJson(new { type = "focus" }); }
     }
 
+    /// <summary>현재 테마의 BgBrush → WebView2 기본 배경색(페이지 페인트 전 구간용).</summary>
+    private static System.Drawing.Color CurrentBgColor()
+    {
+        if (Application.Current?.TryFindResource("BgBrush") is SolidColorBrush b)
+            return System.Drawing.Color.FromArgb(0xFF, b.Color.R, b.Color.G, b.Color.B);
+        return System.Drawing.Color.White;
+    }
+
     public void ApplyTheme(string theme)
     {
+        // 페이지 페인트 전 기본 배경도 테마에 맞춰 갱신(리사이즈/재로드 시 노출될 수 있음).
+        try { if (_webView != null) _webView.DefaultBackgroundColor = CurrentBgColor(); } catch { }
         if (!_pageReady) { _pendingTheme = theme; return; }
         PostJson(new
         {
