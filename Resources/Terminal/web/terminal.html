@@ -159,6 +159,7 @@
   let _scrollSuppressTimer = 0; // suppress 잔여 누수 방지용 타임아웃
   let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
   let _xferCoverTimer = 0; // 전환 커튼 안전 자동해제 타이머(reveal 누락 대비)
+  let _loadGen = 0; // 로딩 스피너 세대 — 새 loading 메시지마다 증가, 이전 카드 표시 대기 폴링을 무효화
   let _xferGen = 0; // 전환 세대 — cover/resync 시작마다 증가. 빠른 연속 전환 시 이전 전환의 지연 타이머(fade/step)를 무효화해 커튼이 엉뚱한 시점에 걷히는 깜빡임을 막는다.
   let _fitSuppressed = false; // 전환(커버) 중 true — 컨테이너가 전체폭→절반으로 줄어드는 중간 폭에서 fit 하면
                               // TUI 가 그 폭으로 그렸다 다시 리플로우돼 깨진다. 억제했다가 reveal 이 안정된 최종 폭에서 한 번만 fit.
@@ -1112,14 +1113,31 @@
       }
       case 'loading': {
         // 세션 로딩 스피너 토글(테마 재시작·세션 진입 중). 웹 레이어라 터미널 위에 항상 보인다.
-        // expectW/H: C# 이 확정한 최종 레이아웃 크기 — 카드(.box)를 그 중앙 px 에 앵커해,
-        // 뷰포트가 stale(옛 크기) 인 동안에도 화면상 올바른 위치에 뜬다(레이아웃 변경 시 C# 이 재전송).
+        // expectW/H: C# 이 확정한 최종 레이아웃 크기. HWND 리사이즈가 렌더러에 늦게 반영되는 동안
+        // stale 프레임이 클립/스트레치로 표시되는데, 그때 카드를 그리면 옆/아래로 튀었다 돌아와 보인다.
+        // → 배경(단색, 스트레치돼도 티 안 남)은 즉시 덮고, 카드(.box)는 뷰포트가 목표 크기와 일치할
+        // 때까지 숨겼다가 표시한다(어떤 리사이즈 시맨틱에서도 튈 수 없음). 1.5s 안에 안 오면 그냥 표시.
+        // 레이아웃이 로딩 중 바뀌면 C# 이 새 목표로 재전송 → 세대(_loadGen)로 이전 폴링 무효화.
         const ov = document.getElementById('loading-overlay');
+        const box = ov.querySelector('.box');
+        _loadGen++;
         if (msg.on) {
-          const box = ov.querySelector('.box');
+          const gen = _loadGen;
           const ew = msg.expectW || 0, eh = msg.expectH || 0;
-          box.style.left = ew > 2 ? (ew / 2) + 'px' : '50%';
-          box.style.top = eh > 2 ? (eh / 2) + 'px' : '50%';
+          const match = function () {
+            return ew <= 2 || (Math.abs(window.innerWidth - ew) < 4 && Math.abs(window.innerHeight - eh) < 4);
+          };
+          if (match()) box.style.visibility = 'visible';
+          else {
+            box.style.visibility = 'hidden';
+            const t0 = Date.now();
+            const step = function () {
+              if (gen !== _loadGen) return;
+              if (match() || Date.now() - t0 > 1500) { box.style.visibility = 'visible'; return; }
+              setTimeout(step, 50);
+            };
+            setTimeout(step, 50);
+          }
         }
         ov.classList.toggle('on', !!msg.on);
         break;

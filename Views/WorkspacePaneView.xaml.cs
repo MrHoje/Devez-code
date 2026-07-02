@@ -727,11 +727,13 @@ public partial class WorkspacePaneView : UserControl
         var sessionAgentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
         if (sessionAgentId != "claude")
             AgentLastMsg?.TrackSession(parent.Path, sessionAgentId);
-        if (_terminal.IsReady(session.Id)) HideSessionLoading();
-        else ShowSessionLoading(session.Id);
         _terminal.ShowTerminal(session.Id);
         _terminal.FocusTerminal();
         UpdateEmptyState();
+        // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
+        // 기대 크기를 캡처해야 웹 스피너 게이트(뷰포트=목표 일치 대기)의 목표가 처음부터 정확하다.
+        if (_terminal.IsReady(session.Id)) HideSessionLoading();
+        else ShowSessionLoading(session.Id);
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
         ActiveChanged?.Invoke(this);
