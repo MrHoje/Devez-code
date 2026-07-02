@@ -680,13 +680,17 @@ public partial class WorkspacePaneView : UserControl
         ActivateFileTab(tab);
     }
 
+    // 이 패널에서 (패널 폭으로) 한 번이라도 표시한 세션들. 프리로드는 기본폭(80)으로 ConPTY 를 만들므로,
+    // 이 패널에서 처음 표시되는 프리로드 세션은 패널 폭으로 리플로우되며 스크롤이 팍 튄다 → 그 첫 표시만 커버로 감춘다.
+    private readonly HashSet<string> _shownSessions = new();
+
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
         if (ReferenceEquals(_activeSession, session)) return;
-        // 파일→세션 전환: 세션 터미널이 백그라운드(기본폭)로 프리로드돼 있어 그대로 보이면 최종 폭으로
-        // 리플로우되며 스크롤이 깨진다. 이미 커버 중이 아니면(셸이 안 덮었으면) 여기서 잠깐 커버하고
-        // 아래에서 최종 폭 재동기(kick) 후 걷는다. (사이드바 클릭·탭 클릭 두 경로 모두 여기로 온다.)
-        bool coverReflow = !_coverActive && _activeTab is FileTabItem && _terminal.IsReady(session.Id);
+        // 이 패널에서 처음 표시되는 프리로드(ready) 세션: 기본폭→패널폭 리플로우로 스크롤이 튄다.
+        // 셸이 이미 커버 중이 아니면 여기서 잠깐 커버하고, 아래에서 최종 폭 재동기(kick) 후 걷는다.
+        // (파일→세션·세션→세션, 사이드바 클릭·탭 클릭 모든 경로가 이 메서드로 온다.)
+        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && !_shownSessions.Contains(session.Id);
         if (coverReflow) CoverForTransition();
         ClearIsolationIfMismatch(session);
         DiagLog.Write($"ActivateSession begin: '{session.Name}' room={session.Id} isReady={_terminal.IsReady(session.Id)} alive={session.IsAlive}");
@@ -717,6 +721,7 @@ public partial class WorkspacePaneView : UserControl
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
         ActiveChanged?.Invoke(this);
+        _shownSessions.Add(session.Id);                     // 이 패널에서 표시됨 — 다음부턴 리플로우 커버 불필요
         if (coverReflow) RevealAfterTransition(kick: true); // 최종 폭에서 세션 재동기 후 커버 걷기(리플로우 감춤)
     }
 
