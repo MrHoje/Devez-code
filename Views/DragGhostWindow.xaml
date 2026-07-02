@@ -1,0 +1,11 @@
+<Window x:Class="DevezCode.Views.DragGhostWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
+        WindowStartupLocation="Manual">
+    <!-- 탭 드래그 고스트가 콘텐츠 영역(터미널 WebView2) 위로 넘어갈 때만 쓰는 대체 고스트.
+         원래 고스트(DragAdorner)는 같은 창 안 WPF Adorner라 airspace 에 걸려 WebView2 뒤로 숨는다.
+         별도 최상위 창(WS_EX_NOACTIVATE+TRANSPARENT)이면 정적인 동안은 위에 그려진다. -->
+    <Border x:Name="Snapshot" Opacity="0.85"/>
+</Window>

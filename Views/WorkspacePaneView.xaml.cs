@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -47,6 +48,9 @@ public partial class WorkspacePaneView : UserControl
     public event Action<WorkspacePaneView>? ActiveChanged;
     /// <summary>분할 토글 버튼 클릭 → 셸이 분할/해제 처리.</summary>
     public event Action<WorkspacePaneView>? SplitToggleRequested;
+    /// <summary>탭 헤더를 콘텐츠 영역(좌/우 반쪽)으로 드래그해 놓음 → 셸이 분할 생성/이동 처리.
+    /// dropRight: true=오른쪽 절반, false=왼쪽 절반에 드롭.</summary>
+    public event Action<WorkspacePaneView, SessionItem, bool>? SplitDropRequested;
 
     public TerminalHostView Terminal => _terminal;
 
@@ -75,6 +79,8 @@ public partial class WorkspacePaneView : UserControl
 
         App.ThemeChanged += OnThemeChanged_UpdateSeam;
         Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged_UpdateSeam;
+        Unloaded += (_, _) => DisarmSplitDrop();
+        Unloaded += (_, _) => HideDragGhostWindow();
 
         ApplyProjectInfoHeaderVisibility();
     }
@@ -97,6 +103,30 @@ public partial class WorkspacePaneView : UserControl
 
     /// <summary>분할 상태 저장. 분할 토글 버튼은 상단 타이틀바로 이동해 패널 탭바에는 버튼이 없다.</summary>
     public void SetSplitActive(bool active) => _split = active;
+
+    // ── 탭바 표시 필터(패널별 숨김) ──────────────────────────────────
+    // Tabs 는 프로젝트 소유(공유) 컬렉션이라 분할된 두 패널이 같은 프로젝트를 보여줄 수 있다.
+    // 탭을 드래그해 다른 패널로 "이동"시키면 세션/컬렉션은 그대로 두고, 이 패널의 탭바에서만
+    // ListCollectionView 필터로 숨긴다(다른 패널 탭바엔 그대로 보임).
+    private readonly HashSet<TabItemBase> _hiddenFromThisPane = new();
+    private ListCollectionView? _tabsView;
+
+    private void ApplyTabsSource(ObservableCollection<TabItemBase>? tabs)
+    {
+        _hiddenFromThisPane.Clear();
+        if (tabs == null) { _tabsView = null; TabsHost.ItemsSource = null; return; }
+        var view = new ListCollectionView(tabs) { Filter = FilterTab };
+        _tabsView = view;
+        TabsHost.ItemsSource = view;
+    }
+
+    private bool FilterTab(object o) => o is not TabItemBase t || !_hiddenFromThisPane.Contains(t);
+
+    /// <summary>드래그로 다른 패널에 넘긴 탭을 이 패널의 탭바에서만 숨긴다(세션/ConPTY 는 유지).</summary>
+    public void HideTabInPane(TabItemBase tab)
+    {
+        if (_hiddenFromThisPane.Add(tab)) _tabsView?.Refresh();
+    }
 
     /// <summary>이 패널의 우측 보더(우측 채널 세퍼레이터) 표시 여부. 우측에 아무 패널도
     /// 열려 있지 않은 최우측 패널은 우측 보더를 꺼서 떠 있는 세로선을 없앤다.</summary>
@@ -140,7 +170,7 @@ public partial class WorkspacePaneView : UserControl
             try { _terminal.CloseTerminal(_activeSession.Id); } catch { /* ignore */ }
         _activeProject = null;
         ClearActiveSession();
-        TabsHost.ItemsSource = null;
+        ApplyTabsSource(null);
     }
 
     // ── 프로젝트 ─────────────────────────────────────────────────
@@ -148,7 +178,7 @@ public partial class WorkspacePaneView : UserControl
     private void SetActiveProject(ProjectItem proj)
     {
         _activeProject = proj;
-        TabsHost.ItemsSource = proj.Tabs;
+        ApplyTabsSource(proj.Tabs);
         if (ProjectPathText != null) { ProjectPathText.Text = proj.Path; ProjectPathText.ToolTip = proj.Path; }
         if (ProjectNameText != null) { ProjectNameText.Text = proj.Name; ProjectNameText.ToolTip = proj.Name; }
         UpdateProjectBranchBubble(proj);
@@ -269,7 +299,7 @@ public partial class WorkspacePaneView : UserControl
         if (_activeSession != null) _activeSession.IsActive = false;
         _activeProject = null; _activeSession = null; _activeTab = null;
         if (next != null) SelectProject(next);
-        else { TabsHost.ItemsSource = null; ClearActiveSession(); ActiveChanged?.Invoke(this); }
+        else { ApplyTabsSource(null); ClearActiveSession(); ActiveChanged?.Invoke(this); }
     }
 
     // ── 세션 ─────────────────────────────────────────────────────
@@ -945,6 +975,17 @@ public partial class WorkspacePaneView : UserControl
     private readonly List<FrameworkElement> _hiddenTabFeet = new();
     private bool _tabDragHidSeam;
 
+    // ── 탭 드래그 → 분할 드롭존 ────────────────────────────────────
+    private SplitDropOverlayWindow? _splitDropOverlay;
+    private bool _splitDropArmed;
+    private bool _splitDropRight;
+
+    // ── 탭 드래그 고스트(콘텐츠 영역=WebView2 위로 넘어갈 때 airspace 우회용 대체 고스트) ──
+    private DragGhostWindow? _dragGhostWindow;
+    private Brush? _dragGhostBrush;
+    private Size _dragGhostSize;
+    private Point _dragGhostGrab;
+
     private void Tab_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _tabPressOrigin = e.GetPosition(TabsHost);
@@ -954,7 +995,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void TabsHost_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_tabDrag != null) { _tabDrag.Update(e); return; }
+        if (_tabDrag != null) { _tabDrag.Update(e); UpdateDragGhost(e); UpdateSplitDropZone(e); return; }
         if (e.LeftButton != MouseButtonState.Pressed || _pendingTab == null) return;
         var diff = _tabPressOrigin - e.GetPosition(TabsHost);
         if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
@@ -966,10 +1007,108 @@ public partial class WorkspacePaneView : UserControl
     {
         var td = _tabDrag;
         _tabDrag = null;
+        var draggedTab = _pendingTab;
+        bool armed = _splitDropArmed;
+        bool dropRight = _splitDropRight;
+        DisarmSplitDrop();
+        HideDragGhostWindow();
+        _dragGhostBrush = null;
         _pendingTab = null;
         if (Mouse.Captured == TabsHost) TabsHost.ReleaseMouseCapture();
         RestoreTabFeet();
-        if (td != null) await td.FinishAsync(commit: true);
+        if (td == null) return;
+        if (armed && draggedTab is SessionItem session)
+        {
+            await td.FinishAsync(commit: false); // 재정렬 취소 — 분할 드롭으로 처리
+            SplitDropRequested?.Invoke(this, session, dropRight);
+        }
+        else
+        {
+            await td.FinishAsync(commit: true);
+        }
+    }
+
+    /// <summary>드래그 고스트가 콘텐츠 영역(WebView2)에 걸치면 원래 고스트(Adorner) 대신 최상위 창으로
+    /// 대체 표시한다. Adorner 는 같은 창 안 WPF 요소라 airspace 에 걸려 WebView2 뒤로 숨기 때문.
+    /// 탭바 영역으로 돌아오면(webview 없는 순수 WPF 영역) 대체 창을 치우고 원래 Adorner 만 보인다.</summary>
+    private void UpdateDragGhost(MouseEventArgs e)
+    {
+        if (ContentArea == null || _dragGhostBrush == null) return;
+
+        var p = e.GetPosition(ContentArea);
+        bool overContent = p.Y >= 0 && p.Y <= ContentArea.ActualHeight;
+        if (!overContent) { HideDragGhostWindow(); return; }
+
+        var screenPx = PointToScreen(e.GetPosition(this));
+        var m = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice
+                ?? Matrix.Identity;
+        var cursorDip = m.Transform(screenPx);
+
+        _dragGhostWindow ??= CreateDragGhostWindow();
+        _dragGhostWindow.Left = cursorDip.X - _dragGhostGrab.X;
+        _dragGhostWindow.Top = cursorDip.Y - _dragGhostGrab.Y;
+        if (!_dragGhostWindow.IsVisible) _dragGhostWindow.Show();
+    }
+
+    private DragGhostWindow CreateDragGhostWindow()
+    {
+        var win = new DragGhostWindow { Owner = Window.GetWindow(this) };
+        win.SetSnapshot(_dragGhostBrush!, _dragGhostSize);
+        return win;
+    }
+
+    private void HideDragGhostWindow()
+    {
+        if (_dragGhostWindow == null) return;
+        _dragGhostWindow.Close();
+        _dragGhostWindow = null;
+    }
+
+    /// <summary>드래그 중인 탭이 탭바를 벗어나 콘텐츠 영역(좌/우 반쪽)에 들어오면 분할 드롭존을 무장한다.
+    /// 이미 분할된 패널이거나 파일 탭이면(=EnableSplit/OpenSession 이 세션만 받음) 대상에서 제외한다.</summary>
+    private void UpdateSplitDropZone(MouseEventArgs e)
+    {
+        if (_split || ContentArea == null || _pendingTab is not SessionItem)
+        {
+            DisarmSplitDrop();
+            return;
+        }
+
+        var p = e.GetPosition(ContentArea);
+        const double cushion = 40; // 드래그 고스트 여백(DragHelper)과 동일한 감도
+        bool overContent = p.Y >= 0 && p.Y <= ContentArea.ActualHeight
+                            && p.X >= -cushion && p.X <= ContentArea.ActualWidth + cushion;
+        if (!overContent) { DisarmSplitDrop(); return; }
+
+        bool right = p.X >= ContentArea.ActualWidth / 2;
+        if (!_splitDropArmed || _splitDropRight != right) ArmSplitDrop(right);
+    }
+
+    private void ArmSplitDrop(bool right)
+    {
+        _splitDropArmed = true;
+        _splitDropRight = right;
+
+        double halfWidth = ContentArea.ActualWidth / 2;
+        var topLeftScreen = ContentArea.PointToScreen(new Point(right ? halfWidth : 0, 0));
+        var m = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice
+                ?? Matrix.Identity;
+        var dip = m.Transform(topLeftScreen);
+
+        _splitDropOverlay ??= new SplitDropOverlayWindow { Owner = Window.GetWindow(this) };
+        _splitDropOverlay.Left = dip.X;
+        _splitDropOverlay.Top = dip.Y;
+        _splitDropOverlay.Width = halfWidth;
+        _splitDropOverlay.Height = ContentArea.ActualHeight;
+        if (!_splitDropOverlay.IsVisible) _splitDropOverlay.Show();
+    }
+
+    private void DisarmSplitDrop()
+    {
+        _splitDropArmed = false;
+        if (_splitDropOverlay == null) return;
+        _splitDropOverlay.Close();
+        _splitDropOverlay = null;
     }
 
     private void TryStartTabDrag(TabItemBase s)
@@ -1014,6 +1153,9 @@ public partial class WorkspacePaneView : UserControl
             TabsHost.CaptureMouse();
             HideTabFeet(sourceBorder);
             SetupDragSeam(s, selectedRoot);
+            _dragGhostBrush = DragHelper.CaptureSnapshot(sourceBorder);
+            _dragGhostSize = new Size(Math.Max(1, sourceBorder.ActualWidth), Math.Max(1, sourceBorder.ActualHeight));
+            _dragGhostGrab = Mouse.GetPosition(sourceBorder);
         }
         else
         {
@@ -1357,8 +1499,35 @@ public partial class WorkspacePaneView : UserControl
         bool dirty = file.Editor.IsDirty;
         FileDirtyDot.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
         FileSaveBtn.IsEnabled = dirty;
+        UpdateFileSize(file);
     }
 
+    private static string FormatFileSize(long bytes)
+    {
+        return bytes switch
+        {
+            < 1024                     => $"{bytes} B",
+            < 1024 * 1024             => $"{bytes / 1024.0:F1} KB",
+            < 1024L * 1024 * 1024     => $"{bytes / (1024.0 * 1024):F1} MB",
+            _                         => $"{bytes / (1024.0 * 1024 * 1024):F2} GB"
+        };
+    }
+
+    private void UpdateFileSize(FileTabItem file)
+    {
+        try
+        {
+            var fi = new FileInfo(file.FilePath);
+            if (fi.Exists)
+                FileSizeText.Text = FormatFileSize(fi.Length);
+            else
+                FileSizeText.Text = "";
+        }
+        catch
+        {
+            FileSizeText.Text = "";
+        }
+    }
     private void FileSaveBtn_Click(object sender, RoutedEventArgs e)
     {
         if (_activeTab is FileTabItem file && file.Editor.Save())

@@ -1926,6 +1926,7 @@ public partial class MainWindow : Window
         pane.FocusRequested += OnPaneFocusRequested;
         pane.ActiveChanged += OnPaneActiveChanged;
         pane.SplitToggleRequested += OnPaneSplitToggle;
+        pane.SplitDropRequested += OnPaneSplitDropRequested;
         _panes.Add(pane);
     }
 
@@ -2100,6 +2101,18 @@ public partial class MainWindow : Window
     {
         if (_splitActive) DisableSplit();
         else EnableSplit();
+    }
+
+    /// <summary>탭 헤더를 콘텐츠 영역(좌/우 반쪽)에 드롭 → 분할 생성. 원본 패널의 탭바에서는 세션을
+    /// 숨기고(HideTabInPane), 세션/ConPTY 자체는 그대로 둔 채 반대쪽 새 패널에 띄운다.
+    /// 이미 분할 중인 패널은 WorkspacePaneView.UpdateSplitDropZone 이 드롭존 자체를 무장하지 않으므로
+    /// 이 이벤트는 비분할(단일) 패널에서만 온다.</summary>
+    private void OnPaneSplitDropRequested(WorkspacePaneView pane, SessionItem session, bool dropRight)
+    {
+        if (_splitActive) return;
+        pane.HideTabInPane(session);
+        EnableSplit(bSession: session);
+        if (!dropRight) SwapPanePositions(); // 드래그한 탭을 좌측에 두고 기존 내용을 우측으로 보낸다.
     }
 
     // 상단 타이틀바 분할 토글 버튼(좌측 패널 버튼 오른쪽).

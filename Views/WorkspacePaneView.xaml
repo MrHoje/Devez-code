@@ -361,6 +361,10 @@
                 </StackPanel>
                 <StackPanel x:Name="FileHeaderActions" Grid.Column="1" Orientation="Horizontal"
                             VerticalAlignment="Center" Visibility="Collapsed">
+                    <TextBlock x:Name="FileSizeText" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs11}" FontWeight="Normal"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Margin="0,0,12,0"/>
                     <Button x:Name="FileSaveBtn" Style="{StaticResource TabNavButton}"
                             Click="FileSaveBtn_Click" ToolTip="저장 (Ctrl+S)">
                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSave}"
@@ -373,7 +377,7 @@
 
         <!-- 콘텐츠: 활성 탭에 따라 터미널(공유) 또는 파일 에디터(탭당 1개) 표시.
              ClipToBounds: 분할 애니메이션 중 좌상단 고정된 스냅샷이 패널 밖으로 넘치지 않게 잘라낸다. -->
-        <Grid Grid.Row="3" ClipToBounds="True">
+        <Grid x:Name="ContentArea" Grid.Row="3" ClipToBounds="True">
             <ContentControl x:Name="TerminalHostContainer"
                             AllowDrop="True"
                             DragOver="TerminalHostContainer_DragOver"
