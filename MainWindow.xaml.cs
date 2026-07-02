@@ -2999,6 +2999,7 @@ public partial class MainWindow : Window
         bool cover = isNewProjectLoad && ReferenceEquals(pane, LeftPane);
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
         bool coverRight = cover && (_splitActive || (parent != null && parent.SplitEnabled));
+        // 파일→세션 탭 전환의 리플로우 커버는 ActivateSession 이 자체 처리(사이드바·탭클릭 두 경로 모두 커버).
         if (cover) pane.CoverForTransition();
         if (coverRight) RightPane.CoverForTransition();
         pane.OpenSession(session);

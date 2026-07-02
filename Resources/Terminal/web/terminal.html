@@ -941,14 +941,14 @@
         break;
       }
       case 'fadeNow': {
-        // C# 이 좌우 모두 준비됨을 확인하고 동시에 커튼을 걷으라고 지시(synced reveal). 세대 무관하게 현재 커버를 fade.
+        // C# 이 좌우 모두 준비됨을 확인하고 동시에 커튼을 걷으라고 지시(synced reveal). 즉시 제거한다 —
+        // 파일 패널(md=WebView2)은 airspace 로 커튼 fade 가 안 먹어 즉시 나타나므로, 세션 커버도 즉시 걷어야
+        // 양쪽이 정확히 같은 순간에 뜬다(fade 로 두면 파일이 더 빨라 보임).
         const cov = document.getElementById('xfer-cover');
         clearTimeout(_xferCoverTimer);
-        requestAnimationFrame(function () {
-          cov.style.transition = 'opacity 0.14s ease';
-          cov.style.opacity = '0';
-          setTimeout(function () { cov.style.display = 'none'; }, 200);
-        });
+        cov.style.transition = 'none';
+        cov.style.opacity = '0';
+        cov.style.display = 'none';
         break;
       }
       case 'xferReveal': {

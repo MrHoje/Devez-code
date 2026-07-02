@@ -244,6 +244,9 @@ public partial class WorkspacePaneView : UserControl
     /// 안 열리던 문제 방지.</summary>
     public bool ShowsTab(TabItemBase tab) => _activeProject != null && _activeProject.Tabs.Contains(tab) && FilterTab(tab);
 
+    /// <summary>현재 이 패널이 파일 탭을 활성으로 보여주는지. 파일→세션 전환 시 세션 터미널 리플로우를 커버로 감추는 판정용.</summary>
+    public bool ActiveIsFile => _activeTab is FileTabItem;
+
     /// <summary>활성 프로젝트의 Tabs 에서 참조("S:id"/"F:path")에 해당하는 탭을 찾는다. 세션은 숨김 제외.</summary>
     public TabItemBase? FindTabByRef(string? @ref)
     {
@@ -351,20 +354,28 @@ public partial class WorkspacePaneView : UserControl
         _terminal.PrepareRevealSynced(_activeSession.Id, kick, target);
     }
 
-    /// <summary>synced reveal 의 최종 단계 — 세션 커튼(#xfer-cover) fade + 파일 커튼(TerminalCurtain) fade + 에디터 노출.</summary>
+    /// <summary>synced reveal 의 최종 단계 — 세션·파일 커버를 즉시(동시에) 걷는다. 파일(md=WebView2)은
+    /// airspace 로 즉시 나타나므로 세션 커버도 즉시 걷어야 좌우가 정확히 같은 순간에 뜬다.</summary>
     public void FadeRevealNow()
     {
         _terminal.FadeNow();
-        EndCover();
+        EndCover(instant: true);
     }
 
-    /// <summary>커버 해제 — 파일 커튼을 fade-out 하고 파일 에디터를 다시 표시한다.</summary>
-    private void EndCover()
+    /// <summary>커버 해제 — 파일 커튼을 걷고(instant=false 면 fade) 파일 에디터를 다시 표시한다.</summary>
+    private void EndCover(bool instant = false)
     {
         if (!_coverActive) return;
         _coverActive = false;
         UpdateEmptyState(); // 파일 에디터 다시 표시(md 는 WebView2 라 즉시, text 는 커튼 뒤에서 노출)
-        if (TerminalCurtain.Visibility == Visibility.Visible)
+        if (TerminalCurtain.Visibility != Visibility.Visible) return;
+        if (instant)
+        {
+            TerminalCurtain.BeginAnimation(UIElement.OpacityProperty, null);
+            TerminalCurtain.Opacity = 1;
+            TerminalCurtain.Visibility = Visibility.Collapsed;
+        }
+        else
         {
             var anim = new DoubleAnimation(1, 0, TimeSpan.FromSeconds(0.14));
             anim.Completed += (_, _) => { TerminalCurtain.Visibility = Visibility.Collapsed; TerminalCurtain.Opacity = 1; };
@@ -672,6 +683,11 @@ public partial class WorkspacePaneView : UserControl
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
         if (ReferenceEquals(_activeSession, session)) return;
+        // 파일→세션 전환: 세션 터미널이 백그라운드(기본폭)로 프리로드돼 있어 그대로 보이면 최종 폭으로
+        // 리플로우되며 스크롤이 깨진다. 이미 커버 중이 아니면(셸이 안 덮었으면) 여기서 잠깐 커버하고
+        // 아래에서 최종 폭 재동기(kick) 후 걷는다. (사이드바 클릭·탭 클릭 두 경로 모두 여기로 온다.)
+        bool coverReflow = !_coverActive && _activeTab is FileTabItem && _terminal.IsReady(session.Id);
+        if (coverReflow) CoverForTransition();
         ClearIsolationIfMismatch(session);
         DiagLog.Write($"ActivateSession begin: '{session.Name}' room={session.Id} isReady={_terminal.IsReady(session.Id)} alive={session.IsAlive}");
         using var _diag = DiagLog.Time($"ActivateSession '{session.Name}'");
@@ -701,6 +717,7 @@ public partial class WorkspacePaneView : UserControl
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
         ActiveChanged?.Invoke(this);
+        if (coverReflow) RevealAfterTransition(kick: true); // 최종 폭에서 세션 재동기 후 커버 걷기(리플로우 감춤)
     }
 
     /// <summary>작업 큐 → 활성 세션 터미널에 텍스트 입력 + Enter. 비활성/죽은 세션이면 false.</summary>
