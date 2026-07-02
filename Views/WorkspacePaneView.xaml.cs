@@ -228,6 +228,12 @@ public partial class WorkspacePaneView : UserControl
     public List<string> CurrentIsolatedRefs()
         => _isolatedTabs?.Select(RefOf).Where(r => r.Length > 0).ToList() ?? new List<string>();
 
+    /// <summary>이 패널 탭바에 실제로 보이는(FilterTab 통과) 탭들의 참조. 화이트리스트/블랙리스트 모드 무관하게
+    /// "이 패널이 지금 보여주는 탭 집합"을 준다 — 분할 상태 저장 시 우측 전용 집합 계산에 쓴다.</summary>
+    public List<string> VisibleTabRefs()
+        => _activeProject?.Tabs.Where(t => FilterTab(t) && !(t is SessionItem s && s.Hidden))
+               .Select(RefOf).Where(r => r.Length > 0).ToList() ?? new List<string>();
+
     /// <summary>이 패널 활성 탭의 참조.</summary>
     public string? ActiveTabRef() => _activeTab == null ? null : RefOf(_activeTab);
 

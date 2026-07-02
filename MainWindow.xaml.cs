@@ -2127,7 +2127,11 @@ public partial class MainWindow : Window
             // 활성 탭을 저장해 복원 시 그대로 되살린다(파트너 하나만 복원돼 나머지가 좌측으로 쏠리던 문제 해결).
             if (ReferenceEquals(RightPane.ActiveProject, leftProj))
             {
-                leftProj.SplitRightTabRefs = RightPane.CurrentIsolatedRefs();
+                // 우측 전용 집합 = 우측에 보이지만 좌측엔 안 보이는 탭. 우측이 화이트리스트(_isolatedTabs)든
+                // 블랙리스트든(격리가 풀렸어도) 실제 표시 기준이라 견고하다. (CurrentIsolatedRefs 는 격리 해제 시
+                // 빈 값이라 우측 탭이 하나만 복원되던 문제가 있었음.)
+                var leftVisible = new HashSet<string>(LeftPane.VisibleTabRefs());
+                leftProj.SplitRightTabRefs = RightPane.VisibleTabRefs().Where(r => !leftVisible.Contains(r)).ToList();
                 leftProj.SplitRightActiveRef = RightPane.ActiveTabRef();
                 leftProj.LastActiveTabRef = LeftPane.ActiveTabRef(); // 좌측 활성 탭(우측 활성은 위 별도 필드)
             }
