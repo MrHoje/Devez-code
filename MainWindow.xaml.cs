@@ -470,21 +470,22 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         _shuttingDown = true;
-        // WebView2(터미널/md 에디터/브라우저)는 HWND 라 WPF 오버레이를 가린다(airspace).
-        // 2단계 suspend: ①모든 패널이 스냅샷만 올리고(HWND 유지) → 스냅샷 present 대기 →
-        // ②모든 HWND 를 '같은 프레임'에 일괄 숨김. 패널별 순차(캡처→hide) 방식은 HWND 가
-        // 서로 다른 프레임에 사라져 팝이 여러 번 어긋나 보였다(종료 오버레이 직전 깜빡임).
+        // 종료 베일 — HWND 를 전혀 숨기지 않는다(사이드패널 웹 커버와 동일 개념). 스냅샷+hide 는
+        // present 대기·동시 hide 를 해도 HWND 가시성 전환의 재합성 프레임이 어긋나 깜빡였다.
+        // 각 WebView2 가 자기 웹 레이어에 딤+스피너 카드를 그리고(airspace 无관), WPF 스크림은
+        // 나머지(사이드바 등) WPF 영역만 덮어 시각적으로 이어진다.
         try
         {
-            DevezCode.Services.DiagLog.Write("Shutdown: prepare snapshots");
+            DevezCode.Services.DiagLog.Write("Shutdown: veil");
             await FileExplorer.SuspendBrowserAsync();
-            await Task.WhenAll(_panes.Select(p => p.PrepareShutdownSnapshotAsync()));
-            await Views.WorkspacePaneView.WaitForFramesAsync(2); // 스냅샷 present 보장
-            foreach (var p in _panes) p.CommitShutdownHide();
-            DevezCode.Services.DiagLog.Write("Shutdown: HWNDs hidden");
+            var veiled = await Task.WhenAll(
+                _panes.Where(p => p.Visibility == Visibility.Visible).Select(p => p.ShowShutdownVeilAsync()));
+            // 세션 베일(웹 스피너 카드)이 하나라도 있으면 WPF 카드는 숨긴다 — 중앙 카드가 터미널
+            // HWND 에 걸쳐 반쯤 가려 보이는 것 방지(카드는 각 세션 패널의 웹 레이어가 그린다).
+            ShutdownCard.Visibility = veiled.Any(v => v) ? Visibility.Collapsed : Visibility.Visible;
         }
         catch { /* best effort */ }
-        // 스냅샷이 실제로 한 프레임 그려진 뒤 오버레이를 올린다 → WebView 가 사라진 직후 빈 배경이 비치는 깜빡임 제거.
+        // 베일이 실제로 한 프레임 그려진 뒤 스크림을 올린다.
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
         ShutdownOverlay.Visibility = Visibility.Visible;
         try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500); }
@@ -3103,6 +3104,7 @@ public partial class MainWindow : Window
 
     private void FadeAllRevealNow()
     {
+        if (_shuttingDown) return; // 종료 베일을 reveal 타임아웃/지연 준비완료가 걷지 못하게
         _revealPending.Clear();
         LeftPane.FadeRevealNow();
         RightPane.FadeRevealNow();

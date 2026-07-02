@@ -2006,45 +2006,24 @@ public partial class WorkspacePaneView : UserControl
         TerminalHostContainer.Visibility = Visibility.Collapsed;
     }
 
-    // ── 종료 오버레이용 2단계 suspend ──────────────────────────────────
-    // 기존(각 패널이 캡처→대기→hide 를 순차 수행)은 패널·에디터 HWND 가 서로 다른 프레임에 사라져
-    // 팝이 여러 번 어긋나 보였다(= 종료 시 깜빡임). 셸이 ①모든 패널 스냅샷 present → ②같은 프레임에
-    // 일괄 hide 하도록 준비/커밋을 분리한다.
-    private enum ShutdownHide { None, Terminal, FileEditor }
-    private ShutdownHide _shutdownHide;
-
-    /// <summary>①스냅샷만 올린다(HWND 유지). 숨길 대상은 기억해 뒀다 CommitShutdownHide 가 처리.</summary>
-    public async Task PrepareShutdownSnapshotAsync()
+    // ── 종료 베일 ──────────────────────────────────────────────────────
+    // HWND 를 숨기지 않는다(사이드패널 웹 커버와 동일 개념). 스냅샷+hide 방식은 present 대기·동시
+    // hide 를 해도 HWND 가시성 전환 자체의 재합성 프레임이 어긋나 깜빡였다. 대신 각 WebView2 의
+    // '웹 레이어 안'에 딤+스피너 카드를 그려, WPF 종료 스크림과 시각적으로 이어붙인다.
+    /// <returns>true = 세션 베일(웹 스피너 카드) 적용 — 셸이 WPF 카드를 숨겨 중복/반가림을 막는다.</returns>
+    public async Task<bool> ShowShutdownVeilAsync()
     {
-        _shutdownHide = ShutdownHide.None;
         if (_activeTab is FileTabItem file)
         {
-            var snap = await file.Editor.CaptureSnapshotAsync();
-            if (snap == null) return; // 캡처 실패 — 에디터를 그대로 두면 최소한 내용은 보인다(기존 동작)
-            TerminalSnapshot.Source = snap;
-            TerminalSnapshot.Visibility = Visibility.Visible;
-            _shutdownHide = ShutdownHide.FileEditor;
-            return;
+            // md(WebView2)만 웹 딤 필요 — 일반 텍스트 에디터는 WPF 라 스크림이 그대로 덮는다.
+            if (file.Editor is MarkdownFileEditorView md) await md.DimForShutdownAsync();
+            return false;
         }
-        if (_activeSession == null) return;
-        var png = await _terminal.CapturePngAsync();
-        if (png != null)
-        {
-            TerminalSnapshot.Source = TerminalHostView.BitmapFromPng(png);
-            TerminalSnapshot.Visibility = Visibility.Visible;
-        }
-        _shutdownHide = ShutdownHide.Terminal; // 캡처 실패해도 HWND 는 숨겨야 오버레이가 보인다
-    }
-
-    /// <summary>②스냅샷 present 확인(셸이 WaitForFramesAsync) 후 — HWND 를 숨긴다. 모든 패널이 같은 프레임에.</summary>
-    public void CommitShutdownHide()
-    {
-        switch (_shutdownHide)
-        {
-            case ShutdownHide.FileEditor: FileEditorHostContainer.Visibility = Visibility.Collapsed; break;
-            case ShutdownHide.Terminal: TerminalHostContainer.Visibility = Visibility.Collapsed; break;
-        }
-        _shutdownHide = ShutdownHide.None;
+        if (_activeSession == null) return false;
+        double cw = TerminalHostContainer.ActualWidth, ch = TerminalHostContainer.ActualHeight;
+        var png = await _terminal.CapturePngAsync(); // 프리즈 프레임 — 종료 중 세션 출력 갱신이 안 비치게
+        _terminal.ShowShutdownVeil(png, cw, ch);
+        return true;
     }
 
     /// <summary>지정한 수만큼 컴포지션 렌더 프레임이 지나갈 때까지 대기. HwndHost 를 숨기기 전에
