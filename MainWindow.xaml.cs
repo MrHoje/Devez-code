@@ -2886,25 +2886,25 @@ public partial class MainWindow : Window
         var existingPane = parent != null
             ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent))
             : null;
-        if (existingPane != null) { OpenSessionIntoPane(existingPane, session); return; }
+        if (existingPane != null) { OpenSessionIntoPane(existingPane, session, isNewProjectLoad: false); return; }
 
         // 새 프로젝트는 메인(좌측) 패널에 연다.
-        OpenSessionIntoPane(LeftPane, session);
+        OpenSessionIntoPane(LeftPane, session, isNewProjectLoad: true);
     }
 
-    private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session)
+    private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session, bool isNewProjectLoad)
     {
         _focusedPane = pane;
-        // SelectProjectIntoPane 과 동일: 분할 열림/닫힘으로 좌측 패널이 리사이즈될 전환이면 커튼으로 감춘다.
-        var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
-        bool coverLayout = ReferenceEquals(pane, LeftPane) && parent != null && parent.SplitEnabled != _splitActive;
-        if (coverLayout) pane.CoverForTransition();
+        // 새 프로젝트를 좌측에 여는 경우만 SelectProjectIntoPane 과 동일하게 커튼으로 덮는다(전환 페이드 균일화).
+        // 이미 열린 프로젝트의 세션 탭 전환(isNewProjectLoad=false)은 즉시 — 탭 전환까지 페이드하면 답답하다.
+        bool cover = isNewProjectLoad && ReferenceEquals(pane, LeftPane);
+        if (cover) pane.CoverForTransition();
         pane.OpenSession(session);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
         if (ReferenceEquals(pane, LeftPane) && pane.ActiveProject != null)
             ApplyProjectSplitForMainPane(pane.ActiveProject);
-        if (coverLayout) pane.RevealAfterTransition();
+        if (cover) pane.RevealAfterTransition();
         PaneA.RefreshSplitIndicator();
         PaneB.RefreshSplitIndicator();
     }
@@ -2929,15 +2929,14 @@ public partial class MainWindow : Window
     private void SelectProjectIntoPane(WorkspacePaneView pane, ProjectItem proj)
     {
         _focusedPane = pane;
-        // 분할 열림/닫힘으로 이 (좌측) 패널이 리사이즈될 전환이면, 그 리플로우 깜빡임을 커튼으로 감춘다.
-        // (SplitEnabled != _splitActive 일 때만 폭이 바뀐다. 이미 분할 중 파트너만 교체하는 경우는 폭 유지.)
-        bool coverLayout = ReferenceEquals(pane, LeftPane) && proj.SplitEnabled != _splitActive;
-        if (coverLayout) pane.CoverForTransition();
+        // 프로젝트 전환은 항상 커튼으로 덮었다 fade-in — 분할 열림/닫힘 리사이즈 리플로우를 감추고,
+        // 리사이즈가 없는 전환(비분할↔비분할, 파트너 교체)에도 같은 페이드를 줘 전환 느낌을 균일하게 한다.
+        if (ReferenceEquals(pane, LeftPane)) pane.CoverForTransition();
         pane.SelectProject(proj);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
         if (ReferenceEquals(pane, LeftPane)) ApplyProjectSplitForMainPane(proj);
-        if (coverLayout) pane.RevealAfterTransition();
+        if (ReferenceEquals(pane, LeftPane)) pane.RevealAfterTransition();
         PaneA.RefreshSplitIndicator();
         PaneB.RefreshSplitIndicator();
     }

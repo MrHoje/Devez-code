@@ -151,6 +151,7 @@
   let _scrollSuppressTimer = 0; // suppress 잔여 누수 방지용 타임아웃
   let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
   let _xferCoverTimer = 0; // 전환 커튼 안전 자동해제 타이머(reveal 누락 대비)
+  let _xferGen = 0; // 전환 세대 — cover/resync 시작마다 증가. 빠른 연속 전환 시 이전 전환의 지연 타이머(fade/step)를 무효화해 커튼이 엉뚱한 시점에 걷히는 깜빡임을 막는다.
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
@@ -909,33 +910,41 @@
         _pinBottomUntil = Date.now() + (msg.ms || 2000);
         break;
       case 'xferCover': {
-        // 분할 열림/닫힘 전환 직전: 단색 커튼으로 즉시 덮어 이후 리사이즈 리플로우를 감춘다.
+        // 분할 열림/닫힘·프로젝트 전환 직전: 단색 커튼으로 즉시 덮어 이후 리사이즈/전환 깜빡임을 감춘다.
+        // 새 세대(_xferGen)를 부여해, 아직 안 끝난 이전 전환의 지연 타이머(fade 등)를 무효화한다.
+        const gen = ++_xferGen;
         const cov = document.getElementById('xfer-cover');
         cov.style.transition = 'none';
         cov.style.display = 'block';
         cov.style.opacity = '1';
         clearTimeout(_xferCoverTimer);
         _xferCoverTimer = setTimeout(function () { // 안전장치: reveal 이 안 와도 2s 뒤 자동 해제
+          if (gen !== _xferGen) return;            // 더 최근 전환이 시작됨 — 무시
           cov.style.transition = 'opacity 0.14s ease'; cov.style.opacity = '0';
-          setTimeout(function () { cov.style.display = 'none'; }, 200);
+          setTimeout(function () { if (gen === _xferGen) cov.style.display = 'none'; }, 200);
         }, 2000);
         break;
       }
       case 'xferReveal': {
         // 레이아웃이 최종 폭으로 확정될 때까지 기다려 fit(→onResize→ConPTY resize→TUI 재렌더)을 몇 번
         // 반복해 안정시킨 뒤 커튼을 fade-out 한다. → 사용자는 리사이즈 리플로우 없이 최종 화면만 본다.
+        // gen 검사: 이 reveal 이 속한 전환이 아직 최신일 때만 진행/걷는다(빠른 재전환 시 낡은 fade 폐기).
         clearTimeout(_xferCoverTimer);
+        const gen = _xferGen; // 직전 xferCover 와 같은 세대
         const cov = document.getElementById('xfer-cover');
         const room = msg.roomId;
         const fadeOut = function () {
+          if (gen !== _xferGen) return;
           requestAnimationFrame(function () {
+            if (gen !== _xferGen) return;
             cov.style.transition = 'opacity 0.14s ease';
             cov.style.opacity = '0';
-            setTimeout(function () { cov.style.display = 'none'; }, 200);
+            setTimeout(function () { if (gen === _xferGen) cov.style.display = 'none'; }, 200);
           });
         };
         let waited = 0, done = 0;
         const step = function () {
+          if (gen !== _xferGen) return;                             // 더 최근 전환 시작 — 폐기(커버 유지)
           const e = room ? terms[room] : null;
           if (!e || room !== activeRoomId) { fadeOut(); return; }   // 세션 없거나 방 전환 — 그냥 걷기
           if (e.el.clientWidth < 2 || e.el.clientHeight < 2) {      // 아직 최종 폭 미확정 — 잠깐 더 대기
@@ -954,8 +963,8 @@
         // Collapsed 였다 되살아난(preserve) 패널: 틀어진 중간 프레임을 안 보이게 컨테이너를 잠깐 투명
         // (opacity:0, 아래 body 배경색=--term-bg 만 노출)으로 덮은 뒤, 폭이 최종값으로 확정될 때까지 기다려
         // fit + resize-kick(cols-1→cols)으로 ConPTY 를 xterm 의 실제 cols 로 재동기(SIGWINCH→TUI 재렌더)하고,
-        // 안정되면 부드럽게 fade-in 한다. → 사용자는 "틀어짐→교정" 과정 없이 최종 화면만 본다.
-        // (WebView2 는 HwndHost 라 WPF 오버레이로 못 덮으므로 웹 레이어 안에서 opacity 로 가린다.)
+        // 안정되면 부드럽게 fade-in 한다. gen 검사로 빠른 재전환 시 낡은 타이머를 폐기(폐기 시 opacity 복원).
+        const gen = ++_xferGen;
         const room = msg.roomId || activeRoomId;
         const first = terms[room];
         if (!first) break;
@@ -963,14 +972,16 @@
         first.el.style.opacity = '0';
         const reveal = function (e) {
           requestAnimationFrame(function () {
+            if (gen !== _xferGen) return;
             e.el.style.transition = 'opacity 0.12s ease';
             e.el.style.opacity = '1';
           });
         };
         let waited = 0, kicks = 0;
         const step = function () {
+          if (gen !== _xferGen) { first.el.style.transition = 'none'; first.el.style.opacity = ''; return; } // 재전환 — 복원 후 폐기
           const e = terms[room];
-          if (!e || room !== activeRoomId) return;              // 그 사이 다른 방으로 전환 — 중단(show 가 opacity 복원)
+          if (!e || room !== activeRoomId) { first.el.style.opacity = ''; return; } // 다른 방 전환 — 복원(show 도 복원)
           if (e.el.clientWidth < 2 || e.el.clientHeight < 2) {  // 아직 최종 폭 미확정 — 잠깐 더 대기
             if (waited < 800) { waited += 40; setTimeout(step, 40); } else reveal(e);
             return;
