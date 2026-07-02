@@ -2326,6 +2326,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        // "분할 보기": 원본 패널(pane)은 이동 탭을 내주고 남은 탭(예: 세션1)이 활성화되며 전체→절반으로
+        // 리사이즈된다. 그 세션 전환 + 리사이즈 리플로우(줄 깨짐)를 커튼으로 감췄다 최종 폭에서 재동기·fade-in.
+        pane.CoverForTransition();
         pane.HideTabInPane(tab);
         if (tab is SessionItem s)
         {
@@ -2340,6 +2343,7 @@ public partial class MainWindow : Window
         }
         if (pane.ActiveProject != null) MoveTabToEnd(tab, pane.ActiveProject);
         PaneB.ScrollTabIntoView(tab);
+        pane.RevealAfterTransition();
 
         // 버튼 토글로 켠 분할과 동일하게 영속 — 메인(좌측) 프로젝트를 "분할 사용"으로 표시하고
         // 파트너를 기록(PersistSplitState가 갱신)해, 재선택/재시작 시 같은 분할이 복원되게 한다.
