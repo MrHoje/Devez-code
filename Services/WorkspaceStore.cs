@@ -35,6 +35,9 @@ public static class WorkspaceStore
         public string? SplitPartnerProjectPath { get; set; }
         public string? SplitPartnerSessionId { get; set; }
         public string? SplitPartnerFilePath { get; set; }
+        // 같은 프로젝트 분할 시 우측 패널 전체 탭 집합 + 우측 활성 탭. 재시작/재선택 시 우측 탭들을 복원.
+        public List<string> SplitRightTabRefs { get; set; } = new();
+        public string? SplitRightActiveRef { get; set; }
     }
     private sealed class WorkspaceDto { public List<ProjectDto> Projects { get; set; } = new(); }
 
@@ -104,6 +107,8 @@ public static class WorkspaceStore
                 proj.SplitPartnerProjectPath = p.SplitPartnerProjectPath;
                 proj.SplitPartnerSessionId = p.SplitPartnerSessionId;
                 proj.SplitPartnerFilePath = p.SplitPartnerFilePath;
+                proj.SplitRightTabRefs = p.SplitRightTabRefs ?? new();
+                proj.SplitRightActiveRef = p.SplitRightActiveRef;
                 (proj.IsArchived ? archived : active).Add(proj);
             }
         }
@@ -155,6 +160,8 @@ public static class WorkspaceStore
         SplitPartnerProjectPath = p.SplitPartnerProjectPath,
         SplitPartnerSessionId = p.SplitPartnerSessionId,
         SplitPartnerFilePath = p.SplitPartnerFilePath,
+        SplitRightTabRefs = p.SplitRightTabRefs,
+        SplitRightActiveRef = p.SplitRightActiveRef,
     };
 
     private static void SaveCore(ICollection<ProjectItem> list)

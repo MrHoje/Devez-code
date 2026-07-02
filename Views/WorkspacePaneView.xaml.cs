@@ -216,6 +216,43 @@ public partial class WorkspacePaneView : UserControl
     /// 떠서 이동 후 IsolateTab 으로 다시 얹는 용도(누적 유지).</summary>
     public List<TabItemBase>? CurrentIsolatedTabs() => _isolatedTabs?.ToList();
 
+    /// <summary>탭 참조 문자열("S:&lt;id&gt;"/"F:&lt;path&gt;"). 분할 상태 영속/복원용.</summary>
+    public static string RefOf(TabItemBase? t) => t switch
+    {
+        SessionItem s => "S:" + s.Id,
+        FileTabItem f => "F:" + f.FilePath,
+        _ => "",
+    };
+
+    /// <summary>현재 우측 패널에 격리된 탭들의 참조 목록(같은 프로젝트 분할 시 우측 전체 탭). 격리 아님/빈 값 제외.</summary>
+    public List<string> CurrentIsolatedRefs()
+        => _isolatedTabs?.Select(RefOf).Where(r => r.Length > 0).ToList() ?? new List<string>();
+
+    /// <summary>이 패널 활성 탭의 참조.</summary>
+    public string? ActiveTabRef() => _activeTab == null ? null : RefOf(_activeTab);
+
+    /// <summary>활성 프로젝트의 Tabs 에서 참조("S:id"/"F:path")에 해당하는 탭을 찾는다. 세션은 숨김 제외.</summary>
+    public TabItemBase? FindTabByRef(string? @ref)
+    {
+        if (_activeProject == null || string.IsNullOrEmpty(@ref) || @ref!.Length < 2 || @ref[1] != ':') return null;
+        var key = @ref[2..];
+        return @ref[0] switch
+        {
+            'S' => _activeProject.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden && s.Id == key),
+            'F' => _activeProject.Tabs.OfType<FileTabItem>().FirstOrDefault(f => string.Equals(f.FilePath, key, StringComparison.OrdinalIgnoreCase)),
+            _ => null,
+        };
+    }
+
+    /// <summary>참조가 가리키는 탭을 이 패널에서 활성화(세션/파일 라우팅). 못 찾으면 false.</summary>
+    public bool ActivateByRef(string? @ref)
+    {
+        var t = FindTabByRef(@ref);
+        if (t is SessionItem s) { ActivateSession(s); return true; }
+        if (t is FileTabItem f) { ActivateFileTab(f); return true; }
+        return false;
+    }
+
     /// <summary>이 패널 탭바에서 이 탭이 확실히 보이게 한다 — 격리 중이면 화이트리스트에 추가,
     /// 전체 모드면 블랙리스트에서 제거. "이동"으로 탭이 들어왔는데, 과거에 이 패널이 그 탭을
     /// 블랙리스트에 넣어둔 상태(원래 이 패널에서 반대쪽으로 처음 보냈던 탭)면 활성화해도 필터에
@@ -439,11 +476,21 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
-    /// <summary>프로젝트의 "마지막 활성 탭" 참조를 갱신하고, 바뀐 경우에만 workspace.json 에 영속.</summary>
+    /// <summary>프로젝트의 "마지막 활성 탭" 참조를 갱신하고, 바뀐 경우에만 workspace.json 에 영속.
+    /// 분할 중 우측 패널은 좌측과 별도 필드(SplitRightActiveRef)에 기록한다 — 안 그러면 우측 활성 탭이
+    /// 좌측의 LastActiveTabRef 를 덮어써, 돌아왔을 때 좌측이 직전 탭이 아닌 엉뚱한(첫) 탭을 복원한다.</summary>
     private void RecordActiveTab(ProjectItem proj, string tabRef)
     {
-        if (proj.LastActiveTabRef == tabRef) return;
-        proj.LastActiveTabRef = tabRef;
+        if (_split && IsRightPane)
+        {
+            if (proj.SplitRightActiveRef == tabRef) return;
+            proj.SplitRightActiveRef = tabRef;
+        }
+        else
+        {
+            if (proj.LastActiveTabRef == tabRef) return;
+            proj.LastActiveTabRef = tabRef;
+        }
         WorkspaceStore.Save(Projects);
     }
 

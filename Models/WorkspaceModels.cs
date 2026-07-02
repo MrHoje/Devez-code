@@ -243,6 +243,12 @@ public sealed class ProjectItem : NotifyBase
     /// <summary>분할 파트너 파일 경로(우측 패널이 파일 탭이었을 때). 세션ID보다 우선순위 낮음. workspace.json 에 영속.</summary>
     public string? SplitPartnerFilePath { get; set; }
 
+    /// <summary>같은 프로젝트를 분할했을 때 우측 패널에 격리해 둔 탭들의 참조 목록("S:&lt;id&gt;"/"F:&lt;path&gt;").
+    /// 파트너 하나만이 아니라 우측 전체 탭 집합을 복원하기 위함(비면 파트너 필드로 폴백). workspace.json 에 영속.</summary>
+    public List<string> SplitRightTabRefs { get; set; } = new();
+    /// <summary>우측 패널에서 활성이던 탭 참조. LastActiveTabRef 는 좌측 활성 탭용. workspace.json 에 영속.</summary>
+    public string? SplitRightActiveRef { get; set; }
+
     /// <summary>사이드바 호환을 위한 세션 전용 동기 뷰(ObservableCollection).
     /// Tabs.CollectionChanged 에서 SessionItem 만 추려 추가/제거한다 → 사이드바 바인딩이 즉시 갱신.</summary>
     public ObservableCollection<SessionItem> Sessions { get; } = new();

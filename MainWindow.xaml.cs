@@ -2122,6 +2122,20 @@ public partial class MainWindow : Window
             // 세션ID/파일 둘 다 없어 자기 프로젝트를 통째로 우측에 여는 중복 버그가 난다.
             leftProj.SplitPartnerFilePath = RightPane.ActiveSession == null
                 ? (RightPane.ActiveTab as FileTabItem)?.FilePath : null;
+
+            // 같은 프로젝트를 분할(분할 보기로 여러 탭을 우측에 격리)한 경우: 우측 전체 탭 집합 + 좌/우
+            // 활성 탭을 저장해 복원 시 그대로 되살린다(파트너 하나만 복원돼 나머지가 좌측으로 쏠리던 문제 해결).
+            if (ReferenceEquals(RightPane.ActiveProject, leftProj))
+            {
+                leftProj.SplitRightTabRefs = RightPane.CurrentIsolatedRefs();
+                leftProj.SplitRightActiveRef = RightPane.ActiveTabRef();
+                leftProj.LastActiveTabRef = LeftPane.ActiveTabRef(); // 좌측 활성 탭(우측 활성은 위 별도 필드)
+            }
+            else
+            {
+                leftProj.SplitRightTabRefs = new(); // 다른 프로젝트 파트너 → 파트너 경로로 복원
+                leftProj.SplitRightActiveRef = null;
+            }
             WorkspaceStore.Save(_projects, _archivedProjects);
         }
     }
@@ -2242,7 +2256,7 @@ public partial class MainWindow : Window
         var (partnerProj, partnerSession, partnerFile) = ResolveSplitPartner(proj);
         // 세션·다른프로젝트 파트너는 EnableSplit 이 바로 우측에 띄운다. 파일 파트너는 빈 우측으로 연 뒤 아래에서 연다.
         EnableSplit(bProject: partnerProj, bSession: partnerSession, animate: animate);
-        RestorePartner(proj, partnerSession, partnerFile);
+        if (!RestoreSameProjectSplit(proj)) RestorePartner(proj, partnerSession, partnerFile);
         // 다른(비분할) 프로젝트에 갔다 이 분할로 돌아오는 경로 — 우측(PaneB) 터미널은 보존돼(스피너/리로드
         // 없음) 즉시 재활성화되지만, Collapsed(0폭)→최종폭 전환 중 첫 프레임이 잠깐 틀어져 보인다. JS 가
         // 컨테이너를 투명하게 덮은 뒤 폭 확정·재동기 후 fade-in 해 그 과정을 감춘다(preserve/ready 세션만).
@@ -2256,7 +2270,48 @@ public partial class MainWindow : Window
         var (partnerProj, partnerSession, partnerFile) = ResolveSplitPartner(proj);
         if (partnerSession != null) RightPane.OpenSession(partnerSession);
         else if (partnerProj != null) RightPane.SelectProject(partnerProj);
-        RestorePartner(proj, partnerSession, partnerFile);
+        if (!RestoreSameProjectSplit(proj)) RestorePartner(proj, partnerSession, partnerFile);
+    }
+
+    /// <summary>같은 프로젝트 분할 복원 — 저장된 우측 탭 집합(SplitRightTabRefs)을 우측에 모두 격리하고
+    /// 좌측에선 숨긴 뒤, 좌/우 활성 탭을 각각 복원한다(파트너 하나만 복원돼 나머지가 좌측으로 쏠리던 문제 해결).
+    /// 저장된 우측 집합이 없으면 false → 호출부가 기존 단일 파트너 복원(RestorePartner)으로 폴백.</summary>
+    private bool RestoreSameProjectSplit(ProjectItem proj)
+    {
+        var refs = proj.SplitRightTabRefs;
+        if (refs == null || refs.Count == 0) return false;
+        var activeRef = !string.IsNullOrEmpty(proj.SplitRightActiveRef) ? proj.SplitRightActiveRef : refs[0];
+        // 우측이 이 프로젝트를 표시하도록 우측 활성 탭을 먼저 연다(세션/파일).
+        OpenRefInPane(RightPane, proj, activeRef);
+        if (!ReferenceEquals(RightPane.ActiveProject, proj)) return false;
+        // 우측 전체 탭 격리 + 좌측 숨김.
+        foreach (var r in refs)
+        {
+            var tab = RightPane.FindTabByRef(r);
+            if (tab == null && r.StartsWith("F:")) { RightPane.OpenFileTabForPartner(proj, r[2..]); tab = RightPane.FindTabByRef(r); }
+            if (tab == null) continue;
+            RightPane.IsolateTab(tab);
+            LeftPane.HideTabInPane(tab);
+        }
+        RightPane.ActivateByRef(activeRef);          // 우측 활성 탭 복원
+        LeftPane.ActivateByRef(proj.LastActiveTabRef); // 좌측 활성 탭 복원(가장 왼쪽이 아니라 직전 선택 탭)
+        return true;
+    }
+
+    /// <summary>참조("S:id"/"F:path")가 가리키는 세션/파일을 지정 패널에서 연다(우측 복원용).</summary>
+    private void OpenRefInPane(WorkspacePaneView pane, ProjectItem proj, string? @ref)
+    {
+        if (string.IsNullOrEmpty(@ref) || @ref!.Length < 2 || @ref[1] != ':') return;
+        var key = @ref[2..];
+        if (@ref[0] == 'S')
+        {
+            var s = _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(x => x.Id == key);
+            if (s != null) pane.OpenSession(s);
+        }
+        else if (@ref[0] == 'F')
+        {
+            pane.OpenFileTabForPartner(proj, key);
+        }
     }
 
     /// <summary>분할 파트너가 "같은 프로젝트(proj)"의 세션/파일이면 = "분할 보기"로 그 탭만 우측에 띄웠던 상태다.
