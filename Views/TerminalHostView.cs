@@ -894,6 +894,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 리플로우 깜빡임을 감춘다. RevealAfterTransition 으로 걷는다(누락돼도 2s 뒤 자동 해제).</summary>
     public void CoverForTransition() => PostJson(new { type = "xferCover" });
 
+    /// <summary>전환 커버를 단색 대신 '캡처 이미지'로 띄운다. HWND 를 Collapsed 로 숨겼다 되살릴 때(사이드패널
+    /// 토글 등) 커버 이미지가 직전 WPF 스냅샷과 동일 내용이라 handoff 가 무깜빡이고, RevealAfterTransition 시
+    /// 최종 폭 터미널로 크로스페이드된다. imgW/imgH 는 캡처 시점 컨테이너 크기(DIP=CSS px)로 좌상단 고정 표시.</summary>
+    public void CoverForTransitionImage(byte[] png, double imgW, double imgH)
+        => PostJson(new { type = "xferCover", image = "data:image/png;base64," + Convert.ToBase64String(png), imgW, imgH });
+
     /// <summary>전환 후 호출 — 레이아웃이 최종 폭으로 확정되면 fit 으로 재측정(→ConPTY resize→TUI 재렌더)한
     /// 뒤 커튼을 fade-out 한다. roomId 는 fit 대상(활성 세션). 없으면 그냥 커튼만 걷는다.</summary>
     /// <summary>expectWidth: C# 이 UpdateLayout 으로 확정한 전환 후 최종 폭(px). JS 는 컨테이너 clientWidth 가
@@ -932,15 +938,32 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             PinBottom(1500);
     }
 
-    /// <summary>현재 터미널 화면을 PNG 스냅샷으로 반환. airspace 우회용.</summary>
-    public async Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync()
+    /// <summary>현재 터미널 화면을 PNG 바이트로 캡처. WPF 스냅샷·웹 커버 이미지 공용(한 번만 캡처).</summary>
+    public async Task<byte[]?> CapturePngAsync()
     {
         if (_webView?.CoreWebView2 == null) return null;
         try
         {
             using var ms = new MemoryStream();
             await _webView.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
-            ms.Position = 0;
+            return ms.ToArray();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>현재 터미널 화면을 PNG 스냅샷(BitmapSource)으로 반환. airspace 우회용.</summary>
+    public async Task<System.Windows.Media.Imaging.BitmapSource?> CaptureSnapshotAsync()
+    {
+        var png = await CapturePngAsync();
+        return png == null ? null : BitmapFromPng(png);
+    }
+
+    /// <summary>PNG 바이트 → 동결(freeze)된 BitmapSource. UI 스레드 밖에서도 안전하게 재사용.</summary>
+    public static System.Windows.Media.Imaging.BitmapSource? BitmapFromPng(byte[] png)
+    {
+        try
+        {
+            using var ms = new MemoryStream(png);
             var bitmap = new System.Windows.Media.Imaging.BitmapImage();
             bitmap.BeginInit();
             bitmap.StreamSource = ms;

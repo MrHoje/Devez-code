@@ -1246,11 +1246,11 @@ public partial class MainWindow : Window
     /// 터미널 WebView2 를 스냅샷으로 정지해 매 프레임 reflow 깜빡임을 막는다(분할 애니메이션과 동일 처리).</summary>
     private Task FreezeWorkspaceTerminalsAsync()
         => Task.WhenAll(_panes.Where(p => p.Visibility == Visibility.Visible)
-                              .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true)));
+                              .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true)));
 
     private void UnfreezeWorkspaceTerminals()
     {
-        foreach (var p in _panes) p.ResumeTerminalOnly();
+        foreach (var p in _panes) p.ResumeTerminalOnly(webCover: true);
     }
 
     private async void LeftPanelBtn_Click(object sender, RoutedEventArgs e)

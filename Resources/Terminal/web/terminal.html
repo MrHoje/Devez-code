@@ -927,6 +927,16 @@
         _fitSuppressed = true; // 전환 동안 중간(전체) 폭 fit 억제 — reveal 이 최종 폭에서 한 번만 fit
         const cov = document.getElementById('xfer-cover');
         cov.style.transition = 'none';
+        // image 가 오면 단색 대신 캡처 이미지를 좌상단 고정으로 깔아, HWND 재표시 handoff 를 무깜빡으로.
+        // (없으면 단색 배경 — 분할/오버레이 기존 동작.) 이후 fade-out 완료 시 backgroundImage 를 비운다.
+        if (msg.image) {
+          cov.style.backgroundImage = 'url("' + msg.image + '")';
+          cov.style.backgroundRepeat = 'no-repeat';
+          cov.style.backgroundPosition = 'top left';
+          cov.style.backgroundSize = (msg.imgW > 0 && msg.imgH > 0) ? (msg.imgW + 'px ' + msg.imgH + 'px') : 'auto';
+        } else {
+          cov.style.backgroundImage = '';
+        }
         cov.style.display = 'block';
         cov.style.opacity = '1';
         clearTimeout(_xferCoverTimer);
@@ -936,7 +946,7 @@
           var a = activeRoomId ? terms[activeRoomId] : null; // 미뤄둔 ConPTY 생성 폴백
           if (a && a.needCreate) { a.needCreate = false; try { a.fit.fit(); } catch (e) {} post({ type: 'created', roomId: activeRoomId, cols: a.term.cols, rows: a.term.rows }); }
           cov.style.transition = 'opacity 0.14s ease'; cov.style.opacity = '0';
-          setTimeout(function () { if (gen === _xferGen) cov.style.display = 'none'; }, 200);
+          setTimeout(function () { if (gen === _xferGen) { cov.style.display = 'none'; cov.style.backgroundImage = ''; } }, 200);
         }, 2000);
         break;
       }
@@ -949,6 +959,7 @@
         cov.style.transition = 'none';
         cov.style.opacity = '0';
         cov.style.display = 'none';
+        cov.style.backgroundImage = ''; // 이미지 커버 잔류 방지(다음 단색 커버 오염 X)
         break;
       }
       case 'xferReveal': {
@@ -968,7 +979,7 @@
             if (gen !== _xferGen) return;
             cov.style.transition = 'opacity 0.14s ease';
             cov.style.opacity = '0';
-            setTimeout(function () { if (gen === _xferGen) cov.style.display = 'none'; }, 200);
+            setTimeout(function () { if (gen === _xferGen) { cov.style.display = 'none'; cov.style.backgroundImage = ''; } }, 200);
           });
         };
         const finish = function (e) {

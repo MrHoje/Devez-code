@@ -1924,20 +1924,21 @@ public partial class WorkspacePaneView : UserControl
 
     /// <summary>스냅샷만(커튼 없이) 정지 — 우측 오버레이 드로어용.
     /// anchorTopLeft=true 면 캡처 시점 크기로 좌상단 고정 → 패널이 리사이즈돼도 이미지가 같이 늘어나지 않고 잘려 보인다(분할 애니메이션용).</summary>
-    public async Task SuspendTerminalOnlyAsync(bool anchorTopLeft = false)
+    public async Task SuspendTerminalOnlyAsync(bool anchorTopLeft = false, bool webCover = false)
     {
         if (_activeSession == null) return;
-        var snap = await _terminal.CaptureSnapshotAsync();
-        if (snap != null)
+        double cw = TerminalHostContainer.ActualWidth, ch = TerminalHostContainer.ActualHeight;
+        var png = await _terminal.CapturePngAsync();
+        if (png != null)
         {
             if (anchorTopLeft)
             {
                 TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Left;
                 TerminalSnapshot.VerticalAlignment = VerticalAlignment.Top;
-                TerminalSnapshot.Width = TerminalHostContainer.ActualWidth;
-                TerminalSnapshot.Height = TerminalHostContainer.ActualHeight;
+                TerminalSnapshot.Width = cw;
+                TerminalSnapshot.Height = ch;
             }
-            TerminalSnapshot.Source = snap;
+            TerminalSnapshot.Source = TerminalHostView.BitmapFromPng(png);
             TerminalSnapshot.Visibility = Visibility.Visible;
             // 스냅샷이 실제 화면 프레임에 present 된 것을 확인한 뒤에 WebView2 HWND 를 숨긴다.
             // 같은 블록에서 동시에 바꾸면 네이티브 HWND(별도 렌더 파이프라인)가 스냅샷보다
@@ -1950,6 +1951,11 @@ public partial class WorkspacePaneView : UserControl
         // Collapsed 로 숨긴다 → WebView2(HwndHost)의 네이티브 HWND 가 실제로 가려진다.
         // (Hidden 은 레이아웃 슬롯을 남겨 HwndHost HWND 가 그대로 보이므로 금지 — 애니메이션 중 라이브 터미널이 비쳐 깜빡인다.)
         TerminalHostContainer.Visibility = Visibility.Collapsed;
+        // webCover: HWND 를 숨긴 직후 같은 PNG 를 웹 레이어 커버(#xfer-cover) 배경으로 올린다. 숨긴 상태에서
+        // 올리므로 suspend 시작엔 라이브(=스냅샷과 동일)만 보여 무깜빡이고, 애니메이션 동안(~200ms) 이미지가
+        // 디코드된다. resume 으로 HWND 가 되살아나는 순간엔 이 커버 이미지(직전 스냅샷과 동일 내용)가 보여
+        // handoff 가 무깜빡이며, 최종 폭 fit 후 라이브 터미널로 크로스페이드된다. 폭 정보(cw/ch)로 좌상단 고정.
+        if (webCover && png != null) _terminal.CoverForTransitionImage(png, cw, ch);
     }
 
     /// <summary>지정한 수만큼 컴포지션 렌더 프레임이 지나갈 때까지 대기. HwndHost 를 숨기기 전에
@@ -1970,10 +1976,18 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
-    public void ResumeTerminalOnly()
+    public void ResumeTerminalOnly(bool webCover = false)
     {
         if (_activeSession != null)
-            TerminalHostContainer.Visibility = Visibility.Visible;
+            TerminalHostContainer.Visibility = Visibility.Visible; // HWND 되살아남 → 웹 커버 이미지(직전 스냅샷과 동일)가 보임
+        // webCover: 최종 폭을 확정(UpdateLayout)해 JS 에 넘겨, clientWidth 가 거기 근접하면 fit + ConPTY 재동기 후
+        // 커버 이미지를 라이브 터미널로 크로스페이드한다 → resume 리플로우가 커버 아래서 일어나 안 보인다.
+        if (webCover && _activeSession != null)
+        {
+            UpdateLayout();
+            double target = TerminalHostContainer?.ActualWidth ?? 0;
+            _terminal.RevealAfterTransition(_activeSession.Id, kick: true, expectWidth: target);
+        }
         TerminalSnapshot.Visibility = Visibility.Collapsed;
         TerminalSnapshot.Source = null;
         // 고정 크기/정렬 원복(다음 사용에서 기본 Fill 동작으로).
