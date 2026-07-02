@@ -878,19 +878,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>다음 N회의 출력 쓰기에서 xterm.js 스크롤을 억제(슬래시 명령 자동주입 시 사용).</summary>
     public void SuppressScroll(int count = 5) => PostJson(new { type = "suppressScroll", count });
 
-    /// <summary>방의 ConPTY 를 -1→원복 리사이즈로 강제 리페인트(SIGWINCH). 패널이 Collapsed(0폭)에서
-    /// 다시 보일 때 최종 폭이 접기 전과 같으면 xterm fit 이 onResize 를 안 내 풀스크린 TUI(claude/opencode
-    /// 등)가 정지 프레임으로 남는다(스플리터를 살짝 움직이면 복구되던 증상). 그 리사이즈를 코드로 흉내내
-    /// 강제로 다시 그리게 한다. 실제 폭이 이미 달라졌다면 fit 이 이미 repaint 를 유발했을 테니 무해한 재확정.</summary>
-    public void RepaintTerminal(string roomId)
-    {
-        var s = TerminalSessionManager.Instance.Get(roomId);
-        if (s is not { IsAlive: true }) return;
-        int c = s.Cols, r = s.Rows;
-        if (c < 3 || r < 2) return; // 아직 초기화 전(기본 80x24 미만) — 킥 무의미
-        s.Resize(Math.Max(2, c - 1), r);
-        s.Resize(c, r);
-    }
+    /// <summary>Collapsed(0폭) 였다 되살아난 패널의 풀스크린 TUI 를 강제 리페인트 + xterm↔ConPTY 크기 재동기.
+    /// preserve 경로(WireSession 미경유)는 "xterm 의 실제 cols 에 ConPTY 를 맞추는" 재동기가 없어, 폭이
+    /// 어긋나면 claude 등이 넓은 폭으로 보낸 줄을 xterm 이 좁게 되접어 줄바꿈이 깨진다. JS 에서 fit 으로
+    /// xterm 을 컨테이너에 맞춘 뒤 xterm resize-kick(cols-1→cols)으로 SIGWINCH 를 내 ConPTY 를 xterm 의
+    /// 실제 cols 로 맞추고 TUI 가 다시 그리게 한다(스플리터 살짝 nudge 와 동일한 효과). C# 이 ConPTY 크기를
+    /// 직접 만지면 xterm 표시 폭과 어긋날 수 있어 반드시 xterm 주도로 재동기한다.</summary>
+    public void RepaintTerminal(string roomId) => PostJson(new { type = "resyncKick", roomId });
 
     /// <summary>ms 동안 출력 쓰기 후 맨 아래로 고정 — 인라인 TUI(gjc) open 직후 최신 화면을 보이게(짧은 창).</summary>
     public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });
