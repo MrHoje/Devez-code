@@ -2021,6 +2021,10 @@ public partial class MainWindow : Window
         pane.ArchivedProjects = _archivedProjects;
         pane.ModelEffort = _modelEffort;
         pane.AgentLastMsg = _agentLastMsg;
+        // 다른 패널이 활성으로 보여주는 세션은 이 패널의 프리로드에서 제외한다. 같은 프로젝트를 분할하면
+        // 양쪽이 같은 세션 집합을 프리로드하는데, 활성 세션을 다른 패널이 기본(전체) 폭으로 먼저 만들어버리면
+        // 보여주는 패널이 최종 폭으로 reattach 하며 리플로우돼 깨진다. 활성 세션은 그 패널이 최종 폭에서 생성하게 둔다.
+        pane.IsSessionActiveElsewhere = s => _panes.Any(p => !ReferenceEquals(p, pane) && ReferenceEquals(p.ActiveSession, s));
         pane.FocusRequested += OnPaneFocusRequested;
         pane.ActiveChanged += OnPaneActiveChanged;
         pane.SplitToggleRequested += OnPaneSplitToggle;

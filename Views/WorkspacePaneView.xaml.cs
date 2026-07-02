@@ -53,6 +53,9 @@ public partial class WorkspacePaneView : UserControl
     public ModelEffortService? ModelEffort { get; set; }
     /// <summary>비-claude 에이전트 last prompt 추적용(공유 서비스).</summary>
     public AgentLastMessageService? AgentLastMsg { get; set; }
+    /// <summary>이 세션이 다른 패널에서 활성으로 표시 중인지(셸이 주입). 프리로드에서 제외해 그 세션 ConPTY 를
+    /// 표시 중인 패널이 최종 폭으로 생성하게 한다(같은 프로젝트 분할 시 폭 충돌·리플로우 방지).</summary>
+    public Func<SessionItem, bool>? IsSessionActiveElsewhere { get; set; }
 
     /// <summary>사용자가 이 패널을 클릭/조작 → 포커스 패널로 지정 요청.</summary>
     public event Action<WorkspacePaneView>? FocusRequested;
@@ -449,6 +452,7 @@ public partial class WorkspacePaneView : UserControl
         foreach (var s in proj.Tabs.OfType<SessionItem>())
         {
             if (ReferenceEquals(s, except) || s.Hidden) continue;
+            if (IsSessionActiveElsewhere?.Invoke(s) == true) continue; // 다른 패널이 표시 중 — 그 패널이 최종 폭으로 생성
             SettingsService.SaveClaudeCodeRoomDir(s.Id, proj.Path);
             _terminal.PreloadTerminal(s.Id);
         }
