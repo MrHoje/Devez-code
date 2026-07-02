@@ -82,6 +82,15 @@
     background: var(--term-bg, #0C0C0C);
   }
   #loading-overlay.on { display: flex; }
+
+  /* 전환 커튼 — 분할 열림/닫힘으로 패널이 리사이즈될 때 그 리플로우를 감추는 단색(터미널 배경색) 덮개.
+     WebView2 는 HwndHost 라 WPF 오버레이로 못 덮으므로 웹 레이어 안에서 처리한다. 커버 즉시 → 레이아웃
+     확정·fit 후 fade-out. (로딩 스피너 z-50 아래에 둬 신규 세션 스피너는 커튼 위에 보인다.) */
+  #xfer-cover {
+    position: absolute; inset: 0; z-index: 45;
+    display: none; opacity: 0; pointer-events: none;
+    background: var(--term-bg, #0C0C0C);
+  }
   /* devez 최초 실행 스피너와 동일: PrimaryBrush 점선 링(28 10) 회전, 0.85s, 두께 3. */
   #loading-overlay .ring {
     width: 36px; height: 36px;
@@ -121,6 +130,7 @@
 </head>
 <body>
 <div id="loading-overlay"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div>
+<div id="xfer-cover"></div>
 <div id="copy-toast"></div>
 <div id="search-bar">
   <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
@@ -140,6 +150,7 @@
   let _scrollSuppress = 0; // >0이면 출력 쓰기 후 스크롤 복원
   let _scrollSuppressTimer = 0; // suppress 잔여 누수 방지용 타임아웃
   let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
+  let _xferCoverTimer = 0; // 전환 커튼 안전 자동해제 타이머(reveal 누락 대비)
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
@@ -897,6 +908,48 @@
       case 'pinBottom':
         _pinBottomUntil = Date.now() + (msg.ms || 2000);
         break;
+      case 'xferCover': {
+        // 분할 열림/닫힘 전환 직전: 단색 커튼으로 즉시 덮어 이후 리사이즈 리플로우를 감춘다.
+        const cov = document.getElementById('xfer-cover');
+        cov.style.transition = 'none';
+        cov.style.display = 'block';
+        cov.style.opacity = '1';
+        clearTimeout(_xferCoverTimer);
+        _xferCoverTimer = setTimeout(function () { // 안전장치: reveal 이 안 와도 2s 뒤 자동 해제
+          cov.style.transition = 'opacity 0.14s ease'; cov.style.opacity = '0';
+          setTimeout(function () { cov.style.display = 'none'; }, 200);
+        }, 2000);
+        break;
+      }
+      case 'xferReveal': {
+        // 레이아웃이 최종 폭으로 확정될 때까지 기다려 fit(→onResize→ConPTY resize→TUI 재렌더)을 몇 번
+        // 반복해 안정시킨 뒤 커튼을 fade-out 한다. → 사용자는 리사이즈 리플로우 없이 최종 화면만 본다.
+        clearTimeout(_xferCoverTimer);
+        const cov = document.getElementById('xfer-cover');
+        const room = msg.roomId;
+        const fadeOut = function () {
+          requestAnimationFrame(function () {
+            cov.style.transition = 'opacity 0.14s ease';
+            cov.style.opacity = '0';
+            setTimeout(function () { cov.style.display = 'none'; }, 200);
+          });
+        };
+        let waited = 0, done = 0;
+        const step = function () {
+          const e = room ? terms[room] : null;
+          if (!e || room !== activeRoomId) { fadeOut(); return; }   // 세션 없거나 방 전환 — 그냥 걷기
+          if (e.el.clientWidth < 2 || e.el.clientHeight < 2) {      // 아직 최종 폭 미확정 — 잠깐 더 대기
+            if (waited < 800) { waited += 40; setTimeout(step, 40); } else fadeOut();
+            return;
+          }
+          try { e.fit.fit(); } catch (err) {}
+          done++;
+          if (done < 3) setTimeout(step, 80);  // 폭 확정 + TUI 재렌더(onResize→ConPTY→repaint) 안정 대기
+          else setTimeout(fadeOut, 80);
+        };
+        step();
+        break;
+      }
       case 'returnResync': {
         // Collapsed 였다 되살아난(preserve) 패널: 틀어진 중간 프레임을 안 보이게 컨테이너를 잠깐 투명
         // (opacity:0, 아래 body 배경색=--term-bg 만 노출)으로 덮은 뒤, 폭이 최종값으로 확정될 때까지 기다려

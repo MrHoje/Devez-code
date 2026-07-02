@@ -274,6 +274,12 @@ public partial class WorkspacePaneView : UserControl
             _terminal.ResyncOnReturn(_activeSession.Id);
     }
 
+    /// <summary>분할 열림/닫힘으로 이 패널이 리사이즈될 전환 직전 — 터미널을 단색 커튼으로 덮어 리플로우를 감춘다.</summary>
+    public void CoverForTransition() => _terminal.CoverForTransition();
+
+    /// <summary>전환 후 — 최종 폭으로 fit 재측정 후 커튼을 fade-out(활성 세션 기준). 세션이 없으면 커튼만 걷는다.</summary>
+    public void RevealAfterTransition() => _terminal.RevealAfterTransition(_activeSession?.Id);
+
     /// <summary>분할 해제 시 — 이 패널의 프로젝트/세션 상태를 비운다(ConPTY·기록 보존).
     /// <paramref name="disposeTerminal"/>=true 면 보여주던 세션의 xterm 배선까지 끊는다(스왑 재부착처럼
     /// 같은 세션이 다른 패널로 옮겨가 더블 배선될 수 있는 경우 필수).

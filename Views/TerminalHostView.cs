@@ -885,6 +885,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// (WebView2 는 HwndHost 라 WPF 오버레이로 못 덮으므로 반드시 웹 레이어 안에서 가린다.)</summary>
     public void ResyncOnReturn(string roomId) => PostJson(new { type = "returnResync", roomId });
 
+    /// <summary>분할 열림/닫힘 전환 직전 호출 — 웹 레이어 단색 커튼으로 터미널을 즉시 덮어 이후 리사이즈
+    /// 리플로우 깜빡임을 감춘다. RevealAfterTransition 으로 걷는다(누락돼도 2s 뒤 자동 해제).</summary>
+    public void CoverForTransition() => PostJson(new { type = "xferCover" });
+
+    /// <summary>전환 후 호출 — 레이아웃이 최종 폭으로 확정되면 fit 으로 재측정(→ConPTY resize→TUI 재렌더)한
+    /// 뒤 커튼을 fade-out 한다. roomId 는 fit 대상(활성 세션). 없으면 그냥 커튼만 걷는다.</summary>
+    public void RevealAfterTransition(string? roomId) => PostJson(new { type = "xferReveal", roomId });
+
     /// <summary>ms 동안 출력 쓰기 후 맨 아래로 고정 — 인라인 TUI(gjc) open 직후 최신 화면을 보이게(짧은 창).</summary>
     public void PinBottom(int ms = 2000) => PostJson(new { type = "pinBottom", ms });
 
