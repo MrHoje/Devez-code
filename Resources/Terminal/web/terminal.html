@@ -953,9 +953,11 @@
             return;
           }
           try { e.fit.fit(); } catch (err) {}
-          if (kick) { // 재배선 세션: SIGWINCH 강제 리페인트로 정지된 스크롤/뷰포트 복원
-            const c = e.term.cols, r = e.term.rows;
-            if (c > 2 && r > 1) { try { e.term.resize(Math.max(2, c - 1), r); e.term.resize(c, r); } catch (err) {} }
+          if (kick && e.term.cols > 2 && e.term.rows > 1) {
+            // 재배선 세션(분할 보기): ConPTY 를 xterm 현재 크기로 강제 재동기한다. xterm 자체는 안 건드리므로
+            // 스크롤백 리플로우가 없어(=스크롤 안 깨짐), 늦게 도착하는 WireSession 재배선 resize(전체 폭)와의
+            // 경쟁에서 이 값이 마지막이 되고, 크기가 달랐다면 SIGWINCH 로 TUI 가 그 폭에서 다시 그린다.
+            post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
           }
           done++;
           if (done < 3) setTimeout(step, 80);  // 폭 확정 + TUI 재렌더(onResize→ConPTY→repaint) 안정 대기
