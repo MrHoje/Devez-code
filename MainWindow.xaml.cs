@@ -2105,6 +2105,7 @@ public partial class MainWindow : Window
 
     private void PersistSplitState()
     {
+        DevezCode.Services.DiagLog.Write($"PersistSplitState split={_splitActive} swapped={_panesSwapped}\n  LEFT  {LeftPane.DebugFilterState()}\n  RIGHT {RightPane.DebugFilterState()}");
         SettingsService.SaveFullSplitState(
             _splitActive,
             LeftPane.ActiveProject?.Path, LeftPane.ActiveSession?.Id,
@@ -2258,9 +2259,12 @@ public partial class MainWindow : Window
     private void EnableSplitForProject(ProjectItem proj, bool animate = true)
     {
         var (partnerProj, partnerSession, partnerFile) = ResolveSplitPartner(proj);
+        // 우측 탭 집합/활성 refs 를 EnableSplit 전에 스냅샷한다 — EnableSplit 의 세션 활성화가 중간
+        // PersistSplitState 를 유발해(아직 격리 전 상태) refs 를 빈 값으로 덮어쓸 수 있기 때문.
+        var (rightRefs, rightActive, leftActive) = SnapshotSplitRefs(proj);
         // 세션·다른프로젝트 파트너는 EnableSplit 이 바로 우측에 띄운다. 파일 파트너는 빈 우측으로 연 뒤 아래에서 연다.
         EnableSplit(bProject: partnerProj, bSession: partnerSession, animate: animate);
-        if (!RestoreSameProjectSplit(proj)) RestorePartner(proj, partnerSession, partnerFile);
+        if (!RestoreSameProjectSplit(proj, rightRefs, rightActive, leftActive)) RestorePartner(proj, partnerSession, partnerFile);
         // 다른(비분할) 프로젝트에 갔다 이 분할로 돌아오는 경로 — 우측(PaneB) 터미널은 보존돼(스피너/리로드
         // 없음) 즉시 재활성화되지만, Collapsed(0폭)→최종폭 전환 중 첫 프레임이 잠깐 틀어져 보인다. JS 가
         // 컨테이너를 투명하게 덮은 뒤 폭 확정·재동기 후 fade-in 해 그 과정을 감춘다(preserve/ready 세션만).
@@ -2272,24 +2276,29 @@ public partial class MainWindow : Window
     private void ApplyPartnerToPaneB(ProjectItem proj)
     {
         var (partnerProj, partnerSession, partnerFile) = ResolveSplitPartner(proj);
+        var (rightRefs, rightActive, leftActive) = SnapshotSplitRefs(proj);
         if (partnerSession != null) RightPane.OpenSession(partnerSession);
         else if (partnerProj != null) RightPane.SelectProject(partnerProj);
-        if (!RestoreSameProjectSplit(proj)) RestorePartner(proj, partnerSession, partnerFile);
+        if (!RestoreSameProjectSplit(proj, rightRefs, rightActive, leftActive)) RestorePartner(proj, partnerSession, partnerFile);
     }
+
+    /// <summary>복원 시작 전 프로젝트의 분할 refs 를 스냅샷 — 이후 활성화가 유발하는 중간 PersistSplitState 가
+    /// (아직 격리 전 상태를 보고) refs 를 빈 값으로 덮어써도, 이 스냅샷으로 올바르게 복원한다.</summary>
+    private (List<string> rightRefs, string? rightActive, string? leftActive) SnapshotSplitRefs(ProjectItem proj)
+        => (proj.SplitRightTabRefs?.ToList() ?? new(), proj.SplitRightActiveRef, proj.LastActiveTabRef);
 
     /// <summary>같은 프로젝트 분할 복원 — 저장된 우측 탭 집합(SplitRightTabRefs)을 우측에 모두 격리하고
     /// 좌측에선 숨긴 뒤, 좌/우 활성 탭을 각각 복원한다(파트너 하나만 복원돼 나머지가 좌측으로 쏠리던 문제 해결).
     /// 저장된 우측 집합이 없으면 false → 호출부가 기존 단일 파트너 복원(RestorePartner)으로 폴백.</summary>
-    private bool RestoreSameProjectSplit(ProjectItem proj)
+    private bool RestoreSameProjectSplit(ProjectItem proj, List<string> rightRefs, string? rightActive, string? leftActive)
     {
-        var refs = proj.SplitRightTabRefs;
-        if (refs == null || refs.Count == 0) return false;
-        var activeRef = !string.IsNullOrEmpty(proj.SplitRightActiveRef) ? proj.SplitRightActiveRef : refs[0];
+        if (rightRefs == null || rightRefs.Count == 0) return false;
+        var activeRef = !string.IsNullOrEmpty(rightActive) ? rightActive : rightRefs[0];
         // 우측이 이 프로젝트를 표시하도록 우측 활성 탭을 먼저 연다(세션/파일).
         OpenRefInPane(RightPane, proj, activeRef);
         if (!ReferenceEquals(RightPane.ActiveProject, proj)) return false;
         // 우측 전체 탭 격리 + 좌측 숨김.
-        foreach (var r in refs)
+        foreach (var r in rightRefs)
         {
             var tab = RightPane.FindTabByRef(r);
             if (tab == null && r.StartsWith("F:")) { RightPane.OpenFileTabForPartner(proj, r[2..]); tab = RightPane.FindTabByRef(r); }
@@ -2297,8 +2306,12 @@ public partial class MainWindow : Window
             RightPane.IsolateTab(tab);
             LeftPane.HideTabInPane(tab);
         }
-        RightPane.ActivateByRef(activeRef);          // 우측 활성 탭 복원
-        LeftPane.ActivateByRef(proj.LastActiveTabRef); // 좌측 활성 탭 복원(가장 왼쪽이 아니라 직전 선택 탭)
+        RightPane.ActivateByRef(activeRef);   // 우측 활성 탭 복원
+        LeftPane.ActivateByRef(leftActive);   // 좌측 활성 탭 복원(가장 왼쪽이 아니라 직전 선택 탭)
+        // 복원 중 중간 PersistSplitState 가 빈 값으로 덮었을 refs 를 스냅샷으로 되돌려 다음 복원도 성공하게 한다.
+        proj.SplitRightTabRefs = rightRefs;
+        proj.SplitRightActiveRef = rightActive;
+        WorkspaceStore.Save(_projects, _archivedProjects);
         return true;
     }
 
@@ -2527,6 +2540,9 @@ public partial class MainWindow : Window
         // 두 패널을 커튼으로 덮어 전환 중 중간(전체) 폭 fit 을 억제하고, 폭이 절반으로 안정된 뒤 fit·재동기·fade.
         PaneA.CoverForTransition();
         PaneB.CoverForTransition();
+        // 같은 프로젝트 분할이면 우측 refs 를 OpenSession(중간 PersistSplitState 유발) 전에 스냅샷.
+        var restoreSnap = (aProj != null && ReferenceEquals(aProj, bProj)) ? SnapshotSplitRefs(aProj!)
+                                                                          : (new List<string>(), (string?)null, (string?)null);
         if (!swapped)
         {
             // 기본: PaneA=좌(저장된 left 내용), PaneB=우(저장된 right 내용)
@@ -2552,16 +2568,20 @@ public partial class MainWindow : Window
         // 좌우 동일 프로젝트)는 프로젝트에 기억된 SplitPartnerFilePath 로 파일을 열어 격리한다.
         if (aProj != null && ReferenceEquals(aProj, bProj))
         {
-            if (bSess != null)
+            // 우측 전체 탭 집합 복원(스냅샷 사용). 저장분이 없으면 기존 단일 파트너 격리로 폴백.
+            if (!RestoreSameProjectSplit(aProj, restoreSnap.Item1, restoreSnap.Item2, restoreSnap.Item3))
             {
-                RightPane.IsolateTab(bSess);
-                LeftPane.HideTabInPane(bSess);
-            }
-            else if (!string.IsNullOrEmpty(aProj.SplitPartnerFilePath) && System.IO.File.Exists(aProj.SplitPartnerFilePath)
-                     && RightPane.OpenFileTabForPartner(aProj, aProj.SplitPartnerFilePath) is { } pf)
-            {
-                RightPane.IsolateTab(pf);
-                LeftPane.HideTabInPane(pf);
+                if (bSess != null)
+                {
+                    RightPane.IsolateTab(bSess);
+                    LeftPane.HideTabInPane(bSess);
+                }
+                else if (!string.IsNullOrEmpty(aProj.SplitPartnerFilePath) && System.IO.File.Exists(aProj.SplitPartnerFilePath)
+                         && RightPane.OpenFileTabForPartner(aProj, aProj.SplitPartnerFilePath) is { } pf)
+                {
+                    RightPane.IsolateTab(pf);
+                    LeftPane.HideTabInPane(pf);
+                }
             }
         }
 
