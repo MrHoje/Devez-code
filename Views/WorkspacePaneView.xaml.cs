@@ -1732,6 +1732,35 @@ public partial class WorkspacePaneView : UserControl
         TerminalHostContainer.VerticalAlignment = VerticalAlignment.Stretch;
     }
 
+    // 파일 에디터(md=WebView2) 컨테이너도 동일하게 0×0 주차 — Collapsed 로 감추면 HWND 생성/재표시가
+    // '다시 보이는 순간'으로 밀려 컴포지터 첫 프레임(검정)이 번쩍인다(분할 복원 reveal 때 md 가
+    // 까매졌다 뜨는 원인). 주차는 HWND·페이지를 안 보이게 살려 두어 표시가 리사이즈로 처리된다.
+    private bool _fileParked;
+
+    private void ParkFileEditorHost()
+    {
+        if (_fileParked) return;
+        _fileParked = true;
+        FileEditorHostContainer.Width = 0;
+        FileEditorHostContainer.Height = 0;
+        FileEditorHostContainer.HorizontalAlignment = HorizontalAlignment.Left;
+        FileEditorHostContainer.VerticalAlignment = VerticalAlignment.Top;
+        FileEditorHostContainer.Visibility = Visibility.Visible;
+    }
+
+    private void UnparkFileEditorHost()
+    {
+        if (_fileParked)
+        {
+            _fileParked = false;
+            FileEditorHostContainer.Width = double.NaN;
+            FileEditorHostContainer.Height = double.NaN;
+            FileEditorHostContainer.HorizontalAlignment = HorizontalAlignment.Stretch;
+            FileEditorHostContainer.VerticalAlignment = VerticalAlignment.Stretch;
+        }
+        FileEditorHostContainer.Visibility = Visibility.Visible; // 다이얼로그 suspend(Collapsed) 복귀 포함
+    }
+
     private void UpdateEmptyState()
     {
         bool hasActive = _activeTab != null;
@@ -1740,19 +1769,22 @@ public partial class WorkspacePaneView : UserControl
         {
             UnparkTerminalHost();
             TerminalHostContainer.Visibility = Visibility.Visible;
-            FileEditorHostContainer.Visibility = Visibility.Collapsed;
+            ParkFileEditorHost();
         }
         else if (_activeTab is FileTabItem)
         {
             ParkTerminalHost();
-            // 전환 커버 중이면 파일 에디터(md=WebView2 는 airspace 로 WPF 커튼에 안 가려짐)를 숨기고
-            // TerminalCurtain(단색)으로 대신 가린다 → reveal 동기화 시 함께 나타나게(파일이 먼저 뜨는 것 방지).
-            FileEditorHostContainer.Visibility = _coverActive ? Visibility.Collapsed : Visibility.Visible;
+            // 전환 커버 중이면 파일 에디터(md=WebView2 는 airspace 로 WPF 커튼에 안 가려짐)를 0×0 주차로
+            // 감추고 TerminalCurtain(단색)으로 대신 가린다 → reveal 동기화 시 함께 나타나게(파일 조기표시 방지).
+            // Collapsed 로 감추면 md HWND 생성/재표시가 reveal 순간으로 밀려 컴포지터 첫 프레임(검정)이
+            // 번쩍인다 — 주차는 HWND 를 안 보이게 살려 두므로 reveal 이 '리사이즈'가 되어 검정 프레임이 없다.
+            if (_coverActive) ParkFileEditorHost();
+            else UnparkFileEditorHost();
         }
         else
         {
             ParkTerminalHost();
-            FileEditorHostContainer.Visibility = Visibility.Collapsed;
+            ParkFileEditorHost();
         }
 
         // 파일 패널 커버: 커버 중 & 파일 탭일 때만 단색 커튼 노출(세션은 웹 레이어 #xfer-cover 가 담당).
