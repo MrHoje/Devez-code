@@ -164,6 +164,7 @@ public partial class MainWindow : Window
         Sidebar.FilesReordered += _ => { RefreshCardGroups(); WorkspaceStore.Save(_projects); };
         Sidebar.SessionSelected        += OpenSessionFromSidebar;
         Sidebar.OpenDocSelected        += OpenDocFromSidebar;
+        Sidebar.OpenDocCloseRequested  += CloseDocFromSidebar;
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
@@ -3169,6 +3170,14 @@ public partial class MainWindow : Window
         pane.OpenFileTab(doc);
         SyncShellToFocusedPane();
         UpdatePaneFocusVisual();
+    }
+
+    /// <summary>사이드바 카드 문서 우클릭 "문서 닫기" → 그 문서가 보이는 패널에서 닫는다(활성 탭이면 이웃으로 교체).</summary>
+    private void CloseDocFromSidebar(FileTabItem doc)
+    {
+        var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc)) ?? _focusedPane;
+        pane.CloseFileTab(doc);
+        RefreshCardGroups();
     }
 
     private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session, bool isNewProjectLoad)

@@ -50,6 +50,8 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionSelected;
     /// <summary>카드의 열린 문서(파일 탭) 행 클릭 — 해당 파일 탭을 활성화(MainWindow 위임).</summary>
     public event Action<FileTabItem>? OpenDocSelected;
+    /// <summary>카드 문서 우클릭 "문서 닫기" — 해당 파일 탭을 닫는다(MainWindow 위임).</summary>
+    public event Action<FileTabItem>? OpenDocCloseRequested;
     public event Action<SessionItem>? SessionDeleteRequested;
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
@@ -324,6 +326,11 @@ public partial class SidebarView : UserControl
         if (_didDrag) { _didDrag = false; return; }
         if (sender is FrameworkElement { DataContext: FileTabItem f })
             OpenDocSelected?.Invoke(f);
+    }
+
+    private void OpenDocClose_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<FileTabItem>(sender) is { } f) OpenDocCloseRequested?.Invoke(f);
     }
 
     private void AddSession_Click(object sender, RoutedEventArgs e)

@@ -105,7 +105,7 @@
                         <Separator/>
                         <MenuItem Header="세션 닫기" Tag="{Binding}" Click="SessionStopTracking_Click">
                             <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
@@ -257,6 +257,16 @@
                     PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
                     Cursor="Arrow"
                     ToolTip="{Binding FilePath}">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="문서 닫기" Tag="{Binding}" Click="OpenDocClose_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                    </ContextMenu>
+                </Border.ContextMenu>
                 <Grid Margin="10,5,10,5">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>

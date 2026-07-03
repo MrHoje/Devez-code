@@ -1221,6 +1221,9 @@ public partial class WorkspacePaneView : UserControl
         else ClearActiveSession();
     }
 
+    /// <summary>사이드바 카드에서 문서 닫기 요청 — 파일 탭을 닫는다(내부 RemoveFileTab 위임).</summary>
+    public void CloseFileTab(FileTabItem tab) => RemoveFileTab(tab);
+
     private void RemoveFileTab(FileTabItem tab)
     {
         var parent = ParentOfTab(tab);
