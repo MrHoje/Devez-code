@@ -3473,17 +3473,48 @@ public partial class MainWindow : Window
         if (isLive)
         {
             var sourcePane = toRight ? LeftPane : RightPane; // 이동 전 소스 패널 = 반대편
-            OnPaneSplitViewRequested(sourcePane, tab);
-            return;
+            OnPaneSplitViewRequested(sourcePane, tab);       // 멤버십 이동(+내부 refresh/persist)
+        }
+        else
+        {
+            var r = WorkspacePaneView.RefOf(tab);
+            var set = new List<string>(project.SplitRightTabRefs);
+            set.RemoveAll(x => string.Equals(x, r, StringComparison.OrdinalIgnoreCase));
+            if (toRight) set.Add(r);
+            project.SplitRightTabRefs = set;
         }
 
-        var r = WorkspacePaneView.RefOf(tab);
-        var set = new List<string>(project.SplitRightTabRefs);
-        set.RemoveAll(x => string.Equals(x, r, StringComparison.OrdinalIgnoreCase));
-        if (toRight) set.Add(r);
-        project.SplitRightTabRefs = set;
-        RefreshCardGroups();
+        RefreshCardGroups();                          // 새 멤버십으로 좌/우 그룹 재계산
+        PositionTabAtBoundary(project, tab, toRight);  // 세퍼레이터 인접 위치로 정렬
+        RefreshCardGroups();                          // 순서 반영
+        PaneA.RefreshSelectedTabSeam(); PaneB.RefreshSelectedTabSeam();
         WorkspaceStore.Save(_projects);
+    }
+
+    /// <summary>크로스그룹 이동 후 도착 위치를 세퍼레이터 인접으로 맞춘다(카드/탭바 순서 = Tabs 순서).
+    /// toRight(아래로): 우 그룹 첫 항목(세퍼레이터 바로 아래). !toRight(위로): 좌 그룹 마지막 항목(세퍼레이터 바로 위).</summary>
+    private static void PositionTabAtBoundary(ProjectItem project, TabItemBase tab, bool toRight)
+    {
+        int from = project.Tabs.IndexOf(tab);
+        if (from < 0) return;
+        if (toRight)
+        {
+            var anchor = project.RightItems.FirstOrDefault(t => !ReferenceEquals(t, tab));
+            if (anchor == null) return;               // 우 그룹에 자기뿐 → 위치 무의미
+            int a = project.Tabs.IndexOf(anchor);
+            if (a < 0) return;
+            int to = from < a ? a - 1 : a;            // anchor 바로 앞(우 그룹 첫 항목)
+            if (from != to) project.Tabs.Move(from, to);
+        }
+        else
+        {
+            var anchor = project.LeftItems.LastOrDefault(t => !ReferenceEquals(t, tab));
+            if (anchor == null) return;               // 좌 그룹에 자기뿐
+            int a = project.Tabs.IndexOf(anchor);
+            if (a < 0) return;
+            int to = from < a ? a : a + 1;            // anchor 바로 뒤(좌 그룹 마지막 항목)
+            if (from != to) project.Tabs.Move(from, to);
+        }
     }
 
     // 푸터 좌측 상태 텍스트는 제거됨(한도 표시로 대체). 호출부 유지를 위해 no-op.
