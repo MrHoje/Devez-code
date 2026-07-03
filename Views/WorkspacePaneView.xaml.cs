@@ -66,6 +66,9 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>탭 헤더 우클릭 → "분할 보기" 클릭 → 셸이 분할 생성/반대쪽 패널로 이동 처리.
     /// 세션 탭·파일 탭 모두 지원.</summary>
     public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
+    /// <summary>격리(분할 파트너) 중인 이 패널에서 파일 탭이 새로 열림 — 셸이 반대 패널에서 그 탭을 숨겨
+    /// (HideTabInPane) 파일이 양쪽에 다 뜨는 것을 막는다. (파일탐색기·드롭·터미널 Ctrl+클릭 모든 경로 공통.)</summary>
+    public event Action<WorkspacePaneView, FileTabItem>? IsolatedFileOpened;
 
     public TerminalHostView Terminal => _terminal;
 
@@ -2005,13 +2008,21 @@ public partial class WorkspacePaneView : UserControl
     }
 
     // ── 파일 탭 ──────────────────────────────────────────────────
-    public void OpenFileAsTab(string path)
+    public FileTabItem? OpenFileAsTab(string path)
     {
-        if (_activeProject == null) return;
+        if (_activeProject == null) return null;
         var tab = CreateFileTab(_activeProject, path);
-        if (tab == null) return;
+        if (tab == null) return null;
+        // 이 패널이 격리(분할 파트너=화이트리스트) 중이면, 활성화가 ClearIsolationIfMismatch 로 격리를
+        // 풀어버려 전체 탭이 쏟아진다(우측 패널에 세션 전부 뜸). 새 파일을 '먼저' 화이트리스트에 넣어
+        // 활성화해도 격리가 유지되게 한다.
+        bool isolated = _isolatedTabs != null;
+        if (isolated) IsolateTab(tab);
         ActivateFileTab(tab);
         PersistWorkspace(); // 열린 파일 탭 목록을 workspace.json 에 영속(재시작 복원용)
+        // 격리 중이었다면 반대 패널에서 이 파일을 숨겨(셸 처리) 좌우 양쪽에 다 뜨는 것을 막는다.
+        if (isolated) IsolatedFileOpened?.Invoke(this, tab);
+        return tab;
     }
 
     /// <summary>분할 파트너 복원용 — 지정 프로젝트를 이 패널에 띄우고 그 프로젝트의 파일 하나를 열어 활성화한 뒤 반환.

@@ -2045,6 +2045,7 @@ public partial class MainWindow : Window
         pane.SplitToggleRequested += OnPaneSplitToggle;
         pane.SplitViewRequested += OnPaneSplitViewRequested;
         pane.RevealPrepared += OnPaneRevealPrepared;
+        pane.IsolatedFileOpened += OnPaneIsolatedFileOpened;
         _panes.Add(pane);
     }
 
@@ -2453,6 +2454,18 @@ public partial class MainWindow : Window
             PaneA.RefreshSplitIndicator();
             PaneB.RefreshSplitIndicator();
         }
+    }
+
+    /// <summary>격리(분할 파트너) 패널에서 파일이 새로 열림 → 반대 패널에서 그 파일 탭을 숨긴다.
+    /// 파일 탭은 공유 proj.Tabs 에 추가되므로, 안 숨기면 '전체 표시' 쪽 패널에도 함께 떠 좌우 양쪽에 보인다.
+    /// (분할 보기의 IsolateTab+HideTabInPane 패턴과 동일 — 여기선 여는 패널이 이미 격리를 유지하므로 파트너 숨김만.)</summary>
+    private void OnPaneIsolatedFileOpened(WorkspacePaneView pane, FileTabItem tab)
+    {
+        if (!_splitActive) return;
+        var partner = ReferenceEquals(pane, LeftPane) ? RightPane : LeftPane;
+        if (ReferenceEquals(partner, pane)) return;
+        partner.HideTabInPane(tab);
+        PersistSplitState(); // 우측 격리 집합 변화 반영(재시작/재선택 복원용)
     }
 
     /// <summary>탭을 그 프로젝트의 Tabs 컬렉션 맨 끝으로 옮긴다(탭바 가장 오른쪽에 보이게).</summary>
