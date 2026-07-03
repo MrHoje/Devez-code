@@ -1003,8 +1003,14 @@
             // 리플로우 없음). 늦게 오는 WireSession resize 와의 경쟁에서 이 값이 마지막이 되고 SIGWINCH 로 재렌더.
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
           }
-          if (synced) post({ type: 'revealPrepared' }); // 커버 유지 — C# 이 양쪽 준비되면 fadeNow 로 동시 걷음
-          else setTimeout(fadeOut, 80);
+          if (synced) { post({ type: 'revealPrepared' }); return; } // 커버 유지 — C# 이 양쪽 준비되면 fadeNow 로 동시 걷음
+          // fit 이 스크롤백을 리플로우한 직후엔 렌더러가 아직 셀을 다 그리지 못해 일부가 빈 채 보인다.
+          // refresh 로 전체 재페인트를 강제하고, 실제 페인트 프레임이 지난 뒤 커버를 걷는다(고정 80ms 대신).
+          try { e.term.refresh(0, e.term.rows - 1); } catch (err) {}
+          requestAnimationFrame(function () {
+            try { e.term.refresh(0, e.term.rows - 1); } catch (err) {}
+            requestAnimationFrame(fadeOut);
+          });
         };
         let waited = 0;
         const step = function () {
