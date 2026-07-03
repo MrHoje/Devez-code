@@ -27,33 +27,35 @@ internal static class WindowCenter
         // 크기는 건드리지 않고(SWP_NOSIZE) 위치만 잡는다. 크기를 물리픽셀로 강제하면 PerMonitorV2 에서
         // 배율 다른 모니터로 넘어갈 때 이어지는 WM_DPICHANGED 리스케일과 충돌해 창이 어긋난다.
         // child 의 '현재 실제 물리 크기'(GetWindowRect)를 owner 물리 rect 중앙에 맞추기만 한다.
-        void Center()
+        (int x, int y)? Target()
         {
-            if (!GetWindowRect(oh, out var o) || !GetWindowRect(ch, out var c)) return;
+            if (!GetWindowRect(oh, out var o) || !GetWindowRect(ch, out var c)) return null;
             int cw = c.Right - c.Left, chh = c.Bottom - c.Top;
-            int x = o.Left + ((o.Right - o.Left) - cw) / 2;
-            int y = o.Top  + ((o.Bottom - o.Top) - chh) / 2;
-            SetWindowPos(ch, IntPtr.Zero, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+            return (o.Left + ((o.Right - o.Left) - cw) / 2,
+                    o.Top  + ((o.Bottom - o.Top) - chh) / 2);
         }
 
-        Center();
+        void Move(int x, int y) => SetWindowPos(ch, IntPtr.Zero, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
 
-        // 초기 배치가 끝날 때까지 크기 확정/리스케일 이벤트마다 재중앙:
-        //  - SizeChanged: SizeToContent 창은 Loaded 시점에 최종 높이가 아직 안 잡혀(위 Center 는 옛 크기로 계산)
-        //    같은 배율 모니터에서도 세로가 어긋난다. 크기 확정 시 다시 중앙에 맞춘다.
-        //  - DpiChanged: Manual 배치 창이 주 모니터에 생성됐다 owner(다른 배율 모니터)로 옮겨질 때 WPF 가
-        //    리스케일한다. 그 새 크기 기준으로 재중앙.
-        SizeChangedEventHandler? onSize = null;
-        DpiChangedEventHandler? onDpi = null;
-        onSize = (_, _) => Center();
-        onDpi = (_, _) => child.Dispatcher.BeginInvoke(new Action(Center), DispatcherPriority.Loaded);
-        child.SizeChanged += onSize;
-        child.DpiChanged += onDpi;
-        // 초기 배치가 끝나면 핸들러를 뗀다 — 이후 사용자가 창을 옮기거나 리사이즈할 때 재중앙되지 않도록.
-        child.Dispatcher.BeginInvoke(new Action(() =>
+        int lastX = int.MinValue, lastY = int.MinValue;
+        if (Target() is (int ix, int iy)) { lastX = ix; lastY = iy; Move(ix, iy); } // 즉시 1회
+
+        // 전체화면(배율 A 모니터)+팝업이 주모니터(배율 B)에 먼저 생성되는 경우: 위 Move 로 owner 모니터로
+        // 옮기는 순간 뒤늦게 WM_DPICHANGED 가 와서 WPF 가 리스케일/재배치 → 한 번의 중앙정렬만으론 어긋난 채
+        // 고정된다. SizeChanged/DpiChanged 훅+제거는 그 '제거 타이밍'이 늦게 오는 DPICHANGED 와 경쟁해 놓친다.
+        // 대신 짧게 폴링하며 목표 좌표가 '안정될 때까지' 재중앙 → 늦게 오는 리스케일도 무조건 잡고, 안정되면 조기 중단.
+        int stable = 0, ticks = 0;
+        var timer = new DispatcherTimer(DispatcherPriority.Loaded, child.Dispatcher) { Interval = TimeSpan.FromMilliseconds(100) };
+        timer.Tick += (_, _) =>
         {
-            child.SizeChanged -= onSize;
-            child.DpiChanged -= onDpi;
-        }), DispatcherPriority.ApplicationIdle);
+            if (Target() is (int x, int y))
+            {
+                if (x == lastX && y == lastY) stable++;
+                else { stable = 0; lastX = x; lastY = y; Move(x, y); }
+            }
+            // 2틱 연속 동일(리스케일/이동 정착) 또는 최대 ~1s 후 중단 — 이후 사용자 드래그 이동은 존중.
+            if (stable >= 2 || ++ticks >= 10) timer.Stop();
+        };
+        timer.Start();
     }
 }
