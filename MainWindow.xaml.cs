@@ -2063,6 +2063,7 @@ public partial class MainWindow : Window
         pane.ActiveChanged += OnPaneActiveChanged;
         pane.SplitToggleRequested += OnPaneSplitToggle;
         pane.SplitViewRequested += OnPaneSplitViewRequested;
+        pane.TabCrossPaneDrop = OnTabCrossPaneDrop;
         pane.RevealPrepared += OnPaneRevealPrepared;
         pane.IsolatedTabOpened += OnPaneIsolatedTabOpened;
         _panes.Add(pane);
@@ -2435,6 +2436,22 @@ public partial class MainWindow : Window
     /// 이동한 탭은 어느 경우든 그 프로젝트의 탭 목록 맨 끝으로 옮겨 반대쪽 탭바 가장 오른쪽에
     /// 보이게 한다(이미 보여지고 있던 케이스도 포함 — 안 그러면 "이동"했는데 위치가 그대로라
     /// 아무 변화도 없어 보인다).</summary>
+    /// <summary>탭 헤더를 드래그해 반대 패널 영역에 드롭 → 그 패널로 이동(우클릭 "이동"과 동일 연산).
+    /// 분할 중 + 커서가 반대 패널 사각형 안일 때만 이동하고 true 반환(내부 재정렬 취소). 그 외 false.</summary>
+    private bool OnTabCrossPaneDrop(WorkspacePaneView source, TabItemBase tab, Point screenPt)
+    {
+        if (!_splitActive) return false;
+        var other = ReferenceEquals(source, LeftPane) ? RightPane : LeftPane;
+        if (ReferenceEquals(other, source)) return false;
+
+        var local = other.PointFromScreen(screenPt);
+        if (local.X < 0 || local.Y < 0 || local.X > other.ActualWidth || local.Y > other.ActualHeight)
+            return false; // 반대 패널 밖 → 내부 재정렬로 처리
+
+        OnPaneSplitViewRequested(source, tab); // 반대 패널로 이동(격리 재배선 + refresh/persist)
+        return true;
+    }
+
     private void OnPaneSplitViewRequested(WorkspacePaneView pane, TabItemBase tab)
     {
         if (_splitActive)

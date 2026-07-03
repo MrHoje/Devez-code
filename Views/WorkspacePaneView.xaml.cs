@@ -66,6 +66,9 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>탭 헤더 우클릭 → "분할 보기" 클릭 → 셸이 분할 생성/반대쪽 패널로 이동 처리.
     /// 세션 탭·파일 탭 모두 지원.</summary>
     public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
+    /// <summary>탭 헤더를 드래그해 반대 패널 영역(screenPt)에 드롭 — 셸이 반대 패널로 이동 처리하고
+    /// true 를 돌려주면 이 패널의 내부 재정렬 커밋을 취소한다(분할 중일 때만).</summary>
+    public Func<WorkspacePaneView, TabItemBase, Point, bool>? TabCrossPaneDrop;
     /// <summary>격리(분할 파트너) 중인 이 패널에서 탭(파일/세션)이 새로 열림 — 셸이 반대 패널에서 그 탭을 숨겨
     /// (HideTabInPane) 양쪽에 다 뜨는 것을 막는다. (파일탐색기·드롭·터미널 Ctrl+클릭·세션 추가 공통.)</summary>
     public event Action<WorkspacePaneView, TabItemBase>? IsolatedTabOpened;
@@ -1502,9 +1505,16 @@ public partial class WorkspacePaneView : UserControl
         var td = _tabDrag;
         _tabDrag = null;
         _pendingTab = null;
+        // 드롭 지점(screen). 캡처 중이라 커서가 반대 패널 위여도 좌표를 얻는다.
+        var screenPt = TabsHost.PointToScreen(Mouse.GetPosition(TabsHost));
         if (Mouse.Captured == TabsHost) TabsHost.ReleaseMouseCapture();
         RestoreTabFeet();
-        if (td != null) await td.FinishAsync(commit: true);
+        if (td != null)
+        {
+            // 커서가 반대 패널 위면 그쪽으로 이동(내부 재정렬 취소), 아니면 이 패널 내부 재정렬.
+            bool crossed = TabCrossPaneDrop?.Invoke(this, td.Source, screenPt) == true;
+            await td.FinishAsync(commit: !crossed);
+        }
     }
 
     private void TryStartTabDrag(TabItemBase s)
