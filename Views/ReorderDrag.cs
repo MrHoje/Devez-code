@@ -141,7 +141,17 @@ internal sealed class ReorderDrag<T> where T : class
         // 커서 raw 대신 드래그 중인 카드의 중심을 기준점으로 사용 — 위/아래 대칭 판정.
         var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
         UpdateBoundary(draggedCenter); // 세퍼레이터 선 기준 그룹 판정 + 세퍼레이터 동반 이동(매 이동 갱신)
-        var newTarget = ComputeTargetIndex(draggedCenter);
+
+        int newTarget;
+        bool srcInLeft = _splitBoundary >= 0 && _sourceIndex < _splitBoundary;
+        bool crossGroup = _splitBoundary >= 0 && (TargetIsRightGroup == srcInLeft);
+        if (crossGroup)
+            // 크로스는 세퍼레이터 인접(우 첫=경계 / 좌 끝=경계-1)으로 스냅 → 행 시프트와 세퍼레이터가
+            // 동일한 단일 변위를 써 겹치지 않는다(도착 위치도 커밋의 세퍼레이터 인접 스냅과 일치).
+            newTarget = TargetIsRightGroup ? _splitBoundary : Math.Max(0, _splitBoundary - 1);
+        else
+            newTarget = ComputeTargetIndex(draggedCenter);
+
         if (newTarget == _targetIndex) return;
         _targetIndex = newTarget;
         ApplyDisplacement();
@@ -234,18 +244,27 @@ internal sealed class ReorderDrag<T> where T : class
         return _slots.Count;
     }
 
+    /// <summary>슬롯 간 이동에 쓸 한 행 피치. 세퍼레이터를 건너뛰는 이웃(다른 그룹)은 피해 계산한다
+    /// — 소스가 세퍼레이터에 인접할 때 세퍼레이터 두께·마진까지 포함된 부풀린 값이 나와 행들이 과이동/겹침.</summary>
     private double RowPitch()
     {
-        if (_sourceIndex + 1 < _slots.Count)
+        int p = _sourceIndex;
+        bool SameGroup(int a, int b) => _splitBoundary < 0 || (a < _splitBoundary) == (b < _splitBoundary);
+        if (p + 1 < _slots.Count && SameGroup(p, p + 1))
         {
-            var shift = AxisPos(_slots[_sourceIndex + 1]) - AxisPos(_slots[_sourceIndex]);
+            var shift = AxisPos(_slots[p + 1]) - AxisPos(_slots[p]);
             if (shift >= 1) return shift;
         }
-        double sourceSize = AxisSize(_slots[_sourceIndex]);
-        if (_sourceIndex - 1 >= 0)
+        if (p - 1 >= 0 && SameGroup(p, p - 1))
         {
-            var aboveBottom = AxisPos(_slots[_sourceIndex - 1]) + AxisSize(_slots[_sourceIndex - 1]);
-            var gap = AxisPos(_slots[_sourceIndex]) - aboveBottom;
+            var shift = AxisPos(_slots[p]) - AxisPos(_slots[p - 1]);
+            if (shift >= 1) return shift;
+        }
+        double sourceSize = AxisSize(_slots[p]);
+        if (p - 1 >= 0 && SameGroup(p, p - 1))
+        {
+            var aboveBottom = AxisPos(_slots[p - 1]) + AxisSize(_slots[p - 1]);
+            var gap = AxisPos(_slots[p]) - aboveBottom;
             return sourceSize + Math.Max(0, gap);
         }
         return sourceSize;
