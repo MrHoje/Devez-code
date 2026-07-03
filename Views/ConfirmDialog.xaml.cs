@@ -1,8 +1,6 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Controls;
-using System.Windows.Media;
 
 namespace DevezCode.Views;
 
@@ -37,10 +35,11 @@ public partial class ConfirmDialog : Window
             MinWidth = 360;
             MaxWidth = 660;
         }
-        else
+        else if (confirmText == null)
         {
-            // 본문 가장 긴 줄의 실제 렌더 폭을 측정해 최소 360 에서 딱 필요한 만큼만 확장(상한 720).
-            Width = MeasureWidth(message);
+            // devez 크기 로직: 폭은 460 고정(XAML), 높이는 본문 줄 수로 계단식 결정.
+            var lines = message.Split('\n').Length;
+            Height = lines <= 2 ? 240 : lines <= 4 ? 300 : 340;
         }
 
         KeyDown += OnKeyDown;
@@ -110,27 +109,6 @@ public partial class ConfirmDialog : Window
 
         dialog.ShowDialog();
         return dialog._choice;
-    }
-
-    /// <summary>본문 최장 줄을 실제 글꼴로 측정해 필요한 창 폭을 산정. [500, 720] 클램프.</summary>
-    private double MeasureWidth(string message)
-    {
-        double fontSize = TryFindResource("Fs13") is double fs ? fs : 13.0;
-        var typeface = new Typeface(MessageText.FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-
-        double maxLine = 0;
-        foreach (var line in message.Split('\n'))
-        {
-            var ft = new FormattedText(line, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                typeface, fontSize, Brushes.Black, dpi);
-            if (ft.WidthIncludingTrailingWhitespace > maxLine) maxLine = ft.WidthIncludingTrailingWhitespace;
-        }
-
-        // chrome: 본문 좌우 패딩 28*2 + 창 그림자 마진 20*2 + 테두리/여유.
-        double needed = maxLine + 56 + 40 + 8;
-        // 하한 360(footer 버튼 취소+중단 최소폭) — 짧은 본문은 텍스트에 딱 붙임.
-        return Math.Max(360, Math.Min(720, needed));
     }
 
     private void ConfirmInputBox_TextChanged(object sender, TextChangedEventArgs e)
