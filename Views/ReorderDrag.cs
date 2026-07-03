@@ -36,6 +36,9 @@ internal sealed class ReorderDrag<T> where T : class
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private bool _finished;
 
+    /// <summary>분할 경계 사용 시, 드래그 카드가 세퍼레이터 선 아래(=우 그룹)에 있는지. 커밋에서 크로스그룹 판정에 사용.</summary>
+    public bool TargetIsRightGroup { get; private set; }
+
     private bool IsGrid => _columns > 1;
     private double AxisPos(Slot s) => _horizontal ? s.Left : s.Top;
     private double AxisSize(Slot s) => _horizontal ? s.Width : s.Height;
@@ -50,6 +53,7 @@ internal sealed class ReorderDrag<T> where T : class
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
         _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
         _splitBoundary = splitBoundary; _boundaryElements = boundaryElements ?? System.Array.Empty<FrameworkElement>();
+        TargetIsRightGroup = splitBoundary >= 0 && sourceIndex >= splitBoundary; // 이동 없으면 소스 그룹 유지
         _targetIndex = sourceIndex;
         _targetColumn = -1; // 그리드: 첫 Update 가 항상 displacement 를 적용하도록 미지정으로 시작.
     }
@@ -136,6 +140,7 @@ internal sealed class ReorderDrag<T> where T : class
         var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
         // 커서 raw 대신 드래그 중인 카드의 중심을 기준점으로 사용 — 위/아래 대칭 판정.
         var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
+        UpdateBoundary(draggedCenter); // 세퍼레이터 선 기준 그룹 판정 + 세퍼레이터 동반 이동(매 이동 갱신)
         var newTarget = ComputeTargetIndex(draggedCenter);
         if (newTarget == _targetIndex) return;
         _targetIndex = newTarget;
@@ -257,20 +262,25 @@ internal sealed class ReorderDrag<T> where T : class
             else if (_targetIndex > _sourceIndex && i > _sourceIndex && i <= _targetIndex) to = -shift;
             AnimateAxis(_slots[i].Element, to);
         }
-        ApplyBoundaryDisplacement(shift);
     }
 
-    /// <summary>좌/우 그룹 세퍼레이터·라벨을, 드래그 항목이 그룹 경계를 넘을 때 한 행 피치만큼 함께 이동.
-    /// 좌→우: 좌 그룹이 한 행 줄어드니 경계가 위로(-). 우→좌: 좌 그룹이 늘어 경계가 아래로(+). 같은 그룹: 0.</summary>
-    private void ApplyBoundaryDisplacement(double shift)
+    /// <summary>세퍼레이터 선(마지막 좌 slot 하단↔첫 우 slot 상단 중점)을 기준으로 도착 그룹을 판정한다.
+    /// 카드 중심이 선 위=좌 그룹, 아래=우 그룹(인덱스로는 "좌 끝"과 "우 첫"을 구분 못 하므로 위치로 판정).
+    /// 그룹을 넘으면 세퍼레이터·라벨을 한 행 피치만큼 함께 이동(좌→우 -, 우→좌 +, 같은 그룹 0).</summary>
+    private void UpdateBoundary(double center)
     {
-        if (_splitBoundary < 0 || _boundaryElements.Count == 0) return;
+        if (_splitBoundary <= 0 || _splitBoundary >= _slots.Count) return;
+        double boundaryY = (AxisPos(_slots[_splitBoundary - 1]) + AxisSize(_slots[_splitBoundary - 1])
+                            + AxisPos(_slots[_splitBoundary])) / 2;
         bool srcInLeft = _sourceIndex < _splitBoundary;
-        int leftAfter = srcInLeft ? _splitBoundary - 1 : _splitBoundary;
-        bool targetIsRight = _targetIndex >= leftAfter;
+        bool targetRight = center >= boundaryY;
+        TargetIsRightGroup = targetRight;
+
+        if (_boundaryElements.Count == 0) return;
+        double shift = RowPitch();
         double bOff = 0;
-        if (srcInLeft && targetIsRight) bOff = -shift;
-        else if (!srcInLeft && !targetIsRight) bOff = shift;
+        if (srcInLeft && targetRight) bOff = -shift;
+        else if (!srcInLeft && !targetRight) bOff = shift;
         foreach (var be in _boundaryElements) AnimateAxis(be, bOff);
     }
 

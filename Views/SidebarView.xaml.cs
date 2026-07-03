@@ -647,17 +647,17 @@ public partial class SidebarView : UserControl
                     if (sp.Children[k] is FrameworkElement fe) boundaryEls.Add(fe);
         }
 
-        _tabDrag = ReorderDrag<TabItemBase>.TryStart(this, rows, s, src.Element,
+        ReorderDrag<TabItemBase>? dragRef = null;
+        _tabDrag = dragRef = ReorderDrag<TabItemBase>.TryStart(this, rows, s, src.Element,
             (item, hostTarget, _) =>
             {
-                // hostTarget = source 제거 후 결합 리스트 내 삽입 위치. 좌 그룹 잔여 개수(leftAfter) 기준으로
-                // 도착 그룹 판정 → 같은 그룹이면 Tabs.Move 재정렬, 다른 그룹이면 패널 이동 위임.
-                int leftAfter = srcInLeft ? leftCount - 1 : leftCount;
-                bool targetIsRight = splitCard && hostTarget >= leftAfter;
+                // 도착 그룹은 세퍼레이터 선 기준 위치로 판정(인덱스로는 "좌 끝"과 "우 첫"을 구분 못 함).
+                bool targetIsRight = splitCard && dragRef!.TargetIsRightGroup;
                 bool crossGroup = splitCard && (targetIsRight == srcInLeft); // src 좌→우 or 우→좌
 
                 if (crossGroup)
                 {
+                    // 크로스그룹은 세퍼레이터 인접(우 첫/좌 끝)으로 스냅 — MainWindow 가 위치까지 처리.
                     TabPaneMoveRequested?.Invoke(project, item, targetIsRight);
                     return Task.CompletedTask;
                 }
