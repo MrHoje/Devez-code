@@ -788,10 +788,15 @@ public partial class WorkspacePaneView : UserControl
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
         if (ReferenceEquals(_activeSession, session)) return;
+        // 직전 탭이 파일(md=WebView2)이면, 세션 전환 시 md 파킹↔터미널 unpark 이 각각 airspace HWND 라
+        // 그 사이 창 배경(검정)이 새어 깜빡인다. 준비된 세션이라 coverReflow(첫표시 전용)에 안 걸려도,
+        // 이 경우엔 아래 ACK-게이트 로딩 커버 경로를 타 md 를 띄워둔 채 대기하다 커버 위에서 스왑한다.
+        bool fromFile = _activeTab is FileTabItem;
         // 이 패널에서 처음 표시되는 프리로드(ready) 세션: 기본폭→패널폭 리플로우로 스크롤이 튄다.
         // 셸이 이미 커버 중이 아니면 여기서 잠깐 커버하고, 아래에서 최종 폭 재동기(kick) 후 걷는다.
-        // (파일→세션·세션→세션, 사이드바 클릭·탭 클릭 모든 경로가 이 메서드로 온다.)
-        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && !_shownSessions.Contains(session.Id);
+        // (파일→세션·세션→세션, 사이드바 클릭·탭 클릭 모든 경로가 이 메서드로 온다.) 단 파일에서 오는
+        // 전환은 아래 로딩 게이트가 커버하므로 여기선 제외(이중 커버 방지).
+        bool coverReflow = !_coverActive && !fromFile && _terminal.IsReady(session.Id) && !_shownSessions.Contains(session.Id);
         if (coverReflow) CoverForTransition();
         ClearIsolationIfMismatch(session);
         DiagLog.Write($"ActivateSession begin: '{session.Name}' room={session.Id} isReady={_terminal.IsReady(session.Id)} alive={session.IsAlive}");
@@ -823,21 +828,23 @@ public partial class WorkspacePaneView : UserControl
         // unpark '전에' 웹 로딩 커버를 먼저 켜 그 프레임을 없앤다(WPF 오버레이도 함께 켜 주차 구간부터
         // 단색 덮개가 끊기지 않게). 정확한 스피너 앵커는 UpdateEmptyState 로 최종 크기 확정 후 재전송한다.
         bool sessionReady = _terminal.IsReady(session.Id);
-        _gateUnpark = !sessionReady; // 콜드면 unpark 을 web 커버 ACK 까지 게이트, 준비됐으면 즉시 unpark
-        DiagLog.Write($"ActivateSession cold={!sessionReady} fromFileParked={_fileParked} termParked={_termParked} pageReady={_terminal.IsPageReady} pane={(IsRightPane ? "R" : "L")}");
-        if (!sessionReady)
+        // 게이트 조건 = 콜드(미준비) 이거나, 파일에서 오는 전환(airspace 스왑 은닉). 둘 다 unpark 을 web 커버
+        // ACK 까지 미루고 md 파킹도 그때 함께 한다(RevealTerminalAfterGate) → 검정 갭 제거.
+        bool needGate = !sessionReady || fromFile;
+        _gateUnpark = needGate;
+        if (needGate)
         {
             TerminalLoadingOverlay.Visibility = Visibility.Visible;
             UpdateLayout();
             _terminal.SetLoading(true, TerminalLoadingOverlay.ActualWidth, TerminalLoadingOverlay.ActualHeight);
             ArmUnparkFallback(); // ACK 누락 대비 — 그때도 unpark 은 보장
         }
-        else _unparkFallback?.Stop(); // 직전 콜드 게이트 취소(빠른 재전환)
+        else _unparkFallback?.Stop(); // 직전 게이트 취소(빠른 재전환)
         UpdateEmptyState();
         // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
         // 기대 크기를 캡처해야 웹 스피너 게이트(뷰포트=목표 일치 대기)의 목표가 처음부터 정확하다.
-        if (sessionReady) HideSessionLoading();
-        else ShowSessionLoading(session.Id);
+        if (needGate) ShowSessionLoading(session.Id); // 커버 유지 — 준비된 세션은 RevealTerminalAfterGate 가 걷음
+        else HideSessionLoading();
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
         ActiveChanged?.Invoke(this);
@@ -1886,10 +1893,11 @@ public partial class WorkspacePaneView : UserControl
     /// 창 배경(검정)이 새는데, md 를 이 순간까지 띄워두다 터미널 커버와 한 프레임에 맞바꿔 갭을 없앤다.</summary>
     private void RevealTerminalAfterGate()
     {
-        if (_activeTab is not SessionItem) return;
-        DiagLog.Write($"RevealTerminalAfterGate pane={(IsRightPane ? "R" : "L")} fileParked={_fileParked}");
+        if (_activeTab is not SessionItem s) return;
         UnparkTerminalHost();
         ParkFileEditorHost();
+        // 준비된 세션이면 커버를 즉시(페이드) 걷는다 — 콜드면 TerminalReady 가 HideSessionLoadingIf 로 걷는다.
+        if (_terminal.IsReady(s.Id)) HideSessionLoading();
     }
 
     private void ParkTerminalHost()
