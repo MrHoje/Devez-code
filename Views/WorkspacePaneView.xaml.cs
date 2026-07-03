@@ -1868,22 +1868,26 @@ public partial class WorkspacePaneView : UserControl
     private void UnparkFallback_Tick(object? sender, EventArgs e)
     {
         _unparkFallback?.Stop();
-        if (_gateUnpark)
-        {
-            DiagLog.Write($"unpark via FALLBACK pane={(IsRightPane ? "R" : "L")} (ACK 미도착)");
-            _gateUnpark = false;
-            if (_activeTab is SessionItem) UnparkTerminalHost();
-        }
+        if (_gateUnpark) { _gateUnpark = false; RevealTerminalAfterGate(); }
     }
 
     /// <summary>web 로딩 커버가 페인트됨 — 게이트 중이면 이제 안전하게 unpark(커버 위에서 HWND repaint).</summary>
     private void OnLoadingShown()
     {
         if (!_gateUnpark) return;
-        DiagLog.Write($"unpark via ACK pane={(IsRightPane ? "R" : "L")}");
         _gateUnpark = false;
         _unparkFallback?.Stop();
-        if (_activeTab is SessionItem) UnparkTerminalHost();
+        RevealTerminalAfterGate();
+    }
+
+    /// <summary>게이트 해제 시점: 터미널을 unpark 하면서 '동시에' 파일 에디터를 파킹한다. 파일(md=WebView2)에서
+    /// 세션으로 전환할 때 md 를 먼저 파킹하면(UpdateEmptyState) md 사라진 뒤 터미널 커버가 뜨기 전 airspace 갭에
+    /// 창 배경(검정)이 새는데, md 를 이 순간까지 띄워두다 터미널 커버와 한 프레임에 맞바꿔 갭을 없앤다.</summary>
+    private void RevealTerminalAfterGate()
+    {
+        if (_activeTab is not SessionItem) return;
+        UnparkTerminalHost();
+        ParkFileEditorHost();
     }
 
     private void ParkTerminalHost()
@@ -1944,9 +1948,10 @@ public partial class WorkspacePaneView : UserControl
 
         if (_activeTab is SessionItem)
         {
-            if (!_gateUnpark) UnparkTerminalHost(); // 콜드 게이트 중이면 web 커버 ACK(OnLoadingShown) 후 unpark
+            // 콜드 게이트 중이면 unpark 과 파일 에디터 파킹 둘 다 ACK(RevealTerminalAfterGate)까지 미룬다 —
+            // 파일(md)에서 세션 전환 시 md 를 먼저 파킹하면 airspace 갭에 검정이 새므로, md 를 띄워둔 채 대기.
+            if (!_gateUnpark) { UnparkTerminalHost(); ParkFileEditorHost(); }
             TerminalHostContainer.Visibility = Visibility.Visible;
-            ParkFileEditorHost();
         }
         else if (_activeTab is FileTabItem)
         {
