@@ -66,9 +66,9 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>탭 헤더 우클릭 → "분할 보기" 클릭 → 셸이 분할 생성/반대쪽 패널로 이동 처리.
     /// 세션 탭·파일 탭 모두 지원.</summary>
     public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
-    /// <summary>격리(분할 파트너) 중인 이 패널에서 파일 탭이 새로 열림 — 셸이 반대 패널에서 그 탭을 숨겨
-    /// (HideTabInPane) 파일이 양쪽에 다 뜨는 것을 막는다. (파일탐색기·드롭·터미널 Ctrl+클릭 모든 경로 공통.)</summary>
-    public event Action<WorkspacePaneView, FileTabItem>? IsolatedFileOpened;
+    /// <summary>격리(분할 파트너) 중인 이 패널에서 탭(파일/세션)이 새로 열림 — 셸이 반대 패널에서 그 탭을 숨겨
+    /// (HideTabInPane) 양쪽에 다 뜨는 것을 막는다. (파일탐색기·드롭·터미널 Ctrl+클릭·세션 추가 공통.)</summary>
+    public event Action<WorkspacePaneView, TabItemBase>? IsolatedTabOpened;
 
     public TerminalHostView Terminal => _terminal;
 
@@ -752,7 +752,15 @@ public partial class WorkspacePaneView : UserControl
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
         SettingsService.SaveAgentForRoom(session.Id, agentId);
         WorkspaceStore.Save(Projects);
-        if (ReferenceEquals(_activeProject, proj)) OpenSession(session);
+        if (ReferenceEquals(_activeProject, proj))
+        {
+            // 이 패널이 격리(분할 파트너) 중이면 새 세션도 먼저 화이트리스트에 넣어 활성화가 격리를 풀지 않게
+            // 하고(우측에 전체 세션 쏟아짐 방지), 반대 패널에선 숨겨 양쪽 중복을 막는다.
+            bool isolated = _isolatedTabs != null;
+            if (isolated) IsolateTab(session);
+            OpenSession(session);
+            if (isolated) IsolatedTabOpened?.Invoke(this, session);
+        }
     }
 
     /// <summary>세션 클릭 — 필요하면 프로젝트 전환 후 해당 세션 활성화.</summary>
@@ -2064,7 +2072,7 @@ public partial class WorkspacePaneView : UserControl
         ActivateFileTab(tab);
         PersistWorkspace(); // 열린 파일 탭 목록을 workspace.json 에 영속(재시작 복원용)
         // 격리 중이었다면 반대 패널에서 이 파일을 숨겨(셸 처리) 좌우 양쪽에 다 뜨는 것을 막는다.
-        if (isolated) IsolatedFileOpened?.Invoke(this, tab);
+        if (isolated) IsolatedTabOpened?.Invoke(this, tab);
         return tab;
     }
 

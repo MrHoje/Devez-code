@@ -2048,7 +2048,7 @@ public partial class MainWindow : Window
         pane.SplitToggleRequested += OnPaneSplitToggle;
         pane.SplitViewRequested += OnPaneSplitViewRequested;
         pane.RevealPrepared += OnPaneRevealPrepared;
-        pane.IsolatedFileOpened += OnPaneIsolatedFileOpened;
+        pane.IsolatedTabOpened += OnPaneIsolatedTabOpened;
         _panes.Add(pane);
     }
 
@@ -2181,6 +2181,7 @@ public partial class MainWindow : Window
                 var left = LeftPane.VisibleTabsInOrder();
                 var leftSet = new HashSet<TabItemBase>(left);
                 var right = RightPane.VisibleTabsInOrder().Where(t => !leftSet.Contains(t)).ToList();
+                DevezCode.Services.DiagLog.Write($"CardGroups LIVE {p.Name} Lisol={LeftPane.CurrentIsolatedTabs()!=null} Risol={RightPane.CurrentIsolatedTabs()!=null} refs={p.SplitRightTabRefs.Count} L=[{string.Join(",",left.Select(t=>t.Title))}] Rexcl=[{string.Join(",",right.Select(t=>t.Title))}]");
                 p.ApplyLiveGroups(left, right);
             }
             else if (p.SplitEnabled && p.SplitRightTabRefs.Count > 0)
@@ -2533,15 +2534,16 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>격리(분할 파트너) 패널에서 파일이 새로 열림 → 반대 패널에서 그 파일 탭을 숨긴다.
-    /// 파일 탭은 공유 proj.Tabs 에 추가되므로, 안 숨기면 '전체 표시' 쪽 패널에도 함께 떠 좌우 양쪽에 보인다.
-    /// (분할 보기의 IsolateTab+HideTabInPane 패턴과 동일 — 여기선 여는 패널이 이미 격리를 유지하므로 파트너 숨김만.)</summary>
-    private void OnPaneIsolatedFileOpened(WorkspacePaneView pane, FileTabItem tab)
+    /// <summary>격리(분할 파트너) 패널에서 탭(파일/세션)이 새로 열림 → 반대 패널에서 그 탭을 숨긴다.
+    /// 탭은 공유 proj.Tabs 에 추가되므로, 안 숨기면 '전체 표시' 쪽 패널에도 함께 떠 좌우 양쪽에 보인다.
+    /// (분할 보기의 IsolateTab+HideTabInPane 패턴과 동일 — 여는 패널은 이미 격리를 유지하므로 파트너 숨김만.)</summary>
+    private void OnPaneIsolatedTabOpened(WorkspacePaneView pane, TabItemBase tab)
     {
         if (!_splitActive) return;
         var partner = ReferenceEquals(pane, LeftPane) ? RightPane : LeftPane;
         if (ReferenceEquals(partner, pane)) return;
         partner.HideTabInPane(tab);
+        RefreshCardGroups();
         PersistSplitState(); // 우측 격리 집합 변화 반영(재시작/재선택 복원용)
     }
 
