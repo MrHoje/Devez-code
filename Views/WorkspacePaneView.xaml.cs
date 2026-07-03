@@ -1430,7 +1430,7 @@ public partial class WorkspacePaneView : UserControl
         else
         {
             header = "분할 보기";
-            iconKey = "IconPanelRightOpen";
+            iconKey = "IconPanelLeftOpen"; // 패널 분할 버튼과 동일 아이콘
         }
         var item = new MenuItem { Header = header, Icon = BuildMenuIcon(iconKey) };
         item.Click += (_, _) => SplitViewRequested?.Invoke(this, tab);

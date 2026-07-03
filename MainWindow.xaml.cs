@@ -2302,6 +2302,7 @@ public partial class MainWindow : Window
             EnableSplitForProject(proj);
             WorkspaceStore.Save(_projects, _archivedProjects);
         }
+        RefreshCardGroups(); // 분할/닫기 후 카드 좌/우 그룹 재계산(닫기 시 SplitEnabled=false 반영 뒤여야 함)
         PaneA.RefreshSplitIndicator();
         PaneB.RefreshSplitIndicator();
     }
