@@ -347,12 +347,11 @@ public partial class SidebarView : UserControl
                 cm.Items.RemoveAt(i);
 
         var project = CurrentProjects.FirstOrDefault(p => p.Tabs.Contains(tab));
-        if (project == null) return;
+        if (project == null || !project.IsSplitView) return; // 분할 상태일 때만 좌/우 이동 항목 노출
 
-        string header, iconKey;
-        if (!project.IsSplitView) { header = "분할 보기"; iconKey = "IconPanelLeftOpen"; }
-        else if (project.RightItems.Contains(tab)) { header = "왼쪽으로 이동"; iconKey = "IconChevronLeft"; }
-        else { header = "오른쪽으로 이동"; iconKey = "IconChevronRight"; }
+        bool inRight = project.RightItems.Contains(tab);
+        string header = inRight ? "왼쪽으로 이동" : "오른쪽으로 이동";
+        string iconKey = inRight ? "IconChevronLeft" : "IconChevronRight";
 
         var item = new MenuItem { Header = header, Tag = "splitmove", Icon = BuildCardMenuIcon(iconKey) };
         item.Click += (_, _) => CardSplitMoveRequested?.Invoke(tab);
