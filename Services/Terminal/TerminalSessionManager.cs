@@ -680,9 +680,9 @@ public sealed class TerminalSessionManager
             if (!File.Exists(HookScriptPath)) return false;
             if (!File.Exists(StatusLineScriptPath)) return false;
             // settings 는 방별로 세션마다 생성되므로 공통 파일 대신 스크립트가 최신본인지 확인한다.
-            // (roomId 인자 수신 + 응답 기록 기능이 들어있어야 최신)
             var busy = File.ReadAllText(BusyHookScriptPath);
-            return busy.Contains("roomArg") && busy.Contains("last_assistant_message");
+            return busy.Contains("roomArg") && busy.Contains("last_assistant_message") &&
+                   busy.Contains("pulse") && busy.Contains("permission");
         }
         catch { return false; }
     }
@@ -924,7 +924,7 @@ public sealed class TerminalSessionManager
             // ghost 방어: SubagentStop 누락(크래시/kill) 대비 30분 초과 run 파일은 카운트 전 prune,
             // SessionEnd 시 방 run 디렉터리 전량 제거, 앱 시작 시 subruns/main 플래그 wipe(C# SessionBusyService).
             const string busyScript = """
-                # DevezCode busy-state hook. Arg1 = running|idle|notify|unwait|substart|substop. Per-room sidebar spinner state.
+                # DevezCode busy-state hook. Arg1 = running|idle|notify|unwait|pulse|substart|substop. Per-room sidebar spinner state.
                 # 스피너 = (메인 턴 진행중) OR (살아있는 서브에이전트 >=1). 둘 다 room 키 → resume 로 session_id 바뀌어도 안 깨짐.
                 param([string]$status = 'idle', [string]$roomArg = '')
                 try {
@@ -941,11 +941,28 @@ public sealed class TerminalSessionManager
                   $sdir = Join-Path $dir '_state'
                   $mainFile = Join-Path $sdir ('main_' + $room + '.flag')
 
-                  # 살아있는 서브에이전트 수. 30분 초과 stale run 파일(SubagentStop 누락분)은 prune 후 제외.
+                  function Write-State($path, $value, $encoding = 'Ascii') {
+                    try {
+                      $tmp = $path + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+                      Set-Content -LiteralPath $tmp -Value $value -Encoding $encoding -Force
+                      Move-Item -LiteralPath $tmp -Destination $path -Force
+                    } catch { try { Set-Content -LiteralPath $path -Value $value -Encoding $encoding -Force } catch { } }
+                  }
+
+                  function Touch-LiveSubruns($rd) {
+                    try {
+                      if (-not (Test-Path -LiteralPath $rd)) { return }
+                      foreach ($f in @(Get-ChildItem -LiteralPath $rd -Filter '*.run' -ErrorAction SilentlyContinue)) {
+                        Write-State $f.FullName ((Get-Date).ToString('o'))
+                      }
+                    } catch { }
+                  }
+
+                  # 살아있는 서브에이전트 수. 4시간 초과 stale run 파일(SubagentStop 누락분)은 prune 후 제외.
                   function Get-LiveSubCount($rd) {
                     try {
                       if (-not (Test-Path -LiteralPath $rd)) { return 0 }
-                      $cut = (Get-Date).AddMinutes(-30)
+                      $cut = (Get-Date).AddHours(-4)
                       $live = 0
                       foreach ($f in @(Get-ChildItem -LiteralPath $rd -Filter '*.run' -ErrorAction SilentlyContinue)) {
                         if ($f.LastWriteTime -lt $cut) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue }
@@ -964,12 +981,20 @@ public sealed class TerminalSessionManager
                   if ($status -eq 'notify' -or $status -eq 'notifyidle') {
                     if ($status -eq 'notifyidle' -and (Get-LiveSubCount $runDir) -gt 0) { exit 0 }
                     $b = ''; try { if (Test-Path -LiteralPath $busyFile) { $b = (Get-Content -LiteralPath $busyFile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
-                    if ($b -eq 'running') { Set-Content -LiteralPath $waitFile -Value 'waiting' -Encoding Ascii -Force }
+                    if ($b -eq 'running') {
+                      $waitValue = if ($status -eq 'notify') { 'permission' } else { 'input' }
+                      Write-State $waitFile $waitValue
+                    }
                     exit 0
                   }
                   # PostToolUse 등 = 답변 처리 재개 → 선택지 대기 해제.
                   if ($status -eq 'unwait') {
-                    Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force
+                    Touch-LiveSubruns $runDir
+                    Write-State $waitFile 'idle'
+                    exit 0
+                  }
+                  if ($status -eq 'pulse') {
+                    Touch-LiveSubruns $runDir
                     exit 0
                   }
 
@@ -983,8 +1008,8 @@ public sealed class TerminalSessionManager
                     $aid = ''; try { $aid = ('' + $j.agent_id) -replace '[^\w\-]', '' } catch { }
                     if ($aid) {
                       New-Item -ItemType Directory -Force -Path $runDir | Out-Null
-                      Set-Content -LiteralPath (Join-Path $runDir ($aid + '.run')) -Value ((Get-Date).ToString('o')) -Encoding Ascii -Force
-                      Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
+                      Write-State (Join-Path $runDir ($aid + '.run')) ((Get-Date).ToString('o'))
+                      Write-State $busyFile 'running'
                     }
                     exit 0
                   }
@@ -993,9 +1018,9 @@ public sealed class TerminalSessionManager
                     $aid = ''; try { $aid = ('' + $j.agent_id) -replace '[^\w\-]', '' } catch { }
                     if ($aid) { Remove-Item -LiteralPath (Join-Path $runDir ($aid + '.run')) -Force -ErrorAction SilentlyContinue }
                     if ((Test-Path -LiteralPath $mainFile) -or ((Get-LiveSubCount $runDir) -gt 0)) {
-                      Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
+                      Write-State $busyFile 'running'
                     } else {
-                      Set-Content -LiteralPath $busyFile -Value 'idle' -Encoding Ascii -Force
+                      Write-State $busyFile 'idle'
                     }
                     exit 0
                   }
@@ -1008,8 +1033,8 @@ public sealed class TerminalSessionManager
                   if ($status -eq 'running') {
                     New-Item -ItemType Directory -Force -Path $sdir | Out-Null
                     Set-Content -LiteralPath $mainFile -Value 'running' -Encoding Ascii -Force  # 메인 턴 진행중 마킹
-                    Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
-                    Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force  # 새 턴 → 대기 해제
+                    Write-State $busyFile 'running'
+                    Write-State $waitFile 'idle'
                     $prompt = ''
                     try { $prompt = '' + $j.prompt } catch { }
                     # <task-notification> 재주입은 세션추적/헤더 제외. 그 외엔 프롬프트가 비어도(이미지·슬래시 커맨드)
@@ -1032,7 +1057,7 @@ public sealed class TerminalSessionManager
                   }
 
                   # status = idle (Stop/SessionEnd) — 메인 턴 종료. 선택지 대기 해제 + main 플래그 clear.
-                  Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force
+                  Write-State $waitFile 'idle'
                   Remove-Item -LiteralPath $mainFile -Force -ErrorAction SilentlyContinue
                   # 응답 완료 시에도 현재 세션을 추적에 확정 기록 — running 훅을 놓쳤거나(경합) 첫 프롬프트가
                   # 비었어도(이미지·슬래시) 완결된 대화가 재실행 때 새 세션으로 유실되는 것을 막는 최종 앵커.
@@ -1045,14 +1070,14 @@ public sealed class TerminalSessionManager
                   if ($evt -eq 'SessionEnd') {
                     # 세션 종료 → 이 방 서브에이전트도 모두 소멸.
                     try { if (Test-Path -LiteralPath $runDir) { Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue } } catch { }
-                    Set-Content -LiteralPath $busyFile -Value 'idle' -Encoding Ascii -Force
+                    Write-State $busyFile 'idle'
                     exit 0
                   }
                   # Stop: 살아있는 서브가 있으면 running 유지(스피너 조기소멸 방지), 없으면 idle + 마지막 답변 기록.
                   if ((Get-LiveSubCount $runDir) -gt 0) {
-                    Set-Content -LiteralPath $busyFile -Value 'running' -Encoding Ascii -Force
+                    Write-State $busyFile 'running'
                   } else {
-                    Set-Content -LiteralPath $busyFile -Value 'idle' -Encoding Ascii -Force
+                    Write-State $busyFile 'idle'
                     # 진짜 응답 완료 → claude 가 stdin 으로 준 마지막 답변을 방별로 기록(Discord reply 가 읽음).
                     try {
                       $lastMsg = '' + $j.last_assistant_message
@@ -1080,19 +1105,22 @@ public sealed class TerminalSessionManager
         EnsureSessionHookAssets(); // 공통 스크립트 보장
         var arg = SafeRoomFileName(roomId); // 영숫자/-/_ 만 → 공백·특수문자 없음(명령 인자 안전)
 
-        var command         = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{HookScriptPath}\" {arg}";
+        const string powershellHook = "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden";
+        var command         = $"{powershellHook} -File \"{HookScriptPath}\" {arg}";
         // statusLine: node 가 있으면 node 직접 호출(~150ms)로 일반 터미널과 동일 속도 — DevezCode 내부
         // 세션(특히 무거운 resume)의 statusLine 빈 줄 해소. node 미발견 시에만 기존 powershell 체인 폴백.
         var nodePath = UserStatusLineInstaller.ResolveNodePath();
         var statusCommand = nodePath != null
             ? $"\"{nodePath}\" \"{RoomStatusLineJsPath}\" {arg}"
-            : $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{StatusLineScriptPath}\" {arg}";
-        var busyRunCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" running {arg}";
-        var busyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" idle {arg}";
-        var busyNotifyCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notify {arg}";
-        var busyNotifyIdleCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" notifyidle {arg}";
-        var busySubStartCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" substart {arg}";
-        var busySubStopCommand  = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{BusyHookScriptPath}\" substop {arg}";
+            : $"{powershellHook} -File \"{StatusLineScriptPath}\" {arg}";
+        var busyRunCommand  = $"{powershellHook} -File \"{BusyHookScriptPath}\" running {arg}";
+        var busyIdleCommand = $"{powershellHook} -File \"{BusyHookScriptPath}\" idle {arg}";
+        var busyNotifyCommand = $"{powershellHook} -File \"{BusyHookScriptPath}\" notify {arg}";
+        var busyNotifyIdleCommand = $"{powershellHook} -File \"{BusyHookScriptPath}\" notifyidle {arg}";
+        var busySubStartCommand = $"{powershellHook} -File \"{BusyHookScriptPath}\" substart {arg}";
+        var busySubStopCommand  = $"{powershellHook} -File \"{BusyHookScriptPath}\" substop {arg}";
+        var busyUnwaitCommand   = $"{powershellHook} -File \"{BusyHookScriptPath}\" unwait {arg}";
+        var busyPulseCommand    = $"{powershellHook} -File \"{BusyHookScriptPath}\" pulse {arg}";
         // refreshInterval: 전역 settings 와 달리 room 은 event-driven 만으로는 1회 렌더 실패(느린 시작/타임아웃)
         // 시 빈 줄이 고착됐다(resume 세션 statusLine 안 뜨던 원인). 주기 재렌더로 자동 복구한다.
         // 3초 주기 절충: 빈 줄 자동 복구는 유지하되 다세션 idle 부하를 낮춘다(타임아웃이 없어
@@ -1117,9 +1145,12 @@ public sealed class TerminalSessionManager
                 //  • Notification: 그 외 입력 대기(AskUserQuestion 등) 폴백(claude 측 타이밍상 수 초 지연 가능).
                 //    단 살아있는 서브에이전트가 있으면 이 Notification 은 '서브 완료 대기중 60초 idle' 오탐이므로
                 //    notifyidle 로 보내 subcount>0 일 때 무장하지 않는다(서브 도는 동안 ❗ 대신 스피너만 유지).
-                // 해제는 UserPromptSubmit/Stop(파일) + 답변 입력(즉시 UI).
+                // 해제는 PostToolUse/PostToolUseFailure/Stop + 답변 입력(즉시 UI).
                 PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
                 Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyIdleCommand } } } },
+                PreToolUse       = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyPulseCommand } } } },
+                PostToolUse      = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
+                PostToolUseFailure = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
                 // 서브에이전트 생존 추적(스피너 조기소멸 방지): Start=run 파일 생성, Stop=삭제 → busy 재평가.
                 SubagentStart    = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStartCommand } } } },
                 SubagentStop     = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStopCommand } } } },

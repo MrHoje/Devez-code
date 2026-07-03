@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using DevezCode.Models;
 
 namespace DevezCode.Services;
 
@@ -17,7 +18,7 @@ public sealed class SessionBusyService : IDisposable
     private static string StateDir => Path.Combine(Dir, "_state");
 
     // 서브에이전트 run 파일이 이보다 오래되면 SubagentStop 을 못 받은 유령으로 보고 prune(스피너 stuck-ON 방지).
-    private static readonly TimeSpan SubMaxAge = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan SubMaxAge = TimeSpan.FromHours(4);
     // reconcile 재예약 간격: 활성(진행중 턴/서브 有)이면 촘촘, 완전 유휴면 느슨(유휴 CPU wake 최소화).
     private const int ReconcileActiveMs = 4000;
     private const int ReconcileIdleMs = 30000;
@@ -32,6 +33,8 @@ public sealed class SessionBusyService : IDisposable
 
     /// <summary>(roomId, waiting) — waiting=true 면 선택지/권한 응답 대기 중(❗). Notification 훅으로 판정.</summary>
     public event Action<string, bool>? WaitingChoiceChanged;
+
+    public event Action<string, WaitingKind>? WaitingKindChanged;
 
     public void Start()
     {
@@ -64,6 +67,7 @@ public sealed class SessionBusyService : IDisposable
             };
             _watcher.Changed += (_, e) => Emit(e.FullPath);
             _watcher.Created += (_, e) => Emit(e.FullPath);
+            _watcher.Renamed += (_, e) => Emit(e.FullPath);
 
             _waitingWatcher?.Dispose();
             _waitingWatcher = new FileSystemWatcher(WaitingDir, "*.txt")
@@ -73,6 +77,7 @@ public sealed class SessionBusyService : IDisposable
             };
             _waitingWatcher.Changed += (_, e) => EmitWaiting(e.FullPath);
             _waitingWatcher.Created += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Renamed += (_, e) => EmitWaiting(e.FullPath);
 
             // 주기 reconcile: 훅의 단발 busy 쓰기가 레이스/누락으로 진실과 어긋나도 지속 수렴시킨다.
             // (재현 안 되는 간헐 조기소멸의 실질 방어 — 원인 무관하게 run 파일이 살아있으면 스피너 재무장,
@@ -132,7 +137,7 @@ public sealed class SessionBusyService : IDisposable
         => !string.IsNullOrEmpty(roomId) && ComputeBusyTruth(roomId);
 
     /// <summary>방의 실제 busy 여부 = 메인 턴 진행중(main 플래그) OR 살아있는 서브에이전트 run 파일&gt;0.
-    /// 카운트 전 30분 초과 stale run 파일(SubagentStop 누락분)을 prune 한다.</summary>
+    /// 카운트 전 SubMaxAge 초과 stale run 파일(SubagentStop 누락분)을 prune 한다.</summary>
     private static bool ComputeBusyTruth(string room)
     {
         if (File.Exists(Path.Combine(StateDir, "main_" + room + ".flag"))) return true;
@@ -168,7 +173,7 @@ public sealed class SessionBusyService : IDisposable
             _ = ReEmitWaitingAfterSettleAsync(path, room);
             return;
         }
-        WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+        EmitWaitingKind(room, status);
     }
 
     private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path, string room)
@@ -178,9 +183,24 @@ public sealed class SessionBusyService : IDisposable
             await System.Threading.Tasks.Task.Delay(60).ConfigureAwait(false);
             var status = TryRead(path);
             if (string.IsNullOrWhiteSpace(status)) return; // 그래도 비면(파일 삭제 등) 포기
-            WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+            EmitWaitingKind(room, status);
         }
         catch { /* fire-and-forget — 재읽기 실패해도 앱 영향 없음 */ }
+    }
+
+    private void EmitWaitingKind(string room, string status)
+    {
+        var kind = ParseWaitingKind(status);
+        WaitingKindChanged?.Invoke(room, kind);
+        WaitingChoiceChanged?.Invoke(room, kind != WaitingKind.None);
+    }
+
+    private static WaitingKind ParseWaitingKind(string status)
+    {
+        if (status.Equals("permission", StringComparison.OrdinalIgnoreCase)) return WaitingKind.Permission;
+        if (status.Equals("input", StringComparison.OrdinalIgnoreCase) ||
+            status.Equals("waiting", StringComparison.OrdinalIgnoreCase)) return WaitingKind.Input;
+        return WaitingKind.None;
     }
 
     private void Emit(string path)

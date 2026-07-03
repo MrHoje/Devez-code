@@ -27,36 +27,6 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- ── 훅 연동 설정 배너 (없을 때만 표시) ───────────────────────
-                 세션 요청중 스피너용 claude 훅이 미설치/구버전이면 상단에 원클릭 설정을 띄운다. -->
-            <Border x:Name="HookSetupBanner" Grid.Row="1" Visibility="Collapsed"
-                    Background="{DynamicResource PanelSoftBrush}"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                <Grid Margin="14,8,8,8">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTriangleAlert}"
-                              Width="15" Height="15" VerticalAlignment="Center"
-                              Stroke="{DynamicResource PrimaryBrush}"/>
-                        <TextBlock x:Name="HookBannerText" Margin="9,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"
-                                   Text="세션 상태(요청 중 스피너) 연동이 설정되지 않았습니다. 원클릭으로 설정할 수 있어요."/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Button x:Name="HookSetupBtn" Click="HookSetupBtn_Click" Height="28" Padding="14,0" Cursor="Arrow"
-                                Style="{StaticResource PrimaryButton}" FontSize="{DynamicResource Fs12}">
-                            <TextBlock Text="설정" Foreground="White"/>
-                        </Button>
-                        <Button x:Name="HookBannerDismiss" Click="HookBannerDismiss_Click"
-                                Width="30" Height="28" Margin="6,0,0,0" Cursor="Arrow"
-                                Style="{StaticResource WinCtrlBtn}" ToolTip="닫기">
-                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
-                                  Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
-                        </Button>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-
             <!-- ── Title bar ───────────────────────────────────────────── -->
             <!-- 타이틀 바 컬럼은 메인 영역과 SharedSizeGroup 으로 묶여 스플리터 조절 시에도
                 중앙패널 시작 x 에 콤보박스/브렌치 블 bubble이 고정. 앱 이름·윈도우 컨트롤은
@@ -320,7 +290,7 @@
                                 <!-- 응답 대기 줄: 느낌표 + 텍스트. 대기 세션이 있을 때만 노출 → 이때만 높이가 늘어난다. -->
                                 <StackPanel x:Name="SessionWaitingRow" Orientation="Horizontal"
                                             Visibility="Collapsed" Margin="0,4,0,0">
-                                    <Path Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,7,0"
+                                    <Path x:Name="SessionWaitingIcon" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,7,0"
                                           Data="{StaticResource IconExclamation}" Stretch="Uniform"
                                           Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent"/>
@@ -370,7 +340,7 @@
                                                                    FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource TextBrush}"/>
                                                         <!-- 완료카드의 시간 위치에 노란색 '대기' 표시. 위로 3px 올림. -->
-                                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="대기" Margin="8,0,0,0"
+                                                         <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding WaitingBadgeText}" Margin="8,0,0,0"
                                                                    VerticalAlignment="Center"
                                                                    FontSize="{DynamicResource Fs10}" FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource WarningBrush}">

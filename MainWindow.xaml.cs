@@ -188,13 +188,11 @@ public partial class MainWindow : Window
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
             });
 
-        // claude 선택지/권한 응답 대기 ❗ — Notification 훅이 떨군 waiting 파일을 감시(화면 스크래핑은
-        // alt-screen append-only 버퍼라 잔상으로 오작동 → 훅 신호로 전환. opencode/gjc 와 동일 방식).
-        _sessionBusy.WaitingChoiceChanged += (id, waiting) =>
+        _sessionBusy.WaitingKindChanged += (id, kind) =>
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindSession(id);
-                if (s != null) s.IsWaitingChoice = waiting;
+                if (s != null) s.WaitingKind = kind;
                 UpdateSessionBusyDisplay();
             });
 
@@ -371,7 +369,7 @@ public partial class MainWindow : Window
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
             RefreshCardGroups(); // 시작 시에도 분할 설정 프로젝트 카드는 좌/우 파티션으로(영속 refs 기반)
-            CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
+            CheckHookSetup();
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
             ApplySidePanelButtonVisibility();
             Dispatcher.BeginInvoke(() =>
@@ -496,23 +494,11 @@ public partial class MainWindow : Window
         Close(); // _shuttingDown=true 라 재진입 시 즉시 종료
     }
 
-    // ── 훅 연동 설정 배너 ─────────────────────────────────────────
-    /// <summary>세션 상태(스피너)용 claude 훅이 미설치/구버전이면 상단 배너를 띄운다.</summary>
     private void CheckHookSetup()
     {
         if (!TerminalSessionManager.HookAssetsHealthy())
-            HookSetupBanner.Visibility = Visibility.Visible;
+            TerminalSessionManager.EnsureHookAssets();
     }
-
-    private void HookSetupBtn_Click(object sender, RoutedEventArgs e)
-    {
-        TerminalSessionManager.EnsureHookAssets();
-        HookSetupBanner.Visibility = Visibility.Collapsed;
-        // 이미 떠 있는 세션은 다음 실행부터 적용된다(새 세션·재시작 시 자동 반영).
-    }
-
-    private void HookBannerDismiss_Click(object sender, RoutedEventArgs e)
-        => HookSetupBanner.Visibility = Visibility.Collapsed;
 
     /// <summary>시작 시 마지막 세션/프로젝트를 자동으로 열지 않는다 — 사용자는 늘 프로젝트 미선택 상태로
     /// 시작하길 원함(세션을 보다 끄든 파일을 보다 끄든 동일). CleanShutdown 마커만 갱신한다.
@@ -2274,8 +2260,6 @@ public partial class MainWindow : Window
             if (proj != null) FileExplorer.ShowDirectory(proj.Path);
         }
         SettingsService.SaveLastActive(proj?.Path, _focusedPane.ActiveSession?.Id);
-        if (_focusedPane.ActiveSession != null && HookSetupBanner.Visibility == Visibility.Visible)
-            HookSetupBanner.Visibility = Visibility.Collapsed;
     }
 
     private bool _splitActive;
@@ -2960,13 +2944,17 @@ public partial class MainWindow : Window
 
     private void UpdateSessionBusyDisplay()
     {
-        int count = 0, waiting = 0;
+        int count = 0, waiting = 0, permission = 0;
         foreach (var p in _projects)
             foreach (var t in p.Tabs)
                 if (t is SessionItem s)
                 {
                     // 응답 대기 중인 세션은 진행중에서 빼고 대기로만 센다.
-                    if (s.IsWaitingChoice) waiting++;
+                    if (s.IsWaitingChoice)
+                    {
+                        waiting++;
+                        if (s.IsWaitingPermission) permission++;
+                    }
                     else if (s.IsBusy) count++;
                 }
         if (count > 0)
@@ -2986,7 +2974,10 @@ public partial class MainWindow : Window
         // 응답 대기(선택지) 세션이 있을 때만 둘째 줄 노출 → 이때만 헤더 높이가 늘어난다.
         if (waiting > 0)
         {
-            SessionWaitingLabel.Text = $"응답 대기 중 {waiting}개";
+            SessionWaitingIcon.Data = (System.Windows.Media.Geometry)FindResource(permission > 0 ? "IconLock" : "IconExclamation");
+            SessionWaitingLabel.Text = permission > 0
+                ? (permission == waiting ? $"권한 승인 대기 {permission}개" : $"권한 승인 {permission}개 · 입력 대기 {waiting - permission}개")
+                : $"응답 대기 중 {waiting}개";
             SessionWaitingRow.Visibility = Visibility.Visible;
             // 진행중 줄이 보일 때만 위 간격(4px). 대기만 단독이면 0 → 가운데 정렬에서 안 밀림.
             SessionWaitingRow.Margin = SessionBusyRow.Visibility == Visibility.Visible
