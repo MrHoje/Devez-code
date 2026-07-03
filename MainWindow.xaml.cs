@@ -2598,11 +2598,15 @@ public partial class MainWindow : Window
             else if (RightPane.ActiveProject == null)
             {
                 target = RightPane;                       // 빈 우측 → 프로젝트를 격리 모드로 활성화 후 연다
+                target.CoverForTransition();              // 격리 활성화(렌더) 전에 덮기
                 RightPane.ActivateProjectIsolated(proj);
             }
             // else: 우측이 다른 프로젝트 → 포커스 패널에 연다(파일 소속 불일치 방지)
         }
 
+        // 프로젝트 선택 열기처럼 커튼으로 감싼다 — md 에디터 호스트 0×0→full 그로우(검정 flash) +
+        // 콜드 로드 스피너를 감추고, RevealAfterTransition 이 md 준비될 때까지 기다렸다 fade.
+        target.CoverForTransition();
         var tab = target.OpenFileAsTab(path);
         if (tab != null && !ReferenceEquals(_focusedPane, target))
         {
@@ -2610,6 +2614,7 @@ public partial class MainWindow : Window
             SyncShellToFocusedPane();
             UpdatePaneFocusVisual();
         }
+        target.RevealAfterTransition();                   // md 콜드 로드 대기 후 커튼 fade(준비됐으면 즉시)
     }
 
     /// <summary>격리(분할 파트너) 패널에서 탭(파일/세션)이 새로 열림 → 반대 패널에서 그 탭을 숨긴다.
