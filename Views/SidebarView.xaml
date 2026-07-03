@@ -248,6 +248,32 @@
             </Border>
         </DataTemplate>
 
+        <!-- ── 열린 문서(파일 탭) row 템플릿 — 세션 row 와 동일 크기. 문서 아이콘 + 파일명. 클릭=해당 탭 활성 ── -->
+        <DataTemplate x:Key="FileDocTemplate" DataType="{x:Type models:FileTabItem}">
+            <Border x:Name="DocRow" Style="{StaticResource SessionCard}"
+                    MouseLeftButtonUp="OpenDoc_Click" Cursor="Arrow"
+                    ToolTip="{Binding FilePath}">
+                <Grid Margin="10,5,10,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Grid.Column="0" Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
+                          Width="14" Height="14" Margin="0,0,10,0" VerticalAlignment="Center"
+                          Stroke="{DynamicResource TextMutedBrush}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Title}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource TextBrush}"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- 세션/문서 행을 타입별 템플릿으로 렌더(좌/우 그룹 ItemsControl 공유) -->
+        <models:TabRowTemplateSelector x:Key="TabRowSelector"
+                                       SessionTemplate="{StaticResource SessionTemplate}"
+                                       FileTemplate="{StaticResource FileDocTemplate}"/>
+
         <!-- ── 프로젝트(상위 항목) 템플릿 — 카드 헤더(아이콘·이름·chevron·⋯) + 세션 row 리스트 ── -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
             <Border x:Name="ProjectCardRoot" Style="{StaticResource ProjectCard}"
@@ -430,8 +456,24 @@
                     <Border Visibility="Collapsed"
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
                         <StackPanel Margin="8,2,8,8">
-                            <ItemsControl ItemsSource="{Binding Sessions}" Tag="{Binding ShowHiddenSessions}"
-                                          ItemTemplate="{StaticResource SessionTemplate}"/>
+                            <!-- 분할 시 '왼쪽' 라벨(비분할이면 숨김) -->
+                            <TextBlock Text="왼쪽" Margin="2,0,0,3"
+                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       Visibility="{Binding IsSplitView, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                            <!-- 상단 그룹: 비분할=전체 탭, 분할=좌측 패널 탭(세션+열린 문서) -->
+                            <ItemsControl ItemsSource="{Binding LeftItems}" Tag="{Binding ShowHiddenSessions}"
+                                          ItemTemplateSelector="{StaticResource TabRowSelector}"/>
+                            <!-- 분할 시 우측 그룹: 세퍼레이터 + '오른쪽' 라벨 + 우측 패널 탭 -->
+                            <Border Height="1" Margin="2,6,2,6"
+                                    Background="{DynamicResource LineBrush}"
+                                    Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                            <TextBlock Text="오른쪽" Margin="2,0,0,3"
+                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                            <ItemsControl ItemsSource="{Binding RightItems}" Tag="{Binding ShowHiddenSessions}"
+                                          ItemTemplateSelector="{StaticResource TabRowSelector}"/>
                             <!-- 바로가기: 세션과 세퍼레이터로 구분, 등록된 게 있을 때만 표시 -->
                             <Border Height="1" Margin="2,6,2,6"
                                     Background="{DynamicResource LineBrush}"

@@ -46,6 +46,8 @@ public partial class SidebarView : UserControl
     /// <summary>드래그로 특정 프로젝트의 세션 순서가 바뀐 뒤 발생(탭 동기화 + 영속용).</summary>
     public event Action<ProjectItem>? SessionsReordered;
     public event Action<SessionItem>? SessionSelected;
+    /// <summary>카드의 열린 문서(파일 탭) 행 클릭 — 해당 파일 탭을 활성화(MainWindow 위임).</summary>
+    public event Action<FileTabItem>? OpenDocSelected;
     public event Action<SessionItem>? SessionDeleteRequested;
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
@@ -313,6 +315,13 @@ public partial class SidebarView : UserControl
             // (ProjectSelected 를 따로 호출하면 첫 세션이 추가로 로드되므로 호출하지 않음)
             SessionSelected?.Invoke(s);
         }
+    }
+
+    private void OpenDoc_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (_didDrag) { _didDrag = false; return; }
+        if (sender is FrameworkElement { DataContext: FileTabItem f })
+            OpenDocSelected?.Invoke(f);
     }
 
     private void AddSession_Click(object sender, RoutedEventArgs e)
@@ -602,11 +611,12 @@ public partial class SidebarView : UserControl
     {
         if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc)
             yield break;
-        var inner = FindVisualChildren<ItemsControl>(pc).FirstOrDefault();
-        if (inner == null) yield break;
+        // 카드 안엔 여러 ItemsControl(좌 그룹/우 그룹/바로가기)이 있다 — 세션이 어느 그룹에 있든 찾는다(분할 대응).
+        var lists = FindVisualChildren<ItemsControl>(pc).ToList();
         foreach (var s in project.Sessions)
-            if (inner.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement fe)
-                yield return (s, fe);
+            foreach (var inner in lists)
+                if (inner.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement fe)
+                { yield return (s, fe); break; }
     }
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject? root) where T : DependencyObject

@@ -162,6 +162,7 @@ public partial class MainWindow : Window
         Sidebar.HiddenSessionVisibilityChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
         Sidebar.SessionSelected        += OpenSession;
+        Sidebar.OpenDocSelected        += OpenDocFromSidebar;
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
@@ -3064,6 +3065,20 @@ public partial class MainWindow : Window
 
         // 새 프로젝트는 메인(좌측) 패널에 연다.
         OpenSessionIntoPane(LeftPane, session, isNewProjectLoad: true);
+    }
+
+    /// <summary>사이드바 카드의 열린 문서(파일 탭) 클릭 → 그 문서가 실제로 보이는 패널(분할 좌/우)에서 활성화.
+    /// 어느 패널에도 없으면 그 프로젝트를 띄운 패널, 그것도 없으면 포커스 패널에 연다.</summary>
+    private void OpenDocFromSidebar(FileTabItem doc)
+    {
+        var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(doc));
+        var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc))
+            ?? (parent != null ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent)) : null)
+            ?? _focusedPane;
+        _focusedPane = pane;
+        pane.OpenFileTab(doc);
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
     }
 
     private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session, bool isNewProjectLoad)

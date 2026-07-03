@@ -235,7 +235,8 @@ public sealed class ProjectItem : NotifyBase
 
     /// <summary>이 프로젝트가 메인 패널에 뜰 때 분할(2패널)을 함께 켜둘지. 탭바 분할 토글 버튼으로 설정.
     /// 프로젝트를 다시 열면 이 값대로 분할 상태가 복원된다. workspace.json 에 영속.</summary>
-    public bool SplitEnabled { get; set; }
+    private bool _splitEnabled;
+    public bool SplitEnabled { get => _splitEnabled; set { if (_splitEnabled != value) { _splitEnabled = value; RebuildGroups(); } } }
     /// <summary>분할 파트너 프로젝트 경로(파트너 세션이 없을 때 폴백). workspace.json 에 영속.</summary>
     public string? SplitPartnerProjectPath { get; set; }
     /// <summary>분할 파트너 세션 ID(있으면 우선). workspace.json 에 영속.</summary>
@@ -245,7 +246,61 @@ public sealed class ProjectItem : NotifyBase
 
     /// <summary>같은 프로젝트를 분할했을 때 우측 패널에 격리해 둔 탭들의 참조 목록("S:&lt;id&gt;"/"F:&lt;path&gt;").
     /// 파트너 하나만이 아니라 우측 전체 탭 집합을 복원하기 위함(비면 파트너 필드로 폴백). workspace.json 에 영속.</summary>
-    public List<string> SplitRightTabRefs { get; set; } = new();
+    private List<string> _splitRightTabRefs = new();
+    public List<string> SplitRightTabRefs { get => _splitRightTabRefs; set { _splitRightTabRefs = value ?? new(); RebuildGroups(); } }
+
+    // ── 사이드바 카드: 분할 시 좌/우 패널 탭 그룹(세션 + 열린 파일 문서) ─────────────────────
+    /// <summary>카드 상단 그룹 = 비분할이면 전체 탭, 분할이면 '좌측 패널' 탭(세션+열린 문서). 사이드바 바인딩.</summary>
+    public ObservableCollection<TabItemBase> LeftItems { get; } = new();
+    /// <summary>카드 하단 그룹 = 분할일 때 '우측 패널' 탭(세션+열린 문서). 비분할이면 빈다. 사이드바 바인딩.</summary>
+    public ObservableCollection<TabItemBase> RightItems { get; } = new();
+
+    private bool _isSplitView;
+    /// <summary>이 프로젝트가 분할(좌/우) 표시 중인지 — 카드가 좌/우 그룹 라벨을 보일지 분기.</summary>
+    public bool IsSplitView { get => _isSplitView; private set => Set(ref _isSplitView, value); }
+    private bool _hasRightItems;
+    /// <summary>우측 그룹에 표시할 탭이 있는지 — 우측 그룹+세퍼레이터+라벨 가시성.</summary>
+    public bool HasRightItems { get => _hasRightItems; private set => Set(ref _hasRightItems, value); }
+
+    /// <summary>탭 참조 문자열("S:&lt;id&gt;"/"F:&lt;path&gt;") — 분할 좌/우 그룹 판정용(WorkspacePaneView.RefOf 와 동일 규칙).</summary>
+    public static string TabRef(TabItemBase t) => t switch
+    {
+        SessionItem s => "S:" + s.Id,
+        FileTabItem f => "F:" + f.FilePath,
+        _ => "",
+    };
+
+    /// <summary>Tabs/분할 상태로부터 좌/우 그룹을 다시 계산한다. Tabs 변화·SplitEnabled·SplitRightTabRefs 변화 시 호출.</summary>
+    private void RebuildGroups()
+    {
+        bool split = SplitEnabled;
+        var rightSet = split ? new HashSet<string>(SplitRightTabRefs, StringComparer.OrdinalIgnoreCase) : null;
+        var left = new List<TabItemBase>();
+        var right = new List<TabItemBase>();
+        foreach (var t in Tabs)
+        {
+            if (split && rightSet!.Contains(TabRef(t))) right.Add(t);
+            else left.Add(t);
+        }
+        SyncObservable(LeftItems, left);
+        SyncObservable(RightItems, right);
+        HasRightItems = right.Count > 0;
+        IsSplitView = split && right.Count > 0;
+    }
+
+    /// <summary>순서/내용이 같으면 그대로 두고(사이드바 깜빡임 방지), 다르면 교체.</summary>
+    private static void SyncObservable(ObservableCollection<TabItemBase> target, List<TabItemBase> desired)
+    {
+        if (target.Count == desired.Count)
+        {
+            bool same = true;
+            for (int i = 0; i < desired.Count; i++)
+                if (!ReferenceEquals(target[i], desired[i])) { same = false; break; }
+            if (same) return;
+        }
+        target.Clear();
+        foreach (var t in desired) target.Add(t);
+    }
     /// <summary>우측 패널에서 활성이던 탭 참조. LastActiveTabRef 는 좌측 활성 탭용. workspace.json 에 영속.</summary>
     public string? SplitRightActiveRef { get; set; }
 
@@ -314,6 +369,10 @@ public sealed class ProjectItem : NotifyBase
         };
 
         Files.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFiles));
+
+        // 탭 추가/제거/이동 → 카드 좌/우 그룹 재계산(세션·열린 문서 모두 반영).
+        Tabs.CollectionChanged += (_, _) => RebuildGroups();
+        RebuildGroups();
     }
 
     private void OnSessionPropChanged(object? sender, PropertyChangedEventArgs e)
