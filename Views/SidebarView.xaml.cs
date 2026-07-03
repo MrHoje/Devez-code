@@ -45,6 +45,8 @@ public partial class SidebarView : UserControl
     public event Action? ProjectExpandChanged;
     /// <summary>드래그로 특정 프로젝트의 세션 순서가 바뀐 뒤 발생(탭 동기화 + 영속용).</summary>
     public event Action<ProjectItem>? SessionsReordered;
+    /// <summary>분할 카드에서 탭(세션/문서)을 반대 그룹으로 드래그 → 패널 이동 요청(bool=우측으로).</summary>
+    public event Action<ProjectItem, TabItemBase, bool>? TabPaneMoveRequested;
     /// <summary>드래그로 특정 프로젝트의 바로가기 순서가 바뀐 뒤 발생(영속용).</summary>
     public event Action<ProjectItem>? FilesReordered;
     public event Action<SessionItem>? SessionSelected;
@@ -607,29 +609,56 @@ public partial class SidebarView : UserControl
         if (project == null) return;
         if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc) return;
 
-        // s 가 실제로 렌더된 그룹 ItemsControl(좌/우)을 찾고, 그 그룹 항목(세션+문서)끼리만 재정렬한다(다른 그룹으로 못 드롭).
-        ItemsControl? group = null;
+        // 좌/우 그룹 ItemsControl 을 ItemsSource 로 식별(바로가기 Files 제외).
+        ItemsControl? leftIc = null, rightIc = null;
         foreach (var ic in FindVisualChildren<ItemsControl>(pc))
-            if (ic.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement) { group = ic; break; }
-        if (group == null) return;
+        {
+            if (ReferenceEquals(ic.ItemsSource, project.LeftItems)) leftIc = ic;
+            else if (ReferenceEquals(ic.ItemsSource, project.RightItems)) rightIc = ic;
+        }
+        if (leftIc == null) return;
 
+        // 분할 카드면 좌(위)+우(아래) 그룹을 하나의 세로 리스트로 결합 → 그룹 경계를 넘겨 드롭 가능.
+        // 비분할이면 좌 그룹(=전체 탭)만 담아 기존과 동일한 그룹 내 재정렬.
+        bool splitCard = project.IsSplitView && rightIc != null && rightIc.Items.Count > 0;
         var rows = new List<(TabItemBase Item, FrameworkElement Element)>();
-        foreach (var item in group.Items)
-            if (item is TabItemBase tb && group.ItemContainerGenerator.ContainerFromItem(tb) is FrameworkElement fe)
-                rows.Add((tb, fe));
-        var groupItems = rows.Select(r => r.Item).ToList();
+        void Collect(ItemsControl ic)
+        {
+            foreach (var item in ic.Items)
+                if (item is TabItemBase tb && ic.ItemContainerGenerator.ContainerFromItem(tb) is FrameworkElement fe)
+                    rows.Add((tb, fe));
+        }
+        Collect(leftIc);
+        int leftCount = rows.Count;
+        if (splitCard) Collect(rightIc!);
+
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, s));
         if (src.Element == null || rows.Count < 2) return;
+        int srcIdx = rows.FindIndex(r => ReferenceEquals(r.Item, s));
+        bool srcInLeft = srcIdx < leftCount;
 
         _tabDrag = ReorderDrag<TabItemBase>.TryStart(this, rows, s, src.Element,
             (item, hostTarget, _) =>
             {
-                // hostTarget = 그룹 내 인덱스 → 그 위치의 그룹 항목 자리로 Tabs 안에서 이동(세션/문서 공통).
-                // 대상이 같은 그룹 항목이라 ref 파티션이 유지돼 반대 그룹은 영향 없다. Tabs.Move → Sessions 동기 +
-                // 탭 스트립 반영, SessionsReordered → RefreshCardGroups 로 카드 순서 갱신.
-                int to = Math.Clamp(hostTarget, 0, groupItems.Count - 1);
+                // hostTarget = source 제거 후 결합 리스트 내 삽입 위치. 좌 그룹 잔여 개수(leftAfter) 기준으로
+                // 도착 그룹 판정 → 같은 그룹이면 Tabs.Move 재정렬, 다른 그룹이면 패널 이동 위임.
+                int leftAfter = srcInLeft ? leftCount - 1 : leftCount;
+                bool targetIsRight = splitCard && hostTarget >= leftAfter;
+                bool crossGroup = splitCard && (targetIsRight == srcInLeft); // src 좌→우 or 우→좌
+
+                if (crossGroup)
+                {
+                    TabPaneMoveRequested?.Invoke(project, item, targetIsRight);
+                    return Task.CompletedTask;
+                }
+
+                // 같은 그룹 내 재정렬: 그룹(소스 포함) 목록에서 삽입 위치 항목의 Tabs 인덱스로 이동.
+                var groupList = (srcInLeft ? rows.Take(leftCount) : rows.Skip(leftCount))
+                                .Select(r => r.Item).ToList();
+                int localIns = srcInLeft ? hostTarget : hostTarget - leftCount;
+                int to = Math.Clamp(localIns, 0, groupList.Count - 1);
                 int fromIdx = project.Tabs.IndexOf(item);
-                int toIdx = project.Tabs.IndexOf(groupItems[to]);
+                int toIdx = project.Tabs.IndexOf(groupList[to]);
                 if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx)
                 {
                     project.Tabs.Move(fromIdx, toIdx);

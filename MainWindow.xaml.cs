@@ -161,6 +161,7 @@ public partial class MainWindow : Window
         Sidebar.ProjectExpandChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.HiddenSessionVisibilityChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
+        Sidebar.TabPaneMoveRequested += OnCardTabPaneMove;
         Sidebar.FilesReordered += _ => { RefreshCardGroups(); WorkspaceStore.Save(_projects); };
         Sidebar.SessionSelected        += OpenSessionFromSidebar;
         Sidebar.OpenDocSelected        += OpenDocFromSidebar;
@@ -3455,6 +3456,33 @@ public partial class MainWindow : Window
     {
         RefreshCardGroups();
         PaneA.RefreshSelectedTabSeam(); PaneB.RefreshSelectedTabSeam(); // 탭 순서 바뀜 → 선택 밑줄 위치 재계산
+        WorkspaceStore.Save(_projects);
+    }
+
+    /// <summary>카드에서 탭(세션/문서)을 반대 그룹으로 드래그 → 패널 이동.
+    /// - 라이브 분할(이 프로젝트가 지금 좌·우 패널에 실제 분할 표시 중): 검증된 패널 이동 연산 재사용
+    ///   (원본 패널에서 숨기고 반대 패널에 노출 + 격리 재배선, 내부에서 refresh/persist 처리).
+    /// - 영속 분할 카드(비라이브): 우측 refs 집합만 갱신 후 저장 → 카드/재시작 복원에 반영.
+    /// toRight=true 는 좌→우 이동(소스가 좌 그룹), false 는 우→좌.</summary>
+    private void OnCardTabPaneMove(ProjectItem project, TabItemBase tab, bool toRight)
+    {
+        bool isLive = _splitActive
+            && ReferenceEquals(LeftPane.ActiveProject, project)
+            && ReferenceEquals(RightPane.ActiveProject, project);
+
+        if (isLive)
+        {
+            var sourcePane = toRight ? LeftPane : RightPane; // 이동 전 소스 패널 = 반대편
+            OnPaneSplitViewRequested(sourcePane, tab);
+            return;
+        }
+
+        var r = WorkspacePaneView.RefOf(tab);
+        var set = new List<string>(project.SplitRightTabRefs);
+        set.RemoveAll(x => string.Equals(x, r, StringComparison.OrdinalIgnoreCase));
+        if (toRight) set.Add(r);
+        project.SplitRightTabRefs = set;
+        RefreshCardGroups();
         WorkspaceStore.Save(_projects);
     }
 
