@@ -3162,7 +3162,12 @@ public partial class MainWindow : Window
     private void OpenDocFromSidebar(FileTabItem doc)
     {
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(doc));
-        EnsureProjectSplitOpen(parent); // 분할 설정 프로젝트면 먼저 분할로 연다(단일로 열리는 것 방지)
+        if (parent != null && !_panes.Any(p => ReferenceEquals(p.ActiveProject, parent)))
+            // 현재 어느 패널에도 안 뜬 '다른 프로젝트'의 문서 → 그 프로젝트를 메인으로 선택(분할/단일은 그 프로젝트
+            // 설정대로 전환). 안 그러면 포커스 패널에 그 프로젝트가 통째로 로드돼 현재 분할이 깨진다.
+            SelectProjectFromSidebar(parent);
+        else
+            EnsureProjectSplitOpen(parent); // 이미 뜬(분할설정) 프로젝트면 분할 보장
         EnsureRightGroupIsolation(doc); // 우측 그룹 문서면 우측 격리 유지(분할 붕괴 방지)
         var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc))
             ?? (parent != null ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent)) : null)

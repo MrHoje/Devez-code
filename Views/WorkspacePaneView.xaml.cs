@@ -824,6 +824,7 @@ public partial class WorkspacePaneView : UserControl
         // 단색 덮개가 끊기지 않게). 정확한 스피너 앵커는 UpdateEmptyState 로 최종 크기 확정 후 재전송한다.
         bool sessionReady = _terminal.IsReady(session.Id);
         _gateUnpark = !sessionReady; // 콜드면 unpark 을 web 커버 ACK 까지 게이트, 준비됐으면 즉시 unpark
+        DiagLog.Write($"ActivateSession cold={!sessionReady} fromFileParked={_fileParked} termParked={_termParked} pageReady={_terminal.IsPageReady} pane={(IsRightPane ? "R" : "L")}");
         if (!sessionReady)
         {
             TerminalLoadingOverlay.Visibility = Visibility.Visible;
@@ -1886,6 +1887,7 @@ public partial class WorkspacePaneView : UserControl
     private void RevealTerminalAfterGate()
     {
         if (_activeTab is not SessionItem) return;
+        DiagLog.Write($"RevealTerminalAfterGate pane={(IsRightPane ? "R" : "L")} fileParked={_fileParked}");
         UnparkTerminalHost();
         ParkFileEditorHost();
     }
