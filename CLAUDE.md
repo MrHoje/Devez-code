@@ -25,6 +25,21 @@ Start-Process "bin\DevezCode.exe"
 - **"지식베이스에 저장해"라고 하면** 해당(또는 방금 작업한) 내용 중 다음에 참조 가치가 있는 것을
   `.knowledge/` 폴더에 마크다운 문서로 저장한다. 이미 같은 주제의 문서가 있으면 새로 만들지 말고
   그 문서를 갱신한다.
+- `.knowledge/*.md` 는 항상 다 읽지 말고, 아래 인덱스에서 **작업에 해당하는 파일만 골라 읽는다.**
+  새 문서를 추가하면 이 인덱스에 한 줄 추가한다.
+
+### 인덱스 (이럴 때 → 이 파일을 읽는다)
+
+| 이런 작업을 할 때 | 읽을 파일 |
+|---|---|
+| 텍스트 표시/입력 컨트롤 추가 (한글 글자 깨짐 방지) | `.knowledge/텍스트렌더링규칙.md` |
+| 새 AI CLI 에이전트(Codex/OpenCode/Gajae 외) 추가 | `.knowledge/에이전트추가규칙.md` |
+| 터미널 입력/마우스/클립보드/IME/스크롤 등 커스텀 동작 | `.knowledge/터미널커스텀동작.md` |
+| 중앙 2분할(Split) 패널·탭 격리·파트너·포커스·터미널 재진입 | `.knowledge/분할패널-탭격리-파트너-포커스.md` |
+| 패널 리사이즈/오버레이 시 터미널 깜빡임(WebView2 airspace) | `.knowledge/webview2-airspace-패널리사이즈-깜빡임.md` |
+| 입력 팝업 검증 실패 피드백(창 흔들기 애니메이션) | `.knowledge/wpf-팝업-입력검증-흔들기-애니메이션.md` |
+| `Style.Setter.Value`/`Template` 인라인 자식 → connectionId 크래시 | `.knowledge/wpf-contextmenu-setter-value-connectionid-충돌.md` |
+| `ListBoxItem` 선택 시 행 전체 파란 배경 제거 | `.knowledge/wpf-listboxitem-default-template-selected-배경.md` |
 
 ## 참고 대상 (devez)
 
@@ -40,5 +55,4 @@ Start-Process "bin\DevezCode.exe"
 - 원격 접속(RDP/Chrome Remote Desktop)에서는 GPU 합성 화면이 전달되지 않아 창이 안 보일 수 있다.
   `App.OnStartup`에서 원격 세션을 감지해 `RenderMode.SoftwareOnly`를 강제하므로 새 창을 만들 때 이 처리를 빠뜨리지 말 것.
 - 디자인(테마/색상/폰트/아이콘/팝업)은 `C:\source\devez`의 디자인 시스템을 따른다. 새 UI도 `AppStyles.xaml`의 전역 스타일을 사용하고 인라인 스타일을 남발하지 말 것.
-- **텍스트 표시/입력 UI를 추가할 때는 `.knowledge/텍스트렌더링규칙.md`를 참조한다.** (한글 글자 깨짐 방지: keyed 스타일 `BasedOn` 필수 등)
-- 에이전트(Claude Code / Codex / OpenCode / Gajae Code 등) 추가 규칙은 `.knowledge/에이전트추가규칙.md` 참조.
+- 작업별로 참조할 `.knowledge/` 문서는 위 **지식베이스 인덱스**를 본다.
