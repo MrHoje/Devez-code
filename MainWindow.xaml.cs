@@ -162,7 +162,7 @@ public partial class MainWindow : Window
         Sidebar.HiddenSessionVisibilityChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
         Sidebar.FilesReordered += _ => WorkspaceStore.Save(_projects);
-        Sidebar.SessionSelected        += OpenSession;
+        Sidebar.SessionSelected        += OpenSessionFromSidebar;
         Sidebar.OpenDocSelected        += OpenDocFromSidebar;
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
@@ -3068,14 +3068,40 @@ public partial class MainWindow : Window
         OpenSessionIntoPane(LeftPane, session, isNewProjectLoad: true);
     }
 
+    /// <summary>사이드바 카드에서 세션 클릭 — '오른쪽' 그룹이면 우측 격리를 유지한 채 연다(활성화가 격리를
+    /// 풀어 우측에 전체 세션이 쏟아지는 것 방지). 그 외엔 기존 OpenSession 라우팅.</summary>
+    private void OpenSessionFromSidebar(SessionItem s)
+    {
+        EnsureRightGroupIsolation(s);
+        OpenSession(s);
+    }
+
+    /// <summary>사이드바 카드의 '오른쪽' 그룹 항목(세션/문서) 클릭 시, 활성화 전에 우측 패널 격리 화이트리스트에
+    /// 넣고 좌측에선 숨긴다 → 이후 ActivateSession/ActivateFileTab 의 ClearIsolationIfMismatch 가 격리를 풀지
+    /// 않아(우측 전체세션 노출·분할 붕괴 방지) 우측 격리가 그대로 유지된다. 우측이 그 프로젝트를 격리 표시
+    /// 중일 때만 동작.</summary>
+    private void EnsureRightGroupIsolation(TabItemBase item)
+    {
+        if (!_splitActive) return;
+        var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(item));
+        if (parent == null || !parent.RightItems.Contains(item)) return;
+        if (!ReferenceEquals(RightPane.ActiveProject, parent)) return;
+        if (RightPane.CurrentIsolatedTabs() == null) return; // 우측이 격리 상태일 때만
+        RightPane.IsolateTab(item);
+        LeftPane.HideTabInPane(item);
+        PersistSplitState();
+    }
+
     /// <summary>사이드바 카드의 열린 문서(파일 탭) 클릭 → 그 문서가 실제로 보이는 패널(분할 좌/우)에서 활성화.
     /// 어느 패널에도 없으면 그 프로젝트를 띄운 패널, 그것도 없으면 포커스 패널에 연다.</summary>
     private void OpenDocFromSidebar(FileTabItem doc)
     {
+        EnsureRightGroupIsolation(doc); // 우측 그룹 문서면 우측 격리 유지(분할 붕괴 방지)
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(doc));
         var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc))
             ?? (parent != null ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent)) : null)
             ?? _focusedPane;
+        DevezCode.Services.DiagLog.Write($"OpenDocFromSidebar doc={doc.Title} splitActive={_splitActive} target={(ReferenceEquals(pane, RightPane) ? "R" : ReferenceEquals(pane, LeftPane) ? "L" : "?")} inRightGroup={parent?.RightItems.Contains(doc)} rightIsolated={RightPane.CurrentIsolatedTabs() != null}");
         _focusedPane = pane;
         pane.OpenFileTab(doc);
         SyncShellToFocusedPane();
