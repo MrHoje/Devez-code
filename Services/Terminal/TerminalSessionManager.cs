@@ -682,12 +682,12 @@ public sealed class TerminalSessionManager
             // settings 는 방별로 세션마다 생성되므로 공통 파일 대신 스크립트가 최신본인지 확인한다.
             var busy = File.ReadAllText(BusyHookScriptPath);
             return busy.Contains("roomArg") && busy.Contains("last_assistant_message") &&
-                   busy.Contains("pulse") && busy.Contains("permission");
+                   busy.Contains("Touch-LiveSubruns") && busy.Contains("'permission'");
         }
         catch { return false; }
     }
 
-    /// <summary>훅 자산을 (재)생성한다. 배너의 원클릭 설정에서 호출.</summary>
+    /// <summary>훅 자산을 (재)생성한다.</summary>
     public static void EnsureHookAssets() => EnsureSessionHookAssets();
 
     /// <summary>Claude SessionStart 훅이 남긴 room별 id 파일을 감시해 실행 중 /resume 등도 즉시 영속화한다.</summary>
@@ -921,7 +921,7 @@ public sealed class TerminalSessionManager
             //   • 메인 턴: UserPromptSubmit=running(main 플래그 set) / Stop·SessionEnd=idle(main 플래그 clear).
             //   • 서브에이전트: SubagentStart=substart(run 파일 생성) / SubagentStop=substop(run 파일 삭제).
             //     busy 는 substop·Stop 시점에 (main 플래그 존재 OR run 파일 개수>0)로 재평가한다.
-            // ghost 방어: SubagentStop 누락(크래시/kill) 대비 30분 초과 run 파일은 카운트 전 prune,
+            // ghost 방어: SubagentStop 누락(크래시/kill) 대비 1시간 초과 run 파일은 카운트 전 prune,
             // SessionEnd 시 방 run 디렉터리 전량 제거, 앱 시작 시 subruns/main 플래그 wipe(C# SessionBusyService).
             const string busyScript = """
                 # DevezCode busy-state hook. Arg1 = running|idle|notify|unwait|pulse|substart|substop. Per-room sidebar spinner state.
@@ -952,17 +952,19 @@ public sealed class TerminalSessionManager
                   function Touch-LiveSubruns($rd) {
                     try {
                       if (-not (Test-Path -LiteralPath $rd)) { return }
+                      $cut = (Get-Date).AddHours(-1)
                       foreach ($f in @(Get-ChildItem -LiteralPath $rd -Filter '*.run' -ErrorAction SilentlyContinue)) {
-                        Write-State $f.FullName ((Get-Date).ToString('o'))
+                        if ($f.LastWriteTime -lt $cut) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue }
+                        else { Write-State $f.FullName ((Get-Date).ToString('o')) }
                       }
                     } catch { }
                   }
 
-                  # 살아있는 서브에이전트 수. 4시간 초과 stale run 파일(SubagentStop 누락분)은 prune 후 제외.
+                  # 살아있는 서브에이전트 수. 1시간 초과 stale run 파일(SubagentStop 누락분)은 prune 후 제외.
                   function Get-LiveSubCount($rd) {
                     try {
                       if (-not (Test-Path -LiteralPath $rd)) { return 0 }
-                      $cut = (Get-Date).AddHours(-4)
+                      $cut = (Get-Date).AddHours(-1)
                       $live = 0
                       foreach ($f in @(Get-ChildItem -LiteralPath $rd -Filter '*.run' -ErrorAction SilentlyContinue)) {
                         if ($f.LastWriteTime -lt $cut) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue }
@@ -1145,12 +1147,11 @@ public sealed class TerminalSessionManager
                 //  • Notification: 그 외 입력 대기(AskUserQuestion 등) 폴백(claude 측 타이밍상 수 초 지연 가능).
                 //    단 살아있는 서브에이전트가 있으면 이 Notification 은 '서브 완료 대기중 60초 idle' 오탐이므로
                 //    notifyidle 로 보내 subcount>0 일 때 무장하지 않는다(서브 도는 동안 ❗ 대신 스피너만 유지).
-                // 해제는 PostToolUse/PostToolUseFailure/Stop + 답변 입력(즉시 UI).
+                // 해제는 PostToolUse/Stop + 답변 입력(즉시 UI).
                 PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
                 Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyIdleCommand } } } },
                 PreToolUse       = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyPulseCommand } } } },
                 PostToolUse      = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
-                PostToolUseFailure = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
                 // 서브에이전트 생존 추적(스피너 조기소멸 방지): Start=run 파일 생성, Stop=삭제 → busy 재평가.
                 SubagentStart    = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStartCommand } } } },
                 SubagentStop     = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStopCommand } } } },

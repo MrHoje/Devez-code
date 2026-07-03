@@ -192,9 +192,9 @@
                                           Stroke="{DynamicResource TextMutedBrush}"/>
                                     <!-- 입력 대기(선택지 메뉴): 아이콘 자리에 ❗ 표시(에이전트 아이콘 위에 겹쳐 노출). -->
                                     <!-- 높이를 15→13 + 하단 Margin 2: 상단 고정, 아래만 2px 줄임. -->
-                                     <Path Grid.Column="0" x:Name="TabWaitingIcon" Width="15" Height="13" Margin="0,0,6,2"
-                                           Stretch="Uniform" Visibility="Collapsed" VerticalAlignment="Center"
-                                           Data="{StaticResource IconExclamation}"
+                                    <Path Grid.Column="0" x:Name="TabWaitingIcon" Width="15" Height="13" Margin="0,0,6,2"
+                                          Stretch="Uniform" Visibility="Collapsed" VerticalAlignment="Center"
+                                          Data="{StaticResource IconExclamation}"
                                           Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                           Fill="Transparent"/>
@@ -271,10 +271,10 @@
                                     <Setter TargetName="TabFileIcon" Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                                 <!-- 입력 대기: 에이전트 아이콘 숨기고 ❗ 노출(File 트리거 뒤에 둬서 세션 탭에서 우선). -->
-                                 <DataTrigger Binding="{Binding IsWaitingChoice}" Value="True">
-                                     <Setter TargetName="TabAgentIcon" Property="Visibility" Value="Collapsed"/>
-                                     <Setter TargetName="TabWaitingIcon" Property="Visibility" Value="Visible"/>
-                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding IsWaitingChoice}" Value="True">
+                                    <Setter TargetName="TabAgentIcon" Property="Visibility" Value="Collapsed"/>
+                                    <Setter TargetName="TabWaitingIcon" Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
                                 <DataTrigger Binding="{Binding IsWaitingPermission}" Value="True">
                                     <Setter TargetName="TabWaitingIcon" Property="Data" Value="{StaticResource IconLock}"/>
                                 </DataTrigger>

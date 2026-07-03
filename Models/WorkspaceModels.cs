@@ -91,7 +91,11 @@ public sealed class SessionItem : TabItemBase
     public bool IsWaitingChoice
     {
         get => WaitingKind != WaitingKind.None;
-        set => WaitingKind = value ? WaitingKind.Input : WaitingKind.None;
+        set
+        {
+            if (value && WaitingKind == WaitingKind.Permission) return;
+            WaitingKind = value ? WaitingKind.Input : WaitingKind.None;
+        }
     }
 
     public bool IsWaitingPermission => WaitingKind == WaitingKind.Permission;

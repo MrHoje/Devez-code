@@ -18,7 +18,7 @@ public sealed class SessionBusyService : IDisposable
     private static string StateDir => Path.Combine(Dir, "_state");
 
     // 서브에이전트 run 파일이 이보다 오래되면 SubagentStop 을 못 받은 유령으로 보고 prune(스피너 stuck-ON 방지).
-    private static readonly TimeSpan SubMaxAge = TimeSpan.FromHours(4);
+    private static readonly TimeSpan SubMaxAge = TimeSpan.FromHours(1);
     // reconcile 재예약 간격: 활성(진행중 턴/서브 有)이면 촘촘, 완전 유휴면 느슨(유휴 CPU wake 최소화).
     private const int ReconcileActiveMs = 4000;
     private const int ReconcileIdleMs = 30000;
@@ -30,9 +30,6 @@ public sealed class SessionBusyService : IDisposable
 
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중.</summary>
     public event Action<string, bool>? BusyChanged;
-
-    /// <summary>(roomId, waiting) — waiting=true 면 선택지/권한 응답 대기 중(❗). Notification 훅으로 판정.</summary>
-    public event Action<string, bool>? WaitingChoiceChanged;
 
     public event Action<string, WaitingKind>? WaitingKindChanged;
 
@@ -192,7 +189,6 @@ public sealed class SessionBusyService : IDisposable
     {
         var kind = ParseWaitingKind(status);
         WaitingKindChanged?.Invoke(room, kind);
-        WaitingChoiceChanged?.Invoke(room, kind != WaitingKind.None);
     }
 
     private static WaitingKind ParseWaitingKind(string status)
