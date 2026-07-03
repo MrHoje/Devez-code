@@ -3679,11 +3679,11 @@ public partial class MainWindow : Window
         ApplyCornerPreference();
     }
 
-    /// <summary>현재 창이 속한 모니터 작업영역의 가로·세로 절반 크기 + 중앙 위치 Rect.</summary>
+    /// <summary>현재 창이 속한 모니터 작업영역의 가로·세로 70% 크기 + 중앙 위치 Rect.</summary>
     private Rect HalfCenteredOnMonitor()
     {
         var area = TryGetMonitorDip(out _, out var work) ? work : new Rect(Left, Top, ActualWidth, ActualHeight);
-        double w = Math.Max(area.Width / 2, MinWidth), h = Math.Max(area.Height / 2, MinHeight);
+        double w = Math.Max(area.Width * 0.7, MinWidth), h = Math.Max(area.Height * 0.7, MinHeight);
         return new Rect(area.Left + (area.Width - w) / 2, area.Top + (area.Height - h) / 2, w, h);
     }
 
