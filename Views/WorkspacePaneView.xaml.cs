@@ -785,10 +785,22 @@ public partial class WorkspacePaneView : UserControl
             AgentLastMsg?.TrackSession(parent.Path, sessionAgentId);
         _terminal.ShowTerminal(session.Id);
         _terminal.FocusTerminal();
+        // 콜드(미준비) 세션: UpdateEmptyState 가 UnparkTerminalHost 로 webview 를 0×0→풀사이즈로 드러내는데,
+        // 그 순간~아래 ShowSessionLoading(web 단색 커버) 사이 한 프레임 동안 빈/콜드 터미널이 노출돼
+        // 프로젝트 선택 시 깜빡인다(준비된 프리로드 세션은 위 coverReflow 커튼이 가려 사각지대는 콜드뿐).
+        // unpark '전에' 웹 로딩 커버를 먼저 켜 그 프레임을 없앤다(WPF 오버레이도 함께 켜 주차 구간부터
+        // 단색 덮개가 끊기지 않게). 정확한 스피너 앵커는 UpdateEmptyState 로 최종 크기 확정 후 재전송한다.
+        bool sessionReady = _terminal.IsReady(session.Id);
+        if (!sessionReady)
+        {
+            TerminalLoadingOverlay.Visibility = Visibility.Visible;
+            UpdateLayout();
+            _terminal.SetLoading(true, TerminalLoadingOverlay.ActualWidth, TerminalLoadingOverlay.ActualHeight);
+        }
         UpdateEmptyState();
         // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
         // 기대 크기를 캡처해야 웹 스피너 게이트(뷰포트=목표 일치 대기)의 목표가 처음부터 정확하다.
-        if (_terminal.IsReady(session.Id)) HideSessionLoading();
+        if (sessionReady) HideSessionLoading();
         else ShowSessionLoading(session.Id);
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
