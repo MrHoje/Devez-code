@@ -369,6 +369,7 @@ public partial class MainWindow : Window
             RestoreLastSession();
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
+            RefreshCardGroups(); // 시작 시에도 분할 설정 프로젝트 카드는 좌/우 파티션으로(영속 refs 기반)
             CheckHookSetup(); // 훅 미설치/구버전이면 상단 배너로 원클릭 설정 안내
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
             ApplySidePanelButtonVisibility();
@@ -2168,19 +2169,27 @@ public partial class MainWindow : Window
     /// (영속 플래그가 아니라 라이브 패널 상태 기준 — 클릭/드래그가 실제 패널과 정확히 일치.)</summary>
     private void RefreshCardGroups()
     {
-        ProjectItem? splitProj = null;
+        ProjectItem? liveSplitProj = null;
         if (_splitActive && LeftPane.ActiveProject != null && ReferenceEquals(LeftPane.ActiveProject, RightPane.ActiveProject))
-            splitProj = LeftPane.ActiveProject;
+            liveSplitProj = LeftPane.ActiveProject;
         foreach (var p in _projects.Concat(_archivedProjects))
         {
-            if (ReferenceEquals(p, splitProj))
+            if (ReferenceEquals(p, liveSplitProj))
             {
-                // 한 세션은 한 그룹에만(겹침 금지). 우측 그룹 = '우측에만' 있는 탭(좌측엔 없는 것),
-                // 좌측 그룹 = 좌측이 보여주는 탭. 전체 공유 분할(양쪽 다 전체)이면 우측 exclusive 가 비어
-                // 우측 그룹이 사라지고 단일 목록이 된다(양쪽 중복 방지). 격리 분할이면 실제 좌/우로 나뉜다.
+                // 현재 실제 분할된 프로젝트: 라이브 패널 상태로 파티션(가장 정확). 한 세션은 한 그룹에만 —
+                // 우측 그룹 = '우측에만' 있는 탭(좌측엔 없는 것), 좌측 그룹 = 좌측 표시 탭.
                 var left = LeftPane.VisibleTabsInOrder();
                 var leftSet = new HashSet<TabItemBase>(left);
                 var right = RightPane.VisibleTabsInOrder().Where(t => !leftSet.Contains(t)).ToList();
+                p.ApplyLiveGroups(left, right);
+            }
+            else if (p.SplitEnabled && p.SplitRightTabRefs.Count > 0)
+            {
+                // 분할 설정된 프로젝트는 지금 활성 분할이 아니어도(시작 직후·다른 프로젝트 선택 중) 영속 우측
+                // refs 로 좌/우 파티션을 계속 보여준다. right = refs 에 든 탭, left = 나머지(각 탭 한 그룹에만).
+                var rightSet = new HashSet<string>(p.SplitRightTabRefs, StringComparer.OrdinalIgnoreCase);
+                var left = p.Tabs.Where(t => !rightSet.Contains(WorkspacePaneView.RefOf(t))).ToList();
+                var right = p.Tabs.Where(t => rightSet.Contains(WorkspacePaneView.RefOf(t))).ToList();
                 p.ApplyLiveGroups(left, right);
             }
             else
