@@ -54,7 +54,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.10.0", "2026-07-03", true, new[]
+        ("v1.10.1", "2026-07-03", true, new[]
+        {
+            "분할된 프로젝트에서 상단 탭 헤더를 드래그해 반대쪽 패널로 옮길 수 있습니다.",
+            "창 크기를 조절할 때 터미널이 부드럽게 따라오고 스크롤 위치가 유실되지 않도록 개선했습니다.",
+        }),
+        ("v1.10.0", "2026-07-03", false, new[]
         {
             "여러 파일과 세션을 좌우로 나눠 볼 수 있는 패널 분할 기능을 추가했습니다.",
             "계정 사용량에 한도 도달 예상 시점을 표시합니다. (설정 > 계정 사용량에서 켤 수 있습니다.)",
