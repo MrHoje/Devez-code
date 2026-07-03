@@ -30,6 +30,7 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly double _gridMidX;    // coordHost 기준, 좌/우 컬럼을 가르는 X(컬럼 판정 기준).
     private readonly double _grabOffsetX; // 잡은 지점의 source 내부 오프셋 — 드래그 카드 중심 계산용
     private readonly double _grabOffsetY;
+    private readonly int _splitBoundary;  // >=0 이면 slot [0,_splitBoundary)=좌 그룹, 나머지=우 그룹(RowPitch 가 그룹 경계=큰 간격을 안 넘게).
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private bool _finished;
@@ -41,11 +42,12 @@ internal sealed class ReorderDrag<T> where T : class
 
     private ReorderDrag(UIElement coordHost, List<Slot> slots, T source, int sourceIndex,
         DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal,
-        int columns, double gridMidX, double grabOffsetX, double grabOffsetY)
+        int columns, double gridMidX, double grabOffsetX, double grabOffsetY, int splitBoundary)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
         _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
+        _splitBoundary = splitBoundary;
         _targetIndex = sourceIndex;
         _targetColumn = -1; // 그리드: 첫 Update 가 항상 displacement 를 적용하도록 미지정으로 시작.
     }
@@ -62,7 +64,8 @@ internal sealed class ReorderDrag<T> where T : class
         bool horizontal = false,
         int columns = 1,
         double gridMidX = 0,
-        FrameworkElement? ghostSource = null)
+        FrameworkElement? ghostSource = null,
+        int splitBoundary = -1)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -103,7 +106,7 @@ internal sealed class ReorderDrag<T> where T : class
         if (ghost == null) return null;
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
-            columns, gridMidX, grabPt.X, grabPt.Y);
+            columns, gridMidX, grabPt.X, grabPt.Y, splitBoundary);
     }
 
     public void Update(MouseEventArgs e)
@@ -223,18 +226,27 @@ internal sealed class ReorderDrag<T> where T : class
         return _slots.Count;
     }
 
+    /// <summary>슬롯 이동 피치. 분할 경계(_splitBoundary)를 건너뛰는 이웃(다른 그룹=먼 간격, 예: 두 패널 사이)은
+    /// 피해 계산 — 그렇지 않으면 부풀린 피치로 이웃들이 과이동/겹침.</summary>
     private double RowPitch()
     {
-        if (_sourceIndex + 1 < _slots.Count)
+        int p = _sourceIndex;
+        bool SameGroup(int a, int b) => _splitBoundary < 0 || (a < _splitBoundary) == (b < _splitBoundary);
+        if (p + 1 < _slots.Count && SameGroup(p, p + 1))
         {
-            var shift = AxisPos(_slots[_sourceIndex + 1]) - AxisPos(_slots[_sourceIndex]);
+            var shift = AxisPos(_slots[p + 1]) - AxisPos(_slots[p]);
             if (shift >= 1) return shift;
         }
-        double sourceSize = AxisSize(_slots[_sourceIndex]);
-        if (_sourceIndex - 1 >= 0)
+        if (p - 1 >= 0 && SameGroup(p, p - 1))
         {
-            var aboveBottom = AxisPos(_slots[_sourceIndex - 1]) + AxisSize(_slots[_sourceIndex - 1]);
-            var gap = AxisPos(_slots[_sourceIndex]) - aboveBottom;
+            var shift = AxisPos(_slots[p]) - AxisPos(_slots[p - 1]);
+            if (shift >= 1) return shift;
+        }
+        double sourceSize = AxisSize(_slots[p]);
+        if (p - 1 >= 0 && SameGroup(p, p - 1))
+        {
+            var aboveBottom = AxisPos(_slots[p - 1]) + AxisSize(_slots[p - 1]);
+            var gap = AxisPos(_slots[p]) - aboveBottom;
             return sourceSize + Math.Max(0, gap);
         }
         return sourceSize;

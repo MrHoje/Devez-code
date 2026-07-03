@@ -66,9 +66,11 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>탭 헤더 우클릭 → "분할 보기" 클릭 → 셸이 분할 생성/반대쪽 패널로 이동 처리.
     /// 세션 탭·파일 탭 모두 지원.</summary>
     public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
-    /// <summary>탭 헤더를 드래그해 반대 패널 영역(screenPt)에 드롭 — 셸이 반대 패널로 이동 처리하고
-    /// true 를 돌려주면 이 패널의 내부 재정렬 커밋을 취소한다(분할 중일 때만).</summary>
-    public Func<WorkspacePaneView, TabItemBase, Point, bool>? TabCrossPaneDrop;
+    /// <summary>탭 드래그 시작 시 셸이 두 패널의 탭을 하나의 가로 리스트로 합쳐 돌려준다(분할 중일 때만, 아니면 null).
+    /// (coordHost, rows=물리적 좌→우 탭+루트, leftCount=물리 좌패널 탭 수). 통합 드래그로 반대 패널에도 밀림·중간삽입.</summary>
+    public Func<WorkspacePaneView, (UIElement Host, List<(TabItemBase Item, FrameworkElement Element)> Rows, int LeftCount)?>? BuildCrossPaneTabRows;
+    /// <summary>통합 탭 드래그 드롭 커밋 — 셸이 드롭 지점(screen)으로 대상 패널·삽입 위치를 정해 재정렬/이동 처리.</summary>
+    public Action<WorkspacePaneView, TabItemBase, Point>? CommitCrossPaneTabDrop;
     /// <summary>격리(분할 파트너) 중인 이 패널에서 탭(파일/세션)이 새로 열림 — 셸이 반대 패널에서 그 탭을 숨겨
     /// (HideTabInPane) 양쪽에 다 뜨는 것을 막는다. (파일탐색기·드롭·터미널 Ctrl+클릭·세션 추가 공통.)</summary>
     public event Action<WorkspacePaneView, TabItemBase>? IsolatedTabOpened;
@@ -1505,54 +1507,67 @@ public partial class WorkspacePaneView : UserControl
         var td = _tabDrag;
         _tabDrag = null;
         _pendingTab = null;
-        // 드롭 지점(screen). 캡처 중이라 커서가 반대 패널 위여도 좌표를 얻는다.
-        var screenPt = TabsHost.PointToScreen(Mouse.GetPosition(TabsHost));
         if (Mouse.Captured == TabsHost) TabsHost.ReleaseMouseCapture();
         RestoreTabFeet();
-        if (td != null)
-        {
-            // 커서가 반대 패널 위면 그쪽으로 이동(내부 재정렬 취소), 아니면 이 패널 내부 재정렬.
-            bool crossed = TabCrossPaneDrop?.Invoke(this, td.Source, screenPt) == true;
-            await td.FinishAsync(commit: !crossed);
-        }
+        if (td != null) await td.FinishAsync(commit: true);
     }
 
     private void TryStartTabDrag(TabItemBase s)
     {
         var coll = _activeProject?.Tabs;
         if (coll == null) return;
-        var rows = new List<(TabItemBase, FrameworkElement)>();
-        FrameworkElement? sourceBorder = null;
-        FrameworkElement? selectedRoot = null;
-        foreach (var t in coll)
-        {
-            if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
-                && FindTabBorder(fe) is FrameworkElement border
-                && VisualTreeHelper.GetParent(border) is FrameworkElement root)
-            {
-                rows.Add((t, root));
-                if (ReferenceEquals(t, s)) sourceBorder = border;
-                if (ReferenceEquals(t, _activeTab)) selectedRoot = root;
-            }
-        }
-        if (sourceBorder == null || rows.Count < 2) return;
 
-        _tabDrag = ReorderDrag<TabItemBase>.TryStart(TabsHost, rows, s, sourceBorder,
-            (tab, hostTarget, _) =>
-            {
-                var c = _activeProject?.Tabs;
-                if (c != null)
+        // 소스 탭의 보더(고스트) + 활성 탭 루트(선택 밑줄 seam)는 이 패널에서 찾는다(소스는 이 패널 소속).
+        FrameworkElement? sourceBorder = null, selectedRoot = null;
+        if (TabsHost.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement sfe)
+            sourceBorder = FindTabBorder(sfe);
+        if (_activeTab != null && TabsHost.ItemContainerGenerator.ContainerFromItem(_activeTab) is FrameworkElement afe
+            && FindTabBorder(afe) is FrameworkElement ab)
+            selectedRoot = VisualTreeHelper.GetParent(ab) as FrameworkElement;
+        if (sourceBorder == null) return;
+
+        // 분할 중이면 두 패널 탭을 합친 통합 드래그(반대 패널에도 밀림·중간삽입). 아니면 이 패널 내부만.
+        var cross = BuildCrossPaneTabRows?.Invoke(this);
+        if (cross is { } cx)
+        {
+            if (cx.Rows.Count < 2) return;
+            _tabDrag = ReorderDrag<TabItemBase>.TryStart(cx.Host, cx.Rows, s, sourceBorder,
+                (tab, _, _) =>
                 {
-                    int from = c.IndexOf(tab);
-                    if (from >= 0)
+                    var sp = TabsHost.PointToScreen(Mouse.GetPosition(TabsHost)); // 드롭 지점(screen)
+                    CommitCrossPaneTabDrop?.Invoke(this, tab, sp);
+                    return Task.CompletedTask;
+                },
+                exactFollow: true, horizontal: true, ghostSource: sourceBorder, splitBoundary: cx.LeftCount);
+        }
+        else
+        {
+            var rows = new List<(TabItemBase, FrameworkElement)>();
+            foreach (var t in coll)
+                if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
+                    && FindTabBorder(fe) is FrameworkElement border
+                    && VisualTreeHelper.GetParent(border) is FrameworkElement root)
+                    rows.Add((t, root));
+            if (rows.Count < 2) return;
+
+            _tabDrag = ReorderDrag<TabItemBase>.TryStart(TabsHost, rows, s, sourceBorder,
+                (tab, hostTarget, _) =>
+                {
+                    var c = _activeProject?.Tabs;
+                    if (c != null)
                     {
-                        int to = Math.Clamp(hostTarget, 0, c.Count - 1);
-                        if (to != from) { c.Move(from, to); WorkspaceStore.Save(Projects); }
+                        int from = c.IndexOf(tab);
+                        if (from >= 0)
+                        {
+                            int to = Math.Clamp(hostTarget, 0, c.Count - 1);
+                            if (to != from) { c.Move(from, to); WorkspaceStore.Save(Projects); }
+                        }
                     }
-                }
-                return Task.CompletedTask;
-            },
-            exactFollow: true, horizontal: true, ghostSource: sourceBorder);
+                    return Task.CompletedTask;
+                },
+                exactFollow: true, horizontal: true, ghostSource: sourceBorder);
+        }
+
         if (_tabDrag != null)
         {
             _tabDidDrag = true;
@@ -1563,6 +1578,53 @@ public partial class WorkspacePaneView : UserControl
         else
         {
             _pendingTab = null;
+        }
+    }
+
+    /// <summary>이 패널의 특정 탭 컨테이너의 루트 FrameworkElement(통합 드래그 슬롯용). 보이지 않으면 null.</summary>
+    public FrameworkElement? TabRootFor(TabItemBase t)
+        => TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
+           && FindTabBorder(fe) is FrameworkElement border
+           ? VisualTreeHelper.GetParent(border) as FrameworkElement : null;
+
+    /// <summary>커서 screen X 기준 이 패널 탭바의 삽입 인덱스(보이는 탭 중, exclude 제외, 중심이 커서 왼쪽인 개수).</summary>
+    public int InsertIndexAtScreenX(Point screen, TabItemBase? exclude)
+    {
+        int idx = 0;
+        foreach (var t in VisibleTabsInOrder())
+        {
+            if (ReferenceEquals(t, exclude)) continue;
+            if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
+                && FindTabBorder(fe) is FrameworkElement border)
+            {
+                var mid = border.PointToScreen(new Point(border.ActualWidth / 2, border.ActualHeight / 2));
+                if (mid.X < screen.X) idx++;
+                else break; // 좌→우 정렬 → 첫 중심이 커서 이상이면 여기 삽입.
+            }
+        }
+        return idx;
+    }
+
+    /// <summary>이 패널 활성 프로젝트의 탭을, 보이는 탭 기준 visibleIndex 위치로 재정렬(탭바/카드 순서 = Tabs 순서).</summary>
+    public void ReorderVisibleTab(TabItemBase tab, int visibleIndex)
+    {
+        var proj = _activeProject;
+        if (proj == null || proj.Tabs.IndexOf(tab) < 0) return;
+        var others = VisibleTabsInOrder().Where(t => !ReferenceEquals(t, tab)).ToList();
+        if (others.Count == 0) return;
+        visibleIndex = Math.Clamp(visibleIndex, 0, others.Count);
+        int from = proj.Tabs.IndexOf(tab);
+        if (visibleIndex >= others.Count)
+        {
+            int a = proj.Tabs.IndexOf(others[^1]);            // 마지막 뒤로
+            int to = from < a ? a : a + 1;
+            if (from != to) proj.Tabs.Move(from, to);
+        }
+        else
+        {
+            int a = proj.Tabs.IndexOf(others[visibleIndex]);  // 해당 탭 앞으로
+            int to = from < a ? a - 1 : a;
+            if (from != to) proj.Tabs.Move(from, to);
         }
     }
 

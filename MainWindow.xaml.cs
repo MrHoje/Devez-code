@@ -2063,7 +2063,8 @@ public partial class MainWindow : Window
         pane.ActiveChanged += OnPaneActiveChanged;
         pane.SplitToggleRequested += OnPaneSplitToggle;
         pane.SplitViewRequested += OnPaneSplitViewRequested;
-        pane.TabCrossPaneDrop = OnTabCrossPaneDrop;
+        pane.BuildCrossPaneTabRows = OnBuildCrossPaneTabRows;
+        pane.CommitCrossPaneTabDrop = OnCommitCrossPaneTabDrop;
         pane.RevealPrepared += OnPaneRevealPrepared;
         pane.IsolatedTabOpened += OnPaneIsolatedTabOpened;
         _panes.Add(pane);
@@ -2436,20 +2437,59 @@ public partial class MainWindow : Window
     /// 이동한 탭은 어느 경우든 그 프로젝트의 탭 목록 맨 끝으로 옮겨 반대쪽 탭바 가장 오른쪽에
     /// 보이게 한다(이미 보여지고 있던 케이스도 포함 — 안 그러면 "이동"했는데 위치가 그대로라
     /// 아무 변화도 없어 보인다).</summary>
-    /// <summary>탭 헤더를 드래그해 반대 패널 영역에 드롭 → 그 패널로 이동(우클릭 "이동"과 동일 연산).
-    /// 분할 중 + 커서가 반대 패널 사각형 안일 때만 이동하고 true 반환(내부 재정렬 취소). 그 외 false.</summary>
-    private bool OnTabCrossPaneDrop(WorkspacePaneView source, TabItemBase tab, Point screenPt)
+    /// <summary>통합 탭 드래그용 두 패널 합본 행 목록(물리적 좌→우). 분할 중이 아니면 null → 단일 패널 드래그.</summary>
+    private (UIElement Host, List<(TabItemBase Item, FrameworkElement Element)> Rows, int LeftCount)? OnBuildCrossPaneTabRows(WorkspacePaneView source)
     {
-        if (!_splitActive) return false;
-        var other = ReferenceEquals(source, LeftPane) ? RightPane : LeftPane;
-        if (ReferenceEquals(other, source)) return false;
+        if (!_splitActive) return null;
+        if (Content is not UIElement host) return null;
 
-        var local = other.PointFromScreen(screenPt);
-        if (local.X < 0 || local.Y < 0 || local.X > other.ActualWidth || local.Y > other.ActualHeight)
-            return false; // 반대 패널 밖 → 내부 재정렬로 처리
+        // 물리적 좌/우(화면 X 기준 — 패널 스왑도 자동 반영).
+        bool leftFirst = LeftPane.PointToScreen(new Point(0, 0)).X <= RightPane.PointToScreen(new Point(0, 0)).X;
+        var physLeft = leftFirst ? LeftPane : RightPane;
+        var physRight = leftFirst ? RightPane : LeftPane;
 
-        OnPaneSplitViewRequested(source, tab); // 반대 패널로 이동(격리 재배선 + refresh/persist)
-        return true;
+        var rows = new List<(TabItemBase, FrameworkElement)>();
+        int leftCount = 0;
+        foreach (var t in physLeft.VisibleTabsInOrder())
+            if (physLeft.TabRootFor(t) is FrameworkElement root) { rows.Add((t, root)); leftCount++; }
+        foreach (var t in physRight.VisibleTabsInOrder())
+            if (physRight.TabRootFor(t) is FrameworkElement root) rows.Add((t, root));
+
+        return (host, rows, leftCount);
+    }
+
+    /// <summary>통합 탭 드래그 드롭 — 드롭 지점(screen)으로 대상 패널·삽입 위치를 정한다.
+    /// 같은 패널이면 그 안에서 재정렬, 다른 패널이면 그 패널로 이동(우클릭 "이동"과 동일 연산) 후 삽입 위치로 정렬.</summary>
+    private void OnCommitCrossPaneTabDrop(WorkspacePaneView source, TabItemBase tab, Point screen)
+    {
+        var target = PaneAtScreen(screen) ?? source;
+        int idx = target.InsertIndexAtScreenX(screen, tab);
+
+        if (ReferenceEquals(target, source))
+        {
+            source.ReorderVisibleTab(tab, idx);
+        }
+        else
+        {
+            OnPaneSplitViewRequested(source, tab); // 반대 패널로 이동(격리 재배선 + refresh/persist)
+            target.ReorderVisibleTab(tab, idx);    // 그 패널의 삽입 위치로 정렬
+        }
+
+        RefreshCardGroups();
+        LeftPane.RefreshSelectedTabSeam(); RightPane.RefreshSelectedTabSeam();
+        WorkspaceStore.Save(_projects);
+    }
+
+    /// <summary>screen 좌표가 들어있는 패널(분할 중 좌/우). 없으면 null.</summary>
+    private WorkspacePaneView? PaneAtScreen(Point screen)
+    {
+        foreach (var p in new[] { LeftPane, RightPane })
+        {
+            if (!p.IsVisible) continue;
+            var loc = p.PointFromScreen(screen);
+            if (loc.X >= 0 && loc.Y >= 0 && loc.X <= p.ActualWidth && loc.Y <= p.ActualHeight) return p;
+        }
+        return null;
     }
 
     private void OnPaneSplitViewRequested(WorkspacePaneView pane, TabItemBase tab)
