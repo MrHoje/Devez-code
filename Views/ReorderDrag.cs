@@ -34,6 +34,7 @@ internal sealed class ReorderDrag<T> where T : class
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private bool _finished;
+    private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
 
     private bool IsGrid => _columns > 1;
     private double AxisPos(Slot s) => _horizontal ? s.Left : s.Top;
@@ -109,10 +110,24 @@ internal sealed class ReorderDrag<T> where T : class
             columns, gridMidX, grabPt.X, grabPt.Y, splitBoundary);
     }
 
+    /// <summary>변위(이웃 밀기) 프리뷰를 잠시 끈다 — 크로스 패널 드래그 중 커서가 반대 패널에 있을 때
+    /// 이 리스트는 그대로 두고 고스트만 따라가게 한다. 끄는 순간 모든 슬롯을 원위치로 되돌린다.</summary>
+    public void SuppressDisplacement(bool on)
+    {
+        if (_suppressed == on) return;
+        _suppressed = on;
+        if (on)
+        {
+            foreach (var s in _slots) ResetAxis(s.Element);
+            _targetIndex = _sourceIndex;
+        }
+    }
+
     public void Update(MouseEventArgs e)
     {
         if (_finished) return;
         _ghost.MoveToMouse();
+        if (_suppressed) return; // 반대 패널 위 → 이 리스트 프리뷰 억제(고스트만 이동).
         if (IsGrid)
         {
             // 2열: 드래그 카드 중심의 X로 목표 컬럼을, Y로 그 컬럼 안의 삽입 위치를 정한다.

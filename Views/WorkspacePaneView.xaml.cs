@@ -66,11 +66,11 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>탭 헤더 우클릭 → "분할 보기" 클릭 → 셸이 분할 생성/반대쪽 패널로 이동 처리.
     /// 세션 탭·파일 탭 모두 지원.</summary>
     public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
-    /// <summary>탭 드래그 시작 시 셸이 두 패널의 탭을 하나의 가로 리스트로 합쳐 돌려준다(분할 중일 때만, 아니면 null).
-    /// (coordHost, rows=물리적 좌→우 탭+루트, leftCount=물리 좌패널 탭 수). 통합 드래그로 반대 패널에도 밀림·중간삽입.</summary>
-    public Func<WorkspacePaneView, (UIElement Host, List<(TabItemBase Item, FrameworkElement Element)> Rows, int LeftCount)?>? BuildCrossPaneTabRows;
-    /// <summary>통합 탭 드래그 드롭 커밋 — 셸이 드롭 지점(screen)으로 대상 패널·삽입 위치를 정해 재정렬/이동 처리.</summary>
-    public Action<WorkspacePaneView, TabItemBase, Point>? CommitCrossPaneTabDrop;
+    /// <summary>탭 드래그 중 매 이동 — 셸이 커서(screen)가 반대 패널 위면 그 패널에 삽입 프리뷰(탭 밀기)를 그리고
+    /// true(크로스 중) 반환. 그러면 소스 패널은 자기 재정렬 프리뷰를 억제한다. ghostWidth=미는 폭.</summary>
+    public Func<WorkspacePaneView, Point, double, bool>? TabDragHoverMoved;
+    /// <summary>탭 드롭 — 커서가 반대 패널 위면 그 패널로 이동+삽입 위치 정렬하고 true(내부 재정렬 취소) 반환.</summary>
+    public Func<WorkspacePaneView, TabItemBase, Point, bool>? TryCommitCrossDrop;
     /// <summary>격리(분할 파트너) 중인 이 패널에서 탭(파일/세션)이 새로 열림 — 셸이 반대 패널에서 그 탭을 숨겨
     /// (HideTabInPane) 양쪽에 다 뜨는 것을 막는다. (파일탐색기·드롭·터미널 Ctrl+클릭·세션 추가 공통.)</summary>
     public event Action<WorkspacePaneView, TabItemBase>? IsolatedTabOpened;
@@ -1482,6 +1482,7 @@ public partial class WorkspacePaneView : UserControl
     private TabItemBase? _pendingTab;
     private ReorderDrag<TabItemBase>? _tabDrag;
     private bool _tabDidDrag;
+    private double _dragGhostWidth;
     private readonly List<FrameworkElement> _hiddenTabFeet = new();
     private bool _tabDragHidSeam;
 
@@ -1494,7 +1495,15 @@ public partial class WorkspacePaneView : UserControl
 
     private void TabsHost_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_tabDrag != null) { _tabDrag.Update(e); return; }
+        if (_tabDrag != null)
+        {
+            _tabDrag.Update(e); // 고스트 + 이 패널 내부 재정렬 프리뷰
+            // 커서가 반대 패널이면 그쪽에 삽입 프리뷰(밀기) → 이 패널 내부 프리뷰는 억제.
+            var screen = TabsHost.PointToScreen(e.GetPosition(TabsHost));
+            bool cross = TabDragHoverMoved?.Invoke(this, screen, _dragGhostWidth) == true;
+            _tabDrag.SuppressDisplacement(cross);
+            return;
+        }
         if (e.LeftButton != MouseButtonState.Pressed || _pendingTab == null) return;
         var diff = _tabPressOrigin - e.GetPosition(TabsHost);
         if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
@@ -1507,67 +1516,54 @@ public partial class WorkspacePaneView : UserControl
         var td = _tabDrag;
         _tabDrag = null;
         _pendingTab = null;
+        var screen = TabsHost.PointToScreen(Mouse.GetPosition(TabsHost));
         if (Mouse.Captured == TabsHost) TabsHost.ReleaseMouseCapture();
         RestoreTabFeet();
-        if (td != null) await td.FinishAsync(commit: true);
+        if (td != null)
+        {
+            // 커서가 반대 패널 위면 그쪽으로 이동(내부 재정렬 취소), 아니면 이 패널 내부 재정렬 커밋.
+            bool crossed = TryCommitCrossDrop?.Invoke(this, td.Source, screen) == true;
+            await td.FinishAsync(commit: !crossed);
+        }
     }
 
     private void TryStartTabDrag(TabItemBase s)
     {
         var coll = _activeProject?.Tabs;
         if (coll == null) return;
-
-        // 소스 탭의 보더(고스트) + 활성 탭 루트(선택 밑줄 seam)는 이 패널에서 찾는다(소스는 이 패널 소속).
-        FrameworkElement? sourceBorder = null, selectedRoot = null;
-        if (TabsHost.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement sfe)
-            sourceBorder = FindTabBorder(sfe);
-        if (_activeTab != null && TabsHost.ItemContainerGenerator.ContainerFromItem(_activeTab) is FrameworkElement afe
-            && FindTabBorder(afe) is FrameworkElement ab)
-            selectedRoot = VisualTreeHelper.GetParent(ab) as FrameworkElement;
-        if (sourceBorder == null) return;
-
-        // 분할 중이면 두 패널 탭을 합친 통합 드래그(반대 패널에도 밀림·중간삽입). 아니면 이 패널 내부만.
-        var cross = BuildCrossPaneTabRows?.Invoke(this);
-        if (cross is { } cx)
+        var rows = new List<(TabItemBase, FrameworkElement)>();
+        FrameworkElement? sourceBorder = null;
+        FrameworkElement? selectedRoot = null;
+        foreach (var t in coll)
         {
-            if (cx.Rows.Count < 2) return;
-            _tabDrag = ReorderDrag<TabItemBase>.TryStart(cx.Host, cx.Rows, s, sourceBorder,
-                (tab, _, _) =>
-                {
-                    var sp = TabsHost.PointToScreen(Mouse.GetPosition(TabsHost)); // 드롭 지점(screen)
-                    CommitCrossPaneTabDrop?.Invoke(this, tab, sp);
-                    return Task.CompletedTask;
-                },
-                exactFollow: true, horizontal: true, ghostSource: sourceBorder, splitBoundary: cx.LeftCount);
+            if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
+                && FindTabBorder(fe) is FrameworkElement border
+                && VisualTreeHelper.GetParent(border) is FrameworkElement root)
+            {
+                rows.Add((t, root));
+                if (ReferenceEquals(t, s)) sourceBorder = border;
+                if (ReferenceEquals(t, _activeTab)) selectedRoot = root;
+            }
         }
-        else
-        {
-            var rows = new List<(TabItemBase, FrameworkElement)>();
-            foreach (var t in coll)
-                if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
-                    && FindTabBorder(fe) is FrameworkElement border
-                    && VisualTreeHelper.GetParent(border) is FrameworkElement root)
-                    rows.Add((t, root));
-            if (rows.Count < 2) return;
+        if (sourceBorder == null || rows.Count < 2) return;
+        _dragGhostWidth = sourceBorder.ActualWidth;
 
-            _tabDrag = ReorderDrag<TabItemBase>.TryStart(TabsHost, rows, s, sourceBorder,
-                (tab, hostTarget, _) =>
+        _tabDrag = ReorderDrag<TabItemBase>.TryStart(TabsHost, rows, s, sourceBorder,
+            (tab, hostTarget, _) =>
+            {
+                var c = _activeProject?.Tabs;
+                if (c != null)
                 {
-                    var c = _activeProject?.Tabs;
-                    if (c != null)
+                    int from = c.IndexOf(tab);
+                    if (from >= 0)
                     {
-                        int from = c.IndexOf(tab);
-                        if (from >= 0)
-                        {
-                            int to = Math.Clamp(hostTarget, 0, c.Count - 1);
-                            if (to != from) { c.Move(from, to); WorkspaceStore.Save(Projects); }
-                        }
+                        int to = Math.Clamp(hostTarget, 0, c.Count - 1);
+                        if (to != from) { c.Move(from, to); WorkspaceStore.Save(Projects); }
                     }
-                    return Task.CompletedTask;
-                },
-                exactFollow: true, horizontal: true, ghostSource: sourceBorder);
-        }
-
+                }
+                return Task.CompletedTask;
+            },
+            exactFollow: true, horizontal: true, ghostSource: sourceBorder);
         if (_tabDrag != null)
         {
             _tabDidDrag = true;
@@ -1581,11 +1577,56 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
-    /// <summary>이 패널의 특정 탭 컨테이너의 루트 FrameworkElement(통합 드래그 슬롯용). 보이지 않으면 null.</summary>
-    public FrameworkElement? TabRootFor(TabItemBase t)
-        => TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
-           && FindTabBorder(fe) is FrameworkElement border
-           ? VisualTreeHelper.GetParent(border) as FrameworkElement : null;
+    // ── 반대 패널 삽입 프리뷰(크로스 탭 드래그 중, 이 패널에 그림) ─────────────────────
+    private readonly List<FrameworkElement> _previewShifted = new();
+
+    /// <summary>커서 screen 위치의 삽입 지점부터 오른쪽 탭들을 gap 만큼 밀어 삽입 자리를 연다(반대 패널이 호출받음).</summary>
+    public void ShowInsertPreview(Point screen, double gap)
+    {
+        int insert = InsertIndexAtScreenX(screen, null);
+        _previewShifted.Clear();
+        int i = 0;
+        foreach (var t in VisibleTabsInOrder())
+        {
+            if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
+                && FindTabBorder(fe) is FrameworkElement border
+                && VisualTreeHelper.GetParent(border) is FrameworkElement root)
+            {
+                AnimateTabX(root, i >= insert ? gap : 0);
+                _previewShifted.Add(root);
+            }
+            i++;
+        }
+    }
+
+    /// <summary>삽입 프리뷰 해제(모든 밀린 탭 원위치).</summary>
+    public void ClearInsertPreview()
+    {
+        foreach (var r in _previewShifted) AnimateTabX(r, 0);
+        _previewShifted.Clear();
+    }
+
+    private static void AnimateTabX(FrameworkElement el, double to)
+    {
+        TranslateTransform tt;
+        if (el.RenderTransform is TranslateTransform t) tt = t;
+        else if (el.RenderTransform is TransformGroup g && g.Children.OfType<TranslateTransform>().FirstOrDefault() is { } et) tt = et;
+        else
+        {
+            tt = new TranslateTransform();
+            if (el.RenderTransform != null && el.RenderTransform != Transform.Identity)
+            { var grp = new TransformGroup(); grp.Children.Add(el.RenderTransform); grp.Children.Add(tt); el.RenderTransform = grp; }
+            else el.RenderTransform = tt;
+        }
+        if (Math.Abs(tt.X - to) < 0.5) return;
+        var anim = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = to,
+            Duration = TimeSpan.FromMilliseconds(140),
+            EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+        };
+        tt.BeginAnimation(TranslateTransform.XProperty, anim, System.Windows.Media.Animation.HandoffBehavior.SnapshotAndReplace);
+    }
 
     /// <summary>커서 screen X 기준 이 패널 탭바의 삽입 인덱스(보이는 탭 중, exclude 제외, 중심이 커서 왼쪽인 개수).</summary>
     public int InsertIndexAtScreenX(Point screen, TabItemBase? exclude)
