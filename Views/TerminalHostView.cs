@@ -340,10 +340,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         // 지역 참조 사용 — 초기화 도중 Dispose 가 _webView 를 null 로 만들어도 NRE 없이 안전하게 진행.
         var webView = new WebView2();
-        // 콜드스타트 흰 배경 제거: WebView2 는 CoreWebView2 초기화·terminal.html 페인트 전까지 기본 흰색을
-        // 렌더한다(다크테마에서도). 컨트롤을 화면(Content)에 붙이기 '전에' 기본 배경을 터미널 배경(#0C0C0C)으로
-        // 맞춰, md 파일만 보던 우측 패널에서 첫 세션을 열 때(=여기서 lazy init) 흰 배경이 팍 튀지 않게 한다.
-        webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0xFF, 0x0C, 0x0C, 0x0C);
+        // 콜드스타트 흰 배경 제거 + clear 프레임 은닉: WebView2 는 CoreWebView2 초기화·terminal.html 페인트
+        // 전(및 HWND 리사이즈 시)까지 DefaultBackgroundColor 로 clear 한다. 하드코딩 대신 '현재 터미널 테마
+        // 배경색'으로 맞춰, unpark/리사이즈 clear 프레임이 실제 배경과 동일해 안 튀게 한다(라이트 테마 등에서도).
+        webView.DefaultBackgroundColor = TerminalBgColor();
         try
         {
             _webView = webView;
@@ -1004,9 +1004,28 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>현재 활성 스킴을 모든 xterm 인스턴스에 즉시 반영. 테마 변경 시 호출.</summary>
     private void PushCurrentTheme()
     {
+        // clear 색도 새 테마 배경으로 갱신 — 이후 리사이즈/unpark clear 프레임이 바뀐 배경과 일치.
+        if (_webView != null) { try { _webView.DefaultBackgroundColor = TerminalBgColor(); } catch { } }
         if (!_pageReady) return; // pageReady 시 OnPageReady 가 init 으로 보내줌
         var scheme = TerminalSessionManager.Instance.Config.Scheme;
         PostJson(new { type = "theme", theme = scheme, accent = CurrentAccentHex() });
+    }
+
+    /// <summary>현재 터미널 테마 배경색(#RRGGBB) → 불투명 Color. WebView2 DefaultBackgroundColor(렌더 전·
+    /// 리사이즈 clear 색)를 실제 배경과 맞춰 clear 프레임이 안 튀게 한다. 파싱 실패 시 #0C0C0C 폴백.</summary>
+    private static System.Drawing.Color TerminalBgColor()
+    {
+        try
+        {
+            var hex = TerminalSessionManager.Instance.Config.Scheme.Background;
+            if (!string.IsNullOrWhiteSpace(hex))
+            {
+                var c = System.Drawing.ColorTranslator.FromHtml(hex);
+                return System.Drawing.Color.FromArgb(0xFF, c.R, c.G, c.B);
+            }
+        }
+        catch { }
+        return System.Drawing.Color.FromArgb(0xFF, 0x0C, 0x0C, 0x0C);
     }
 
     /// <summary>현재 테마의 PrimaryColor 를 #RRGGBB 로. 로딩 스피너 색(devez 스타일)에 사용.</summary>
