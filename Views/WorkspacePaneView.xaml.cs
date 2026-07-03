@@ -310,6 +310,10 @@ public partial class WorkspacePaneView : UserControl
         if (changed) _tabsView?.Refresh();
     }
 
+    /// <summary>이 패널이 현재 실제로 표시하는 탭들(FilterTab 통과), 탭 순서대로. 사이드바 카드 라이브 그룹용.</summary>
+    public List<TabItemBase> VisibleTabsInOrder()
+        => _activeProject?.Tabs.Where(FilterTab).ToList() ?? new List<TabItemBase>();
+
     private void ClearIsolationIfMismatch(TabItemBase active)
     {
         if (_isolatedTabs == null || _isolatedTabs.Contains(active)) return;

@@ -2163,9 +2163,27 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>사이드바 카드의 좌/우 그룹을 '현재 실제 분할 상태'로 갱신. 같은 프로젝트를 좌/우 패널이 함께
+    /// 표시할 때만 그 프로젝트를 좌=좌패널 표시탭 / 우=우패널 표시탭으로 나눠 보이고, 나머지는 단일 목록.
+    /// (영속 플래그가 아니라 라이브 패널 상태 기준 — 클릭/드래그가 실제 패널과 정확히 일치.)</summary>
+    private void RefreshCardGroups()
+    {
+        ProjectItem? splitProj = null;
+        if (_splitActive && LeftPane.ActiveProject != null && ReferenceEquals(LeftPane.ActiveProject, RightPane.ActiveProject))
+            splitProj = LeftPane.ActiveProject;
+        foreach (var p in _projects.Concat(_archivedProjects))
+        {
+            if (ReferenceEquals(p, splitProj))
+                p.ApplyLiveGroups(LeftPane.VisibleTabsInOrder(), RightPane.VisibleTabsInOrder());
+            else
+                p.ClearLiveGroups();
+        }
+    }
+
     /// <summary>포커스 패널의 활성 프로젝트/세션을 셸(파일탐색기·사이드바·last-active)에 반영.</summary>
     private void SyncShellToFocusedPane()
     {
+        RefreshCardGroups();
         var proj = _focusedPane.ActiveProject;
         // 보관함 프로젝트도 패널에 띄울 수 있으므로 활성+보관 양쪽을 순회해야 강조가 정확히 옮겨간다.
         // (_projects 만 돌면 보관 프로젝트는 선택돼도 강조 안 되고, 선택 해제도 안 됨)
