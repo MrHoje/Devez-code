@@ -1140,6 +1140,10 @@
           }
         }
         ov.classList.toggle('on', !!msg.on);
+        // 커버가 DOM 에 반영·페인트된 뒤 C# 에 통지 → C# 은 이 ACK 후에야 터미널 HWND 를 unpark 한다.
+        // (unpark HWND 리사이즈 repaint 가 '이미 켜진 커버' 위에서 일어나게 해 콜드 세션 부팅 노이즈 프레임을
+        //  가린다. PostJson↔WPF 는 프레임 동기가 안 돼 이 왕복 ACK 로만 순서를 보장할 수 있음.) 2×rAF = 페인트 확정.
+        if (msg.on) requestAnimationFrame(function () { requestAnimationFrame(function () { post({ type: 'loadingShown' }); }); });
         break;
       }
       case 'focus': {

@@ -99,6 +99,8 @@ public partial class WorkspacePaneView : UserControl
         _terminal.FileOpenRequested += OnTerminalFileOpenRequested;
         // synced reveal 준비 완료 → 셸로 전달(셸이 좌우를 모아 동시에 fade)
         _terminal.RevealPrepared += () => RevealPrepared?.Invoke(this);
+        // 콜드 세션: web 로딩 커버가 켜진 것(ACK)을 확인한 뒤에만 터미널 HWND 를 unpark 한다.
+        _terminal.LoadingShown += OnLoadingShown;
         Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);
         // 로딩 중 레이아웃이 바뀌면(예: 시작 시 전체폭으로 세션 복원 → 곧바로 분할 적용) 웹 스피너의
         // px 앵커 좌표를 재전송해 카드가 항상 최종 중앙에 있게 한다.
@@ -791,12 +793,15 @@ public partial class WorkspacePaneView : UserControl
         // unpark '전에' 웹 로딩 커버를 먼저 켜 그 프레임을 없앤다(WPF 오버레이도 함께 켜 주차 구간부터
         // 단색 덮개가 끊기지 않게). 정확한 스피너 앵커는 UpdateEmptyState 로 최종 크기 확정 후 재전송한다.
         bool sessionReady = _terminal.IsReady(session.Id);
+        _gateUnpark = !sessionReady; // 콜드면 unpark 을 web 커버 ACK 까지 게이트, 준비됐으면 즉시 unpark
         if (!sessionReady)
         {
             TerminalLoadingOverlay.Visibility = Visibility.Visible;
             UpdateLayout();
             _terminal.SetLoading(true, TerminalLoadingOverlay.ActualWidth, TerminalLoadingOverlay.ActualHeight);
+            ArmUnparkFallback(); // ACK 누락 대비 — 그때도 unpark 은 보장
         }
+        else _unparkFallback?.Stop(); // 직전 콜드 게이트 취소(빠른 재전환)
         UpdateEmptyState();
         // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
         // 기대 크기를 캡처해야 웹 스피너 게이트(뷰포트=목표 일치 대기)의 목표가 처음부터 정확하다.
@@ -1777,6 +1782,38 @@ public partial class WorkspacePaneView : UserControl
     // 첫 표시는 '이미 어두운 HWND 의 리사이즈'가 되어 흰 프레임이 없다.
     private bool _termParked;
 
+    // 콜드 세션 unpark 게이트: web 로딩 커버(ACK=OnLoadingShown)가 켜진 뒤에만 터미널 HWND 를 unpark 해
+    // unpark repaint 가 커버 위에서 일어나게 한다(부팅 노이즈 프레임 은닉). ACK 누락 대비 폴백 타이머.
+    private bool _gateUnpark;
+    private System.Windows.Threading.DispatcherTimer? _unparkFallback;
+
+    private void ArmUnparkFallback()
+    {
+        _unparkFallback ??= new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(200),
+        };
+        _unparkFallback.Tick -= UnparkFallback_Tick;
+        _unparkFallback.Tick += UnparkFallback_Tick;
+        _unparkFallback.Stop();
+        _unparkFallback.Start();
+    }
+
+    private void UnparkFallback_Tick(object? sender, EventArgs e)
+    {
+        _unparkFallback?.Stop();
+        if (_gateUnpark) { _gateUnpark = false; if (_activeTab is SessionItem) UnparkTerminalHost(); }
+    }
+
+    /// <summary>web 로딩 커버가 페인트됨 — 게이트 중이면 이제 안전하게 unpark(커버 위에서 HWND repaint).</summary>
+    private void OnLoadingShown()
+    {
+        if (!_gateUnpark) return;
+        _gateUnpark = false;
+        _unparkFallback?.Stop();
+        if (_activeTab is SessionItem) UnparkTerminalHost();
+    }
+
     private void ParkTerminalHost()
     {
         if (_termParked) return;
@@ -1835,7 +1872,7 @@ public partial class WorkspacePaneView : UserControl
 
         if (_activeTab is SessionItem)
         {
-            UnparkTerminalHost();
+            if (!_gateUnpark) UnparkTerminalHost(); // 콜드 게이트 중이면 web 커버 ACK(OnLoadingShown) 후 unpark
             TerminalHostContainer.Visibility = Visibility.Visible;
             ParkFileEditorHost();
         }

@@ -41,6 +41,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string>? FileOpenRequested;
     /// <summary>synced reveal 준비 완료(폭 안정·fit·재동기 끝, 커튼은 아직 유지) — 셸이 양쪽 준비를 모아 동시에 걷는다.</summary>
     public event Action? RevealPrepared;
+    /// <summary>web 로딩 커버가 DOM 에 반영·페인트됨 — 셸이 이 ACK 후에 터미널 HWND 를 unpark 해 콜드 세션
+    /// unpark repaint 가 커버 위에서 일어나게 한다(PostJson↔WPF 프레임 비동기로 생기는 커버 레이스 제거).</summary>
+    public event Action? LoadingShown;
 
     private WebView2? _webView;
     private bool _initStarted;
@@ -422,6 +425,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     break;
                 case "revealPrepared":
                     RevealPrepared?.Invoke();
+                    break;
+                case "loadingShown":
+                    LoadingShown?.Invoke();
                     break;
                 case "pageReady":
                     OnPageReady();
