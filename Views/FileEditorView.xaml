@@ -17,9 +17,7 @@
             <Setter Property="Padding" Value="24,20"/>
             <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
-            <!-- 줄번호: 기본 진회색 대신 은은한 뮤티드 색으로 표시 -->
-            <Setter Property="ShowLineNumbers" Value="True"/>
-            <Setter Property="LineNumbersForeground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="ShowLineNumbers" Value="False"/>
         </Style>
     </UserControl.Resources>
 
