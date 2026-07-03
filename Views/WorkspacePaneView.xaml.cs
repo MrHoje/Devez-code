@@ -788,15 +788,10 @@ public partial class WorkspacePaneView : UserControl
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
         if (ReferenceEquals(_activeSession, session)) return;
-        // 직전 탭이 파일(md=WebView2)이면, 세션 전환 시 md 파킹↔터미널 unpark 이 각각 airspace HWND 라
-        // 그 사이 창 배경(검정)이 새어 깜빡인다. 준비된 세션이라 coverReflow(첫표시 전용)에 안 걸려도,
-        // 이 경우엔 아래 ACK-게이트 로딩 커버 경로를 타 md 를 띄워둔 채 대기하다 커버 위에서 스왑한다.
-        bool fromFile = _activeTab is FileTabItem;
-        // 이 패널에서 처음 표시되는 프리로드(ready) 세션: 기본폭→패널폭 리플로우로 스크롤이 튄다.
+        // 이 패널에서 처음 표시되는 프리로드(ready) 세션: 기본폭→패널폭 ConPTY 리플로우로 스크롤이 튄다.
         // 셸이 이미 커버 중이 아니면 여기서 잠깐 커버하고, 아래에서 최종 폭 재동기(kick) 후 걷는다.
-        // (파일→세션·세션→세션, 사이드바 클릭·탭 클릭 모든 경로가 이 메서드로 온다.) 단 파일에서 오는
-        // 전환은 아래 로딩 게이트가 커버하므로 여기선 제외(이중 커버 방지).
-        bool coverReflow = !_coverActive && !fromFile && _terminal.IsReady(session.Id) && !_shownSessions.Contains(session.Id);
+        // (파일→세션·세션→세션, 사이드바 클릭·탭 클릭 모든 경로가 이 메서드로 온다.)
+        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && !_shownSessions.Contains(session.Id);
         if (coverReflow) CoverForTransition();
         ClearIsolationIfMismatch(session);
         DiagLog.Write($"ActivateSession begin: '{session.Name}' room={session.Id} isReady={_terminal.IsReady(session.Id)} alive={session.IsAlive}");
@@ -830,7 +825,9 @@ public partial class WorkspacePaneView : UserControl
         bool sessionReady = _terminal.IsReady(session.Id);
         // 게이트 조건 = 콜드(미준비) 이거나, 파일에서 오는 전환(airspace 스왑 은닉). 둘 다 unpark 을 web 커버
         // ACK 까지 미루고 md 파킹도 그때 함께 한다(RevealTerminalAfterGate) → 검정 갭 제거.
-        bool needGate = !sessionReady || fromFile;
+        // off-screen 파킹이라 unpark 은 리사이즈가 아니라 위치 이동뿐 → grow 없음. 따라서 파일에서 오는
+        // 전환(fromFile)도 커버가 불필요(준비된 세션은 즉시 표시). 게이트는 콜드(부팅 스피너)만.
+        bool needGate = !sessionReady;
         _gateUnpark = needGate;
         if (needGate)
         {
@@ -1894,26 +1891,26 @@ public partial class WorkspacePaneView : UserControl
     private void RevealTerminalAfterGate()
     {
         if (_activeTab is not SessionItem s) return;
-        // 터미널 unpark(0→full) 후, md 파킹은 다음 프레임에 — 터미널이 full 로 리사이즈·페인트될 시간을 줘
-        // 우측 raw HWND strip 노출을 md 로 가린다(즉시 파킹하면 우측 끝 검정이 샌다).
+        // 터미널은 화면 밖에서 이미 전체폭으로 떠 있으므로 unpark 은 위치 이동만(리사이즈 없음) → grow strip 없음.
+        // md 를 파킹해 걷으면 이미 페인트된 터미널이 그대로 드러난다.
         UnparkTerminalHost();
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            if (_activeTab is not SessionItem cur) return;
-            ParkFileEditorHost();
-            if (_terminal.IsReady(cur.Id)) HideSessionLoading();
-        }), System.Windows.Threading.DispatcherPriority.Background);
+        ParkFileEditorHost();
+        // 준비된 세션이면 커버를 즉시(페이드) 걷는다 — 콜드면 TerminalReady 가 HideSessionLoadingIf 로 걷는다.
+        if (_terminal.IsReady(s.Id)) HideSessionLoading();
     }
 
     private void ParkTerminalHost()
     {
         if (_termParked) return;
         _termParked = true;
-        DiagLog.Write($"ParkTerminalHost pane={(IsRightPane ? "R" : "L")}");
-        TerminalHostContainer.Width = 0;
-        TerminalHostContainer.Height = 0;
-        TerminalHostContainer.HorizontalAlignment = HorizontalAlignment.Left;
-        TerminalHostContainer.VerticalAlignment = VerticalAlignment.Top;
+        // 0×0 대신 '전체폭 유지 + 화면 밖(Margin)'으로 주차. 이렇게 하면 unpark 이 리사이즈(0→full grow)가
+        // 아니라 '위치 이동'만이라, 터미널 WebView2 가 grow 중 노출하던 raw HWND(검정 우측 strip/분할우측 전체)가
+        // 사라진다. 컨테이너 Grid 는 ClipToBounds + 창 경계가 화면 밖 HWND 를 잘라 md/빈화면이 그대로 보인다.
+        TerminalHostContainer.Width = double.NaN;
+        TerminalHostContainer.Height = double.NaN;
+        TerminalHostContainer.HorizontalAlignment = HorizontalAlignment.Stretch;
+        TerminalHostContainer.VerticalAlignment = VerticalAlignment.Stretch;
+        TerminalHostContainer.Margin = new Thickness(-100000, 0, 100000, 0);
         TerminalHostContainer.Visibility = Visibility.Visible;
     }
 
@@ -1921,11 +1918,12 @@ public partial class WorkspacePaneView : UserControl
     {
         if (!_termParked) return;
         _termParked = false;
-        DiagLog.Write($"UnparkTerminalHost pane={(IsRightPane ? "R" : "L")} pageReady={_terminal.IsPageReady}");
+        // 화면 안으로 위치만 되돌린다(폭 동일 → 리사이즈 없음 → grow raw strip 없음).
         TerminalHostContainer.Width = double.NaN;
         TerminalHostContainer.Height = double.NaN;
         TerminalHostContainer.HorizontalAlignment = HorizontalAlignment.Stretch;
         TerminalHostContainer.VerticalAlignment = VerticalAlignment.Stretch;
+        TerminalHostContainer.Margin = new Thickness(0);
     }
 
     // 파일 에디터(md=WebView2) 컨테이너도 동일하게 0×0 주차 — Collapsed 로 감추면 HWND 생성/재표시가
