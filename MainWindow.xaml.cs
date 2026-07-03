@@ -2399,12 +2399,13 @@ public partial class MainWindow : Window
                 // (격리 중이면 화이트리스트에 추가, 전체 모드면 블랙리스트 해제 — 활성 탭 변경 없음.)
                 // OpenSession/OpenFileTab 을 부르지 않으므로 대상 격리도 안 풀린다 → 스냅샷 복원 불필요.
                 target.UnhideTabInPane(tab);
-                // 단, 도착 패널에 열린 세션이 없고(빈 쪽) 이동된 게 세션이면 = 그 패널의 첫 세션이므로 바로
-                // 활성화해 연다(안 그러면 탭만 생기고 빈 화면). UnhideTabInPane 으로 이미 화이트리스트에 들어가
-                // 격리도 안 풀린다. 이 경우엔 방금 연 세션을 볼 수 있게 포커스를 대상으로 옮긴다.
-                if (tab is SessionItem movedFirst && target.ActiveSession == null)
+                // 단, 도착 패널이 비어 있으면(열린 탭 없음) 이동된 게 그 패널의 첫(유일) 탭이므로 바로 활성화해
+                // 연다 — 세션이든 파일(md 등)이든. 안 그러면 탭만 생기고 빈 화면. UnhideTabInPane 으로 이미
+                // 화이트리스트에 들어가 격리도 안 풀린다. 이 경우엔 방금 연 탭을 볼 수 있게 포커스를 대상으로 옮긴다.
+                if (target.ActiveTab == null)
                 {
-                    target.OpenSession(movedFirst);
+                    if (tab is SessionItem movedFirstS) target.OpenSession(movedFirstS);
+                    else if (tab is FileTabItem movedFirstF) target.OpenFileTab(movedFirstF);
                     _focusedPane = target;
                 }
                 // 그 외엔 포커스를 원본에 그대로 둔다(대상 활성 탭을 안 바꾸므로).
