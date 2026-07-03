@@ -2099,7 +2099,19 @@ public partial class MainWindow : Window
             }
         }
 
-        if (ReferenceEquals(pane, _focusedPane)) SyncShellToFocusedPane();
+        // 분할 중 포커스 패널이 마지막 탭을 닫아 비면(활성 탭 없음) 내용이 남은 반대 패널로 포커스를
+        // 넘긴다 — 우측에서 유일한 파일/세션을 닫았을 때 좌측 세션이 자동 선택되고 셸(사이드바·헤더
+        // 타이틀)이 갱신되게 한다. 안 그러면 포커스가 빈 패널에 머물러 좌측 세션이 선택되지 않고
+        // 직전 파일 타이틀이 그대로 남는다.
+        bool refocused = false;
+        if (_splitActive && ReferenceEquals(pane, _focusedPane) && pane.ActiveTab == null)
+        {
+            var other = _panes.FirstOrDefault(p => !ReferenceEquals(p, pane) && p.ActiveTab != null);
+            if (other != null) { _focusedPane = other; refocused = true; }
+        }
+
+        if (refocused) { SyncShellToFocusedPane(); UpdatePaneFocusVisual(); }
+        else if (ReferenceEquals(pane, _focusedPane)) SyncShellToFocusedPane();
         // 패널 B 의 활성이 바뀌면 분할 복원용 상태를 갱신(패널 A 는 SyncShell 의 last-active 가 담당).
         if (ReferenceEquals(pane, RightPane)) PersistSplitState();
         UpdatePaneRoles();
