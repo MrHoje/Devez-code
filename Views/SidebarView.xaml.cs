@@ -354,11 +354,23 @@ public partial class SidebarView : UserControl
         else if (project.RightItems.Contains(tab)) { header = "왼쪽으로 이동"; iconKey = "IconChevronLeft"; }
         else { header = "오른쪽으로 이동"; iconKey = "IconChevronRight"; }
 
-        // 맨 위에 삽입(분할 보기/이동 → 세퍼레이터 → 기존 닫기/삭제 항목).
         var item = new MenuItem { Header = header, Tag = "splitmove", Icon = BuildCardMenuIcon(iconKey) };
         item.Click += (_, _) => CardSplitMoveRequested?.Invoke(tab);
-        cm.Items.Insert(0, item);
-        cm.Items.Insert(1, new Separator { Tag = "splitmove" });
+
+        // "이름 변경" 바로 아래에 넣는다(그 뒤 기존 세퍼레이터가 닫기/삭제와 구분). 이름변경이 없으면(문서 메뉴)
+        // 맨 위 + 세퍼레이터로.
+        int renameIdx = -1;
+        for (int i = 0; i < cm.Items.Count; i++)
+            if (cm.Items[i] is MenuItem mi && (mi.Header as string) == "이름 변경") { renameIdx = i; break; }
+        if (renameIdx >= 0)
+        {
+            cm.Items.Insert(renameIdx + 1, item);
+        }
+        else
+        {
+            cm.Items.Insert(0, item);
+            cm.Items.Insert(1, new Separator { Tag = "splitmove" });
+        }
     }
 
     private System.Windows.Shapes.Path BuildCardMenuIcon(string iconKey)
