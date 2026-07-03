@@ -946,50 +946,67 @@ public partial class MainWindow : Window
     private static string BuildRlTooltip(Models.RateLimitSnapshot snap)
     {
         var planLabel = UsageApiService.FormatPlanLabel(UsageApiService.ReadSubscriptionType());
+        var showEst = SettingsService.LoadShowEstimate();
         var sb = new System.Text.StringBuilder();
        sb.Append(planLabel);
         if (snap.FiveHourPercent is double f)
        {
             sb.Append($"\n5시간 한도 {f:F0}%  ·  초기화까지 {FormatRemaining(snap.FiveHourResetsAt)}");
-            var est5h = EstimateLimitReached(f, snap.FiveHourResetsAt, TimeSpan.FromHours(5));
-            var fmt5h = FormatEstimate(est5h);
-            if (fmt5h != null) sb.Append($"  ·  예상 소진 {fmt5h}");
+            if (showEst)
+            {
+                var est5h = EstimateLimitReached(f, snap.FiveHourResetsAt, TimeSpan.FromHours(5));
+                var fmt5h = FormatEstimate(est5h);
+                if (fmt5h != null) sb.Append($"  ·  예상 소진 {fmt5h}");
+            }
        }
         if (snap.SevenDayPercent is double w)
        {
             sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(snap.SevenDayResetsAt)}");
-            var est7d = EstimateLimitReached(w, snap.SevenDayResetsAt, TimeSpan.FromDays(7));
-            var fmt7d = FormatEstimate(est7d, useDate: true);
-            if (fmt7d != null) sb.Append($"  ·  예상 소진 {fmt7d}");
+            if (showEst)
+            {
+                var est7d = EstimateLimitReached(w, snap.SevenDayResetsAt, TimeSpan.FromDays(7));
+                var fmt7d = FormatEstimate(est7d, useDate: true);
+                if (fmt7d != null) sb.Append($"  ·  예상 소진 {fmt7d}");
+            }
        }
         return sb.ToString();
        }
 
     private static string BuildProviderTooltip(Models.ProviderUsage u, string name)
     {
+        var showEst = SettingsService.LoadShowEstimate();
         var sb = new System.Text.StringBuilder();
         sb.Append(name);
         if (u.PlanLabel != null) sb.Append("  ·  ").Append(u.PlanLabel);
         if (u.Primary?.UsedPercent is double p)
         {
             sb.Append($"\n5시간 한도 {p:F0}%  ·  초기화까지 {FormatRemaining(u.Primary.ResetsAt)}");
-            var estP = EstimateLimitReached(p, u.Primary.ResetsAt, TimeSpan.FromHours(5));
-            var fmtP = FormatEstimate(estP);
-            if (fmtP != null) sb.Append($"  ·  예상 소진 {fmtP}");
+            if (showEst)
+            {
+                var estP = EstimateLimitReached(p, u.Primary.ResetsAt, TimeSpan.FromHours(5));
+                var fmtP = FormatEstimate(estP);
+                if (fmtP != null) sb.Append($"  ·  예상 소진 {fmtP}");
+            }
         }
         if (u.Weekly?.UsedPercent is double w)
         {
             sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(u.Weekly.ResetsAt)}");
-            var estW = EstimateLimitReached(w, u.Weekly.ResetsAt, TimeSpan.FromDays(7));
-            var fmtW = FormatEstimate(estW, useDate: true);
-            if (fmtW != null) sb.Append($"  ·  예상 소진 {fmtW}");
+            if (showEst)
+            {
+                var estW = EstimateLimitReached(w, u.Weekly.ResetsAt, TimeSpan.FromDays(7));
+                var fmtW = FormatEstimate(estW, useDate: true);
+                if (fmtW != null) sb.Append($"  ·  예상 소진 {fmtW}");
+            }
         }
         if (u.Monthly?.UsedPercent is double m)
         {
             sb.Append($"\n월간 한도 {m:F0}%  ·  초기화 {FormatResetDate(u.Monthly.ResetsAt)}");
-            var estM = EstimateLimitReached(m, u.Monthly.ResetsAt, TimeSpan.FromDays(30));
-            var fmtM = FormatEstimate(estM, useDate: true);
-            if (fmtM != null) sb.Append($"  ·  예상 소진 {fmtM}");
+            if (showEst)
+            {
+                var estM = EstimateLimitReached(m, u.Monthly.ResetsAt, TimeSpan.FromDays(30));
+                var fmtM = FormatEstimate(estM, useDate: true);
+                if (fmtM != null) sb.Append($"  ·  예상 소진 {fmtM}");
+            }
         }
         if (u.Error != null) sb.Append('\n').Append(u.Error);
 
