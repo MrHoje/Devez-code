@@ -1628,7 +1628,8 @@ public partial class WorkspacePaneView : UserControl
         tt.BeginAnimation(TranslateTransform.XProperty, anim, System.Windows.Media.Animation.HandoffBehavior.SnapshotAndReplace);
     }
 
-    /// <summary>커서 screen X 기준 이 패널 탭바의 삽입 인덱스(보이는 탭 중, exclude 제외, 중심이 커서 왼쪽인 개수).</summary>
+    /// <summary>커서 screen X 기준 이 패널 탭바의 삽입 인덱스(보이는 탭 중, exclude 제외, 중심이 커서 왼쪽인 개수).
+    /// 삽입 프리뷰로 밀린(translate) 만큼은 빼서 '원래 레이아웃 중심'으로 판정(밀림 때문에 인덱스가 튀지 않게).</summary>
     public int InsertIndexAtScreenX(Point screen, TabItemBase? exclude)
     {
         int idx = 0;
@@ -1636,15 +1637,24 @@ public partial class WorkspacePaneView : UserControl
         {
             if (ReferenceEquals(t, exclude)) continue;
             if (TabsHost.ItemContainerGenerator.ContainerFromItem(t) is FrameworkElement fe
-                && FindTabBorder(fe) is FrameworkElement border)
+                && FindTabBorder(fe) is FrameworkElement border
+                && VisualTreeHelper.GetParent(border) is FrameworkElement root)
             {
                 var mid = border.PointToScreen(new Point(border.ActualWidth / 2, border.ActualHeight / 2));
-                if (mid.X < screen.X) idx++;
+                if (mid.X - CurrentTranslateX(root) < screen.X) idx++;
                 else break; // 좌→우 정렬 → 첫 중심이 커서 이상이면 여기 삽입.
             }
         }
         return idx;
     }
+
+    /// <summary>요소에 걸린 TranslateTransform 의 X(프리뷰 밀림량). 없으면 0.</summary>
+    private static double CurrentTranslateX(FrameworkElement el) => el.RenderTransform switch
+    {
+        TranslateTransform t => t.X,
+        TransformGroup g when g.Children.OfType<TranslateTransform>().FirstOrDefault() is { } et => et.X,
+        _ => 0,
+    };
 
     /// <summary>이 패널 활성 프로젝트의 탭을, 보이는 탭 기준 visibleIndex 위치로 재정렬(탭바/카드 순서 = Tabs 순서).</summary>
     public void ReorderVisibleTab(TabItemBase tab, int visibleIndex)

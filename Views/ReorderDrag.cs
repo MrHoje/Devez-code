@@ -110,17 +110,15 @@ internal sealed class ReorderDrag<T> where T : class
             columns, gridMidX, grabPt.X, grabPt.Y, splitBoundary);
     }
 
-    /// <summary>변위(이웃 밀기) 프리뷰를 잠시 끈다 — 크로스 패널 드래그 중 커서가 반대 패널에 있을 때
-    /// 이 리스트는 그대로 두고 고스트만 따라가게 한다. 끄는 순간 모든 슬롯을 원위치로 되돌린다.</summary>
+    /// <summary>크로스 패널 드래그 중 커서가 반대 패널에 있을 때 호출 — 소스가 이 리스트에서 '나간' 것처럼
+    /// 뒤 항목을 앞으로 당겨 빈자리를 메운다(압축). 고스트만 커서를 따라가고 이 리스트는 이 상태로 고정.
+    /// off 로 돌아오면 원복하고 이후 Update 가 정상 재정렬 프리뷰를 재개한다.</summary>
     public void SuppressDisplacement(bool on)
     {
         if (_suppressed == on) return;
         _suppressed = on;
-        if (on)
-        {
-            foreach (var s in _slots) ResetAxis(s.Element);
-            _targetIndex = _sourceIndex;
-        }
+        _targetIndex = on ? _slots.Count - 1 : _sourceIndex; // 압축=소스를 끝으로 보낸 변위(뒤 항목 앞당김)
+        ApplyDisplacement();
     }
 
     public void Update(MouseEventArgs e)
