@@ -93,7 +93,8 @@
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
             <Border x:Name="SessionRow" Style="{StaticResource SessionCard}"
                     MouseLeftButtonUp="Session_Click"
-                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown">
+                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
+                    ContextMenuOpening="CardRow_ContextMenuOpening">
                 <Border.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="이름 변경" Tag="{Binding}" Click="SessionRename_Click">
@@ -255,6 +256,7 @@
             <Border x:Name="DocRow" Style="{StaticResource SessionCard}"
                     MouseLeftButtonUp="OpenDoc_Click"
                     PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
+                    ContextMenuOpening="CardRow_ContextMenuOpening"
                     Cursor="Arrow"
                     ToolTip="{Binding FilePath}">
                 <Border.ContextMenu>
