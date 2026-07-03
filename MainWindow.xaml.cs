@@ -3640,7 +3640,12 @@ public partial class MainWindow : Window
         if (_mainHwnd == IntPtr.Zero) return;
         if (!TryGetMonitorDip(out var monitor, out _)) return;
         var target = OverCover(monitor); // 가장자리 틈 방지 ±1px
-        _preFsBounds = RestoreBounds;   // 진입 전 일반 창 bounds
+        // 진입 전 일반 창 bounds(해제 시 복원용). 수동 전체화면은 WindowState=Normal 을 유지하므로
+        // 최대화 이력이 없으면 RestoreBounds 가 Empty → exit 가 전체화면 크기로 폴백되던 버그.
+        // Maximized 일 때만 RestoreBounds(그때만 일반 크기를 담음), 그 외엔 현재 실제 창 크기를 직접 캡처.
+        _preFsBounds = (WindowState == WindowState.Maximized) ? RestoreBounds : new Rect(Left, Top, ActualWidth, ActualHeight);
+        if (_preFsBounds.IsEmpty || _preFsBounds.Width <= 0 || _preFsBounds.Height <= 0)
+            _preFsBounds = new Rect(Left, Top, Math.Max(ActualWidth, MinWidth), Math.Max(ActualHeight, MinHeight));
         _inFullScreen = true;
         // 작업표시줄은 WS_EX_TOPMOST 라 일반 창은 못 덮음(보조 모니터는 셸 전체화면 감지도 안 먹음).
         // WPF Topmost 속성으로 올려 z-order 로 확실히 덮는다.
