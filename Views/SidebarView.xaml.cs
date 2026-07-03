@@ -364,7 +364,8 @@ public partial class SidebarView : UserControl
             if (cm.Items[i] is MenuItem mi && (mi.Header as string) == "이름 변경") { renameIdx = i; break; }
         if (renameIdx >= 0)
         {
-            cm.Items.Insert(renameIdx + 1, item);
+            cm.Items.Insert(renameIdx + 1, new Separator { Tag = "splitmove" });
+            cm.Items.Insert(renameIdx + 2, item);
         }
         else
         {
