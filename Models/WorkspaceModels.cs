@@ -124,6 +124,10 @@ public sealed class FileTabItem : TabItemBase
     /// <summary>편집 대상 절대 경로. 비교는 OrdinalIgnoreCase.</summary>
     public string FilePath { get; init; } = "";
 
+    /// <summary>이 파일 탭이 현재 어느 패널에서 활성(보고 있는)인지 — 사이드바 카드 하이라이트용(세션 IsActive 대응).</summary>
+    private bool _isActive;
+    public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
+
     /// <summary>탭마다 1개의 파일 편집기 인스턴스. 콘텐츠 호스트에 그대로 붙여 렌더한다.</summary>
     public IFileTabEditor Editor { get; init; } = new FileEditorView();
 

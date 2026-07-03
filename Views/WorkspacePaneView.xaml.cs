@@ -797,6 +797,7 @@ public partial class WorkspacePaneView : UserControl
         if (!parent.IsExpanded) parent.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
 
+        if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false; // 세션으로 전환 → 이전 활성 문서 해제
         _activeTab = session; // SelectedTab DP 갱신 → 이 패널 탭바만 이 탭을 선택 강조(패널별 독립)
         _activeSession = session;
         session.IsActive = true;
@@ -931,7 +932,9 @@ public partial class WorkspacePaneView : UserControl
         if (parent == null) return;
         ClearIsolationIfMismatch(tab);
 
+        if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false; // 이전 활성 문서 하이라이트 해제
         _activeTab = tab; // SelectedTab DP 갱신 → 이 패널 탭바만 이 탭을 선택 강조(패널별 독립)
+        tab.IsActive = true; // 사이드바 카드 문서 하이라이트(세션 IsActive 대응)
         if (_activeSession != null) _activeSession.IsActive = false;
         _activeSession = null;
         RecordActiveTab(parent, "F:" + tab.FilePath);
@@ -1114,6 +1117,7 @@ public partial class WorkspacePaneView : UserControl
     private void ClearActiveSession()
     {
         if (_activeSession != null) _activeSession.IsActive = false;
+        if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false;
         _activeSession = null;
         _activeTab = null; // SelectedTab DP=null → 이 패널 탭바 선택 강조 해제
         if (FileEditorHostContainer != null) FileEditorHostContainer.Content = null;

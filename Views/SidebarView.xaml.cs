@@ -610,6 +610,7 @@ public partial class SidebarView : UserControl
                 rows.Add((gs, fe));
         var groupSessions = rows.Select(r => r.Item).ToList();
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, s));
+        Services.DiagLog.Write($"SessionDrag s={s.Name} groupFound={group != null} groupItems={group.Items.Count} rowsSessions={rows.Count} srcFound={src.Element != null}");
         if (src.Element == null) return;
 
         _sessionDrag = ReorderDrag<SessionItem>.TryStart(this, rows, s, src.Element,

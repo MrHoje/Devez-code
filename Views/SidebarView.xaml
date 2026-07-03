@@ -269,6 +269,12 @@
                                Foreground="{DynamicResource TextBrush}"/>
                 </Grid>
             </Border>
+            <DataTemplate.Triggers>
+                <!-- 활성(보고 있는) 문서: 세션과 동일하게 배경 하이라이트 -->
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter TargetName="DocRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
 
         <!-- 세션/문서 행을 타입별 템플릿으로 렌더(좌/우 그룹 ItemsControl 공유) -->
