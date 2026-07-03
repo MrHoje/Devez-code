@@ -62,8 +62,8 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
             const long maxBytes = 5 * 1024 * 1024;
             if (fi.Length > maxBytes)
             {
-                MessageBox.Show($"파일이 너무 큽니다 (5MB 초과).\n{path}", "DevezCode",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                ConfirmDialog.Alert("파일 열기", $"파일이 너무 큽니다 (5MB 초과).\n{path}",
+                    iconKey: "IconTriangleAlert");
                 return false;
             }
 
@@ -79,8 +79,8 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"파일을 열 수 없습니다.\n{ex.Message}", "DevezCode",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ConfirmDialog.Alert("파일 열기", $"파일을 열 수 없습니다.\n{ex.Message}",
+                iconKey: "IconTriangleAlert");
             return false;
         }
     }
@@ -135,8 +135,8 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"저장에 실패했습니다.\n{ex.Message}", "DevezCode",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            ConfirmDialog.Alert("저장 실패", $"저장에 실패했습니다.\n{ex.Message}",
+                iconKey: "IconTriangleAlert");
             return false;
         }
     }
