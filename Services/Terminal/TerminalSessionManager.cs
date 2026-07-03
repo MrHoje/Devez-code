@@ -1012,14 +1012,16 @@ public sealed class TerminalSessionManager
                     Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force  # 새 턴 → 대기 해제
                     $prompt = ''
                     try { $prompt = '' + $j.prompt } catch { }
-                    # <task-notification> 재주입도 메인 턴이므로 running 유지. 실제 사용자 프롬프트만 세션추적/헤더 기록.
+                    # <task-notification> 재주입은 세션추적/헤더 제외. 그 외엔 프롬프트가 비어도(이미지·슬래시 커맨드)
+                    # 세션추적은 확정한다 — 새 세션 첫 턴이 여기서만 앵커되므로 프롬프트 유무로 유실되면 안 됨.
+                    if ($sid -and -not $prompt.StartsWith('<task-notification>')) {
+                      # 사용자가 실제로 메시지를 보낸 세션 = 이 방의 진짜 현재 대화. 추적파일에 확정 기록(resume 용).
+                      $tdir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
+                      New-Item -ItemType Directory -Force -Path $tdir | Out-Null
+                      Set-Content -LiteralPath (Join-Path $tdir ($room + '.txt')) -Value $sid -Encoding Ascii -Force
+                    }
+                    # 헤더 lastmsg 는 실제 텍스트 프롬프트가 있을 때만 기록.
                     if ($prompt -and -not $prompt.StartsWith('<task-notification>')) {
-                      if ($sid) {
-                        # 사용자가 실제로 메시지를 보낸 세션 = 이 방의 진짜 현재 대화. 추적파일에 확정 기록(resume 용).
-                        $tdir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
-                        New-Item -ItemType Directory -Force -Path $tdir | Out-Null
-                        Set-Content -LiteralPath (Join-Path $tdir ($room + '.txt')) -Value $sid -Encoding Ascii -Force
-                      }
                       $prompt = ($prompt -replace '\s+', ' ').Trim()
                       if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
                       $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
@@ -1032,6 +1034,13 @@ public sealed class TerminalSessionManager
                   # status = idle (Stop/SessionEnd) — 메인 턴 종료. 선택지 대기 해제 + main 플래그 clear.
                   Set-Content -LiteralPath $waitFile -Value 'idle' -Encoding Ascii -Force
                   Remove-Item -LiteralPath $mainFile -Force -ErrorAction SilentlyContinue
+                  # 응답 완료 시에도 현재 세션을 추적에 확정 기록 — running 훅을 놓쳤거나(경합) 첫 프롬프트가
+                  # 비었어도(이미지·슬래시) 완결된 대화가 재실행 때 새 세션으로 유실되는 것을 막는 최종 앵커.
+                  if ($sid) {
+                    $tdir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
+                    New-Item -ItemType Directory -Force -Path $tdir | Out-Null
+                    Set-Content -LiteralPath (Join-Path $tdir ($room + '.txt')) -Value $sid -Encoding Ascii -Force
+                  }
                   $evt = ''; try { $evt = '' + $j.hook_event_name } catch { }
                   if ($evt -eq 'SessionEnd') {
                     # 세션 종료 → 이 방 서브에이전트도 모두 소멸.
