@@ -476,22 +476,13 @@
                     <Border Visibility="Collapsed"
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
                         <StackPanel Margin="8,2,8,8">
-                            <!-- 분할 시 '왼쪽' 라벨(비분할이면 숨김) -->
-                            <TextBlock Text="왼쪽" Margin="2,0,0,3"
-                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextMutedBrush}"
-                                       Visibility="{Binding IsSplitView, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                             <!-- 상단 그룹: 비분할=전체 탭, 분할=좌측 패널 탭(세션+열린 문서) -->
                             <ItemsControl ItemsSource="{Binding LeftItems}" Tag="{Binding ShowHiddenSessions}"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
-                            <!-- 분할 시 우측 그룹: 세퍼레이터 + '오른쪽' 라벨 + 우측 패널 탭 -->
+                            <!-- 분할 시 우측 그룹: 세퍼레이터 + 우측 패널 탭 (라벨 없음) -->
                             <Border Height="1" Margin="2,6,2,6"
                                     Background="{DynamicResource LineBrush}"
                                     Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                            <TextBlock Text="오른쪽" Margin="2,0,0,3"
-                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextMutedBrush}"
-                                       Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                             <ItemsControl ItemsSource="{Binding RightItems}" Tag="{Binding ShowHiddenSessions}"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
                             <!-- 바로가기: 세션과 세퍼레이터로 구분, 등록된 게 있을 때만 표시 -->
