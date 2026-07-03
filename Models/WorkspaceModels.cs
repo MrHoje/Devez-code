@@ -233,6 +233,10 @@ public sealed class ProjectItem : NotifyBase
     /// 한 번 소비해 실제 FileTabItem 으로 만든다.</summary>
     public List<string> PendingOpenFiles { get; set; } = new();
 
+    /// <summary>재시작 복원용 — 저장 시점의 전체 탭 순서(세션+문서 섞인 순서, "S:id"/"F:path"). 시작 시
+    /// 세션+파일 탭이 모두 복원된 뒤 이 순서로 Tabs 를 1회 재배열한다(문서가 끝으로 몰려 끼임 순서를 잃는 것 방지).</summary>
+    public List<string> PendingTabOrder { get; set; } = new();
+
     /// <summary>이 프로젝트에서 마지막으로 활성화했던 탭 참조. 형식: "S:&lt;세션ID&gt;" 또는 "F:&lt;파일경로&gt;".
     /// 프로젝트를 다시 선택할 때 이 탭을 복원한다(없거나 못 찾으면 기본 우선순위로 폴백). workspace.json 에 영속.</summary>
     public string? LastActiveTabRef { get; set; }

@@ -28,6 +28,8 @@ public static class WorkspaceStore
         public bool ShowHiddenSessions { get; set; } = true;
         // 직전에 열려 있던 파일 편집기 탭의 절대 경로 목록. 재시작 시 다시 탭으로 복원.
         public List<string> OpenFiles { get; set; } = new();
+        // 저장 시점 전체 탭 순서(세션+문서 섞임, "S:<id>"/"F:<path>"). 복원 시 이 순서로 Tabs 재배열(문서 끼임 순서 보존).
+        public List<string> TabOrder { get; set; } = new();
         // 마지막으로 활성화했던 탭 참조("S:<세션ID>"/"F:<파일경로>"). 프로젝트 재선택 시 복원.
         public string? LastActiveTab { get; set; }
         // 이 프로젝트를 메인 패널에 열 때 분할을 함께 켤지 + 분할 파트너. 재시작/재선택 시 복원.
@@ -102,6 +104,7 @@ public static class WorkspaceStore
                 foreach (var f in p.Files)
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 proj.PendingOpenFiles = p.OpenFiles ?? new();   // 시작 시 RestoreFileTabs 가 1회 소비
+                proj.PendingTabOrder = p.TabOrder ?? new();     // 세션+파일 복원 후 이 순서로 Tabs 재배열
                 proj.LastActiveTabRef = p.LastActiveTab;
                 proj.SplitEnabled = p.SplitEnabled;
                 proj.SplitPartnerProjectPath = p.SplitPartnerProjectPath;
@@ -155,6 +158,13 @@ public static class WorkspaceStore
         ShowHiddenSessions = p.ShowHiddenSessions,
         // 열린 파일 탭 경로 → 재시작 시 복원(Tabs 순서 그대로).
         OpenFiles = p.Tabs.OfType<FileTabItem>().Select(f => f.FilePath).ToList(),
+        // 전체 탭 순서(세션+문서) → 복원 시 이 순서로 재배열해 문서의 끼임 위치 보존.
+        TabOrder = p.Tabs.Select(t => t switch
+        {
+            SessionItem s => "S:" + s.Id,
+            FileTabItem f => "F:" + f.FilePath,
+            _ => "",
+        }).Where(r => r.Length > 0).ToList(),
         LastActiveTab = p.LastActiveTabRef,
         SplitEnabled = p.SplitEnabled,
         SplitPartnerProjectPath = p.SplitPartnerProjectPath,

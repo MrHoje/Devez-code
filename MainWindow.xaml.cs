@@ -551,6 +551,21 @@ public partial class MainWindow : Window
             PaneA.RestoreFileTabs(proj, proj.PendingOpenFiles);
             proj.PendingOpenFiles.Clear();
         }
+        // 세션+파일 탭이 모두 생성된 뒤, 저장된 전체 순서로 Tabs 를 재배열(문서가 끝으로 몰려 끼임 순서 잃는 것 방지).
+        foreach (var proj in _projects)
+        {
+            var order = proj.PendingTabOrder;
+            proj.PendingTabOrder = new();
+            if (order.Count == 0) continue;
+            var rank = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < order.Count; i++) rank[order[i]] = i;
+            var sorted = proj.Tabs.OrderBy(t => rank.TryGetValue(WorkspacePaneView.RefOf(t), out var r) ? r : int.MaxValue).ToList();
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                int cur = proj.Tabs.IndexOf(sorted[i]);
+                if (cur != i && cur >= 0) proj.Tabs.Move(cur, i);
+            }
+        }
     }
 
     // ── 성능 모니터 (헤더 CPU/RAM 칩, devez 이식) ──────────────────────
@@ -2181,7 +2196,6 @@ public partial class MainWindow : Window
                 var left = LeftPane.VisibleTabsInOrder();
                 var leftSet = new HashSet<TabItemBase>(left);
                 var right = RightPane.VisibleTabsInOrder().Where(t => !leftSet.Contains(t)).ToList();
-                DevezCode.Services.DiagLog.Write($"CardGroups LIVE {p.Name} Lisol={LeftPane.CurrentIsolatedTabs()!=null} Risol={RightPane.CurrentIsolatedTabs()!=null} refs={p.SplitRightTabRefs.Count} L=[{string.Join(",",left.Select(t=>t.Title))}] Rexcl=[{string.Join(",",right.Select(t=>t.Title))}]");
                 p.ApplyLiveGroups(left, right);
             }
             else if (p.SplitEnabled && p.SplitRightTabRefs.Count > 0)
@@ -3272,6 +3286,9 @@ public partial class MainWindow : Window
         {
             DisableSplit(animate: false); // 다른(비분할) 프로젝트로 전환 — 슬라이드 없이 즉시 단일 패널로 축소.
         }
+        // 격리 복원(RestoreSameProjectSplit)이 끝난 뒤 카드 그룹을 다시 계산 — 진입 흐름에서 SyncShell→
+        // RefreshCardGroups 가 격리 '전에' 먼저 불려 카드가 단일로 보이던 문제 방지(패널은 분할됐는데 카드만 단일).
+        RefreshCardGroups();
     }
 
     private void FocusPaneOnly(WorkspacePaneView pane)
