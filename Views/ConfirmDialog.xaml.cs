@@ -37,9 +37,10 @@ public partial class ConfirmDialog : Window
         }
         else if (confirmText == null)
         {
-            // devez 크기 로직: 폭은 460 고정(XAML), 높이는 본문 줄 수로 계단식 결정.
+            // devez 크기 로직: 폭은 490 고정(XAML), 높이는 본문 줄 수로 계단식 결정.
+            // 스크롤 없이 3줄이 다 보이도록 각 단계를 살짝 높임.
             var lines = message.Split('\n').Length;
-            Height = lines <= 2 ? 240 : lines <= 4 ? 300 : 340;
+            Height = lines <= 2 ? 260 : lines <= 4 ? 325 : 360;
         }
 
         KeyDown += OnKeyDown;
