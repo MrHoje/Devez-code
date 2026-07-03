@@ -2399,7 +2399,15 @@ public partial class MainWindow : Window
                 // (격리 중이면 화이트리스트에 추가, 전체 모드면 블랙리스트 해제 — 활성 탭 변경 없음.)
                 // OpenSession/OpenFileTab 을 부르지 않으므로 대상 격리도 안 풀린다 → 스냅샷 복원 불필요.
                 target.UnhideTabInPane(tab);
-                // 포커스는 원본에 그대로 둔다(대상 활성 탭을 안 바꾸므로 포커스도 안 옮김).
+                // 단, 도착 패널에 열린 세션이 없고(빈 쪽) 이동된 게 세션이면 = 그 패널의 첫 세션이므로 바로
+                // 활성화해 연다(안 그러면 탭만 생기고 빈 화면). UnhideTabInPane 으로 이미 화이트리스트에 들어가
+                // 격리도 안 풀린다. 이 경우엔 방금 연 세션을 볼 수 있게 포커스를 대상으로 옮긴다.
+                if (tab is SessionItem movedFirst && target.ActiveSession == null)
+                {
+                    target.OpenSession(movedFirst);
+                    _focusedPane = target;
+                }
+                // 그 외엔 포커스를 원본에 그대로 둔다(대상 활성 탭을 안 바꾸므로).
             }
             else
             {
@@ -2553,19 +2561,20 @@ public partial class MainWindow : Window
         if (persist) PersistSplitState();
     }
 
-    /// <summary>분할 펼침: 두 패널 터미널을 스냅샷으로 정지(WebView2 매 프레임 리사이즈 깜빡임 방지)한 뒤
-    /// PaneB 를 0%→저장된 비율로 펼치고, 완료 시 라이브 터미널로 복원한다.</summary>
+    /// <summary>분할 펼침: 두 패널 터미널을 webCover(HWND 유지+DOM 커버)로 정지한 뒤
+    /// PaneB 를 0%→저장된 비율로 펼치고, 완료 시 라이브 터미널로 크로스페이드 복원한다.
+    /// 좌우 사이드패널 토글(FreezeWorkspaceTerminalsAsync)과 동일 경로 — collapse→visible 재합성 플래시 없음.</summary>
     private async Task AnimateSplitOpenAsync()
     {
-        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
+        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true));
         PaneB.SetEmptyTextWrapping(false); // 펼침 애니메이션 중 줄바꿈 방지
         double targetStar = SettingsService.LoadSplitBStar();
         AnimatePaneSplit(0, targetStar, () =>
         {
             PaneBCol.Width = new GridLength(targetStar, GridUnitType.Star);
             PaneB.SetEmptyTextWrapping(true); // 완전히 펼쳐진 후에만 줄바꿈
-            PaneA.ResumeTerminalOnly();
-            PaneB.ResumeTerminalOnly();
+            PaneA.ResumeTerminalOnly(webCover: true);
+            PaneB.ResumeTerminalOnly(webCover: true);
             UpdatePaneFocusVisual(animate: false);
         });
     }
@@ -2722,15 +2731,16 @@ public partial class MainWindow : Window
             // 터미널을 살려두면 다른(비분할) 프로젝트에 갔다 이 분할로 돌아올 때 스피너·리로드·스크롤 튐 없이
             // 즉시 재활성화된다. (스왑은 유지 콘텐츠를 PaneA 로 재부착하므로 더블 배선 방지 위해 위에서 dispose 함.)
             if (!swapped) PaneB.ClearForHide(disposeTerminal: false);
-            PaneB.ResumeTerminalOnly();   // 숨겨진 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록).
-            PaneA.ResumeTerminalOnly();
+            PaneB.ResumeTerminalOnly();   // 숨겨진 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록). PaneB 는 hide 되므로 collapse 경로 유지.
+            PaneA.ResumeTerminalOnly(webCover: true);   // 살아남아 전체폭으로 넓어지는 PaneA 는 사이드패널과 동일 무플래시 크로스페이드.
             UpdatePaneFocusVisual(animate: false);
             PersistSplitState();
         }
 
         if (!animate) { Finish(); return; }
 
-        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
+        // PaneA: webCover(HWND 유지) — 50%→100% 리사이즈 중 재합성 플래시 없음. PaneB: collapse 경로 유지(어차피 hide/정리 대상, Finish 순서 의존).
+        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true));
         PaneB.SetEmptyTextWrapping(false); // 접힘 애니메이션 중 줄바꿈 방지
         AnimatePaneSplit(1, 0, Finish);
     }
