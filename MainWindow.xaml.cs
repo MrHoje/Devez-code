@@ -2174,7 +2174,15 @@ public partial class MainWindow : Window
         foreach (var p in _projects.Concat(_archivedProjects))
         {
             if (ReferenceEquals(p, splitProj))
-                p.ApplyLiveGroups(LeftPane.VisibleTabsInOrder(), RightPane.VisibleTabsInOrder());
+            {
+                // 한 세션은 한 그룹에만(겹침 금지). 우측 그룹 = '우측에만' 있는 탭(좌측엔 없는 것),
+                // 좌측 그룹 = 좌측이 보여주는 탭. 전체 공유 분할(양쪽 다 전체)이면 우측 exclusive 가 비어
+                // 우측 그룹이 사라지고 단일 목록이 된다(양쪽 중복 방지). 격리 분할이면 실제 좌/우로 나뉜다.
+                var left = LeftPane.VisibleTabsInOrder();
+                var leftSet = new HashSet<TabItemBase>(left);
+                var right = RightPane.VisibleTabsInOrder().Where(t => !leftSet.Contains(t)).ToList();
+                p.ApplyLiveGroups(left, right);
+            }
             else
                 p.ClearLiveGroups();
         }
@@ -3119,7 +3127,6 @@ public partial class MainWindow : Window
         var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc))
             ?? (parent != null ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent)) : null)
             ?? _focusedPane;
-        DevezCode.Services.DiagLog.Write($"OpenDocFromSidebar doc={doc.Title} splitActive={_splitActive} target={(ReferenceEquals(pane, RightPane) ? "R" : ReferenceEquals(pane, LeftPane) ? "L" : "?")} inRightGroup={parent?.RightItems.Contains(doc)} rightIsolated={RightPane.CurrentIsolatedTabs() != null}");
         _focusedPane = pane;
         pane.OpenFileTab(doc);
         SyncShellToFocusedPane();
