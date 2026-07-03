@@ -104,6 +104,10 @@ public partial class WorkspacePaneView : UserControl
         _terminal.RevealPrepared += () => RevealPrepared?.Invoke(this);
         // 콜드 세션: web 로딩 커버가 켜진 것(ACK)을 확인한 뒤에만 터미널 HWND 를 unpark 한다.
         _terminal.LoadingShown += OnLoadingShown;
+        // 로딩 오버레이(파킹 중 터미널 영역 덮개) 배경을 '터미널 배경색'과 맞춘다 — 앱 배경(BgBrush)으로 두면
+        // unpark 후 웹 커버/터미널(터미널 배경색)과 색이 달라 앱배경→터미널배경 점프가 검정 깜빡으로 보인다.
+        ApplyTerminalBgToCovers();
+        App.ThemeChanged += _ => ApplyTerminalBgToCovers();
         Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);
         // 로딩 중 레이아웃이 바뀌면(예: 시작 시 전체폭으로 세션 복원 → 곧바로 분할 적용) 웹 스피너의
         // px 앵커 좌표를 재전송해 카드가 항상 최종 중앙에 있게 한다.
@@ -1799,6 +1803,27 @@ public partial class WorkspacePaneView : UserControl
     // unpark repaint 가 커버 위에서 일어나게 한다(부팅 노이즈 프레임 은닉). ACK 누락 대비 폴백 타이머.
     private bool _gateUnpark;
     private System.Windows.Threading.DispatcherTimer? _unparkFallback;
+
+    /// <summary>로딩 오버레이 배경을 현재 터미널 테마 배경색으로 맞춘다(앱 배경과 달라 생기는 색 점프 제거).
+    /// 파싱 실패 시 BgBrush 로 폴백. TerminalCurtain(파일 전환용)은 별개라 건드리지 않는다.</summary>
+    private void ApplyTerminalBgToCovers()
+    {
+        if (TerminalLoadingOverlay == null) return;
+        try
+        {
+            var hex = TerminalSessionManager.Instance.Config.Scheme.Background;
+            if (!string.IsNullOrWhiteSpace(hex))
+            {
+                var c = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+                var brush = new System.Windows.Media.SolidColorBrush(c);
+                brush.Freeze();
+                TerminalLoadingOverlay.Background = brush;
+                return;
+            }
+        }
+        catch { }
+        TerminalLoadingOverlay.SetResourceReference(System.Windows.Controls.Panel.BackgroundProperty, "BgBrush");
+    }
 
     private void ArmUnparkFallback()
     {
