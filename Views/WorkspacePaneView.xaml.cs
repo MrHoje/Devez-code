@@ -1894,10 +1894,15 @@ public partial class WorkspacePaneView : UserControl
     private void RevealTerminalAfterGate()
     {
         if (_activeTab is not SessionItem s) return;
+        // 터미널 unpark(0→full) 후, md 파킹은 다음 프레임에 — 터미널이 full 로 리사이즈·페인트될 시간을 줘
+        // 우측 raw HWND strip 노출을 md 로 가린다(즉시 파킹하면 우측 끝 검정이 샌다).
         UnparkTerminalHost();
-        ParkFileEditorHost();
-        // 준비된 세션이면 커버를 즉시(페이드) 걷는다 — 콜드면 TerminalReady 가 HideSessionLoadingIf 로 걷는다.
-        if (_terminal.IsReady(s.Id)) HideSessionLoading();
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_activeTab is not SessionItem cur) return;
+            ParkFileEditorHost();
+            if (_terminal.IsReady(cur.Id)) HideSessionLoading();
+        }), System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private void ParkTerminalHost()
