@@ -8,20 +8,21 @@
              FontFamily="{StaticResource PretendardFont}">
 
     <UserControl.Resources>
+        <!-- 노트패드 스타일: 라인번호/구문색 없는 순수 텍스트 편집 표면. -->
         <Style TargetType="ae:TextEditor">
             <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, D2Coding, Malgun Gothic"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Padding" Value="14,10"/>
-            <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="FontFamily" Value="Consolas, D2Coding, Malgun Gothic"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="24,20"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
-            <Setter Property="ShowLineNumbers" Value="True"/>
+            <Setter Property="ShowLineNumbers" Value="False"/>
         </Style>
     </UserControl.Resources>
 
     <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
-        <ae:TextEditor x:Name="Editor" WordWrap="False"
+        <ae:TextEditor x:Name="Editor" WordWrap="True"
                        TextChanged="Editor_TextChanged"/>
     </Border>
 </UserControl>
