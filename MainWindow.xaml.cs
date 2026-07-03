@@ -2068,7 +2068,21 @@ public partial class MainWindow : Window
         pane.SetPanesTabDragActive = on => { LeftPane.SetTabDragActive(on); RightPane.SetTabDragActive(on); };
         pane.RevealPrepared += OnPaneRevealPrepared;
         pane.IsolatedTabOpened += OnPaneIsolatedTabOpened;
+        pane.FileTabCloseRequested += OnFileTabCloseRequested;
         _panes.Add(pane);
+    }
+
+    /// <summary>파일 탭 닫기(탭 X·에디터 버튼·컨텍스트 메뉴)를 '실제로 표시(활성) 중인 패널'로 라우팅한다.
+    /// 에디터 CloseRequested 는 탭을 만든 패널에 묶여 있어, 그 탭이 분할로 다른 패널에 옮겨져 있으면
+    /// 생성 패널에서 닫아도 표시 패널이 갱신되지 않는다(이웃 세션 미선택·타이틀 잔류). 활성 패널 우선,
+    /// 없으면 그 탭을 보여주는 패널, 그것도 없으면 포커스 패널에서 닫는다.</summary>
+    private void OnFileTabCloseRequested(FileTabItem tab)
+    {
+        var pane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveTab, tab))
+                   ?? _panes.FirstOrDefault(p => p.ShowsTab(tab))
+                   ?? _focusedPane;
+        pane.CloseFileTab(tab);
+        RefreshCardGroups();
     }
 
     private void OnPaneFocusRequested(WorkspacePaneView pane)

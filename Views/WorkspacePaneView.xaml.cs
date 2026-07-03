@@ -76,6 +76,11 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>격리(분할 파트너) 중인 이 패널에서 탭(파일/세션)이 새로 열림 — 셸이 반대 패널에서 그 탭을 숨겨
     /// (HideTabInPane) 양쪽에 다 뜨는 것을 막는다. (파일탐색기·드롭·터미널 Ctrl+클릭·세션 추가 공통.)</summary>
     public event Action<WorkspacePaneView, TabItemBase>? IsolatedTabOpened;
+    /// <summary>파일 에디터가 닫기를 요청함(탭 X·에디터 버튼·컨텍스트 메뉴 공통). 에디터는 공유 단일
+    /// 인스턴스라 CloseRequested 는 '탭을 만든 패널'에 묶인다 — 그 탭이 다른 패널로 옮겨져 표시 중이면
+    /// 생성 패널에서 닫아 봤자 표시 패널이 갱신되지 않는다(활성 이웃 미선택·타이틀 잔류). 셸이 실제
+    /// 표시(활성) 패널로 라우팅해 그 패널에서 닫도록 이 이벤트로 위임한다.</summary>
+    public event Action<FileTabItem>? FileTabCloseRequested;
 
     public TerminalHostView Terminal => _terminal;
 
@@ -2260,7 +2265,13 @@ public partial class WorkspacePaneView : UserControl
 
         var tab = new FileTabItem { FilePath = path, Editor = CreateFileTabEditor(path) };
         if (!tab.Editor.LoadFile(path)) return null;
-        tab.Editor.CloseRequested += (_, _) => RemoveFileTab(tab);
+        // 닫기는 '생성 패널(this)'이 아니라 셸이 찾은 '실제 표시 패널'에서 처리하도록 위임한다.
+        // (핸들러 미배선 등 예외 상황에선 생성 패널에서 직접 닫아 최소한 탭은 제거되게 폴백.)
+        tab.Editor.CloseRequested += (_, _) =>
+        {
+            if (FileTabCloseRequested != null) FileTabCloseRequested(tab);
+            else RemoveFileTab(tab);
+        };
         tab.Editor.DirtyChanged += (_, _) => { if (ReferenceEquals(_activeTab, tab)) RefreshFileHeaderState(tab); };
         // Interacted(포커스 통지) 구독은 CreateFileTab(생성 패널)이 아니라 ActivateFileTab(표시 패널)에서
         // 가드와 함께 건다 — 에디터가 공유 단일 인스턴스라 다른 패널에서 표시될 때 생성 패널이 잘못 포커스되던 문제.
