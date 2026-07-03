@@ -146,10 +146,14 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         if (_path == null) return;
         if (_dirty)
         {
-            var r = MessageBox.Show("변경 사항을 저장하시겠습니까?", "DevezCode",
-                MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (r == MessageBoxResult.Cancel) return;
-            if (r == MessageBoxResult.Yes && !Save()) return;
+            var r = ConfirmDialog.ShowThreeWay(
+                "저장되지 않은 변경사항",
+                "변경 사항을 저장하시겠습니까?",
+                primaryLabel: "저장",
+                secondaryLabel: "저장 안 함",
+                iconKey: "IconMessageSquare");
+            if (r == ConfirmChoice.Cancel) return;
+            if (r == ConfirmChoice.Primary && !Save()) return;
         }
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }

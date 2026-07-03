@@ -234,10 +234,14 @@ public partial class FileEditorView : UserControl, IFileTabEditor
     private bool ConfirmDiscardOrSave()
     {
         if (!_dirty) return true;
-        var r = MessageBox.Show("변경 사항을 저장하시겠습니까?", "DevezCode",
-            MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-        if (r == MessageBoxResult.Cancel) return false;
-        if (r == MessageBoxResult.Yes) return Save();
+        var r = ConfirmDialog.ShowThreeWay(
+            "저장되지 않은 변경사항",
+            "변경 사항을 저장하시겠습니까?",
+            primaryLabel: "저장",
+            secondaryLabel: "저장 안 함",
+            iconKey: "IconMessageSquare");
+        if (r == ConfirmChoice.Cancel) return false;
+        if (r == ConfirmChoice.Primary) return Save();
         return true;
     }
 
