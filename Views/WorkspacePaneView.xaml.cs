@@ -1597,6 +1597,9 @@ public partial class WorkspacePaneView : UserControl
             }
             i++;
         }
+        // 삽입으로 스트립 폭이 gap 만큼 늘어나므로 끝의 + 버튼도 함께 오른쪽으로 민다.
+        AnimateTabX(NewTabBtn, gap);
+        _previewShifted.Add(NewTabBtn);
     }
 
     /// <summary>삽입 프리뷰 해제(모든 밀린 탭 원위치).</summary>
