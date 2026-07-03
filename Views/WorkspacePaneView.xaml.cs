@@ -1789,9 +1789,13 @@ public partial class WorkspacePaneView : UserControl
 
     private void ArmUnparkFallback()
     {
+        // ACK(web 커버 페인트 통지)가 정상 트리거. 폴백은 web 무응답 대비 '최후' 안전망이라 넉넉히 둔다.
+        // 짧으면(구 200ms) 분할 우측(PaneB)처럼 webview 페이지가 콜드로 시작할 때 pageReady→커버 flush→ACK
+        // 보다 폴백이 먼저 불려, 커버 확정 전에 unpark 돼 검정 프레임이 샌다. 대기 동안엔 파킹된 0×0 위로
+        // WPF 로딩 오버레이(스피너)가 덮으므로 길게 둬도 검정 없이 스피너만 보인다.
         _unparkFallback ??= new System.Windows.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(200),
+            Interval = TimeSpan.FromMilliseconds(2500),
         };
         _unparkFallback.Tick -= UnparkFallback_Tick;
         _unparkFallback.Tick += UnparkFallback_Tick;
@@ -1802,13 +1806,19 @@ public partial class WorkspacePaneView : UserControl
     private void UnparkFallback_Tick(object? sender, EventArgs e)
     {
         _unparkFallback?.Stop();
-        if (_gateUnpark) { _gateUnpark = false; if (_activeTab is SessionItem) UnparkTerminalHost(); }
+        if (_gateUnpark)
+        {
+            DiagLog.Write($"unpark via FALLBACK pane={(IsRightPane ? "R" : "L")} (ACK 미도착)");
+            _gateUnpark = false;
+            if (_activeTab is SessionItem) UnparkTerminalHost();
+        }
     }
 
     /// <summary>web 로딩 커버가 페인트됨 — 게이트 중이면 이제 안전하게 unpark(커버 위에서 HWND repaint).</summary>
     private void OnLoadingShown()
     {
         if (!_gateUnpark) return;
+        DiagLog.Write($"unpark via ACK pane={(IsRightPane ? "R" : "L")}");
         _gateUnpark = false;
         _unparkFallback?.Stop();
         if (_activeTab is SessionItem) UnparkTerminalHost();
