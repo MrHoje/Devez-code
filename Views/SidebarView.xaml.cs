@@ -637,6 +637,16 @@ public partial class SidebarView : UserControl
         int srcIdx = rows.FindIndex(r => ReferenceEquals(r.Item, s));
         bool srcInLeft = srcIdx < leftCount;
 
+        // 좌/우 그룹 사이 요소(세퍼레이터 + '우' 라벨) — 드래그가 경계를 넘으면 함께 이동시킨다.
+        var boundaryEls = new List<FrameworkElement>();
+        if (splitCard && VisualTreeHelper.GetParent(leftIc) is Panel sp)
+        {
+            int li = sp.Children.IndexOf(leftIc), ri = sp.Children.IndexOf(rightIc);
+            if (li >= 0 && ri > li)
+                for (int k = li + 1; k < ri; k++)
+                    if (sp.Children[k] is FrameworkElement fe) boundaryEls.Add(fe);
+        }
+
         _tabDrag = ReorderDrag<TabItemBase>.TryStart(this, rows, s, src.Element,
             (item, hostTarget, _) =>
             {
@@ -665,7 +675,9 @@ public partial class SidebarView : UserControl
                     SessionsReordered?.Invoke(project);
                 }
                 return Task.CompletedTask;
-            }, exactFollow: true);
+            }, exactFollow: true,
+            splitBoundary: splitCard ? leftCount : -1,
+            boundaryElements: boundaryEls);
         if (_tabDrag != null) { _didDrag = true; CaptureMouse(); }
         _pendingTab = null;
     }

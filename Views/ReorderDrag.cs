@@ -30,6 +30,8 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly double _gridMidX;    // coordHost 기준, 좌/우 컬럼을 가르는 X(컬럼 판정 기준).
     private readonly double _grabOffsetX; // 잡은 지점의 source 내부 오프셋 — 드래그 카드 중심 계산용
     private readonly double _grabOffsetY;
+    private readonly int _splitBoundary;  // >=0 이면 slot [0,_splitBoundary)=좌 그룹, [_splitBoundary,N)=우 그룹.
+    private readonly IReadOnlyList<FrameworkElement> _boundaryElements; // 좌/우 사이 세퍼레이터·라벨(그룹 넘을 때 함께 이동).
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private bool _finished;
@@ -41,11 +43,13 @@ internal sealed class ReorderDrag<T> where T : class
 
     private ReorderDrag(UIElement coordHost, List<Slot> slots, T source, int sourceIndex,
         DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal,
-        int columns, double gridMidX, double grabOffsetX, double grabOffsetY)
+        int columns, double gridMidX, double grabOffsetX, double grabOffsetY,
+        int splitBoundary, IReadOnlyList<FrameworkElement>? boundaryElements)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
         _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
+        _splitBoundary = splitBoundary; _boundaryElements = boundaryElements ?? System.Array.Empty<FrameworkElement>();
         _targetIndex = sourceIndex;
         _targetColumn = -1; // 그리드: 첫 Update 가 항상 displacement 를 적용하도록 미지정으로 시작.
     }
@@ -62,7 +66,9 @@ internal sealed class ReorderDrag<T> where T : class
         bool horizontal = false,
         int columns = 1,
         double gridMidX = 0,
-        FrameworkElement? ghostSource = null)
+        FrameworkElement? ghostSource = null,
+        int splitBoundary = -1,
+        IReadOnlyList<FrameworkElement>? boundaryElements = null)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -103,7 +109,7 @@ internal sealed class ReorderDrag<T> where T : class
         if (ghost == null) return null;
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
-            columns, gridMidX, grabPt.X, grabPt.Y);
+            columns, gridMidX, grabPt.X, grabPt.Y, splitBoundary, boundaryElements);
     }
 
     public void Update(MouseEventArgs e)
@@ -251,6 +257,21 @@ internal sealed class ReorderDrag<T> where T : class
             else if (_targetIndex > _sourceIndex && i > _sourceIndex && i <= _targetIndex) to = -shift;
             AnimateAxis(_slots[i].Element, to);
         }
+        ApplyBoundaryDisplacement(shift);
+    }
+
+    /// <summary>좌/우 그룹 세퍼레이터·라벨을, 드래그 항목이 그룹 경계를 넘을 때 한 행 피치만큼 함께 이동.
+    /// 좌→우: 좌 그룹이 한 행 줄어드니 경계가 위로(-). 우→좌: 좌 그룹이 늘어 경계가 아래로(+). 같은 그룹: 0.</summary>
+    private void ApplyBoundaryDisplacement(double shift)
+    {
+        if (_splitBoundary < 0 || _boundaryElements.Count == 0) return;
+        bool srcInLeft = _sourceIndex < _splitBoundary;
+        int leftAfter = srcInLeft ? _splitBoundary - 1 : _splitBoundary;
+        bool targetIsRight = _targetIndex >= leftAfter;
+        double bOff = 0;
+        if (srcInLeft && targetIsRight) bOff = -shift;
+        else if (!srcInLeft && !targetIsRight) bOff = shift;
+        foreach (var be in _boundaryElements) AnimateAxis(be, bOff);
     }
 
     public async Task FinishAsync(bool commit)
@@ -260,6 +281,7 @@ internal sealed class ReorderDrag<T> where T : class
 
         _ghost.Dispose();
         foreach (var s in _slots) ResetAxis(s.Element);
+        foreach (var be in _boundaryElements) ResetAxis(be);
 
         if (!commit) return;
 
