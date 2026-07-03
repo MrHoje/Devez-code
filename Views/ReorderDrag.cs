@@ -30,14 +30,9 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly double _gridMidX;    // coordHost 기준, 좌/우 컬럼을 가르는 X(컬럼 판정 기준).
     private readonly double _grabOffsetX; // 잡은 지점의 source 내부 오프셋 — 드래그 카드 중심 계산용
     private readonly double _grabOffsetY;
-    private readonly int _splitBoundary;  // >=0 이면 slot [0,_splitBoundary)=좌 그룹, [_splitBoundary,N)=우 그룹.
-    private readonly IReadOnlyList<FrameworkElement> _boundaryElements; // 좌/우 사이 세퍼레이터·라벨(그룹 넘을 때 함께 이동).
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private bool _finished;
-
-    /// <summary>분할 경계 사용 시, 드래그 카드가 세퍼레이터 선 아래(=우 그룹)에 있는지. 커밋에서 크로스그룹 판정에 사용.</summary>
-    public bool TargetIsRightGroup { get; private set; }
 
     private bool IsGrid => _columns > 1;
     private double AxisPos(Slot s) => _horizontal ? s.Left : s.Top;
@@ -46,14 +41,11 @@ internal sealed class ReorderDrag<T> where T : class
 
     private ReorderDrag(UIElement coordHost, List<Slot> slots, T source, int sourceIndex,
         DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal,
-        int columns, double gridMidX, double grabOffsetX, double grabOffsetY,
-        int splitBoundary, IReadOnlyList<FrameworkElement>? boundaryElements)
+        int columns, double gridMidX, double grabOffsetX, double grabOffsetY)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
         _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
-        _splitBoundary = splitBoundary; _boundaryElements = boundaryElements ?? System.Array.Empty<FrameworkElement>();
-        TargetIsRightGroup = splitBoundary >= 0 && sourceIndex >= splitBoundary; // 이동 없으면 소스 그룹 유지
         _targetIndex = sourceIndex;
         _targetColumn = -1; // 그리드: 첫 Update 가 항상 displacement 를 적용하도록 미지정으로 시작.
     }
@@ -70,9 +62,7 @@ internal sealed class ReorderDrag<T> where T : class
         bool horizontal = false,
         int columns = 1,
         double gridMidX = 0,
-        FrameworkElement? ghostSource = null,
-        int splitBoundary = -1,
-        IReadOnlyList<FrameworkElement>? boundaryElements = null)
+        FrameworkElement? ghostSource = null)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -113,7 +103,7 @@ internal sealed class ReorderDrag<T> where T : class
         if (ghost == null) return null;
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
-            columns, gridMidX, grabPt.X, grabPt.Y, splitBoundary, boundaryElements);
+            columns, gridMidX, grabPt.X, grabPt.Y);
     }
 
     public void Update(MouseEventArgs e)
@@ -140,18 +130,7 @@ internal sealed class ReorderDrag<T> where T : class
         var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
         // 커서 raw 대신 드래그 중인 카드의 중심을 기준점으로 사용 — 위/아래 대칭 판정.
         var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
-        UpdateBoundary(draggedCenter); // 세퍼레이터 선 기준 그룹 판정 + 세퍼레이터 동반 이동(매 이동 갱신)
-
-        int newTarget;
-        bool srcInLeft = _splitBoundary >= 0 && _sourceIndex < _splitBoundary;
-        bool crossGroup = _splitBoundary >= 0 && (TargetIsRightGroup == srcInLeft);
-        if (crossGroup)
-            // 크로스는 세퍼레이터 인접(우 첫=경계 / 좌 끝=경계-1)으로 스냅 → 행 시프트와 세퍼레이터가
-            // 동일한 단일 변위를 써 겹치지 않는다(도착 위치도 커밋의 세퍼레이터 인접 스냅과 일치).
-            newTarget = TargetIsRightGroup ? _splitBoundary : Math.Max(0, _splitBoundary - 1);
-        else
-            newTarget = ComputeTargetIndex(draggedCenter);
-
+        var newTarget = ComputeTargetIndex(draggedCenter);
         if (newTarget == _targetIndex) return;
         _targetIndex = newTarget;
         ApplyDisplacement();
@@ -244,27 +223,18 @@ internal sealed class ReorderDrag<T> where T : class
         return _slots.Count;
     }
 
-    /// <summary>슬롯 간 이동에 쓸 한 행 피치. 세퍼레이터를 건너뛰는 이웃(다른 그룹)은 피해 계산한다
-    /// — 소스가 세퍼레이터에 인접할 때 세퍼레이터 두께·마진까지 포함된 부풀린 값이 나와 행들이 과이동/겹침.</summary>
     private double RowPitch()
     {
-        int p = _sourceIndex;
-        bool SameGroup(int a, int b) => _splitBoundary < 0 || (a < _splitBoundary) == (b < _splitBoundary);
-        if (p + 1 < _slots.Count && SameGroup(p, p + 1))
+        if (_sourceIndex + 1 < _slots.Count)
         {
-            var shift = AxisPos(_slots[p + 1]) - AxisPos(_slots[p]);
+            var shift = AxisPos(_slots[_sourceIndex + 1]) - AxisPos(_slots[_sourceIndex]);
             if (shift >= 1) return shift;
         }
-        if (p - 1 >= 0 && SameGroup(p, p - 1))
+        double sourceSize = AxisSize(_slots[_sourceIndex]);
+        if (_sourceIndex - 1 >= 0)
         {
-            var shift = AxisPos(_slots[p]) - AxisPos(_slots[p - 1]);
-            if (shift >= 1) return shift;
-        }
-        double sourceSize = AxisSize(_slots[p]);
-        if (p - 1 >= 0 && SameGroup(p, p - 1))
-        {
-            var aboveBottom = AxisPos(_slots[p - 1]) + AxisSize(_slots[p - 1]);
-            var gap = AxisPos(_slots[p]) - aboveBottom;
+            var aboveBottom = AxisPos(_slots[_sourceIndex - 1]) + AxisSize(_slots[_sourceIndex - 1]);
+            var gap = AxisPos(_slots[_sourceIndex]) - aboveBottom;
             return sourceSize + Math.Max(0, gap);
         }
         return sourceSize;
@@ -283,26 +253,6 @@ internal sealed class ReorderDrag<T> where T : class
         }
     }
 
-    /// <summary>세퍼레이터 선(마지막 좌 slot 하단↔첫 우 slot 상단 중점)을 기준으로 도착 그룹을 판정한다.
-    /// 카드 중심이 선 위=좌 그룹, 아래=우 그룹(인덱스로는 "좌 끝"과 "우 첫"을 구분 못 하므로 위치로 판정).
-    /// 그룹을 넘으면 세퍼레이터·라벨을 한 행 피치만큼 함께 이동(좌→우 -, 우→좌 +, 같은 그룹 0).</summary>
-    private void UpdateBoundary(double center)
-    {
-        if (_splitBoundary <= 0 || _splitBoundary >= _slots.Count) return;
-        double boundaryY = (AxisPos(_slots[_splitBoundary - 1]) + AxisSize(_slots[_splitBoundary - 1])
-                            + AxisPos(_slots[_splitBoundary])) / 2;
-        bool srcInLeft = _sourceIndex < _splitBoundary;
-        bool targetRight = center >= boundaryY;
-        TargetIsRightGroup = targetRight;
-
-        if (_boundaryElements.Count == 0) return;
-        double shift = RowPitch();
-        double bOff = 0;
-        if (srcInLeft && targetRight) bOff = -shift;
-        else if (!srcInLeft && !targetRight) bOff = shift;
-        foreach (var be in _boundaryElements) AnimateAxis(be, bOff);
-    }
-
     public async Task FinishAsync(bool commit)
     {
         if (_finished) return;
@@ -310,7 +260,6 @@ internal sealed class ReorderDrag<T> where T : class
 
         _ghost.Dispose();
         foreach (var s in _slots) ResetAxis(s.Element);
-        foreach (var be in _boundaryElements) ResetAxis(be);
 
         if (!commit) return;
 

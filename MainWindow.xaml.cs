@@ -161,7 +161,6 @@ public partial class MainWindow : Window
         Sidebar.ProjectExpandChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.HiddenSessionVisibilityChanged += () => WorkspaceStore.Save(_projects);
         Sidebar.SessionsReordered += OnSidebarSessionsReordered;
-        Sidebar.TabPaneMoveRequested += OnCardTabPaneMove;
         Sidebar.FilesReordered += _ => { RefreshCardGroups(); WorkspaceStore.Save(_projects); };
         Sidebar.SessionSelected        += OpenSessionFromSidebar;
         Sidebar.OpenDocSelected        += OpenDocFromSidebar;
@@ -3457,64 +3456,6 @@ public partial class MainWindow : Window
         RefreshCardGroups();
         PaneA.RefreshSelectedTabSeam(); PaneB.RefreshSelectedTabSeam(); // 탭 순서 바뀜 → 선택 밑줄 위치 재계산
         WorkspaceStore.Save(_projects);
-    }
-
-    /// <summary>카드에서 탭(세션/문서)을 반대 그룹으로 드래그 → 패널 이동.
-    /// - 라이브 분할(이 프로젝트가 지금 좌·우 패널에 실제 분할 표시 중): 검증된 패널 이동 연산 재사용
-    ///   (원본 패널에서 숨기고 반대 패널에 노출 + 격리 재배선, 내부에서 refresh/persist 처리).
-    /// - 영속 분할 카드(비라이브): 우측 refs 집합만 갱신 후 저장 → 카드/재시작 복원에 반영.
-    /// toRight=true 는 좌→우 이동(소스가 좌 그룹), false 는 우→좌.</summary>
-    private void OnCardTabPaneMove(ProjectItem project, TabItemBase tab, bool toRight)
-    {
-        bool isLive = _splitActive
-            && ReferenceEquals(LeftPane.ActiveProject, project)
-            && ReferenceEquals(RightPane.ActiveProject, project);
-
-        if (isLive)
-        {
-            var sourcePane = toRight ? LeftPane : RightPane; // 이동 전 소스 패널 = 반대편
-            OnPaneSplitViewRequested(sourcePane, tab);       // 멤버십 이동(+내부 refresh/persist)
-        }
-        else
-        {
-            var r = WorkspacePaneView.RefOf(tab);
-            var set = new List<string>(project.SplitRightTabRefs);
-            set.RemoveAll(x => string.Equals(x, r, StringComparison.OrdinalIgnoreCase));
-            if (toRight) set.Add(r);
-            project.SplitRightTabRefs = set;
-        }
-
-        RefreshCardGroups();                          // 새 멤버십으로 좌/우 그룹 재계산
-        PositionTabAtBoundary(project, tab, toRight);  // 세퍼레이터 인접 위치로 정렬
-        RefreshCardGroups();                          // 순서 반영
-        PaneA.RefreshSelectedTabSeam(); PaneB.RefreshSelectedTabSeam();
-        WorkspaceStore.Save(_projects);
-    }
-
-    /// <summary>크로스그룹 이동 후 도착 위치를 세퍼레이터 인접으로 맞춘다(카드/탭바 순서 = Tabs 순서).
-    /// toRight(아래로): 우 그룹 첫 항목(세퍼레이터 바로 아래). !toRight(위로): 좌 그룹 마지막 항목(세퍼레이터 바로 위).</summary>
-    private static void PositionTabAtBoundary(ProjectItem project, TabItemBase tab, bool toRight)
-    {
-        int from = project.Tabs.IndexOf(tab);
-        if (from < 0) return;
-        if (toRight)
-        {
-            var anchor = project.RightItems.FirstOrDefault(t => !ReferenceEquals(t, tab));
-            if (anchor == null) return;               // 우 그룹에 자기뿐 → 위치 무의미
-            int a = project.Tabs.IndexOf(anchor);
-            if (a < 0) return;
-            int to = from < a ? a - 1 : a;            // anchor 바로 앞(우 그룹 첫 항목)
-            if (from != to) project.Tabs.Move(from, to);
-        }
-        else
-        {
-            var anchor = project.LeftItems.LastOrDefault(t => !ReferenceEquals(t, tab));
-            if (anchor == null) return;               // 좌 그룹에 자기뿐
-            int a = project.Tabs.IndexOf(anchor);
-            if (a < 0) return;
-            int to = from < a ? a : a + 1;            // anchor 바로 뒤(좌 그룹 마지막 항목)
-            if (from != to) project.Tabs.Move(from, to);
-        }
     }
 
     // 푸터 좌측 상태 텍스트는 제거됨(한도 표시로 대체). 호출부 유지를 위해 no-op.
