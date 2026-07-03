@@ -18,6 +18,16 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         InitializeComponent();
         // WPF 네이티브 에디터라 클릭이 이미 CenterArea 로 버블링되지만, 인터페이스 일관성 + 명시적 포커스 통지.
         PreviewMouseDown += (_, _) => Interacted?.Invoke(this, EventArgs.Empty);
+        Editor.PreviewMouseWheel += Editor_PreviewMouseWheel;
+    }
+
+    // Ctrl + 휠: 폰트 크기 확대/축소 (노트패드/코드에디터 관례). [8, 40] 클램프.
+    private void Editor_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control) return;
+        double size = Editor.FontSize + (e.Delta > 0 ? 1 : -1);
+        Editor.FontSize = System.Math.Max(8, System.Math.Min(40, size));
+        e.Handled = true;
     }
 
     public static bool IsEditable(string path)

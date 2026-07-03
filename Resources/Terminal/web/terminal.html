@@ -159,6 +159,9 @@
   let _scrollSuppressTimer = 0; // suppress 잔여 누수 방지용 타임아웃
   let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
   let _xferCoverTimer = 0; // 전환 커튼 안전 자동해제 타이머(reveal 누락 대비)
+  let _xferDataWaiter = null; // {room, fire} — reveal 시 폭이 바뀌면 alt-screen TUI 가 SIGWINCH 로 '비동기' 재렌더한다.
+                              // 그 첫 출력이 올 때까지 커버를 유지해 '리사이즈됐지만 아직 안 그려진' 빈/틀어진 화면
+                              // (분할 닫기 후 좌측 세션 텍스트 갈라짐·스크롤 튐)을 감춘다. writeOut 이 도착 시 fire.
   let _loadGen = 0; // 로딩 스피너 세대 — 새 loading 메시지마다 증가, 이전 카드 표시 대기 폴링을 무효화
   let _xferGen = 0; // 전환 세대 — cover/resync 시작마다 증가. 빠른 연속 전환 시 이전 전환의 지연 타이머(fade/step)를 무효화해 커튼이 엉뚱한 시점에 걷히는 깜빡임을 막는다.
   let _fitSuppressed = false; // 전환(커버) 중 true — 컨테이너가 전체폭→절반으로 줄어드는 중간 폭에서 fit 하면
@@ -275,6 +278,8 @@
       t.term.write(bytes);
       if (stick) requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
     }
+    // 전환 커버가 '리사이즈 후 첫 재렌더 출력'을 기다리는 중이면 지금 걷는다(앱 재페인트 도착).
+    if (_xferDataWaiter && terms[_xferDataWaiter.room] === t) { const w = _xferDataWaiter; w.fire(); }
   }
 
   // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
@@ -976,6 +981,7 @@
         // 풀고 한 번만 fit 한다 → TUI 가 최종 폭에서만 그려 리플로우 깨짐이 없다. 이후 커튼 fade-out.
         // gen 검사: 이 reveal 이 속한 전환이 아직 최신일 때만 진행(빠른 재전환 시 낡은 타이머 폐기).
         clearTimeout(_xferCoverTimer);
+        _xferDataWaiter = null; // 새 전환 — 이전 reveal 의 출력 대기 폐기
         const gen = _xferGen; // 직전 xferCover 와 같은 세대
         const cov = document.getElementById('xfer-cover');
         const room = msg.roomId;
@@ -1004,13 +1010,23 @@
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
           }
           if (synced) { post({ type: 'revealPrepared' }); return; } // 커버 유지 — C# 이 양쪽 준비되면 fadeNow 로 동시 걷음
-          // fit 이 스크롤백을 리플로우한 직후엔 렌더러가 아직 셀을 다 그리지 못해 일부가 빈 채 보인다.
-          // refresh 로 전체 재페인트를 강제하고, 실제 페인트 프레임이 지난 뒤 커버를 걷는다(고정 80ms 대신).
-          try { e.term.refresh(0, e.term.rows - 1); } catch (err) {}
-          requestAnimationFrame(function () {
+          // 폭이 바뀌면 alt-screen TUI(claude 등)는 SIGWINCH 로 '비동기' 재렌더한다. 그 출력이 오기 전에
+          // 커버를 걷으면 리사이즈됐지만 아직 안 그려진 빈/틀어진 화면(텍스트 갈라짐·스크롤 튐)이 잠깐
+          // 보인다(분할 닫기 후 좌측 세션 증상). 첫 재렌더 출력이 올 때(writeOut) 또는 폴백 타임아웃에
+          // refresh(전체 재페인트 강제) 후 커버를 걷는다.
+          let faded = false;
+          const doFade = function () {
+            if (faded || gen !== _xferGen) return;
+            faded = true;
+            _xferDataWaiter = null;
             try { e.term.refresh(0, e.term.rows - 1); } catch (err) {}
-            requestAnimationFrame(fadeOut);
-          });
+            requestAnimationFrame(function () {
+              try { e.term.refresh(0, e.term.rows - 1); } catch (err) {}
+              requestAnimationFrame(fadeOut);
+            });
+          };
+          _xferDataWaiter = { room: room, fire: doFade };
+          setTimeout(doFade, 250); // 폴백 — 재렌더 출력이 안 와도(정적 화면·일반 셸) 커버는 걷는다
         };
         let waited = 0;
         const step = function () {
