@@ -322,7 +322,7 @@ public partial class MainWindow : Window
         App.ThemeChanged += OnThemeChanged_UpdatePanels;
 
         // 파일 탐색기에서 텍스트 파일 더블클릭 → 포커스 패널의 새 파일 탭으로 열기
-        FileExplorer.FileOpenRequested += (_, path) => _focusedPane.OpenFileAsTab(path);
+        FileExplorer.FileOpenRequested += (_, path) => OpenFileFromExplorer(path);
 
         UpdateStatus();
         RestorePanelStates();
@@ -2453,6 +2453,37 @@ public partial class MainWindow : Window
             PersistSplitState();
             PaneA.RefreshSplitIndicator();
             PaneB.RefreshSplitIndicator();
+        }
+    }
+
+    /// <summary>파일탐색기 더블클릭 → 파일 탭 열기. 분할 중이면 더블클릭 파일을 '우측' 패널에 연다:
+    /// 우측이 같은 프로젝트를 보여주면 그대로, 우측이 그 프로젝트를 아직 안 띄웠으면(빈 우측/세션0) 격리
+    /// 모드로 프로젝트를 활성화한 뒤 연다(그래서 우측 세션이 없어도 파일이 열린다). 우측이 '다른' 프로젝트를
+    /// 보여주는 크로스-프로젝트 분할이면 파일 소속이 어긋나므로 포커스 패널에 연다. 비분할이면 포커스 패널.</summary>
+    private void OpenFileFromExplorer(string path)
+    {
+        // 파일이 속한 프로젝트 = 탐색기가 보여주는 프로젝트(포커스 패널 활성, 없으면 좌/우 폴백).
+        var proj = _focusedPane.ActiveProject ?? LeftPane.ActiveProject ?? RightPane.ActiveProject;
+
+        var target = _focusedPane;
+        if (_splitActive && proj != null)
+        {
+            if (ReferenceEquals(RightPane.ActiveProject, proj))
+                target = RightPane;                       // 우측이 같은 프로젝트 → 우측에(격리 유지)
+            else if (RightPane.ActiveProject == null)
+            {
+                target = RightPane;                       // 빈 우측 → 프로젝트를 격리 모드로 활성화 후 연다
+                RightPane.ActivateProjectIsolated(proj);
+            }
+            // else: 우측이 다른 프로젝트 → 포커스 패널에 연다(파일 소속 불일치 방지)
+        }
+
+        var tab = target.OpenFileAsTab(path);
+        if (tab != null && !ReferenceEquals(_focusedPane, target))
+        {
+            _focusedPane = target;                        // 연 패널로 포커스 이동
+            SyncShellToFocusedPane();
+            UpdatePaneFocusVisual();
         }
     }
 

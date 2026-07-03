@@ -230,6 +230,16 @@ public partial class WorkspacePaneView : UserControl
         _tabsView?.Refresh();
     }
 
+    /// <summary>분할 우측 패널이 그 프로젝트를 아직 안 띄운(빈/세션0) 상태에서 파일을 처음 열 때: 프로젝트를
+    /// 활성화하되 '격리 모드(빈 화이트리스트)'로 시작한다. 이어지는 OpenFileAsTab 이 그 파일만 우측에 격리
+    /// 표시해(전체 세션 노출·좌우 중복 방지) 준다. 세션은 활성화하지 않는다.</summary>
+    public void ActivateProjectIsolated(ProjectItem proj)
+    {
+        SetActiveProject(proj);                     // _activeProject 세팅 + 탭소스(격리 null 로 리셋)
+        _isolatedTabs = new HashSet<TabItemBase>(); // 빈 화이트리스트 = 아무 탭도 안 보임(곧 파일만 격리)
+        _tabsView?.Refresh();
+    }
+
     /// <summary>현재 화이트리스트 스냅샷(격리 중이 아니면 null). OpenSession/OpenFileTab 내부의
     /// ActivateSession→ClearIsolationIfMismatch 가 격리를 풀어버릴 수 있어, 호출 전에 미리
     /// 떠서 이동 후 IsolateTab 으로 다시 얹는 용도(누적 유지).</summary>
