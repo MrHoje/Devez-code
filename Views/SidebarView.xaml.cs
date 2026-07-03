@@ -596,10 +596,19 @@ public partial class SidebarView : UserControl
     {
         var project = CurrentProjects.FirstOrDefault(pr => pr.Sessions.Contains(s));
         if (project == null) return;
-        // 같은 패널 그룹(좌/우) 세션들끼리만 재정렬 — 드래그 행 집합을 그 그룹으로 제한한다(다른 그룹으로 못 드롭).
-        var groupItems = project.RightItems.Contains(s) ? project.RightItems : project.LeftItems;
-        var groupSessions = groupItems.OfType<SessionItem>().ToList();
-        var rows = GetSessionRows(project, groupSessions).ToList();
+        if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc) return;
+
+        // s 가 실제로 렌더된 그룹 ItemsControl(좌/우)을 찾고, 그 그룹 세션들끼리만 재정렬한다(다른 그룹으로 못 드롭).
+        ItemsControl? group = null;
+        foreach (var ic in FindVisualChildren<ItemsControl>(pc))
+            if (ic.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement) { group = ic; break; }
+        if (group == null) return;
+
+        var rows = new List<(SessionItem Item, FrameworkElement Element)>();
+        foreach (var item in group.Items)
+            if (item is SessionItem gs && group.ItemContainerGenerator.ContainerFromItem(gs) is FrameworkElement fe)
+                rows.Add((gs, fe));
+        var groupSessions = rows.Select(r => r.Item).ToList();
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, s));
         if (src.Element == null) return;
 
@@ -649,18 +658,6 @@ public partial class SidebarView : UserControl
         foreach (var p in CurrentProjects)
             if (CurrentHost.ItemContainerGenerator.ContainerFromItem(p) is FrameworkElement fe)
                 yield return (p, fe);
-    }
-
-    private IEnumerable<(SessionItem Item, FrameworkElement Element)> GetSessionRows(ProjectItem project, IEnumerable<SessionItem> sessions)
-    {
-        if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc)
-            yield break;
-        // 카드 안엔 여러 ItemsControl(좌 그룹/우 그룹/바로가기)이 있다 — 세션이 어느 그룹에 있든 찾는다(분할 대응).
-        var lists = FindVisualChildren<ItemsControl>(pc).ToList();
-        foreach (var s in sessions)
-            foreach (var inner in lists)
-                if (inner.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement fe)
-                { yield return (s, fe); break; }
     }
 
     private IEnumerable<(ProjectFile Item, FrameworkElement Element)> GetFileRows(ProjectItem project)
