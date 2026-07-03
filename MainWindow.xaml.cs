@@ -75,6 +75,8 @@ public partial class MainWindow : Window
     // gjc(가재코드) — 훅 미지원. 방별 세션 .jsonl 을 폴링해 마지막 user 메시지를 헤더에 반영.
     private readonly GajaeLastMessageService _gajaeLastMsg = new();
     private readonly DiscordBotService _discordBot = DiscordBotService.Instance;
+    // hermes 등 외부 에이전트가 세션 상태를 조회하고 입력을 주입할 수 있게 하는 MCP HTTP 서버(루프백 전용).
+    private readonly Services.Mcp.McpServerService _mcpServer = new();
 
     static MainWindow()
     {
@@ -116,6 +118,7 @@ public partial class MainWindow : Window
         UpdateSessionBusyDisplay();
         _archivedProjects = archived;
         _discordBot.SetProjects(_projects);
+        _mcpServer.SetProjects(_projects);
         // Discord 스레드에 메시지가 왔는데 세션이 꺼져 있으면 UI 스레드에서 해당 세션을 자동으로 연다.
         _discordBot.SetOpenSessionRequest(sessionId => Dispatcher.BeginInvoke(() =>
         {
@@ -366,6 +369,7 @@ public partial class MainWindow : Window
             _gajaeLastMsg.Start();
             _agentLastMsg.Start();
             _discordBot.Start();
+            _mcpServer.Start();
             RestoreOpenFiles();  // 직전에 열려 있던 파일 편집기 탭 복원(세션 활성화보다 먼저 → 활성 탭은 세션 유지)
             RestoreLastSession();
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
@@ -419,6 +423,7 @@ public partial class MainWindow : Window
             _gajaeLastMsg.Dispose();
             _agentLastMsg.Dispose();
             _discordBot.Dispose();
+            _mcpServer.Dispose();
             FileExplorer.DisposeBrowser();
         };
     }
