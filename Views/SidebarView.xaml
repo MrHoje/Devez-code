@@ -207,7 +207,9 @@
         <!-- ── 바로가기 row 템플릿 — 세션 row 와 동일 크기. 셸 아이콘 + 이름. 클릭=실행, 우클릭=제거 ── -->
         <DataTemplate x:Key="ShortcutTemplate" DataType="{x:Type models:ProjectFile}">
             <Border x:Name="ShortcutRow" Style="{StaticResource SessionCard}"
-                    MouseLeftButtonUp="ProjectFileRow_Click" Cursor="Arrow"
+                    MouseLeftButtonUp="ProjectFileRow_Click"
+                    PreviewMouseLeftButtonDown="ProjectFileRow_PreviewMouseLeftButtonDown"
+                    Cursor="Arrow"
                     ToolTip="{Binding FilePath}">
                 <Border.ContextMenu>
                     <ContextMenu>

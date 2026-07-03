@@ -45,6 +45,8 @@ public partial class SidebarView : UserControl
     public event Action? ProjectExpandChanged;
     /// <summary>드래그로 특정 프로젝트의 세션 순서가 바뀐 뒤 발생(탭 동기화 + 영속용).</summary>
     public event Action<ProjectItem>? SessionsReordered;
+    /// <summary>드래그로 특정 프로젝트의 바로가기 순서가 바뀐 뒤 발생(영속용).</summary>
+    public event Action<ProjectItem>? FilesReordered;
     public event Action<SessionItem>? SessionSelected;
     /// <summary>카드의 열린 문서(파일 탭) 행 클릭 — 해당 파일 탭을 활성화(MainWindow 위임).</summary>
     public event Action<FileTabItem>? OpenDocSelected;
@@ -365,6 +367,7 @@ public partial class SidebarView : UserControl
     /// <summary>카드 하단 바로가기 행 클릭 — 대상 실행.</summary>
     private void ProjectFileRow_Click(object sender, MouseButtonEventArgs e)
     {
+        if (_didDrag) { _didDrag = false; return; } // 드래그 재정렬은 실행 트리거 아님
         if ((sender as FrameworkElement)?.DataContext is ProjectFile f) ProjectFileSelected?.Invoke(f);
     }
 
@@ -435,8 +438,10 @@ public partial class SidebarView : UserControl
     private Point _pressOrigin;
     private ProjectItem? _pendingProject;
     private SessionItem? _pendingSession;
+    private ProjectFile? _pendingFile;
     private ReorderDrag<ProjectItem>? _projectDrag;
     private ReorderDrag<SessionItem>? _sessionDrag;
+    private ReorderDrag<ProjectFile>? _fileDrag;
     private bool _didDrag;
 
     private void ProjectRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -461,6 +466,16 @@ public partial class SidebarView : UserControl
         _pressOrigin = e.GetPosition(this);
         _pendingSession = (sender as FrameworkElement)?.DataContext as SessionItem;
         _pendingProject = null;
+        _pendingFile = null;
+        _didDrag = false;
+    }
+
+    private void ProjectFileRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _pressOrigin = e.GetPosition(this);
+        _pendingFile = (sender as FrameworkElement)?.DataContext as ProjectFile;
+        _pendingProject = null;
+        _pendingSession = null;
         _didDrag = false;
     }
 
@@ -468,6 +483,7 @@ public partial class SidebarView : UserControl
     {
         if (_projectDrag != null) { _projectDrag.Update(e); return; }
         if (_sessionDrag != null) { _sessionDrag.Update(e); return; }
+        if (_fileDrag != null) { _fileDrag.Update(e); return; }
         if (e.LeftButton != MouseButtonState.Pressed) return;
 
         var diff = _pressOrigin - e.GetPosition(this);
@@ -476,6 +492,7 @@ public partial class SidebarView : UserControl
 
         if (_pendingProject != null) TryStartProjectDrag(_pendingProject);
         else if (_pendingSession != null) TryStartSessionDrag(_pendingSession);
+        else if (_pendingFile != null) TryStartFileDrag(_pendingFile);
     }
 
     private async void Sidebar_PreviewMouseUp(object sender, MouseButtonEventArgs e) => await EndDragAsync(commit: true);
@@ -483,12 +500,13 @@ public partial class SidebarView : UserControl
 
     private async Task EndDragAsync(bool commit)
     {
-        var pd = _projectDrag; var sd = _sessionDrag;
-        _projectDrag = null; _sessionDrag = null;
-        _pendingProject = null; _pendingSession = null;
+        var pd = _projectDrag; var sd = _sessionDrag; var fd = _fileDrag;
+        _projectDrag = null; _sessionDrag = null; _fileDrag = null;
+        _pendingProject = null; _pendingSession = null; _pendingFile = null;
         if (Mouse.Captured == this) ReleaseMouseCapture();
         if (pd != null) await pd.FinishAsync(commit);
         if (sd != null) await sd.FinishAsync(commit);
+        if (fd != null) await fd.FinishAsync(commit);
     }
 
     private void TryStartProjectDrag(ProjectItem p)
@@ -578,26 +596,52 @@ public partial class SidebarView : UserControl
     {
         var project = CurrentProjects.FirstOrDefault(pr => pr.Sessions.Contains(s));
         if (project == null) return;
-        var rows = GetSessionRows(project).ToList();
+        // 같은 패널 그룹(좌/우) 세션들끼리만 재정렬 — 드래그 행 집합을 그 그룹으로 제한한다(다른 그룹으로 못 드롭).
+        var groupItems = project.RightItems.Contains(s) ? project.RightItems : project.LeftItems;
+        var groupSessions = groupItems.OfType<SessionItem>().ToList();
+        var rows = GetSessionRows(project, groupSessions).ToList();
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, s));
         if (src.Element == null) return;
 
         _sessionDrag = ReorderDrag<SessionItem>.TryStart(this, rows, s, src.Element,
             (sess, hostTarget, _) =>
             {
+                // hostTarget 은 그룹 내 인덱스 → 그 위치의 그룹 세션을 전역 Sessions 인덱스로 환산해 이동.
+                int to = Math.Clamp(hostTarget, 0, groupSessions.Count - 1);
+                int globalTo = project.Sessions.IndexOf(groupSessions[to]);
                 int from = project.Sessions.IndexOf(sess);
-                if (from < 0) return Task.CompletedTask;
-                int to = Math.Clamp(hostTarget, 0, project.Sessions.Count - 1);
-                if (to != from)
+                if (globalTo >= 0 && globalTo != from)
                 {
                     // ProjectItem.MoveSession: Tabs 안의 세션 상대 순서도 동기화 → 탭 스트립이 자동으로 따라간다.
-                    project.MoveSession(sess, to);
+                    // 대상이 같은 그룹 세션이라 ref 파티션이 유지돼 반대 그룹은 영향 없다.
+                    project.MoveSession(sess, globalTo);
                     SessionsReordered?.Invoke(project);
                 }
                 return Task.CompletedTask;
             }, exactFollow: true);
         if (_sessionDrag != null) { _didDrag = true; CaptureMouse(); }
         _pendingSession = null;
+    }
+
+    private void TryStartFileDrag(ProjectFile f)
+    {
+        var project = CurrentProjects.FirstOrDefault(pr => pr.Files.Contains(f));
+        if (project == null) return;
+        var rows = GetFileRows(project).ToList();
+        var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, f));
+        if (src.Element == null) return;
+
+        _fileDrag = ReorderDrag<ProjectFile>.TryStart(this, rows, f, src.Element,
+            (file, hostTarget, _) =>
+            {
+                int from = project.Files.IndexOf(file);
+                if (from < 0) return Task.CompletedTask;
+                int to = Math.Clamp(hostTarget, 0, project.Files.Count - 1);
+                if (to != from) { project.Files.Move(from, to); FilesReordered?.Invoke(project); }
+                return Task.CompletedTask;
+            }, exactFollow: true);
+        if (_fileDrag != null) { _didDrag = true; CaptureMouse(); }
+        _pendingFile = null;
     }
 
     private IEnumerable<(ProjectItem Item, FrameworkElement Element)> GetProjectRows()
@@ -607,16 +651,27 @@ public partial class SidebarView : UserControl
                 yield return (p, fe);
     }
 
-    private IEnumerable<(SessionItem Item, FrameworkElement Element)> GetSessionRows(ProjectItem project)
+    private IEnumerable<(SessionItem Item, FrameworkElement Element)> GetSessionRows(ProjectItem project, IEnumerable<SessionItem> sessions)
     {
         if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc)
             yield break;
         // 카드 안엔 여러 ItemsControl(좌 그룹/우 그룹/바로가기)이 있다 — 세션이 어느 그룹에 있든 찾는다(분할 대응).
         var lists = FindVisualChildren<ItemsControl>(pc).ToList();
-        foreach (var s in project.Sessions)
+        foreach (var s in sessions)
             foreach (var inner in lists)
                 if (inner.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement fe)
                 { yield return (s, fe); break; }
+    }
+
+    private IEnumerable<(ProjectFile Item, FrameworkElement Element)> GetFileRows(ProjectItem project)
+    {
+        if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc)
+            yield break;
+        var lists = FindVisualChildren<ItemsControl>(pc).ToList();
+        foreach (var f in project.Files)
+            foreach (var inner in lists)
+                if (inner.ItemContainerGenerator.ContainerFromItem(f) is FrameworkElement fe)
+                { yield return (f, fe); break; }
     }
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject? root) where T : DependencyObject
