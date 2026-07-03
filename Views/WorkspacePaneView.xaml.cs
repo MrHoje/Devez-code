@@ -71,6 +71,8 @@ public partial class WorkspacePaneView : UserControl
     public Func<WorkspacePaneView, Point, double, bool>? TabDragHoverMoved;
     /// <summary>탭 드롭 — 커서가 반대 패널 위면 그 패널로 이동+삽입 위치 정렬하고 true(내부 재정렬 취소) 반환.</summary>
     public Func<WorkspacePaneView, TabItemBase, Point, bool>? TryCommitCrossDrop;
+    /// <summary>탭 드래그 시작/종료 — 셸이 양쪽 패널의 + 버튼을 숨기고/복원한다.</summary>
+    public Action<bool>? SetPanesTabDragActive;
     /// <summary>격리(분할 파트너) 중인 이 패널에서 탭(파일/세션)이 새로 열림 — 셸이 반대 패널에서 그 탭을 숨겨
     /// (HideTabInPane) 양쪽에 다 뜨는 것을 막는다. (파일탐색기·드롭·터미널 Ctrl+클릭·세션 추가 공통.)</summary>
     public event Action<WorkspacePaneView, TabItemBase>? IsolatedTabOpened;
@@ -1482,6 +1484,7 @@ public partial class WorkspacePaneView : UserControl
     private TabItemBase? _pendingTab;
     private ReorderDrag<TabItemBase>? _tabDrag;
     private bool _tabDidDrag;
+    private bool _tabDragActive; // 드래그 중 + 버튼 숨김 상태(양쪽 패널 공통으로 셸이 토글).
     private double _dragGhostWidth;
     private readonly List<FrameworkElement> _hiddenTabFeet = new();
     private bool _tabDragHidSeam;
@@ -1497,11 +1500,11 @@ public partial class WorkspacePaneView : UserControl
     {
         if (_tabDrag != null)
         {
-            _tabDrag.Update(e); // 고스트 + 이 패널 내부 재정렬 프리뷰
-            // 커서가 반대 패널이면 그쪽에 삽입 프리뷰(밀기) → 이 패널 내부 프리뷰는 억제.
+            // 커서가 반대 패널이면 그쪽에 삽입 프리뷰(밀기) → 이 패널은 압축(빈자리 메움).
             var screen = TabsHost.PointToScreen(e.GetPosition(TabsHost));
             bool cross = TabDragHoverMoved?.Invoke(this, screen, _dragGhostWidth) == true;
-            _tabDrag.SuppressDisplacement(cross);
+            _tabDrag.SuppressDisplacement(cross); // 먼저 상태 전환
+            _tabDrag.Update(e);                    // 그 다음 갱신 — 복귀 시 커서 기준으로 즉시 재계산(원래자리 빈 채 안 남음)
             return;
         }
         if (e.LeftButton != MouseButtonState.Pressed || _pendingTab == null) return;
@@ -1525,6 +1528,7 @@ public partial class WorkspacePaneView : UserControl
             bool crossed = TryCommitCrossDrop?.Invoke(this, td.Source, screen) == true;
             await td.FinishAsync(commit: !crossed);
         }
+        SetPanesTabDragActive?.Invoke(false); // 드래그 종료 → 양쪽 + 버튼 복원
     }
 
     private void TryStartTabDrag(TabItemBase s)
@@ -1570,11 +1574,20 @@ public partial class WorkspacePaneView : UserControl
             TabsHost.CaptureMouse();
             HideTabFeet(sourceBorder);
             SetupDragSeam(s, selectedRoot);
+            SetPanesTabDragActive?.Invoke(true); // 드래그 중 양쪽 + 버튼 숨김
         }
         else
         {
             _pendingTab = null;
         }
+    }
+
+    /// <summary>탭 드래그 동안 이 패널의 + 버튼을 숨긴다(양쪽 패널에 셸이 적용). 종료 시 원복.</summary>
+    public void SetTabDragActive(bool on)
+    {
+        _tabDragActive = on;
+        if (NewTabBtn != null)
+            NewTabBtn.Visibility = (!on && _activeProject != null) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── 반대 패널 삽입 프리뷰(크로스 탭 드래그 중, 이 패널에 그림) ─────────────────────
@@ -1597,9 +1610,6 @@ public partial class WorkspacePaneView : UserControl
             }
             i++;
         }
-        // 삽입으로 스트립 폭이 gap 만큼 늘어나므로 끝의 + 버튼도 함께 오른쪽으로 민다.
-        AnimateTabX(NewTabBtn, gap);
-        _previewShifted.Add(NewTabBtn);
     }
 
     /// <summary>삽입 프리뷰 해제(모든 밀린 탭 원위치).</summary>
@@ -2115,9 +2125,9 @@ public partial class WorkspacePaneView : UserControl
 
         EmptyState.Visibility = hasActive ? Visibility.Collapsed : Visibility.Visible;
 
-        // 프로젝트 미선택(빈 패널) 시 새 탭(+) 버튼과 메타바(#·경로) 숨김.
+        // 프로젝트 미선택(빈 패널) 시 새 탭(+) 버튼과 메타바(#·경로) 숨김. 탭 드래그 중이면 항상 숨김.
         if (NewTabBtn != null)
-            NewTabBtn.Visibility = _activeProject != null ? Visibility.Visible : Visibility.Collapsed;
+            NewTabBtn.Visibility = (!_tabDragActive && _activeProject != null) ? Visibility.Visible : Visibility.Collapsed;
         ApplyProjectInfoHeaderVisibility();
 
         SessionHeaderBar.Visibility = hasActive ? Visibility.Visible : Visibility.Collapsed;

@@ -117,8 +117,8 @@ internal sealed class ReorderDrag<T> where T : class
     {
         if (_suppressed == on) return;
         _suppressed = on;
-        _targetIndex = on ? _slots.Count - 1 : _sourceIndex; // 압축=소스를 끝으로 보낸 변위(뒤 항목 앞당김)
-        ApplyDisplacement();
+        if (on) { _targetIndex = _slots.Count - 1; ApplyDisplacement(); } // 압축=소스를 끝으로 보낸 변위(뒤 항목 앞당김)
+        // off: 되돌리지 않고 둔다 — 뒤이어 호출되는 Update 가 커서 기준으로 즉시 재계산(원래자리 빈 채 안 남게).
     }
 
     public void Update(MouseEventArgs e)

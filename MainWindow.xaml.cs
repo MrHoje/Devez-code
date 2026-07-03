@@ -2065,6 +2065,7 @@ public partial class MainWindow : Window
         pane.SplitViewRequested += OnPaneSplitViewRequested;
         pane.TabDragHoverMoved = OnTabDragHoverMoved;
         pane.TryCommitCrossDrop = OnTryCommitCrossTabDrop;
+        pane.SetPanesTabDragActive = on => { LeftPane.SetTabDragActive(on); RightPane.SetTabDragActive(on); };
         pane.RevealPrepared += OnPaneRevealPrepared;
         pane.IsolatedTabOpened += OnPaneIsolatedTabOpened;
         _panes.Add(pane);
