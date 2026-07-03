@@ -354,10 +354,11 @@ public partial class SidebarView : UserControl
         else if (project.RightItems.Contains(tab)) { header = "왼쪽으로 이동"; iconKey = "IconChevronLeft"; }
         else { header = "오른쪽으로 이동"; iconKey = "IconChevronRight"; }
 
-        cm.Items.Add(new Separator { Tag = "splitmove" });
+        // 맨 위에 삽입(분할 보기/이동 → 세퍼레이터 → 기존 닫기/삭제 항목).
         var item = new MenuItem { Header = header, Tag = "splitmove", Icon = BuildCardMenuIcon(iconKey) };
         item.Click += (_, _) => CardSplitMoveRequested?.Invoke(tab);
-        cm.Items.Add(item);
+        cm.Items.Insert(0, item);
+        cm.Items.Insert(1, new Separator { Tag = "splitmove" });
     }
 
     private System.Windows.Shapes.Path BuildCardMenuIcon(string iconKey)
