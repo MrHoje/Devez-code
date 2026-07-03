@@ -167,7 +167,6 @@ public partial class MainWindow : Window
         Sidebar.OpenDocCloseRequested  += CloseDocFromSidebar;
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
-        Sidebar.CardSplitMoveRequested += OnCardSplitMove;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
 
@@ -2484,17 +2483,6 @@ public partial class MainWindow : Window
             if (loc.X >= 0 && loc.Y >= 0 && loc.X <= p.ActualWidth && loc.Y <= p.ActualHeight) return p;
         }
         return null;
-    }
-
-    /// <summary>카드 세션/문서 우클릭 "분할 보기/이동" — 항목을 그 패널에 활성화한 뒤, 실제 표시 패널에서
-    /// 탭 헤더와 동일한 분할보기/이동 연산을 수행한다(조건·방향 자동 일치).</summary>
-    private void OnCardSplitMove(TabItemBase tab)
-    {
-        if (tab is SessionItem s) OpenSessionFromSidebar(s);
-        else if (tab is FileTabItem f) OpenDocFromSidebar(f);
-        else return;
-        var pane = _panes.FirstOrDefault(p => p.ShowsTab(tab)) ?? _focusedPane;
-        OnPaneSplitViewRequested(pane, tab);
     }
 
     private void OnPaneSplitViewRequested(WorkspacePaneView pane, TabItemBase tab)

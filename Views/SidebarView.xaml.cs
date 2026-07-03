@@ -55,8 +55,6 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionDeleteRequested;
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
-    /// <summary>카드 세션/문서 우클릭 "분할 보기/이동" — 탭 헤더와 동일 연산(MainWindow 위임).</summary>
-    public event Action<TabItemBase>? CardSplitMoveRequested;
 
     // 프로젝트 목록 열 수(1/2). 2면 카드 2열 그리드 + 가로 드래그. 기본 1.
     /// <summary>숨김 세션 표시 토글 변경 → 영속 저장 트리거.</summary>
@@ -335,57 +333,6 @@ public partial class SidebarView : UserControl
         if (ItemOf<FileTabItem>(sender) is { } f) OpenDocCloseRequested?.Invoke(f);
     }
 
-    /// <summary>카드 세션/문서 우클릭 메뉴 열릴 때 "분할 보기/이동" 항목을 조건에 맞춰 동적 삽입(탭 헤더와 동일 규칙):
-    /// 비분할=분할 보기, 분할·좌 그룹=오른쪽으로 이동, 분할·우 그룹=왼쪽으로 이동.</summary>
-    private void CardRow_ContextMenuOpening(object sender, ContextMenuEventArgs e)
-    {
-        if (sender is not FrameworkElement { DataContext: TabItemBase tab } fe || fe.ContextMenu is not ContextMenu cm) return;
-
-        // 이전에 삽입한 동적 항목 제거(재오픈 대비).
-        for (int i = cm.Items.Count - 1; i >= 0; i--)
-            if ((cm.Items[i] as FrameworkElement)?.Tag as string == "splitmove")
-                cm.Items.RemoveAt(i);
-
-        var project = CurrentProjects.FirstOrDefault(p => p.Tabs.Contains(tab));
-        if (project == null || !project.IsSplitView) return; // 분할 상태일 때만 좌/우 이동 항목 노출
-
-        bool inRight = project.RightItems.Contains(tab);
-        string header = inRight ? "왼쪽으로 이동" : "오른쪽으로 이동";
-        string iconKey = inRight ? "IconChevronLeft" : "IconChevronRight";
-
-        var item = new MenuItem { Header = header, Tag = "splitmove", Icon = BuildCardMenuIcon(iconKey) };
-        item.Click += (_, _) => CardSplitMoveRequested?.Invoke(tab);
-
-        // "이름 변경" 바로 아래에 넣는다(그 뒤 기존 세퍼레이터가 닫기/삭제와 구분). 이름변경이 없으면(문서 메뉴)
-        // 맨 위 + 세퍼레이터로.
-        int renameIdx = -1;
-        for (int i = 0; i < cm.Items.Count; i++)
-            if (cm.Items[i] is MenuItem mi && (mi.Header as string) == "이름 변경") { renameIdx = i; break; }
-        if (renameIdx >= 0)
-        {
-            cm.Items.Insert(renameIdx + 1, new Separator { Tag = "splitmove" });
-            cm.Items.Insert(renameIdx + 2, item);
-        }
-        else
-        {
-            cm.Items.Insert(0, item);
-            cm.Items.Insert(1, new Separator { Tag = "splitmove" });
-        }
-    }
-
-    private System.Windows.Shapes.Path BuildCardMenuIcon(string iconKey)
-    {
-        var path = new System.Windows.Shapes.Path
-        {
-            Width = 13,
-            Height = 13,
-            Stretch = Stretch.Uniform,
-            Style = (Style)FindResource("LucideIcon"),
-            Data = (System.Windows.Media.Geometry)FindResource(iconKey),
-        };
-        path.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "TextMutedBrush");
-        return path;
-    }
 
     private void AddSession_Click(object sender, RoutedEventArgs e)
     {
