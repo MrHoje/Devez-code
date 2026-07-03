@@ -476,13 +476,22 @@
                     <Border Visibility="Collapsed"
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
                         <StackPanel Margin="8,2,8,8">
+                            <!-- 분할 시 '좌' 라벨(비분할이면 숨김) -->
+                            <TextBlock Text="좌" Margin="2,0,0,3"
+                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       Visibility="{Binding IsSplitView, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                             <!-- 상단 그룹: 비분할=전체 탭, 분할=좌측 패널 탭(세션+열린 문서) -->
                             <ItemsControl ItemsSource="{Binding LeftItems}" Tag="{Binding ShowHiddenSessions}"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
-                            <!-- 분할 시 우측 그룹: 세퍼레이터 + 우측 패널 탭 (라벨 없음) -->
+                            <!-- 분할 시 우측 그룹: 세퍼레이터 + '우' 라벨 + 우측 패널 탭 -->
                             <Border Height="1" Margin="2,6,2,6"
                                     Background="{DynamicResource LineBrush}"
                                     Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                            <TextBlock Text="우" Margin="2,0,0,3"
+                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                             <ItemsControl ItemsSource="{Binding RightItems}" Tag="{Binding ShowHiddenSessions}"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
                             <!-- 바로가기: 세션과 세퍼레이터로 구분, 등록된 게 있을 때만 표시 -->
@@ -696,36 +705,6 @@
                                   ItemTemplate="{StaticResource ProjectTemplate}"
                                   ItemsPanel="{StaticResource ProjectsPanel}"/>
                 </ScrollViewer>
-
-                <!-- 새 프로젝트 FAB (devez 방식: 우하단 떠 있는 원형 버튼) -->
-                <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
-                        Margin="0,0,10,10" Panel.ZIndex="10">
-                    <Button Width="32" Height="32" Click="AddProject_Click" ToolTip="새 프로젝트">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border x:Name="Bd" CornerRadius="16" Background="{DynamicResource PrimaryBrush}">
-                                    <Border.Effect>
-                                        <DropShadowEffect Color="{DynamicResource ShadowColor}" Opacity="0.3"
-                                                          BlurRadius="12" ShadowDepth="2" Direction="270"/>
-                                    </Border.Effect>
-                                    <Path Data="{StaticResource IconPlus}"
-                                          Stroke="White" StrokeThickness="2"
-                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                                          Width="14" Height="14" Stretch="Uniform"
-                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBrush}"/>
-                                    </Trigger>
-                                    <Trigger Property="IsPressed" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryPressedBrush}"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
-                </Border>
             </Grid>
 
             <!-- 보관함 패널 — 동일 ProjectTemplate 사용(선택/세션실행 전부 동일 동작). 우측에 대기하다 슬라이드 인 -->
@@ -765,6 +744,37 @@
                     </LinearGradientBrush>
                 </Rectangle.OpacityMask>
             </Rectangle>
+
+            <!-- 새 프로젝트 FAB — 페이드 위(z=20)에 떠서 블러 안 먹음. 활성 패널일 때만 노출 -->
+            <Border VerticalAlignment="Bottom" HorizontalAlignment="Right"
+                    Margin="0,0,10,10" Panel.ZIndex="20"
+                    Visibility="{Binding Visibility, ElementName=ActivePanel}">
+                <Button Width="32" Height="32" Click="AddProject_Click" ToolTip="새 프로젝트">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" CornerRadius="16" Background="{DynamicResource PrimaryBrush}">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="{DynamicResource ShadowColor}" Opacity="0.3"
+                                                      BlurRadius="12" ShadowDepth="2" Direction="270"/>
+                                </Border.Effect>
+                                <Path Data="{StaticResource IconPlus}"
+                                      Stroke="White" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      Width="14" Height="14" Stretch="Uniform"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryPressedBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Border>
         </Grid>
 
         <!-- 업데이트 알림 버튼 -->
