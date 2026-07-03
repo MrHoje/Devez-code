@@ -3668,21 +3668,23 @@ public partial class MainWindow : Window
     }
 
 
-    /// <summary>전체화면 해제 → 진입 전 창 크기를 현재 모니터 작업영역 중앙에 배치(애니메이션 없음).</summary>
+    /// <summary>전체화면 해제 → 현재 모니터 작업영역의 가로·세로 절반 크기로 중앙 배치(애니메이션 없음).</summary>
     private void ExitFullScreen()
     {
         if (!_inFullScreen) return;
         _inFullScreen = false;
         Topmost = false;
         ResizeMode = ResizeMode.CanResize;
-        double w = (!_preFsBounds.IsEmpty && _preFsBounds.Width  > 0) ? _preFsBounds.Width  : ActualWidth;
-        double h = (!_preFsBounds.IsEmpty && _preFsBounds.Height > 0) ? _preFsBounds.Height : ActualHeight;
-        var area = TryGetMonitorDip(out _, out var work) ? work : new Rect(Left, Top, w, h);
-        // 작업영역 중앙. 창이 더 크면 작업영역 안으로 클램프.
-        w = Math.Min(w, area.Width);
-        h = Math.Min(h, area.Height);
-        SetBoundsInstant(new Rect(area.Left + (area.Width - w) / 2, area.Top + (area.Height - h) / 2, w, h));
+        SetBoundsInstant(HalfCenteredOnMonitor());
         ApplyCornerPreference();
+    }
+
+    /// <summary>현재 창이 속한 모니터 작업영역의 가로·세로 절반 크기 + 중앙 위치 Rect.</summary>
+    private Rect HalfCenteredOnMonitor()
+    {
+        var area = TryGetMonitorDip(out _, out var work) ? work : new Rect(Left, Top, ActualWidth, ActualHeight);
+        double w = Math.Max(area.Width / 2, MinWidth), h = Math.Max(area.Height / 2, MinHeight);
+        return new Rect(area.Left + (area.Width - w) / 2, area.Top + (area.Height - h) / 2, w, h);
     }
 
     /// <summary>현재 창이 속한 모니터의 전체/작업 영역을 DIP Rect 로 반환.</summary>
@@ -3825,25 +3827,16 @@ public partial class MainWindow : Window
         return IntPtr.Zero;
     }
 
-    /// <summary>전체화면 중 캡션을 드래그하면 진입 전 일반 크기로 복원하고, 커서가 타이틀바 위에
-    /// 오도록 창을 재배치한 뒤 네이티브 이동 루프(SC_MOVE)로 드래그를 이어간다.</summary>
+    /// <summary>전체화면 중 캡션을 아래로 드래그하면 작업영역 절반 크기로 화면 중앙에 배치한다.</summary>
     private void RestoreFromFullScreenAndDrag(int screenPxX, int screenPxY)
     {
         if (!_inFullScreen) return;
-        var dpi = VisualTreeHelper.GetDpi(this);
-        double cx = screenPxX / dpi.DpiScaleX, cy = screenPxY / dpi.DpiScaleY;
-        double w = (!_preFsBounds.IsEmpty && _preFsBounds.Width  > 0) ? _preFsBounds.Width  : 960;
-        double h = (!_preFsBounds.IsEmpty && _preFsBounds.Height > 0) ? _preFsBounds.Height : 640;
-
         _inFullScreen = false;
         Topmost = false;
         ResizeMode = ResizeMode.CanResize;
-        SetBoundsInstant(new Rect(cx - w / 2, cy - 16, w, h));
-        ApplyCornerPreference();
-
-        // SC_MOVE: 합성 NCLBUTTONDOWN 을 안 써(더블클릭 오인 방지) 커서 따라 이동 시작.
         ReleaseCapture();
-        SendMessage(_mainHwnd, WM_SYSCOMMAND, (IntPtr)(SC_MOVE | 0x0002), IntPtr.Zero);
+        SetBoundsInstant(HalfCenteredOnMonitor());
+        ApplyCornerPreference();
     }
 
     private const int SM_CXDOUBLECLK = 36, SM_CYDOUBLECLK = 37, SM_CXDRAG = 68, SM_CYDRAG = 69;
