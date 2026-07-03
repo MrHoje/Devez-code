@@ -34,6 +34,7 @@ internal sealed class ReorderDrag<T> where T : class
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private bool _finished;
     private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
+    private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
 
     private bool IsGrid => _columns > 1;
     private double AxisPos(Slot s) => _horizontal ? s.Left : s.Top;
@@ -114,10 +115,10 @@ internal sealed class ReorderDrag<T> where T : class
     {
         if (_suppressed == on) return;
         _suppressed = on;
-        // on=압축(소스를 끝으로 보낸 변위=뒤 항목 앞당김). off=소스 자리로 되돌림 — 뒤이어 호출되는
-        // Update 가 커서 기준으로 다시 옮긴다(off 후 Update 가 없거나 커서 target 이 끝일 때도 자리 안 어긋나게).
-        _targetIndex = on ? _slots.Count - 1 : _sourceIndex;
-        ApplyDisplacement();
+        // on=압축(소스를 끝으로 보낸 변위=뒤 항목 앞당김). off=억제 해제 — 뒤이어 호출되는 Update 가 커서 기준으로
+        // 재적용하게 강제 플래그를 세운다(target 이 우연히 이전 값과 같아도 조기 return 안 되게 → 소스 자리 빈 채 고정 방지).
+        if (on) { _targetIndex = _slots.Count - 1; ApplyDisplacement(); }
+        else _needsReapply = true;
     }
 
     public void Update(MouseEventArgs e)
@@ -146,7 +147,8 @@ internal sealed class ReorderDrag<T> where T : class
         // 커서 raw 대신 드래그 중인 카드의 중심을 기준점으로 사용 — 위/아래 대칭 판정.
         var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
         var newTarget = ComputeTargetIndex(draggedCenter);
-        if (newTarget == _targetIndex) return;
+        if (!_needsReapply && newTarget == _targetIndex) return;
+        _needsReapply = false;
         _targetIndex = newTarget;
         ApplyDisplacement();
     }
