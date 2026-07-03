@@ -37,8 +37,9 @@ Start-Process "bin\DevezCode.exe"
 | 터미널 입력/마우스/클립보드/IME/스크롤 등 커스텀 동작 | `.knowledge/터미널커스텀동작.md` |
 | 중앙 2분할(Split) 패널·탭 격리·파트너·포커스·터미널 재진입 | `.knowledge/분할패널-탭격리-파트너-포커스.md` |
 | 패널 리사이즈/오버레이 시 터미널 깜빡임(WebView2 airspace) | `.knowledge/webview2-airspace-패널리사이즈-깜빡임.md` |
+| `Style.Setter.Value`/`Template` 인라인 자식 → connectionId 크래시 | `.knowledge/wpf-contextmenu-setter-value-connectionid-충돌.md` |
 
-> 위에 없는 일회성 버그 교훈(WPF 스타일 크래시·특정 컨트롤 트리거 등)은 `.knowledge/wpf-*.md` 로 남아 있으니, 비슷한 증상을 만나면 폴더를 이름으로 grep 해서 찾는다.
+> 위에 없는 일회성 버그 교훈(특정 컨트롤 트리거 등)은 `.knowledge/wpf-*.md` 로 남아 있으니, 비슷한 증상을 만나면 폴더를 이름으로 grep 해서 찾는다.
 
 ## 참고 대상 (devez)
 
