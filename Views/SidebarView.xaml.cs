@@ -437,10 +437,10 @@ public partial class SidebarView : UserControl
     // ── 드래그 순서변경 (devez ReorderDrag: 고스트 + 시프트 애니메이션) ──────────────
     private Point _pressOrigin;
     private ProjectItem? _pendingProject;
-    private SessionItem? _pendingSession;
+    private TabItemBase? _pendingTab;   // 카드 그룹의 세션/문서 행(드래그 재정렬 대상)
     private ProjectFile? _pendingFile;
     private ReorderDrag<ProjectItem>? _projectDrag;
-    private ReorderDrag<SessionItem>? _sessionDrag;
+    private ReorderDrag<TabItemBase>? _tabDrag;
     private ReorderDrag<ProjectFile>? _fileDrag;
     private bool _didDrag;
 
@@ -450,7 +450,8 @@ public partial class SidebarView : UserControl
         // chevron 등 버튼 위에서 누른 경우 드래그를 무장하지 않는다(버튼 동작 보존).
         _pendingProject = IsWithinButton(e.OriginalSource as DependencyObject)
             ? null : (sender as FrameworkElement)?.DataContext as ProjectItem;
-        _pendingSession = null;
+        _pendingTab = null;
+        _pendingFile = null;
         _didDrag = false;
     }
 
@@ -461,10 +462,11 @@ public partial class SidebarView : UserControl
         return false;
     }
 
+    // 카드 그룹의 세션/문서 행 공용 — 드래그 재정렬 대상(TabItemBase).
     private void SessionRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _pressOrigin = e.GetPosition(this);
-        _pendingSession = (sender as FrameworkElement)?.DataContext as SessionItem;
+        _pendingTab = (sender as FrameworkElement)?.DataContext as TabItemBase;
         _pendingProject = null;
         _pendingFile = null;
         _didDrag = false;
@@ -475,14 +477,14 @@ public partial class SidebarView : UserControl
         _pressOrigin = e.GetPosition(this);
         _pendingFile = (sender as FrameworkElement)?.DataContext as ProjectFile;
         _pendingProject = null;
-        _pendingSession = null;
+        _pendingTab = null;
         _didDrag = false;
     }
 
     private void Sidebar_PreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (_projectDrag != null) { _projectDrag.Update(e); return; }
-        if (_sessionDrag != null) { _sessionDrag.Update(e); return; }
+        if (_tabDrag != null) { _tabDrag.Update(e); return; }
         if (_fileDrag != null) { _fileDrag.Update(e); return; }
         if (e.LeftButton != MouseButtonState.Pressed) return;
 
@@ -491,7 +493,7 @@ public partial class SidebarView : UserControl
             Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance) return;
 
         if (_pendingProject != null) TryStartProjectDrag(_pendingProject);
-        else if (_pendingSession != null) TryStartSessionDrag(_pendingSession);
+        else if (_pendingTab != null) TryStartTabDrag(_pendingTab);
         else if (_pendingFile != null) TryStartFileDrag(_pendingFile);
     }
 
@@ -500,12 +502,12 @@ public partial class SidebarView : UserControl
 
     private async Task EndDragAsync(bool commit)
     {
-        var pd = _projectDrag; var sd = _sessionDrag; var fd = _fileDrag;
-        _projectDrag = null; _sessionDrag = null; _fileDrag = null;
-        _pendingProject = null; _pendingSession = null; _pendingFile = null;
+        var pd = _projectDrag; var td = _tabDrag; var fd = _fileDrag;
+        _projectDrag = null; _tabDrag = null; _fileDrag = null;
+        _pendingProject = null; _pendingTab = null; _pendingFile = null;
         if (Mouse.Captured == this) ReleaseMouseCapture();
         if (pd != null) await pd.FinishAsync(commit);
-        if (sd != null) await sd.FinishAsync(commit);
+        if (td != null) await td.FinishAsync(commit);
         if (fd != null) await fd.FinishAsync(commit);
     }
 
@@ -592,45 +594,44 @@ public partial class SidebarView : UserControl
         return true;
     }
 
-    private void TryStartSessionDrag(SessionItem s)
+    private void TryStartTabDrag(TabItemBase s)
     {
-        var project = CurrentProjects.FirstOrDefault(pr => pr.Sessions.Contains(s));
+        var project = CurrentProjects.FirstOrDefault(pr => pr.Tabs.Contains(s));
         if (project == null) return;
         if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc) return;
 
-        // s 가 실제로 렌더된 그룹 ItemsControl(좌/우)을 찾고, 그 그룹 세션들끼리만 재정렬한다(다른 그룹으로 못 드롭).
+        // s 가 실제로 렌더된 그룹 ItemsControl(좌/우)을 찾고, 그 그룹 항목(세션+문서)끼리만 재정렬한다(다른 그룹으로 못 드롭).
         ItemsControl? group = null;
         foreach (var ic in FindVisualChildren<ItemsControl>(pc))
             if (ic.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement) { group = ic; break; }
         if (group == null) return;
 
-        var rows = new List<(SessionItem Item, FrameworkElement Element)>();
+        var rows = new List<(TabItemBase Item, FrameworkElement Element)>();
         foreach (var item in group.Items)
-            if (item is SessionItem gs && group.ItemContainerGenerator.ContainerFromItem(gs) is FrameworkElement fe)
-                rows.Add((gs, fe));
-        var groupSessions = rows.Select(r => r.Item).ToList();
+            if (item is TabItemBase tb && group.ItemContainerGenerator.ContainerFromItem(tb) is FrameworkElement fe)
+                rows.Add((tb, fe));
+        var groupItems = rows.Select(r => r.Item).ToList();
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, s));
-        Services.DiagLog.Write($"SessionDrag s={s.Name} groupFound={group != null} groupItems={group.Items.Count} rowsSessions={rows.Count} srcFound={src.Element != null}");
-        if (src.Element == null) return;
+        if (src.Element == null || rows.Count < 2) return;
 
-        _sessionDrag = ReorderDrag<SessionItem>.TryStart(this, rows, s, src.Element,
-            (sess, hostTarget, _) =>
+        _tabDrag = ReorderDrag<TabItemBase>.TryStart(this, rows, s, src.Element,
+            (item, hostTarget, _) =>
             {
-                // hostTarget 은 그룹 내 인덱스 → 그 위치의 그룹 세션을 전역 Sessions 인덱스로 환산해 이동.
-                int to = Math.Clamp(hostTarget, 0, groupSessions.Count - 1);
-                int globalTo = project.Sessions.IndexOf(groupSessions[to]);
-                int from = project.Sessions.IndexOf(sess);
-                if (globalTo >= 0 && globalTo != from)
+                // hostTarget = 그룹 내 인덱스 → 그 위치의 그룹 항목 자리로 Tabs 안에서 이동(세션/문서 공통).
+                // 대상이 같은 그룹 항목이라 ref 파티션이 유지돼 반대 그룹은 영향 없다. Tabs.Move → Sessions 동기 +
+                // 탭 스트립 반영, SessionsReordered → RefreshCardGroups 로 카드 순서 갱신.
+                int to = Math.Clamp(hostTarget, 0, groupItems.Count - 1);
+                int fromIdx = project.Tabs.IndexOf(item);
+                int toIdx = project.Tabs.IndexOf(groupItems[to]);
+                if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx)
                 {
-                    // ProjectItem.MoveSession: Tabs 안의 세션 상대 순서도 동기화 → 탭 스트립이 자동으로 따라간다.
-                    // 대상이 같은 그룹 세션이라 ref 파티션이 유지돼 반대 그룹은 영향 없다.
-                    project.MoveSession(sess, globalTo);
+                    project.Tabs.Move(fromIdx, toIdx);
                     SessionsReordered?.Invoke(project);
                 }
                 return Task.CompletedTask;
             }, exactFollow: true);
-        if (_sessionDrag != null) { _didDrag = true; CaptureMouse(); }
-        _pendingSession = null;
+        if (_tabDrag != null) { _didDrag = true; CaptureMouse(); }
+        _pendingTab = null;
     }
 
     private void TryStartFileDrag(ProjectFile f)

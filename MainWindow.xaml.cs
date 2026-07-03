@@ -3107,8 +3107,20 @@ public partial class MainWindow : Window
     /// 풀어 우측에 전체 세션이 쏟아지는 것 방지). 그 외엔 기존 OpenSession 라우팅.</summary>
     private void OpenSessionFromSidebar(SessionItem s)
     {
+        var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
+        EnsureProjectSplitOpen(parent);
         EnsureRightGroupIsolation(s);
         OpenSession(s);
+    }
+
+    /// <summary>분할 설정 프로젝트의 카드 항목(세션/문서)을 클릭했는데 지금 그 프로젝트가 분할 표시 중이 아니면,
+    /// 먼저 프로젝트를 분할로 연다(그냥 열면 단일 패널로 떠 분할이 안 됨). 이미 분할 표시 중이면 그대로.</summary>
+    private void EnsureProjectSplitOpen(ProjectItem? parent)
+    {
+        if (parent == null || !parent.SplitEnabled) return;
+        bool splitAsParent = _splitActive
+            && ReferenceEquals(LeftPane.ActiveProject, parent) && ReferenceEquals(RightPane.ActiveProject, parent);
+        if (!splitAsParent) SelectProjectFromSidebar(parent); // 프로젝트 선택 = ApplyProjectSplitForMainPane 로 분할 적용
     }
 
     /// <summary>사이드바 카드의 '오른쪽' 그룹 항목(세션/문서) 클릭 시, 활성화 전에 우측 패널 격리 화이트리스트에
@@ -3131,8 +3143,9 @@ public partial class MainWindow : Window
     /// 어느 패널에도 없으면 그 프로젝트를 띄운 패널, 그것도 없으면 포커스 패널에 연다.</summary>
     private void OpenDocFromSidebar(FileTabItem doc)
     {
-        EnsureRightGroupIsolation(doc); // 우측 그룹 문서면 우측 격리 유지(분할 붕괴 방지)
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(doc));
+        EnsureProjectSplitOpen(parent); // 분할 설정 프로젝트면 먼저 분할로 연다(단일로 열리는 것 방지)
+        EnsureRightGroupIsolation(doc); // 우측 그룹 문서면 우측 격리 유지(분할 붕괴 방지)
         var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc))
             ?? (parent != null ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent)) : null)
             ?? _focusedPane;

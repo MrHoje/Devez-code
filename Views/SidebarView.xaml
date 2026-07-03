@@ -253,7 +253,9 @@
         <!-- ── 열린 문서(파일 탭) row 템플릿 — 세션 row 와 동일 크기. 문서 아이콘 + 파일명. 클릭=해당 탭 활성 ── -->
         <DataTemplate x:Key="FileDocTemplate" DataType="{x:Type models:FileTabItem}">
             <Border x:Name="DocRow" Style="{StaticResource SessionCard}"
-                    MouseLeftButtonUp="OpenDoc_Click" Cursor="Arrow"
+                    MouseLeftButtonUp="OpenDoc_Click"
+                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
+                    Cursor="Arrow"
                     ToolTip="{Binding FilePath}">
                 <Grid Margin="10,5,10,5">
                     <Grid.ColumnDefinitions>
