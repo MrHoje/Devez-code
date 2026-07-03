@@ -38,12 +38,22 @@ internal static class WindowCenter
 
         Center();
 
-        // Manual 배치 창은 OS 기본 위치(대개 주 모니터)에 생성됐다가 위 Center() 로 owner(확대 모니터)로
-        // 옮겨지면서 WM_DPICHANGED → WPF 가 창을 리스케일한다. 그 새 크기 기준으로 한 번 더 중앙 정렬.
+        // 초기 배치가 끝날 때까지 크기 확정/리스케일 이벤트마다 재중앙:
+        //  - SizeChanged: SizeToContent 창은 Loaded 시점에 최종 높이가 아직 안 잡혀(위 Center 는 옛 크기로 계산)
+        //    같은 배율 모니터에서도 세로가 어긋난다. 크기 확정 시 다시 중앙에 맞춘다.
+        //  - DpiChanged: Manual 배치 창이 주 모니터에 생성됐다 owner(다른 배율 모니터)로 옮겨질 때 WPF 가
+        //    리스케일한다. 그 새 크기 기준으로 재중앙.
+        SizeChangedEventHandler? onSize = null;
         DpiChangedEventHandler? onDpi = null;
+        onSize = (_, _) => Center();
         onDpi = (_, _) => child.Dispatcher.BeginInvoke(new Action(Center), DispatcherPriority.Loaded);
+        child.SizeChanged += onSize;
         child.DpiChanged += onDpi;
-        // 이후 사용자가 창을 다른 모니터로 끌 때 재중앙되지 않도록, 초기 배치가 끝나면 핸들러를 뗀다.
-        child.Dispatcher.BeginInvoke(new Action(() => child.DpiChanged -= onDpi), DispatcherPriority.ApplicationIdle);
+        // 초기 배치가 끝나면 핸들러를 뗀다 — 이후 사용자가 창을 옮기거나 리사이즈할 때 재중앙되지 않도록.
+        child.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            child.SizeChanged -= onSize;
+            child.DpiChanged -= onDpi;
+        }), DispatcherPriority.ApplicationIdle);
     }
 }
