@@ -370,8 +370,19 @@ public sealed class ProjectItem : NotifyBase
         Files.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFiles));
 
         // 탭 추가/제거/이동 → 비분할이면 단일 목록(LeftItems=전체 탭) 자동 갱신.
-        // 분할(IsSplitView) 중이면 MainWindow 가 라이브 패널 상태로 ApplyLiveGroups 를 다시 밀어넣는다.
-        Tabs.CollectionChanged += (_, _) => { if (!IsSplitView) SyncObservable(LeftItems, Tabs); };
+        // 분할(IsSplitView) 중이면 그룹 내용은 MainWindow(RefreshCardGroups)가 라이브로 주입하지만,
+        // '삭제'만은 즉시 반영한다 — 안 그러면 탭 헤더에선 지워져도 카드엔 남는다(새로고침 누락).
+        Tabs.CollectionChanged += (_, e) =>
+        {
+            if (!IsSplitView) { SyncObservable(LeftItems, Tabs); return; }
+            if (e.Action is NotifyCollectionChangedAction.Remove or NotifyCollectionChangedAction.Reset)
+            {
+                var live = new HashSet<TabItemBase>(Tabs);
+                for (int i = LeftItems.Count - 1; i >= 0; i--) if (!live.Contains(LeftItems[i])) LeftItems.RemoveAt(i);
+                for (int i = RightItems.Count - 1; i >= 0; i--) if (!live.Contains(RightItems[i])) RightItems.RemoveAt(i);
+                HasRightItems = RightItems.Count > 0;
+            }
+        };
         SyncObservable(LeftItems, Tabs);
     }
 

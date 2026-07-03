@@ -3436,7 +3436,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>사이드바 세션 순서 변경 — 탭은 같은 컬렉션이라 자동 반영되므로 영속만 한다.</summary>
-    private void OnSidebarSessionsReordered(ProjectItem _) { RefreshCardGroups(); WorkspaceStore.Save(_projects); }
+    private void OnSidebarSessionsReordered(ProjectItem _)
+    {
+        RefreshCardGroups();
+        PaneA.RefreshSelectedTabSeam(); PaneB.RefreshSelectedTabSeam(); // 탭 순서 바뀜 → 선택 밑줄 위치 재계산
+        WorkspaceStore.Save(_projects);
+    }
 
     // 푸터 좌측 상태 텍스트는 제거됨(한도 표시로 대체). 호출부 유지를 위해 no-op.
     private void UpdateStatus() { }

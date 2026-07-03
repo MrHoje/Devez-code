@@ -1648,6 +1648,11 @@ public partial class WorkspacePaneView : UserControl
                 s.RefreshAgentIcon();
     }));
 
+    /// <summary>외부(사이드바 카드 드래그로 탭 순서가 바뀐 뒤)에서 이 패널 탭 스트립의 선택 밑줄(seam)을
+    /// 갱신 요청 — 탭 스트립이 재배치된 다음 프레임에 재계산해 밑줄이 새 위치로 따라가게 한다.</summary>
+    public void RefreshSelectedTabSeam()
+        => Dispatcher.InvokeAsync(UpdateSelectedTabSeam, System.Windows.Threading.DispatcherPriority.Loaded);
+
     private void UpdateSelectedTabSeam()
     {
         if (SelectedTabSeam == null || TabBar == null || TabsHost == null) return;
