@@ -3161,6 +3161,20 @@ public partial class MainWindow : Window
     {
         if (s == null || wasWaiting || !nowWaiting) return;
         RequestTaskbarAttention();
+        if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
+
+        var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
+        var projName = proj != null
+            ? System.IO.Path.GetFileName(proj.Path.TrimEnd('\\', '/'))
+            : "";
+        var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
+        var title = string.IsNullOrEmpty(projName) ? sessName : projName;
+        var body  = string.IsNullOrEmpty(projName) ? "응답 대기" : $"{sessName} · 응답 대기";
+
+        App.ShowNotification(title, body, () =>
+        {
+            try { Activate(); OpenSession(s); } catch { /* best effort */ }
+        });
     }
 
     /// <summary>창이 비활성일 때 세션 완료/응답대기 발생을 작업표시줄 깜빡임으로 알린다.
