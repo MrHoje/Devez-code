@@ -109,6 +109,9 @@ public partial class PluginControlDialog : UserControl
         bool plugins = tab == "plugins";
         bool market = tab == "marketplaces";
 
+        // 탭 전환 시 하단 Discover 닫아 출력이 꽉 차게(특히 플러그인 탭은 설치 가능 목록이 없음).
+        CloseDiscover();
+
         StyleTab(PluginTabBtn, plugins);
         StyleTab(MarketTabBtn, market);
 
@@ -307,8 +310,9 @@ public partial class PluginControlDialog : UserControl
         _selectedMarket = m;
         m.IsSelected = true;
 
-        // 하단 Discover 패널 열기 — 출력은 240px 고정, 나머지 공간은 Discover 차지.
+        // 하단 Discover 패널 열기 — 출력은 200px 고정, 나머지 공간은 Discover 차지.
         DiscoverTitle.Text = m.Name;
+        OutputRow.Height = new GridLength(200);
         DiscoverRow.Height = new GridLength(1, GridUnitType.Star);
         DiscoverSearchBox.Text = "";   // 이전 검색어 초기화
         DiscoverSpinner.Visibility = Visibility.Visible;
@@ -333,6 +337,16 @@ public partial class PluginControlDialog : UserControl
                 DiscoverEmpty.Visibility = _avail.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             }
         }
+    }
+
+    // 하단 Discover 패널을 닫고 출력이 전체 높이를 차지하도록 되돌린다.
+    private void CloseDiscover()
+    {
+        if (_selectedMarket != null) { _selectedMarket.IsSelected = false; _selectedMarket = null; }
+        OutputRow.Height = new GridLength(1, GridUnitType.Star);
+        DiscoverRow.Height = new GridLength(0);
+        _avail.Clear();
+        DiscoverSearchBox.Text = "";
     }
 
     // 하단 Discover 검색(설치 가능한 플러그인 필터). 목록이 작아 즉시 필터.

@@ -460,21 +460,21 @@
 
             <!-- 스플리터: 중앙 리스트 ↔ 우측 출력 크기 조절. 메인화면과 동일 방식 —
                  좌·우 패널이 각자 1px LineBrush 세퍼레이터를 그리고 그 사이 BgBrush 채널,
-                 위에 투명 GridSplitter 오버레이(전역 스타일: 호버 시 PrimaryBrush 핸들). -->
-            <Grid Grid.Column="2">
-                <Border Width="1" HorizontalAlignment="Left"  Background="{DynamicResource LineBrush}"/>
-                <Border Width="1" HorizontalAlignment="Right" Background="{DynamicResource LineBrush}"/>
-                <GridSplitter HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                              ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"
-                              DragCompleted="OutputSplitter_DragCompleted"/>
-            </Grid>
+                 위에 투명 GridSplitter 오버레이(전역 스타일: 호버 시 PrimaryBrush 핸들).
+                 GridSplitter 는 컬럼정의를 가진 본문 Grid 의 직접 자식이어야 실제로 컬럼을 리사이즈한다
+                 (Wrapper Grid 안에 넣으면 그 안쪽 단일 컬럼만 만져 동작하지 않음). -->
+            <Border Grid.Column="2" Width="1" HorizontalAlignment="Left"  Background="{DynamicResource LineBrush}"/>
+            <Border Grid.Column="2" Width="1" HorizontalAlignment="Right" Background="{DynamicResource LineBrush}"/>
+            <GridSplitter Grid.Column="2" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"
+                          DragCompleted="OutputSplitter_DragCompleted"/>
 
             <!-- 우: 출력 영역 (+ 마켓 상세 시 하단 절반에 Discover) -->
             <Border Grid.Column="3" Background="{DynamicResource PanelBrush}">
                 <Grid Margin="16,16,16,16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="240" x:Name="OutputRow"/>
+                        <RowDefinition Height="*" x:Name="OutputRow"/>
                         <RowDefinition Height="0" x:Name="DiscoverRow"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="출력" Margin="2,0,0,10"
