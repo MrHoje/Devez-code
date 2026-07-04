@@ -25,6 +25,7 @@ public partial class PluginControlDialog : UserControl
     private readonly ObservableCollection<ClaudeAvailablePlugin> _avail = new();
     private string _tab = "plugins";
     private string _query = "";
+    private string _discQuery = "";   // 하단 Discover 검색어
     private bool _busy;
     private bool _disposed;
 
@@ -44,6 +45,7 @@ public partial class PluginControlDialog : UserControl
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); ApplyFilter(); };
         CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
         CollectionViewSource.GetDefaultView(_markets).Filter = o => o is ClaudeMarketplace m && Match(m.Name, m.OriginText);
+        CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && DiscMatch(a);
         // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
         // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
         Loaded += (_, _) => SetTabVisual("plugins");
@@ -295,10 +297,11 @@ public partial class PluginControlDialog : UserControl
         if (!string.IsNullOrWhiteSpace(m.InstallLocation)) sb.AppendLine($"설치 위치: {m.InstallLocation}");
         ShowOutput($"marketplace · {m.Name}", sb.Length == 0 ? "(추가 정보 없음)" : sb.ToString().TrimEnd());
 
-        // 하단 Discover 패널 열기(출력 영역을 절반으로).
+        // 하단 Discover 패널 열기(출력 영역을 절반으로) + 가로 스플리터 노출.
         DiscoverTitle.Text = m.Name;
-        DiscoverHeader.Visibility = Visibility.Visible;
+        OutputDiscoverSplitter.Visibility = Visibility.Visible;
         DiscoverRow.Height = new GridLength(1, GridUnitType.Star);
+        DiscoverSearchBox.Text = "";   // 이전 검색어 초기화
         DiscoverSpinner.Visibility = Visibility.Visible;
         DiscoverEmpty.Visibility = Visibility.Collapsed;
         _avail.Clear();
@@ -306,7 +309,10 @@ public partial class PluginControlDialog : UserControl
         {
             var list = await ClaudePluginService.AvailableAsync();
             if (_disposed) return;
-            foreach (var a in list.Where(a => string.Equals(a.Marketplace, m.Name, StringComparison.OrdinalIgnoreCase)))
+            // 설치된 것을 상단에 모은다(설치됨 → 설치 수 내림차순).
+            foreach (var a in list.Where(a => string.Equals(a.Marketplace, m.Name, StringComparison.OrdinalIgnoreCase))
+                                   .OrderByDescending(a => a.IsInstalled)
+                                   .ThenByDescending(a => a.InstallCount))
                 _avail.Add(a);
         }
         catch { }
@@ -322,10 +328,29 @@ public partial class PluginControlDialog : UserControl
 
     private void DiscoverClose_Click(object sender, RoutedEventArgs e)
     {
-        DiscoverHeader.Visibility = Visibility.Collapsed;
+        OutputDiscoverSplitter.Visibility = Visibility.Collapsed;
         DiscoverRow.Height = new GridLength(0);
+        DiscoverSearchBox.Text = "";
         _avail.Clear();
     }
+
+    // 하단 Discover 검색(설치 가능한 플러그인 필터). 목록이 작아 즉시 필터.
+    private bool DiscMatch(ClaudeAvailablePlugin a)
+        => string.IsNullOrEmpty(_discQuery)
+           || (a.Name?.IndexOf(_discQuery, StringComparison.OrdinalIgnoreCase) >= 0)
+           || (a.Id?.IndexOf(_discQuery, StringComparison.OrdinalIgnoreCase) >= 0)
+           || (a.Description?.IndexOf(_discQuery, StringComparison.OrdinalIgnoreCase) >= 0);
+
+    private void DiscoverSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        DiscoverSearchClearBtn.Visibility = string.IsNullOrEmpty(DiscoverSearchBox.Text) ? Visibility.Collapsed : Visibility.Visible;
+        _discQuery = DiscoverSearchBox.Text.Trim();
+        var view = CollectionViewSource.GetDefaultView(_avail);
+        view.Refresh();
+        DiscoverEmpty.Visibility = view.Cast<object>().Any() ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void DiscoverSearchClear_Click(object sender, RoutedEventArgs e) => DiscoverSearchBox.Text = "";
 
     private async void MarketItemUpdate_Click(object sender, RoutedEventArgs e)
     {
