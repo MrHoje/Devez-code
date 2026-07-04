@@ -41,6 +41,9 @@ public partial class ConfirmDialog : Window
             // 스크롤 없이 3줄이 다 보이도록 각 단계를 살짝 높임.
             var lines = message.Split('\n').Length;
             Height = lines <= 2 ? 260 : lines <= 4 ? 325 : 360;
+
+            // 한 줄 메시지가 기본 폭에 안 들어가면 필요한 만큼 폭을 넓힌다(최대 +100px).
+            if (lines == 1) GrowWidthForSingleLine(message);
         }
 
         KeyDown += OnKeyDown;
@@ -110,6 +113,30 @@ public partial class ConfirmDialog : Window
 
         dialog.ShowDialog();
         return dialog._choice;
+    }
+
+    /// <summary>한 줄 메시지가 기본 폭(490)에 안 들어가면 필요한 만큼 창 폭을 넓힌다(최대 +100px → 590).</summary>
+    private void GrowWidthForSingleLine(string message)
+    {
+        try
+        {
+            double dpi = 1.0;
+            try { dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this).PixelsPerDip; } catch { }
+            var ft = new System.Windows.Media.FormattedText(
+                message,
+                System.Globalization.CultureInfo.CurrentUICulture,
+                FlowDirection.LeftToRight,
+                new System.Windows.Media.Typeface(
+                    (System.Windows.Media.FontFamily)FindResource("PretendardFont"),
+                    FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
+                (double)FindResource("Fs13"),
+                System.Windows.Media.Brushes.Black,
+                dpi);
+            // 창 폭 = 본문텍스트폭 + 좌우 본문여백(28*2) + 그림자여백(20*2) + 여유(8).
+            double target = ft.Width + 56 + 40 + 8;
+            if (target > Width) Width = System.Math.Min(Width + 100, target);
+        }
+        catch { }
     }
 
     private void ConfirmInputBox_TextChanged(object sender, TextChangedEventArgs e)
