@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace DevezCode.Views;
 
@@ -10,6 +11,16 @@ public partial class McpControlWindow : Window
     {
         InitializeComponent();
         McpView.CloseRequested += (_, _) => Close();
+        // 콘텐츠 UserControl 을 둥근 RectangleGeometry 로 클립 — ClipToBounds 만으로는 라운드 코너가 안 됨.
+        McpView.SizeChanged += (_, _) => ApplyRoundedClip();
+        Loaded += (_, _) => ApplyRoundedClip();
+    }
+
+    private void ApplyRoundedClip()
+    {
+        double w = McpView.ActualWidth, h = McpView.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        McpView.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 13, 13);
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)

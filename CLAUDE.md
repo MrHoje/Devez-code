@@ -38,6 +38,7 @@ Start-Process "bin\DevezCode.exe"
 | 중앙 2분할(Split) 패널·탭 격리·파트너·포커스·터미널 재진입 | `.knowledge/분할패널-탭격리-파트너-포커스.md` |
 | 패널 리사이즈/오버레이 시 터미널 깜빡임(WebView2 airspace) | `.knowledge/webview2-airspace-패널리사이즈-깜빡임.md` |
 | `Style.Setter.Value`/`Template` 인라인 자식 → connectionId 크래시 | `.knowledge/wpf-contextmenu-setter-value-connectionid-충돌.md` |
+| borderless 팝업 창의 라운드 코너 밖으로 자식 사각 모서리 삐져나옴 | `.knowledge/borderless-창-라운드-코너-클립.md` |
 
 > 위에 없는 일회성 버그 교훈(특정 컨트롤 트리거 등)은 `.knowledge/wpf-*.md` 로 남아 있으니, 비슷한 증상을 만나면 폴더를 이름으로 grep 해서 찾는다.
 

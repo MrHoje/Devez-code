@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 
 namespace DevezCode.Views;
@@ -15,7 +16,18 @@ public partial class PluginControlWindow : Window
         InitializeComponent();
         PluginView.CloseRequested += (_, _) => Close();
         Opacity = 0;
+        // 콘텐츠 Border 의 ClipToBounds 는 사각 경계로만 클립 → 자식 사각 모서리가 라운드 코너 위로 삐져나온다.
+        // 설정창(SettingsWindow)처럼 콘텐츠 UserControl 을 둥근 RectangleGeometry 로 직접 클립해야 한다.
+        PluginView.SizeChanged += (_, _) => ApplyRoundedClip();
+        Loaded += (_, _) => ApplyRoundedClip();
         ContentRendered += async (_, _) => await AnimateOpenAsync();
+    }
+
+    private void ApplyRoundedClip()
+    {
+        double w = PluginView.ActualWidth, h = PluginView.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        PluginView.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 13, 13);
     }
 
     private async Task AnimateOpenAsync()
