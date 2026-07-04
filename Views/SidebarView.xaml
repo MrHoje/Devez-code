@@ -102,6 +102,12 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="포크" Tag="{Binding}" Click="SessionFork_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconGitBranch}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <Separator/>
                         <MenuItem Header="세션 닫기" Tag="{Binding}" Click="SessionStopTracking_Click">
                             <MenuItem.Icon>

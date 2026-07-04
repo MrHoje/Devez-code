@@ -55,6 +55,8 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionDeleteRequested;
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
+    /// <summary>세션 메뉴 "포크" 요청(MainWindow 위임) — 원본 대화를 복사한 새 세션 생성.</summary>
+    public event Action<SessionItem>? SessionForkRequested;
 
     // 프로젝트 목록 열 수(1/2). 2면 카드 2열 그리드 + 가로 드래그. 기본 1.
     /// <summary>숨김 세션 표시 토글 변경 → 영속 저장 트리거.</summary>
@@ -431,6 +433,11 @@ public partial class SidebarView : UserControl
     private void SessionRename_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<SessionItem>(sender) is { } s) SessionRenameRequested?.Invoke(s);
+    }
+
+    private void SessionFork_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is { } s) SessionForkRequested?.Invoke(s);
     }
 
     private void SessionStopTracking_Click(object sender, RoutedEventArgs e)

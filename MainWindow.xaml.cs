@@ -168,6 +168,7 @@ public partial class MainWindow : Window
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
+        Sidebar.SessionForkRequested += ForkSession;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
 
         // 세션 요청 처리중 스피너: claude 훅(busy-hook.ps1)이 떨군 상태 파일을 감시 (clude-blinker 방식).
@@ -3503,6 +3504,8 @@ public partial class MainWindow : Window
             _ = _discordBot.InjectFirstMessageAsync(session.Id, threadId, content);
     }
     private void StopTrackingSession(SessionItem session) => PaneFor(session).StopTrackingSession(session);
+
+    private void ForkSession(SessionItem session) => PaneFor(session).ForkSession(session);
 
     // ── 공개 API (외부 뷰가 호출) ─────────────────────────────────────
     /// <summary>작업 큐 → 포커스 패널의 활성 세션에 텍스트 전송.</summary>

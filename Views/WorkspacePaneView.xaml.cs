@@ -775,6 +775,50 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
+    /// <summary>세션 포크 — 원본 대화를 복사한 새 세션을 같은 프로젝트에 만들어 연다.
+    /// claude=<c>--fork-session</c>, opencode=<c>--fork</c> 네이티브 지원(그 외 에이전트는 미지원 안내).
+    /// SettingsService.RoomForkSource 마커(원본 세션 ID)를 심어두면 새 방 첫 실행에 1회 소비돼 포크 커맨드로 시작한다.</summary>
+    public void ForkSession(SessionItem source)
+    {
+        var proj = ParentOf(source);
+        if (proj == null) return;
+
+        var agentId = string.IsNullOrEmpty(source.AgentId)
+            ? SettingsService.LoadAgentForRoom(source.Id) : source.AgentId;
+
+        // 네이티브 포크 지원 에이전트만(claude/opencode). codex/gjc 등은 fork 플래그가 없다.
+        if (agentId != "claude" && agentId != "opencode")
+        {
+            ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode 세션만 지원합니다.");
+            return;
+        }
+
+        // 원본의 현재 세션 ID = 포크 기준. 추적 ID 가 없으면(아직 대화 전) 포크할 게 없다.
+        var srcSid = agentId == "claude"
+            ? SettingsService.LoadClaudeCodeRoomSession(source.Id)
+            : SettingsService.LoadOpenCodeRoomSession(source.Id);
+        if (string.IsNullOrWhiteSpace(srcSid))
+        {
+            ConfirmDialog.Alert("포크 불가",
+                "아직 대화가 없어 포크할 수 없습니다.\n한 번 이상 대화한 세션만 포크할 수 있어요.");
+            return;
+        }
+
+        var session = new SessionItem { Name = source.Name + " (포크)", AgentId = agentId };
+        proj.Tabs.Add(session);
+        proj.IsExpanded = true;
+        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path); // RoomDir 은 에이전트 공통 저장소
+        SettingsService.SaveAgentForRoom(session.Id, agentId);
+        SettingsService.SaveRoomForkSource(session.Id, srcSid);       // 첫 실행에 1회 소비
+        WorkspaceStore.Save(Projects);
+
+        // 포크는 "새 세션이 열리게" 하는 게 목적 → 항상 연다(다른 프로젝트면 OpenSession 이 전환).
+        bool isolatedSameProj = _isolatedTabs != null && ReferenceEquals(_activeProject, proj);
+        if (isolatedSameProj) IsolateTab(session);
+        OpenSession(session);
+        if (isolatedSameProj) IsolatedTabOpened?.Invoke(this, session);
+    }
+
     /// <summary>세션 클릭 — 필요하면 프로젝트 전환 후 해당 세션 활성화.</summary>
     public void OpenSession(SessionItem session)
     {
