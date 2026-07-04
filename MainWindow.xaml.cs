@@ -3705,6 +3705,16 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
+    private async void McpControlBtn_Click(object sender, RoutedEventArgs e)
+    {
+        await SuspendTerminalWithSnapshotAsync();
+        var dlg = new Views.McpControlWindow { Owner = this };
+        dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+        dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
+        dlg.Closed += (_, _) => ResumeTerminal();
+        dlg.ShowDialog();
+    }
+
     // ── airspace 우회 (오버레이가 뜰 때 터미널 WebView2 정지) ────────────
     /// <summary>모든 패널 터미널 + 우측 브라우저를 정지(스냅샷/커튼). 설정·MCP 오버레이용.</summary>
     private async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)

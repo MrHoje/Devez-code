@@ -98,6 +98,18 @@ public sealed class McpStatusToVisibilityConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>McpServerType → Visibility. 원격(http/sse)일 때만 Visible — OAuth 인증/로그아웃 버튼 게이팅용.</summary>
+public sealed class McpRemoteToVisibilityConverter : IValueConverter
+{
+    public static readonly McpRemoteToVisibilityConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is McpServerType t && t == McpServerType.Remote ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>McpServerType → 한글 라벨 (local/remote → 로컬/원격).</summary>
 public sealed class McpTypeToLabelConverter : IValueConverter
 {

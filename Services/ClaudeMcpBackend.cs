@@ -448,4 +448,136 @@ public sealed class ClaudeMcpBackend : IMcpBackend
             };
         }
     }
+
+    // ── 런타임 제어 (라이브 대시보드용) ──────────────────────────────
+    // claude mcp CLI: login/logout(OAuth) · get(상세) · list(상태). 제어는 모두 CLI 경유.
+
+    /// <summary>어느 프로젝트에서든 disabledMcpServers 에 든 서버 이름의 합집합(=전역 비활성으로 간주).</summary>
+    public static HashSet<string> LoadDisabledNames()
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        var (root, _) = LoadRaw();
+        if (root == null || root.Value.ValueKind != JsonValueKind.Object) return set;
+        if (!root.Value.TryGetProperty("projects", out var projects) || projects.ValueKind != JsonValueKind.Object)
+            return set;
+        foreach (var proj in projects.EnumerateObject())
+            if (proj.Value.TryGetProperty("disabledMcpServers", out var d) && d.ValueKind == JsonValueKind.Array)
+                foreach (var it in d.EnumerateArray())
+                    if (it.ValueKind == JsonValueKind.String)
+                    {
+                        var n = it.GetString();
+                        if (!string.IsNullOrEmpty(n)) set.Add(n!);
+                    }
+        return set;
+    }
+
+    /// <summary>OAuth 인증 시작. 브라우저 플로우라 보이는 콘솔 창을 띄워 사용자가 완료하게 한다.
+    /// (claude 는 .cmd shim 이라 cmd 경유. /k 로 결과를 남겨 사용자가 확인 후 닫음)</summary>
+    public static void SpawnLogin(string name)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/k claude mcp login \"{name.Replace("\"", "")}\"",
+                UseShellExecute = true,
+                CreateNoWindow = false,
+            });
+        }
+        catch { /* CLI 미설치 등 — 호출부에서 상태 갱신 실패로 드러남 */ }
+    }
+
+    /// <summary>OAuth 자격증명 삭제. 비대화형 — stdout 캡처.</summary>
+    public static Task<string> LogoutAsync(string name) => RunCaptureAsync($"logout \"{name.Replace("\"", "")}\"");
+
+    /// <summary>서버 상세(claude mcp get). 명령·URL·툴 목록 등. 비대화형 — stdout 캡처.</summary>
+    public static Task<string> GetAsync(string name) => RunCaptureAsync($"get \"{name.Replace("\"", "")}\"");
+
+    private static async Task<string> RunCaptureAsync(string mcpArgs, int timeoutMs = 20000)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c claude mcp {mcpArgs}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return "";
+            var outTask = p.StandardOutput.ReadToEndAsync();
+            var errTask = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch { } return ""; }
+            var raw = Ansi.Replace(await outTask, "");
+            var err = Ansi.Replace(await errTask, "");
+            return string.IsNullOrWhiteSpace(raw) ? err.Trim() : raw.Trim();
+        }
+        catch (Exception ex) { return ex.Message; }
+    }
+
+    /// <summary>서버를 전역(모든 프로젝트) 활성/비활성 토글. Claude 는 mcpServers.enabled 를 무시하고
+    /// projects[*].disabledMcpServers(이름 배열)만 존중하므로, 모든 프로젝트의 그 목록을 갱신한다.
+    /// first-party/plugin 서버도 이름 기준으로 동일하게 gate 되므로 uniform 하게 처리 가능.</summary>
+    public static void SetServerEnabledGlobally(string name, bool enabled)
+    {
+        var (root, _) = LoadRaw();
+        if (root == null || root.Value.ValueKind != JsonValueKind.Object) return;
+
+        using var final = new MemoryStream();
+        using (var w = new Utf8JsonWriter(final, new JsonWriterOptions { Indented = true, IndentSize = 2 }))
+        {
+            w.WriteStartObject();
+            foreach (var prop in root.Value.EnumerateObject())
+            {
+                if (prop.NameEquals("projects")) continue; // 아래에서 갱신해 재작성
+                prop.WriteTo(w);
+            }
+            w.WritePropertyName("projects");
+            w.WriteStartObject();
+            if (root.Value.TryGetProperty("projects", out var projects) &&
+                projects.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var proj in projects.EnumerateObject())
+                {
+                    w.WritePropertyName(proj.Name);
+                    w.WriteStartObject();
+                    var disabled = new List<string>();
+                    foreach (var p in proj.Value.EnumerateObject())
+                    {
+                        if (p.NameEquals("disabledMcpServers"))
+                        {
+                            if (p.Value.ValueKind == JsonValueKind.Array)
+                                foreach (var it in p.Value.EnumerateArray())
+                                    if (it.ValueKind == JsonValueKind.String)
+                                    {
+                                        var n = it.GetString();
+                                        if (!string.IsNullOrEmpty(n)) disabled.Add(n!);
+                                    }
+                            continue; // 아래에서 새로 씀
+                        }
+                        p.WriteTo(w);
+                    }
+                    if (enabled) disabled.RemoveAll(n => string.Equals(n, name, StringComparison.Ordinal));
+                    else if (!disabled.Contains(name)) disabled.Add(name);
+                    w.WritePropertyName("disabledMcpServers");
+                    w.WriteStartArray();
+                    foreach (var n in disabled) w.WriteStringValue(n);
+                    w.WriteEndArray();
+                    w.WriteEndObject();
+                }
+            }
+            w.WriteEndObject();
+            w.WriteEndObject();
+        }
+
+        var tmp = ConfigPath + ".tmp";
+        File.WriteAllText(tmp, Encoding.UTF8.GetString(final.ToArray()));
+        if (File.Exists(ConfigPath)) File.Replace(tmp, ConfigPath, null);
+        else File.Move(tmp, ConfigPath);
+    }
 }
