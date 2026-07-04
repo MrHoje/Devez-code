@@ -98,6 +98,22 @@ public sealed class McpStatusToVisibilityConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>bool(활성) → 상태 점 색. true=초록, false=회색. 플러그인 on/off 표시용.</summary>
+public sealed class BoolToOnOffBrushConverter : IValueConverter
+{
+    public static readonly BoolToOnOffBrushConverter Instance = new();
+
+    private static readonly Brush On  = new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E));
+    private static readonly Brush Off = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
+    static BoolToOnOffBrushConverter() { On.Freeze(); Off.Freeze(); }
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is bool b && b ? On : Off;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>McpServerType → Visibility. 원격(http/sse)일 때만 Visible — OAuth 인증/로그아웃 버튼 게이팅용.</summary>
 public sealed class McpRemoteToVisibilityConverter : IValueConverter
 {

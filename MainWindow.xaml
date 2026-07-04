@@ -793,6 +793,11 @@
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconZap}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
+                        <Button x:Name="PluginControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
+                                Click="PluginControlBtn_Click" ToolTip="플러그인 컨트롤러" Margin="0,0,2,0">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBox}"
+                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
                         <Button x:Name="CleanerBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
                                 Click="CleanerBtn_Click" ToolTip="세션 클리너" Margin="0,0,2,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBrushCleaning}"
