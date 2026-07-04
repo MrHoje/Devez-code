@@ -27,6 +27,9 @@ public partial class PluginControlDialog : UserControl
     private string _query = "";
     private string _discQuery = "";   // 하단 Discover 검색어
     private ClaudeMarketplace? _selectedMarket;   // 상세 열린(선택된) 마켓
+    // 출력은 탭별로 분리 저장 — 탭 전환 시 서로의 내용이 유지되지 않는다.
+    private string _outPlugins = "";
+    private string _outMarket = "";
     private bool _busy;
     private bool _disposed;
 
@@ -111,6 +114,8 @@ public partial class PluginControlDialog : UserControl
 
         // 탭 전환 시 하단 Discover 닫아 출력이 꽉 차게(특히 플러그인 탭은 설치 가능 목록이 없음).
         CloseDiscover();
+        // 탭별 출력만 표시(전환 시 내용 유지 안 함).
+        RestoreOutputForTab();
 
         StyleTab(PluginTabBtn, plugins);
         StyleTab(MarketTabBtn, market);
@@ -265,12 +270,13 @@ public partial class PluginControlDialog : UserControl
         await RefreshAsync();
     }
 
-    // ── Discover 탭 ───────────────────────────────────────────────
-    private void AvailableInstall_Click(object sender, RoutedEventArgs e)
+    // ── Discover(설치 가능한 플러그인) ────────────────────────────
+    // 카드 클릭 → 상세 팝업(좌: 이름·설명 + 설치, 우: 출력).
+    private void DiscoverCard_Click(object sender, MouseButtonEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ClaudeAvailablePlugin a) return;
-        ClaudePluginService.SpawnInstall(a.Id);
-        ShowOutput("install", $"'{a.Name}' 설치를 별도 콘솔 창에서 진행합니다.\n완료되면 [새로고침] 으로 목록을 갱신하세요.");
+        var win = new PluginDetailWindow(a) { Owner = Window.GetWindow(this) };
+        win.ShowDialog();
     }
 
     // ── 마켓플레이스 탭 ───────────────────────────────────────────
@@ -396,10 +402,21 @@ public partial class PluginControlDialog : UserControl
 
     // ── 우측 출력 영역 ────────────────────────────────────────────
     // 헤더는 항상 "출력" 고정. 실행 맥락(명령명)은 본문 첫 줄에 표시.
+    // 출력은 현재 탭 버퍼에 저장 → 탭 전환 시 서로 섞이지 않는다.
     private void ShowOutput(string title, string body)
     {
-        OutputText.Text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
-        OutputPlaceholder.Visibility = Visibility.Collapsed;
+        var text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
+        if (_tab == "plugins") _outPlugins = text; else _outMarket = text;
+        OutputText.Text = text;
+        OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // 탭에 저장된 출력만 표시(없으면 안내문구).
+    private void RestoreOutputForTab()
+    {
+        var text = _tab == "plugins" ? _outPlugins : _outMarket;
+        OutputText.Text = text;
+        OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── 창 제어 ───────────────────────────────────────────────────

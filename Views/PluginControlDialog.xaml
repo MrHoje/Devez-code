@@ -622,7 +622,9 @@
                                         <DataTemplate DataType="{x:Type models:ClaudeAvailablePlugin}">
                                             <Border Margin="0,0,6,8" Padding="12,10" CornerRadius="10"
                                                     Background="{DynamicResource PanelBrush}"
-                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                                    Cursor="Hand" MouseLeftButtonUp="DiscoverCard_Click"
+                                                    ToolTip="클릭하여 상세 보기">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*"/>
@@ -649,12 +651,9 @@
                                                             <TextBlock Text="설치됨" FontSize="{DynamicResource Fs10}"
                                                                        Foreground="{DynamicResource TextMutedBrush}"/>
                                                         </Border>
-                                                        <Button Style="{StaticResource RowIconBtn}" Click="AvailableInstall_Click" ToolTip="설치"
-                                                                Width="28" Height="28"
-                                                                Visibility="{Binding IsInstalled, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
-                                                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
-                                                                  Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
-                                                        </Button>
+                                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronRight}"
+                                                              Width="14" Height="14" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                              Stroke="{DynamicResource TextMutedBrush}"/>
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>
