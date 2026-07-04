@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -36,20 +37,13 @@ public partial class PluginControlDialog : UserControl
     {
         if (_busy || _disposed) return;
         _busy = true;
-        _plugins.Clear();
-        EmptyState.Visibility = Visibility.Collapsed;
         RefreshSpinner.Visibility = Visibility.Visible;
         try
         {
-            // CLI 조회는 비동기(UI 안 막힘). 결과는 도착하는 대로 하나씩 카드로 채워 넣는다.
+            // 기존 리스트를 비우지 않고, 먼저 조회한 뒤 바뀐 항목만 교체/추가/삭제하여 병합한다(깜빡임 방지).
             var list = await ClaudePluginService.ListAsync();
             if (_disposed) return;
-            foreach (var p in list)
-            {
-                _plugins.Add(p);
-                await Task.Delay(45);            // 카드가 순차적으로 떠오르는 느낌
-                if (_disposed) return;
-            }
+            MergeInto(list);
             EmptyState.Visibility = _plugins.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             LastRefreshedText.Text = "갱신: " + DateTime.Now.ToString("HH:mm:ss");
         }
@@ -60,6 +54,40 @@ public partial class PluginControlDialog : UserControl
             if (!_disposed) RefreshSpinner.Visibility = Visibility.Collapsed;
         }
     }
+
+    /// <summary>새 스냅샷을 기존 컬렉션에 병합. 사라진 항목 제거 → 새 항목 삽입 →
+    /// 남은 항목은 순서만 맞추고, 내용(버전/메타/이름/출처)이 바뀐 것만 인스턴스 교체(=재렌더),
+    /// enabled 만 바뀐 것은 제자리에서 갱신(토글 애니메이션 유지).</summary>
+    private void MergeInto(System.Collections.Generic.List<ClaudePlugin> list)
+    {
+        // 1) 새 목록에 없는 것 제거
+        for (int i = _plugins.Count - 1; i >= 0; i--)
+            if (!list.Any(n => n.Id == _plugins[i].Id))
+                _plugins.RemoveAt(i);
+
+        // 2) 순서대로 삽입/갱신
+        for (int i = 0; i < list.Count; i++)
+        {
+            var n = list[i];
+            int cur = IndexOfId(n.Id);
+            if (cur < 0) { _plugins.Insert(i, n); continue; }
+            if (CoreSig(_plugins[cur]) != CoreSig(n))
+                _plugins[cur] = n;                    // 내용 변경 → 인스턴스 교체(Replace 알림)
+            else if (_plugins[cur].Enabled != n.Enabled)
+                _plugins[cur].Enabled = n.Enabled;    // enabled 만 변경 → 제자리 갱신
+            if (cur != i) _plugins.Move(cur, i);      // 순서 정렬
+        }
+    }
+
+    private int IndexOfId(string id)
+    {
+        for (int i = 0; i < _plugins.Count; i++) if (_plugins[i].Id == id) return i;
+        return -1;
+    }
+
+    /// <summary>enabled 를 제외한 표시 내용 서명(달라지면 카드 재렌더 필요).</summary>
+    private static string CoreSig(ClaudePlugin p)
+        => $"{p.Id}|{p.Name}|{p.Marketplace}|{p.Version}|{p.McpText}|{p.UpdatedText}";
 
     private async void RefreshBtn_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
 

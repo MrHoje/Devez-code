@@ -32,18 +32,13 @@
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                     <Path Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconBox}"
+                          Data="{StaticResource IconPlug}"
                           Width="16" Height="16" VerticalAlignment="Center"
                           Stroke="{DynamicResource TextBrush}"
                           Margin="0,-1,11,0"/>
-                    <TextBlock Text="플러그인 컨트롤러" VerticalAlignment="Center"
+                    <TextBlock Text="Claude 플러그인 컨트롤러" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}"/>
-                    <Border Margin="10,0,0,0" Padding="6,1" CornerRadius="4"
-                            Background="{DynamicResource PanelSoftBrush}">
-                        <TextBlock Text="Claude Code" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs10}" Foreground="{DynamicResource TextMutedBrush}"/>
-                    </Border>
                 </StackPanel>
                 <Button Click="CloseBtn_Click"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
