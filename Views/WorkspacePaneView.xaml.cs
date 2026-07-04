@@ -804,7 +804,7 @@ public partial class WorkspacePaneView : UserControl
             return;
         }
 
-        var session = new SessionItem { Name = source.Name + " (--fork)", AgentId = agentId };
+        var session = new SessionItem { Name = source.Name + " (fork)", AgentId = agentId };
         proj.Tabs.Add(session);
         proj.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path); // RoomDir 은 에이전트 공통 저장소
