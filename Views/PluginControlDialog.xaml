@@ -358,7 +358,7 @@
                                                           VerticalAlignment="Center" Margin="0,0,8,0"
                                                           ToolTip="활성/비활성"/>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="Detail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPackageSearch}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="Update_Click" ToolTip="업데이트">
@@ -400,7 +400,7 @@
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                 <Button Style="{StaticResource RowIconBtn}" Click="MarketItemDetail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPackageSearch}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="MarketItemUpdate_Click"
@@ -458,7 +458,7 @@
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                 <Button Style="{StaticResource RowIconBtn}" Click="AvailableDetail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPackageSearch}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
                                                 <!-- 이미 설치됨 -->

@@ -108,6 +108,28 @@ public sealed class SessionCompletionRecord : NotifyBase
     private bool _isRead;
     public bool IsRead { get => _isRead; set => Set(ref _isRead, value); }
 
+    /// <summary>이 기록의 프로젝트가 더 이상 존재하지 않는지(삭제됨). 파생 상태 — 직렬화 대상 아님.
+    /// true 면 프로젝트명에 취소선(strikeout)을 그린다.</summary>
+    private bool _projectMissing;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ProjectMissing { get => _projectMissing; set { if (Set(ref _projectMissing, value)) OnPropertyChanged(nameof(ProjectDecoration)); } }
+
+    /// <summary>이 세션이 어느 프로젝트 카드에도 더 이상 추적되지 않는지(탭 닫힘/삭제). 파생 상태 — 직렬화 대상 아님.
+    /// true 면 세션명에 취소선(strikeout)을 그린다.</summary>
+    private bool _sessionMissing;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool SessionMissing { get => _sessionMissing; set { if (Set(ref _sessionMissing, value)) OnPropertyChanged(nameof(SessionDecoration)); } }
+
+    /// <summary>프로젝트명 취소선(삭제된 프로젝트) — null 이면 장식 없음.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public System.Windows.TextDecorationCollection? ProjectDecoration
+        => _projectMissing ? System.Windows.TextDecorations.Strikethrough : null;
+
+    /// <summary>세션명 취소선(추적 안 되는 세션) — null 이면 장식 없음.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public System.Windows.TextDecorationCollection? SessionDecoration
+        => _sessionMissing ? System.Windows.TextDecorations.Strikethrough : null;
+
     public string TimeText => CompletedAt.ToString("HH:mm");
     public System.Windows.Visibility ProjectVisibility
         => string.IsNullOrWhiteSpace(ProjectName) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
