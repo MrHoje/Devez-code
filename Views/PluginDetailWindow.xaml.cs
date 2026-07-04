@@ -15,6 +15,9 @@ public partial class PluginDetailWindow : Window
 {
     private readonly ClaudeAvailablePlugin _plugin;
 
+    /// <summary>이 팝업에서 설치가 완료됐는지 — 닫힌 뒤 호출측이 목록에서 제거하는 데 사용.</summary>
+    public bool Installed { get; private set; }
+
     public PluginDetailWindow(ClaudeAvailablePlugin plugin)
     {
         InitializeComponent();
@@ -22,8 +25,10 @@ public partial class PluginDetailWindow : Window
 
         NameText.Text = plugin.Name;
         MarketText.Text = plugin.Marketplace;
+        VersionText.Text = plugin.VersionText;
         InstallCountText.Text = plugin.InstallCountText;
         DescText.Text = string.IsNullOrWhiteSpace(plugin.Description) ? "설명이 없습니다." : plugin.Description;
+        RepoLink.Visibility = plugin.HasSourceUrl ? Visibility.Visible : Visibility.Collapsed;
 
         // 이미 설치된 경우 설치 버튼 대신 '설치됨' 표시.
         if (plugin.IsInstalled)
@@ -63,6 +68,7 @@ public partial class PluginDetailWindow : Window
             var result = await ClaudePluginService.InstallAsync(_plugin.Id);
             ShowOutput($"install · {_plugin.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
             // 설치 후에는 설치 버튼 비활성화 → '설치됨' 표시로 전환.
+            Installed = true;
             InstallBtn.Visibility = Visibility.Collapsed;
             InstalledChip.Visibility = Visibility.Visible;
         }
@@ -85,6 +91,13 @@ public partial class PluginDetailWindow : Window
         {
             try { DragMove(); } catch { }
         }
+    }
+
+    private void RepoLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_plugin.SourceUrl)) return;
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_plugin.SourceUrl) { UseShellExecute = true }); }
+        catch { }
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();

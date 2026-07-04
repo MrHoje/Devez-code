@@ -77,10 +77,30 @@
                                     <TextBlock x:Name="MarketText" FontSize="{DynamicResource Fs10}"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                 </Border>
+                                <TextBlock x:Name="VersionText" FontSize="{DynamicResource Fs11}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"
+                                           VerticalAlignment="Center"/>
                                 <TextBlock x:Name="InstallCountText" FontSize="{DynamicResource Fs11}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"
                                            VerticalAlignment="Center"/>
                             </StackPanel>
+                            <!-- 저장소 링크 (source.url 있을 때) -->
+                            <Button x:Name="RepoLink" Click="RepoLink_Click" Margin="0,8,0,0"
+                                    HorizontalAlignment="Left" Cursor="Hand" Visibility="Collapsed"
+                                    Background="Transparent" BorderThickness="0" Padding="0"
+                                    IsTabStop="False" FocusVisualStyle="{x:Null}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconExternalLink}"
+                                                  Width="12" Height="12" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                  Stroke="{DynamicResource PrimaryBrush}"/>
+                                            <TextBlock x:Name="RepoText" Text="저장소 열기" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource PrimaryBrush}"/>
+                                        </StackPanel>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
                         </StackPanel>
 
                         <!-- 설명 -->

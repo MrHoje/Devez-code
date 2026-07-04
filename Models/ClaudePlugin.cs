@@ -57,8 +57,12 @@ public sealed class ClaudeAvailablePlugin
     public string Description { get; set; } = "";
     public int InstallCount { get; set; }
     public bool IsInstalled { get; set; }
+    public string Version { get; set; } = "";     // source.ref 또는 version
+    public string SourceUrl { get; set; } = "";    // source.url (GitHub 등)
 
     public string InstallCountText => InstallCount > 0 ? $"설치 {InstallCount:N0}" : "";
+    public string VersionText => string.IsNullOrWhiteSpace(Version) ? "" : (Version.StartsWith("v") ? Version : "v" + Version);
+    public bool HasSourceUrl => !string.IsNullOrWhiteSpace(SourceUrl);
 }
 
 /// <summary>Claude Code 마켓플레이스 한 개. <c>claude plugin marketplace list --json</c> 매핑.</summary>

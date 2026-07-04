@@ -284,6 +284,13 @@ public partial class PluginControlDialog : UserControl
         if ((sender as FrameworkElement)?.DataContext is not ClaudeAvailablePlugin a) return;
         var win = new PluginDetailWindow(a) { Owner = Window.GetWindow(this) };
         win.ShowDialog();
+        // 팝업에서 설치했으면 설치 가능한 목록에서 제거.
+        if (win.Installed)
+        {
+            _avail.Remove(a);
+            var view = CollectionViewSource.GetDefaultView(_avail);
+            DiscoverEmpty.Visibility = view.Cast<object>().Any() ? Visibility.Collapsed : Visibility.Visible;
+        }
     }
 
     // ── 마켓플레이스 탭 ───────────────────────────────────────────

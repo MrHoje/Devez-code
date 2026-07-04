@@ -135,6 +135,12 @@ public static class ClaudePluginService
                 if (string.IsNullOrEmpty(name)) name = at > 0 ? pid.Substring(0, at) : pid;
                 int count = el.TryGetProperty("installCount", out var ic) && ic.ValueKind == JsonValueKind.Number
                             && ic.TryGetInt32(out var n) ? n : 0;
+                // source(객체) 에서 url·ref 를 뽑는다(문자열 source 인 경우는 무시).
+                string srcUrl = "", srcRef = "";
+                if (el.TryGetProperty("source", out var src) && src.ValueKind == JsonValueKind.Object)
+                { srcUrl = Str(src, "url"); srcRef = Str(src, "ref"); }
+                var ver = Str(el, "version");
+                if (string.IsNullOrEmpty(ver)) ver = srcRef;
                 list.Add(new ClaudeAvailablePlugin
                 {
                     Id = pid,
@@ -143,6 +149,8 @@ public static class ClaudePluginService
                     Description = Str(el, "description"),
                     InstallCount = count,
                     IsInstalled = installedIds.Contains(pid),
+                    Version = ver,
+                    SourceUrl = srcUrl,
                 });
             }
         }
