@@ -541,8 +541,14 @@ public sealed class TerminalSessionManager
             if (!Guid.TryParse(oldId, out _)) return null;
 
             // 새 id 로 복사 + 내부 id 참조(세션 헤더 "id"/메시지 sessionID 등) 전역 치환.
+            // FileShare.ReadWrite 로 읽는다 — 대화 중인 세션이면 gjc 가 이 jsonl 을 열어두고 있어
+            // File.ReadAllText(제한 공유)는 "다른 프로세스가 사용 중" 예외로 실패한다(=활성 세션 포크 불가).
             var newId = Guid.NewGuid().ToString("D").ToLowerInvariant();
-            var content = File.ReadAllText(srcFile.FullName).Replace(oldId, newId);
+            string content;
+            using (var fs = new FileStream(srcFile.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var sr = new StreamReader(fs))
+                content = sr.ReadToEnd();
+            content = content.Replace(oldId, newId);
 
             var newDir = GajaeSessionDir(newRoomId);
             Directory.CreateDirectory(newDir);
