@@ -94,12 +94,18 @@
                                FontSize="{DynamicResource Fs11}"
                                Foreground="{DynamicResource TextMutedBrush}"/>
                 </StackPanel>
-                <Button Click="CloseBtn_Click"
-                        HorizontalAlignment="Right" VerticalAlignment="Center"
-                        Width="40" Height="32" Margin="0,0,8,0"
-                        Style="{StaticResource WinCloseBtn}">
-                    <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
-                </Button>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Margin="0,0,8,0">
+                    <Button x:Name="MaxRestoreBtn" Click="MaxRestore_Click"
+                            Width="40" Height="32" Style="{StaticResource WinCtrlBtn}" ToolTip="최대화">
+                        <TextBlock x:Name="MaxRestoreGlyph" Text="&#x25A1;" FontSize="14"/>
+                    </Button>
+                    <Button Click="CloseBtn_Click"
+                            Width="40" Height="32"
+                            Style="{StaticResource WinCloseBtn}">
+                        <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
+                    </Button>
+                </StackPanel>
             </Grid>
         </Border>
 

@@ -27,7 +27,7 @@
                                   Color="{DynamicResource ShadowColor}" Opacity="{DynamicResource ShadowOpacity}"/>
             </Border.Effect>
         </Border>
-        <Border CornerRadius="14"
+        <Border x:Name="ContentChrome" CornerRadius="14"
                 Background="{DynamicResource BgBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                 ClipToBounds="True"

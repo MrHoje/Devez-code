@@ -466,6 +466,20 @@ public partial class PluginControlDialog : UserControl
     private void OutputSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
         => SettingsService.SavePluginOutputWidth(OutputCol.ActualWidth);
 
+    private void MaxRestore_Click(object sender, RoutedEventArgs e)
+    {
+        var w = Window.GetWindow(this);
+        if (w == null) return;
+        w.WindowState = w.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    }
+
+    /// <summary>창이 최대화/복원될 때 버튼 글리프·툴팁을 동기화(창에서 호출).</summary>
+    public void SetMaximizedVisual(bool maximized)
+    {
+        MaxRestoreGlyph.Text = maximized ? "❐" : "□";  // ❐ 복원 / □ 최대화
+        MaxRestoreBtn.ToolTip = maximized ? "이전 크기로" : "최대화";
+    }
+
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => TryClose();
 
     public void TryClose() => CloseRequested?.Invoke(this, EventArgs.Empty);
