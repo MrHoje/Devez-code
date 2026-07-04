@@ -33,6 +33,9 @@ public partial class PluginControlDialog : UserControl
     // 검색 지연 적용(파일 탐색기와 동일한 180ms 디바운스). 타이핑 중 매 키마다 필터를 돌리지 않는다.
     private readonly System.Windows.Threading.DispatcherTimer _searchDebounce =
         new() { Interval = TimeSpan.FromMilliseconds(180) };
+    // 하단 Discover 검색 디바운스(입력마다 Refresh 하면 컨테이너 재생성으로 살짝 멈춤).
+    private readonly System.Windows.Threading.DispatcherTimer _discSearchDebounce =
+        new() { Interval = TimeSpan.FromMilliseconds(180) };
 
     public PluginControlDialog()
     {
@@ -44,13 +47,14 @@ public partial class PluginControlDialog : UserControl
         MarketList.ItemsSource = _markets;
         DiscoverList.ItemsSource = _avail;
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); ApplyFilter(); };
+        _discSearchDebounce.Tick += (_, _) => { _discSearchDebounce.Stop(); ApplyDiscFilter(); };
         CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
         CollectionViewSource.GetDefaultView(_markets).Filter = o => o is ClaudeMarketplace m && Match(m.Name, m.OriginText);
         CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && DiscMatch(a);
         // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
         // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
         Loaded += (_, _) => SetTabVisual("plugins");
-        Unloaded += (_, _) => { _disposed = true; _searchDebounce.Stop(); };
+        Unloaded += (_, _) => { _disposed = true; _searchDebounce.Stop(); _discSearchDebounce.Stop(); };
     }
 
     /// <summary>창 오픈 애니메이션 완료 후 호출 — 첫 목록 로드를 시작한다.</summary>
@@ -303,10 +307,9 @@ public partial class PluginControlDialog : UserControl
         _selectedMarket = m;
         m.IsSelected = true;
 
-        // 하단 Discover 패널 열기 — 출력:Discover = 1:2 비율.
+        // 하단 Discover 패널 열기 — 출력은 240px 고정, 나머지 공간은 Discover 차지.
         DiscoverTitle.Text = m.Name;
-        OutputRow.Height = new GridLength(1, GridUnitType.Star);
-        DiscoverRow.Height = new GridLength(2, GridUnitType.Star);
+        DiscoverRow.Height = new GridLength(1, GridUnitType.Star);
         DiscoverSearchBox.Text = "";   // 이전 검색어 초기화
         DiscoverSpinner.Visibility = Visibility.Visible;
         DiscoverEmpty.Visibility = Visibility.Collapsed;
@@ -342,6 +345,14 @@ public partial class PluginControlDialog : UserControl
     private void DiscoverSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         DiscoverSearchClearBtn.Visibility = string.IsNullOrEmpty(DiscoverSearchBox.Text) ? Visibility.Collapsed : Visibility.Visible;
+        _discSearchDebounce.Stop();
+        // 비우면 즉시 해제, 입력 중이면 180ms 지연 후 적용(입력 중 Refresh 반복으로 인한 멈춤 방지).
+        if (string.IsNullOrEmpty(DiscoverSearchBox.Text)) ApplyDiscFilter();
+        else _discSearchDebounce.Start();
+    }
+
+    private void ApplyDiscFilter()
+    {
         _discQuery = DiscoverSearchBox.Text.Trim();
         var view = CollectionViewSource.GetDefaultView(_avail);
         view.Refresh();

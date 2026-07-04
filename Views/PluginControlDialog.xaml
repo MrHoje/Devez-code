@@ -474,7 +474,7 @@
                 <Grid Margin="16,16,16,16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*" x:Name="OutputRow"/>
+                        <RowDefinition Height="240" x:Name="OutputRow"/>
                         <RowDefinition Height="0" x:Name="DiscoverRow"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="출력" Margin="2,0,0,10"
@@ -509,7 +509,7 @@
                         </Grid.RowDefinitions>
 
                         <!-- 헤더 -->
-                        <Grid x:Name="DiscoverHeader" Grid.Row="0" Margin="2,0,0,8">
+                        <Grid x:Name="DiscoverHeader" Grid.Row="0" Margin="2,16,0,8">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPackageSearch}"
                                       Width="14" Height="14" VerticalAlignment="Center"
