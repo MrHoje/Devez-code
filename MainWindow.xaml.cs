@@ -2912,8 +2912,27 @@ public partial class MainWindow : Window
     private void StartBusyDisplaySync()
     {
         var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        t.Tick += (_, _) => UpdateSessionBusyDisplay(); // 동일값 set 은 no-op → 깜빡임/비용 없음
+        t.Tick += (_, _) => { UpdateSessionBusyDisplay(); RefreshSessionHistoryTracking(); }; // 동일값 set 은 no-op → 깜빡임/비용 없음
         t.Start();
+    }
+
+    /// <summary>완료기록 카드의 취소선 상태를 현재 워크스페이스와 동기화한다.
+    /// - 세션이 어느 프로젝트 카드에도 없으면(탭 닫힘/삭제) → 세션명 취소선
+    /// - 프로젝트가 활성/보관 어디에도 없으면(삭제됨) → 프로젝트명 취소선
+    /// 파생 상태라 저장하지 않고, 이벤트 밖 경로도 커버되게 500ms 주기로 맞춘다(동일값 set 은 no-op).</summary>
+    private void RefreshSessionHistoryTracking()
+    {
+        foreach (var r in _sessionDoneRecords)
+        {
+            r.SessionMissing = FindSession(r.SessionId) == null;
+
+            if (string.IsNullOrWhiteSpace(r.ProjectName))
+                r.ProjectMissing = false;
+            else
+                r.ProjectMissing = !_projects.Concat(_archivedProjects).Any(p =>
+                    string.Equals(p.Name, r.ProjectName, StringComparison.Ordinal) ||
+                    string.Equals(System.IO.Path.GetFileName(p.Path.TrimEnd('\\', '/')), r.ProjectName, StringComparison.Ordinal));
+        }
     }
 
     private void AddSessionCompletionRecord(SessionItem s)

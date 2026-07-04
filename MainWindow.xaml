@@ -420,6 +420,7 @@
                                                     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                                                         <TextBlock Text="{Binding ProjectName}"
                                                                    Visibility="{Binding ProjectVisibility}"
+                                                                   TextDecorations="{Binding ProjectDecoration}"
                                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                                    FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource TextBrush}">
@@ -460,6 +461,7 @@
                                                     </StackPanel>
                                                     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
                                                                Text="{Binding SessionName}" Margin="0,5,0,0"
+                                                               TextDecorations="{Binding SessionDecoration}"
                                                                TextTrimming="CharacterEllipsis"
                                                                FontSize="{DynamicResource Fs13}"
                                                                Foreground="{DynamicResource TextBrush}"/>
