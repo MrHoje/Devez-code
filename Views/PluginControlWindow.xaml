@@ -18,7 +18,7 @@
         TextOptions.TextRenderingMode="ClearType"
         FontFamily="{StaticResource PretendardFont}">
 
-    <Grid Margin="{DynamicResource WindowShadowOuterMargin}">
+    <Grid x:Name="RootLayer" Margin="{DynamicResource WindowShadowOuterMargin}">
         <Border Background="{DynamicResource BgBrush}" CornerRadius="{DynamicResource WindowShadowCornerRadius}"
                 Margin="{DynamicResource WindowShadowInnerMargin}"
                 SnapsToDevicePixels="True">

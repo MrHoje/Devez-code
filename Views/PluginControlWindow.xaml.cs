@@ -20,7 +20,7 @@ public partial class PluginControlWindow : Window
         // 설정창(SettingsWindow)처럼 콘텐츠 UserControl 을 둥근 RectangleGeometry 로 직접 클립해야 한다.
         PluginView.SizeChanged += (_, _) => ApplyRoundedClip();
         Loaded += (_, _) => ApplyRoundedClip();
-        ContentRendered += async (_, _) => await AnimateOpenAsync();
+        ContentRendered += (_, _) => AnimateOpen();
     }
 
     private void ApplyRoundedClip()
@@ -30,15 +30,25 @@ public partial class PluginControlWindow : Window
         PluginView.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 13, 13);
     }
 
-    private async Task AnimateOpenAsync()
+    private void AnimateOpen()
     {
-        // 설정창(SettingsWindow)과 동일 패턴 — 그림자 블러 재계산을 피하려고 창 Opacity 페이드만 준다.
+        // AllowsTransparency 레이어드 창은 크기가 클수록(플러그인 창 1240x840) 페이드 매 프레임마다
+        // 전체 픽셀 blit + DropShadow(BlurRadius=40) 재계산을 해서 버벅인다.
+        // 페이드 동안 콘텐츠 전체를 BitmapCache 로 캐시 → 그림자/텍스트를 한 번만 렌더하고, 매 프레임엔
+        // 캐시된 비트맵만 알파 블렌딩한다. 애니메이션이 끝나면 캐시를 풀고(라이브 리사이즈/스크롤을 위해)
+        // 그때 첫 목록 로드를 시작한다.
+        var dpi = VisualTreeHelper.GetDpi(this);
+        RootLayer.CacheMode = new BitmapCache { RenderAtScale = dpi.DpiScaleX };
+
         var dur = new Duration(TimeSpan.FromMilliseconds(220));
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
-        await Task.Delay(220);
-        // 페이드가 끝난 뒤에 첫 목록 로드(서브프로세스 실행) — 애니메이션 프레임과 겹치지 않게.
-        PluginView.BeginInitialLoad();
+        var anim = new DoubleAnimation(0, 1, dur) { EasingFunction = ease };
+        anim.Completed += (_, _) =>
+        {
+            RootLayer.CacheMode = null;
+            PluginView.BeginInitialLoad();
+        };
+        BeginAnimation(OpacityProperty, anim);
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
