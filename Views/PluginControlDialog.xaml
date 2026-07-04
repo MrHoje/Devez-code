@@ -72,7 +72,11 @@
             <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <!-- 고정 높이 → 세 버튼의 호버 배경 높이·위치 동일 -->
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="8,0"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -177,7 +181,8 @@
                      액션 버튼은 보더 없이 아이콘+텍스트로만 배치. -->
                 <Border Grid.Row="0" Height="37"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                    <Grid Margin="14,0,14,0">
+                    <!-- Margin top 1: 액션 버튼을 1px 아래로 -->
+                    <Grid Margin="14,1,14,0">
                         <!-- 플러그인 탭 액션 -->
                         <StackPanel x:Name="PluginActions" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button x:Name="InstallBtn" Click="InstallBtn_Click" Style="{StaticResource HeaderActionBtn}">
@@ -219,10 +224,10 @@
                                 HorizontalAlignment="Right">
                             <StackPanel Orientation="Horizontal">
                                 <!-- 새로고침 중엔 아이콘 자리에 스피너 표시 -->
-                                <Grid Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center">
+                                <Grid Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center">
                                     <Path x:Name="RefreshIcon" Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
                                           Width="13" Height="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    <Ellipse x:Name="RefreshSpinner" Width="14" Height="14"
+                                    <Ellipse x:Name="RefreshSpinner" Width="13" Height="13"
                                              Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
                                              models:SpinnerActivator.Track="True"
                                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
