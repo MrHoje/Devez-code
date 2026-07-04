@@ -269,7 +269,7 @@ public partial class PluginControlDialog : UserControl
     private void MarketAdd_Click(object sender, RoutedEventArgs e)
     {
         var input = PromptDialog.Show("마켓플레이스 추가",
-            "URL · 로컬 경로 · GitHub 저장소(owner/repo) 중 하나를 입력하세요.", okLabel: "추가");
+            "URL · 로컬 경로 · GitHub 저장소(owner/repo) 중\n하나를 입력하세요.", okLabel: "추가");
         if (string.IsNullOrWhiteSpace(input)) return;
         ClaudePluginService.SpawnMarketplaceAdd(input);
         ShowOutput("marketplace add", $"'{input}' 추가를 별도 콘솔 창에서 진행합니다.\n완료되면 [새로고침] 으로 목록을 갱신하세요.");
