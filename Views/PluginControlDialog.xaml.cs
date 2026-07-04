@@ -182,6 +182,23 @@ public partial class PluginControlDialog : UserControl
         ShowOutput("install", $"'{input}' 설치를 별도 콘솔 창에서 진행합니다.\n완료되면 [새로고침] 으로 목록을 갱신하세요.");
     }
 
+    private async void PluginUpdateAll_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = _plugins.ToList();
+        if (targets.Count == 0) { ShowOutput("update --all", "설치된 플러그인이 없습니다."); return; }
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < targets.Count; i++)
+        {
+            var p = targets[i];
+            ShowOutput("전체 업데이트", $"({i + 1}/{targets.Count}) {p.Name} 업데이트 중…\n\n{sb}");
+            var r = await ClaudePluginService.UpdateAsync(p.Id);
+            if (_disposed) return;
+            sb.Append($"• {p.Name}: {(string.IsNullOrWhiteSpace(r) ? "완료" : r.Replace("\r", " ").Replace("\n", " "))}\n");
+        }
+        ShowOutput("전체 업데이트", sb.ToString().TrimEnd());
+        await RefreshAsync();
+    }
+
     // ── 마켓플레이스 탭 ───────────────────────────────────────────
     private void MarketAdd_Click(object sender, RoutedEventArgs e)
     {
@@ -222,10 +239,10 @@ public partial class PluginControlDialog : UserControl
     }
 
     // ── 우측 출력 영역 ────────────────────────────────────────────
+    // 헤더는 항상 "출력" 고정. 실행 맥락(명령명)은 본문 첫 줄에 표시.
     private void ShowOutput(string title, string body)
     {
-        OutputTitle.Text = title;
-        OutputText.Text = body;
+        OutputText.Text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
         OutputPlaceholder.Visibility = Visibility.Collapsed;
     }
 

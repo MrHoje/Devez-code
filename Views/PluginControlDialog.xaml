@@ -14,7 +14,7 @@
             <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="4,0,0,0"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -147,9 +147,18 @@
                             <Button x:Name="InstallBtn" Click="InstallBtn_Click"
                                     Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
                                 <StackPanel Orientation="Horizontal">
-                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
                                           Width="13" Height="13" Margin="0,0,7,0"/>
                                     <TextBlock Text="설치" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="PluginUpdateAllBtn" Click="PluginUpdateAll_Click" Margin="8,0,0,0"
+                                    Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0"
+                                    ToolTip="설치된 모든 플러그인 업데이트">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
+                                          Width="13" Height="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="전체 업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -331,24 +340,22 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,10">
-                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
-                              Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"
-                              VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock x:Name="OutputTitle" Text="출력" FontSize="{DynamicResource Fs11}"
-                                   FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"
-                                   VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <Border Grid.Row="1" CornerRadius="10" Padding="12,10"
+                    <TextBlock Grid.Row="0" Text="출력" Margin="2,0,0,10"
+                               FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                    <!-- 패딩을 Border 가 아니라 콘텐츠(TextBox)의 Margin 으로 줘야, 세로 스크롤바가 생겨도
+                         텍스트가 스크롤바로부터 왼쪽 여백과 동일한 간격을 유지한다(스크롤바는 테두리 안쪽 끝에 붙음). -->
+                    <Border Grid.Row="1" CornerRadius="10"
                             Background="{DynamicResource PanelSoftBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                         <Grid>
                             <TextBlock x:Name="OutputPlaceholder" TextWrapping="Wrap" VerticalAlignment="Top"
+                                       Margin="14,12,14,12"
                                        FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
                                        Text="상세·업데이트·삭제 등의 실행 결과가 여기에 표시됩니다."/>
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <TextBox x:Name="OutputText" IsReadOnly="True" BorderThickness="0"
-                                         Background="Transparent" TextWrapping="Wrap"
+                                         Background="Transparent" TextWrapping="Wrap" Margin="14,12,14,12"
                                          FontFamily="Consolas, Cascadia Code, PretendardFont"
                                          FontSize="{DynamicResource Fs12}"
                                          Foreground="{DynamicResource TextBrush}"/>
