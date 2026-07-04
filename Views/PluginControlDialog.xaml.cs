@@ -28,17 +28,22 @@ public partial class PluginControlDialog : UserControl
     private bool _busy;
     private bool _disposed;
 
+    // 검색 지연 적용(파일 탐색기와 동일한 180ms 디바운스). 타이핑 중 매 키마다 필터를 돌리지 않는다.
+    private readonly System.Windows.Threading.DispatcherTimer _searchDebounce =
+        new() { Interval = TimeSpan.FromMilliseconds(180) };
+
     public PluginControlDialog()
     {
         InitializeComponent();
         PluginList.ItemsSource = _plugins;
         MarketList.ItemsSource = _markets;
         DiscoverList.ItemsSource = _avail;
+        _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); ApplyFilter(); };
         CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
         CollectionViewSource.GetDefaultView(_markets).Filter = o => o is ClaudeMarketplace m && Match(m.Name, m.OriginText);
         CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && Match(a.Name, a.Id, a.Marketplace, a.Description);
         Loaded += (_, _) => SetTab("plugins");
-        Unloaded += (_, _) => _disposed = true;
+        Unloaded += (_, _) => { _disposed = true; _searchDebounce.Stop(); };
     }
 
     private bool Match(params string?[] fields)
@@ -47,8 +52,16 @@ public partial class PluginControlDialog : UserControl
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        _query = SearchBox.Text.Trim();
         SearchClearBtn.Visibility = string.IsNullOrEmpty(SearchBox.Text) ? Visibility.Collapsed : Visibility.Visible;
+        _searchDebounce.Stop();
+        // 비우면 즉시 해제, 입력 중이면 180ms 지연 후 적용.
+        if (string.IsNullOrEmpty(SearchBox.Text)) ApplyFilter();
+        else _searchDebounce.Start();
+    }
+
+    private void ApplyFilter()
+    {
+        _query = SearchBox.Text.Trim();
         CollectionViewSource.GetDefaultView(_plugins).Refresh();
         CollectionViewSource.GetDefaultView(_markets).Refresh();
         CollectionViewSource.GetDefaultView(_avail).Refresh();
