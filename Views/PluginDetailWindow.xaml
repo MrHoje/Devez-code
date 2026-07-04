@@ -103,14 +103,21 @@
                             </Button>
                         </StackPanel>
 
-                        <!-- 설명 -->
+                        <!-- 설명 (드래그 선택·복사 가능한 읽기전용 TextBox) -->
                         <Border Grid.Row="1" Margin="0,14,0,0" CornerRadius="10"
                                 Background="{DynamicResource PanelSoftBrush}"
                                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <TextBlock x:Name="DescText" Margin="14,12,14,12" TextWrapping="Wrap"
-                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                            </ScrollViewer>
+                            <TextBox x:Name="DescText" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                                     BorderThickness="0" Background="Transparent"
+                                     TextWrapping="Wrap" Margin="14,12,14,12"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                     FocusVisualStyle="{x:Null}"
+                                     FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"
+                                     FontFamily="{StaticResource PretendardFont}">
+                                <TextBox.Resources>
+                                    <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                                </TextBox.Resources>
+                            </TextBox>
                         </Border>
 
                         <!-- 설치 버튼 / 설치됨 -->
