@@ -144,6 +144,7 @@ public partial class PluginControlDialog : UserControl
         if (_busy) { _pendingRefresh = true; return; }
         _busy = true;
         RefreshSpinner.Visibility = Visibility.Visible;
+        RefreshIcon.Visibility = Visibility.Collapsed;
         try
         {
             do
@@ -171,7 +172,7 @@ public partial class PluginControlDialog : UserControl
         finally
         {
             _busy = false;
-            if (!_disposed) RefreshSpinner.Visibility = Visibility.Collapsed;
+            if (!_disposed) { RefreshSpinner.Visibility = Visibility.Collapsed; RefreshIcon.Visibility = Visibility.Visible; }
         }
     }
 
