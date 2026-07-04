@@ -406,13 +406,19 @@ public sealed class TerminalSessionManager
             SettingsService.SaveOpenCodeRoomSession(roomId, tracked);
         }
 
-        // ── 포크(opencode): 첫 실행이면(자체 세션 없음) --fork 로 원본 세션을 분기(새 세션 생성).
-        //    cwd 폴백(아래)보다 먼저 처리 — 안 그러면 같은 폴더의 다른 세션을 잡아버린다. 마커 1회 소비.
+        // ── 포크(opencode): 이 방이 다른 세션에서 분기 요청됐고 아직 분기 전이면 --fork 로 원본을 분기.
+        //    cwd 폴백(아래)보다 먼저 처리 — 안 그러면 같은 폴더의 다른 세션을 잡아버린다.
+        //    claude 와 동일하게, 마커는 첫 실행에 소비하지 않고 "추적값이 원본과 달라질 때(분기 완료)"까지 유지.
         var forkSrc = SettingsService.LoadRoomForkSource(roomId);
-        if (forkSrc != null && sessionId == null)
+        if (forkSrc != null)
         {
-            SettingsService.RemoveRoomForkSource(roomId);
-            if (System.Text.RegularExpressions.Regex.IsMatch(forkSrc, @"^[A-Za-z0-9_.\-]+$"))
+            bool diverged = sessionId != null
+                && !string.Equals(sessionId, forkSrc, StringComparison.OrdinalIgnoreCase);
+            if (diverged)
+            {
+                SettingsService.RemoveRoomForkSource(roomId); // 분기 완료 → 아래 일반 경로(새 세션 resume)
+            }
+            else if (System.Text.RegularExpressions.Regex.IsMatch(forkSrc, @"^[A-Za-z0-9_.\-]+$"))
             {
                 string forkBody = $"@echo off\r\n" +
                                   $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
@@ -430,6 +436,10 @@ public sealed class TerminalSessionManager
                     injectFallback = $"opencode --session {forkSrc} --fork\r";
                     return null;
                 }
+            }
+            else
+            {
+                SettingsService.RemoveRoomForkSource(roomId); // 비정상 ID → 정리
             }
         }
 
@@ -607,29 +617,41 @@ public sealed class TerminalSessionManager
         // 훅이 기록한 마지막 세션 ID가 저장값과 다르면 그쪽이 최신 대화 — 교체 후 resume
         sessionId = SyncTrackedClaudeSessionId(roomId) ?? sessionId;
 
-        // ── 포크(claude): 이 방이 다른 세션에서 분기 요청됐고(RoomForkSource) 아직 자체 추적 세션이 없으면
-        //    (첫 실행) --resume <원본> --fork-session 으로 원본 대화를 복사한 새 세션으로 시작. 마커는
-        //    1회 소비(성공/실패 무관 재-포크 방지). transcript 없거나 비정상 ID 면 아래 일반 경로(fresh)로.
+        // ── 포크(claude): 이 방이 다른 세션에서 분기 요청됐고(RoomForkSource) 아직 분기 전이면
+        //    --resume <원본> --fork-session 으로 원본 대화를 복사한 새 세션으로 시작한다.
+        //    fork-session 은 '메시지를 보내야' 새 ID로 갈라지는 지연 분기 → SessionStart 는 원본 ID를 기록하므로,
+        //    마커를 첫 실행에 소비하지 않고 "추적값이 원본과 달라질 때(=분기 완료)"까지 유지한다.
+        //    (분기 전 재실행에도 계속 --fork-session → 원본을 이어가버리는 사고 방지. 메시지 없이 재포크는
+        //     transcript 를 안 만들어 무해.) transcript 없거나 비정상 ID 면 마커 정리 후 일반 경로.
         var forkSrc = SettingsService.LoadRoomForkSource(roomId);
-        if (forkSrc != null && sessionId == null)
+        if (forkSrc != null)
         {
-            SettingsService.RemoveRoomForkSource(roomId);
-            var forkCcDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-            if (Guid.TryParse(forkSrc, out _) && ClaudeTranscriptExists(forkCcDir, forkSrc))
+            bool diverged = sessionId != null
+                && !string.Equals(sessionId, forkSrc, StringComparison.OrdinalIgnoreCase);
+            if (diverged)
             {
-                var forkBody = $"claude --resume {forkSrc} --fork-session {flags}\r\n"
-                             + $"if errorlevel 1 claude {flags}";
-                try
+                SettingsService.RemoveRoomForkSource(roomId); // 분기 완료 → 아래 일반 경로(새 포크 세션 resume)
+            }
+            else
+            {
+                var forkCcDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+                if (Guid.TryParse(forkSrc, out _) && ClaudeTranscriptExists(forkCcDir, forkSrc))
                 {
-                    Directory.CreateDirectory(LaunchDir);
-                    File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + forkBody + "\r\n");
-                    return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
+                    var forkBody = $"claude --resume {forkSrc} --fork-session {flags}\r\n"
+                                 + $"if errorlevel 1 claude {flags}";
+                    try
+                    {
+                        Directory.CreateDirectory(LaunchDir);
+                        File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + forkBody + "\r\n");
+                        return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
+                    }
+                    catch (Exception)
+                    {
+                        injectFallback = $"claude --resume {forkSrc} --fork-session {flags}\r";
+                        return null;
+                    }
                 }
-                catch (Exception)
-                {
-                    injectFallback = $"claude --resume {forkSrc} --fork-session {flags}\r";
-                    return null;
-                }
+                SettingsService.RemoveRoomForkSource(roomId); // 포크 불가(transcript 없음/비정상 ID) → 정리
             }
         }
 
