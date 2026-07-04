@@ -284,13 +284,27 @@ public partial class PluginControlDialog : UserControl
         if ((sender as FrameworkElement)?.DataContext is not ClaudeAvailablePlugin a) return;
         var win = new PluginDetailWindow(a) { Owner = Window.GetWindow(this) };
         win.ShowDialog();
-        // 팝업에서 설치했으면 설치 가능한 목록에서 제거.
+        // 팝업에서 설치했으면 설치 가능한 목록에서 제거 + 플러그인 탭 목록을 뒤에서 미리 갱신.
         if (win.Installed)
         {
             _avail.Remove(a);
             var view = CollectionViewSource.GetDefaultView(_avail);
             DiscoverEmpty.Visibility = view.Cast<object>().Any() ? Visibility.Collapsed : Visibility.Visible;
+            _ = ReloadPluginsSilentAsync();
         }
+    }
+
+    // 탭 전환 없이 설치된 플러그인 목록만 백그라운드로 갱신(설치 직후 미리 반영).
+    private async Task ReloadPluginsSilentAsync()
+    {
+        try
+        {
+            var list = await ClaudePluginService.ListAsync();
+            if (_disposed) return;
+            MergeInto(list);
+            if (_tab == "plugins") UpdateEmptyForTab();
+        }
+        catch { }
     }
 
     // ── 마켓플레이스 탭 ───────────────────────────────────────────
