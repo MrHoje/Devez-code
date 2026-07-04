@@ -85,8 +85,7 @@ public partial class PluginDetailWindow : Window
 
     private void ShowOutput(string title, string body, bool isError = false)
     {
-        OutputText.Text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
-        OutputText.Foreground = (Brush)FindResource(isError ? "DangerBrush" : "TextBrush");
+        PluginOutputRenderer.Render(OutputText, string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}");
         OutputPlaceholder.Visibility = Visibility.Collapsed;
     }
 

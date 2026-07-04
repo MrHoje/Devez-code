@@ -161,13 +161,17 @@
                                                Margin="14,12,14,12"
                                                FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
                                                Text="설치 실행 결과가 여기에 표시됩니다."/>
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                        <TextBox x:Name="OutputText" IsReadOnly="True" BorderThickness="0"
-                                                 Background="Transparent" TextWrapping="Wrap" Margin="14,12,14,12"
+                                    <RichTextBox x:Name="OutputText" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                                                 BorderThickness="0" Background="Transparent" Padding="0" Margin="14,12,14,12"
+                                                 FocusVisualStyle="{x:Null}"
+                                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                                  FontFamily="Consolas, Cascadia Code, PretendardFont"
                                                  FontSize="{DynamicResource Fs12}"
-                                                 Foreground="{DynamicResource TextBrush}"/>
-                                    </ScrollViewer>
+                                                 Foreground="{DynamicResource TextBrush}">
+                                        <RichTextBox.Resources>
+                                            <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                                        </RichTextBox.Resources>
+                                    </RichTextBox>
                                 </Grid>
                             </Border>
                         </Grid>

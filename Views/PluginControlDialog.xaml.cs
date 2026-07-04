@@ -30,8 +30,6 @@ public partial class PluginControlDialog : UserControl
     // 출력은 탭별로 분리 저장 — 탭 전환 시 서로의 내용이 유지되지 않는다.
     private string _outPlugins = "";
     private string _outMarket = "";
-    private bool _outPluginsErr;
-    private bool _outMarketErr;
     private bool _busy;
     private bool _pendingRefresh;   // 로딩 중 들어온 탭 전환/새로고침 예약
     private bool _disposed;
@@ -438,14 +436,12 @@ public partial class PluginControlDialog : UserControl
 
     // ── 우측 출력 영역 ────────────────────────────────────────────
     // 헤더는 항상 "출력" 고정. 실행 맥락(명령명)은 본문 첫 줄에 표시.
-    // 출력은 현재 탭 버퍼에 저장 → 탭 전환 시 서로 섞이지 않는다. isError 면 빨간색(윈도우 터미널처럼).
+    // 출력은 현재 탭 버퍼에 저장 → 탭 전환 시 서로 섞이지 않는다. 색상은 줄 단위(✔ 초록/✘ 빨강)로 렌더러가 처리.
     private void ShowOutput(string title, string body, bool isError = false)
     {
         var text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
-        if (_tab == "plugins") { _outPlugins = text; _outPluginsErr = isError; }
-        else { _outMarket = text; _outMarketErr = isError; }
-        OutputText.Text = text;
-        OutputText.Foreground = (Brush)FindResource(isError ? "DangerBrush" : "TextBrush");
+        if (_tab == "plugins") _outPlugins = text; else _outMarket = text;
+        PluginOutputRenderer.Render(OutputText, text);
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -453,9 +449,7 @@ public partial class PluginControlDialog : UserControl
     private void RestoreOutputForTab()
     {
         var text = _tab == "plugins" ? _outPlugins : _outMarket;
-        var err = _tab == "plugins" ? _outPluginsErr : _outMarketErr;
-        OutputText.Text = text;
-        OutputText.Foreground = (Brush)FindResource(err ? "DangerBrush" : "TextBrush");
+        PluginOutputRenderer.Render(OutputText, text);
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }
 
