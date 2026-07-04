@@ -165,7 +165,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
                                           Width="13" Height="13" Margin="0,0,7,0"/>
-                                    <TextBlock Text="전체 업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -186,7 +186,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
                                           Width="13" Height="13" Margin="0,0,7,0"/>
-                                    <TextBlock Text="전체 업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
