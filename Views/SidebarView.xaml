@@ -108,6 +108,12 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="텍스트로 내보내기" Tag="{Binding}" Click="SessionExport_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <Separator/>
                         <MenuItem Header="세션 닫기" Tag="{Binding}" Click="SessionStopTracking_Click">
                             <MenuItem.Icon>

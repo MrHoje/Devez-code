@@ -169,6 +169,7 @@ public partial class MainWindow : Window
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
         Sidebar.SessionForkRequested += ForkSession;
+        Sidebar.SessionExportRequested += ExportSession;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
 
         // 세션 요청 처리중 스피너: claude 훅(busy-hook.ps1)이 떨군 상태 파일을 감시 (clude-blinker 방식).
@@ -3506,6 +3507,50 @@ public partial class MainWindow : Window
     private void StopTrackingSession(SessionItem session) => PaneFor(session).StopTrackingSession(session);
 
     private void ForkSession(SessionItem session) => PaneFor(session).ForkSession(session);
+
+    /// <summary>세션 대화를 마크다운(.md)으로 내보낸다(옵션 A: user/assistant 텍스트만). 파싱은 백그라운드에서
+    /// (opencode 는 CLI export 스폰), 그 뒤 저장 위치를 물어 UTF-8(BOM)로 저장.</summary>
+    private async void ExportSession(SessionItem session)
+    {
+        var roomId = session.Id;
+        var name = session.Name;
+        var agentId = string.IsNullOrEmpty(session.AgentId)
+            ? SettingsService.LoadAgentForRoom(roomId) : session.AgentId;
+        var cwd = SettingsService.LoadClaudeCodeRoomDir(roomId);
+
+        string? md = await System.Threading.Tasks.Task.Run(() =>
+        {
+            try { return SessionExporter.BuildMarkdown(roomId, agentId ?? "", name, cwd); }
+            catch { return null; }
+        });
+
+        if (string.IsNullOrWhiteSpace(md))
+        {
+            ConfirmDialog.Alert("내보내기 실패",
+                "이 세션에서 내보낼 대화를 찾지 못했습니다.\n(대화가 없거나 지원되지 않는 에이전트일 수 있어요.)");
+            return;
+        }
+
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "세션 대화 내보내기",
+            FileName = SafeExportFileName(name),
+            Filter = "Markdown (*.md)|*.md|텍스트 (*.txt)|*.txt",
+            DefaultExt = ".md",
+        };
+        if (dlg.ShowDialog(this) == true)
+        {
+            try { System.IO.File.WriteAllText(dlg.FileName, md, new System.Text.UTF8Encoding(true)); }
+            catch (Exception ex) { ConfirmDialog.Alert("저장 실패", ex.Message); }
+        }
+    }
+
+    private static string SafeExportFileName(string name)
+    {
+        var baseName = string.IsNullOrWhiteSpace(name) ? "session" : name;
+        foreach (var ch in System.IO.Path.GetInvalidFileNameChars()) baseName = baseName.Replace(ch, '_');
+        return baseName + ".md";
+    }
 
     // ── 공개 API (외부 뷰가 호출) ─────────────────────────────────────
     /// <summary>작업 큐 → 포커스 패널의 활성 세션에 텍스트 전송.</summary>

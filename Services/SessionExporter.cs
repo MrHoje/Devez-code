@@ -1,0 +1,199 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Text.Json;
+using DevezCode.Services.Terminal;
+
+namespace DevezCode.Services;
+
+/// <summary>세션 대화를 사람이 읽는 마크다운으로 내보낸다(옵션 A: user/assistant 텍스트만 —
+/// 툴 호출·결과·thinking·시스템 메시지·이미지는 제외). claude/opencode/gajae 각 저장 포맷을 파싱.
+/// 활성 세션이면 파일이 잠겨 있어 FileShare.ReadWrite 로 읽는다.</summary>
+public static class SessionExporter
+{
+    /// <summary>세션 마크다운 생성. 대화가 없거나 미지원이면 null. (opencode 는 CLI export 를 스폰하므로
+    /// 호출부는 백그라운드 스레드에서 부르는 게 좋다.)</summary>
+    public static string? BuildMarkdown(string roomId, string agentId, string sessionName, string? cwd)
+    {
+        var turns = agentId switch
+        {
+            "claude"   => FromClaude(roomId, cwd),
+            "opencode" => FromOpenCode(roomId),
+            "gajae"    => FromGajae(roomId),
+            _          => new List<(string role, string text)>(),
+        };
+        if (turns.Count == 0) return null;
+
+        var label = AgentLabel(agentId);
+        var sb = new StringBuilder();
+        sb.Append("# ").Append(string.IsNullOrWhiteSpace(sessionName) ? "세션" : sessionName)
+          .Append("  ·  ").Append(label).Append('\n');
+        sb.Append("_내보낸 시각: ").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm")).Append("_\n\n");
+        foreach (var (role, text) in turns)
+        {
+            var t = text.Trim();
+            if (t.Length == 0) continue;
+            sb.Append(role == "user" ? "### 🧑 나\n\n" : $"### 🤖 {label}\n\n");
+            sb.Append(t).Append("\n\n");
+        }
+        return sb.ToString();
+    }
+
+    private static string AgentLabel(string a) => a switch
+    { "claude" => "Claude", "opencode" => "OpenCode", "gajae" => "가재코드", _ => a };
+
+    // ── claude: %USERPROFILE%\.claude\projects\<enc>\<sid>.jsonl (type=user/assistant, content=str|[text]) ──
+    private static List<(string role, string text)> FromClaude(string roomId, string? cwd)
+    {
+        var turns = new List<(string, string)>();
+        var sid = SettingsService.LoadClaudeCodeRoomSession(roomId);
+        var path = TerminalSessionManager.FindClaudeTranscriptPath(cwd, sid);
+        if (path == null) return turns;
+        foreach (var line in ReadLinesShared(path))
+        {
+            var turn = ParseTurn(line, requireType: true, typeIsMessageMarker: false);
+            if (turn != null) turns.Add(turn.Value);
+        }
+        return turns;
+    }
+
+    // ── gajae(gjc): 방 dir 최신 jsonl (type=="message" + role, content=[text]; model_change 등 메타 제외) ──
+    private static List<(string role, string text)> FromGajae(string roomId)
+    {
+        var turns = new List<(string, string)>();
+        var path = TerminalSessionManager.FindLatestGajaeTranscriptPath(roomId);
+        if (path == null) return turns;
+        foreach (var line in ReadLinesShared(path))
+        {
+            var turn = ParseTurn(line, requireType: true, typeIsMessageMarker: true);
+            if (turn != null) turns.Add(turn.Value);
+        }
+        return turns;
+    }
+
+    /// <summary>jsonl 한 줄에서 (role, text) 추출. claude/gjc 공용.
+    /// typeIsMessageMarker=false(claude): type 이 곧 role(user/assistant).
+    /// true(gjc): type=="message" 인 줄만, role 은 message.role/role 필드에서.</summary>
+    private static (string role, string text)? ParseTurn(string line, bool requireType, bool typeIsMessageMarker)
+    {
+        try
+        {
+            using var d = JsonDocument.Parse(line);
+            var o = d.RootElement;
+            if (!TryStr(o, "type", out var type)) { if (requireType) return null; type = ""; }
+
+            string role;
+            if (typeIsMessageMarker)
+            {
+                if (type != "message") return null;
+                var m0 = o.TryGetProperty("message", out var mm) && mm.ValueKind == JsonValueKind.Object ? mm : o;
+                if (!TryStr(m0, "role", out role)) TryStr(o, "role", out role);
+            }
+            else
+            {
+                role = type; // claude: type == role
+            }
+            if (role != "user" && role != "assistant") return null;
+
+            var msg = o.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.Object ? m : o;
+            var text = ExtractContentText(msg);
+            return string.IsNullOrWhiteSpace(text) ? null : (role, text);
+        }
+        catch { return null; }
+    }
+
+    // ── opencode: `opencode export <sid>` → JSON {messages:[{info:{role}, parts:[{type,text}]}]} ──
+    private static List<(string role, string text)> FromOpenCode(string roomId)
+    {
+        var turns = new List<(string, string)>();
+        var sid = SettingsService.LoadOpenCodeRoomSession(roomId);
+        if (string.IsNullOrWhiteSpace(sid)) return turns;
+        var json = RunCapture("opencode", "export " + sid);
+        if (string.IsNullOrWhiteSpace(json)) return turns;
+        try
+        {
+            using var d = JsonDocument.Parse(json);
+            if (!d.RootElement.TryGetProperty("messages", out var msgs) || msgs.ValueKind != JsonValueKind.Array)
+                return turns;
+            foreach (var msg in msgs.EnumerateArray())
+            {
+                var info = msg.TryGetProperty("info", out var inf) && inf.ValueKind == JsonValueKind.Object ? inf : msg;
+                if (!TryStr(info, "role", out var role) || (role != "user" && role != "assistant")) continue;
+                if (!msg.TryGetProperty("parts", out var parts) || parts.ValueKind != JsonValueKind.Array) continue;
+                var sb = new StringBuilder();
+                foreach (var p in parts.EnumerateArray())
+                    if (TryStr(p, "type", out var pt) && pt == "text" && TryStr(p, "text", out var txt))
+                        sb.Append(txt).Append('\n');
+                var text = sb.ToString().Trim();
+                if (text.Length > 0) turns.Add((role, text));
+            }
+        }
+        catch { }
+        return turns;
+    }
+
+    /// <summary>content(문자열 or [{type,text},…] 배열)에서 text 블록만 이어붙인다(tool_use/tool_result/thinking/image 제외).</summary>
+    private static string ExtractContentText(JsonElement msg)
+    {
+        if (msg.ValueKind != JsonValueKind.Object || !msg.TryGetProperty("content", out var c)) return "";
+        if (c.ValueKind == JsonValueKind.String) return c.GetString() ?? "";
+        if (c.ValueKind == JsonValueKind.Array)
+        {
+            var sb = new StringBuilder();
+            foreach (var b in c.EnumerateArray())
+                if (b.ValueKind == JsonValueKind.Object && TryStr(b, "type", out var bt) && bt == "text"
+                    && TryStr(b, "text", out var txt))
+                    sb.Append(txt).Append('\n');
+            return sb.ToString().Trim();
+        }
+        return "";
+    }
+
+    private static bool TryStr(JsonElement o, string prop, out string val)
+    {
+        val = "";
+        if (o.ValueKind == JsonValueKind.Object && o.TryGetProperty(prop, out var v)
+            && v.ValueKind == JsonValueKind.String) { val = v.GetString() ?? ""; return true; }
+        return false;
+    }
+
+    private static IEnumerable<string> ReadLinesShared(string path)
+    {
+        // 활성 세션이면 에이전트 프로세스가 파일을 열어둔 상태 → FileShare.ReadWrite 로 읽어야 한다(포크와 동일 이슈).
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var sr = new StreamReader(fs);
+        string? line;
+        while ((line = sr.ReadLine()) != null)
+            if (line.Length > 0) yield return line;
+    }
+
+    /// <summary>cmd /k 없이 실행(shim/.cmd 해석 위해 cmd /c 경유) 후 stdout 캡처. 타임아웃 시 kill.</summary>
+    private static string? RunCapture(string exe, string args, int timeoutMs = 20000)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c {exe} {args}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return null;
+            var sb = new StringBuilder();
+            p.OutputDataReceived += (_, e) => { if (e.Data != null) sb.Append(e.Data).Append('\n'); };
+            p.ErrorDataReceived += (_, __) => { };
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+            if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch { } return null; }
+            return sb.ToString();
+        }
+        catch { return null; }
+    }
+}

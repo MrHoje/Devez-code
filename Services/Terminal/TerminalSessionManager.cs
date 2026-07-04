@@ -518,6 +518,19 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
+    /// <summary>가재코드(gjc) 방의 최신 세션 jsonl 전체 경로(없으면 null). 세션 내보내기용.</summary>
+    public static string? FindLatestGajaeTranscriptPath(string roomId)
+    {
+        try
+        {
+            var dir = GajaeSessionDir(roomId);
+            if (!Directory.Exists(dir)) return null;
+            return new DirectoryInfo(dir).GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName;
+        }
+        catch { return null; }
+    }
+
     /// <summary>가재코드(gjc) 세션 포크 — 네이티브 fork 가 없어, 원본 방의 최신 세션 jsonl 을 새 GUID 로
     /// (내부 id 참조 전역 치환) 복사해 새 방의 session-dir 에 심는다. 새 세션 id 반환(원본에 대화 없으면 null).
     /// gjc 는 --session-dir 로 격리되므로 새 방은 이 복사본만 resume → 원본과 완전 독립.</summary>
