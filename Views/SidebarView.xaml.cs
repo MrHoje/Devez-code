@@ -57,7 +57,7 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionStopTrackingRequested;
     /// <summary>세션 메뉴 "포크" 요청(MainWindow 위임) — 원본 대화를 복사한 새 세션 생성.</summary>
     public event Action<SessionItem>? SessionForkRequested;
-    /// <summary>세션 메뉴 "마크다운으로 내보내기" 요청(MainWindow 위임) — 대화를 .md 로 저장.</summary>
+    /// <summary>세션 메뉴 "내보내기" 요청(MainWindow 위임) — 대화를 .md 로 저장.</summary>
     public event Action<SessionItem>? SessionExportRequested;
 
     // 프로젝트 목록 열 수(1/2). 2면 카드 2열 그리드 + 가로 드래그. 기본 1.
