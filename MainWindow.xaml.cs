@@ -371,6 +371,13 @@ public partial class MainWindow : Window
             // 가재코드 — 세션 .jsonl 폴링으로 헤더 lastmsg + 스피너 busy 둘 다 처리(확장/훅 불필요).
             _gajaeLastMsg.Start();
             _agentLastMsg.Start();
+            // devez 마켓플레이스 자동설치 — 없으면 콘솔 없이 조용히 추가. 시작 부하를 피해 지연 실행,
+            // 한 번 확인되면 설정 플래그로 이후엔 CLI 체크도 건너뛴다(가벼움).
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                await System.Threading.Tasks.Task.Delay(4000);
+                await Services.ClaudePluginService.EnsureDevezMarketplaceAsync();
+            });
             _discordBot.Start();
             RestoreOpenFiles();  // 직전에 열려 있던 파일 편집기 탭 복원(세션 활성화보다 먼저 → 활성 탭은 세션 유지)
             RestoreLastSession();
