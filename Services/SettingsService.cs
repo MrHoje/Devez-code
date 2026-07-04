@@ -31,7 +31,7 @@ public static class SettingsService
         // 세션 완료 기록 사이드바 너비 (드래그로 조절, settings.json 에 영속).
         public double SessionHistoryWidth { get; set; } = 218;
         // 플러그인 컨트롤러 우측 출력 영역 너비 (스플리터 드래그로 조절, settings.json 에 영속).
-        public double PluginOutputWidth { get; set; } = 420;
+        public double PluginOutputWidth { get; set; } = 403;
         public Dictionary<string, string> ClaudeCodeRoomDirs { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomSessions { get; set; } = new();
         public List<string> ClaudeCodeRoomLaunched { get; set; } = new();
