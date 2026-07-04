@@ -35,6 +35,9 @@ public partial class PluginControlDialog : UserControl
     public PluginControlDialog()
     {
         InitializeComponent();
+        // 우측 출력 영역 너비 복원(스플리터 드래그 값). 최소폭 미만이면 기본값 유지.
+        var savedW = SettingsService.LoadPluginOutputWidth();
+        if (savedW >= 340) OutputCol.Width = new GridLength(savedW);
         PluginList.ItemsSource = _plugins;
         MarketList.ItemsSource = _markets;
         DiscoverList.ItemsSource = _avail;
@@ -275,6 +278,18 @@ public partial class PluginControlDialog : UserControl
         ShowOutput("install", $"'{a.Name}' 설치를 별도 콘솔 창에서 진행합니다.\n완료되면 [새로고침] 으로 목록을 갱신하세요.");
     }
 
+    private void AvailableDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ClaudeAvailablePlugin a) return;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"ID: {a.Id}");
+        if (!string.IsNullOrWhiteSpace(a.Marketplace)) sb.AppendLine($"마켓플레이스: {a.Marketplace}");
+        if (a.InstallCount > 0) sb.AppendLine($"설치 수: {a.InstallCount:N0}");
+        sb.AppendLine($"설치 여부: {(a.IsInstalled ? "설치됨" : "미설치")}");
+        if (!string.IsNullOrWhiteSpace(a.Description)) { sb.AppendLine(); sb.AppendLine(a.Description); }
+        ShowOutput($"details · {a.Name}", sb.ToString().TrimEnd());
+    }
+
     // ── 마켓플레이스 탭 ───────────────────────────────────────────
     private void MarketAdd_Click(object sender, RoutedEventArgs e)
     {
@@ -294,6 +309,17 @@ public partial class PluginControlDialog : UserControl
     }
 
     private static ClaudeMarketplace? MarketOf(object sender) => (sender as FrameworkElement)?.DataContext as ClaudeMarketplace;
+
+    private void MarketItemDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if (MarketOf(sender) is not ClaudeMarketplace m) return;
+        var sb = new System.Text.StringBuilder();
+        if (!string.IsNullOrWhiteSpace(m.Source)) sb.AppendLine($"소스: {m.Source}");
+        if (!string.IsNullOrWhiteSpace(m.Repo)) sb.AppendLine($"저장소: {m.Repo}");
+        if (!string.IsNullOrWhiteSpace(m.Url)) sb.AppendLine($"URL: {m.Url}");
+        if (!string.IsNullOrWhiteSpace(m.InstallLocation)) sb.AppendLine($"설치 위치: {m.InstallLocation}");
+        ShowOutput($"marketplace · {m.Name}", sb.Length == 0 ? "(추가 정보 없음)" : sb.ToString().TrimEnd());
+    }
 
     private async void MarketItemUpdate_Click(object sender, RoutedEventArgs e)
     {
@@ -328,6 +354,10 @@ public partial class PluginControlDialog : UserControl
         if (e.ButtonState == MouseButtonState.Pressed)
             Window.GetWindow(this)?.DragMove();
     }
+
+    // 스플리터 드래그 완료 시 우측 출력 영역 너비를 영속.
+    private void OutputSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+        => SettingsService.SavePluginOutputWidth(OutputCol.ActualWidth);
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => TryClose();
 
