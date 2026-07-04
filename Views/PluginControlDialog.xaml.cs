@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using DevezCode.Models;
@@ -22,6 +24,7 @@ public partial class PluginControlDialog : UserControl
     private readonly ObservableCollection<ClaudeMarketplace> _markets = new();
     private readonly ObservableCollection<ClaudeAvailablePlugin> _avail = new();
     private string _tab = "plugins";
+    private string _query = "";
     private bool _busy;
     private bool _disposed;
 
@@ -31,8 +34,35 @@ public partial class PluginControlDialog : UserControl
         PluginList.ItemsSource = _plugins;
         MarketList.ItemsSource = _markets;
         DiscoverList.ItemsSource = _avail;
+        CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
+        CollectionViewSource.GetDefaultView(_markets).Filter = o => o is ClaudeMarketplace m && Match(m.Name, m.OriginText);
+        CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && Match(a.Name, a.Id, a.Marketplace, a.Description);
         Loaded += (_, _) => SetTab("plugins");
         Unloaded += (_, _) => _disposed = true;
+    }
+
+    private bool Match(params string?[] fields)
+        => string.IsNullOrEmpty(_query)
+           || fields.Any(f => f != null && f.IndexOf(_query, StringComparison.OrdinalIgnoreCase) >= 0);
+
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _query = SearchBox.Text.Trim();
+        SearchClearBtn.Visibility = string.IsNullOrEmpty(SearchBox.Text) ? Visibility.Collapsed : Visibility.Visible;
+        CollectionViewSource.GetDefaultView(_plugins).Refresh();
+        CollectionViewSource.GetDefaultView(_markets).Refresh();
+        CollectionViewSource.GetDefaultView(_avail).Refresh();
+        UpdateEmptyForTab();
+    }
+
+    private void SearchClear_Click(object sender, RoutedEventArgs e) => SearchBox.Text = "";
+
+    private void UpdateEmptyForTab()
+    {
+        var view = _tab == "plugins" ? CollectionViewSource.GetDefaultView(_plugins)
+                 : _tab == "discover" ? CollectionViewSource.GetDefaultView(_avail)
+                 : CollectionViewSource.GetDefaultView(_markets);
+        UpdateEmpty(view.Cast<object>().Count());
     }
 
     // ── 탭 전환 ───────────────────────────────────────────────────
@@ -86,7 +116,6 @@ public partial class PluginControlDialog : UserControl
                 var list = await ClaudePluginService.ListAsync();
                 if (_disposed || _tab != tab) return;
                 MergeInto(list);
-                UpdateEmpty(_plugins.Count);
             }
             else if (tab == "discover")
             {
@@ -94,7 +123,6 @@ public partial class PluginControlDialog : UserControl
                 if (_disposed || _tab != tab) return;
                 _avail.Clear();
                 foreach (var a in list) _avail.Add(a);
-                UpdateEmpty(_avail.Count);
             }
             else
             {
@@ -102,8 +130,8 @@ public partial class PluginControlDialog : UserControl
                 if (_disposed || _tab != tab) return;
                 _markets.Clear();
                 foreach (var m in list) _markets.Add(m);
-                UpdateEmpty(_markets.Count);
             }
+            UpdateEmptyForTab();
             LastRefreshedText.Text = "갱신: " + DateTime.Now.ToString("HH:mm:ss");
         }
         catch { }

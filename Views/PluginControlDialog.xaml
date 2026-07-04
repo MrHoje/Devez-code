@@ -142,6 +142,7 @@
             <Grid Grid.Column="1" Margin="20,18,20,18">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
@@ -217,8 +218,84 @@
                     </Grid>
                 </Border>
 
+                <!-- 검색창 (모든 탭 공통) -->
+                <Border Grid.Row="1" Height="35" Margin="0,0,0,14"
+                        Background="{DynamicResource PanelSoftBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1" CornerRadius="8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconSearch}"
+                              Stroke="{DynamicResource TextMutedBrush}"
+                              Width="13" Height="13"
+                              Margin="12,0,0,0" VerticalAlignment="Center"/>
+                        <Grid Grid.Column="1">
+                            <TextBox x:Name="SearchBox"
+                                     Margin="8,0,0,0" Padding="0" VerticalContentAlignment="Center"
+                                     Background="Transparent" BorderThickness="0"
+                                     FocusVisualStyle="{x:Null}"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     CaretBrush="{DynamicResource TextBrush}"
+                                     FontSize="{DynamicResource Fs13}"
+                                     FontFamily="{StaticResource PretendardFont}"
+                                     TextChanged="SearchBox_TextChanged">
+                                <TextBox.Resources>
+                                    <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                                </TextBox.Resources>
+                            </TextBox>
+                            <TextBlock x:Name="SearchPlaceholder" Text="검색"
+                                       IsHitTestVisible="False"
+                                       Margin="8,0,0,0" Padding="0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       FontSize="{DynamicResource Fs13}"
+                                       FontFamily="{StaticResource PretendardFont}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <Button x:Name="SearchClearBtn" Grid.Column="2"
+                                Width="20" Height="20" Margin="0,0,10,0"
+                                VerticalAlignment="Center" Visibility="Collapsed"
+                                Click="SearchClear_Click" Cursor="Arrow"
+                                Background="Transparent" BorderThickness="0"
+                                IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                ToolTip="지우기">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd" Width="20" Height="20" CornerRadius="4"
+                                            Background="{TemplateBinding Background}">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconX}"
+                                              Width="11" Height="11" Stretch="Uniform"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Stroke="{DynamicResource TextMutedBrush}"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </Grid>
+                </Border>
+
                 <!-- 리스트 영역 -->
-                <Grid Grid.Row="1">
+                <Grid Grid.Row="2">
                     <!-- 플러그인 목록 -->
                     <ScrollViewer x:Name="PluginScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl x:Name="PluginList">
@@ -248,16 +325,6 @@
                                                             Background="{DynamicResource PanelBrush}">
                                                         <TextBlock Text="{Binding Marketplace}" FontSize="{DynamicResource Fs10}"
                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                                                    </Border>
-                                                    <!-- 비활성 배지 (Enabled == false 일 때만) -->
-                                                    <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
-                                                            VerticalAlignment="Center"
-                                                            Background="{DynamicResource PanelBrush}"
-                                                            BorderBrush="{DynamicResource DangerBrush}" BorderThickness="1"
-                                                            Visibility="{Binding Enabled, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
-                                                        <TextBlock Text="비활성" FontSize="{DynamicResource Fs10}"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource DangerBrush}"/>
                                                     </Border>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
