@@ -23,6 +23,8 @@ public partial class PluginControlDialog : UserControl
     private readonly ObservableCollection<ClaudePlugin> _plugins = new();
     private readonly ObservableCollection<ClaudeMarketplace> _markets = new();
     private readonly ObservableCollection<ClaudeAvailablePlugin> _avail = new();
+    private readonly ObservableCollection<ClaudeSkill> _skills = new();
+    private readonly ObservableCollection<ClaudeAgent> _agents = new();
     private string _tab = "plugins";
     private string _query = "";
     private string _discQuery = "";   // 하단 Discover 검색어
@@ -30,6 +32,8 @@ public partial class PluginControlDialog : UserControl
     // 출력은 탭별로 분리 저장 — 탭 전환 시 서로의 내용이 유지되지 않는다.
     private string _outPlugins = "";
     private string _outMarket = "";
+    private string _outSkills = "";
+    private string _outAgents = "";
     private bool _busy;
     private bool _pendingRefresh;   // 로딩 중 들어온 탭 전환/새로고침 예약
     private bool _disposed;
@@ -50,11 +54,15 @@ public partial class PluginControlDialog : UserControl
         PluginList.ItemsSource = _plugins;
         MarketList.ItemsSource = _markets;
         DiscoverList.ItemsSource = _avail;
+        SkillList.ItemsSource = _skills;
+        AgentList.ItemsSource = _agents;
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); ApplyFilter(); };
         _discSearchDebounce.Tick += (_, _) => { _discSearchDebounce.Stop(); ApplyDiscFilter(); };
         CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
         CollectionViewSource.GetDefaultView(_markets).Filter = o => o is ClaudeMarketplace m && Match(m.Name, m.OriginText);
         CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && DiscMatch(a);
+        CollectionViewSource.GetDefaultView(_skills).Filter = o => o is ClaudeSkill s && Match(s.Name, s.Description);
+        CollectionViewSource.GetDefaultView(_agents).Filter = o => o is ClaudeAgent a && Match(a.Name, a.Description);
         // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
         // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
         Loaded += (_, _) => SetTabVisual("plugins");
@@ -82,6 +90,8 @@ public partial class PluginControlDialog : UserControl
         _query = SearchBox.Text.Trim();
         CollectionViewSource.GetDefaultView(_plugins).Refresh();
         CollectionViewSource.GetDefaultView(_markets).Refresh();
+        CollectionViewSource.GetDefaultView(_skills).Refresh();
+        CollectionViewSource.GetDefaultView(_agents).Refresh();
         UpdateEmptyForTab();
     }
 
@@ -111,8 +121,13 @@ public partial class PluginControlDialog : UserControl
 
     private void UpdateEmptyForTab()
     {
-        var view = _tab == "plugins" ? CollectionViewSource.GetDefaultView(_plugins)
-                 : CollectionViewSource.GetDefaultView(_markets);
+        var view = _tab switch
+        {
+            "plugins" => CollectionViewSource.GetDefaultView(_plugins),
+            "marketplaces" => CollectionViewSource.GetDefaultView(_markets),
+            "skills" => CollectionViewSource.GetDefaultView(_skills),
+            _ => CollectionViewSource.GetDefaultView(_agents),
+        };
         UpdateEmpty(view.Cast<object>().Count());
     }
 
@@ -134,6 +149,8 @@ public partial class PluginControlDialog : UserControl
         _tab = tab;
         bool plugins = tab == "plugins";
         bool market = tab == "marketplaces";
+        bool skills = tab == "skills";
+        bool agents = tab == "agents";
 
         // 탭 전환 시 하단 Discover 닫아 출력이 꽉 차게(특히 플러그인 탭은 설치 가능 목록이 없음).
         CloseDiscover();
@@ -142,12 +159,21 @@ public partial class PluginControlDialog : UserControl
 
         StyleTab(PluginTabBtn, plugins);
         StyleTab(MarketTabBtn, market);
+        StyleTab(SkillTabBtn, skills);
+        StyleTab(AgentTabBtn, agents);
 
         PluginActions.Visibility = plugins ? Visibility.Visible : Visibility.Collapsed;
         MarketActions.Visibility = market ? Visibility.Visible : Visibility.Collapsed;
+        SkillActions.Visibility = skills ? Visibility.Visible : Visibility.Collapsed;
+        AgentActions.Visibility = agents ? Visibility.Visible : Visibility.Collapsed;
         PluginScroll.Visibility = plugins ? Visibility.Visible : Visibility.Collapsed;
         MarketScroll.Visibility = market ? Visibility.Visible : Visibility.Collapsed;
-        EmptyText.Text = plugins ? "설치된 플러그인이 없습니다" : "등록된 마켓플레이스가 없습니다";
+        SkillScroll.Visibility = skills ? Visibility.Visible : Visibility.Collapsed;
+        AgentScroll.Visibility = agents ? Visibility.Visible : Visibility.Collapsed;
+        EmptyText.Text = plugins ? "설치된 플러그인이 없습니다"
+                       : market ? "등록된 마켓플레이스가 없습니다"
+                       : skills ? "스킬이 없습니다 (~/.claude/skills)"
+                       : "에이전트가 없습니다 (~/.claude/agents)";
     }
 
     private void StyleTab(Button btn, bool active)
@@ -179,11 +205,23 @@ public partial class PluginControlDialog : UserControl
                     if (_disposed) return;
                     if (_tab == tab) MergeInto(list);   // 로딩 중 탭이 바뀌었으면 적용하지 않고 루프 재실행
                 }
-                else
+                else if (tab == "marketplaces")
                 {
                     var list = await ClaudePluginService.MarketplacesAsync();
                     if (_disposed) return;
                     if (_tab == tab) { _markets.Clear(); foreach (var m in list) _markets.Add(m); }
+                }
+                else if (tab == "skills")
+                {
+                    var list = await ClaudeExtensionService.SkillsAsync();
+                    if (_disposed) return;
+                    if (_tab == tab) { _skills.Clear(); foreach (var s in list) _skills.Add(s); }
+                }
+                else
+                {
+                    var list = await ClaudeExtensionService.AgentsAsync();
+                    if (_disposed) return;
+                    if (_tab == tab) { _agents.Clear(); foreach (var a in list) _agents.Add(a); }
                 }
                 UpdateEmptyForTab();
             }
@@ -457,13 +495,70 @@ public partial class PluginControlDialog : UserControl
         await RefreshAsync();
     }
 
+    // ── 스킬 탭 ───────────────────────────────────────────────────
+    private void SkillFolder_Click(object sender, RoutedEventArgs e) => ClaudeExtensionService.OpenFolder(skills: true);
+
+    private static ClaudeSkill? SkillOf(object sender) => (sender as FrameworkElement)?.DataContext as ClaudeSkill;
+
+    // 잠금(숨김) 토글 — 켜면 SKILL.md, 끄면 SKILL.md.off. 파일명만 바꿔 Claude 스킬 탐색에서 제외.
+    private async void SkillLock_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox cb || SkillOf(sender) is not ClaudeSkill s) return;
+        var target = cb.IsChecked == true;
+        cb.IsEnabled = false;
+        try
+        {
+            var newPath = await ClaudeExtensionService.SetSkillEnabledAsync(s, target);
+            if (_disposed) return;
+            if (newPath == null)
+            {
+                cb.IsChecked = !target;
+                ShowOutput($"skill · {s.Name}", target ? "활성화 실패." : "잠금 실패.", isError: true);
+            }
+            else
+            {
+                s.Enabled = target;
+                s.FilePath = newPath;
+                ShowOutput($"skill · {s.Name}", target
+                    ? "활성화됨 — Claude 가 이 스킬을 다시 사용합니다."
+                    : "잠금(숨김) — Claude 가 이 스킬을 발견하지 않습니다.");
+            }
+        }
+        finally { if (!_disposed) cb.IsEnabled = true; }
+    }
+
+    private void SkillEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if (SkillOf(sender) is not ClaudeSkill s) return;
+        var win = new FileEditorWindow($"스킬 편집 · {s.Name}", s.FilePath) { Owner = Window.GetWindow(this) };
+        win.ShowDialog();
+        if (win.Saved) ShowOutput($"skill · {s.Name}", "저장됨.");
+    }
+
+    // ── 에이전트 탭 ───────────────────────────────────────────────
+    private void AgentFolder_Click(object sender, RoutedEventArgs e) => ClaudeExtensionService.OpenFolder(skills: false);
+
+    private void AgentEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ClaudeAgent a) return;
+        var win = new FileEditorWindow($"에이전트 편집 · {a.Name}", a.FilePath) { Owner = Window.GetWindow(this) };
+        win.ShowDialog();
+        if (win.Saved) ShowOutput($"agent · {a.Name}", "저장됨.");
+    }
+
     // ── 우측 출력 영역 ────────────────────────────────────────────
     // 헤더는 항상 "출력" 고정. 실행 맥락(명령명)은 본문 첫 줄에 표시.
     // 출력은 현재 탭 버퍼에 저장 → 탭 전환 시 서로 섞이지 않는다. 색상은 줄 단위(✔ 초록/✘ 빨강)로 렌더러가 처리.
     private void ShowOutput(string title, string body, bool isError = false)
     {
         var text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
-        if (_tab == "plugins") _outPlugins = text; else _outMarket = text;
+        switch (_tab)
+        {
+            case "plugins": _outPlugins = text; break;
+            case "marketplaces": _outMarket = text; break;
+            case "skills": _outSkills = text; break;
+            default: _outAgents = text; break;
+        }
         PluginOutputRenderer.Render(OutputText, text);
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -471,7 +566,13 @@ public partial class PluginControlDialog : UserControl
     // 탭에 저장된 출력만 표시(없으면 안내문구).
     private void RestoreOutputForTab()
     {
-        var text = _tab == "plugins" ? _outPlugins : _outMarket;
+        var text = _tab switch
+        {
+            "plugins" => _outPlugins,
+            "marketplaces" => _outMarket,
+            "skills" => _outSkills,
+            _ => _outAgents,
+        };
         PluginOutputRenderer.Render(OutputText, text);
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }
