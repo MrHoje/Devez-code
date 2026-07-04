@@ -116,14 +116,15 @@
                     <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
                             Background="{DynamicResource LineBrush}" Opacity="0.5"/>
 
+                    <!-- 컨트롤 버튼: 글꼴 크기 설정과 무관하게 항상 "크게"(base+2) 기준 고정 -->
                     <Button Style="{StaticResource WinCtrlBtn}" Click="MinBtn_Click">
-                        <TextBlock Text="&#x2013;" FontSize="{DynamicResource Fs14}"/>
+                        <TextBlock Text="&#x2013;" FontSize="16"/>
                     </Button>
                     <Button Style="{StaticResource WinCtrlBtn}" Click="MaxBtn_Click">
-                        <TextBlock Text="&#x25A1;" FontSize="{DynamicResource Fs12}"/>
+                        <TextBlock Text="&#x25A1;" FontSize="14"/>
                     </Button>
                     <Button Style="{StaticResource WinCloseBtn}" Click="CloseBtn_Click">
-                        <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
+                        <TextBlock Text="&#x2715;" FontSize="13"/>
                     </Button>
                 </StackPanel>
             </Grid>
