@@ -14,13 +14,43 @@
             <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="4,0,0,0"/>
         </Style>
+        <!-- 좌측 탭(플러그인 / 마켓플레이스) — 세션 클리너 카테고리 패턴 -->
+        <Style x:Key="CategoryItem" TargetType="Button">
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="Cursor" Value="Arrow"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              TextElement.FontWeight="{TemplateBinding FontWeight}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="48"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- 헤더 -->
@@ -49,273 +79,167 @@
             </Grid>
         </Border>
 
-        <!-- 본문 -->
-        <Grid Grid.Row="1" Margin="24,20,24,4">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+        <!-- 본문: 좌(탭) | 중(리스트) | 우(출력) -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="164"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="340"/>
+            </Grid.ColumnDefinitions>
 
-            <!-- 컨트롤 카드 -->
-            <Border Grid.Row="0" Padding="16,12" CornerRadius="12" Margin="0,0,0,16"
-                    Background="{DynamicResource PanelSoftBrush}"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                <Grid>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="InstallBtn" Click="InstallBtn_Click"
-                                Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
-                                      Width="13" Height="13" Margin="0,0,7,0"/>
-                                <TextBlock Text="설치" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="MarketBtn" Click="MarketBtn_Click" Margin="8,0,0,0"
-                                Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconStore}"
-                                      Width="13" Height="13" Margin="0,0,7,0"/>
-                                <TextBlock Text="마켓플레이스" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Ellipse x:Name="RefreshSpinner" Width="18" Height="18" Margin="0,0,10,0"
-                                 Visibility="Collapsed" VerticalAlignment="Center"
-                                 models:SpinnerActivator.Track="True"
-                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2.2"
-                                 StrokeDashArray="15 100" StrokeDashCap="Round"
-                                 RenderTransformOrigin="0.5,0.5">
-                            <Ellipse.RenderTransform>
-                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                            </Ellipse.RenderTransform>
-                        </Ellipse>
-                        <TextBlock x:Name="LastRefreshedText" VerticalAlignment="Center" Margin="0,0,12,0"
-                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
-                        <Button x:Name="RefreshBtn" Click="RefreshBtn_Click"
-                                Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
-                                      Width="13" Height="13" Margin="0,0,7,0"/>
-                                <TextBlock Text="새로고침" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                </Grid>
+            <!-- 좌: 탭 -->
+            <Border Grid.Column="0" Background="{DynamicResource PanelSoftBrush}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
+                <StackPanel Margin="12,16,12,16">
+                    <Button x:Name="PluginTabBtn" Tag="plugins" Style="{StaticResource CategoryItem}"
+                            Click="Tab_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlug}"
+                                  Width="15" Height="15" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="플러그인" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="MarketTabBtn" Tag="marketplaces" Style="{StaticResource CategoryItem}"
+                            Click="Tab_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconStore}"
+                                  Width="15" Height="15" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="마켓플레이스" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
             </Border>
 
-            <!-- 플러그인 목록 -->
-            <Grid Grid.Row="1">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl x:Name="PluginList">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type models:ClaudePlugin}">
-                                <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
-                                        Background="{DynamicResource PanelSoftBrush}"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-
-                                        <Ellipse Grid.Column="0" Width="10" Height="10" VerticalAlignment="Center"
-                                                 Margin="2,0,14,0"
-                                                 Fill="{Binding Enabled, Converter={x:Static models:BoolToOnOffBrushConverter.Instance}}"/>
-
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs13}"
-                                                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
-                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                                <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
-                                                        VerticalAlignment="Center"
-                                                        Background="{DynamicResource PanelBrush}">
-                                                    <TextBlock Text="{Binding Marketplace}" FontSize="{DynamicResource Fs10}"
-                                                               Foreground="{DynamicResource TextMutedBrush}"/>
-                                                </Border>
-                                            </StackPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                                <TextBlock Text="{Binding VersionText}" FontSize="{DynamicResource Fs11}"
-                                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                                                <TextBlock Text=" · " FontSize="{DynamicResource Fs11}"
-                                                           Foreground="{DynamicResource TextMutedBrush}"
-                                                           Visibility="{Binding HasMcp, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                                                <TextBlock Text="{Binding McpText}" FontSize="{DynamicResource Fs11}"
-                                                           Foreground="{DynamicResource TextMutedBrush}"
-                                                           Visibility="{Binding HasMcp, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                                                <TextBlock Text="  " FontSize="{DynamicResource Fs11}"/>
-                                                <TextBlock Text="{Binding UpdatedText}" FontSize="{DynamicResource Fs11}"
-                                                           Foreground="{DynamicResource TextMutedBrush}" Margin="6,0,0,0"/>
-                                            </StackPanel>
-                                        </StackPanel>
-
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <CheckBox IsChecked="{Binding Enabled, Mode=OneWay}"
-                                                      Click="EnableToggle_Click"
-                                                      Style="{StaticResource ToggleSwitch}"
-                                                      VerticalAlignment="Center" Margin="0,0,8,0"
-                                                      ToolTip="활성/비활성 (enable/disable)"/>
-                                            <Button Style="{StaticResource RowIconBtn}" Click="Detail_Click"
-                                                    ToolTip="상세 (details)">
-                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
-                                                      Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
-                                            </Button>
-                                            <Button Style="{StaticResource RowIconBtn}" Click="Update_Click"
-                                                    ToolTip="업데이트 (update · 재시작 필요)">
-                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
-                                                      Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
-                                            </Button>
-                                            <Button Style="{StaticResource RowIconBtn}" Click="Uninstall_Click"
-                                                    ToolTip="삭제 (uninstall)">
-                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconTrash2}"
-                                                      Width="14" Height="14" Stroke="{DynamicResource DangerBrush}"/>
-                                            </Button>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-
-                <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
-                            Visibility="Collapsed">
-                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlug}"
-                          Width="40" Height="40" Stroke="{DynamicResource LineBrush}"
-                          HorizontalAlignment="Center"/>
-                    <TextBlock Text="설치된 플러그인이 없습니다"
-                               FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}"
-                               Margin="0,14,0,0" HorizontalAlignment="Center"/>
-                    <TextBlock Text="'설치' 버튼으로 마켓플레이스에서 플러그인을 추가하세요."
-                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
-                               Margin="0,6,0,0" HorizontalAlignment="Center"/>
-                </StackPanel>
-            </Grid>
-        </Grid>
-
-        <!-- 상세/결과 출력 패널 -->
-        <Border x:Name="DetailPanel" Grid.Row="2" Visibility="Collapsed"
-                Background="{DynamicResource PanelBrush}"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
-                MaxHeight="220">
-            <Grid Margin="24,12,24,14">
+            <!-- 중: 리스트 -->
+            <Grid Grid.Column="1" Margin="20,18,20,18">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <Grid Grid.Row="0" Margin="0,0,0,8">
-                    <TextBlock x:Name="DetailTitle" Text="상세" FontSize="{DynamicResource Fs11}"
-                               FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"
-                               VerticalAlignment="Center"/>
-                    <Button Click="DetailClose_Click" HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Style="{StaticResource TitleBarChipButton}" Width="26" Height="26" ToolTip="닫기">
-                        <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconX}"
-                              Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
-                    </Button>
-                </Grid>
-                <Border Grid.Row="1" CornerRadius="10" Padding="12,10"
+
+                <!-- 툴바 카드 -->
+                <Border Grid.Row="0" Padding="14,11" CornerRadius="12" Margin="0,0,0,14"
                         Background="{DynamicResource PanelSoftBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                        <TextBox x:Name="DetailText" IsReadOnly="True" BorderThickness="0"
-                                 Background="Transparent" TextWrapping="NoWrap"
-                                 FontFamily="Consolas, Cascadia Code, PretendardFont"
-                                 FontSize="{DynamicResource Fs11}"
-                                 Foreground="{DynamicResource TextBrush}"/>
-                    </ScrollViewer>
-                </Border>
-            </Grid>
-        </Border>
-
-        <!-- 마켓플레이스 오버레이 (body+detail 위) -->
-        <Grid x:Name="MarketOverlay" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed" Panel.ZIndex="10">
-            <Border Background="#66000000" MouseLeftButtonDown="MarketScrim_Click"/>
-            <Border Width="520" MaxHeight="440" VerticalAlignment="Center" HorizontalAlignment="Center"
-                    CornerRadius="14" Background="{DynamicResource BgBrush}"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                <Border.Effect>
-                    <DropShadowEffect ShadowDepth="0" BlurRadius="28" Direction="270"
-                                      Color="{DynamicResource ShadowColor}" Opacity="{DynamicResource ShadowOpacity}"/>
-                </Border.Effect>
-                <Grid Margin="20,18,20,18">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <Grid Grid.Row="0" Margin="0,0,0,14">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconStore}"
-                                  Width="16" Height="16" Stroke="{DynamicResource TextBrush}"
-                                  VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBlock Text="마켓플레이스" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                    <Grid>
+                        <!-- 플러그인 탭 액션 -->
+                        <StackPanel x:Name="PluginActions" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="InstallBtn" Click="InstallBtn_Click"
+                                    Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
+                                          Width="13" Height="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="설치" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
-                        <Button Click="MarketClose_Click" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                Style="{StaticResource TitleBarChipButton}" Width="28" Height="28" ToolTip="닫기">
-                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconX}"
-                                  Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
-                        </Button>
-                    </Grid>
+                        <!-- 마켓플레이스 탭 액션 -->
+                        <StackPanel x:Name="MarketActions" Orientation="Horizontal" VerticalAlignment="Center"
+                                    Visibility="Collapsed">
+                            <Button x:Name="MarketAddBtn" Click="MarketAdd_Click"
+                                    Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
+                                          Width="13" Height="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="마켓플레이스 추가" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="MarketUpdateAllBtn" Click="MarketUpdateAll_Click" Margin="8,0,0,0"
+                                    Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0"
+                                    ToolTip="모든 마켓플레이스 업데이트">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
+                                          Width="13" Height="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="전체 업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
 
-                    <!-- 추가 입력 + 전체 업데이트 -->
-                    <Grid Grid.Row="1" Margin="0,0,0,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" x:Name="MarketAddBtn" Click="MarketAdd_Click"
-                                Style="{StaticResource SecondaryButton}" Height="34" HorizontalAlignment="Left" Padding="14,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
-                                      Width="13" Height="13" Margin="0,0,7,0"/>
-                                <TextBlock Text="마켓플레이스 추가" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Grid.Column="1" x:Name="MarketUpdateAllBtn" Click="MarketUpdateAll_Click"
-                                Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0"
-                                ToolTip="모든 마켓플레이스 업데이트">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
-                                      Width="13" Height="13" Margin="0,0,7,0"/>
-                                <TextBlock Text="전체 업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Button>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Ellipse x:Name="RefreshSpinner" Width="18" Height="18" Margin="0,0,10,0"
+                                     Visibility="Collapsed" VerticalAlignment="Center"
+                                     models:SpinnerActivator.Track="True"
+                                     Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2.2"
+                                     StrokeDashArray="15 100" StrokeDashCap="Round"
+                                     RenderTransformOrigin="0.5,0.5">
+                                <Ellipse.RenderTransform>
+                                    <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                </Ellipse.RenderTransform>
+                            </Ellipse>
+                            <TextBlock x:Name="LastRefreshedText" VerticalAlignment="Center" Margin="0,0,12,0"
+                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Button x:Name="RefreshBtn" Click="RefreshBtn_Click"
+                                    Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
+                                          Width="13" Height="13" Margin="0,0,7,0"/>
+                                    <TextBlock Text="새로고침" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
                     </Grid>
+                </Border>
 
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl x:Name="MarketList">
+                <!-- 리스트 영역 -->
+                <Grid Grid.Row="1">
+                    <!-- 플러그인 목록 -->
+                    <ScrollViewer x:Name="PluginScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="PluginList">
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type models:ClaudeMarketplace}">
-                                    <Border Margin="0,0,0,8" Padding="14,11" CornerRadius="10"
+                                <DataTemplate DataType="{x:Type models:ClaudePlugin}">
+                                    <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
                                             Background="{DynamicResource PanelSoftBrush}"
                                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs12}"
-                                                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
-                                                <TextBlock Text="{Binding OriginText}" FontSize="{DynamicResource Fs11}"
-                                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"
-                                                           TextTrimming="CharacterEllipsis" MaxWidth="360"/>
+
+                                            <Ellipse Grid.Column="0" Width="10" Height="10" VerticalAlignment="Center"
+                                                     Margin="2,0,14,0"
+                                                     Fill="{Binding Enabled, Converter={x:Static models:BoolToOnOffBrushConverter.Instance}}"/>
+
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs13}"
+                                                               FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
+                                                            VerticalAlignment="Center"
+                                                            Background="{DynamicResource PanelBrush}">
+                                                        <TextBlock Text="{Binding Marketplace}" FontSize="{DynamicResource Fs10}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                    <TextBlock Text="{Binding VersionText}" FontSize="{DynamicResource Fs11}"
+                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    <TextBlock Text="{Binding McpText}" FontSize="{DynamicResource Fs11}"
+                                                               Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"/>
+                                                    <TextBlock Text="{Binding UpdatedText}" FontSize="{DynamicResource Fs11}"
+                                                               Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"/>
+                                                </StackPanel>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button Style="{StaticResource RowIconBtn}" Click="MarketItemUpdate_Click"
-                                                        ToolTip="이 마켓플레이스 업데이트">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
-                                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <CheckBox IsChecked="{Binding Enabled, Mode=OneWay}"
+                                                          Click="EnableToggle_Click"
+                                                          Style="{StaticResource ToggleSwitch}"
+                                                          VerticalAlignment="Center" Margin="0,0,8,0"
+                                                          ToolTip="활성/비활성"/>
+                                                <Button Style="{StaticResource RowIconBtn}" Click="Detail_Click" ToolTip="상세">
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
+                                                          Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
-                                                <Button Style="{StaticResource RowIconBtn}" Click="MarketItemRemove_Click"
-                                                        ToolTip="삭제">
+                                                <Button Style="{StaticResource RowIconBtn}" Click="Update_Click" ToolTip="업데이트">
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
+                                                          Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
+                                                </Button>
+                                                <Button Style="{StaticResource RowIconBtn}" Click="Uninstall_Click" ToolTip="삭제">
                                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconTrash2}"
-                                                          Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
+                                                          Width="14" Height="14" Stroke="{DynamicResource DangerBrush}"/>
                                                 </Button>
                                             </StackPanel>
                                         </Grid>
@@ -324,6 +248,100 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
+
+                    <!-- 마켓플레이스 목록 -->
+                    <ScrollViewer x:Name="MarketScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Visibility="Collapsed">
+                        <ItemsControl x:Name="MarketList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:ClaudeMarketplace}">
+                                    <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
+                                            Background="{DynamicResource PanelSoftBrush}"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs13}"
+                                                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                                <TextBlock Text="{Binding OriginText}" FontSize="{DynamicResource Fs11}"
+                                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button Style="{StaticResource RowIconBtn}" Click="MarketItemUpdate_Click"
+                                                        ToolTip="이 마켓플레이스 업데이트">
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
+                                                          Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
+                                                </Button>
+                                                <Button Style="{StaticResource RowIconBtn}" Click="MarketItemRemove_Click"
+                                                        ToolTip="삭제">
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconTrash2}"
+                                                          Width="14" Height="14" Stroke="{DynamicResource DangerBrush}"/>
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <!-- 빈 상태 -->
+                    <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                Visibility="Collapsed">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlug}"
+                              Width="40" Height="40" Stroke="{DynamicResource LineBrush}"
+                              HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="EmptyText" Text="설치된 플러그인이 없습니다"
+                                   FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   Margin="0,14,0,0" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+
+            <!-- 우: 출력 영역 -->
+            <Border Grid.Column="2" Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
+                <Grid Margin="16,16,16,16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
+                                  Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"
+                                  VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="OutputTitle" Text="출력" FontSize="{DynamicResource Fs11}"
+                                       FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Button Click="OutputClear_Click" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Style="{StaticResource TitleBarChipButton}" Width="26" Height="26" ToolTip="지우기">
+                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconX}"
+                                  Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
+                    </Grid>
+                    <Border Grid.Row="1" CornerRadius="10" Padding="12,10"
+                            Background="{DynamicResource PanelSoftBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                        <Grid>
+                            <TextBlock x:Name="OutputPlaceholder" TextWrapping="Wrap" VerticalAlignment="Top"
+                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
+                                       Text="상세·업데이트·삭제 등의 실행 결과가 여기에 표시됩니다."/>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                                <TextBox x:Name="OutputText" IsReadOnly="True" BorderThickness="0"
+                                         Background="Transparent" TextWrapping="NoWrap"
+                                         FontFamily="Consolas, Cascadia Code, PretendardFont"
+                                         FontSize="{DynamicResource Fs11}"
+                                         Foreground="{DynamicResource TextBrush}"/>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
                 </Grid>
             </Border>
         </Grid>
