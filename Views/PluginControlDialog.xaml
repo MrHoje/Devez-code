@@ -112,7 +112,7 @@
                 <ColumnDefinition Width="164"/>
                 <ColumnDefinition Width="*" MinWidth="360"/>
                 <ColumnDefinition Width="6"/>
-                <ColumnDefinition x:Name="OutputCol" Width="490" MinWidth="340"/>
+                <ColumnDefinition x:Name="OutputCol" Width="420" MinWidth="340"/>
             </Grid.ColumnDefinitions>
 
             <!-- 좌: 탭 -->
