@@ -1121,8 +1121,13 @@ public sealed class TerminalSessionManager
         var busyNotifyIdleCommand = $"{powershellHook} -File \"{BusyHookScriptPath}\" notifyidle {arg}";
         var busySubStartCommand = $"{powershellHook} -File \"{BusyHookScriptPath}\" substart {arg}";
         var busySubStopCommand  = $"{powershellHook} -File \"{BusyHookScriptPath}\" substop {arg}";
-        var busyUnwaitCommand   = $"{powershellHook} -File \"{BusyHookScriptPath}\" unwait {arg}";
-        var busyPulseCommand    = $"{powershellHook} -File \"{BusyHookScriptPath}\" pulse {arg}";
+        // 응답 대기(❗/🔒) 해제 = waiting 파일에 'idle' 한 줄 기록. 툴마다(PostToolUse) 발화하므로
+        // powershell(~250ms) 대신 cmd echo(~30ms)로 경량화해 툴당 오버헤드를 죽인다.
+        // arg 는 SafeRoomFileName(영숫자/-/_)이라 커맨드 주입 안전. 실패해도 무해(MenuInputSubmitted 가 해제 보강).
+        var waitDir             = Path.Combine(ClaudeTrackDir, "waiting");
+        try { Directory.CreateDirectory(waitDir); } catch { /* SessionBusyService 도 생성 — 경합 무시 */ }
+        var waitFilePath        = Path.Combine(waitDir, arg + ".txt");
+        var busyUnwaitCommand   = $"cmd /c echo idle>\"{waitFilePath}\"";
         // refreshInterval: 전역 settings 와 달리 room 은 event-driven 만으로는 1회 렌더 실패(느린 시작/타임아웃)
         // 시 빈 줄이 고착됐다(resume 세션 statusLine 안 뜨던 원인). 주기 재렌더로 자동 복구한다.
         // 3초 주기 절충: 빈 줄 자동 복구는 유지하되 다세션 idle 부하를 낮춘다(타임아웃이 없어
@@ -1150,7 +1155,8 @@ public sealed class TerminalSessionManager
                 // 해제는 PostToolUse/Stop + 답변 입력(즉시 UI).
                 PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
                 Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyIdleCommand } } } },
-                PreToolUse       = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyPulseCommand } } } },
+                // PostToolUse: 툴 처리 재개 → 대기 해제(cmd 로 idle 기록, 경량). PreToolUse(pulse)는 서브런 keep-alive 가
+                // C# reconcile/SubMaxAge 와 중복 + 서브 실행 중엔 메인이 블로킹돼 발화도 안 해 실효 없음 → 제거(툴당 오버헤드 제거).
                 PostToolUse      = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
                 // 서브에이전트 생존 추적(스피너 조기소멸 방지): Start=run 파일 생성, Stop=삭제 → busy 재평가.
                 SubagentStart    = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStartCommand } } } },
