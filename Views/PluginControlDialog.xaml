@@ -86,9 +86,13 @@
                           Width="16" Height="16" VerticalAlignment="Center"
                           Stroke="{DynamicResource TextBrush}"
                           Margin="0,-1,11,0"/>
-                    <TextBlock Text="Claude 플러그인 컨트롤러" VerticalAlignment="Center"
+                    <TextBlock Text="Claude 플러그인 관리" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}"/>
+                    <TextBlock Text="플러그인 변경사항은 세션 재실행 또는 /reload-plugins 호출 후 적용됩니다."
+                               VerticalAlignment="Center" Margin="14,1,0,0"
+                               FontSize="{DynamicResource Fs11}"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
                 </StackPanel>
                 <Button Click="CloseBtn_Click"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
