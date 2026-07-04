@@ -20,6 +20,7 @@ public partial class PluginControlDialog : UserControl
 
     private readonly ObservableCollection<ClaudePlugin> _plugins = new();
     private readonly ObservableCollection<ClaudeMarketplace> _markets = new();
+    private readonly ObservableCollection<ClaudeAvailablePlugin> _avail = new();
     private string _tab = "plugins";
     private bool _busy;
     private bool _disposed;
@@ -29,6 +30,7 @@ public partial class PluginControlDialog : UserControl
         InitializeComponent();
         PluginList.ItemsSource = _plugins;
         MarketList.ItemsSource = _markets;
+        DiscoverList.ItemsSource = _avail;
         Loaded += (_, _) => SetTab("plugins");
         Unloaded += (_, _) => _disposed = true;
     }
@@ -43,23 +45,30 @@ public partial class PluginControlDialog : UserControl
     {
         _tab = tab;
         bool plugins = tab == "plugins";
-        var primary = (Brush)FindResource("PrimaryBrush");
-        var text = (Brush)FindResource("TextBrush");
-        var panel = (Brush)FindResource("PanelBrush");
-        PluginTabBtn.Background = plugins ? panel : Brushes.Transparent;
-        PluginTabBtn.Foreground = plugins ? primary : text;
-        PluginTabBtn.FontWeight = plugins ? FontWeights.SemiBold : FontWeights.Normal;
-        MarketTabBtn.Background = plugins ? Brushes.Transparent : panel;
-        MarketTabBtn.Foreground = plugins ? text : primary;
-        MarketTabBtn.FontWeight = plugins ? FontWeights.Normal : FontWeights.SemiBold;
+        bool market = tab == "marketplaces";
+        bool discover = tab == "discover";
+
+        StyleTab(PluginTabBtn, plugins);
+        StyleTab(MarketTabBtn, market);
+        StyleTab(DiscoverTabBtn, discover);
 
         PluginActions.Visibility = plugins ? Visibility.Visible : Visibility.Collapsed;
-        MarketActions.Visibility = plugins ? Visibility.Collapsed : Visibility.Visible;
+        MarketActions.Visibility = market ? Visibility.Visible : Visibility.Collapsed;
         PluginScroll.Visibility = plugins ? Visibility.Visible : Visibility.Collapsed;
-        MarketScroll.Visibility = plugins ? Visibility.Collapsed : Visibility.Visible;
-        EmptyText.Text = plugins ? "설치된 플러그인이 없습니다" : "등록된 마켓플레이스가 없습니다";
+        MarketScroll.Visibility = market ? Visibility.Visible : Visibility.Collapsed;
+        DiscoverScroll.Visibility = discover ? Visibility.Visible : Visibility.Collapsed;
+        EmptyText.Text = plugins ? "설치된 플러그인이 없습니다"
+                       : market ? "등록된 마켓플레이스가 없습니다"
+                       : "설치 가능한 플러그인이 없습니다";
 
         await RefreshAsync();
+    }
+
+    private void StyleTab(Button btn, bool active)
+    {
+        btn.Background = active ? (Brush)FindResource("PanelBrush") : Brushes.Transparent;
+        btn.Foreground = active ? (Brush)FindResource("PrimaryBrush") : (Brush)FindResource("TextBrush");
+        btn.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
     }
 
     private async void RefreshBtn_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
@@ -78,6 +87,14 @@ public partial class PluginControlDialog : UserControl
                 if (_disposed || _tab != tab) return;
                 MergeInto(list);
                 UpdateEmpty(_plugins.Count);
+            }
+            else if (tab == "discover")
+            {
+                var list = await ClaudePluginService.AvailableAsync();
+                if (_disposed || _tab != tab) return;
+                _avail.Clear();
+                foreach (var a in list) _avail.Add(a);
+                UpdateEmpty(_avail.Count);
             }
             else
             {
@@ -197,6 +214,14 @@ public partial class PluginControlDialog : UserControl
         }
         ShowOutput("전체 업데이트", sb.ToString().TrimEnd());
         await RefreshAsync();
+    }
+
+    // ── Discover 탭 ───────────────────────────────────────────────
+    private void AvailableInstall_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ClaudeAvailablePlugin a) return;
+        ClaudePluginService.SpawnInstall(a.Id);
+        ShowOutput("install", $"'{a.Name}' 설치를 별도 콘솔 창에서 진행합니다.\n완료되면 [새로고침] 으로 목록을 갱신하세요.");
     }
 
     // ── 마켓플레이스 탭 ───────────────────────────────────────────

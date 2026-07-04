@@ -104,6 +104,53 @@ public static class ClaudePluginService
         return Version.TryParse(t, out var v) ? v : null;
     }
 
+    /// <summary>설치 가능한 플러그인 카탈로그(Discover). --available 의 available[] 를 인기(installCount) 순으로.
+    /// 이미 설치된 항목은 IsInstalled=true 로 표시.</summary>
+    public static async Task<List<ClaudeAvailablePlugin>> AvailableAsync()
+    {
+        var list = new List<ClaudeAvailablePlugin>();
+        var json = await RunCaptureAsync("plugin list --available --json", 45000);
+        if (string.IsNullOrWhiteSpace(json)) return list;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var installedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (root.TryGetProperty("installed", out var inst) && inst.ValueKind == JsonValueKind.Array)
+                foreach (var el in inst.EnumerateArray())
+                {
+                    var id = Str(el, "id");
+                    if (!string.IsNullOrEmpty(id)) installedIds.Add(id);
+                }
+
+            if (!root.TryGetProperty("available", out var avail) || avail.ValueKind != JsonValueKind.Array)
+                return list;
+            foreach (var el in avail.EnumerateArray())
+            {
+                var pid = Str(el, "pluginId");
+                if (string.IsNullOrEmpty(pid)) continue;
+                var at = pid.LastIndexOf('@');
+                var name = Str(el, "name");
+                if (string.IsNullOrEmpty(name)) name = at > 0 ? pid.Substring(0, at) : pid;
+                int count = el.TryGetProperty("installCount", out var ic) && ic.ValueKind == JsonValueKind.Number
+                            && ic.TryGetInt32(out var n) ? n : 0;
+                list.Add(new ClaudeAvailablePlugin
+                {
+                    Id = pid,
+                    Name = name,
+                    Marketplace = Str(el, "marketplaceName"),
+                    Description = Str(el, "description"),
+                    InstallCount = count,
+                    IsInstalled = installedIds.Contains(pid),
+                });
+            }
+        }
+        catch { }
+        list.Sort((a, b) => b.InstallCount.CompareTo(a.InstallCount));
+        return list;
+    }
+
     public static async Task<List<ClaudeMarketplace>> MarketplacesAsync()
     {
         var list = new List<ClaudeMarketplace>();

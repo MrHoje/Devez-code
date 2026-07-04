@@ -127,6 +127,14 @@
                             <TextBlock Text="마켓플레이스" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
+                    <Button x:Name="DiscoverTabBtn" Tag="discover" Style="{StaticResource CategoryItem}"
+                            Click="Tab_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPackageSearch}"
+                                  Width="15" Height="15" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Discover" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Border>
 
@@ -241,6 +249,16 @@
                                                         <TextBlock Text="{Binding Marketplace}" FontSize="{DynamicResource Fs10}"
                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
                                                     </Border>
+                                                    <!-- 비활성 배지 (Enabled == false 일 때만) -->
+                                                    <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
+                                                            VerticalAlignment="Center"
+                                                            Background="{DynamicResource PanelBrush}"
+                                                            BorderBrush="{DynamicResource DangerBrush}" BorderThickness="1"
+                                                            Visibility="{Binding Enabled, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
+                                                        <TextBlock Text="비활성" FontSize="{DynamicResource Fs10}"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource DangerBrush}"/>
+                                                    </Border>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                                                     <TextBlock Text="{Binding VersionText}" FontSize="{DynamicResource Fs11}"
@@ -321,6 +339,61 @@
                                                         ToolTip="삭제">
                                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconTrash2}"
                                                           Width="14" Height="14" Stroke="{DynamicResource DangerBrush}"/>
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <!-- Discover: 설치 가능한 플러그인 -->
+                    <ScrollViewer x:Name="DiscoverScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Visibility="Collapsed">
+                        <ItemsControl x:Name="DiscoverList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:ClaudeAvailablePlugin}">
+                                    <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
+                                            Background="{DynamicResource PanelSoftBrush}"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs13}"
+                                                               FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
+                                                            VerticalAlignment="Center"
+                                                            Background="{DynamicResource PanelBrush}">
+                                                        <TextBlock Text="{Binding Marketplace}" FontSize="{DynamicResource Fs10}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding InstallCountText}" FontSize="{DynamicResource Fs11}"
+                                                               Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}" FontSize="{DynamicResource Fs11}"
+                                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
+                                                           TextTrimming="CharacterEllipsis" MaxHeight="34" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <!-- 이미 설치됨 -->
+                                                <Border Padding="8,4" CornerRadius="6" VerticalAlignment="Center"
+                                                        Background="{DynamicResource PanelBrush}"
+                                                        Visibility="{Binding IsInstalled, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                                    <TextBlock Text="설치됨" FontSize="{DynamicResource Fs11}"
+                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                </Border>
+                                                <!-- 설치 버튼 -->
+                                                <Button Style="{StaticResource RowIconBtn}" Click="AvailableInstall_Click" ToolTip="설치"
+                                                        Visibility="{Binding IsInstalled, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
+                                                          Width="15" Height="15" Stroke="{DynamicResource PrimaryBrush}"/>
                                                 </Button>
                                             </StackPanel>
                                         </Grid>

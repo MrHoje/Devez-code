@@ -48,6 +48,19 @@ public sealed class ClaudePlugin : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
+/// <summary>설치 가능한 플러그인 한 개(Discover). <c>claude plugin list --available --json</c> 의 available[] 매핑.</summary>
+public sealed class ClaudeAvailablePlugin
+{
+    public string Id { get; set; } = "";          // "name@marketplace"
+    public string Name { get; set; } = "";
+    public string Marketplace { get; set; } = ""; // marketplaceName
+    public string Description { get; set; } = "";
+    public int InstallCount { get; set; }
+    public bool IsInstalled { get; set; }
+
+    public string InstallCountText => InstallCount > 0 ? $"설치 {InstallCount:N0}" : "";
+}
+
 /// <summary>Claude Code 마켓플레이스 한 개. <c>claude plugin marketplace list --json</c> 매핑.</summary>
 public sealed class ClaudeMarketplace
 {
