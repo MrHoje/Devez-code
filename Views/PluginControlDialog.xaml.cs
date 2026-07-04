@@ -355,6 +355,14 @@ public partial class PluginControlDialog : UserControl
             Window.GetWindow(this)?.DragMove();
     }
 
+    // 스크롤 상·하단 페이드(프로젝트 영역과 동일) — 스크롤 위치에 따라 top/bottom 페이드 토글.
+    private void ListScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        var sv = (ScrollViewer)sender;
+        ListFadeTop.Visibility = sv.VerticalOffset > 0.5 ? Visibility.Visible : Visibility.Collapsed;
+        ListFadeBottom.Visibility = sv.VerticalOffset < sv.ScrollableHeight - 0.5 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     // 스플리터 드래그 완료 시 우측 출력 영역 너비를 영속.
     private void OutputSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
         => SettingsService.SavePluginOutputWidth(OutputCol.ActualWidth);

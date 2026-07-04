@@ -104,7 +104,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="164"/>
                 <ColumnDefinition Width="*" MinWidth="360"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="6"/>
                 <ColumnDefinition x:Name="OutputCol" Width="490" MinWidth="340"/>
             </Grid.ColumnDefinitions>
 
@@ -298,7 +298,8 @@
                 <!-- 리스트 영역 -->
                 <Grid Grid.Row="2">
                     <!-- 플러그인 목록 -->
-                    <ScrollViewer x:Name="PluginScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ScrollViewer x:Name="PluginScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  ScrollChanged="ListScrollChanged">
                         <ItemsControl x:Name="PluginList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type models:ClaudePlugin}">
@@ -357,7 +358,7 @@
                                                           VerticalAlignment="Center" Margin="0,0,8,0"
                                                           ToolTip="활성/비활성"/>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="Detail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconInfo}"
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="Update_Click" ToolTip="업데이트">
@@ -378,7 +379,7 @@
 
                     <!-- 마켓플레이스 목록 -->
                     <ScrollViewer x:Name="MarketScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                  Visibility="Collapsed">
+                                  ScrollChanged="ListScrollChanged" Visibility="Collapsed">
                         <ItemsControl x:Name="MarketList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type models:ClaudeMarketplace}">
@@ -399,7 +400,7 @@
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                 <Button Style="{StaticResource RowIconBtn}" Click="MarketItemDetail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconInfo}"
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="MarketItemUpdate_Click"
@@ -422,7 +423,7 @@
 
                     <!-- Discover: 설치 가능한 플러그인 -->
                     <ScrollViewer x:Name="DiscoverScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                  Visibility="Collapsed">
+                                  ScrollChanged="ListScrollChanged" Visibility="Collapsed">
                         <ItemsControl x:Name="DiscoverList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type models:ClaudeAvailablePlugin}">
@@ -449,15 +450,15 @@
                                                                Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"
                                                                VerticalAlignment="Center"/>
                                                 </StackPanel>
-                                                <!-- 자동 줄바꿈하되 정확히 2줄까지만: LineHeight 고정 + MaxHeight=2줄, 초과분은 … 처리 -->
+                                                <!-- 자동 줄바꿈하되 정확히 2줄까지만: LineHeight 고정 + MaxHeight=2줄. … 표시 없이 초과분은 클립 -->
                                                 <TextBlock Text="{Binding Description}" FontSize="{DynamicResource Fs11}"
                                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
-                                                           TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                                           TextWrapping="Wrap" TextTrimming="None"
                                                            LineHeight="16" LineStackingStrategy="BlockLineHeight" MaxHeight="32"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                 <Button Style="{StaticResource RowIconBtn}" Click="AvailableDetail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconInfo}"
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
                                                 <!-- 이미 설치됨 -->
@@ -481,6 +482,26 @@
                         </ItemsControl>
                     </ScrollViewer>
 
+                    <!-- 스크롤 상·하단 페이드(프로젝트 영역과 동일). 스크롤이 생겼을 때만 노출 -->
+                    <Rectangle x:Name="ListFadeTop" Height="22" VerticalAlignment="Top" IsHitTestVisible="False"
+                               Panel.ZIndex="2" Visibility="Collapsed" Fill="{DynamicResource BgBrush}">
+                        <Rectangle.OpacityMask>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Offset="0" Color="Black"/>
+                                <GradientStop Offset="0.7" Color="Transparent"/>
+                            </LinearGradientBrush>
+                        </Rectangle.OpacityMask>
+                    </Rectangle>
+                    <Rectangle x:Name="ListFadeBottom" Height="22" VerticalAlignment="Bottom" IsHitTestVisible="False"
+                               Panel.ZIndex="2" Visibility="Collapsed" Fill="{DynamicResource BgBrush}">
+                        <Rectangle.OpacityMask>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Offset="0" Color="Transparent"/>
+                                <GradientStop Offset="0.7" Color="Black"/>
+                            </LinearGradientBrush>
+                        </Rectangle.OpacityMask>
+                    </Rectangle>
+
                     <!-- 빈 상태 -->
                     <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
                                 Visibility="Collapsed">
@@ -495,28 +516,15 @@
                 </Grid>
             </Grid>
 
-            <!-- 스플리터: 중앙 리스트 ↔ 우측 출력 크기 조절. 양쪽에 세퍼레이터 라인. -->
+            <!-- 스플리터: 중앙 리스트 ↔ 우측 출력 크기 조절. 메인화면과 동일 방식 —
+                 좌·우 패널이 각자 1px LineBrush 세퍼레이터를 그리고 그 사이 BgBrush 채널,
+                 위에 투명 GridSplitter 오버레이(전역 스타일: 호버 시 PrimaryBrush 핸들). -->
             <Grid Grid.Column="2">
                 <Border Width="1" HorizontalAlignment="Left"  Background="{DynamicResource LineBrush}"/>
                 <Border Width="1" HorizontalAlignment="Right" Background="{DynamicResource LineBrush}"/>
-                <GridSplitter x:Name="OutputSplitter"
-                              Width="11" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                              Background="Transparent" ResizeBehavior="PreviousAndNext"
-                              ResizeDirection="Columns" Cursor="SizeWE"
-                              DragCompleted="OutputSplitter_DragCompleted">
-                    <GridSplitter.Template>
-                        <ControlTemplate TargetType="GridSplitter">
-                            <Border Background="{TemplateBinding Background}">
-                                <!-- 중앙 그립 점 3개 -->
-                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Ellipse Width="3" Height="3" Margin="0,2" Fill="{DynamicResource TextMutedBrush}"/>
-                                    <Ellipse Width="3" Height="3" Margin="0,2" Fill="{DynamicResource TextMutedBrush}"/>
-                                    <Ellipse Width="3" Height="3" Margin="0,2" Fill="{DynamicResource TextMutedBrush}"/>
-                                </StackPanel>
-                            </Border>
-                        </ControlTemplate>
-                    </GridSplitter.Template>
-                </GridSplitter>
+                <GridSplitter HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                              ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"
+                              DragCompleted="OutputSplitter_DragCompleted"/>
             </Grid>
 
             <!-- 우: 출력 영역 -->
