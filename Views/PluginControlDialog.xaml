@@ -73,12 +73,11 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 헤더 -->
+        <!-- 헤더 (드래그는 WindowChrome 캡션이 담당) -->
         <Border Grid.Row="0"
                 Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}"
-                BorderThickness="0,0,0,1"
-                MouseLeftButtonDown="Header_DragMove">
+                BorderThickness="0,0,0,1">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
                     <Path Style="{StaticResource LucideIcon}"
@@ -97,12 +96,10 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center"
                             Margin="0,0,8,0">
                     <Button x:Name="MaxRestoreBtn" Click="MaxRestore_Click"
-                            Width="40" Height="32" Style="{StaticResource WinCtrlBtn}" ToolTip="최대화">
+                            Style="{StaticResource WinCtrlBtn}" ToolTip="최대화">
                         <TextBlock x:Name="MaxRestoreGlyph" Text="&#x25A1;" FontSize="14"/>
                     </Button>
-                    <Button Click="CloseBtn_Click"
-                            Width="40" Height="32"
-                            Style="{StaticResource WinCloseBtn}">
+                    <Button Click="CloseBtn_Click" Style="{StaticResource WinCloseBtn}">
                         <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
                     </Button>
                 </StackPanel>

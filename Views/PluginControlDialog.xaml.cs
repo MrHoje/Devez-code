@@ -251,13 +251,16 @@ public partial class PluginControlDialog : UserControl
     }
 
     // ── 설치 ──────────────────────────────────────────────────────
-    private void InstallBtn_Click(object sender, RoutedEventArgs e)
+    private async void InstallBtn_Click(object sender, RoutedEventArgs e)
     {
         var input = PromptDialog.Show("플러그인 설치",
             "설치할 플러그인 이름을 입력하세요. 특정 마켓플레이스는 name@marketplace 형식.", okLabel: "설치");
         if (string.IsNullOrWhiteSpace(input)) return;
-        ClaudePluginService.SpawnInstall(input);
-        ShowOutput("install", $"'{input}' 설치를 별도 콘솔 창에서 진행합니다.\n완료되면 [새로고침] 으로 목록을 갱신하세요.");
+        ShowOutput("install", $"'{input}' 설치 중… (잠시 걸릴 수 있습니다)");
+        var result = await ClaudePluginService.InstallAsync(input);
+        if (_disposed) return;
+        ShowOutput("install", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+        await RefreshAsync();   // 설치 후 목록 자동 갱신
     }
 
     private async void PluginUpdateAll_Click(object sender, RoutedEventArgs e)
@@ -308,13 +311,16 @@ public partial class PluginControlDialog : UserControl
     }
 
     // ── 마켓플레이스 탭 ───────────────────────────────────────────
-    private void MarketAdd_Click(object sender, RoutedEventArgs e)
+    private async void MarketAdd_Click(object sender, RoutedEventArgs e)
     {
         var input = PromptDialog.Show("마켓플레이스 추가",
             "URL · 로컬 경로 · GitHub 저장소(owner/repo) 중\n하나를 입력하세요.", okLabel: "추가");
         if (string.IsNullOrWhiteSpace(input)) return;
-        ClaudePluginService.SpawnMarketplaceAdd(input);
-        ShowOutput("marketplace add", $"'{input}' 추가를 별도 콘솔 창에서 진행합니다.\n완료되면 [새로고침] 으로 목록을 갱신하세요.");
+        ShowOutput("marketplace add", $"'{input}' 추가 중… (잠시 걸릴 수 있습니다)");
+        var result = await ClaudePluginService.MarketplaceAddAsync(input);
+        if (_disposed) return;
+        ShowOutput("marketplace add", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+        await RefreshAsync();   // 추가 후 목록 자동 갱신
     }
 
     private async void MarketUpdateAll_Click(object sender, RoutedEventArgs e)
@@ -448,12 +454,6 @@ public partial class PluginControlDialog : UserControl
     }
 
     // ── 창 제어 ───────────────────────────────────────────────────
-    private void Header_DragMove(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ButtonState == MouseButtonState.Pressed)
-            Window.GetWindow(this)?.DragMove();
-    }
-
     // 스크롤 상·하단 페이드(프로젝트 영역과 동일) — 스크롤 위치에 따라 top/bottom 페이드 토글.
     private void ListScrollChanged(object sender, ScrollChangedEventArgs e)
     {
