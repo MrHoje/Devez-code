@@ -192,7 +192,9 @@ public partial class MainWindow : Window
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindSession(id);
+                bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
+                NotifyIfSessionWaiting(s, wasWaiting, waiting);
                 UpdateSessionBusyDisplay();
             });
 
@@ -268,7 +270,9 @@ public partial class MainWindow : Window
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindSession(roomId);
+                bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
+                NotifyIfSessionWaiting(s, wasWaiting, waiting);
                 UpdateSessionBusyDisplay();
             });
 
@@ -293,7 +297,9 @@ public partial class MainWindow : Window
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindSession(roomId);
+                bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
+                NotifyIfSessionWaiting(s, wasWaiting, waiting);
                 UpdateSessionBusyDisplay();
             });
 
@@ -3098,6 +3104,8 @@ public partial class MainWindow : Window
     // 이 시간이 지나면 SubagentStart 가 run 파일을 이미 썼을 것이므로 만료 시점의 파일시스템 진실이 확정적.
     private const int FinishSettleMs = 1200;
 
+    private bool _taskbarAttentionActive;
+
     /// <param name="isStillActive">만료 시점에 방이 실제로 활성인지 파일시스템 진실로 재확인하는 함수(claude 전용).
     /// null 이면 IsBusy 플래그만 사용. BusyChanged(true) 이벤트가 누락돼도 원본을 직접 봐서 오판을 막는다.</param>
     private void NotifyIfSessionFinished(SessionItem? s, bool wasBusy, bool nowBusy, Func<bool>? isStillActive = null)
@@ -3132,6 +3140,7 @@ public partial class MainWindow : Window
         AddSessionCompletionRecord(s);
         var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
         _ = _discordBot.NotifySessionDoneAsync(proj, s);
+        RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
         var projName = proj != null
@@ -3146,6 +3155,49 @@ public partial class MainWindow : Window
         {
             try { Activate(); OpenSession(s); } catch { /* best effort */ }
         });
+    }
+
+    private void NotifyIfSessionWaiting(SessionItem? s, bool wasWaiting, bool nowWaiting)
+    {
+        if (s == null || wasWaiting || !nowWaiting) return;
+        RequestTaskbarAttention();
+    }
+
+    /// <summary>창이 비활성일 때 세션 완료/응답대기 발생을 작업표시줄 깜빡임으로 알린다.
+    /// 포커스를 훔치거나 Topmost 를 건드리지 않아 전체화면 모드와 다른 전체화면 앱을 방해하지 않는다.</summary>
+    private void RequestTaskbarAttention()
+    {
+        if (IsActive) return;
+        var hwnd = _mainHwnd != IntPtr.Zero ? _mainHwnd : new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        var info = new FLASHWINFO
+        {
+            cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(),
+            hwnd = hwnd,
+            dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG,
+            uCount = 0,
+            dwTimeout = 0,
+        };
+        if (FlashWindowEx(ref info)) _taskbarAttentionActive = true;
+    }
+
+    private void StopTaskbarAttention()
+    {
+        if (!_taskbarAttentionActive) return;
+        var hwnd = _mainHwnd != IntPtr.Zero ? _mainHwnd : new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        var info = new FLASHWINFO
+        {
+            cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(),
+            hwnd = hwnd,
+            dwFlags = FLASHW_STOP,
+            uCount = 0,
+            dwTimeout = 0,
+        };
+        FlashWindowEx(ref info);
+        _taskbarAttentionActive = false;
     }
 
     /// <summary>헤더에 표시할 마지막 메시지 반영. true=헤더 갱신 필요.
@@ -3643,7 +3695,7 @@ public partial class MainWindow : Window
         ApplyCornerPreference();          // 최대화 시 각진 모서리(둥근 모서리가 화면 모서리를 깎는 문제 방지)
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
         StateChanged += OnStateChangedForFullScreen;
-        Activated   += (_, _) => UpdateFullScreenTopmost();
+        Activated   += (_, _) => { StopTaskbarAttention(); UpdateFullScreenTopmost(); };
         Deactivated += (_, _) => UpdateFullScreenTopmost();
         // 시작 시 전체화면 복원: 저장된 일반 bounds 위치(=올바른 모니터)에서 전체화면 진입.
         if (_restoreFullScreen) { _restoreFullScreen = false; EnterFullScreen(); }
@@ -3906,6 +3958,22 @@ public partial class MainWindow : Window
     private struct MINMAXINFO { public POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize; }
     [StructLayout(LayoutKind.Sequential)]
     private struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public int dwFlags; }
+
+    private const uint FLASHW_STOP = 0x00000000;
+    private const uint FLASHW_TRAY = 0x00000002;
+    private const uint FLASHW_TIMERNOFG = 0x0000000C;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FLASHWINFO
+    {
+        public uint cbSize;
+        public IntPtr hwnd;
+        public uint dwFlags;
+        public uint uCount;
+        public uint dwTimeout;
+    }
+
+    [DllImport("user32.dll")] private static extern bool FlashWindowEx(ref FLASHWINFO pwfi);
 
     /// <summary>창이 좁아질 때 우측 패널(탐색기/DIFF)이 화면 밖으로 잘리지 않게 폭을 가용 범위로 클램프.
     /// 최대화 상태에서 패널을 넓힌 뒤 창모드로 복원하면 고정 px 폭이 남아 오른쪽이 잘리던 문제를 막는다.</summary>
