@@ -68,19 +68,12 @@
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                 <Grid>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <CheckBox x:Name="AutoRefreshToggle" IsChecked="True"
-                                  Click="AutoRefreshToggle_Click"
-                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
-                        <TextBlock Text="자동 재조회" VerticalAlignment="Center" Margin="10,0,0,0"
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
+                              Width="14" Height="14" VerticalAlignment="Center" Margin="0,0,8,0"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                        <TextBlock Text="MCP 서버 상태" VerticalAlignment="Center"
                                    FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextBrush}"/>
-                        <ComboBox x:Name="IntervalCombo" Width="88" Height="32" Margin="14,0,0,0"
-                                  VerticalAlignment="Center" SelectionChanged="IntervalCombo_Changed"
-                                  ToolTip="자동 재조회 간격">
-                            <ComboBoxItem Content="5초"  Tag="5"/>
-                            <ComboBoxItem Content="10초" Tag="10" IsSelected="True"/>
-                            <ComboBoxItem Content="30초" Tag="30"/>
-                        </ComboBox>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <Ellipse x:Name="RefreshSpinner" Width="18" Height="18" Margin="0,0,10,0"

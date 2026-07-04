@@ -4,22 +4,21 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Threading;
 using DevezCode.Models;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
 
 /// <summary>Claude Code MCP 라이브 상태/제어 대시보드. 편집 위주인 McpManagerDialog 와 달리
-/// 실시간 모니터링 + 런타임 제어(재조회 폴링 · OAuth 인증/로그아웃 · on/off 토글 · 상세 get)에 집중.
-/// 모든 제어는 <see cref="ClaudeMcpBackend"/> 의 CLI 경유 정적 메서드로 수행.</summary>
+/// 상태 모니터링 + 런타임 제어(OAuth 인증/로그아웃 · on/off 토글 · 상세 get)에 집중.
+/// 모든 제어는 <see cref="ClaudeMcpBackend"/> 의 CLI 경유 정적 메서드로 수행.
+/// (주기 폴링은 개발 중지에 따라 제거 — 새로고침은 수동만.)</summary>
 public partial class McpControlDialog : UserControl
 {
     public event EventHandler? CloseRequested;
 
     private readonly ClaudeMcpBackend _backend = new();
     private readonly ObservableCollection<McpServer> _servers = new();
-    private readonly DispatcherTimer _timer;
     private bool _refreshing;
     private bool _disposed;
 
@@ -27,11 +26,9 @@ public partial class McpControlDialog : UserControl
     {
         InitializeComponent();
         ServerList.ItemsSource = _servers;
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
-        _timer.Tick += async (_, _) => await RefreshAsync();
         // 목록은 즉시 표시(로컬 파일 파싱, 빠름). 상태 조회는 CLI 라 느리므로 백그라운드로 던져 창을 막지 않는다.
-        Loaded += (_, _) => { LoadServers(); StartTimer(); _ = RefreshAsync(); };
-        Unloaded += (_, _) => { _disposed = true; _timer.Stop(); };
+        Loaded += (_, _) => { LoadServers(); _ = RefreshAsync(); };
+        Unloaded += (_, _) => _disposed = true;
     }
 
     // ── 데이터 로드 ────────────────────────────────────────────────
@@ -71,27 +68,6 @@ public partial class McpControlDialog : UserControl
     }
 
     // ── 툴바 ──────────────────────────────────────────────────────
-    private void StartTimer()
-    {
-        if (AutoRefreshToggle.IsChecked == true) _timer.Start();
-    }
-
-    private void AutoRefreshToggle_Click(object sender, RoutedEventArgs e)
-    {
-        if (AutoRefreshToggle.IsChecked == true) _timer.Start();
-        else _timer.Stop();
-    }
-
-    private void IntervalCombo_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (!IsLoaded) return;
-        if (IntervalCombo.SelectedItem is ComboBoxItem it && it.Tag is string tag
-            && int.TryParse(tag, out var secs) && secs > 0)
-        {
-            _timer.Interval = TimeSpan.FromSeconds(secs);
-        }
-    }
-
     private async void RefreshBtn_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
 
     // ── 행 액션 ──────────────────────────────────────────────────
@@ -160,7 +136,7 @@ public partial class McpControlDialog : UserControl
 
     public void TryClose()
     {
-        _timer.Stop();
+        _disposed = true;
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 }

@@ -788,19 +788,21 @@
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
                         -->
+                        <!-- MCP 컨트롤러: 개발 중지(당분간 숨김) — 재개 시 Visibility 제거 -->
                         <Button x:Name="McpControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
-                                Click="McpControlBtn_Click" ToolTip="MCP 컨트롤러" Margin="0,0,2,0">
+                                Click="McpControlBtn_Click" ToolTip="MCP 컨트롤러" Margin="0,0,2,0"
+                                Visibility="Collapsed">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconZap}"
-                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
-                        </Button>
-                        <Button x:Name="PluginControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
-                                Click="PluginControlBtn_Click" ToolTip="플러그인 컨트롤러" Margin="0,0,2,0">
-                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBox}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
                         <Button x:Name="CleanerBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
                                 Click="CleanerBtn_Click" ToolTip="세션 클리너" Margin="0,0,2,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBrushCleaning}"
+                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
+                        <Button x:Name="PluginControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
+                                Click="PluginControlBtn_Click" ToolTip="플러그인 컨트롤러" Margin="0,0,2,0">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlug}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
                         <Button Style="{StaticResource WinCtrlBtn}" Width="30" Click="SettingsBtn_Click"
