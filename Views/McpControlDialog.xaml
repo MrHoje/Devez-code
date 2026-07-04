@@ -9,10 +9,10 @@
              FontFamily="{StaticResource PretendardFont}">
 
     <UserControl.Resources>
-        <!-- 서버 카드 행 -->
+        <!-- 카드 안 액션 아이콘 버튼 -->
         <Style x:Key="RowIconBtn" TargetType="Button" BasedOn="{StaticResource TitleBarChipButton}">
-            <Setter Property="Width" Value="30"/>
-            <Setter Property="Height" Value="30"/>
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="4,0,0,0"/>
         </Style>
     </UserControl.Resources>
@@ -20,7 +20,6 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="48"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -43,9 +42,8 @@
                                Foreground="{DynamicResource TextBrush}"/>
                     <Border Margin="10,0,0,0" Padding="6,1" CornerRadius="4"
                             Background="{DynamicResource PanelSoftBrush}">
-                        <TextBlock Text="Claude Code · ~/.claude.json"
-                                   FontSize="{DynamicResource Fs10}" Foreground="{DynamicResource TextMutedBrush}"
-                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="Claude Code" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs10}" Foreground="{DynamicResource TextMutedBrush}"/>
                     </Border>
                 </StackPanel>
                 <Button Click="CloseBtn_Click"
@@ -57,149 +55,176 @@
             </Grid>
         </Border>
 
-        <!-- 툴바: 자동 재조회 + 간격 + 마지막 갱신 + 수동 새로고침 -->
-        <Border Grid.Row="1" Background="{DynamicResource PanelBrush}"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
-                Padding="16,8">
-            <Grid>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <CheckBox x:Name="AutoRefreshToggle" Content="자동 재조회"
-                              IsChecked="True" Click="AutoRefreshToggle_Click"
-                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
-                    <ComboBox x:Name="IntervalCombo" Width="90" Height="30" Margin="12,0,0,0"
-                              VerticalAlignment="Center" SelectionChanged="IntervalCombo_Changed"
-                              ToolTip="자동 재조회 간격">
-                        <ComboBoxItem Content="5초"  Tag="5"/>
-                        <ComboBoxItem Content="10초" Tag="10" IsSelected="True"/>
-                        <ComboBoxItem Content="30초" Tag="30"/>
-                    </ComboBox>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <TextBlock x:Name="LastRefreshedText" VerticalAlignment="Center" Margin="0,0,10,0"
-                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
-                    <Button x:Name="RefreshBtn" Click="RefreshBtn_Click"
-                            Style="{StaticResource SecondaryButton}" Height="30" MinWidth="92">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
-                                  Width="13" Height="13" Margin="0,0,6,0"/>
-                            <TextBlock Text="새로고침" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
+        <!-- 본문 -->
+        <Grid Grid.Row="1" Margin="24,20,24,4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- 컨트롤 카드: 자동 재조회 + 간격 + 마지막 갱신 + 새로고침 -->
+            <Border Grid.Row="0" Padding="16,12" CornerRadius="12" Margin="0,0,0,16"
+                    Background="{DynamicResource PanelSoftBrush}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <CheckBox x:Name="AutoRefreshToggle" IsChecked="True"
+                                  Click="AutoRefreshToggle_Click"
+                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                        <TextBlock Text="자동 재조회" VerticalAlignment="Center" Margin="10,0,0,0"
+                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                        <ComboBox x:Name="IntervalCombo" Width="88" Height="32" Margin="14,0,0,0"
+                                  VerticalAlignment="Center" SelectionChanged="IntervalCombo_Changed"
+                                  ToolTip="자동 재조회 간격">
+                            <ComboBoxItem Content="5초"  Tag="5"/>
+                            <ComboBoxItem Content="10초" Tag="10" IsSelected="True"/>
+                            <ComboBoxItem Content="30초" Tag="30"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Ellipse x:Name="RefreshSpinner" Width="18" Height="18" Margin="0,0,10,0"
+                                 Visibility="Collapsed" VerticalAlignment="Center"
+                                 models:SpinnerActivator.Track="True"
+                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2.2"
+                                 StrokeDashArray="15 100" StrokeDashCap="Round"
+                                 RenderTransformOrigin="0.5,0.5">
+                            <Ellipse.RenderTransform>
+                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                        <TextBlock x:Name="LastRefreshedText" VerticalAlignment="Center" Margin="0,0,12,0"
+                                   FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                        <Button x:Name="RefreshBtn" Click="RefreshBtn_Click"
+                                Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
+                                      Width="13" Height="13" Margin="0,0,7,0"/>
+                                <TextBlock Text="새로고침" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- 서버 목록 -->
+            <Grid Grid.Row="1">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="ServerList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:McpServer}">
+                                <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
+                                        Background="{DynamicResource PanelSoftBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- 상태 점 -->
+                                        <Ellipse Grid.Column="0" Width="10" Height="10" VerticalAlignment="Center"
+                                                 Margin="2,0,14,0"
+                                                 Fill="{Binding Status, Converter={x:Static models:McpStatusToBrushConverter.Instance}}"/>
+
+                                        <!-- 이름 + 메타 -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs13}"
+                                                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
+                                                        VerticalAlignment="Center"
+                                                        Background="{DynamicResource PanelBrush}">
+                                                    <TextBlock Text="{Binding Type, Converter={x:Static models:McpTypeToLabelConverter.Instance}}"
+                                                               FontSize="{DynamicResource Fs10}"
+                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                </Border>
+                                                <Border Margin="6,0,0,0" Padding="6,1" CornerRadius="4"
+                                                        VerticalAlignment="Center"
+                                                        Background="{DynamicResource PanelBrush}"
+                                                        ToolTip="{Binding ReadOnlyReason}"
+                                                        Visibility="{Binding IsReadOnly, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                                    <TextBlock Text="읽기 전용" FontSize="{DynamicResource Fs10}"
+                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <TextBlock Text="{Binding Status, Converter={x:Static models:McpStatusToLabelConverter.Instance}}"
+                                                           FontSize="{DynamicResource Fs11}"
+                                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                                                <TextBlock Text=" · " FontSize="{DynamicResource Fs11}"
+                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                           Visibility="{Binding Type, Converter={x:Static models:McpRemoteToVisibilityConverter.Instance}}"/>
+                                                <TextBlock Text="{Binding Url}"
+                                                           FontSize="{DynamicResource Fs11}"
+                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                           TextTrimming="CharacterEllipsis" MaxWidth="380"
+                                                           Visibility="{Binding Type, Converter={x:Static models:McpRemoteToVisibilityConverter.Instance}}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- 액션 -->
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <CheckBox IsChecked="{Binding Enabled, Mode=OneWay}"
+                                                      Click="EnableToggle_Click"
+                                                      Style="{StaticResource ToggleSwitch}"
+                                                      VerticalAlignment="Center" Margin="0,0,8,0"
+                                                      ToolTip="활성/비활성 (모든 프로젝트)"/>
+                                            <Button Style="{StaticResource RowIconBtn}" Click="Login_Click"
+                                                    ToolTip="OAuth 인증 (login)"
+                                                    Visibility="{Binding Type, Converter={x:Static models:McpRemoteToVisibilityConverter.Instance}}">
+                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconKey}"
+                                                      Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowIconBtn}" Click="Logout_Click"
+                                                    ToolTip="OAuth 로그아웃 (logout)"
+                                                    Visibility="{Binding Type, Converter={x:Static models:McpRemoteToVisibilityConverter.Instance}}">
+                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconLogOut}"
+                                                      Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowIconBtn}" Click="Detail_Click"
+                                                    ToolTip="상세 (get)">
+                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
+                                                      Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- 빈 상태 -->
+                <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
+                            Visibility="Collapsed">
+                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
+                          Width="40" Height="40" Stroke="{DynamicResource LineBrush}"
+                          HorizontalAlignment="Center"/>
+                    <TextBlock Text="등록된 MCP 서버가 없습니다"
+                               FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}"
+                               Margin="0,14,0,0" HorizontalAlignment="Center"/>
+                    <TextBlock Text="MCP 서버 관리에서 서버를 추가하면 여기에 표시됩니다."
+                               FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
+                               Margin="0,6,0,0" HorizontalAlignment="Center"/>
                 </StackPanel>
             </Grid>
-        </Border>
-
-        <!-- 서버 목록 -->
-        <Grid Grid.Row="2">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                          Padding="16,12">
-                <ItemsControl x:Name="ServerList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type models:McpServer}">
-                            <Border Margin="0,0,0,8" Padding="14,11" CornerRadius="10"
-                                    Background="{DynamicResource PanelBrush}"
-                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1.5">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <!-- 상태 점 -->
-                                    <Ellipse Grid.Column="0" Width="10" Height="10" VerticalAlignment="Center"
-                                             Margin="2,0,12,0"
-                                             Fill="{Binding Status, Converter={x:Static models:McpStatusToBrushConverter.Instance}}"/>
-
-                                    <!-- 이름 + 메타 -->
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs13}"
-                                                       FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
-                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                            <Border Margin="8,0,0,0" Padding="5,1" CornerRadius="4"
-                                                    VerticalAlignment="Center"
-                                                    Background="{DynamicResource PanelSoftBrush}">
-                                                <TextBlock Text="{Binding Type, Converter={x:Static models:McpTypeToLabelConverter.Instance}}"
-                                                           FontSize="{DynamicResource Fs10}"
-                                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                                            </Border>
-                                            <Border Margin="6,0,0,0" Padding="5,1" CornerRadius="4"
-                                                    VerticalAlignment="Center"
-                                                    Background="{DynamicResource PanelSoftBrush}"
-                                                    ToolTip="{Binding ReadOnlyReason}"
-                                                    Visibility="{Binding IsReadOnly, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
-                                                <TextBlock Text="읽기 전용" FontSize="{DynamicResource Fs10}"
-                                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                                            </Border>
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
-                                            <TextBlock Text="{Binding Status, Converter={x:Static models:McpStatusToLabelConverter.Instance}}"
-                                                       FontSize="{DynamicResource Fs11}"
-                                                       Foreground="{DynamicResource TextMutedBrush}"/>
-                                            <TextBlock Text="{Binding Url}" Margin="8,0,0,0"
-                                                       FontSize="{DynamicResource Fs11}"
-                                                       Foreground="{DynamicResource TextMutedBrush}"
-                                                       TextTrimming="CharacterEllipsis" MaxWidth="360"
-                                                       Visibility="{Binding Type, Converter={x:Static models:McpRemoteToVisibilityConverter.Instance}}"/>
-                                        </StackPanel>
-                                    </StackPanel>
-
-                                    <!-- 액션 -->
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <CheckBox IsChecked="{Binding Enabled, Mode=OneWay}"
-                                                  Click="EnableToggle_Click"
-                                                  Style="{StaticResource ToggleSwitch}"
-                                                  VerticalAlignment="Center" Margin="0,0,6,0"
-                                                  ToolTip="활성/비활성 (모든 프로젝트)"/>
-                                        <Button Style="{StaticResource RowIconBtn}" Click="Login_Click"
-                                                ToolTip="OAuth 인증 (login)"
-                                                Visibility="{Binding Type, Converter={x:Static models:McpRemoteToVisibilityConverter.Instance}}">
-                                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconKey}"
-                                                  Width="14" Height="14"/>
-                                        </Button>
-                                        <Button Style="{StaticResource RowIconBtn}" Click="Logout_Click"
-                                                ToolTip="OAuth 로그아웃 (logout)"
-                                                Visibility="{Binding Type, Converter={x:Static models:McpRemoteToVisibilityConverter.Instance}}">
-                                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconLogOut}"
-                                                  Width="14" Height="14"/>
-                                        </Button>
-                                        <Button Style="{StaticResource RowIconBtn}" Click="Detail_Click"
-                                                ToolTip="상세 (get)">
-                                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
-                                                  Width="14" Height="14"/>
-                                        </Button>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
-
-            <!-- 빈 상태 -->
-            <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="Collapsed">
-                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
-                      Width="36" Height="36" Stroke="{DynamicResource LineBrush}"
-                      HorizontalAlignment="Center"/>
-                <TextBlock Text="등록된 MCP 서버가 없습니다"
-                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
-                           Margin="0,12,0,0" HorizontalAlignment="Center"/>
-            </StackPanel>
         </Grid>
 
         <!-- 상세 출력 패널 (get / logout 결과) -->
-        <Border x:Name="DetailPanel" Grid.Row="3" Visibility="Collapsed"
+        <Border x:Name="DetailPanel" Grid.Row="2" Visibility="Collapsed"
                 Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
-                MaxHeight="240">
-            <Grid Margin="16,10,16,12">
+                MaxHeight="220">
+            <Grid Margin="24,12,24,14">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <Grid Grid.Row="0" Margin="0,0,0,6">
+                <Grid Grid.Row="0" Margin="0,0,0,8">
                     <TextBlock x:Name="DetailTitle" Text="상세" FontSize="{DynamicResource Fs11}"
                                FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"
                                VerticalAlignment="Center"/>
@@ -210,14 +235,17 @@
                               Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
                 </Grid>
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Auto">
-                    <TextBox x:Name="DetailText" IsReadOnly="True" BorderThickness="0"
-                             Background="Transparent" TextWrapping="NoWrap"
-                             FontFamily="Consolas, Cascadia Code, PretendardFont"
-                             FontSize="{DynamicResource Fs11}"
-                             Foreground="{DynamicResource TextBrush}"/>
-                </ScrollViewer>
+                <Border Grid.Row="1" CornerRadius="10" Padding="12,10"
+                        Background="{DynamicResource PanelSoftBrush}"
+                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                        <TextBox x:Name="DetailText" IsReadOnly="True" BorderThickness="0"
+                                 Background="Transparent" TextWrapping="NoWrap"
+                                 FontFamily="Consolas, Cascadia Code, PretendardFont"
+                                 FontSize="{DynamicResource Fs11}"
+                                 Foreground="{DynamicResource TextBrush}"/>
+                    </ScrollViewer>
+                </Border>
             </Grid>
         </Border>
     </Grid>

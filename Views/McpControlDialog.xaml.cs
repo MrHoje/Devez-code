@@ -29,7 +29,8 @@ public partial class McpControlDialog : UserControl
         ServerList.ItemsSource = _servers;
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         _timer.Tick += async (_, _) => await RefreshAsync();
-        Loaded += async (_, _) => { LoadServers(); await RefreshAsync(); StartTimer(); };
+        // 목록은 즉시 표시(로컬 파일 파싱, 빠름). 상태 조회는 CLI 라 느리므로 백그라운드로 던져 창을 막지 않는다.
+        Loaded += (_, _) => { LoadServers(); StartTimer(); _ = RefreshAsync(); };
         Unloaded += (_, _) => { _disposed = true; _timer.Stop(); };
     }
 
@@ -50,16 +51,23 @@ public partial class McpControlDialog : UserControl
     {
         if (_refreshing || _disposed) return;
         _refreshing = true;
+        RefreshSpinner.Visibility = Visibility.Visible;
         try
         {
-            await _backend.RefreshStatusAsync(_servers);
+            // RefreshStatusAsync 내부는 WaitForExit 로 동기 블로킹하므로 UI 스레드에서 떼어낸다.
+            await System.Threading.Tasks.Task.Run(() => _backend.RefreshStatusAsync(_servers));
+            if (_disposed) return;
             // disabled 목록으로 토글 상태 재동기화(외부 변경 반영)
             var disabled = ClaudeMcpBackend.LoadDisabledNames();
             foreach (var s in _servers) s.Enabled = !disabled.Contains(s.Name);
             LastRefreshedText.Text = "갱신: " + DateTime.Now.ToString("HH:mm:ss");
         }
         catch { /* 조용히 유지 */ }
-        finally { _refreshing = false; }
+        finally
+        {
+            _refreshing = false;
+            if (!_disposed) RefreshSpinner.Visibility = Visibility.Collapsed;
+        }
     }
 
     // ── 툴바 ──────────────────────────────────────────────────────
