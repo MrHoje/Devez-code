@@ -26,12 +26,22 @@ public sealed class ClaudePlugin : INotifyPropertyChanged
         set { if (_enabled != value) { _enabled = value; OnPropertyChanged(); } }
     }
 
+    /// <summary>마켓플레이스가 제공하는 최신 버전(비교 가능할 때만 채워짐). 빈 문자열이면 확인 불가.</summary>
+    public string LatestVersion { get; set; } = "";
+    /// <summary>설치본이 최신보다 낮음(업데이트 가능).</summary>
+    public bool UpdateAvailable { get; set; }
+
     // ── 표시용 파생 ──
     public string VersionText => string.IsNullOrWhiteSpace(Version) || Version == "unknown"
         ? "버전 미상" : "v" + Version;
     public string McpText => McpServerNames.Count > 0 ? $"MCP {McpServerNames.Count}개" : "";
     public bool HasMcp => McpServerNames.Count > 0;
     public string UpdatedText => LastUpdated.HasValue ? "갱신 " + LastUpdated.Value.ToLocalTime().ToString("yyyy-MM-dd") : "";
+
+    /// <summary>최신 버전을 확인했고 이미 최신임.</summary>
+    public bool IsLatest => !string.IsNullOrEmpty(LatestVersion) && !UpdateAvailable;
+    /// <summary>업데이트 가능 배지 문구.</summary>
+    public string UpdateBadgeText => string.IsNullOrEmpty(LatestVersion) ? "업데이트 가능" : $"업데이트 가능 · v{LatestVersion}";
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null)

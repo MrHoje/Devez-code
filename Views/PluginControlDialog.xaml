@@ -104,7 +104,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="164"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="420"/>
+                <ColumnDefinition Width="490"/>
             </Grid.ColumnDefinitions>
 
             <!-- 좌: 탭 -->
@@ -245,6 +245,18 @@
                                                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                                                     <TextBlock Text="{Binding VersionText}" FontSize="{DynamicResource Fs11}"
                                                                Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    <!-- 최신 확인됨 -->
+                                                    <TextBlock Text="최신" FontSize="{DynamicResource Fs11}" Margin="8,0,0,0"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               Visibility="{Binding IsLatest, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                                                    <!-- 업데이트 가능 배지 -->
+                                                    <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
+                                                            VerticalAlignment="Center"
+                                                            Background="{DynamicResource PrimarySoftBrush}"
+                                                            Visibility="{Binding UpdateAvailable, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                                        <TextBlock Text="{Binding UpdateBadgeText}" FontSize="{DynamicResource Fs10}"
+                                                                   FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"/>
+                                                    </Border>
                                                     <TextBlock Text="{Binding McpText}" FontSize="{DynamicResource Fs11}"
                                                                Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"/>
                                                     <TextBlock Text="{Binding UpdatedText}" FontSize="{DynamicResource Fs11}"

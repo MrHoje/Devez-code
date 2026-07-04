@@ -49,7 +49,59 @@ public static class ClaudePluginService
             }
         }
         catch { /* 파싱 실패 시 빈 목록 */ }
+
+        // 마켓플레이스 카탈로그(--available)에서 각 플러그인의 최신 버전(source.ref)을 얻어 최신 여부 판정.
+        await AnnotateLatestAsync(list);
         return list;
+    }
+
+    /// <summary>--available 카탈로그의 각 항목 source.ref(예: "v1.5.5")를 최신 버전으로 보고 설치본과 비교.
+    /// ref 가 semver 로 파싱될 때만 판정한다(main/sha 는 확인 불가 → 표시 안 함).</summary>
+    private static async Task AnnotateLatestAsync(List<ClaudePlugin> installed)
+    {
+        if (installed.Count == 0) return;
+        try
+        {
+            var json = await RunCaptureAsync("plugin list --available --json", 45000);
+            if (string.IsNullOrWhiteSpace(json)) return;
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("available", out var avail) || avail.ValueKind != JsonValueKind.Array)
+                return;
+            // pluginId → ref 문자열
+            var latest = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var el in avail.EnumerateArray())
+            {
+                var pid = Str(el, "pluginId");
+                if (string.IsNullOrEmpty(pid)) continue;
+                if (el.TryGetProperty("source", out var src) && src.ValueKind == JsonValueKind.Object)
+                {
+                    var r = Str(src, "ref");
+                    if (!string.IsNullOrEmpty(r)) latest[pid] = r;
+                }
+            }
+            foreach (var p in installed)
+            {
+                if (!latest.TryGetValue(p.Id, out var refStr)) continue;
+                var lv = ParseVer(refStr);
+                var cv = ParseVer(p.Version);
+                if (lv == null || cv == null) continue;   // 비교 불가(main/sha 등) → 표시 안 함
+                p.LatestVersion = TrimV(refStr);
+                p.UpdateAvailable = lv > cv;
+            }
+        }
+        catch { /* 실패 시 최신 정보 없이 진행 */ }
+    }
+
+    private static readonly Regex VerRx = new(@"^\d+(\.\d+)*", RegexOptions.Compiled);
+    private static string TrimV(string s) => s.TrimStart('v', 'V');
+    private static Version? ParseVer(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        var m = VerRx.Match(TrimV(s.Trim()));
+        if (!m.Success) return null;
+        var t = m.Value;
+        if (!t.Contains('.')) t += ".0";
+        return Version.TryParse(t, out var v) ? v : null;
     }
 
     public static async Task<List<ClaudeMarketplace>> MarketplacesAsync()

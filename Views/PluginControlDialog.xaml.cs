@@ -122,7 +122,7 @@ public partial class PluginControlDialog : UserControl
     }
 
     private static string CoreSig(ClaudePlugin p)
-        => $"{p.Id}|{p.Name}|{p.Marketplace}|{p.Version}|{p.McpText}|{p.UpdatedText}";
+        => $"{p.Id}|{p.Name}|{p.Marketplace}|{p.Version}|{p.McpText}|{p.UpdatedText}|{p.LatestVersion}|{p.UpdateAvailable}";
 
     // ── 플러그인 행 액션 ──────────────────────────────────────────
     private static ClaudePlugin? PluginOf(object sender) => (sender as FrameworkElement)?.DataContext as ClaudePlugin;
