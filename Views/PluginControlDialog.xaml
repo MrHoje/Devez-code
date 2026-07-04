@@ -623,8 +623,7 @@
                                             <Border Margin="0,0,6,8" Padding="12,10" CornerRadius="10"
                                                     Background="{DynamicResource PanelBrush}"
                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                                    Cursor="Hand" MouseLeftButtonUp="DiscoverCard_Click"
-                                                    ToolTip="클릭하여 상세 보기">
+                                                    Cursor="Arrow" MouseLeftButtonUp="DiscoverCard_Click">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*"/>
