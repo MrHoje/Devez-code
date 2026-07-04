@@ -9,10 +9,30 @@
              FontFamily="{StaticResource PretendardFont}">
 
     <UserControl.Resources>
-        <Style x:Key="RowIconBtn" TargetType="Button" BasedOn="{StaticResource TitleBarChipButton}">
+        <Style x:Key="RowIconBtn" TargetType="Button">
             <Setter Property="Width" Value="32"/>
             <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="4,0,0,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="7">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PanelBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <!-- 좌측 탭(플러그인 / 마켓플레이스) — 세션 클리너 카테고리 패턴 -->
         <Style x:Key="CategoryItem" TargetType="Button">
@@ -84,7 +104,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="164"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="340"/>
+                <ColumnDefinition Width="420"/>
             </Grid.ColumnDefinitions>
 
             <!-- 좌: 탭 -->
@@ -141,14 +161,14 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
                                           Width="13" Height="13" Margin="0,0,7,0"/>
-                                    <TextBlock Text="마켓플레이스 추가" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="추가" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
                                 </StackPanel>
                             </Button>
                             <Button x:Name="MarketUpdateAllBtn" Click="MarketUpdateAll_Click" Margin="8,0,0,0"
                                     Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0"
                                     ToolTip="모든 마켓플레이스 업데이트">
                                 <StackPanel Orientation="Horizontal">
-                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
                                           Width="13" Height="13" Margin="0,0,7,0"/>
                                     <TextBlock Text="전체 업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
                                 </StackPanel>
@@ -273,7 +293,7 @@
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                 <Button Style="{StaticResource RowIconBtn}" Click="MarketItemUpdate_Click"
                                                         ToolTip="이 마켓플레이스 업데이트">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="MarketItemRemove_Click"
@@ -311,21 +331,14 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <Grid Grid.Row="0" Margin="0,0,0,10">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
-                                  Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"
-                                  VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock x:Name="OutputTitle" Text="출력" FontSize="{DynamicResource Fs11}"
-                                       FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"
-                                       VerticalAlignment="Center"/>
-                        </StackPanel>
-                        <Button Click="OutputClear_Click" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                Style="{StaticResource TitleBarChipButton}" Width="26" Height="26" ToolTip="지우기">
-                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconX}"
-                                  Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
-                        </Button>
-                    </Grid>
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,10">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
+                              Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"
+                              VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="OutputTitle" Text="출력" FontSize="{DynamicResource Fs11}"
+                                   FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
                     <Border Grid.Row="1" CornerRadius="10" Padding="12,10"
                             Background="{DynamicResource PanelSoftBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
@@ -333,11 +346,11 @@
                             <TextBlock x:Name="OutputPlaceholder" TextWrapping="Wrap" VerticalAlignment="Top"
                                        FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"
                                        Text="상세·업데이트·삭제 등의 실행 결과가 여기에 표시됩니다."/>
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <TextBox x:Name="OutputText" IsReadOnly="True" BorderThickness="0"
-                                         Background="Transparent" TextWrapping="NoWrap"
+                                         Background="Transparent" TextWrapping="Wrap"
                                          FontFamily="Consolas, Cascadia Code, PretendardFont"
-                                         FontSize="{DynamicResource Fs11}"
+                                         FontSize="{DynamicResource Fs12}"
                                          Foreground="{DynamicResource TextBrush}"/>
                             </ScrollViewer>
                         </Grid>

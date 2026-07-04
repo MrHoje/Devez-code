@@ -229,13 +229,6 @@ public partial class PluginControlDialog : UserControl
         OutputPlaceholder.Visibility = Visibility.Collapsed;
     }
 
-    private void OutputClear_Click(object sender, RoutedEventArgs e)
-    {
-        OutputTitle.Text = "출력";
-        OutputText.Text = "";
-        OutputPlaceholder.Visibility = Visibility.Visible;
-    }
-
     // ── 창 제어 ───────────────────────────────────────────────────
     private void Header_DragMove(object sender, MouseButtonEventArgs e)
     {
