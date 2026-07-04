@@ -377,10 +377,14 @@
                                 <DataTemplate DataType="{x:Type models:ClaudeMarketplace}">
                                     <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
                                             Background="{DynamicResource PanelSoftBrush}"
-                                            BorderThickness="1">
+                                            BorderThickness="1.5">
                                         <Border.Style>
                                             <Style TargetType="Border">
                                                 <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                                                <!-- 프로젝트 카드와 동일: 픽셀 스냅·레이아웃 라운딩 끄고 안티에일리어싱 → 부드러운 라운드 보더 -->
+                                                <Setter Property="SnapsToDevicePixels" Value="False"/>
+                                                <Setter Property="UseLayoutRounding" Value="False"/>
+                                                <Setter Property="RenderOptions.EdgeMode" Value="Unspecified"/>
                                                 <Style.Triggers>
                                                     <!-- 선택된(상세 열린) 마켓: 프로젝트 카드처럼 primary 보더만 하이라이트 -->
                                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
@@ -532,8 +536,8 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- 검색창 (설치 가능한 플러그인 필터) -->
-                        <Border Grid.Row="1" Height="30" Margin="0,0,0,8"
+                        <!-- 검색창 (설치 가능한 플러그인 필터). 높이 35 — 프로젝트 영역 검색창과 동일 -->
+                        <Border Grid.Row="1" Height="35" Margin="0,0,0,8"
                                 Background="{DynamicResource PanelSoftBrush}"
                                 BorderBrush="{DynamicResource LineBrush}"
                                 BorderThickness="1" CornerRadius="8">
@@ -554,7 +558,7 @@
                                              FocusVisualStyle="{x:Null}"
                                              Foreground="{DynamicResource TextBrush}"
                                              CaretBrush="{DynamicResource TextBrush}"
-                                             FontSize="{DynamicResource Fs12}"
+                                             FontSize="{DynamicResource Fs13}"
                                              FontFamily="{StaticResource PretendardFont}"
                                              TextChanged="DiscoverSearchBox_TextChanged">
                                         <TextBox.Resources>
@@ -565,7 +569,7 @@
                                                IsHitTestVisible="False"
                                                Margin="8,0,0,0" Padding="0" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextMutedBrush}"
-                                               FontSize="{DynamicResource Fs12}"
+                                               FontSize="{DynamicResource Fs13}"
                                                FontFamily="{StaticResource PretendardFont}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
