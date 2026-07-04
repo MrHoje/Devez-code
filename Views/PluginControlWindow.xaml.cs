@@ -37,6 +37,8 @@ public partial class PluginControlWindow : Window
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
         await Task.Delay(220);
+        // 페이드가 끝난 뒤에 첫 목록 로드(서브프로세스 실행) — 애니메이션 프레임과 겹치지 않게.
+        PluginView.BeginInitialLoad();
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)

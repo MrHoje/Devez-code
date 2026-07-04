@@ -228,7 +228,9 @@ public static class ClaudePluginService
                 CreateNoWindow = true,
                 StandardOutputEncoding = Encoding.UTF8,
             };
-            using var p = Process.Start(psi);
+            // Process.Start 는 동기 호출이라 UI 스레드에서 수십 ms 블로킹될 수 있다(cmd+claude 기동).
+            // 스레드풀로 오프로드해 팝업 오픈 애니메이션 등이 끊기지 않게 한다.
+            using var p = await Task.Run(() => Process.Start(psi));
             if (p == null) return "";
             var outTask = p.StandardOutput.ReadToEndAsync();
             var errTask = p.StandardError.ReadToEndAsync();

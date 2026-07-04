@@ -42,9 +42,14 @@ public partial class PluginControlDialog : UserControl
         CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
         CollectionViewSource.GetDefaultView(_markets).Filter = o => o is ClaudeMarketplace m && Match(m.Name, m.OriginText);
         CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && Match(a.Name, a.Id, a.Marketplace, a.Description);
-        Loaded += (_, _) => SetTab("plugins");
+        // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
+        // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
+        Loaded += (_, _) => SetTabVisual("plugins");
         Unloaded += (_, _) => { _disposed = true; _searchDebounce.Stop(); };
     }
+
+    /// <summary>창 오픈 애니메이션 완료 후 호출 — 첫 목록 로드를 시작한다.</summary>
+    public async void BeginInitialLoad() { await RefreshAsync(); }
 
     private bool Match(params string?[] fields)
         => string.IsNullOrEmpty(_query)
@@ -86,6 +91,13 @@ public partial class PluginControlDialog : UserControl
 
     private async void SetTab(string tab)
     {
+        SetTabVisual(tab);
+        await RefreshAsync();
+    }
+
+    // 탭 버튼 하이라이트/액션·리스트 표시만 즉시 전환(데이터 로드 없음).
+    private void SetTabVisual(string tab)
+    {
         _tab = tab;
         bool plugins = tab == "plugins";
         bool market = tab == "marketplaces";
@@ -103,8 +115,6 @@ public partial class PluginControlDialog : UserControl
         EmptyText.Text = plugins ? "설치된 플러그인이 없습니다"
                        : market ? "등록된 마켓플레이스가 없습니다"
                        : "설치 가능한 플러그인이 없습니다";
-
-        await RefreshAsync();
     }
 
     private void StyleTab(Button btn, bool active)
