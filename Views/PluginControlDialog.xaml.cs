@@ -44,7 +44,6 @@ public partial class PluginControlDialog : UserControl
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); ApplyFilter(); };
         CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
         CollectionViewSource.GetDefaultView(_markets).Filter = o => o is ClaudeMarketplace m && Match(m.Name, m.OriginText);
-        CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && Match(a.Name, a.Id, a.Marketplace, a.Description);
         // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
         // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
         Loaded += (_, _) => SetTabVisual("plugins");
@@ -72,7 +71,6 @@ public partial class PluginControlDialog : UserControl
         _query = SearchBox.Text.Trim();
         CollectionViewSource.GetDefaultView(_plugins).Refresh();
         CollectionViewSource.GetDefaultView(_markets).Refresh();
-        CollectionViewSource.GetDefaultView(_avail).Refresh();
         UpdateEmptyForTab();
     }
 
@@ -81,7 +79,6 @@ public partial class PluginControlDialog : UserControl
     private void UpdateEmptyForTab()
     {
         var view = _tab == "plugins" ? CollectionViewSource.GetDefaultView(_plugins)
-                 : _tab == "discover" ? CollectionViewSource.GetDefaultView(_avail)
                  : CollectionViewSource.GetDefaultView(_markets);
         UpdateEmpty(view.Cast<object>().Count());
     }
@@ -104,20 +101,15 @@ public partial class PluginControlDialog : UserControl
         _tab = tab;
         bool plugins = tab == "plugins";
         bool market = tab == "marketplaces";
-        bool discover = tab == "discover";
 
         StyleTab(PluginTabBtn, plugins);
         StyleTab(MarketTabBtn, market);
-        StyleTab(DiscoverTabBtn, discover);
 
         PluginActions.Visibility = plugins ? Visibility.Visible : Visibility.Collapsed;
         MarketActions.Visibility = market ? Visibility.Visible : Visibility.Collapsed;
         PluginScroll.Visibility = plugins ? Visibility.Visible : Visibility.Collapsed;
         MarketScroll.Visibility = market ? Visibility.Visible : Visibility.Collapsed;
-        DiscoverScroll.Visibility = discover ? Visibility.Visible : Visibility.Collapsed;
-        EmptyText.Text = plugins ? "설치된 플러그인이 없습니다"
-                       : market ? "등록된 마켓플레이스가 없습니다"
-                       : "설치 가능한 플러그인이 없습니다";
+        EmptyText.Text = plugins ? "설치된 플러그인이 없습니다" : "등록된 마켓플레이스가 없습니다";
     }
 
     private void StyleTab(Button btn, bool active)
@@ -142,13 +134,6 @@ public partial class PluginControlDialog : UserControl
                 var list = await ClaudePluginService.ListAsync();
                 if (_disposed || _tab != tab) return;
                 MergeInto(list);
-            }
-            else if (tab == "discover")
-            {
-                var list = await ClaudePluginService.AvailableAsync();
-                if (_disposed || _tab != tab) return;
-                _avail.Clear();
-                foreach (var a in list) _avail.Add(a);
             }
             else
             {
@@ -278,18 +263,6 @@ public partial class PluginControlDialog : UserControl
         ShowOutput("install", $"'{a.Name}' 설치를 별도 콘솔 창에서 진행합니다.\n완료되면 [새로고침] 으로 목록을 갱신하세요.");
     }
 
-    private void AvailableDetail_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is not ClaudeAvailablePlugin a) return;
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"ID: {a.Id}");
-        if (!string.IsNullOrWhiteSpace(a.Marketplace)) sb.AppendLine($"마켓플레이스: {a.Marketplace}");
-        if (a.InstallCount > 0) sb.AppendLine($"설치 수: {a.InstallCount:N0}");
-        sb.AppendLine($"설치 여부: {(a.IsInstalled ? "설치됨" : "미설치")}");
-        if (!string.IsNullOrWhiteSpace(a.Description)) { sb.AppendLine(); sb.AppendLine(a.Description); }
-        ShowOutput($"details · {a.Name}", sb.ToString().TrimEnd());
-    }
-
     // ── 마켓플레이스 탭 ───────────────────────────────────────────
     private void MarketAdd_Click(object sender, RoutedEventArgs e)
     {
@@ -310,15 +283,48 @@ public partial class PluginControlDialog : UserControl
 
     private static ClaudeMarketplace? MarketOf(object sender) => (sender as FrameworkElement)?.DataContext as ClaudeMarketplace;
 
-    private void MarketItemDetail_Click(object sender, RoutedEventArgs e)
+    // 마켓 상세: 상단엔 텍스트 정보, 하단 절반엔 이 마켓플레이스의 설치 가능한 플러그인(Discover) 표시.
+    private async void MarketItemDetail_Click(object sender, RoutedEventArgs e)
     {
         if (MarketOf(sender) is not ClaudeMarketplace m) return;
+
         var sb = new System.Text.StringBuilder();
         if (!string.IsNullOrWhiteSpace(m.Source)) sb.AppendLine($"소스: {m.Source}");
         if (!string.IsNullOrWhiteSpace(m.Repo)) sb.AppendLine($"저장소: {m.Repo}");
         if (!string.IsNullOrWhiteSpace(m.Url)) sb.AppendLine($"URL: {m.Url}");
         if (!string.IsNullOrWhiteSpace(m.InstallLocation)) sb.AppendLine($"설치 위치: {m.InstallLocation}");
         ShowOutput($"marketplace · {m.Name}", sb.Length == 0 ? "(추가 정보 없음)" : sb.ToString().TrimEnd());
+
+        // 하단 Discover 패널 열기(출력 영역을 절반으로).
+        DiscoverTitle.Text = m.Name;
+        DiscoverHeader.Visibility = Visibility.Visible;
+        DiscoverRow.Height = new GridLength(1, GridUnitType.Star);
+        DiscoverSpinner.Visibility = Visibility.Visible;
+        DiscoverEmpty.Visibility = Visibility.Collapsed;
+        _avail.Clear();
+        try
+        {
+            var list = await ClaudePluginService.AvailableAsync();
+            if (_disposed) return;
+            foreach (var a in list.Where(a => string.Equals(a.Marketplace, m.Name, StringComparison.OrdinalIgnoreCase)))
+                _avail.Add(a);
+        }
+        catch { }
+        finally
+        {
+            if (!_disposed)
+            {
+                DiscoverSpinner.Visibility = Visibility.Collapsed;
+                DiscoverEmpty.Visibility = _avail.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+    }
+
+    private void DiscoverClose_Click(object sender, RoutedEventArgs e)
+    {
+        DiscoverHeader.Visibility = Visibility.Collapsed;
+        DiscoverRow.Height = new GridLength(0);
+        _avail.Clear();
     }
 
     private async void MarketItemUpdate_Click(object sender, RoutedEventArgs e)

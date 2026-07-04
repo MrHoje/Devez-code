@@ -128,14 +128,6 @@
                             <TextBlock Text="마켓플레이스" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <Button x:Name="DiscoverTabBtn" Tag="discover" Style="{StaticResource CategoryItem}"
-                            Click="Tab_Click">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPackageSearch}"
-                                  Width="15" Height="15" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Discover" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
                 </StackPanel>
             </Border>
 
@@ -421,67 +413,6 @@
                         </ItemsControl>
                     </ScrollViewer>
 
-                    <!-- Discover: 설치 가능한 플러그인 -->
-                    <ScrollViewer x:Name="DiscoverScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                  ScrollChanged="ListScrollChanged" Visibility="Collapsed">
-                        <ItemsControl x:Name="DiscoverList">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type models:ClaudeAvailablePlugin}">
-                                    <Border Margin="0,0,10,10" Padding="16,13" CornerRadius="12"
-                                            Background="{DynamicResource PanelSoftBrush}"
-                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs13}"
-                                                               FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
-                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                                    <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="4"
-                                                            VerticalAlignment="Center"
-                                                            Background="{DynamicResource PanelBrush}">
-                                                        <TextBlock Text="{Binding Marketplace}" FontSize="{DynamicResource Fs10}"
-                                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                                    </Border>
-                                                    <TextBlock Text="{Binding InstallCountText}" FontSize="{DynamicResource Fs11}"
-                                                               Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"
-                                                               VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                                <!-- 자동 줄바꿈하되 정확히 2줄까지만: LineHeight 고정 + MaxHeight=2줄. … 표시 없이 초과분은 클립 -->
-                                                <TextBlock Text="{Binding Description}" FontSize="{DynamicResource Fs11}"
-                                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
-                                                           TextWrapping="Wrap" TextTrimming="None"
-                                                           LineHeight="16" LineStackingStrategy="BlockLineHeight" MaxHeight="32"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button Style="{StaticResource RowIconBtn}" Click="AvailableDetail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPackageSearch}"
-                                                          Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
-                                                </Button>
-                                                <!-- 이미 설치됨 -->
-                                                <Border Padding="8,4" CornerRadius="6" VerticalAlignment="Center" Margin="4,0,0,0"
-                                                        Background="{DynamicResource PanelBrush}"
-                                                        Visibility="{Binding IsInstalled, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
-                                                    <TextBlock Text="설치됨" FontSize="{DynamicResource Fs11}"
-                                                               Foreground="{DynamicResource TextMutedBrush}"/>
-                                                </Border>
-                                                <!-- 설치 버튼 (일반 행 아이콘과 동일 색상) -->
-                                                <Button Style="{StaticResource RowIconBtn}" Click="AvailableInstall_Click" ToolTip="설치"
-                                                        Visibility="{Binding IsInstalled, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
-                                                          Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
-                                                </Button>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-
                     <!-- 스크롤 상·하단 페이드(프로젝트 영역과 동일). 스크롤이 생겼을 때만 노출 -->
                     <Rectangle x:Name="ListFadeTop" Height="22" VerticalAlignment="Top" IsHitTestVisible="False"
                                Panel.ZIndex="2" Visibility="Collapsed" Fill="{DynamicResource BgBrush}">
@@ -527,12 +458,14 @@
                               DragCompleted="OutputSplitter_DragCompleted"/>
             </Grid>
 
-            <!-- 우: 출력 영역 -->
+            <!-- 우: 출력 영역 (+ 마켓 상세 시 하단 절반에 Discover) -->
             <Border Grid.Column="3" Background="{DynamicResource PanelBrush}">
                 <Grid Margin="16,16,16,16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*" x:Name="OutputRow"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="0" x:Name="DiscoverRow"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="출력" Margin="2,0,0,10"
                                FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
@@ -554,6 +487,93 @@
                                          FontSize="{DynamicResource Fs12}"
                                          Foreground="{DynamicResource TextBrush}"/>
                             </ScrollViewer>
+                        </Grid>
+                    </Border>
+
+                    <!-- Discover 섹션 헤더 (마켓 상세 시에만 표시) -->
+                    <Grid x:Name="DiscoverHeader" Grid.Row="2" Margin="2,16,0,8" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPackageSearch}"
+                                  Width="14" Height="14" VerticalAlignment="Center"
+                                  Stroke="{DynamicResource TextMutedBrush}" Margin="0,0,7,0"/>
+                            <TextBlock Text="설치 가능한 플러그인" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                            <TextBlock x:Name="DiscoverTitle" VerticalAlignment="Center" Margin="8,0,0,0"
+                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Ellipse x:Name="DiscoverSpinner" Width="14" Height="14" Margin="8,0,0,0"
+                                     Visibility="Collapsed" VerticalAlignment="Center"
+                                     models:SpinnerActivator.Track="True"
+                                     Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                     StrokeDashArray="15 100" StrokeDashCap="Round"
+                                     RenderTransformOrigin="0.5,0.5">
+                                <Ellipse.RenderTransform>
+                                    <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                </Ellipse.RenderTransform>
+                            </Ellipse>
+                        </StackPanel>
+                        <Button x:Name="DiscoverCloseBtn" Click="DiscoverClose_Click" ToolTip="닫기"
+                                HorizontalAlignment="Right" Style="{StaticResource RowIconBtn}" Width="24" Height="24">
+                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconX}"
+                                  Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
+                    </Grid>
+
+                    <!-- Discover 목록 (하단 절반) -->
+                    <Border Grid.Row="3" CornerRadius="10"
+                            Background="{DynamicResource PanelSoftBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                        <Grid>
+                            <ScrollViewer x:Name="DiscoverScroll" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled" Padding="10,10,4,10">
+                                <ItemsControl x:Name="DiscoverList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:ClaudeAvailablePlugin}">
+                                            <Border Margin="0,0,6,8" Padding="12,10" CornerRadius="10"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Name}" FontSize="{DynamicResource Fs12}"
+                                                                       FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding InstallCountText}" FontSize="{DynamicResource Fs10}"
+                                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0"
+                                                                       VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Description}" FontSize="{DynamicResource Fs10}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"
+                                                                   TextWrapping="Wrap" TextTrimming="None"
+                                                                   LineHeight="15" LineStackingStrategy="BlockLineHeight" MaxHeight="30"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Border Padding="7,3" CornerRadius="6" VerticalAlignment="Center"
+                                                                Background="{DynamicResource PanelSoftBrush}"
+                                                                Visibility="{Binding IsInstalled, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                                            <TextBlock Text="설치됨" FontSize="{DynamicResource Fs10}"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                                                        </Border>
+                                                        <Button Style="{StaticResource RowIconBtn}" Click="AvailableInstall_Click" ToolTip="설치"
+                                                                Width="28" Height="28"
+                                                                Visibility="{Binding IsInstalled, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
+                                                            <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
+                                                                  Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <TextBlock x:Name="DiscoverEmpty" Text="설치 가능한 플러그인이 없습니다"
+                                       VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed"
+                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
                         </Grid>
                     </Border>
                 </Grid>

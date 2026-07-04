@@ -422,8 +422,18 @@
                                                                    Visibility="{Binding ProjectVisibility}"
                                                                    TextDecorations="{Binding ProjectDecoration}"
                                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource TextBrush}">
+                                                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                                                    <Style.Triggers>
+                                                                        <!-- 삭제된 프로젝트: 취소선 + 프롬프트(LastMessage)와 동일한 흐린 색 -->
+                                                                        <DataTrigger Binding="{Binding ProjectMissing}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
                                                             <TextBlock.RenderTransform>
                                                                 <TranslateTransform Y="-2"/>
                                                             </TextBlock.RenderTransform>
@@ -463,8 +473,19 @@
                                                                Text="{Binding SessionName}" Margin="0,5,0,0"
                                                                TextDecorations="{Binding SessionDecoration}"
                                                                TextTrimming="CharacterEllipsis"
-                                                               FontSize="{DynamicResource Fs13}"
-                                                               Foreground="{DynamicResource TextBrush}"/>
+                                                               FontSize="{DynamicResource Fs13}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                                                <Style.Triggers>
+                                                                    <!-- 추적 안 되는 세션(닫힘/삭제): 취소선 + 프롬프트와 동일한 흐린 색 -->
+                                                                    <DataTrigger Binding="{Binding SessionMissing}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                     <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
                                                                Text="{Binding LastMessage}" Visibility="{Binding LastMessageVisibility}"
                                                                Margin="0,4,0,0"
