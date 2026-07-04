@@ -87,6 +87,28 @@ public partial class PluginControlDialog : UserControl
 
     private void SearchClear_Click(object sender, RoutedEventArgs e) => SearchBox.Text = "";
 
+    // 검색 행 토글 — 좌측 사이드바처럼 Height 0↔49 슬라이드. 닫으면 검색어 초기화(필터 해제).
+    private bool _searchOpen;
+    private const double SearchRowHeightPx = 49;   // 35(pill) + 14(margin-bottom)
+
+    private void SearchToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _searchOpen = !_searchOpen;
+        var anim = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = _searchOpen ? SearchRowHeightPx : 0,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new System.Windows.Media.Animation.CubicEase
+            { EasingMode = System.Windows.Media.Animation.EasingMode.EaseInOut }
+        };
+        SearchRow.BeginAnimation(HeightProperty, anim);
+        if (_searchOpen)
+            Dispatcher.BeginInvoke(new Action(() => { SearchBox.Focus(); SearchBox.SelectAll(); }),
+                System.Windows.Threading.DispatcherPriority.Input);
+        else
+            SearchBox.Text = "";   // 닫으면 검색어 지워 목록 전체 표시
+    }
+
     private void UpdateEmptyForTab()
     {
         var view = _tab == "plugins" ? CollectionViewSource.GetDefaultView(_plugins)

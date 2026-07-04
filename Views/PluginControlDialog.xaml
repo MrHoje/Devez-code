@@ -181,15 +181,14 @@
                      액션 버튼은 보더 없이 아이콘+텍스트로만 배치. -->
                 <Border Grid.Row="0" Height="37"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-                    <!-- Margin top 1: 액션 버튼을 1px 아래로 -->
-                    <Grid Margin="14,1,14,0">
+                    <Grid Margin="14,0,14,0">
                         <!-- 플러그인 탭 액션 -->
                         <StackPanel x:Name="PluginActions" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button x:Name="InstallBtn" Click="InstallBtn_Click" Style="{StaticResource HeaderActionBtn}">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
                                           Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="설치" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock Text="설치" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{DynamicResource HeaderActionTextMargin}"/>
                                 </StackPanel>
                             </Button>
                             <Button x:Name="PluginUpdateAllBtn" Click="PluginUpdateAll_Click" Style="{StaticResource HeaderActionBtn}" Margin="2,0,0,0"
@@ -197,7 +196,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
                                           Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock Text="전체 업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{DynamicResource HeaderActionTextMargin}"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -207,7 +206,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlus}"
                                           Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="추가" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock Text="추가" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{DynamicResource HeaderActionTextMargin}"/>
                                 </StackPanel>
                             </Button>
                             <Button x:Name="MarketUpdateAllBtn" Click="MarketUpdateAll_Click" Style="{StaticResource HeaderActionBtn}" Margin="2,0,0,0"
@@ -215,32 +214,42 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
                                           Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock Text="전체 업데이트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{DynamicResource HeaderActionTextMargin}"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
 
-                        <Button x:Name="RefreshBtn" Click="RefreshBtn_Click" Style="{StaticResource HeaderActionBtn}"
-                                HorizontalAlignment="Right">
-                            <StackPanel Orientation="Horizontal">
-                                <!-- 새로고침 중엔 아이콘 자리에 스피너 표시 -->
-                                <Grid Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center">
-                                    <Path x:Name="RefreshIcon" Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
-                                          Width="13" Height="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    <Ellipse x:Name="RefreshSpinner" Width="13" Height="13"
-                                             Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                             models:SpinnerActivator.Track="True"
-                                             Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
-                                             StrokeDashArray="15 100" StrokeDashCap="Round"
-                                             RenderTransformOrigin="0.5,0.5">
-                                        <Ellipse.RenderTransform>
-                                            <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                                        </Ellipse.RenderTransform>
-                                    </Ellipse>
-                                </Grid>
-                                <TextBlock Text="새로고침" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <!-- 검색 토글: 좌측 사이드바처럼 눌러서 검색창 슬라이드 -->
+                            <Button x:Name="SearchToggleBtn" Click="SearchToggle_Click" Style="{StaticResource HeaderActionBtn}"
+                                    ToolTip="검색">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconSearch}"
+                                          Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="검색" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{DynamicResource HeaderActionTextMargin}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="RefreshBtn" Click="RefreshBtn_Click" Style="{StaticResource HeaderActionBtn}" Margin="2,0,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <!-- 새로고침 중엔 아이콘 자리에 스피너 표시 -->
+                                    <Grid Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center">
+                                        <Path x:Name="RefreshIcon" Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconRefresh}"
+                                              Width="13" Height="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <Ellipse x:Name="RefreshSpinner" Width="13" Height="13"
+                                                 Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                 models:SpinnerActivator.Track="True"
+                                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2"
+                                                 StrokeDashArray="15 100" StrokeDashCap="Round"
+                                                 RenderTransformOrigin="0.5,0.5">
+                                            <Ellipse.RenderTransform>
+                                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                            </Ellipse.RenderTransform>
+                                        </Ellipse>
+                                    </Grid>
+                                    <TextBlock Text="새로고침" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{DynamicResource HeaderActionTextMargin}"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -251,8 +260,9 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                <!-- 검색창 (모든 탭 공통) -->
-                <Border Grid.Row="0" Height="35" Margin="0,0,0,14"
+                <!-- 검색창 (모든 탭 공통) — 기본 숨김(Height 0), 검색 버튼으로 슬라이드 -->
+                <Border x:Name="SearchRow" Grid.Row="0" Height="0" ClipToBounds="True">
+                <Border Height="35" Margin="0,0,0,14" VerticalAlignment="Top"
                         Background="{DynamicResource PanelSoftBrush}"
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="1" CornerRadius="8">
@@ -325,6 +335,7 @@
                             </Button.Template>
                         </Button>
                     </Grid>
+                </Border>
                 </Border>
 
                 <!-- 리스트 영역 -->

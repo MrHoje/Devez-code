@@ -193,6 +193,9 @@ public partial class App : Application
         // 완료/대기 카드 아이콘 세로 보정: 작게(0)는 텍스트와 맞춰 위로 2px, 크게(1)는 0.
         res["HistoryIconY"] = scale == 0 ? -1.0 : 0.0;
 
+        // 플러그인 헤더 액션 버튼: 글꼴 크게(1)에서만 텍스트가 아이콘보다 살짝 떠 보여 1px 내림.
+        res["HeaderActionTextMargin"] = new Thickness(0, scale == 1 ? 1 : 0, 0, 0);
+
         res["HdrBtnSize"] = (double)(28 + d);
         res["RailWidth"]    = scale == 0 ? 44.0 : 46.0;
         res["RailBtnSize"]  = scale == 0 ? 32.0 : 34.0;
