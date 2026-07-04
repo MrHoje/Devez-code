@@ -54,7 +54,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.10.2", "2026-07-03", true, new[]
+        ("v1.11.0", "2026-07-05", true, new[]
+        {
+            "세션을 포크해 대화 흐름을 분기할 수 있습니다.",
+            "세션 대화 내역을 파일로 내보낼 수 있습니다.",
+            "좌측 하단에 Claude 플러그인 관리 메뉴가 추가되었습니다.",
+        }),
+        ("v1.10.2", "2026-07-03", false, new[]
         {
             "일부 안내 대화상자가 Windows 기본 창으로 표시되던 것을 앱 디자인에 맞게 통일했습니다.",
             "분할된 패널에서 텍스트 파일을 닫으면 이전 세션이 자동으로 선택되지 않던 문제를 수정했습니다.",
