@@ -66,6 +66,8 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>탭 헤더 우클릭 → "분할 보기" 클릭 → 셸이 분할 생성/반대쪽 패널로 이동 처리.
     /// 세션 탭·파일 탭 모두 지원.</summary>
     public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
+    /// <summary>세션 탭 우클릭 "내보내기" → 셸이 대화를 .md 로 저장(프로젝트 카드 메뉴와 동일 동작).</summary>
+    public event Action<SessionItem>? ExportSessionRequested;
     /// <summary>탭 드래그 중 매 이동 — 셸이 커서(screen)가 반대 패널 위면 그 패널에 삽입 프리뷰(탭 밀기)를 그리고
     /// true(크로스 중) 반환. 그러면 소스 패널은 자기 재정렬 프리뷰를 억제한다. ghostWidth=미는 폭.</summary>
     public Func<WorkspacePaneView, Point, double, bool>? TabDragHoverMoved;
@@ -1484,6 +1486,17 @@ public partial class WorkspacePaneView : UserControl
                 }
             };
             cm.Items.Add(hideOthers);
+
+            cm.Items.Add(new Separator());
+
+            // 포크·내보내기 — 프로젝트 카드 세션 우클릭과 동일 기능.
+            var forkItem = new MenuItem { Header = "포크", Icon = BuildMenuIcon("IconGitBranch") };
+            forkItem.Click += (_, _) => ForkSession(s);
+            cm.Items.Add(forkItem);
+
+            var exportItem = new MenuItem { Header = "내보내기", Icon = BuildMenuIcon("IconFileText") };
+            exportItem.Click += (_, _) => ExportSessionRequested?.Invoke(s);
+            cm.Items.Add(exportItem);
 
             cm.Items.Add(new Separator());
             cm.Items.Add(BuildSplitMoveItem(s));
