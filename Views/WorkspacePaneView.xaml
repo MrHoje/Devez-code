@@ -275,9 +275,6 @@
                                     <Setter TargetName="TabAgentIcon" Property="Visibility" Value="Collapsed"/>
                                     <Setter TargetName="TabWaitingIcon" Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <DataTrigger Binding="{Binding IsWaitingPermission}" Value="True">
-                                    <Setter TargetName="TabWaitingIcon" Property="Data" Value="{StaticResource IconLock}"/>
-                                </DataTrigger>
                                 <!-- 진행중 스피너: IsBusy + !IsWaitingChoice → 에이전트 아이콘 대신 스피너 -->
                                 <MultiDataTrigger>
                                     <MultiDataTrigger.Conditions>

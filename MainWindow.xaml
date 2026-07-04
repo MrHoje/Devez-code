@@ -290,7 +290,7 @@
                                 <!-- 응답 대기 줄: 느낌표 + 텍스트. 대기 세션이 있을 때만 노출 → 이때만 높이가 늘어난다. -->
                                 <StackPanel x:Name="SessionWaitingRow" Orientation="Horizontal"
                                             Visibility="Collapsed" Margin="0,4,0,0">
-                                    <Path x:Name="SessionWaitingIcon" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,7,0"
+                                    <Path Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,7,0"
                                           Data="{StaticResource IconExclamation}" Stretch="Uniform"
                                           Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent"/>
@@ -340,7 +340,7 @@
                                                                    FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource TextBrush}"/>
                                                         <!-- 완료카드의 시간 위치에 노란색 '대기' 표시. 위로 3px 올림. -->
-                                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding WaitingBadgeText}" Margin="8,0,0,0"
+                                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="대기" Margin="8,0,0,0"
                                                                    VerticalAlignment="Center"
                                                                    FontSize="{DynamicResource Fs10}" FontWeight="SemiBold"
                                                                    Foreground="{DynamicResource WarningBrush}">

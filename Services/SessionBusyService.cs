@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.IO;
-using DevezCode.Models;
 
 namespace DevezCode.Services;
 
@@ -31,7 +30,8 @@ public sealed class SessionBusyService : IDisposable
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중.</summary>
     public event Action<string, bool>? BusyChanged;
 
-    public event Action<string, WaitingKind>? WaitingKindChanged;
+    /// <summary>(roomId, waiting) — waiting=true 면 선택지/권한 응답 대기 중(❗). 선택지·권한을 구분하지 않고 통합.</summary>
+    public event Action<string, bool>? WaitingChoiceChanged;
 
     public void Start()
     {
@@ -187,16 +187,11 @@ public sealed class SessionBusyService : IDisposable
 
     private void EmitWaitingKind(string room, string status)
     {
-        var kind = ParseWaitingKind(status);
-        WaitingKindChanged?.Invoke(room, kind);
-    }
-
-    private static WaitingKind ParseWaitingKind(string status)
-    {
-        if (status.Equals("permission", StringComparison.OrdinalIgnoreCase)) return WaitingKind.Permission;
-        if (status.Equals("input", StringComparison.OrdinalIgnoreCase) ||
-            status.Equals("waiting", StringComparison.OrdinalIgnoreCase)) return WaitingKind.Input;
-        return WaitingKind.None;
+        // 선택지·권한을 구분하지 않고 통틀어 '입력 대기(❗)'로 emit(permission/input/waiting 모두 대기 취급).
+        bool waiting = status.Equals("waiting", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("permission", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("input", StringComparison.OrdinalIgnoreCase);
+        WaitingChoiceChanged?.Invoke(room, waiting);
     }
 
     private void Emit(string path)

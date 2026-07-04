@@ -201,9 +201,6 @@
                     <Setter TargetName="HiddenIcon" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="WaitingIcon" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
-                <DataTrigger Binding="{Binding IsWaitingPermission}" Value="True">
-                    <Setter TargetName="WaitingIcon" Property="Data" Value="{StaticResource IconLock}"/>
-                </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
 

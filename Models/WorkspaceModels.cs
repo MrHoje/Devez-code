@@ -23,8 +23,6 @@ public abstract class NotifyBase : INotifyPropertyChanged
 /// <summary>중앙 탭 종류. 탭 아이콘·콘텐츠 분기에 사용.</summary>
 public enum TabKind { Session, File }
 
-public enum WaitingKind { None, Input, Permission }
-
 /// <summary>분할(2분할) 시 이 프로젝트가 어느 패널에 떠 있는지. 사이드바 카드의 패널 배지 표시에 사용.
 /// None=어느 패널에도 없음(또는 비분할), Left=좌 패널(PaneA), Right=우 패널(PaneB).</summary>
 public enum PaneRole { None, Left, Right }
@@ -74,32 +72,11 @@ public sealed class SessionItem : TabItemBase
     private bool _isBusy;
     public bool IsBusy { get => _isBusy; set => Set(ref _isBusy, value); }
 
-    /// <summary>선택지/권한 응답 대기 종류. claude=PermissionRequest/Notification 훅, opencode=question.asked, gjc=jsonl 'ask'.</summary>
-    private WaitingKind _waitingKind;
-    public WaitingKind WaitingKind
-    {
-        get => _waitingKind;
-        set
-        {
-            if (!Set(ref _waitingKind, value)) return;
-            OnPropertyChanged(nameof(IsWaitingChoice));
-            OnPropertyChanged(nameof(IsWaitingPermission));
-            OnPropertyChanged(nameof(WaitingBadgeText));
-        }
-    }
-
-    public bool IsWaitingChoice
-    {
-        get => WaitingKind != WaitingKind.None;
-        set
-        {
-            if (value && WaitingKind == WaitingKind.Permission) return;
-            WaitingKind = value ? WaitingKind.Input : WaitingKind.None;
-        }
-    }
-
-    public bool IsWaitingPermission => WaitingKind == WaitingKind.Permission;
-    public string WaitingBadgeText => WaitingKind == WaitingKind.Permission ? "권한" : "대기";
+    /// <summary>선택지/권한 응답 대기 중인지. true=스피너 대신 ❗(느낌표)를 표시(busy 중이라도 우선).
+    /// 선택지·권한을 구분하지 않고 통틀어 '입력 대기'로 다룬다.
+    /// claude=Notification/PermissionRequest 훅, opencode=question.asked, gjc=jsonl 'ask'.</summary>
+    private bool _isWaitingChoice;
+    public bool IsWaitingChoice { get => _isWaitingChoice; set => Set(ref _isWaitingChoice, value); }
 
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";

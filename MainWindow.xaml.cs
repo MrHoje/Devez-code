@@ -188,11 +188,11 @@ public partial class MainWindow : Window
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
             });
 
-        _sessionBusy.WaitingKindChanged += (id, kind) =>
+        _sessionBusy.WaitingChoiceChanged += (id, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindSession(id);
-                if (s != null) s.WaitingKind = kind;
+                if (s != null) s.IsWaitingChoice = waiting;
                 UpdateSessionBusyDisplay();
             });
 
@@ -2944,17 +2944,13 @@ public partial class MainWindow : Window
 
     private void UpdateSessionBusyDisplay()
     {
-        int count = 0, waiting = 0, permission = 0;
+        int count = 0, waiting = 0;
         foreach (var p in _projects)
             foreach (var t in p.Tabs)
                 if (t is SessionItem s)
                 {
                     // 응답 대기 중인 세션은 진행중에서 빼고 대기로만 센다.
-                    if (s.IsWaitingChoice)
-                    {
-                        waiting++;
-                        if (s.IsWaitingPermission) permission++;
-                    }
+                    if (s.IsWaitingChoice) waiting++;
                     else if (s.IsBusy) count++;
                 }
         if (count > 0)
@@ -2974,10 +2970,7 @@ public partial class MainWindow : Window
         // 응답 대기(선택지) 세션이 있을 때만 둘째 줄 노출 → 이때만 헤더 높이가 늘어난다.
         if (waiting > 0)
         {
-            SessionWaitingIcon.Data = (System.Windows.Media.Geometry)FindResource(permission > 0 ? "IconLock" : "IconExclamation");
-            SessionWaitingLabel.Text = permission > 0
-                ? (permission == waiting ? $"권한 승인 대기 {permission}개" : $"권한 승인 {permission}개 · 입력 대기 {waiting - permission}개")
-                : $"응답 대기 중 {waiting}개";
+            SessionWaitingLabel.Text = $"응답 대기 중 {waiting}개";
             SessionWaitingRow.Visibility = Visibility.Visible;
             // 진행중 줄이 보일 때만 위 간격(4px). 대기만 단독이면 0 → 가운데 정렬에서 안 밀림.
             SessionWaitingRow.Margin = SessionBusyRow.Visibility == Visibility.Visible
