@@ -197,8 +197,6 @@
                                     <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
                                 </Ellipse.RenderTransform>
                             </Ellipse>
-                            <TextBlock x:Name="LastRefreshedText" VerticalAlignment="Center" Margin="0,0,12,0"
-                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
                             <Button x:Name="RefreshBtn" Click="RefreshBtn_Click"
                                     Style="{StaticResource SecondaryButton}" Height="34" Padding="14,0">
                                 <StackPanel Orientation="Horizontal">
@@ -621,9 +619,18 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:ClaudeAvailablePlugin}">
                                             <Border Margin="0,0,6,8" Padding="12,10" CornerRadius="10"
-                                                    Background="{DynamicResource PanelBrush}"
                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                                     Cursor="Arrow" MouseLeftButtonUp="DiscoverCard_Click">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*"/>

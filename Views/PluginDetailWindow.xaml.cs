@@ -1,12 +1,16 @@
+using System;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using DevezCode.Models;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
 
 /// <summary>Discover 카드 클릭 시 뜨는 플러그인 상세 팝업.
-/// 좌측: 이름·마켓·설명 + 설치 버튼, 우측: 설치 실행 결과 출력.</summary>
+/// 좌측: 이름·마켓·설명 + 설치 버튼, 우측: 설치 실행 결과 출력.
+/// 다른 팝업과 동일하게 라운드 클립 + Opacity 페이드로 열린다.</summary>
 public partial class PluginDetailWindow : Window
 {
     private readonly ClaudeAvailablePlugin _plugin;
@@ -27,14 +31,52 @@ public partial class PluginDetailWindow : Window
             InstallBtn.Visibility = Visibility.Collapsed;
             InstalledChip.Visibility = Visibility.Visible;
         }
+
+        Opacity = 0;
+        SizeChanged += (_, _) => ApplyRoundedClip();
+        Loaded += (_, _) => ApplyRoundedClip();
+        ContentRendered += (_, _) => AnimateOpen();
     }
 
-    private void InstallBtn_Click(object sender, RoutedEventArgs e)
+    // ClipToBounds 는 사각 경계로만 클립 → 자식 사각 모서리가 라운드 코너 위로 삐져나온다.
+    // 콘텐츠 Border 를 둥근 RectangleGeometry 로 직접 클립.
+    private void ApplyRoundedClip()
     {
-        ClaudePluginService.SpawnInstall(_plugin.Id);
+        double w = ContentRoot.ActualWidth, h = ContentRoot.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        ContentRoot.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 14, 14);
+    }
+
+    private void AnimateOpen()
+    {
+        var dur = new Duration(TimeSpan.FromMilliseconds(200));
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
+    }
+
+    private async void InstallBtn_Click(object sender, RoutedEventArgs e)
+    {
+        InstallBtn.IsEnabled = false;
+        ShowOutput($"install · {_plugin.Name}", "설치 중… (잠시 걸릴 수 있습니다)");
+        try
+        {
+            var result = await ClaudePluginService.InstallAsync(_plugin.Id);
+            ShowOutput($"install · {_plugin.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+        }
+        catch (Exception ex)
+        {
+            ShowOutput($"install · {_plugin.Name}", "설치 실패: " + ex.Message);
+        }
+        finally
+        {
+            InstallBtn.IsEnabled = true;
+        }
+    }
+
+    private void ShowOutput(string title, string body)
+    {
+        OutputText.Text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
         OutputPlaceholder.Visibility = Visibility.Collapsed;
-        OutputText.Text = $"install · {_plugin.Name}\n\n'{_plugin.Id}' 설치를 별도 콘솔 창에서 진행합니다.\n" +
-                          "완료되면 컨트롤러의 [새로고침] 으로 목록을 갱신하세요.";
     }
 
     private void Header_DragMove(object sender, MouseButtonEventArgs e)

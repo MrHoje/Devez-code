@@ -191,7 +191,9 @@ public static class ClaudePluginService
     public static Task<string> MarketplaceUpdateAsync(string? name = null)
         => RunCaptureAsync(string.IsNullOrWhiteSpace(name) ? "plugin marketplace update" : $"plugin marketplace update {Q(name!)}", timeoutMs: 120000);
 
-    /// <summary>설치 — 신뢰/설정 프롬프트가 뜰 수 있어 보이는 콘솔로 띄운다.</summary>
+    /// <summary>설치(인라인 캡처) — install 명령은 대화형 프롬프트가 없어 stdout 캡처로 처리 가능.</summary>
+    public static Task<string> InstallAsync(string pluginAtMarket) => RunCaptureAsync($"plugin install {Q(pluginAtMarket)}", timeoutMs: 180000);
+    /// <summary>설치 — 보이는 콘솔로 띄운다(레거시/대체 경로).</summary>
     public static void SpawnInstall(string pluginAtMarket) => SpawnConsole($"plugin install {Q(pluginAtMarket)}");
     /// <summary>마켓플레이스 추가 — 신뢰 프롬프트가 뜰 수 있어 보이는 콘솔로 띄운다.</summary>
     public static void SpawnMarketplaceAdd(string source) => SpawnConsole($"plugin marketplace add {Q(source)}");

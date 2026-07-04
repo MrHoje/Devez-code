@@ -158,7 +158,6 @@ public partial class PluginControlDialog : UserControl
                 foreach (var m in list) _markets.Add(m);
             }
             UpdateEmptyForTab();
-            LastRefreshedText.Text = "갱신: " + DateTime.Now.ToString("HH:mm:ss");
         }
         catch { }
         finally

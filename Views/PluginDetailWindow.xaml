@@ -22,7 +22,7 @@
             </Border.Effect>
         </Border>
         <!-- Content layer -->
-        <Border CornerRadius="14"
+        <Border x:Name="ContentRoot" CornerRadius="14"
                 Background="{DynamicResource BgBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                 ClipToBounds="True">
