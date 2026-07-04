@@ -62,7 +62,7 @@ public sealed class ClaudeAvailablePlugin
 }
 
 /// <summary>Claude Code 마켓플레이스 한 개. <c>claude plugin marketplace list --json</c> 매핑.</summary>
-public sealed class ClaudeMarketplace
+public sealed class ClaudeMarketplace : INotifyPropertyChanged
 {
     public string Name { get; set; } = "";
     public string Source { get; set; } = "";  // github / git / local …
@@ -73,4 +73,16 @@ public sealed class ClaudeMarketplace
     /// <summary>표시용: repo 또는 url 중 있는 것.</summary>
     public string OriginText => !string.IsNullOrWhiteSpace(Repo) ? Repo
         : !string.IsNullOrWhiteSpace(Url) ? Url : Source;
+
+    /// <summary>상세를 열어 하단 Discover에 표시 중인(선택된) 마켓플레이스 — 프로젝트 카드처럼 보더만 하이라이트.</summary>
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected != value) { _isSelected = value; OnPropertyChanged(); } }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([CallerMemberName] string? n = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }

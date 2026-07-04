@@ -377,7 +377,18 @@
                                 <DataTemplate DataType="{x:Type models:ClaudeMarketplace}">
                                     <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
                                             Background="{DynamicResource PanelSoftBrush}"
-                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                            BorderThickness="1">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                                                <Style.Triggers>
+                                                    <!-- 선택된(상세 열린) 마켓: 프로젝트 카드처럼 primary 보더만 하이라이트 -->
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -464,7 +475,6 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*" x:Name="OutputRow"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="0" x:Name="DiscoverRow"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="출력" Margin="2,0,0,10"
@@ -490,15 +500,8 @@
                         </Grid>
                     </Border>
 
-                    <!-- 출력 ↔ Discover 가로 스플리터 (마켓 상세 시에만 표시). 메인화면 가로 스플리터 스타일 -->
-                    <GridSplitter x:Name="OutputDiscoverSplitter" Grid.Row="2"
-                                  Style="{StaticResource GridSplitterHorizontal}"
-                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
-                                  HorizontalAlignment="Stretch" Height="10" Margin="0,3"
-                                  Visibility="Collapsed"/>
-
-                    <!-- Discover 섹션 (마켓 상세 시 하단 절반): 헤더 · 검색창 · 목록 -->
-                    <Grid Grid.Row="3">
+                    <!-- Discover 섹션 (마켓 상세 시 하단 2/3): 헤더 · 검색창 · 목록 -->
+                    <Grid Grid.Row="2">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
@@ -527,11 +530,6 @@
                                     </Ellipse.RenderTransform>
                                 </Ellipse>
                             </StackPanel>
-                            <Button x:Name="DiscoverCloseBtn" Click="DiscoverClose_Click" ToolTip="닫기"
-                                    HorizontalAlignment="Right" Style="{StaticResource RowIconBtn}" Width="24" Height="24">
-                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconX}"
-                                      Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
-                            </Button>
                         </Grid>
 
                         <!-- 검색창 (설치 가능한 플러그인 필터) -->

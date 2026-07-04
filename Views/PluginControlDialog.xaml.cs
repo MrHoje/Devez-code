@@ -26,6 +26,7 @@ public partial class PluginControlDialog : UserControl
     private string _tab = "plugins";
     private string _query = "";
     private string _discQuery = "";   // 하단 Discover 검색어
+    private ClaudeMarketplace? _selectedMarket;   // 상세 열린(선택된) 마켓
     private bool _busy;
     private bool _disposed;
 
@@ -297,10 +298,15 @@ public partial class PluginControlDialog : UserControl
         if (!string.IsNullOrWhiteSpace(m.InstallLocation)) sb.AppendLine($"설치 위치: {m.InstallLocation}");
         ShowOutput($"marketplace · {m.Name}", sb.Length == 0 ? "(추가 정보 없음)" : sb.ToString().TrimEnd());
 
-        // 하단 Discover 패널 열기(출력 영역을 절반으로) + 가로 스플리터 노출.
+        // 선택 표시(프로젝트 카드처럼 보더 하이라이트) — 이전 선택 해제 후 현재만 선택.
+        if (_selectedMarket != null && !ReferenceEquals(_selectedMarket, m)) _selectedMarket.IsSelected = false;
+        _selectedMarket = m;
+        m.IsSelected = true;
+
+        // 하단 Discover 패널 열기 — 출력:Discover = 1:2 비율.
         DiscoverTitle.Text = m.Name;
-        OutputDiscoverSplitter.Visibility = Visibility.Visible;
-        DiscoverRow.Height = new GridLength(1, GridUnitType.Star);
+        OutputRow.Height = new GridLength(1, GridUnitType.Star);
+        DiscoverRow.Height = new GridLength(2, GridUnitType.Star);
         DiscoverSearchBox.Text = "";   // 이전 검색어 초기화
         DiscoverSpinner.Visibility = Visibility.Visible;
         DiscoverEmpty.Visibility = Visibility.Collapsed;
@@ -324,14 +330,6 @@ public partial class PluginControlDialog : UserControl
                 DiscoverEmpty.Visibility = _avail.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             }
         }
-    }
-
-    private void DiscoverClose_Click(object sender, RoutedEventArgs e)
-    {
-        OutputDiscoverSplitter.Visibility = Visibility.Collapsed;
-        DiscoverRow.Height = new GridLength(0);
-        DiscoverSearchBox.Text = "";
-        _avail.Clear();
     }
 
     // 하단 Discover 검색(설치 가능한 플러그인 필터). 목록이 작아 즉시 필터.
