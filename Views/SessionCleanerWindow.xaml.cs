@@ -29,15 +29,21 @@ public partial class SessionCleanerWindow : Window
             StartRefreshAll();
         };
         SizeChanged += (_, _) => ApplyRoundedClip();
-        ContentRendered += async (_, _) => await AnimateOpenAsync();
+        ContentRendered += (_, _) => AnimateOpen();
     }
 
-    private async Task AnimateOpenAsync()
+    private void AnimateOpen()
     {
+        // 페이드 동안 콘텐츠 전체를 BitmapCache 로 캐시 → 매 프레임 DropShadow 블러 재계산을 없앤다
+        // (플러그인 팝업과 동일 패턴). 완료 시 캐시 해제.
+        var dpi = VisualTreeHelper.GetDpi(this);
+        RootLayer.CacheMode = new BitmapCache { RenderAtScale = dpi.DpiScaleX };
+
         var dur  = new Duration(TimeSpan.FromMilliseconds(220));
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
-        await Task.Delay(220);
+        var anim = new DoubleAnimation(0, 1, dur) { EasingFunction = ease };
+        anim.Completed += (_, _) => RootLayer.CacheMode = null;
+        BeginAnimation(OpacityProperty, anim);
     }
 
     private void ApplyRoundedClip()

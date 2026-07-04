@@ -19,7 +19,7 @@ public partial class SettingsWindow : Window
         Opacity = 0;
         SettingsView.SizeChanged += (_, _) => ApplyRoundedClip();
         Loaded += (_, _) => ApplyRoundedClip();
-        ContentRendered += async (_, _) => await AnimateOpenAsync();
+        ContentRendered += (_, _) => AnimateOpen();
     }
 
     private void ApplyRoundedClip()
@@ -29,15 +29,18 @@ public partial class SettingsWindow : Window
         SettingsView.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 13, 13);
     }
 
-    private async Task AnimateOpenAsync()
+    private void AnimateOpen()
     {
-        // scale 은 콘텐츠 레이어에만 적용 — 그림자(DropShadowEffect) 레이어까지 스케일하면
-        // 매 프레임 블러 재계산으로 끊긴다. 그림자는 창 Opacity 페이드만 따라간다.
-        // (devez SettingsWindow 와 동일 패턴)
+        // 페이드 동안 콘텐츠 전체를 BitmapCache 로 캐시 → 매 프레임 DropShadow 블러 재계산을 없앤다
+        // (플러그인 팝업과 동일 패턴). 완료 시 캐시 해제.
+        var dpi = VisualTreeHelper.GetDpi(this);
+        RootLayer.CacheMode = new BitmapCache { RenderAtScale = dpi.DpiScaleX };
+
         var dur  = new Duration(TimeSpan.FromMilliseconds(220));
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, dur) { EasingFunction = ease });
-        await Task.Delay(220);
+        var anim = new DoubleAnimation(0, 1, dur) { EasingFunction = ease };
+        anim.Completed += (_, _) => RootLayer.CacheMode = null;
+        BeginAnimation(OpacityProperty, anim);
     }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
