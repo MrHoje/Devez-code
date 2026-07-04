@@ -31,6 +31,7 @@ public partial class PluginControlDialog : UserControl
     private string _outPlugins = "";
     private string _outMarket = "";
     private bool _busy;
+    private bool _pendingRefresh;   // 로딩 중 들어온 탭 전환/새로고침 예약
     private bool _disposed;
 
     // 검색 지연 적용(파일 탐색기와 동일한 180ms 디바운스). 타이핑 중 매 키마다 필터를 돌리지 않는다.
@@ -138,26 +139,33 @@ public partial class PluginControlDialog : UserControl
 
     private async Task RefreshAsync()
     {
-        if (_busy || _disposed) return;
+        if (_disposed) return;
+        // 로딩 중 다른 탭을 누르면 조회가 씹히던 문제: 진행 중이면 예약만 하고, 끝난 뒤 현재 탭으로 다시 돈다.
+        if (_busy) { _pendingRefresh = true; return; }
         _busy = true;
-        var tab = _tab;
         RefreshSpinner.Visibility = Visibility.Visible;
         try
         {
-            if (tab == "plugins")
+            do
             {
-                var list = await ClaudePluginService.ListAsync();
-                if (_disposed || _tab != tab) return;
-                MergeInto(list);
+                _pendingRefresh = false;
+                var tab = _tab;
+                if (tab == "plugins")
+                {
+                    var list = await ClaudePluginService.ListAsync();
+                    if (_disposed) return;
+                    if (_tab == tab) MergeInto(list);   // 로딩 중 탭이 바뀌었으면 적용하지 않고 루프 재실행
+                }
+                else
+                {
+                    var list = await ClaudePluginService.MarketplacesAsync();
+                    if (_disposed) return;
+                    if (_tab == tab) { _markets.Clear(); foreach (var m in list) _markets.Add(m); }
+                }
+                UpdateEmptyForTab();
             }
-            else
-            {
-                var list = await ClaudePluginService.MarketplacesAsync();
-                if (_disposed || _tab != tab) return;
-                _markets.Clear();
-                foreach (var m in list) _markets.Add(m);
-            }
-            UpdateEmptyForTab();
+            // 로딩 중 탭 전환/새로고침이 예약됐으면 현재 탭으로 한 번 더.
+            while (!_disposed && _pendingRefresh);
         }
         catch { }
         finally

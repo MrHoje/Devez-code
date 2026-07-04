@@ -38,13 +38,13 @@ public partial class PluginDetailWindow : Window
         ContentRendered += (_, _) => AnimateOpen();
     }
 
-    // ClipToBounds 는 사각 경계로만 클립 → 자식 사각 모서리가 라운드 코너 위로 삐져나온다.
-    // 콘텐츠 Border 를 둥근 RectangleGeometry 로 직접 클립.
+    // 바깥 Border(CornerRadius=14)는 그대로 두고 자식(내용 Grid)만 라운드 클립 → 다른 팝업과 동일하게
+    // 보더 모서리가 선명하다. (Border 자체를 클립하면 보더 스트로크가 재클립돼 모서리가 흐려짐)
     private void ApplyRoundedClip()
     {
-        double w = ContentRoot.ActualWidth, h = ContentRoot.ActualHeight;
+        double w = ContentClip.ActualWidth, h = ContentClip.ActualHeight;
         if (w <= 0 || h <= 0) return;
-        ContentRoot.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 14, 14);
+        ContentClip.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 13, 13);
     }
 
     private void AnimateOpen()
@@ -62,14 +62,14 @@ public partial class PluginDetailWindow : Window
         {
             var result = await ClaudePluginService.InstallAsync(_plugin.Id);
             ShowOutput($"install · {_plugin.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+            // 설치 후에는 설치 버튼 비활성화 → '설치됨' 표시로 전환.
+            InstallBtn.Visibility = Visibility.Collapsed;
+            InstalledChip.Visibility = Visibility.Visible;
         }
         catch (Exception ex)
         {
             ShowOutput($"install · {_plugin.Name}", "설치 실패: " + ex.Message);
-        }
-        finally
-        {
-            InstallBtn.IsEnabled = true;
+            InstallBtn.IsEnabled = true;   // 실패 시 재시도 가능하게 복구
         }
     }
 

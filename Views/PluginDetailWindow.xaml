@@ -26,7 +26,7 @@
                 Background="{DynamicResource BgBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                 ClipToBounds="True">
-            <Grid>
+            <Grid x:Name="ContentClip">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="48"/>
                     <RowDefinition Height="*"/>
