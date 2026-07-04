@@ -3715,15 +3715,14 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
-    private async void PluginControlBtn_Click(object sender, RoutedEventArgs e)
+    private void PluginControlBtn_Click(object sender, RoutedEventArgs e)
     {
-        // 설정창과 동일 경로: 단색 커튼 즉시 표시 → 프레임 present 대기 → HWND collapse.
-        // (blankCurtain:false 스냅샷 경로는 캡처 실패/지연 시 빈 배경 한 프레임이 번쩍인다.)
-        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
+        // 플러그인 팝업은 테마를 바꾸지 않으므로 터미널을 숨길(suspend) 필요가 없다.
+        // 별도 최상위 창이 정적 터미널 위를 그대로 덮는다. 깜빡임은 창이 첫 프레임을 완전히
+        // 렌더한 뒤 뜨도록(PluginControlWindow 의 Opacity 0 → ContentRendered 페이드) 처리한다.
         var dlg = new Views.PluginControlWindow { Owner = this };
         dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
         dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
-        dlg.Closed += (_, _) => ResumeTerminal();
         dlg.ShowDialog();
     }
 
