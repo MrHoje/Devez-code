@@ -3717,7 +3717,9 @@ public partial class MainWindow : Window
 
     private async void PluginControlBtn_Click(object sender, RoutedEventArgs e)
     {
-        await SuspendTerminalWithSnapshotAsync();
+        // 설정창과 동일 경로: 단색 커튼 즉시 표시 → 프레임 present 대기 → HWND collapse.
+        // (blankCurtain:false 스냅샷 경로는 캡처 실패/지연 시 빈 배경 한 프레임이 번쩍인다.)
+        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
         var dlg = new Views.PluginControlWindow { Owner = this };
         dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
         dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
