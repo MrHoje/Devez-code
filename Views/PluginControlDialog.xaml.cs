@@ -30,6 +30,8 @@ public partial class PluginControlDialog : UserControl
     // 출력은 탭별로 분리 저장 — 탭 전환 시 서로의 내용이 유지되지 않는다.
     private string _outPlugins = "";
     private string _outMarket = "";
+    private bool _outPluginsErr;
+    private bool _outMarketErr;
     private bool _busy;
     private bool _pendingRefresh;   // 로딩 중 들어온 탭 전환/새로고침 예약
     private bool _disposed;
@@ -257,9 +259,9 @@ public partial class PluginControlDialog : UserControl
             "설치할 플러그인 이름을 입력하세요. 특정 마켓플레이스는 name@marketplace 형식.", okLabel: "설치");
         if (string.IsNullOrWhiteSpace(input)) return;
         ShowOutput("install", $"'{input}' 설치 중… (잠시 걸릴 수 있습니다)");
-        var result = await ClaudePluginService.InstallAsync(input);
+        var r = await ClaudePluginService.InstallAsync(input);
         if (_disposed) return;
-        ShowOutput("install", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+        ShowOutput("install", string.IsNullOrWhiteSpace(r.Text) ? (r.Ok ? "완료." : "설치 실패") : r.Text, isError: !r.Ok);
         await RefreshAsync();   // 설치 후 목록 자동 갱신
     }
 
@@ -317,9 +319,9 @@ public partial class PluginControlDialog : UserControl
             "URL · 로컬 경로 · GitHub 저장소(owner/repo) 중\n하나를 입력하세요.", okLabel: "추가");
         if (string.IsNullOrWhiteSpace(input)) return;
         ShowOutput("marketplace add", $"'{input}' 추가 중… (잠시 걸릴 수 있습니다)");
-        var result = await ClaudePluginService.MarketplaceAddAsync(input);
+        var r = await ClaudePluginService.MarketplaceAddAsync(input);
         if (_disposed) return;
-        ShowOutput("marketplace add", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+        ShowOutput("marketplace add", string.IsNullOrWhiteSpace(r.Text) ? (r.Ok ? "완료." : "추가 실패") : r.Text, isError: !r.Ok);
         await RefreshAsync();   // 추가 후 목록 자동 갱신
     }
 
@@ -436,12 +438,14 @@ public partial class PluginControlDialog : UserControl
 
     // ── 우측 출력 영역 ────────────────────────────────────────────
     // 헤더는 항상 "출력" 고정. 실행 맥락(명령명)은 본문 첫 줄에 표시.
-    // 출력은 현재 탭 버퍼에 저장 → 탭 전환 시 서로 섞이지 않는다.
-    private void ShowOutput(string title, string body)
+    // 출력은 현재 탭 버퍼에 저장 → 탭 전환 시 서로 섞이지 않는다. isError 면 빨간색(윈도우 터미널처럼).
+    private void ShowOutput(string title, string body, bool isError = false)
     {
         var text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
-        if (_tab == "plugins") _outPlugins = text; else _outMarket = text;
+        if (_tab == "plugins") { _outPlugins = text; _outPluginsErr = isError; }
+        else { _outMarket = text; _outMarketErr = isError; }
         OutputText.Text = text;
+        OutputText.Foreground = (Brush)FindResource(isError ? "DangerBrush" : "TextBrush");
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -449,7 +453,9 @@ public partial class PluginControlDialog : UserControl
     private void RestoreOutputForTab()
     {
         var text = _tab == "plugins" ? _outPlugins : _outMarket;
+        var err = _tab == "plugins" ? _outPluginsErr : _outMarketErr;
         OutputText.Text = text;
+        OutputText.Foreground = (Brush)FindResource(err ? "DangerBrush" : "TextBrush");
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }
 

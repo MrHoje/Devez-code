@@ -199,12 +199,12 @@ public static class ClaudePluginService
     public static Task<string> MarketplaceUpdateAsync(string? name = null)
         => RunCaptureAsync(string.IsNullOrWhiteSpace(name) ? "plugin marketplace update" : $"plugin marketplace update {Q(name!)}", timeoutMs: 120000);
 
-    /// <summary>설치(인라인 캡처) — install 명령은 대화형 프롬프트가 없어 stdout 캡처로 처리 가능.</summary>
-    public static Task<string> InstallAsync(string pluginAtMarket) => RunCaptureAsync($"plugin install {Q(pluginAtMarket)}", timeoutMs: 180000);
+    /// <summary>설치(인라인 캡처) — 성공/실패까지 반환. install 은 대화형 프롬프트가 없어 캡처 가능.</summary>
+    public static Task<CliResult> InstallAsync(string pluginAtMarket) => RunCaptureExAsync($"plugin install {Q(pluginAtMarket)}", timeoutMs: 180000);
     /// <summary>설치 — 보이는 콘솔로 띄운다(레거시/대체 경로).</summary>
     public static void SpawnInstall(string pluginAtMarket) => SpawnConsole($"plugin install {Q(pluginAtMarket)}");
-    /// <summary>마켓플레이스 추가(인라인 캡처) — 대화형 프롬프트가 없어 stdout 캡처로 처리 가능.</summary>
-    public static Task<string> MarketplaceAddAsync(string source) => RunCaptureAsync($"plugin marketplace add {Q(source)}", timeoutMs: 120000);
+    /// <summary>마켓플레이스 추가(인라인 캡처) — 성공/실패까지 반환.</summary>
+    public static Task<CliResult> MarketplaceAddAsync(string source) => RunCaptureExAsync($"plugin marketplace add {Q(source)}", timeoutMs: 120000);
     /// <summary>마켓플레이스 추가 — 보이는 콘솔로 띄운다(레거시/대체 경로).</summary>
     public static void SpawnMarketplaceAdd(string source) => SpawnConsole($"plugin marketplace add {Q(source)}");
 
@@ -226,7 +226,15 @@ public static class ClaudePluginService
         catch { /* CLI 미설치 등 */ }
     }
 
+    /// <summary>CLI 실행 결과. Ok=성공(종료 코드 0), Text=표시용 출력(실패 시 stderr 포함).</summary>
+    public readonly record struct CliResult(bool Ok, string Text);
+
     private static async Task<string> RunCaptureAsync(string args, int timeoutMs = 30000)
+        => (await RunCaptureExAsync(args, timeoutMs)).Text;
+
+    /// <summary>성공/실패까지 구분해 캡처. 실패(종료 코드≠0) 시 stderr 를 반드시 포함한다
+    /// (기존엔 stdout 이 있으면 stderr 를 버려 설치 실패 메시지가 안 보였다).</summary>
+    private static async Task<CliResult> RunCaptureExAsync(string args, int timeoutMs = 30000)
     {
         try
         {
@@ -239,22 +247,34 @@ public static class ClaudePluginService
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             };
             // Process.Start 는 동기 호출이라 UI 스레드에서 수십 ms 블로킹될 수 있다(cmd+claude 기동).
             // 스레드풀로 오프로드해 팝업 오픈 애니메이션 등이 끊기지 않게 한다.
             using var p = await Task.Run(() => Process.Start(psi));
-            if (p == null) return "";
+            if (p == null) return new CliResult(false, "claude CLI 를 실행할 수 없습니다.");
             var outTask = p.StandardOutput.ReadToEndAsync();
             var errTask = p.StandardError.ReadToEndAsync();
             // WaitForExit(int) 은 UI 스레드를 동기 블로킹하므로 사용 금지. WaitForExitAsync + 타임아웃 토큰으로 비동기 대기.
             using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
             try { await p.WaitForExitAsync(cts.Token); }
-            catch (OperationCanceledException) { try { p.Kill(true); } catch { } return ""; }
-            var raw = Ansi.Replace(await outTask, "");
-            var err = Ansi.Replace(await errTask, "");
-            return string.IsNullOrWhiteSpace(raw) ? err.Trim() : raw.Trim();
+            catch (OperationCanceledException) { try { p.Kill(true); } catch { } return new CliResult(false, "시간이 초과되어 중단했습니다."); }
+            var raw = Ansi.Replace(await outTask, "").Trim();
+            var err = Ansi.Replace(await errTask, "").Trim();
+            bool ok = p.ExitCode == 0;
+            string text;
+            if (ok)
+                text = raw.Length > 0 ? raw : err;
+            else
+            {
+                // 실패: stdout·stderr 모두 살려서 보여준다.
+                text = (raw.Length > 0 && err.Length > 0) ? raw + "\n" + err
+                     : err.Length > 0 ? err : raw;
+                if (text.Length == 0) text = $"실패 (종료 코드 {p.ExitCode}).";
+            }
+            return new CliResult(ok, text);
         }
-        catch (Exception ex) { return ex.Message; }
+        catch (Exception ex) { return new CliResult(false, ex.Message); }
     }
 
     private static string Str(JsonElement o, string prop)

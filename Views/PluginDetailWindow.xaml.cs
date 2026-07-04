@@ -65,23 +65,28 @@ public partial class PluginDetailWindow : Window
         ShowOutput($"install · {_plugin.Name}", "설치 중… (잠시 걸릴 수 있습니다)");
         try
         {
-            var result = await ClaudePluginService.InstallAsync(_plugin.Id);
-            ShowOutput($"install · {_plugin.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
-            // 설치 후에는 설치 버튼 비활성화 → '설치됨' 표시로 전환.
-            Installed = true;
-            InstallBtn.Visibility = Visibility.Collapsed;
-            InstalledChip.Visibility = Visibility.Visible;
+            var r = await ClaudePluginService.InstallAsync(_plugin.Id);
+            ShowOutput($"install · {_plugin.Name}", string.IsNullOrWhiteSpace(r.Text) ? (r.Ok ? "완료." : "설치 실패") : r.Text, isError: !r.Ok);
+            if (r.Ok)
+            {
+                // 설치 성공 시에만 '설치됨' 으로 전환.
+                Installed = true;
+                InstallBtn.Visibility = Visibility.Collapsed;
+                InstalledChip.Visibility = Visibility.Visible;
+            }
+            else InstallBtn.IsEnabled = true;   // 실패 시 재시도 가능
         }
         catch (Exception ex)
         {
-            ShowOutput($"install · {_plugin.Name}", "설치 실패: " + ex.Message);
-            InstallBtn.IsEnabled = true;   // 실패 시 재시도 가능하게 복구
+            ShowOutput($"install · {_plugin.Name}", "설치 실패: " + ex.Message, isError: true);
+            InstallBtn.IsEnabled = true;
         }
     }
 
-    private void ShowOutput(string title, string body)
+    private void ShowOutput(string title, string body, bool isError = false)
     {
         OutputText.Text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
+        OutputText.Foreground = (Brush)FindResource(isError ? "DangerBrush" : "TextBrush");
         OutputPlaceholder.Visibility = Visibility.Collapsed;
     }
 
