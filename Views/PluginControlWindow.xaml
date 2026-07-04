@@ -4,7 +4,7 @@
         xmlns:views="clr-namespace:DevezCode.Views"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Claude 플러그인 관리"
-        Width="1100" Height="700"
+        Width="1170" Height="700"
         MinWidth="980" MinHeight="600"
         WindowStartupLocation="Manual"
         WindowStyle="None"
