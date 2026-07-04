@@ -36,13 +36,20 @@ public partial class PluginControlDialog : UserControl
     {
         if (_busy || _disposed) return;
         _busy = true;
+        _plugins.Clear();
+        EmptyState.Visibility = Visibility.Collapsed;
         RefreshSpinner.Visibility = Visibility.Visible;
         try
         {
+            // CLI 조회는 비동기(UI 안 막힘). 결과는 도착하는 대로 하나씩 카드로 채워 넣는다.
             var list = await ClaudePluginService.ListAsync();
             if (_disposed) return;
-            _plugins.Clear();
-            foreach (var p in list) _plugins.Add(p);
+            foreach (var p in list)
+            {
+                _plugins.Add(p);
+                await Task.Delay(45);            // 카드가 순차적으로 떠오르는 느낌
+                if (_disposed) return;
+            }
             EmptyState.Visibility = _plugins.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             LastRefreshedText.Text = "갱신: " + DateTime.Now.ToString("HH:mm:ss");
         }

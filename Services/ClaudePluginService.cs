@@ -133,7 +133,10 @@ public static class ClaudePluginService
             if (p == null) return "";
             var outTask = p.StandardOutput.ReadToEndAsync();
             var errTask = p.StandardError.ReadToEndAsync();
-            if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch { } return ""; }
+            // WaitForExit(int) 은 UI 스레드를 동기 블로킹하므로 사용 금지. WaitForExitAsync + 타임아웃 토큰으로 비동기 대기.
+            using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
+            try { await p.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException) { try { p.Kill(true); } catch { } return ""; }
             var raw = Ansi.Replace(await outTask, "");
             var err = Ansi.Replace(await errTask, "");
             return string.IsNullOrWhiteSpace(raw) ? err.Trim() : raw.Trim();
