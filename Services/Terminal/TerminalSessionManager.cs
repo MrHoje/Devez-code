@@ -518,6 +518,41 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
+    /// <summary>가재코드(gjc) 세션 포크 — 네이티브 fork 가 없어, 원본 방의 최신 세션 jsonl 을 새 GUID 로
+    /// (내부 id 참조 전역 치환) 복사해 새 방의 session-dir 에 심는다. 새 세션 id 반환(원본에 대화 없으면 null).
+    /// gjc 는 --session-dir 로 격리되므로 새 방은 이 복사본만 resume → 원본과 완전 독립.</summary>
+    public static string? TryForkGajaeSession(string sourceRoomId, string newRoomId)
+    {
+        try
+        {
+            var srcDir = GajaeSessionDir(sourceRoomId);
+            if (!Directory.Exists(srcDir)) return null;
+            var srcFile = new DirectoryInfo(srcDir)
+                .GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (srcFile == null) return null;
+
+            // 원본 파일명(<ts>_<id>.jsonl)에서 옛 세션 id 추출.
+            var srcName = Path.GetFileNameWithoutExtension(srcFile.Name);
+            var us = srcName.LastIndexOf('_');
+            if (us < 0 || us + 1 >= srcName.Length) return null;
+            var oldId = srcName.Substring(us + 1);
+            if (!Guid.TryParse(oldId, out _)) return null;
+
+            // 새 id 로 복사 + 내부 id 참조(세션 헤더 "id"/메시지 sessionID 등) 전역 치환.
+            var newId = Guid.NewGuid().ToString("D").ToLowerInvariant();
+            var content = File.ReadAllText(srcFile.FullName).Replace(oldId, newId);
+
+            var newDir = GajaeSessionDir(newRoomId);
+            Directory.CreateDirectory(newDir);
+            var ts = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH-mm-ss-fff'Z'");
+            File.WriteAllText(Path.Combine(newDir, ts + "_" + newId + ".jsonl"), content);
+            return newId;
+        }
+        catch { return null; }
+    }
+
     /// <summary>가재코드(gjc)를 cmd /k 배치로 직접 실행. 방별 --session-dir 로 세션을 격리하고,
     /// 그 폴더의 최신 세션 ID 를 영속(SettingsService)한 뒤 `gjc -r &lt;id&gt;` 로 같은 대화를 복원한다.
     /// 첫 실행(저장·추출 ID 모두 없음)은 plain `gjc` 로 새 세션 생성. resume 실패(외부 삭제 등) 시 fresh 폴백.

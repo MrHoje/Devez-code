@@ -776,8 +776,8 @@ public partial class WorkspacePaneView : UserControl
     }
 
     /// <summary>세션 포크 — 원본 대화를 복사한 새 세션을 같은 프로젝트에 만들어 연다.
-    /// claude=<c>--fork-session</c>, opencode=<c>--fork</c> 네이티브 지원(그 외 에이전트는 미지원 안내).
-    /// SettingsService.RoomForkSource 마커(원본 세션 ID)를 심어두면 새 방 첫 실행에 1회 소비돼 포크 커맨드로 시작한다.</summary>
+    /// claude=<c>--fork-session</c>, opencode=<c>--fork</c> 네이티브 지원. gajae 는 네이티브 fork 가 없어
+    /// 세션 jsonl 을 새 id 로 복사(<see cref="TerminalSessionManager.TryForkGajaeSession"/>). 그 외 에이전트는 미지원 안내.</summary>
     public void ForkSession(SessionItem source)
     {
         var proj = ParentOf(source);
@@ -786,18 +786,18 @@ public partial class WorkspacePaneView : UserControl
         var agentId = string.IsNullOrEmpty(source.AgentId)
             ? SettingsService.LoadAgentForRoom(source.Id) : source.AgentId;
 
-        // 네이티브 포크 지원 에이전트만(claude/opencode). codex/gjc 등은 fork 플래그가 없다.
-        if (agentId != "claude" && agentId != "opencode")
+        // 포크 지원 에이전트만. claude/opencode=CLI 네이티브, gajae=jsonl 복사. codex 등은 미지원.
+        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae")
         {
-            ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode 세션만 지원합니다.");
+            ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode · 가재코드 세션만 지원합니다.");
             return;
         }
 
-        // 원본의 현재 세션 ID = 포크 기준. 추적 ID 가 없으면(아직 대화 전) 포크할 게 없다.
-        var srcSid = agentId == "claude"
-            ? SettingsService.LoadClaudeCodeRoomSession(source.Id)
-            : SettingsService.LoadOpenCodeRoomSession(source.Id);
-        if (string.IsNullOrWhiteSpace(srcSid))
+        // 원본에 포크할 대화가 있는지 확인. claude/opencode=추적 세션 ID, gajae=파일 복사 시점에 판정.
+        var srcSid = agentId == "claude"   ? SettingsService.LoadClaudeCodeRoomSession(source.Id)
+                   : agentId == "opencode" ? SettingsService.LoadOpenCodeRoomSession(source.Id)
+                   : null;
+        if (agentId != "gajae" && string.IsNullOrWhiteSpace(srcSid))
         {
             ConfirmDialog.Alert("포크 불가",
                 "아직 대화가 없어 포크할 수 없습니다.\n한 번 이상 대화한 세션만 포크할 수 있어요.");
@@ -805,11 +805,26 @@ public partial class WorkspacePaneView : UserControl
         }
 
         var session = new SessionItem { Name = source.Name + " (fork)", AgentId = agentId };
+
+        // gajae: 세션 jsonl 을 새 id 로 새 방 dir 에 복사(원본 대화 없으면 null → 포크 취소).
+        if (agentId == "gajae")
+        {
+            var forkedId = TerminalSessionManager.TryForkGajaeSession(source.Id, session.Id);
+            if (forkedId == null)
+            {
+                ConfirmDialog.Alert("포크 불가",
+                    "아직 대화가 없어 포크할 수 없습니다.\n한 번 이상 대화한 세션만 포크할 수 있어요.");
+                return;
+            }
+            SettingsService.SaveGajaeRoomSession(session.Id, forkedId); // 미리 확정 추적(마커 불필요)
+        }
+
         proj.Tabs.Add(session);
         proj.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path); // RoomDir 은 에이전트 공통 저장소
         SettingsService.SaveAgentForRoom(session.Id, agentId);
-        SettingsService.SaveRoomForkSource(session.Id, srcSid);       // 첫 실행에 1회 소비
+        if (agentId != "gajae")
+            SettingsService.SaveRoomForkSource(session.Id, srcSid!);  // claude/opencode: 첫 실행에 소비
         WorkspaceStore.Save(Projects);
 
         // 포크는 "새 세션이 열리게" 하는 게 목적 → 항상 연다(다른 프로젝트면 OpenSession 이 전환).
