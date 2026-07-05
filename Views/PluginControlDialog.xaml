@@ -170,11 +170,12 @@
                         </StackPanel>
                     </Button>
 
-                    <!-- 구분선 + 로컬 확장(스킬 / 에이전트) -->
-                    <Border Height="1" Margin="6,10,6,8" Background="{DynamicResource LineBrush}"/>
+                    <!-- 구분선 + 로컬 확장(스킬 / 에이전트) — 임시 숨김(추후 재개) -->
+                    <Border x:Name="ExtSeparator" Height="1" Margin="6,10,6,8" Background="{DynamicResource LineBrush}"
+                            Visibility="Collapsed"/>
 
                     <Button x:Name="SkillTabBtn" Tag="skills" Style="{StaticResource CategoryItem}"
-                            Click="Tab_Click">
+                            Click="Tab_Click" Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconZap}"
                                   Width="15" Height="15" Margin="0,0,10,0" VerticalAlignment="Center"/>
@@ -182,7 +183,7 @@
                         </StackPanel>
                     </Button>
                     <Button x:Name="AgentTabBtn" Tag="agents" Style="{StaticResource CategoryItem}"
-                            Click="Tab_Click">
+                            Click="Tab_Click" Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconUserRound}"
                                   Width="15" Height="15" Margin="0,0,10,0" VerticalAlignment="Center"/>
