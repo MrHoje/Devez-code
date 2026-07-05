@@ -536,6 +536,196 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
+        <!-- ── 프로젝트(리스트/컴팩트 트리) 템플릿 — 카드 보더 없이 flat 헤더 행 + 들여쓰기된 하위 행.
+             하위(세션/문서/바로가기)는 카드뷰와 동일한 셀렉터/템플릿을 재사용 → 상태점·스피너·클릭·메뉴 전부 동일 동작. ── -->
+        <DataTemplate x:Key="ProjectListTemplate" DataType="{x:Type models:ProjectItem}">
+            <StackPanel>
+                <!-- 헤더 행: flat, 호버 시 배경만 살짝 -->
+                <Border x:Name="ListHeaderRow" Background="Transparent" CornerRadius="6"
+                        Cursor="Arrow" Margin="0,1,0,0"
+                        MouseLeftButtonUp="Project_Click"
+                        PreviewMouseLeftButtonDown="ProjectRow_PreviewMouseLeftButtonDown">
+                    <Border.ContextMenu>
+                        <ContextMenu Opened="ProjectMenu_Opened">
+                            <MenuItem Header="세션 추가" Tag="{Binding}" Click="AddSession_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="바로가기 추가" Tag="{Binding}" Click="AddProjectFile_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFilePlus}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="디렉토리 열기" Tag="{Binding}" Click="OpenProjectDirectory_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolderOpen}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator/>
+                            <MenuItem Header="이름 변경" Tag="{Binding}" Click="ProjectRename_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPencil}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="보관함 이동" Tag="{Binding}" Click="ArchiveProject_Click"
+                                      Visibility="{Binding IsActive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchive}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="꺼내기" Tag="{Binding}" Click="UnarchiveProject_Click"
+                                      Visibility="{Binding IsArchived, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveRestore}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator/>
+                            <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="{DynamicResource DangerBrush}">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
+                                          Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </ContextMenu>
+                    </Border.ContextMenu>
+                    <Grid Margin="4,5,6,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <!-- chevron (접기/펴기 전용) -->
+                        <Button Grid.Column="0" Tag="{Binding}"
+                                Click="ProjectChevron_Click" Cursor="Arrow"
+                                Background="Transparent" BorderThickness="0"
+                                IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                VerticalAlignment="Center" Margin="0,0,2,0"
+                                ToolTip="펼치기 / 접기">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd" Width="18" Height="18" CornerRadius="4"
+                                            Background="{TemplateBinding Background}">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{Binding IsExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
+                                              Width="11" Height="11"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Stretch="Uniform"
+                                              Stroke="{DynamicResource TextMutedBrush}"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <!-- 접힘 상태 요청 처리중 스피너 -->
+                        <Ellipse x:Name="ListBusySpinner" Grid.Column="1" Width="12" Height="12"
+                                 Margin="2,0,6,0" VerticalAlignment="Center"
+                                 Visibility="Collapsed"
+                                 models:SpinnerActivator.Track="True"
+                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                 StrokeDashArray="15 100" StrokeDashCap="Round"
+                                 RenderTransformOrigin="0.5,0.5">
+                            <Ellipse.RenderTransform>
+                                <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                        <TextBlock Grid.Column="2" Text="{Binding Name}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                   Margin="2,0,0,0"
+                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   ToolTip="{Binding Path}"/>
+                        <!-- 숨김 세션 보기/숨기기 토글 -->
+                        <Button Grid.Column="3" Tag="{Binding}"
+                                Click="HiddenToggle_Click" Cursor="Arrow"
+                                Background="Transparent" BorderThickness="0"
+                                IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                VerticalAlignment="Center">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="ToolTip" Value="숨김 세션 표시"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowHiddenSessions}" Value="True">
+                                            <Setter Property="ToolTip" Value="숨김 세션 숨기기"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd" Width="18" Height="18" CornerRadius="4"
+                                            Background="{TemplateBinding Background}">
+                                        <Path x:Name="Icon"
+                                              Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconEyeOff}"
+                                              Width="11" Height="11"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Stretch="Uniform"
+                                              Stroke="{DynamicResource TextMutedBrush}"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding ShowHiddenSessions}" Value="True">
+                                            <Setter TargetName="Icon" Property="Data" Value="{StaticResource IconEye}"/>
+                                        </DataTrigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </Grid>
+                </Border>
+                <!-- 하위: 펼침 시 들여쓰기. 카드뷰와 동일 셀렉터/템플릿 재사용 -->
+                <Border Visibility="Collapsed"
+                        b:TreeExpander.IsExpanded="{Binding IsExpanded}">
+                    <StackPanel Margin="18,0,2,4">
+                        <ItemsControl ItemsSource="{Binding LeftItems}" Tag="{Binding ShowHiddenSessions}"
+                                      ItemTemplateSelector="{StaticResource TabRowSelector}"/>
+                        <Border Height="1" Margin="2,6,2,6"
+                                Background="{DynamicResource LineBrush}"
+                                Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                        <ItemsControl ItemsSource="{Binding RightItems}" Tag="{Binding ShowHiddenSessions}"
+                                      ItemTemplateSelector="{StaticResource TabRowSelector}"/>
+                        <Border Height="1" Margin="2,6,2,6"
+                                Background="{DynamicResource LineBrush}"
+                                Visibility="{Binding HasFiles, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                        <ItemsControl ItemsSource="{Binding Files}"
+                                      ItemTemplate="{StaticResource ShortcutTemplate}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <!-- 접힘 + 내부 세션 요청 처리중 → 이름 왼쪽 스피너 -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsExpanded}" Value="False"/>
+                        <Condition Binding="{Binding HasBusySession}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="ListBusySpinner" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+                <!-- 헤더 행 호버: 배경만 살짝 -->
+                <Trigger SourceName="ListHeaderRow" Property="IsMouseOver" Value="True">
+                    <Setter TargetName="ListHeaderRow" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                </Trigger>
+                <!-- 선택(활성) 프로젝트: 이름 primary 색 -->
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter TargetName="ListHeaderRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
     </UserControl.Resources>
 
     <Grid>
@@ -555,6 +745,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <!-- 뒤로가기: 보관함 보기일 때만 노출 → 프로젝트 보기로 복귀 -->
@@ -571,8 +762,19 @@
                                FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}"/>
                 </StackPanel>
+                <!-- 카드↔리스트 뷰 전환: 보관함 버튼 왼쪽. 기본 카드뷰(아이콘=리스트), 클릭 시 리스트뷰(아이콘=그리드) -->
+                <Button x:Name="ViewToggleBtn" Grid.Column="1"
+                        Width="24" Height="24" Margin="0,0,4,0"
+                        Style="{StaticResource IconButton}"
+                        Click="ViewToggleBtn_Click"
+                        ToolTip="리스트 보기">
+                    <Path x:Name="ViewToggleIcon"
+                          Style="{StaticResource LucideButtonIcon}"
+                          Data="{StaticResource IconList}"
+                          Width="13" Height="13"/>
+                </Button>
                 <!-- 보관함 열기: 프로젝트 보기에서 보관함으로 슬라이드 전환 -->
-                <Button x:Name="ArchiveToggleBtn" Grid.Column="1"
+                <Button x:Name="ArchiveToggleBtn" Grid.Column="2"
                         Width="24" Height="24" Margin="0,0,4,0"
                         Style="{StaticResource IconButton}"
                         Click="ArchiveToggleBtn_Click"
@@ -582,7 +784,7 @@
                           Width="13" Height="13"/>
                 </Button>
                 <!-- 돋보기: 클릭 시 아래 행(SearchRow) 의 Height 를 0→43 으로 애니메이션하며 펼침 -->
-                <Button x:Name="SearchToggleBtn" Grid.Column="2"
+                <Button x:Name="SearchToggleBtn" Grid.Column="3"
                         Width="24" Height="24" Margin="0,0,4,0"
                         Style="{StaticResource IconButton}"
                         Click="SearchToggleBtn_Click"
@@ -592,7 +794,7 @@
                           Data="{StaticResource IconSearch}"
                           Width="12" Height="12"/>
                 </Button>
-                <Button x:Name="ToggleExpandAllBtn" Grid.Column="3"
+                <Button x:Name="ToggleExpandAllBtn" Grid.Column="4"
                         Width="24" Height="24"
                         Style="{StaticResource IconButton}"
                         Click="ToggleExpandAll_Click"

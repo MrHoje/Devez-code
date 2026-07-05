@@ -71,8 +71,28 @@ public partial class SidebarView : UserControl
     public void ApplyProjectColumns(int cols)
     {
         _projectColumns = cols == 2 ? 2 : 1;
-        ProjectsHost.Tag = _projectColumns;
-        ArchivedHost.Tag = _projectColumns;
+        // 리스트뷰는 항상 1열 → 카드뷰일 때만 열 수 반영
+        if (!_listView)
+        {
+            ProjectsHost.Tag = _projectColumns;
+            ArchivedHost.Tag = _projectColumns;
+        }
+    }
+
+    // ── 카드 ↔ 리스트(컴팩트 트리) 뷰 전환 (세션마다 기본 카드뷰, 저장 안 함) ──────────
+    private bool _listView;
+
+    private void ViewToggleBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _listView = !_listView;
+        var tmpl = (DataTemplate)FindResource(_listView ? "ProjectListTemplate" : "ProjectTemplate");
+        ProjectsHost.ItemTemplate = tmpl;
+        ArchivedHost.ItemTemplate = tmpl;
+        // 리스트뷰는 항상 1열, 카드뷰는 설정 열 수 복원
+        ProjectsHost.Tag = _listView ? 1 : _projectColumns;
+        ArchivedHost.Tag = _listView ? 1 : _projectColumns;
+        ViewToggleIcon.Data = (System.Windows.Media.Geometry)FindResource(_listView ? "IconGrid2x2" : "IconList");
+        ViewToggleBtn.ToolTip = _listView ? "카드 보기" : "리스트 보기";
     }
 
     private ObservableCollection<ProjectItem>? _projects;
