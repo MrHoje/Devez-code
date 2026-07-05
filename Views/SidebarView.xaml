@@ -539,9 +539,9 @@
         <!-- ── 프로젝트(리스트/컴팩트 트리) 템플릿 — 카드 보더 없이 flat 헤더 행 + 들여쓰기된 하위 행.
              하위(세션/문서/바로가기)는 카드뷰와 동일한 셀렉터/템플릿을 재사용 → 상태점·스피너·클릭·메뉴 전부 동일 동작. ── -->
         <DataTemplate x:Key="ProjectListTemplate" DataType="{x:Type models:ProjectItem}">
-            <!-- 이미지 정합: 프로젝트 블록 왼쪽 세로 보더(레일). 선택 시 primary 색 -->
+            <!-- 이미지 정합: 프로젝트 블록마다 하단 가로 구분선 -->
             <Border x:Name="ListRail" BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="1.5,0,0,0" Padding="8,0,0,0" Margin="2,1,0,1">
+                    BorderThickness="0,0,0,1">
               <StackPanel>
                 <!-- 헤더 행: flat, 호버 시 배경만 살짝 -->
                 <Border x:Name="ListHeaderRow" Background="Transparent" CornerRadius="6"
@@ -723,10 +723,9 @@
                 <Trigger SourceName="ListHeaderRow" Property="IsMouseOver" Value="True">
                     <Setter TargetName="ListHeaderRow" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                 </Trigger>
-                <!-- 선택(활성) 프로젝트: 헤더 배경 + 세로 레일 primary 색 -->
+                <!-- 선택(활성) 프로젝트: 헤더 배경 강조 -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter TargetName="ListHeaderRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
-                    <Setter TargetName="ListRail" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
