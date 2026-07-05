@@ -165,7 +165,7 @@
                                                  BorderThickness="0" Background="Transparent" Padding="0" Margin="14,12,14,12"
                                                  FocusVisualStyle="{x:Null}"
                                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                                 FontFamily="Consolas, Cascadia Code, PretendardFont"
+                                                 FontFamily="{StaticResource PretendardFont}"
                                                  FontSize="{DynamicResource Fs12}"
                                                  Foreground="{DynamicResource TextBrush}">
                                         <RichTextBox.Resources>
