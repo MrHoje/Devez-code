@@ -19,8 +19,10 @@
   .toastui-editor-main .toastui-editor-ww-container { background: var(--md-bg, transparent); }
   .toastui-editor-contents { color: var(--md-text, inherit); }
 
-  /* 상단 서식 툴바 — 배경을 테마색/투명으로(기본 흰색 1프레임 플래시 방지) + 버튼 축소 */
-  .toastui-editor-defaultUI-toolbar { zoom: 0.7; background: var(--md-bg, transparent); border: none; }
+  /* 상단 서식 툴바 — 배경을 테마색/투명으로(기본 흰색 1프레임 플래시 방지) + 버튼 축소 + 하단 구분선.
+     toastui-editor-dark.css가 .toastui-editor-dark .toastui-editor-defaultUI-toolbar { background-color: #232428; border-bottom-color: #303238 }
+     로 고정해버리므로(다크 클래스가 셀렉터 2개라 특이도도 더 높음) !important로 우리 테마 변수가 항상 우선하게 함. */
+  .toastui-editor-defaultUI-toolbar { zoom: 0.7; background: var(--md-panel, transparent) !important; border: none !important; border-bottom: 1px solid var(--ob-border, rgba(160,160,170,0.18)) !important; }
   .toastui-editor-defaultUI { background: var(--md-bg, transparent); }
   /* 본문 제목 크기 축소 — WYSIWYG에서 H1~H3가 과하게 커 보이지 않게 */
   .toastui-editor-contents h1 { font-size: 1.55em; padding-bottom: 4px; }

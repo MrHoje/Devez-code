@@ -86,6 +86,7 @@
     if (ui) ui.classList.toggle('toastui-editor-dark', !!m.dark);
     var r = document.documentElement.style;
     r.setProperty('--md-bg', m.bg || '#ffffff');
+    r.setProperty('--md-panel', m.panel || m.bg || '#ffffff');
     r.setProperty('--md-text', m.text || '#0f172a');
     r.setProperty('--md-primary', m.primary || '#2563eb');
     r.setProperty('--md-code-bg', m.codeBg || 'rgba(140,140,140,0.18)');

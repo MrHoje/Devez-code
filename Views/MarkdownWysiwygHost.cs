@@ -172,6 +172,7 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
             type = "setTheme",
             dark = theme == "dark",
             bg = Hex("BgBrush", "#ffffff"),
+            panel = Hex("PanelBrush", "#ffffff"),
             text = Hex("TextBrush", "#0f172a"),
             codeBg = Hex("CodeBgBrush", "#f1f5f9"),
             codeText = Hex("CodeTextBrush", "#0f172a"),
