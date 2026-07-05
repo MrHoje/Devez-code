@@ -26,10 +26,19 @@ public static class ClaudePluginService
         {
             using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.ValueKind != JsonValueKind.Array) return list;
+            // 같은 플러그인이 scope(user/project/local) 별로 중복 반환됨(예: superpowers user+project).
+            // Id 기준으로 하나로 합친다 — 어느 scope든 enabled 면 enabled 로 본다.
+            var byId = new Dictionary<string, ClaudePlugin>(StringComparer.Ordinal);
             foreach (var el in doc.RootElement.EnumerateArray())
             {
                 var id = Str(el, "id");
                 if (string.IsNullOrWhiteSpace(id)) continue;
+                bool enabled = el.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True;
+                if (byId.TryGetValue(id, out var exist))
+                {
+                    if (enabled) exist.Enabled = true;   // 어느 scope든 켜져 있으면 켜짐으로
+                    continue;
+                }
                 var at = id.LastIndexOf('@');
                 var p = new ClaudePlugin
                 {
@@ -39,12 +48,13 @@ public static class ClaudePluginService
                     Version = Str(el, "version"),
                     Scope = Str(el, "scope"),
                     InstallPath = Str(el, "installPath"),
-                    Enabled = el.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True,
+                    Enabled = enabled,
                     InstalledAt = Date(el, "installedAt"),
                     LastUpdated = Date(el, "lastUpdated"),
                 };
                 if (el.TryGetProperty("mcpServers", out var ms) && ms.ValueKind == JsonValueKind.Object)
                     foreach (var srv in ms.EnumerateObject()) p.McpServerNames.Add(srv.Name);
+                byId[id] = p;
                 list.Add(p);
             }
         }
