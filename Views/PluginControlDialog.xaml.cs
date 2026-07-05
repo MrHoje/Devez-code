@@ -154,6 +154,8 @@ public partial class PluginControlDialog : UserControl
 
         // 탭 전환 시 하단 Discover 닫아 출력이 꽉 차게(특히 플러그인 탭은 설치 가능 목록이 없음).
         CloseDiscover();
+        // 편집 중이었다면 편집기를 닫고 출력 표시로 되돌린다.
+        ExitEditor();
         // 탭별 출력만 표시(전환 시 내용 유지 안 함).
         RestoreOutputForTab();
 
@@ -527,23 +529,74 @@ public partial class PluginControlDialog : UserControl
         finally { if (!_disposed) cb.IsEnabled = true; }
     }
 
-    private void SkillEdit_Click(object sender, RoutedEventArgs e)
+    private async void SkillEdit_Click(object sender, RoutedEventArgs e)
     {
         if (SkillOf(sender) is not ClaudeSkill s) return;
-        var win = new FileEditorWindow($"스킬 편집 · {s.Name}", s.FilePath) { Owner = Window.GetWindow(this) };
-        win.ShowDialog();
-        if (win.Saved) ShowOutput($"skill · {s.Name}", "저장됨.");
+        await OpenEditorAsync($"편집 · {s.Name}", s.FilePath);
     }
 
     // ── 에이전트 탭 ───────────────────────────────────────────────
     private void AgentFolder_Click(object sender, RoutedEventArgs e) => ClaudeExtensionService.OpenFolder(skills: false);
 
-    private void AgentEdit_Click(object sender, RoutedEventArgs e)
+    private async void AgentEdit_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ClaudeAgent a) return;
-        var win = new FileEditorWindow($"에이전트 편집 · {a.Name}", a.FilePath) { Owner = Window.GetWindow(this) };
-        win.ShowDialog();
-        if (win.Saved) ShowOutput($"agent · {a.Name}", "저장됨.");
+        await OpenEditorAsync($"편집 · {a.Name}", a.FilePath);
+    }
+
+    // ── 인라인 에디터(우측 출력 영역) ─────────────────────────────
+    // 스킬/에이전트 편집은 팝업 대신 출력 영역을 편집기로 전환해 표시한다.
+    private string? _editPath;
+
+    private async Task OpenEditorAsync(string title, string path)
+    {
+        _editPath = path;
+        OutputTitle.Text = title;
+        EditorActions.Visibility = Visibility.Visible;
+        OutputBorder.Visibility = Visibility.Collapsed;
+        EditorBorder.Visibility = Visibility.Visible;
+        EditorBox.Text = "불러오는 중…";
+        EditorBox.IsReadOnly = true;
+        var content = await ClaudeExtensionService.ReadAsync(path);
+        if (_disposed || _editPath != path) return;   // 그 사이 닫혔으면 무시
+        EditorBox.IsReadOnly = false;
+        EditorBox.Text = content;
+        EditorBox.CaretIndex = 0;
+        EditorBox.Focus();
+    }
+
+    // 편집기를 닫고 출력 표시로 되돌린다.
+    private void ExitEditor()
+    {
+        if (_editPath == null) return;
+        _editPath = null;
+        EditorActions.Visibility = Visibility.Collapsed;
+        EditorBorder.Visibility = Visibility.Collapsed;
+        OutputBorder.Visibility = Visibility.Visible;
+        OutputTitle.Text = "출력";
+        EditorBox.Clear();
+    }
+
+    // 저장 — 파일에 기록(성공 메시지는 표시하지 않음). 저장 후 편집기는 그대로 유지.
+    private async void EditorSave_Click(object sender, RoutedEventArgs e) => await SaveEditorAsync();
+
+    private async Task SaveEditorAsync()
+    {
+        if (_editPath == null || EditorBox.IsReadOnly) return;
+        var path = _editPath;
+        EditorSaveBtn.IsEnabled = false;
+        await ClaudeExtensionService.WriteAsync(path, EditorBox.Text);
+        if (!_disposed) EditorSaveBtn.IsEnabled = true;
+    }
+
+    private void EditorClose_Click(object sender, RoutedEventArgs e) => ExitEditor();
+
+    private async void EditorBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.S && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        { e.Handled = true; await SaveEditorAsync(); }
+        else if (e.Key == Key.Escape)
+        { e.Handled = true; ExitEditor(); }
     }
 
     // ── 우측 출력 영역 ────────────────────────────────────────────

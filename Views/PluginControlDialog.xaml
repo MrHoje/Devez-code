@@ -685,12 +685,35 @@
                         <RowDefinition Height="*" x:Name="OutputRow"/>
                         <RowDefinition Height="0" x:Name="DiscoverRow"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="출력" Margin="2,0,0,10"
-                               FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
+                    <!-- 헤더: 좌측 타이틀("출력" 또는 "편집 · 이름") + 우측 편집 저장/닫기(편집 시만) -->
+                    <Grid Grid.Row="0" Margin="2,0,0,10">
+                        <TextBlock x:Name="OutputTitle" Text="출력" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <StackPanel x:Name="EditorActions" Orientation="Horizontal" HorizontalAlignment="Right"
+                                    VerticalAlignment="Center" Visibility="Collapsed">
+                            <Button x:Name="EditorSaveBtn" Click="EditorSave_Click" Style="{StaticResource HeaderActionBtn}"
+                                    Height="24" ToolTip="저장 (Ctrl+S)">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconSave}"
+                                          Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="저장" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="EditorCloseBtn" Click="EditorClose_Click" Style="{StaticResource HeaderActionBtn}"
+                                    Height="24" Margin="2,0,0,0" ToolTip="편집 닫기">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconX}"
+                                          Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="닫기" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
                     <!-- 패딩을 Border 가 아니라 콘텐츠(TextBox)의 Margin 으로 줘야, 세로 스크롤바가 생겨도
                          텍스트가 스크롤바로부터 왼쪽 여백과 동일한 간격을 유지한다(스크롤바는 테두리 안쪽 끝에 붙음). -->
-                    <Border Grid.Row="1" CornerRadius="10"
+                    <Border x:Name="OutputBorder" Grid.Row="1" CornerRadius="10"
                             Background="{DynamicResource PanelSoftBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                         <Grid>
@@ -710,6 +733,27 @@
                                 </RichTextBox.Resources>
                             </RichTextBox>
                         </Grid>
+                    </Border>
+
+                    <!-- 인라인 에디터(스킬·에이전트 편집). 편집 중엔 출력 대신 이 편집기가 보인다. -->
+                    <Border x:Name="EditorBorder" Grid.Row="1" CornerRadius="10" Visibility="Collapsed"
+                            Background="{DynamicResource PanelSoftBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                        <TextBox x:Name="EditorBox"
+                                 AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                                 BorderThickness="0" Background="Transparent" Padding="14,12,14,12"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                 VerticalContentAlignment="Top"
+                                 FocusVisualStyle="{x:Null}"
+                                 FontFamily="Consolas, Cascadia Code, PretendardFont"
+                                 FontSize="{DynamicResource Fs12}"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource TextBrush}"
+                                 PreviewKeyDown="EditorBox_PreviewKeyDown">
+                            <TextBox.Resources>
+                                <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                            </TextBox.Resources>
+                        </TextBox>
                     </Border>
 
                     <!-- Discover 섹션 (마켓 상세 시 하단 2/3): 헤더 · 검색창 · 목록 -->
