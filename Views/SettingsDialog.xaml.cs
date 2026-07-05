@@ -54,7 +54,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.11.0", "2026-07-05", true, new[]
+        ("v1.11.1", "2026-07-05", true, new[]
+        {
+            "터미널에서 세션을 /exit·Ctrl+C 로 종료해도 세션이 유지된 채 자동으로 다시 시작됩니다.",
+            "사소한 오류를 수정하고 일부 UI를 개선했습니다.",
+        }),
+        ("v1.11.0", "2026-07-05", false, new[]
         {
             "세션을 포크해 대화를 분기할 수 있습니다.",
             "세션 대화 내역을 파일로 내보낼 수 있습니다.",
