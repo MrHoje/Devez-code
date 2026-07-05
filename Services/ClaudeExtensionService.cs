@@ -97,6 +97,7 @@ public static class ClaudeExtensionService
         var result = new List<(string, string)>();
         try
         {
+            var disabled = DisabledPlugins();               // 비활성 플러그인 키 집합
             var jsonPath = Path.Combine(PluginsDir, "installed_plugins.json");
             if (!File.Exists(jsonPath)) return result;
             using var doc = JsonDocument.Parse(File.ReadAllText(jsonPath));
@@ -105,6 +106,7 @@ public static class ClaudeExtensionService
             foreach (var prop in plugins.EnumerateObject())
             {
                 var key = prop.Name;                        // "name@marketplace"
+                if (disabled.Contains(key)) continue;       // 비활성 플러그인은 /skills 처럼 제외
                 var at = key.IndexOf('@');
                 var label = at > 0 ? key.Substring(0, at) : key;
                 if (prop.Value.ValueKind != JsonValueKind.Array) continue;
@@ -122,6 +124,24 @@ public static class ClaudeExtensionService
         }
         catch { }
         return result;
+    }
+
+    /// <summary>settings.json 의 enabledPlugins 에서 명시적으로 false 인(비활성) 플러그인 키 집합.
+    /// 키가 없으면 기본 활성으로 본다(/skills 와 동일).</summary>
+    private static HashSet<string> DisabledPlugins()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var p = Path.Combine(ClaudeHome, "settings.json");
+            if (!File.Exists(p)) return set;
+            using var doc = JsonDocument.Parse(File.ReadAllText(p));
+            if (doc.RootElement.TryGetProperty("enabledPlugins", out var ep) && ep.ValueKind == JsonValueKind.Object)
+                foreach (var m in ep.EnumerateObject())
+                    if (m.Value.ValueKind == JsonValueKind.False) set.Add(m.Name);
+        }
+        catch { }
+        return set;
     }
 
     /// <summary>스킬 잠금(숨김) 토글. enable=true → SKILL.md, false → SKILL.md.off.
