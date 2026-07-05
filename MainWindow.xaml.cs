@@ -1210,24 +1210,12 @@ public partial class MainWindow : Window
     private void PaneSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
     {
         if (e.Canceled) return;
-        double star;
-        if (PaneBCol.Width.IsStar && PaneBCol.Width.Value > 0)
-        {
-            star = PaneBCol.Width.Value;
-        }
-        else if (PaneACol.Width.IsAbsolute && PaneBCol.Width.IsAbsolute)
-        {
-            // GridSplitter가 star 컬럼을 absolute(px)로 변환했으므로, 실제 너비 비율로 star 값 계산
-            // PaneA=1* 기준: PaneB star = PaneB_px / PaneA_px
-            if (PaneACol.Width.Value > 0)
-                star = PaneBCol.Width.Value / PaneACol.Width.Value;
-            else
-                star = 1.0;
-        }
-        else
-        {
-            star = 1.0;
-        }
+        // GridSplitter는 star 컬럼을 드래그해도 star 단위를 유지한 채 값을 재분배한다(합계 보존).
+        // 따라서 PaneBCol.Width.Value(star)를 그대로 저장하면 PaneA=1* 기준이 아니라 어긋나고,
+        // 재시작마다 오차가 누적돼 결국 클램프 한계까지 드리프트한다.
+        // 단위 타입에 의존하지 말고 실제 픽셀 폭으로 "PaneA=1* 기준" 비율(PaneB/PaneA)을 계산한다.
+        double aw = PaneACol.ActualWidth, bw = PaneBCol.ActualWidth;
+        double star = aw > 0 ? bw / aw : 1.0;
         SettingsService.SaveSplitBStar(star);
     }
     private void SidebarSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
