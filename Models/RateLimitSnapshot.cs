@@ -61,8 +61,12 @@ public class RateLimitSnapshot
             var diff = nrr - orr;
             if (diff > WindowTolerance) return (newPct, newReset);   // 새 윈도우 → 채택
             if (diff < -WindowTolerance) return (oldPct, oldReset);  // 낡은 윈도우 → 무시
-            return (n, nrr > orr ? nrr : orr);                       // 같은 윈도우 → 최신 pct, 더 늦은 reset 유지
+            // 같은 윈도우: 사용률은 리셋 전까지 단조 증가하므로 더 높은 값을 채택한다.
+            // 낮은 값은 (a) 낡은 스냅샷이거나 (b) 두 소스의 반올림 차이(hook 의 정수
+            // used_percentage vs OAuth 의 실수 utilization)일 뿐이다. 최신값을 무조건
+            // 채택하면 두 소스가 번갈아 도착할 때 표시가 ±1 로 진동한다.
+            return (Math.Max(oldPct.Value, n), nrr > orr ? nrr : orr);
         }
-        return (n, newReset ?? oldReset);                            // reset 정보 부족 → 최신 pct 채택
+        return (Math.Max(oldPct.Value, n), newReset ?? oldReset);    // reset 정보 부족 → 더 높은 pct 채택
     }
 }
