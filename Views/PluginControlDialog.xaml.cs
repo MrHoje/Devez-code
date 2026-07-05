@@ -61,7 +61,7 @@ public partial class PluginControlDialog : UserControl
         CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
         CollectionViewSource.GetDefaultView(_markets).Filter = o => o is ClaudeMarketplace m && Match(m.Name, m.OriginText);
         CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && DiscMatch(a);
-        CollectionViewSource.GetDefaultView(_skills).Filter = o => o is ClaudeSkill s && Match(s.Name, s.Description);
+        CollectionViewSource.GetDefaultView(_skills).Filter = o => o is ClaudeSkill s && Match(s.Name, s.Description) && (!_hideLocked || !s.Locked);
         CollectionViewSource.GetDefaultView(_agents).Filter = o => o is ClaudeAgent a && Match(a.Name, a.Description);
         // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
         // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
@@ -533,8 +533,18 @@ public partial class PluginControlDialog : UserControl
 
     private async void SkillEdit_Click(object sender, RoutedEventArgs e)
     {
-        if (SkillOf(sender) is not ClaudeSkill s) return;
+        if (SkillOf(sender) is not ClaudeSkill s || !s.CanEdit) return;
         await OpenEditorAsync($"편집 · {s.Name}", s.FilePath);
+    }
+
+    // 잠금(읽기전용) 스킬 숨기기 토글.
+    private bool _hideLocked;
+    private void HideLocked_Click(object sender, RoutedEventArgs e)
+    {
+        _hideLocked = (sender as CheckBox)?.IsChecked == true;
+        var view = CollectionViewSource.GetDefaultView(_skills);
+        view.Refresh();
+        if (_tab == "skills") UpdateEmptyForTab();
     }
 
     // ── 에이전트 탭 ───────────────────────────────────────────────

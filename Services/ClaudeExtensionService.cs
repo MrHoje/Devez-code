@@ -55,10 +55,13 @@ public static class ClaudeExtensionService
         var plugin = new List<ClaudeSkill>();
         try
         {
+            var cacheDir = Path.Combine(PluginsDir, "cache");
             foreach (var (label, installPath) in InstalledPluginPaths())
             {
                 var skillsRoot = Path.Combine(installPath, "skills");
                 if (!Directory.Exists(skillsRoot)) continue;
+                // 캐시(git/github 소스 복사본) 아래면 읽기전용 — 업데이트 시 덮어써지므로 수정 불가.
+                bool editable = !installPath.StartsWith(cacheDir, StringComparison.OrdinalIgnoreCase);
                 foreach (var dir in Directory.EnumerateDirectories(skillsRoot))
                 {
                     var file = Path.Combine(dir, "SKILL.md");
@@ -73,6 +76,7 @@ public static class ClaudeExtensionService
                         FilePath = file,
                         Enabled = true,
                         IsPlugin = true,
+                        Editable = editable,
                     });
                 }
             }

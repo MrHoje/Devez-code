@@ -16,8 +16,15 @@ public sealed class ClaudeSkill : INotifyPropertyChanged
 
     /// <summary>플러그인이 제공하는 스킬(캐시 위치). 개별 잠금 불가 — 플러그인 단위로 관리됨.</summary>
     public bool IsPlugin { get; set; }
+    /// <summary>수정 가능 여부. 개인 스킬은 항상 true. 플러그인 스킬은 캐시(읽기전용 복사본)가 아닐 때만 true
+    /// (git/github 소스 캐시는 업데이트 시 덮어써지므로 읽기전용).</summary>
+    public bool Editable { get; set; } = true;
+    /// <summary>읽기전용(잠금) — 수정 불가한 플러그인 스킬. 잠금 아이콘으로 표시.</summary>
+    public bool Locked => IsPlugin && !Editable;
     /// <summary>잠금(숨김) 토글 노출 여부 — 개인 스킬만 가능.</summary>
     public bool CanLock => !IsPlugin;
+    /// <summary>편집 버튼 노출 여부 — 수정 가능한 항목만.</summary>
+    public bool CanEdit => Editable;
 
     private bool _enabled = true;
     /// <summary>true=활성(SKILL.md), false=잠금·숨김(SKILL.md.off).</summary>
