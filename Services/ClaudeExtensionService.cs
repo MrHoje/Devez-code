@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using DevezCode.Models;
@@ -20,36 +21,104 @@ public static class ClaudeExtensionService
         => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
     private static string SkillsDir => Path.Combine(ClaudeHome, "skills");
     private static string AgentsDir => Path.Combine(ClaudeHome, "agents");
+    private static string PluginsDir => Path.Combine(ClaudeHome, "plugins");
 
     // ── 스킬 ──────────────────────────────────────────────────────
+    // /skills 와 동일하게: 개인 스킬(~/.claude/skills) + 설치된 플러그인이 제공하는 스킬을 함께 보여준다.
     public static Task<List<ClaudeSkill>> SkillsAsync() => Task.Run(() =>
     {
-        var list = new List<ClaudeSkill>();
+        var personal = new List<ClaudeSkill>();
         try
         {
-            if (!Directory.Exists(SkillsDir)) return list;
-            foreach (var dir in Directory.EnumerateDirectories(SkillsDir))
-            {
-                var active = Path.Combine(dir, "SKILL.md");
-                var off = active + DisabledSuffix;
-                bool enabled = File.Exists(active);
-                var file = enabled ? active : (File.Exists(off) ? off : null);
-                if (file == null) continue;   // SKILL.md(.off) 없는 폴더는 스킬 아님
-                var (name, desc) = ParseFrontmatter(file);
-                list.Add(new ClaudeSkill
+            if (Directory.Exists(SkillsDir))
+                foreach (var dir in Directory.EnumerateDirectories(SkillsDir))
                 {
-                    Name = string.IsNullOrWhiteSpace(name) ? Path.GetFileName(dir) : name,
-                    Description = desc,
-                    Scope = "user",
-                    Dir = dir,
-                    FilePath = file,
-                    Enabled = enabled,
-                });
+                    var active = Path.Combine(dir, "SKILL.md");
+                    var off = active + DisabledSuffix;
+                    bool enabled = File.Exists(active);
+                    var file = enabled ? active : (File.Exists(off) ? off : null);
+                    if (file == null) continue;   // SKILL.md(.off) 없는 폴더는 스킬 아님
+                    var (name, desc) = ParseFrontmatter(file);
+                    personal.Add(new ClaudeSkill
+                    {
+                        Name = string.IsNullOrWhiteSpace(name) ? Path.GetFileName(dir) : name,
+                        Description = desc,
+                        Scope = "user",
+                        Dir = dir,
+                        FilePath = file,
+                        Enabled = enabled,
+                    });
+                }
+        }
+        catch { }
+
+        var plugin = new List<ClaudeSkill>();
+        try
+        {
+            foreach (var (label, installPath) in InstalledPluginPaths())
+            {
+                var skillsRoot = Path.Combine(installPath, "skills");
+                if (!Directory.Exists(skillsRoot)) continue;
+                foreach (var dir in Directory.EnumerateDirectories(skillsRoot))
+                {
+                    var file = Path.Combine(dir, "SKILL.md");
+                    if (!File.Exists(file)) continue;
+                    var (name, desc) = ParseFrontmatter(file);
+                    plugin.Add(new ClaudeSkill
+                    {
+                        Name = string.IsNullOrWhiteSpace(name) ? Path.GetFileName(dir) : name,
+                        Description = desc,
+                        Scope = label,           // 플러그인 표시명(배지)
+                        Dir = dir,
+                        FilePath = file,
+                        Enabled = true,
+                        IsPlugin = true,
+                    });
+                }
             }
         }
         catch { }
-        return list.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+        // 개인 스킬 먼저, 그다음 플러그인 스킬(플러그인명 → 이름 순).
+        return personal.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .Concat(plugin.OrderBy(s => s.Scope, StringComparer.OrdinalIgnoreCase)
+                          .ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
+            .ToList();
     });
+
+    /// <summary>installed_plugins.json 을 읽어 각 설치 플러그인의 (표시명, installPath) 를 돌려준다.
+    /// 표시명은 "name@marketplace" 의 name 부분. installPath 가 존재하는 항목만.</summary>
+    private static IEnumerable<(string label, string installPath)> InstalledPluginPaths()
+    {
+        var result = new List<(string, string)>();
+        try
+        {
+            var jsonPath = Path.Combine(PluginsDir, "installed_plugins.json");
+            if (!File.Exists(jsonPath)) return result;
+            using var doc = JsonDocument.Parse(File.ReadAllText(jsonPath));
+            if (!doc.RootElement.TryGetProperty("plugins", out var plugins) || plugins.ValueKind != JsonValueKind.Object)
+                return result;
+            foreach (var prop in plugins.EnumerateObject())
+            {
+                var key = prop.Name;                        // "name@marketplace"
+                var at = key.IndexOf('@');
+                var label = at > 0 ? key.Substring(0, at) : key;
+                if (prop.Value.ValueKind != JsonValueKind.Array) continue;
+                foreach (var entry in prop.Value.EnumerateArray())
+                {
+                    if (entry.ValueKind == JsonValueKind.Object
+                        && entry.TryGetProperty("installPath", out var ip)
+                        && ip.ValueKind == JsonValueKind.String)
+                    {
+                        var path = ip.GetString() ?? "";
+                        if (Directory.Exists(path)) { result.Add((label, path)); break; }   // 첫(활성) 버전만
+                    }
+                }
+            }
+        }
+        catch { }
+        return result;
+    }
 
     /// <summary>스킬 잠금(숨김) 토글. enable=true → SKILL.md, false → SKILL.md.off.
     /// 성공 시 갱신된 활성 파일 경로를 반환(실패 시 null).</summary>
@@ -98,6 +167,13 @@ public static class ClaudeExtensionService
         }
         catch { }
         return list.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    });
+
+    /// <summary>에이전트 .md 파일 삭제.</summary>
+    public static Task<bool> DeleteAgentAsync(string path) => Task.Run(() =>
+    {
+        try { if (File.Exists(path)) File.Delete(path); return true; }
+        catch { return false; }
     });
 
     // ── 파일 읽기/쓰기(에디터 공용) ───────────────────────────────

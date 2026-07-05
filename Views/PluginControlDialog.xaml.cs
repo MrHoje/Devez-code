@@ -174,8 +174,10 @@ public partial class PluginControlDialog : UserControl
         AgentScroll.Visibility = agents ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Text = plugins ? "설치된 플러그인이 없습니다"
                        : market ? "등록된 마켓플레이스가 없습니다"
-                       : skills ? "스킬이 없습니다 (~/.claude/skills)"
+                       : skills ? "스킬이 없습니다"
                        : "에이전트가 없습니다 (~/.claude/agents)";
+        // 우측 헤더: 스킬·에이전트 탭은 "편집", 나머지는 "출력"(편집 중이면 OpenEditorAsync 가 별도 설정).
+        if (_editPath == null) OutputTitle.Text = DefaultOutputTitle();
     }
 
     private void StyleTab(Button btn, bool active)
@@ -544,6 +546,23 @@ public partial class PluginControlDialog : UserControl
         await OpenEditorAsync($"편집 · {a.Name}", a.FilePath);
     }
 
+    private async void AgentDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ClaudeAgent a) return;
+        if (!ConfirmDialog.Show("에이전트 삭제", $"'{a.Name}' 에이전트를 삭제할까요?", "삭제", danger: true))
+            return;
+        var ok = await ClaudeExtensionService.DeleteAgentAsync(a.FilePath);
+        if (_disposed) return;
+        if (ok)
+        {
+            // 편집 중이던 파일이면 편집기를 닫는다.
+            if (_editPath == a.FilePath) ExitEditor();
+            _agents.Remove(a);
+            UpdateEmptyForTab();
+        }
+        else ConfirmDialog.Alert("삭제 실패", "파일을 삭제할 수 없습니다.");
+    }
+
     // ── 인라인 에디터(우측 출력 영역) ─────────────────────────────
     // 스킬/에이전트 편집은 팝업 대신 출력 영역을 편집기로 전환해 표시한다.
     private string? _editPath;
@@ -573,9 +592,12 @@ public partial class PluginControlDialog : UserControl
         EditorActions.Visibility = Visibility.Collapsed;
         EditorBorder.Visibility = Visibility.Collapsed;
         OutputBorder.Visibility = Visibility.Visible;
-        OutputTitle.Text = "출력";
+        OutputTitle.Text = DefaultOutputTitle();
         EditorBox.Clear();
     }
+
+    // 스킬·에이전트 탭은 주 용도가 편집이므로 헤더를 "편집"으로, 나머지는 "출력".
+    private string DefaultOutputTitle() => _tab is "skills" or "agents" ? "편집" : "출력";
 
     // 저장 — 파일에 기록(성공 메시지는 표시하지 않음). 저장 후 편집기는 그대로 유지.
     private async void EditorSave_Click(object sender, RoutedEventArgs e) => await SaveEditorAsync();

@@ -10,9 +10,14 @@ public sealed class ClaudeSkill : INotifyPropertyChanged
 {
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
-    public string Scope { get; set; } = "user";   // user / project
+    public string Scope { get; set; } = "user";   // user / 플러그인 표시명
     public string Dir { get; set; } = "";           // 스킬 폴더 경로
     public string FilePath { get; set; } = "";       // 현재 활성 파일(SKILL.md 또는 SKILL.md.off)
+
+    /// <summary>플러그인이 제공하는 스킬(캐시 위치). 개별 잠금 불가 — 플러그인 단위로 관리됨.</summary>
+    public bool IsPlugin { get; set; }
+    /// <summary>잠금(숨김) 토글 노출 여부 — 개인 스킬만 가능.</summary>
+    public bool CanLock => !IsPlugin;
 
     private bool _enabled = true;
     /// <summary>true=활성(SKILL.md), false=잠금·숨김(SKILL.md.off).</summary>
@@ -22,7 +27,7 @@ public sealed class ClaudeSkill : INotifyPropertyChanged
         set { if (_enabled != value) { _enabled = value; OnPropertyChanged(); } }
     }
 
-    public string ScopeText => Scope == "project" ? "프로젝트" : "사용자";
+    public string ScopeText => IsPlugin ? Scope : "사용자";
     public string DescText => string.IsNullOrWhiteSpace(Description) ? "설명 없음" : Description;
 
     public event PropertyChangedEventHandler? PropertyChanged;
