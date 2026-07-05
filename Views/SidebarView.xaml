@@ -539,12 +539,10 @@
         <!-- ── 프로젝트(리스트/컴팩트 트리) 템플릿 — 카드 보더 없이 flat 헤더 행 + 들여쓰기된 하위 행.
              하위(세션/문서/바로가기)는 카드뷰와 동일한 셀렉터/템플릿을 재사용 → 상태점·스피너·클릭·메뉴 전부 동일 동작. ── -->
         <DataTemplate x:Key="ProjectListTemplate" DataType="{x:Type models:ProjectItem}">
-            <!-- 이미지 정합: 프로젝트 블록마다 하단 가로 구분선. 부모 ScrollViewer 의 좌우 Padding(8)을
-                 음수 Margin 으로 뚫고 나가 구분선이 사이드바 좌우 끝까지 여백 없이 꽉 차게 하고,
-                 같은 값의 Padding 으로 안쪽 콘텐츠 위치는 원래대로 보정. -->
+            <!-- 이미지 정합: 프로젝트 블록마다 하단 가로 구분선. 리스트뷰에서는 ScrollViewer 좌우 Padding 이
+                 0 으로 바뀌므로(ViewToggleBtn_Click) 이 구분선이 사이드바 좌우 끝까지 여백 없이 닿는다. -->
             <Border x:Name="ListRail" BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="0,0,0,1"
-                    Margin="-8,0,-8,0" Padding="8,0,8,0">
+                    BorderThickness="0,0,0,1">
               <StackPanel>
                 <!-- 헤더 행: flat, 호버 시 배경만 살짝 -->
                 <Border x:Name="ListHeaderRow" Background="Transparent" CornerRadius="6"
@@ -910,7 +908,7 @@
                 <Grid.RenderTransform>
                     <TranslateTransform x:Name="ActivePanelTransform" X="0"/>
                 </Grid.RenderTransform>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
+                <ScrollViewer x:Name="ProjectsScroll" VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
                               Style="{StaticResource OverlayVScroll}"
                               ScrollChanged="ProjectScrollChanged">
                     <ItemsControl x:Name="ProjectsHost" Tag="1"
@@ -925,7 +923,7 @@
                 <Grid.RenderTransform>
                     <TranslateTransform x:Name="ArchivePanelTransform" X="9999"/>
                 </Grid.RenderTransform>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
+                <ScrollViewer x:Name="ArchiveScroll" VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
                               Style="{StaticResource OverlayVScroll}"
                               ScrollChanged="ProjectScrollChanged">
                     <ItemsControl x:Name="ArchivedHost" Tag="1"

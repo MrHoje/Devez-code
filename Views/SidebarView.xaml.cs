@@ -91,6 +91,11 @@ public partial class SidebarView : UserControl
         // 리스트뷰는 항상 1열, 카드뷰는 설정 열 수 복원
         ProjectsHost.Tag = _listView ? 1 : _projectColumns;
         ArchivedHost.Tag = _listView ? 1 : _projectColumns;
+        // 리스트뷰: 구분선이 좌우 끝까지 닿도록 ScrollViewer 좌우 Padding 제거(상하 8은 유지, 스크롤 여백용).
+        // 카드뷰 복귀 시 원래 8,8,8,8 로 복원.
+        var pad = _listView ? new Thickness(0, 8, 0, 8) : new Thickness(8, 8, 8, 8);
+        ProjectsScroll.Padding = pad;
+        ArchiveScroll.Padding = pad;
         ViewToggleIcon.Data = (System.Windows.Media.Geometry)FindResource(_listView ? "IconGrid2x2" : "IconList");
         ViewToggleBtn.ToolTip = _listView ? "카드 보기" : "리스트 보기";
     }
