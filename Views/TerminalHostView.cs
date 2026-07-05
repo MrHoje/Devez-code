@@ -72,6 +72,33 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>roomId → 현재 JS와 배선된 세션 (재시작 시 교체 감지용).</summary>
     private readonly Dictionary<string, TerminalSession> _wired = new();
 
+    /// <summary>opencode 자동 재시작 폭주 방지: roomId → (10초 창 내 재시작 횟수, 창 시작 tick).</summary>
+    private readonly Dictionary<string, (int Count, long WindowStartTick)> _autoRestart = new();
+
+    /// <summary>세션 종료 시 앱이 새 ConPTY 로 자동 재시작할 방인가(현재 opencode 만 — 배치 루프 대신).</summary>
+    private static bool IsAutoReenterRoom(string roomId)
+    {
+        try { return string.Equals(DevezCode.Services.SettingsService.LoadAgentForRoom(roomId), "opencode", StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
+    }
+
+    /// <summary>자동 재시작 허용 여부. 10초 창 안에서 3회까지만 — 그 이상은 시작 실패 반복으로 보고
+    /// 멈춰 종료 프롬프트를 띄운다(무한 크래시 루프 방지). 세션이 10초 넘게 살았다 끝나면 창이 리셋된다.</summary>
+    private bool AllowAutoRestart(string roomId)
+    {
+        long now = Environment.TickCount64;
+        if (_autoRestart.TryGetValue(roomId, out var s) && now - s.WindowStartTick < 10_000)
+        {
+            if (s.Count >= 3) return false;
+            _autoRestart[roomId] = (s.Count + 1, s.WindowStartTick);
+        }
+        else
+        {
+            _autoRestart[roomId] = (1, now);
+        }
+        return true;
+    }
+
     /// <summary>roomId → (배선된 세션, OutputReceived 핸들러, Exited 핸들러). CloseTerminal/재배선 시
     /// 반드시 이 핸들러를 detach 해야 한다. 안 하면 같은 세션에 핸들러가 누적돼(패널 이동 왕복 등)
     /// 출력이 2·3배로 post → 화면에 글자가 여러 번 찍힌다("두 번 입력됨"의 실체).</summary>
@@ -631,6 +658,18 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 // 이 세션이 이미 새 세션으로 교체되었으면(테마 재시작 등) 종료 프롬프트를 띄우지 않는다.
                 // Exited 는 WaitForExit 스레드에서 뒤늦게 와서 "restarted" 이후 도착할 수 있다.
                 if (!_wired.TryGetValue(roomId, out var cur) || !ReferenceEquals(cur, session)) return;
+
+                // opencode: opencode.exe(bun TUI) 는 종료된 ConPTY 에서 in-place 재기동 시 0xc0000142 라
+                // 배치 루프를 못 쓴다(claude/gjc 는 .exe 라 배치 루프로 자체 재진입). 대신 세션이 끝나면
+                // 여기서 "새 ConPTY 세션"으로 같은 세션을 resume 해 자동 재시작한다. 진짜 종료는 방 닫기.
+                // 폭주 방지: 짧은 시간 내 반복 실패면 멈추고 종료 프롬프트를 띄운다(AllowAutoRestart).
+                if (IsAutoReenterRoom(roomId) && AllowAutoRestart(roomId))
+                {
+                    DevezCode.Services.DiagLog.Write($"opencode 세션 종료 → 앱 자동 재시작(새 세션 resume) room={roomId}");
+                    WireSession(roomId, 120, 30);            // 죽은 세션 → GetOrCreate 가 새 ConPTY 로 만들며 resume
+                    PostJson(new { type = "restarted", roomId }); // xterm 클리어 + JS 가 실제 크기로 resize
+                    return;
+                }
                 PostJson(new { type = "exited", roomId });
                 SessionExited?.Invoke(roomId); // 끊김/죽음 → 회색 점
             });

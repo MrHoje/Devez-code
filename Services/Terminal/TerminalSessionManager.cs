@@ -422,14 +422,14 @@ public sealed class TerminalSessionManager
             {
                 string forkBody = $"@echo off\r\n" +
                                   $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
-                                  $"opencode --session {forkSrc} --fork || opencode\r\n";
+                                  $"call opencode --session {forkSrc} --fork || call opencode\r\n";
                 try
                 {
                     var fdir = OpenCodeLaunchDir();
                     Directory.CreateDirectory(fdir);
                     var fbatch = Path.Combine(fdir, SafeRoomFileName(roomId) + ".cmd");
-                    var fTrack = Path.Combine(OpenCodePluginInstaller.SessionTrackDir, SafeRoomFileName(roomId) + ".txt");
-                    File.WriteAllText(fbatch, forkBody + OpenCodeReentryLoop(fTrack));
+                    // 위와 동일 — opencode 는 exit 로 cmd 를 닫고 앱이 새 세션으로 재시작(0xc0000142 회피).
+                    File.WriteAllText(fbatch, forkBody + "exit\r\n");
                     return $"cmd.exe /k \"{fbatch}\"";
                 }
                 catch
@@ -454,9 +454,10 @@ public sealed class TerminalSessionManager
         }
 
         // body: opencode 실행 라인. 실패 시 fresh 폴백.
+        // opencode 는 opencode.cmd(배치) — call 로 불러야 종료 후 제어가 배치(재진입 루프)로 돌아온다.
         string opencodeCmd = sessionId != null
-            ? $"opencode --session {sessionId} || opencode"
-            : "opencode";
+            ? $"call opencode --session {sessionId} || call opencode"
+            : "call opencode";
 
         // 배치: env 명시 set → opencode 실행. cmd 의 env 상속이 불안정해도 set 으로 확실히 전달.
         // roomId 에 공백/특수문자 가능 — set "VAR=value" 형식으로 안전하게.
@@ -469,8 +470,10 @@ public sealed class TerminalSessionManager
             var dir = OpenCodeLaunchDir();
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
-            var ocTrack = Path.Combine(OpenCodePluginInstaller.SessionTrackDir, SafeRoomFileName(roomId) + ".txt");
-            File.WriteAllText(batchPath, body + OpenCodeReentryLoop(ocTrack));
+            // opencode 는 opencode.exe(bun TUI) 를 종료한 ConPTY 에서 in-place 재기동하면 0xc0000142
+            // (DLL init 실패)가 난다. 그래서 배치 루프(claude/gjc 방식)를 쓰지 않고, 세션이 끝나면 exit 로
+            // cmd 를 닫아 앱(TerminalHostView.onExited)이 "새 ConPTY 세션"으로 같은 세션을 resume 재시작한다.
+            File.WriteAllText(batchPath, body + "exit\r\n");
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
@@ -596,9 +599,10 @@ public sealed class TerminalSessionManager
         // --session-dir 토큰은 따옴표로 감싸 공백 경로 안전. -r <id> 는 GUID 만(파일명에서 검증) → 주입 차단.
         // busy/lastmsg 는 앱이 이 session-dir 의 .jsonl 을 폴링해 처리(GajaeLastMessageService). gjc 확장/훅 불필요.
         string sd = $"--session-dir \"{sessionDir}\"";
+        // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 배치(재진입 루프)로 돌아오게 한다(.exe 엔 무해).
         string cmd = sessionId != null
-            ? $"gjc {sd} -r {sessionId}\r\nif errorlevel 1 gjc {sd}"
-            : $"gjc {sd}";
+            ? $"call gjc {sd} -r {sessionId}\r\nif errorlevel 1 call gjc {sd}"
+            : $"call gjc {sd}";
 
         try
         {
@@ -693,8 +697,8 @@ public sealed class TerminalSessionManager
                 var forkCcDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
                 if (Guid.TryParse(forkSrc, out _) && ClaudeTranscriptExists(forkCcDir, forkSrc))
                 {
-                    var forkBody = $"claude --resume {forkSrc} --fork-session {flags}\r\n"
-                                 + $"if errorlevel 1 claude {flags}";
+                    var forkBody = $"call claude --resume {forkSrc} --fork-session {flags}\r\n"
+                                 + $"if errorlevel 1 call claude {flags}";
                     try
                     {
                         Directory.CreateDirectory(LaunchDir);
@@ -735,13 +739,14 @@ public sealed class TerminalSessionManager
         // --session-id 폴백(추적 ID 보존) → 그마저 실패(손상/타 인스턴스 점유로 "already in use" 등) 시
         // plain 새 세션. 3단이 없으면 이중 실패 때 cmd 프롬프트만 남아 방이 죽는다.
         // claude 가 정상 시작하면 인터랙티브로 유지되어 뒤 폴백 줄은 실행되지 않는다.
+        // call: claude 가 claude.cmd(npm) 인 환경에서도 종료 후 제어가 배치(재진입 루프)로 돌아오게 한다(.exe 엔 무해).
         string body;
         if (sessionId == null)
-            body = $"claude {flags}";
+            body = $"call claude {flags}";
         else
-            body = $"claude --resume {sessionId} {flags}\r\n"
-                 + $"if errorlevel 1 claude --session-id {sessionId} {flags}\r\n"
-                 + $"if errorlevel 1 claude {flags}";
+            body = $"call claude --resume {sessionId} {flags}\r\n"
+                 + $"if errorlevel 1 call claude --session-id {sessionId} {flags}\r\n"
+                 + $"if errorlevel 1 call claude {flags}";
 
         try
         {
@@ -799,25 +804,10 @@ public sealed class TerminalSessionManager
         "set \"SID=\"\r\n" +
         $"if exist \"{trackFile}\" for /f \"usebackq delims=\" %%i in (\"{trackFile}\") do set \"SID=%%i\"\r\n" +
         "if defined SID (\r\n" +
-        $"  claude --resume %SID% {flags}\r\n" +
-        $"  if errorlevel 1 claude {flags}\r\n" +
+        $"  call claude --resume %SID% {flags}\r\n" +   // call: claude 가 claude.cmd(npm) 인 환경에서도 종료 후 제어가 루프로 복귀
+        $"  if errorlevel 1 call claude {flags}\r\n" +
         ") else (\r\n" +
-        $"  claude {flags}\r\n" +
-        ")\r\n" +
-        ReentryTail();
-
-    /// <summary>opencode 재진입 루프 — 추적파일(sessions\&lt;room&gt;.txt, 플러그인이 갱신)의 sid 로 --session.
-    /// 배치 상단 set DEVEZCODE_ROOM_ID 가 cmd 세션에 남아, 재진입 세션도 계속 이 방으로 추적된다.</summary>
-    private static string OpenCodeReentryLoop(string trackFile) =>
-        "set FAILS=0\r\n" +
-        ":__reenter\r\n" +
-        "set \"SID=\"\r\n" +
-        $"if exist \"{trackFile}\" for /f \"usebackq delims=\" %%i in (\"{trackFile}\") do set \"SID=%%i\"\r\n" +
-        "if defined SID (\r\n" +
-        "  opencode --session %SID%\r\n" +
-        "  if errorlevel 1 opencode\r\n" +
-        ") else (\r\n" +
-        "  opencode\r\n" +
+        $"  call claude {flags}\r\n" +
         ")\r\n" +
         ReentryTail();
 
@@ -826,8 +816,8 @@ public sealed class TerminalSessionManager
     private static string GajaeReentryLoop(string sd) =>
         "set FAILS=0\r\n" +
         ":__reenter\r\n" +
-        $"gjc {sd} -c\r\n" +
-        $"if errorlevel 1 gjc {sd}\r\n" +
+        $"call gjc {sd} -c\r\n" +   // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 루프로 복귀
+        $"if errorlevel 1 call gjc {sd}\r\n" +
         ReentryTail();
 
     // ── Claude 세션 ID 추적 (%APPDATA%\DevezCode\claude\) ──────────────
