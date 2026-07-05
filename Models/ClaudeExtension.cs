@@ -53,3 +53,17 @@ public sealed class ClaudeAgent
     public string ScopeText => Scope == "project" ? "프로젝트" : "사용자";
     public string DescText => string.IsNullOrWhiteSpace(Description) ? "설명 없음" : Description;
 }
+
+/// <summary>Claude Code 커스텀 슬래시 커맨드 한 개. <c>~/.claude/commands/&lt;name&gt;.md</c> 매핑
+/// (하위 폴더는 네임스페이스: <c>foo/bar.md</c> → <c>/foo:bar</c>).</summary>
+public sealed class ClaudeCommand
+{
+    public string Name { get; set; } = "";          // 슬래시 없는 커맨드명(네임스페이스는 ':')
+    public string Description { get; set; } = "";
+    public string Scope { get; set; } = "user";
+    public string FilePath { get; set; } = "";
+
+    public string CommandText => "/" + Name;
+    public string ScopeText => Scope == "project" ? "프로젝트" : "사용자";
+    public string DescText => string.IsNullOrWhiteSpace(Description) ? "설명 없음" : Description;
+}

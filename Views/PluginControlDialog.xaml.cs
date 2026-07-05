@@ -25,6 +25,7 @@ public partial class PluginControlDialog : UserControl
     private readonly ObservableCollection<ClaudeAvailablePlugin> _avail = new();
     private readonly ObservableCollection<ClaudeSkill> _skills = new();
     private readonly ObservableCollection<ClaudeAgent> _agents = new();
+    private readonly ObservableCollection<ClaudeCommand> _commands = new();
     private string _tab = "plugins";
     private string _query = "";
     private string _discQuery = "";   // 하단 Discover 검색어
@@ -34,6 +35,7 @@ public partial class PluginControlDialog : UserControl
     private string _outMarket = "";
     private string _outSkills = "";
     private string _outAgents = "";
+    private string _outCommands = "";
     private bool _busy;
     private bool _pendingRefresh;   // 로딩 중 들어온 탭 전환/새로고침 예약
     private bool _disposed;
@@ -56,6 +58,7 @@ public partial class PluginControlDialog : UserControl
         DiscoverList.ItemsSource = _avail;
         SkillList.ItemsSource = _skills;
         AgentList.ItemsSource = _agents;
+        CommandList.ItemsSource = _commands;
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); ApplyFilter(); };
         _discSearchDebounce.Tick += (_, _) => { _discSearchDebounce.Stop(); ApplyDiscFilter(); };
         CollectionViewSource.GetDefaultView(_plugins).Filter = o => o is ClaudePlugin p && Match(p.Name, p.Id, p.Marketplace);
@@ -63,6 +66,7 @@ public partial class PluginControlDialog : UserControl
         CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && DiscMatch(a);
         CollectionViewSource.GetDefaultView(_skills).Filter = o => o is ClaudeSkill s && Match(s.Name, s.Description) && (!_hideLocked || !s.Locked);
         CollectionViewSource.GetDefaultView(_agents).Filter = o => o is ClaudeAgent a && Match(a.Name, a.Description);
+        CollectionViewSource.GetDefaultView(_commands).Filter = o => o is ClaudeCommand c && Match(c.Name, c.Description);
         // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
         // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
         Loaded += (_, _) => SetTabVisual("plugins");
@@ -92,6 +96,7 @@ public partial class PluginControlDialog : UserControl
         CollectionViewSource.GetDefaultView(_markets).Refresh();
         CollectionViewSource.GetDefaultView(_skills).Refresh();
         CollectionViewSource.GetDefaultView(_agents).Refresh();
+        CollectionViewSource.GetDefaultView(_commands).Refresh();
         UpdateEmptyForTab();
     }
 
@@ -126,7 +131,8 @@ public partial class PluginControlDialog : UserControl
             "plugins" => CollectionViewSource.GetDefaultView(_plugins),
             "marketplaces" => CollectionViewSource.GetDefaultView(_markets),
             "skills" => CollectionViewSource.GetDefaultView(_skills),
-            _ => CollectionViewSource.GetDefaultView(_agents),
+            "agents" => CollectionViewSource.GetDefaultView(_agents),
+            _ => CollectionViewSource.GetDefaultView(_commands),
         };
         UpdateEmpty(view.Cast<object>().Count());
     }
@@ -151,6 +157,7 @@ public partial class PluginControlDialog : UserControl
         bool market = tab == "marketplaces";
         bool skills = tab == "skills";
         bool agents = tab == "agents";
+        bool commands = tab == "commands";
 
         // 탭 전환 시 하단 Discover 닫아 출력이 꽉 차게(특히 플러그인 탭은 설치 가능 목록이 없음).
         CloseDiscover();
@@ -163,19 +170,23 @@ public partial class PluginControlDialog : UserControl
         StyleTab(MarketTabBtn, market);
         StyleTab(SkillTabBtn, skills);
         StyleTab(AgentTabBtn, agents);
+        StyleTab(CommandTabBtn, commands);
 
         PluginActions.Visibility = plugins ? Visibility.Visible : Visibility.Collapsed;
         MarketActions.Visibility = market ? Visibility.Visible : Visibility.Collapsed;
         SkillActions.Visibility = skills ? Visibility.Visible : Visibility.Collapsed;
         AgentActions.Visibility = agents ? Visibility.Visible : Visibility.Collapsed;
+        CommandActions.Visibility = commands ? Visibility.Visible : Visibility.Collapsed;
         PluginScroll.Visibility = plugins ? Visibility.Visible : Visibility.Collapsed;
         MarketScroll.Visibility = market ? Visibility.Visible : Visibility.Collapsed;
         SkillScroll.Visibility = skills ? Visibility.Visible : Visibility.Collapsed;
         AgentScroll.Visibility = agents ? Visibility.Visible : Visibility.Collapsed;
+        CommandScroll.Visibility = commands ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Text = plugins ? "설치된 플러그인이 없습니다"
                        : market ? "등록된 마켓플레이스가 없습니다"
                        : skills ? "스킬이 없습니다"
-                       : "에이전트가 없습니다 (~/.claude/agents)";
+                       : agents ? "에이전트가 없습니다 (~/.claude/agents)"
+                       : "커맨드가 없습니다 (~/.claude/commands)";
         // 우측 헤더: 스킬·에이전트 탭은 "편집", 나머지는 "출력"(편집 중이면 OpenEditorAsync 가 별도 설정).
         if (_editPath == null) OutputTitle.Text = DefaultOutputTitle();
     }
@@ -221,11 +232,17 @@ public partial class PluginControlDialog : UserControl
                     if (_disposed) return;
                     if (_tab == tab) { _skills.Clear(); foreach (var s in list) _skills.Add(s); }
                 }
-                else
+                else if (tab == "agents")
                 {
                     var list = await ClaudeExtensionService.AgentsAsync();
                     if (_disposed) return;
                     if (_tab == tab) { _agents.Clear(); foreach (var a in list) _agents.Add(a); }
+                }
+                else
+                {
+                    var list = await ClaudeExtensionService.CommandsAsync();
+                    if (_disposed) return;
+                    if (_tab == tab) { _commands.Clear(); foreach (var c in list) _commands.Add(c); }
                 }
                 UpdateEmptyForTab();
             }
@@ -500,7 +517,7 @@ public partial class PluginControlDialog : UserControl
     }
 
     // ── 스킬 탭 ───────────────────────────────────────────────────
-    private void SkillFolder_Click(object sender, RoutedEventArgs e) => ClaudeExtensionService.OpenFolder(skills: true);
+    private void SkillFolder_Click(object sender, RoutedEventArgs e) => ClaudeExtensionService.OpenFolder("skills");
 
     private static ClaudeSkill? SkillOf(object sender) => (sender as FrameworkElement)?.DataContext as ClaudeSkill;
 
@@ -548,7 +565,7 @@ public partial class PluginControlDialog : UserControl
     }
 
     // ── 에이전트 탭 ───────────────────────────────────────────────
-    private void AgentFolder_Click(object sender, RoutedEventArgs e) => ClaudeExtensionService.OpenFolder(skills: false);
+    private void AgentFolder_Click(object sender, RoutedEventArgs e) => ClaudeExtensionService.OpenFolder("agents");
 
     private async void AgentEdit_Click(object sender, RoutedEventArgs e)
     {
@@ -561,13 +578,38 @@ public partial class PluginControlDialog : UserControl
         if ((sender as FrameworkElement)?.DataContext is not ClaudeAgent a) return;
         if (!ConfirmDialog.Show("에이전트 삭제", $"'{a.Name}' 에이전트를 삭제할까요?", "삭제", danger: true))
             return;
-        var ok = await ClaudeExtensionService.DeleteAgentAsync(a.FilePath);
+        var ok = await ClaudeExtensionService.DeleteFileAsync(a.FilePath);
         if (_disposed) return;
         if (ok)
         {
             // 편집 중이던 파일이면 편집기를 닫는다.
             if (_editPath == a.FilePath) ExitEditor();
             _agents.Remove(a);
+            UpdateEmptyForTab();
+        }
+        else ConfirmDialog.Alert("삭제 실패", "파일을 삭제할 수 없습니다.");
+    }
+
+    // ── 커맨드 탭 ─────────────────────────────────────────────────
+    private void CommandFolder_Click(object sender, RoutedEventArgs e) => ClaudeExtensionService.OpenFolder("commands");
+
+    private async void CommandEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ClaudeCommand c) return;
+        await OpenEditorAsync($"편집 · {c.CommandText}", c.FilePath);
+    }
+
+    private async void CommandDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not ClaudeCommand c) return;
+        if (!ConfirmDialog.Show("커맨드 삭제", $"'{c.CommandText}' 커맨드를 삭제할까요?", "삭제", danger: true))
+            return;
+        var ok = await ClaudeExtensionService.DeleteFileAsync(c.FilePath);
+        if (_disposed) return;
+        if (ok)
+        {
+            if (_editPath == c.FilePath) ExitEditor();
+            _commands.Remove(c);
             UpdateEmptyForTab();
         }
         else ConfirmDialog.Alert("삭제 실패", "파일을 삭제할 수 없습니다.");
@@ -607,7 +649,7 @@ public partial class PluginControlDialog : UserControl
     }
 
     // 스킬·에이전트 탭은 주 용도가 편집이므로 헤더를 "편집"으로, 나머지는 "출력".
-    private string DefaultOutputTitle() => _tab is "skills" or "agents" ? "편집" : "출력";
+    private string DefaultOutputTitle() => _tab is "skills" or "agents" or "commands" ? "편집" : "출력";
 
     // 저장 — 파일에 기록(성공 메시지는 표시하지 않음). 저장 후 편집기는 그대로 유지.
     private async void EditorSave_Click(object sender, RoutedEventArgs e) => await SaveEditorAsync();
@@ -642,7 +684,8 @@ public partial class PluginControlDialog : UserControl
             case "plugins": _outPlugins = text; break;
             case "marketplaces": _outMarket = text; break;
             case "skills": _outSkills = text; break;
-            default: _outAgents = text; break;
+            case "agents": _outAgents = text; break;
+            default: _outCommands = text; break;
         }
         PluginOutputRenderer.Render(OutputText, text);
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
@@ -656,7 +699,8 @@ public partial class PluginControlDialog : UserControl
             "plugins" => _outPlugins,
             "marketplaces" => _outMarket,
             "skills" => _outSkills,
-            _ => _outAgents,
+            "agents" => _outAgents,
+            _ => _outCommands,
         };
         PluginOutputRenderer.Render(OutputText, text);
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
