@@ -251,17 +251,17 @@
                                     <TextBlock Text="폴더 열기" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{DynamicResource HeaderActionTextMargin}"/>
                                 </StackPanel>
                             </Button>
-                            <!-- 잠금(읽기전용) 항목 숨기기 토글 -->
+                            <!-- 플러그인 스킬 보기 토글 (기본 꺼짐 → 개인 스킬만 표시) -->
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconLock}"
+                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPlug}"
                                       Width="13" Height="13" Margin="0,0,6,0" VerticalAlignment="Center"
                                       Stroke="{DynamicResource TextMutedBrush}"/>
-                                <TextBlock Text="잠금 숨기기" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                <TextBlock Text="플러그인 스킬 보기" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                            VerticalAlignment="Center" Margin="0,0,7,0"
                                            Foreground="{DynamicResource TextMutedBrush}"/>
-                                <CheckBox x:Name="HideLockedToggle" Click="HideLocked_Click"
+                                <CheckBox x:Name="ShowPluginSkillsToggle" Click="PluginSkillsToggle_Click"
                                           Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                          ToolTip="읽기전용(잠금) 스킬 숨기기"/>
+                                          ToolTip="플러그인이 제공하는 스킬 표시"/>
                             </StackPanel>
                         </StackPanel>
                         <!-- 에이전트 탭 액션 -->
