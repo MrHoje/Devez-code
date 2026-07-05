@@ -428,7 +428,8 @@ public sealed class TerminalSessionManager
                     var fdir = OpenCodeLaunchDir();
                     Directory.CreateDirectory(fdir);
                     var fbatch = Path.Combine(fdir, SafeRoomFileName(roomId) + ".cmd");
-                    File.WriteAllText(fbatch, forkBody);
+                    var fTrack = Path.Combine(OpenCodePluginInstaller.SessionTrackDir, SafeRoomFileName(roomId) + ".txt");
+                    File.WriteAllText(fbatch, forkBody + OpenCodeReentryLoop(fTrack));
                     return $"cmd.exe /k \"{fbatch}\"";
                 }
                 catch
@@ -468,7 +469,8 @@ public sealed class TerminalSessionManager
             var dir = OpenCodeLaunchDir();
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
-            File.WriteAllText(batchPath, body);
+            var ocTrack = Path.Combine(OpenCodePluginInstaller.SessionTrackDir, SafeRoomFileName(roomId) + ".txt");
+            File.WriteAllText(batchPath, body + OpenCodeReentryLoop(ocTrack));
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
@@ -606,7 +608,7 @@ public sealed class TerminalSessionManager
             // gjc 일반(비멀티플렉서) 모드로 실행 — 멀티플렉서 모드(STY)는 입력창 하단에 빈 줄을
             // 더 그려서 제외했다. 일반 모드가 풀 재페인트마다 보내는 스크롤백 클리어(\x1b[3J)는
             // terminal.html 파서에서 gjc 방 한정으로 삼켜 스크롤백/휠 스크롤을 보존한다.
-            File.WriteAllText(batchPath, "@echo off\r\n" + cmd + "\r\n");
+            File.WriteAllText(batchPath, "@echo off\r\n" + cmd + "\r\n" + GajaeReentryLoop(sd));
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
@@ -696,7 +698,8 @@ public sealed class TerminalSessionManager
                     try
                     {
                         Directory.CreateDirectory(LaunchDir);
-                        File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + forkBody + "\r\n");
+                        var forkTrack = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
+                        File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + forkBody + "\r\n" + ClaudeReentryLoop(flags, forkTrack));
                         return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
                     }
                     catch (Exception)
@@ -743,7 +746,8 @@ public sealed class TerminalSessionManager
         try
         {
             Directory.CreateDirectory(LaunchDir);
-            File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + body + "\r\n");
+            var trackFile = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
+            File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + body + "\r\n" + ClaudeReentryLoop(flags, trackFile));
             // 경로에 공백이 있어도 cmd /k "<단일 토큰>" 규칙으로 안전(따옴표 보존/제거 모두 정상 실행).
             return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
         }
@@ -770,6 +774,61 @@ public sealed class TerminalSessionManager
             ? $"{r} || {f} || {n}\r"
             : $"{r}; if ($LASTEXITCODE -ne 0) {{ {f} }}; if ($LASTEXITCODE -ne 0) {{ {n} }}\r";
     }
+
+    // ── 종료 시 같은 세션으로 자동 재진입 (cmd /k 배치 루프) ──────────────
+    // /exit·Ctrl+C 로 CLI 를 닫아도 셸로 빠지지 않고, 방이 살아있는 동안은 같은 세션으로 다시 띄운다.
+    // "진짜 종료"는 앱에서 방(탭)을 닫는 것으로만 한다. 각 에이전트의 첫 실행(fork/resume/신규 판정)
+    // 배치 본문 뒤에 이 루프를 붙인다 — 루프는 매 반복 추적파일/세션-dir 에서 현재 세션을 다시 잡는다.
+    // 안전장치: 연속 실행 실패(=CLI 미설치 등)가 5회 쌓이면 무한 스핀 대신 프롬프트를 남겨 진단 가능.
+
+    /// <summary>재진입 루프 공통 꼬리: 실패 카운트·스로틀(≈1s)·재진입 goto·5회 실패 시 giveup.</summary>
+    private static string ReentryTail() =>
+        "if errorlevel 1 (set /a FAILS+=1) else (set \"FAILS=0\")\r\n" +
+        "if %FAILS% geq 5 goto __giveup\r\n" +
+        "ping -n 2 127.0.0.1 >nul\r\n" +      // ≈1s 스로틀 — 정상 /exit 엔 무해, 크래시 루프 스핀 방지
+        "goto __reenter\r\n" +
+        ":__giveup\r\n" +
+        "echo.\r\n" +
+        "echo [DevezCode] Session restart failed repeatedly. Run a command or close this room.\r\n";
+
+    /// <summary>claude 재진입 루프 — 추적파일(sessions\&lt;room&gt;.txt, 훅이 라이브 갱신)의 sid 를 매 반복
+    /// 다시 읽어 --resume. resume 실패(transcript 삭제 등) 시 즉시 신규 세션으로 폴백(에러 잔류 없음).</summary>
+    private static string ClaudeReentryLoop(string flags, string trackFile) =>
+        "set FAILS=0\r\n" +
+        ":__reenter\r\n" +
+        "set \"SID=\"\r\n" +
+        $"if exist \"{trackFile}\" for /f \"usebackq delims=\" %%i in (\"{trackFile}\") do set \"SID=%%i\"\r\n" +
+        "if defined SID (\r\n" +
+        $"  claude --resume %SID% {flags}\r\n" +
+        $"  if errorlevel 1 claude {flags}\r\n" +
+        ") else (\r\n" +
+        $"  claude {flags}\r\n" +
+        ")\r\n" +
+        ReentryTail();
+
+    /// <summary>opencode 재진입 루프 — 추적파일(sessions\&lt;room&gt;.txt, 플러그인이 갱신)의 sid 로 --session.
+    /// 배치 상단 set DEVEZCODE_ROOM_ID 가 cmd 세션에 남아, 재진입 세션도 계속 이 방으로 추적된다.</summary>
+    private static string OpenCodeReentryLoop(string trackFile) =>
+        "set FAILS=0\r\n" +
+        ":__reenter\r\n" +
+        "set \"SID=\"\r\n" +
+        $"if exist \"{trackFile}\" for /f \"usebackq delims=\" %%i in (\"{trackFile}\") do set \"SID=%%i\"\r\n" +
+        "if defined SID (\r\n" +
+        "  opencode --session %SID%\r\n" +
+        "  if errorlevel 1 opencode\r\n" +
+        ") else (\r\n" +
+        "  opencode\r\n" +
+        ")\r\n" +
+        ReentryTail();
+
+    /// <summary>가재(gjc) 재진입 루프 — 방별 --session-dir 로 격리돼 있어 -c(최신 이어가기)가 곧 이 방의
+    /// 마지막 대화. 앱의 session-dir 폴링(GajaeLastMessageService)이 재진입 세션도 그대로 추적한다.</summary>
+    private static string GajaeReentryLoop(string sd) =>
+        "set FAILS=0\r\n" +
+        ":__reenter\r\n" +
+        $"gjc {sd} -c\r\n" +
+        $"if errorlevel 1 gjc {sd}\r\n" +
+        ReentryTail();
 
     // ── Claude 세션 ID 추적 (%APPDATA%\DevezCode\claude\) ──────────────
     // SessionStart 훅이 방별 현재 세션 ID를 sessions\<roomId>.txt 에 기록한다.
