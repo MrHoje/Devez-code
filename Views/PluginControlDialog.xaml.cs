@@ -537,6 +537,13 @@ public partial class PluginControlDialog : UserControl
         await OpenEditorAsync($"편집 · {s.Name}", s.FilePath);
     }
 
+    // 잠금(읽기전용) 스킬 상세 보기 — 편집기를 읽기전용으로 열어 내용만 확인.
+    private async void SkillDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if (SkillOf(sender) is not ClaudeSkill s) return;
+        await OpenEditorAsync($"상세 · {s.Name}", s.FilePath, readOnly: true);
+    }
+
     // 잠금(읽기전용) 스킬 숨기기 토글.
     private bool _hideLocked;
     private void HideLocked_Click(object sender, RoutedEventArgs e)
@@ -577,22 +584,26 @@ public partial class PluginControlDialog : UserControl
     // 스킬/에이전트 편집은 팝업 대신 출력 영역을 편집기로 전환해 표시한다.
     private string? _editPath;
 
-    private async Task OpenEditorAsync(string title, string path)
+    private async Task OpenEditorAsync(string title, string path, bool readOnly = false)
     {
         _editPath = path;
+        _editReadOnly = readOnly;
         OutputTitle.Text = title;
         EditorActions.Visibility = Visibility.Visible;
+        // 읽기전용(상세)이면 저장 버튼 숨김 — 닫기만 노출.
+        EditorSaveBtn.Visibility = readOnly ? Visibility.Collapsed : Visibility.Visible;
         OutputBorder.Visibility = Visibility.Collapsed;
         EditorBorder.Visibility = Visibility.Visible;
         EditorBox.Text = "불러오는 중…";
         EditorBox.IsReadOnly = true;
         var content = await ClaudeExtensionService.ReadAsync(path);
         if (_disposed || _editPath != path) return;   // 그 사이 닫혔으면 무시
-        EditorBox.IsReadOnly = false;
+        EditorBox.IsReadOnly = readOnly;
         EditorBox.Text = content;
         EditorBox.CaretIndex = 0;
         EditorBox.Focus();
     }
+    private bool _editReadOnly;
 
     // 편집기를 닫고 출력 표시로 되돌린다.
     private void ExitEditor()

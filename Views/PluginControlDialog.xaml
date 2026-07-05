@@ -399,6 +399,7 @@
                 <Grid Grid.Row="1">
                     <!-- 플러그인 목록 -->
                     <ScrollViewer x:Name="PluginScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Padding="0,0,8,0"
                                   ScrollChanged="ListScrollChanged">
                         <ItemsControl x:Name="PluginList">
                             <ItemsControl.ItemTemplate>
@@ -479,6 +480,7 @@
 
                     <!-- 마켓플레이스 목록 -->
                     <ScrollViewer x:Name="MarketScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Padding="0,0,8,0"
                                   ScrollChanged="ListScrollChanged" Visibility="Collapsed">
                         <ItemsControl x:Name="MarketList">
                             <ItemsControl.ItemTemplate>
@@ -538,6 +540,7 @@
 
                     <!-- 스킬 목록 -->
                     <ScrollViewer x:Name="SkillScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Padding="0,0,8,0"
                                   ScrollChanged="ListScrollChanged" Visibility="Collapsed">
                         <ItemsControl x:Name="SkillList">
                             <ItemsControl.ItemTemplate>
@@ -599,6 +602,12 @@
                                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPencil}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
                                                 </Button>
+                                                <!-- 잠금(읽기전용) 스킬도 상세(내용 보기)는 가능 -->
+                                                <Button Style="{StaticResource RowIconBtn}" Click="SkillDetail_Click" ToolTip="상세(읽기전용)"
+                                                        Visibility="{Binding Locked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconEye}"
+                                                          Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
+                                                </Button>
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -609,6 +618,7 @@
 
                     <!-- 에이전트 목록 -->
                     <ScrollViewer x:Name="AgentScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Padding="0,0,8,0"
                                   ScrollChanged="ListScrollChanged" Visibility="Collapsed">
                         <ItemsControl x:Name="AgentList">
                             <ItemsControl.ItemTemplate>
