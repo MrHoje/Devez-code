@@ -173,40 +173,11 @@ public static class ClaudeExtensionService
         return list.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
     });
 
-    /// <summary>에이전트/커맨드 .md 파일 삭제.</summary>
-    public static Task<bool> DeleteFileAsync(string path) => Task.Run(() =>
+    /// <summary>에이전트 .md 파일 삭제.</summary>
+    public static Task<bool> DeleteAgentAsync(string path) => Task.Run(() =>
     {
         try { if (File.Exists(path)) File.Delete(path); return true; }
         catch { return false; }
-    });
-
-    // ── 커맨드 ────────────────────────────────────────────────────
-    private static string CommandsDir => Path.Combine(ClaudeHome, "commands");
-
-    public static Task<List<ClaudeCommand>> CommandsAsync() => Task.Run(() =>
-    {
-        var list = new List<ClaudeCommand>();
-        try
-        {
-            if (!Directory.Exists(CommandsDir)) return list;
-            foreach (var file in Directory.EnumerateFiles(CommandsDir, "*.md", SearchOption.AllDirectories))
-            {
-                // 하위 폴더는 네임스페이스(':')로 — foo\bar.md → foo:bar
-                var rel = Path.GetRelativePath(CommandsDir, file);
-                var name = Path.Combine(Path.GetDirectoryName(rel) ?? "", Path.GetFileNameWithoutExtension(rel))
-                    .Replace('\\', ':').Replace('/', ':').Trim(':');
-                var (_, desc) = ParseFrontmatter(file);
-                list.Add(new ClaudeCommand
-                {
-                    Name = name,
-                    Description = desc,
-                    Scope = "user",
-                    FilePath = file,
-                });
-            }
-        }
-        catch { }
-        return list.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
     });
 
     // ── 파일 읽기/쓰기(에디터 공용) ───────────────────────────────
@@ -228,12 +199,12 @@ public static class ClaudeExtensionService
         catch { return false; }
     });
 
-    /// <summary>탐색기에서 스킬/에이전트/커맨드 루트 폴더 열기(없으면 생성).</summary>
-    public static void OpenFolder(string which)
+    /// <summary>탐색기에서 스킬/에이전트 루트 폴더 열기(없으면 생성).</summary>
+    public static void OpenFolder(bool skills)
     {
         try
         {
-            var dir = which switch { "skills" => SkillsDir, "commands" => CommandsDir, _ => AgentsDir };
+            var dir = skills ? SkillsDir : AgentsDir;
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dir) { UseShellExecute = true });
         }
