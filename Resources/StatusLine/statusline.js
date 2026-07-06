@@ -96,28 +96,29 @@ process.stdin.on("end", () => {
     const totalTokens = counter.displayTotal || 0;
     const elapsedSec  = counter.displayTime  || 0;
 
-    // 테마별 색감. statusline 은 터미널 배경 위에 그려지므로 밝은 테마(soft/minimal)에선
-    // 밝은 팔레트를 배경 텍스트색 쪽으로 강하게 블렌드해 어둡게(=가독) 만든다. 의미색(모델/effort
-    // 등)의 색상(hue)은 유지되고 명도만 낮아져 라이트 배경에서도 또렷하다.
-    //   dark:    따뜻한 다크(#2A2620) 쪽 16% — 어두운 배경, 밝은 글자 유지.
-    //   soft:    본문색(#2A2620) 쪽 62% — 크림 배경에서 톤다운.
-    //   minimal: 본문색(#0F172A) 쪽 62% — 화이트 배경에서 톤다운.
-    const _tints = {
-      dark:    { tint: [42, 38, 32],  k: 0.16 },
-      soft:    { tint: [42, 38, 32],  k: 0.62 },
-      minimal: { tint: [15, 23, 42],  k: 0.62 },
-    };
-    const _t = _tints[THEME] || _tints.dark;
-    const TINT = _t.tint, K = _t.k;
-    const fg = (r, g, b) =>
-      "\x1b[38;2;" + Math.round(r + (TINT[0] - r) * K)
-            + ";" + Math.round(g + (TINT[1] - g) * K)
-            + ";" + Math.round(b + (TINT[2] - b) * K) + "m";
+    // 테마별 색감. statusline 은 터미널 배경 위에 그려진다.
+    //   dark:    따뜻한 다크(#2A2620) 쪽 16% 블렌드 — 어두운 배경, 밝은 글자 유지.
+    //   soft/minimal(라이트): 회색으로 블렌드하면 채도가 죽어 색 구분이 뭉개진다.
+    //     대신 명도만 곱연산으로 낮춰(hue/채도 유지) 밝은 배경에서 쨍하게 구분되게 한다.
+    //     액센트(ACC)는 살짝만, 일반 텍스트(TXT)는 강하게 낮춰 검정에 가깝게(soft 가 가장 진함).
+    const _light = THEME === "soft" || THEME === "minimal";
+    const ACC = THEME === "soft" ? 0.60 : 0.58; // 액센트(모델/effort/ctx 등) 어둡기 배수
+    const TXT = THEME === "soft" ? 0.24 : 0.34; // 일반 텍스트 어둡기 — soft 를 더 검게
+    const TINT = [42, 38, 32], K = 0.16;
+    const _cl = v => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+    // 액센트/의미색: 라이트=곱연산 톤다운, 다크=따뜻한 다크 블렌드.
+    const fg = (r, g, b) => _light
+      ? "\x1b[38;2;" + _cl(r * ACC) + ";" + _cl(g * ACC) + ";" + _cl(b * ACC) + "m"
+      : "\x1b[38;2;" + _cl(r + (TINT[0] - r) * K) + ";" + _cl(g + (TINT[1] - g) * K) + ";" + _cl(b + (TINT[2] - b) * K) + "m";
+    // 일반 텍스트(브랜치 외 model 폴백/구분자/토큰 등): 라이트에서 더 진하게. 다크는 fg 와 동일.
+    const fgText = (r, g, b) => _light
+      ? "\x1b[38;2;" + _cl(r * TXT) + ";" + _cl(g * TXT) + ";" + _cl(b * TXT) + "m"
+      : fg(r, g, b);
 
     const R = "\x1b[0m";
-    const MAIN   = fg(229, 231, 235);
-    const SEP    = fg(147, 164, 184);
-    const SOFT   = fg(203, 213, 225);
+    const MAIN   = fgText(229, 231, 235);
+    const SEP    = fgText(147, 164, 184);
+    const SOFT   = fgText(203, 213, 225);
     const HAIKU  = fg(0, 255, 255);
     const OPUS   = fg(248, 113, 113);
     const SONNET = fg(250, 204, 21);
@@ -125,7 +126,7 @@ process.stdin.on("end", () => {
     const CTX    = fg(52, 211, 153);
     const TIME   = fg(96, 165, 250);
     const WEEK   = fg(167, 139, 250);
-    const TOK    = fg(226, 232, 240);
+    const TOK    = fgText(226, 232, 240);
     const E_LOW  = fg(220, 172, 18);
     const E_MED  = fg(63, 157, 99);
     const E_HIGH = fg(177, 185, 249);
