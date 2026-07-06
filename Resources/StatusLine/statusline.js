@@ -102,18 +102,25 @@ process.stdin.on("end", () => {
     //     대신 명도만 곱연산으로 낮춰(hue/채도 유지) 밝은 배경에서 쨍하게 구분되게 한다.
     //     액센트(ACC)는 살짝만, 일반 텍스트(TXT)는 강하게 낮춰 검정에 가깝게(soft 가 가장 진함).
     const _light = THEME === "soft" || THEME === "minimal";
-    const ACC = THEME === "soft" ? 0.60 : 0.58; // 액센트(모델/effort/ctx 등) 어둡기 배수
-    const TXT = THEME === "soft" ? 0.24 : 0.34; // 일반 텍스트 어둡기 — soft 를 더 검게
+    const VF = THEME === "soft" ? 0.80 : 0.82;         // 라이트 액센트 명도(채도 최대화 후 적용)
+    const INK = THEME === "soft" ? [22, 18, 12] : [15, 20, 34]; // 일반 텍스트 잉크색(진한 검정 계열)
     const TINT = [42, 38, 32], K = 0.16;
     const _cl = v => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
-    // 액센트/의미색: 라이트=곱연산 톤다운, 다크=따뜻한 다크 블렌드.
-    const fg = (r, g, b) => _light
-      ? "\x1b[38;2;" + _cl(r * ACC) + ";" + _cl(g * ACC) + ";" + _cl(b * ACC) + "m"
-      : "\x1b[38;2;" + _cl(r + (TINT[0] - r) * K) + ";" + _cl(g + (TINT[1] - g) * K) + ";" + _cl(b + (TINT[2] - b) * K) + "m";
-    // 일반 텍스트(브랜치 외 model 폴백/구분자/토큰 등): 라이트에서 더 진하게. 다크는 fg 와 동일.
-    const fgText = (r, g, b) => _light
-      ? "\x1b[38;2;" + _cl(r * TXT) + ";" + _cl(g * TXT) + ";" + _cl(b * TXT) + "m"
-      : fg(r, g, b);
+    const _esc = (r, g, b) => "\x1b[38;2;" + _cl(r) + ";" + _cl(g) + ";" + _cl(b) + "m";
+    // 액센트/의미색.
+    //   dark: 따뜻한 다크(#2A2620) 쪽 16% 블렌드 — 밝은 글자 유지.
+    //   라이트: 옅은 팔레트를 곱연산만 하면 칙칙해 색 구분이 죽는다. 채도를 최대로 끌어올린 뒤
+    //     (min 을 0 으로 당겨 hue 유지) 명도(VF)만 낮춰 밝은 배경에서 쨍하게 구분되게 한다.
+    const fg = (r, g, b) => {
+      if (!_light)
+        return _esc(r + (TINT[0] - r) * K, g + (TINT[1] - g) * K, b + (TINT[2] - b) * K);
+      const mn = Math.min(r, g, b), mx = Math.max(r, g, b);
+      if (mx === mn) return _esc(r * 0.34, g * 0.34, b * 0.34); // 무채색은 그냥 어둡게
+      const s = 255 / (mx - mn);
+      return _esc((r - mn) * s * VF, (g - mn) * s * VF, (b - mn) * s * VF);
+    };
+    // 일반 텍스트(브랜치 외 model 폴백/구분자/토큰 등): 라이트=진한 잉크색 고정, 다크는 fg 와 동일.
+    const fgText = (r, g, b) => _light ? _esc(INK[0], INK[1], INK[2]) : fg(r, g, b);
 
     const R = "\x1b[0m";
     const MAIN   = fgText(229, 231, 235);
