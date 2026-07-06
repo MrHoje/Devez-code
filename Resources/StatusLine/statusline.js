@@ -140,9 +140,9 @@ process.stdin.on("end", () => {
     const WEEK   = fg(167, 139, 250);
     const TOK    = fgText(226, 232, 240);
     const E_LOW  = fg(220, 172, 18);
-    const E_MED  = fg(63, 157, 99);
-    const E_HIGH = fg(177, 185, 249);
-    const E_XH   = fg(175, 135, 255);
+    const E_MED  = fg(63, 157, 99, 0.80);   // 라이트에서 초록 명도 낮춰 가독성 확보
+    const E_HIGH = fg(59, 130, 246);        // 파랑 — xhigh(보라)와 hue 분리
+    const E_XH   = fg(192, 100, 255);       // 보라/마젠타 — high(파랑)와 확실히 구분
     const E_MAX  = fg(248, 113, 113);
     const PIPE   = SEP + " | " + R;
 
