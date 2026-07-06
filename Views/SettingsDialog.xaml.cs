@@ -609,13 +609,17 @@ public partial class SettingsDialog : UserControl
         DeepSeekConnectedBadge.Visibility = DeepSeekCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // ── 알림 설정 (sidepanel 과 동일하게 즉시 저장 — 테스트가 선택값을 바로 반영) ──
+    // ── 알림 설정 (켜짐/꺼짐은 [저장] 버튼에서 반영 — 나머지 상세 설정은 즉시 저장) ──
     private bool _loadingNotify;
     private string _notifyPos = "br";
+    private bool _selectedNotifyEnabled;
+    private bool _originalNotifyEnabled;
     private void LoadNotifySettings()
     {
         _loadingNotify = true;
-        NotifyEnabledToggle.IsChecked = SettingsService.LoadNotifySessionDoneEnabled();
+        _originalNotifyEnabled = SettingsService.LoadNotifySessionDoneEnabled();
+        _selectedNotifyEnabled = _originalNotifyEnabled;
+        NotifyEnabledToggle.IsChecked = _originalNotifyEnabled;
         _notifyPos = SettingsService.LoadNotifyPosition();
         UpdateNotifyPositionVisual();
         SelectComboByTag(NotifyAutoCloseCombo, SettingsService.LoadNotifyAutoCloseSeconds().ToString());
@@ -658,7 +662,7 @@ public partial class SettingsDialog : UserControl
     {
         UpdateNotifyDetailVisibility();
         if (_loadingNotify) return;
-        SettingsService.SaveNotifySessionDoneEnabled(NotifyEnabledToggle.IsChecked == true);
+        _selectedNotifyEnabled = NotifyEnabledToggle.IsChecked == true; // 저장은 [저장] 버튼에서
     }
 
     private void NotifyAutoCloseCombo_Changed(object sender, SelectionChangedEventArgs e)
@@ -853,6 +857,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
         if (_selectedProjectColumns != _originalProjectColumns) return true;
         if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled) return true;
+        if (_selectedNotifyEnabled != _originalNotifyEnabled) return true;
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
@@ -895,6 +900,10 @@ public partial class SettingsDialog : UserControl
             (Application.Current.MainWindow as MainWindow)?.RefreshDeepSeekUsage();
         }
         _originalDeepSeekEnabled = _selectedDeepSeekEnabled;
+
+        if (_selectedNotifyEnabled != _originalNotifyEnabled)
+            SettingsService.SaveNotifySessionDoneEnabled(_selectedNotifyEnabled);
+        _originalNotifyEnabled = _selectedNotifyEnabled;
 
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext)
         {
@@ -961,6 +970,12 @@ public partial class SettingsDialog : UserControl
             _selectedDeepSeekEnabled = _originalDeepSeekEnabled; // 미적용 — 선택값만 복원(키는 건드리지 않음)
             DeepSeekEnabledToggle.IsChecked = _originalDeepSeekEnabled;
             DeepSeekKeyArea.Visibility = Visibility.Collapsed;
+        }
+        if (_selectedNotifyEnabled != _originalNotifyEnabled)
+        {
+            _selectedNotifyEnabled = _originalNotifyEnabled;
+            NotifyEnabledToggle.IsChecked = _originalNotifyEnabled;
+            UpdateNotifyDetailVisibility();
         }
         // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)
         CancelShortcutCapture();
