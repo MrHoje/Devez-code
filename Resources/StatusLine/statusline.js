@@ -1,13 +1,19 @@
-// DEVEZCODE-STATUSLINE v7 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+// DEVEZCODE-STATUSLINE v8 — Devez/DevezCode 공용 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+// 두 앱(devez, DevezCode)이 같은 사용자 ~/.claude 를 공유하므로 이 파일도 공유·동일 내용으로 관리된다.
 const _fs = require("fs"), _path = require("path"), _os = require("os");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
-// 테마 추종은 DevezCode 안에서 뜬 세션만. DevezCode 는 자기 세션에만 DEVEZCODE_ROOM_ID 를
+// 테마 추종은 devez/DevezCode 안에서 뜬 세션만. 각 앱은 자기 세션에만 각자의 ROOM_ID 를
 // 자식 트리에 상속시킨다(외부 Windows Terminal 등에는 없음). 외부 세션은 앱 테마와 무관하게
-// 항상 dark 로 고정해, DevezCode 라이트 테마가 외부 터미널 statusline 색을 바꾸지 않게 한다.
-// DevezCode 안: %AppData%\DevezCode\theme.txt("dark"|"soft"|"minimal")를 읽어 추종.
+// 항상 dark 로 고정해, 라이트 테마가 외부 터미널 statusline 색을 바꾸지 않게 한다.
+//   DevezCode 안: DEVEZCODE_ROOM_ID + %AppData%\DevezCode\theme.txt
+//   devez     안: DEVEZ_ROOM_ID     + %AppData%\Devez\theme.txt
+// 둘 다 "dark"|"soft"|"minimal" 값을 쓰므로 이후 로직은 앱 구분 없이 THEME 하나로 처리된다.
 let THEME = "dark";
-if (process.env.DEVEZCODE_ROOM_ID) {
-  try { if (process.env.APPDATA) THEME = (_fs.readFileSync(_path.join(process.env.APPDATA, "DevezCode", "theme.txt"), "utf8").trim() || "dark"); } catch (e) {}
+const _themeSrc = process.env.DEVEZCODE_ROOM_ID ? "DevezCode"
+                 : process.env.DEVEZ_ROOM_ID     ? "Devez"
+                 : null;
+if (_themeSrc) {
+  try { if (process.env.APPDATA) THEME = (_fs.readFileSync(_path.join(process.env.APPDATA, _themeSrc, "theme.txt"), "utf8").trim() || "dark"); } catch (e) {}
 }
 // 직전 정상 출력 캐시. parse 실패/빈 결과로 빈 줄을 뱉으면 세션 진입 시 statusline 이
 // 잠깐 비어 보이므로, 그런 렌더에서는 마지막 정상 줄을 대신 출력해 깜빡임을 막는다.
