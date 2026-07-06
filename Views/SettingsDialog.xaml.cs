@@ -67,7 +67,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.11.3", "2026-07-06", true, new[]
+        ("v1.11.4", "2026-07-06", true, new[]
+        {
+            "DevezCode 테마 설정이 외부 터미널에서 실행 중인 Claude Code에 영향을 주지 않도록 수정했습니다.",
+            "프로젝트 이름을 변경해도 세션 완료 기록에 이전 프로젝트명이 표시되던 문제를 수정했습니다.",
+            "Claude Code 세션 유지 로직을 강화했습니다.",
+        }),
+        ("v1.11.3", "2026-07-06", false, new[]
         {
             "심플·소프트 테마에서 하단 상태 표시줄(모델·컨텍스트·사용량 등)의 색상 가독성을 개선했습니다.",
         }),

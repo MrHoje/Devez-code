@@ -44,6 +44,10 @@ public static class ClaudeCustomThemes
     // ── 테마 정의 ──────────────────────────────────────────────
     // DevezCode Soft 팔레트를 claude TUI 토큰에 매핑. base=light (라이트 베이스에 톤만 덮어씀).
     // 미지정 토큰은 light 베이스 폴백. 토큰 이름/효과는 claude code 공식 문서 기준.
+    // subtle: "마지막 프롬프트" 배너(inactive 배경) 위 텍스트로 쓰인다. 원래 값(#D8D2C6 / #E2E8F0)은
+    // 라이트 페이지 위 아주 옅은 보더용이라 이 배경 위에서 dim 처리 후 거의 안 보였다.
+    // text(본문 폰트색)와 같은 값으로 맞춤. 주의: 이 JSON은 그대로 파일로 쓰이므로
+    // JSON 문자열 리터럴 내부에는 "//" 주석을 절대 넣지 말 것(파싱 실패 → 기본 테마 폴백).
     private const string SoftThemeJson = """
     {
       "name": "Devez Soft",
@@ -55,7 +59,7 @@ public static class ClaudeCustomThemes
         "inverseText": "#FAF7F2",
         "inactive": "#5A5448",
         "inactiveShimmer": "#7A7368",
-        "subtle": "#D8D2C6",
+        "subtle": "#2A2620",
         "suggestion": "#5C8C4A",
         "permission": "#5C8C4A",
         "permissionShimmer": "#7BAA68",
@@ -103,7 +107,7 @@ public static class ClaudeCustomThemes
         "inverseText": "#FFFFFF",
         "inactive": "#475569",
         "inactiveShimmer": "#64748B",
-        "subtle": "#E2E8F0",
+        "subtle": "#0F172A",
         "suggestion": "#2563EB",
         "permission": "#2563EB",
         "permissionShimmer": "#60A5FA",
