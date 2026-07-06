@@ -407,7 +407,21 @@
                                 <DataTemplate DataType="{x:Type models:ClaudePlugin}">
                                     <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
                                             Background="{DynamicResource PanelSoftBrush}"
-                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                            BorderThickness="1.5" Cursor="Hand"
+                                            MouseLeftButtonUp="Detail_Click">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                                                <Setter Property="SnapsToDevicePixels" Value="False"/>
+                                                <Setter Property="UseLayoutRounding" Value="False"/>
+                                                <Setter Property="RenderOptions.EdgeMode" Value="Unspecified"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -459,10 +473,6 @@
                                                           Style="{StaticResource ToggleSwitch}"
                                                           VerticalAlignment="Center" Margin="0,0,8,0"
                                                           ToolTip="활성/비활성"/>
-                                                <Button Style="{StaticResource RowIconBtn}" Click="Detail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPackageSearch}"
-                                                          Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
-                                                </Button>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="Update_Click" ToolTip="업데이트">
                                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
                                                           Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
@@ -488,7 +498,8 @@
                                 <DataTemplate DataType="{x:Type models:ClaudeMarketplace}">
                                     <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
                                             Background="{DynamicResource PanelSoftBrush}"
-                                            BorderThickness="1.5">
+                                            BorderThickness="1.5" Cursor="Hand"
+                                            MouseLeftButtonUp="MarketItemDetail_Click">
                                         <Border.Style>
                                             <Style TargetType="Border">
                                                 <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
@@ -517,10 +528,6 @@
                                                            TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button Style="{StaticResource RowIconBtn}" Click="MarketItemDetail_Click" ToolTip="상세">
-                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconPackageSearch}"
-                                                          Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"/>
-                                                </Button>
                                                 <Button Style="{StaticResource RowIconBtn}" Click="MarketItemUpdate_Click"
                                                         ToolTip="이 마켓플레이스 업데이트">
                                                     <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"

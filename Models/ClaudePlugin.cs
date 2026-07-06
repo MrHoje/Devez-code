@@ -43,6 +43,14 @@ public sealed class ClaudePlugin : INotifyPropertyChanged
     /// <summary>업데이트 가능 배지 문구.</summary>
     public string UpdateBadgeText => string.IsNullOrEmpty(LatestVersion) ? "업데이트 가능" : $"업데이트 가능 · v{LatestVersion}";
 
+    /// <summary>상세를 열어본(선택된) 플러그인 — 마켓플레이스 카드처럼 보더만 하이라이트.</summary>
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected != value) { _isSelected = value; OnPropertyChanged(); } }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));

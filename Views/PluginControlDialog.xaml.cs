@@ -29,6 +29,7 @@ public partial class PluginControlDialog : UserControl
     private string _query = "";
     private string _discQuery = "";   // 하단 Discover 검색어
     private ClaudeMarketplace? _selectedMarket;   // 상세 열린(선택된) 마켓
+    private ClaudePlugin? _selectedPlugin;   // 상세 열린(선택된) 플러그인
     // 출력은 탭별로 분리 저장 — 탭 전환 시 서로의 내용이 유지되지 않는다.
     private string _outPlugins = "";
     private string _outMarket = "";
@@ -154,6 +155,7 @@ public partial class PluginControlDialog : UserControl
 
         // 탭 전환 시 하단 Discover 닫아 출력이 꽉 차게(특히 플러그인 탭은 설치 가능 목록이 없음).
         CloseDiscover();
+        if (_selectedPlugin != null) { _selectedPlugin.IsSelected = false; _selectedPlugin = null; }
         // 편집 중이었다면 편집기를 닫고 출력 표시로 되돌린다.
         ExitEditor();
         // 탭별 출력만 표시(전환 시 내용 유지 안 함).
@@ -290,6 +292,9 @@ public partial class PluginControlDialog : UserControl
     private async void Detail_Click(object sender, RoutedEventArgs e)
     {
         if (PluginOf(sender) is not ClaudePlugin p) return;
+        if (_selectedPlugin != null && !ReferenceEquals(_selectedPlugin, p)) _selectedPlugin.IsSelected = false;
+        _selectedPlugin = p;
+        p.IsSelected = true;
         ShowOutput($"details · {p.Name}", "조회 중…");
         var result = await ClaudePluginService.DetailsAsync(p.Id);
         ShowOutput($"details · {p.Name}", string.IsNullOrWhiteSpace(result) ? "(출력 없음)" : result);
