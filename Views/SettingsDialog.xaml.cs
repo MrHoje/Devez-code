@@ -54,7 +54,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.11.2", "2026-07-06", true, new[]
+        ("v1.11.3", "2026-07-06", true, new[]
+        {
+            "심플·소프트 테마에서 하단 상태 표시줄(모델·컨텍스트·사용량 등)의 색상 가독성을 개선했습니다.",
+        }),
+        ("v1.11.2", "2026-07-06", false, new[]
         {
             "플러그인 관리에서 목록을 새로고침할 때 같은 플러그인이 중복으로 쌓이던 문제를 수정했습니다.",
         }),
