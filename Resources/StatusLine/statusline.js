@@ -1,6 +1,10 @@
-// DEVEZCODE-STATUSLINE v5 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+// DEVEZCODE-STATUSLINE v6 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
 const _fs = require("fs"), _path = require("path"), _os = require("os");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
+// DevezCode 현재 테마("dark"|"soft"|"minimal"). 앱이 %AppData%\DevezCode\theme.txt 에 떨군다.
+// statusline 은 별도 node 프로세스라 이 파일로만 테마를 안다. 없으면 dark 로 폴백.
+let THEME = "dark";
+try { if (process.env.APPDATA) THEME = (_fs.readFileSync(_path.join(process.env.APPDATA, "DevezCode", "theme.txt"), "utf8").trim() || "dark"); } catch (e) {}
 // 직전 정상 출력 캐시. parse 실패/빈 결과로 빈 줄을 뱉으면 세션 진입 시 statusline 이
 // 잠깐 비어 보이므로, 그런 렌더에서는 마지막 정상 줄을 대신 출력해 깜빡임을 막는다.
 const _lastFile = _path.join(_os.tmpdir(), "claude-statusline-last.txt");
@@ -92,9 +96,19 @@ process.stdin.on("end", () => {
     const totalTokens = counter.displayTotal || 0;
     const elapsedSec  = counter.displayTime  || 0;
 
-    // DevezCode 기본 색감: 베이스 색을 따뜻한 다크(#2A2620) 쪽으로 16% 블렌드.
-    // 다크 배경에서도 충분히 또렷하고, 라이트 테마에서도 가독성을 챙기는 톤다운 값.
-    const TINT = [42, 38, 32], K = 0.16;
+    // 테마별 색감. statusline 은 터미널 배경 위에 그려지므로 밝은 테마(soft/minimal)에선
+    // 밝은 팔레트를 배경 텍스트색 쪽으로 강하게 블렌드해 어둡게(=가독) 만든다. 의미색(모델/effort
+    // 등)의 색상(hue)은 유지되고 명도만 낮아져 라이트 배경에서도 또렷하다.
+    //   dark:    따뜻한 다크(#2A2620) 쪽 16% — 어두운 배경, 밝은 글자 유지.
+    //   soft:    본문색(#2A2620) 쪽 62% — 크림 배경에서 톤다운.
+    //   minimal: 본문색(#0F172A) 쪽 62% — 화이트 배경에서 톤다운.
+    const _tints = {
+      dark:    { tint: [42, 38, 32],  k: 0.16 },
+      soft:    { tint: [42, 38, 32],  k: 0.62 },
+      minimal: { tint: [15, 23, 42],  k: 0.62 },
+    };
+    const _t = _tints[THEME] || _tints.dark;
+    const TINT = _t.tint, K = _t.k;
     const fg = (r, g, b) =>
       "\x1b[38;2;" + Math.round(r + (TINT[0] - r) * K)
             + ";" + Math.round(g + (TINT[1] - g) * K)
