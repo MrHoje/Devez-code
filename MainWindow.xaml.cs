@@ -2934,9 +2934,7 @@ public partial class MainWindow : Window
     private void AddSessionCompletionRecord(SessionItem s)
     {
         var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
-        var projName = proj != null
-            ? System.IO.Path.GetFileName(proj.Path.TrimEnd('\\', '/'))
-            : "";
+        var projName = proj?.Name ?? "";
         var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
 
         _sessionDoneRecords.Insert(0, new SessionCompletionRecord
@@ -3160,9 +3158,7 @@ public partial class MainWindow : Window
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
-        var projName = proj != null
-            ? System.IO.Path.GetFileName(proj.Path.TrimEnd('\\', '/'))
-            : "";
+        var projName = proj?.Name ?? "";
         var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
         // 제목(큰 글씨)=프로젝트명, 본문(작은 글씨)=세션명 · 상태. 프로젝트명 없으면 세션명을 제목으로.
         var title = string.IsNullOrEmpty(projName) ? sessName : projName;
@@ -3181,9 +3177,7 @@ public partial class MainWindow : Window
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
         var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
-        var projName = proj != null
-            ? System.IO.Path.GetFileName(proj.Path.TrimEnd('\\', '/'))
-            : "";
+        var projName = proj?.Name ?? "";
         var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
         var title = string.IsNullOrEmpty(projName) ? sessName : projName;
         var body  = string.IsNullOrEmpty(projName) ? "응답 대기" : $"{sessName} · 응답 대기";
@@ -3949,14 +3943,18 @@ public partial class MainWindow : Window
     private const int WM_NCLBUTTONDOWN = 0x00A1;
     private const int WM_MOUSEMOVE = 0x0200;
     private const int WM_LBUTTONUP = 0x0202;
-    private const int WM_SYSCOMMAND = 0x0112;
-    private const int SC_MOVE = 0xF010;
     private const int HTCAPTION = 2;
 
     // 전체화면 중 캡션 누름 추적: 실제 드래그일 때만 축소, 단순 클릭은 무시, 더블클릭은 시간차로 직접 판정.
     private bool _fsCapPending;
     private int _fsCapDownTick;
     private POINT _fsCapDownPt;
+    // 축소 후 수동 이동 드래그 상태 — Windows SC_MOVE(복원+드래그 인계) 트릭은 실제 WS_MAXIMIZE 가
+    // 아닌 우리 수동 전체화면(WindowState.Normal 을 모니터 크기로 채운 것)에서는 내부 휴리스틱이
+    // 안 맞아 커서가 한참 움직여야 뒤늦게 붙는 데드존이 생겼다 — 그래서 SC_MOVE 에 맡기지 않고
+    // 캡션을 쥔 오프셋을 고정해 두고 매 WM_MOUSEMOVE 마다 직접 SetWindowPos 로 따라가게 한다.
+    private bool _fsDragging;
+    private int _fsDragOffX, _fsDragOffY; // 창 좌상단 → 그랩 지점 오프셋(물리 px), 드래그 시작 시 고정
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -3984,7 +3982,7 @@ public partial class MainWindow : Window
                 SetCapture(_mainHwnd);
             }
         }
-        // 캡처 중 충분히 움직이면 드래그로 판정 → 축소 후 네이티브 이동 루프로 인계.
+        // 캡처 중 충분히 움직이면 드래그로 판정 → 축소하고 수동 드래그 상태로 전환(캡처 유지).
         else if (msg == WM_MOUSEMOVE && _fsCapPending && _inFullScreen)
         {
             GetCursorPos(out var p);
@@ -3993,28 +3991,72 @@ public partial class MainWindow : Window
             {
                 _fsCapPending = false; _fsCapDownTick = 0;
                 handled = true;
-                RestoreFromFullScreenAndDrag(p.X, p.Y);
+                BeginDragFromFullScreen(p.X, p.Y);
             }
         }
-        // 움직임 없이 떼면 단순 클릭 — 아무 동작 안 함(다음 down 과의 시간차로 더블클릭 판정).
-        else if (msg == WM_LBUTTONUP && _fsCapPending)
+        // 수동 드래그 중: 매 이동마다 그랩 오프셋을 유지하며 직접 이동(리사이즈 없음) — 커서에 정확히 붙는다.
+        else if (msg == WM_MOUSEMOVE && _fsDragging)
         {
-            _fsCapPending = false; ReleaseCapture(); handled = true;
+            handled = true;
+            GetCursorPos(out var p);
+            SetWindowPos(_mainHwnd, IntPtr.Zero, p.X - _fsDragOffX, p.Y - _fsDragOffY, 0, 0,
+                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE);
+        }
+        // 움직임 없이 떼면 단순 클릭 — 아무 동작 안 함(다음 down 과의 시간차로 더블클릭 판정).
+        // 드래그 중이었다면 여기서 종료.
+        else if (msg == WM_LBUTTONUP && (_fsCapPending || _fsDragging))
+        {
+            _fsCapPending = false; _fsDragging = false; ReleaseCapture(); handled = true;
         }
         return IntPtr.Zero;
     }
 
-    /// <summary>전체화면 중 캡션을 아래로 드래그하면 작업영역 절반 크기로 화면 중앙에 배치한다.</summary>
-    private void RestoreFromFullScreenAndDrag(int screenPxX, int screenPxY)
+    /// <summary>전체화면 중 캡션 드래그 시작 — 축소하되, 캡션을 잡은 지점이 새 창에서도 커서 아래
+    /// 정확히 같은 자리(가로는 창폭 대비 비율, 세로는 캡션 상단 기준 절대 오프셋)에 오도록 재배치한 뒤
+    /// 그랩 오프셋을 고정해 이후 WM_MOUSEMOVE 마다 직접 따라가게 한다.</summary>
+    private void BeginDragFromFullScreen(int screenPxX, int screenPxY)
     {
         if (!_inFullScreen) return;
         _inFullScreen = false;
         Topmost = false;
         ResizeMode = ResizeMode.CanResize;
-        ReleaseCapture();
-        SetBoundsInstant(HalfCenteredOnMonitor());
+
+        var target = HalfCenteredOnMonitor();
+        var dpi = VisualTreeHelper.GetDpi(this);
+        int pw = (int)Math.Round(target.Width * dpi.DpiScaleX);
+        int ph = (int)Math.Round(target.Height * dpi.DpiScaleY);
+        int px = (int)Math.Round(target.X * dpi.DpiScaleX);
+        int py = (int)Math.Round(target.Y * dpi.DpiScaleY);
+
+        var mon = MonitorFromWindow(_mainHwnd, MONITOR_DEFAULTTONEAREST);
+        if (mon != IntPtr.Zero)
+        {
+            var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (GetMonitorInfo(mon, ref info))
+            {
+                double monW = info.rcMonitor.Right - info.rcMonitor.Left;
+                double ratioX = monW > 0 ? (_fsCapDownPt.X - info.rcMonitor.Left) / monW : 0.5;
+                // 캡션 높이는 전체화면·창모드 동일 → 다운 지점의 세로 오프셋(윈도우 상단 기준)을
+                // 스케일 없이 그대로 보존해야 커서가 캡션의 같은 지점에 정확히 붙는다.
+                // (가로는 폭이 급격히 줄어드는 값이라 비율(ratioX)로 스케일해야 캡션 밖으로 안 벗어난다.)
+                int yOffsetPhysical = _fsCapDownPt.Y - info.rcMonitor.Top;
+                px = (int)Math.Round(screenPxX - ratioX * pw);
+                py = screenPxY - yOffsetPhysical;
+            }
+        }
+
+        SetWindowPos(_mainHwnd, IntPtr.Zero, px, py, pw, ph, SWP_NOZORDER | SWP_NOACTIVATE);
         ApplyCornerPreference();
+
+        // 그랩 오프셋 고정 — 이후 WM_MOUSEMOVE 마다 이 오프셋만큼 커서에서 뺀 위치로 직접 이동.
+        _fsDragOffX = screenPxX - px;
+        _fsDragOffY = screenPxY - py;
+        _fsDragging = true;
+        // 캡처는 유지(ReleaseCapture 안 함) — WM_LBUTTONUP 까지 계속 이 창으로 마우스 메시지를 받아야 함.
     }
+
+    private const uint SWP_NOZORDER = 0x0004, SWP_NOSIZE = 0x0001, SWP_NOACTIVATE = 0x0010;
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     private const int SM_CXDOUBLECLK = 36, SM_CYDOUBLECLK = 37, SM_CXDRAG = 68, SM_CYDRAG = 69;
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
