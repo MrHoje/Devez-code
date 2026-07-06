@@ -111,13 +111,14 @@ process.stdin.on("end", () => {
     //   dark: 따뜻한 다크(#2A2620) 쪽 16% 블렌드 — 밝은 글자 유지.
     //   라이트: 옅은 팔레트를 곱연산만 하면 칙칙해 색 구분이 죽는다. 채도를 최대로 끌어올린 뒤
     //     (min 을 0 으로 당겨 hue 유지) 명도(VF)만 낮춰 밝은 배경에서 쨍하게 구분되게 한다.
-    const fg = (r, g, b) => {
+    // m: 라이트 전용 추가 명도 배수(색별 미세조정, 기본 1). 다크는 무시.
+    const fg = (r, g, b, m = 1) => {
       if (!_light)
         return _esc(r + (TINT[0] - r) * K, g + (TINT[1] - g) * K, b + (TINT[2] - b) * K);
       const mn = Math.min(r, g, b), mx = Math.max(r, g, b);
       if (mx === mn) return _esc(r * 0.34, g * 0.34, b * 0.34); // 무채색은 그냥 어둡게
-      const s = 255 / (mx - mn);
-      return _esc((r - mn) * s * VF, (g - mn) * s * VF, (b - mn) * s * VF);
+      const s = 255 / (mx - mn), v = VF * m;
+      return _esc((r - mn) * s * v, (g - mn) * s * v, (b - mn) * s * v);
     };
     // 일반 텍스트(브랜치 외 model 폴백/구분자/토큰 등): 라이트=진한 잉크색 고정, 다크는 fg 와 동일.
     const fgText = (r, g, b) => _light ? _esc(INK[0], INK[1], INK[2]) : fg(r, g, b);
@@ -130,7 +131,7 @@ process.stdin.on("end", () => {
     const OPUS   = fg(248, 113, 113);
     const SONNET = fg(250, 204, 21);
     const FABLE  = fg(232, 121, 249);
-    const CTX    = fg(52, 211, 153);
+    const CTX    = fg(52, 211, 153, 0.68); // 라이트에서 더 어두운 녹색
     const TIME   = fg(96, 165, 250);
     const WEEK   = fg(167, 139, 250);
     const TOK    = fgText(226, 232, 240);
