@@ -1,10 +1,14 @@
-// DEVEZCODE-STATUSLINE v6 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+// DEVEZCODE-STATUSLINE v7 — DevezCode 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
 const _fs = require("fs"), _path = require("path"), _os = require("os");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
-// DevezCode 현재 테마("dark"|"soft"|"minimal"). 앱이 %AppData%\DevezCode\theme.txt 에 떨군다.
-// statusline 은 별도 node 프로세스라 이 파일로만 테마를 안다. 없으면 dark 로 폴백.
+// 테마 추종은 DevezCode 안에서 뜬 세션만. DevezCode 는 자기 세션에만 DEVEZCODE_ROOM_ID 를
+// 자식 트리에 상속시킨다(외부 Windows Terminal 등에는 없음). 외부 세션은 앱 테마와 무관하게
+// 항상 dark 로 고정해, DevezCode 라이트 테마가 외부 터미널 statusline 색을 바꾸지 않게 한다.
+// DevezCode 안: %AppData%\DevezCode\theme.txt("dark"|"soft"|"minimal")를 읽어 추종.
 let THEME = "dark";
-try { if (process.env.APPDATA) THEME = (_fs.readFileSync(_path.join(process.env.APPDATA, "DevezCode", "theme.txt"), "utf8").trim() || "dark"); } catch (e) {}
+if (process.env.DEVEZCODE_ROOM_ID) {
+  try { if (process.env.APPDATA) THEME = (_fs.readFileSync(_path.join(process.env.APPDATA, "DevezCode", "theme.txt"), "utf8").trim() || "dark"); } catch (e) {}
+}
 // 직전 정상 출력 캐시. parse 실패/빈 결과로 빈 줄을 뱉으면 세션 진입 시 statusline 이
 // 잠깐 비어 보이므로, 그런 렌더에서는 마지막 정상 줄을 대신 출력해 깜빡임을 막는다.
 const _lastFile = _path.join(_os.tmpdir(), "claude-statusline-last.txt");
