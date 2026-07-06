@@ -42,6 +42,19 @@ public partial class SettingsDialog : UserControl
     private bool   _originalDeepSeekEnabled;
     private bool   _selectedDeepSeekEnabled;
 
+    // 사이드패널 뷰 버튼 표시 — [저장] 시점에만 디스크 반영.
+    private bool _originalShowDirView, _originalShowQueueView, _originalShowBrowserView, _originalShowDiffView;
+    private bool _selectedShowDirView, _selectedShowQueueView, _selectedShowBrowserView, _selectedShowDiffView;
+
+    // 푸터 사용량 표시(provider별) + 한도예상 표시 — [저장] 시점에만 디스크 반영.
+    private bool _originalShowFooterClaude, _originalShowFooterCodex, _originalShowFooterGo, _originalShowFooterDeepSeek, _originalShowEstimate;
+    private bool _selectedShowFooterClaude, _selectedShowFooterCodex, _selectedShowFooterGo, _selectedShowFooterDeepSeek, _selectedShowEstimate;
+
+    // 알림 상세(자동닫힘/모니터) — [저장] 시점에만 디스크 반영. 위치는 기존 _notifyPos/_originalNotifyPos 사용.
+    private int    _originalNotifyAutoCloseSec, _selectedNotifyAutoCloseSec;
+    private string _originalNotifyMonitor = "", _selectedNotifyMonitor = "";
+    private string _originalNotifyPos = "br";
+
     // 탭 이동 단축키(가상키코드). 디스크 저장은 [저장] 버튼에서만 — 다른 설정과 동일.
     private int _originalHkMod, _originalHkPrev, _originalHkNext;
     private int _selectedHkMod, _selectedHkPrev, _selectedHkNext;
@@ -484,21 +497,24 @@ public partial class SettingsDialog : UserControl
     private void LoadSidePanelSettings()
     {
         _loadingSidePanel = true;
-        ShowDirViewToggle.IsChecked     = SettingsService.LoadShowDirViewBtn();
-        ShowQueueViewToggle.IsChecked   = SettingsService.LoadShowQueueViewBtn();
-        ShowBrowserViewToggle.IsChecked = SettingsService.LoadShowBrowserViewBtn();
-        ShowDiffViewToggle.IsChecked    = SettingsService.LoadShowDiffViewBtn();
+        _originalShowDirView     = _selectedShowDirView     = SettingsService.LoadShowDirViewBtn();
+        _originalShowQueueView   = _selectedShowQueueView   = SettingsService.LoadShowQueueViewBtn();
+        _originalShowBrowserView = _selectedShowBrowserView = SettingsService.LoadShowBrowserViewBtn();
+        _originalShowDiffView    = _selectedShowDiffView    = SettingsService.LoadShowDiffViewBtn();
+        ShowDirViewToggle.IsChecked     = _originalShowDirView;
+        ShowQueueViewToggle.IsChecked   = _originalShowQueueView;
+        ShowBrowserViewToggle.IsChecked = _originalShowBrowserView;
+        ShowDiffViewToggle.IsChecked    = _originalShowDiffView;
         _loadingSidePanel = false;
     }
 
     private void SidePanelToggle_Changed(object sender, RoutedEventArgs e)
     {
         if (_loadingSidePanel) return;
-        SettingsService.SaveShowDirViewBtn(ShowDirViewToggle.IsChecked == true);
-        SettingsService.SaveShowQueueViewBtn(ShowQueueViewToggle.IsChecked == true);
-        SettingsService.SaveShowBrowserViewBtn(ShowBrowserViewToggle.IsChecked == true);
-        SettingsService.SaveShowDiffViewBtn(ShowDiffViewToggle.IsChecked == true);
-        (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
+        _selectedShowDirView     = ShowDirViewToggle.IsChecked == true;
+        _selectedShowQueueView   = ShowQueueViewToggle.IsChecked == true;
+        _selectedShowBrowserView = ShowBrowserViewToggle.IsChecked == true;
+        _selectedShowDiffView    = ShowDiffViewToggle.IsChecked == true;
     }
 
     // ── 하단 푸터 계정 사용량(provider) 표시 설정 ─────────────────
@@ -506,15 +522,20 @@ public partial class SettingsDialog : UserControl
     private void LoadFooterUsageSettings()
     {
         _loadingFooterUsage = true;
-        ShowFooterClaudeToggle.IsChecked = SettingsService.LoadShowFooterClaude();
-        ShowFooterCodexToggle.IsChecked  = SettingsService.LoadShowFooterCodex();
-        ShowFooterGoToggle.IsChecked     = SettingsService.LoadShowFooterGo();
-        ShowFooterDeepSeekToggle.IsChecked = SettingsService.LoadShowFooterDeepSeek();
-        _loadingFooterUsage = false;
+        _originalShowFooterClaude   = _selectedShowFooterClaude   = SettingsService.LoadShowFooterClaude();
+        _originalShowFooterCodex    = _selectedShowFooterCodex    = SettingsService.LoadShowFooterCodex();
+        _originalShowFooterGo       = _selectedShowFooterGo       = SettingsService.LoadShowFooterGo();
+        _originalShowFooterDeepSeek = _selectedShowFooterDeepSeek = SettingsService.LoadShowFooterDeepSeek();
+        ShowFooterClaudeToggle.IsChecked   = _originalShowFooterClaude;
+        ShowFooterCodexToggle.IsChecked    = _originalShowFooterCodex;
+        ShowFooterGoToggle.IsChecked       = _originalShowFooterGo;
+        ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek;
         UpdateConnectionBadges();
 
         // 한도 도달 예상 표시 토글
-        ShowEstimateToggle.IsChecked = SettingsService.LoadShowEstimate();
+        _originalShowEstimate = _selectedShowEstimate = SettingsService.LoadShowEstimate();
+        ShowEstimateToggle.IsChecked = _originalShowEstimate;
+        _loadingFooterUsage = false;
 
         // DeepSeek 연결 토글 상태 복원 — 키가 이미 저장되어 있으면 입력 영역은 숨김
         bool hasKey = DeepSeekCredentialStore.IsConnected();
@@ -528,17 +549,16 @@ public partial class SettingsDialog : UserControl
     private void FooterUsageToggle_Changed(object sender, RoutedEventArgs e)
     {
         if (_loadingFooterUsage) return;
-        SettingsService.SaveShowFooterClaude(ShowFooterClaudeToggle.IsChecked == true);
-        SettingsService.SaveShowFooterCodex(ShowFooterCodexToggle.IsChecked == true);
-        SettingsService.SaveShowFooterGo(ShowFooterGoToggle.IsChecked == true);
-        SettingsService.SaveShowFooterDeepSeek(ShowFooterDeepSeekToggle.IsChecked == true);
-        (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
+        _selectedShowFooterClaude   = ShowFooterClaudeToggle.IsChecked == true;
+        _selectedShowFooterCodex    = ShowFooterCodexToggle.IsChecked == true;
+        _selectedShowFooterGo       = ShowFooterGoToggle.IsChecked == true;
+        _selectedShowFooterDeepSeek = ShowFooterDeepSeekToggle.IsChecked == true;
     }
 
     private void EstimateToggle_Changed(object sender, RoutedEventArgs e)
     {
-        SettingsService.SaveShowEstimate(ShowEstimateToggle.IsChecked == true);
-        (Application.Current.MainWindow as MainWindow)?.RefreshUsagePanelIfVisible();
+        if (_loadingFooterUsage) return;
+        _selectedShowEstimate = ShowEstimateToggle.IsChecked == true;
     }
 
     // ── 계정 사용량 로그인/재연결 — OAuth 창을 띄운다(갱신은 설정 닫힐 때 MainWindow 가 RefreshNow). ──
@@ -609,7 +629,7 @@ public partial class SettingsDialog : UserControl
         DeepSeekConnectedBadge.Visibility = DeepSeekCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // ── 알림 설정 (켜짐/꺼짐은 [저장] 버튼에서 반영 — 나머지 상세 설정은 즉시 저장) ──
+    // ── 알림 설정 (모두 [저장] 버튼에서만 디스크 반영 — 테스트 버튼은 저장된 값으로 동작) ──
     private bool _loadingNotify;
     private string _notifyPos = "br";
     private bool _selectedNotifyEnabled;
@@ -620,9 +640,10 @@ public partial class SettingsDialog : UserControl
         _originalNotifyEnabled = SettingsService.LoadNotifySessionDoneEnabled();
         _selectedNotifyEnabled = _originalNotifyEnabled;
         NotifyEnabledToggle.IsChecked = _originalNotifyEnabled;
-        _notifyPos = SettingsService.LoadNotifyPosition();
+        _notifyPos = _originalNotifyPos = SettingsService.LoadNotifyPosition();
         UpdateNotifyPositionVisual();
-        SelectComboByTag(NotifyAutoCloseCombo, SettingsService.LoadNotifyAutoCloseSeconds().ToString());
+        _originalNotifyAutoCloseSec = _selectedNotifyAutoCloseSec = SettingsService.LoadNotifyAutoCloseSeconds();
+        SelectComboByTag(NotifyAutoCloseCombo, _originalNotifyAutoCloseSec.ToString());
         InitNotifyMonitorCombo();
         UpdateNotifyDetailVisibility();
         _loadingNotify = false;
@@ -640,13 +661,13 @@ public partial class SettingsDialog : UserControl
     private void InitNotifyMonitorCombo()
     {
         var monitors = MonitorHelper.GetAllMonitors();
-        var saved = SettingsService.LoadNotifyMonitorDevice();
+        _originalNotifyMonitor = _selectedNotifyMonitor = SettingsService.LoadNotifyMonitorDevice();
         NotifyMonitorCombo.Items.Clear();
         int selectIndex = 0;
         for (int i = 0; i < monitors.Count; i++)
         {
             NotifyMonitorCombo.Items.Add(new ComboBoxItem { Content = monitors[i].DisplayName, Tag = monitors[i].DeviceName });
-            if (monitors[i].DeviceName == saved) selectIndex = i;
+            if (monitors[i].DeviceName == _originalNotifyMonitor) selectIndex = i;
         }
         if (NotifyMonitorCombo.Items.Count > 0) NotifyMonitorCombo.SelectedIndex = selectIndex;
     }
@@ -669,21 +690,20 @@ public partial class SettingsDialog : UserControl
     {
         if (_loadingNotify) return;
         if (NotifyAutoCloseCombo.SelectedItem is ComboBoxItem it && int.TryParse((string)it.Tag, out var sec))
-            SettingsService.SaveNotifyAutoCloseSeconds(sec);
+            _selectedNotifyAutoCloseSec = sec;
     }
 
     private void NotifyMonitorCombo_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (_loadingNotify) return;
         if (NotifyMonitorCombo.SelectedItem is ComboBoxItem it)
-            SettingsService.SaveNotifyMonitorDevice((string)(it.Tag ?? ""));
+            _selectedNotifyMonitor = (string)(it.Tag ?? "");
     }
 
     private void NotifyPositionCard_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Border b || b.Tag is not string pos) return;
         _notifyPos = pos;
-        SettingsService.SaveNotifyPosition(pos);
         UpdateNotifyPositionVisual();
     }
 
@@ -858,6 +878,18 @@ public partial class SettingsDialog : UserControl
         if (_selectedProjectColumns != _originalProjectColumns) return true;
         if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled) return true;
         if (_selectedNotifyEnabled != _originalNotifyEnabled) return true;
+        if (_selectedShowDirView != _originalShowDirView) return true;
+        if (_selectedShowQueueView != _originalShowQueueView) return true;
+        if (_selectedShowBrowserView != _originalShowBrowserView) return true;
+        if (_selectedShowDiffView != _originalShowDiffView) return true;
+        if (_selectedShowFooterClaude != _originalShowFooterClaude) return true;
+        if (_selectedShowFooterCodex != _originalShowFooterCodex) return true;
+        if (_selectedShowFooterGo != _originalShowFooterGo) return true;
+        if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) return true;
+        if (_selectedShowEstimate != _originalShowEstimate) return true;
+        if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec) return true;
+        if (_selectedNotifyMonitor != _originalNotifyMonitor) return true;
+        if (_notifyPos != _originalNotifyPos) return true;
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
@@ -904,6 +936,51 @@ public partial class SettingsDialog : UserControl
         if (_selectedNotifyEnabled != _originalNotifyEnabled)
             SettingsService.SaveNotifySessionDoneEnabled(_selectedNotifyEnabled);
         _originalNotifyEnabled = _selectedNotifyEnabled;
+
+        if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec)
+            SettingsService.SaveNotifyAutoCloseSeconds(_selectedNotifyAutoCloseSec);
+        _originalNotifyAutoCloseSec = _selectedNotifyAutoCloseSec;
+        if (_selectedNotifyMonitor != _originalNotifyMonitor)
+            SettingsService.SaveNotifyMonitorDevice(_selectedNotifyMonitor);
+        _originalNotifyMonitor = _selectedNotifyMonitor;
+        if (_notifyPos != _originalNotifyPos)
+            SettingsService.SaveNotifyPosition(_notifyPos);
+        _originalNotifyPos = _notifyPos;
+
+        if (_selectedShowDirView != _originalShowDirView || _selectedShowQueueView != _originalShowQueueView
+            || _selectedShowBrowserView != _originalShowBrowserView || _selectedShowDiffView != _originalShowDiffView)
+        {
+            SettingsService.SaveShowDirViewBtn(_selectedShowDirView);
+            SettingsService.SaveShowQueueViewBtn(_selectedShowQueueView);
+            SettingsService.SaveShowBrowserViewBtn(_selectedShowBrowserView);
+            SettingsService.SaveShowDiffViewBtn(_selectedShowDiffView);
+            (Application.Current.MainWindow as MainWindow)?.ApplySidePanelButtonVisibility();
+        }
+        _originalShowDirView = _selectedShowDirView;
+        _originalShowQueueView = _selectedShowQueueView;
+        _originalShowBrowserView = _selectedShowBrowserView;
+        _originalShowDiffView = _selectedShowDiffView;
+
+        if (_selectedShowFooterClaude != _originalShowFooterClaude || _selectedShowFooterCodex != _originalShowFooterCodex
+            || _selectedShowFooterGo != _originalShowFooterGo || _selectedShowFooterDeepSeek != _originalShowFooterDeepSeek)
+        {
+            SettingsService.SaveShowFooterClaude(_selectedShowFooterClaude);
+            SettingsService.SaveShowFooterCodex(_selectedShowFooterCodex);
+            SettingsService.SaveShowFooterGo(_selectedShowFooterGo);
+            SettingsService.SaveShowFooterDeepSeek(_selectedShowFooterDeepSeek);
+            (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
+        }
+        _originalShowFooterClaude = _selectedShowFooterClaude;
+        _originalShowFooterCodex = _selectedShowFooterCodex;
+        _originalShowFooterGo = _selectedShowFooterGo;
+        _originalShowFooterDeepSeek = _selectedShowFooterDeepSeek;
+
+        if (_selectedShowEstimate != _originalShowEstimate)
+        {
+            SettingsService.SaveShowEstimate(_selectedShowEstimate);
+            (Application.Current.MainWindow as MainWindow)?.RefreshUsagePanelIfVisible();
+        }
+        _originalShowEstimate = _selectedShowEstimate;
 
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext)
         {
@@ -977,6 +1054,30 @@ public partial class SettingsDialog : UserControl
             NotifyEnabledToggle.IsChecked = _originalNotifyEnabled;
             UpdateNotifyDetailVisibility();
         }
+        if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec)
+        {
+            _selectedNotifyAutoCloseSec = _originalNotifyAutoCloseSec;
+            SelectComboByTag(NotifyAutoCloseCombo, _originalNotifyAutoCloseSec.ToString());
+        }
+        if (_selectedNotifyMonitor != _originalNotifyMonitor)
+        {
+            _selectedNotifyMonitor = _originalNotifyMonitor;
+            SelectComboByTag(NotifyMonitorCombo, _originalNotifyMonitor);
+        }
+        if (_notifyPos != _originalNotifyPos)
+        {
+            _notifyPos = _originalNotifyPos;
+            UpdateNotifyPositionVisual();
+        }
+        if (_selectedShowDirView != _originalShowDirView) { _selectedShowDirView = _originalShowDirView; ShowDirViewToggle.IsChecked = _originalShowDirView; }
+        if (_selectedShowQueueView != _originalShowQueueView) { _selectedShowQueueView = _originalShowQueueView; ShowQueueViewToggle.IsChecked = _originalShowQueueView; }
+        if (_selectedShowBrowserView != _originalShowBrowserView) { _selectedShowBrowserView = _originalShowBrowserView; ShowBrowserViewToggle.IsChecked = _originalShowBrowserView; }
+        if (_selectedShowDiffView != _originalShowDiffView) { _selectedShowDiffView = _originalShowDiffView; ShowDiffViewToggle.IsChecked = _originalShowDiffView; }
+        if (_selectedShowFooterClaude != _originalShowFooterClaude) { _selectedShowFooterClaude = _originalShowFooterClaude; ShowFooterClaudeToggle.IsChecked = _originalShowFooterClaude; }
+        if (_selectedShowFooterCodex != _originalShowFooterCodex) { _selectedShowFooterCodex = _originalShowFooterCodex; ShowFooterCodexToggle.IsChecked = _originalShowFooterCodex; }
+        if (_selectedShowFooterGo != _originalShowFooterGo) { _selectedShowFooterGo = _originalShowFooterGo; ShowFooterGoToggle.IsChecked = _originalShowFooterGo; }
+        if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) { _selectedShowFooterDeepSeek = _originalShowFooterDeepSeek; ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek; }
+        if (_selectedShowEstimate != _originalShowEstimate) { _selectedShowEstimate = _originalShowEstimate; ShowEstimateToggle.IsChecked = _originalShowEstimate; }
         // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)
         CancelShortcutCapture();
         _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
