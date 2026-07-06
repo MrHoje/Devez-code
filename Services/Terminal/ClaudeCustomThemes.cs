@@ -6,7 +6,9 @@ using System.Text;
 namespace DevezCode.Services.Terminal;
 
 /// <summary>claude code 커스텀 테마 — DevezCode 3개 테마 중 soft/minimal 의 톤에 맞춘 두 개.
-/// <c>~/.claude/themes/devez-soft.json</c>, <c>devez-minimal.json</c> 으로 1회 설치(devez 앱이 만든 파일 있으면 보존·재사용).
+/// <c>~/.claude/themes/devez-soft.json</c>, <c>devez-minimal.json</c> 으로 매 시작 시 번들 내용으로
+/// 항상 재생성(statusline.js 와 동일한 관리 방식) — 팔레트를 코드에서 바꾸면 다음 실행에 바로 반영.
+/// 이 두 파일은 우리 전용 슬러그라 사용자가 직접 편집해 커스터마이즈할 대상이 아니다.
 /// Per-session 으로 <c>/config theme=custom:devez-soft</c> 같은 형태로 주입해서 사용.
 /// (dark 는 claude 내장 "dark" 와 톤이 같으므로 별도 커스텀 불필요.)</summary>
 public static class ClaudeCustomThemes
@@ -15,7 +17,7 @@ public static class ClaudeCustomThemes
     private const string SoftSlug     = "devez-soft";
     private const string MinimalSlug  = "devez-minimal";
 
-    /// <summary>앱 시작 시 호출. 테마 파일이 없으면 생성. 기존 파일은 사용자 편집 보존 위해 덮어쓰지 않음.</summary>
+    /// <summary>앱 시작 시 호출. 매번 번들 내용으로 덮어써 최신 팔레트를 강제 반영한다.</summary>
     public static void EnsureInstalled()
     {
         try
@@ -24,16 +26,10 @@ public static class ClaudeCustomThemes
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ThemesDirName);
             Directory.CreateDirectory(dir);
 
-            WriteIfMissing(Path.Combine(dir, SoftSlug + ".json"), SoftThemeJson);
-            WriteIfMissing(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson);
+            File.WriteAllText(Path.Combine(dir, SoftSlug + ".json"), SoftThemeJson, new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson, new UTF8Encoding(false));
         }
         catch { /* best-effort — 실패해도 per-session 주입이 안 될 뿐 */ }
-    }
-
-    private static void WriteIfMissing(string path, string content)
-    {
-        if (File.Exists(path)) return;
-        File.WriteAllText(path, content, new UTF8Encoding(false));
     }
 
     /// <summary>DevezCode 테마 → claude theme 슬러그. per-session 주입에서 사용.</summary>
@@ -83,10 +79,10 @@ public static class ClaudeCustomThemes
         "selectionBg": "#C2D8B0",
         "diffAdded": "#DEECD6",
         "diffAddedDimmed": "#F2EDE6",
-        "diffAddedWord": "#5C8C4A",
+        "diffAddedWord": "#7BAA68",
         "diffRemoved": "#F2D6D6",
         "diffRemovedDimmed": "#F2EDE6",
-        "diffRemovedWord": "#D95F5F",
+        "diffRemovedWord": "#E8A0A0",
         "rate_limit_fill": "#5C8C4A",
         "rate_limit_empty": "#D8D2C6",
         "briefLabelYou": "#5C8C4A",
@@ -131,10 +127,10 @@ public static class ClaudeCustomThemes
         "selectionBg": "#C5D8F8",
         "diffAdded": "#DBEAFE",
         "diffAddedDimmed": "#F8FAFC",
-        "diffAddedWord": "#2563EB",
+        "diffAddedWord": "#60A5FA",
         "diffRemoved": "#FEE2E2",
         "diffRemovedDimmed": "#F8FAFC",
-        "diffRemovedWord": "#DC2626",
+        "diffRemovedWord": "#F87171",
         "rate_limit_fill": "#2563EB",
         "rate_limit_empty": "#E2E8F0",
         "briefLabelYou": "#2563EB",

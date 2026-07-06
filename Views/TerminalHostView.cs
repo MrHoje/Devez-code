@@ -48,7 +48,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private WebView2? _webView;
     private bool _initStarted;
     private bool _pageReady;
-    private (double w, double h)? _pendingLoading; // pageReady 전 SetLoading(true) 보류(기대 크기 포함, 콜드스타트 첫 세션 스피너)
+    private (double w, double h, string? label)? _pendingLoading; // pageReady 전 SetLoading(true) 보류(기대 크기·문구 포함, 콜드스타트 첫 세션 스피너)
     private string? _pendingShowRoomId;
     private readonly List<string> _pendingPreload = new(); // pageReady 전에 들어온 백그라운드 로드 요청
     private string? _activeRoomId;
@@ -579,7 +579,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (_pendingLoading is { } pl)
         {
             _pendingLoading = null;
-            PostJson(new { type = "loading", on = true, expectW = pl.w, expectH = pl.h });
+            PostJson(new { type = "loading", on = true, expectW = pl.w, expectH = pl.h, label = pl.label });
         }
 
         // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
@@ -728,7 +728,58 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             }
         }
         ScanForReady(roomId, merged); // claude 화면이 뜨면 로딩 스피너 종료(누적 버퍼라 합쳐도 동일 판정)
+        // soft 테마에서 claude 가 클래스명/식별자 등에 쓰는 색 — 실측 결과 테마 override 토큰도,
+        // ANSI 팔레트(Blue)도 아닌 claude 내부 고정 truecolor 상수(RGB 87,105,247)였다
+        // (DEVEZCODE_TERM_LOG=1 raw dump 로 확인: "\e[38;2;87;105;247mApp"). 팔레트로는 손댈 수
+        // 없어 출력 바이트에서 그 이스케이프만 우리 soft 그린으로 직접 치환한다. ASCII 이스케이프라
+        // UTF-8 멀티바이트(한글) 와 겹칠 일이 없어 문자열 디코딩 없이 바이트 매칭만으로 안전하다.
+        if (DevezCode.App.CurrentTheme == "soft")
+            merged = RecolorClaudeIdentifierBlue(merged);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
+    }
+
+    // claude 가 클래스명/식별자 하이라이트에 쓰는 고정 truecolor(RGB 87,105,247, 테마 무관 상수) →
+    // soft 브랜드 그린(ANSI Blue 와 동일한 92,140,74)으로 바이트 단위 치환.
+    private static readonly byte[] _identifierBlueEscape =
+        System.Text.Encoding.ASCII.GetBytes("\x1b[38;2;87;105;247m");
+    private static readonly byte[] _identifierGreenEscape =
+        System.Text.Encoding.ASCII.GetBytes("\x1b[38;2;92;140;74m");
+
+    private static byte[] RecolorClaudeIdentifierBlue(byte[] data)
+    {
+        int firstHit = IndexOfBytes(data, _identifierBlueEscape, 0);
+        if (firstHit < 0) return data; // 대부분의 청크엔 없음 — 흔한 경로를 빠르게 통과
+
+        var result = new List<byte>(data.Length);
+        int i = 0;
+        while (i < data.Length)
+        {
+            if (i + _identifierBlueEscape.Length <= data.Length && MatchesAt(data, i, _identifierBlueEscape))
+            {
+                result.AddRange(_identifierGreenEscape);
+                i += _identifierBlueEscape.Length;
+            }
+            else
+            {
+                result.Add(data[i]);
+                i++;
+            }
+        }
+        return result.ToArray();
+    }
+
+    private static int IndexOfBytes(byte[] data, byte[] pattern, int start)
+    {
+        for (int i = start; i + pattern.Length <= data.Length; i++)
+            if (MatchesAt(data, i, pattern)) return i;
+        return -1;
+    }
+
+    private static bool MatchesAt(byte[] data, int offset, byte[] pattern)
+    {
+        for (int j = 0; j < pattern.Length; j++)
+            if (data[offset + j] != pattern[j]) return false;
+        return true;
     }
 
     /// <summary>현재 활성 방의 xterm.js 폰트 크기만 즉시 변경. Devez 설정에 영구 저장.</summary>
@@ -1078,12 +1129,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>세션 로딩 스피너(웹 레이어) 표시/숨김. WebView2 는 HwndHost 라 WPF 오버레이로는
     /// 터미널을 못 덮으므로 스피너를 웹 안에서 띄운다(터미널 위에 항상 보임).
     /// expectW/H: 셸이 확정한 최종 레이아웃 크기(DIP=CSS px). JS 가 스피너 카드를 그 중앙 px 에
-    /// 앵커해, HWND 리사이즈 지연으로 뷰포트가 stale 인 동안에도 스피너가 옆/아래로 튀지 않는다.</summary>
-    public void SetLoading(bool on, double expectW = 0, double expectH = 0)
+    /// 앵커해, HWND 리사이즈 지연으로 뷰포트가 stale 인 동안에도 스피너가 옆/아래로 튀지 않는다.
+    /// label: 스피너 아래 문구 — 생략 시 기본("세션 여는 중…"). 종료 대기 등 다른 문구가 필요할 때 지정.</summary>
+    public void SetLoading(bool on, double expectW = 0, double expectH = 0, string? label = null)
     {
         // 콜드스타트: pageReady 전이면 보류했다가 OnPageReady 에서 flush (web 스피너 유실 방지)
-        if (!_pageReady) { _pendingLoading = on ? (expectW, expectH) : null; return; }
-        PostJson(new { type = "loading", on, expectW, expectH });
+        if (!_pageReady) { _pendingLoading = on ? (expectW, expectH, label) : null; return; }
+        PostJson(new { type = "loading", on, expectW, expectH, label });
     }
 
     /// <summary>방 삭제 시 호출 — 방별 배선·준비 상태와 JS 쪽 xterm 인스턴스를 정리.

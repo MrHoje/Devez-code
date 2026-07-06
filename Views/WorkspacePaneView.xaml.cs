@@ -858,6 +858,14 @@ public partial class WorkspacePaneView : UserControl
     // 이 패널에서 처음 표시되는 프리로드 세션은 패널 폭으로 리플로우되며 스크롤이 팍 튄다 → 그 첫 표시만 커버로 감춘다.
     private readonly HashSet<string> _shownSessions = new();
 
+    // ReloadAllSessionsForTheme 가 종료→재시작 중인 방 id 들. 원래 활성 세션에만 안내 스피너를
+    // 띄웠는데, 실제로는 이 목록의 모든 방이 같이 종료·재시작된다 — 재시작이 끝나기 전에 사용자가
+    // 다른 탭을 눌러도 ActivateSession 의 콜드-게이트에서 같은 안내 문구를 보여주기 위한 추적셋.
+    private readonly HashSet<string> _themeReloadRoomIds = new();
+    // 재시작 중이라 연결을 미룬 탭 id 들. 정리가 끝나면(finally) 아직 그 탭을 보고 있는 경우에만 재연결.
+    private readonly HashSet<string> _pendingReactivateAfterReload = new();
+    private const string ThemeReloadLabel = "테마 적용 중\n세션을 다시 여는 중입니다.";
+
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
         if (ReferenceEquals(_activeSession, session)) return;
@@ -883,6 +891,27 @@ public partial class WorkspacePaneView : UserControl
         _activeSession = session;
         session.IsActive = true;
         RecordActiveTab(parent, "S:" + session.Id);
+
+        // 테마 재시작이 이 방을 아직 정리 중이면 지금 TerminalSessionManager 가 들고 있는 세션은
+        // 재진입 루프(cmd `goto __reenter`)가 exit 직후 스스로 되살린 "곧 죽을" 옛 세션이다 —
+        // 여기 붙어 정상처럼 보여도 몇 초 뒤 배치 종료의 지연된 하드킬로 그대로 끊긴다.
+        // 지금은 연결하지 않고 안내만 띄운 채, 정리가 실제로 끝난 뒤(finally 에서) 아직 이 탭을
+        // 보고 있으면 그때 다시 진짜로 연결한다.
+        if (_themeReloadRoomIds.Contains(session.Id))
+        {
+            _pendingReactivateAfterReload.Add(session.Id);
+            UpdateEmptyState();
+            ShowSessionLoading(session.Id, ThemeReloadLabel);
+            EnsureSelectedTabVisible(session);
+            RefreshModelEffortDock();
+            ActiveChanged?.Invoke(this);
+            // _shownSessions 는 여기서 추가하지 않는다 — 아직 실제로 터미널을 보여준 게 아니라
+            // 스피너만 띄운 상태다. 잘못 마킹하면 나중에 진짜로 연결될 때 리플로우 감춤 커버가
+            // "이미 이 폭으로 본 적 있음"으로 오판돼 스킵되고, 기본폭→패널폭 리플로우가 그대로
+            // 노출돼 터미널이 화면 모서리에만 작게 뜨는 것처럼 보인다.
+            if (coverReflow) RevealAfterTransition(kick: true);
+            return;
+        }
 
         session.IsAlive = true;
         var sessionAgentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
@@ -913,7 +942,8 @@ public partial class WorkspacePaneView : UserControl
         UpdateEmptyState();
         // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
         // 기대 크기를 캡처해야 웹 스피너 게이트(뷰포트=목표 일치 대기)의 목표가 처음부터 정확하다.
-        if (needGate) ShowSessionLoading(session.Id); // 커버 유지 — 준비된 세션은 RevealTerminalAfterGate 가 걷음
+        // 테마 재시작 중인 방이면 그 안내 문구를 그대로 — 종료/재시작 어느 시점에 눌러도 동일하게 보인다.
+        if (needGate) ShowSessionLoading(session.Id, _themeReloadRoomIds.Contains(session.Id) ? ThemeReloadLabel : null); // 커버 유지 — 준비된 세션은 RevealTerminalAfterGate 가 걷음
         else HideSessionLoading();
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
@@ -1165,7 +1195,7 @@ public partial class WorkspacePaneView : UserControl
     private string? _loadingRoomId;
     private System.Windows.Threading.DispatcherTimer? _loadingTimeout;
 
-    private void ShowSessionLoading(string roomId)
+    private void ShowSessionLoading(string roomId, string? label = null)
     {
         DiagLog.Write($"ShowSessionLoading room={roomId}");
         _loadingRoomId = roomId;
@@ -1174,7 +1204,7 @@ public partial class WorkspacePaneView : UserControl
         // 뷰포트가 stale 인 동안 스피너가 옆/아래로 튀는 것을 막는다. TerminalLoadingOverlay 는 콘텐츠
         // 그리드를 가득 채우므로(주차된 터미널 컨테이너와 달리) 그 크기 = 터미널 최종 크기다.
         UpdateLayout();
-        _terminal.SetLoading(true, TerminalLoadingOverlay.ActualWidth, TerminalLoadingOverlay.ActualHeight);
+        _terminal.SetLoading(true, TerminalLoadingOverlay.ActualWidth, TerminalLoadingOverlay.ActualHeight, label);
 
         _loadingTimeout?.Stop();
         _loadingTimeout ??= new System.Windows.Threading.DispatcherTimer();
@@ -1356,12 +1386,25 @@ public partial class WorkspacePaneView : UserControl
             })
             .ToList();
 
+        // graceful 종료는 훅 flush 대기 등으로 수 초 걸릴 수 있는데 그동안 스피너가 없으면
+        // 화면이 멈춘 것처럼 보인다 — 종료 시작과 동시에 먼저 스피너를 띄운다.
+        if (_activeSession != null && allClaudeSessions.Contains(_activeSession))
+            ShowSessionLoading(_activeSession.Id, "세션을 안전하게 종료하는 중…");
+
+        foreach (var s in allClaudeSessions)
+        {
+            try { _terminal.CloseTerminal(s.Id); } catch { /* ignore */ }
+        }
+
+        // 하드킬(DisposeRoom) 대신 graceful 종료 — Ctrl+C×2 + exit 로 claude 가 transcript 를
+        // flush 하고 Stop/SessionEnd 훅을 기록할 틈을 준 뒤 정리한다.
+        try { await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(allClaudeSessions.Select(s => s.Id)); }
+        catch { /* best effort */ }
+
         foreach (var s in allClaudeSessions)
         {
             try
             {
-                _terminal.CloseTerminal(s.Id);
-                DisposeSessionProcess(s, purge: false);
                 TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
                 TerminalSessionManager.Instance.GetOrCreate(s.Id, 120, 30);
                 // 곧바로 xterm 재생성+배선 — 배선 없이 세션만 만들면 시작 출력(alt-screen 신호)이
@@ -1383,30 +1426,78 @@ public partial class WorkspacePaneView : UserControl
         var active = _activeSession;
         var proj = _activeProject;
 
-        foreach (var s in Projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList())
+        var allSessions = Projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList();
+        // 이 목록의 방들이 전부 같이 종료·재시작된다 — 재시작 끝나기 전에 다른 탭을 눌러도
+        // ActivateSession 콜드-게이트가 같은 안내 문구를 보여줄 수 있게 추적해 둔다(finally 에서 정리).
+        foreach (var s in allSessions) _themeReloadRoomIds.Add(s.Id);
+
+        try
         {
-            try
+            // graceful 종료는 훅 flush 대기 등으로 수 초 걸릴 수 있는데 그동안 스피너가 없으면
+            // 화면이 멈춘 것처럼 보인다 — 종료 시작과 동시에 먼저 스피너를 띄운다.
+            if (active != null) ShowSessionLoading(active.Id, ThemeReloadLabel);
+
+            foreach (var s in allSessions)
             {
-                DisposeSessionProcess(s, purge: false);
-                TerminalSessionManager.Instance.ClearDisposedRoom(s.Id);
+                try { _terminal.CloseTerminal(s.Id); } catch { /* ignore */ }
             }
-            catch { /* ignore */ }
+
+            // 하드킬(DisposeRoom) 대신 graceful 종료 — Ctrl+C×2 + exit 로 각 에이전트가 transcript 를
+            // flush 하고 종료 훅을 기록할 틈을 준 뒤 정리한다.
+            try { await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(allSessions.Select(s => s.Id)); }
+            catch { /* best effort */ }
+
+            foreach (var s in allSessions)
+            {
+                try { TerminalSessionManager.Instance.ClearDisposedRoom(s.Id); }
+                catch { /* ignore */ }
+            }
+
+            // GracefulDisposeRoomsAsync 가 이미 완전히 끝나 진짜 하드킬까지 된 뒤다 — 좀비 세션
+            // 보호(연결 유예)가 더 이상 필요 없으니 지금 바로 해제한다. 이걸 finally 까지 미루면
+            // 바로 아래의 활성 세션 재연결(ActivateSession(active))이 자기 자신을 아직 재시작
+            // 중이라고 오판해 스피너만 띄우고 실제 연결을 건너뛴다(활성 세션이 바로 안 열리는 원인).
+            foreach (var s in allSessions) _themeReloadRoomIds.Remove(s.Id);
+
+            await Task.Delay(150);
+
+            if (proj != null)
+            {
+                // 로드 중 사용자가 이미 다른 탭으로 옮겨갔으면(_activeSession 이 active 와 달라짐)
+                // 원래 보던 탭으로 강제로 되돌리지 않는다.
+                if (active != null && proj.Tabs.Contains(active) && ReferenceEquals(_activeSession, active))
+                {
+                    // ActivateSession 가드(_activeSession 동일 시 no-op) 우회 — 터미널이 dispose 됐으므로 강제 재활성화해 ConPTY 재생성 + 로딩 스피너 표시.
+                    _activeSession.IsActive = false;
+                    _activeSession = null;
+                    _activeTab = null;
+                    ActivateSession(active);
+                    _pendingReactivateAfterReload.Remove(active.Id); // 방금 정상 재연결됨 — 아래서 중복 재연결 방지
+                }
+                if (SettingsService.LoadPreloadAllProjectSessions())
+                    PreloadProjectSessions(proj, except: active);
+            }
+
+            // 정리 중(위에서 막 해제하기 전)에 사용자가 눌러서 연결을 미뤘던 탭들 — 이제 안전하니
+            // 아직도 그 탭을 보고 있으면 지금 실제로 연결한다(다른 데로 또 옮겨갔으면 안 건드림).
+            var toReactivate = _pendingReactivateAfterReload.Where(id => allSessions.Any(s => s.Id == id)).ToList();
+            foreach (var id in toReactivate) _pendingReactivateAfterReload.Remove(id);
+            foreach (var id in toReactivate)
+            {
+                var s = FindSession(id);
+                if (s != null && ReferenceEquals(_activeSession, s))
+                {
+                    _activeSession.IsActive = false;
+                    _activeSession = null;
+                    _activeTab = null;
+                    ActivateSession(s);
+                }
+            }
         }
-
-        await Task.Delay(150);
-
-        if (proj != null)
+        finally
         {
-            if (active != null && proj.Tabs.Contains(active))
-            {
-                // ActivateSession 가드(_activeSession 동일 시 no-op) 우회 — 터미널이 dispose 됐으므로 강제 재활성화해 ConPTY 재생성 + 로딩 스피너 표시.
-                if (_activeSession != null) _activeSession.IsActive = false;
-                _activeSession = null;
-                _activeTab = null;
-                ActivateSession(active);
-            }
-            if (SettingsService.LoadPreloadAllProjectSessions())
-                PreloadProjectSessions(proj, except: active);
+            // 안전망 — 예외로 위 본문이 중간에 끊겼어도 추적셋은 반드시 비운다.
+            foreach (var s in allSessions) _themeReloadRoomIds.Remove(s.Id);
         }
     }
 

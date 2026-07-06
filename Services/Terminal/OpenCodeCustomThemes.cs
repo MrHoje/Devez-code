@@ -5,7 +5,9 @@ using System.Text;
 namespace DevezCode.Services.Terminal;
 
 /// <summary>opencode 커스텀 테마 — DevezCode dark/soft/minimal 팔레트를 opencode TUI에 적용.
-/// <c>~/.config/opencode/themes/devez-{dark,soft,minimal}.json</c> 으로 1회 설치(devez 앱이 만든 파일 있으면 보존·재사용).
+/// <c>~/.config/opencode/themes/devez-{dark,soft,minimal}.json</c> 으로 매 시작 시 번들 내용으로
+/// 항상 재생성(statusline.js/ClaudeCustomThemes 와 동일한 관리 방식) — 팔레트를 코드에서 바꾸면
+/// 다음 실행에 바로 반영. 이 세 파일은 우리 전용 슬러그라 사용자가 직접 편집할 대상이 아니다.
 /// Per-project 로 <c>tui.json</c> 에 <c>"theme": "devez-dark"</c> 형태로 주입해서 사용.</summary>
 public static class OpenCodeCustomThemes
 {
@@ -26,7 +28,7 @@ public static class OpenCodeCustomThemes
         }
     }
 
-    /// <summary>앱 시작 시 호출. 테마 파일이 없으면 생성. 기존 파일은 사용자 편집 보존 위해 덮어쓰지 않음.</summary>
+    /// <summary>앱 시작 시 호출. 매번 번들 내용으로 덮어써 최신 팔레트를 강제 반영한다.</summary>
     public static void EnsureInstalled()
     {
         try
@@ -34,17 +36,11 @@ public static class OpenCodeCustomThemes
             var dir = ThemesDir;
             Directory.CreateDirectory(dir);
 
-            WriteIfMissing(Path.Combine(dir, DarkSlug + ".json"),    DarkThemeJson);
-            WriteIfMissing(Path.Combine(dir, SoftSlug + ".json"),    SoftThemeJson);
-            WriteIfMissing(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson);
+            File.WriteAllText(Path.Combine(dir, DarkSlug + ".json"),    DarkThemeJson,    new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, SoftSlug + ".json"),    SoftThemeJson,    new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson, new UTF8Encoding(false));
         }
         catch { /* best-effort — 실패해도 per-project 주입이 안 될 뿐 */ }
-    }
-
-    private static void WriteIfMissing(string path, string content)
-    {
-        if (File.Exists(path)) return;
-        File.WriteAllText(path, content, new UTF8Encoding(false));
     }
 
     /// <summary>DevezCode 테마 → opencode theme 슬러그. per-project 주입에서 사용.</summary>

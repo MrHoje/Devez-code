@@ -114,6 +114,7 @@
     margin-top: 14px; font-size: 13px; opacity: 0.85;
     color: var(--term-fg, #CCCCCC);
     font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+    white-space: pre-line; text-align: center; line-height: 1.5; /* label 의 \n 을 줄바꿈으로 렌더 */
   }
   @keyframes dz-spin { to { transform: rotate(360deg); } }
 
@@ -163,6 +164,7 @@
                               // 그 첫 출력이 올 때까지 커버를 유지해 '리사이즈됐지만 아직 안 그려진' 빈/틀어진 화면
                               // (분할 닫기 후 좌측 세션 텍스트 갈라짐·스크롤 튐)을 감춘다. writeOut 이 도착 시 fire.
   let _loadGen = 0; // 로딩 스피너 세대 — 새 loading 메시지마다 증가, 이전 카드 표시 대기 폴링을 무효화
+  const DEFAULT_LOADING_LABEL = '세션 여는 중…';
   let _xferGen = 0; // 전환 세대 — cover/resync 시작마다 증가. 빠른 연속 전환 시 이전 전환의 지연 타이머(fade/step)를 무효화해 커튼이 엉뚱한 시점에 걷히는 깜빡임을 막는다.
   let _fitSuppressed = false; // 전환(커버) 중 true — 컨테이너가 전체폭→절반으로 줄어드는 중간 폭에서 fit 하면
                               // TUI 가 그 폭으로 그렸다 다시 리플로우돼 깨진다. 억제했다가 reveal 이 안정된 최종 폭에서 한 번만 fit.
@@ -1144,6 +1146,7 @@
         const box = ov.querySelector('.box');
         _loadGen++;
         if (msg.on) {
+          box.querySelector('.label').textContent = msg.label || DEFAULT_LOADING_LABEL;
           const gen = _loadGen;
           const ew = msg.expectW || 0, eh = msg.expectH || 0;
           const match = function () {

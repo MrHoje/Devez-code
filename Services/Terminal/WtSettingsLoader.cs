@@ -120,10 +120,13 @@ public sealed class WtColorScheme
         {
             Name = "DevezCode Soft", Background = "#F2EDE6", Foreground = "#2A2620",
             CursorColor = "#5C8C4A", SelectionBackground = "#C2D8B0",
+            // Blue/BrightBlue: claude 가 마크다운 굵은글씨(클래스명 등)에 raw ANSI blue 를 쓰는데
+            // 이 색을 위한 claude 테마 override 토큰이 없어 여기(ANSI 팔레트)에서만 바꿀 수 있다.
+            // soft 는 초록 계열이라 브랜드 그린(claude/suggestion 원래색 계열)으로 교체(eGhisDevWPF 동일 조치).
             Black = "#2A2620", Red = "#D95F5F", Green = "#5C8C4A", Yellow = "#C97C1A",
-            Blue = "#2563EB", Purple = "#7C3AED", Cyan = "#0891B2", White = "#F2EDE6",
+            Blue = "#5C8C4A", Purple = "#7C3AED", Cyan = "#0891B2", White = "#F2EDE6",
             BrightBlack = "#5A5448", BrightRed = "#C84A4A", BrightGreen = "#4E7A3E", BrightYellow = "#B86A15",
-            BrightBlue = "#1D4ED8", BrightPurple = "#8B5CF6", BrightCyan = "#0E7490", BrightWhite = "#FAF7F2",
+            BrightBlue = "#7BAA68", BrightPurple = "#8B5CF6", BrightCyan = "#0E7490", BrightWhite = "#FAF7F2",
         },
         ["DevezCode Minimal"] = new()
         {

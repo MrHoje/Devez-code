@@ -214,19 +214,41 @@ public sealed class TerminalSession : IDisposable
         thread.Start();
     }
 
-    /// <summary>graceful 종료 시도 — claude/codex 가 transcript 를 flush 할 틈을 준다.
-    /// stdin 으로 Ctrl+C 2회(에이전트 종료) + exit(셸 종료)를 보낸 뒤 프로세스 트리 종료를 timeout 까지 대기.
-    /// 반환: 시간 내 정상 종료했으면 true. (이후 호출부가 Dispose 로 하드 정리 — 폴백)</summary>
-    public async Task<bool> TryGracefulExitAsync(int timeoutMs)
+    /// <summary>graceful 종료 시도 — 에이전트가 transcript 를 flush 할 틈을 준다.
+    /// 프로세스 트리 종료를 timeout 까지 대기. 반환: 시간 내 정상 종료했으면 true.
+    /// (이후 호출부가 Dispose 로 하드 정리 — 폴백)
+    ///
+    /// quitInput 이 null 이면 기본값(Ctrl+C 2회)을 보낸다 — 재진입 루프 없는 플레인 셸/opencode 용.
+    /// quitInput 이 문자열이면 그 텍스트를 그대로 한 번 Write 한다(빈 문자열이면 아무것도 안 보내고
+    /// 바로 대기) — **claude/gajae 전용**. 이 두 에이전트는 항상 재진입 배치 루프(cmd `goto
+    /// __reenter`) 안에서 돈다. 루프를 실행 중인 cmd.exe 는 콘솔의 Ctrl+C(CTRL_C_EVENT)를 배치
+    /// 인터프리터 레벨에서도 독립적으로 받아 "Terminate batch job (Y/N)?"(일괄 작업을 끝내시겠습니까)
+    /// 를 띄우며 멈춘다 — claude 가 Ctrl+C 를 스스로 처리해 정상 종료해도 무관하게 발생한다.
+    /// 그래서 claude 는 콘솔 브레이크를 전혀 만들지 않는 순수 텍스트 명령 "/exit\r\n" 으로 종료시킨다
+    /// (claude 바이너리에 실제 등록된 슬래시 명령, alias "quit" — 확인됨). gajae 는 이런 텍스트 종료
+    /// 명령이 확인되지 않아 아무 입력도 보내지 않고 timeout 까지 기다린 뒤 호출부의 하드킬에 맡긴다.
+    /// sendShellExit 은 그 뒤 셸 자체를 닫을지("exit\r\n") — 재진입 루프가 있는 claude/gajae 는
+    /// 루프가 셸까지 알아서 정리하므로 false.</summary>
+    public async Task<bool> TryGracefulExitAsync(int timeoutMs, bool sendShellExit = true, string? quitInput = null)
     {
         if (_disposed || !IsAlive) return true;
         try
         {
-            Write("\x03");           // claude: 1회 = 인터럽트
-            await Task.Delay(120);
-            Write("\x03");           // 2회 = 종료 (이때 transcript flush 기회)
-            await Task.Delay(400);
-            Write("exit\r\n");       // 에이전트 종료 후 셸도 닫아 트리 종료
+            if (quitInput == null)
+            {
+                Write("\x03");           // 1회 = 인터럽트
+                await Task.Delay(120);
+                Write("\x03");           // 2회 = 종료 (이때 transcript flush 기회)
+            }
+            else if (quitInput.Length > 0)
+            {
+                Write(quitInput);
+            }
+            if (sendShellExit)
+            {
+                await Task.Delay(400);
+                Write("exit\r\n");       // 에이전트 종료 후 셸도 닫아 트리 종료
+            }
         }
         catch { /* 파이프 닫힘 — 이미 종료 중 */ }
         return await WaitForExitAsync(timeoutMs);

@@ -132,6 +132,9 @@ process.stdin.on("end", () => {
     };
     // 일반 텍스트(브랜치 외 model 폴백/구분자/토큰 등): 라이트=진한 잉크색 고정, 다크는 fg 와 동일.
     const fgText = (r, g, b) => _light ? _esc(INK[0], INK[1], INK[2]) : fg(r, g, b);
+    // 채도 최대화를 거치지 않고 지정한 색을 그대로 쓴다. fg() 의 saturate-max 는 인디고 같은
+    // (R·G·B 가 가까운) 색을 순수 파랑으로 뭉개버려 다크의 톤과 너무 멀어지는 경우에 사용.
+    const fgFixed = (r, g, b) => _esc(r, g, b);
 
     const R = "\x1b[0m";
     const MAIN   = fgText(229, 231, 235);
@@ -139,7 +142,11 @@ process.stdin.on("end", () => {
     const SOFT   = fgText(203, 213, 225);
     const HAIKU  = fg(0, 255, 255);
     const OPUS   = fg(248, 113, 113);
-    const SONNET = fg(250, 204, 21);
+    // 라이트에서는 claude TUI 의 AUTO MODE(warning 토큰) 색과 동일하게 고정(테마별로 다름).
+    // 다크는 기존 골드 유지.
+    const SONNET = _light
+      ? (THEME === "soft" ? fgFixed(201, 124, 26) : fgFixed(202, 138, 4))
+      : fg(250, 204, 21);
     const FABLE  = fg(232, 121, 249);
     const CTX    = fg(52, 211, 153, 0.68); // 라이트에서 더 어두운 녹색
     const TIME   = fg(96, 165, 250);
@@ -147,10 +154,14 @@ process.stdin.on("end", () => {
     const TOK    = fgText(226, 232, 240);
     const E_LOW  = fg(220, 172, 18);
     const E_MED  = fg(63, 157, 99, 0.80);   // 라이트에서 초록 명도 낮춰 가독성(다크는 m 무시=원래색)
-    // high/xhigh: 다크는 원래 색 유지, 라이트만 파랑/보라로 hue 분리해 구분되게.
-    const E_HIGH = _light ? fg(59, 130, 246) : fg(177, 185, 249);
+    // high/xhigh: 다크는 원래 색 유지, 라이트만 hue 분리해 구분되게.
+    // E_HIGH 는 다크의 옅은 인디고(177,185,249)와 계열을 맞추려 고정 인디고色 사용
+    // (saturate-max 를 거치면 인디고가 순수 파랑으로 뭉개져 다크 톤과 너무 멀어짐).
+    const E_HIGH = _light ? fgFixed(67, 56, 202) : fg(177, 185, 249);
     const E_XH   = _light ? fg(192, 100, 255) : fg(175, 135, 255);
     const E_MAX  = fg(248, 113, 113);
+    // 브랜치(첫 세그먼트): 라이트에서만 시안 쪽으로 틀어 더 하늘색 느낌(다크는 기존 파랑 유지).
+    const BRANCH = _light ? fg(56, 189, 248) : fg(147, 197, 253);
     const PIPE   = SEP + " | " + R;
 
     // 버전 정규식: 메이저(-마이너)? 만 잡고 날짜 접미사(-20250929 등)는 제외.
@@ -164,7 +175,7 @@ process.stdin.on("end", () => {
     else                            { mc = MAIN;   ml = id || "unknown"; }
 
     const parts = [];
-    if (CFG.branch && gitBranch) parts.push(fg(147, 197, 253) + gitBranch + R);
+    if (CFG.branch && gitBranch) parts.push(BRANCH + gitBranch + R);
     if (CFG.model) parts.push(mc + ml + R);
     if (CFG.eff && effortLevel) {
       let ec = SOFT;

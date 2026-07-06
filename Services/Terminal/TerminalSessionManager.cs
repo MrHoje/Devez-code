@@ -1441,7 +1441,14 @@ public sealed class TerminalSessionManager
         lock (_lock) snapshot = _sessions.ToList();
         if (snapshot.Count == 0) return;
 
-        try { await Task.WhenAll(snapshot.Select(kv => kv.Value.TryGracefulExitAsync(perGraceMs))); }
+        try
+        {
+            await Task.WhenAll(snapshot.Select(kv =>
+            {
+                var (sendShellExit, quitInput) = GracefulExitPlan(kv.Key);
+                return kv.Value.TryGracefulExitAsync(perGraceMs, sendShellExit, quitInput);
+            }));
+        }
         catch { /* best effort */ }
 
         // 프로세스 종료 후 별도 훅 프로세스(powershell)가 파일을 마저 쓸 여유.
@@ -1540,6 +1547,63 @@ public sealed class TerminalSessionManager
             }
         }
         catch (Exception) { /* 스냅샷 실패 — 종료는 계속 */ }
+    }
+
+    /// <summary>테마 변경 등 부분 재시작 시: 지정된 세션들만 graceful 종료(Ctrl+C×2 + exit)해 훅 flush 기회를
+    /// 준 뒤 Dispose 한다. GracefulShutdownAllAsync 와 동일 흐름이나 전체가 아닌 지정 room 만 대상.</summary>
+    public async Task GracefulDisposeRoomsAsync(IEnumerable<string> roomIds, int perGraceMs = 2500, int postFlushMs = 3000)
+    {
+        var idSet = new HashSet<string>(roomIds);
+        List<KeyValuePair<string, TerminalSession>> snapshot;
+        lock (_lock) snapshot = _sessions.Where(kv => idSet.Contains(kv.Key)).ToList();
+        if (snapshot.Count == 0) return;
+
+        try
+        {
+            await Task.WhenAll(snapshot.Select(kv =>
+            {
+                var (sendShellExit, quitInput) = GracefulExitPlan(kv.Key);
+                return kv.Value.TryGracefulExitAsync(perGraceMs, sendShellExit, quitInput);
+            }));
+        }
+        catch { /* best effort */ }
+
+        if (postFlushMs > 0) { try { await WaitForHookFlushAsync(snapshot.Select(kv => kv.Key), postFlushMs); } catch { /* best effort */ } }
+
+        foreach (var kv in snapshot)
+            TrySnapshotRoomSession(kv.Key);
+
+        lock (_lock)
+        {
+            foreach (var kv in snapshot)
+            {
+                try { kv.Value.Dispose(); } catch (Exception) { }
+                _sessions.Remove(kv.Key);
+                _claudeRoomDirs.Remove(kv.Key);
+                _opencodeRoomDirs.Remove(kv.Key);
+                _pendingInitial.Remove(kv.Key);
+                _disposedRooms.Add(kv.Key); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
+            }
+        }
+    }
+
+    /// <summary>graceful 종료 시 (셸에 exit 을 보내도 되는가, 종료를 요청할 때 무엇을 입력하는가).
+    /// claude/gajae 는 항상 재진입 배치 루프(cmd `goto __reenter`) 로 실행된다. 그 루프를 돌리는
+    /// cmd.exe 는 콘솔 Ctrl+C(CTRL_C_EVENT)를 배치 인터프리터 레벨에서도 독립적으로 받아 에이전트가
+    /// 스스로 정상 종료해도 무관하게 "Terminate batch job (Y/N)?"(일괄 작업을 끝내시겠습니까)로 멈춘다.
+    /// 그래서 claude 는 콘솔 브레이크를 만들지 않는 순수 텍스트 명령 "/exit"(claude 바이너리에 실제
+    /// 등록된 슬래시 명령, alias "quit")로 종료시키고, 이어 exit 도 보내지 않는다(루프가 셸까지 정리).
+    /// gajae 는 이런 텍스트 종료 명령이 확인되지 않아 아무 입력도 안 보내고 timeout 후 하드킬에 맡긴다.
+    /// 그 외(opencode 등)는 재진입 루프가 없는 플레인 셸이라 기존 Ctrl+C×2 + exit 그대로 사용.</summary>
+    private static (bool sendShellExit, string? quitInput) GracefulExitPlan(string roomId)
+    {
+        var agent = SettingsService.LoadAgentForRoom(roomId);
+        return agent switch
+        {
+            "claude" => (false, "/exit\r\n"),
+            "gajae"  => (false, ""),
+            _        => (true, null),
+        };
     }
 
     public void DisposeRoom(string roomId, bool purgeTracking = true)
