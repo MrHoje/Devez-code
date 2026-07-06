@@ -407,7 +407,7 @@
                                 <DataTemplate DataType="{x:Type models:ClaudePlugin}">
                                     <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
                                             Background="{DynamicResource PanelSoftBrush}"
-                                            BorderThickness="1.5" Cursor="Hand"
+                                            BorderThickness="1.5" Cursor="Arrow"
                                             MouseLeftButtonUp="Detail_Click">
                                         <Border.Style>
                                             <Style TargetType="Border">
@@ -498,7 +498,7 @@
                                 <DataTemplate DataType="{x:Type models:ClaudeMarketplace}">
                                     <Border Margin="0,0,0,10" Padding="16,13" CornerRadius="12"
                                             Background="{DynamicResource PanelSoftBrush}"
-                                            BorderThickness="1.5" Cursor="Hand"
+                                            BorderThickness="1.5" Cursor="Arrow"
                                             MouseLeftButtonUp="MarketItemDetail_Click">
                                         <Border.Style>
                                             <Style TargetType="Border">
