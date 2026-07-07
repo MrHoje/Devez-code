@@ -181,35 +181,46 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <Image Grid.Column="0" x:Name="TabAgentIcon" Width="14" Height="14" Margin="0,0,7,0"
-                                           VerticalAlignment="Center"
-                                           Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
-                                           RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    <Path Grid.Column="0" x:Name="TabFileIcon" Width="14" Height="14" Margin="0,0,7,0"
-                                          Stretch="Uniform" Visibility="Collapsed"
-                                          Data="{StaticResource IconFileText}"
-                                          Style="{StaticResource LucideIcon}"
-                                          Stroke="{DynamicResource TextMutedBrush}"/>
-                                    <!-- 입력 대기(선택지 메뉴): 아이콘 자리에 ❗ 표시(에이전트 아이콘 위에 겹쳐 노출). -->
-                                    <!-- 높이를 15→13 + 하단 Margin 2: 상단 고정, 아래만 2px 줄임. -->
-                                    <Path Grid.Column="0" x:Name="TabWaitingIcon" Width="15" Height="13" Margin="0,0,6,2"
-                                          Stretch="Uniform" Visibility="Collapsed" VerticalAlignment="Center"
-                                          Data="{StaticResource IconExclamation}"
-                                          Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
-                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                          Fill="Transparent"/>
-                                    <!-- 진행중 스피너: IsBusy + !IsWaitingChoice → 대신 표시 -->
-                                    <Ellipse Grid.Column="0" x:Name="TabBusySpinner" Width="12" Height="12"
-                                             Margin="0,0,6,0" VerticalAlignment="Center"
-                                             Visibility="Collapsed"
-                                             models:SpinnerActivator.Track="True"
-                                             Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
-                                             StrokeDashArray="15 100" StrokeDashCap="Round"
-                                             RenderTransformOrigin="0.5,0.5">
-                                        <Ellipse.RenderTransform>
-                                            <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                                        </Ellipse.RenderTransform>
-                                    </Ellipse>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,7,0">
+                                        <!-- 잠금 아이콘(에이전트 아이콘 왼쪽) -->
+                                        <Path x:Name="TabLockIcon" Width="10" Height="10" Margin="0,0,5,0"
+                                              Stretch="Uniform" VerticalAlignment="Center"
+                                              Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
+                                              Data="{StaticResource IconLock}"
+                                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent"/>
+                                        <Grid>
+                                            <Image x:Name="TabAgentIcon" Width="14" Height="14"
+                                                   VerticalAlignment="Center"
+                                                   Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            <Path x:Name="TabFileIcon" Width="14" Height="14"
+                                                  Stretch="Uniform" Visibility="Collapsed"
+                                                  Data="{StaticResource IconFileText}"
+                                                  Style="{StaticResource LucideIcon}"
+                                                  Stroke="{DynamicResource TextMutedBrush}"/>
+                                            <!-- 입력 대기(선택지 메뉴): 아이콘 자리에 ❗ 표시(에이전트 아이콘 위에 겹쳐 노출). -->
+                                            <!-- 높이를 15→13 + 하단 Margin 2: 상단 고정, 아래만 2px 줄임. -->
+                                            <Path x:Name="TabWaitingIcon" Width="15" Height="13" Margin="0,0,0,2"
+                                                  Stretch="Uniform" Visibility="Collapsed" VerticalAlignment="Center"
+                                                  Data="{StaticResource IconExclamation}"
+                                                  Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                  Fill="Transparent"/>
+                                            <!-- 진행중 스피너: IsBusy + !IsWaitingChoice → 대신 표시 -->
+                                            <Ellipse x:Name="TabBusySpinner" Width="12" Height="12"
+                                                     VerticalAlignment="Center"
+                                                     Visibility="Collapsed"
+                                                     models:SpinnerActivator.Track="True"
+                                                     Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                                     StrokeDashArray="15 100" StrokeDashCap="Round"
+                                                     RenderTransformOrigin="0.5,0.5">
+                                                <Ellipse.RenderTransform>
+                                                    <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                                </Ellipse.RenderTransform>
+                                            </Ellipse>
+                                        </Grid>
+                                    </StackPanel>
                                     <TextBlock x:Name="TabTitle" Grid.Column="1" Text="{Binding Title}"
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
