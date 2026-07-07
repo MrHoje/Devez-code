@@ -923,6 +923,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool CloseClipboard();
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr GetClipboardData(uint uFormat);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern UIntPtr GlobalSize(IntPtr hMem);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
 
@@ -949,12 +955,19 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 var data = System.Windows.Clipboard.GetDataObject();
                 if (data == null) return (null, null);
 
-                // 이미지 우선(claude 이미지 첨부) — 저장 성공 시 파일 경로 반환
-                if (data.GetDataPresent(System.Windows.DataFormats.Bitmap)
-                    && data.GetData(System.Windows.DataFormats.Bitmap) is System.Windows.Media.Imaging.BitmapSource img)
+                // 이미지 우선(claude 이미지 첨부) — 저장 성공 시 파일 경로 반환.
+                // WPF DataFormats.Bitmap(CF_BITMAP/HBITMAP)은 캡처 도구의 delayed-rendering
+                // 클립보드에서 무효 핸들→검은 화면을 반환하는 경우가 있어, 실제 픽셀 바이트인
+                // CF_DIB 를 직접 읽어 BMP 파일 헤더를 씌워 디코딩한다(핸들이 아니라 raw 데이터라 무관).
+                var dibBytes = GetClipboardDibBytes();
+                if (dibBytes != null)
                 {
-                    var path = SaveBitmap(img);
-                    if (path != null) return (path, null);
+                    using var bmp = DibToBitmap(dibBytes);
+                    if (bmp != null)
+                    {
+                        var path = SaveBitmap(bmp);
+                        if (path != null) return (path, null);
+                    }
                 }
 
                 if (data.GetDataPresent(System.Windows.DataFormats.UnicodeText))
@@ -969,19 +982,71 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         return (null, null);
     }
 
-    /// <summary>BitmapSource 를 %TEMP%\DevezCode\clipboard\ 에 PNG 로 저장 후 경로 반환. 실패 시 null.</summary>
-    private static string? SaveBitmap(System.Windows.Media.Imaging.BitmapSource img)
+    private const uint CF_DIB = 8;
+
+    /// <summary>클립보드의 CF_DIB(raw 픽셀 바이트) 를 읽는다. CF_BITMAP(HBITMAP)과 달리 핸들이 아니라
+    /// 실제 데이터라 delayed-rendering 캡처 도구에서도 안전하다. 없으면 null.</summary>
+    private static byte[]? GetClipboardDibBytes()
+    {
+        if (!OpenClipboard(IntPtr.Zero)) return null;
+        try
+        {
+            var hMem = GetClipboardData(CF_DIB);
+            if (hMem == IntPtr.Zero) return null;
+            var size = (int)GlobalSize(hMem);
+            if (size <= 0) return null;
+            var ptr = GlobalLock(hMem);
+            if (ptr == IntPtr.Zero) return null;
+            try
+            {
+                var bytes = new byte[size];
+                System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, size);
+                return bytes;
+            }
+            finally { GlobalUnlock(hMem); }
+        }
+        finally { CloseClipboard(); }
+    }
+
+    /// <summary>CF_DIB(BITMAPINFOHEADER+팔레트+픽셀) 바이트에 BITMAPFILEHEADER(14바이트) 를 씌워
+    /// 표준 BMP 로 만들고 디코딩한다. 실패 시 null.</summary>
+    private static System.Drawing.Bitmap? DibToBitmap(byte[] dib)
     {
         try
         {
+            if (dib.Length < 40) return null;
+            int headerSize = BitConverter.ToInt32(dib, 0);
+            short bitCount = BitConverter.ToInt16(dib, 14);
+            int compression = BitConverter.ToInt32(dib, 16);
+            int clrUsed = BitConverter.ToInt32(dib, 32);
+            // BI_BITFIELDS(3) + 기본 40바이트 헤더면 RGB 마스크 3개(DWORD)가 헤더 뒤에 추가로 붙는다.
+            int maskBytes = (compression == 3 && headerSize == 40) ? 12 : 0;
+            int paletteEntries = clrUsed > 0 ? clrUsed : (bitCount <= 8 ? (1 << bitCount) : 0);
+            int offBits = 14 + headerSize + maskBytes + paletteEntries * 4;
+
             using var ms = new System.IO.MemoryStream();
-            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(img));
-            encoder.Save(ms);
+            using var bw = new System.IO.BinaryWriter(ms);
+            bw.Write((byte)'B'); bw.Write((byte)'M');
+            bw.Write(14 + dib.Length);
+            bw.Write(0);
+            bw.Write(offBits);
+            bw.Write(dib);
+            bw.Flush();
+            ms.Position = 0;
+            return new System.Drawing.Bitmap(ms);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>System.Drawing.Bitmap 을 %TEMP%\DevezCode\clipboard\ 에 PNG 로 저장 후 경로 반환. 실패 시 null.</summary>
+    private static string? SaveBitmap(System.Drawing.Bitmap bmp)
+    {
+        try
+        {
             var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "DevezCode", "clipboard");
             System.IO.Directory.CreateDirectory(dir);
             var path = System.IO.Path.Combine(dir, $"clip_{DateTime.Now:yyyyMMddHHmmssfff}.png");
-            System.IO.File.WriteAllBytes(path, ms.ToArray());
+            bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
             return path;
         }
         catch { return null; }
