@@ -3,8 +3,10 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using DevezCode.Services;
 
 namespace DevezCode.Views;
 
@@ -18,12 +20,17 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
     public event Action? EditorReady;
     /// <summary>에디터 표면 클릭/포커스 — 분할 시 이 패널을 포커스 패널로 지정하는 데 사용.</summary>
     public event Action? Interacted;
+    /// <summary>WebView2 초기화 실패 또는 pageReady 무응답(타임아웃) — 호스트(MarkdownFileEditorView)가
+    /// 이걸 받아 로딩 스피너를 내리고 에러를 보여줘야 한다. 안 그러면 스피너가 영원히 돈다(무한 스피너 버그).</summary>
+    public event Action<string>? InitFailed;
 
     private WebView2? _webView;
     private bool _initStarted;
     private bool _pageReady;
     private (string md, bool markClean)? _pendingMarkdown;
     private string? _pendingTheme;
+    private DispatcherTimer? _readyTimeoutTimer;
+    private const int ReadyTimeoutMs = 15000;
 
     private static readonly JsonSerializerOptions CamelCase = new()
     {
@@ -79,9 +86,22 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
             long ver = 0;
             try { ver = File.GetLastWriteTimeUtc(Path.Combine(webRoot, "bridge.js")).Ticks; } catch { }
             core.Navigate($"https://{VirtualHost}/editor.html?v={ver}");
+
+            // pageReady(JS)가 안 오면(스크립트 예외 등) 스피너가 영원히 도는 것 방지 — 15초 폴백.
+            _readyTimeoutTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ReadyTimeoutMs) };
+            _readyTimeoutTimer.Tick += (_, _) =>
+            {
+                _readyTimeoutTimer!.Stop();
+                if (_pageReady) return;
+                DiagLog.Write("MarkdownWysiwygHost: pageReady timeout — bridge.js 초기화 응답 없음");
+                InitFailed?.Invoke("에디터 페이지 응답 시간 초과");
+            };
+            _readyTimeoutTimer.Start();
         }
         catch (Exception ex)
         {
+            DiagLog.Write($"MarkdownWysiwygHost: init failed — {ex}");
+            InitFailed?.Invoke(ex.Message);
             Content = new TextBlock
             {
                 Text = "마크다운 편집기를 시작할 수 없습니다.\nWebView2 런타임이 필요합니다.\n\n" + ex.Message,
@@ -104,6 +124,8 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
             {
                 case "pageReady":
                     _pageReady = true;
+                    _readyTimeoutTimer?.Stop();
+                    _readyTimeoutTimer = null;
                     if (_pendingTheme != null) { ApplyTheme(_pendingTheme); _pendingTheme = null; }
                     if (_pendingMarkdown is { } pm) { SetMarkdown(pm.md, pm.markClean); _pendingMarkdown = null; }
                     EditorReady?.Invoke();
@@ -229,6 +251,8 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
 
     public void Dispose()
     {
+        _readyTimeoutTimer?.Stop();
+        _readyTimeoutTimer = null;
         try
         {
             if (_webView?.CoreWebView2 != null)

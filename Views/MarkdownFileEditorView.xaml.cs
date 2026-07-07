@@ -33,6 +33,7 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         MdHost.BaselineReady += OnBaselineReady;
         MdHost.SaveRequested += () => Save();
         MdHost.EditorReady += OnEditorReady;
+        MdHost.InitFailed += OnInitFailed;
         MdHost.Interacted += () => Interacted?.Invoke(this, EventArgs.Empty);
         App.ThemeChanged += OnThemeChanged;
         Loaded += OnLoaded;
@@ -98,6 +99,14 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         MdHost.FocusEditor();
         IsEditorShellReady = true; // 테마·내용 반영을 큐에 올린 뒤 보고
         EditorShellReady?.Invoke();
+    }
+
+    /// <summary>WebView2 초기화 실패/pageReady 무응답 — 스피너를 내리고 에러를 알려 무한 로딩을 막는다.</summary>
+    private void OnInitFailed(string message)
+    {
+        LoadingOverlay.Visibility = Visibility.Collapsed;
+        ConfirmDialog.Alert("마크다운 편집기 오류", $"마크다운 편집기를 열지 못했습니다.\n{message}",
+            iconKey: "IconTriangleAlert");
     }
 
     private void OnThemeChanged(string theme) => MdHost.ApplyTheme(theme);
@@ -321,6 +330,7 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         if (Window.GetWindow(this) is { } win)
             win.Activated -= OnWindowActivated;
         App.ThemeChanged -= OnThemeChanged;
+        MdHost.InitFailed -= OnInitFailed;
         MdHost.Dispose();
     }
 }
