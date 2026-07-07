@@ -3639,9 +3639,15 @@ public partial class MainWindow : Window
         var locked = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.IsLocked);
         if (locked != null)
         {
-            ConfirmDialog.Alert("프로젝트 제거 불가",
-                $"'{locked.Name}' 세션이 잠겨 있습니다.\n잠금을 해제한 후 다시 시도하세요.");
-            return;
+            bool unlockAndDelete = ConfirmDialog.AlertWithLink(
+                "프로젝트 제거 불가",
+                $"'{locked.Name}' 세션이 잠겨 있습니다.\n잠금을 해제한 후 다시 시도하세요.",
+                linkLabel: "잠금 해제 후 삭제");
+            if (!unlockAndDelete) return;
+
+            foreach (var s in proj.Tabs.OfType<SessionItem>().Where(s => s.IsLocked))
+                s.IsLocked = false;
+            WorkspaceStore.Save(_projects, _archivedProjects);
         }
 
         if (!ConfirmDialog.Show("프로젝트 제거",

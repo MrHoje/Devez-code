@@ -11,6 +11,7 @@ public partial class ConfirmDialog : Window
 {
     private string? _confirmText;
     private ConfirmChoice _choice = ConfirmChoice.Cancel;
+    private bool _linkClicked;
 
     private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false)
     {
@@ -169,6 +170,31 @@ public partial class ConfirmDialog : Window
         dialog.ShowDialog();
     }
 
+    /// <summary>Alert + 좌측 하단 보조 링크(예: "잠금 해제 후 삭제"). 링크를 클릭해 닫으면 true,
+    /// 확인/닫기로 닫으면 false를 반환한다.</summary>
+    public static bool AlertWithLink(
+        string title,
+        string message,
+        string linkLabel,
+        string okLabel = "확인",
+        string iconKey = "IconMessageSquare")
+    {
+        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, false, null, wideLayout: false);
+        dialog.CancelBtn.Visibility = Visibility.Collapsed;
+        dialog.LinkText.Text = linkLabel;
+        dialog.LinkText.Visibility = Visibility.Visible;
+
+        if (Application.Current.MainWindow != null
+            && Application.Current.MainWindow.IsLoaded
+            && Application.Current.MainWindow != dialog)
+        {
+            dialog.Owner = Application.Current.MainWindow;
+        }
+
+        dialog.ShowDialog();
+        return dialog._linkClicked;
+    }
+
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)
@@ -214,4 +240,5 @@ public partial class ConfirmDialog : Window
     private void OkBtn_Click(object sender, RoutedEventArgs e) { _choice = ConfirmChoice.Primary; DialogResult = true; }
     private void MiddleBtn_Click(object sender, RoutedEventArgs e) { _choice = ConfirmChoice.Secondary; DialogResult = true; }
     private void CancelBtn_Click(object sender, RoutedEventArgs e) { _choice = ConfirmChoice.Cancel; DialogResult = false; }
+    private void LinkText_Click(object sender, MouseButtonEventArgs e) { _linkClicked = true; DialogResult = true; }
 }

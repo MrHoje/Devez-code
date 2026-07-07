@@ -100,30 +100,56 @@
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="0,1,0,0"
                         CornerRadius="0,0,14,14">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                Margin="20,14,20,14">
-                        <Button x:Name="CancelBtn" Click="CancelBtn_Click"
-                                MinWidth="80" Height="38" Padding="16,0"
-                                Style="{StaticResource SecondaryButton}"
-                                FontSize="{DynamicResource Fs13}" Margin="0,0,8,0">
-                            <TextBlock Text="취소" TextTrimming="None"/>
-                        </Button>
+                    <Grid Margin="20,14,20,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
-                        <!-- 3버튼 모드 전용 중간 버튼 (예: '저장 안 함'). 기본 숨김. -->
-                        <Button x:Name="MiddleBtn" Click="MiddleBtn_Click"
-                                MinWidth="80" Height="38" Padding="16,0" Visibility="Collapsed"
-                                Style="{StaticResource SecondaryButton}"
-                                FontSize="{DynamicResource Fs13}" Margin="0,0,8,0">
-                            <TextBlock x:Name="MiddleText" TextTrimming="None"/>
-                        </Button>
+                        <!-- 좌측 하단 보조 링크(예: "잠금 해제 후 삭제"). AlertWithLink 에서만 노출. -->
+                        <TextBlock x:Name="LinkText" Grid.Column="0"
+                                   Visibility="Collapsed"
+                                   VerticalAlignment="Center"
+                                   Cursor="Hand"
+                                   FontSize="{DynamicResource Fs12}"
+                                   Foreground="{DynamicResource LinkBrush}"
+                                   TextDecorations="Underline"
+                                   MouseLeftButtonUp="LinkText_Click">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Opacity" Value="0.75"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
 
-                        <Button x:Name="OkBtn" Click="OkBtn_Click"
-                                MinWidth="80" Height="38" Padding="16,0"
-                                Style="{StaticResource PrimaryButton}"
-                                FontSize="{DynamicResource Fs13}">
-                            <TextBlock x:Name="OkText" Text="확인" Foreground="White" TextTrimming="None"/>
-                        </Button>
-                    </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="CancelBtn" Click="CancelBtn_Click"
+                                    MinWidth="80" Height="38" Padding="16,0"
+                                    Style="{StaticResource SecondaryButton}"
+                                    FontSize="{DynamicResource Fs13}" Margin="0,0,8,0">
+                                <TextBlock Text="취소" TextTrimming="None"/>
+                            </Button>
+
+                            <!-- 3버튼 모드 전용 중간 버튼 (예: '저장 안 함'). 기본 숨김. -->
+                            <Button x:Name="MiddleBtn" Click="MiddleBtn_Click"
+                                    MinWidth="80" Height="38" Padding="16,0" Visibility="Collapsed"
+                                    Style="{StaticResource SecondaryButton}"
+                                    FontSize="{DynamicResource Fs13}" Margin="0,0,8,0">
+                                <TextBlock x:Name="MiddleText" TextTrimming="None"/>
+                            </Button>
+
+                            <Button x:Name="OkBtn" Click="OkBtn_Click"
+                                    MinWidth="80" Height="38" Padding="16,0"
+                                    Style="{StaticResource PrimaryButton}"
+                                    FontSize="{DynamicResource Fs13}">
+                                <TextBlock x:Name="OkText" Text="확인" Foreground="White" TextTrimming="None"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>
