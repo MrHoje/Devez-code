@@ -180,6 +180,7 @@ public partial class MainWindow : Window
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
+        Sidebar.SessionHideRequested += HideSessionFromSidebar;
         Sidebar.SessionForkRequested += ForkSession;
         Sidebar.SessionExportRequested += ExportSession;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
@@ -3542,6 +3543,8 @@ public partial class MainWindow : Window
             _ = _discordBot.InjectFirstMessageAsync(session.Id, threadId, content);
     }
     private void StopTrackingSession(SessionItem session) => PaneFor(session).StopTrackingSession(session);
+
+    private void HideSessionFromSidebar(SessionItem session) => PaneFor(session).HideSession(session);
 
     private void ForkSession(SessionItem session) => PaneFor(session).ForkSession(session);
 

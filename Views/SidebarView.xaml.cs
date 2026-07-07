@@ -55,6 +55,8 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionDeleteRequested;
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
+    /// <summary>세션 메뉴 "세션 숨기기" — 탭 X 숨기기와 동일(MainWindow 위임).</summary>
+    public event Action<SessionItem>? SessionHideRequested;
     /// <summary>세션 메뉴 "포크" 요청(MainWindow 위임) — 원본 대화를 복사한 새 세션 생성.</summary>
     public event Action<SessionItem>? SessionForkRequested;
     /// <summary>세션 메뉴 "내보내기" 요청(MainWindow 위임) — 대화를 .md 로 저장.</summary>
@@ -456,6 +458,11 @@ public partial class SidebarView : UserControl
     private void SessionStopTracking_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<SessionItem>(sender) is { } s) SessionStopTrackingRequested?.Invoke(s);
+    }
+
+    private void SessionHide_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is { } s) SessionHideRequested?.Invoke(s);
     }
 
     /// <summary>이벤트 소스에서 데이터 항목을 얻는다. 컨텍스트 메뉴 항목은 Tag, 행 요소는 DataContext.</summary>

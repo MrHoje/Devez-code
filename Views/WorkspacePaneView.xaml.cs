@@ -1296,6 +1296,14 @@ public partial class WorkspacePaneView : UserControl
         RemoveSession(session, purge: true);
     }
 
+    /// <summary>사이드바 컨텍스트 메뉴 "세션 숨기기" — 탭 X 숨기기와 동일 동작.</summary>
+    public void HideSession(SessionItem session)
+    {
+        session.Hidden = true;
+        WorkspaceStore.Save(Projects);
+        ActivateNeighborAfterHide(session);
+    }
+
     public void StopTrackingSession(SessionItem session)
     {
         if (!ConfirmDialog.Show("세션 추적 중단",
@@ -1571,13 +1579,23 @@ public partial class WorkspacePaneView : UserControl
         }
         else if (tab is SessionItem s)
         {
+            // 이름변경·포크·내보내기 — 프로젝트 카드 세션 우클릭과 동일 기능.
+            var renameItem = new MenuItem { Header = "이름 변경", Icon = BuildMenuIcon("IconPencil") };
+            renameItem.Click += (_, _) => RenameSession(s);
+            cm.Items.Add(renameItem);
+
+            var forkItem = new MenuItem { Header = "포크", Icon = BuildMenuIcon("IconGitBranch") };
+            forkItem.Click += (_, _) => ForkSession(s);
+            cm.Items.Add(forkItem);
+
+            var exportItem = new MenuItem { Header = "내보내기", Icon = BuildMenuIcon("IconFileText") };
+            exportItem.Click += (_, _) => ExportSessionRequested?.Invoke(s);
+            cm.Items.Add(exportItem);
+
+            cm.Items.Add(new Separator());
+
             var hideItem = new MenuItem { Header = "숨기기", Icon = BuildMenuIcon("IconEyeOff") };
-            hideItem.Click += (_, _) =>
-            {
-                s.Hidden = true;
-                WorkspaceStore.Save(Projects);
-                ActivateNeighborAfterHide(s); // 같은 패널의 왼쪽 이웃 우선(분할 시 반대쪽 패널 탭 제외)
-            };
+            hideItem.Click += (_, _) => HideSession(s);
             cm.Items.Add(hideItem);
 
             var hideOthers = new MenuItem { Header = "다른 세션 모두 숨기기", Icon = BuildMenuIcon("IconEyeOff") };
@@ -1600,16 +1618,14 @@ public partial class WorkspacePaneView : UserControl
             };
             cm.Items.Add(hideOthers);
 
-            cm.Items.Add(new Separator());
+            var closeItem = new MenuItem { Header = "닫기", Icon = BuildMenuIcon("IconX") };
+            closeItem.Click += (_, _) => StopTrackingSession(s);
+            cm.Items.Add(closeItem);
 
-            // 포크·내보내기 — 프로젝트 카드 세션 우클릭과 동일 기능.
-            var forkItem = new MenuItem { Header = "포크", Icon = BuildMenuIcon("IconGitBranch") };
-            forkItem.Click += (_, _) => ForkSession(s);
-            cm.Items.Add(forkItem);
-
-            var exportItem = new MenuItem { Header = "내보내기", Icon = BuildMenuIcon("IconFileText") };
-            exportItem.Click += (_, _) => ExportSessionRequested?.Invoke(s);
-            cm.Items.Add(exportItem);
+            var deleteItem = new MenuItem { Header = "삭제", Icon = BuildMenuIcon("IconTrash2", danger: true) };
+            deleteItem.SetResourceReference(MenuItem.ForegroundProperty, "DangerBrush");
+            deleteItem.Click += (_, _) => DeleteSession(s);
+            cm.Items.Add(deleteItem);
 
             cm.Items.Add(new Separator());
             cm.Items.Add(BuildSplitMoveItem(s));
@@ -1639,7 +1655,7 @@ public partial class WorkspacePaneView : UserControl
         return item;
     }
 
-    private System.Windows.Shapes.Path BuildMenuIcon(string iconKey)
+    private System.Windows.Shapes.Path BuildMenuIcon(string iconKey, bool danger = false)
     {
         var path = new System.Windows.Shapes.Path
         {
@@ -1649,7 +1665,7 @@ public partial class WorkspacePaneView : UserControl
             Style = (Style)FindResource("LucideIcon"),
             Data = (System.Windows.Media.Geometry)FindResource(iconKey),
         };
-        path.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "TextMutedBrush");
+        path.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, danger ? "DangerBrush" : "TextMutedBrush");
         return path;
     }
 
