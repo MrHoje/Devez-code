@@ -41,15 +41,16 @@
             <local:ProjectColumnsPanel Columns="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
         </ItemsPanelTemplate>
 
-        <!-- 세션 상태 점: 살아있으면 테마 primary(다크=주황), 죽으면 회색 -->
+        <!-- 세션 상태 점: 살아있을 때만 테마 primary 색으로 표시. 로드되지 않은(죽은) 세션은 점 자체를 숨김. -->
         <Style x:Key="SessionDot" TargetType="Ellipse">
             <Setter Property="Width" Value="8"/>
             <Setter Property="Height" Value="8"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Fill" Value="#6B7280"/>
+            <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsAlive}" Value="True">
-                    <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter Property="Visibility" Value="Visible"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -161,7 +162,7 @@
                     <!-- 잠금 아이콘(에이전트 아이콘 왼쪽) + 세션 아이콘 -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLock}"
-                              Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"
+                              Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
                               Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                         <Image Width="14" Height="14" VerticalAlignment="Center"
