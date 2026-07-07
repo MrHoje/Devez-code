@@ -121,5 +121,8 @@ windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합
   - 터미널을 **리사이즈하지 않는** 경로(위로 덮기/숨기기) → 스냅샷+`Collapsed`(`SuspendTerminalWithSnapshotAsync` 또는 `webCover:false`).
   - 터미널을 **리사이즈하는** 경로 → **`webCover:true`** 경로를 써야 reveal 깜빡임이 없다. (스냅샷+Collapsed 만 쓰면 옛 1~2 프레임 깜빡임이 되살아난다.)
 - `Hidden` 으로 숨기는 코드를 발견하면 `Collapsed` 로 고칠 것(HwndHost HWND 가 안 숨겨짐).
+- 커버를 올리는(`xferCover`) 경로를 추가하면 **어떤 종결 경로로 끝나든 `_fitSuppressed` 해제·needCreate 처리**가
+  보장되는지 확인할 것 — `fadeNow` 가 이를 빠뜨려 패널 fit 이 영구 잠겼던 버그는
+  `분할패널-탭격리-파트너-포커스.md` §6.5 참조.
 - webCover 경로는 `expectWidth`(최종 폭)를 정확히 넘겨야 중간 전체폭 plateau 를 건너뛴다 — resume 전 `UpdateLayout()` 로 폭을 확정할 것.
 - 좌우를 각자 뜨게 두면 시점이 어긋나 보인다 — 동시 표시가 필요하면 synced(`RevealPreparedSynced` + `FadeNow`) 경로를 쓸 것.
