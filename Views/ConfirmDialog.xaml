@@ -113,7 +113,6 @@
                                    Cursor="Hand"
                                    FontSize="{DynamicResource Fs12}"
                                    Foreground="{DynamicResource PrimaryBrush}"
-                                   TextDecorations="Underline"
                                    MouseLeftButtonUp="LinkText_Click">
                             <TextBlock.Style>
                                 <!-- BasedOn 필수: 없으면 전역 암시적 TextBlock 스타일(Pretendard 폰트 지정)이
