@@ -315,7 +315,7 @@ public sealed class ProjectItem : NotifyBase
     }
 
     /// <summary>순서/내용이 같으면 그대로 두고(사이드바 깜빡임 방지), 다르면 교체.</summary>
-    private static void SyncObservable(ObservableCollection<TabItemBase> target, IReadOnlyList<TabItemBase> desired)
+    private static void SyncObservable<T>(ObservableCollection<T> target, IReadOnlyList<T> desired)
     {
         if (target.Count == desired.Count)
         {
@@ -334,6 +334,14 @@ public sealed class ProjectItem : NotifyBase
     /// Tabs.CollectionChanged 에서 SessionItem 만 추려 추가/제거한다 → 사이드바 바인딩이 즉시 갱신.</summary>
     public ObservableCollection<SessionItem> Sessions { get; } = new();
 
+    /// <summary>숨김(Hidden=true) 세션만 모은 뷰 — 좌/우 그룹에서는 제외되고 사이드바 카드 맨 아래
+    /// '숨김 세션' 그룹에 모여 표시된다. Sessions 순서를 따르며 Hidden 변경 시 자동 갱신.</summary>
+    public ObservableCollection<SessionItem> HiddenSessions { get; } = new();
+    /// <summary>숨김 세션이 하나라도 있는지 — 하단 그룹 세퍼레이터/표시 여부.</summary>
+    public bool HasHiddenSessions => HiddenSessions.Count > 0;
+    /// <summary>ShowHiddenSessions 토글이 켜져 있고 숨김 세션이 실제로 있을 때만 하단 그룹을 보인다.</summary>
+    public bool ShowHiddenGroup => ShowHiddenSessions && HasHiddenSessions;
+
     // ── 프로젝트 카드 헤더의 집계 세션 상태 (펼치지 않아도 한눈에) ──
     /// <summary>이 프로젝트의 총 세션 수.</summary>
     public int SessionCount => Sessions.Count;
@@ -347,7 +355,11 @@ public sealed class ProjectItem : NotifyBase
     public string SessionStatusText => Sessions.Count == 0 ? "" : $"{AliveSessionCount}/{Sessions.Count}";
 
     private bool _showHiddenSessions = true;
-    public bool ShowHiddenSessions { get => _showHiddenSessions; set => Set(ref _showHiddenSessions, value); }
+    public bool ShowHiddenSessions
+    {
+        get => _showHiddenSessions;
+        set { if (Set(ref _showHiddenSessions, value)) OnPropertyChanged(nameof(ShowHiddenGroup)); }
+    }
 
     public ProjectItem()
     {
@@ -392,6 +404,12 @@ public sealed class ProjectItem : NotifyBase
             if (e.NewItems != null)
                 foreach (SessionItem s in e.NewItems) s.PropertyChanged += OnSessionPropChanged;
             RaiseSessionStatus();
+            RefreshHiddenSessions();
+        };
+        HiddenSessions.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasHiddenSessions));
+            OnPropertyChanged(nameof(ShowHiddenGroup));
         };
 
         Files.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFiles));
@@ -417,7 +435,14 @@ public sealed class ProjectItem : NotifyBase
     {
         if (e.PropertyName is nameof(SessionItem.IsAlive) or nameof(SessionItem.IsBusy))
             RaiseSessionStatus();
+        if (e.PropertyName == nameof(SessionItem.Hidden))
+            RefreshHiddenSessions();
     }
+
+    /// <summary>HiddenSessions 를 Sessions 기준(Hidden=true만)으로 재계산. 내용/순서가 같으면 그대로 두어
+    /// 사이드바 깜빡임을 방지한다.</summary>
+    private void RefreshHiddenSessions()
+        => SyncObservable(HiddenSessions, Sessions.Where(s => s.Hidden).ToList());
 
     private void RaiseSessionStatus()
     {

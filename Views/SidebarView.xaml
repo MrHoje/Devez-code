@@ -214,7 +214,8 @@
                     <Setter TargetName="BusySpinner" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="HiddenIcon" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
-                <!-- ShowHiddenSessions=false + Hidden=true → 세션 row 숨김 -->
+                <!-- 부모 ItemsControl.Tag="False"(좌/우 그룹)면 숨김(Hidden) 세션 행을 항상 접는다.
+                     하단 '숨김 세션' 그룹은 Tag="True" 로 이 트리거를 비활성화해 정상 표시된다. -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding Tag, RelativeSource={RelativeSource FindAncestor, AncestorType=ItemsControl}}" Value="False"/>
@@ -525,15 +526,25 @@
                     <Border Visibility="Collapsed"
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
                         <StackPanel Margin="8,2,8,8">
-                            <!-- 상단 그룹: 비분할=전체 탭, 분할=좌측 패널 탭(세션+열린 문서) -->
-                            <ItemsControl ItemsSource="{Binding LeftItems}" Tag="{Binding ShowHiddenSessions}"
+                            <!-- 상단 그룹: 비분할=전체 탭, 분할=좌측 패널 탭(세션+열린 문서).
+                                 Tag="False" 고정 → 숨김(Hidden) 세션은 이 그룹에서 항상 접히고
+                                 아래 '숨김 세션' 그룹으로만 모인다. -->
+                            <ItemsControl ItemsSource="{Binding LeftItems}" Tag="False"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
                             <!-- 분할 시 우측 그룹: 세퍼레이터로만 구분(라벨 없음) -->
                             <Border Height="1" Margin="2,6,2,6"
                                     Background="{DynamicResource LineBrush}"
                                     Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                            <ItemsControl ItemsSource="{Binding RightItems}" Tag="{Binding ShowHiddenSessions}"
+                            <ItemsControl ItemsSource="{Binding RightItems}" Tag="False"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
+                            <!-- 숨김 세션: 좌/우 구분 없이 전부 모아 맨 아래로. 좌우 그룹과 동일한 세퍼레이터로 구분.
+                                 '숨김 세션 표시' 토글(ShowHiddenSessions) + 실제 숨김 세션 존재 시에만 그룹째 표시. -->
+                            <Border Height="1" Margin="2,6,2,6"
+                                    Background="{DynamicResource LineBrush}"
+                                    Visibility="{Binding ShowHiddenGroup, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                            <ItemsControl ItemsSource="{Binding HiddenSessions}" Tag="True"
+                                          ItemTemplate="{StaticResource SessionTemplate}"
+                                          Visibility="{Binding ShowHiddenGroup, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                             <!-- 바로가기: 세션과 세퍼레이터로 구분, 등록된 게 있을 때만 표시 -->
                             <Border Height="1" Margin="2,6,2,6"
                                     Background="{DynamicResource LineBrush}"

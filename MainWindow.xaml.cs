@@ -3314,11 +3314,21 @@ public partial class MainWindow : Window
     }
 
     /// <summary>사이드바 카드에서 세션 클릭 — '오른쪽' 그룹이면 우측 격리를 유지한 채 연다(활성화가 격리를
-    /// 풀어 우측에 전체 세션이 쏟아지는 것 방지). 그 외엔 기존 OpenSession 라우팅.</summary>
+    /// 풀어 우측에 전체 세션이 쏟아지는 것 방지). 숨김 세션 그룹(사이드바 맨 아래)에서 다시 불러오는
+    /// 경우엔 이전에 어느 패널에 있었든 상관없이, 분할 중이면 항상 좌측 패널로 들어온다.
+    /// 그 외엔 기존 OpenSession 라우팅.</summary>
     private void OpenSessionFromSidebar(SessionItem s)
     {
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
+        bool reopeningHidden = s.Hidden;
         EnsureProjectSplitOpen(parent);
+
+        if (reopeningHidden && _splitActive)
+        {
+            OpenSessionIntoPane(LeftPane, s, isNewProjectLoad: false);
+            return;
+        }
+
         EnsureRightGroupIsolation(s);
         OpenSession(s);
     }
