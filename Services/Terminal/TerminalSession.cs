@@ -228,12 +228,22 @@ public sealed class TerminalSession : IDisposable
     /// (claude 바이너리에 실제 등록된 슬래시 명령, alias "quit" — 확인됨). gajae 는 이런 텍스트 종료
     /// 명령이 확인되지 않아 아무 입력도 보내지 않고 timeout 까지 기다린 뒤 호출부의 하드킬에 맡긴다.
     /// sendShellExit 은 그 뒤 셸 자체를 닫을지("exit\r\n") — 재진입 루프가 있는 claude/gajae 는
-    /// 루프가 셸까지 알아서 정리하므로 false.</summary>
-    public async Task<bool> TryGracefulExitAsync(int timeoutMs, bool sendShellExit = true, string? quitInput = null)
+    /// 루프가 셸까지 알아서 정리하므로 false.
+    ///
+    /// escFirst: claude 가 응답을 생성 중(busy)일 때 true — 이때는 REPL 입력 프롬프트가 안 떠 있어
+    /// quitInput("/exit")이 씹힐 수 있으므로, 먼저 Esc 로 그 턴만 취소해 idle 프롬프트로 복귀시킨 뒤
+    /// quitInput 을 보낸다. 권한/선택지 대기 중(waiting=permission/input)일 때는 호출부가 escFirst 를
+    /// false 로 넘겨야 한다 — Esc 가 대기 중인 권한창을 취소해 원치 않는 자동거부를 유발할 수 있어서다.</summary>
+    public async Task<bool> TryGracefulExitAsync(int timeoutMs, bool sendShellExit = true, string? quitInput = null, bool escFirst = false)
     {
         if (_disposed || !IsAlive) return true;
         try
         {
+            if (escFirst)
+            {
+                Write("\x1b");           // 현재 턴만 취소 → idle 프롬프트 복귀 유도(콘솔 브레이크 아님)
+                await Task.Delay(150);
+            }
             if (quitInput == null)
             {
                 Write("\x03");           // 1회 = 인터럽트

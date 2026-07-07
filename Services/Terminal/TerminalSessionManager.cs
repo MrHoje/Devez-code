@@ -11,7 +11,6 @@ public sealed class TerminalSessionManager
     public static TerminalSessionManager Instance { get; } = new();
 
     private readonly Dictionary<string, TerminalSession> _sessions = new();
-    private readonly Dictionary<string, string> _claudeRoomDirs = new();
     private readonly Dictionary<string, string> _opencodeRoomDirs = new();
     private readonly object _lock = new();
     private FileSystemWatcher? _claudeSessionWatcher;
@@ -153,11 +152,9 @@ public sealed class TerminalSessionManager
                 if (simple != null) commandLine = simple;
             }
 
-            // claude 세션이면 프로세스 시작 전에 프로젝트 local settings 에 theme 을 먼저 기록한다.
-            // claude 가 시작 시 바로 맞는 테마를 읽도록 하기 위함. ~/.claude/settings.json 은 건드리지 않음.
-            var isClaude = agent.Id == "claude" && agent.SupportsHooks;
-            if (isClaude && !string.IsNullOrWhiteSpace(ccDir))
-                ApplyClaudeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
+            // claude 는 room-settings.json(--settings 커맨드라인, 프로세스 격리)에 이미 테마가 박혀
+            // 시작되므로 프로젝트 local settings 를 따로 건드릴 필요가 없다(예전엔 건드렸으나, 그러면
+            // 그 프로젝트 폴더에서 DevezCode 밖의 claude 를 켜도 테마가 새어나가는 부작용이 있었다).
 
             // opencode 세션이면 시작 전에 프로젝트 tui.json 에 theme 을 기록한다.
             var isOpenCode = agent.Id == "opencode";
@@ -181,14 +178,6 @@ public sealed class TerminalSessionManager
             _pendingInitial[roomId] = inject;
             _sessions[roomId] = session;
 
-            // claude 세션이면 room → working directory 를 기억한다.
-            // 테마 변경 시 settings.local.json 을 다시 갱신하기 위해 사용.
-            if (isClaude)
-            {
-                if (!string.IsNullOrWhiteSpace(ccDir))
-                    _claudeRoomDirs[roomId] = ccDir;
-            }
-
             // opencode 세션이면 room → working directory 기억.
             if (isOpenCode)
             {
@@ -200,66 +189,23 @@ public sealed class TerminalSessionManager
         }
     }
 
-    /// <summary>App.ThemeChanged → 살아있는 모든 claude/opencode 세션에 라이브 갱신.
-    /// claude 는 settings.local.json 파일 감시로 즉시 반영.
+    /// <summary>App.ThemeChanged → 살아있는 opencode 세션의 프로젝트 tui.json 갱신.
     /// opencode 는 tui.json 을 시작 시에만 읽으므로 세션 재시작이 필요한데,
     /// 그 재시작은 JS 브리지를 가진 TerminalHostView 가 담당한다(rewire + "restarted" 통지로
-    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄움). 여기서는 tui.json 만 기록.</summary>
+    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄움). 여기서는 tui.json 만 기록.
+    /// claude 는 테마 변경 시 세션 자체가 재시작되고(SettingsDialog → ReloadAllSessionsForTheme),
+    /// 재시작된 프로세스가 room-settings.json(--settings 커맨드라인)으로 새 테마를 받으므로
+    /// 프로젝트 local settings 를 따로 건드릴 필요가 없다(예전엔 건드렸으나, 그 프로젝트 폴더에서
+    /// DevezCode 밖의 claude 를 켜도 테마가 새어나가는 부작용만 있었다).</summary>
     private void OnAppThemeChanged_Broadcast(string theme)
     {
-        List<string> claudeDirs;
         List<string> opencodeDirs;
         lock (_lock)
         {
-            claudeDirs   = new List<string>(_claudeRoomDirs.Values);
             opencodeDirs = new List<string>(_opencodeRoomDirs.Values);
         }
-        foreach (var dir in claudeDirs)
-            ApplyClaudeProjectTheme(dir, theme);
         foreach (var dir in opencodeDirs)
             ApplyOpenCodeProjectTheme(dir, theme);
-    }
-
-    /// <summary>프로젝트 local settings 에 claude theme 을 기록한다.
-    /// claude 는 settings 파일 변경을 감시하므로 이미 떠 있는 TUI 도 이 경로로 갱신된다.
-    /// 파일: &lt;workingDir&gt;/.claude/settings.local.json. 기존 설정은 보존.</summary>
-    private static void ApplyClaudeProjectTheme(string workingDir, string devezCodeTheme)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(workingDir) || !Directory.Exists(workingDir)) return;
-            var dir = Path.Combine(workingDir, ".claude");
-            Directory.CreateDirectory(dir);
-            var path = Path.Combine(dir, "settings.local.json");
-            var theme = ClaudeCustomThemes.MapToClaudeTheme(devezCodeTheme);
-
-            System.Text.Json.Nodes.JsonObject root;
-            if (File.Exists(path))
-            {
-                try
-                {
-                    root = System.Text.Json.Nodes.JsonNode.Parse(
-                        File.ReadAllText(path),
-                        documentOptions: new System.Text.Json.JsonDocumentOptions
-                        {
-                            CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
-                            AllowTrailingCommas = true,
-                        }) as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
-                }
-                catch
-                {
-                    return; // 깨진 사용자 설정 파일은 덮어쓰지 않음
-                }
-            }
-            else
-            {
-                root = new System.Text.Json.Nodes.JsonObject();
-            }
-
-            root["theme"] = theme;
-            File.WriteAllText(path, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch { /* local settings 갱신 실패 — best-effort */ }
     }
 
     /// <summary>프로젝트 루트 tui.json 에 opencode theme 을 기록한다.
@@ -655,6 +601,9 @@ public sealed class TerminalSessionManager
     private string? TryBuildDirectLaunch(string roomId, string shellCommandLine, out string? injectFallback)
     {
         injectFallback = null;
+        // 이전 종료(GracefulExitPlan → MarkClaudeQuitting)가 남긴 종료중 플래그를 새 실행 전에 지운다 —
+        // 남아있으면 ClaudeReentryLoop 가 이번 실행의 재진입도 "종료중"으로 오판해 resume 을 못 한다.
+        ClearClaudeQuitFlag(roomId);
         var roomSettings = BuildRoomSettings(roomId); // 방별 settings 생성(roomId 인자 박힌 hook command 포함)
         string flags = "--dangerously-skip-permissions";
         if (File.Exists(roomSettings)) flags += $" --settings \"{roomSettings}\"";
@@ -703,7 +652,7 @@ public sealed class TerminalSessionManager
                     {
                         Directory.CreateDirectory(LaunchDir);
                         var forkTrack = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
-                        File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + forkBody + "\r\n" + ClaudeReentryLoop(flags, forkTrack));
+                        File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + forkBody + "\r\n" + ClaudeReentryLoop(flags, forkTrack, ClaudeQuitFlagPath(roomId)));
                         return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
                     }
                     catch (Exception)
@@ -752,7 +701,7 @@ public sealed class TerminalSessionManager
         {
             Directory.CreateDirectory(LaunchDir);
             var trackFile = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
-            File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + body + "\r\n" + ClaudeReentryLoop(flags, trackFile));
+            File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + body + "\r\n" + ClaudeReentryLoop(flags, trackFile, ClaudeQuitFlagPath(roomId)));
             // 경로에 공백이 있어도 cmd /k "<단일 토큰>" 규칙으로 안전(따옴표 보존/제거 모두 정상 실행).
             return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
         }
@@ -797,10 +746,14 @@ public sealed class TerminalSessionManager
         "echo [DevezCode] Session restart failed repeatedly. Run a command or close this room.\r\n";
 
     /// <summary>claude 재진입 루프 — 추적파일(sessions\&lt;room&gt;.txt, 훅이 라이브 갱신)의 sid 를 매 반복
-    /// 다시 읽어 --resume. resume 실패(transcript 삭제 등) 시 즉시 신규 세션으로 폴백(에러 잔류 없음).</summary>
-    private static string ClaudeReentryLoop(string flags, string trackFile) =>
+    /// 다시 읽어 --resume. resume 실패(transcript 삭제 등) 시 즉시 신규 세션으로 폴백(에러 잔류 없음).
+    /// quitFlagPath: 앱 종료(GracefulExitPlan → MarkClaudeQuitting)가 남긴 "종료중" 플래그. escFirst
+    /// 로 claude 가 예상보다 빨리 정상 종료하면 Dispose(ConPTY 닫기) 전 이 틈에 재진입해 새 claude 를
+    /// 띄우는 레이스가 있어, 재진입 직전에 이 플래그를 먼저 확인해 있으면 루프를 끝낸다.</summary>
+    private static string ClaudeReentryLoop(string flags, string trackFile, string quitFlagPath) =>
         "set FAILS=0\r\n" +
         ":__reenter\r\n" +
+        $"if exist \"{quitFlagPath}\" goto __quitflag\r\n" +
         "set \"SID=\"\r\n" +
         $"if exist \"{trackFile}\" for /f \"usebackq delims=\" %%i in (\"{trackFile}\") do set \"SID=%%i\"\r\n" +
         "if defined SID (\r\n" +
@@ -809,7 +762,8 @@ public sealed class TerminalSessionManager
         ") else (\r\n" +
         $"  call claude {flags}\r\n" +
         ")\r\n" +
-        ReentryTail();
+        ReentryTail() +
+        ":__quitflag\r\n";
 
     /// <summary>가재(gjc) 재진입 루프 — 방별 --session-dir 로 격리돼 있어 -c(최신 이어가기)가 곧 이 방의
     /// 마지막 대화. 앱의 session-dir 폴링(GajaeLastMessageService)이 재진입 세션도 그대로 추적한다.</summary>
@@ -1456,8 +1410,8 @@ public sealed class TerminalSessionManager
         {
             await Task.WhenAll(snapshot.Select(kv =>
             {
-                var (sendShellExit, quitInput) = GracefulExitPlan(kv.Key);
-                return kv.Value.TryGracefulExitAsync(perGraceMs, sendShellExit, quitInput);
+                var (sendShellExit, quitInput, escFirst) = GracefulExitPlan(kv.Key);
+                return kv.Value.TryGracefulExitAsync(perGraceMs, sendShellExit, quitInput, escFirst);
             }));
         }
         catch { /* best effort */ }
@@ -1533,6 +1487,48 @@ public sealed class TerminalSessionManager
         catch { return false; }
     }
 
+    /// <summary>claude 방이 권한/선택지 입력을 기다리는 중인가('permission'/'input', waiting 훅 파일).
+    /// 이 상태에서 Esc 를 보내면 대기 중인 권한창·선택지가 취소되며 원치 않는 자동거부/중단이 날 수
+    /// 있어, 종료 시 Esc 시도 여부를 이걸로 가른다(대기 중이면 Esc 생략, /exit 만 시도).</summary>
+    private static bool IsClaudeWaitingOnUser(string roomId)
+    {
+        try
+        {
+            var path = Path.Combine(ClaudeTrackDir, "waiting", SafeRoomFileName(roomId) + ".txt");
+            if (!File.Exists(path)) return false;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var sr = new StreamReader(fs);
+            var v = sr.ReadToEnd().Trim();
+            return v == "permission" || v == "input";
+        }
+        catch { return false; }
+    }
+
+    private static string ClaudeQuitFlagPath(string roomId) =>
+        Path.Combine(ClaudeTrackDir, "quitting", SafeRoomFileName(roomId) + ".txt");
+
+    /// <summary>종료 시작 전에 방별 "종료중" 플래그를 남긴다. escFirst(Esc→/exit) 로 claude 가
+    /// 예상보다 빨리 정상 종료(errorlevel 0)하면, ClaudeReentryLoop 배치가 Dispose 로 ConPTY 를
+    /// 닫기 전 그 틈에 goto __reenter 로 새 claude 를 띄우는 레이스가 있다 — 이 플래그를 배치가
+    /// 재진입 직전에 확인해 그 레이스를 막는다.</summary>
+    private static void MarkClaudeQuitting(string roomId)
+    {
+        try
+        {
+            var path = ClaudeQuitFlagPath(roomId);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "1");
+        }
+        catch { /* best effort — 실패해도 기존 하드킬 폴백이 종료를 보장 */ }
+    }
+
+    /// <summary>다음 실행 전에 종료중 플래그를 지운다 — 남아있으면 재시작 때 재진입 루프가
+    /// 곧바로 "종료중"으로 오판해 resume 자체를 안 하게 된다.</summary>
+    private static void ClearClaudeQuitFlag(string roomId)
+    {
+        try { File.Delete(ClaudeQuitFlagPath(roomId)); } catch { }
+    }
+
     /// <summary>방의 최신 세션 추적값을 settings 에 확정 기록(종료 스냅샷). best-effort — 실패해도 종료 계속.
     /// claude 는 훅 기록 파일, opencode 는 플러그인 기록 파일, gjc 는 방 session-dir 의 최신 .jsonl 이 원천.</summary>
     private static void TrySnapshotRoomSession(string roomId)
@@ -1573,8 +1569,8 @@ public sealed class TerminalSessionManager
         {
             await Task.WhenAll(snapshot.Select(kv =>
             {
-                var (sendShellExit, quitInput) = GracefulExitPlan(kv.Key);
-                return kv.Value.TryGracefulExitAsync(perGraceMs, sendShellExit, quitInput);
+                var (sendShellExit, quitInput, escFirst) = GracefulExitPlan(kv.Key);
+                return kv.Value.TryGracefulExitAsync(perGraceMs, sendShellExit, quitInput, escFirst);
             }));
         }
         catch { /* best effort */ }
@@ -1590,7 +1586,6 @@ public sealed class TerminalSessionManager
             {
                 try { kv.Value.Dispose(); } catch (Exception) { }
                 _sessions.Remove(kv.Key);
-                _claudeRoomDirs.Remove(kv.Key);
                 _opencodeRoomDirs.Remove(kv.Key);
                 _pendingInitial.Remove(kv.Key);
                 _disposedRooms.Add(kv.Key); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
@@ -1606,14 +1601,22 @@ public sealed class TerminalSessionManager
     /// 등록된 슬래시 명령, alias "quit")로 종료시키고, 이어 exit 도 보내지 않는다(루프가 셸까지 정리).
     /// gajae 는 이런 텍스트 종료 명령이 확인되지 않아 아무 입력도 안 보내고 timeout 후 하드킬에 맡긴다.
     /// 그 외(opencode 등)는 재진입 루프가 없는 플레인 셸이라 기존 Ctrl+C×2 + exit 그대로 사용.</summary>
-    private static (bool sendShellExit, string? quitInput) GracefulExitPlan(string roomId)
+    /// <summary>claude 는 응답 생성 중(busy)이고 권한/선택지 대기(waiting)가 아닐 때만 Esc 를
+    /// 먼저 보낸다(escFirst) — REPL 이 idle 프롬프트로 복귀해야 "/exit" 가 씹히지 않는다.
+    /// claude 방이면 여기서 종료중 플래그도 남긴다(레이스 방지, <see cref="MarkClaudeQuitting"/>).</summary>
+    private static (bool sendShellExit, string? quitInput, bool escFirst) GracefulExitPlan(string roomId)
     {
         var agent = SettingsService.LoadAgentForRoom(roomId);
+        if (agent == "claude")
+        {
+            MarkClaudeQuitting(roomId);
+            bool escFirst = !IsClaudeWaitingOnUser(roomId) && IsClaudeBusyRunning(roomId);
+            return (false, "/exit\r\n", escFirst);
+        }
         return agent switch
         {
-            "claude" => (false, "/exit\r\n"),
-            "gajae"  => (false, ""),
-            _        => (true, null),
+            "gajae" => (false, "", false),
+            _       => (true, null, false),
         };
     }
 
@@ -1626,7 +1629,6 @@ public sealed class TerminalSessionManager
                 try { s.Dispose(); } catch (Exception) { }
                 _sessions.Remove(roomId);
             }
-            _claudeRoomDirs.Remove(roomId);
             _opencodeRoomDirs.Remove(roomId);
             _pendingInitial.Remove(roomId);
             _disposedRooms.Add(roomId); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
@@ -1734,7 +1736,6 @@ public sealed class TerminalSessionManager
                 try { s.Dispose(); } catch (Exception) { }
             }
             _sessions.Clear();
-            _claudeRoomDirs.Clear();
             _claudeSessionWatcher?.Dispose();
             _claudeSessionWatcher = null;
         }
