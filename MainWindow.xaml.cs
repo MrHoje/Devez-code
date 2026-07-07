@@ -2840,8 +2840,10 @@ public partial class MainWindow : Window
         if (!_splitActive) return;
         _splitActive = false;
 
-        // 분할을 닫으면 너비 비율을 초기화 → 다음에 다시 열 때 1:1 로 시작.
-        SettingsService.SaveSplitBStar(1.0);
+        // 분할을 '사용자가 직접' 닫으면(animate=true) 너비 비율을 초기화 → 다음에 다시 열 때 1:1 로 시작.
+        // 프로젝트 전환(animate=false)으로 잠시 닫힐 땐 보존한다 — 초기화하면 분할 프로젝트로 돌아올 때
+        // 모든 세션이 떠나기 전과 다른 폭으로 열려 ConPTY 리플로우(스크롤 튐·줄 갈라짐)를 일으킨다.
+        if (animate) SettingsService.SaveSplitBStar(1.0);
 
         // 좌측(주) 패널 콘텐츠를 유지, 우측은 버린다. 스왑 상태에서는 유지 콘텐츠가 PaneB 에 있을 수 있다.
         var keep = LeftPane;

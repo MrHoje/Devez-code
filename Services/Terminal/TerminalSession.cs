@@ -290,6 +290,9 @@ public sealed class TerminalSession : IDisposable
     public void Resize(int cols, int rows)
     {
         if (_disposed || _hPC == IntPtr.Zero) return;
+        // 동일 크기는 no-op — 탭 활성화마다 오는 재동기 resize(refitSoon)가 실제 어긋남이 있을 때만
+        // ConPTY 를 건드리게 한다. (강제 리페인트가 필요한 곳은 -1→원복 킥을 쓰므로 영향 없음.)
+        if (Math.Max(cols, 2) == Cols && Math.Max(rows, 2) == Rows) return;
         Cols = Math.Max(cols, 2);
         Rows = Math.Max(rows, 2);
         var size = new COORD { X = (short)Cols, Y = (short)Rows };
