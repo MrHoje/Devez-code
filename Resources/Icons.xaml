@@ -176,6 +176,13 @@
     <PathGeometry x:Key="IconMaximize2"
         Figures="M15 3 21 3 21 9 M9 21 3 21 3 15 M21 3 14 10 M3 21 10 14"/>
 
+    <!-- VS Code/Win11 캡션 버튼 스타일: 사각형 1개=최대화, 겹친 사각형 2개(=IconCopy 형상)=복원 -->
+    <PathGeometry x:Key="IconWinMaximize"
+        Figures="M2 2 M22 22 M5 5H19V19H5Z"/>
+
+    <PathGeometry x:Key="IconWinRestore"
+        Figures="M2 2 M22 22 M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+
     <!-- Lucide picture-in-picture-2 (미니 채팅방 모드 진입) -->
     <PathGeometry x:Key="IconPictureInPicture2"
         Figures="M2 2 M22 22 M21 9 V6 A2 2 0 0 0 19 4 H4 A2 2 0 0 0 2 6 V16 A2 2 0 0 0 4 18 H8 M14 13 H20 A2 2 0 0 1 22 15 V18 A2 2 0 0 1 20 20 H14 A2 2 0 0 1 12 18 V15 A2 2 0 0 1 14 13 Z"/>

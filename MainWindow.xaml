@@ -121,7 +121,8 @@
                         <TextBlock Text="&#x2013;" FontSize="16"/>
                     </Button>
                     <Button x:Name="MaxBtn" Click="MaxBtn_Click" Style="{StaticResource WinCtrlBtn}" ToolTip="최대화">
-                        <TextBlock x:Name="MaxBtnGlyph" Text="&#x25A1;" FontSize="14"/>
+                        <Path x:Name="MaxBtnIcon" Style="{StaticResource LucideButtonIcon}"
+                              Data="{StaticResource IconWinMaximize}" Width="11" Height="11" StrokeThickness="1.4"/>
                     </Button>
                     <Button Style="{StaticResource WinCloseBtn}" Click="CloseBtn_Click">
                         <TextBlock Text="&#x2715;" FontSize="13"/>

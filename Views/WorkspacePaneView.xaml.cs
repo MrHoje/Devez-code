@@ -710,24 +710,46 @@ public partial class WorkspacePaneView : UserControl
 
     private void GotoSession(int index)
     {
-        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().ToList();
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.Hidden).ToList();
         if (sessionTabs == null || sessionTabs.Count == 0) return;
         int i = index < 0 ? sessionTabs.Count - 1 : index;
         if (i < 0 || i >= sessionTabs.Count) return;
         OpenSession(sessionTabs[i]);
     }
 
-    /// <summary>전역 단축키(한자+방향키)용 — 활성 세션 탭을 이전/다음으로 이동.</summary>
-    public void CycleActiveSession(bool next) => CycleSession(next ? +1 : -1);
-
     private void CycleSession(int dir)
     {
-        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().ToList();
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.Hidden).ToList();
         if (_activeProject == null || _activeSession == null || sessionTabs == null || sessionTabs.Count < 2) return;
         int idx = sessionTabs.IndexOf(_activeSession);
         if (idx < 0) return;
         int n = sessionTabs.Count;
         OpenSession(sessionTabs[((idx + dir) % n + n) % n]);
+    }
+
+    /// <summary>전역 단축키(방향키)용 — 이 패널 안에서만 이전/다음 세션 탭으로 이동(래핑 없음).
+    /// 경계(맨 끝)라 더 이동할 탭이 없으면 아무것도 바꾸지 않고 false 반환 — 호출자(MainWindow)가
+    /// false 를 보면 반대편 패널로 포커스를 넘길지 판단한다.</summary>
+    public bool CycleActiveSession(bool next)
+    {
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.Hidden).ToList();
+        if (_activeProject == null || _activeSession == null || sessionTabs == null) return false;
+        int idx = sessionTabs.IndexOf(_activeSession);
+        if (idx < 0) return false;
+        int ni = idx + (next ? 1 : -1);
+        if (ni < 0 || ni >= sessionTabs.Count) return false; // 경계 — 더 이동 불가
+        OpenSession(sessionTabs[ni]);
+        return true;
+    }
+
+    /// <summary>전역 단축키 패널 간 이동용 — 이 패널의 첫/마지막 세션 탭을 선택.
+    /// 반대편 패널 경계에서 넘어올 때 진입 지점을 정하는 데 쓴다.</summary>
+    public bool SelectEdgeSession(bool first)
+    {
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.Hidden).ToList();
+        if (sessionTabs == null || sessionTabs.Count == 0) return false;
+        OpenSession(first ? sessionTabs[0] : sessionTabs[^1]);
+        return true;
     }
 
     private static string NextSessionName(ProjectItem proj)

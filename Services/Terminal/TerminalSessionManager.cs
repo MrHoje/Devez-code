@@ -1726,6 +1726,130 @@ public sealed class TerminalSessionManager
         try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); } catch (Exception) { }
     }
 
+    // ── 유령 방 추적파일 GC (3일 유예) ─────────────────────────────────
+    // 워크스페이스(활성+보관)에 더 이상 없는 roomId 의 앱 자체 북키핑 파일(추적/캐시)을 정리한다.
+    // 실제 claude 대화 기록(.jsonl)은 절대 안 건드림 — PurgeAppOwnedRoomArtifacts 가 지우는 범위만.
+    // 타이밍 레이스 등으로 인한 오탐을 막기 위해 발견 즉시 지우지 않고, ghost-registry.txt 에 최초
+    // 발견일을 남겨 재시작해도 계속 3일 이상 유령으로 관측된 것만 실제로 지운다.
+    private static string GhostRegistryPath => Path.Combine(ClaudeTrackDir, "ghost-registry.txt");
+    private static readonly TimeSpan GhostGraceDays = TimeSpan.FromDays(3);
+
+    /// <summary>앱 시작 시 1회 호출. validRoomIds 는 워크스페이스의 활성+보관 세션 Id 전체
+    /// (호출부가 모델 타입을 몰라도 되게 문자열만 받는다). 실패해도 앱 동작엔 영향 없는 best-effort.</summary>
+    public static void ReconcileGhostRoomTracking(IEnumerable<string> validRoomIds)
+    {
+        try
+        {
+            var valid = new HashSet<string>(
+                validRoomIds.Where(id => !string.IsNullOrWhiteSpace(id)).Select(SafeRoomFileName),
+                StringComparer.OrdinalIgnoreCase);
+
+            var tracked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            void Collect(string dir, string ext)
+            {
+                if (!Directory.Exists(dir)) return;
+                try
+                {
+                    foreach (var f in Directory.EnumerateFiles(dir, "*" + ext, SearchOption.TopDirectoryOnly))
+                        tracked.Add(Path.GetFileNameWithoutExtension(f));
+                }
+                catch { }
+            }
+            Collect(Path.Combine(ClaudeTrackDir, "sessions"), ".txt");
+            Collect(Path.Combine(ClaudeTrackDir, "waiting"), ".txt");
+            Collect(Path.Combine(ClaudeTrackDir, "busy"), ".txt");
+            Collect(Path.Combine(ClaudeTrackDir, "lastmsg"), ".txt");
+            Collect(Path.Combine(ClaudeTrackDir, "lastreply"), ".txt");
+            Collect(Path.Combine(ClaudeTrackDir, "modeleffort"), ".txt");
+            Collect(Path.Combine(ClaudeTrackDir, "room-settings"), ".json");
+            Collect(Path.Combine(ClaudeTrackDir, "quitting"), ".txt");
+            // statusline-cache-<room>-<sig>.txt 는 ClaudeTrackDir 루트에 바로 있고 접두사 매칭 필요.
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(ClaudeTrackDir, "statusline-cache-*.txt", SearchOption.TopDirectoryOnly))
+                {
+                    var name = Path.GetFileNameWithoutExtension(f); // statusline-cache-<room>-<sig>
+                    var rest = name.Substring("statusline-cache-".Length);
+                    var dash = rest.LastIndexOf('-');
+                    if (dash > 0) tracked.Add(rest.Substring(0, dash));
+                }
+            }
+            catch { }
+            // subruns/<room>/ 는 디렉터리 단위(파일 아님).
+            try
+            {
+                var subrunsDir = Path.Combine(ClaudeTrackDir, "subruns");
+                if (Directory.Exists(subrunsDir))
+                    foreach (var d in Directory.EnumerateDirectories(subrunsDir))
+                        tracked.Add(Path.GetFileName(d));
+            }
+            catch { }
+
+            var registry = LoadGhostRegistry();
+            var now = DateTime.UtcNow;
+            bool changed = false;
+
+            // 유령 후보가 다시 유효해졌으면(재등장) 레지스트리에서 제거.
+            foreach (var rid in registry.Keys.Where(valid.Contains).ToList())
+            { registry.Remove(rid); changed = true; }
+
+            foreach (var rid in tracked)
+            {
+                if (valid.Contains(rid)) continue; // 살아있는 방 — 손대지 않음
+                if (registry.TryGetValue(rid, out var firstSeen))
+                {
+                    if (now - firstSeen >= GhostGraceDays)
+                    {
+                        PurgeAppOwnedRoomArtifacts(rid, Enumerable.Empty<string?>());
+                        registry.Remove(rid);
+                        changed = true;
+                    }
+                }
+                else
+                {
+                    registry[rid] = now; // 첫 발견 — 이번엔 안 지우고 날짜만 기록
+                    changed = true;
+                }
+            }
+
+            // 레지스트리에 있는데 추적 흔적 자체가 이미 없어졌으면(수동삭제 등) 정리.
+            foreach (var rid in registry.Keys.Where(r => !tracked.Contains(r)).ToList())
+            { registry.Remove(rid); changed = true; }
+
+            if (changed) SaveGhostRegistry(registry);
+        }
+        catch { /* GC 실패해도 앱 동작엔 영향 없음 */ }
+    }
+
+    private static Dictionary<string, DateTime> LoadGhostRegistry()
+    {
+        var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            if (!File.Exists(GhostRegistryPath)) return result;
+            foreach (var line in File.ReadAllLines(GhostRegistryPath))
+            {
+                var parts = line.Split('\t');
+                if (parts.Length == 2 && DateTime.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+                    result[parts[0]] = dt;
+            }
+        }
+        catch { }
+        return result;
+    }
+
+    private static void SaveGhostRegistry(Dictionary<string, DateTime> registry)
+    {
+        try
+        {
+            Directory.CreateDirectory(ClaudeTrackDir);
+            var lines = registry.Select(kv => kv.Key + "\t" + kv.Value.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+            File.WriteAllLines(GhostRegistryPath, lines);
+        }
+        catch { }
+    }
+
     /// <summary>앱 종료 시 호출 — 모든 셸 프로세스 정리 (좀비 방지).</summary>
     public void DisposeAll()
     {

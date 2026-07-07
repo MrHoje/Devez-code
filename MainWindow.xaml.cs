@@ -115,6 +115,18 @@ public partial class MainWindow : Window
         _projects = WorkspaceStore.Load(out var archived);
         UpdateSessionBusyDisplay();
         _archivedProjects = archived;
+        // 워크스페이스에 더 이상 없는(활성+보관 통틀어) roomId 의 claude 추적/캐시 파일 정리(3일 유예, GC).
+        // 실제 대화 기록(.jsonl)은 안 건드림 — 앱 자체 북키핑 파일만.
+        // WorkspaceStore 가 손상 복구로 빈 트리를 반환한 경우는 건너뛴다 — 그 상태에서 돌리면
+        // 실제로 살아있는 방 전부가 유령으로 오판돼(활성+보관이 통째로 비어 보이므로) 며칠 뒤 다 지워진다.
+        if (!WorkspaceStore.LastLoadDegraded)
+        {
+            TerminalSessionManager.ReconcileGhostRoomTracking(
+                _projects.Concat(_archivedProjects)
+                    .SelectMany(p => p.Tabs)
+                    .OfType<SessionItem>()
+                    .Select(s => s.Id));
+        }
         _discordBot.SetProjects(_projects);
         // Discord 스레드에 메시지가 왔는데 세션이 꺼져 있으면 UI 스레드에서 해당 세션을 자동으로 연다.
         _discordBot.SetOpenSessionRequest(sessionId => Dispatcher.BeginInvoke(() =>
@@ -399,7 +411,23 @@ public partial class MainWindow : Window
             GlobalTabHotkey.Configure(hkMod, hkPrev, hkNext);
             GlobalTabHotkey.Install(next =>
             {
-                _focusedPane?.CycleActiveSession(next);
+                bool moved = _focusedPane?.CycleActiveSession(next) ?? false;
+                // 포커스 패널 안에서 경계(맨 끝)라 못 옮겼으면, 분할 중일 때만 반대편 패널로 이동.
+                // 좌측 마지막 탭에서 다음 → 우측 첫 탭 / 우측 첫 탭에서 이전 → 좌측 마지막 탭.
+                // (그 반대 방향, 즉 우측 마지막에서 다음·좌측 첫 탭에서 이전은 더 갈 곳이 없어 정지.)
+                if (!moved && _splitActive)
+                {
+                    var other = next && ReferenceEquals(_focusedPane, LeftPane) ? RightPane
+                              : !next && ReferenceEquals(_focusedPane, RightPane) ? LeftPane
+                              : null;
+                    if (other != null)
+                    {
+                        _focusedPane = other;
+                        other.SelectEdgeSession(first: next);
+                        SyncShellToFocusedPane();
+                        UpdatePaneFocusVisual();
+                    }
+                }
                 BringToForegroundFromHotkey();
             });
         };
@@ -3807,12 +3835,12 @@ public partial class MainWindow : Window
         UpdateMaxBtnVisual();
     }
 
-    /// <summary>최대화/전체화면 여부에 따라 컨트롤박스 버튼 글리프·툴팁 동기화(devez MaxRestoreGlyph 패턴).</summary>
+    /// <summary>최대화/전체화면 여부에 따라 컨트롤박스 버튼 아이콘·툴팁 동기화(devez MaxRestoreGlyph 패턴).</summary>
     private void UpdateMaxBtnVisual()
     {
-        if (MaxBtnGlyph == null) return;
+        if (MaxBtnIcon == null) return;
         bool maximized = WindowState == WindowState.Maximized || _inFullScreen;
-        MaxBtnGlyph.Text = maximized ? "❐" : "□"; // ❐ 복원 / □ 최대화 (PluginControlDialog 동일 패턴)
+        MaxBtnIcon.Data = (System.Windows.Media.Geometry)FindResource(maximized ? "IconWinRestore" : "IconWinMaximize");
         MaxBtn.ToolTip = maximized ? "이전 크기로" : "최대화";
     }
 

@@ -50,6 +50,11 @@ public static class WorkspaceStore
     /// 이 상태에서 빈 트리로 Save 하면 격리해 둔 원본까지 영구 손실되므로 Save 를 막는다.</summary>
     private static bool _loadDegraded;
 
+    /// <summary>직전 Load 가 손상 복구로 빈 트리를 반환했는가 — 이 경우 활성+보관 세션 목록이
+    /// 실제로 비어있는 게 아니라 "일시적으로 못 읽은 것"이므로, 이 값에 의존해 방 존재 여부를
+    /// 판단하는 로직(예: 유령 방 GC)은 이번 실행에서 건너뛰어야 한다.</summary>
+    public static bool LastLoadDegraded => _loadDegraded;
+
     // Load/Save 직렬화 — 현재는 UI 스레드 전용이나, tmp/bak 고정 파일명을 쓰므로
     // 동시 진입 시 쓰기 충돌을 막기 위한 방어적 잠금.
     private static readonly object _lock = new();
