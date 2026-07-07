@@ -1593,6 +1593,9 @@ public partial class WorkspacePaneView : UserControl
             cm.Items.Add(exportItem);
 
             cm.Items.Add(new Separator());
+            cm.Items.Add(BuildSplitMoveItem(s));
+
+            cm.Items.Add(new Separator());
 
             var hideItem = new MenuItem { Header = "숨기기", Icon = BuildMenuIcon("IconEyeOff") };
             hideItem.Click += (_, _) => HideSession(s);
@@ -1626,9 +1629,6 @@ public partial class WorkspacePaneView : UserControl
             deleteItem.SetResourceReference(MenuItem.ForegroundProperty, "DangerBrush");
             deleteItem.Click += (_, _) => DeleteSession(s);
             cm.Items.Add(deleteItem);
-
-            cm.Items.Add(new Separator());
-            cm.Items.Add(BuildSplitMoveItem(s));
         }
 
         cm.PlacementTarget = sender as UIElement;

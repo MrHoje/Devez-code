@@ -67,7 +67,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.11.5", "2026-07-07", true, new[]
+        ("v1.11.6", "2026-07-07", true, new[]
+        {
+            "사이드바·탭 헤더 세션 우클릭 메뉴에 \"숨기기\"(다른 세션 모두 숨기기 포함)를 추가했습니다.",
+            "세션 탭 우클릭 메뉴 항목 순서를 정리했습니다.",
+        }),
+        ("v1.11.5", "2026-07-07", false, new[]
         {
             "마크다운(.md) 파일을 열 때 간헐적으로 로딩 스피너가 멈춰 있던 문제를 수정했습니다.",
             "프로젝트 파일 탭 우클릭 메뉴에 \"파일 경로 복사\"를 추가했습니다.",

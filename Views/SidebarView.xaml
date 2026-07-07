@@ -117,7 +117,7 @@
                         <Separator/>
                         <MenuItem Header="세션 숨기기" Tag="{Binding}" Click="SessionHide_Click">
                             <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEyeOff}"
                                       Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
