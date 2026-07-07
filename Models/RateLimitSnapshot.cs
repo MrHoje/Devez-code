@@ -65,8 +65,16 @@ public class RateLimitSnapshot
             // 낮은 값은 (a) 낡은 스냅샷이거나 (b) 두 소스의 반올림 차이(hook 의 정수
             // used_percentage vs OAuth 의 실수 utilization)일 뿐이다. 최신값을 무조건
             // 채택하면 두 소스가 번갈아 도착할 때 표시가 ±1 로 진동한다.
+            // 단, 차이가 1%p 이하면 새 값이 낮거나 같을 때만 채택(올림차 진동 방지).
+            // statusline(정수 used_percentage)이 API(실수 utilization)보다 같거나
+            // 낮은 경향이 있어 자연히 Claude 세션 표시값이 푸터에 반영된다.
+            if (Math.Abs(oldPct.Value - n) <= 1 && n <= oldPct.Value)
+                return (n, nrr > orr ? nrr : orr);
             return (Math.Max(oldPct.Value, n), nrr > orr ? nrr : orr);
         }
-        return (Math.Max(oldPct.Value, n), newReset ?? oldReset);    // reset 정보 부족 → 더 높은 pct 채택
+        // 차이가 1%p 이하면 새 값이 낮거나 같을 때만 채택.
+        if (Math.Abs(oldPct.Value - n) <= 1 && n <= oldPct.Value)
+            return (n, newReset ?? oldReset);
+        return (Math.Max(oldPct.Value, n), newReset ?? oldReset);
     }
 }
