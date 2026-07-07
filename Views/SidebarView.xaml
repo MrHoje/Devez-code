@@ -114,13 +114,6 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <Separator/>
-                        <MenuItem Header="세션 숨기기" Tag="{Binding}" Click="SessionHide_Click">
-                            <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEyeOff}"
-                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
-                            </MenuItem.Icon>
-                        </MenuItem>
                         <!-- Lock toggle -->
                         <MenuItem Header="세션 잠금" Tag="{Binding}" Click="SessionLock_Click"
                                   Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
@@ -133,6 +126,13 @@
                                   Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLockOpen}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <Separator/>
+                        <MenuItem Header="세션 숨기기" Tag="{Binding}" Click="SessionHide_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEyeOff}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>

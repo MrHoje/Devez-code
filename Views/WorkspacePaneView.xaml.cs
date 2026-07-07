@@ -1594,6 +1594,15 @@ public partial class WorkspacePaneView : UserControl
             exportItem.Click += (_, _) => ExportSessionRequested?.Invoke(s);
             cm.Items.Add(exportItem);
 
+            // Lock toggle
+            var lockItem = new MenuItem
+            {
+                Header = s.IsLocked ? "잠금 해제" : "세션 잠금",
+                Icon = BuildMenuIcon(s.IsLocked ? "IconLockOpen" : "IconLock"),
+            };
+            lockItem.Click += (_, _) => ToggleSessionLockRequested?.Invoke(s);
+            cm.Items.Add(lockItem);
+
             cm.Items.Add(new Separator());
             cm.Items.Add(BuildSplitMoveItem(s));
 
@@ -1622,15 +1631,6 @@ public partial class WorkspacePaneView : UserControl
                 }
             };
             cm.Items.Add(hideOthers);
-
-            // Lock toggle
-            var lockItem = new MenuItem
-            {
-                Header = s.IsLocked ? "잠금 해제" : "세션 잠금",
-                Icon = BuildMenuIcon(s.IsLocked ? "IconLockOpen" : "IconLock"),
-            };
-            lockItem.Click += (_, _) => ToggleSessionLockRequested?.Invoke(s);
-            cm.Items.Add(lockItem);
 
             if (!s.IsLocked)
             {
