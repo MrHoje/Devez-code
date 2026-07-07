@@ -336,7 +336,7 @@
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="프로젝트 선택 시 세션 모두 로드" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="끄면 첫 번째 세션만 실행하고, 다른 세션은 선택할 때 로드합니다."
+                                            <TextBlock Text="끄면 첫 번째 세션만 실행하고, 다른 세션은 선택할 때 로드합니다. (숨김 처리된 세션은 켜져 있어도 로드하지 않습니다.)"
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                         </StackPanel>
