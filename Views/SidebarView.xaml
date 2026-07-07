@@ -169,8 +169,9 @@
                                Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
                                RenderOptions.BitmapScalingMode="HighQuality"/>
                     </StackPanel>
-                    <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중). 탭 X 로 숨긴 세션은 추적중지 아이콘. -->
-                    <Grid Grid.Column="1" Width="12" Height="12" VerticalAlignment="Center">
+                    <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중). 탭 X 로 숨긴 세션은 추적중지 아이콘.
+                         로드되지 않은(죽은) 세션은 점을 아예 숨기고 이 컬럼 자체도 접어 텍스트가 아이콘에 붙게 한다. -->
+                    <Grid x:Name="StatusIndicator" Grid.Column="1" Width="12" Height="12" VerticalAlignment="Center">
                         <Ellipse x:Name="StatusDot" Style="{StaticResource SessionDot}"/>
                         <Ellipse x:Name="BusySpinner" Width="12" Height="12" Visibility="Collapsed"
                                  models:SpinnerActivator.Track="True"
@@ -209,6 +210,17 @@
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
                     <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
                 </DataTrigger>
+                <!-- 로드되지 않은(죽은) 세션 + 숨김/처리중/대기 아님 → 점/스피너/아이콘 전부 없으므로
+                     컬럼 자체를 접어 텍스트가 에이전트 아이콘에 바로 붙게 한다. -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsAlive}" Value="False"/>
+                        <Condition Binding="{Binding Hidden}" Value="False"/>
+                        <Condition Binding="{Binding IsBusy}" Value="False"/>
+                        <Condition Binding="{Binding IsWaitingChoice}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="StatusIndicator" Property="Visibility" Value="Collapsed"/>
+                </MultiDataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
                 <DataTrigger Binding="{Binding Hidden}" Value="True">
                     <Setter TargetName="StatusDot" Property="Visibility" Value="Collapsed"/>
