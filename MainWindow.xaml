@@ -120,8 +120,8 @@
                     <Button Style="{StaticResource WinCtrlBtn}" Click="MinBtn_Click">
                         <TextBlock Text="&#x2013;" FontSize="16"/>
                     </Button>
-                    <Button Style="{StaticResource WinCtrlBtn}" Click="MaxBtn_Click">
-                        <TextBlock Text="&#x25A1;" FontSize="14"/>
+                    <Button x:Name="MaxBtn" Click="MaxBtn_Click" Style="{StaticResource WinCtrlBtn}" ToolTip="최대화">
+                        <TextBlock x:Name="MaxBtnGlyph" Text="&#x25A1;" FontSize="14"/>
                     </Button>
                     <Button Style="{StaticResource WinCloseBtn}" Click="CloseBtn_Click">
                         <TextBlock Text="&#x2715;" FontSize="13"/>

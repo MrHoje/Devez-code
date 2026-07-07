@@ -3792,6 +3792,7 @@ public partial class MainWindow : Window
         // 시작 시 전체화면 복원: 저장된 일반 bounds 위치(=올바른 모니터)에서 전체화면 진입.
         if (_restoreFullScreen) { _restoreFullScreen = false; EnterFullScreen(); }
         else if (_useFullScreen && WindowState == WindowState.Maximized) EnterFullScreen();
+        UpdateMaxBtnVisual();
     }
 
 
@@ -3803,6 +3804,16 @@ public partial class MainWindow : Window
         // 전체화면 설정 ON 상태에서 최대화 요청(버튼·더블클릭·시스템) → 수동 전체화면으로 전환.
         if (_useFullScreen && WindowState == WindowState.Maximized && !_inFullScreen)
             EnterFullScreen();
+        UpdateMaxBtnVisual();
+    }
+
+    /// <summary>최대화/전체화면 여부에 따라 컨트롤박스 버튼 글리프·툴팁 동기화(devez MaxRestoreGlyph 패턴).</summary>
+    private void UpdateMaxBtnVisual()
+    {
+        if (MaxBtnGlyph == null) return;
+        bool maximized = WindowState == WindowState.Maximized || _inFullScreen;
+        MaxBtnGlyph.Text = maximized ? "❐" : "□"; // ❐ 복원 / □ 최대화 (PluginControlDialog 동일 패턴)
+        MaxBtn.ToolTip = maximized ? "이전 크기로" : "최대화";
     }
 
     /// <summary>WS_MAXIMIZE 없이 모니터 전체를 채우는 수동 전체화면 진입(작업표시줄까지 덮음).</summary>
@@ -3835,7 +3846,7 @@ public partial class MainWindow : Window
         }
         SetBoundsInstant(target);
         ApplyCornerPreference();
-
+        UpdateMaxBtnVisual();
     }
 
 
@@ -3848,6 +3859,7 @@ public partial class MainWindow : Window
         ResizeMode = ResizeMode.CanResize;
         SetBoundsInstant(HalfCenteredOnMonitor());
         ApplyCornerPreference();
+        UpdateMaxBtnVisual();
     }
 
     /// <summary>현재 창이 속한 모니터 작업영역의 가로·세로 70% 크기 + 중앙 위치 Rect.</summary>
