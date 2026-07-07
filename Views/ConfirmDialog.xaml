@@ -109,9 +109,10 @@
                         <!-- 좌측 하단 보조 링크(예: "잠금 해제 후 삭제"). AlertWithLink 에서만 노출. -->
                         <TextBlock x:Name="LinkText" Grid.Column="0"
                                    Visibility="Collapsed"
+                                   HorizontalAlignment="Left"
                                    VerticalAlignment="Center"
                                    Cursor="Hand"
-                                   FontSize="{DynamicResource Fs12}"
+                                   FontSize="{DynamicResource Fs13}"
                                    Foreground="{DynamicResource PrimaryBrush}"
                                    MouseLeftButtonUp="LinkText_Click">
                             <TextBlock.Style>
