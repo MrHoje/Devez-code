@@ -959,14 +959,19 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 // WPF DataFormats.Bitmap(CF_BITMAP/HBITMAP)은 캡처 도구의 delayed-rendering
                 // 클립보드에서 무효 핸들→검은 화면을 반환하는 경우가 있어, 실제 픽셀 바이트인
                 // CF_DIB 를 직접 읽어 BMP 파일 헤더를 씌워 디코딩한다(핸들이 아니라 raw 데이터라 무관).
-                var dibBytes = GetClipboardDibBytes();
-                if (dibBytes != null)
+                // 단, raw OpenClipboard 는 텍스트 붙여넣기에서 클립보드를 한 번 더 여는 셈이라
+                // (원래 이 함수가 고치려던 "두 번 열어서 실패" 문제 재발), 실제 이미지가 있을 때만 시도한다.
+                if (data.GetDataPresent(System.Windows.DataFormats.Bitmap))
                 {
-                    using var bmp = DibToBitmap(dibBytes);
-                    if (bmp != null)
+                    var dibBytes = GetClipboardDibBytes();
+                    if (dibBytes != null)
                     {
-                        var path = SaveBitmap(bmp);
-                        if (path != null) return (path, null);
+                        using var bmp = DibToBitmap(dibBytes);
+                        if (bmp != null)
+                        {
+                            var path = SaveBitmap(bmp);
+                            if (path != null) return (path, null);
+                        }
                     }
                 }
 
@@ -1024,16 +1029,16 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             int paletteEntries = clrUsed > 0 ? clrUsed : (bitCount <= 8 ? (1 << bitCount) : 0);
             int offBits = 14 + headerSize + maskBytes + paletteEntries * 4;
 
-            using var ms = new System.IO.MemoryStream();
-            using var bw = new System.IO.BinaryWriter(ms);
-            bw.Write((byte)'B'); bw.Write((byte)'M');
-            bw.Write(14 + dib.Length);
-            bw.Write(0);
-            bw.Write(offBits);
-            bw.Write(dib);
-            bw.Flush();
-            ms.Position = 0;
-            return new System.Drawing.Bitmap(ms);
+            // System.Drawing.Bitmap(Stream) 은 지연 디코딩 시 스트림을 계속 참조할 수 있어(GDI+ 요구사항:
+            // "Bitmap 생명주기 동안 스트림을 열어둬야 한다") using 으로 여기서 닫으면 안 된다 —
+            // 스트림을 미리 닫으면 이후 Save() 시점에 "매개 변수가 잘못되었습니다" 예외가 날 수 있다.
+            var bmpBytes = new byte[14 + dib.Length];
+            bmpBytes[0] = (byte)'B'; bmpBytes[1] = (byte)'M';
+            BitConverter.GetBytes(14 + dib.Length).CopyTo(bmpBytes, 2);
+            BitConverter.GetBytes(0).CopyTo(bmpBytes, 6);
+            BitConverter.GetBytes(offBits).CopyTo(bmpBytes, 10);
+            Buffer.BlockCopy(dib, 0, bmpBytes, 14, dib.Length);
+            return new System.Drawing.Bitmap(new System.IO.MemoryStream(bmpBytes));
         }
         catch { return null; }
     }
