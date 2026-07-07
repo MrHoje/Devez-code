@@ -160,10 +160,10 @@
                     </Grid.ColumnDefinitions>
                     <!-- 잠금 아이콘(에이전트 아이콘 왼쪽) + 세션 아이콘 -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
-                        <Path Data="{StaticResource IconLock}" Width="10" Height="10" Stretch="Uniform"
+                        <Path Data="{StaticResource IconLock}" Width="14" Height="14" Stretch="Uniform"
                               Margin="0,0,5,0" VerticalAlignment="Center"
                               Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
-                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                              Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.5"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent"/>
                         <Image Width="14" Height="14" VerticalAlignment="Center"
                                Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"

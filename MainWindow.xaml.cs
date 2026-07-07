@@ -3619,10 +3619,6 @@ public partial class MainWindow : Window
     private void DeleteProject(ProjectItem proj)
     {
         bool fromArchive = _archivedProjects.Contains(proj);
-        if (!ConfirmDialog.Show("프로젝트 제거",
-                $"'{proj.Name}' 프로젝트를 목록에서 제거할까요?\n(디스크의 실제 파일은 삭제되지 않습니다.)",
-                okLabel: "제거", danger: true, confirmText: proj.Name))
-            return;
 
         var locked = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.IsLocked);
         if (locked != null)
@@ -3631,6 +3627,11 @@ public partial class MainWindow : Window
                 $"'{locked.Name}' 세션이 잠겨 있습니다.\n잠금을 해제한 후 다시 시도하세요.");
             return;
         }
+
+        if (!ConfirmDialog.Show("프로젝트 제거",
+                $"'{proj.Name}' 프로젝트를 목록에서 제거할까요?\n(디스크의 실제 파일은 삭제되지 않습니다.)",
+                okLabel: "제거", danger: true, confirmText: proj.Name))
+            return;
 
         foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
             foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);
