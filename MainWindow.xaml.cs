@@ -183,6 +183,7 @@ public partial class MainWindow : Window
         Sidebar.SessionHideRequested += HideSessionFromSidebar;
         Sidebar.SessionForkRequested += ForkSession;
         Sidebar.SessionExportRequested += ExportSession;
+        Sidebar.SessionLockRequested += ToggleSessionLock;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
 
         // 세션 요청 처리중 스피너: claude 훅(busy-hook.ps1)이 떨군 상태 파일을 감시 (clude-blinker 방식).
@@ -2099,6 +2100,7 @@ public partial class MainWindow : Window
         pane.SplitToggleRequested += OnPaneSplitToggle;
         pane.SplitViewRequested += OnPaneSplitViewRequested;
         pane.ExportSessionRequested += ExportSession;
+        pane.ToggleSessionLockRequested += ToggleSessionLock;
         pane.TabDragHoverMoved = OnTabDragHoverMoved;
         pane.TryCommitCrossDrop = OnTryCommitCrossTabDrop;
         pane.SetPanesTabDragActive = on => { LeftPane.SetTabDragActive(on); RightPane.SetTabDragActive(on); };
@@ -3550,6 +3552,12 @@ public partial class MainWindow : Window
 
     private void ForkSession(SessionItem session) => PaneFor(session).ForkSession(session);
 
+    private void ToggleSessionLock(SessionItem session)
+    {
+        session.IsLocked = !session.IsLocked;
+        WorkspaceStore.Save(_projects, _archivedProjects);
+    }
+
     /// <summary>세션 대화를 마크다운(.md)으로 내보낸다(옵션 A: user/assistant 텍스트만). 파싱은 백그라운드에서
     /// (opencode 는 CLI export 스폰), 그 뒤 저장 위치를 물어 UTF-8(BOM)로 저장.</summary>
     private async void ExportSession(SessionItem session)
@@ -3615,6 +3623,14 @@ public partial class MainWindow : Window
                 $"'{proj.Name}' 프로젝트를 목록에서 제거할까요?\n(디스크의 실제 파일은 삭제되지 않습니다.)",
                 okLabel: "제거", danger: true, confirmText: proj.Name))
             return;
+
+        var locked = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.IsLocked);
+        if (locked != null)
+        {
+            ConfirmDialog.Alert("프로젝트 제거 불가",
+                $"'{locked.Name}' 세션이 잠겨 있습니다.\n잠금을 해제한 후 다시 시도하세요.");
+            return;
+        }
 
         foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
             foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);

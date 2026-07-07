@@ -121,13 +121,48 @@
                                       Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <!-- Lock toggle -->
+                        <MenuItem Header="세션 잠금" Tag="{Binding}" Click="SessionLock_Click"
+                                  Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLock}"
+                                      Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="잠금 해제" Tag="{Binding}" Click="SessionLock_Click"
+                                  Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLockOpen}"
+                                      Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <MenuItem Header="세션 닫기" Tag="{Binding}" Click="SessionStopTracking_Click">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
                                       Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="세션 삭제" Tag="{Binding}" Click="SessionDelete_Click" Foreground="{DynamicResource DangerBrush}">
+                            <MenuItem.Style>
+                                <Style TargetType="MenuItem">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
                                       Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>

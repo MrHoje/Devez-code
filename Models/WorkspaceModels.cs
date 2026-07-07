@@ -86,6 +86,10 @@ public sealed class SessionItem : TabItemBase
     /// 좌측 트리에서 PrimaryBrush 배경 하이라이트에 사용.</summary>
     private bool _isActive;
     public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
+    /// <summary>이 세션이 잠겼는지 여부. 잠기면 사이드바/탭헤더 우클릭 메뉴에서 삭제·닫기를 숨기고
+    /// 동일 위치에 "잠금 해제"를 표시한다. 프로젝트 삭제 시 잠긴 세션이 있으면 차단.</summary>
+    private bool _isLocked;
+    public bool IsLocked { get => _isLocked; set => Set(ref _isLocked, value); }
 }
 
 /// <summary>우측 세션 완료 기록 패널에 쌓는 런타임 완료 이벤트. 최신 항목이 위에 표시된다.</summary>

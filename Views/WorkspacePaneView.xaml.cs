@@ -68,6 +68,8 @@ public partial class WorkspacePaneView : UserControl
     public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
     /// <summary>세션 탭 우클릭 "내보내기" → 셸이 대화를 .md 로 저장(프로젝트 카드 메뉴와 동일 동작).</summary>
     public event Action<SessionItem>? ExportSessionRequested;
+    /// <summary>세션 탭 우클릭 "잠금/잠금 해제" → MainWindow 가 토글.</summary>
+    public event Action<SessionItem>? ToggleSessionLockRequested;
     /// <summary>탭 드래그 중 매 이동 — 셸이 커서(screen)가 반대 패널 위면 그 패널에 삽입 프리뷰(탭 밀기)를 그리고
     /// true(크로스 중) 반환. 그러면 소스 패널은 자기 재정렬 프리뷰를 억제한다. ghostWidth=미는 폭.</summary>
     public Func<WorkspacePaneView, Point, double, bool>? TabDragHoverMoved;
@@ -1621,14 +1623,26 @@ public partial class WorkspacePaneView : UserControl
             };
             cm.Items.Add(hideOthers);
 
-            var closeItem = new MenuItem { Header = "닫기", Icon = BuildMenuIcon("IconX") };
-            closeItem.Click += (_, _) => StopTrackingSession(s);
-            cm.Items.Add(closeItem);
+            // Lock toggle
+            var lockItem = new MenuItem
+            {
+                Header = s.IsLocked ? "잠금 해제" : "세션 잠금",
+                Icon = BuildMenuIcon(s.IsLocked ? "IconLockOpen" : "IconLock"),
+            };
+            lockItem.Click += (_, _) => ToggleSessionLockRequested?.Invoke(s);
+            cm.Items.Add(lockItem);
 
-            var deleteItem = new MenuItem { Header = "삭제", Icon = BuildMenuIcon("IconTrash2", danger: true) };
-            deleteItem.SetResourceReference(MenuItem.ForegroundProperty, "DangerBrush");
-            deleteItem.Click += (_, _) => DeleteSession(s);
-            cm.Items.Add(deleteItem);
+            if (!s.IsLocked)
+            {
+                var closeItem = new MenuItem { Header = "닫기", Icon = BuildMenuIcon("IconX") };
+                closeItem.Click += (_, _) => StopTrackingSession(s);
+                cm.Items.Add(closeItem);
+
+                var deleteItem = new MenuItem { Header = "삭제", Icon = BuildMenuIcon("IconTrash2", danger: true) };
+                deleteItem.SetResourceReference(MenuItem.ForegroundProperty, "DangerBrush");
+                deleteItem.Click += (_, _) => DeleteSession(s);
+                cm.Items.Add(deleteItem);
+            }
         }
 
         cm.PlacementTarget = sender as UIElement;

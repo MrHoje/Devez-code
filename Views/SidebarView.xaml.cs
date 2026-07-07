@@ -61,6 +61,8 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionForkRequested;
     /// <summary>세션 메뉴 "내보내기" 요청(MainWindow 위임) — 대화를 .md 로 저장.</summary>
     public event Action<SessionItem>? SessionExportRequested;
+    /// <summary>세션 메뉴 "잠금/잠금 해제" 요청(MainWindow 위임).</summary>
+    public event Action<SessionItem>? SessionLockRequested;
 
     // 프로젝트 목록 열 수(1/2). 2면 카드 2열 그리드 + 가로 드래그. 기본 1.
     /// <summary>숨김 세션 표시 토글 변경 → 영속 저장 트리거.</summary>
@@ -463,6 +465,11 @@ public partial class SidebarView : UserControl
     private void SessionHide_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<SessionItem>(sender) is { } s) SessionHideRequested?.Invoke(s);
+    }
+
+    private void SessionLock_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is { } s) SessionLockRequested?.Invoke(s);
     }
 
     /// <summary>이벤트 소스에서 데이터 항목을 얻는다. 컨텍스트 메뉴 항목은 Tag, 행 요소는 DataContext.</summary>

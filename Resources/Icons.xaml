@@ -324,6 +324,8 @@
 
     <PathGeometry x:Key="IconLock"
         Figures="M2 2 M22 22 M5 13a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z M8 11V7a4 4 0 0 1 8 0v4 M12 16 a 1 1 0 1 0 2 0 a 1 1 0 1 0 -2 0"/>
+    <PathGeometry x:Key="IconLockOpen"
+        Figures="M2 2 M22 22 M5 13a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z M9 11V7a4 4 0 0 1 7.5-2.5 M12 16 a 1 1 0 1 0 2 0 a 1 1 0 1 0 -2 0"/>
 
     <PathGeometry x:Key="IconBookmark"
         Figures="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>

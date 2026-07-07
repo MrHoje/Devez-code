@@ -8,7 +8,7 @@ namespace DevezCode.Services;
 /// <summary>프로젝트/세션 트리를 %AppData%\DevezCode\workspace.json 에 저장·복원.</summary>
 public static class WorkspaceStore
 {
-    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } }
+    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
     private sealed class ProjectDto
     {
@@ -105,7 +105,7 @@ public static class WorkspaceStore
                 proj.Column = p.Column;
                 proj.ShowHiddenSessions = p.ShowHiddenSessions;
                 foreach (var s in p.Sessions)
-                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden });
+                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden, IsLocked = s.Locked });
                 foreach (var f in p.Files)
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 proj.PendingOpenFiles = p.OpenFiles ?? new();   // 시작 시 RestoreFileTabs 가 1회 소비
@@ -156,7 +156,7 @@ public static class WorkspaceStore
         {
             Id = s.Id, Name = s.Name,
             Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
-            Hidden = s.Hidden,
+            Hidden = s.Hidden, Locked = s.IsLocked,
         }).ToList(),
         Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
         // 숨김 세션 표시 여부
