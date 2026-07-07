@@ -112,11 +112,13 @@
                                    VerticalAlignment="Center"
                                    Cursor="Hand"
                                    FontSize="{DynamicResource Fs12}"
-                                   Foreground="{DynamicResource LinkBrush}"
+                                   Foreground="{DynamicResource PrimaryBrush}"
                                    TextDecorations="Underline"
                                    MouseLeftButtonUp="LinkText_Click">
                             <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                                <!-- BasedOn 필수: 없으면 전역 암시적 TextBlock 스타일(Pretendard 폰트 지정)이
+                                     이 인라인 스타일에 덮여 기본 시스템 폰트로 떨어진다. -->
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                     <Style.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
                                             <Setter Property="Opacity" Value="0.75"/>
