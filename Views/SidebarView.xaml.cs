@@ -337,6 +337,12 @@ public partial class SidebarView : UserControl
         if (ItemOf<FileTabItem>(sender) is { } f) OpenDocCloseRequested?.Invoke(f);
     }
 
+    private void OpenDocCopyPath_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<FileTabItem>(sender) is { } f)
+            try { Clipboard.SetText(f.FilePath); } catch { }
+    }
+
 
     private void AddSession_Click(object sender, RoutedEventArgs e)
     {
