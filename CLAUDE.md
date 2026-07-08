@@ -33,7 +33,7 @@ Start-Process "bin\DevezCode.exe"
 | 이런 작업을 할 때 | 읽을 파일 |
 |---|---|
 | 텍스트 표시/입력 컨트롤 추가 (한글 글자 깨짐 방지) | `.knowledge/텍스트렌더링규칙.md` |
-| 새 AI CLI 에이전트(Codex/OpenCode/Gajae 외) 추가 | `.knowledge/에이전트추가규칙.md` |
+| 새 AI CLI 에이전트 추가, 에이전트별 분기 수정(세션 추적/복원·재진입·종료·포크·테마·상태표시·사용량·MCP·클리너) | `.knowledge/에이전트추가규칙.md` |
 | 터미널 입력/마우스/클립보드/IME/스크롤 등 커스텀 동작 | `.knowledge/터미널커스텀동작.md` |
 | 중앙 2분할(Split) 패널·탭 격리·파트너·포커스·터미널 재진입 | `.knowledge/분할패널-탭격리-파트너-포커스.md` |
 | 패널 리사이즈/오버레이 시 터미널 깜빡임(WebView2 airspace) | `.knowledge/webview2-airspace-패널리사이즈-깜빡임.md` |
