@@ -3874,8 +3874,14 @@ public partial class MainWindow : Window
         ApplyMaximizeMargin();
         if (_fsGuard) return;
         // 전체화면 설정 ON 상태에서 최대화 요청(버튼·더블클릭·시스템) → 수동 전체화면으로 전환.
+        // 커버로 감싼다(작업영역→모니터 전체 리사이즈 동안 터미널 빈 화면 방지). 조건은 커버가
+        // 올라온 뒤(change 시점) 재확인 — await 사이 상태가 바뀌었으면 no-op.
         if (_useFullScreen && WindowState == WindowState.Maximized && !_inFullScreen)
-            EnterFullScreen();
+            RunFullScreenTransitionCovered(() =>
+            {
+                if (_useFullScreen && WindowState == WindowState.Maximized && !_inFullScreen)
+                    EnterFullScreen();
+            });
         UpdateMaxBtnVisual();
     }
 
@@ -3961,6 +3967,28 @@ public partial class MainWindow : Window
     private void SetBoundsInstant(Rect r)
     {
         Left = r.Left; Top = r.Top; Width = r.Width; Height = r.Height;
+    }
+
+    private bool _fsCoverBusy; // 전체화면 전환 커버 진행 중(연타 무시용)
+
+    /// <summary>전체화면 진입/해제를 터미널 webCover 로 감싸 실행. 전체화면 전환은 창 전체가 한 번에
+    /// 즉시 리사이즈되는 가장 큰 리플로우인데, 커버 없이 하면 WebView2 가 클리어→재fit→TUI 비동기
+    /// 재렌더를 마칠 때까지 터미널 내용이 비어 보인다(사이드패널/분할은 이미 커버로 가리는 것과 동일
+    /// 증상). 캡처 커버 아래서 리사이즈하고 최종 크기에서 fit·재동기 후 크로스페이드한다.
+    /// change 후 Background 우선순위까지 기다리는 이유: EnterFullScreen 이 Maximized 경유 시 최종
+    /// bounds 를 Background 에서 한 번 더 적용하므로, 그 뒤에 reveal 해야 expectWidth 가 최종값이 된다.</summary>
+    private async void RunFullScreenTransitionCovered(Action change)
+    {
+        if (_fsCoverBusy) return; // 전환 중 연타 무시(커버/리빌 상태 꼬임 방지)
+        _fsCoverBusy = true;
+        try
+        {
+            await FreezeWorkspaceTerminalsAsync();
+            change();
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+            UnfreezeWorkspaceTerminals();
+        }
+        finally { _fsCoverBusy = false; }
     }
 
     /// <summary>전체화면 중 활성/비활성에 따라 Topmost 토글 — 다른 창으로 전환 시엔 내려서
@@ -4375,7 +4403,11 @@ public partial class MainWindow : Window
     {
         if (_useFullScreen)
         {
-            if (_inFullScreen) ExitFullScreen(); else EnterFullScreen();
+            // 커버가 올라온 뒤(change 시점) 상태를 다시 보고 토글 — await 사이 상태 변화에 안전.
+            RunFullScreenTransitionCovered(() =>
+            {
+                if (_inFullScreen) ExitFullScreen(); else EnterFullScreen();
+            });
             return;
         }
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
