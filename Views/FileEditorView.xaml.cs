@@ -31,6 +31,14 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         => Editor.TextArea.TextView.LinkTextForegroundBrush =
             new System.Windows.Media.SolidColorBrush(Services.SyntaxThemeService.LinkColor(theme));
 
+    // 라인번호 점선 구분선과 텍스트가 붙어 있어, 구분선 오른쪽에 살짝 여백을 준다.
+    private void SetGutterGap()
+    {
+        foreach (var m in Editor.TextArea.LeftMargins)
+            if (m is System.Windows.Shapes.Line line)
+                line.Margin = new Thickness(0, 0, 6, 0);
+    }
+
     private void OnThemeChanged(string theme)
     {
         ApplyLinkColor(theme);
@@ -114,6 +122,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             var def = ResolveDefinition(path);
             Editor.SyntaxHighlighting = def;
             Editor.ShowLineNumbers = def != null;
+            if (def != null) SetGutterGap();
 
             _path = path;
             SetDirty(false);

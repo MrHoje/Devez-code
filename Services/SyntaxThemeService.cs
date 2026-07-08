@@ -57,9 +57,10 @@ public static class SyntaxThemeService
         {
             foreach (var c in def.NamedHighlightingColors)
             {
+                // 분류된 토큰만 팔레트 색. 미분류(메서드명·구두점 등)는 내장색(라이트 기준)을 버리고
+                // null 로 두어 에디터 기본 전경색(테마 텍스트색)을 상속 → 다크/라이트 모두 항상 가독.
                 var color = Categorize(c.Name, p);
-                if (color is Color col)
-                    c.Foreground = new SimpleHighlightingBrush(col);
+                c.Foreground = color is Color col ? new SimpleHighlightingBrush(col) : null;
             }
         }
     }
