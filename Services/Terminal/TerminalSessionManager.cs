@@ -544,7 +544,12 @@ public sealed class TerminalSessionManager
                 content = sr.ReadToEnd();
             content = content.Replace(oldId, newId);
 
-            var newPath = Path.Combine(Path.GetDirectoryName(srcPath)!, newId + ".jsonl");
+            // 복사본은 반드시 "fork 방이 실행될 cwd(workingDir)의 인코딩 폴더"에 심어야 한다 — claude --resume 은
+            // 그 폴더에서만 <id>.jsonl 을 찾는다. srcPath 는 전역 폴백 스캔으로 다른 프로젝트 폴더에서 왔을 수
+            // 있어(그 경우 소스 폴더에 두면 resume 이 못 찾아 빈 세션이 됨) srcPath 폴더를 그대로 쓰면 안 된다.
+            var destDir = ClaudeProjectDir(workingDir) ?? Path.GetDirectoryName(srcPath)!;
+            Directory.CreateDirectory(destDir);
+            var newPath = Path.Combine(destDir, newId + ".jsonl");
             File.WriteAllText(newPath, content);
             return newId;
         }
@@ -638,10 +643,10 @@ public sealed class TerminalSessionManager
 
         // 방별 model/effort 를 런치 플래그로 적용. 값은 콤보 화이트리스트지만 변조 대비 영숫자/하이픈만 허용.
         // 우선순위: (1) statusLine 이 영속한 라이브값 = 세션이 마지막에 쓰던 model/effort(TUI 안 /model 변경 포함)
-        //          (2) 콤보로 명시 저장한 값  (3) 콤보 기본값(opus). → 세션이 opus 로 끝났으면 reopen 도 opus.
+        //          (2) 콤보로 명시 저장한 값. 둘 다 없으면 플래그 생략 → claude 자체 기본값(sonnet 등) 유지.
         var (liveModelId, liveEffort) = ModelEffortService.ReadPersisted(roomId);
         var model = ModelEffortService.ToModelValue(liveModelId)
-                    ?? SettingsService.LoadClaudeCodeRoomModel(roomId) ?? "opus";
+                    ?? SettingsService.LoadClaudeCodeRoomModel(roomId);
         var effort = liveEffort ?? SettingsService.LoadClaudeCodeRoomEffort(roomId);
         if (IsSafeFlagValue(model)) flags += $" --model {model}";
         if (IsSafeFlagValue(effort)) flags += $" --effort {effort}";
@@ -657,6 +662,44 @@ public sealed class TerminalSessionManager
         // 포크(claude)는 이제 방 생성 시 transcript 를 새 GUID 로 즉시 복사(TryForkClaudeSession)해
         // 독립 세션으로 추적하므로, 여기선 특별 처리 없이 아래 일반 resume 경로로 그 세션을 복원한다.
         // (예전 --fork-session 지연 분기 방식은 포크 방 재실행마다 원본에서 다시 포크되어 폐기했다.)
+        //
+        // 레거시 마이그레이션: 구버전 --fork-session 으로 만든 포크 방(RoomForkSource 마커 잔존)이
+        // 아직 독립 세션으로 안 갈라진 경우(추적==원본 or 미기록) 지금 eager 복사로 독립 세션을 만든다.
+        // 이 처리가 없으면 위에서 sessionId==원본으로 잡혀 원본 대화를 그대로 resume → 원본 방과 세션이
+        // 섞인다(양쪽이 같은 jsonl 에 쓴다). 이미 갈라졌으면(추적!=원본) 마커만 정리한다.
+        var legacyForkSrc = SettingsService.LoadRoomForkSource(roomId);
+        if (legacyForkSrc != null)
+        {
+            bool undiverged = sessionId == null
+                || string.Equals(sessionId, legacyForkSrc, StringComparison.OrdinalIgnoreCase);
+            bool migrated = false;
+            if (undiverged)
+            {
+                var forked = TryForkClaudeSession(legacyForkSrc, SettingsService.LoadClaudeCodeRoomDir(roomId));
+                if (forked != null)
+                {
+                    // 추적 파일을 '먼저' 갱신하고 성공한 경우에만 마커를 소비한다 — 순서가 반대면
+                    // 추적 쓰기가 IO 로 실패했는데 마커가 지워져, 다음 실행의 SyncTrackedClaudeSessionId 가
+                    // 옛 원본 id 로 settings 를 되돌리고(원본 방과 세션 공유) 재마이그레이션 기회도 사라진다.
+                    try
+                    {
+                        var tf = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
+                        Directory.CreateDirectory(Path.GetDirectoryName(tf)!);
+                        File.WriteAllText(tf, forked);
+                        SettingsService.SaveClaudeCodeRoomSession(roomId, forked);
+                        sessionId = forked;
+                        migrated = true;
+                    }
+                    catch { /* 추적 쓰기 실패 → 마커 유지, 다음 실행에 재시도 */ }
+                }
+                else
+                {
+                    // 원본 transcript 가 없어 포크 불가 — 마커만 정리(계속 두면 매번 헛시도).
+                    migrated = true;
+                }
+            }
+            if (migrated || !undiverged) SettingsService.RemoveRoomForkSource(roomId);
+        }
 
         // resume 은 추적된 세션의 대화 transcript 가 실제로 디스크에 있을 때만 한다.
         // (빈 세션 등 conversation 이 저장 안 된 경우 --resume 하면 "No conversation found" 에러가
@@ -1336,6 +1379,20 @@ public sealed class TerminalSessionManager
     ///    경로 인코딩 엣지(UNC·네트워크 드라이브 등), claude 의 인코딩 규칙 변경에도 sessionId(GUID 는 projects
     ///    전역에서 유일)로 정확히 찾아낸다. (예전엔 인코딩이 어긋나면 "대화 없음"으로 오판해 멀쩡한 세션
     ///    추적을 폐기 → 재실행 시 그 대화에 영영 못 붙었다.)</summary>
+    /// <summary>주어진 cwd 에 대응하는 claude 프로젝트 폴더(%USERPROFILE%\.claude\projects\&lt;인코딩&gt;).
+    /// claude 는 cwd 절대경로의 비영숫자를 '-' 로 바꾼 이름으로 대화를 저장한다. workingDir 없으면 null.</summary>
+    private static string? ClaudeProjectDir(string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(workingDir)) return null;
+        var projects = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".claude", "projects");
+        var full = Path.GetFullPath(workingDir);
+        if (full.Length > 3) full = full.TrimEnd('\\', '/'); // 드라이브 루트(C:\)는 백슬래시 유지 — claude 인코딩(C--)과 일치
+        var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
+        return Path.Combine(projects, encoded);
+    }
+
     public static string? FindClaudeTranscriptPath(string? workingDir, string? sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId) || !Guid.TryParse(sessionId, out _)) return null;
@@ -1348,12 +1405,10 @@ public sealed class TerminalSessionManager
             var file = sessionId + ".jsonl";
 
             // 1) 빠른 경로: working dir 인코딩으로 바로 확인.
-            if (!string.IsNullOrWhiteSpace(workingDir))
+            var pdir = ClaudeProjectDir(workingDir);
+            if (pdir != null)
             {
-                var full = Path.GetFullPath(workingDir);
-                if (full.Length > 3) full = full.TrimEnd('\\', '/'); // 드라이브 루트(C:\)는 백슬래시 유지 — claude 인코딩(C--)과 일치
-                var encoded = System.Text.RegularExpressions.Regex.Replace(full, "[^a-zA-Z0-9]", "-");
-                var fast = Path.Combine(projects, encoded, file);
+                var fast = Path.Combine(pdir, file);
                 if (File.Exists(fast)) return fast;
             }
 
