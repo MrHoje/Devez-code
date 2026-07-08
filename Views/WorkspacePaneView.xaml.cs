@@ -105,6 +105,9 @@ public partial class WorkspacePaneView : UserControl
         _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
         _terminal.SessionExited += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; s.IsWaitingChoice = false; } HideSessionLoadingIf(id); };
         _terminal.TerminalReady += id => HideSessionLoadingIf(id);
+        // claude /exit·Ctrl+C → 배치 재진입 루프가 resume 재실행하는 동안 배치 에코가 보이지 않게 즉시 커버.
+        // 재실행된 claude 의 alt-screen 재진입이 TerminalReady 로 커버를 걷는다(실패 시 20s 타임아웃).
+        _terminal.SessionRestarting += id => { if (_activeSession?.Id == id) ShowSessionLoading(id, "세션을 다시 시작하는 중…"); };
         // 단독 ESC 취소 → busy 스피너 + 입력 대기 ❗ 즉시 해제(훅 신호보다 빠른 UI 반응; 훅도 곧 확정).
         _terminal.InterruptRequested += id => { var s = FindSession(id); if (s != null) { s.IsBusy = false; s.IsWaitingChoice = false; } };
         // 선택지 답변(Enter/숫자키) → 대기 ❗ 즉시 해제(busy 는 유지 — claude 가 답변 처리로 계속 진행).

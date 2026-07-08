@@ -30,6 +30,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string>? MenuInputSubmitted;
     /// <summary>방의 셸 프로세스가 종료됨(끊김/죽음). roomId 전달.</summary>
     public event Action<string>? SessionExited;
+    /// <summary>claude 가 /exit·Ctrl+C 로 끝나 배치 재진입 루프가 곧 재실행함 — 스피너로 덮을 시점. roomId 전달.</summary>
+    public event Action<string>? SessionRestarting;
     /// <summary>터미널에서 세션(탭) 단축키 발생 — name: newSession/closeSession/nextSession/prevSession/gotoSession.
     /// gotoSession 일 때 index = 0-기준 세션 번호(-1 = 마지막), 그 외엔 의미 없음.</summary>
     public event Action<string, int>? SessionActionRequested;
@@ -131,6 +133,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private const int MaxSettleAfterAltMs = 700;
     /// <summary>인라인 TUI(gjc): 첫 출력 시각. 준비 마커가 안 올 때 폴백 타임아웃 기준.</summary>
     private readonly Dictionary<string, int> _inlineFirstOutTick = new();
+    /// <summary>ready 방의 alt-screen "이탈"(claude /exit·Ctrl+C) 감지용 방별 꼬리 버퍼(청크 경계 분할 대비). UI 스레드.</summary>
+    private readonly Dictionary<string, string> _altLeaveTail = new();
     /// <summary>풀스크린 방별 준비 폴백 1회성 타이머(alt-screen 미감지 대비). UI 스레드.</summary>
     private readonly Dictionary<string, System.Windows.Threading.DispatcherTimer> _fullscreenFallbackTimers = new();
     /// <summary>인라인 TUI 준비 마커(\e[?2004h/\e[?2026h)가 안 와도 이만큼 지나면 준비로 본다(무한 스피너 방지).</summary>
@@ -203,6 +207,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         if (_ready.Contains(roomId))
         {
+            // claude 방: TUI 가 alt-screen 을 "이탈"하면(= /exit·Ctrl+C 종료) 배치 재진입 루프가 곧
+            // resume 재실행한다. 그 사이 배치 에코·resume 커맨드가 보이지 않게 즉시 스피너로 덮고
+            // ready 를 재무장 — 새 claude 의 alt-screen 재진입이 TerminalReady 로 스피너를 걷는다.
+            if (DetectClaudeRestart(roomId, bytes)) return;
             // alt-screen 은 봤지만 아직 통지 전 — 출력이 계속되는 동안 안정화 타이머를 미룬다.
             BumpSettle(roomId);
             return;
@@ -274,6 +282,36 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 첫 출력 시 1회성 타이머를 걸어, 이후 출력이 잠잠해져 ScanForReady 가 다시 안 불려도 발화하게 한다.
         ArmFullscreenReadyFallback(roomId);
         _readyScan[roomId] = text.Length > 512 ? text[^512..] : text; // 버퍼 과다 방지
+    }
+
+    /// <summary>ready 상태의 claude 방 출력에서 alt-screen 이탈([?1049l/[?47l)을 감지하면 재시작으로
+    /// 간주해 준비 상태를 재무장하고 SessionRestarting 을 발화한다. 감지 시 true(호출부는 스캔 종료).
+    /// 이탈 이후 잔여 바이트는 재귀로 일반 스캔에 태워, 같은 청크에 재진입([?1049h)이 붙어 와도 놓치지 않는다.</summary>
+    private bool DetectClaudeRestart(string roomId, byte[] bytes)
+    {
+        if (!string.Equals(AgentFor(roomId), "claude", StringComparison.OrdinalIgnoreCase)) return false;
+        var text = (_altLeaveTail.TryGetValue(roomId, out var tail) ? tail : string.Empty)
+                   + System.Text.Encoding.ASCII.GetString(bytes);
+        int idx = text.IndexOf("[?1049l", StringComparison.Ordinal);
+        if (idx < 0) idx = text.IndexOf("[?47l", StringComparison.Ordinal);
+        if (idx < 0)
+        {
+            _altLeaveTail[roomId] = text.Length > 8 ? text[^8..] : text; // 시퀀스가 청크 경계에 걸릴 때 대비
+            return false;
+        }
+        DevezCode.Services.DiagLog.Write($"claude alt-screen leave 감지 → 재시작 커버 room={roomId}");
+        _ready.Remove(roomId);
+        _readyNotified.Remove(roomId);
+        _readyScan.Remove(roomId);
+        _altSeenTick.Remove(roomId);
+        _altLeaveTail.Remove(roomId);
+        if (_settleTimers.Remove(roomId, out var st)) st.Stop();
+        SessionRestarting?.Invoke(roomId);
+        // 잔여 출력(이탈 뒤 배치 에코·드물게 같은 청크의 재진입 신호)을 일반 준비 스캔으로 재처리.
+        var rest = text[(idx + 5)..]; // "[?47l" 길이 기준 — 1049l 이어도 남는 "049l" 은 시퀀스 매칭에 무해
+        if (rest.Length > 0) ScanForReady(roomId, System.Text.Encoding.ASCII.GetBytes(rest));
+        else ArmFullscreenReadyFallback(roomId); // 잔여가 없어도 폴백 무장 — 재실행 실패(giveup) 시 무한 스피너 방지
+        return true;
     }
 
     /// <summary>풀스크린 방에서 alt-screen 이 안 잡히는 경우를 대비한 1회성 준비 폴백 타이머(중복 무시).
@@ -1246,6 +1284,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _readyScan.Remove(roomId);
         _readyNotified.Remove(roomId);
         _altSeenTick.Remove(roomId);
+        _altLeaveTail.Remove(roomId);
         _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         if (_fullscreenFallbackTimers.Remove(roomId, out var ft)) ft.Stop();
@@ -1354,6 +1393,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _readyScan.Clear();
         _readyNotified.Clear();
         _altSeenTick.Clear();
+        _altLeaveTail.Clear();
         foreach (var t in _settleTimers.Values) t.Stop();
         _settleTimers.Clear();
         lock (_outLock) { _outPending.Clear(); _outScheduled.Clear(); }
