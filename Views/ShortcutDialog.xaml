@@ -51,7 +51,7 @@
                 </Border>
 
                 <!-- 본문 -->
-                <Grid Grid.Row="1" Margin="20,18,20,8">
+                <Grid Grid.Row="1" Margin="20,18,20,13">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
