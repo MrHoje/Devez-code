@@ -23,10 +23,17 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         // 테마 전환 시 현재 에디터 리렌더. 전역 정의 색은 App.SetTheme 이 먼저 갱신하므로 여기선 재할당만.
         Loaded += (_, _) => App.ThemeChanged += OnThemeChanged;
         Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged;
+        ApplyLinkColor(App.CurrentTheme);
     }
+
+    // 자동 URL 링크 색 — 다크 기본 진파랑이 안 보여 테마별로 밝게 지정.
+    private void ApplyLinkColor(string theme)
+        => Editor.TextArea.TextView.LinkTextForegroundBrush =
+            new System.Windows.Media.SolidColorBrush(Services.SyntaxThemeService.LinkColor(theme));
 
     private void OnThemeChanged(string theme)
     {
+        ApplyLinkColor(theme);
         var def = Editor.SyntaxHighlighting;
         if (def == null) return;
         Editor.SyntaxHighlighting = null;

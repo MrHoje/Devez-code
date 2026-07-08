@@ -25,18 +25,34 @@ public static class SyntaxThemeService
         Number:    Color.FromRgb(0xB5, 0xCE, 0xA8),
         Attribute: Color.FromRgb(0x9C, 0xDC, 0xFE));
 
-    // VS Light 근사 (minimal + soft 공용).
-    private static readonly Palette Light = new(
+    // VS Light 근사 (minimal — 쨍한 순색).
+    private static readonly Palette Minimal = new(
         Comment:   Color.FromRgb(0x00, 0x80, 0x00),
         Str:       Color.FromRgb(0xA3, 0x15, 0x15),
         Keyword:   Color.FromRgb(0x00, 0x00, 0xFF),
         Number:    Color.FromRgb(0x09, 0x88, 0x58),
         Attribute: Color.FromRgb(0xFF, 0x00, 0x00));
 
+    // soft — minimal 을 살짝 톤다운(채도↓)한 부드러운 색. 크림/베이지 배경에 어울림.
+    private static readonly Palette Soft = new(
+        Comment:   Color.FromRgb(0x3C, 0x7A, 0x3C),
+        Str:       Color.FromRgb(0xB1, 0x4A, 0x42),
+        Keyword:   Color.FromRgb(0x33, 0x55, 0xCC),
+        Number:    Color.FromRgb(0x3C, 0x80, 0x60),
+        Attribute: Color.FromRgb(0xC0, 0x50, 0x4D));
+
+    /// <summary>테마별 하이퍼링크(자동 URL) 색. 다크에서 안 보이던 기본 진파랑을 밝게 교체.</summary>
+    public static Color LinkColor(string theme) => theme switch
+    {
+        "dark" => Color.FromRgb(0x4F, 0xA6, 0xFF),
+        "soft" => Color.FromRgb(0x3A, 0x6F, 0xA5),
+        _      => Color.FromRgb(0x05, 0x63, 0xC1),
+    };
+
     /// <summary>등록된 모든 내장 정의의 named color 를 현재 테마 팔레트로 덮어쓴다.</summary>
     public static void Apply(string theme)
     {
-        var p = theme == "dark" ? Dark : Light;
+        var p = theme switch { "dark" => Dark, "soft" => Soft, _ => Minimal };
         foreach (var def in HighlightingManager.Instance.HighlightingDefinitions)
         {
             foreach (var c in def.NamedHighlightingColors)
