@@ -854,25 +854,30 @@ public partial class WorkspacePaneView : UserControl
 
         var session = new SessionItem { Name = source.Name + " (fork)", AgentId = agentId };
 
-        // gajae: 세션 jsonl 을 새 id 로 새 방 dir 에 복사(원본 대화 없으면 null → 포크 취소).
+        // gajae·claude: transcript(.jsonl)를 새 id 로 즉시 복사해 독립 세션을 만든다(원본 대화 없으면 취소).
+        // claude 도 --fork-session(지연) 대신 eager 복사 — 포크 방 재실행 시 원본에서 재포크되던 문제 해소.
+        string? forkedId = null;
         if (agentId == "gajae")
+            forkedId = TerminalSessionManager.TryForkGajaeSession(source.Id, session.Id);
+        else if (agentId == "claude")
+            forkedId = TerminalSessionManager.TryForkClaudeSession(srcSid!, proj.Path);
+        if (agentId != "opencode" && forkedId == null)
         {
-            var forkedId = TerminalSessionManager.TryForkGajaeSession(source.Id, session.Id);
-            if (forkedId == null)
-            {
-                ConfirmDialog.Alert("포크 불가",
-                    "아직 대화가 없어 포크할 수 없습니다.\n한 번 이상 대화한 세션만 포크할 수 있어요.");
-                return;
-            }
-            SettingsService.SaveGajaeRoomSession(session.Id, forkedId); // 미리 확정 추적(마커 불필요)
+            ConfirmDialog.Alert("포크 불가",
+                "아직 대화가 없어 포크할 수 없습니다.\n한 번 이상 대화한 세션만 포크할 수 있어요.");
+            return;
         }
 
         proj.Tabs.Add(session);
         proj.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path); // RoomDir 은 에이전트 공통 저장소
         SettingsService.SaveAgentForRoom(session.Id, agentId);
-        if (agentId != "gajae")
-            SettingsService.SaveRoomForkSource(session.Id, srcSid!);  // claude/opencode: 첫 실행에 소비
+        if (agentId == "gajae")
+            SettingsService.SaveGajaeRoomSession(session.Id, forkedId!);   // 미리 확정 추적(마커 불필요)
+        else if (agentId == "claude")
+            SettingsService.SaveClaudeCodeRoomSession(session.Id, forkedId!); // 즉시 독립 세션 → 바로 resume
+        else
+            SettingsService.SaveRoomForkSource(session.Id, srcSid!);        // opencode: 첫 실행에 --fork 소비
         WorkspaceStore.Save(Projects);
 
         // 포크는 "새 세션이 열리게" 하는 게 목적 → 항상 연다(다른 프로젝트면 OpenSession 이 전환).

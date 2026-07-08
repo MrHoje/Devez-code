@@ -523,6 +523,34 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
+    /// <summary>claude 세션 포크 — CLI 의 --fork-session(지연 분기) 대신 원본 transcript(.jsonl)를
+    /// 새 GUID 로 즉시 복사(내부 sessionId 참조 치환)해 독립 세션을 만든다. 새 세션 id 반환(없으면 null).
+    /// (--fork-session 은 메시지를 보내기 전까지 원본 id 를 추적 → 포크 방을 재실행하면 원본에서 매번
+    ///  다시 포크되어 포크가 자기 대화로 고정되지 않았다. 같은 프로젝트 폴더에 심어 cwd 인코딩을 맞춘다.)</summary>
+    public static string? TryForkClaudeSession(string sourceSessionId, string? workingDir)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(sourceSessionId) || !Guid.TryParse(sourceSessionId, out _)) return null;
+            var srcPath = FindClaudeTranscriptPath(workingDir, sourceSessionId);
+            if (srcPath == null) return null;
+
+            var oldId = Path.GetFileNameWithoutExtension(srcPath); // 파일명 실제 케이스로 치환해야 정확히 맞음
+            var newId = Guid.NewGuid().ToString("D").ToLowerInvariant();
+            // FileShare.ReadWrite — 대화 중인 세션도 claude 가 jsonl 을 열어둔 채라 제한 공유면 읽기 실패한다.
+            string content;
+            using (var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var sr = new StreamReader(fs))
+                content = sr.ReadToEnd();
+            content = content.Replace(oldId, newId);
+
+            var newPath = Path.Combine(Path.GetDirectoryName(srcPath)!, newId + ".jsonl");
+            File.WriteAllText(newPath, content);
+            return newId;
+        }
+        catch { return null; }
+    }
+
     /// <summary>가재코드(gjc)를 cmd /k 배치로 직접 실행. 방별 --session-dir 로 세션을 격리하고,
     /// 그 폴더의 최신 세션 ID 를 영속(SettingsService)한 뒤 `gjc -r &lt;id&gt;` 로 같은 대화를 복원한다.
     /// 첫 실행(저장·추출 ID 모두 없음)은 plain `gjc` 로 새 세션 생성. resume 실패(외부 삭제 등) 시 fresh 폴백.
@@ -626,44 +654,9 @@ public sealed class TerminalSessionManager
         // 훅이 기록한 마지막 세션 ID가 저장값과 다르면 그쪽이 최신 대화 — 교체 후 resume
         sessionId = SyncTrackedClaudeSessionId(roomId) ?? sessionId;
 
-        // ── 포크(claude): 이 방이 다른 세션에서 분기 요청됐고(RoomForkSource) 아직 분기 전이면
-        //    --resume <원본> --fork-session 으로 원본 대화를 복사한 새 세션으로 시작한다.
-        //    fork-session 은 '메시지를 보내야' 새 ID로 갈라지는 지연 분기 → SessionStart 는 원본 ID를 기록하므로,
-        //    마커를 첫 실행에 소비하지 않고 "추적값이 원본과 달라질 때(=분기 완료)"까지 유지한다.
-        //    (분기 전 재실행에도 계속 --fork-session → 원본을 이어가버리는 사고 방지. 메시지 없이 재포크는
-        //     transcript 를 안 만들어 무해.) transcript 없거나 비정상 ID 면 마커 정리 후 일반 경로.
-        var forkSrc = SettingsService.LoadRoomForkSource(roomId);
-        if (forkSrc != null)
-        {
-            bool diverged = sessionId != null
-                && !string.Equals(sessionId, forkSrc, StringComparison.OrdinalIgnoreCase);
-            if (diverged)
-            {
-                SettingsService.RemoveRoomForkSource(roomId); // 분기 완료 → 아래 일반 경로(새 포크 세션 resume)
-            }
-            else
-            {
-                var forkCcDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-                if (Guid.TryParse(forkSrc, out _) && ClaudeTranscriptExists(forkCcDir, forkSrc))
-                {
-                    var forkBody = $"call claude --resume {forkSrc} --fork-session {flags}\r\n"
-                                 + $"if errorlevel 1 call claude {flags}";
-                    try
-                    {
-                        Directory.CreateDirectory(LaunchDir);
-                        var forkTrack = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
-                        File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + forkBody + "\r\n" + ClaudeReentryLoop(flags, forkTrack, ClaudeQuitFlagPath(roomId)));
-                        return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
-                    }
-                    catch (Exception)
-                    {
-                        injectFallback = $"claude --resume {forkSrc} --fork-session {flags}\r";
-                        return null;
-                    }
-                }
-                SettingsService.RemoveRoomForkSource(roomId); // 포크 불가(transcript 없음/비정상 ID) → 정리
-            }
-        }
+        // 포크(claude)는 이제 방 생성 시 transcript 를 새 GUID 로 즉시 복사(TryForkClaudeSession)해
+        // 독립 세션으로 추적하므로, 여기선 특별 처리 없이 아래 일반 resume 경로로 그 세션을 복원한다.
+        // (예전 --fork-session 지연 분기 방식은 포크 방 재실행마다 원본에서 다시 포크되어 폐기했다.)
 
         // resume 은 추적된 세션의 대화 transcript 가 실제로 디스크에 있을 때만 한다.
         // (빈 세션 등 conversation 이 저장 안 된 경우 --resume 하면 "No conversation found" 에러가
