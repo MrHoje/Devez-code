@@ -9,24 +9,29 @@
              FontFamily="{StaticResource PretendardFont}">
 
     <UserControl.Resources>
-        <!-- 세션 클리너 에이전트 선택 pill 버튼 (선택 시 PanelBrush 배경 + PrimaryBrush 텍스트) -->
+        <!-- 세션 클리너 에이전트 선택 pill 버튼 (선택 시 PanelBrush 배경 + PrimaryBrush 텍스트).
+             프로젝트 카드(ProjectCard, SidebarView.xaml) 선택 보더와 동일한 방식으로 부드럽게: 픽셀 스냅·레이아웃 라운딩 끄고 안티에일리어싱. -->
         <Style x:Key="CleanerPill" TargetType="Button">
             <Setter Property="IsTabStop" Value="False"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="SnapsToDevicePixels" Value="False"/>
+            <Setter Property="UseLayoutRounding" Value="False"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Bd" Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="9" Padding="{TemplateBinding Padding}">
+                                CornerRadius="9" Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="False" UseLayoutRounding="False"
+                                RenderOptions.EdgeMode="Unspecified">
                             <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"
                                               TextElement.Foreground="{TemplateBinding Foreground}"
                                               TextElement.FontWeight="{TemplateBinding FontWeight}"/>
