@@ -408,7 +408,7 @@ public static class SettingsService
       }
     }
     /// <summary>클리너 보호 목록용: DevezCode 가 현재 관리 중인 room/session ID 스냅샷.</summary>
-    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Rooms)
+    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Codex, IReadOnlyCollection<string> Rooms)
         LoadManagedSessionSnapshot()
     {
         lock (_lock)
@@ -417,6 +417,7 @@ public static class SettingsService
                 Current.ClaudeCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.OpenCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.GajaeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                Current.CodexRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.ClaudeCodeRoomDirs.Keys.Where(v => !string.IsNullOrWhiteSpace(v)).ToList()
             );
         }

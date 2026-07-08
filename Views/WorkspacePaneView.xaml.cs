@@ -838,16 +838,17 @@ public partial class WorkspacePaneView : UserControl
         var agentId = string.IsNullOrEmpty(source.AgentId)
             ? SettingsService.LoadAgentForRoom(source.Id) : source.AgentId;
 
-        // 포크 지원 에이전트만. claude/opencode=CLI 네이티브, gajae=jsonl 복사. codex 등은 미지원.
-        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae")
+        // 포크 지원 에이전트만. claude/opencode=CLI 네이티브, gajae/codex=jsonl 복사.
+        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae" && agentId != "codex")
         {
-            ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode · 가재코드 세션만 지원합니다.");
+            ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode · 가재코드 · Codex 세션만 지원합니다.");
             return;
         }
 
-        // 원본에 포크할 대화가 있는지 확인. claude/opencode=추적 세션 ID, gajae=파일 복사 시점에 판정.
+        // 원본에 포크할 대화가 있는지 확인. claude/opencode/codex=추적 세션 ID, gajae=파일 복사 시점에 판정.
         var srcSid = agentId == "claude"   ? SettingsService.LoadClaudeCodeRoomSession(source.Id)
                    : agentId == "opencode" ? SettingsService.LoadOpenCodeRoomSession(source.Id)
+                   : agentId == "codex"    ? SettingsService.LoadCodexRoomSession(source.Id)
                    : null;
         if (agentId != "gajae" && string.IsNullOrWhiteSpace(srcSid))
         {
@@ -865,6 +866,8 @@ public partial class WorkspacePaneView : UserControl
             forkedId = TerminalSessionManager.TryForkGajaeSession(source.Id, session.Id);
         else if (agentId == "claude")
             forkedId = TerminalSessionManager.TryForkClaudeSession(srcSid!, proj.Path);
+        else if (agentId == "codex")
+            forkedId = TerminalSessionManager.TryForkCodexSession(srcSid!);
         if (agentId != "opencode" && forkedId == null)
         {
             ConfirmDialog.Alert("포크 불가",
@@ -880,6 +883,8 @@ public partial class WorkspacePaneView : UserControl
             SettingsService.SaveGajaeRoomSession(session.Id, forkedId!);   // 미리 확정 추적(마커 불필요)
         else if (agentId == "claude")
             SettingsService.SaveClaudeCodeRoomSession(session.Id, forkedId!); // 즉시 독립 세션 → 바로 resume
+        else if (agentId == "codex")
+            SettingsService.SaveCodexRoomSession(session.Id, forkedId!);   // 복사한 새 세션 id 로 바로 resume
         else
             SettingsService.SaveRoomForkSource(session.Id, srcSid!);        // opencode: 첫 실행에 --fork 소비
         WorkspaceStore.Save(Projects);

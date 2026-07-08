@@ -45,6 +45,8 @@ public static class AgentRegistry
             Command = "codex",
             ResumeFlag = "--last",
             SupportsHooks = true, // ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적 (Claude 정합)
+            InlineTui = true,     // codex 는 alt-screen(?1049h) 미사용 인라인 TUI — ?2026h 프레임 마커로
+                                  // 로딩 오버레이를 즉시 dismiss(안 하면 6초 폴백까지 스피너가 안 꺼짐).
         },
         new()
         {

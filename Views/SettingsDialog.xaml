@@ -634,6 +634,14 @@
                                                 <TextBlock Text="Gajae Code" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
+                                        <Button x:Name="CodexCatBtn" Tag="codex" Style="{StaticResource CleanerPill}" Click="CleanerAgent_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
+                                                       Source="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <TextBlock Text="Codex" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
 
                                     <!-- 카운트 카드 -->

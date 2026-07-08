@@ -282,18 +282,17 @@ public sealed class TerminalSessionManager
         // 배치 본문. 저장된 session_id(훅이 기록) 가 있으면 무조건 resume(실패 시 fresh 폴백).
         // launched 플래그에 의존하지 않는다 — 작업 중 강제 종료로 플래그가 유실돼도 session_id 가
         // 살아있으면 이어가야 하기 때문. codex 가 정상 시작하면 뒤 폴백 줄은 실행되지 않음.
+        // codex 종료(/exit·Ctrl+D) 시 배치 끝의 exit 로 cmd 를 닫는다 → ConPTY 종료 → onExited 가
+        // IsAutoReenterRoom(codex) 을 보고 앱레벨로 같은 세션을 resume 재시작(로딩커버로 스피너 표시).
+        // ※ 인-배치 폴백(if errorlevel 1 codex)은 넣지 않는다: codex /exit 가 비정상 종료코드를 반환해
+        //   폴백이 오발동하면 cmd 안에서 fresh codex 가 다시 떠 cmd 가 안 닫히고(→ onExited 미발생) 앱
+        //   재진입이 막힌다. 재개 실패(세션 삭제 등)는 앱 재진입이 반복하다 AllowAutoRestart 3회 캡에서
+        //   'Enter 로 재시작' 프롬프트로 폴백된다.
         string body;
         if (string.IsNullOrEmpty(sessionId))
-        {
-            // session_id 없음 — codex 가 새 세션 생성. 훅이 session_id 를 저장.
-            body = "codex";
-        }
+            body = "codex\r\nexit";                       // session_id 없음 — codex 가 새 세션 생성(훅이 저장)
         else
-        {
-            // 저장된 session_id 로 resume. resume 실패(세션 삭제 등) 시 fresh 폴백.
-            body = $"codex resume {sessionId}\r\n"
-                 + $"if errorlevel 1 codex";
-        }
+            body = $"codex resume {sessionId}\r\nexit";   // 저장된 session_id 로 resume
 
         try
         {
@@ -302,7 +301,10 @@ public sealed class TerminalSessionManager
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
             File.WriteAllText(batchPath, "@echo off\r\n" + body + "\r\n");
-            return $"cmd.exe /k \"{batchPath}\"";
+            // /c: 배치가 끝나면(codex 반환 시) cmd 가 자동 종료 → ConPTY 종료 → onExited → 앱 재진입.
+            // (/k 는 배치의 exit 에 의존하는데, codex 종료 경로에서 exit 에 도달 못 하고 프롬프트가 남는
+            //  사례가 있어 /c 로 확실히 닫는다.)
+            return $"cmd.exe /c \"{batchPath}\"";
         }
         catch
         {
@@ -482,6 +484,21 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
+    /// <summary>codex 세션 rollout jsonl 을 session_id 로 찾는다. 파일명에 id 가 들어가 있어(rollout-&lt;ts&gt;-&lt;id&gt;.jsonl)
+    /// ~/.codex/sessions 하위를 재귀 검색. 없으면 null.</summary>
+    public static string? FindCodexTranscriptPath(string? sessionId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(sessionId)) return null;
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "sessions");
+            if (!Directory.Exists(root)) return null;
+            return new DirectoryInfo(root).GetFiles("*" + sessionId + "*.jsonl", SearchOption.AllDirectories)
+                .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName;
+        }
+        catch { return null; }
+    }
+
     /// <summary>가재코드(gjc) 세션 포크 — 네이티브 fork 가 없어, 원본 방의 최신 세션 jsonl 을 새 GUID 로
     /// (내부 id 참조 전역 치환) 복사해 새 방의 session-dir 에 심는다. 새 세션 id 반환(원본에 대화 없으면 null).
     /// gjc 는 --session-dir 로 격리되므로 새 방은 이 복사본만 resume → 원본과 완전 독립.</summary>
@@ -518,6 +535,35 @@ public sealed class TerminalSessionManager
             Directory.CreateDirectory(newDir);
             var ts = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH-mm-ss-fff'Z'");
             File.WriteAllText(Path.Combine(newDir, ts + "_" + newId + ".jsonl"), content);
+            return newId;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>codex 세션 포크 — 네이티브 fork 가 없어, 원본 세션 rollout jsonl 을 새 GUID 로(내부 id 참조
+    /// 전역 치환) 복사해 codex sessions 폴더에 심는다. 새 방은 이 새 id 로 resume → 원본과 독립.
+    /// 새 세션 id 반환(원본 파일 없거나 실패면 null → 호출부가 포크 취소). best-effort: codex 가 v4 GUID
+    /// resume 을 거부해도 배치의 fresh 폴백으로 무해.</summary>
+    public static string? TryForkCodexSession(string sourceSessionId)
+    {
+        try
+        {
+            var srcPath = FindCodexTranscriptPath(sourceSessionId);
+            if (srcPath == null || !File.Exists(srcPath)) return null;
+            var newId = Guid.NewGuid().ToString("D").ToLowerInvariant();
+            string content;
+            using (var fs = new FileStream(srcPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var sr = new StreamReader(fs))
+                content = sr.ReadToEnd();
+            content = content.Replace(sourceSessionId, newId); // 헤더 payload.id 등 전역 치환
+
+            // codex 규약 파일명: rollout-<ISO(대시)>-<id>.jsonl, 날짜별 폴더.
+            var now = DateTime.Now;
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".codex", "sessions", now.ToString("yyyy"), now.ToString("MM"), now.ToString("dd"));
+            Directory.CreateDirectory(dir);
+            var ts = now.ToString("yyyy-MM-dd'T'HH-mm-ss");
+            File.WriteAllText(Path.Combine(dir, $"rollout-{ts}-{newId}.jsonl"), content, new System.Text.UTF8Encoding(false));
             return newId;
         }
         catch { return null; }
@@ -1651,6 +1697,20 @@ public sealed class TerminalSessionManager
                     var gj = FindLatestGajaeSessionId(GajaeSessionDir(roomId));
                     if (gj != null && gj != SettingsService.LoadGajaeRoomSession(roomId))
                         SettingsService.SaveGajaeRoomSession(roomId, gj);
+                    break;
+                case "codex":
+                    // SessionStart 훅이 sessions\<room>.txt 에 기록한 최신 codex session_id 를 종료 시점에
+                    // settings 로 확정 기록. 평시엔 CodexSessionChanged(FileSystemWatcher)가 라이브 저장하지만,
+                    // 종료 직전 write 를 워처가 놓치면 stale ID 로 resume("예전 대화가 뜨는") 버그가 나므로 스냅샷으로 보강.
+                    var cxDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "DevezCode", "codex", "sessions");
+                    var cxPath = Path.Combine(cxDir, SafeRoomFileName(roomId) + ".txt");
+                    if (File.Exists(cxPath))
+                    {
+                        var cx = File.ReadAllText(cxPath).Trim();
+                        if (Guid.TryParse(cx, out _) && cx != SettingsService.LoadCodexRoomSession(roomId))
+                            SettingsService.SaveCodexRoomSession(roomId, cx);
+                    }
                     break;
             }
         }

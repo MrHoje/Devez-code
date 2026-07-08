@@ -6,9 +6,9 @@ using Microsoft.Data.Sqlite;
 
 namespace DevezCode.Services;
 
-public sealed record SessionCleanerCounts(int Claude, int OpenCode, int Gajae)
+public sealed record SessionCleanerCounts(int Claude, int OpenCode, int Gajae, int Codex)
 {
-    public int Total => Claude + OpenCode + Gajae;
+    public int Total => Claude + OpenCode + Gajae + Codex;
 }
 
 public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCleanerCounts Deleted, SessionCleanerCounts Failed)
@@ -16,12 +16,12 @@ public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCl
     public int DeletedTotal => Deleted.Total;
     public int FailedTotal => Failed.Total;
 }
-public enum CleanerAgentKind { Claude, OpenCode, Gajae }
+public enum CleanerAgentKind { Claude, OpenCode, Gajae, Codex }
 public sealed record CleanerScanInfo(int Count, long Bytes);
 
-public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, bool ShowClaude, bool ShowOpenCode, bool ShowGajae)
+public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, int Codex, bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex)
 {
-    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0);
+    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0) + (ShowCodex ? Codex : 0);
 }
 
 
@@ -41,9 +41,11 @@ public static class SessionCleanerService
             Claude: enabled.ShowClaude ? EnumerateUnmanagedClaude(managed).Count : 0,
             OpenCode: enabled.ShowOpenCode ? EnumerateUnmanagedOpenCode(managed).Count : 0,
             Gajae: enabled.ShowGajae ? EnumerateUnmanagedGajae(managed).Count : 0,
+            Codex: enabled.ShowCodex ? EnumerateUnmanagedCodex(managed).Count : 0,
             enabled.ShowClaude,
             enabled.ShowOpenCode,
-            enabled.ShowGajae);
+            enabled.ShowGajae,
+            enabled.ShowCodex);
     }
 
     public static int GetCount(CleanerAgentKind kind) => GetScanInfo(kind).Count;
@@ -56,6 +58,7 @@ public static class SessionCleanerService
             CleanerAgentKind.Claude => FromFiles(EnumerateUnmanagedClaude(managed)),
             CleanerAgentKind.OpenCode => new CleanerScanInfo(EnumerateUnmanagedOpenCode(managed).Count, OpenCodeStoreBytes()),
             CleanerAgentKind.Gajae => FromFiles(EnumerateUnmanagedGajae(managed)),
+            CleanerAgentKind.Codex => FromFiles(EnumerateUnmanagedCodex(managed)),
             _ => new CleanerScanInfo(0, 0),
         };
     }
@@ -80,11 +83,12 @@ public static class SessionCleanerService
         (int deleted, int failed) cd = enabled.ShowClaude ? DeleteUnmanaged(CleanerAgentKind.Claude) : (0, 0);
         (int deleted, int failed) od = enabled.ShowOpenCode ? DeleteUnmanaged(CleanerAgentKind.OpenCode) : (0, 0);
         (int deleted, int failed) gd = enabled.ShowGajae ? DeleteUnmanaged(CleanerAgentKind.Gajae) : (0, 0);
+        (int deleted, int failed) xd = enabled.ShowCodex ? DeleteUnmanaged(CleanerAgentKind.Codex) : (0, 0);
 
         return new SessionCleanerResult(
-            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae),
-            new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted),
-            new SessionCleanerCounts(cd.failed, od.failed, gd.failed));
+            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae, before.Codex),
+            new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted, xd.deleted),
+            new SessionCleanerCounts(cd.failed, od.failed, gd.failed, xd.failed));
     }
 
     public static (int deleted, int failed) DeleteUnmanaged(CleanerAgentKind kind)
@@ -95,29 +99,33 @@ public static class SessionCleanerService
             CleanerAgentKind.Claude => DeleteFiles(EnumerateUnmanagedClaude(managed)),
             CleanerAgentKind.OpenCode => DeleteOpenCode(EnumerateUnmanagedOpenCode(managed)),
             CleanerAgentKind.Gajae => DeleteFiles(EnumerateUnmanagedGajae(managed)),
+            CleanerAgentKind.Codex => DeleteFiles(EnumerateUnmanagedCodex(managed)),
             _ => (0, 0),
         };
     }
 
 
-    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> RoomIds)
+    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> CodexIds, HashSet<string> RoomIds)
     {
         public static ManagedSnapshot Load()
         {
-            var (claude, opencode, gajae, rooms) = SettingsService.LoadManagedSessionSnapshot();
+            var (claude, opencode, gajae, codex, rooms) = SettingsService.LoadManagedSessionSnapshot();
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             var claudeIds = ToSet(claude);
             var openCodeIds = ToSet(opencode);
             var gajaeIds = ToSet(gajae);
+            var codexIds = ToSet(codex);
 
             AddTrackedFileIds(claudeIds, Path.Combine(appData, "DevezCode", "claude", "sessions"), GuidRegex);
             AddTrackedFileIds(openCodeIds, Path.Combine(appData, "DevezCode", "opencode", "sessions"), new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled));
             AddTrackedFileIds(gajaeIds, Path.Combine(appData, "DevezCode", "gajae", "sessions"), GuidRegex, fromGajaeRoomDir: true);
+            AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "codex", "sessions"), GuidRegex);
 
             return new ManagedSnapshot(
                 claudeIds,
                 openCodeIds,
                 gajaeIds,
+                codexIds,
                 ToSet(rooms));
         }
 
@@ -150,7 +158,7 @@ public static class SessionCleanerService
             catch { }
         }
     }
-    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae)
+    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex)
     {
         public static EnabledSnapshot Load()
         {
@@ -158,7 +166,8 @@ public static class SessionCleanerService
             return new EnabledSnapshot(
                 enabled.Contains("claude"),
                 enabled.Contains("opencode"),
-                enabled.Contains("gajae"));
+                enabled.Contains("gajae"),
+                enabled.Contains("codex"));
         }
     }
 
@@ -218,6 +227,35 @@ public static class SessionCleanerService
         var us = name.LastIndexOf('_');
         var id = us >= 0 && us + 1 < name.Length ? name[(us + 1)..] : name;
         return GuidRegex.IsMatch(id) ? id : null;
+    }
+
+    // codex 세션: ~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl. 파일명 끝의 GUID 를 추출.
+    private static readonly Regex CodexIdRegex =
+        new(@"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})", RegexOptions.Compiled);
+
+    private static string? ExtractCodexId(string path)
+    {
+        var m = CodexIdRegex.Match(Path.GetFileNameWithoutExtension(path));
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
+    private static List<string> EnumerateUnmanagedCodex(ManagedSnapshot managed)
+    {
+        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "sessions");
+        if (!Directory.Exists(root)) return new();
+        var list = new List<string>();
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(root, "rollout-*.jsonl", SearchOption.AllDirectories))
+            {
+                var id = ExtractCodexId(f);
+                if (id == null) continue;
+                if (managed.CodexIds.Contains(id)) continue;
+                list.Add(f);
+            }
+        }
+        catch { }
+        return list;
     }
 
     private static List<string> EnumerateUnmanagedOpenCode(ManagedSnapshot managed)

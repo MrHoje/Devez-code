@@ -77,10 +77,17 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>opencode 자동 재시작 폭주 방지: roomId → (10초 창 내 재시작 횟수, 창 시작 tick).</summary>
     private readonly Dictionary<string, (int Count, long WindowStartTick)> _autoRestart = new();
 
-    /// <summary>세션 종료 시 앱이 새 ConPTY 로 자동 재시작할 방인가(현재 opencode 만 — 배치 루프 대신).</summary>
+    /// <summary>세션 종료 시 앱이 새 ConPTY 로 자동 재시작할 방인가(배치 루프 대신 앱레벨 재진입).
+    /// opencode: 배치 루프 시 0xc0000142 크래시 회피. codex: Ctrl+C·/exit 종료 후 같은 세션 resume 으로
+    /// 자동 복귀(배치 종료 시 exit → onExited → 여기서 재시작, 로딩커버로 스피너 표시).</summary>
     private static bool IsAutoReenterRoom(string roomId)
     {
-        try { return string.Equals(DevezCode.Services.SettingsService.LoadAgentForRoom(roomId), "opencode", StringComparison.OrdinalIgnoreCase); }
+        try
+        {
+            var a = DevezCode.Services.SettingsService.LoadAgentForRoom(roomId);
+            return string.Equals(a, "opencode", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(a, "codex", StringComparison.OrdinalIgnoreCase);
+        }
         catch { return false; }
     }
 
@@ -771,6 +778,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // UTF-8 멀티바이트(한글) 와 겹칠 일이 없어 문자열 디코딩 없이 바이트 매칭만으로 안전하다.
         if (DevezCode.App.CurrentTheme == "soft")
             merged = RecolorClaudeIdentifierBlue(merged);
+        // codex: 사용자가 보낸 메시지 박스 배경(codex 고정 truecolor rgb 41,41,41)을 앱 테마별
+        // 색조로 치환해 '내 메시지'가 구분되게 한다. 상태바(39,39,39)·diff(48,58,48/58,48,48)는 보존.
+        if (AgentFor(roomId) == "codex")
+            merged = RecolorCodexUserMsgBg(merged);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
     }
 
@@ -800,6 +811,40 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 result.Add(data[i]);
                 i++;
             }
+        }
+        return result.ToArray();
+    }
+
+    // codex 가 '사용자 메시지 박스' 배경에 쓰는 고정 truecolor(rgb 41,41,41, 테마 무관 UI 상수).
+    private static readonly byte[] _codexUserMsgBgSrc =
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;41;41;41m");
+
+    // 앱 테마별 '내 메시지' 박스 배경 = gjc 와 동일하게 currentLine(배경에서 살짝 뜬 톤)로 맞춘다.
+    // codex 는 xterm 스킴(DevezCode Dark/Soft/Minimal)을 따라 배경·기본전경이 테마별로 바뀌므로
+    // (soft/minimal 은 밝은 배경+어두운 글자) 밝은 박스에서도 글자가 읽힌다.
+    // 스킴 매핑(App.xaml.cs)과 동일 규칙: dark→Dark, soft→Soft, 그 외→Minimal.
+    private static byte[] CodexUserMsgBgTarget() =>
+        System.Text.Encoding.ASCII.GetBytes(DevezCode.App.CurrentTheme switch
+        {
+            "dark" => "\x1b[48;2;39;39;39m",     // gjc currentLine #272727
+            "soft" => "\x1b[48;2;236;231;222m",  // gjc currentLine #ECE7DE
+            _      => "\x1b[48;2;241;245;249m",  // minimal: gjc currentLine #F1F5F9
+        });
+
+    private static byte[] RecolorCodexUserMsgBg(byte[] data)
+    {
+        if (IndexOfBytes(data, _codexUserMsgBgSrc, 0) < 0) return data; // 없으면 빠른 통과
+        var target = CodexUserMsgBgTarget();
+        var result = new List<byte>(data.Length);
+        int i = 0;
+        while (i < data.Length)
+        {
+            if (i + _codexUserMsgBgSrc.Length <= data.Length && MatchesAt(data, i, _codexUserMsgBgSrc))
+            {
+                result.AddRange(target);
+                i += _codexUserMsgBgSrc.Length;
+            }
+            else { result.Add(data[i]); i++; }
         }
         return result.ToArray();
     }

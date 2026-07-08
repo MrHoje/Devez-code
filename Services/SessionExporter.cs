@@ -22,6 +22,7 @@ public static class SessionExporter
             "claude"   => FromClaude(roomId, cwd),
             "opencode" => FromOpenCode(roomId),
             "gajae"    => FromGajae(roomId),
+            "codex"    => FromCodex(roomId),
             _          => new List<(string role, string text)>(),
         };
         if (turns.Count == 0) return null;
@@ -42,7 +43,48 @@ public static class SessionExporter
     }
 
     private static string AgentLabel(string a) => a switch
-    { "claude" => "Claude", "opencode" => "OpenCode", "gajae" => "가재코드", _ => a };
+    { "claude" => "Claude", "opencode" => "OpenCode", "gajae" => "가재코드", "codex" => "Codex", _ => a };
+
+    // ── codex: ~/.codex/sessions/**/rollout-*-<sid>.jsonl (type=response_item, payload.type=message,
+    //    role=user|assistant, content=[{type:input_text|output_text, text}]). role=developer(시스템) 제외. ──
+    private static List<(string role, string text)> FromCodex(string roomId)
+    {
+        var turns = new List<(string, string)>();
+        var sid = SettingsService.LoadCodexRoomSession(roomId);
+        var path = TerminalSessionManager.FindCodexTranscriptPath(sid);
+        if (path == null) return turns;
+        foreach (var line in ReadLinesShared(path))
+        {
+            try
+            {
+                using var d = JsonDocument.Parse(line);
+                var o = d.RootElement;
+                if (!TryStr(o, "type", out var t) || t != "response_item") continue;
+                if (!o.TryGetProperty("payload", out var p) || p.ValueKind != JsonValueKind.Object) continue;
+                if (!TryStr(p, "type", out var pt) || pt != "message") continue;
+                if (!TryStr(p, "role", out var role) || (role != "user" && role != "assistant")) continue;
+                if (!p.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) continue;
+                var sb = new StringBuilder();
+                foreach (var c in content.EnumerateArray())
+                    if (c.ValueKind == JsonValueKind.Object && TryStr(c, "type", out var ct)
+                        && (ct == "input_text" || ct == "output_text") && TryStr(c, "text", out var txt))
+                        sb.Append(txt).Append('\n');
+                var text = sb.ToString().Trim();
+                if (text.Length == 0) continue;
+                // codex 가 첫 user 턴에 주입하는 컨텍스트(AGENTS.md·환경·지침)는 대화가 아니므로 제외.
+                if (role == "user" && IsInjectedCodexContext(text)) continue;
+                turns.Add((role, text));
+            }
+            catch { }
+        }
+        return turns;
+    }
+
+    private static bool IsInjectedCodexContext(string text) =>
+        text.StartsWith("# AGENTS.md", StringComparison.OrdinalIgnoreCase)
+        || text.StartsWith("<environment_context", StringComparison.OrdinalIgnoreCase)
+        || text.StartsWith("<permissions", StringComparison.OrdinalIgnoreCase)
+        || text.StartsWith("<user_instructions", StringComparison.OrdinalIgnoreCase);
 
     // ── claude: %USERPROFILE%\.claude\projects\<enc>\<sid>.jsonl (type=user/assistant, content=str|[text]) ──
     private static List<(string role, string text)> FromClaude(string roomId, string? cwd)

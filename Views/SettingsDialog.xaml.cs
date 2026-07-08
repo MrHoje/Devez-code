@@ -377,6 +377,7 @@ public partial class SettingsDialog : UserControl
         SetCleanerAgentVisible(CleanerAgentKind.Claude, ClaudeCatBtn, enabled.Contains("claude"));
         SetCleanerAgentVisible(CleanerAgentKind.OpenCode, OpenCodeCatBtn, enabled.Contains("opencode"));
         SetCleanerAgentVisible(CleanerAgentKind.Gajae, GajaeCatBtn, enabled.Contains("gajae"));
+        SetCleanerAgentVisible(CleanerAgentKind.Codex, CodexCatBtn, enabled.Contains("codex"));
 
         CleanerEmptyText.Visibility = _cleanerVisible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         CleanerBody.Visibility = _cleanerVisible.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -401,6 +402,7 @@ public partial class SettingsDialog : UserControl
         {
             "opencode" => CleanerAgentKind.OpenCode,
             "gajae" => CleanerAgentKind.Gajae,
+            "codex" => CleanerAgentKind.Codex,
             _ => CleanerAgentKind.Claude,
         });
         ApplyCleanerCount();
@@ -417,6 +419,7 @@ public partial class SettingsDialog : UserControl
         ApplyCleanerPill(ClaudeCatBtn, kind == CleanerAgentKind.Claude, active, primary, line, text);
         ApplyCleanerPill(OpenCodeCatBtn, kind == CleanerAgentKind.OpenCode, active, primary, line, text);
         ApplyCleanerPill(GajaeCatBtn, kind == CleanerAgentKind.Gajae, active, primary, line, text);
+        ApplyCleanerPill(CodexCatBtn, kind == CleanerAgentKind.Codex, active, primary, line, text);
 
         VacuumSection.Visibility = kind == CleanerAgentKind.OpenCode ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -510,6 +513,7 @@ public partial class SettingsDialog : UserControl
         {
             CleanerAgentKind.OpenCode => "OpenCode",
             CleanerAgentKind.Gajae => "Gajae Code",
+            CleanerAgentKind.Codex => "Codex",
             _ => "Claude",
         };
         var extra = _cleanerCurrent == CleanerAgentKind.OpenCode

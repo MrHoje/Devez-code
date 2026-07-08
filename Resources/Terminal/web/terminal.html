@@ -21,6 +21,14 @@
   /* 스크롤바 숨김 (휠 스크롤은 동작) */
   .xterm .xterm-viewport { scrollbar-width: none; }
   .xterm .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  /* codex(xterm 6.0)는 VS Code 식 오버레이 스크롤바(.xterm-scrollable-element>.scrollbar>.slider)와
+     그림자(.shadow)를 쓴다. 위 네이티브 스크롤바 숨김 규칙에 안 걸리므로 별도로 숨긴다. */
+  .term-container.agent-codex .xterm-scrollable-element > .scrollbar,
+  .term-container.agent-codex .xterm-scrollable-element > .shadow { display: none !important; }
+  /* 하단 검정 줄 = 6.0 뷰포트의 background-color:#000 이 콘텐츠(테마 배경) 아래로 노출된 것.
+     codex 뷰포트/스크롤영역 배경을 투명으로 눌러 터미널 테마 배경만 보이게 한다. */
+  .term-container.agent-codex .xterm .xterm-viewport,
+  .term-container.agent-codex .xterm-scrollable-element { background-color: transparent !important; }
 
   /* IME 조합 미리보기 스타일 — Windows Terminal 과 동일하게 터미널 배경 위에
      전경색 글자 + 밑줄. (배경을 불투명하게 둬야 아래 깔린 블록커서(반전 셀)가
@@ -136,6 +144,22 @@
 <script src="addon-fit.min.js"></script>
 <script src="addon-search.min.js"></script>
 <script src="addon-webgl.min.js"></script>
+<!-- codex 전용 xterm 6.0 — 렌더러 레벨 ?2026(동기화 출력) 네이티브 지원으로 codex 리페인트
+     티어링을 근본 차단한다. 다른 에이전트는 기존 5.5 유지(6.0 뷰포트/스크롤바 개편의 회귀 회피).
+     로드 순서상 6.0 스크립트가 window.Terminal 등 전역을 덮으므로, 6.0 을 *6 전역으로 스냅샷한 뒤
+     기본 전역(window.Terminal/FitAddon/…)은 5.5 로 되돌린다 → 기존 코드는 그대로 5.5 를 쓴다. -->
+<script>window.__t5 = { Terminal: window.Terminal, FitAddon: window.FitAddon, SearchAddon: window.SearchAddon, WebglAddon: window.WebglAddon };</script>
+<script src="xterm6.min.js"></script>
+<script src="addon-fit6.min.js"></script>
+<script src="addon-search6.min.js"></script>
+<script src="addon-webgl6.min.js"></script>
+<script>
+  window.Terminal6 = window.Terminal; window.FitAddon6 = window.FitAddon;
+  window.SearchAddon6 = window.SearchAddon; window.WebglAddon6 = window.WebglAddon;
+  // 기본 전역을 5.5 로 복원 (codex 외 모든 경로는 5.5 사용)
+  window.Terminal = window.__t5.Terminal; window.FitAddon = window.__t5.FitAddon;
+  window.SearchAddon = window.__t5.SearchAddon; window.WebglAddon = window.__t5.WebglAddon;
+</script>
 </head>
 <body>
 <div id="loading-overlay"><div class="box"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div></div>
@@ -333,13 +357,21 @@
       // xterm 은 "정확히 바닥"일 때만 새 출력을 자동 추종하는데, gjc 고빈도 재페인트 중 사용자가
       // 위로 올렸다 바닥 근처까지 내리면 몇 줄 모자라 추종이 끊긴다(맨 아래로 안 붙고 PageDown 필요).
       // 바닥 근처면 추종을 재개해 일반 터미널처럼 동작. 위로 올려 읽는 중(임계값 밖)엔 개입 안 함.
-      const vp = t.term.element && t.term.element.querySelector('.xterm-viewport');
       let stick = false;
-      if (vp) {
-        const cell = (vp.clientHeight / t.term.rows) || 16;
-        stick = (vp.scrollHeight - vp.clientHeight - vp.scrollTop) <= cell * 2 + 2;
+      if (t.agent === 'codex') {
+        // codex 는 인라인 TUI 라 매 프레임 clear+rewrite 로 baseY(스크롤백 길이)가 출렁여서,
+        // 매 write 마다 위치로 바닥을 판정하면 간헐적으로 오판돼 위로 올린 화면이 당겨진다.
+        // → 사용자 스크롤 의도(entry.follow: 휠 핸들러가 갱신)만 보고 추종 여부를 정한다(표준 터미널 동작).
+        stick = t.follow;
+        t.term.write(bytes);
+      } else {
+        const vp = t.term.element && t.term.element.querySelector('.xterm-viewport');
+        if (vp) {
+          const cell = (vp.clientHeight / t.term.rows) || 16;
+          stick = (vp.scrollHeight - vp.clientHeight - vp.scrollTop) <= cell * 2 + 2;
+        }
+        t.term.write(bytes);
       }
-      t.term.write(bytes);
       if (stick) requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
     }
     // 전환 커버가 '리사이즈 후 첫 재렌더 출력'을 기다리는 중이면 지금 걷는다(앱 재페인트 도착).
@@ -387,12 +419,26 @@
   // ── IME 조합 위치 고정 ──────────────────────────────────────────────
   // claude 의 입력 캐럿 = 자체 블록 커서(반전 영상의 빈 셀, ESC[7m space).
   // 조합 시작 시 버퍼에서 이를 찾아 CSS 변수로 위치를 고정한다 (.ime-fixed).
-  function setupImeCaretFix(term, el) {
+  function setupImeCaretFix(term, el, agent) {
     const ta = el.querySelector('.xterm-helper-textarea');
     if (!ta) return;
+    const isCodex = (agent === 'codex');
 
     function findBlockCursor() {
+      // codex 는 응답 렌더링 중 화면 곳곳에 반전 셀(구문강조·스피너 등)을 뿌려서 반전셀 스캔이
+      // 엉뚱한 위치를 입력 캐럿으로 오인한다(조합뷰가 우측하단 등으로 튐). codex 는 CUP 로 지정한
+      // 논리 커서(buffer.active.cursorX/Y)가 실제 입력 캐럿이므로 그걸 쓴다. 그 외(claude)는
+      // 자체 블록커서=반전 빈 셀을 아래→위 스캔.
       const buf = term.buffer.active;
+      if (isCodex) {
+        const row = buf.cursorY, col = buf.cursorX;
+        if (row < 0 || row >= term.rows) return null;
+        // 응답 렌더링 중 커서가 출력영역(상단)으로 잠깐 옮겨가는 순간을 배제한다. codex 입력창은
+        // 항상 화면 하단 바에 있으므로, 커서가 하단 절반에 있을 때만 유효 입력 캐럿으로 인정하고
+        // 상단으로 튄 순간은 null 반환 → apply 가 직전 위치를 유지(조합뷰 blip 방지).
+        if (row < (term.rows >> 1)) return null;
+        return { row: row, col: col };
+      }
       // 입력란은 화면 하단부 → 아래에서 위로 스캔 (맨 아래 1줄=상태바 제외)
       for (let row = term.rows - 2; row >= 0; row--) {
         const line = buf.getLine(buf.baseY + row);
@@ -524,12 +570,14 @@
     }
 
     // ── 스크롤 ──
-    if (ctrl && shift && !alt && key === 'ArrowUp')   { e.preventDefault(); term.scrollLines(-1); return false; }
+    // codex: 키보드 스크롤도 follow(추종 의도)를 갱신 — 위로/맨위=중단, 아래/맨아래=재개.
+    const cdx = (entry && entry.agent === 'codex');
+    if (ctrl && shift && !alt && key === 'ArrowUp')   { e.preventDefault(); if (cdx) entry.follow = false; term.scrollLines(-1); return false; }
     if (ctrl && shift && !alt && key === 'ArrowDown') { e.preventDefault(); term.scrollLines(1);  return false; }
-    if (shift && !alt && key === 'PageUp')   { e.preventDefault(); term.scrollPages(-1); return false; }
+    if (shift && !alt && key === 'PageUp')   { e.preventDefault(); if (cdx) entry.follow = false; term.scrollPages(-1); return false; }
     if (shift && !alt && key === 'PageDown') { e.preventDefault(); term.scrollPages(1);  return false; }
-    if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); term.scrollToTop();    return false; }
-    if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); term.scrollToBottom(); return false; }
+    if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); if (cdx) entry.follow = false; term.scrollToTop();    return false; }
+    if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); if (cdx) entry.follow = true;  term.scrollToBottom(); return false; }
 
     // ── 세션(탭) 관리 — C# 으로 위임 ──
     if (ctrl && shift && !alt && (key === 't' || key === 'T' || key === 'd' || key === 'D')) {
@@ -638,6 +686,19 @@
     // 사용자가 휠로 직접 스크롤 → 프로그램적 스크롤 억제(_scrollSuppress)를 즉시 해제.
     // (/model·/effort 후 남은 잔여 suppress 카운트가 사용자의 스크롤을 되돌리는 것 방지.)
     _scrollSuppress = 0;
+
+    // codex: 사용자 스크롤 의도(follow)를 갱신 — 위로 올리면 추종 중단, 바닥으로 내려오면 재개.
+    // writeOut 은 이 플래그만 보고 추종하므로 baseY 출렁임에 흔들리지 않는다.
+    {
+      const _ct = activeRoomId ? terms[activeRoomId] : null;
+      if (_ct && _ct.agent === 'codex') {
+        if (e.deltaY < 0) _ct.follow = false;
+        else if (e.deltaY > 0) requestAnimationFrame(function () {
+          const b = _ct.term.buffer.active;
+          if (b.viewportY >= b.baseY) _ct.follow = true;
+        });
+      }
+    }
     // 일반 휠은 xterm 기본 동작(스크롤백 스크롤)에 맡긴다. gjc 는 풀 재페인트의 스크롤백
     // 클리어(CSI 3 J)를 파서에서 삼켜 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.
 
@@ -684,7 +745,15 @@
     el.className = 'term-container' + (agent ? ' agent-' + agent : '');
     document.body.appendChild(el);
 
-    const term = new Terminal({
+    // codex 만 xterm 6.0 엔진(+짝 addon)으로 생성 — 6.0 은 ?2026 동기화 출력을 렌더러 레벨에서
+    // 네이티브 지원해 codex 리페인트 티어링을 근본 차단한다. 나머지 에이전트는 5.5 기본 전역 사용.
+    const use6 = (agent === 'codex') && window.Terminal6;
+    const TerminalCtor = use6 ? window.Terminal6 : window.Terminal;
+    const FitNS       = use6 ? window.FitAddon6 : window.FitAddon;
+    const SearchNS    = use6 ? window.SearchAddon6 : window.SearchAddon;
+    const WebglNS     = use6 ? window.WebglAddon6 : window.WebglAddon;
+
+    const term = new TerminalCtor({
       theme: themeFor(agent),
       // 한글 폴백: 기본 모노스페이스 폰트에는 한글 글리프가 없어 IME 조합 표시가 깨진다
       fontFamily: cfg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",
@@ -695,22 +764,22 @@
       // ConPTY 백엔드 명시 → Windows 줄바꿈/와이드(CJK) 문자 휴리스틱 적용
       windowsPty: { backend: 'conpty', buildNumber: cfg.windowsBuild || 0 },
     });
-    const fit = new FitAddon.FitAddon();
+    const fit = new FitNS.FitAddon();
     term.loadAddon(fit);
-    const search = new SearchAddon.SearchAddon();
+    const search = new SearchNS.SearchAddon();
     term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false };
+    const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true };
     terms[roomId] = entry;
 
     // WebGL 렌더러(GPU) — 글자 그리기를 CPU(DOM) 대신 GPU 로 올려 활성 탭 렌더 비용을 낮춘다(WT 정합).
     // 원격/소프트웨어 렌더링(enableWebgl=false)에선 SwiftShader 로 오히려 느려져 비활성화한다.
     // GPU 컨텍스트 로스(드라이버 리셋/탭 과다) 시 dispose → xterm 기본 DOM 렌더러로 자동 폴백.
     // 소수 배율(125/150% 등)에선 WebGL 커서 렌더 버그가 있어 DOM 렌더러를 쓴다(위 disposeWebglIfFractional 참고).
-    if (cfg.enableWebgl && !fractionalDpr() && typeof WebglAddon !== 'undefined') {
+    if (cfg.enableWebgl && !fractionalDpr() && typeof WebglNS !== 'undefined') {
       try {
-        const webgl = new WebglAddon.WebglAddon();
+        const webgl = new WebglNS.WebglAddon();
         webgl.onContextLoss(function () { try { webgl.dispose(); } catch (e) {} entry.webgl = null; });
         term.loadAddon(webgl);
         entry.webgl = webgl;
@@ -815,7 +884,7 @@
     ro.observe(el);
     entry.ro = ro;
 
-    setupImeCaretFix(term, el);
+    setupImeCaretFix(term, el, agent);
     term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
 
     // 마지막 비어있지 않은 선택을 기억(텍스트+시각) — gjc 재페인트가 선택을 지운 직후의
@@ -1259,6 +1328,9 @@
                 const chunks = t._coChunks; t._coChunks = [];
                 if (!chunks || !chunks.length) return;
                 feedSync(t, concatAll(chunks), function (out) {
+                  // codex 는 커서를 입력창으로 되돌리는 프레임을 sync 블록 '밖'에서 보내므로,
+                  // 6.0 네이티브 ?2026(원자 렌더)으로도 커서 튐이 남는다(WT 에서도 #9081 로 발생).
+                  // 엔진 무관 codex 자체 동작 → 커서 숨김 debounce 정책 유지가 유일한 대응.
                   out = applyCodexCursorPolicy(t, out);
                   writeOut(t, out);
                 });

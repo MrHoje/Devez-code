@@ -8,8 +8,12 @@
 
 $ErrorActionPreference = 'SilentlyContinue'
 
+# codex 는 stdin 으로 UTF-8 JSON 을 보낸다. Windows PowerShell 5.1 의 [Console]::In 은 콘솔 입력
+# 코드페이지(OEM/ANSI)로 디코딩해 한글 등 비ASCII 가 깨진다 → StreamReader 로 UTF-8 명시 디코딩.
 try {
-    $raw = [Console]::In.ReadToEnd()
+    $reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)
+    $raw = $reader.ReadToEnd()
+    $reader.Dispose()
     if (-not $raw) { exit 0 }
     $j = $raw | ConvertFrom-Json
 } catch { exit 0 }
