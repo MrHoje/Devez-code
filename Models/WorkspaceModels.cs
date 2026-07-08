@@ -314,18 +314,26 @@ public sealed class ProjectItem : NotifyBase
         IsSplitView = false;
     }
 
-    /// <summary>순서/내용이 같으면 그대로 두고(사이드바 깜빡임 방지), 다르면 교체.</summary>
+    /// <summary>desired 와 최소 변경(제거/삽입/이동)으로 동기화. Clear+전체 재추가를 쓰면 Count 가
+    /// 순간 0 이 되어 HasHiddenSessions/ShowHiddenGroup 이 false 로 튀고, 숨김 그룹 TreeExpander 가
+    /// 접힘→펼침 애니를 매번 재생해 그룹 전체가 사라졌다 자라나는 깜빡임이 생긴다(탭 X 숨기기·숨김 해제 시).</summary>
     private static void SyncObservable<T>(ObservableCollection<T> target, IReadOnlyList<T> desired)
     {
-        if (target.Count == desired.Count)
+        for (int i = target.Count - 1; i >= 0; i--)
         {
-            bool same = true;
-            for (int i = 0; i < desired.Count; i++)
-                if (!ReferenceEquals(target[i], desired[i])) { same = false; break; }
-            if (same) return;
+            bool keep = false;
+            for (int j = 0; j < desired.Count; j++)
+                if (ReferenceEquals(target[i], desired[j])) { keep = true; break; }
+            if (!keep) target.RemoveAt(i);
         }
-        target.Clear();
-        foreach (var t in desired) target.Add(t);
+        for (int i = 0; i < desired.Count; i++)
+        {
+            int cur = -1;
+            for (int j = 0; j < target.Count; j++)
+                if (ReferenceEquals(target[j], desired[i])) { cur = j; break; }
+            if (cur < 0) target.Insert(i, desired[i]);
+            else if (cur != i) target.Move(cur, i);
+        }
     }
     /// <summary>우측 패널에서 활성이던 탭 참조. LastActiveTabRef 는 좌측 활성 탭용. workspace.json 에 영속.</summary>
     public string? SplitRightActiveRef { get; set; }
