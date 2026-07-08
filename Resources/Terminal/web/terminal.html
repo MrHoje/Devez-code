@@ -925,6 +925,16 @@
         });
         if (!data) return;
       }
+      // codex: 타이핑 = 추종(follow) 재개 + 바닥 정렬 — 위로 올려 읽다가도 입력하는 순간 입력창으로
+      // 복귀(WT scrollOnUserInput 정합). 마우스 리포트(\x1b[<)는 위에서 처리/식별됨 — 휠 스크롤이
+      // 여기 걸리면 위로 굴릴 때마다 바닥으로 끌려와 스크롤이 불가능해지므로 반드시 제외.
+      // 포커스 리포트(?1004: \x1b[I/\x1b[O)도 타이핑이 아님(클릭/포커스 전환) — 제외.
+      // 이미 바닥이면 scrollToBottom 은 no-op(상태 변경 없음)이라 키당 비용은 무시 가능.
+      if (entry.agent === 'codex' && data.indexOf('\x1b[<') === -1
+          && data !== '\x1b[I' && data !== '\x1b[O') {
+        entry.follow = true;
+        try { term.scrollToBottom(); } catch (e) {}
+      }
       post({ type: 'input', roomId: roomId, data: data });
     });
     term.onResize(function (size) {
