@@ -136,9 +136,6 @@ windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합
   - 터미널을 **리사이즈하지 않는** 경로(위로 덮기/숨기기) → 스냅샷+`Collapsed`(`SuspendTerminalWithSnapshotAsync` 또는 `webCover:false`).
   - 터미널을 **리사이즈하는** 경로 → **`webCover:true`** 경로를 써야 reveal 깜빡임이 없다. (스냅샷+Collapsed 만 쓰면 옛 1~2 프레임 깜빡임이 되살아난다.)
     창/윈도우 단위 리사이즈(전체화면 등 새 창 크기 전환)면 여기에 **`stretchCover:true`** 까지 — 좌상단 고정 커버는 커지는 쪽이 비어 보인다.
-- "수정했는데 여전히 그렇다" 리포트를 받으면 **`bin\DevezCode.exe` mtime 과 수정 커밋 시각부터 비교**할 것 —
-  빌드 없이 커밋만 한 수정(병행 세션 실행 중 등)은 실행 중인 앱에 없다. 이번 전체화면 건도 exe(전날 23:28)가
-  수정 커밋(당일 11:42)보다 오래돼 "재발"이 아니라 "미적용"이었다.
 - `Hidden` 으로 숨기는 코드를 발견하면 `Collapsed` 로 고칠 것(HwndHost HWND 가 안 숨겨짐).
 - 커버를 올리는(`xferCover`) 경로를 추가하면 **어떤 종결 경로로 끝나든 `_fitSuppressed` 해제·needCreate 처리**가
   보장되는지 확인할 것 — `fadeNow` 가 이를 빠뜨려 패널 fit 이 영구 잠겼던 버그는
