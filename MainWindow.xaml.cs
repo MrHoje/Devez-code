@@ -3763,7 +3763,21 @@ public partial class MainWindow : Window
         ApplyFooterUsageVisibility();
         GoFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
         RefreshUsagePanelIfVisible();                                                                      // 사용량 카드 아이콘도 재빌드
+        RefreshSessionHistoryIcons();                                                                      // 완료기록/대기 카드 opencode 아이콘도 재빌드
     }));
+
+    /// <summary>완료기록(SessionHistoryList) / 응답대기(WaitingList) 카드의 AgentId→아이콘 바인딩을 강제로 재평가한다.
+    /// AgentId 는 불변(init) 값이라 값 자체는 안 바뀌므로, 테마 전환 시 컨버터가 재호출되지 않아
+    /// opencode 흑/백 아이콘이 즉시 반영되지 않는 문제(다른 갱신 트리거 전까지 이전 테마 색 유지)를 ItemsSource 재적용으로 해결.</summary>
+    private void RefreshSessionHistoryIcons()
+    {
+        var history = SessionHistoryList.ItemsSource;
+        SessionHistoryList.ItemsSource = null;
+        SessionHistoryList.ItemsSource = history;
+        var waiting = WaitingList.ItemsSource;
+        WaitingList.ItemsSource = null;
+        WaitingList.ItemsSource = waiting;
+    }
 
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
