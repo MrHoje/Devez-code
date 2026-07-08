@@ -905,7 +905,14 @@ public partial class WorkspacePaneView : UserControl
         var parent = ParentOf(session);
         if (parent == null) return;
 
-        if (unHide && session.Hidden) { session.Hidden = false; WorkspaceStore.Save(Projects); }
+        if (unHide && session.Hidden)
+        {
+            // 숨김 해제 시 원래 위치가 아니라 탭바 맨 오른쪽(끝)으로 옮긴다.
+            int idx = parent.Tabs.IndexOf(session);
+            if (idx >= 0 && idx != parent.Tabs.Count - 1) parent.Tabs.Move(idx, parent.Tabs.Count - 1);
+            session.Hidden = false;
+            WorkspaceStore.Save(Projects);
+        }
         // 접혀 있던 프로젝트의 세션이 선택되면 자동으로 펼쳐서 보이게 한다.
         if (!parent.IsExpanded) parent.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
@@ -1115,8 +1122,8 @@ public partial class WorkspacePaneView : UserControl
     // ── 메타바 model/effort dock ─────────────────────────────────
     private static readonly ModelEffortOption[] ModelOptions =
     {
-        new("Opus 4.8", "opus"), new("Sonnet 4.6", "sonnet"),
-        new("Haiku 4.5", "haiku"), new("Fable 5", "fable"),
+        new("Opus", "opus"), new("Sonnet", "sonnet"),
+        new("Haiku", "haiku"), new("Fable", "fable"),
     };
     private static readonly ModelEffortOption[] EffortOptions =
     {
