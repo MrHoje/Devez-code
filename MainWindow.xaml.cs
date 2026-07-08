@@ -2452,7 +2452,12 @@ public partial class MainWindow : Window
             LeftPane.HideTabInPane(tab);
         }
         RightPane.ActivateByRef(activeRef);   // 우측 활성 탭 복원
-        LeftPane.ActivateByRef(leftActive);   // 좌측 활성 탭 복원(가장 왼쪽이 아니라 직전 선택 탭)
+        // 좌측 활성 탭 복원(가장 왼쪽이 아니라 직전 선택 탭) — 단, leftActive 가 방금 위 루프에서
+        // 우측으로 격리되며 좌측에 숨겨진 탭이면 활성화하면 안 된다. 그 탭은 좌측 탭바엔 안 보이는데
+        // (HideTabInPane 이 이미 다른 탭으로 교체/비움 처리함) 여기서 그대로 재활성화하면 좌측 헤더
+        // (브랜치/모델/effort)와 터미널이 우측에 보이는 탭 내용으로 다시 채워지는 유령 상태가 된다.
+        var leftTab = LeftPane.FindTabByRef(leftActive);
+        if (leftTab != null && LeftPane.ShowsTab(leftTab)) LeftPane.ActivateByRef(leftActive);
         // 복원 중 중간 PersistSplitState 가 빈 값으로 덮었을 refs 를 스냅샷으로 되돌려 다음 복원도 성공하게 한다.
         proj.SplitRightTabRefs = rightRefs;
         proj.SplitRightActiveRef = rightActive;
