@@ -324,6 +324,8 @@ public partial class SettingsDialog : UserControl
         CatThemeBtn.Foreground     = key == "theme"      ? primary : text;
         CatAgentBtn.Background     = key == "agent"      ? active : Brushes.Transparent;
         CatAgentBtn.Foreground     = key == "agent"      ? primary : text;
+        CatCleanerBtn.Background   = key == "cleaner"    ? active : Brushes.Transparent;
+        CatCleanerBtn.Foreground   = key == "cleaner"    ? primary : text;
         CatSidePanelBtn.Background = key == "sidepanel"  ? active : Brushes.Transparent;
         CatSidePanelBtn.Foreground = key == "sidepanel"  ? primary : text;
         CatUsageBtn.Background     = key == "usage"      ? active : Brushes.Transparent;
@@ -341,6 +343,7 @@ public partial class SettingsDialog : UserControl
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility      = key == "agent"      ? Visibility.Visible : Visibility.Collapsed;
+        CleanerPanel.Visibility    = key == "cleaner"    ? Visibility.Visible : Visibility.Collapsed;
         SidePanelPanel.Visibility  = key == "sidepanel"  ? Visibility.Visible : Visibility.Collapsed;
         UsagePanel.Visibility      = key == "usage"      ? Visibility.Visible : Visibility.Collapsed;
         McpPanel.Visibility        = key == "mcp"        ? Visibility.Visible : Visibility.Collapsed;
@@ -355,7 +358,197 @@ public partial class SettingsDialog : UserControl
         if (key == "notify") LoadNotifySettings();
         if (key == "discord") LoadDiscordSettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
+        if (key == "cleaner") EnterCleaner();
     }
+    // ── 세션 클리너 (SessionCleanerWindow 이식 — 설정창 내부 탭) ──────
+    private CleanerAgentKind _cleanerCurrent;
+    private bool _cleanerBuilt;
+    private readonly List<CleanerAgentKind> _cleanerVisible = new();
+    private readonly Dictionary<CleanerAgentKind, CleanerScanInfo?> _cleanerCounts = new();
+    private readonly HashSet<CleanerAgentKind> _cleanerLoading = new();
+
+    /// <summary>클리너 탭 진입 — 최초 1회만 켜진 에이전트 목록을 구성하고 전체 스캔을 시작한다.</summary>
+    private void EnterCleaner()
+    {
+        if (_cleanerBuilt) return;
+        _cleanerBuilt = true;
+
+        var enabled = SettingsService.LoadEnabledAgents().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        SetCleanerAgentVisible(CleanerAgentKind.Claude, ClaudeCatBtn, enabled.Contains("claude"));
+        SetCleanerAgentVisible(CleanerAgentKind.OpenCode, OpenCodeCatBtn, enabled.Contains("opencode"));
+        SetCleanerAgentVisible(CleanerAgentKind.Gajae, GajaeCatBtn, enabled.Contains("gajae"));
+
+        CleanerEmptyText.Visibility = _cleanerVisible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        CleanerBody.Visibility = _cleanerVisible.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (_cleanerVisible.Count == 0) return;
+
+        SetCleanerActive(_cleanerVisible[0]);
+        foreach (var kind in _cleanerVisible)
+            _ = RefreshCleanerAsync(kind);
+        ApplyCleanerCount();
+    }
+
+    private void SetCleanerAgentVisible(CleanerAgentKind kind, Button button, bool visible)
+    {
+        button.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (visible) { _cleanerVisible.Add(kind); _cleanerCounts[kind] = null; }
+    }
+
+    private void CleanerAgent_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button b || b.Tag is not string tag) return;
+        SetCleanerActive(tag switch
+        {
+            "opencode" => CleanerAgentKind.OpenCode,
+            "gajae" => CleanerAgentKind.Gajae,
+            _ => CleanerAgentKind.Claude,
+        });
+        ApplyCleanerCount();
+    }
+
+    private void SetCleanerActive(CleanerAgentKind kind)
+    {
+        _cleanerCurrent = kind;
+        var active = (Brush)FindResource("PanelBrush");
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var line = (Brush)FindResource("LineBrush");
+        var text = (Brush)FindResource("TextBrush");
+
+        ApplyCleanerPill(ClaudeCatBtn, kind == CleanerAgentKind.Claude, active, primary, line, text);
+        ApplyCleanerPill(OpenCodeCatBtn, kind == CleanerAgentKind.OpenCode, active, primary, line, text);
+        ApplyCleanerPill(GajaeCatBtn, kind == CleanerAgentKind.Gajae, active, primary, line, text);
+
+        VacuumSection.Visibility = kind == CleanerAgentKind.OpenCode ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static void ApplyCleanerPill(Button button, bool selected, Brush active, Brush primary, Brush line, Brush text)
+    {
+        button.Background = selected ? active : Brushes.Transparent;
+        button.BorderBrush = selected ? primary : line;
+        button.Foreground = selected ? primary : text;
+    }
+
+    private async Task RefreshCleanerAsync(CleanerAgentKind kind)
+    {
+        _cleanerLoading.Add(kind);
+        if (kind == _cleanerCurrent) ApplyCleanerCount();
+        try
+        {
+            _cleanerCounts[kind] = await Task.Run(() => SessionCleanerService.GetScanInfo(kind));
+        }
+        catch
+        {
+            _cleanerCounts[kind] = null;
+        }
+        finally
+        {
+            _cleanerLoading.Remove(kind);
+            if (kind == _cleanerCurrent) ApplyCleanerCount();
+        }
+    }
+
+    private void ApplyCleanerCount()
+    {
+        if (_cleanerVisible.Count == 0) return;
+        if (_cleanerLoading.Contains(_cleanerCurrent))
+        {
+            AgentCountText.Visibility = Visibility.Collapsed;
+            CountSpinner.Visibility = Visibility.Visible;
+            CleanerDeleteBtn.IsEnabled = false;
+            return;
+        }
+
+        if (_cleanerCounts.TryGetValue(_cleanerCurrent, out var info) && info is { } scan)
+        {
+            CountSpinner.Visibility = Visibility.Collapsed;
+            AgentCountText.Visibility = Visibility.Visible;
+            AgentCountText.Text = $"{scan.Count}";
+            AgentCountText.FontSize = 32;
+            AgentCapacityText.Text = $"({FormatCleanerBytes(scan.Bytes)})";
+            AgentCapacityText.FontSize = 17;
+            CleanerDeleteBtn.IsEnabled = scan.Count > 0;
+            return;
+        }
+
+        CountSpinner.Visibility = Visibility.Collapsed;
+        AgentCountText.Visibility = Visibility.Visible;
+        AgentCountText.Text = "-";
+        AgentCountText.FontSize = 32;
+        AgentCapacityText.Text = "";
+        CleanerDeleteBtn.IsEnabled = false;
+    }
+
+    private async void CleanerRefresh_Click(object sender, RoutedEventArgs e) => await RefreshCleanerAsync(_cleanerCurrent);
+
+    private async void CleanerVacuum_Click(object sender, RoutedEventArgs e)
+    {
+        VacuumBtn.IsEnabled = false;
+        VacuumBtn.Content = "정리 중...";
+        try
+        {
+            var result = await Task.Run(() => SessionCleanerService.VacuumOpenCodeDb());
+            ConfirmDialog.Alert("OpenCode DB 정리", result);
+            await RefreshCleanerAsync(CleanerAgentKind.OpenCode);
+        }
+        finally
+        {
+            VacuumBtn.IsEnabled = true;
+            VacuumBtn.Content = "OpenCode DB 정리";
+        }
+    }
+
+    private async void CleanerDelete_Click(object sender, RoutedEventArgs e)
+    {
+        var scan = await EnsureCleanerScanAsync();
+        if (scan.Count <= 0)
+        {
+            await RefreshCleanerAsync(_cleanerCurrent);
+            return;
+        }
+
+        var name = _cleanerCurrent switch
+        {
+            CleanerAgentKind.OpenCode => "OpenCode",
+            CleanerAgentKind.Gajae => "Gajae Code",
+            _ => "Claude",
+        };
+        var extra = _cleanerCurrent == CleanerAgentKind.OpenCode
+            ? "\n\n⚠ 빠른 삭제를 위해 실행 중인 OpenCode가 모두 종료됩니다. 진행 중인 OpenCode 작업이 중단될 수 있습니다."
+            : "";
+        var ok = ConfirmDialog.Show("관리중이지 않은 세션 삭제",
+            $"{name}의 DevezCode에서 관리중이지 않은 세션 {scan.Count}개를 PC에서 완전 삭제합니다.\n" +
+            "DevezCode가 현재 관리 중인 세션은 삭제 대상에서 제외됩니다." + extra,
+            okLabel: "삭제", danger: true, iconKey: "IconTrash2");
+        if (!ok) return;
+
+        AgentCountText.Visibility = Visibility.Collapsed;
+        CountSpinner.Visibility = Visibility.Visible;
+        CleanerDeleteBtn.IsEnabled = false;
+        var result = await Task.Run(() => SessionCleanerService.DeleteUnmanaged(_cleanerCurrent));
+        await RefreshCleanerAsync(_cleanerCurrent);
+
+        var message = result.failed == 0
+            ? $"{name}의 DevezCode에서 관리중이지 않은 세션 {result.deleted}개를 삭제했습니다."
+            : $"{name}의 DevezCode에서 관리중이지 않은 세션 {result.deleted}개를 삭제했습니다.\n삭제 실패 {result.failed}개는 파일 잠금 또는 에이전트 CLI 제한으로 남았습니다.";
+        ConfirmDialog.Alert("세션 클리너", message);
+    }
+
+    private async Task<CleanerScanInfo> EnsureCleanerScanAsync()
+    {
+        if (_cleanerCounts.TryGetValue(_cleanerCurrent, out var cached) && cached is { } scan) return scan;
+        await RefreshCleanerAsync(_cleanerCurrent);
+        return _cleanerCounts.TryGetValue(_cleanerCurrent, out var count) && count is { } v ? v : new CleanerScanInfo(0, 0);
+    }
+
+    private static string FormatCleanerBytes(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        double value = System.Math.Max(0, bytes);
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
+        return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.#} {units[unit]}";
+    }
+
     // ── 타이틀 10번 클릭 → Discord 버튼 표시 ─────────────────────────
     private void SettingsTitle_MouseDown(object sender, MouseButtonEventArgs e)
     {
