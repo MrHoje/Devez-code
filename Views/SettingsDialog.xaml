@@ -620,7 +620,7 @@
                                         </Button>
                                         <Button x:Name="OpenCodeCatBtn" Tag="opencode" Style="{StaticResource CleanerPill}" Click="CleanerAgent_Click">
                                             <StackPanel Orientation="Horizontal">
-                                                <Image Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
+                                                <Image x:Name="OpenCodeCatIcon" Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
                                                        Source="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}, Converter={x:Static models:AgentImageConverter.Instance}}"
                                                        RenderOptions.BitmapScalingMode="HighQuality"/>
                                                 <TextBlock Text="OpenCode" VerticalAlignment="Center"/>

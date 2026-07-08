@@ -696,6 +696,7 @@ public partial class SettingsDialog : UserControl
             UpdateThemeSelectionVisual();
             UpdateFontSelectionVisual();
             OpenCodeLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
+            OpenCodeCatIcon.Source  = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 세션 클리너 pill 아이콘도 동일 처리
         }));
     }
 

@@ -3766,17 +3766,15 @@ public partial class MainWindow : Window
         RefreshSessionHistoryIcons();                                                                      // 완료기록/대기 카드 opencode 아이콘도 재빌드
     }));
 
-    /// <summary>완료기록(SessionHistoryList) / 응답대기(WaitingList) 카드의 AgentId→아이콘 바인딩을 강제로 재평가한다.
+    /// <summary>완료기록(SessionHistoryList) 카드의 AgentId→아이콘 바인딩을 강제로 재평가한다.
     /// AgentId 는 불변(init) 값이라 값 자체는 안 바뀌므로, 테마 전환 시 컨버터가 재호출되지 않아
-    /// opencode 흑/백 아이콘이 즉시 반영되지 않는 문제(다른 갱신 트리거 전까지 이전 테마 색 유지)를 ItemsSource 재적용으로 해결.</summary>
+    /// opencode 흑/백 아이콘이 즉시 반영되지 않는 문제를 SessionItem.RefreshAgentIcon() 과 동일한
+    /// PropertyChanged(AgentId) 트리거 방식으로 해결(스크롤 위치 보존, 컨테이너 재생성 없음).
+    /// WaitingList(SessionItem)는 WorkspacePaneView.OnThemeChanged_UpdateSeam 이 같은 인스턴스를
+    /// 이미 갱신하므로 여기서는 손대지 않는다.</summary>
     private void RefreshSessionHistoryIcons()
     {
-        var history = SessionHistoryList.ItemsSource;
-        SessionHistoryList.ItemsSource = null;
-        SessionHistoryList.ItemsSource = history;
-        var waiting = WaitingList.ItemsSource;
-        WaitingList.ItemsSource = null;
-        WaitingList.ItemsSource = waiting;
+        foreach (var r in _sessionDoneRecords) r.RefreshAgentIcon();
     }
 
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
