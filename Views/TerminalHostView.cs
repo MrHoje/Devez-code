@@ -1073,9 +1073,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>전환 커버를 단색 대신 '캡처 이미지'로 띄운다. HWND 를 Collapsed 로 숨겼다 되살릴 때(사이드패널
     /// 토글 등) 커버 이미지가 직전 WPF 스냅샷과 동일 내용이라 handoff 가 무깜빡이고, RevealAfterTransition 시
-    /// 최종 폭 터미널로 크로스페이드된다. imgW/imgH 는 캡처 시점 컨테이너 크기(DIP=CSS px)로 좌상단 고정 표시.</summary>
-    public void CoverForTransitionImage(byte[] png, double imgW, double imgH)
-        => PostJson(new { type = "xferCover", image = "data:image/png;base64," + Convert.ToBase64String(png), imgW, imgH });
+    /// 최종 폭 터미널로 크로스페이드된다. imgW/imgH 는 캡처 시점 컨테이너 크기(DIP=CSS px)로 좌상단 고정 표시.
+    /// stretch=true 면 좌상단 px 고정 대신 뷰포트에 맞춰 늘린다 — 전체화면 토글처럼 창 전체가 한 번에
+    /// 크게 변하는 전환용(px 고정은 창이 커질 때 캡처 밖 영역이 배경색만 남아 '비어' 보인다).</summary>
+    public void CoverForTransitionImage(byte[] png, double imgW, double imgH, bool stretch = false)
+        => PostJson(new { type = "xferCover", image = "data:image/png;base64," + Convert.ToBase64String(png), imgW, imgH, stretch });
 
     /// <summary>전환 후 호출 — 레이아웃이 최종 폭으로 확정되면 fit 으로 재측정(→ConPTY resize→TUI 재렌더)한
     /// 뒤 커튼을 fade-out 한다. roomId 는 fit 대상(활성 세션). 없으면 그냥 커튼만 걷는다.</summary>

@@ -960,7 +960,11 @@
           cov.style.backgroundImage = 'url("' + msg.image + '")';
           cov.style.backgroundRepeat = 'no-repeat';
           cov.style.backgroundPosition = 'top left';
-          cov.style.backgroundSize = (msg.imgW > 0 && msg.imgH > 0) ? (msg.imgW + 'px ' + msg.imgH + 'px') : 'auto';
+          // stretch: 커버를 뷰포트에 맞춰 늘림 — 전체화면 토글처럼 창 전체가 한 번에 크게 변하는
+          // 전환용(OS 최대화 애니메이션과 같은 인상). 좌상단 고정(px)은 패널 리사이즈용 기본값 —
+          // 창이 커지는 전환에서 px 고정을 쓰면 캡처 밖 영역이 배경색만 남아 '비어' 보인다.
+          cov.style.backgroundSize = msg.stretch ? '100% 100%'
+            : (msg.imgW > 0 && msg.imgH > 0) ? (msg.imgW + 'px ' + msg.imgH + 'px') : 'auto';
         } else {
           cov.style.backgroundImage = '';
         }

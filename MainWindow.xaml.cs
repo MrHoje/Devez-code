@@ -1313,9 +1313,9 @@ public partial class MainWindow : Window
     // 내부 트리·WebView2 가 다시 그려지는 깜빡임을 BitmapCache 로 차단한다 — HideEditorColumn 과 동일 패턴.
     /// <summary>좌/우/사용량 패널 토글로 중앙 `*` 컬럼이 리사이즈될 때, 보이는 워크스페이스 패널의
     /// 터미널 WebView2 를 스냅샷으로 정지해 매 프레임 reflow 깜빡임을 막는다(분할 애니메이션과 동일 처리).</summary>
-    private Task FreezeWorkspaceTerminalsAsync()
+    private Task FreezeWorkspaceTerminalsAsync(bool stretchCover = false)
         => Task.WhenAll(_panes.Where(p => p.Visibility == Visibility.Visible)
-                              .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true)));
+                              .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true, stretchCover: stretchCover)));
 
     private void UnfreezeWorkspaceTerminals()
     {
@@ -3983,7 +3983,9 @@ public partial class MainWindow : Window
         _fsCoverBusy = true;
         try
         {
-            await FreezeWorkspaceTerminalsAsync();
+            // stretch: 창 전체가 한 번에 크게 변하므로 커버를 뷰포트에 맞춰 늘린다(OS 최대화 애니메이션 인상).
+            // 좌상단 px 고정을 쓰면 커지는 쪽(오른쪽·아래)이 배경색만 남아 '비어' 보인다.
+            await FreezeWorkspaceTerminalsAsync(stretchCover: true);
             change();
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
             UnfreezeWorkspaceTerminals();
