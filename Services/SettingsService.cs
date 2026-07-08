@@ -71,6 +71,8 @@ public static class SettingsService
         public double SplitBStarRatio { get; set; } = 1.0;
         // PaneA/PaneB 좌우 위치 교환 여부
         public bool SplitSwapped { get; set; } = false;
+        // 일반 터미널 드로어 비율 (CenterMainRow=1* 기준 드로어 star 값). 기본 0.42857 ≈ 30/70.
+        public double GeneralTerminalRowStar { get; set; } = 0.42857;
         // 우측 패널 브라우저 — 프로젝트별 마지막 방문 URL(재시작 시 복원).
         // 키 = 프로젝트 절대경로. 프로젝트가 없거나 저장된 적 없으면 HomeUrl 로 폴백.
         // (하위호환 유지용. 신규 코드는 BrowserHistoryByProject 사용 — 단 마이그레이션 소스로 계속 읽힘.)
@@ -538,6 +540,22 @@ public static class SettingsService
         if (star < 0.112) star = 0.112; // PaneB >= 10%
         if (star > 9.0) star = 9.0;     // PaneA >= 10%
         Current.SplitBStarRatio = star;
+        Save();
+    }
+
+    /// <summary>일반 터미널 드로어 비율(CenterMainRow=1* 기준 star 값). 최소 10%~최대 70% 범위로 클램프.</summary>
+    public static double LoadGeneralTerminalRowStar()
+    {
+        double star = Current.GeneralTerminalRowStar;
+        if (star < 0.112) star = 0.112;  // 드로어 >= 10%
+        if (star > 2.334) star = 2.334;  // 드로어 <= 70%
+        return star;
+    }
+    public static void SaveGeneralTerminalRowStar(double star)
+    {
+        if (star < 0.112) star = 0.112;
+        if (star > 2.334) star = 2.334;
+        Current.GeneralTerminalRowStar = star;
         Save();
     }
 

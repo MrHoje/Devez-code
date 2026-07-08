@@ -129,8 +129,8 @@ public static class AgentRegistry
     }
 
     /// <summary>UI 에서 숨길 에이전트 ID. 세션 생성 피커·설정 다이얼로그에서 제외.
-    /// 백엔드 코드(codex 훅·MCP 등)는 그대로 유지 — 기존 codex 세션이 있어도 동작은 계속.</summary>
-    public static readonly HashSet<string> HiddenFromUI = new(StringComparer.OrdinalIgnoreCase) { "codex" };
+    /// 백엔드 코드(codex 훅·MCP 등)는 그대로 유지.</summary>
+    public static readonly HashSet<string> HiddenFromUI = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>UI 노출 대상에서 제외한 에이전트만 반환.</summary>
     public static IReadOnlyList<AgentDef> GetVisibleAgents()

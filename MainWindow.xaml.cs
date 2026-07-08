@@ -525,9 +525,11 @@ public partial class MainWindow : Window
         {
             DevezCode.Services.DiagLog.Write("Shutdown: prepare snapshots");
             await FileExplorer.SuspendBrowserAsync();
-            await Task.WhenAll(_panes.Select(p => p.PrepareShutdownSnapshotAsync()));
+            await Task.WhenAll(_panes.Select(p => p.PrepareShutdownSnapshotAsync())
+                                     .Append(PrepareGeneralTerminalShutdownSnapshotAsync()));
             await Views.WorkspacePaneView.WaitForFramesAsync(2); // 스냅샷 present 보장
             foreach (var p in _panes) p.CommitShutdownHide();
+            CommitGeneralTerminalShutdownHide();
             DevezCode.Services.DiagLog.Write("Shutdown: HWNDs hidden");
         }
         catch { /* best effort */ }
@@ -1397,8 +1399,10 @@ public partial class MainWindow : Window
             _rightCollapsed = false;
             FileExplorer.Visibility = Visibility.Visible;
             SetMinWidth(0, FileExpCol, FooterFileExpCol);
+            // 우측 완료기록/사용량이 열려 있으면 그만큼 자리를 비워, 파일탐색기를 남는 폭까지만 편다.
+            double openTarget = Math.Min(_fileExpWidth, ComputeMaxFileExpWidth());
             _rightAnimCancel = AnimatePanelAndSplitter(
-                FileExpCol, _fileExpWidth,
+                FileExpCol, openTarget,
                 FileExpSplitterCol, 4,
                 durationMs: 200, easeIn: false,
                 colMirrors: new[] { FooterFileExpCol },
@@ -1506,6 +1510,7 @@ public partial class MainWindow : Window
         }
 
         if (persist) SettingsService.SaveUsagePanelOpen(open);
+        if (open) ClampFileExpToFit(animate); // 사용량 패널 자리 확보를 위해 파일탐색기를 남는 폭까지 줄임
         UpdatePanelToggleVisual();
         UpdateUsageSidebarBorder();
     }
@@ -1554,6 +1559,7 @@ public partial class MainWindow : Window
         }
 
         if (persist) SettingsService.SaveSessionHistoryPanelOpen(open);
+        if (open) ClampFileExpToFit(animate); // 완료기록 패널 자리 확보를 위해 파일탐색기를 남는 폭까지 줄임
         UpdatePanelToggleVisual();
         UpdateUsageSidebarBorder();
     }
@@ -2306,6 +2312,162 @@ public partial class MainWindow : Window
     }
 
     private bool _splitActive;
+
+    // ── 일반 터미널 드로어(세션/프로젝트와 무관한 단일 셸) ──────────────
+    private TerminalHostView? _generalTerminal;
+    private bool _generalTerminalOpen;
+    private bool _generalTerminalShown;   // 최초 ShowTerminal(방/ConPTY 생성)이 한 번이라도 일어났는지
+    private const string GeneralTerminalRoomId = TerminalSessionManager.GeneralTerminalRoomId;
+
+    // 드로어 애니메이션 진행도(0=숨김, 1=하단 30% 완전 펼침). GridLength 는 직접 애니메이션이 안 되므로
+    // 이 double DP 를 애니메이션하고 콜백에서 드로어 행의 star 높이를 갱신한다(AnimatePaneSplit 과 동일 패턴).
+    private static readonly DependencyProperty GeneralTerminalProgressProperty =
+        DependencyProperty.Register(nameof(GeneralTerminalProgress), typeof(double), typeof(MainWindow),
+            new PropertyMetadata(0.0, OnGeneralTerminalProgressChanged));
+
+    private double GeneralTerminalProgress
+    {
+        get => (double)GetValue(GeneralTerminalProgressProperty);
+        set => SetValue(GeneralTerminalProgressProperty, value);
+    }
+
+    private static void OnGeneralTerminalProgressChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var w = (MainWindow)d;
+        // CenterMainRow 는 1* 고정 — 이 값 자체가 드로어의 star 값(=CenterMainRow 기준 비율)이다.
+        w.GeneralTerminalRow.Height = new GridLength((double)e.NewValue, GridUnitType.Star);
+    }
+
+    /// <summary>일반 터미널 드로어 행의 star 값을 from→to 로 애니메이션(PaneSplitter 와 동일 패턴). 완료 시 onComplete 호출.</summary>
+    private void AnimateGeneralTerminal(double from, double to, Action onComplete)
+    {
+        GeneralTerminalProgress = from;
+        var anim = new DoubleAnimation
+        {
+            From = from,
+            To = to,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+        };
+        anim.Completed += (_, _) =>
+        {
+            BeginAnimation(GeneralTerminalProgressProperty, null);   // 애니메이션 해제 → 이후 값 고정
+            GeneralTerminalRow.Height = new GridLength(to, GridUnitType.Star);
+            onComplete();
+        };
+        BeginAnimation(GeneralTerminalProgressProperty, anim);
+    }
+
+    /// <summary>일반 터미널 드로어 스플리터 드래그 완료 — 실제 픽셀 높이 비율(CenterMainRow=1* 기준)로 계산해 저장.
+    /// PaneSplitter_DragCompleted 와 동일 이유(star 값 자체를 저장하면 드리프트 누적)로 ActualHeight 로 계산한다.</summary>
+    private void GeneralTerminalSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (e.Canceled) return;
+        double th = CenterMainRow.ActualHeight, dh = GeneralTerminalRow.ActualHeight;
+        double star = th > 0 ? dh / th : SettingsService.LoadGeneralTerminalRowStar();
+        SettingsService.SaveGeneralTerminalRowStar(star);
+    }
+
+    private void EnsureGeneralTerminal()
+    {
+        if (_generalTerminal != null) return;
+        _generalTerminal = new TerminalHostView();
+        // 터미널 안에서 단독 ESC 를 누르면(=인터럽트) 드로어도 함께 닫는다(사용자 요청: 버튼/ESC 로만 닫힘).
+        _generalTerminal.InterruptRequested += __ =>
+        {
+            if (_generalTerminalOpen) _ = CloseGeneralTerminalDrawerAsync();
+        };
+        GeneralTerminalContainer.Content = _generalTerminal;
+    }
+
+    private void GeneralTerminalBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _ = _generalTerminalOpen ? CloseGeneralTerminalDrawerAsync() : OpenGeneralTerminalDrawerAsync();
+    }
+
+    /// <summary>일반 터미널 드로어를 세션 터미널 아래에서 위로 슬라이드업. 세션 터미널(들)은 높이가 줄어드는
+    /// 리사이즈를 겪으므로 webCover 로 정지시켜 리플로우 깜빡임을 없앤다(분할 펼침과 동일 기법).
+    ///
+    /// 최초 생성은 애니메이션이 끝나 드로어가 '최종 크기'에 도달한 뒤에 ShowTerminal 을 호출한다 — 그래야
+    /// show() 의 fit 과 ConPTY 생성이 정확한 최종 크기로 이뤄진다. (예전엔 애니메이션 전에 show 하고 reveal 로
+    /// 생성을 미뤘는데, WebView2 콜드 초기화가 애니메이션보다 늦으면 reveal 시점에 JS 방이 없어 생성 트리거가
+    /// 유실 → 셸이 안 뜨거나 죽어 'Enter로 재시작'이 떴다. 그 레이스를 없앤다.)
+    /// 재오픈은 방/ConPTY 가 이미 살아있으므로 커버→애니메이션→reveal(기존 ConPTY 리사이즈) 표준 경로.</summary>
+    private async Task OpenGeneralTerminalDrawerAsync()
+    {
+        if (_generalTerminalOpen) return;
+        _generalTerminalOpen = true;
+        EnsureGeneralTerminal();
+        bool firstShow = !_generalTerminalShown;
+
+        if (!firstShow)
+        {
+            // 재오픈: 이미 초기화된 웹뷰라 CoverForTransition 이 유효 → 중간 크기 fit 억제 후 최종 크기에서 reveal.
+            _generalTerminal!.ShowTerminal(GeneralTerminalRoomId);
+            _generalTerminal.CoverForTransition();
+        }
+        await FreezeWorkspaceTerminalsAsync();
+        GeneralTerminalSplitterRow.Height = new GridLength(4);
+        GeneralTerminalSplitter.Visibility = Visibility.Visible;
+        double targetStar = SettingsService.LoadGeneralTerminalRowStar();
+        AnimateGeneralTerminal(0, targetStar, () =>
+        {
+            UnfreezeWorkspaceTerminals();
+            UpdateLayout();   // GeneralTerminalDrawer.ActualHeight 를 최종값으로 확정
+            if (firstShow)
+            {
+                // 드로어가 최종 크기에 도달한 지금 show → fit·ConPTY 생성이 정확한 크기로 (웹뷰 초기화가 늦어도
+                // _pendingShowRoomId 로 pageReady 때 처리되며, 그 시점 레이아웃도 이미 최종이라 안전).
+                _generalTerminalShown = true;
+                _generalTerminal!.ShowTerminal(GeneralTerminalRoomId);
+            }
+            else
+            {
+                _generalTerminal!.RevealAfterTransition(GeneralTerminalRoomId, kick: false, expectHeight: GeneralTerminalDrawer.ActualHeight);
+            }
+            _generalTerminal!.FocusTerminal();
+        });
+    }
+
+    /// <summary>종료 오버레이 직전 — 열려 있는 일반 터미널의 WebView2 를 캡처 이미지로 덮는다(HWND 는 아직 유지).
+    /// 패널의 PrepareShutdownSnapshotAsync 와 같은 프레임에 present 시켜 airspace 팝을 막는다.</summary>
+    private async Task PrepareGeneralTerminalShutdownSnapshotAsync()
+    {
+        if (!_generalTerminalOpen || _generalTerminal == null) return;
+        try
+        {
+            var png = await _generalTerminal.CapturePngAsync();
+            if (png != null)
+            {
+                GeneralTerminalSnapshot.Source = TerminalHostView.BitmapFromPng(png);
+                GeneralTerminalSnapshot.Visibility = Visibility.Visible;
+            }
+        }
+        catch { /* best effort — 캡처 실패해도 아래 Commit 이 HWND 를 숨겨 오버레이가 보이게 함 */ }
+    }
+
+    /// <summary>스냅샷 present 확인 후 — 일반 터미널 WebView2 HWND 를 숨긴다(패널들과 같은 프레임).</summary>
+    private void CommitGeneralTerminalShutdownHide()
+    {
+        if (_generalTerminalOpen && _generalTerminal != null)
+            GeneralTerminalContainer.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>드로어를 하단으로 슬라이드다운해 닫는다. 백그라운드 셸 프로세스는 유지(다음에 열면 이어서 보임).</summary>
+    private async Task CloseGeneralTerminalDrawerAsync()
+    {
+        if (!_generalTerminalOpen || _generalTerminal == null) return;
+        _generalTerminalOpen = false;
+        _generalTerminal.CoverForTransition();   // 0 으로 줄어드는 동안 중간 fit 억제 → 그리드 붕괴 방지
+        await FreezeWorkspaceTerminalsAsync();
+        double fromStar = GeneralTerminalRow.Height.Value;
+        AnimateGeneralTerminal(fromStar, 0, () =>
+        {
+            GeneralTerminalSplitterRow.Height = new GridLength(0);
+            GeneralTerminalSplitter.Visibility = Visibility.Collapsed;
+            UnfreezeWorkspaceTerminals();
+        });
+    }
 
     // 분할 펼침/접힘 애니메이션 진행도(0=합쳐짐, 1=완전 분할). GridLength 는 직접 애니메이션이 안 되므로
     // 이 double DP 를 애니메이션하고 콜백에서 PaneB 컬럼의 star 폭을 갱신한다.
@@ -3761,16 +3923,6 @@ public partial class MainWindow : Window
         RefreshUsagePanelIfVisible();                                                                      // 사용량 카드 아이콘도 재빌드
     }));
 
-    // ── 세션 클리너 ───────────────────────────────────────────────
-    private async void CleanerBtn_Click(object sender, RoutedEventArgs e)
-    {
-        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
-        var dlg = new Views.SessionCleanerWindow { Owner = this };
-        dlg.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
-        dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
-        dlg.Closed += (_, _) => ResumeTerminal();
-        dlg.ShowDialog();
-    }
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
@@ -4268,14 +4420,52 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 도킹 모드: 우측 패널이 창 밖으로 잘리지 않게 폭을 클램프(중앙 최소 폭 보장).
+        // 도킹 모드: 파일탐색기가 중앙 최소폭 + 우측 보조 패널을 창 밖으로 밀어내지 않게 클램프.
+        ClampFileExpToFit(animate: false);
+    }
+
+    /// <summary>도킹 모드에서 파일탐색기가 가질 수 있는 최대 폭.
+    /// 중앙 터미널 최소폭(360)과 오른쪽 보조 패널(완료기록/사용량)이 창 안에 남도록
+    /// 그 폭을 미리 예약해 계산한다 → 파일탐색기가 우측 패널을 화면 밖으로 밀지 않는다.</summary>
+    private double ComputeMaxFileExpWidth()
+    {
         const double centerMin = 360;
-        double splitters = SidebarSplitterCol.ActualWidth + FileExpSplitterCol.ActualWidth;
-        double maxFileExp = avail - SidebarCol.ActualWidth - splitters - centerMin;
-        if (maxFileExp < FileExpCol.MinWidth) maxFileExp = FileExpCol.MinWidth;
+        double avail = BodyGrid.ActualWidth;
+        double reservedRight =
+            (_sessionHistoryOpen ? SettingsService.LoadSessionHistoryWidth() + 4 : 0) // 4=완료기록 스플리터 채널
+            + (_usageOpen ? UsagePanelWidth : 0);
+        double splitters = SidebarSplitterCol.ActualWidth + (_rightCollapsed ? 0 : 4); // 파일탐색기 스플리터
+        double floor = FileExpCol.MinWidth > 0 ? FileExpCol.MinWidth : 190;
+        double max = avail - SidebarCol.ActualWidth - splitters - reservedRight - centerMin;
+        return Math.Max(max, floor);
+    }
+
+    /// <summary>파일탐색기가 열려 있고 우측 보조 패널을 밀어낼 만큼 넓으면 남는 공간까지만 줄인다.
+    /// 사용자가 선호한 폭(_fileExpWidth)은 보존하므로, 창이 넓어지거나 우측 패널을 닫은 뒤
+    /// 파일탐색기를 다시 토글하면 원래 폭으로 복원된다.</summary>
+    private void ClampFileExpToFit(bool animate)
+    {
+        if (_narrow == true || _rightCollapsed) return;
+        if (BodyGrid.ActualWidth <= 0) return;
+        double max = ComputeMaxFileExpWidth();
         double current = FileExpCol.Width.IsAbsolute ? FileExpCol.Width.Value : FileExpCol.ActualWidth;
-        if (current > maxFileExp + 0.5)
-            FileExpCol.Width = new GridLength(maxFileExp);
+        if (current <= max + 0.5) return;
+
+        if (animate)
+        {
+            _rightAnimCancel?.Invoke();
+            _rightAnimCancel = AnimateColumn(
+                FileExpCol, max, durationMs: 200, easeIn: true,
+                cacheTarget: FileExplorer,
+                mirrors: new[] { FooterFileExpCol },
+                onComplete: () => _rightAnimCancel = null);
+        }
+        else
+        {
+            // SharedSizeGroup 은 멤버 중 최대 폭을 채택하므로 푸터 미러도 함께 줄여야 실제로 줄어든다.
+            FileExpCol.Width = new GridLength(max);
+            FooterFileExpCol.Width = new GridLength(max);
+        }
     }
 
     /// <summary>오버레이 드로어 폭. 중앙이 일부 보이도록 창 폭에 따라 제한.
