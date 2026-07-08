@@ -133,8 +133,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private const int MaxSettleAfterAltMs = 700;
     /// <summary>인라인 TUI(gjc): 첫 출력 시각. 준비 마커가 안 올 때 폴백 타임아웃 기준.</summary>
     private readonly Dictionary<string, int> _inlineFirstOutTick = new();
-    /// <summary>ready 방의 alt-screen "이탈"(claude /exit·Ctrl+C) 감지용 방별 꼬리 버퍼(청크 경계 분할 대비). UI 스레드.</summary>
-    private readonly Dictionary<string, string> _altLeaveTail = new();
     /// <summary>풀스크린 방별 준비 폴백 1회성 타이머(alt-screen 미감지 대비). UI 스레드.</summary>
     private readonly Dictionary<string, System.Windows.Threading.DispatcherTimer> _fullscreenFallbackTimers = new();
     /// <summary>인라인 TUI 준비 마커(\e[?2004h/\e[?2026h)가 안 와도 이만큼 지나면 준비로 본다(무한 스피너 방지).</summary>
@@ -154,6 +152,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // MainWindow.ReloadAllSessionsForTheme 가 커밋 시점에 일괄 처리한다.
         _themeChangedHandler = _ => PushCurrentTheme();
         App.ThemeChanged += _themeChangedHandler;
+        // 배치 재진입 신호(claude/gjc /exit·Ctrl+C 후 루프 재실행 직전) → 로딩 커버. Dispose 에서 해제.
+        TerminalSessionManager.RoomReentering += OnRoomReentering;
     }
 
     /// <summary>해당 방의 claude 화면이 이미 떠서 안정화까지 끝났는지(로딩 불필요).</summary>
@@ -207,10 +207,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         if (_ready.Contains(roomId))
         {
-            // claude 방: TUI 가 alt-screen 을 "이탈"하면(= /exit·Ctrl+C 종료) 배치 재진입 루프가 곧
-            // resume 재실행한다. 그 사이 배치 에코·resume 커맨드가 보이지 않게 즉시 스피너로 덮고
-            // ready 를 재무장 — 새 claude 의 alt-screen 재진입이 TerminalReady 로 스피너를 걷는다.
-            if (DetectClaudeRestart(roomId, bytes)) return;
             // alt-screen 은 봤지만 아직 통지 전 — 출력이 계속되는 동안 안정화 타이머를 미룬다.
             BumpSettle(roomId);
             return;
@@ -284,34 +280,32 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _readyScan[roomId] = text.Length > 512 ? text[^512..] : text; // 버퍼 과다 방지
     }
 
-    /// <summary>ready 상태의 claude 방 출력에서 alt-screen 이탈([?1049l/[?47l)을 감지하면 재시작으로
-    /// 간주해 준비 상태를 재무장하고 SessionRestarting 을 발화한다. 감지 시 true(호출부는 스캔 종료).
-    /// 이탈 이후 잔여 바이트는 재귀로 일반 스캔에 태워, 같은 청크에 재진입([?1049h)이 붙어 와도 놓치지 않는다.</summary>
-    private bool DetectClaudeRestart(string roomId, byte[] bytes)
+    /// <summary>재시작(재진입) 직전 준비 상태 재무장 — 새 TUI 의 준비 신호가 TerminalReady 를 다시 발화하게 한다.</summary>
+    private void ResetReadyForRestart(string roomId)
     {
-        if (!string.Equals(AgentFor(roomId), "claude", StringComparison.OrdinalIgnoreCase)) return false;
-        var text = (_altLeaveTail.TryGetValue(roomId, out var tail) ? tail : string.Empty)
-                   + System.Text.Encoding.ASCII.GetString(bytes);
-        int idx = text.IndexOf("[?1049l", StringComparison.Ordinal);
-        if (idx < 0) idx = text.IndexOf("[?47l", StringComparison.Ordinal);
-        if (idx < 0)
-        {
-            _altLeaveTail[roomId] = text.Length > 8 ? text[^8..] : text; // 시퀀스가 청크 경계에 걸릴 때 대비
-            return false;
-        }
-        DevezCode.Services.DiagLog.Write($"claude alt-screen leave 감지 → 재시작 커버 room={roomId}");
         _ready.Remove(roomId);
         _readyNotified.Remove(roomId);
         _readyScan.Remove(roomId);
         _altSeenTick.Remove(roomId);
-        _altLeaveTail.Remove(roomId);
+        _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
-        SessionRestarting?.Invoke(roomId);
-        // 잔여 출력(이탈 뒤 배치 에코·드물게 같은 청크의 재진입 신호)을 일반 준비 스캔으로 재처리.
-        var rest = text[(idx + 5)..]; // "[?47l" 길이 기준 — 1049l 이어도 남는 "049l" 은 시퀀스 매칭에 무해
-        if (rest.Length > 0) ScanForReady(roomId, System.Text.Encoding.ASCII.GetBytes(rest));
-        else ArmFullscreenReadyFallback(roomId); // 잔여가 없어도 폴백 무장 — 재실행 실패(giveup) 시 무한 스피너 방지
-        return true;
+        if (_fullscreenFallbackTimers.Remove(roomId, out var ft)) ft.Stop(); // 잔존 타이머 조기 발화 방지
+    }
+
+    /// <summary>배치 재진입 플래그(claude·gjc — TerminalSessionManager.RoomReentering, FSW 스레드) 처리.
+    /// ready 였던 방만 재시작으로 간주(첫 실행·연속 재시도 중복은 무시 — 재무장 직후라 ready 가 아님).
+    /// 준비 상태를 재무장하고 SessionRestarting 을 발화해 UI 가 로딩 커버로 재실행 과정을 가리게 한다.</summary>
+    private void OnRoomReentering(string roomId)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_disposed || !_wired.ContainsKey(roomId)) return; // 이 뷰가 배선한 방만
+            if (!_readyNotified.Contains(roomId)) return;
+            DevezCode.Services.DiagLog.Write($"재진입 플래그 감지 → 재시작 커버 room={roomId}");
+            ResetReadyForRestart(roomId);
+            ArmFullscreenReadyFallback(roomId); // 재실행 실패(giveup 프롬프트 등) 시 무한 스피너 방지
+            SessionRestarting?.Invoke(roomId);
+        });
     }
 
     /// <summary>풀스크린 방에서 alt-screen 이 안 잡히는 경우를 대비한 1회성 준비 폴백 타이머(중복 무시).
@@ -704,6 +698,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 if (IsAutoReenterRoom(roomId) && AllowAutoRestart(roomId))
                 {
                     DevezCode.Services.DiagLog.Write($"opencode 세션 종료 → 앱 자동 재시작(새 세션 resume) room={roomId}");
+                    // 준비 상태 재무장 + 로딩 커버 — 안 하면 stale ready 로 커버가 즉시 걷혀 부팅 출력이 보인다.
+                    // 새 opencode 의 준비 신호(alt-screen/settle)가 TerminalReady 로 커버를 다시 걷는다.
+                    ResetReadyForRestart(roomId);
+                    SessionRestarting?.Invoke(roomId);
                     WireSession(roomId, 120, 30);            // 죽은 세션 → GetOrCreate 가 새 ConPTY 로 만들며 resume
                     PostJson(new { type = "restarted", roomId }); // xterm 클리어 + JS 가 실제 크기로 resize
                     return;
@@ -1284,7 +1282,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _readyScan.Remove(roomId);
         _readyNotified.Remove(roomId);
         _altSeenTick.Remove(roomId);
-        _altLeaveTail.Remove(roomId);
         _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         if (_fullscreenFallbackTimers.Remove(roomId, out var ft)) ft.Stop();
@@ -1374,6 +1371,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (_disposed) return;
         _disposed = true;
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
+        try { TerminalSessionManager.RoomReentering -= OnRoomReentering; } catch { }
         try
         {
             if (_webView?.CoreWebView2 != null)
@@ -1393,7 +1391,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _readyScan.Clear();
         _readyNotified.Clear();
         _altSeenTick.Clear();
-        _altLeaveTail.Clear();
         foreach (var t in _settleTimers.Values) t.Stop();
         _settleTimers.Clear();
         lock (_outLock) { _outPending.Clear(); _outScheduled.Clear(); }

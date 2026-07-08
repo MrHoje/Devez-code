@@ -591,7 +591,7 @@ public sealed class TerminalSessionManager
             // gjc 일반(비멀티플렉서) 모드로 실행 — 멀티플렉서 모드(STY)는 입력창 하단에 빈 줄을
             // 더 그려서 제외했다. 일반 모드가 풀 재페인트마다 보내는 스크롤백 클리어(\x1b[3J)는
             // terminal.html 파서에서 gjc 방 한정으로 삼켜 스크롤백/휠 스크롤을 보존한다.
-            File.WriteAllText(batchPath, "@echo off\r\n" + cmd + "\r\n" + GajaeReentryLoop(sd));
+            File.WriteAllText(batchPath, "@echo off\r\n" + cmd + "\r\n" + GajaeReentryLoop(sd, RegisterReenterFlag(roomId)));
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
@@ -737,7 +737,7 @@ public sealed class TerminalSessionManager
         {
             Directory.CreateDirectory(LaunchDir);
             var trackFile = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
-            File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + body + "\r\n" + ClaudeReentryLoop(flags, trackFile, ClaudeQuitFlagPath(roomId)));
+            File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + body + "\r\n" + ClaudeReentryLoop(flags, trackFile, ClaudeQuitFlagPath(roomId), RegisterReenterFlag(roomId)));
             // 경로에 공백이 있어도 cmd /k "<단일 토큰>" 규칙으로 안전(따옴표 보존/제거 모두 정상 실행).
             return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
         }
@@ -771,6 +771,55 @@ public sealed class TerminalSessionManager
     // 배치 본문 뒤에 이 루프를 붙인다 — 루프는 매 반복 추적파일/세션-dir 에서 현재 세션을 다시 잡는다.
     // 안전장치: 연속 실행 실패(=CLI 미설치 등)가 5회 쌓이면 무한 스핀 대신 프롬프트를 남겨 진단 가능.
 
+    // ── 재진입 플래그 (배치 루프 → 앱 신호) ─────────────────────────
+    // 배치 재진입 루프가 에이전트를 다시 띄우기 "직전" 방별 플래그 파일을 touch 한다.
+    // FileSystemWatcher 가 이를 감지해 RoomReentering 을 발화 — UI(TerminalHostView)가 즉시
+    // 로딩 커버를 띄워 배치 에코·resume 커맨드 입력 과정을 가린다. 출력 스트림 휴리스틱
+    // (alt-screen 이탈 감지)과 달리 오발동이 없고 ConPTY 의 시퀀스 필터링에도 안전하다.
+
+    /// <summary>배치 재진입 직전 신호. roomId 전달 — FSW 백그라운드 스레드에서 발화되므로 구독자가 마샬링.</summary>
+    public static event Action<string>? RoomReentering;
+
+    private static string ReenterFlagDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "reenter");
+    private static FileSystemWatcher? _reenterWatcher;
+    private static readonly Dictionary<string, string> _reenterRoomByFile = new(); // "<safe>.flag" → roomId
+    private static readonly object _reenterLock = new();
+
+    /// <summary>방의 재진입 플래그 파일 경로를 등록(파일명→roomId 역매핑 + FSW 1회 기동)하고 반환.
+    /// 배치 작성 시점에 호출 — 실패해도 배치 실행엔 지장 없게 예외를 삼키고 경로만 돌려준다.</summary>
+    private static string RegisterReenterFlag(string roomId)
+    {
+        var file = SafeRoomFileName(roomId) + ".flag";
+        var path = Path.Combine(ReenterFlagDir, file);
+        try
+        {
+            Directory.CreateDirectory(ReenterFlagDir);
+            lock (_reenterLock)
+            {
+                _reenterRoomByFile[file] = roomId;
+                if (_reenterWatcher == null)
+                {
+                    _reenterWatcher = new FileSystemWatcher(ReenterFlagDir, "*.flag")
+                    {
+                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
+                    };
+                    FileSystemEventHandler h = (_, e) =>
+                    {
+                        string? room;
+                        lock (_reenterLock) _reenterRoomByFile.TryGetValue(e.Name ?? string.Empty, out room);
+                        if (room != null) RoomReentering?.Invoke(room);
+                    };
+                    _reenterWatcher.Created += h;
+                    _reenterWatcher.Changed += h;
+                    _reenterWatcher.EnableRaisingEvents = true;
+                }
+            }
+        }
+        catch { /* 감시 실패 = 스피너 커버만 없음 — 재진입 자체는 배치가 수행 */ }
+        return path;
+    }
+
     /// <summary>재진입 루프 공통 꼬리: 실패 카운트·스로틀(≈1s)·재진입 goto·5회 실패 시 giveup.</summary>
     private static string ReentryTail() =>
         "if errorlevel 1 (set /a FAILS+=1) else (set \"FAILS=0\")\r\n" +
@@ -786,10 +835,13 @@ public sealed class TerminalSessionManager
     /// quitFlagPath: 앱 종료(GracefulExitPlan → MarkClaudeQuitting)가 남긴 "종료중" 플래그. escFirst
     /// 로 claude 가 예상보다 빨리 정상 종료하면 Dispose(ConPTY 닫기) 전 이 틈에 재진입해 새 claude 를
     /// 띄우는 레이스가 있어, 재진입 직전에 이 플래그를 먼저 확인해 있으면 루프를 끝낸다.</summary>
-    private static string ClaudeReentryLoop(string flags, string trackFile, string quitFlagPath) =>
+    private static string ClaudeReentryLoop(string flags, string trackFile, string quitFlagPath, string reenterFlagPath) =>
         "set FAILS=0\r\n" +
         ":__reenter\r\n" +
         $"if exist \"{quitFlagPath}\" goto __quitflag\r\n" +
+        // 재실행 직전 앱에 신호(touch) — FSW 가 감지해 로딩 커버를 띄운다. 종료(quitflag) 경로는 안 지나므로
+        // 앱 종료 중 스피너 오발동 없음. 첫 실행은 루프 밖(body)이라 콜드스타트에도 안 걸린다.
+        $"type nul >\"{reenterFlagPath}\"\r\n" +
         "set \"SID=\"\r\n" +
         $"if exist \"{trackFile}\" for /f \"usebackq delims=\" %%i in (\"{trackFile}\") do set \"SID=%%i\"\r\n" +
         "if defined SID (\r\n" +
@@ -803,9 +855,10 @@ public sealed class TerminalSessionManager
 
     /// <summary>가재(gjc) 재진입 루프 — 방별 --session-dir 로 격리돼 있어 -c(최신 이어가기)가 곧 이 방의
     /// 마지막 대화. 앱의 session-dir 폴링(GajaeLastMessageService)이 재진입 세션도 그대로 추적한다.</summary>
-    private static string GajaeReentryLoop(string sd) =>
+    private static string GajaeReentryLoop(string sd, string reenterFlagPath) =>
         "set FAILS=0\r\n" +
         ":__reenter\r\n" +
+        $"type nul >\"{reenterFlagPath}\"\r\n" + // 재실행 직전 앱 신호(touch) — 로딩 커버용. 첫 실행은 루프 밖
         $"call gjc {sd} -c\r\n" +   // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 루프로 복귀
         $"if errorlevel 1 call gjc {sd}\r\n" +
         ReentryTail();
