@@ -10,3 +10,6 @@ obj/
 # Inno Setup 인스톨러 산출물(바이너리 — 배포는 R2)
 installer/Output/
 .gjc/
+
+# hoje-code goal 세션 추적(로컬 전용)
+.hoje/

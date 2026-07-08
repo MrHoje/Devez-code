@@ -1,2 +1,0 @@
-{"goal":"G001","status":"complete","evidence":"5개 문제 확정: 종료중 재진입 레이스, GracefulExitPlan codex 부재, AgentReplyService codex 미지원, terminal.html codex 타이머 미정리, 키보드 follow 재개 누락. 나머지 체크리스트 항목 전수 이상무."}
-{"goal":"G002","status":"complete","evidence":"5건 수정 완료. Release 빌드 오류 0(경고 18개 전부 기존). 앱 재시작 확인. diff 리뷰 통과 — 타 에이전트 분기 무변경(claude/gajae/opencode 경로 동일)."}
