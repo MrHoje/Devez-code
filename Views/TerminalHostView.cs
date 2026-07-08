@@ -52,7 +52,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private bool _pageReady;
     private (double w, double h, string? label)? _pendingLoading; // pageReady 전 SetLoading(true) 보류(기대 크기·문구 포함, 콜드스타트 첫 세션 스피너)
     private string? _pendingShowRoomId;
-    private bool _pendingShowDeferCreate;
     private readonly List<string> _pendingPreload = new(); // pageReady 전에 들어온 백그라운드 로드 요청
     private string? _activeRoomId;
     private double _fontSizePt = -1; // -1 = config에서 아직 읽지 않음
@@ -172,12 +171,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>방의 에이전트 ID(opencode 등) — JS 가 컨테이너 패딩 등 에이전트별 스타일에 사용.</summary>
     private static string AgentFor(string roomId) => DevezCode.Services.SettingsService.LoadAgentForRoom(roomId);
 
-    /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).
-    /// deferCreate: 호출 시점의 컨테이너 크기가 아직 최종이 아님(예: 슬라이드업 드로어가 0에서 자라는 중)을
-    /// 명시 — 새 방이면 그 크기로 즉시 ConPTY 를 만들지 않고 이후 RevealAfterTransition 이 최종 크기에서
-    /// 만들게 미룬다. _fitSuppressed(커버)는 WebView2 초기화 타이밍과 경쟁해 dropped 될 수 있어(웹뷰가
-    /// 아직 없으면 xferCover 메시지 자체가 무시됨) 최초 생성 크기 보호는 이 플래그로 확정해야 한다.</summary>
-    public async void ShowTerminal(string roomId, bool deferCreate = false)
+    /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
+    public async void ShowTerminal(string roomId)
     {
         DevezCode.Services.DiagLog.Write($"ShowTerminal room={roomId} pageReady={_pageReady} readyNotified={_readyNotified.Contains(roomId)}");
         _activeRoomId = roomId;
@@ -186,8 +181,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId), fontSize = RoomFontSizeOverridePx(roomId), deferCreate }); PinBottomIfInline(roomId); }
-        else { _pendingShowRoomId = roomId; _pendingShowDeferCreate = deferCreate; } // pageReady 때 처리
+        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId), fontSize = RoomFontSizeOverridePx(roomId) }); PinBottomIfInline(roomId); }
+        else _pendingShowRoomId = roomId; // pageReady 때 처리
 
         // 이미 안정화까지 끝난 방이면 즉시 준비 완료 통지 → 로딩 스킵
         if (_readyNotified.Contains(roomId))
@@ -609,10 +604,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             enableWebgl = System.Windows.Media.RenderOptions.ProcessRenderMode != System.Windows.Interop.RenderMode.SoftwareOnly,
         });
         var pending = _pendingShowRoomId ?? _activeRoomId;
-        var pendingDeferCreate = _pendingShowDeferCreate;
         _pendingShowRoomId = null;
-        _pendingShowDeferCreate = false;
-        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomFontSizeOverridePx(pending), deferCreate = pendingDeferCreate }); PinBottomIfInline(pending); }
+        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomFontSizeOverridePx(pending) }); PinBottomIfInline(pending); }
 
         // 콜드스타트 동안 보류된 로딩 스피너 적용(기대 크기 포함 — px 앵커로 위치 튐 방지)
         if (_pendingLoading is { } pl)
@@ -713,7 +706,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     PostJson(new { type = "restarted", roomId }); // xterm 클리어 + JS 가 실제 크기로 resize
                     return;
                 }
-                DevezCode.Services.DiagLog.Write($"session exited → 'Enter로 재시작' room={roomId}");
                 PostJson(new { type = "exited", roomId });
                 SessionExited?.Invoke(roomId); // 끊김/죽음 → 회색 점
             });
@@ -1152,10 +1144,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 뒤 커튼을 fade-out 한다. roomId 는 fit 대상(활성 세션). 없으면 그냥 커튼만 걷는다.</summary>
     /// <summary>expectWidth: C# 이 UpdateLayout 으로 확정한 전환 후 최종 폭(px). JS 는 컨테이너 clientWidth 가
     /// 이 목표에 근접할 때까지 기다렸다 fit 한다 — 전체폭→절반 전환의 중간 전체폭 plateau(HWND 지연)를 건너뛰기 위함.</summary>
-    /// <summary>expectHeight: 높이 전환(일반 터미널 드로어 등)용 — 지정 시 clientHeight 도 이 목표에 근접해야
-    /// '최종 크기 도달'로 본다. 폭만 바뀌는 기존 호출은 생략(0)하면 이전과 동일하게 동작.</summary>
-    public void RevealAfterTransition(string? roomId, bool kick = false, double expectWidth = 0, double expectHeight = 0)
-        => PostJson(new { type = "xferReveal", roomId, kick, expectWidth, expectHeight });
+    public void RevealAfterTransition(string? roomId, bool kick = false, double expectWidth = 0)
+        => PostJson(new { type = "xferReveal", roomId, kick, expectWidth });
 
     /// <summary>동시(synced) reveal 준비 — 폭 안정·fit·재동기까지만 하고 커튼은 유지한 채 RevealPrepared 를 낸다.
     /// 셸이 좌우 모두의 준비를 받으면 FadeNow 로 동시에 걷는다(느린 쪽 기준으로 함께 표시).</summary>

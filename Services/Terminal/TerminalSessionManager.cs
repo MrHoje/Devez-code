@@ -10,68 +10,6 @@ public sealed class TerminalSessionManager
 {
     public static TerminalSessionManager Instance { get; } = new();
 
-    /// <summary>프로젝트/에이전트와 무관한 일반 터미널 드로어가 쓰는 예약 방 ID. 이 방은 GetOrCreate 에서
-    /// ccDir·에이전트 분기를 전부 건너뛰고 항상 고정된 기본 디렉토리에서 열린다(활성 프로젝트를 절대 따라가지 않음).</summary>
-    public const string GeneralTerminalRoomId = "__general_terminal__";
-
-    /// <summary>일반 터미널의 셸 커맨드라인을 CreateProcess+ConPTY 에서 확실히 뜨는 형태로 해석한다.
-    /// WT 기본 프로필 셸이 <c>pwsh.exe</c> 로 잡혀도, 그 실체가 <c>%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe</c>
-    /// 같은 **Store 앱 실행 별칭(0바이트 reparse 스텁)** 이면 우리 CreateProcessW+pseudoconsole 조합에서
-    /// attach 가 안 돼 즉시 종료된다(=셸이 뜨자마자 죽어 'Enter로 재시작'). WT 는 별도 실행 경로라 정상.
-    /// → 실제 pwsh(Program Files) 를 찾고, 없으면 항상 존재·동작하는 Windows PowerShell(System32)로 폴백한다.
-    /// (첫 토큰이 exe, 나머지는 인자로 보존. claude 등 다른 방은 cmd.exe /k 라 이 경로를 안 탄다.)</summary>
-    private static string ResolveGeneralShellCommand(string commandLine)
-    {
-        var trimmed = (commandLine ?? "").Trim();
-        if (trimmed.Length == 0) return "powershell.exe";
-
-        // 첫 토큰(실행 파일)과 나머지 인자 분리 — 따옴표로 감싼 경로 지원.
-        string exe, args;
-        if (trimmed[0] == '"')
-        {
-            int end = trimmed.IndexOf('"', 1);
-            if (end < 0) { exe = trimmed.Trim('"'); args = ""; }
-            else { exe = trimmed.Substring(1, end - 1); args = trimmed.Substring(end + 1); }
-        }
-        else
-        {
-            int sp = trimmed.IndexOf(' ');
-            if (sp < 0) { exe = trimmed; args = ""; }
-            else { exe = trimmed.Substring(0, sp); args = trimmed.Substring(sp); }
-        }
-
-        var name = Path.GetFileName(exe).ToLowerInvariant();
-        bool isWindowsAppsAlias = exe.IndexOf("WindowsApps", StringComparison.OrdinalIgnoreCase) >= 0;
-
-        if (name is "pwsh.exe" or "pwsh" || (isWindowsAppsAlias && name.StartsWith("pwsh")))
-        {
-            var realPwsh = FindRealPwsh();
-            if (realPwsh != null) return $"\"{realPwsh}\"{args}";
-            return "powershell.exe" + args; // 실제 pwsh 미설치 → Windows PowerShell 폴백(항상 동작)
-        }
-        // 그 외 셸이 WindowsApps 별칭으로 잡힌 경우도 폴백(별칭은 우리 실행 경로에서 불안정).
-        if (isWindowsAppsAlias) return "powershell.exe" + args;
-        return commandLine!;
-    }
-
-    /// <summary>MSI/winget 로 설치된 실제 pwsh.exe 경로. 못 찾으면 null(폴백 유도). Store 전용 설치는 경로가
-    /// 버전·ACL 종속이라 신뢰 해석이 어려워 시도하지 않는다.</summary>
-    private static string? FindRealPwsh()
-    {
-        foreach (var baseDir in new[]
-        {
-            Environment.GetEnvironmentVariable("ProgramW6432"),
-            Environment.GetEnvironmentVariable("ProgramFiles"),
-            Environment.GetEnvironmentVariable("ProgramFiles(x86)"),
-        })
-        {
-            if (string.IsNullOrEmpty(baseDir)) continue;
-            var p = Path.Combine(baseDir, "PowerShell", "7", "pwsh.exe");
-            if (File.Exists(p)) return p;
-        }
-        return null;
-    }
-
     private readonly Dictionary<string, TerminalSession> _sessions = new();
     private readonly Dictionary<string, string> _opencodeRoomDirs = new();
     private readonly object _lock = new();
@@ -169,24 +107,6 @@ public sealed class TerminalSessionManager
             string commandLine = cfg.CommandLine;
             string? startDir = cfg.StartingDirectory;
             string? inject = null;
-
-            // 일반 터미널 드로어: Windows Terminal 을 그냥 실행한 것과 동일한 고정 기본 디렉토리(%USERPROFILE%
-            // 폴백)에서 연다. cfg.StartingDirectory 가 비어 있으면(inherit) 프로세스의 현재 디렉토리를 그대로
-            // 물려받는데, 폴더 선택 다이얼로그 등이 그 값을 바꿔놓을 수 있어 "마지막으로 연 프로젝트를 따라가는"
-            // 것처럼 보이는 버그가 생긴다 — 그래서 절대 inherit 하지 않고 항상 명시적인 경로로 고정한다.
-            // 아래 ccDir(프로젝트) 기반 분기는 전부 건너뛴다(이 방은 어떤 프로젝트에도 속하지 않음).
-            if (roomId == GeneralTerminalRoomId)
-            {
-                startDir = string.IsNullOrWhiteSpace(cfg.StartingDirectory)
-                    ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-                    : cfg.StartingDirectory;
-                commandLine = ResolveGeneralShellCommand(commandLine);
-                DiagLog.Write($"GeneralTerminal launch: cmd=[{commandLine}] dir=[{startDir}]");
-                var plain = new TerminalSession(commandLine, startDir, cols, rows);
-                _pendingInitial[roomId] = null;
-                _sessions[roomId] = plain;
-                return plain;
-            }
 
             // 방별 에이전트 조회. Claude 만 풀 통합(훅/resume/세션ID 추적), 그 외는 단순 cmd /k <command> 실행.
             var agentId = SettingsService.LoadAgentForRoom(roomId);
@@ -1787,12 +1707,6 @@ public sealed class TerminalSessionManager
     /// claude 방이면 여기서 종료중 플래그도 남긴다(레이스 방지, <see cref="MarkClaudeQuitting"/>).</summary>
     private static (bool sendShellExit, string? quitInput, bool escFirst) GracefulExitPlan(string roomId)
     {
-        // 일반 터미널(플레인 셸)은 에이전트가 없다 — 방 매핑이 없어 LoadAgentForRoom 이 기본값 "claude" 를
-        // 돌려주므로, 특별 처리하지 않으면 아래 claude 분기로 빠져 "/exit\r\n" 이 터미널에 타이핑된다.
-        // transcript 개념이 없으니 아무 입력도 보내지 않고(빈 문자열) 호출부의 하드킬(Dispose)에 맡긴다.
-        if (roomId == GeneralTerminalRoomId)
-            return (false, "", false);
-
         var agent = SettingsService.LoadAgentForRoom(roomId);
         if (agent == "claude")
         {
