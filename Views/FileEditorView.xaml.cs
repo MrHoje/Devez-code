@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using ICSharpCode.AvalonEdit.Highlighting;
 
 namespace DevezCode.Views;
 
@@ -19,6 +20,35 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         // WPF 네이티브 에디터라 클릭이 이미 CenterArea 로 버블링되지만, 인터페이스 일관성 + 명시적 포커스 통지.
         PreviewMouseDown += (_, _) => Interacted?.Invoke(this, EventArgs.Empty);
         Editor.PreviewMouseWheel += Editor_PreviewMouseWheel;
+        // 테마 전환 시 현재 에디터 리렌더. 전역 정의 색은 App.SetTheme 이 먼저 갱신하므로 여기선 재할당만.
+        Loaded += (_, _) => App.ThemeChanged += OnThemeChanged;
+        Unloaded += (_, _) => App.ThemeChanged -= OnThemeChanged;
+    }
+
+    private void OnThemeChanged(string theme)
+    {
+        var def = Editor.SyntaxHighlighting;
+        if (def == null) return;
+        Editor.SyntaxHighlighting = null;
+        Editor.SyntaxHighlighting = def; // 재할당 → 갱신된 색으로 리렌더.
+    }
+
+    /// <summary>확장자 → AvalonEdit 내장 정의. 내장에 없는 XML 계열/별칭은 매핑, 없으면 null(순수 텍스트).</summary>
+    private static IHighlightingDefinition? ResolveDefinition(string path)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        ext = ext switch
+        {
+            ".xaml" or ".csproj" or ".vbproj" or ".fsproj" or ".props" or ".targets"
+                or ".config" or ".resx" or ".nuspec" or ".vue" or ".svelte"
+                or ".razor" or ".cshtml" or ".xhtml" or ".axml" => ".xml",
+            ".jsonc" or ".json5" => ".json",
+            ".htm" => ".html",
+            ".bash" or ".zsh" => ".sh",
+            ".psm1" => ".ps1",
+            _ => ext
+        };
+        return HighlightingManager.Instance.GetDefinitionByExtension(ext);
     }
 
     // Ctrl + 휠: 폰트 크기 확대/축소 (노트패드/코드에디터 관례). [8, 40] 클램프.
@@ -72,6 +102,11 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             _loading = true;
             Editor.Text = File.ReadAllText(path);
             _loading = false;
+
+            // 구문 강조: 정의가 있으면 하이라이팅 + 라인번호(VS 스타일), 없으면 순수 텍스트.
+            var def = ResolveDefinition(path);
+            Editor.SyntaxHighlighting = def;
+            Editor.ShowLineNumbers = def != null;
 
             _path = path;
             SetDirty(false);

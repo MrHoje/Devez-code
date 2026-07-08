@@ -8,16 +8,16 @@
              FontFamily="{StaticResource PretendardFont}">
 
     <UserControl.Resources>
-        <!-- 노트패드 스타일: 라인번호/구문색 없는 순수 텍스트 편집 표면. -->
+        <!-- 구문색이 있으면 라인번호도 켠다(VS 스타일). ShowLineNumbers 는 코드비하인드에서 파일 타입별로 제어. -->
         <Style TargetType="ae:TextEditor">
             <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="LineNumbersForeground" Value="{DynamicResource TextMutedBrush}"/>
             <Setter Property="FontFamily" Value="Consolas, D2Coding, Malgun Gothic"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Padding" Value="24,20"/>
             <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
-            <Setter Property="ShowLineNumbers" Value="False"/>
         </Style>
     </UserControl.Resources>
 

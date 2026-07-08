@@ -476,6 +476,8 @@ public partial class App : Application
         }
 
         CurrentTheme = theme;
+        // AvalonEdit 파일 에디터 구문색 — 정의 싱글턴 색을 현재 테마로 덮어쓴다(ThemeChanged 핸들러보다 먼저).
+        Services.SyntaxThemeService.Apply(theme);
         // 가재코드(gjc) — devez.json 팔레트 덮어쓰기. gjc의 테마는 전역 파일 하나(watch)라 외부 세션도 영향받지만,
         // 이 호출을 빼면 DevezCode 안 세션도 못 따라간다. (Claude/OpenCode는 per-project 설정이라 이런 문제 없음)
         Services.Terminal.GajaeCustomThemes.Apply(theme);
