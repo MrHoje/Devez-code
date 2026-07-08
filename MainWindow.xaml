@@ -732,6 +732,17 @@
                             </Border>
                             <TextBlock x:Name="RlSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            <!-- Fable 주간 전용 한도 — 값 없으면(사용 기간 지남 등) 그룹 자체 숨김 -->
+                            <StackPanel x:Name="RlFableGroup" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
+                                <TextBlock Text="Fable" Margin="14,0,0,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                        Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                    <Border x:Name="RlFableBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                                </Border>
+                                <TextBlock x:Name="RlFablePct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
                         </StackPanel>
                         <!-- Codex (클릭 시 ChatGPT OAuth 로그인) -->
                         <StackPanel x:Name="CodexPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"

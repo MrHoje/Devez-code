@@ -924,6 +924,12 @@ public partial class MainWindow : Window
         SetBar(RlFiveLabel, RlFiveBar, RlFivePct,
                FormatRemainingShort(snap.FiveHourResetsAt) ?? "5h", snap.FiveHourPercent);
         SetBar(RlSevenLabel, RlSevenBar, RlSevenPct, "주간", snap.SevenDayPercent);
+        if (snap.FableWeeklyPercent is double fw)
+        {
+            RlFableGroup.Visibility = Visibility.Visible;
+            SetWindowBar(RlFableBar, RlFablePct, fw);
+        }
+        else RlFableGroup.Visibility = Visibility.Collapsed;
         RateLimitPanel.ToolTip = BuildRlTooltip(snap);
     }
 
@@ -1000,6 +1006,8 @@ public partial class MainWindow : Window
                 if (fmt7d != null) sb.Append($"  ·  예상 소진 {fmt7d}");
             }
        }
+        if (snap.FableWeeklyPercent is double fwt)
+            sb.Append($"\nFable 주간 한도 {fwt:F0}%  ·  초기화 {FormatResetDate(snap.FableWeeklyResetsAt)}");
         return sb.ToString();
        }
 
