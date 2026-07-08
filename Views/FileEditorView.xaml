@@ -21,7 +21,8 @@
         </Style>
     </UserControl.Resources>
 
-    <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
+    <!-- 왼쪽 보더 제거(중앙 구분선과 겹쳐 두 줄로 보임) + 1px 왼쪽으로 확장. -->
+    <Border Margin="-1,0,0,0">
         <ae:TextEditor x:Name="Editor" WordWrap="True"
                        TextChanged="Editor_TextChanged"/>
     </Border>
