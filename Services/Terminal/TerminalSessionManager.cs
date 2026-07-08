@@ -19,6 +19,10 @@ public sealed class TerminalSessionManager
     /// <summary>삭제된 방 ID. 삭제 직후 뒤늦게 도착한 생성 요청으로 claude 가 다시 떠 고아가 되는 것을 막는다.</summary>
     private readonly HashSet<string> _disposedRooms = new();
 
+    /// <summary>앱 종료(graceful shutdown)가 시작됐는가 — 종료 중 세션 Exited 로 앱레벨
+    /// 자동 재진입(codex/opencode)이 오발동하지 않게 TerminalHostView 가 확인한다.</summary>
+    public volatile bool IsShuttingDown;
+
     /// <summary>방이 삭제되었는지(다시 세션을 만들면 안 됨).</summary>
     public bool IsRoomDisposed(string roomId)
     {
@@ -1549,6 +1553,10 @@ public sealed class TerminalSessionManager
     /// 프로세스가 빨리 죽어도 무조건 postFlushMs(기본 3s) 만큼은 기다려 기록을 보존한다.</summary>
     public async Task GracefulShutdownAllAsync(int perGraceMs = 2500, int postFlushMs = 5000)
     {
+        // 앱 종료 시작 표시 — TerminalHostView 의 앱레벨 자동 재진입(codex/opencode)이 종료 중
+        // 세션 Exited 를 "CLI 가 스스로 끝남"으로 오인해 새 ConPTY 로 resume 재기동하는 것을 막는다.
+        // (재기동된 codex 가 곧바로 하드킬되며 세션 추적 ID 를 오염시키는 레이스의 원천 차단.)
+        IsShuttingDown = true;
         List<KeyValuePair<string, TerminalSession>> snapshot;
         lock (_lock) snapshot = _sessions.ToList();
         if (snapshot.Count == 0) return;
@@ -1774,11 +1782,36 @@ public sealed class TerminalSessionManager
             bool escFirst = !IsClaudeWaitingOnUser(roomId) && IsClaudeBusyRunning(roomId);
             return (false, "/exit\r\n", escFirst);
         }
+        if (agent == "codex")
+        {
+            // codex 는 cmd /c 배치(codex → exit)로 실행된다. 기본 경로(Ctrl+C×2)를 쓰면 배치
+            // 인터프리터가 콘솔 브레이크를 "Terminate batch job (Y/N)?" 로 붙잡아 cmd 가 안 닫혀
+            // 매번 perGraceMs 타임아웃 후 하드킬로만 정리됐다. codex TUI 의 슬래시 명령 "/quit" 으로
+            // 곱게 종료시키면 배치가 exit 까지 진행돼 cmd /c 가 스스로 닫힌다(sendShellExit 불필요).
+            // 응답 생성 중(busy)이면 composer 가 입력을 못 받으므로 claude 처럼 Esc 로 턴을 먼저 끊는다.
+            return (false, "/quit\r\n", IsCodexBusyRunning(roomId));
+        }
         return agent switch
         {
             "gajae" => (false, "", false),
             _       => (true, null, false),
         };
+    }
+
+    /// <summary>codex 훅(busy\&lt;room&gt;.txt)이 'running' 인가 — 종료 시 Esc 선행 여부 판단용.
+    /// 파일 없음/판독 실패 = 진행 중 턴 없음으로 간주(Esc 생략).</summary>
+    private static bool IsCodexBusyRunning(string roomId)
+    {
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "codex", "busy", SafeRoomFileName(roomId) + ".txt");
+            if (!File.Exists(path)) return false;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var sr = new StreamReader(fs);
+            return sr.ReadToEnd().Trim() == "running";
+        }
+        catch { return false; }
     }
 
     public void DisposeRoom(string roomId, bool purgeTracking = true)

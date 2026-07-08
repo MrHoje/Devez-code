@@ -5,8 +5,8 @@ using System.Text.Json;
 namespace DevezCode.Services;
 
 /// <summary>세션의 대화 내용을 transcript(.jsonl)에서 읽어 Discord 전송용으로 추출한다.
-/// claude·gajae 는 transcript 경로가 있어 추출 가능하고, 그 외 에이전트(codex/opencode 등)는
-/// 접근 경로가 없어 null/빈 목록을 반환한다(호출부가 폴백 처리).</summary>
+/// claude·gajae 는 transcript 스트리밍 추출까지 지원. codex 는 rollout(.jsonl)에서 마지막 답변만,
+/// opencode 는 플러그인 lastreply 파일에서 마지막 답변만 지원(스트리밍 미지원 — 호출부가 폴백 처리).</summary>
 public static class AgentReplyService
 {
     /// <summary>roomId(=세션 ID)와 에이전트로 마지막 assistant 텍스트 응답을 구한다. 없으면 null.</summary>
@@ -26,6 +26,12 @@ public static class AgentReplyService
             {
                 var ocReply = ReadOpenCodeReply(roomId);
                 if (!string.IsNullOrWhiteSpace(ocReply)) return ocReply;
+            }
+            // codex: rollout transcript(.jsonl)에서 마지막 assistant 답변을 읽는다.
+            if (agentId == "codex")
+            {
+                var cxReply = ReadCodexLastAssistant(roomId);
+                if (!string.IsNullOrWhiteSpace(cxReply)) return cxReply;
             }
             var path = TranscriptPath(roomId, agentId);
             return path == null ? null : LastAssistantTextFromJsonl(path);
@@ -145,6 +151,78 @@ public static class AgentReplyService
             if (!File.Exists(p)) return null;
             var s = File.ReadAllText(p).Trim();
             return Guid.TryParse(s, out _) ? s : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>codex rollout(.jsonl)에서 끝에서부터 첫 assistant 메시지 텍스트.
+    /// 세션 ID 는 훅 추적 파일(최신) → settings 순으로 구한다. 파일은 codex 가 열고 있을 수 있어 공유 읽기.</summary>
+    private static string? ReadCodexLastAssistant(string roomId)
+    {
+        try
+        {
+            var sid = ReadTrackedCodexSession(roomId) ?? SettingsService.LoadCodexRoomSession(roomId);
+            var path = Terminal.TerminalSessionManager.FindCodexTranscriptPath(sid);
+            if (path == null) return null;
+            var lines = ReadLines(path);
+            if (lines == null) return null;
+            for (int i = lines.Length - 1; i >= 0; i--)
+            {
+                var text = TryParseCodexAssistantText(lines[i]);
+                if (!string.IsNullOrWhiteSpace(text)) return text;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>codex 훅이 기록한 방별 세션 ID (%APPDATA%\DevezCode\codex\sessions\&lt;room&gt;.txt).
+    /// settings 동기화 지연을 우회한다(claude 의 ReadTrackedClaudeSession 과 동일 패턴).</summary>
+    private static string? ReadTrackedCodexSession(string roomId)
+    {
+        try
+        {
+            var safe = System.Text.RegularExpressions.Regex.Replace(roomId, @"[^\w\-]", "");
+            var p = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "codex", "sessions", safe + ".txt");
+            if (!File.Exists(p)) return null;
+            var s = File.ReadAllText(p).Trim();
+            return Guid.TryParse(s, out _) ? s : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>rollout 한 줄에서 assistant 메시지의 output_text 파트들을 결합해 반환. 아니면 null.
+    /// (스키마: type=response_item, payload.type=message, payload.role — SessionExporter.FromCodex 와 동일 규칙.)</summary>
+    private static string? TryParseCodexAssistantText(string line)
+    {
+        line = line.Trim();
+        if (line.Length == 0 || line[0] != '{') return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var t) || t.GetString() != "response_item") return null;
+            if (!root.TryGetProperty("payload", out var p)) return null;
+            if (!p.TryGetProperty("type", out var pt) || pt.GetString() != "message") return null;
+            if (!p.TryGetProperty("role", out var r) || r.GetString() != "assistant") return null;
+            if (!p.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) return null;
+            var sb = new StringBuilder();
+            foreach (var part in content.EnumerateArray())
+            {
+                if (part.TryGetProperty("type", out var ct) && ct.GetString() == "output_text"
+                    && part.TryGetProperty("text", out var txt))
+                {
+                    var s = txt.GetString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        if (sb.Length > 0) sb.Append('\n');
+                        sb.Append(s!.Trim());
+                    }
+                }
+            }
+            return sb.Length > 0 ? sb.ToString() : null;
         }
         catch { return null; }
     }

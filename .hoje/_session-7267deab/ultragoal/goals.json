@@ -1,0 +1,8 @@
+{
+  "brief": "codex 세션 고도화 이후 종합 점검 (에이전트추가규칙 기준 격차 + 오동작 검토)",
+  "goals": [
+    { "id": "G001", "title": "codex 격차·오동작 분석", "status": "in_progress", "objective": ".knowledge/에이전트추가규칙.md 기준으로 다른 에이전트에는 있지만 codex에 없는 분기와 최근 codex 고도화로 유입된 오동작 가능성을 코드 레벨 전수 조사, 문제 목록 확정" },
+    { "id": "G002", "title": "발견 문제 수정", "status": "pending", "objective": "확정된 문제를 기존 에이전트 분기 패턴에 맞게 수정, 타 에이전트 회귀 없음" },
+    { "id": "G003", "title": "빌드·커밋·푸시", "status": "pending", "objective": "Release 빌드 성공 확인 후 commit → push" }
+  ]
+}

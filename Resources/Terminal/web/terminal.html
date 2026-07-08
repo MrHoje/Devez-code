@@ -572,10 +572,16 @@
     // ── 스크롤 ──
     // codex: 키보드 스크롤도 follow(추종 의도)를 갱신 — 위로/맨위=중단, 아래/맨아래=재개.
     const cdx = (entry && entry.agent === 'codex');
+    // 아래 방향 스크롤로 바닥에 닿으면 추종 재개(휠 핸들러와 동일 판정 — scrollLines/Pages 는 동기 반영).
+    const cdxResumeIfBottom = function () {
+      if (!cdx) return;
+      const b = term.buffer.active;
+      if (b.viewportY >= b.baseY) entry.follow = true;
+    };
     if (ctrl && shift && !alt && key === 'ArrowUp')   { e.preventDefault(); if (cdx) entry.follow = false; term.scrollLines(-1); return false; }
-    if (ctrl && shift && !alt && key === 'ArrowDown') { e.preventDefault(); term.scrollLines(1);  return false; }
+    if (ctrl && shift && !alt && key === 'ArrowDown') { e.preventDefault(); term.scrollLines(1); cdxResumeIfBottom(); return false; }
     if (shift && !alt && key === 'PageUp')   { e.preventDefault(); if (cdx) entry.follow = false; term.scrollPages(-1); return false; }
-    if (shift && !alt && key === 'PageDown') { e.preventDefault(); term.scrollPages(1);  return false; }
+    if (shift && !alt && key === 'PageDown') { e.preventDefault(); term.scrollPages(1); cdxResumeIfBottom(); return false; }
     if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); if (cdx) entry.follow = false; term.scrollToTop();    return false; }
     if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); if (cdx) entry.follow = true;  term.scrollToBottom(); return false; }
 
@@ -1367,6 +1373,12 @@
         if (t) {
           t.dead = false;
           t.inSync = false; t.syncChunks = []; t.syncCarry = null; // 잔여 sync 버퍼 폐기
+          // codex 12ms 코얼레싱 버퍼/커서 표시 타이머도 폐기 — 남겨두면 이전 세션의 stale 바이트가
+          // reset 직후의 새 터미널에 write 되어 재시작 첫 화면이 깨진다.
+          if (t._coTimer) { clearTimeout(t._coTimer); t._coTimer = 0; }
+          t._coChunks = [];
+          if (t._curShowTimer) { clearTimeout(t._curShowTimer); t._curShowTimer = 0; }
+          t.follow = true; // 재시작 = 새 화면 — 추종 상태로 초기화
           t.term.reset();
           t.fit.fit();
           post({ type: 'resize', roomId: msg.roomId, cols: t.term.cols, rows: t.term.rows });
@@ -1458,6 +1470,11 @@
         // 방 삭제 시 — xterm 인스턴스·DOM·버퍼 해제 (메모리 회수)
         const t = terms[msg.roomId];
         if (t) {
+          // codex 지연 타이머 해제 — dispose 된 term 에 늦은 write/커서 표시가 가지 않게.
+          if (t._coTimer) { clearTimeout(t._coTimer); t._coTimer = 0; }
+          t._coChunks = [];
+          if (t._curShowTimer) { clearTimeout(t._curShowTimer); t._curShowTimer = 0; }
+          t.dead = true; // 닫힌 콜백 참조가 남아도 write 경로가 스스로 무시하게
           try { t.ro && t.ro.disconnect(); } catch (e) {}
           try { t.webgl && t.webgl.dispose(); } catch (e) {} // GPU 컨텍스트 즉시 반납
           try { t.term.dispose(); } catch (e) {}

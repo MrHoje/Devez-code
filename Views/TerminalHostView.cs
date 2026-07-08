@@ -702,7 +702,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 // 배치 루프를 못 쓴다(claude/gjc 는 .exe 라 배치 루프로 자체 재진입). 대신 세션이 끝나면
                 // 여기서 "새 ConPTY 세션"으로 같은 세션을 resume 해 자동 재시작한다. 진짜 종료는 방 닫기.
                 // 폭주 방지: 짧은 시간 내 반복 실패면 멈추고 종료 프롬프트를 띄운다(AllowAutoRestart).
-                if (IsAutoReenterRoom(roomId) && AllowAutoRestart(roomId))
+                // 앱 종료(graceful shutdown) 중의 Exited 는 우리가 죽인 것 — 재진입하면 종료 중에
+                // 새 codex/opencode 가 떠 하드킬·세션ID 오염 레이스가 된다. IsShuttingDown 이면 스킵.
+                if (IsAutoReenterRoom(roomId) && !TerminalSessionManager.Instance.IsShuttingDown && AllowAutoRestart(roomId))
                 {
                     DevezCode.Services.DiagLog.Write($"opencode 세션 종료 → 앱 자동 재시작(새 세션 resume) room={roomId}");
                     // 준비 상태 재무장 + 로딩 커버 — 안 하면 stale ready 로 커버가 즉시 걷혀 부팅 출력이 보인다.
