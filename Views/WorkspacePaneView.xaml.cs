@@ -125,6 +125,10 @@ public partial class WorkspacePaneView : UserControl
         ApplyTerminalBgToCovers();
         App.ThemeChanged += _ => ApplyTerminalBgToCovers();
         Loaded += (_, _) => ApplyHeaderFontSize(_terminal.EffectiveFontSizePx);
+        // 터미널 폰트 크기 dock: 항상 노출(모델과 무관), Ctrl+휠/Ctrl+0 로 바뀌어도 콤보 선택값 동기화.
+        FontSizeCombo.ItemsSource = FontSizeOptions;
+        _terminal.FontSizePxChanged += SyncFontSizeCombo;
+        Loaded += (_, _) => SyncFontSizeCombo(_terminal.EffectiveFontSizePx);
         // 로딩 중 레이아웃이 바뀌면(예: 시작 시 전체폭으로 세션 복원 → 곧바로 분할 적용) 웹 스피너의
         // px 앵커 좌표를 재전송해 카드가 항상 최종 중앙에 있게 한다.
         TerminalLoadingOverlay.SizeChanged += (_, e) =>
@@ -200,9 +204,11 @@ public partial class WorkspacePaneView : UserControl
         bool changed = _isolatedTabs != null ? _isolatedTabs.Remove(tab) : _hiddenFromThisPane.Add(tab);
         if (!changed) return;
         _tabsView?.Refresh();
+        RefreshHeaderSessionGate();
 
         if (!ReferenceEquals(_activeTab, tab)) return;
-        var next = _activeProject?.Tabs.FirstOrDefault(t => !ReferenceEquals(t, tab) && FilterTab(t));
+        int idx = _activeProject?.Tabs.IndexOf(tab) ?? -1;
+        var next = PickNeighborTab(_activeProject, idx); // 왼쪽 우선 이웃 + Hidden 세션 제외(PickNeighborTab 과 동일 규칙)
         if (next is SessionItem ns) ActivateSession(ns);
         else if (next is FileTabItem nf) ActivateFileTab(nf);
         else ClearActiveSession();
@@ -323,7 +329,9 @@ public partial class WorkspacePaneView : UserControl
     public void UnhideTabInPane(TabItemBase tab)
     {
         bool changed = _isolatedTabs != null ? _isolatedTabs.Add(tab) : _hiddenFromThisPane.Remove(tab);
-        if (changed) _tabsView?.Refresh();
+        if (!changed) return;
+        _tabsView?.Refresh();
+        RefreshHeaderSessionGate();
     }
 
     /// <summary>이 패널이 현재 실제로 표시하는 탭들(FilterTab 통과), 탭 순서대로. 사이드바 카드 라이브 그룹용.</summary>
@@ -574,7 +582,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void UpdateProjectBranchBubble(ProjectItem? proj)
     {
-        if (proj == null || string.IsNullOrEmpty(proj.Path) || BranchGroup == null)
+        if (proj == null || string.IsNullOrEmpty(proj.Path) || BranchGroup == null || !PaneHasAnySessionTab())
         {
             if (BranchGroup != null) BranchGroup.Visibility = Visibility.Collapsed;
             return;
@@ -582,6 +590,20 @@ public partial class WorkspacePaneView : UserControl
         _projectCts?.Cancel();
         _projectCts = new System.Threading.CancellationTokenSource();
         _ = LoadBranchAsync(proj.Path, _projectCts.Token);
+    }
+
+    /// <summary>이 패널에 보이는(FilterTab 통과 + Hidden 아님) 세션 탭이 하나라도 있는지.
+    /// 없으면(전부 다른 패널로 이동/닫힘, 파일 탭만 있음, 빈 패널 등) 브랜치·터미널 폰트 정보를 숨긴다.</summary>
+    private bool PaneHasAnySessionTab()
+        => _activeProject != null && _activeProject.Tabs.Any(t => t is SessionItem s && !s.Hidden && FilterTab(t));
+
+    /// <summary>탭 이동/숨김/복원 등 "이 패널에 보이는 탭 집합"이 바뀌는 지점에서 호출 —
+    /// 세션 탭이 하나도 없어지면 브랜치·터미널 폰트 정보를 같이 숨긴다.</summary>
+    private void RefreshHeaderSessionGate()
+    {
+        if (FontSizeCombo != null)
+            FontSizeCombo.Visibility = PaneHasAnySessionTab() ? Visibility.Visible : Visibility.Collapsed;
+        UpdateProjectBranchBubble(_activeProject);
     }
 
     private async Task LoadBranchAsync(string repoDir, System.Threading.CancellationToken ct)
@@ -1137,10 +1159,41 @@ public partial class WorkspacePaneView : UserControl
     private readonly Dictionary<string, string> _pendingModel = new();
     private readonly Dictionary<string, string> _pendingEffort = new();
 
+    // ── 메타바 터미널 폰트 크기 dock(claude 여부와 무관, 항상 노출) ─────────
+    private static readonly ModelEffortOption[] FontSizeOptions =
+    {
+        new("10pt", "10"), new("11pt", "11"), new("12pt", "12"), new("13pt", "13"),
+        new("14pt", "14"), new("16pt", "16"), new("18pt", "18"), new("20pt", "20"),
+        new("24pt", "24"), new("28pt", "28"),
+    };
+    private const double PtToPxRatio = 96.0 / 72.0;
+    private bool _suppressFontSize;
+
+    private void SyncFontSizeCombo(double px)
+    {
+        int pt = (int)Math.Round(px / PtToPxRatio);
+        _suppressFontSize = true;
+        try { FontSizeCombo.SelectedValue = pt.ToString(); }
+        finally { _suppressFontSize = false; }
+    }
+
+    private void FontSizeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressFontSize) return;
+        if (_activeSession == null) return;
+        if (FontSizeCombo.SelectedValue is not string val || !int.TryParse(val, out var pt)) return;
+        _terminal.SetRoomFontSizePt(_activeSession.Id, pt); // 지금 보고 있는 방에만 적용, 다른 방/새 방엔 영향 없음
+    }
+
     private void RefreshModelEffortDock()
     {
+        RefreshHeaderSessionGate(); // 세션 탭이 하나도 없으면 브랜치·터미널 폰트 정보도 같이 숨김
         if (ModelEffortDock == null) return;
         var s = _activeSession;
+
+        // 폰트 크기는 에이전트 종류와 무관하게 항상 동기화(방별 값, 없으면 전역 기본값).
+        if (s != null) SyncFontSizeCombo(_terminal.RoomEffectiveFontSizePx(s.Id));
+
         var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
         bool isClaude = s != null && agentId == "claude";
         ModelEffortDock.Visibility = isClaude ? Visibility.Visible : Visibility.Collapsed;
@@ -1271,6 +1324,7 @@ public partial class WorkspacePaneView : UserControl
         HideSessionLoading();
         UpdateEmptyState();
         UpdateSelectedTabSeam();
+        RefreshHeaderSessionGate();
         ActiveChanged?.Invoke(this);
     }
 
@@ -1776,7 +1830,7 @@ public partial class WorkspacePaneView : UserControl
                 if (ReferenceEquals(t, _activeTab)) selectedRoot = root;
             }
         }
-        if (sourceBorder == null || rows.Count < 2) return;
+        if (sourceBorder == null) return; // 탭 1개(패널 마지막 탭)여도 크로스 패널 이동 위해 드래그 시작 허용.
         _dragGhostWidth = sourceBorder.ActualWidth;
 
         _tabDrag = ReorderDrag<TabItemBase>.TryStart(TabsHost, rows, s, sourceBorder,

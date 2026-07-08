@@ -83,17 +83,24 @@
                 </StackPanel>
               </StackPanel>
 
-              <!-- 우측 dock: 이 세션의 model/effort 선택 (claude 세션일 때만 노출) -->
-              <StackPanel x:Name="ModelEffortDock" Grid.Column="1" Orientation="Horizontal"
-                          VerticalAlignment="Center" HorizontalAlignment="Right" Visibility="Collapsed">
-                  <ComboBox x:Name="ModelCombo" Style="{StaticResource DockComboBox}" MinWidth="104" Margin="0,4,0,4"
+              <!-- 우측 dock: model/effort(claude 세션 전용) + 터미널 폰트 크기(항상 노출) -->
+              <StackPanel Grid.Column="1" Orientation="Horizontal"
+                          VerticalAlignment="Center" HorizontalAlignment="Right">
+                  <StackPanel x:Name="ModelEffortDock" Orientation="Horizontal"
+                              VerticalAlignment="Center" Visibility="Collapsed">
+                      <ComboBox x:Name="ModelCombo" Style="{StaticResource DockComboBox}" MinWidth="104" Margin="0,4,0,4"
+                                SelectedValuePath="Value"
+                                SelectionChanged="ModelCombo_SelectionChanged"
+                                ToolTip="이 세션의 모델"/>
+                      <ComboBox x:Name="EffortCombo" Style="{StaticResource DockComboBox}" MinWidth="92" Margin="8,4,0,4"
+                                SelectedValuePath="Value"
+                                SelectionChanged="EffortCombo_SelectionChanged"
+                                ToolTip="이 세션의 추론 강도(effort)"/>
+                  </StackPanel>
+                  <ComboBox x:Name="FontSizeCombo" Style="{StaticResource DockComboBox}" MinWidth="72" Margin="8,4,0,4"
                             SelectedValuePath="Value"
-                            SelectionChanged="ModelCombo_SelectionChanged"
-                            ToolTip="이 세션의 모델"/>
-                  <ComboBox x:Name="EffortCombo" Style="{StaticResource DockComboBox}" MinWidth="92" Margin="8,4,0,4"
-                            SelectedValuePath="Value"
-                            SelectionChanged="EffortCombo_SelectionChanged"
-                            ToolTip="이 세션의 추론 강도(effort)"/>
+                            SelectionChanged="FontSizeCombo_SelectionChanged"
+                            ToolTip="터미널 폰트 크기"/>
               </StackPanel>
             </Grid>
         </Border>

@@ -91,7 +91,7 @@ internal sealed class ReorderDrag<T> where T : class
             captured.Sort((a, b) => (horizontal ? a.Left : a.Top).CompareTo(horizontal ? b.Left : b.Top));
 
         var srcIdx = captured.FindIndex(s => ReferenceEquals(s.Item, source));
-        if (srcIdx < 0 || captured.Count < 2) return null;
+        if (srcIdx < 0) return null; // 1개(패널 마지막 탭)여도 시작은 허용 — 로컬 재정렬은 무동작, 크로스 패널 이동은 별도 경로.
 
         // ghostSource: ghost 이미지로 캡처할 visual (null이면 sourceElement 사용).
         // 슬롯에는 받침(Path) 자식이 포함되어 sourceElement(row) 자체로는 bitmap에 받침까지

@@ -613,7 +613,7 @@
   }, { capture: true });
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
-  function createTerm(roomId, agent) {
+  function createTerm(roomId, agent, fontSizeOverride) {
     const el = document.createElement('div');
     el.className = 'term-container' + (agent ? ' agent-' + agent : '');
     document.body.appendChild(el);
@@ -622,7 +622,7 @@
       theme: themeFor(agent),
       // 한글 폴백: 기본 모노스페이스 폰트에는 한글 글리프가 없어 IME 조합 표시가 깨진다
       fontFamily: cfg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",
-      fontSize: cfg.fontSize,
+      fontSize: fontSizeOverride || cfg.fontSize,
       cursorBlink: true,
       allowProposedApi: true,
       scrollback: 5000,
@@ -802,10 +802,10 @@
     return entry;
   }
 
-  function show(roomId, agent) {
+  function show(roomId, agent, fontSizeOverride) {
     let entry = terms[roomId];
     const isNew = !entry;
-    if (isNew) entry = createTerm(roomId, agent);
+    if (isNew) entry = createTerm(roomId, agent, fontSizeOverride);
 
     if (searchBar.classList.contains('open')) closeSearch(); // 방 전환 시 검색바 닫기
     for (const id in terms) terms[id].el.classList.toggle('active', id === roomId);
@@ -864,9 +864,9 @@
   // 화면에 표시하지 않고 xterm 인스턴스+ConPTY 세션만 미리 생성(백그라운드 로드).
   // 컨테이너는 display:none(.active 없음) 상태라 xterm 기본 크기(80x24)로 만들고,
   // 실제 크기 보정(fit→resize)은 나중에 show 될 때 일어난다.
-  function preload(roomId, agent) {
+  function preload(roomId, agent, fontSizeOverride) {
     if (terms[roomId]) return; // 이미 생성됨
-    const entry = createTerm(roomId, agent);
+    const entry = createTerm(roomId, agent, fontSizeOverride);
     post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
   }
 
@@ -1138,10 +1138,10 @@
         break;
       }
       case 'show':
-        show(msg.roomId, msg.agent);
+        show(msg.roomId, msg.agent, msg.fontSize);
         break;
       case 'preload':
-        preload(msg.roomId, msg.agent);
+        preload(msg.roomId, msg.agent, msg.fontSize);
         break;
       case 'output': {
         const t = terms[msg.roomId];
@@ -1240,6 +1240,15 @@
         if (active) {
           active.term.options.fontSize = msg.size;
           active.fit.fit();
+        }
+        break;
+      }
+      case 'setRoomFontSize': {
+        // 전역 cfg.fontSize 는 건드리지 않음 — 이 방(roomId)에만 적용, 다른 방/새 방엔 영향 없음.
+        const t = terms[msg.roomId];
+        if (t) {
+          t.term.options.fontSize = msg.size;
+          t.fit.fit();
         }
         break;
       }

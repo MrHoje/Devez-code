@@ -38,6 +38,8 @@ public static class SettingsService
         // 방별 model/effort 선택 (claude --model / --effort 런치 플래그). 빈 값/미존재 = 미적용(claude 기본). 로컬 전용.
         public Dictionary<string, string> ClaudeCodeRoomModel { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomEffort { get; set; } = new();
+        // 방별 터미널 폰트 크기(pt) — 지정 없으면 전역 TerminalFontSizePt 사용. 에이전트 종류 무관.
+        public Dictionary<string, string> TerminalRoomFontSizePt { get; set; } = new();
         // 범용 — "roomId|agentId" 키로 첫 실행 여부 추적. 비-Claude 에이전트도 같은 메커니즘으로
         // 첫 실행=plain, 이후=ResumeFlag(--last / -c) 분기. (Claude 는 별도 IsClaudeCodeRoomLaunched 그대로 사용)
         public List<string> AgentRoomsLaunched { get; set; } = new();
@@ -396,6 +398,7 @@ public static class SettingsService
         changed |= Current.RoomAgents.Remove(roomId);
         changed |= Current.ClaudeCodeRoomModel.Remove(roomId);
         changed |= Current.ClaudeCodeRoomEffort.Remove(roomId);
+        changed |= Current.TerminalRoomFontSizePt.Remove(roomId);
         changed |= Current.CodexRoomSessions.Remove(roomId);
         changed |= Current.OpenCodeRoomSessions.Remove(roomId);
         changed |= Current.GajaeRoomSessions.Remove(roomId);
@@ -481,6 +484,11 @@ public static class SettingsService
         => Current.ClaudeCodeRoomEffort.TryGetValue(roomId, out var v) && !string.IsNullOrEmpty(v) ? v : null;
     public static void SaveClaudeCodeRoomEffort(string roomId, string? value)
     { SetOrRemove(Current.ClaudeCodeRoomEffort, roomId, value); Save(); }
+
+    public static int? LoadTerminalRoomFontSizePt(string roomId)
+        => Current.TerminalRoomFontSizePt.TryGetValue(roomId, out var v) && int.TryParse(v, out var pt) ? pt : null;
+    public static void SaveTerminalRoomFontSizePt(string roomId, int? pt)
+    { SetOrRemove(Current.TerminalRoomFontSizePt, roomId, pt?.ToString()); Save(); }
 
     /// <summary>값이 비면 키 제거, 아니면 설정. (저장은 호출부에서)</summary>
     private static void SetOrRemove(Dictionary<string, string> map, string key, string? value)

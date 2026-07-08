@@ -177,7 +177,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId) }); PinBottomIfInline(roomId); }
+        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId), fontSize = RoomFontSizeOverridePx(roomId) }); PinBottomIfInline(roomId); }
         else _pendingShowRoomId = roomId; // pageReady 때 처리
 
         // 이미 안정화까지 끝난 방이면 즉시 준비 완료 통지 → 로딩 스킵
@@ -194,7 +194,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) PostJson(new { type = "preload", roomId, agent = AgentFor(roomId) });
+        if (_pageReady) PostJson(new { type = "preload", roomId, agent = AgentFor(roomId), fontSize = RoomFontSizeOverridePx(roomId) });
         else if (!_pendingPreload.Contains(roomId)) _pendingPreload.Add(roomId);
     }
 
@@ -573,7 +573,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         });
         var pending = _pendingShowRoomId ?? _activeRoomId;
         _pendingShowRoomId = null;
-        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending) }); PinBottomIfInline(pending); }
+        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomFontSizeOverridePx(pending) }); PinBottomIfInline(pending); }
 
         // 콜드스타트 동안 보류된 로딩 스피너 적용(기대 크기 포함 — px 앵커로 위치 튐 방지)
         if (_pendingLoading is { } pl)
@@ -584,7 +584,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
         // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
         foreach (var r in _pendingPreload)
-            if (r != pending) PostJson(new { type = "preload", roomId = r, agent = AgentFor(r) });
+            if (r != pending) PostJson(new { type = "preload", roomId = r, agent = AgentFor(r), fontSize = RoomFontSizeOverridePx(r) });
         _pendingPreload.Clear();
 
         // 보류된 포커스 적용 — 그 사이 다른 방(채팅 등)으로 전환했으면 훔치지 않음
@@ -798,6 +798,31 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         PostJson(new { type = "adjustFontSize", size = px });
         DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
         FontSizePxChanged?.Invoke(px);
+    }
+
+    /// <summary>지정한 방(roomId)의 폰트 크기만 pt 단위로 절대 지정(콤보박스 선택 등).
+    /// 전역 기본값(Ctrl+휠/Ctrl+0)과 무관하게 그 방에만 적용, 방별로 영구 저장.</summary>
+    public void SetRoomFontSizePt(string roomId, int pt)
+    {
+        pt = Math.Max(6, Math.Min(72, pt));
+        double px = Math.Round(pt * PtToPx, 1);
+        PostJson(new { type = "setRoomFontSize", roomId, size = px });
+        DevezCode.Services.SettingsService.SaveTerminalRoomFontSizePt(roomId, pt);
+        if (roomId == _activeRoomId) FontSizePxChanged?.Invoke(px);
+    }
+
+    /// <summary>해당 방의 유효 폰트 크기(px). 방별 지정이 없으면 전역 기본값.</summary>
+    public double RoomEffectiveFontSizePx(string roomId)
+    {
+        var saved = DevezCode.Services.SettingsService.LoadTerminalRoomFontSizePt(roomId);
+        return saved.HasValue ? Math.Round(saved.Value * PtToPx, 1) : EffectiveFontSizePx;
+    }
+
+    /// <summary>show/preload 시 xterm 생성에 넘길 방별 폰트 override(px). 지정 없으면 null → JS 가 전역 cfg.fontSize 사용.</summary>
+    private static double? RoomFontSizeOverridePx(string roomId)
+    {
+        var saved = DevezCode.Services.SettingsService.LoadTerminalRoomFontSizePt(roomId);
+        return saved.HasValue ? Math.Round(saved.Value * PtToPx, 1) : null;
     }
 
     /// <summary>폰트 크기를 WT 설정 기본값으로 초기화 (Ctrl+0). 영구 저장.</summary>
