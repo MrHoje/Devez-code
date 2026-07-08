@@ -25,7 +25,7 @@ public sealed class TerminalSession : IDisposable
     public int Cols { get; private set; }
     public int Rows { get; private set; }
 
-    // 최근 출력(원본 ANSI 포함) 롤링 버퍼 — Discord 가 입력 대기 시 화면(선택지 메뉴 등)을 읽는 데 사용.
+    // 최근 출력(원본 ANSI 포함) 롤링 버퍼 — 재배선 시 HasPriorOutput 으로 준비 상태 복원 판단에 사용.
     private readonly object _recentLock = new();
     private readonly StringBuilder _recent = new();
     private const int RecentCap = 16384;
@@ -33,14 +33,6 @@ public sealed class TerminalSession : IDisposable
     /// <summary>이 세션이 이미 출력을 내보낸 적 있는지 — 배선 전에 출력이 흘렀다면(재배선)
     /// 시작 신호(alt-screen 등)를 다시 감지할 수 없으므로 호출부가 준비 상태를 직접 복원해야 한다.</summary>
     public bool HasPriorOutput { get { lock (_recentLock) return _recent.Length > 0; } }
-
-    /// <summary>최근 터미널 출력 텍스트(ANSI 이스케이프 제거). 화면에 보이는 마지막 내용 일부.</summary>
-    public string GetRecentText()
-    {
-        string raw;
-        lock (_recentLock) raw = _recent.ToString();
-        return StripAnsi(raw);
-    }
 
     private void AppendRecent(string text)
     {
@@ -50,13 +42,6 @@ public sealed class TerminalSession : IDisposable
             if (_recent.Length > RecentCap) _recent.Remove(0, _recent.Length - RecentCap);
         }
     }
-
-    private static readonly System.Text.RegularExpressions.Regex AnsiRegex =
-        new(@"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|[\x00-\x08\x0b\x0c\x0e-\x1f]",
-            System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    /// <summary>ANSI 이스케이프·제어문자를 제거해 사람이 읽을 수 있는 텍스트만 남긴다.</summary>
-    private static string StripAnsi(string s) => AnsiRegex.Replace(s, "");
 
     /// <summary>셸(직속) 프로세스 ID — graceful 종료 대기에 사용.</summary>
     public int ProcessId { get; private set; }

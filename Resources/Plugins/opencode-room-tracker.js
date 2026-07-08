@@ -96,7 +96,7 @@ export const DevezCodeRoomTracker = async () => {
     } catch (e) { debug(`writeLastmsg failed: ${e.message}`); }
   };
 
-  // lastreply\<room>.txt = 마지막 assistant 답변 텍스트. Discord 완료 알림에 본문으로 보낸다
+  // lastreply\<room>.txt = 마지막 assistant 답변 텍스트
   // (claude 의 lastreply hook 과 동일 패턴). 한 assistant 메시지의 text part 들을 합쳐 기록.
   const writeLastreply = (text) => {
     try {

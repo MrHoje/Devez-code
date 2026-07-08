@@ -74,7 +74,6 @@ public partial class MainWindow : Window
     private readonly OpenCodeBusyService _opencodeBusy = new();
     // gjc(가재코드) — 훅 미지원. 방별 세션 .jsonl 을 폴링해 마지막 user 메시지를 헤더에 반영.
     private readonly GajaeLastMessageService _gajaeLastMsg = new();
-    private readonly DiscordBotService _discordBot = DiscordBotService.Instance;
 
     static MainWindow()
     {
@@ -127,28 +126,6 @@ public partial class MainWindow : Window
                     .OfType<SessionItem>()
                     .Select(s => s.Id));
         }
-        _discordBot.SetProjects(_projects);
-        // Discord 스레드에 메시지가 왔는데 세션이 꺼져 있으면 UI 스레드에서 해당 세션을 자동으로 연다.
-        _discordBot.SetOpenSessionRequest(sessionId => Dispatcher.BeginInvoke(() =>
-        {
-            var s = FindSession(sessionId);
-            if (s != null) { try { Activate(); } catch { } OpenSession(s); }
-        }));
-        // Discord 에서 스레드를 삭제하면 UI 스레드에서 해당 세션을 제거한다(확인창 없이 즉시).
-        _discordBot.SetRemoveSessionRequest(sessionId => Dispatcher.BeginInvoke(() =>
-        {
-            var s = FindSession(sessionId);
-            if (s != null) RemoveSessionSilent(s);
-        }));
-        // Discord 에서 스레드 이름을 바꾸면 세션 이름을 동기화한다(양방향 이름 동기화).
-        _discordBot.SetRenameSessionRequest((sessionId, name) => Dispatcher.BeginInvoke(() =>
-        {
-            var s = FindSession(sessionId);
-            if (s != null) RenameSessionSilent(s, name);
-        }));
-        // Discord 에서 새 포스트를 만들면 제목으로 claude 세션을 만들고 본문을 첫 메시지로 보낸다.
-        _discordBot.SetCreateSessionRequest((projectPath, name, threadId, content) => Dispatcher.BeginInvoke(() =>
-            CreateSessionFromDiscord(projectPath, name, threadId, content)));
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
@@ -392,7 +369,6 @@ public partial class MainWindow : Window
                 await System.Threading.Tasks.Task.Delay(4000);
                 await Services.ClaudePluginService.EnsureDevezMarketplaceAsync();
             });
-            _discordBot.Start();
             RestoreOpenFiles();  // 직전에 열려 있던 파일 편집기 탭 복원(세션 활성화보다 먼저 → 활성 탭은 세션 유지)
             RestoreLastSession();
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
@@ -461,7 +437,6 @@ public partial class MainWindow : Window
             _opencodeBusy.Dispose();
             _gajaeLastMsg.Dispose();
             _agentLastMsg.Dispose();
-            _discordBot.Dispose();
             FileExplorer.DisposeBrowser();
         };
     }
@@ -1997,7 +1972,7 @@ public partial class MainWindow : Window
         var picker = new Microsoft.Win32.OpenFolderDialog { Title = "프로젝트 디렉터리 선택" };
         if (picker.ShowDialog(this) != true) return;
         var path = picker.FolderName;
-        // 같은 경로 중복 등록 허용 — 경로키 설정(작업큐/브라우저URL/Discord)은 중복끼리 공유.
+        // 같은 경로 중복 등록 허용 — 경로키 설정(작업큐/브라우저URL)은 중복끼리 공유.
         // 복원/조회는 전역 유일한 세션ID 기준이라 충돌 없음.
         var proj = ProjectItem.FromPath(path);
         // 프로젝트 연결 시 기본 세션 1개 자동 생성. 사용 가능한 에이전트가 1개면 그걸로, 아니면(2개+) 피커 표시.
@@ -3204,7 +3179,6 @@ public partial class MainWindow : Window
     {
         AddSessionCompletionRecord(s);
         var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
-        _ = _discordBot.NotifySessionDoneAsync(proj, s);
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
@@ -3541,8 +3515,6 @@ public partial class MainWindow : Window
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
     private void RenameSession(SessionItem session) { PaneFor(session).RenameSession(session); SyncRecordsForSessionRename(session); }
     private void DeleteSession(SessionItem session) => PaneFor(session).DeleteSession(session);
-    public void RemoveSessionSilent(SessionItem session) => PaneFor(session).RemoveSessionSilent(session);
-    public void RenameSessionSilent(SessionItem session, string newName) { PaneFor(session).RenameSessionSilent(session, newName); SyncRecordsForSessionRename(session); }
 
     /// <summary>세션 이름 변경 → 동일 SessionId 의 완료 기록 카드 이름도 동기화하고 저장.</summary>
     private void SyncRecordsForSessionRename(SessionItem session)
@@ -3555,30 +3527,6 @@ public partial class MainWindow : Window
                 new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
     }
 
-    /// <summary>Discord 새 포스트 → claude 세션 생성 + 본문을 첫 메시지로 전송. 매핑을 먼저 저장해
-    /// 세션 추가(OnSessionsChanged)가 새 스레드를 또 만들지 않게 한다.</summary>
-    public void CreateSessionFromDiscord(string projectPath, string name, ulong threadId, string content)
-    {
-        var norm = System.IO.Path.GetFullPath(projectPath).TrimEnd('\\', '/');
-        var proj = _projects.FirstOrDefault(p =>
-            string.Equals(System.IO.Path.GetFullPath(p.Path).TrimEnd('\\', '/'), norm, StringComparison.OrdinalIgnoreCase));
-        if (proj == null) return;
-
-        var sessionName = string.IsNullOrWhiteSpace(name) ? "세션" : name.Trim();
-        if (sessionName.Length > 60) sessionName = sessionName[..60];
-
-        var session = new SessionItem { Name = sessionName, AgentId = "claude" };
-        // 매핑·설정을 Tabs 추가보다 먼저 저장 → CollectionChanged 핸들러가 기존 스레드를 인식.
-        SettingsService.SaveDiscordSessionThread(session.Id, threadId);
-        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
-        SettingsService.SaveAgentForRoom(session.Id, "claude");
-        proj.Tabs.Add(session);
-        proj.IsExpanded = true;
-        WorkspaceStore.Save(_projects);
-
-        if (!string.IsNullOrWhiteSpace(content))
-            _ = _discordBot.InjectFirstMessageAsync(session.Id, threadId, content);
-    }
     private void StopTrackingSession(SessionItem session) => PaneFor(session).StopTrackingSession(session);
 
     private void HideSessionFromSidebar(SessionItem session) => PaneFor(session).HideSession(session);

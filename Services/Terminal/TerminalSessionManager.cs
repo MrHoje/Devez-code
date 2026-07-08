@@ -1166,7 +1166,7 @@ public sealed class TerminalSessionManager
                   } catch (e) {}
                   // 3) 사용자 statusline.js 로 렌더 위임(사용자 커스터마이즈 보존). 같은 node 재사용.
                   //    렌더 결과를 방별 캐시(statusline-cache-<room>-<sig>.txt)에도 떨군다 —
-                  //    앱 사이드바 푸터 + Discord 완료 푸터가 이 파일을 읽는다(sig=model-effort 라 모델/강도 변경 즉시 반영).
+                  //    앱 사이드바 푸터가 이 파일을 읽는다(sig=model-effort 라 모델/강도 변경 즉시 반영).
                   try {
                     const js = path.join(os.homedir(), ".claude", "statusline.js");
                     if (fs.existsSync(js)) {
@@ -1362,7 +1362,7 @@ public sealed class TerminalSessionManager
                     Write-State $busyFile 'running'
                   } else {
                     Write-State $busyFile 'idle'
-                    # 진짜 응답 완료 → claude 가 stdin 으로 준 마지막 답변을 방별로 기록(Discord reply 가 읽음).
+                    # 진짜 응답 완료 → claude 가 stdin 으로 준 마지막 답변을 방별로 기록(lastreply).
                     try {
                       $lastMsg = '' + $j.last_assistant_message
                       if ($lastMsg) {

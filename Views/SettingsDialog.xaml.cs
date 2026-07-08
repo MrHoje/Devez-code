@@ -62,7 +62,6 @@ public partial class SettingsDialog : UserControl
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
-    private int _titleClickCount;
 
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
@@ -364,13 +363,11 @@ public partial class SettingsDialog : UserControl
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
         NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
-        DiscordPanel.Visibility    = key == "discord"    ? Visibility.Visible : Visibility.Collapsed;
 
         if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
         if (key == "sidepanel") LoadSidePanelSettings();
         if (key == "usage") LoadFooterUsageSettings();
         if (key == "notify") LoadNotifySettings();
-        if (key == "discord") LoadDiscordSettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
         if (key == "cleaner") EnterCleaner();
     }
@@ -565,22 +562,6 @@ public partial class SettingsDialog : UserControl
         int unit = 0;
         while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
         return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.#} {units[unit]}";
-    }
-
-    // ── 타이틀 10번 클릭 → Discord 버튼 표시 ─────────────────────────
-    private void SettingsTitle_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        _titleClickCount++;
-        if (_titleClickCount >= 10)
-        {
-            _titleClickCount = 10; // 고정
-            DiscordRevealBtn.Visibility = Visibility.Visible;
-        }
-    }
-
-    private void DiscordRevealBtn_Click(object sender, RoutedEventArgs e)
-    {
-        SetActiveCategory("discord");
     }
 
     private void PreloadAllSessionsToggle_Changed(object sender, RoutedEventArgs e)
@@ -964,38 +945,6 @@ public partial class SettingsDialog : UserControl
 
     private void TestNotify_Click(object sender, RoutedEventArgs e)
         => App.ShowNotification("테스트 알림", "세션이 끝나면 이렇게 알려드립니다.");
-
-    // ── Discord 설정 (즉시 저장 — 토큰/서버 ID 변경 후 재연결 버튼으로 런타임 반영) ──
-    private bool _loadingDiscord;
-
-    private void LoadDiscordSettings()
-    {
-        _loadingDiscord = true;
-        DiscordEnabledToggle.IsChecked = SettingsService.LoadDiscordEnabled();
-        DiscordTokenBox.Password = SettingsService.LoadDiscordBotToken();
-        var guildId = SettingsService.LoadDiscordGuildId();
-        DiscordGuildIdBox.Text = guildId == 0 ? "" : guildId.ToString();
-        DiscordNotifyDoneToggle.IsChecked = SettingsService.LoadDiscordNotifySessionDone();
-        _loadingDiscord = false;
-    }
-
-    private void DiscordSetting_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_loadingDiscord) return;
-        SettingsService.SaveDiscordEnabled(DiscordEnabledToggle.IsChecked == true);
-        SettingsService.SaveDiscordBotToken(DiscordTokenBox.Password);
-        SettingsService.SaveDiscordNotifySessionDone(DiscordNotifyDoneToggle.IsChecked == true);
-        if (ulong.TryParse(DiscordGuildIdBox.Text.Trim(), out var guildId))
-            SettingsService.SaveDiscordGuildId(guildId);
-        else if (string.IsNullOrWhiteSpace(DiscordGuildIdBox.Text))
-            SettingsService.SaveDiscordGuildId(0);
-    }
-
-    private void DiscordReconnect_Click(object sender, RoutedEventArgs e)
-    {
-        DiscordSetting_Changed(sender, e);
-        DiscordBotService.Instance.Restart();
-    }
 
     // ── 탭 이동 단축키 수식키 리바인드 (방향키는 ← / → 고정) ──────
     /// <summary>수식키 칸 클릭 → 전역 훅 캡처 시작. 다음 키다운 1회를 수식키로 지정.</summary>

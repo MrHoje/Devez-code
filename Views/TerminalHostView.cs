@@ -1212,8 +1212,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         {
             DevezCode.Services.DiagLog.Write($"NotifyReady room={roomId}");
             TerminalReady?.Invoke(roomId);
-            // 자동 시작으로 열린 세션이면 대기 중이던 Discord 메시지를 주입한다.
-            DevezCode.Services.DiscordBotService.Instance.NotifySessionReady(roomId);
         }
     }
 

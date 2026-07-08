@@ -1351,19 +1351,6 @@ public partial class WorkspacePaneView : UserControl
         WorkspaceStore.Save(Projects);
     }
 
-    /// <summary>Discord 에서 스레드 삭제로 트리거 — 확인 대화상자 없이 즉시 세션 삭제(대화 기록도 제거).</summary>
-    public void RemoveSessionSilent(SessionItem session) => RemoveSession(session, purge: true);
-
-    /// <summary>Discord 에서 스레드 이름 변경으로 트리거 — 확인 없이 세션 이름만 동기화.</summary>
-    public void RenameSessionSilent(SessionItem session, string newName)
-    {
-        var name = newName.Trim();
-        if (string.IsNullOrWhiteSpace(name) || name == session.Name) return;
-        if (name.Length > 60) name = name[..60];
-        session.Name = name;
-        WorkspaceStore.Save(Projects);
-    }
-
     public void DeleteSession(SessionItem session)
     {
         if (!ConfirmDialog.Show("세션 삭제",
