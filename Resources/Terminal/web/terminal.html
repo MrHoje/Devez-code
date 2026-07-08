@@ -160,6 +160,9 @@
   let _scrollSuppressTimer = 0; // suppress 잔여 누수 방지용 타임아웃
   let _pinBottomUntil = 0; // 이 시각(ms)까지 출력 쓰기 후 항상 맨 아래로(인라인 TUI resume 재페인트 스크롤 튐 방지)
   let _xferCoverTimer = 0; // 전환 커튼 안전 자동해제 타이머(reveal 누락 대비)
+  let _xferWasAtBottom = false; // 커버 시점에 활성 방 viewport 가 맨 아래였는지 — 리사이즈 reflow 로
+                                // viewport 가 위로 밀려도 reveal 후 하단으로 복원(전체화면 토글 스크롤 튐 방지).
+                                // 사용자가 위로 스크롤해둔 상태(false)면 건드리지 않는다.
   let _xferDataWaiter = null; // {room, fire} — reveal 시 폭이 바뀌면 alt-screen TUI 가 SIGWINCH 로 '비동기' 재렌더한다.
                               // 그 첫 출력이 올 때까지 커버를 유지해 '리사이즈됐지만 아직 안 그려진' 빈/틀어진 화면
                               // (분할 닫기 후 좌측 세션 텍스트 갈라짐·스크롤 튐)을 감춘다. writeOut 이 도착 시 fire.
@@ -1035,6 +1038,15 @@
         // 새 세대(_xferGen)를 부여해, 아직 안 끝난 이전 전환의 지연 타이머(fade 등)를 무효화한다.
         const gen = ++_xferGen;
         _fitSuppressed = true; // 전환 동안 중간(전체) 폭 fit 억제 — reveal 이 최종 폭에서 한 번만 fit
+        // 커버 시점 하단 여부 기록 — reveal 이 fit 후 하단 복원 판단에 쓴다(전환 전 커버 경로에서 정확).
+        _xferWasAtBottom = false;
+        const covAct = activeRoomId ? terms[activeRoomId] : null;
+        if (covAct) {
+          try {
+            const b = covAct.term.buffer.active;
+            _xferWasAtBottom = b.viewportY >= b.baseY;
+          } catch (e) {}
+        }
         const cov = document.getElementById('xfer-cover');
         cov.style.transition = 'none';
         // image 가 오면 단색 대신 캡처 이미지를 좌상단 고정으로 깔아, HWND 재표시 handoff 를 무깜빡으로.
@@ -1122,6 +1134,12 @@
             // 재배선 세션(분할 보기): ConPTY 를 xterm 현재 크기로 강제 재동기(xterm 미변경 → 스크롤백
             // 리플로우 없음). 늦게 오는 WireSession resize 와의 경쟁에서 이 값이 마지막이 되고 SIGWINCH 로 재렌더.
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
+          }
+          // 커버 시점에 하단이었다면 리사이즈 reflow 로 viewport 가 위로 밀렸어도 하단 복원 +
+          // 이어지는 TUI 재렌더 출력 동안에도 하단 유지(pin) — 전체화면/창모드 전환 스크롤 튐 방지.
+          if (_xferWasAtBottom) {
+            try { e.term.scrollToBottom(); } catch (err) {}
+            _pinBottomUntil = Date.now() + 1200;
           }
           if (synced) { post({ type: 'revealPrepared' }); return; } // 커버 유지 — C# 이 양쪽 준비되면 fadeNow 로 동시 걷음
           // 폭이 바뀌면 alt-screen TUI(claude 등)는 SIGWINCH 로 '비동기' 재렌더한다. 그 출력이 오기 전에

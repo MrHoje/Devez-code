@@ -3865,6 +3865,7 @@ public partial class MainWindow : Window
         EnableDwmTransitions(_mainHwnd); // 최대화/복원 시 DWM 부드러운 전환 활성화
         ApplyCornerPreference();          // 최대화 시 각진 모서리(둥근 모서리가 화면 모서리를 깎는 문제 방지)
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
+        _lastWindowState = WindowState; // 시작 복원 상태 기준으로 초기화(첫 StateChanged 의 prev 오판 방지)
         StateChanged += OnStateChangedForFullScreen;
         Activated   += (_, _) => { StopTaskbarAttention(); UpdateFullScreenTopmost(); };
         Deactivated += (_, _) => UpdateFullScreenTopmost();
@@ -3875,20 +3876,31 @@ public partial class MainWindow : Window
     }
 
 
+    private WindowState _lastWindowState = WindowState.Normal; // OS 주도 최대화/복원 감지용(StateChanged 는 이전 상태를 안 주므로 직접 추적)
+
     private void OnStateChangedForFullScreen(object? sender, EventArgs e)
     {
+        var prev = _lastWindowState;
+        _lastWindowState = WindowState;
         ApplyCornerPreference();
         ApplyMaximizeMargin();
         if (_fsGuard) return;
-        // 전체화면 설정 ON 상태에서 최대화 요청(버튼·더블클릭·시스템) → 수동 전체화면으로 전환.
-        // 커버로 감싼다(작업영역→모니터 전체 리사이즈 동안 터미널 빈 화면 방지). 조건은 커버가
-        // 올라온 뒤(change 시점) 재확인 — await 사이 상태가 바뀌었으면 no-op.
+        // 전체화면 설정 ON 상태에서 최대화 요청(드래그 상단 스냅·Win+↑ 등 시스템 주도) → 수동 전체화면으로 전환.
+        // 이 시점엔 OS 최대화 리사이즈가 이미 끝난 뒤라 사전 캡처가 불가(찍으면 틀어진 중간 화면) →
+        // 단색(post-hoc) 커버로 감싼다. 조건은 change 시점 재확인 — await 사이 상태가 바뀌었으면 no-op.
         if (_useFullScreen && WindowState == WindowState.Maximized && !_inFullScreen)
             RunFullScreenTransitionCovered(() =>
             {
                 if (_useFullScreen && WindowState == WindowState.Maximized && !_inFullScreen)
                     EnterFullScreen();
-            });
+            }, solidCover: true);
+        // 전체화면 미사용: OS 주도 최대화/복원(드래그 상단 스냅, 최대화 상태에서 캡션 끌어내리기,
+        // Win+화살표, 작업표시줄 등) — 리사이즈가 이미 일어난 뒤 통지되므로 post-hoc 단색 커버로
+        // 재fit·ConPTY 재동기·하단 복원만 수행한다. 우리 래퍼가 주도한 전환(_fsCoverBusy)은 자체 처리.
+        // (최소화↔복원은 크기가 안 변하므로 Normal↔Maximized 간 전환만 해당.)
+        else if ((prev == WindowState.Maximized && WindowState == WindowState.Normal)
+              || (prev == WindowState.Normal && WindowState == WindowState.Maximized))
+            RunFullScreenTransitionCovered(() => { }, solidCover: true);
         UpdateMaxBtnVisual();
     }
 
@@ -3984,18 +3996,35 @@ public partial class MainWindow : Window
     /// 증상). 캡처 커버 아래서 리사이즈하고 최종 크기에서 fit·재동기 후 크로스페이드한다.
     /// change 후 Background 우선순위까지 기다리는 이유: EnterFullScreen 이 Maximized 경유 시 최종
     /// bounds 를 Background 에서 한 번 더 적용하므로, 그 뒤에 reveal 해야 expectWidth 가 최종값이 된다.</summary>
-    private async void RunFullScreenTransitionCovered(Action change)
+    private async void RunFullScreenTransitionCovered(Action change, bool solidCover = false)
     {
         if (_fsCoverBusy) return; // 전환 중 연타 무시(커버/리빌 상태 꼬임 방지)
         _fsCoverBusy = true;
         try
         {
-            // stretch: 창 전체가 한 번에 크게 변하므로 커버를 뷰포트에 맞춰 늘린다(OS 최대화 애니메이션 인상).
-            // 좌상단 px 고정을 쓰면 커지는 쪽(오른쪽·아래)이 배경색만 남아 '비어' 보인다.
-            await FreezeWorkspaceTerminalsAsync(stretchCover: true);
+            var covered = _panes.Where(p => p.Visibility == Visibility.Visible).ToList();
+            if (solidCover)
+            {
+                // 리사이즈가 이미 일어난 뒤 통지되는 경로(OS 주도 최대화/복원 — 드래그 스냅·Win+화살표 등):
+                // 캡처는 이미 틀어진 중간 화면을 찍으므로 단색 커버를 즉시 덮는다(파일 커튼 포함).
+                // 스크롤: JS 의 wasAtBottom 기록이 리사이즈 이후라 부정확할 수 있어, pinBottom 으로
+                // 이어지는 TUI 재렌더 출력 동안 하단을 강제 유지한다(스크롤 튐 방지).
+                foreach (var p in covered)
+                {
+                    p.CoverForTransition();
+                    if (p.ActiveSession != null) p.Terminal.PinBottom(1500);
+                }
+            }
+            else
+            {
+                // stretch: 창 전체가 한 번에 크게 변하므로 커버를 뷰포트에 맞춰 늘린다(OS 최대화 애니메이션 인상).
+                // 좌상단 px 고정을 쓰면 커지는 쪽(오른쪽·아래)이 배경색만 남아 '비어' 보인다.
+                await FreezeWorkspaceTerminalsAsync(stretchCover: true);
+            }
             change();
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
-            UnfreezeWorkspaceTerminals();
+            if (solidCover) foreach (var p in covered) p.RevealAfterTransition(kick: true);
+            else UnfreezeWorkspaceTerminals();
         }
         finally { _fsCoverBusy = false; }
     }
@@ -4080,8 +4109,11 @@ public partial class MainWindow : Window
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(lParam); handled = true; }
-        // 전체화면 ON 이면 상단바 더블클릭(캡션 더블클릭)도 기본 최대화 대신 전체화면 토글.
-        else if (msg == WM_NCLBUTTONDBLCLK && _useFullScreen) { ToggleMaximizeOrFullScreen(); handled = true; }
+        // 상단바(캡션) 더블클릭: 전체화면 ON 은 기본 최대화 대신 전체화면 토글(기존 동작, hit-test 무관),
+        // OFF 도 OS 기본 최대화 대신 우리 토글로 가로채 사전 캡처 커버를 적용한다(캡션에 한정 —
+        // 테두리 더블클릭의 OS 수직 최대화 등 기타 NC 동작은 보존).
+        else if (msg == WM_NCLBUTTONDBLCLK && (_useFullScreen || wParam.ToInt32() == HTCAPTION))
+        { ToggleMaximizeOrFullScreen(); handled = true; }
         // 전체화면 중 캡션 누름: down 에서 바로 처리하지 않고 캡처 후 드래그/클릭/더블클릭을 구분.
         else if (msg == WM_NCLBUTTONDOWN && wParam.ToInt32() == HTCAPTION && _inFullScreen)
         {
@@ -4138,6 +4170,15 @@ public partial class MainWindow : Window
     private void BeginDragFromFullScreen(int screenPxX, int screenPxY)
     {
         if (!_inFullScreen) return;
+        // 단색 커버 즉시 post — 캡처(await)는 드래그 시작을 지연시켜 커서 추종이 어긋나므로 불가.
+        // reveal 은 Background 로 예약: JS 쪽 reveal(폭 대기→fit→크로스페이드)은 WPF 드래그 루프와
+        // 무관하게 진행되므로 드래그 중에도 축소된 크기로 터미널이 정상 복귀한다. 하단 복원은 pin.
+        var dragCovered = _panes.Where(p => p.Visibility == Visibility.Visible).ToList();
+        foreach (var p in dragCovered)
+        {
+            p.CoverForTransition();
+            if (p.ActiveSession != null) p.Terminal.PinBottom(1500);
+        }
         _inFullScreen = false;
         Topmost = false;
         ResizeMode = ResizeMode.CanResize;
@@ -4168,6 +4209,12 @@ public partial class MainWindow : Window
 
         SetWindowPos(_mainHwnd, IntPtr.Zero, px, py, pw, ph, SWP_NOZORDER | SWP_NOACTIVATE);
         ApplyCornerPreference();
+        // 리사이즈 반영 후 커버 해제(fit·재동기·크로스페이드). 드래그 이동(WM_MOUSEMOVE)은 리사이즈가
+        // 아니므로 reveal 뒤에도 터미널은 안정 상태를 유지한다.
+        Dispatcher.InvokeAsync(() =>
+        {
+            foreach (var p in dragCovered) p.RevealAfterTransition(kick: true);
+        }, System.Windows.Threading.DispatcherPriority.Background);
 
         // 그랩 오프셋 고정 — 이후 WM_MOUSEMOVE 마다 이 오프셋만큼 커서에서 뺀 위치로 직접 이동.
         _fsDragOffX = screenPxX - px;
@@ -4457,7 +4504,12 @@ public partial class MainWindow : Window
             });
             return;
         }
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        // 전체화면 미사용: 일반 최대화/복원도 리사이즈 리플로우는 동일 → 사전 캡처 커버로 감싼다.
+        // (여기서 바뀐 WindowState 의 StateChanged post-hoc 커버는 _fsCoverBusy 가드로 중복 방지.)
+        RunFullScreenTransitionCovered(() =>
+        {
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        });
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
