@@ -538,13 +538,17 @@
                             <ItemsControl ItemsSource="{Binding RightItems}" Tag="False"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
                             <!-- 숨김 세션: 좌/우 구분 없이 전부 모아 맨 아래로. 좌우 그룹과 동일한 세퍼레이터로 구분.
-                                 '숨김 세션 표시' 토글(ShowHiddenSessions) + 실제 숨김 세션 존재 시에만 그룹째 표시. -->
-                            <Border Height="1" Margin="2,6,2,6"
-                                    Background="{DynamicResource LineBrush}"
-                                    Visibility="{Binding ShowHiddenGroup, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                            <ItemsControl ItemsSource="{Binding HiddenSessions}" Tag="True"
-                                          ItemTemplate="{StaticResource SessionTemplate}"
-                                          Visibility="{Binding ShowHiddenGroup, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                                 '숨김 세션 표시' 토글(ShowHiddenSessions) + 실제 숨김 세션 존재 시에만 그룹째 표시.
+                                 카드 접고펴는 것과 동일한 TreeExpander 애니메이션(MaxHeight+Opacity)으로 토글. -->
+                            <Border Visibility="Collapsed"
+                                    b:TreeExpander.IsExpanded="{Binding ShowHiddenGroup}">
+                                <StackPanel>
+                                    <Border Height="1" Margin="2,6,2,6"
+                                            Background="{DynamicResource LineBrush}"/>
+                                    <ItemsControl ItemsSource="{Binding HiddenSessions}" Tag="True"
+                                                  ItemTemplate="{StaticResource SessionTemplate}"/>
+                                </StackPanel>
+                            </Border>
                             <!-- 바로가기: 세션과 세퍼레이터로 구분, 등록된 게 있을 때만 표시 -->
                             <Border Height="1" Margin="2,6,2,6"
                                     Background="{DynamicResource LineBrush}"
