@@ -36,7 +36,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
     {
         foreach (var m in Editor.TextArea.LeftMargins)
             if (m is System.Windows.Shapes.Line line)
-                line.Margin = new Thickness(0, 0, 6, 0);
+                line.Margin = new Thickness(0, 0, 10, 0);
     }
 
     private void OnThemeChanged(string theme)
