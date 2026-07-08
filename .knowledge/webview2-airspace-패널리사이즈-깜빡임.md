@@ -49,10 +49,17 @@ HwndHost 는 `Visibility.Hidden` 에서 **레이아웃 슬롯을 남기며 네�
 `Collapsed`(슬롯 0)여야 HwndHost 가 HWND 를 실제로 숨긴다. (2026-06-26, Hidden 실험으로 회귀 확인 후 복원.)
 (webCover 경로는 애초에 HWND 를 숨기지 않으므로 이 규칙과 무관.)
 
-### `anchorTopLeft` — 스냅샷/커버 늘어남 방지
+### `anchorTopLeft` vs `stretch` — 커버 크기 정책은 전환 종류로 고른다
 스냅샷 Image(또는 웹 커버 이미지)가 `Stretch=Fill`/`backgroundSize:auto` 면 패널이 커질 때 같이 쭉 늘어난다.
 `anchorTopLeft`(WPF) / `imgW·imgH`(웹 커버) 로 캡처 시점 크기로 **좌상단 고정** → 패널이 잘라낼 뿐
 늘어나지 않는다(실제 터미널 reflow 와 비슷한 인상).
+- **단, 좌상단 고정은 "패널" 리사이즈용이다.** 전체화면 토글처럼 **창 전체가 한 번에 크게 커지는**
+  전환에서 px 고정을 쓰면 캡처 밖 영역(오른쪽·아래 넓은 띠)이 배경색만 남아 **"비어" 보인다**.
+  이 경우 `stretch`(`xferCover` 의 `msg.stretch` → `backgroundSize:100% 100%`)로 커버를 뷰포트에
+  맞춰 늘린다 — OS 최대화 애니메이션과 같은 인상. 체인: `CoverForTransitionImage(..., stretch)` ←
+  `SuspendTerminalOnlyAsync(stretchCover:)` ← `FreezeWorkspaceTerminalsAsync(stretchCover:)`.
+- 요약: 이웃 패널이 남는 공간을 채우는 **패널 리사이즈 = 좌상단 고정**, 창 전체가 점프하는
+  **윈도우 리사이즈 = stretch**.
 
 ### 흰색 클리어 방지
 리사이즈 중 WebView2 가 흰색으로 클리어했다 다시 그린다 →
@@ -111,6 +118,14 @@ windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합
 - **분할 펼침**(`AnimateSplitOpenAsync`): PaneA·PaneB 둘 다 `webCover:true` suspend → 애니메이션 → `webCover:true` resume. 무플래시.
 - **분할 접힘**(`AnimateSplitCloseAsync`): 넓어져 살아남는 PaneA 는 `webCover:true`(무플래시 크로스페이드),
   사라지는 PaneB 는 스냅샷+Collapsed(`webCover` 없음) — 어차피 hide 되므로 collapse 경로 유지.
+- **전체화면 토글**(2026-07-08, `RunFullScreenTransitionCovered`): `EnterFullScreen`/`ExitFullScreen` 은
+  창 전체를 `SetBoundsInstant` 로 즉시 리사이즈하는 **가장 큰 리플로우**인데 커버 없이 수행돼 터미널이
+  클리어→재fit→TUI 비동기 재렌더 동안 비어 보였다. → `FreezeWorkspaceTerminalsAsync(stretchCover:true)`
+  → 전환 → **Background 우선순위 대기**(EnterFullScreen 이 Maximized 경유 시 최종 bounds 를 Background
+  에서 한 번 더 적용하므로, 그 뒤에 reveal 해야 expectWidth 가 최종값) → `UnfreezeWorkspaceTerminals()`.
+  적용: MaxBtn/캡션 더블클릭 토글, 시스템 최대화 요청(`OnStateChangedForFullScreen`). 토글 조건은
+  await 뒤 change 시점에 재확인, 연타는 `_fsCoverBusy` 로 무시. **미적용(의도)**: 시작 복원(터미널
+  미생성), 전체화면 캡션 드래그 축소(커버 대기가 드래그 반응성을 해침 — 여기 잔여 플래시는 허용).
 - **설정/MCP 창, 우측 드로어**: `SuspendTerminalWithSnapshotAsync(blankCurtain:false)`(스냅샷+Collapsed). 리사이즈 없어 원래부터 매끄러움.
 - **종료("세션 닫는 중" 오버레이)**: 2단계 배치(`PrepareShutdownSnapshotAsync` → 모든 패널 스냅샷 present 대기(`WaitForFramesAsync`)
   → `CommitShutdownHide` 로 **모든 HWND 를 같은 프레임에 일괄 숨김**) → 렌더 프레임 flush → `ShutdownOverlay` 표시.
@@ -120,6 +135,10 @@ windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합
 - 새 오버레이/패널을 터미널 위에 띄울 땐:
   - 터미널을 **리사이즈하지 않는** 경로(위로 덮기/숨기기) → 스냅샷+`Collapsed`(`SuspendTerminalWithSnapshotAsync` 또는 `webCover:false`).
   - 터미널을 **리사이즈하는** 경로 → **`webCover:true`** 경로를 써야 reveal 깜빡임이 없다. (스냅샷+Collapsed 만 쓰면 옛 1~2 프레임 깜빡임이 되살아난다.)
+    창/윈도우 단위 리사이즈(전체화면 등 새 창 크기 전환)면 여기에 **`stretchCover:true`** 까지 — 좌상단 고정 커버는 커지는 쪽이 비어 보인다.
+- "수정했는데 여전히 그렇다" 리포트를 받으면 **`bin\DevezCode.exe` mtime 과 수정 커밋 시각부터 비교**할 것 —
+  빌드 없이 커밋만 한 수정(병행 세션 실행 중 등)은 실행 중인 앱에 없다. 이번 전체화면 건도 exe(전날 23:28)가
+  수정 커밋(당일 11:42)보다 오래돼 "재발"이 아니라 "미적용"이었다.
 - `Hidden` 으로 숨기는 코드를 발견하면 `Collapsed` 로 고칠 것(HwndHost HWND 가 안 숨겨짐).
 - 커버를 올리는(`xferCover`) 경로를 추가하면 **어떤 종결 경로로 끝나든 `_fitSuppressed` 해제·needCreate 처리**가
   보장되는지 확인할 것 — `fadeNow` 가 이를 빠뜨려 패널 fit 이 영구 잠겼던 버그는
