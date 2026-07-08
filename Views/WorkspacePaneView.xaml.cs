@@ -1324,7 +1324,7 @@ public partial class WorkspacePaneView : UserControl
         HideSessionLoading();
         UpdateEmptyState();
         UpdateSelectedTabSeam();
-        RefreshHeaderSessionGate();
+        RefreshModelEffortDock(); // 활성 세션 없음 → 모델/effort 숨김 + 내부에서 폰트/브랜치 게이트도 재평가
         ActiveChanged?.Invoke(this);
     }
 
