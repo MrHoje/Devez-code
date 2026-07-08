@@ -586,6 +586,10 @@
       const t = activeRoomId ? terms[activeRoomId] : null;
       const vp = t && t.term.element && t.term.element.querySelector('.xterm-viewport');
       if (vp) requestAnimationFrame(function () {
+        // 이미 논리적 바닥(ydisp==ybase)이면 개입 안 함 — WT 처럼 그대로 정지.
+        // gjc 는 바닥에서도 픽셀 잔여(rest>0)가 남아 매 휠마다 nudge 가 재발동 → 위아래 꿈틀거림.
+        const buf = t.term.buffer.active;
+        if (buf.viewportY >= buf.baseY) return;
         const cell = (vp.clientHeight / t.term.rows) || 16;
         const rest = vp.scrollHeight - vp.clientHeight - vp.scrollTop;
         // 바닥 근처면 nudge(위 1줄→맨 아래)로 스냅 — 단순 scrollToBottom 은 gjc 인라인
@@ -840,6 +844,26 @@
     // 잘려 보인다. 레이아웃이 안정된 다음 프레임/짧은 지연 후 다시 측정해 fit 하면 실제 폭으로
     // 교정되고, onResize 가 정확한 크기를 ConPTY 로 보내 alt-screen TUI(claude 등)가 풀폭 재렌더한다.
     refitSoon(roomId);
+    // 숨김(display:none) 동안 출력이 쌓이면 xterm 이 DOM 뷰포트를 동기화하지 못해 scrollTop 이
+    // 낡은(작은) 값으로 남는다 → 복귀 후 첫 휠에서 낡은 scrollTop 기준으로 위치가 계산돼
+    // 한 칸 휠에 과거로 크게 점프. 표시 직후 버퍼 위치에 맞춰 scrollTop 재동기.
+    requestAnimationFrame(function () { requestAnimationFrame(function () { resyncViewportScroll(roomId); }); });
+    setTimeout(function () { resyncViewportScroll(roomId); }, 220); // refitSoon(180ms) 리플로우 이후 한 번 더
+  }
+
+  // DOM 뷰포트 scrollTop 을 xterm 버퍼 위치(viewportY)에 맞춘다. 값이 이미 맞으면 no-op.
+  function resyncViewportScroll(roomId) {
+    const t = terms[roomId];
+    if (!t || roomId !== activeRoomId) return;
+    const vp = t.term.element && t.term.element.querySelector('.xterm-viewport');
+    if (!vp || vp.scrollHeight <= vp.clientHeight) return;
+    const buf = t.term.buffer.active;
+    const total = buf.baseY + t.term.rows;
+    if (total <= 0) return;
+    const target = (buf.viewportY >= buf.baseY)
+      ? vp.scrollHeight - vp.clientHeight                  // 바닥 추종 중이었으면 정확히 맨 아래로
+      : buf.viewportY * (vp.scrollHeight / total);         // 위로 읽던 중이면 그 줄 위치로
+    if (Math.abs(vp.scrollTop - target) > 1) vp.scrollTop = target;
   }
 
   // show/재진입 직후 레이아웃이 안정되길 기다려 여러 번 재측정 fit. 활성 방일 때만.
