@@ -74,6 +74,7 @@ public static class AgentRegistry
             InstallCommand = "bun install -g gajae-code",
             InlineTui = true,
         },
+        // [개발 중단] Grok 통합 보류 — HiddenFromUI. 재개 시 이 항목·관련 서비스 활성화.
         new()
         {
             // Grok Build CLI (xAI). 기본 설치: %USERPROFILE%\.grok\bin\grok.exe
@@ -161,10 +162,10 @@ public static class AgentRegistry
     }
 
     /// <summary>UI 에서 숨길 에이전트 ID. 세션 생성 피커·설정 다이얼로그에서 제외.
-    /// 백엔드 코드(훅·런치 등)는 그대로 유지 — 나중에 다시 노출할 때 여기만 비우면 됨.
-    /// grok: 통합 작업 보류 중(기본 비노출·비활성).</summary>
+    /// 백엔드 코드(훅·런치 등)는 그대로 유지 — 나중에 다시 노출할 때 여기만 비우면 됨.</summary>
     public static readonly HashSet<string> HiddenFromUI = new(StringComparer.OrdinalIgnoreCase)
     {
+        // [개발 중단] Grok 통합 보류 — 설정/피커 숨김·기본 비활성. 재개 시 이 항목 제거.
         "grok",
     };
 

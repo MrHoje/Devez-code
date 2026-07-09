@@ -8,7 +8,8 @@ using System.Text.Json.Nodes;
 
 namespace DevezCode.Services;
 
-/// <summary>grok 훅(grok-hook.ps1) 설치/유지.
+/// <summary>[개발 중단] Grok 통합 보류 — UI 비노출. 재개 시 사용.
+/// grok 훅(grok-hook.ps1) 설치/유지.
 /// 1) 스크립트를 %LOCALAPPDATA%\DevezCode\grok\hook.ps1 에 항상 최신본으로 기록.
 /// 2) ~/.grok/hooks/devezcode-room-tracker.json 에 SessionStart/UserPromptSubmit/Stop/SessionEnd 등록.</summary>
 public static class GrokHookInstaller

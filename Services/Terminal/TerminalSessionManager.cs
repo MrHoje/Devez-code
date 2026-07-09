@@ -126,7 +126,8 @@ public sealed class TerminalSessionManager
             }
             else if (ccDir != null && agent.Id == "grok")
             {
-                // grok: 훅으로 lastmsg/busy/session_id 추적 + `grok -r <id>` 복원. 앱레벨 자동 재진입(codex 패턴).
+                // [개발 중단] Grok 통합 보류(UI 비노출). 기존 방 복원용 경로 유지.
+                // grok: 훅 + `grok -r <id>` 복원. 앱레벨 자동 재진입(codex 패턴).
                 startDir = ccDir;
                 var direct = TryBuildGrokDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
@@ -456,7 +457,8 @@ public sealed class TerminalSessionManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "grok", "launch");
 
-    /// <summary>grok 방 직접 실행. 훅 설치 후 저장된 session_id 가 있으면 <c>grok -r &lt;id&gt;</c>,
+    /// <summary>[개발 중단] Grok 통합 보류. 재개 시 사용.
+    /// grok 방 직접 실행. 훅 설치 후 저장된 session_id 가 있으면 <c>grok -r &lt;id&gt;</c>,
     /// 없으면 <c>grok</c> 신규. 포크 마커가 있으면 <c>-r src --fork-session</c>.
     /// 배치 끝 exit + cmd /c → ConPTY 종료 → IsAutoReenterRoom 앱레벨 재진입.</summary>
     private string? TryBuildGrokDirectLaunch(string roomId, out string? injectFallback)
@@ -1820,7 +1822,7 @@ public sealed class TerminalSessionManager
                             SettingsService.SaveCodexRoomSession(roomId, cx);
                     }
                     break;
-                case "grok":
+                case "grok": // [개발 중단] Grok 통합 보류
                     var gk = GrokHookService.LoadTrackedSessionId(roomId);
                     if (gk != null && gk != SettingsService.LoadGrokRoomSession(roomId))
                         SettingsService.SaveGrokRoomSession(roomId, gk);

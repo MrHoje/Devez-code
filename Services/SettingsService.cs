@@ -51,7 +51,7 @@ public static class SettingsService
         // 가재코드(gjc) 방별 세션 ID. gjc 는 사전 발급 플래그가 없어, 방별 격리 --session-dir 의
         // 최신 .jsonl 파일명에서 추출한 ID 를 영속 → 재오픈 시 `gjc -r <id>` 로 같은 대화 복원.
         public Dictionary<string, string> GajaeRoomSessions { get; set; } = new();
-        // grok 방별 세션 ID. SessionStart 훅이 sessions\<room>.txt 에 기록 → `grok -r <id>` 로 복원.
+        // [개발 중단] Grok 통합 보류. 방별 세션 ID (훅 sessions\<room>.txt → `grok -r <id>`).
         public Dictionary<string, string> GrokRoomSessions { get; set; } = new();
         // 세션 포크: 새 방(roomId) → 포크 원본 세션 ID. 새 방 첫 실행에 --fork-session/--fork 로 1회 소비.
         public Dictionary<string, string> RoomForkSources { get; set; } = new();
@@ -671,7 +671,7 @@ public static class SettingsService
         Save();
     }
 
-    // ── grok 세션 ID (훅 sessions\<room>.txt → settings 영속) ─────
+    // ── [개발 중단] grok 세션 ID (훅 → settings 영속) ─────
     public static string? LoadGrokRoomSession(string roomId)
         => Current.GrokRoomSessions.TryGetValue(roomId, out var s) ? s : null;
 

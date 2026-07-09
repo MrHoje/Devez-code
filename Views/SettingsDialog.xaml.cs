@@ -1329,6 +1329,7 @@ public partial class SettingsDialog : UserControl
             {
                 Id = agent.Id,
                 DisplayName = agent.DisplayName,
+                InstallCommand = agent.InstallCommand,
                 CommandHint = $"실행 명령: {agent.Command}",
                 Installed = installed,
                 InstalledLabel = installed ? "설치됨" : "미설치",
@@ -1366,6 +1367,34 @@ public partial class SettingsDialog : UserControl
         // [저장] 버튼을 눌러야 디스크에 기록되므로 여기선 _selectedEnabledAgents 만 갱신하면 됨.
         // (BuildAgentList 가 기준값을 잡았고, ApplySettings 가 enabled 목록을 디스크에 쓴다.)
     }
+
+    /// <summary>에이전트 설치 명령을 클립보드에 복사.</summary>
+    private void CopyInstallCommand_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string cmd } || string.IsNullOrWhiteSpace(cmd)) return;
+        try { Clipboard.SetText(cmd); }
+        catch { /* 클립보드 잠김 등 무시 */ }
+    }
+
+    /// <summary>PATH 재스캔 후 해당 에이전트 설치 상태 배지·토글 활성 갱신.</summary>
+    private void RefreshAgentInstall_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string id } || string.IsNullOrWhiteSpace(id)) return;
+        var item = _agentItems.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+        var agent = AgentRegistry.Find(id);
+        if (item == null || agent == null) return;
+
+        AgentRegistry.InvalidateCache();
+        bool installed = AgentRegistry.IsInstalled(agent);
+        var muted = (Brush)FindResource("TextMutedBrush");
+        var primary = (Brush)FindResource("PrimaryBrush");
+
+        item.Installed = installed;
+        item.InstalledLabel = installed ? "설치됨" : "미설치";
+        item.InstalledBrush = installed ? primary : muted;
+        // 미설치면 토글 강제 off (IsEnabled 가 false 이므로 켤 수 없음)
+        if (!installed) item.Enabled = false;
+    }
 }
 
 /// <summary>설정 → 에이전트 패널의 한 줄 (이름·설치 상태·활성화 토글).</summary>
@@ -1373,10 +1402,30 @@ public sealed class AgentItem : INotifyPropertyChanged
 {
     public string Id { get; set; } = "";
     public string DisplayName { get; set; } = "";
+    /// <summary>설치 명령(복사 대상). 예: irm https://claude.ai/install.ps1 | iex</summary>
+    public string InstallCommand { get; set; } = "";
     public string CommandHint { get; set; } = "";
-    public bool Installed { get; set; }
-    public string InstalledLabel { get; set; } = "";
-    public Brush InstalledBrush { get; set; } = Brushes.Gray;
+
+    private bool _installed;
+    public bool Installed
+    {
+        get => _installed;
+        set { if (_installed != value) { _installed = value; OnPropertyChanged(); } }
+    }
+
+    private string _installedLabel = "";
+    public string InstalledLabel
+    {
+        get => _installedLabel;
+        set { if (_installedLabel != value) { _installedLabel = value; OnPropertyChanged(); } }
+    }
+
+    private Brush _installedBrush = Brushes.Gray;
+    public Brush InstalledBrush
+    {
+        get => _installedBrush;
+        set { if (!ReferenceEquals(_installedBrush, value)) { _installedBrush = value; OnPropertyChanged(); } }
+    }
 
     private bool _enabled;
     public bool Enabled { get => _enabled; set { if (_enabled != value) { _enabled = value; OnPropertyChanged(); } } }

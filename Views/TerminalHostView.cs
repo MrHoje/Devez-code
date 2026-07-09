@@ -85,6 +85,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         try
         {
             var a = DevezCode.Services.SettingsService.LoadAgentForRoom(roomId);
+            // [개발 중단] grok 포함 — UI 비노출·통합 보류, 기존 방 재진입 유지.
             return string.Equals(a, "opencode", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(a, "codex", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(a, "grok", StringComparison.OrdinalIgnoreCase);
@@ -785,8 +786,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 색조로 치환해 '내 메시지'가 구분되게 한다. 상태바(39,39,39)·diff(48,58,48/58,48,48)는 보존.
         if (AgentFor(roomId) == "codex")
             merged = RecolorCodexUserMsgBg(merged);
-        // grok: TUI 가 자체 truecolor 로 전면 배경을 칠해 xterm 스킴 배경이 가려진다
-        // (GrokNight #0a0a0a / GrokDay #f5f5f5 등). 베이스·패널 배경만 현재 스킴 Background 로 치환.
+        // [개발 중단] Grok: TUI 자체 truecolor 전면 배경 → xterm 스킴 배경 치환(통합 보류·코드 유지).
         if (AgentFor(roomId) == "grok")
             merged = RecolorGrokTerminalBg(merged);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
@@ -896,7 +896,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         });
     }
 
-    /// <summary>Grok 가 칠하는 전면 배경 truecolor 를 DevezCode 터미널 스킴 배경으로 치환.
+    /// <summary>[개발 중단] Grok 통합 보류. 재개 시 사용.
+    /// Grok 가 칠하는 전면 배경 truecolor 를 DevezCode 터미널 스킴 배경으로 치환.
     /// dark 앱테마 → GrokNight 팔레트 소스, soft/minimal → GrokDay 소스 (config 매핑과 정합).
     /// 글자/액센트(38;2) 는 건드리지 않는다.</summary>
     private static byte[] RecolorGrokTerminalBg(byte[] data)

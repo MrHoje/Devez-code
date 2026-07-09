@@ -519,8 +519,32 @@
                                                                            Foreground="White" VerticalAlignment="Center"/>
                                                             </Border>
                                                         </StackPanel>
-                                                        <TextBlock Text="{Binding CommandHint}" FontSize="{DynamicResource Fs11}"
-                                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                                        <!-- 1줄: 설치 명령 + 복사 / 2줄: 실행 명령 -->
+                                                        <StackPanel Margin="0,3,0,0">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="설치 명령:" FontSize="{DynamicResource Fs11}"
+                                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                                           VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                                <TextBlock Text="{Binding InstallCommand}" FontSize="{DynamicResource Fs11}"
+                                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                                           VerticalAlignment="Center"
+                                                                           ToolTip="{Binding InstallCommand}"/>
+                                                                <Button Style="{StaticResource IconButton}" Width="22" Height="22"
+                                                                        Margin="4,0,0,0" Padding="2"
+                                                                        VerticalAlignment="Center" Cursor="Hand"
+                                                                        ToolTip="설치 명령 복사"
+                                                                        Tag="{Binding InstallCommand}"
+                                                                        Click="CopyInstallCommand_Click">
+                                                                    <Path Style="{StaticResource LucideIcon}"
+                                                                          Data="{StaticResource IconCopy}"
+                                                                          Width="12" Height="12"
+                                                                          Stroke="{DynamicResource TextMutedBrush}"/>
+                                                                </Button>
+                                                            </StackPanel>
+                                                            <TextBlock Text="{Binding CommandHint}" FontSize="{DynamicResource Fs11}"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                                       Margin="0,2,0,0"/>
+                                                        </StackPanel>
                                                         <!-- Claude Code 전용: 세션 유지기간 (~/.claude/settings.json 의 cleanupPeriodDays) -->
                                                         <StackPanel Margin="0,12,0,0"
                                                                     Visibility="{Binding IsClaudeCode, Converter={x:Static models:BoolVisibilityConverter.Instance}}">
@@ -538,9 +562,23 @@
                                                                        Foreground="{DynamicResource TextMutedBrush}"/>
                                                         </StackPanel>
                                                     </StackPanel>
-                                                    <CheckBox Grid.Column="1" IsChecked="{Binding Enabled, Mode=TwoWay}"
-                                                              IsEnabled="{Binding Installed}"
-                                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                                    <!-- 새로고침(설치 상태 재스캔) + 활성화 토글 -->
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Style="{StaticResource IconButton}" Width="28" Height="28"
+                                                                Margin="0,0,8,0" Padding="4"
+                                                                VerticalAlignment="Center" Cursor="Hand"
+                                                                ToolTip="설치 상태 새로고침"
+                                                                Tag="{Binding Id}"
+                                                                Click="RefreshAgentInstall_Click">
+                                                            <Path Style="{StaticResource LucideIcon}"
+                                                                  Data="{StaticResource IconRefresh}"
+                                                                  Width="14" Height="14"
+                                                                  Stroke="{DynamicResource TextMutedBrush}"/>
+                                                        </Button>
+                                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                                                  IsEnabled="{Binding Installed}"
+                                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                                    </StackPanel>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>

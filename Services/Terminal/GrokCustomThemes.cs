@@ -5,12 +5,12 @@ using System.Text.RegularExpressions;
 
 namespace DevezCode.Services.Terminal;
 
-/// <summary>Grok Build CLI 테마 — DevezCode dark/soft/minimal 을 grok 내장 테마 이름으로 매핑.
+/// <summary>[개발 중단] Grok 통합 보류 — UI 비노출. 코드는 재개용으로 유지.
+/// Grok Build CLI 테마 — DevezCode dark/soft/minimal 을 grok 내장 테마 이름으로 매핑.
 /// Grok 은 커스텀 팔레트 JSON 을 지원하지 않으므로(claude/opencode/gjc 와 다름)
 /// <c>~/.grok/config.toml</c> 의 <c>[ui] theme</c> 만 갱신한다.
 /// dark → groknight, soft/minimal → grokday (라이트 계열 공유, codex 와 동일한 수준).
-/// 터미널 배경은 xterm DevezCode 스킴(공통). 유저 프롬프트 박스 재색은 TerminalHostView
-/// 바이트 치환(실측 truecolor, codex 패턴) — 1차 통합에선 스킴+config 매핑만.</summary>
+/// 터미널 배경은 xterm 스킴 + TerminalHostView RecolorGrokTerminalBg.</summary>
 public static class GrokCustomThemes
 {
     private static string ConfigTomlPath => Path.Combine(

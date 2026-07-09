@@ -23,7 +23,7 @@ public static class SessionExporter
             "opencode" => FromOpenCode(roomId),
             "gajae"    => FromGajae(roomId),
             "codex"    => FromCodex(roomId),
-            "grok"     => FromGrok(roomId),
+            "grok"     => FromGrok(roomId), // [개발 중단] Grok 통합 보류
             _          => new List<(string role, string text)>(),
         };
         if (turns.Count == 0) return null;
@@ -49,7 +49,7 @@ public static class SessionExporter
         "codex" => "Codex", "grok" => "Grok", _ => a,
     };
 
-    // ── grok: ~/.grok/sessions/**/<sid>/chat_history.jsonl (type=user|assistant, content=str|[{text}]) ──
+    // ── [개발 중단] grok: ~/.grok/sessions/**/<sid>/chat_history.jsonl ──
     private static List<(string role, string text)> FromGrok(string roomId)
     {
         var turns = new List<(string, string)>();

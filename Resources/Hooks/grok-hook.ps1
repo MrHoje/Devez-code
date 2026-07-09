@@ -1,3 +1,4 @@
+# [개발 중단] Grok 통합 보류 — UI 비노출. 재개 시 사용.
 # DevezCode grok hook (UserPromptSubmit / Stop / SessionStart / SessionEnd)
 # ~/.grok/hooks/devezcode-room-tracker.json 에 등록. stdin 으로 JSON (hookEventName, sessionId, …).
 # 세션 추적은 $env:DEVEZCODE_ROOM_ID (앱이 ConPTY/배치 env 로 주입) 로 식별.

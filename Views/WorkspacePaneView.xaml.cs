@@ -839,6 +839,7 @@ public partial class WorkspacePaneView : UserControl
             ? SettingsService.LoadAgentForRoom(source.Id) : source.AgentId;
 
         // 포크 지원 에이전트만. claude/opencode/grok=CLI 네이티브, gajae/codex=jsonl 복사.
+        // [개발 중단] grok 는 UI 비노출이나 기존 방 포크 경로 유지.
         if (agentId != "claude" && agentId != "opencode" && agentId != "gajae" && agentId != "codex" && agentId != "grok")
         {
             ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode · 가재코드 · Codex · Grok 세션만 지원합니다.");

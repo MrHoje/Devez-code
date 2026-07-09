@@ -5,7 +5,8 @@ using System.Threading;
 
 namespace DevezCode.Services;
 
-/// <summary>grok 훅이 방별로 떨군 lastmsg/busy/sessions 파일을 감시.
+/// <summary>[개발 중단] Grok 통합 보류 — UI 비노출. 재개 시 사용.
+/// grok 훅이 방별로 떨군 lastmsg/busy/sessions 파일을 감시.
 /// CodexHookService 와 동일 패턴 (roomId 키).</summary>
 public sealed class GrokHookService : IDisposable
 {

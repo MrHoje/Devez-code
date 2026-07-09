@@ -20,6 +20,7 @@ public sealed class AgentImageConverter : IValueConverter
         string fileName = id switch
         {
             "opencode"    => isDark ? "opencode_icon_white_50.png" : "opencode_icon_black_50.png",
+            // [개발 중단] Grok UI 비노출 — 아이콘 매핑은 재개용으로 유지.
             "grok"        => isDark ? "grok_icon_white_50.png" : "grok_icon_black_50.png",
             "claude"      => "claude_code.png",
             "codex"       => "codex.png",
