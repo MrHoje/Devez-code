@@ -785,6 +785,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 색조로 치환해 '내 메시지'가 구분되게 한다. 상태바(39,39,39)·diff(48,58,48/58,48,48)는 보존.
         if (AgentFor(roomId) == "codex")
             merged = RecolorCodexUserMsgBg(merged);
+        // grok: TUI 가 자체 truecolor 로 전면 배경을 칠해 xterm 스킴 배경이 가려진다
+        // (GrokNight #0a0a0a / GrokDay #f5f5f5 등). 베이스·패널 배경만 현재 스킴 Background 로 치환.
+        if (AgentFor(roomId) == "grok")
+            merged = RecolorGrokTerminalBg(merged);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
     }
 
@@ -848,6 +852,78 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 i += _codexUserMsgBgSrc.Length;
             }
             else { result.Add(data[i]); i++; }
+        }
+        return result.ToArray();
+    }
+
+    // GrokNight 베이스/패널 배경 (바이너리 팔레트·커뮤니티 패치 노트 기준 truecolor).
+    private static readonly byte[][] _grokNightBgSrcs =
+    {
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;10;10;10m"),   // #0a0a0a bg_base
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;17;17;17m"),   // #111111
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;30;30;34m"),   // #1e1e22
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;36;36;36m"),   // #242424
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;60;60;65m"),   // #3c3c41
+    };
+    // GrokDay 베이스/패널 배경.
+    private static readonly byte[][] _grokDayBgSrcs =
+    {
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;245;245;245m"), // #f5f5f5 bg_base
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;234;234;234m"), // #eaeaea
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;222;222;222m"), // #dedede
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;228;228;228m"), // #e4e4e4
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;216;216;216m"), // #d8d8d8 여유
+    };
+
+    /// <summary>현재 xterm 스킴 Background → ESC[48;2;r;g;bm. 파싱 실패 시 테마별 폴백.</summary>
+    private static byte[] SchemeBackgroundBgEscape()
+    {
+        try
+        {
+            var hex = TerminalSessionManager.Instance.Config.Scheme.Background?.Trim();
+            if (!string.IsNullOrEmpty(hex) && hex[0] == '#' && hex.Length >= 7
+                && byte.TryParse(hex.AsSpan(1, 2), System.Globalization.NumberStyles.HexNumber, null, out var r)
+                && byte.TryParse(hex.AsSpan(3, 2), System.Globalization.NumberStyles.HexNumber, null, out var g)
+                && byte.TryParse(hex.AsSpan(5, 2), System.Globalization.NumberStyles.HexNumber, null, out var b))
+                return System.Text.Encoding.ASCII.GetBytes($"\x1b[48;2;{r};{g};{b}m");
+        }
+        catch { }
+        return System.Text.Encoding.ASCII.GetBytes(DevezCode.App.CurrentTheme switch
+        {
+            "dark" => "\x1b[48;2;31;31;30m",      // #1F1F1E
+            "soft" => "\x1b[48;2;242;237;230m",   // #F2EDE6
+            _      => "\x1b[48;2;248;250;252m",   // #F8FAFC
+        });
+    }
+
+    /// <summary>Grok 가 칠하는 전면 배경 truecolor 를 DevezCode 터미널 스킴 배경으로 치환.
+    /// dark 앱테마 → GrokNight 팔레트 소스, soft/minimal → GrokDay 소스 (config 매핑과 정합).
+    /// 글자/액센트(38;2) 는 건드리지 않는다.</summary>
+    private static byte[] RecolorGrokTerminalBg(byte[] data)
+    {
+        var srcs = DevezCode.App.CurrentTheme == "dark" ? _grokNightBgSrcs : _grokDayBgSrcs;
+        bool any = false;
+        foreach (var s in srcs)
+            if (IndexOfBytes(data, s, 0) >= 0) { any = true; break; }
+        if (!any) return data;
+
+        var target = SchemeBackgroundBgEscape();
+        var result = new List<byte>(data.Length);
+        int i = 0;
+        while (i < data.Length)
+        {
+            bool hit = false;
+            foreach (var src in srcs)
+            {
+                if (i + src.Length <= data.Length && MatchesAt(data, i, src))
+                {
+                    result.AddRange(target);
+                    i += src.Length;
+                    hit = true;
+                    break;
+                }
+            }
+            if (!hit) { result.Add(data[i]); i++; }
         }
         return result.ToArray();
     }
