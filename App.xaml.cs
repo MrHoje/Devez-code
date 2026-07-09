@@ -19,6 +19,9 @@ public partial class App : Application
     /// <summary>테마별 OpenCode 아이콘 pack URI (dark=흰색, light=검정). 푸터/사용량 패널 공용 소스.</summary>
     public static string OpenCodeIconUri =>
         $"pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
+    /// <summary>테마별 Grok 아이콘 pack URI (dark=흰색, light=검정).</summary>
+    public static string GrokIconUri =>
+        $"pack://application:,,,/Resources/Images/ShellPresets/grok_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
     /// <summary>테마 변경 시 발생.</summary>
     public static event Action<string>? ThemeChanged;
     public static event Action<int>? FontScaleChanged;
@@ -71,6 +74,10 @@ public partial class App : Application
         // claude code 커스텀 테마 (devezcode-soft / devezcode-minimal) 1회 설치.
         // per-session /config theme=custom:<slug> 주입의 기반 — 파일 없으면 claude 가 못 찾음.
         Services.Terminal.ClaudeCustomThemes.EnsureInstalled();
+
+        // claude /config 의 "← opens agents"(leftArrowOpensAgents) 를 항상 false 로 강제.
+        // 전역 ~/.claude.json 키라 room --settings 로는 못 박음 → 앱 시작 시 1회 패치.
+        Services.ClaudeGlobalSettings.EnsureLeftArrowOpensAgentsDisabled();
 
         // opencode 커스텀 테마 (devezcode-soft / devezcode-minimal) 1회 설치.
         // per-project tui.json theme 주입의 기반.

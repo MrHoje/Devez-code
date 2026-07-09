@@ -4,16 +4,28 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace DevezCode.Services;
 
 /// <summary>Claude Code 전역설정(~/.claude/settings.json) 의 일부 키를 읽고/쓴다.
-/// 나머지 키(statusLine, hooks 등)는 보존한다.</summary>
+/// 나머지 키(statusLine, hooks 등)는 보존한다.
+/// 또한 전역 런타임 상태 파일(<c>~/.claude.json</c>)의 일부 UI 토글도 강제한다.</summary>
 public static class ClaudeGlobalSettings
 {
     private static string ClaudeDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
     private static string SettingsJsonPath => Path.Combine(ClaudeDir, "settings.json");
+    /// <summary>Claude Code 전역 런타임 상태/설정(<c>~/.claude.json</c>).
+    /// <c>~/.claude/settings.json</c> 과 별개 — /config 의 일부 UI 토글(leftArrowOpensAgents 등)이 여기 저장된다.</summary>
+    private static string ClaudeJsonPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude.json");
+
+    // "leftArrowOpensAgents": true|false  (공백 가변). 대규모 ~/.claude.json 을 전체 재직렬화하지 않고
+    // 이 키만 수술적으로 패치하기 위한 패턴. 다른 키/순서를 보존한다.
+    private static readonly Regex LeftArrowOpensAgentsRe = new(
+        "\"leftArrowOpensAgents\"\\s*:\\s*(true|false)",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     /// <summary>Claude 기본값(미지정 시 30일 동안 세션 트랜스크립트 유지).</summary>
     public const int DefaultCleanupPeriodDays = 30;
@@ -61,5 +73,51 @@ public static class ClaudeGlobalSettings
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         };
         File.WriteAllText(SettingsJsonPath, rootObj.ToJsonString(opts), new UTF8Encoding(false));
+    }
+
+    /// <summary>앱 시작 시 호출. Claude Code /config 의 <c>← opens agents</c>
+    /// (<c>leftArrowOpensAgents</c>) 를 항상 false 로 강제한다.
+    /// 이 키는 room <c>--settings</c> 가 아니라 전역 <c>~/.claude.json</c> 에만 존재하므로
+    /// 시작 시 한 번 패치한다. 이미 false 면 디스크 write 생략.
+    /// 대규모 상태 파일이라 전체 JSON 재직렬화 없이 해당 키만 수술적으로 고친다.</summary>
+    public static void EnsureLeftArrowOpensAgentsDisabled()
+    {
+        try
+        {
+            if (!File.Exists(ClaudeJsonPath)) return; // 아직 claude 미사용 — 건드릴 파일 없음
+
+            var text = File.ReadAllText(ClaudeJsonPath);
+            if (string.IsNullOrWhiteSpace(text)) return;
+
+            var m = LeftArrowOpensAgentsRe.Match(text);
+            string next;
+            if (m.Success)
+            {
+                if (string.Equals(m.Groups[1].Value, "false", StringComparison.Ordinal)) return; // 이미 목표값
+                // 매치 구간 전체를 "leftArrowOpensAgents": false 로 교체(공백 스타일 정규화)
+                next = text.Substring(0, m.Index)
+                     + "\"leftArrowOpensAgents\": false"
+                     + text.Substring(m.Index + m.Length);
+            }
+            else
+            {
+                // 키 없음 — 루트 객체의 마지막 `}` 직전에 삽입.
+                // 기본값이 true 이므로 키가 없으면 false 를 명시해야 한다.
+                var close = text.LastIndexOf('}');
+                if (close < 0) return;
+                var before = text.AsSpan(0, close).TrimEnd();
+                // 직전 비공백이 `{` 면 빈 객체, 아니면 콤마 필요
+                var needsComma = before.Length > 0 && before[^1] != '{';
+                var insert = (needsComma ? "," : "") + "\n  \"leftArrowOpensAgents\": false\n";
+                next = string.Concat(text.AsSpan(0, close), insert, text.AsSpan(close));
+            }
+
+            // 패치 결과가 유효 JSON 인지 확인 — 실패 시 원본 보존
+            try { using var _ = JsonDocument.Parse(next); }
+            catch { return; }
+
+            AtomicFile.WriteAllText(ClaudeJsonPath, next);
+        }
+        catch { /* best-effort — 실패해도 세션 기동은 막지 않음 */ }
     }
 }
