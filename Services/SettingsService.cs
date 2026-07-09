@@ -368,11 +368,15 @@ public static class SettingsService
     }
 
     // ── 사용자가 활성화한 에이전트 목록 ────────────────────────────
-    /// <summary>빈 값이면 opencode 제외한 에이전트를 활성화한 것으로 간주(첫 실행 기본값).</summary>
+    /// <summary>빈 값이면 HiddenFromUI·opencode 제외 에이전트를 활성화한 것으로 간주(첫 실행 기본값).
+    /// grok 등 UI 숨김 에이전트는 기본 false(목록 미포함).</summary>
     public static IReadOnlyList<string> LoadEnabledAgents()
     {
         var list = Current.EnabledAgents;
-        if (list.Count == 0) return AgentRegistry.All.Where(a => a.Id != "opencode").Select(a => a.Id).ToList();
+        if (list.Count == 0)
+            return AgentRegistry.All
+                .Where(a => a.Id != "opencode" && !AgentRegistry.HiddenFromUI.Contains(a.Id))
+                .Select(a => a.Id).ToList();
         return list;
     }
 

@@ -13,6 +13,8 @@ public sealed class AgentDef
     public string[] ExeNames { get; init; } = Array.Empty<string>();
     /// <summary>프로젝트 디렉터리에서 띄울 기본 커맨드. (인자 없이; Claude 는 세션 ID·훅 등 별도 처리)</summary>
     public string Command { get; init; } = "";
+    /// <summary>설정 UI에 보여줄 설치 명령(Windows 기준 권장 한 줄). 복사 버튼 대상.</summary>
+    public string InstallCommand { get; init; } = "";
     /// <summary>Claude 만 — SessionStart/UserPromptSubmit 훅으로 busy 스피너·lastmsg 헤더 지원.</summary>
     public bool SupportsHooks { get; init; }
     /// <summary>alt-screen(풀스크린 TUI) 대신 인라인으로 렌더하는 에이전트(gjc 등).
@@ -36,13 +38,17 @@ public static class AgentRegistry
         {
             Id = "claude", DisplayName = "Claude Code", Provider = "Anthropic",
             ExeNames = new[] { "claude.exe", "claude.cmd", "claude.bat", "claude.ps1", "claude" },
-            Command = "claude", SupportsHooks = true,
+            Command = "claude",
+            InstallCommand = "irm https://claude.ai/install.ps1 | iex",
+            SupportsHooks = true,
         },
         new()
         {
             Id = "codex", DisplayName = "Codex", Provider = "OpenAI",
             ExeNames = new[] { "codex.exe", "codex.cmd", "codex.bat", "codex.ps1", "codex" },
             Command = "codex",
+            // Windows 공식 스탠드얼론 (docs: chatgpt.com/codex/install.ps1). npm 대안: npm install -g @openai/codex
+            InstallCommand = "irm https://chatgpt.com/codex/install.ps1 | iex",
             ResumeFlag = "--last",
             SupportsHooks = true, // ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적 (Claude 정합)
             InlineTui = true,     // codex 는 alt-screen(?1049h) 미사용 인라인 TUI — ?2026h 프레임 마커로
@@ -53,6 +59,7 @@ public static class AgentRegistry
             Id = "opencode", DisplayName = "OpenCode", Provider = "OpenCode",
             ExeNames = new[] { "opencode.exe", "opencode.cmd", "opencode.bat", "opencode.ps1", "opencode" },
             Command = "opencode",
+            InstallCommand = "npm install -g opencode-ai",
             ResumeFlag = "-c",
         },
         new()
@@ -63,7 +70,9 @@ public static class AgentRegistry
             // 인라인 렌더(alt-screen 미사용) → InlineTui=true 로 로딩 오버레이 첫 출력에 해제.
             Id = "gajae", DisplayName = "Gajae Code", Provider = "Gajae",
             ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
-            Command = "gjc", InlineTui = true,
+            Command = "gjc",
+            InstallCommand = "bun install -g gajae-code",
+            InlineTui = true,
         },
         new()
         {
@@ -73,6 +82,7 @@ public static class AgentRegistry
             Id = "grok", DisplayName = "Grok", Provider = "xAI",
             ExeNames = new[] { "grok.exe", "grok.cmd", "grok.bat", "grok.ps1", "grok" },
             Command = "grok",
+            InstallCommand = "irm https://x.ai/cli/install.ps1 | iex",
             ResumeFlag = "-c",
         },
     };
@@ -151,8 +161,12 @@ public static class AgentRegistry
     }
 
     /// <summary>UI 에서 숨길 에이전트 ID. 세션 생성 피커·설정 다이얼로그에서 제외.
-    /// 백엔드 코드(codex 훅·MCP 등)는 그대로 유지.</summary>
-    public static readonly HashSet<string> HiddenFromUI = new(StringComparer.OrdinalIgnoreCase);
+    /// 백엔드 코드(훅·런치 등)는 그대로 유지 — 나중에 다시 노출할 때 여기만 비우면 됨.
+    /// grok: 통합 작업 보류 중(기본 비노출·비활성).</summary>
+    public static readonly HashSet<string> HiddenFromUI = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "grok",
+    };
 
     /// <summary>UI 노출 대상에서 제외한 에이전트만 반환.</summary>
     public static IReadOnlyList<AgentDef> GetVisibleAgents()
