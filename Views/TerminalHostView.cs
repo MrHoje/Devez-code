@@ -570,6 +570,27 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     });
                     break;
                 }
+                case "confirmPaste":
+                {
+                    // JS 가 "메인 버퍼(=에이전트 아닌 맨 셸) + 개행 포함 붙여넣기"(줄마다 즉시 실행 위험)를
+                    // 감지해 넘긴 확인 요청. doc 은 이 핸들러 종료 시 dispose 되므로 문자열만 먼저 뽑아
+                    // 캡처한 뒤 모달을 Dispatcher 로 미룬다(메시지 처리 중 재진입/doc 무효화 회피).
+                    var pasteRoom = root.GetProperty("roomId").GetString()!;
+                    var pasteData = root.GetProperty("data").GetString() ?? "";
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        var ok = ConfirmDialog.Show(
+                            "여러 줄 붙여넣기",
+                            "지금 이 터미널은 에이전트가 아니라 셸 프롬프트 상태입니다.\n" +
+                            "여러 줄을 붙여넣으면 줄마다 명령으로 즉시 실행되어 '>' 같은 문자가\n" +
+                            "예상치 못한 파일을 만들 수 있습니다. 그래도 붙여넣을까요?",
+                            okLabel: "붙여넣기",
+                            iconKey: "IconTriangleAlert",
+                            danger: true);
+                        if (ok) PostJson(new { type = "paste", roomId = pasteRoom, data = pasteData, force = true });
+                    });
+                    break;
+                }
                 case "action":
                 {
                     var name = root.GetProperty("name").GetString() ?? "";

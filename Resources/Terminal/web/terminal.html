@@ -1460,7 +1460,30 @@
       }
       case 'paste': {
         const t = terms[msg.roomId || activeRoomId];
-        if (t && !t.dead) t.term.paste(msg.data || '');
+        if (!t || t.dead) break;
+        const data = msg.data || '';
+        // 맨 셸(cmd) 프롬프트에 개행 포함 텍스트를 붙여넣으면 줄마다 명령으로 즉시 실행돼
+        // '>'·'=>' 등이 예상치 못한 파일을 만든다. "지금 에이전트가 아니라 맨 셸인가"를 두 신호로 판정:
+        //  - bracketed paste(?2004h) OFF: 에이전트(claude/codex/gjc/opencode 등)는 켜고 cmd 는 안 켬.
+        //  - 메인(normal) 버퍼: alt-screen 에이전트(claude/codex/opencode)는 alternate 버퍼라 제외되고,
+        //    인라인 에이전트(gjc 등, alt-screen 없음)는 bracketed 로 제외된다.
+        // 둘 다 성립(off + normal)일 때만 = 맨 cmd → 호스트에 확인 요청. force(확인 통과분)면 바로 붙여넣기.
+        // (bracketed 는 크래시 종료 시 ?2004l 유실로 stale-on 가능성 있으나, 기동 실패형 giveup 은
+        //  애초에 2004h 를 못 켜 off 로 잡힌다 — 지배적 경로는 커버.)
+        if (!msg.force && /[\r\n]/.test(data)) {
+          let atShell = true;
+          try {
+            const bracketed = !!(t.term.modes && t.term.modes.bracketedPasteMode);
+            const buf = t.term.buffer && t.term.buffer.active;
+            const normalBuffer = !buf || buf.type === 'normal';
+            atShell = !bracketed && normalBuffer;
+          } catch (e) { atShell = true; }
+          if (atShell) {
+            post({ type: 'confirmPaste', roomId: (msg.roomId || activeRoomId), data: data });
+            break;
+          }
+        }
+        t.term.paste(data);
         break;
       }
       case 'adjustFontSize': {
