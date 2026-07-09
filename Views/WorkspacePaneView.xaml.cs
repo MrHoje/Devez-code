@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -930,11 +931,13 @@ public partial class WorkspacePaneView : UserControl
     private readonly HashSet<string> _pendingReactivateAfterReload = new();
     private const string ThemeReloadLabel = "테마 적용 중\n세션을 다시 여는 중입니다.";
 
-    // 숨김 graceful 종료 중인 방. 숨긴 직후 사이드바에서 바로 다시 열면 옛 프로세스가 아직 살아 있을 수 있어
-    // 붙지 말고 종료 완료 후 resume 재연결한다(내용 소실·이중 세션 방지).
+    // 숨김 후 실제 종료 대기(유예) CTS. 3초 안에 다시 열면 취소 → 프로세스 그대로 복귀.
+    private readonly Dictionary<string, CancellationTokenSource> _pendingHideStopCts = new();
+    // 유예 만료 후 graceful 종료 진행 중. 이 동안 다시 열면 옛 프로세스에 붙지 말고 완료 후 resume.
     private readonly HashSet<string> _gracefulStopRoomIds = new();
     private readonly HashSet<string> _pendingReactivateAfterHideStop = new();
     private const string HideStopLabel = "세션을 안전하게 종료하는 중…";
+    private const int HideStopDelayMs = 3000; // 실수 숨김 복구 유예
 
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
@@ -957,6 +960,8 @@ public partial class WorkspacePaneView : UserControl
             int idx = parent.Tabs.IndexOf(session);
             if (idx >= 0 && idx != parent.Tabs.Count - 1) parent.Tabs.Move(idx, parent.Tabs.Count - 1);
             session.Hidden = false;
+            // 3초 유예 종료 예약이 있으면 취소 — 프로세스 살려 둔 채 바로 복귀.
+            CancelPendingHideStop(session.Id);
             WorkspaceStore.Save(Projects);
         }
         // 접혀 있던 프로젝트의 세션이 선택되면 자동으로 펼쳐서 보이게 한다.
@@ -1384,64 +1389,113 @@ public partial class WorkspacePaneView : UserControl
     }
 
     /// <summary>사이드바 컨텍스트 메뉴 "세션 숨기기" / 탭 X — 탭에서 숨기고,
-    /// 이미 띄워 둔 ConPTY 가 있으면 transcript·훅 flush 후 안전하게 종료한다(내용 소실 방지).
-    /// 추적 파일/대화 기록은 보존. 사이드바에서 다시 열면 새로 resume 한다.</summary>
+    /// 이미 띄워 둔 ConPTY 는 <see cref="HideStopDelayMs"/> 유예 후 graceful 종료한다.
+    /// 유예 안에 다시 열면 종료를 취소해 프로세스·대화 상태를 그대로 복구한다.
+    /// 유예 후에는 transcript·훅 flush 후 프로세스만 내리고 추적 파일은 보존(다시 열면 resume).</summary>
     public void HideSession(SessionItem session)
     {
         if (session.Hidden) return;
         session.Hidden = true;
-        session.IsBusy = false;
-        session.IsWaitingChoice = false;
-        // 프로세스 종료는 비동기 — UI 상 즉시 죽은 상태로 표시(사이드바 점/스피너 잔류 방지).
-        session.IsAlive = false;
         WorkspaceStore.Save(Projects);
         ActivateNeighborAfterHide(session);
-        _ = GracefullyStopHiddenSessionAsync(session);
+        ScheduleGracefulStopAfterHide(session);
     }
 
-    /// <summary>숨긴 세션의 실행 중 프로세스를 graceful 종료. 미기동 세션은 no-op.
-    /// CloseTerminal 로 핸들러를 먼저 떼 자동 재진입(codex/opencode)이 오발동하지 않게 한 뒤,
-    /// /exit·/quit 등으로 transcript 를 flush 하고 Dispose 한다. 추적 파일은 보존.</summary>
-    private async Task GracefullyStopHiddenSessionAsync(SessionItem session)
+    /// <summary>숨김 세션의 지연 종료 예약을 취소한다(다시 열기·삭제·프로젝트 제거 공통).</summary>
+    private void CancelPendingHideStop(string roomId)
     {
-        // 숨기는 동안 다른 경로가 다시 열었으면 죽이지 않는다.
-        if (!session.Hidden) return;
+        if (!_pendingHideStopCts.Remove(roomId, out var cts)) return;
+        try { cts.Cancel(); } catch { /* ignore */ }
+        try { cts.Dispose(); } catch { /* ignore */ }
+    }
+
+    /// <summary>실행 중이면 3초 뒤 graceful 종료를 예약. 미기동은 no-op. 이미 예약이 있으면 재시작한다.</summary>
+    private void ScheduleGracefulStopAfterHide(SessionItem session)
+    {
+        CancelPendingHideStop(session.Id);
         if (TerminalSessionManager.Instance.Get(session.Id) is not { IsAlive: true })
             return;
 
-        _gracefulStopRoomIds.Add(session.Id);
+        var cts = new CancellationTokenSource();
+        _pendingHideStopCts[session.Id] = cts;
+        _ = GracefullyStopHiddenSessionAsync(session, cts);
+    }
+
+    /// <summary>유예 대기 후 숨긴 세션 프로세스를 graceful 종료. 유예 중 취소되면 프로세스 유지.
+    /// CloseTerminal 로 핸들러를 먼저 떼 자동 재진입(codex/opencode)이 오발동하지 않게 한 뒤,
+    /// /exit·/quit 등으로 transcript 를 flush 하고 Dispose 한다. 추적 파일은 보존.</summary>
+    private async Task GracefullyStopHiddenSessionAsync(SessionItem session, CancellationTokenSource cts)
+    {
+        var roomId = session.Id;
         try
         {
-            try { _terminal.CloseTerminal(session.Id); } catch { /* ignore */ }
             try
             {
-                await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { session.Id });
+                await Task.Delay(HideStopDelayMs, cts.Token);
             }
-            catch { /* best effort */ }
-
-            // dispose 플래그 해제 — 사이드바에서 다시 열 때 WireSession 이 막히지 않게.
-            // (GracefulDisposeRoomsAsync 는 고아 방지로 _disposedRooms 에 넣는다.)
-            try { TerminalSessionManager.Instance.ClearDisposedRoom(session.Id); } catch { /* ignore */ }
-
-            if (session.Hidden)
+            catch (OperationCanceledException)
             {
-                session.IsAlive = false;
-                session.IsBusy = false;
-                session.IsWaitingChoice = false;
+                return; // 유예 안에 다시 열림 — 프로세스 그대로
+            }
+
+            // 예약이 교체됐으면(다시 숨김 등) 이 인스턴스는 폐기.
+            if (!_pendingHideStopCts.TryGetValue(roomId, out var current) || !ReferenceEquals(current, cts))
+                return;
+            _pendingHideStopCts.Remove(roomId);
+            try { cts.Dispose(); } catch { /* ignore */ }
+
+            // 유예 동안 다시 열렸으면 죽이지 않는다.
+            if (!session.Hidden) return;
+            if (TerminalSessionManager.Instance.Get(roomId) is not { IsAlive: true })
+                return;
+
+            // 실제 종료 시작 — UI 는 죽은 상태, 종료 중 재오픈은 완료 후 resume.
+            session.IsAlive = false;
+            session.IsBusy = false;
+            session.IsWaitingChoice = false;
+            _gracefulStopRoomIds.Add(roomId);
+            try
+            {
+                try { _terminal.CloseTerminal(roomId); } catch { /* ignore */ }
+                try
+                {
+                    await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { roomId });
+                }
+                catch { /* best effort */ }
+
+                // dispose 플래그 해제 — 사이드바에서 다시 열 때 WireSession 이 막히지 않게.
+                try { TerminalSessionManager.Instance.ClearDisposedRoom(roomId); } catch { /* ignore */ }
+
+                if (session.Hidden)
+                {
+                    session.IsAlive = false;
+                    session.IsBusy = false;
+                    session.IsWaitingChoice = false;
+                }
+            }
+            finally
+            {
+                _gracefulStopRoomIds.Remove(roomId);
+                // 종료 중에 다시 연 경우 — 아직 이 탭을 보고 있으면 이제 안전하게 resume 연결.
+                if (_pendingReactivateAfterHideStop.Remove(roomId)
+                    && !session.Hidden
+                    && ReferenceEquals(_activeSession, session))
+                {
+                    _activeSession.IsActive = false;
+                    _activeSession = null;
+                    _activeTab = null;
+                    ActivateSession(session, unHide: false);
+                }
             }
         }
-        finally
+        catch (Exception ex)
         {
-            _gracefulStopRoomIds.Remove(session.Id);
-            // 종료 중에 다시 연 경우 — 아직 이 탭을 보고 있으면 이제 안전하게 resume 연결.
-            if (_pendingReactivateAfterHideStop.Remove(session.Id)
-                && !session.Hidden
-                && ReferenceEquals(_activeSession, session))
+            DiagLog.Write($"GracefullyStopHiddenSessionAsync room={roomId} err={ex.Message}");
+            _gracefulStopRoomIds.Remove(roomId);
+            if (_pendingHideStopCts.TryGetValue(roomId, out var cur) && ReferenceEquals(cur, cts))
             {
-                _activeSession.IsActive = false;
-                _activeSession = null;
-                _activeTab = null;
-                ActivateSession(session, unHide: false);
+                _pendingHideStopCts.Remove(roomId);
+                try { cts.Dispose(); } catch { /* ignore */ }
             }
         }
     }
@@ -1528,6 +1582,7 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>세션의 터미널 프로세스·매핑 정리(컬렉션은 건드리지 않음). 셸의 DeleteProject 도 호출.</summary>
     public void DisposeSessionProcess(SessionItem session, bool purge = true)
     {
+        CancelPendingHideStop(session.Id); // 숨김 유예 종료 예약 취소(삭제/프로젝트 제거와 레이스 방지)
         var workingDir = SettingsService.LoadClaudeCodeRoomDir(session.Id);
         try { _terminal.CloseTerminal(session.Id); } catch { /* ignore */ }
         try
