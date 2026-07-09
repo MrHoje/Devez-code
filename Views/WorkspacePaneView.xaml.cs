@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -929,6 +930,12 @@ public partial class WorkspacePaneView : UserControl
     private readonly HashSet<string> _pendingReactivateAfterReload = new();
     private const string ThemeReloadLabel = "테마 적용 중\n세션을 다시 여는 중입니다.";
 
+    // 숨김 graceful 종료 중인 방. 숨긴 직후 사이드바에서 바로 다시 열면 옛 프로세스가 아직 살아 있을 수 있어
+    // 붙지 말고 종료 완료 후 resume 재연결한다(내용 소실·이중 세션 방지).
+    private readonly HashSet<string> _gracefulStopRoomIds = new();
+    private readonly HashSet<string> _pendingReactivateAfterHideStop = new();
+    private const string HideStopLabel = "세션을 안전하게 종료하는 중…";
+
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
         if (ReferenceEquals(_activeSession, session)) return;
@@ -979,6 +986,19 @@ public partial class WorkspacePaneView : UserControl
             // 스피너만 띄운 상태다. 잘못 마킹하면 나중에 진짜로 연결될 때 리플로우 감춤 커버가
             // "이미 이 폭으로 본 적 있음"으로 오판돼 스킵되고, 기본폭→패널폭 리플로우가 그대로
             // 노출돼 터미널이 화면 모서리에만 작게 뜨는 것처럼 보인다.
+            if (coverReflow) RevealAfterTransition(kick: true);
+            return;
+        }
+
+        // 숨김 graceful 종료 중이면 옛 프로세스에 붙지 않는다 — 종료 완료 후 아래에서 재연결.
+        if (_gracefulStopRoomIds.Contains(session.Id))
+        {
+            _pendingReactivateAfterHideStop.Add(session.Id);
+            UpdateEmptyState();
+            ShowSessionLoading(session.Id, HideStopLabel);
+            EnsureSelectedTabVisible(session);
+            RefreshModelEffortDock();
+            ActiveChanged?.Invoke(this);
             if (coverReflow) RevealAfterTransition(kick: true);
             return;
         }
@@ -1363,12 +1383,67 @@ public partial class WorkspacePaneView : UserControl
         RemoveSession(session, purge: true);
     }
 
-    /// <summary>사이드바 컨텍스트 메뉴 "세션 숨기기" — 탭 X 숨기기와 동일 동작.</summary>
+    /// <summary>사이드바 컨텍스트 메뉴 "세션 숨기기" / 탭 X — 탭에서 숨기고,
+    /// 이미 띄워 둔 ConPTY 가 있으면 transcript·훅 flush 후 안전하게 종료한다(내용 소실 방지).
+    /// 추적 파일/대화 기록은 보존. 사이드바에서 다시 열면 새로 resume 한다.</summary>
     public void HideSession(SessionItem session)
     {
+        if (session.Hidden) return;
         session.Hidden = true;
+        session.IsBusy = false;
+        session.IsWaitingChoice = false;
+        // 프로세스 종료는 비동기 — UI 상 즉시 죽은 상태로 표시(사이드바 점/스피너 잔류 방지).
+        session.IsAlive = false;
         WorkspaceStore.Save(Projects);
         ActivateNeighborAfterHide(session);
+        _ = GracefullyStopHiddenSessionAsync(session);
+    }
+
+    /// <summary>숨긴 세션의 실행 중 프로세스를 graceful 종료. 미기동 세션은 no-op.
+    /// CloseTerminal 로 핸들러를 먼저 떼 자동 재진입(codex/opencode)이 오발동하지 않게 한 뒤,
+    /// /exit·/quit 등으로 transcript 를 flush 하고 Dispose 한다. 추적 파일은 보존.</summary>
+    private async Task GracefullyStopHiddenSessionAsync(SessionItem session)
+    {
+        // 숨기는 동안 다른 경로가 다시 열었으면 죽이지 않는다.
+        if (!session.Hidden) return;
+        if (TerminalSessionManager.Instance.Get(session.Id) is not { IsAlive: true })
+            return;
+
+        _gracefulStopRoomIds.Add(session.Id);
+        try
+        {
+            try { _terminal.CloseTerminal(session.Id); } catch { /* ignore */ }
+            try
+            {
+                await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { session.Id });
+            }
+            catch { /* best effort */ }
+
+            // dispose 플래그 해제 — 사이드바에서 다시 열 때 WireSession 이 막히지 않게.
+            // (GracefulDisposeRoomsAsync 는 고아 방지로 _disposedRooms 에 넣는다.)
+            try { TerminalSessionManager.Instance.ClearDisposedRoom(session.Id); } catch { /* ignore */ }
+
+            if (session.Hidden)
+            {
+                session.IsAlive = false;
+                session.IsBusy = false;
+                session.IsWaitingChoice = false;
+            }
+        }
+        finally
+        {
+            _gracefulStopRoomIds.Remove(session.Id);
+            // 종료 중에 다시 연 경우 — 아직 이 탭을 보고 있으면 이제 안전하게 resume 연결.
+            if (_pendingReactivateAfterHideStop.Remove(session.Id)
+                && !session.Hidden
+                && ReferenceEquals(_activeSession, session))
+            {
+                _activeSession.IsActive = false;
+                _activeSession = null;
+                _activeTab = null;
+                ActivateSession(session, unHide: false);
+            }
+        }
     }
 
     public void StopTrackingSession(SessionItem session)
@@ -1685,14 +1760,7 @@ public partial class WorkspacePaneView : UserControl
                 foreach (var t in parent.Tabs.OfType<SessionItem>().ToList())
                 {
                     if (t == s) continue;
-                    t.Hidden = true;
-                }
-                WorkspaceStore.Save(Projects);
-                if (ReferenceEquals(_activeSession, s))
-                {
-                    var next = parent.Tabs.OfType<SessionItem>().FirstOrDefault(x => !x.Hidden);
-                    if (next != null) ActivateSession(next);
-                    else ClearActiveSession();
+                    HideSession(t); // graceful 종료 포함(미기동은 no-op)
                 }
             };
             cm.Items.Add(hideOthers);
@@ -1754,9 +1822,7 @@ public partial class WorkspacePaneView : UserControl
 
         if (tab is SessionItem s)
         {
-            s.Hidden = true;
-            WorkspaceStore.Save(Projects);
-            ActivateNeighborAfterHide(s); // 같은 패널의 왼쪽 이웃 우선(분할 시 반대쪽 패널 탭 제외)
+            HideSession(s); // 탭 숨김 + 실행 중이면 graceful 종료(내용 소실 방지)
         }
         else if (tab is FileTabItem f)
         {
