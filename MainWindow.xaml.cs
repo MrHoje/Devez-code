@@ -697,7 +697,18 @@ public partial class MainWindow : Window
         if (_lastGrok is null) return;
         if (_lastGrok.HasData)
         {
-            AddProviderCard(cards, _lastGrok, "Grok Build", App.GrokIconUri);
+            // Grok Build 는 주간 한도만 제공 — 5시간/월간 행은 만들지 않는다.
+            var rows = new List<Models.UsageRowVM>();
+            var showEst = SettingsService.LoadShowEstimate();
+            AddRow(rows, "주간", _lastGrok.Weekly?.UsedPercent, _lastGrok.Weekly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
+            AddRow(rows, "월간", _lastGrok.Monthly?.UsedPercent, _lastGrok.Monthly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
+            cards.Add(new Models.UsageCardVM
+            {
+                Name = "Grok Build",
+                Plan = _lastGrok.PlanLabel,
+                IconPath = App.GrokIconUri,
+                Rows = rows,
+            });
             return;
         }
         if (string.IsNullOrEmpty(_lastGrok.Error)) return;

@@ -33,8 +33,40 @@ public partial class App : Application
     private System.Threading.Mutex? _singleInstanceMutex;
     private const string SingleInstanceMutexName = @"Global\DevezCode.SingleInstance";
 
+    /// <summary>스타트업/런타임 크래시 진단 로그 경로(%AppData%\DevezCode\crash.log).
+    /// 전역 예외가 아무 메시지 없이 앱을 죽일 때 원인을 남긴다.</summary>
+    private static string CrashLogFile => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "crash.log");
+
+    /// <summary>처리되지 않은 예외를 crash.log 에 append 한다(best-effort). UI/백그라운드 공통.</summary>
+    private static void WriteCrashLog(string source, Exception? ex)
+    {
+        try
+        {
+            var path = CrashLogFile;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "?";
+            var stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            File.AppendAllText(path,
+                $"[{stamp}] v{ver} {source}{Environment.NewLine}{ex}{Environment.NewLine}{new string('-', 60)}{Environment.NewLine}");
+        }
+        catch { /* best-effort — 로깅 실패가 크래시 처리를 막지 않도록 */ }
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 전역 예외 핸들러 — 스타트업 포함 어느 지점 크래시든 crash.log 에 기록.
+        // (핸들러 부착 전 크래시는 못 잡으므로 OnStartup 최상단에서 건다.)
+        DispatcherUnhandledException += (_, args) =>
+        {
+            WriteCrashLog("DispatcherUnhandledException", args.Exception);
+            // 기록만 — 처리 표시 안 함(기존 크래시 동작 유지, 관찰만).
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            WriteCrashLog("AppDomain.UnhandledException", args.ExceptionObject as Exception);
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
+            WriteCrashLog("UnobservedTaskException", args.Exception);
+
         // 자동 업데이트 재실행 플래그(단일 인스턴스 분기보다 먼저 읽어 둔다).
         UpdateFailedRelaunch = e.Args.Contains("--update-failed");
 
