@@ -802,6 +802,24 @@
                             <TextBlock x:Name="GoMonthPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
+                        <!-- Grok Build (주간 한도 — CLI /usage 와 동일) -->
+                        <StackPanel x:Name="GrokPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
+                                    Background="Transparent" Cursor="Arrow"
+                                    ToolTip="Grok Build 주간 한도">
+                            <Border x:Name="GrokLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                            <Image x:Name="GrokFooterIcon" Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
+                                   Source="pack://application:,,,/Resources/Images/ShellPresets/grok_icon_white_50.png"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <TextBlock x:Name="GrokWeekLabel" Text="주간" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="GrokWeekBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="GrokWeekPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
                         <!-- DeepSeek (API 키 잔액) -->
                         <StackPanel x:Name="DeepSeekPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
                                     Background="Transparent" Cursor="Arrow">

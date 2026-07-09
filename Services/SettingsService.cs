@@ -118,6 +118,7 @@ public static class SettingsService
         public bool ShowFooterCodex  { get; set; } = false;
         public bool ShowFooterGo     { get; set; } = false;
         public bool ShowFooterDeepSeek { get; set; } = false;
+        public bool ShowFooterGrok { get; set; } = false;
         // 계정 사용량 사이드바/툴팁에 한도 도달 예상 시간 표시. 기본 켜짐.
         public bool ShowEstimate { get; set; } = false;
         // 탭 이동 전역 단축키(가상키코드). 기본 한자(0x19) + 좌(0x25)/우(0x27) 방향키.
@@ -270,6 +271,8 @@ public static class SettingsService
     public static void SaveShowFooterGo(bool v)     { Current.ShowFooterGo     = v; Save(); }
     public static bool LoadShowFooterDeepSeek() => Current.ShowFooterDeepSeek;
     public static void SaveShowFooterDeepSeek(bool v) { Current.ShowFooterDeepSeek = v; Save(); }
+    public static bool LoadShowFooterGrok() => Current.ShowFooterGrok;
+    public static void SaveShowFooterGrok(bool v) { Current.ShowFooterGrok = v; Save(); }
 
     // ── 계정 사용량 한도 도달 예상 표시 ──────────────────────────
     public static bool LoadShowEstimate() => Current.ShowEstimate;

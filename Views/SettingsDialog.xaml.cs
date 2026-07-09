@@ -47,8 +47,8 @@ public partial class SettingsDialog : UserControl
     private bool _selectedShowDirView, _selectedShowQueueView, _selectedShowBrowserView, _selectedShowDiffView;
 
     // 푸터 사용량 표시(provider별) + 한도예상 표시 — [저장] 시점에만 디스크 반영.
-    private bool _originalShowFooterClaude, _originalShowFooterCodex, _originalShowFooterGo, _originalShowFooterDeepSeek, _originalShowEstimate;
-    private bool _selectedShowFooterClaude, _selectedShowFooterCodex, _selectedShowFooterGo, _selectedShowFooterDeepSeek, _selectedShowEstimate;
+    private bool _originalShowFooterClaude, _originalShowFooterCodex, _originalShowFooterGo, _originalShowFooterDeepSeek, _originalShowFooterGrok, _originalShowEstimate;
+    private bool _selectedShowFooterClaude, _selectedShowFooterCodex, _selectedShowFooterGo, _selectedShowFooterDeepSeek, _selectedShowFooterGrok, _selectedShowEstimate;
 
     // 알림 상세(자동닫힘/모니터) — [저장] 시점에만 디스크 반영. 위치는 기존 _notifyPos/_originalNotifyPos 사용.
     private int    _originalNotifyAutoCloseSec, _selectedNotifyAutoCloseSec;
@@ -694,8 +694,9 @@ public partial class SettingsDialog : UserControl
             SetActiveCategory(_activeCategoryKey);
             UpdateThemeSelectionVisual();
             UpdateFontSelectionVisual();
-            OpenCodeLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
-            OpenCodeCatIcon.Source  = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 세션 클리너 pill 아이콘도 동일 처리
+        OpenCodeLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
+        OpenCodeCatIcon.Source  = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 세션 클리너 pill 아이콘도 동일 처리
+        GrokLoginIcon.Source    = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
         }));
     }
 
@@ -744,10 +745,12 @@ public partial class SettingsDialog : UserControl
         _originalShowFooterCodex    = _selectedShowFooterCodex    = SettingsService.LoadShowFooterCodex();
         _originalShowFooterGo       = _selectedShowFooterGo       = SettingsService.LoadShowFooterGo();
         _originalShowFooterDeepSeek = _selectedShowFooterDeepSeek = SettingsService.LoadShowFooterDeepSeek();
+        _originalShowFooterGrok     = _selectedShowFooterGrok     = SettingsService.LoadShowFooterGrok();
         ShowFooterClaudeToggle.IsChecked   = _originalShowFooterClaude;
         ShowFooterCodexToggle.IsChecked    = _originalShowFooterCodex;
         ShowFooterGoToggle.IsChecked       = _originalShowFooterGo;
         ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek;
+        ShowFooterGrokToggle.IsChecked     = _originalShowFooterGrok;
         UpdateConnectionBadges();
 
         // 한도 도달 예상 표시 토글
@@ -771,6 +774,7 @@ public partial class SettingsDialog : UserControl
         _selectedShowFooterCodex    = ShowFooterCodexToggle.IsChecked == true;
         _selectedShowFooterGo       = ShowFooterGoToggle.IsChecked == true;
         _selectedShowFooterDeepSeek = ShowFooterDeepSeekToggle.IsChecked == true;
+        _selectedShowFooterGrok     = ShowFooterGrokToggle.IsChecked == true;
     }
 
     private void EstimateToggle_Changed(object sender, RoutedEventArgs e)
@@ -796,6 +800,15 @@ public partial class SettingsDialog : UserControl
     {
         new OpenCodeGoLoginWindow(Window.GetWindow(this)).ShowDialog();
         UpdateConnectionBadges();
+    }
+
+    private void GrokLogin_Click(object sender, RoutedEventArgs e)
+    {
+        var win = new GrokLoginWindow(Window.GetWindow(this));
+        win.ShowDialog();
+        UpdateConnectionBadges();
+        if (win.Captured)
+            (Application.Current.MainWindow as MainWindow)?.RefreshGrokUsage();
     }
 
     // ── DeepSeek API 키 토글/저장 ─────────────────────────────────
@@ -845,6 +858,7 @@ public partial class SettingsDialog : UserControl
         CodexConnectedBadge.Visibility = CodexUsageService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
         GoConnectedBadge.Visibility = OpenCodeGoCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
         DeepSeekConnectedBadge.Visibility = DeepSeekCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
+        GrokConnectedBadge.Visibility = GrokUsageService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── 알림 설정 (모두 [저장] 버튼에서만 디스크 반영 — 테스트 버튼은 저장된 값으로 동작) ──
@@ -1072,6 +1086,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowFooterCodex != _originalShowFooterCodex) return true;
         if (_selectedShowFooterGo != _originalShowFooterGo) return true;
         if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) return true;
+        if (_selectedShowFooterGrok != _originalShowFooterGrok) return true;
         if (_selectedShowEstimate != _originalShowEstimate) return true;
         if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec) return true;
         if (_selectedNotifyMonitor != _originalNotifyMonitor) return true;
@@ -1148,18 +1163,21 @@ public partial class SettingsDialog : UserControl
         _originalShowDiffView = _selectedShowDiffView;
 
         if (_selectedShowFooterClaude != _originalShowFooterClaude || _selectedShowFooterCodex != _originalShowFooterCodex
-            || _selectedShowFooterGo != _originalShowFooterGo || _selectedShowFooterDeepSeek != _originalShowFooterDeepSeek)
+            || _selectedShowFooterGo != _originalShowFooterGo || _selectedShowFooterDeepSeek != _originalShowFooterDeepSeek
+            || _selectedShowFooterGrok != _originalShowFooterGrok)
         {
             SettingsService.SaveShowFooterClaude(_selectedShowFooterClaude);
             SettingsService.SaveShowFooterCodex(_selectedShowFooterCodex);
             SettingsService.SaveShowFooterGo(_selectedShowFooterGo);
             SettingsService.SaveShowFooterDeepSeek(_selectedShowFooterDeepSeek);
+            SettingsService.SaveShowFooterGrok(_selectedShowFooterGrok);
             (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
         }
         _originalShowFooterClaude = _selectedShowFooterClaude;
         _originalShowFooterCodex = _selectedShowFooterCodex;
         _originalShowFooterGo = _selectedShowFooterGo;
         _originalShowFooterDeepSeek = _selectedShowFooterDeepSeek;
+        _originalShowFooterGrok = _selectedShowFooterGrok;
 
         if (_selectedShowEstimate != _originalShowEstimate)
         {
@@ -1263,6 +1281,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowFooterCodex != _originalShowFooterCodex) { _selectedShowFooterCodex = _originalShowFooterCodex; ShowFooterCodexToggle.IsChecked = _originalShowFooterCodex; }
         if (_selectedShowFooterGo != _originalShowFooterGo) { _selectedShowFooterGo = _originalShowFooterGo; ShowFooterGoToggle.IsChecked = _originalShowFooterGo; }
         if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) { _selectedShowFooterDeepSeek = _originalShowFooterDeepSeek; ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek; }
+        if (_selectedShowFooterGrok != _originalShowFooterGrok) { _selectedShowFooterGrok = _originalShowFooterGrok; ShowFooterGrokToggle.IsChecked = _originalShowFooterGrok; }
         if (_selectedShowEstimate != _originalShowEstimate) { _selectedShowEstimate = _originalShowEstimate; ShowEstimateToggle.IsChecked = _originalShowEstimate; }
         // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)
         CancelShortcutCapture();
@@ -1330,7 +1349,6 @@ public partial class SettingsDialog : UserControl
                 Id = agent.Id,
                 DisplayName = agent.DisplayName,
                 InstallCommand = agent.InstallCommand,
-                CommandHint = $"실행 명령: {agent.Command}",
                 Installed = installed,
                 InstalledLabel = installed ? "설치됨" : "미설치",
                 InstalledBrush = installed
@@ -1404,7 +1422,6 @@ public sealed class AgentItem : INotifyPropertyChanged
     public string DisplayName { get; set; } = "";
     /// <summary>설치 명령(복사 대상). 예: irm https://claude.ai/install.ps1 | iex</summary>
     public string InstallCommand { get; set; } = "";
-    public string CommandHint { get; set; } = "";
 
     private bool _installed;
     public bool Installed

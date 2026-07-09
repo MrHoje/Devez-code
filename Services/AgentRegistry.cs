@@ -47,8 +47,9 @@ public static class AgentRegistry
             Id = "codex", DisplayName = "Codex", Provider = "OpenAI",
             ExeNames = new[] { "codex.exe", "codex.cmd", "codex.bat", "codex.ps1", "codex" },
             Command = "codex",
-            // Windows 공식 스탠드얼론 (docs: chatgpt.com/codex/install.ps1). npm 대안: npm install -g @openai/codex
-            InstallCommand = "irm https://chatgpt.com/codex/install.ps1 | iex",
+            // 스탠드얼론 install.ps1 은 PS 5.1 에서 OSArchitecture 속성 오류로 실패(openai/codex#19559).
+            // Windows 실사용은 npm 경로가 안정적(공식 대안). Node.js 필요.
+            InstallCommand = "npm install -g @openai/codex",
             ResumeFlag = "--last",
             SupportsHooks = true, // ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적 (Claude 정합)
             InlineTui = true,     // codex 는 alt-screen(?1049h) 미사용 인라인 TUI — ?2026h 프레임 마커로

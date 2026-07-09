@@ -56,10 +56,12 @@ public partial class MainWindow : Window
     private readonly CodexUsageService _codex = new();
     private readonly OpenCodeGoUsageService _openCodeGo = new();
     private readonly DeepSeekUsageService _deepSeek = new();
+    private readonly GrokUsageService _grok = new();
     // 사용량 팝오버(우측 사이드바)용 최신 스냅샷 보관 — 데이터 있는 provider 만 카드로 노출.
     private Models.ProviderUsage? _lastCodex;
     private Models.ProviderUsage? _lastGo;
     private Models.ProviderUsage? _lastDeepSeek;
+    private Models.ProviderUsage? _lastGrok;
     private readonly SessionBusyService _sessionBusy = new();
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
@@ -456,6 +458,7 @@ public partial class MainWindow : Window
             _codex.Dispose();
             _openCodeGo.Dispose();
             _deepSeek.Dispose();
+            _grok.Dispose();
             _sessionBusy.Dispose();
             _modelEffort.Dispose();
             _sessionLastMsg.Dispose();
@@ -646,14 +649,15 @@ public partial class MainWindow : Window
         _statusLine.Start();
         _usageApi.Start();
 
-        // codex·opencode-go 사용량 폴링 → 푸터 패널(데이터 오면 CodexPanel/GoPanel 자동 표시).
+        // codex·opencode-go·deepseek·grok 사용량 폴링 → 푸터 패널(데이터 오면 자동 표시).
         _codex.Updated       += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _openCodeGo.Updated  += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _deepSeek.Updated    += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _grok.Updated        += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _codex.Start();
         _openCodeGo.Start();
         _deepSeek.Start();
-
+        _grok.Start();
     }
 
     /// <summary>표시 가능한(데이터 있는) provider 만 사용량 카드로 변환. Claude → Codex → OpenCode Go 순.</summary>
@@ -682,9 +686,28 @@ public partial class MainWindow : Window
         AddProviderCard(cards, _lastCodex, "Codex",
             "pack://application:,,,/Resources/Images/ShellPresets/codex.png");
         AddProviderCard(cards, _lastGo, "OpenCode Go", App.OpenCodeIconUri);
+        AddGrokCard(cards);
         AddDeepSeekCard(cards);
 
         return cards;
+    }
+
+    private void AddGrokCard(List<Models.UsageCardVM> cards)
+    {
+        if (_lastGrok is null) return;
+        if (_lastGrok.HasData)
+        {
+            AddProviderCard(cards, _lastGrok, "Grok Build", App.GrokIconUri);
+            return;
+        }
+        if (string.IsNullOrEmpty(_lastGrok.Error)) return;
+        cards.Add(new Models.UsageCardVM
+        {
+            Name = "Grok Build",
+            Plan = _lastGrok.Error,
+            IconPath = App.GrokIconUri,
+            Rows = Array.Empty<Models.UsageRowVM>(),
+        });
     }
 
     /// <summary>DeepSeek 잔액 텍스트를 사이드바에 추가. 프로그래스바 없이 잔액만 표시.</summary>
@@ -870,6 +893,10 @@ public partial class MainWindow : Window
                 _lastDeepSeek = u;
                 ApplyDeepSeekFooter(u);
                 break;
+            case "grok":
+                _lastGrok = u;
+                ApplyGrokFooter(u);
+                break;
         }
         RefreshUsagePanelIfVisible();
     }
@@ -911,6 +938,42 @@ public partial class MainWindow : Window
 
     /// <summary>API 키 저장 직후 MainWindow 에서 즉시 폴링 (SettingsDialog 에서 호출).</summary>
     public void RefreshDeepSeekUsage() => _deepSeek.RefreshNow();
+
+    /// <summary>Grok 토큰/설정 변경 직후 즉시 폴링.</summary>
+    public void RefreshGrokUsage() => _grok.RefreshNow();
+
+    /// <summary>Grok Build 주간 한도를 하단 푸터에 반영 (CLI /usage 와 동일 format=credits).</summary>
+    private void ApplyGrokFooter(Models.ProviderUsage u)
+    {
+        bool show = SettingsService.LoadShowFooterGrok();
+        if (!show || (!u.HasData && string.IsNullOrEmpty(u.Error)))
+        { GrokPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
+
+        GrokPanel.Visibility = Visibility.Visible;
+        UpdateFooterDivider();
+        var pct = u.Weekly?.UsedPercent ?? u.Monthly?.UsedPercent;
+        SetWindowBar(GrokWeekBar, GrokWeekPct, pct);
+        GrokWeekLabel.Text = !string.IsNullOrEmpty(u.Error) ? "!"
+            : u.Weekly != null ? "주간" : "월간";
+        if (!string.IsNullOrEmpty(u.Error) && pct is null)
+            GrokWeekPct.Text = "--";
+        GrokPanel.ToolTip = BuildGrokTooltip(u);
+    }
+
+    private static string BuildGrokTooltip(Models.ProviderUsage u)
+    {
+        if (!string.IsNullOrEmpty(u.Error))
+            return "Grok Build\n" + u.Error;
+        var sb = new System.Text.StringBuilder("Grok Build");
+        if (u.Weekly?.UsedPercent is double w)
+            sb.Append($"\n주간 한도 {w:F0}%");
+        if (u.Monthly?.UsedPercent is double m)
+            sb.Append($"\n월간 {m:F0}%");
+        var reset = u.Weekly?.ResetsAt ?? u.Monthly?.ResetsAt;
+        if (reset is DateTimeOffset r)
+            sb.Append($"  ·  초기화 {FormatResetDate(r)}");
+        return sb.ToString();
+    }
 
     /* ── 하단 푸터 계정 사용량 (우측 사이드바와 별개; 설정의 '하단 푸터 표시' 토글로 provider별 on/off) ── */
 
@@ -978,9 +1041,11 @@ public partial class MainWindow : Window
         bool claude = RateLimitPanel.Visibility == Visibility.Visible;
         bool codex = CodexPanel.Visibility == Visibility.Visible;
         bool go = GoPanel.Visibility == Visibility.Visible;
+        bool grok = GrokPanel.Visibility == Visibility.Visible;
         if (CxLeadDivider != null) CxLeadDivider.Visibility = claude ? Visibility.Visible : Visibility.Collapsed;
         if (GoLeadDivider != null) GoLeadDivider.Visibility = (claude || codex) ? Visibility.Visible : Visibility.Collapsed;
-        if (DeepSeekLeadDivider != null) DeepSeekLeadDivider.Visibility = (claude || codex || go) ? Visibility.Visible : Visibility.Collapsed;
+        if (GrokLeadDivider != null) GrokLeadDivider.Visibility = (claude || codex || go) ? Visibility.Visible : Visibility.Collapsed;
+        if (DeepSeekLeadDivider != null) DeepSeekLeadDivider.Visibility = (claude || codex || go || grok) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static string BuildRlTooltip(Models.RateLimitSnapshot snap)
@@ -1111,6 +1176,7 @@ public partial class MainWindow : Window
         else { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastCodex != null) ApplyProviderUsage(_lastCodex); else { CodexPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastGo != null)       ApplyProviderUsage(_lastGo);       else { GoPanel.Visibility       = Visibility.Collapsed; UpdateFooterDivider(); }
+        if (_lastGrok != null)     ApplyProviderUsage(_lastGrok);     else { GrokPanel.Visibility     = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastDeepSeek != null) ApplyProviderUsage(_lastDeepSeek); else { DeepSeekPanel.Visibility  = Visibility.Collapsed; UpdateFooterDivider(); }
         RefreshUsagePanelIfVisible();
     }
@@ -3738,6 +3804,7 @@ public partial class MainWindow : Window
         UpdatePanelToggleVisual();
         ApplyFooterUsageVisibility();
         GoFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
+        GrokFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
         RefreshUsagePanelIfVisible();                                                                      // 사용량 카드 아이콘도 재빌드
         RefreshSessionHistoryIcons();                                                                      // 완료기록/대기 카드 opencode 아이콘도 재빌드
     }));

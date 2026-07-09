@@ -519,31 +519,26 @@
                                                                            Foreground="White" VerticalAlignment="Center"/>
                                                             </Border>
                                                         </StackPanel>
-                                                        <!-- 1줄: 설치 명령 + 복사 / 2줄: 실행 명령 -->
-                                                        <StackPanel Margin="0,3,0,0">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="설치 명령:" FontSize="{DynamicResource Fs11}"
-                                                                           Foreground="{DynamicResource TextMutedBrush}"
-                                                                           VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                                <TextBlock Text="{Binding InstallCommand}" FontSize="{DynamicResource Fs11}"
-                                                                           Foreground="{DynamicResource TextMutedBrush}"
-                                                                           VerticalAlignment="Center"
-                                                                           ToolTip="{Binding InstallCommand}"/>
-                                                                <Button Style="{StaticResource IconButton}" Width="22" Height="22"
-                                                                        Margin="4,0,0,0" Padding="2"
-                                                                        VerticalAlignment="Center" Cursor="Hand"
-                                                                        ToolTip="설치 명령 복사"
-                                                                        Tag="{Binding InstallCommand}"
-                                                                        Click="CopyInstallCommand_Click">
-                                                                    <Path Style="{StaticResource LucideIcon}"
-                                                                          Data="{StaticResource IconCopy}"
-                                                                          Width="12" Height="12"
-                                                                          Stroke="{DynamicResource TextMutedBrush}"/>
-                                                                </Button>
-                                                            </StackPanel>
-                                                            <TextBlock Text="{Binding CommandHint}" FontSize="{DynamicResource Fs11}"
+                                                        <!-- 설치 명령 + 복사 -->
+                                                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                            <TextBlock Text="설치 명령:" FontSize="{DynamicResource Fs11}"
                                                                        Foreground="{DynamicResource TextMutedBrush}"
-                                                                       Margin="0,2,0,0"/>
+                                                                       VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                            <TextBlock Text="{Binding InstallCommand}" FontSize="{DynamicResource Fs11}"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                                       VerticalAlignment="Center"
+                                                                       ToolTip="{Binding InstallCommand}"/>
+                                                            <Button Style="{StaticResource IconButton}" Width="22" Height="22"
+                                                                    Margin="4,0,0,0" Padding="2"
+                                                                    VerticalAlignment="Center" Cursor="Hand"
+                                                                    ToolTip="설치 명령 복사"
+                                                                    Tag="{Binding InstallCommand}"
+                                                                    Click="CopyInstallCommand_Click">
+                                                                <Path Style="{StaticResource LucideIcon}"
+                                                                      Data="{StaticResource IconCopy}"
+                                                                      Width="12" Height="12"
+                                                                      Stroke="{DynamicResource TextMutedBrush}"/>
+                                                            </Button>
                                                         </StackPanel>
                                                         <!-- Claude Code 전용: 세션 유지기간 (~/.claude/settings.json 의 cleanupPeriodDays) -->
                                                         <StackPanel Margin="0,12,0,0"
@@ -988,6 +983,34 @@
                                     </Button>
                                 </Grid>
 
+                                <Grid Margin="0,0,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Grok Build" VerticalAlignment="Center"
+                                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                        <StackPanel x:Name="GrokConnectedBadge" Orientation="Horizontal" Visibility="Collapsed"
+                                                    Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="연결됨" Margin="5,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Click="GrokLogin_Click" Style="{StaticResource UsageLoginButton}"
+                                            ToolTip="xAI 계정으로 로그인해 Grok Build 사용량 연결 (Grok CLI 토큰도 자동 인식)">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Image x:Name="GrokLoginIcon"
+                                                   Source="pack://application:,,,/Resources/Images/ShellPresets/grok_icon_white_50.png"
+                                                   Width="13" Height="13" VerticalAlignment="Center"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+
                                 <!-- DeepSeek (API 키) -->
                                 <Grid>
                                     <Grid.RowDefinitions>
@@ -1127,7 +1150,7 @@
                                               Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
                                 </Grid>
 
-                                <Grid>
+                                <Grid Margin="0,0,0,14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -1139,6 +1162,22 @@
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <CheckBox x:Name="ShowFooterDeepSeekToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                </Grid>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="Grok Build" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="Grok Build 주간 한도" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowFooterGrokToggle" Grid.Column="1"
                                               Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                               Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
                                 </Grid>

@@ -22,7 +22,7 @@ public sealed class ResetCredit
 /// Claude 는 <see cref="RateLimitSnapshot"/> 를 따로 쓰고, 이건 푸터의 추가 provider 칸에 쓴다.</summary>
 public sealed class ProviderUsage
 {
-    /// <summary>provider 키 — "codex" | "opencode-go".</summary>
+    /// <summary>provider 키 — "codex" | "opencode-go" | "deepseek" | "grok".</summary>
     public required string Provider { get; init; }
 
     public UsageWindow? Primary { get; init; }   // 단기(5h/hourly/rolling)
