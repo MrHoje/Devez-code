@@ -66,6 +66,8 @@ public partial class MainWindow : Window
     private readonly SessionLastMessageService _sessionLastMsg = new();
     // codex — Claude 와 동일하게 ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적.
     private readonly CodexHookService _codexHook = new();
+    // grok — ~/.grok/hooks + 방별 상태 파일로 lastmsg/busy/session_id 추적 (codex 패턴).
+    private readonly GrokHookService _grokHook = new();
     // 비-Claude 비-codex (opencode/gjc) 의 last prompt 추적. codex 는 위 훅 서비스가 처리.
     private readonly AgentLastMessageService _agentLastMsg = new();
     // opencode — 플러그인이 lastmsg\<room>.txt 에 저장한 user prompt 를 FileSystemWatcher 로 즉시 반영 (claude 와 동일 패턴).
@@ -318,6 +320,27 @@ public partial class MainWindow : Window
         _codexHook.CodexSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() => SettingsService.SaveCodexRoomSession(roomId, sid));
 
+        // grok — codex 와 동일 roomId 키 즉시 갱신.
+        _grokHook.MessageChanged += (roomId, msg) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s == null) return;
+                s.LastMessage = msg;
+                foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
+            });
+        _grokHook.BusyChanged += (roomId, busy) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                bool was = s?.IsBusy ?? false;
+                if (s != null) s.IsBusy = busy;
+                NotifyIfSessionFinished(s, was, busy);
+                UpdateSessionBusyDisplay();
+            });
+        _grokHook.GrokSessionChanged += (roomId, sid) =>
+            Dispatcher.InvokeAsync(() => SettingsService.SaveGrokRoomSession(roomId, sid));
+
         // 테마 변경 시 좌·우 패널 토글 아이콘 brush 재계산(seam 은 각 패널이 자체 처리)
         App.ThemeChanged += OnThemeChanged_UpdatePanels;
 
@@ -353,6 +376,9 @@ public partial class MainWindow : Window
             CodexHookInstaller.EnsureScriptInstalled();
             CodexHookInstaller.InstallHooksJson();
             _codexHook.Start();
+            // grok 훅 — ~/.grok/hooks/devezcode-room-tracker.json + hook.ps1
+            GrokHookInstaller.EnsureInstalled();
+            _grokHook.Start();
             // opencode 플러그인 — 매 시작 시 ~/.config\opencode\plugin\devezcode-room-tracker.js 갱신.
             // session.created/updated → sessions\<room>.txt (세션 ID 복원용)
             // message.updated( role=user ) → lastmsg\<room>.txt (헤더 타이틀 즉시 표시)
@@ -433,6 +459,7 @@ public partial class MainWindow : Window
             _modelEffort.Dispose();
             _sessionLastMsg.Dispose();
             _codexHook.Dispose();
+            _grokHook.Dispose();
             _opencodeLastMsg.Dispose();
             _opencodeBusy.Dispose();
             _gajaeLastMsg.Dispose();

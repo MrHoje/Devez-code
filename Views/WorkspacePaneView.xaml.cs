@@ -838,17 +838,18 @@ public partial class WorkspacePaneView : UserControl
         var agentId = string.IsNullOrEmpty(source.AgentId)
             ? SettingsService.LoadAgentForRoom(source.Id) : source.AgentId;
 
-        // 포크 지원 에이전트만. claude/opencode=CLI 네이티브, gajae/codex=jsonl 복사.
-        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae" && agentId != "codex")
+        // 포크 지원 에이전트만. claude/opencode/grok=CLI 네이티브, gajae/codex=jsonl 복사.
+        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae" && agentId != "codex" && agentId != "grok")
         {
-            ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode · 가재코드 · Codex 세션만 지원합니다.");
+            ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode · 가재코드 · Codex · Grok 세션만 지원합니다.");
             return;
         }
 
-        // 원본에 포크할 대화가 있는지 확인. claude/opencode/codex=추적 세션 ID, gajae=파일 복사 시점에 판정.
+        // 원본에 포크할 대화가 있는지 확인. claude/opencode/codex/grok=추적 세션 ID, gajae=파일 복사 시점에 판정.
         var srcSid = agentId == "claude"   ? SettingsService.LoadClaudeCodeRoomSession(source.Id)
                    : agentId == "opencode" ? SettingsService.LoadOpenCodeRoomSession(source.Id)
                    : agentId == "codex"    ? SettingsService.LoadCodexRoomSession(source.Id)
+                   : agentId == "grok"     ? SettingsService.LoadGrokRoomSession(source.Id)
                    : null;
         if (agentId != "gajae" && string.IsNullOrWhiteSpace(srcSid))
         {
@@ -861,6 +862,7 @@ public partial class WorkspacePaneView : UserControl
 
         // gajae·claude: transcript(.jsonl)를 새 id 로 즉시 복사해 독립 세션을 만든다(원본 대화 없으면 취소).
         // claude 도 --fork-session(지연) 대신 eager 복사 — 포크 방 재실행 시 원본에서 재포크되던 문제 해소.
+        // opencode/grok: 첫 실행에 CLI --fork / --fork-session 소비.
         string? forkedId = null;
         if (agentId == "gajae")
             forkedId = TerminalSessionManager.TryForkGajaeSession(source.Id, session.Id);
@@ -868,7 +870,7 @@ public partial class WorkspacePaneView : UserControl
             forkedId = TerminalSessionManager.TryForkClaudeSession(srcSid!, proj.Path);
         else if (agentId == "codex")
             forkedId = TerminalSessionManager.TryForkCodexSession(srcSid!);
-        if (agentId != "opencode" && forkedId == null)
+        if (agentId != "opencode" && agentId != "grok" && forkedId == null)
         {
             ConfirmDialog.Alert("포크 불가",
                 "아직 대화가 없어 포크할 수 없습니다.\n한 번 이상 대화한 세션만 포크할 수 있어요.");
@@ -886,7 +888,7 @@ public partial class WorkspacePaneView : UserControl
         else if (agentId == "codex")
             SettingsService.SaveCodexRoomSession(session.Id, forkedId!);   // 복사한 새 세션 id 로 바로 resume
         else
-            SettingsService.SaveRoomForkSource(session.Id, srcSid!);        // opencode: 첫 실행에 --fork 소비
+            SettingsService.SaveRoomForkSource(session.Id, srcSid!);        // opencode/grok: 첫 실행에 --fork 소비
         WorkspaceStore.Save(Projects);
 
         // 포크는 "새 세션이 열리게" 하는 게 목적 → 항상 연다(다른 프로젝트면 OpenSession 이 전환).

@@ -51,6 +51,8 @@ public static class SettingsService
         // 가재코드(gjc) 방별 세션 ID. gjc 는 사전 발급 플래그가 없어, 방별 격리 --session-dir 의
         // 최신 .jsonl 파일명에서 추출한 ID 를 영속 → 재오픈 시 `gjc -r <id>` 로 같은 대화 복원.
         public Dictionary<string, string> GajaeRoomSessions { get; set; } = new();
+        // grok 방별 세션 ID. SessionStart 훅이 sessions\<room>.txt 에 기록 → `grok -r <id>` 로 복원.
+        public Dictionary<string, string> GrokRoomSessions { get; set; } = new();
         // 세션 포크: 새 방(roomId) → 포크 원본 세션 ID. 새 방 첫 실행에 --fork-session/--fork 로 1회 소비.
         public Dictionary<string, string> RoomForkSources { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
@@ -333,6 +335,7 @@ public static class SettingsService
         changed |= Current.CodexRoomSessions.Remove(roomId);
         changed |= Current.OpenCodeRoomSessions.Remove(roomId);
         changed |= Current.GajaeRoomSessions.Remove(roomId);
+        changed |= Current.GrokRoomSessions.Remove(roomId);
         changed |= Current.RoomForkSources.Remove(roomId);
         changed |= Current.AgentRoomsLaunched.RemoveAll(k => k.StartsWith(roomId + "|", StringComparison.Ordinal)) > 0;
         if (changed) Save();
@@ -661,6 +664,17 @@ public static class SettingsService
         // 불변식: 비정상 값(빈 문자열 등) 은 무시 — 코드 안전성.
         if (string.IsNullOrWhiteSpace(sessionId)) return;
         Current.CodexRoomSessions[roomId] = sessionId;
+        Save();
+    }
+
+    // ── grok 세션 ID (훅 sessions\<room>.txt → settings 영속) ─────
+    public static string? LoadGrokRoomSession(string roomId)
+        => Current.GrokRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+
+    public static void SaveGrokRoomSession(string roomId, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        Current.GrokRoomSessions[roomId] = sessionId;
         Save();
     }
 

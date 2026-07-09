@@ -124,6 +124,13 @@ public sealed class TerminalSessionManager
                 var direct = TryBuildCodexDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
             }
+            else if (ccDir != null && agent.Id == "grok")
+            {
+                // grok: 훅으로 lastmsg/busy/session_id 추적 + `grok -r <id>` 복원. 앱레벨 자동 재진입(codex 패턴).
+                startDir = ccDir;
+                var direct = TryBuildGrokDirectLaunch(roomId, out inject);
+                if (direct != null) commandLine = direct;
+            }
             else if (ccDir != null && agent.Id == "opencode")
             {
                 // opencode: Devez 패턴 — 플러그인이 sessions\<room>.txt 에 기록한 session_id 로 --session <id> 로 정확히 복원.
@@ -164,10 +171,6 @@ public sealed class TerminalSessionManager
             var isOpenCode = agent.Id == "opencode";
             if (isOpenCode && !string.IsNullOrWhiteSpace(ccDir))
                 ApplyOpenCodeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
-
-            // grok — 시작 직전 config.toml [ui] theme 을 현재 앱 테마에 맞춤(세션이 최신 매핑으로 기동).
-            if (agent.Id == "grok")
-                GrokCustomThemes.Apply(DevezCode.App.CurrentTheme);
 
             TerminalSession session;
             try
@@ -449,6 +452,75 @@ public sealed class TerminalSessionManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "codex", "launch");
 
+    private static string GrokLaunchDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "grok", "launch");
+
+    /// <summary>grok 방 직접 실행. 훅 설치 후 저장된 session_id 가 있으면 <c>grok -r &lt;id&gt;</c>,
+    /// 없으면 <c>grok</c> 신규. 포크 마커가 있으면 <c>-r src --fork-session</c>.
+    /// 배치 끝 exit + cmd /c → ConPTY 종료 → IsAutoReenterRoom 앱레벨 재진입.</summary>
+    private string? TryBuildGrokDirectLaunch(string roomId, out string? injectFallback)
+    {
+        injectFallback = null;
+        GrokHookInstaller.EnsureInstalled();
+        GrokCustomThemes.Apply(DevezCode.App.CurrentTheme);
+
+        // 훅 파일이 settings 보다 최신이면 동기화
+        var tracked = GrokHookService.LoadTrackedSessionId(roomId);
+        var sessionId = SettingsService.LoadGrokRoomSession(roomId);
+        if (tracked != null && tracked != sessionId)
+        {
+            sessionId = tracked;
+            SettingsService.SaveGrokRoomSession(roomId, tracked);
+        }
+        if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
+        SettingsService.MarkAgentRoomLaunched(roomId, "grok");
+
+        // 포크: 첫 실행에 원본 resume + --fork-session. 추적 ID 가 원본과 달라지면 마커 소비.
+        var forkSrc = SettingsService.LoadRoomForkSource(roomId);
+        string body;
+        if (forkSrc != null)
+        {
+            bool diverged = sessionId != null
+                && !string.Equals(sessionId, forkSrc, StringComparison.OrdinalIgnoreCase);
+            if (diverged)
+            {
+                SettingsService.RemoveRoomForkSource(roomId);
+                body = $"grok -r {sessionId}\r\nexit";
+            }
+            else if (System.Text.RegularExpressions.Regex.IsMatch(forkSrc, @"^[A-Za-z0-9_\-]+$"))
+            {
+                body = $"grok -r {forkSrc} --fork-session\r\nexit";
+            }
+            else
+            {
+                body = string.IsNullOrEmpty(sessionId) ? "grok\r\nexit" : $"grok -r {sessionId}\r\nexit";
+            }
+        }
+        else if (string.IsNullOrEmpty(sessionId))
+            body = "grok\r\nexit";
+        else
+            body = $"grok -r {sessionId}\r\nexit";
+
+        try
+        {
+            var dir = GrokLaunchDir();
+            Directory.CreateDirectory(dir);
+            var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
+            // DEVEZCODE_ROOM_ID 를 배치에서도 set — ConPTY env 상속 실패 대비 (훅 room 식별).
+            File.WriteAllText(batchPath,
+                "@echo off\r\n" +
+                $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                body + "\r\n");
+            return $"cmd.exe /c \"{batchPath}\"";
+        }
+        catch
+        {
+            injectFallback = body + "\r";
+            return null;
+        }
+    }
+
     private static string OpenCodeLaunchDir() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "opencode", "launch");
@@ -502,6 +574,30 @@ public sealed class TerminalSessionManager
             var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "sessions");
             if (!Directory.Exists(root)) return null;
             return new DirectoryInfo(root).GetFiles("*" + sessionId + "*.jsonl", SearchOption.AllDirectories)
+                .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>grok 세션 chat_history.jsonl.
+    /// 경로: ~/.grok/sessions/&lt;url-encoded-cwd&gt;/&lt;sessionId&gt;/chat_history.jsonl.
+    /// cwd 인코딩이 달라도 sessionId 폴더명으로 재귀 검색.</summary>
+    public static string? FindGrokChatHistoryPath(string? sessionId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(sessionId) || !Guid.TryParse(sessionId, out _)) return null;
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "sessions");
+            if (!Directory.Exists(root)) return null;
+            // 직접 경로 우선: */<sessionId>/chat_history.jsonl
+            foreach (var cwdDir in Directory.EnumerateDirectories(root))
+            {
+                var p = Path.Combine(cwdDir, sessionId, "chat_history.jsonl");
+                if (File.Exists(p)) return p;
+            }
+            // 폴백 재귀
+            return new DirectoryInfo(root).GetFiles("chat_history.jsonl", SearchOption.AllDirectories)
+                .Where(f => string.Equals(f.Directory?.Name, sessionId, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName;
         }
         catch { return null; }
@@ -1724,6 +1820,11 @@ public sealed class TerminalSessionManager
                             SettingsService.SaveCodexRoomSession(roomId, cx);
                     }
                     break;
+                case "grok":
+                    var gk = GrokHookService.LoadTrackedSessionId(roomId);
+                    if (gk != null && gk != SettingsService.LoadGrokRoomSession(roomId))
+                        SettingsService.SaveGrokRoomSession(roomId, gk);
+                    break;
             }
         }
         catch (Exception) { /* 스냅샷 실패 — 종료는 계속 */ }
@@ -1795,11 +1896,31 @@ public sealed class TerminalSessionManager
             // 응답 생성 중(busy)이면 composer 가 입력을 못 받으므로 claude 처럼 Esc 로 턴을 먼저 끊는다.
             return (false, "/quit\r\n", IsCodexBusyRunning(roomId));
         }
+        if (agent == "grok")
+        {
+            // grok 도 cmd /c 배치 + /quit|/exit. busy 중이면 Esc 선행(codex 와 동일).
+            return (false, "/quit\r\n", IsGrokBusyRunning(roomId));
+        }
         return agent switch
         {
             "gajae" => (false, "", false),
             _       => (true, null, false),
         };
+    }
+
+    /// <summary>grok 훅 busy\&lt;room&gt;.txt 가 running 인가.</summary>
+    private static bool IsGrokBusyRunning(string roomId)
+    {
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "grok", "busy", SafeRoomFileName(roomId) + ".txt");
+            if (!File.Exists(path)) return false;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var sr = new StreamReader(fs);
+            return sr.ReadToEnd().Trim() == "running";
+        }
+        catch { return false; }
     }
 
     /// <summary>codex 훅(busy\&lt;room&gt;.txt)이 'running' 인가 — 종료 시 Esc 선행 여부 판단용.
@@ -1851,6 +1972,7 @@ public sealed class TerminalSessionManager
             SettingsService.LoadCodexRoomSession(roomId),
             SettingsService.LoadOpenCodeRoomSession(roomId),
             SettingsService.LoadGajaeRoomSession(roomId),
+            SettingsService.LoadGrokRoomSession(roomId),
         };
         DisposeRoom(roomId);
 
@@ -1891,6 +2013,12 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(codexDir, "lastmsg", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(codexDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(CodexLaunchDir(), roomFile + ".cmd"));
+
+        var grokDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "grok");
+        TryDeleteFile(Path.Combine(grokDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(grokDir, "lastmsg", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(grokDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(GrokLaunchDir(), roomFile + ".cmd"));
 
         var opencodeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode");
         TryDeleteFile(Path.Combine(opencodeDir, "sessions", roomFile + ".txt"));
@@ -1961,6 +2089,13 @@ public sealed class TerminalSessionManager
             Collect(Path.Combine(ClaudeTrackDir, "modeleffort"), ".txt");
             Collect(Path.Combine(ClaudeTrackDir, "room-settings"), ".json");
             Collect(Path.Combine(ClaudeTrackDir, "quitting"), ".txt");
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            Collect(Path.Combine(appData, "DevezCode", "codex", "sessions"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "codex", "busy"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "codex", "lastmsg"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "grok", "sessions"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "grok", "busy"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "grok", "lastmsg"), ".txt");
             // statusline-cache-<room>-<sig>.txt 는 ClaudeTrackDir 루트에 바로 있고 접두사 매칭 필요.
             try
             {

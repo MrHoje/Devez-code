@@ -23,6 +23,7 @@ public static class SessionExporter
             "opencode" => FromOpenCode(roomId),
             "gajae"    => FromGajae(roomId),
             "codex"    => FromCodex(roomId),
+            "grok"     => FromGrok(roomId),
             _          => new List<(string role, string text)>(),
         };
         if (turns.Count == 0) return null;
@@ -43,7 +44,36 @@ public static class SessionExporter
     }
 
     private static string AgentLabel(string a) => a switch
-    { "claude" => "Claude", "opencode" => "OpenCode", "gajae" => "가재코드", "codex" => "Codex", _ => a };
+    {
+        "claude" => "Claude", "opencode" => "OpenCode", "gajae" => "가재코드",
+        "codex" => "Codex", "grok" => "Grok", _ => a,
+    };
+
+    // ── grok: ~/.grok/sessions/**/<sid>/chat_history.jsonl (type=user|assistant, content=str|[{text}]) ──
+    private static List<(string role, string text)> FromGrok(string roomId)
+    {
+        var turns = new List<(string, string)>();
+        var sid = SettingsService.LoadGrokRoomSession(roomId);
+        var path = TerminalSessionManager.FindGrokChatHistoryPath(sid);
+        if (path == null) return turns;
+        foreach (var line in ReadLinesShared(path))
+        {
+            try
+            {
+                using var d = JsonDocument.Parse(line);
+                var o = d.RootElement;
+                if (!TryStr(o, "type", out var role) || (role != "user" && role != "assistant")) continue;
+                var text = ExtractContentText(o);
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                // 시스템/스킬 주입 덩어리는 제외
+                if (role == "user" && (text.Contains("<system-reminder>", StringComparison.Ordinal)
+                    || text.StartsWith("You are Grok", StringComparison.Ordinal))) continue;
+                turns.Add((role, text.Trim()));
+            }
+            catch { }
+        }
+        return turns;
+    }
 
     // ── codex: ~/.codex/sessions/**/rollout-*-<sid>.jsonl (type=response_item, payload.type=message,
     //    role=user|assistant, content=[{type:input_text|output_text, text}]). role=developer(시스템) 제외. ──
