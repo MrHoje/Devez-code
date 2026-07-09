@@ -1033,11 +1033,26 @@
   }
 
   // 화면에 표시하지 않고 xterm 인스턴스+ConPTY 세션만 미리 생성(백그라운드 로드).
-  // 컨테이너는 display:none(.active 없음) 상태라 xterm 기본 크기(80x24)로 만들고,
-  // 실제 크기 보정(fit→resize)은 나중에 show 될 때 일어난다.
-  function preload(roomId, agent, fontSizeOverride) {
+  // 컨테이너는 display:none(.active 없음)이라 xterm 은 기본 80x24 로 만들어지는데, 그 크기로
+  // ConPTY 를 만들면 claude/gjc resume 히스토리가 80컬럼으로 그려지고, 80폭에서 하드랩된
+  // 스크롤백은 나중에 show 의 fit 리사이즈로도 풀리지 않아 '안 보고 있던 세션'이 좁게 깨져
+  // 보인다. → 생성 직후 컨테이너를 visibility:hidden 으로 잠깐 레이아웃만 시켜(페인트 없음 =
+  // 무깜빡) 실제 크기로 fit 한 뒤 ConPTY 를 만든다. 전환(커버) 중이면 폭이 유동적이므로
+  // 억제가 풀릴 때까지 프리로드 자체를 미룬다(최대 ~5s 후 폴백 진행).
+  function preload(roomId, agent, fontSizeOverride, tries) {
     if (terms[roomId]) return; // 이미 생성됨
+    if (_fitSuppressed && (tries || 0) < 25) {
+      setTimeout(function () { preload(roomId, agent, fontSizeOverride, (tries || 0) + 1); }, 200);
+      return;
+    }
     const entry = createTerm(roomId, agent, fontSizeOverride);
+    try {
+      entry.el.style.visibility = 'hidden';
+      entry.el.style.display = 'block';
+      if (entry.el.clientWidth >= 2 && entry.el.clientHeight >= 2) entry.fit.fit();
+    } catch (e) {}
+    entry.el.style.display = '';    // 측정 불가(0폭)였으면 기본 80x24 폴백 유지
+    entry.el.style.visibility = '';
     post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
   }
 
