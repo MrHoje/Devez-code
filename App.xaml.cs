@@ -75,10 +75,6 @@ public partial class App : Application
         // per-session /config theme=custom:<slug> 주입의 기반 — 파일 없으면 claude 가 못 찾음.
         Services.Terminal.ClaudeCustomThemes.EnsureInstalled();
 
-        // claude /config 의 "← opens agents"(leftArrowOpensAgents) 를 항상 false 로 강제.
-        // 전역 ~/.claude.json 키라 room --settings 로는 못 박음 → 앱 시작 시 1회 패치.
-        Services.ClaudeGlobalSettings.EnsureLeftArrowOpensAgentsDisabled();
-
         // opencode 커스텀 테마 (devezcode-soft / devezcode-minimal) 1회 설치.
         // per-project tui.json theme 주입의 기반.
         Services.Terminal.OpenCodeCustomThemes.EnsureInstalled();

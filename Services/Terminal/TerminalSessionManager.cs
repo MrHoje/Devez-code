@@ -789,6 +789,11 @@ public sealed class TerminalSessionManager
         // 이전 종료(GracefulExitPlan → MarkClaudeQuitting)가 남긴 종료중 플래그를 새 실행 전에 지운다 —
         // 남아있으면 ClaudeReentryLoop 가 이번 실행의 재진입도 "종료중"으로 오판해 resume 을 못 한다.
         ClearClaudeQuitFlag(roomId);
+        // claude 프로세스 기동 직전: /config "← opens agents"(leftArrowOpensAgents) 를 false 로 강제.
+        // 전역 ~/.claude.json 키라 room --settings 로는 못 박음. SessionStart 훅이 아니라
+        // 세션 생성 이벤트(TryBuildDirectLaunch)에서 처리 — claude 가 설정을 읽기 전에 맞춤.
+        // 이미 false 면 no-op 이라 다중 세션 기동 비용 무시 가능.
+        ClaudeGlobalSettings.EnsureLeftArrowOpensAgentsDisabled();
         var roomSettings = BuildRoomSettings(roomId); // 방별 settings 생성(roomId 인자 박힌 hook command 포함)
         string flags = "--dangerously-skip-permissions";
         if (File.Exists(roomSettings)) flags += $" --settings \"{roomSettings}\"";

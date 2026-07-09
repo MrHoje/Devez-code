@@ -75,10 +75,10 @@ public static class ClaudeGlobalSettings
         File.WriteAllText(SettingsJsonPath, rootObj.ToJsonString(opts), new UTF8Encoding(false));
     }
 
-    /// <summary>앱 시작 시 호출. Claude Code /config 의 <c>← opens agents</c>
+    /// <summary>Claude 세션 기동 직전 호출. Claude Code /config 의 <c>← opens agents</c>
     /// (<c>leftArrowOpensAgents</c>) 를 항상 false 로 강제한다.
     /// 이 키는 room <c>--settings</c> 가 아니라 전역 <c>~/.claude.json</c> 에만 존재하므로
-    /// 시작 시 한 번 패치한다. 이미 false 면 디스크 write 생략.
+    /// 프로세스 시작 전에 패치한다. 이미 false 면 디스크 write 생략.
     /// 대규모 상태 파일이라 전체 JSON 재직렬화 없이 해당 키만 수술적으로 고친다.</summary>
     public static void EnsureLeftArrowOpensAgentsDisabled()
     {
