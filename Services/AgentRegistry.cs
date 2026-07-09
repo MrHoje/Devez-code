@@ -65,6 +65,16 @@ public static class AgentRegistry
             ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
             Command = "gjc", InlineTui = true,
         },
+        new()
+        {
+            // Grok Build CLI (xAI). 기본 설치: %USERPROFILE%\.grok\bin\grok.exe
+            // Tier1: ResumeFlag -c (cwd 최근 세션). 방별 정확 복원은 Tier2 전용 런치에서 -r <id>.
+            // 기본 TUI 는 alt-screen — InlineTui=false. 테마는 xterm 스킴 + (선택) 유저 프롬프트 recolor.
+            Id = "grok", DisplayName = "Grok", Provider = "xAI",
+            ExeNames = new[] { "grok.exe", "grok.cmd", "grok.bat", "grok.ps1", "grok" },
+            Command = "grok",
+            ResumeFlag = "-c",
+        },
     };
 
     public static AgentDef? Find(string? id)
@@ -94,6 +104,16 @@ public static class AgentRegistry
                 try { dirs.AddRange((Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine) ?? "")
                     .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)); }
                 catch { }
+                // grok 기본 설치 경로 (PATH 미등록 환경 대비)
+                if (agent.Id.Equals("grok", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        dirs.Insert(0, Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "bin"));
+                    }
+                    catch { }
+                }
                 foreach (var dir in dirs.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     foreach (var name in agent.ExeNames)

@@ -79,6 +79,7 @@
     <Resource Include="Resources\Images\ShellPresets\opencode_icon_black_50.png" />
     <Resource Include="Resources\Images\ShellPresets\opencode_icon_white_50.png" />
     <Resource Include="Resources\Images\ShellPresets\gajae_code.png" />
+    <Resource Include="Resources\Images\ShellPresets\grok.png" />
     <Resource Include="Resources\Images\ShellPresets\deepseek.png" />
     <!-- 앱 로고 이미지 (좌상단 타이틀바, 데스크탑 image.png 기반) -->
     <Resource Include="Resources\Logos\logo.png" />

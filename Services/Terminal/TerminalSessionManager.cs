@@ -165,6 +165,10 @@ public sealed class TerminalSessionManager
             if (isOpenCode && !string.IsNullOrWhiteSpace(ccDir))
                 ApplyOpenCodeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
 
+            // grok — 시작 직전 config.toml [ui] theme 을 현재 앱 테마에 맞춤(세션이 최신 매핑으로 기동).
+            if (agent.Id == "grok")
+                GrokCustomThemes.Apply(DevezCode.App.CurrentTheme);
+
             TerminalSession session;
             try
             {
