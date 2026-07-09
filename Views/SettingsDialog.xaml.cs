@@ -66,7 +66,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.13.0", "2026-07-08", true, new[]
+        ("v1.13.1", "2026-07-09", true, new[]
+        {
+            "사소한 UX 버그를 수정했습니다.",
+        }),
+        ("v1.13.0", "2026-07-08", false, new[]
         {
             "Codex CLI 연결 기능이 추가되었습니다.",
             "파일 편집기에 구문 강조 및 줄 번호가 추가되었습니다.",
