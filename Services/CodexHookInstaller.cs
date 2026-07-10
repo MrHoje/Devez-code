@@ -136,7 +136,12 @@ public static class CodexHookInstaller
     }
 
     private static string BuildHookCommand()
-        => $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{ScriptInstallPath}\"";
+        // -WindowStyle Hidden 금지: codex(Rust)는 훅 프로세스를 부모 콘솔을 상속해 스폰한다.
+        // 상속된 powershell 에 -WindowStyle Hidden 을 주면 ShowWindow(GetConsoleWindow(), SW_HIDE) 가
+        // '공유' 콘솔(외부 터미널 창)에 적용돼 세션 창이 최소화/숨김된다(프롬프트 전송·응답 완료 시점).
+        // 콘솔을 상속하므로 새 창이 뜨지 않아 Hidden 없이도 flash 가 없고, DevezCode ConPTY(헤드리스)
+        // 에서도 창이 없어 무해하다. (claude 는 windowsHide 로 스폰돼 Hidden 이 no-op 이라 영향 없었음.)
+        => $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{ScriptInstallPath}\"";
 
     /// <summary>
     /// 이벤트 안의 DevezCode 훅을 최신 command 로 유지한다. command 옵션이 다른 구버전도

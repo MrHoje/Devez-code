@@ -55,8 +55,10 @@ public static class GrokHookInstaller
             Directory.CreateDirectory(Path.GetDirectoryName(HooksJsonPath)!);
             EnsureScriptInstalled();
 
+            // -WindowStyle Hidden 금지 — codex 훅과 동일 이유(콘솔 상속 스폰 시 부모 터미널 창 최소화).
+            // 자세한 근거는 CodexHookInstaller.BuildHookCommand 참고.
             var hookCommand =
-                $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden " +
+                $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass " +
                 $"-File \"{ScriptInstallPath}\"";
             var events = new[] { "SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "StopFailure" };
 
