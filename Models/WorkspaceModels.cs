@@ -41,9 +41,9 @@ public abstract class TabItemBase : NotifyBase
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 
-    /// <summary>세션 탭 전용: 탭에서만 숨김. 파일 탭은 사용하지 않음(파일 탭은 X 시 제거).
-    /// true 면 탭 스트립에서 Collapse, 세션 자체(터미널/기록)는 보존.
-    /// 사이드바에서 해당 세션을 클릭하면 다시 false 로 풀려 탭이 복귀한다.</summary>
+    /// <summary>세션 탭 전용 직접 숨김 상태. true면 탭 스트립에서 숨기고 터미널/기록은 보존한다.
+    /// 최상위 세션은 사이드바 하단 숨김 목록으로, 자식 세션은 부모 아래 숨김 자식 후순위로 표시한다.
+    /// 조상 숨김까지 포함한 실제 표시 판정은 SessionItem.IsEffectivelyHidden을 사용한다.</summary>
     private bool _hidden;
     public bool Hidden { get => _hidden; set => Set(ref _hidden, value); }
 }
@@ -413,8 +413,8 @@ public sealed class ProjectItem : NotifyBase
     /// Tabs.CollectionChanged 에서 SessionItem 만 추려 추가/제거한다 → 사이드바 바인딩이 즉시 갱신.</summary>
     public ObservableCollection<SessionItem> Sessions { get; } = new();
 
-    /// <summary>숨김(Hidden=true) 세션만 모은 뷰 — 좌/우 그룹에서는 제외되고 사이드바 카드 맨 아래
-    /// '숨김 세션' 그룹에 모여 표시된다. Sessions 순서를 따르며 Hidden 변경 시 자동 갱신.</summary>
+    /// <summary>직접 숨긴 최상위 세션과 그 자식 트리를 모은 뷰. 자식 단독 숨김은 여기에 넣지 않고
+    /// 원래 부모 아래에서 표시 자식 뒤로 정렬한다.</summary>
     public ObservableCollection<SessionItem> HiddenSessions { get; } = new();
     /// <summary>숨김 세션이 하나라도 있는지 — 하단 그룹 세퍼레이터/표시 여부.</summary>
     public bool HasHiddenSessions => HiddenSessions.Count > 0;
@@ -575,6 +575,17 @@ public sealed class ProjectItem : NotifyBase
                 current = parent;
             }
         }
+
+        // 트리는 1단계만 허용. 기존/손상 데이터의 손자 세션은 최상위 조상의 직접 자식으로 승격.
+        foreach (var session in Sessions)
+        {
+            var parent = SessionParentOf(session);
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            while (parent != null && !string.IsNullOrEmpty(parent.ParentSessionId) && visited.Add(parent.Id))
+                parent = SessionParentOf(parent);
+            if (parent != null && session.ParentSessionId != parent.Id)
+                session.ParentSessionId = parent.Id;
+        }
         RefreshSessionTree();
     }
 
@@ -600,6 +611,8 @@ public sealed class ProjectItem : NotifyBase
     public bool CanSetSessionParent(SessionItem child, SessionItem parent)
         => Sessions.Contains(child) && Sessions.Contains(parent)
            && !ReferenceEquals(child, parent)
+           && string.IsNullOrEmpty(parent.ParentSessionId)
+           && !Sessions.Any(s => s.ParentSessionId == child.Id)
            && !GetSessionSubtree(child).Contains(parent);
 
     /// <summary>child 서브트리를 parent의 마지막 자식으로 붙이고 세션 탭 상대 순서도 트리 순서로 맞춤.</summary>
@@ -619,16 +632,16 @@ public sealed class ProjectItem : NotifyBase
         return relationChanged || order.Count > 0;
     }
 
-    /// <summary>상/하 드롭: 대상과 같은 부모 레벨로 옮긴 뒤 대상 앞/뒤에 서브트리 단위 배치.</summary>
-    public bool MoveSessionRelative(SessionItem source, SessionItem target, bool after)
+    /// <summary>상/하 드롭은 항상 최상위로 분리한 뒤 대상 앞/뒤에 서브트리 단위 배치.
+    /// 자식 관계 생성은 중앙 드롭에서만 허용한다.</summary>
+    public bool MoveSessionAsRootRelative(SessionItem source, SessionItem target, bool after)
     {
-        if (!Sessions.Contains(source) || !Sessions.Contains(target) || ReferenceEquals(source, target)) return false;
+        if (!Sessions.Contains(source) || !Sessions.Contains(target)) return false;
+        if (ReferenceEquals(source, target)) return DetachSessionAsRoot(source);
         var subtree = GetSessionSubtree(source).ToList();
         if (subtree.Contains(target)) return false;
 
-        var newParent = SessionParentOf(target);
-        if (newParent != null && !CanSetSessionParent(source, newParent)) return false;
-        source.ParentSessionId = newParent?.Id;
+        source.ParentSessionId = null;
 
         var order = Sessions.Where(s => !subtree.Contains(s)).ToList();
         int targetIndex = order.IndexOf(target);
@@ -636,6 +649,24 @@ public sealed class ProjectItem : NotifyBase
         int insertAt = targetIndex;
         if (after)
             insertAt = order.FindLastIndex(s => ReferenceEquals(s, target) || IsDescendantOf(s, target)) + 1;
+        order.InsertRange(Math.Clamp(insertAt, 0, order.Count), subtree);
+        ApplySessionOrder(FlattenSessionOrder(order));
+        RefreshSessionTree();
+        return true;
+    }
+
+    /// <summary>움직이지 않고 놓은 자식도 원래 부모 서브트리 바로 뒤의 최상위 세션으로 분리.</summary>
+    public bool DetachSessionAsRoot(SessionItem source)
+    {
+        if (!Sessions.Contains(source) || string.IsNullOrEmpty(source.ParentSessionId)) return false;
+        var oldParent = SessionParentOf(source);
+        var subtree = GetSessionSubtree(source).ToList();
+        var order = Sessions.Where(s => !subtree.Contains(s)).ToList();
+        source.ParentSessionId = null;
+
+        int insertAt = oldParent == null
+            ? order.Count
+            : order.FindLastIndex(s => ReferenceEquals(s, oldParent) || IsDescendantOf(s, oldParent)) + 1;
         order.InsertRange(Math.Clamp(insertAt, 0, order.Count), subtree);
         ApplySessionOrder(FlattenSessionOrder(order));
         RefreshSessionTree();

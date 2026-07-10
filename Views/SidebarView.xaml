@@ -233,8 +233,8 @@
                     <Setter TargetName="BusySpinner" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="HiddenIcon" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
-                <!-- 부모 ItemsControl.Tag="False"(좌/우 그룹)면 숨김(Hidden) 세션 행을 항상 접는다.
-                     하단 '숨김 세션' 그룹은 Tag="True" 로 이 트리거를 비활성화해 정상 표시된다. -->
+                <!-- 부모 ItemsControl.Tag="False"(좌/우 그룹)면 최상위 숨김 트리만 접는다.
+                     자식 단독 숨김은 원래 부모 아래 유지. 하단 그룹은 Tag="True"로 전체 트리를 표시. -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding Tag, RelativeSource={RelativeSource FindAncestor, AncestorType=ItemsControl}}" Value="False"/>

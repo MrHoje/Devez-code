@@ -671,7 +671,10 @@ public partial class SidebarView : UserControl
                 rows.Add((tb, fe));
         var groupItems = rows.Select(r => r.Item).ToList();
         var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, s));
-        if (src.Element == null || rows.Count < 2) return;
+        // 자식이 분할 그룹에 단독으로 표시돼도 드래그만으로 부모에서 분리할 수 있어야 한다.
+        // ReorderDrag는 1개 슬롯도 지원하며, commitUnchanged가 분리 커밋을 담당한다.
+        if (src.Element == null) return;
+        bool detachOnDrop = s is SessionItem { ParentSessionId: not null };
 
         _tabDrag = ReorderDrag<TabItemBase>.TryStart(this, rows, s, src.Element,
             (item, hostTarget, _) =>
@@ -683,10 +686,12 @@ public partial class SidebarView : UserControl
                 int groupFrom = groupItems.IndexOf(item);
                 if (item is SessionItem movedSession && groupItems[to] is SessionItem targetSession)
                 {
-                    if (project.MoveSessionRelative(movedSession, targetSession, after: groupFrom < to))
+                    if (project.MoveSessionAsRootRelative(movedSession, targetSession, after: groupFrom < to))
                         SessionsReordered?.Invoke(project);
                     return Task.CompletedTask;
                 }
+                bool treeChanged = item is SessionItem detachedSession && detachOnDrop
+                    && project.DetachSessionAsRoot(detachedSession);
                 int fromIdx = project.Tabs.IndexOf(item);
                 int toIdx = project.Tabs.IndexOf(groupItems[to]);
                 if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx)
@@ -694,6 +699,8 @@ public partial class SidebarView : UserControl
                     project.Tabs.Move(fromIdx, toIdx);
                     SessionsReordered?.Invoke(project);
                 }
+                else if (treeChanged)
+                    SessionsReordered?.Invoke(project);
                 return Task.CompletedTask;
             }, exactFollow: true,
             canDropInto: (source, target) => source is SessionItem child && target is SessionItem parent
@@ -705,8 +712,13 @@ public partial class SidebarView : UserControl
                     && project.SetSessionParent(child, parent))
                     SessionsReordered?.Invoke(project);
                 return Task.CompletedTask;
-            });
-        if (_tabDrag != null) { _didDrag = true; CaptureMouse(); }
+            }, commitUnchanged: detachOnDrop);
+        if (_tabDrag != null)
+        {
+            if (detachOnDrop) _tabDrag.ShowDetachedSourcePreview();
+            _didDrag = true;
+            CaptureMouse();
+        }
         _pendingTab = null;
     }
 

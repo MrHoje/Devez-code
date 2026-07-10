@@ -33,9 +33,10 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly Func<T, T, bool>? _canDropInto;
     private readonly Action<T?, FrameworkElement?>? _dropIntoPreviewChanged;
     private readonly Func<T, T, Task>? _onDropInto;
+    private readonly bool _commitUnchanged;
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
-    private Slot? _dropIntoTarget;         // 중앙 50%: 자식 드롭 프리뷰 대상. 실제 트리 커밋은 호스트가 추가할 때까지 no-op.
+    private Slot? _dropIntoTarget;         // 중앙 50%: 자식 드롭 프리뷰/커밋 대상.
     private bool _finished;
     private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
     private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
@@ -49,13 +50,13 @@ internal sealed class ReorderDrag<T> where T : class
         DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal,
         int columns, double gridMidX, double grabOffsetX, double grabOffsetY,
         Func<T, T, bool>? canDropInto, Action<T?, FrameworkElement?>? dropIntoPreviewChanged,
-        Func<T, T, Task>? onDropInto)
+        Func<T, T, Task>? onDropInto, bool commitUnchanged)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
         _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
         _canDropInto = canDropInto; _dropIntoPreviewChanged = dropIntoPreviewChanged;
-        _onDropInto = onDropInto;
+        _onDropInto = onDropInto; _commitUnchanged = commitUnchanged;
         _targetIndex = sourceIndex;
         _targetColumn = -1; // 그리드: 첫 Update 가 항상 displacement 를 적용하도록 미지정으로 시작.
     }
@@ -75,7 +76,8 @@ internal sealed class ReorderDrag<T> where T : class
         FrameworkElement? ghostSource = null,
         Func<T, T, bool>? canDropInto = null,
         Action<T?, FrameworkElement?>? dropIntoPreviewChanged = null,
-        Func<T, T, Task>? onDropInto = null)
+        Func<T, T, Task>? onDropInto = null,
+        bool commitUnchanged = false)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -116,7 +118,21 @@ internal sealed class ReorderDrag<T> where T : class
         if (ghost == null) return null;
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
-            columns, gridMidX, grabPt.X, grabPt.Y, canDropInto, dropIntoPreviewChanged, onDropInto);
+            columns, gridMidX, grabPt.X, grabPt.Y, canDropInto, dropIntoPreviewChanged, onDropInto, commitUnchanged);
+    }
+
+    /// <summary>자식 드래그 시작 즉시 원래 자리를 접어 부모에서 빠져나오는 프리뷰를 표시.
+    /// 실제 부모 관계 변경은 드롭 커밋 시 수행한다.</summary>
+    public void ShowDetachedSourcePreview()
+    {
+        if (_finished || IsGrid) return;
+        double shift = RowPitch();
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (i == _sourceIndex) { AnimateAxis(_slots[i].Element, 0); continue; }
+            AnimateAxis(_slots[i].Element, i > _sourceIndex ? -shift : 0);
+        }
+        _needsReapply = true;
     }
 
     /// <summary>크로스 패널 드래그 중 커서가 반대 패널에 있을 때 호출 — 소스가 이 리스트에서 '나간' 것처럼
@@ -397,7 +413,7 @@ internal sealed class ReorderDrag<T> where T : class
             return;
         }
 
-        if (_targetIndex != _sourceIndex)
+        if (_commitUnchanged || _targetIndex != _sourceIndex)
         {
             int hostSource = SlotToHostIndex(_sourceIndex, skipSource: false);
             int hostTarget = SlotToHostIndex(_targetIndex, skipSource: !_exactFollow);
