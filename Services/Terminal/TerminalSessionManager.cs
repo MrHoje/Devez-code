@@ -144,6 +144,8 @@ public sealed class TerminalSessionManager
             {
                 // 가재코드(gjc): 방별 격리 --session-dir + 그 폴더 최신 세션 ID 추출 → `gjc -r <id>` 로 복원.
                 // gjc 는 --session-id 사전 발급이 없어 cwd 공유 시 -c 가 섞이므로, 방마다 별도 session-dir 로 분리.
+                // 실행 직전에도 전역 설정을 보정해 star reminder 의 gh.exe 콘솔 깜빡임을 막는다.
+                GajaeCustomThemes.Apply(DevezCode.App.CurrentTheme);
                 startDir = ccDir;
                 var direct = TryBuildGajaeDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
