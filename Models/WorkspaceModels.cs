@@ -103,6 +103,14 @@ public sealed class SessionItem : TabItemBase
         set => Set(ref _parentSessionId, string.IsNullOrWhiteSpace(value) ? null : value);
     }
 
+    /// <summary>부모 세션의 자식 행을 사이드바에서 펼칠지 여부. workspace.json에 영속.</summary>
+    private bool _areSessionChildrenExpanded = true;
+    public bool AreSessionChildrenExpanded
+    {
+        get => _areSessionChildrenExpanded;
+        set => Set(ref _areSessionChildrenExpanded, value);
+    }
+
     /// <summary>자기 또는 조상 세션이 직접 숨김이면 true. 탭/프로세스 표시 판정용 런타임 파생 상태.</summary>
     private bool _isEffectivelyHidden;
     public bool IsEffectivelyHidden { get => _isEffectivelyHidden; private set => Set(ref _isEffectivelyHidden, value); }
@@ -110,6 +118,18 @@ public sealed class SessionItem : TabItemBase
     /// <summary>최상위 루트가 숨김이면 true. 사이드바 하단 전역 숨김 목록 이동 판정용.</summary>
     private bool _isSidebarGloballyHidden;
     public bool IsSidebarGloballyHidden { get => _isSidebarGloballyHidden; private set => Set(ref _isSidebarGloballyHidden, value); }
+
+    private bool _hasSessionChildren;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasSessionChildren { get => _hasSessionChildren; private set => Set(ref _hasSessionChildren, value); }
+
+    private int _sessionChildCount;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int SessionChildCount { get => _sessionChildCount; private set => Set(ref _sessionChildCount, value); }
+
+    private bool _isSessionTreeVisible = true;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsSessionTreeVisible { get => _isSessionTreeVisible; private set => Set(ref _isSessionTreeVisible, value); }
 
     private int _treeDepth;
     public int TreeDepth
@@ -128,10 +148,19 @@ public sealed class SessionItem : TabItemBase
     /// <summary>사이드바 자식 세션 행과 연결선의 트리 들여쓰기 폭.</summary>
     public System.Windows.GridLength TreeIndent => new(TreeDepth * 19d);
 
-    internal void ApplyTreePresentation(int depth, bool hasParent, bool effectivelyHidden, bool globallyHidden)
+    internal void ApplyTreePresentation(
+        int depth,
+        bool hasParent,
+        int childCount,
+        bool treeVisible,
+        bool effectivelyHidden,
+        bool globallyHidden)
     {
         TreeDepth = Math.Max(0, depth);
         HasSessionParent = hasParent;
+        HasSessionChildren = childCount > 0;
+        SessionChildCount = childCount;
+        IsSessionTreeVisible = treeVisible;
         IsEffectivelyHidden = effectivelyHidden;
         IsSidebarGloballyHidden = globallyHidden;
     }
@@ -286,6 +315,9 @@ public sealed class ProjectFolderItem : NotifyBase
         System.Windows.Application.Current?.TryFindResource(IconKey) as System.Windows.Media.Geometry
         ?? System.Windows.Application.Current?.TryFindResource(FolderIconCatalog.DefaultKey) as System.Windows.Media.Geometry;
 
+    private int _rootOrder = int.MaxValue;
+    public int RootOrder { get => _rootOrder; set => Set(ref _rootOrder, Math.Max(0, value)); }
+
     private bool _isExpanded = true;
     public bool IsExpanded { get => _isExpanded; set => Set(ref _isExpanded, value); }
     private string? _archivedAt;
@@ -305,6 +337,42 @@ public sealed class ProjectFolderItem : NotifyBase
 
     [System.Text.Json.Serialization.JsonIgnore]
     public ObservableCollection<ProjectItem> Projects { get; } = new();
+
+    private bool _hasBusySession;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasBusySession
+    {
+        get => _hasBusySession;
+        private set => Set(ref _hasBusySession, value);
+    }
+
+    private bool _hasSelectedProject;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasSelectedProject
+    {
+        get => _hasSelectedProject;
+        private set => Set(ref _hasSelectedProject, value);
+    }
+
+    private string _projectCountText = "0개";
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string ProjectCountText
+    {
+        get => _projectCountText;
+        private set => Set(ref _projectCountText, value);
+    }
+
+    internal void UpdateSummary(
+        IReadOnlyCollection<ProjectItem> allProjects,
+        int visibleCount,
+        bool hasQuery)
+    {
+        HasBusySession = allProjects.Any(project => project.HasBusySession);
+        HasSelectedProject = allProjects.Any(project => project.IsSelected);
+        ProjectCountText = hasQuery && visibleCount < allProjects.Count
+            ? $"{visibleCount}/{allProjects.Count}개"
+            : $"{allProjects.Count}개";
+    }
 
     private bool _isSearchVisible = true;
     [System.Text.Json.Serialization.JsonIgnore]
@@ -328,6 +396,9 @@ public sealed class ProjectItem : NotifyBase
     }
 
     public bool HasProjectFolder => FolderId != null;
+
+    private int _rootOrder = int.MaxValue;
+    public int RootOrder { get => _rootOrder; set => Set(ref _rootOrder, Math.Max(0, value)); }
 
     /// <summary>프로젝트에 등록한 파일 목록(메뉴 고정). 하나라도 있으면 메뉴가 "파일" 서브메뉴로 바뀐다.</summary>
     public ObservableCollection<ProjectFile> Files { get; } = new();
@@ -609,7 +680,9 @@ public sealed class ProjectItem : NotifyBase
             RaiseSessionStatus();
         if (e.PropertyName == nameof(SessionItem.Name) && sender is SessionItem session)
             ApplySidebarSearch(session);
-        if (e.PropertyName is nameof(SessionItem.Hidden) or nameof(SessionItem.ParentSessionId))
+        if (e.PropertyName is nameof(SessionItem.Hidden)
+            or nameof(SessionItem.ParentSessionId)
+            or nameof(SessionItem.AreSessionChildrenExpanded))
             RefreshSessionTree();
     }
 
@@ -621,6 +694,7 @@ public sealed class ProjectItem : NotifyBase
         {
             int depth = 0;
             bool effectivelyHidden = session.Hidden;
+            bool treeVisible = true;
             bool hasParent = false;
             var root = session;
             var current = session;
@@ -632,12 +706,21 @@ public sealed class ProjectItem : NotifyBase
             {
                 hasParent = true;
                 depth++;
+                treeVisible &= parent.AreSessionChildrenExpanded;
                 effectivelyHidden |= parent.Hidden;
                 root = parent;
                 current = parent;
             }
 
-            session.ApplyTreePresentation(depth, hasParent, effectivelyHidden, root.Hidden);
+            int childCount = Sessions.Count(child =>
+                StringComparer.Ordinal.Equals(child.ParentSessionId, session.Id));
+            session.ApplyTreePresentation(
+                depth,
+                hasParent,
+                childCount,
+                treeVisible,
+                effectivelyHidden,
+                root.Hidden);
         }
 
         SyncObservable(HiddenSessions, BuildHiddenTreeOrder());

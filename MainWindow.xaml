@@ -431,7 +431,7 @@
                                                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Top">
                                                         <!-- 체크된 기록: 에이전트 아이콘 왼쪽에 테마색 체크 아이콘 하나만 표시 -->
                                                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconCheck}"
-                                                              Width="12" Height="12" VerticalAlignment="Top" Margin="0,3,5,0"
+                                                              Width="12" Height="12" VerticalAlignment="Top" Margin="0,3,7,0"
                                                               StrokeThickness="2" Stroke="{DynamicResource PrimaryBrush}"
                                                               Visibility="{Binding IsChecked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                                                             <Path.RenderTransform>

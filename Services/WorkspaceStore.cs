@@ -8,10 +8,10 @@ namespace DevezCode.Services;
 /// <summary>프로젝트/세션 트리를 %AppData%\DevezCode\workspace.json 에 저장·복원.</summary>
 public static class WorkspaceStore
 {
-    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public string? ParentId { get; set; } }
+    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public string? ParentId { get; set; } public bool ChildrenExpanded { get; set; } = true; }
     private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
-    private sealed class ProjectFolderDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Icon { get; set; } public bool IsExpanded { get; set; } = true; public string? ArchivedAt { get; set; } }
+    private sealed class ProjectFolderDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Icon { get; set; } public int? RootOrder { get; set; } public bool IsExpanded { get; set; } = true; public string? ArchivedAt { get; set; } }
     private sealed class ProjectDto
     {
         public string Path { get; set; } = "";
@@ -24,6 +24,7 @@ public static class WorkspaceStore
         // 2열 보기에서의 컬럼(0=좌, 1=우). 1열 보기에선 무시. 기본 0.
         public int Column { get; set; }
         public string? FolderId { get; set; }
+        public int? RootOrder { get; set; }
         public List<SessionDto> Sessions { get; set; } = new();
         // 중앙 웹 브라우저 탭. ID가 settings.json 의 탭별 방문 기록 키와 연결된다.
         public List<BrowserDto> Browsers { get; set; } = new();
@@ -144,6 +145,7 @@ public static class WorkspaceStore
                     Id = folder.Id,
                     Name = folder.Name ?? "",
                     IconKey = FolderIconCatalog.Normalize(folder.Icon),
+                    RootOrder = folder.RootOrder ?? int.MaxValue,
                     IsExpanded = folder.IsExpanded,
                     ArchivedAt = folder.ArchivedAt,
                 });
@@ -157,9 +159,10 @@ public static class WorkspaceStore
                 proj.ArchivedAt = p.ArchivedAt;
                 proj.Column = p.Column;
                 proj.FolderId = folderIds.Contains(p.FolderId ?? "") ? p.FolderId : null;
+                proj.RootOrder = p.RootOrder ?? int.MaxValue;
                 proj.ShowHiddenSessions = p.ShowHiddenSessions;
                 foreach (var s in p.Sessions)
-                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden, IsLocked = s.Locked, ParentSessionId = s.ParentId });
+                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden, IsLocked = s.Locked, ParentSessionId = s.ParentId, AreSessionChildrenExpanded = s.ChildrenExpanded });
                 proj.NormalizeSessionTree();
                 foreach (var b in p.Browsers ?? new())
                     proj.Tabs.Add(new BrowserTabItem { Id = b.Id, Name = string.IsNullOrWhiteSpace(b.Name) ? "웹 브라우저" : b.Name });
@@ -210,11 +213,13 @@ public static class WorkspaceStore
         ArchivedAt = p.ArchivedAt,
         Column = p.Column,
         FolderId = p.FolderId,
+        RootOrder = p.RootOrder,
         Sessions = p.Tabs.OfType<SessionItem>().Select(s => new SessionDto
         {
             Id = s.Id, Name = s.Name,
             Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
             Hidden = s.Hidden, Locked = s.IsLocked, ParentId = s.ParentSessionId,
+            ChildrenExpanded = s.AreSessionChildrenExpanded,
         }).ToList(),
         Browsers = p.Tabs.OfType<BrowserTabItem>().Select(b => new BrowserDto
         {
@@ -263,6 +268,7 @@ public static class WorkspaceStore
                     Id = folder.Id,
                     Name = folder.Name,
                     Icon = folder.IconKey,
+                    RootOrder = folder.RootOrder,
                     IsExpanded = folder.IsExpanded,
                     ArchivedAt = folder.ArchivedAt,
                 }).ToList(),

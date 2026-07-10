@@ -44,10 +44,15 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly Func<T, T, bool>? _canDropInto;
     private readonly Action<T?, FrameworkElement?>? _dropIntoPreviewChanged;
     private readonly Func<T, T, Task>? _onDropInto;
+    private readonly Action<T?, FrameworkElement?, bool>? _reorderPreviewChanged;
     private readonly bool _commitUnchanged;
+    private readonly bool _hitTestSlots;
+    private readonly bool _suppressDisplacement;
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private Slot? _dropIntoTarget;         // 중앙 50%: 자식 드롭 프리뷰/커밋 대상.
+    private Slot? _reorderPreviewTarget;
+    private bool _reorderPreviewAfter;
     private bool _finished;
     private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
     private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
@@ -61,13 +66,17 @@ internal sealed class ReorderDrag<T> where T : class
         DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal,
         int columns, double gridMidX, double grabOffsetX, double grabOffsetY,
         Func<T, T, bool>? canDropInto, Action<T?, FrameworkElement?>? dropIntoPreviewChanged,
-        Func<T, T, Task>? onDropInto, bool commitUnchanged)
+        Func<T, T, Task>? onDropInto, bool commitUnchanged,
+        bool hitTestSlots, bool suppressDisplacement,
+        Action<T?, FrameworkElement?, bool>? reorderPreviewChanged)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
         _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
         _canDropInto = canDropInto; _dropIntoPreviewChanged = dropIntoPreviewChanged;
         _onDropInto = onDropInto; _commitUnchanged = commitUnchanged;
+        _hitTestSlots = hitTestSlots; _suppressDisplacement = suppressDisplacement;
+        _reorderPreviewChanged = reorderPreviewChanged;
         _targetIndex = sourceIndex;
         _targetColumn = -1; // 그리드: 첫 Update 가 항상 displacement 를 적용하도록 미지정으로 시작.
     }
@@ -89,7 +98,11 @@ internal sealed class ReorderDrag<T> where T : class
         Action<T?, FrameworkElement?>? dropIntoPreviewChanged = null,
         Func<T, T, Task>? onDropInto = null,
         bool commitUnchanged = false,
-        Func<T, IReadOnlyList<FrameworkElement>>? groupedElements = null)
+        Func<T, IReadOnlyList<FrameworkElement>>? groupedElements = null,
+        bool hitTestSlots = false,
+        Action<T?, FrameworkElement?, bool>? reorderPreviewChanged = null,
+        bool suppressDisplacement = false,
+        bool preserveRowOrder = false)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -134,15 +147,20 @@ internal sealed class ReorderDrag<T> where T : class
                 Math.Max(1, el.ActualHeight)));
         }
         // 그리드(2열): 컬럼(좌→우) 우선, 그 안에서 위→아래. 1축: 해당 축 위치.
-        if (columns > 1)
+        if (!preserveRowOrder && columns > 1)
             captured.Sort((a, b) =>
             {
                 int ca = a.Left + a.Width / 2 >= gridMidX ? 1 : 0;
                 int cb = b.Left + b.Width / 2 >= gridMidX ? 1 : 0;
                 return ca != cb ? ca.CompareTo(cb) : a.Top.CompareTo(b.Top);
             });
-        else
-            captured.Sort((a, b) => (horizontal ? a.Left : a.Top).CompareTo(horizontal ? b.Left : b.Top));
+        else if (!preserveRowOrder)
+            captured.Sort((a, b) =>
+            {
+                int primary = (horizontal ? a.Left : a.Top).CompareTo(horizontal ? b.Left : b.Top);
+                if (primary != 0) return primary;
+                return (horizontal ? a.Top : a.Left).CompareTo(horizontal ? b.Top : b.Left);
+            });
 
         var srcIdx = captured.FindIndex(s => ReferenceEquals(s.Item, source));
         if (srcIdx < 0) return null; // 1개(패널 마지막 탭)여도 시작은 허용 — 로컬 재정렬은 무동작, 크로스 패널 이동은 별도 경로.
@@ -173,7 +191,8 @@ internal sealed class ReorderDrag<T> where T : class
         if (ghost == null) return null;
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
-            columns, gridMidX, grabPt.X, grabPt.Y, canDropInto, dropIntoPreviewChanged, onDropInto, commitUnchanged);
+            columns, gridMidX, grabPt.X, grabPt.Y, canDropInto, dropIntoPreviewChanged, onDropInto, commitUnchanged,
+            hitTestSlots, suppressDisplacement, reorderPreviewChanged);
     }
 
     /// <summary>자식 드래그 시작 즉시 원래 자리를 접어 부모에서 빠져나오는 프리뷰를 표시.
@@ -230,6 +249,7 @@ internal sealed class ReorderDrag<T> where T : class
         {
             if (zone == DropZone.Into)
             {
+                ClearReorderPreview();
                 if (SetDropIntoTarget(hovered))
                 {
                     _targetIndex = _sourceIndex;
@@ -239,6 +259,7 @@ internal sealed class ReorderDrag<T> where T : class
             }
 
             ClearDropIntoTarget();
+            SetReorderPreview(hovered, zone == DropZone.After);
             var zoneTarget = TargetIndexAround(hovered, after: zone == DropZone.After);
             if (!_needsReapply && zoneTarget == _targetIndex) return;
             _needsReapply = false;
@@ -247,6 +268,23 @@ internal sealed class ReorderDrag<T> where T : class
             return;
         }
 
+        if (_hitTestSlots)
+        {
+            ClearDropIntoTarget();
+            if (TryGetOuterDropTarget(pointer, out var outerTarget, out bool after))
+            {
+                SetReorderPreview(outerTarget, after);
+                int outerIndex = TargetIndexAround(outerTarget, after);
+                if (_needsReapply || outerIndex != _targetIndex)
+                {
+                    _needsReapply = false;
+                    _targetIndex = outerIndex;
+                    ApplyDisplacement();
+                }
+            }
+            return;
+        }
+        ClearReorderPreview();
         ClearDropIntoTarget();
         var cursor = _horizontal ? pointer.X : pointer.Y;
         var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
@@ -261,32 +299,84 @@ internal sealed class ReorderDrag<T> where T : class
 
     private enum DropZone { Before, Into, After }
 
+    private Rect CurrentBounds(Slot slot)
+    {
+        if (!_hitTestSlots || !_suppressDisplacement)
+            return new Rect(slot.PrimaryLeft, slot.PrimaryTop, slot.PrimaryWidth, slot.PrimaryHeight);
+
+        try
+        {
+            var point = slot.Element.TransformToAncestor(_coordHost).Transform(new Point(0, 0));
+            return new Rect(point.X, point.Y, Math.Max(1, slot.Element.ActualWidth), Math.Max(1, slot.Element.ActualHeight));
+        }
+        catch
+        {
+            return new Rect(slot.PrimaryLeft, slot.PrimaryTop, slot.PrimaryWidth, slot.PrimaryHeight);
+        }
+    }
+
     /// <summary>자식 드롭을 허용한 항목은 포인터 기준 상단 25%=앞, 중앙 50%=자식, 하단 25%=뒤.</summary>
     private bool TryGetDropZone(Point pointer, out Slot target, out DropZone zone)
     {
         target = null!;
         zone = DropZone.Before;
-        if (_canDropInto == null) return false;
+        if (_canDropInto == null && !_hitTestSlots) return false;
 
         foreach (var slot in _slots)
         {
-            if (ReferenceEquals(slot, _slots[_sourceIndex]) || !_canDropInto(_source, slot.Item)) continue;
+            if (ReferenceEquals(slot, _slots[_sourceIndex])) continue;
+            bool canDropInto = _canDropInto?.Invoke(_source, slot.Item) == true;
+            if (!canDropInto && !_hitTestSlots) continue;
             // 시프트 애니메이션으로 대상 카드가 움직여도 드롭 구역까지 같이 도망가지 않게
             // 드래그 시작 시 캡처한 논리 슬롯을 사용한다. 중앙 진입 시 displacement가 원복되고
             // 실제 대상 SessionRow가 원래 자리로 돌아오며 보더 하이라이트된다.
-            var bounds = new Rect(slot.PrimaryLeft, slot.PrimaryTop, slot.PrimaryWidth, slot.PrimaryHeight);
+            var bounds = CurrentBounds(slot);
             if (!bounds.Contains(pointer)) continue;
 
             double relative = _horizontal
                 ? (pointer.X - bounds.Left) / bounds.Width
                 : (pointer.Y - bounds.Top) / bounds.Height;
-            zone = relative < 0.25 ? DropZone.Before
-                : relative > 0.75 ? DropZone.After
-                : DropZone.Into;
+            zone = canDropInto
+                ? relative < 0.25
+                    ? DropZone.Before
+                    : relative > 0.75 ? DropZone.After : DropZone.Into
+                : relative < 0.5
+                    ? DropZone.Before
+                    : DropZone.After;
             target = slot;
             return true;
         }
         return false;
+    }
+
+    private bool TryGetOuterDropTarget(Point pointer, out Slot target, out bool after)
+    {
+        target = null!;
+        after = false;
+        var candidates = _slots
+            .Where(slot => !ReferenceEquals(slot, _slots[_sourceIndex]))
+            .Select(slot => (Slot: slot, Bounds: CurrentBounds(slot)))
+            .ToList();
+        if (candidates.Count == 0) return false;
+
+        if (_horizontal)
+        {
+            double firstEdge = candidates.Min(candidate => candidate.Bounds.Left);
+            double lastEdge = candidates.Max(candidate => candidate.Bounds.Right);
+            if (pointer.X < firstEdge) { target = candidates[0].Slot; return true; }
+            if (pointer.X <= lastEdge) return false;
+            target = candidates[^1].Slot;
+        }
+        else
+        {
+            double firstEdge = candidates.Min(candidate => candidate.Bounds.Top);
+            double lastEdge = candidates.Max(candidate => candidate.Bounds.Bottom);
+            if (pointer.Y < firstEdge) { target = candidates[0].Slot; return true; }
+            if (pointer.Y <= lastEdge) return false;
+            target = candidates[^1].Slot;
+        }
+        after = true;
+        return true;
     }
 
     private int TargetIndexAround(Slot target, bool after)
@@ -314,6 +404,27 @@ internal sealed class ReorderDrag<T> where T : class
         _dropIntoTarget = null;
         _dropIntoPreviewChanged?.Invoke(null, null);
         _needsReapply = true;
+    }
+
+    private void SetReorderPreview(Slot target, bool after)
+    {
+        if (ReferenceEquals(_reorderPreviewTarget, target) && _reorderPreviewAfter == after)
+        {
+            _reorderPreviewChanged?.Invoke(target.Item, target.Element, after);
+            return;
+        }
+
+        _reorderPreviewTarget = target;
+        _reorderPreviewAfter = after;
+        _reorderPreviewChanged?.Invoke(target.Item, target.Element, after);
+    }
+
+    private void ClearReorderPreview()
+    {
+        if (_reorderPreviewTarget == null) return;
+        _reorderPreviewTarget = null;
+        _reorderPreviewAfter = false;
+        _reorderPreviewChanged?.Invoke(null, null, false);
     }
 
     private void ResetDisplacementPreview()
@@ -427,6 +538,7 @@ internal sealed class ReorderDrag<T> where T : class
 
     private void ApplyDisplacement()
     {
+        if (_suppressDisplacement) return;
         double shift = RowPitch();
         for (int i = 0; i < _slots.Count; i++)
         {
@@ -445,6 +557,7 @@ internal sealed class ReorderDrag<T> where T : class
 
         var dropIntoTarget = _dropIntoTarget;
         ClearDropIntoTarget();
+        ClearReorderPreview();
 
         _ghost.Dispose();
         foreach (var slot in _slots)

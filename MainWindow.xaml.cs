@@ -382,6 +382,9 @@ public partial class MainWindow : Window
             UserStatusLineInstaller.EnsureInstalled();
             StartStatusLine();
             _sessionBusy.Start();
+            // /send-new: 인박스가 자식 세션 생성을 요청하면 UI 스레드에서 생성·시작한다.
+            _sessionCommandInbox.ChildSessionRequested += (parentRoomId, sessionName, brief) =>
+                Dispatcher.BeginInvoke(() => CreateChildAndDispatch(parentRoomId, sessionName, brief));
             _sessionCommandInbox.Start();  // 세션 간 지시 릴레이 수신 시작
             StartBusyDisplaySync();
             _modelEffort.Start();
@@ -2935,6 +2938,44 @@ public partial class MainWindow : Window
     private SessionItem? FindSession(string id)
         => _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
 
+    /// <summary>/send-new: 부모(A) 세션의 자식 세션을 만들어 열고, 부팅 완료되면 브리핑을 주입한다(InjectWhenReady).
+    /// 자식은 부모와 같은 프로젝트·같은 에이전트의 fresh 세션(코드베이스·CLAUDE.md 자동 확보)이며,
+    /// 완료되면 부모 A에게 완료 알림이 돌아온다(콜백). 인박스 이벤트에서 UI 스레드로 마샬링돼 호출된다.</summary>
+    private void CreateChildAndDispatch(string parentRoomId, string sessionName, string brief)
+    {
+        try
+        {
+            var parent = FindSession(parentRoomId);
+            if (parent == null) return;
+            var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(parent));
+            if (proj == null) return;
+
+            var agentId = string.IsNullOrEmpty(parent.AgentId)
+                ? SettingsService.LoadAgentForRoom(parent.Id) : parent.AgentId;
+
+            // 자식 이름 = A가 지시 내용으로 지은 짧은 이름(≤15자). 비면 기본명 폴백.
+            var name = (sessionName ?? "").Trim();
+            if (name.Length > 15) name = name.Substring(0, 15);
+            if (string.IsNullOrEmpty(name)) name = "위임 작업";
+
+            var child = new SessionItem
+            {
+                Name = name,
+                AgentId = agentId,
+                ParentSessionId = parent.Id,
+            };
+            proj.Tabs.Add(child);
+            proj.IsExpanded = true;
+            SettingsService.SaveClaudeCodeRoomDir(child.Id, proj.Path);
+            SettingsService.SaveAgentForRoom(child.Id, agentId);
+            WorkspaceStore.Save(_projects);
+
+            OpenSession(child);   // 자식 세션 터미널 시작(v1: 포커스가 자식으로 이동)
+            _sessionCommandInbox.InjectWhenReady(child.Id, brief);
+        }
+        catch { /* best-effort */ }
+    }
+
     /// <summary>완료기록 헤더("진행중/응답 대기 중 N개")·대기 카드를 IsBusy/IsWaitingChoice 와 주기 동기화.
     /// 대기/진행 감지는 모두 훅·이벤트(Notification/jsonl/플러그인)가 담당하고, 여기선 화면 스크래핑 없이
     /// 표시만 맞춘다 — Esc/세션 종료 등 이벤트 밖 경로에서 플래그가 바뀌어도 헤더가 즉시 따라오게.</summary>
@@ -3624,7 +3665,7 @@ public partial class MainWindow : Window
         var subtree = project.GetSessionSubtree(session).ToList();
         var owners = subtree.ToDictionary(s => s, PaneFor);
 
-        session.Hidden = true;
+        foreach (var hidden in subtree) hidden.Hidden = true;
         foreach (var pane in _panes) pane.OnSessionsHidden(subtree);
         foreach (var hidden in subtree) owners[hidden].ScheduleSessionHide(hidden);
 

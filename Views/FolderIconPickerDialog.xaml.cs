@@ -50,22 +50,21 @@ public partial class FolderIconPickerDialog : Window
             Padding = new Thickness(8),
             CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1.5),
-            BorderBrush = ResourceBrush(selected ? "PrimaryBrush" : "LineBrush"),
-            Background = ResourceBrush(selected ? "PanelSoftBrush" : "PanelBrush"),
             Cursor = Cursors.Arrow,
             ToolTip = option.Label,
         };
+        tile.SetResourceReference(Border.BorderBrushProperty, selected ? "PrimaryBrush" : "LineBrush");
+        tile.SetResourceReference(Border.BackgroundProperty, selected ? "PanelSoftBrush" : "PanelBrush");
 
         if (TryFindResource(option.Key) is Geometry geometry)
         {
             double iconSize = option.Key == "IconSparkle" ? 18 : 20;
-            tile.Child = new Path
+            var icon = new Path
             {
                 Data = geometry,
                 Width = iconSize,
                 Height = iconSize,
                 Stretch = Stretch.Uniform,
-                Stroke = ResourceBrush("TextMutedBrush"),
                 StrokeThickness = 1.5,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
@@ -74,6 +73,8 @@ public partial class FolderIconPickerDialog : Window
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            icon.SetResourceReference(Shape.StrokeProperty, "TextMutedBrush");
+            tile.Child = icon;
         }
 
         tile.MouseLeftButtonDown += (_, e) =>
@@ -85,18 +86,15 @@ public partial class FolderIconPickerDialog : Window
         tile.MouseEnter += (_, _) =>
         {
             if (option.Key != _selectedIconKey)
-                tile.Background = ResourceBrush("PanelSoftBrush");
+                tile.SetResourceReference(Border.BackgroundProperty, "PanelSoftBrush");
         };
         tile.MouseLeave += (_, _) =>
         {
             if (option.Key != _selectedIconKey)
-                tile.Background = ResourceBrush("PanelBrush");
+                tile.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
         };
         return tile;
     }
-
-    private Brush ResourceBrush(string key) =>
-        TryFindResource(key) as Brush ?? Brushes.Gray;
 
     private void Complete()
     {

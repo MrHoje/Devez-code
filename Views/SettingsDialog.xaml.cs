@@ -694,7 +694,7 @@ public partial class SettingsDialog : UserControl
         if (_changelogPage < totalPages - 1) { _changelogPage++; RenderChangelogPage(); }
     }
 
-    /// <summary>테마 변경 시 — brush instance 가 stale 된 좌측 활성 배경·테마/글꼴 카드 보더를 모두 재계산.</summary>
+    /// <summary>테마 변경 시 DynamicResource가 아닌 코드 할당 브러시와 테마별 아이콘을 모두 재계산한다.</summary>
     private void RefreshAfterThemeChange()
     {
         Dispatcher.BeginInvoke(new Action(() =>
@@ -702,9 +702,24 @@ public partial class SettingsDialog : UserControl
             SetActiveCategory(_activeCategoryKey);
             UpdateThemeSelectionVisual();
             UpdateFontSelectionVisual();
-        OpenCodeLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
-        OpenCodeCatIcon.Source  = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 세션 클리너 pill 아이콘도 동일 처리
-        GrokLoginIcon.Source    = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
+            UpdateProjectColumnsVisual();
+            UpdateNotifyPositionVisual();
+            UpdateShortcutVisual();
+            if (_cleanerBuilt && _cleanerVisible.Count > 0)
+                SetCleanerActive(_cleanerCurrent);
+            foreach (var item in _agentItems)
+                item.InstalledBrush = (Brush)FindResource(
+                    item.Installed ? "PrimaryBrush" : "TextMutedBrush");
+            if (DeepSeekKeyStatus.Visibility == Visibility.Visible)
+                DeepSeekKeyStatus.SetResourceReference(
+                    TextBlock.ForegroundProperty,
+                    "DangerBrush");
+            if (ChangelogItemsHost.Children.Count > 0)
+                RenderChangelogPage();
+
+            OpenCodeLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri));
+            OpenCodeCatIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri));
+            GrokLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
         }));
     }
 
@@ -873,7 +888,7 @@ public partial class SettingsDialog : UserControl
         if (string.IsNullOrEmpty(key))
         {
             DeepSeekKeyStatus.Text = "API 키를 입력하세요.";
-            DeepSeekKeyStatus.Foreground = (Brush)FindResource("DangerBrush");
+            DeepSeekKeyStatus.SetResourceReference(TextBlock.ForegroundProperty, "DangerBrush");
             DeepSeekKeyStatus.Visibility = Visibility.Visible;
             return;
         }

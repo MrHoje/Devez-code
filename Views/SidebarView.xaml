@@ -108,6 +108,8 @@
 
         <!-- ── 세션(하위 항목) 템플릿 — Claude 로고 + 상태 점 + 이름 + 호버 ⋯ 메뉴 ── -->
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
+            <Border Visibility="Collapsed"
+                    b:TreeExpander.IsExpanded="{Binding IsSessionTreeVisible}">
             <Grid x:Name="SessionRowLayout"
                   Visibility="{Binding IsSearchVisible, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                 <Grid.ColumnDefinitions>
@@ -206,6 +208,8 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <!-- 잠금 아이콘(에이전트 아이콘 왼쪽) + 세션 아이콘 -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
@@ -250,9 +254,25 @@
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                FontSize="{DynamicResource Fs12}"
                                Foreground="{DynamicResource TextBrush}"/>
+                    <TextBlock Grid.Column="3" Text="{Binding SessionChildCount}"
+                               Margin="6,0,0,0" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs11}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Visibility="{Binding HasSessionChildren, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                    <Button Grid.Column="4" Width="18" Height="18" Margin="4,0,0,0"
+                            Tag="{Binding}" Click="SessionChevron_Click"
+                            Style="{StaticResource IconButton}" Padding="3"
+                            Cursor="Arrow" VerticalAlignment="Center"
+                            Visibility="{Binding HasSessionChildren, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
+                            ToolTip="자식 세션 접기 / 펼치기">
+                        <Path Style="{StaticResource LucideButtonIcon}"
+                              Data="{Binding AreSessionChildrenExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
+                              Width="11" Height="11" Stretch="Uniform"/>
+                    </Button>
                 </Grid>
                 </Border>
             </Grid>
+            </Border>
             <DataTemplate.Triggers>
                 <!-- 연결선 열에서 조금 더 떨어뜨려 자식 카드를 총 23px 들여쓴다. -->
                 <DataTrigger Binding="{Binding HasSessionParent}" Value="True">
@@ -704,7 +724,7 @@
         <Style x:Key="ProjectFolderCard" TargetType="Border">
             <Setter Property="Margin" Value="0,3,0,10"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
             <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="CornerRadius" Value="9"/>
             <Setter Property="SnapsToDevicePixels" Value="False"/>
@@ -770,19 +790,33 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
-                                  Data="{Binding IconGeometry}" Width="15" Height="15"
-                                  Margin="0,0,8,0" VerticalAlignment="Center"
-                                  Stroke="{DynamicResource TextMutedBrush}"/>
+                            <Grid Grid.Column="0" Width="15" Height="15"
+                                  Margin="0,0,8,0" VerticalAlignment="Center">
+                                <Path x:Name="FolderIcon"
+                                      Style="{StaticResource LucideIcon}"
+                                      Data="{Binding IconGeometry}"
+                                      Width="15" Height="15"
+                                      Stroke="{DynamicResource TextMutedBrush}"/>
+                                <Ellipse x:Name="FolderBusySpinner"
+                                         Width="14" Height="14" Visibility="Collapsed"
+                                         models:SpinnerActivator.Track="True"
+                                         Stroke="{DynamicResource PrimaryBrush}"
+                                         StrokeThickness="1.6"
+                                         StrokeDashArray="15 100"
+                                         StrokeDashCap="Round"
+                                         RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                            </Grid>
                             <TextBlock Grid.Column="1" Text="{Binding Name}"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                        FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
-                            <TextBlock Grid.Column="2" Margin="8,0,4,0" VerticalAlignment="Center"
+                            <TextBlock Grid.Column="2" Text="{Binding ProjectCountText}" Margin="8,0,4,0" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource TextMutedBrush}">
-                                <Run Text="{Binding Projects.Count, Mode=OneWay}"/><Run Text="개"/>
-                            </TextBlock>
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
                             <Button Grid.Column="3" Tag="{Binding}"
                                     Click="FolderChevron_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
@@ -826,6 +860,15 @@
             </Border>
             <DataTemplate.Triggers>
                 <!-- 접힌 상태는 투명 보더, 펼치면 같은 행 외곽선이 자식 영역까지 이어진다. -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsExpanded}" Value="False"/>
+                        <Condition Binding="{Binding HasBusySession}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="FolderIcon" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="FolderBusySpinner" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+
                 <DataTrigger Binding="{Binding IsExpanded}" Value="True">
                     <Setter TargetName="FolderRoot" Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
                     <Setter TargetName="FolderHeader" Property="CornerRadius" Value="8,8,0,0"/>
@@ -838,8 +881,19 @@
                     <Setter TargetName="FolderRoot" Property="BorderBrush"
                             Value="{DynamicResource ProjectCardHoverBorderBrush}"/>
                 </DataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsExpanded}" Value="False"/>
+                        <Condition Binding="{Binding HasSelectedProject}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="FolderRoot" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                </MultiDataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
+
+        <local:ProjectRootTemplateSelector x:Key="ProjectRootRowSelector"
+                                           FolderTemplate="{StaticResource ProjectFolderTemplate}"
+                                           ProjectTemplate="{StaticResource ProjectTemplate}"/>
 
     </UserControl.Resources>
 
@@ -1009,13 +1063,9 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
                               Style="{StaticResource OverlayVScroll}"
                               ScrollChanged="ProjectScrollChanged">
-                    <StackPanel>
-                        <ItemsControl x:Name="FoldersHost" Tag="1"
-                                      ItemTemplate="{StaticResource ProjectFolderTemplate}"/>
-                        <ItemsControl x:Name="ProjectsHost" Tag="1"
-                                      ItemTemplate="{StaticResource ProjectTemplate}"
-                                      ItemsPanel="{StaticResource ProjectsPanel}"/>
-                    </StackPanel>
+                    <ItemsControl x:Name="ProjectsHost" Tag="1"
+                                  ItemTemplateSelector="{StaticResource ProjectRootRowSelector}"
+                                  ItemsPanel="{StaticResource ProjectsPanel}"/>
                 </ScrollViewer>
             </Grid>
 
@@ -1028,13 +1078,9 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
                               Style="{StaticResource OverlayVScroll}"
                               ScrollChanged="ProjectScrollChanged">
-                    <StackPanel>
-                        <ItemsControl x:Name="ArchivedFoldersHost" Tag="1"
-                                      ItemTemplate="{StaticResource ProjectFolderTemplate}"/>
-                        <ItemsControl x:Name="ArchivedHost" Tag="1"
-                                      ItemTemplate="{StaticResource ProjectTemplate}"
-                                      ItemsPanel="{StaticResource ProjectsPanel}"/>
-                    </StackPanel>
+                    <ItemsControl x:Name="ArchivedHost" Tag="1"
+                                  ItemTemplateSelector="{StaticResource ProjectRootRowSelector}"
+                                  ItemsPanel="{StaticResource ProjectsPanel}"/>
                 </ScrollViewer>
                 <!-- 보관함 비었을 때 안내 -->
                 <TextBlock x:Name="ArchiveEmptyText" Text="보관된 프로젝트 또는 폴더가 없습니다"
