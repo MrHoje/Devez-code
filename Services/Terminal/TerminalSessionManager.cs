@@ -1017,7 +1017,14 @@ public sealed class TerminalSessionManager
     /// quitFlagPath: 앱 종료(GracefulExitPlan → MarkClaudeQuitting)가 남긴 "종료중" 플래그. escFirst
     /// 로 claude 가 예상보다 빨리 정상 종료하면 Dispose(ConPTY 닫기) 전 이 틈에 재진입해 새 claude 를
     /// 띄우는 레이스가 있어, 재진입 직전에 이 플래그를 먼저 확인해 있으면 루프를 끝낸다.</summary>
-    private static string ClaudeReentryLoop(string flags, string trackFile, string quitFlagPath, string reenterFlagPath) =>
+    private static string ClaudeReentryLoop(string flags, string trackFile, string quitFlagPath, string reenterFlagPath)
+    {
+        // 유령 SID(resume 포크 직후 .jsonl 미생성 상태에서 크래시/수동 /exit) 대비: 훅이 보존한
+        // 직전 sid(.prev)로 한 번 더 resume 을 시도한 뒤에야 새 세션으로 폴백한다 — 대화 유실 방지.
+        var prevFile = trackFile.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
+            ? trackFile[..^4] + ".prev.txt"
+            : trackFile + ".prev";
+        return
         "set FAILS=0\r\n" +
         ":__reenter\r\n" +
         $"if exist \"{quitFlagPath}\" goto __quitflag\r\n" +
@@ -1026,14 +1033,23 @@ public sealed class TerminalSessionManager
         $"type nul >\"{reenterFlagPath}\"\r\n" +
         "set \"SID=\"\r\n" +
         $"if exist \"{trackFile}\" for /f \"usebackq delims=\" %%i in (\"{trackFile}\") do set \"SID=%%i\"\r\n" +
+        "set \"PSID=\"\r\n" +
+        $"if exist \"{prevFile}\" for /f \"usebackq delims=\" %%i in (\"{prevFile}\") do set \"PSID=%%i\"\r\n" +
         "if defined SID (\r\n" +
         $"  call claude --resume %SID% {flags}\r\n" +   // call: claude 가 claude.cmd(npm) 인 환경에서도 종료 후 제어가 루프로 복귀
+        // prev 폴백 전 추적 파일을 prev 로 치유 — 안 하면 새 claude 의 SessionStart 훅이 추적 파일의
+        // 유령 sid 를 $prev 로 읽어 .prev 를 유령으로 덮는다(체인 오염). C# 실행 경로의 치유와 동일 원리.
+        $"  if errorlevel 1 if defined PSID (\r\n" +
+        $"    copy /y \"{prevFile}\" \"{trackFile}\" >nul\r\n" +
+        $"    call claude --resume %PSID% {flags}\r\n" +
+        $"  )\r\n" +
         $"  if errorlevel 1 call claude {flags}\r\n" +
         ") else (\r\n" +
         $"  call claude {flags}\r\n" +
         ")\r\n" +
         ReentryTail() +
         ":__quitflag\r\n";
+    }
 
     /// <summary>가재(gjc) 재진입 루프 — 방별 --session-dir 로 격리돼 있어 -c(최신 이어가기)가 곧 이 방의
     /// 마지막 대화. 앱의 session-dir 폴링(GajaeLastMessageService)이 재진입 세션도 그대로 추적한다.</summary>
@@ -1195,7 +1211,14 @@ public sealed class TerminalSessionManager
                     # sid 가 바뀌면 이전 sid 를 .prev 로 보존 — resume 은 새 sid 로 포크하지만 새 .jsonl 은
                     # 첫 활동 전까지 생성되지 않아(lazy), 그 사이 재시작하면 추적이 유령 sid 를 가리켜
                     # 빈 세션으로 열린다. 실행 시(C# TryBuildDirectLaunch) transcript 없으면 .prev 로 복원.
-                    if ($prev -and $sid -ne $prev) { Write-State (Join-Path $dir ($room + '.prev.txt')) $prev }
+                    # 단 /clear(의도적 초기화)는 prev 를 지운다 — 남겨두면 "clear 후 입력 없이 재시작" 때
+                    # 폴백이 사용자가 지운 대화를 되살린다(clear 의도 위반).
+                    $pfile = Join-Path $dir ($room + '.prev.txt')
+                    if ($j.source -eq 'clear') {
+                      try { Remove-Item -LiteralPath $pfile -Force -ErrorAction SilentlyContinue } catch { }
+                    } elseif ($prev -and $sid -ne $prev) {
+                      Write-State $pfile $prev
+                    }
                     Write-State $tfile $sid
                     if ($sid -ne $prev) {
                       $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
@@ -1601,6 +1624,9 @@ public sealed class TerminalSessionManager
     private static void DeleteTrackedSessionFile(string roomId)
     {
         try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt")); }
+        catch (Exception) { }
+        // 고착 해제 = 이 방을 새 세션으로 리셋하려는 의도 — prev 를 남기면 실행부 폴백이 옛 대화를 되살린다.
+        try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".prev.txt")); }
         catch (Exception) { }
     }
 
@@ -2019,6 +2045,8 @@ public sealed class TerminalSessionManager
             // 추적 파일도 정리 (남아있으면 같은 roomId 재사용 시 엉뚱한 세션으로 이어붙음)
             try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt")); }
             catch (Exception) { }
+            try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".prev.txt")); }
+            catch (Exception) { }
             try { File.Delete(LaunchBatchPath(roomId)); } catch (Exception) { }
         }
     }
@@ -2030,6 +2058,7 @@ public sealed class TerminalSessionManager
         var ids = new List<string?>
         {
             LoadTrackedSessionId(roomId),
+            LoadPrevTrackedSessionId(roomId), // resume 포크 직전 세대의 transcript 도 이 방의 기록
             SettingsService.LoadClaudeCodeRoomSession(roomId),
             SettingsService.LoadCodexRoomSession(roomId),
             SettingsService.LoadOpenCodeRoomSession(roomId),
@@ -2063,6 +2092,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "modeleffort", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "room-settings", roomFile + ".json"));
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".prev.txt"));
         TryDeleteFiles(ClaudeTrackDir, "statusline-cache-" + roomFile + "-*.txt");
 
         // 서브에이전트 추적 상태(신규): 메인 턴 플래그 + 방별 run 파일 디렉터리.
