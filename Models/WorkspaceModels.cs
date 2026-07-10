@@ -56,6 +56,10 @@ public sealed class SessionItem : TabItemBase
 
     private string _name = "세션";
     public string Name { get => _name; set { if (Set(ref _name, value)) OnPropertyChanged(nameof(Title)); } }
+    /// <summary>사이드바 검색 중 이 세션 행을 표시할지 여부. 런타임 UI 상태이며 저장하지 않는다.</summary>
+    private bool _isSearchVisible = true;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsSearchVisible { get => _isSearchVisible; set => Set(ref _isSearchVisible, value); }
 
     /// <summary>이 세션이 사용할 에이전트 ID. 빈 값/누락이면 SettingsService.LoadAgentForRoom 으로 폴백.</summary>
     public string AgentId { get; set; } = "";
@@ -121,8 +125,8 @@ public sealed class SessionItem : TabItemBase
     private bool _hasSessionParent;
     public bool HasSessionParent { get => _hasSessionParent; private set => Set(ref _hasSessionParent, value); }
 
-    /// <summary>사이드바 행의 트리 들여쓰기 폭.</summary>
-    public System.Windows.GridLength TreeIndent => new(TreeDepth * 14d);
+    /// <summary>사이드바 자식 세션 행과 연결선의 트리 들여쓰기 폭.</summary>
+    public System.Windows.GridLength TreeIndent => new(TreeDepth * 19d);
 
     internal void ApplyTreePresentation(int depth, bool hasParent, bool effectivelyHidden, bool globallyHidden)
     {
@@ -155,6 +159,11 @@ public sealed class SessionCompletionRecord : NotifyBase
     /// <summary>사용자가 이 기록을 확인했는지 여부. 카드 클릭 또는 해당 세션 직접 열기 시 true.</summary>
     private bool _isRead;
     public bool IsRead { get => _isRead; set => Set(ref _isRead, value); }
+
+    /// <summary>사용자가 이 기록을 체크(표시)했는지 여부. 우클릭 메뉴로 토글.
+    /// true 면 카드의 에이전트 아이콘 왼쪽에 테마색 체크 아이콘을 표시한다.</summary>
+    private bool _isChecked;
+    public bool IsChecked { get => _isChecked; set => Set(ref _isChecked, value); }
 
     /// <summary>이 기록의 프로젝트가 더 이상 존재하지 않는지(삭제됨). 파생 상태 — 직렬화 대상 아님.
     /// true 면 프로젝트명에 취소선(strikeout)을 그린다.</summary>
@@ -253,10 +262,72 @@ public sealed class ProjectFile : NotifyBase
     }
 }
 
+/// <summary>프로젝트 영역의 논리 폴더. 프로젝트 목록과 검색 표시 상태는 런타임에서 구성된다.</summary>
+public sealed class ProjectFolderItem : NotifyBase
+{
+    public string Id { get; init; } = Guid.NewGuid().ToString("N");
+
+    private string _name = "";
+    public string Name { get => _name; set => Set(ref _name, value); }
+
+    private string _iconKey = FolderIconCatalog.DefaultKey;
+    public string IconKey
+    {
+        get => _iconKey;
+        set
+        {
+            if (Set(ref _iconKey, FolderIconCatalog.Normalize(value)))
+                OnPropertyChanged(nameof(IconGeometry));
+        }
+    }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public System.Windows.Media.Geometry? IconGeometry =>
+        System.Windows.Application.Current?.TryFindResource(IconKey) as System.Windows.Media.Geometry
+        ?? System.Windows.Application.Current?.TryFindResource(FolderIconCatalog.DefaultKey) as System.Windows.Media.Geometry;
+
+    private bool _isExpanded = true;
+    public bool IsExpanded { get => _isExpanded; set => Set(ref _isExpanded, value); }
+    private string? _archivedAt;
+    public string? ArchivedAt
+    {
+        get => _archivedAt;
+        set
+        {
+            if (!Set(ref _archivedAt, string.IsNullOrWhiteSpace(value) ? null : value)) return;
+            OnPropertyChanged(nameof(IsArchived));
+            OnPropertyChanged(nameof(IsActive));
+        }
+    }
+
+    public bool IsArchived => ArchivedAt != null;
+    public bool IsActive => ArchivedAt == null;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ObservableCollection<ProjectItem> Projects { get; } = new();
+
+    private bool _isSearchVisible = true;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsSearchVisible { get => _isSearchVisible; set => Set(ref _isSearchVisible, value); }
+}
+
 /// <summary>좌측 트리의 프로젝트(= 디렉터리). 하위에 탭(세션/파일) 목록을 가진다.</summary>
 public sealed class ProjectItem : NotifyBase
 {
     public string Path { get; init; } = "";
+    private string? _folderId;
+    public string? FolderId
+    {
+        get => _folderId;
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? null : value;
+            if (Set(ref _folderId, normalized))
+                OnPropertyChanged(nameof(HasProjectFolder));
+        }
+    }
+
+    public bool HasProjectFolder => FolderId != null;
 
     /// <summary>프로젝트에 등록한 파일 목록(메뉴 고정). 하나라도 있으면 메뉴가 "파일" 서브메뉴로 바뀐다.</summary>
     public ObservableCollection<ProjectFile> Files { get; } = new();
@@ -412,6 +483,24 @@ public sealed class ProjectItem : NotifyBase
     /// <summary>사이드바 호환을 위한 세션 전용 동기 뷰(ObservableCollection).
     /// Tabs.CollectionChanged 에서 SessionItem 만 추려 추가/제거한다 → 사이드바 바인딩이 즉시 갱신.</summary>
     public ObservableCollection<SessionItem> Sessions { get; } = new();
+    private string _sidebarSearchQuery = "";
+    private bool _showAllSidebarSessions = true;
+
+    /// <summary>
+    /// 프로젝트/폴더 이름이 검색어와 일치하면 전체 세션을, 세션 이름만 일치하면 해당 세션만 표시한다.
+    /// 검색 조건을 보관해 검색 중 추가되거나 이름이 바뀐 세션에도 같은 필터를 적용한다.
+    /// </summary>
+    public void ApplySidebarSearch(string query, bool showAllSessions)
+    {
+        _sidebarSearchQuery = query ?? "";
+        _showAllSidebarSessions = showAllSessions;
+        foreach (var session in Sessions)
+            ApplySidebarSearch(session);
+    }
+
+    private void ApplySidebarSearch(SessionItem session)
+        => session.IsSearchVisible = _showAllSidebarSessions ||
+            session.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>직접 숨긴 최상위 세션과 그 자식 트리를 모은 뷰. 자식 단독 숨김은 여기에 넣지 않고
     /// 원래 부모 아래에서 표시 자식 뒤로 정렬한다.</summary>
@@ -481,7 +570,11 @@ public sealed class ProjectItem : NotifyBase
             if (e.OldItems != null)
                 foreach (SessionItem s in e.OldItems) s.PropertyChanged -= OnSessionPropChanged;
             if (e.NewItems != null)
-                foreach (SessionItem s in e.NewItems) s.PropertyChanged += OnSessionPropChanged;
+                foreach (SessionItem s in e.NewItems)
+                {
+                    s.PropertyChanged += OnSessionPropChanged;
+                    ApplySidebarSearch(s);
+                }
             RaiseSessionStatus();
             RefreshSessionTree();
         };
@@ -514,6 +607,8 @@ public sealed class ProjectItem : NotifyBase
     {
         if (e.PropertyName is nameof(SessionItem.IsAlive) or nameof(SessionItem.IsBusy))
             RaiseSessionStatus();
+        if (e.PropertyName == nameof(SessionItem.Name) && sender is SessionItem session)
+            ApplySidebarSearch(session);
         if (e.PropertyName is nameof(SessionItem.Hidden) or nameof(SessionItem.ParentSessionId))
             RefreshSessionTree();
     }
@@ -611,6 +706,7 @@ public sealed class ProjectItem : NotifyBase
     public bool CanSetSessionParent(SessionItem child, SessionItem parent)
         => Sessions.Contains(child) && Sessions.Contains(parent)
            && !ReferenceEquals(child, parent)
+           && string.IsNullOrEmpty(child.ParentSessionId)
            && string.IsNullOrEmpty(parent.ParentSessionId)
            && !Sessions.Any(s => s.ParentSessionId == child.Id)
            && !GetSessionSubtree(child).Contains(parent);
@@ -632,28 +728,86 @@ public sealed class ProjectItem : NotifyBase
         return relationChanged || order.Count > 0;
     }
 
-    /// <summary>상/하 드롭은 항상 최상위로 분리한 뒤 대상 앞/뒤에 서브트리 단위 배치.
-    /// 자식 관계 생성은 중앙 드롭에서만 허용한다.</summary>
-    public bool MoveSessionAsRootRelative(SessionItem source, SessionItem target, bool after)
+    /// <summary>같은 부모를 가진 자식 세션의 순서만 바꾸고 부모 관계는 유지한다.</summary>
+    public bool MoveSessionWithinSiblings(SessionItem source, SessionItem target, bool after)
     {
-        if (!Sessions.Contains(source) || !Sessions.Contains(target)) return false;
-        if (ReferenceEquals(source, target)) return DetachSessionAsRoot(source);
-        var subtree = GetSessionSubtree(source).ToList();
-        if (subtree.Contains(target)) return false;
+        string? parentId = source.ParentSessionId;
+        if (string.IsNullOrEmpty(parentId)
+            || !Sessions.Contains(source)
+            || !Sessions.Contains(target)
+            || !StringComparer.Ordinal.Equals(parentId, target.ParentSessionId))
+            return false;
 
-        source.ParentSessionId = null;
+        var siblings = Sessions
+            .Where(session => StringComparer.Ordinal.Equals(session.ParentSessionId, parentId))
+            .ToList();
+        int oldIndex = siblings.IndexOf(source);
+        if (oldIndex < 0) return false;
 
-        var order = Sessions.Where(s => !subtree.Contains(s)).ToList();
-        int targetIndex = order.IndexOf(target);
+        siblings.RemoveAt(oldIndex);
+        int targetIndex = siblings.IndexOf(target);
         if (targetIndex < 0) return false;
-        int insertAt = targetIndex;
-        if (after)
-            insertAt = order.FindLastIndex(s => ReferenceEquals(s, target) || IsDescendantOf(s, target)) + 1;
-        order.InsertRange(Math.Clamp(insertAt, 0, order.Count), subtree);
-        ApplySessionOrder(FlattenSessionOrder(order));
+
+        int newIndex = targetIndex + (after ? 1 : 0);
+        if (newIndex == oldIndex) return false;
+        siblings.Insert(newIndex, source);
+
+        var desiredSessions = Sessions.ToList();
+        int siblingIndex = 0;
+        for (int i = 0; i < desiredSessions.Count; i++)
+            if (StringComparer.Ordinal.Equals(desiredSessions[i].ParentSessionId, parentId))
+                desiredSessions[i] = siblings[siblingIndex++];
+
+        ApplySessionOrder(desiredSessions);
         RefreshSessionTree();
         return true;
     }
+
+    /// <summary>최상위 세션은 자식 서브트리를 한 블록으로 유지한 채 다른 최상위 행 앞/뒤로 이동한다.</summary>
+    public bool MoveSessionSubtreeRelativeToTab(SessionItem source, TabItemBase target, bool after)
+    {
+        if (!Sessions.Contains(source)
+            || !Tabs.Contains(target)
+            || ReferenceEquals(source, target)
+            || target is SessionItem { ParentSessionId: not null })
+            return false;
+
+        var subtree = GetSessionSubtree(source).ToList();
+        if (target is SessionItem targetSession && subtree.Contains(targetSession)) return false;
+
+        var desiredTabs = Tabs
+            .Where(tab => tab is not SessionItem session || !subtree.Contains(session))
+            .ToList();
+        int targetIndex = desiredTabs.IndexOf(target);
+        if (targetIndex < 0) return false;
+
+        int insertAt = targetIndex;
+        if (after)
+        {
+            if (target is SessionItem rootTarget)
+            {
+                var targetSubtree = GetSessionSubtree(rootTarget).ToHashSet();
+                insertAt = desiredTabs.FindLastIndex(
+                    tab => tab is SessionItem session && targetSubtree.Contains(session)) + 1;
+            }
+            else
+            {
+                insertAt++;
+            }
+        }
+
+        bool relationChanged = !string.IsNullOrEmpty(source.ParentSessionId);
+        source.ParentSessionId = null;
+        desiredTabs.InsertRange(
+            Math.Clamp(insertAt, 0, desiredTabs.Count),
+            subtree.Cast<TabItemBase>());
+        if (Tabs.SequenceEqual(desiredTabs)) return relationChanged;
+
+        SyncObservable(Tabs, desiredTabs);
+        RefreshSessionTree();
+        return true;
+    }
+
 
     /// <summary>움직이지 않고 놓은 자식도 원래 부모 서브트리 바로 뒤의 최상위 세션으로 분리.</summary>
     public bool DetachSessionAsRoot(SessionItem source)

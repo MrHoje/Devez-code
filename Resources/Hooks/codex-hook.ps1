@@ -27,12 +27,24 @@ $roomSafe = $room -replace '[^\w\-]', ''
 $base = Join-Path $env:APPDATA 'DevezCode\codex'
 $event = $j.hook_event_name
 
+# 원자적 상태 기록 — claude busy-hook 의 Write-State 와 동일 패턴.
+# 직접 Set-Content 는 파일을 0바이트로 truncate 후 값을 쓰므로, truncate 직후 훅 프로세스가
+# (codex 훅 타임아웃/종료 레이스 등으로) 중단되면 0바이트 빈 파일이 남아 idle 전이를 영영 놓친다
+# (스피너 stuck-ON). temp 에 완전히 쓴 뒤 Move-Item 으로 원자적 rename 하면 중간 0바이트 상태가 없다.
+function Write-State($path, $value, $encoding = 'Ascii') {
+    try {
+        $tmp = $path + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+        Set-Content -LiteralPath $tmp -Value $value -Encoding $encoding -Force
+        Move-Item -LiteralPath $tmp -Destination $path -Force
+    } catch { try { Set-Content -LiteralPath $path -Value $value -Encoding $encoding -Force } catch { } }
+}
+
 switch ($event) {
     'UserPromptSubmit' {
         # 1) busy=running
         $busyDir = Join-Path $base 'busy'
         New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
-        Set-Content -LiteralPath (Join-Path $busyDir ($roomSafe + '.txt')) -Value 'running' -Encoding Ascii -Force
+        Write-State (Join-Path $busyDir ($roomSafe + '.txt')) 'running'
 
         # 2) 마지막 프롬프트 (1줄, 200자)
         $prompt = $j.prompt
@@ -41,14 +53,14 @@ switch ($event) {
             if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
             $mDir = Join-Path $base 'lastmsg'
             New-Item -ItemType Directory -Force -Path $mDir | Out-Null
-            Set-Content -LiteralPath (Join-Path $mDir ($roomSafe + '.txt')) -Value $prompt -Encoding UTF8 -Force
+            Write-State (Join-Path $mDir ($roomSafe + '.txt')) $prompt 'UTF8'
         }
     }
     'Stop' {
         # 턴 종료 → idle
         $busyDir = Join-Path $base 'busy'
         New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
-        Set-Content -LiteralPath (Join-Path $busyDir ($roomSafe + '.txt')) -Value 'idle' -Encoding Ascii -Force
+        Write-State (Join-Path $busyDir ($roomSafe + '.txt')) 'idle'
     }
     'SessionStart' {
         # codex session_id 기록 — 다음 실행 때 --resume <id> 로 이어가기.
@@ -57,7 +69,7 @@ switch ($event) {
         if ($sid) {
             $sDir = Join-Path $base 'sessions'
             New-Item -ItemType Directory -Force -Path $sDir | Out-Null
-            Set-Content -LiteralPath (Join-Path $sDir ($roomSafe + '.txt')) -Value $sid -Encoding Ascii -Force
+            Write-State (Join-Path $sDir ($roomSafe + '.txt')) $sid
         }
     }
 }

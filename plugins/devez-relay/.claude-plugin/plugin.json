@@ -1,0 +1,8 @@
+{
+  "name": "devez-relay",
+  "version": "0.1.0",
+  "description": "DevezCode 세션 간 지시 릴레이 — /devez-relay:send-to <세션이름> <메시지> 로 다른 세션 터미널에 프롬프트를 주입한다(수동 오케스트레이션).",
+  "author": {
+    "name": "DevezCode"
+  }
+}

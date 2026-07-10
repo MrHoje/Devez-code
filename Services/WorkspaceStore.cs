@@ -11,6 +11,7 @@ public static class WorkspaceStore
     private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public string? ParentId { get; set; } }
     private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
+    private sealed class ProjectFolderDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Icon { get; set; } public bool IsExpanded { get; set; } = true; public string? ArchivedAt { get; set; } }
     private sealed class ProjectDto
     {
         public string Path { get; set; } = "";
@@ -22,6 +23,7 @@ public static class WorkspaceStore
         public string? ArchivedAt { get; set; }
         // 2열 보기에서의 컬럼(0=좌, 1=우). 1열 보기에선 무시. 기본 0.
         public int Column { get; set; }
+        public string? FolderId { get; set; }
         public List<SessionDto> Sessions { get; set; } = new();
         // 중앙 웹 브라우저 탭. ID가 settings.json 의 탭별 방문 기록 키와 연결된다.
         public List<BrowserDto> Browsers { get; set; } = new();
@@ -44,10 +46,44 @@ public static class WorkspaceStore
         public List<string> SplitRightTabRefs { get; set; } = new();
         public string? SplitRightActiveRef { get; set; }
     }
-    private sealed class WorkspaceDto { public List<ProjectDto> Projects { get; set; } = new(); }
+    private sealed class WorkspaceDto { public List<ProjectDto> Projects { get; set; } = new(); public List<ProjectFolderDto> Folders { get; set; } = new(); }
 
     private static string WorkspacePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "workspace.json");
+
+    // 세션 간 지시 릴레이(플러그인 /send-to)용 세션 목록. 플러그인이 이름→roomId 를 해석한다.
+    private static string SessionsIndexPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "sessions-index.json");
+
+    // JSON 키를 camelCase 로 그대로 내보내 send.js 가 별도 매핑 없이 읽게 한다.
+    private sealed class SessionIndexEntryDto
+    {
+        public string roomId { get; set; } = "";
+        public string name { get; set; } = "";
+        public string projectPath { get; set; } = "";
+        public string projectName { get; set; } = "";
+    }
+
+    /// <summary>활성 프로젝트의 세션 목록을 sessions-index.json 에 내보낸다.
+    /// 플러그인 /send-to 가 대상 이름을 roomId 로 해석(같은 프로젝트 우선)하는 데 쓴다.
+    /// 저장(추가/삭제/이름변경)마다 갱신되며, 시작 시 1회도 호출해 최신화한다.</summary>
+    public static void ExportSessionsIndex(IEnumerable<ProjectItem> active)
+    {
+        try
+        {
+            var entries = active
+                .SelectMany(p => p.Tabs.OfType<SessionItem>().Select(s => new SessionIndexEntryDto
+                {
+                    roomId = s.Id,
+                    name = s.Name,
+                    projectPath = p.Path,
+                    projectName = p.Name,
+                }))
+                .ToList();
+            AtomicFile.WriteAllText(SessionsIndexPath, JsonSerializer.Serialize(entries));
+        }
+        catch { /* non-critical — 릴레이 인덱스만 갱신 실패 */ }
+    }
 
     /// <summary>직전 Load 가 손상으로 데이터를 못 읽고 빈 결과를 반환했는지.
     /// 이 상태에서 빈 트리로 Save 하면 격리해 둔 원본까지 영구 손실되므로 Save 를 막는다.</summary>
@@ -66,6 +102,7 @@ public static class WorkspaceStore
     // Save(active) 호출도 이 참조를 함께 직렬화해 보관 항목이 유실되지 않는다.
     // (호출부 대량 수정 없이 보관함을 영속하기 위한 장치.)
     private static IEnumerable<ProjectItem>? _archivedRef;
+    public static ObservableCollection<ProjectFolderItem> ProjectFolders { get; } = new();
 
     /// <summary>보관 프로젝트 소스 등록 — 이후 모든 Save 가 이 항목들을 함께 기록한다.</summary>
     public static void SetArchivedSource(IEnumerable<ProjectItem> archived) => _archivedRef = archived;
@@ -83,6 +120,7 @@ public static class WorkspaceStore
         var active = new ObservableCollection<ProjectItem>();
         archived = new ObservableCollection<ProjectItem>();
         _loadDegraded = false;
+        ProjectFolders.Clear();
 
         // 본 파일 → .bak 순으로 읽되, 역직렬화까지 성공해야 유효로 인정.
         var text = AtomicFile.ReadValidated(WorkspacePath, IsParseable, out bool corrupted);
@@ -99,6 +137,18 @@ public static class WorkspaceStore
         {
             var dto = JsonSerializer.Deserialize<WorkspaceDto>(text);
             if (dto == null) { SetArchivedSource(archived); return active; }
+
+            foreach (var folder in dto.Folders ?? new())
+                ProjectFolders.Add(new ProjectFolderItem
+                {
+                    Id = folder.Id,
+                    Name = folder.Name ?? "",
+                    IconKey = FolderIconCatalog.Normalize(folder.Icon),
+                    IsExpanded = folder.IsExpanded,
+                    ArchivedAt = folder.ArchivedAt,
+                });
+
+            var folderIds = new HashSet<string>(ProjectFolders.Select(folder => folder.Id), StringComparer.Ordinal);
             foreach (var p in dto.Projects)
             {
                 var proj = ProjectItem.FromPath(p.Path);
@@ -106,6 +156,7 @@ public static class WorkspaceStore
                 proj.IsExpanded = p.IsExpanded;
                 proj.ArchivedAt = p.ArchivedAt;
                 proj.Column = p.Column;
+                proj.FolderId = folderIds.Contains(p.FolderId ?? "") ? p.FolderId : null;
                 proj.ShowHiddenSessions = p.ShowHiddenSessions;
                 foreach (var s in p.Sessions)
                     proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden, IsLocked = s.Locked, ParentSessionId = s.ParentId });
@@ -126,7 +177,7 @@ public static class WorkspaceStore
                 (proj.IsArchived ? archived : active).Add(proj);
             }
         }
-        catch { _loadDegraded = true; archived = new ObservableCollection<ProjectItem>(); SetArchivedSource(archived); return new ObservableCollection<ProjectItem>(); }
+        catch { _loadDegraded = true; ProjectFolders.Clear(); archived = new ObservableCollection<ProjectItem>(); SetArchivedSource(archived); return new ObservableCollection<ProjectItem>(); }
         SetArchivedSource(archived);
         return active;
     }
@@ -158,6 +209,7 @@ public static class WorkspaceStore
         IsExpanded = p.IsExpanded,
         ArchivedAt = p.ArchivedAt,
         Column = p.Column,
+        FolderId = p.FolderId,
         Sessions = p.Tabs.OfType<SessionItem>().Select(s => new SessionDto
         {
             Id = s.Id, Name = s.Name,
@@ -203,10 +255,22 @@ public static class WorkspaceStore
             var projects = list.Select(ToDto).ToList();
             if (archived != null) projects.AddRange(archived.Select(ToDto));
 
-            var dto = new WorkspaceDto { Projects = projects };
+            var dto = new WorkspaceDto
+            {
+                Projects = projects,
+                Folders = ProjectFolders.Select(folder => new ProjectFolderDto
+                {
+                    Id = folder.Id,
+                    Name = folder.Name,
+                    Icon = folder.IconKey,
+                    IsExpanded = folder.IsExpanded,
+                    ArchivedAt = folder.ArchivedAt,
+                }).ToList(),
+            };
             AtomicFile.WriteAllText(WorkspacePath,
                 JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true }));
             _loadDegraded = false; // 정상 저장됨 — 이후 빈 가드 해제
+            ExportSessionsIndex(list); // 세션 릴레이용 인덱스도 함께 갱신(추가/삭제/이름변경 반영)
         }
         catch { /* non-critical */ }
     }

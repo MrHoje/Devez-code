@@ -399,6 +399,24 @@
                                                         </Style.Triggers>
                                                     </Style>
                                                 </Border.Style>
+                                                <Border.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="체크" Tag="{Binding}" Click="HistoryCheck_Click"
+                                                                  Visibility="{Binding IsChecked, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
+                                                            <MenuItem.Icon>
+                                                                <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconCheck}"
+                                                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                                            </MenuItem.Icon>
+                                                        </MenuItem>
+                                                        <MenuItem Header="체크 해제" Tag="{Binding}" Click="HistoryCheck_Click"
+                                                                  Visibility="{Binding IsChecked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                                            <MenuItem.Icon>
+                                                                <Path Style="{StaticResource LucideMenuIcon}" Data="{StaticResource IconCheck}"
+                                                                      Width="13" Height="13" Stroke="{DynamicResource PrimaryBrush}"/>
+                                                            </MenuItem.Icon>
+                                                        </MenuItem>
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/>
@@ -410,15 +428,26 @@
                                                         <RowDefinition Height="Auto"/>
                                                         <RowDefinition Height="Auto"/>
                                                     </Grid.RowDefinitions>
-                                                    <Image Grid.Row="0" Grid.Column="0" Width="15" Height="15"
-                                                           Margin="0,0,9,0" VerticalAlignment="Top"
-                                                           Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
-                                                           RenderOptions.BitmapScalingMode="HighQuality">
-                                                        <Image.RenderTransform>
-                                                            <!-- 텍스트는 Y=-2 유지, 아이콘만 글꼴 크기별 보정(작게 -2 / 크게 0). -->
-                                                            <TranslateTransform Y="{DynamicResource HistoryIconY}"/>
-                                                        </Image.RenderTransform>
-                                                    </Image>
+                                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Top">
+                                                        <!-- 체크된 기록: 에이전트 아이콘 왼쪽에 테마색 체크 아이콘 하나만 표시 -->
+                                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconCheck}"
+                                                              Width="12" Height="12" VerticalAlignment="Top" Margin="0,3,5,0"
+                                                              StrokeThickness="2" Stroke="{DynamicResource PrimaryBrush}"
+                                                              Visibility="{Binding IsChecked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                                            <Path.RenderTransform>
+                                                                <TranslateTransform Y="{DynamicResource HistoryIconY}"/>
+                                                            </Path.RenderTransform>
+                                                        </Path>
+                                                        <Image Width="15" Height="15"
+                                                               Margin="0,0,9,0" VerticalAlignment="Top"
+                                                               Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                               RenderOptions.BitmapScalingMode="HighQuality">
+                                                            <Image.RenderTransform>
+                                                                <!-- 텍스트는 Y=-2 유지, 아이콘만 글꼴 크기별 보정(작게 -2 / 크게 0). -->
+                                                                <TranslateTransform Y="{DynamicResource HistoryIconY}"/>
+                                                            </Image.RenderTransform>
+                                                        </Image>
+                                                    </StackPanel>
                                                     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                                                         <TextBlock Text="{Binding ProjectName}"
                                                                    Visibility="{Binding ProjectVisibility}"

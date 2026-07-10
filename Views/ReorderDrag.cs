@@ -15,8 +15,19 @@ internal sealed class ReorderDrag<T> where T : class
 {
     private const double AnimMs = 160;
 
-    // Left/Top/Width/Height: coordHost 기준 실제 사각형. 1D(축) 계산은 _horizontal 로 골라 쓴다.
-    private sealed record Slot(T Item, FrameworkElement Element, double Left, double Top, double Width, double Height);
+    // Left/Top/Width/Height: 그룹 전체 사각형. Primary*: 실제 대표 행의 드롭 사각형.
+    private sealed record Slot(
+        T Item,
+        FrameworkElement Element,
+        IReadOnlyList<FrameworkElement> Elements,
+        double Left,
+        double Top,
+        double Width,
+        double Height,
+        double PrimaryLeft,
+        double PrimaryTop,
+        double PrimaryWidth,
+        double PrimaryHeight);
 
     private readonly UIElement _coordHost;
     private readonly List<Slot> _slots;
@@ -77,20 +88,50 @@ internal sealed class ReorderDrag<T> where T : class
         Func<T, T, bool>? canDropInto = null,
         Action<T?, FrameworkElement?>? dropIntoPreviewChanged = null,
         Func<T, T, Task>? onDropInto = null,
-        bool commitUnchanged = false)
+        bool commitUnchanged = false,
+        Func<T, IReadOnlyList<FrameworkElement>>? groupedElements = null)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
         {
-            double left, top;
+            var elements = groupedElements?.Invoke(item)?
+                .Where(element => element != null)
+                .Distinct()
+                .ToList() ?? new List<FrameworkElement> { el };
+            if (!elements.Contains(el)) elements.Insert(0, el);
+
+            Rect bounds = Rect.Empty;
+            double primaryLeft, primaryTop;
             try
             {
-                var p = el.TransformToAncestor(coordHost).Transform(new Point(0, 0));
-                left = p.X; top = p.Y;
+                var primary = el.TransformToAncestor(coordHost).Transform(new Point(0, 0));
+                primaryLeft = primary.X;
+                primaryTop = primary.Y;
+                foreach (var element in elements)
+                {
+                    var point = element.TransformToAncestor(coordHost).Transform(new Point(0, 0));
+                    var elementBounds = new Rect(
+                        point.X,
+                        point.Y,
+                        Math.Max(1, element.ActualWidth),
+                        Math.Max(1, element.ActualHeight));
+                    bounds = bounds.IsEmpty ? elementBounds : Rect.Union(bounds, elementBounds);
+                }
             }
             catch { continue; }
-            captured.Add(new Slot(item, el, left, top,
-                Math.Max(1, el.ActualWidth), Math.Max(1, el.ActualHeight)));
+
+            captured.Add(new Slot(
+                item,
+                el,
+                elements,
+                bounds.Left,
+                bounds.Top,
+                Math.Max(1, bounds.Width),
+                Math.Max(1, bounds.Height),
+                primaryLeft,
+                primaryTop,
+                Math.Max(1, el.ActualWidth),
+                Math.Max(1, el.ActualHeight)));
         }
         // 그리드(2열): 컬럼(좌→우) 우선, 그 안에서 위→아래. 1축: 해당 축 위치.
         if (columns > 1)
@@ -107,14 +148,28 @@ internal sealed class ReorderDrag<T> where T : class
         if (srcIdx < 0) return null; // 1개(패널 마지막 탭)여도 시작은 허용 — 로컬 재정렬은 무동작, 크로스 패널 이동은 별도 경로.
 
         // ghostSource: ghost 이미지로 캡처할 visual (null이면 sourceElement 사용).
-        // 슬롯에는 받침(Path) 자식이 포함되어 sourceElement(row) 자체로는 bitmap에 받침까지
-        // 잡혀버리는 경우, 받침 없는 Border를 따로 지정해 ghost에서 받침을 제외한다 (devez 정합).
-        // 잡은 지점의 source row 내부 오프셋(축) — 커서 raw 대신 '드래그 카드 중심'을 기준으로
+        // groupedElements가 둘 이상이면 그룹 전체 영역을 한 장으로 캡처하고 모든 원본 행을 숨긴다.
+        // 잡은 지점의 source 내부 오프셋(축) — 커서 raw 대신 '드래그 카드 중심'을 기준으로
         // 타깃을 판정하기 위함. 그래야 source 높이/잡은 위치와 무관하게 위/아래 모두 대칭으로
         // '이웃 카드 절반을 넘을 때' 순서가 바뀐다.
-        var grabPt = Mouse.GetPosition(sourceElement);
-
-        var ghost = DragHelper.BeginManualDrag(ghostSource ?? sourceElement, sourceElement);
+        var sourceSlot = captured[srcIdx];
+        Point grabPt;
+        DragHelper.IGhost? ghost;
+        if (ghostSource == null && sourceSlot.Elements.Count > 1)
+        {
+            var pointer = Mouse.GetPosition(coordHost);
+            grabPt = new Point(pointer.X - sourceSlot.Left, pointer.Y - sourceSlot.Top);
+            ghost = DragHelper.BeginManualDrag(
+                coordHost,
+                new Rect(sourceSlot.Left, sourceSlot.Top, sourceSlot.Width, sourceSlot.Height),
+                sourceSlot.Elements,
+                grabPt);
+        }
+        else
+        {
+            grabPt = Mouse.GetPosition(sourceElement);
+            ghost = DragHelper.BeginManualDrag(ghostSource ?? sourceElement, sourceElement);
+        }
         if (ghost == null) return null;
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
@@ -129,8 +184,8 @@ internal sealed class ReorderDrag<T> where T : class
         double shift = RowPitch();
         for (int i = 0; i < _slots.Count; i++)
         {
-            if (i == _sourceIndex) { AnimateAxis(_slots[i].Element, 0); continue; }
-            AnimateAxis(_slots[i].Element, i > _sourceIndex ? -shift : 0);
+            if (i == _sourceIndex) { AnimateSlot(_slots[i], 0); continue; }
+            AnimateSlot(_slots[i], i > _sourceIndex ? -shift : 0);
         }
         _needsReapply = true;
     }
@@ -219,7 +274,7 @@ internal sealed class ReorderDrag<T> where T : class
             // 시프트 애니메이션으로 대상 카드가 움직여도 드롭 구역까지 같이 도망가지 않게
             // 드래그 시작 시 캡처한 논리 슬롯을 사용한다. 중앙 진입 시 displacement가 원복되고
             // 실제 대상 SessionRow가 원래 자리로 돌아오며 보더 하이라이트된다.
-            var bounds = new Rect(slot.Left, slot.Top, slot.Width, slot.Height);
+            var bounds = new Rect(slot.PrimaryLeft, slot.PrimaryTop, slot.PrimaryWidth, slot.PrimaryHeight);
             if (!bounds.Contains(pointer)) continue;
 
             double relative = _horizontal
@@ -263,7 +318,7 @@ internal sealed class ReorderDrag<T> where T : class
 
     private void ResetDisplacementPreview()
     {
-        foreach (var slot in _slots) AnimateAxis(slot.Element, 0);
+        foreach (var slot in _slots) AnimateSlot(slot, 0);
     }
 
     /// <summary>그리드: 목표 컬럼 안에서 드래그 카드 중심 Y 가 들어갈 삽입 위치(0-based, source 제외).
@@ -305,7 +360,7 @@ internal sealed class ReorderDrag<T> where T : class
 
         for (int i = 0; i < _slots.Count; i++)
         {
-            if (i == _sourceIndex) { AnimateAxis(_slots[i].Element, 0); continue; }
+            if (i == _sourceIndex) { AnimateSlot(_slots[i], 0); continue; }
             int col = ColumnOf(_slots[i]);
             int w = WithinColumnIndex(i, col);
             double to = 0;
@@ -323,7 +378,7 @@ internal sealed class ReorderDrag<T> where T : class
             {
                 if (w >= _targetIndex) to = srcH; // 들어올 컬럼: 삽입 위치 이후 아래로 밂
             }
-            AnimateAxis(_slots[i].Element, to);
+            AnimateSlot(_slots[i], to);
         }
     }
 
@@ -375,11 +430,11 @@ internal sealed class ReorderDrag<T> where T : class
         double shift = RowPitch();
         for (int i = 0; i < _slots.Count; i++)
         {
-            if (i == _sourceIndex) { AnimateAxis(_slots[i].Element, 0); continue; }
+            if (i == _sourceIndex) { AnimateSlot(_slots[i], 0); continue; }
             double to = 0;
             if (_targetIndex < _sourceIndex && i >= _targetIndex && i < _sourceIndex) to = shift;
             else if (_targetIndex > _sourceIndex && i > _sourceIndex && i <= _targetIndex) to = -shift;
-            AnimateAxis(_slots[i].Element, to);
+            AnimateSlot(_slots[i], to);
         }
     }
 
@@ -392,7 +447,9 @@ internal sealed class ReorderDrag<T> where T : class
         ClearDropIntoTarget();
 
         _ghost.Dispose();
-        foreach (var s in _slots) ResetAxis(s.Element);
+        foreach (var slot in _slots)
+            foreach (var element in slot.Elements)
+                ResetAxis(element);
 
         if (!commit) return;
         if (dropIntoTarget != null)
@@ -433,6 +490,10 @@ internal sealed class ReorderDrag<T> where T : class
         return count;
     }
 
+    private void AnimateSlot(Slot slot, double offset)
+    {
+        foreach (var element in slot.Elements) AnimateAxis(element, offset);
+    }
     private void AnimateAxis(UIElement el, double offset)
     {
         var tt = EnsureTranslate(el);

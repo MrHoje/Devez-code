@@ -68,6 +68,8 @@ public partial class MainWindow : Window
     private Models.ProviderUsage? _lastDeepSeek;
     private Models.ProviderUsage? _lastGrok;
     private readonly SessionBusyService _sessionBusy = new();
+    // 세션 간 지시 릴레이(/devez-relay:send-to) 수신부 — commands\<uuid>.json 감시 → 대상 세션 터미널에 주입.
+    private readonly SessionCommandInboxService _sessionCommandInbox = new();
     // claude statusLine 훅이 떨군 방별 실제 model/effort 를 감시해 메타바 콤보에 라이브 연동.
     private readonly ModelEffortService _modelEffort = new();
     private readonly SessionLastMessageService _sessionLastMsg = new();
@@ -166,6 +168,7 @@ public partial class MainWindow : Window
         Sidebar.OpenDocCloseRequested  += CloseDocFromSidebar;
         Sidebar.BrowserTabSelected     += OpenBrowserFromSidebar;
         Sidebar.BrowserTabCloseRequested += CloseBrowserFromSidebar;
+        Sidebar.BrowserTabRenameRequested += RenameBrowserFromSidebar;
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
@@ -379,6 +382,7 @@ public partial class MainWindow : Window
             UserStatusLineInstaller.EnsureInstalled();
             StartStatusLine();
             _sessionBusy.Start();
+            _sessionCommandInbox.Start();  // 세션 간 지시 릴레이 수신 시작
             StartBusyDisplaySync();
             _modelEffort.Start();
             _sessionLastMsg.Start();
@@ -407,6 +411,7 @@ public partial class MainWindow : Window
             });
             RestoreOpenFiles();  // 직전에 열려 있던 파일 편집기 탭 복원(세션 활성화보다 먼저 → 활성 탭은 세션 유지)
             RestoreLastSession();
+            WorkspaceStore.ExportSessionsIndex(_projects); // 세션 릴레이용 인덱스 시작 시 최신화
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
             RefreshCardGroups(); // 시작 시에도 분할 설정 프로젝트 카드는 좌/우 파티션으로(영속 refs 기반)
@@ -803,7 +808,14 @@ public partial class MainWindow : Window
         if (expiry < now) return ("만료됨", true);
 
         var span = expiry - now;
-        if (span.TotalDays < 1) return ("오늘 만료", true);
+        if (span.TotalDays < 1)
+        {
+            // 24시간 미만은 시/분 단위로 남은 시간을 표시한다.
+            var text = span.TotalHours >= 1
+                ? $"{(int)span.TotalHours}시간 {span.Minutes}분 후 만료"
+                : $"{Math.Max(1, span.Minutes)}분 후 만료";
+            return (text, true);
+        }
 
         // 달력 날짜가 아니라 실제 남은 시간을 24시간 단위로 계산한다.
         var daysLeft = (int)span.TotalDays;
@@ -1961,7 +1973,7 @@ public partial class MainWindow : Window
         // 같은 경로 중복 등록 허용 — 경로키 설정(작업큐/브라우저URL)은 중복끼리 공유.
         // 복원/조회는 전역 유일한 세션ID 기준이라 충돌 없음.
         var proj = ProjectItem.FromPath(path);
-        // 프로젝트 연결 시 기본 세션 1개 자동 생성. 사용 가능한 에이전트가 1개면 그걸로, 아니면(2개+) 피커 표시.
+        // 프로젝트 연결 시 기본 세션 1개 자동 생성. 피커 없이 기본 에이전트(없으면 첫 번째)로 자동 선택.
         var available = AgentRegistry.GetEnabledAndInstalled();
         if (available.Count == 0)
         {
@@ -1969,14 +1981,9 @@ public partial class MainWindow : Window
                 "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
             return;
         }
-        string defaultAgentId;
-        if (available.Count == 1) defaultAgentId = available[0].Id;
-        else
-        {
-            var picked = AgentPickerDialog.Pick(this, available, proj.Path);
-            if (picked == null) return;   // 에이전트 피커 취소/X → 프로젝트 추가 자체 취소
-            defaultAgentId = picked;
-        }
+        string defaultAgentId =
+            available.FirstOrDefault(a => a.Id.Equals(AgentRegistry.DefaultAgentId, StringComparison.OrdinalIgnoreCase))?.Id
+            ?? available[0].Id;
         var session = new SessionItem { Name = "세션 1", AgentId = defaultAgentId };
         proj.Tabs.Add(session);
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
@@ -3094,6 +3101,15 @@ public partial class MainWindow : Window
         UpdateSessionHistoryEmpty();
     }
 
+    /// <summary>완료기록 카드 우클릭 메뉴의 체크/체크 해제 → 표시 상태 토글 후 저장.</summary>
+    private void HistoryCheck_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not SessionCompletionRecord r) return;
+        r.IsChecked = !r.IsChecked;
+        SettingsService.SaveSessionHistoryRecords(
+            new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+    }
+
     /// <summary>응답 대기 카드 클릭 → 해당 세션을 열어 선택지에 답할 수 있게 한다.</summary>
     private void WaitingCard_Click(object sender, MouseButtonEventArgs e)
     {
@@ -3428,6 +3444,9 @@ public partial class MainWindow : Window
     {
         OnBrowserTabCloseRequested(browser);
     }
+
+    private void RenameBrowserFromSidebar(BrowserTabItem browser)
+        => _focusedPane.RenameBrowserTab(browser);
 
     private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session, bool isNewProjectLoad)
     {

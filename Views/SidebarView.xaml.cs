@@ -16,6 +16,9 @@ public partial class SidebarView : UserControl
     public SidebarView()
     {
         InitializeComponent();
+        FoldersHost.ItemsSource = _activeProjectFolders;
+        ArchivedFoldersHost.ItemsSource = _archivedProjectFolders;
+        WorkspaceStore.ProjectFolders.CollectionChanged += ProjectFolders_CollectionChanged;
         PreviewMouseMove += Sidebar_PreviewMouseMove;
         PreviewMouseLeftButtonUp += Sidebar_PreviewMouseUp;
         LostMouseCapture += Sidebar_LostCapture;
@@ -55,6 +58,7 @@ public partial class SidebarView : UserControl
     /// <summary>카드의 웹 브라우저 탭 클릭/닫기 요청.</summary>
     public event Action<BrowserTabItem>? BrowserTabSelected;
     public event Action<BrowserTabItem>? BrowserTabCloseRequested;
+    public event Action<BrowserTabItem>? BrowserTabRenameRequested;
     public event Action<SessionItem>? SessionDeleteRequested;
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
@@ -79,14 +83,145 @@ public partial class SidebarView : UserControl
     {
         _projectColumns = cols == 2 ? 2 : 1;
         ProjectsHost.Tag = _projectColumns;
+        FoldersHost.Tag = _projectColumns;
         ArchivedHost.Tag = _projectColumns;
+        ArchivedFoldersHost.Tag = _projectColumns;
     }
 
+    private readonly ObservableCollection<ProjectItem> _ungroupedProjects = new();
+    private readonly ObservableCollection<ProjectItem> _ungroupedArchivedProjects = new();
+    private readonly ObservableCollection<ProjectFolderItem> _activeProjectFolders = new();
+    private readonly ObservableCollection<ProjectFolderItem> _archivedProjectFolders = new();
     private ObservableCollection<ProjectItem>? _projects;
     public ObservableCollection<ProjectItem> Projects
     {
         get => _projects ??= new();
-        set { _projects = value; ProjectsHost.ItemsSource = value; }
+        set
+        {
+            if (_projects != null)
+            {
+                _projects.CollectionChanged -= Projects_CollectionChanged;
+                foreach (var project in _projects)
+                    project.PropertyChanged -= Project_PropertyChanged;
+            }
+
+            _projects = value;
+            value.CollectionChanged += Projects_CollectionChanged;
+            foreach (var project in value)
+                project.PropertyChanged += Project_PropertyChanged;
+
+            ProjectsHost.ItemsSource = _ungroupedProjects;
+            RefreshProjectGroups();
+        }
+    }
+
+    private string _sidebarSearchQuery = "";
+
+    private void Projects_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems != null)
+            foreach (ProjectItem project in e.OldItems)
+                project.PropertyChanged -= Project_PropertyChanged;
+        if (e.NewItems != null)
+            foreach (ProjectItem project in e.NewItems)
+                project.PropertyChanged += Project_PropertyChanged;
+        RefreshProjectGroups();
+    }
+
+    private void Project_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ProjectItem.FolderId))
+            RefreshProjectGroups();
+    }
+
+    private void ProjectFolders_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems != null)
+            foreach (ProjectFolderItem folder in e.OldItems)
+                folder.PropertyChanged -= ProjectFolder_PropertyChanged;
+        if (e.NewItems != null)
+            foreach (ProjectFolderItem folder in e.NewItems)
+                folder.PropertyChanged += ProjectFolder_PropertyChanged;
+        RefreshProjectGroups();
+    }
+
+    private void ProjectFolder_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ProjectFolderItem.ArchivedAt) or nameof(ProjectFolderItem.Name))
+            RefreshProjectGroups();
+    }
+
+    private bool _movingProjectFolder;
+    private void RefreshProjectGroups()
+    {
+        if (_projects == null || _archivedProjects == null) return;
+
+        var folders = WorkspaceStore.ProjectFolders;
+        var foldersById = folders.ToDictionary(folder => folder.Id, StringComparer.Ordinal);
+        if (!_movingProjectFolder)
+        {
+            foreach (var project in _projects)
+                if (project.FolderId != null &&
+                    (!foldersById.TryGetValue(project.FolderId, out var folder) || folder.IsArchived))
+                    project.FolderId = null;
+            foreach (var project in _archivedProjects)
+                if (project.FolderId != null &&
+                    (!foldersById.TryGetValue(project.FolderId, out var folder) || folder.IsActive))
+                    project.FolderId = null;
+        }
+
+        bool hasQuery = _sidebarSearchQuery.Length > 0;
+        bool Matches(ProjectItem project) =>
+            project.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase) ||
+            project.Sessions.Any(session => session.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var project in _projects.Concat(_archivedProjects))
+        {
+            bool projectMatches = hasQuery &&
+                project.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase);
+            bool folderMatches = hasQuery &&
+                project.FolderId != null &&
+                foldersById.TryGetValue(project.FolderId, out var folder) &&
+                folder.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase);
+            project.ApplySidebarSearch(
+                _sidebarSearchQuery,
+                !hasQuery || projectMatches || folderMatches);
+        }
+
+        foreach (var folder in folders)
+        {
+            bool folderMatches = hasQuery &&
+                folder.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase);
+            var source = folder.IsArchived ? _archivedProjects : _projects;
+            var desired = source.Where(project =>
+                project.FolderId == folder.Id &&
+                (!hasQuery || folderMatches || Matches(project))).ToList();
+            SyncCollection(folder.Projects, desired);
+            folder.IsSearchVisible = !hasQuery || folderMatches || desired.Count > 0;
+            if (hasQuery && folder.IsSearchVisible) folder.IsExpanded = true;
+        }
+
+        SyncCollection(_activeProjectFolders, folders.Where(folder => folder.IsActive).ToList());
+        SyncCollection(_archivedProjectFolders, folders.Where(folder => folder.IsArchived).ToList());
+        SyncCollection(_ungroupedProjects, _projects.Where(project =>
+            project.FolderId == null && (!hasQuery || Matches(project))).ToList());
+        SyncCollection(_ungroupedArchivedProjects, _archivedProjects.Where(project =>
+            project.FolderId == null && (!hasQuery || Matches(project))).ToList());
+        UpdateArchiveEmptyState();
+    }
+
+    private static void SyncCollection<T>(ObservableCollection<T> target, IReadOnlyList<T> desired)
+    {
+        for (int i = target.Count - 1; i >= 0; i--)
+            if (!desired.Contains(target[i]))
+                target.RemoveAt(i);
+
+        for (int i = 0; i < desired.Count; i++)
+        {
+            int current = target.IndexOf(desired[i]);
+            if (current < 0) target.Insert(i, desired[i]);
+            else if (current != i) target.Move(current, i);
+        }
     }
 
     private ObservableCollection<ProjectItem>? _archivedProjects;
@@ -96,21 +231,39 @@ public partial class SidebarView : UserControl
         get => _archivedProjects ??= new();
         set
         {
-            if (_archivedProjects != null) _archivedProjects.CollectionChanged -= OnArchivedChanged;
+            if (_archivedProjects != null)
+            {
+                _archivedProjects.CollectionChanged -= OnArchivedChanged;
+                foreach (var project in _archivedProjects)
+                    project.PropertyChanged -= Project_PropertyChanged;
+            }
             _archivedProjects = value;
-            ArchivedHost.ItemsSource = value;
+            ArchivedHost.ItemsSource = _ungroupedArchivedProjects;
             value.CollectionChanged += OnArchivedChanged;
-            UpdateArchiveEmptyState();
+            foreach (var project in value)
+                project.PropertyChanged += Project_PropertyChanged;
+            RefreshProjectGroups();
         }
     }
 
     private void OnArchivedChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
-        => UpdateArchiveEmptyState();
+    {
+        if (e.OldItems != null)
+            foreach (ProjectItem project in e.OldItems)
+                project.PropertyChanged -= Project_PropertyChanged;
+        if (e.NewItems != null)
+            foreach (ProjectItem project in e.NewItems)
+                project.PropertyChanged += Project_PropertyChanged;
+        RefreshProjectGroups();
+    }
 
     private void UpdateArchiveEmptyState()
     {
         if (ArchiveEmptyText != null)
-            ArchiveEmptyText.Visibility = ArchivedProjects.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            ArchiveEmptyText.Visibility =
+                ArchivedProjects.Count == 0 && _archivedProjectFolders.Count == 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
     }
 
     // ── 보관함 슬라이드 전환 (devez 정합: 프로젝트↔보관함, 헤더 제목·뒤로가기 교체) ──────────
@@ -118,7 +271,6 @@ public partial class SidebarView : UserControl
 
     /// <summary>현재 보기의 대상 컬렉션(검색/일괄펼침/드래그 공용).</summary>
     private ObservableCollection<ProjectItem> CurrentProjects => _archiveOpen ? ArchivedProjects : Projects;
-    private ItemsControl CurrentHost => _archiveOpen ? ArchivedHost : ProjectsHost;
 
     private void ArchiveToggleBtn_Click(object sender, RoutedEventArgs e) => OpenArchivePanel();
     private void ArchiveBack_Click(object sender, RoutedEventArgs e) => CloseArchivePanel();
@@ -195,7 +347,49 @@ public partial class SidebarView : UserControl
     public void HideUpdateButton() => UpdateButton.Visibility = Visibility.Collapsed;
 
 
-    private void AddProject_Click(object sender, RoutedEventArgs e) => AddProjectRequested?.Invoke();
+    private void AddProject_Click(object sender, RoutedEventArgs e)
+    {
+        var owner = Window.GetWindow(this);
+        if (owner == null) return;
+
+        var kind = ProjectAddDialog.Pick(owner);
+        if (kind == ProjectAddKind.Project)
+        {
+            var existing = _archiveOpen ? Projects.ToHashSet() : null;
+            AddProjectRequested?.Invoke();
+            if (_archiveOpen && existing != null)
+            {
+                var added = Projects.FirstOrDefault(project => !existing.Contains(project));
+                if (added != null) ProjectArchiveRequested?.Invoke(added);
+            }
+            return;
+        }
+
+        if (kind != ProjectAddKind.Folder) return;
+
+        var folder = new ProjectFolderItem
+        {
+            Name = NextProjectFolderName(),
+            ArchivedAt = _archiveOpen ? DateTime.UtcNow.ToString("o") : null,
+        };
+        WorkspaceStore.ProjectFolders.Add(folder);
+        RefreshProjectGroups();
+        WorkspaceStore.Save(Projects, ArchivedProjects);
+    }
+    private static string NextProjectFolderName()
+    {
+        const string baseName = "새 폴더";
+        var names = WorkspaceStore.ProjectFolders
+            .Select(folder => folder.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!names.Contains(baseName)) return baseName;
+
+        for (int suffix = 1; ; suffix++)
+        {
+            var candidate = $"{baseName} ({suffix})";
+            if (!names.Contains(candidate)) return candidate;
+        }
+    }
 
     // ── 검색 행 토글 (돋보기 버튼) — Height 0↔43 애니메이션으로 프로젝트 카드를 아래로 밀어냄 ──
     private bool _searchOpen;
@@ -227,12 +421,22 @@ public partial class SidebarView : UserControl
     private void ToggleExpandAll_Click(object sender, RoutedEventArgs e)
     {
         bool target = !AreAllExpanded();
-        foreach (var p in CurrentProjects) p.IsExpanded = target;
+        foreach (var project in CurrentProjects) project.IsExpanded = target;
+        foreach (var folder in CurrentProjectFolders) folder.IsExpanded = target;
         UpdateExpandAllVisual();
         ProjectExpandChanged?.Invoke();
     }
 
-    private bool AreAllExpanded() => CurrentProjects.Count > 0 && CurrentProjects.All(p => p.IsExpanded);
+    private IEnumerable<ProjectFolderItem> CurrentProjectFolders =>
+        _archiveOpen ? _archivedProjectFolders : _activeProjectFolders;
+
+    private bool AreAllExpanded()
+    {
+        var folders = CurrentProjectFolders.ToList();
+        if (CurrentProjects.Count == 0 && folders.Count == 0) return false;
+        return CurrentProjects.All(project => project.IsExpanded) &&
+               folders.All(folder => folder.IsExpanded);
+    }
 
     /// <summary>일괄 버튼 아이콘/툴팁 갱신. 외부(프로젝트 로드 후)에서도 호출.</summary>
     public void UpdateExpandAllVisual()
@@ -246,17 +450,14 @@ public partial class SidebarView : UserControl
     // ── 검색 (프로젝트/세션 이름 필터) — devez 정합 ──────────────
     private void SidebarSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        var q = SidebarSearchBox.Text?.Trim() ?? "";
-        if (q.Length == 0) { CurrentHost.ItemsSource = CurrentProjects; return; }
-
-        var filtered = CurrentProjects.Where(p =>
-            p.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-            p.Sessions.Any(s => s.Name.Contains(q, StringComparison.OrdinalIgnoreCase))).ToList();
-        // 세션만 매칭된 프로젝트는 펼쳐서 해당 세션이 보이게 한다.
-        foreach (var p in filtered)
-            if (!p.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
-                p.IsExpanded = true;
-        CurrentHost.ItemsSource = filtered;
+        _sidebarSearchQuery = SidebarSearchBox.Text?.Trim() ?? "";
+        if (_sidebarSearchQuery.Length > 0)
+            foreach (var project in CurrentProjects)
+                if (!project.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase) &&
+                    project.Sessions.Any(session =>
+                        session.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase)))
+                    project.IsExpanded = true;
+        RefreshProjectGroups();
     }
 
     private void SidebarSearchClear_Click(object sender, RoutedEventArgs e)
@@ -291,6 +492,105 @@ public partial class SidebarView : UserControl
         UpdateExpandAllVisual(); // 개별 토글도 일괄 버튼 상태에 반영
         ProjectExpandChanged?.Invoke();
         e.Handled = true; // 행 선택으로 버블링 방지
+    }
+    private void FolderHeader_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (_didDrag) { _didDrag = false; return; }
+        if (IsWithinButton(e.OriginalSource as DependencyObject)) return;
+        if ((sender as FrameworkElement)?.DataContext is not ProjectFolderItem folder) return;
+        folder.IsExpanded = !folder.IsExpanded;
+        UpdateExpandAllVisual();
+        ProjectExpandChanged?.Invoke();
+    }
+
+    private void FolderChevron_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFolderItem>(sender) is not { } folder) return;
+        folder.IsExpanded = !folder.IsExpanded;
+        UpdateExpandAllVisual();
+        ProjectExpandChanged?.Invoke();
+        e.Handled = true;
+    }
+
+    private void FolderRename_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFolderItem>(sender) is not { } folder) return;
+        var name = PromptDialog.Show("폴더 이름 변경", "새 이름을 입력하세요.",
+                                     defaultValue: folder.Name, maxLength: 60);
+        if (string.IsNullOrWhiteSpace(name) || name.Trim() == folder.Name) return;
+        folder.Name = name.Trim();
+        WorkspaceStore.Save(Projects, ArchivedProjects);
+    }
+    private void FolderIconChange_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFolderItem>(sender) is not { } folder) return;
+        var owner = Window.GetWindow(this);
+        if (owner == null) return;
+
+        var iconKey = FolderIconPickerDialog.Pick(owner, folder.IconKey, folder.Name);
+        if (iconKey == null || iconKey == folder.IconKey) return;
+
+        folder.IconKey = iconKey;
+        WorkspaceStore.Save(Projects, ArchivedProjects);
+    }
+
+    private void FolderArchive_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFolderItem>(sender) is not { IsActive: true } folder) return;
+        MoveProjectFolder(folder, archive: true);
+    }
+
+    private void FolderUnarchive_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFolderItem>(sender) is not { IsArchived: true } folder) return;
+        MoveProjectFolder(folder, archive: false);
+    }
+
+    private void MoveProjectFolder(ProjectFolderItem folder, bool archive)
+    {
+        var source = archive ? Projects : ArchivedProjects;
+        var projects = source.Where(project => project.FolderId == folder.Id).ToList();
+        _movingProjectFolder = true;
+        try
+        {
+            folder.ArchivedAt = archive ? DateTime.UtcNow.ToString("o") : null;
+            foreach (var project in projects)
+            {
+                if (archive) ProjectArchiveRequested?.Invoke(project);
+                else ProjectUnarchiveRequested?.Invoke(project);
+            }
+        }
+        finally
+        {
+            _movingProjectFolder = false;
+        }
+
+        RefreshProjectGroups();
+        WorkspaceStore.Save(Projects, ArchivedProjects);
+    }
+
+    private void FolderDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectFolderItem>(sender) is not { } folder) return;
+        if (!ConfirmDialog.Show("폴더 제거",
+                $"'{folder.Name}' 폴더를 제거할까요?\n프로젝트는 폴더 밖의 프로젝트 영역으로 이동합니다.",
+                okLabel: "제거", danger: true))
+            return;
+
+        foreach (var project in Projects.Concat(ArchivedProjects)
+                                        .Where(project => project.FolderId == folder.Id))
+            project.FolderId = null;
+        WorkspaceStore.ProjectFolders.Remove(folder);
+        RefreshProjectGroups();
+        WorkspaceStore.Save(Projects, ArchivedProjects);
+    }
+
+    private void RemoveProjectFromFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is not { } project || project.FolderId == null) return;
+        project.FolderId = null;
+        RefreshProjectGroups();
+        ProjectsReordered?.Invoke();
     }
 
     private void HiddenToggle_Click(object sender, RoutedEventArgs e)
@@ -332,6 +632,26 @@ public partial class SidebarView : UserControl
         }
     }
 
+    private void SessionRow_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (FindProjectCardRoot(sender as DependencyObject) is { } projectCard)
+            projectCard.Tag = true;
+    }
+
+    private void SessionRow_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (FindProjectCardRoot(sender as DependencyObject) is { } projectCard)
+            projectCard.ClearValue(FrameworkElement.TagProperty);
+    }
+
+    private static Border? FindProjectCardRoot(DependencyObject? current)
+    {
+        for (; current != null; current = VisualTreeHelper.GetParent(current))
+            if (current is Border { Name: "ProjectCardRoot" } projectCard)
+                return projectCard;
+        return null;
+    }
+
     private void OpenDoc_Click(object sender, MouseButtonEventArgs e)
     {
         if (_didDrag) { _didDrag = false; return; }
@@ -355,6 +675,12 @@ public partial class SidebarView : UserControl
     {
         if (ItemOf<BrowserTabItem>(sender) is { } browser)
             BrowserTabCloseRequested?.Invoke(browser);
+    }
+
+    private void BrowserTabRename_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<BrowserTabItem>(sender) is { } browser)
+            BrowserTabRenameRequested?.Invoke(browser);
     }
 
     private void OpenDocCopyPath_Click(object sender, RoutedEventArgs e)
@@ -453,6 +779,14 @@ public partial class SidebarView : UserControl
         parent.Items.Add(add);
     }
 
+    private void SessionDetach_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is not { ParentSessionId: not null } session) return;
+        var project = CurrentProjects.FirstOrDefault(item => item.Sessions.Contains(session));
+        if (project != null && project.DetachSessionAsRoot(session))
+            SessionsReordered?.Invoke(project);
+    }
+
     private void SessionDelete_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<SessionItem>(sender) is { } s) SessionDeleteRequested?.Invoke(s);
@@ -494,14 +828,19 @@ public partial class SidebarView : UserControl
 
     // ── 드래그 순서변경 (devez ReorderDrag: 고스트 + 시프트 애니메이션) ──────────────
     private Point _pressOrigin;
+    private ProjectFolderItem? _pendingFolder;
     private ProjectItem? _pendingProject;
     private TabItemBase? _pendingTab;   // 카드 그룹의 세션/문서 행(드래그 재정렬 대상)
     private ProjectFile? _pendingFile;
+    private ReorderDrag<ProjectFolderItem>? _folderDrag;
     private ReorderDrag<ProjectItem>? _projectDrag;
     private ReorderDrag<TabItemBase>? _tabDrag;
     private ReorderDrag<ProjectFile>? _fileDrag;
     private Border? _sessionChildDropTarget;
     private bool _didDrag;
+    private ProjectItem? _draggedProject;
+    private ProjectFolderItem? _projectFolderDropTarget;
+    private Border? _projectFolderDropBorder;
 
     private void ProjectRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -509,15 +848,36 @@ public partial class SidebarView : UserControl
         // chevron 등 버튼 위에서 누른 경우 드래그를 무장하지 않는다(버튼 동작 보존).
         _pendingProject = IsWithinButton(e.OriginalSource as DependencyObject)
             ? null : (sender as FrameworkElement)?.DataContext as ProjectItem;
+        _pendingFolder = null;
         _pendingTab = null;
         _pendingFile = null;
         _didDrag = false;
     }
 
-    private static bool IsWithinButton(DependencyObject? d)
+    private void FolderHeader_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        for (; d != null; d = VisualTreeHelper.GetParent(d))
-            if (d is ButtonBase) return true;
+        _pressOrigin = e.GetPosition(this);
+        _pendingFolder = IsWithinButton(e.OriginalSource as DependencyObject)
+            ? null : (sender as FrameworkElement)?.DataContext as ProjectFolderItem;
+        _pendingProject = null;
+        _pendingTab = null;
+        _pendingFile = null;
+        _didDrag = false;
+    }
+
+    private static bool IsWithinButton(DependencyObject? current)
+    {
+        while (current != null)
+        {
+            if (current is ButtonBase) return true;
+            current = current switch
+            {
+                FrameworkContentElement content => content.Parent,
+                Visual _ => VisualTreeHelper.GetParent(current),
+                System.Windows.Media.Media3D.Visual3D _ => VisualTreeHelper.GetParent(current),
+                _ => LogicalTreeHelper.GetParent(current),
+            };
+        }
         return false;
     }
 
@@ -526,6 +886,7 @@ public partial class SidebarView : UserControl
     {
         _pressOrigin = e.GetPosition(this);
         _pendingTab = (sender as FrameworkElement)?.DataContext as TabItemBase;
+        _pendingFolder = null;
         _pendingProject = null;
         _pendingFile = null;
         _didDrag = false;
@@ -535,6 +896,7 @@ public partial class SidebarView : UserControl
     {
         _pressOrigin = e.GetPosition(this);
         _pendingFile = (sender as FrameworkElement)?.DataContext as ProjectFile;
+        _pendingFolder = null;
         _pendingProject = null;
         _pendingTab = null;
         _didDrag = false;
@@ -542,7 +904,13 @@ public partial class SidebarView : UserControl
 
     private void Sidebar_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_projectDrag != null) { _projectDrag.Update(e); return; }
+        if (_folderDrag != null) { _folderDrag.Update(e); return; }
+        if (_projectDrag != null)
+        {
+            _projectDrag.Update(e);
+            UpdateProjectFolderDropPreview(e.GetPosition(this));
+            return;
+        }
         if (_tabDrag != null) { _tabDrag.Update(e); return; }
         if (_fileDrag != null) { _fileDrag.Update(e); return; }
         if (e.LeftButton != MouseButtonState.Pressed) return;
@@ -551,7 +919,8 @@ public partial class SidebarView : UserControl
         if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance) return;
 
-        if (_pendingProject != null) TryStartProjectDrag(_pendingProject);
+        if (_pendingFolder != null) TryStartFolderDrag(_pendingFolder);
+        else if (_pendingProject != null) TryStartProjectDrag(_pendingProject);
         else if (_pendingTab != null) TryStartTabDrag(_pendingTab);
         else if (_pendingFile != null) TryStartFileDrag(_pendingFile);
     }
@@ -561,57 +930,195 @@ public partial class SidebarView : UserControl
 
     private async Task EndDragAsync(bool commit)
     {
-        var pd = _projectDrag; var td = _tabDrag; var fd = _fileDrag;
-        _projectDrag = null; _tabDrag = null; _fileDrag = null;
-        _pendingProject = null; _pendingTab = null; _pendingFile = null;
+        var folderDrag = _folderDrag;
+        var projectDrag = _projectDrag;
+        var tabDrag = _tabDrag;
+        var fileDrag = _fileDrag;
+        var draggedProject = _draggedProject;
+        var dropFolder = _projectFolderDropTarget;
+        _folderDrag = null;
+        _projectDrag = null;
+        _tabDrag = null;
+        _fileDrag = null;
+        _pendingFolder = null;
+        _pendingProject = null;
+        _pendingTab = null;
+        _pendingFile = null;
+        _draggedProject = null;
+        ClearProjectFolderDropPreview();
         if (Mouse.Captured == this) ReleaseMouseCapture();
-        if (pd != null) await pd.FinishAsync(commit);
-        if (td != null) await td.FinishAsync(commit);
-        if (fd != null) await fd.FinishAsync(commit);
+
+        if (projectDrag != null)
+        {
+            bool moveIntoFolder = commit && draggedProject != null && dropFolder != null &&
+                                  draggedProject.FolderId != dropFolder.Id;
+            await projectDrag.FinishAsync(commit && !moveIntoFolder);
+            if (moveIntoFolder)
+            {
+                draggedProject!.FolderId = dropFolder!.Id;
+                RefreshProjectGroups();
+                ProjectsReordered?.Invoke();
+            }
+        }
+        if (folderDrag != null) await folderDrag.FinishAsync(commit);
+        if (tabDrag != null) await tabDrag.FinishAsync(commit);
+        if (fileDrag != null) await fileDrag.FinishAsync(commit);
+    }
+
+    private void UpdateProjectFolderDropPreview(Point point)
+    {
+        ClearProjectFolderDropPreview();
+        if (_draggedProject == null) return;
+
+        for (DependencyObject? current = InputHitTest(point) as DependencyObject;
+             current != null && !ReferenceEquals(current, this);
+             current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is not Border { Name: "FolderHeader", DataContext: ProjectFolderItem folder } header)
+                continue;
+            if (_draggedProject.FolderId == folder.Id) return;
+
+            var previewBorder = header;
+            for (DependencyObject? parent = VisualTreeHelper.GetParent(header);
+                 parent != null && !ReferenceEquals(parent, this);
+                 parent = VisualTreeHelper.GetParent(parent))
+            {
+                if (parent is Border { Name: "FolderRoot" } root)
+                {
+                    previewBorder = root;
+                    break;
+                }
+            }
+
+            _projectFolderDropTarget = folder;
+            _projectFolderDropBorder = previewBorder;
+            previewBorder.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
+            return;
+        }
+    }
+
+    private void ClearProjectFolderDropPreview()
+    {
+        if (_projectFolderDropBorder != null)
+            _projectFolderDropBorder.ClearValue(Border.BorderBrushProperty);
+        _projectFolderDropBorder = null;
+        _projectFolderDropTarget = null;
+    }
+
+    private void TryStartFolderDrag(ProjectFolderItem folder)
+    {
+        var host = folder.IsArchived ? ArchivedFoldersHost : FoldersHost;
+        var rows = FindVisualChildren<Border>(host)
+            .Where(border => border.Name == "FolderRoot"
+                             && border.DataContext is ProjectFolderItem { IsSearchVisible: true })
+            .Select(border => (
+                Item: (ProjectFolderItem)border.DataContext,
+                Element: (FrameworkElement)border))
+            .ToList();
+        var source = rows.FirstOrDefault(row => ReferenceEquals(row.Item, folder));
+        if (source.Element == null) return;
+
+        var visibleFolders = rows.Select(row => row.Item).ToList();
+        _folderDrag = ReorderDrag<ProjectFolderItem>.TryStart(
+            this, rows, folder, source.Element,
+            (item, hostTarget, _) =>
+            {
+                if (MoveFolderWithinVisible(
+                        WorkspaceStore.ProjectFolders, item, hostTarget, visibleFolders))
+                    ProjectsReordered?.Invoke();
+                return Task.CompletedTask;
+            }, exactFollow: true);
+
+        if (_folderDrag != null)
+        {
+            _didDrag = true;
+            CaptureMouse();
+        }
+        _pendingFolder = null;
+    }
+
+    private static bool MoveFolderWithinVisible(
+        ObservableCollection<ProjectFolderItem> collection,
+        ProjectFolderItem source,
+        int targetIndex,
+        IReadOnlyList<ProjectFolderItem> visibleFolders)
+    {
+        var ordered = visibleFolders.ToList();
+        int oldIndex = ordered.IndexOf(source);
+        if (oldIndex < 0) return false;
+
+        targetIndex = Math.Clamp(targetIndex, 0, ordered.Count - 1);
+        if (targetIndex == oldIndex) return false;
+
+        ordered.RemoveAt(oldIndex);
+        ordered.Insert(targetIndex, source);
+
+        var visibleSet = visibleFolders.ToHashSet();
+        var desired = collection.ToList();
+        int visibleIndex = 0;
+        for (int i = 0; i < desired.Count; i++)
+            if (visibleSet.Contains(desired[i]))
+                desired[i] = ordered[visibleIndex++];
+
+        SyncCollection(collection, desired);
+        return true;
     }
 
     private void TryStartProjectDrag(ProjectItem p)
     {
-        var rows = GetProjectRows().ToList();
-        var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, p));
+        bool includeAll = false;
+        string? folderId = p.FolderId;
+        var rows = GetProjectRows()
+            .Where(row => includeAll || row.Item.FolderId == folderId)
+            .ToList();
+        var src = rows.FirstOrDefault(row => ReferenceEquals(row.Item, p));
         if (src.Element == null) return;
 
         var coll = CurrentProjects;
 
         if (_projectColumns >= 2)
         {
-            // 2열: 목표 컬럼 + 컬럼 내 위치로 커밋. midX 는 패널 가운데(coordHost=this 기준).
-            double midX = ComputeColumnsMidX();
+            double midX = ComputeColumnsMidX(src.Element);
             _projectDrag = ReorderDrag<ProjectItem>.TryStart(this, rows, p, src.Element,
-                (s, targetCol, targetIdx) =>
+                (project, targetColumn, targetIndex) =>
                 {
-                    if (MoveProjectToColumn(coll, s, targetCol, targetIdx)) ProjectsReordered?.Invoke();
+                    if (MoveProjectToColumn(coll, project, targetColumn, targetIndex, folderId, includeAll))
+                        ProjectsReordered?.Invoke();
                     return Task.CompletedTask;
                 }, exactFollow: true, columns: 2, gridMidX: midX);
         }
         else
         {
             _projectDrag = ReorderDrag<ProjectItem>.TryStart(this, rows, p, src.Element,
-                (s, hostTarget, _) =>
+                (project, hostTarget, _) =>
                 {
-                    int from = coll.IndexOf(s);
-                    if (from >= 0)
-                    {
-                        int to = Math.Clamp(hostTarget, 0, coll.Count - 1);
-                        if (to != from) { coll.Move(from, to); ProjectsReordered?.Invoke(); }
-                    }
+                    if (MoveProjectWithinGroup(coll, project, hostTarget, folderId, includeAll))
+                        ProjectsReordered?.Invoke();
                     return Task.CompletedTask;
                 }, exactFollow: true);
         }
-        if (_projectDrag != null) { _didDrag = true; CaptureMouse(); }
+
+        if (_projectDrag != null)
+        {
+            _draggedProject = p;
+            _didDrag = true;
+            CaptureMouse();
+        }
         _pendingProject = null;
     }
 
-    /// <summary>현재 보기의 프로젝트 패널 가운데 X(좌/우 컬럼 경계). 좌표계는 this(SidebarView).</summary>
-    private double ComputeColumnsMidX()
+    /// <summary>드래그 중인 프로젝트가 배치된 패널의 가운데 X(좌/우 컬럼 경계).</summary>
+    private double ComputeColumnsMidX(FrameworkElement source)
     {
-        var panel = FindVisualChildren<ProjectColumnsPanel>(CurrentHost).FirstOrDefault();
-        if (panel == null || panel.ActualWidth <= 0) return double.PositiveInfinity; // 폴백: 전부 좌 컬럼 취급
+        ProjectColumnsPanel? panel = null;
+        for (DependencyObject? current = source; current != null; current = VisualTreeHelper.GetParent(current))
+            if (current is ProjectColumnsPanel columnsPanel)
+            {
+                panel = columnsPanel;
+                break;
+            }
+
+        if (panel == null || panel.ActualWidth <= 0) return double.PositiveInfinity;
         try
         {
             var origin = panel.TransformToAncestor(this).Transform(new Point(0, 0));
@@ -620,36 +1127,67 @@ public partial class SidebarView : UserControl
         catch { return double.PositiveInfinity; }
     }
 
-    /// <summary>2열: 드롭한 컬럼/위치로 프로젝트를 옮긴다. 같은 컬럼의 같은 위치면 no-op(false 반환).
-    /// 컬럼 내 상대 순서가 유지되도록 마스터 컬렉션에서 제거 후 알맞은 마스터 인덱스에 재삽입한다.</summary>
-    private static bool MoveProjectToColumn(ObservableCollection<ProjectItem> coll, ProjectItem s, int targetCol, int targetIdx)
+    private static bool MoveProjectWithinGroup(
+        ObservableCollection<ProjectItem> collection,
+        ProjectItem source,
+        int targetIndex,
+        string? folderId,
+        bool includeAll)
     {
-        targetCol = targetCol == 1 ? 1 : 0;
-        int from = coll.IndexOf(s);
-        if (from < 0) return false;
+        bool Matches(ProjectItem project) => includeAll || project.FolderId == folderId;
+        var groupItems = collection.Where(Matches).ToList();
+        int oldIndex = groupItems.IndexOf(source);
+        if (oldIndex < 0) return false;
 
-        // 드롭 전 같은-컬럼 내 현재 위치(no-op 판정용).
-        int oldCol = s.Column;
-        int oldWithin = 0;
-        for (int i = 0; i < from; i++) if (coll[i].Column == oldCol) oldWithin++;
+        targetIndex = Math.Clamp(targetIndex, 0, groupItems.Count - 1);
+        if (targetIndex == oldIndex) return false;
 
-        // 목표 컬럼의 다른 카드들(마스터 순서) — s 제외.
-        var colItems = coll.Where(x => !ReferenceEquals(x, s) && x.Column == targetCol).ToList();
-        targetIdx = Math.Clamp(targetIdx, 0, colItems.Count);
+        collection.Remove(source);
+        groupItems.Remove(source);
+        int insertAt = targetIndex >= groupItems.Count
+            ? (groupItems.Count == 0 ? collection.Count : collection.IndexOf(groupItems[^1]) + 1)
+            : collection.IndexOf(groupItems[targetIndex]);
+        collection.Insert(Math.Clamp(insertAt, 0, collection.Count), source);
+        return true;
+    }
 
-        if (targetCol == oldCol && targetIdx == oldWithin) return false; // 변화 없음
+    /// <summary>2열에서 같은 폴더 안의 목표 컬럼/위치로 프로젝트를 옮긴다.</summary>
+    private static bool MoveProjectToColumn(
+        ObservableCollection<ProjectItem> collection,
+        ProjectItem source,
+        int targetColumn,
+        int targetIndex,
+        string? folderId,
+        bool includeAll)
+    {
+        targetColumn = targetColumn == 1 ? 1 : 0;
+        int sourceIndex = collection.IndexOf(source);
+        if (sourceIndex < 0) return false;
 
-        coll.RemoveAt(from);
-        s.Column = targetCol;
+        bool Matches(ProjectItem project) => includeAll || project.FolderId == folderId;
+        int oldColumn = source.Column;
+        int oldWithin = collection.Take(sourceIndex)
+            .Count(project => Matches(project) && project.Column == oldColumn);
+
+        var columnItems = collection
+            .Where(project => !ReferenceEquals(project, source) &&
+                              Matches(project) &&
+                              project.Column == targetColumn)
+            .ToList();
+        targetIndex = Math.Clamp(targetIndex, 0, columnItems.Count);
+        if (targetColumn == oldColumn && targetIndex == oldWithin) return false;
+
+        collection.RemoveAt(sourceIndex);
+        source.Column = targetColumn;
 
         int insertAt;
-        if (colItems.Count == 0)
-            insertAt = Math.Min(from, coll.Count);                 // 빈 컬럼: 위치 무관(레이아웃은 컬럼만 따름)
-        else if (targetIdx >= colItems.Count)
-            insertAt = coll.IndexOf(colItems[^1]) + 1;             // 컬럼 맨 끝
+        if (columnItems.Count == 0)
+            insertAt = Math.Min(sourceIndex, collection.Count);
+        else if (targetIndex >= columnItems.Count)
+            insertAt = collection.IndexOf(columnItems[^1]) + 1;
         else
-            insertAt = coll.IndexOf(colItems[targetIdx]);          // 해당 카드 앞
-        coll.Insert(Math.Clamp(insertAt, 0, coll.Count), s);
+            insertAt = collection.IndexOf(columnItems[targetIndex]);
+        collection.Insert(Math.Clamp(insertAt, 0, collection.Count), source);
         return true;
     }
 
@@ -657,41 +1195,71 @@ public partial class SidebarView : UserControl
     {
         var project = CurrentProjects.FirstOrDefault(pr => pr.Tabs.Contains(s));
         if (project == null) return;
-        if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc) return;
+        if (GetProjectContainer(project) is not DependencyObject pc) return;
 
-        // s 가 실제로 렌더된 그룹 ItemsControl(좌/우)을 찾고, 그 그룹 항목(세션+문서)끼리만 재정렬한다(다른 그룹으로 못 드롭).
+        // 자식 세션은 같은 부모의 형제끼리만 재정렬한다. 최상위 행은 부모 세션의 자식들을 한 드래그 단위로 묶는다.
         ItemsControl? group = null;
         foreach (var ic in FindVisualChildren<ItemsControl>(pc))
             if (ic.ItemContainerGenerator.ContainerFromItem(s) is FrameworkElement) { group = ic; break; }
         if (group == null) return;
 
-        var rows = new List<(TabItemBase Item, FrameworkElement Element)>();
+        string? siblingParentId = (s as SessionItem)?.ParentSessionId;
+        bool siblingsOnly = !string.IsNullOrEmpty(siblingParentId);
+        var allRows = new List<(TabItemBase Item, FrameworkElement Element)>();
         foreach (var item in group.Items)
-            if (item is TabItemBase tb && group.ItemContainerGenerator.ContainerFromItem(tb) is FrameworkElement fe)
-                rows.Add((tb, fe));
-        var groupItems = rows.Select(r => r.Item).ToList();
-        var src = rows.FirstOrDefault(r => ReferenceEquals(r.Item, s));
-        // 자식이 분할 그룹에 단독으로 표시돼도 드래그만으로 부모에서 분리할 수 있어야 한다.
-        // ReorderDrag는 1개 슬롯도 지원하며, commitUnchanged가 분리 커밋을 담당한다.
+        {
+            if (item is not TabItemBase tab
+                || group.ItemContainerGenerator.ContainerFromItem(tab) is not FrameworkElement element)
+                continue;
+            allRows.Add((tab, element));
+        }
+
+        var rows = siblingsOnly
+            ? allRows.Where(row => row.Item is SessionItem sibling
+                && StringComparer.Ordinal.Equals(sibling.ParentSessionId, siblingParentId)).ToList()
+            : allRows.Where(row => row.Item is not SessionItem { ParentSessionId: not null }).ToList();
+        if (siblingsOnly && rows.Count < 2) return;
+
+        IReadOnlyList<FrameworkElement> GroupElements(TabItemBase item)
+        {
+            if (siblingsOnly || item is not SessionItem root)
+                return rows.Where(row => ReferenceEquals(row.Item, item))
+                    .Select(row => row.Element)
+                    .ToList();
+
+            var subtree = project.GetSessionSubtree(root).ToHashSet();
+            return allRows
+                .Where(row => row.Item is SessionItem session && subtree.Contains(session))
+                .Select(row => row.Element)
+                .ToList();
+        }
+
+        var groupItems = rows.Select(row => row.Item).ToList();
+        var src = rows.FirstOrDefault(row => ReferenceEquals(row.Item, s));
         if (src.Element == null) return;
-        bool detachOnDrop = s is SessionItem { ParentSessionId: not null };
 
         _tabDrag = ReorderDrag<TabItemBase>.TryStart(this, rows, s, src.Element,
             (item, hostTarget, _) =>
             {
-                // hostTarget = 그룹 내 인덱스 → 그 위치의 그룹 항목 자리로 Tabs 안에서 이동(세션/문서 공통).
-                // 대상이 같은 그룹 항목이라 ref 파티션이 유지돼 반대 그룹은 영향 없다. Tabs.Move → Sessions 동기 +
-                // 탭 스트립 반영, SessionsReordered → RefreshCardGroups 로 카드 순서 갱신.
                 int to = Math.Clamp(hostTarget, 0, groupItems.Count - 1);
                 int groupFrom = groupItems.IndexOf(item);
-                if (item is SessionItem movedSession && groupItems[to] is SessionItem targetSession)
+                if (item is SessionItem movedSession)
                 {
-                    if (project.MoveSessionAsRootRelative(movedSession, targetSession, after: groupFrom < to))
-                        SessionsReordered?.Invoke(project);
+                    bool changed;
+                    if (siblingsOnly && groupItems[to] is SessionItem siblingTarget)
+                        changed = project.MoveSessionWithinSiblings(
+                            movedSession,
+                            siblingTarget,
+                            after: groupFrom < to);
+                    else
+                        changed = project.MoveSessionSubtreeRelativeToTab(
+                            movedSession,
+                            groupItems[to],
+                            after: groupFrom < to);
+                    if (changed) SessionsReordered?.Invoke(project);
                     return Task.CompletedTask;
                 }
-                bool treeChanged = item is SessionItem detachedSession && detachOnDrop
-                    && project.DetachSessionAsRoot(detachedSession);
+
                 int fromIdx = project.Tabs.IndexOf(item);
                 int toIdx = project.Tabs.IndexOf(groupItems[to]);
                 if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx)
@@ -699,11 +1267,11 @@ public partial class SidebarView : UserControl
                     project.Tabs.Move(fromIdx, toIdx);
                     SessionsReordered?.Invoke(project);
                 }
-                else if (treeChanged)
-                    SessionsReordered?.Invoke(project);
                 return Task.CompletedTask;
             }, exactFollow: true,
-            canDropInto: (source, target) => source is SessionItem child && target is SessionItem parent
+            canDropInto: (source, target) => !siblingsOnly
+                && source is SessionItem { ParentSessionId: null } child
+                && target is SessionItem parent
                 && project.CanSetSessionParent(child, parent),
             dropIntoPreviewChanged: SetSessionChildDropPreview,
             onDropInto: (source, target) =>
@@ -712,16 +1280,15 @@ public partial class SidebarView : UserControl
                     && project.SetSessionParent(child, parent))
                     SessionsReordered?.Invoke(project);
                 return Task.CompletedTask;
-            }, commitUnchanged: detachOnDrop);
+            },
+            groupedElements: GroupElements);
         if (_tabDrag != null)
         {
-            if (detachOnDrop) _tabDrag.ShowDetachedSourcePreview();
             _didDrag = true;
             CaptureMouse();
         }
         _pendingTab = null;
     }
-
     private void SetSessionChildDropPreview(TabItemBase? target, FrameworkElement? container)
     {
         if (_sessionChildDropTarget != null)
@@ -757,20 +1324,29 @@ public partial class SidebarView : UserControl
 
     private IEnumerable<(ProjectItem Item, FrameworkElement Element)> GetProjectRows()
     {
-        foreach (var p in CurrentProjects)
-            if (CurrentHost.ItemContainerGenerator.ContainerFromItem(p) is FrameworkElement fe)
-                yield return (p, fe);
+        var root = _archiveOpen ? (DependencyObject)ArchivePanel : ActivePanel;
+        foreach (var border in FindVisualChildren<Border>(root))
+            if (border.Name == "ProjectCardRoot" && border.DataContext is ProjectItem project)
+                yield return (project, border);
     }
+
+    private FrameworkElement? GetProjectContainer(ProjectItem project)
+        => GetProjectRows()
+            .FirstOrDefault(row => ReferenceEquals(row.Item, project))
+            .Element;
 
     private IEnumerable<(ProjectFile Item, FrameworkElement Element)> GetFileRows(ProjectItem project)
     {
-        if (CurrentHost.ItemContainerGenerator.ContainerFromItem(project) is not DependencyObject pc)
+        if (GetProjectContainer(project) is not DependencyObject container)
             yield break;
-        var lists = FindVisualChildren<ItemsControl>(pc).ToList();
-        foreach (var f in project.Files)
+        var lists = FindVisualChildren<ItemsControl>(container).ToList();
+        foreach (var file in project.Files)
             foreach (var inner in lists)
-                if (inner.ItemContainerGenerator.ContainerFromItem(f) is FrameworkElement fe)
-                { yield return (f, fe); break; }
+                if (inner.ItemContainerGenerator.ContainerFromItem(file) is FrameworkElement element)
+                {
+                    yield return (file, element);
+                    break;
+                }
     }
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject? root) where T : DependencyObject

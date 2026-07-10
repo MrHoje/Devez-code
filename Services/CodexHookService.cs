@@ -84,10 +84,28 @@ public sealed class CodexHookService : IDisposable
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
         if (status == null) return;
-        // Set-Content 의 truncate 찰나에 watcher 가 빈 파일을 읽어 idle 로 오인 → 가짜 "응답 완료" 알림 방지
-        // (SessionBusyService / OpenCodeBusyService 와 동일 경합). busy 파일은 정상값이 빈 적이 없으므로 무시.
-        if (string.IsNullOrWhiteSpace(status)) return;
+        // Set-Content 의 truncate 찰나에 watcher 가 빈 파일을 읽어 idle 로 오인 → 가짜 "응답 완료" 알림 방지.
+        // 다만 codex 훅은 Stop 에서만 idle 을 쓰므로, truncate 후 write 가 경합/중단으로 완료되지 못해
+        // 파일이 0바이트로 "영구히" 남으면 이후 Changed 이벤트가 더 없어 idle 전이를 영영 놓친다(스피너
+        // stuck-ON). claude 는 reconcile 타이머로 복구하지만 codex 엔 진실 소스가 없으므로, 빈 값은 짧게
+        // 뒤 재확인해 정착값을 반영하고 그래도 비어 있으면 idle 로 확정한다(busy 파일 부재/빈 상태 = running 아님).
+        if (string.IsNullOrWhiteSpace(status)) { _ = ReEmitBusyAfterSettleAsync(path, room); return; }
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async System.Threading.Tasks.Task ReEmitBusyAfterSettleAsync(string path, string room)
+    {
+        try
+        {
+            await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
+            var status = TryRead(path);
+            // 재확인 후에도 비어 있으면(truncate 중단·경합으로 영구 0바이트) idle 로 확정 → 스피너 해제.
+            // 값이 정착됐으면 그대로 반영(running/idle).
+            bool busy = !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("running", StringComparison.OrdinalIgnoreCase);
+            BusyChanged?.Invoke(room, busy);
+        }
+        catch { /* fire-and-forget — 재읽기 실패해도 앱 영향 없음 */ }
     }
 
     private void EmitSession(string path)

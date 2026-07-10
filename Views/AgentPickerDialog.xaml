@@ -61,7 +61,7 @@
                                 <RadioButton GroupName="AgentPicker"
                                              Click="Card_Click"
                                              Tag="{Binding Id}"
-                                             Cursor="Hand"
+                                             Cursor="Arrow"
                                              Focusable="False"
                                              HorizontalContentAlignment="Stretch"
                                              VerticalContentAlignment="Stretch">

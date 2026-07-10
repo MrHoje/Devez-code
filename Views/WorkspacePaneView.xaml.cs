@@ -1474,6 +1474,15 @@ public partial class WorkspacePaneView : UserControl
         WorkspaceStore.Save(Projects);
     }
 
+    public void RenameBrowserTab(BrowserTabItem browser)
+    {
+        var name = PromptDialog.Show("탭 이름 변경", "새 이름을 입력하세요.",
+                                     defaultValue: browser.Name, maxLength: 60);
+        if (string.IsNullOrWhiteSpace(name) || name == browser.Name) return;
+        browser.Name = name;
+        WorkspaceStore.Save(Projects);
+    }
+
     public void DeleteSession(SessionItem session)
         => DeleteSessionRequested?.Invoke(session);
 
@@ -1894,6 +1903,11 @@ public partial class WorkspacePaneView : UserControl
         }
         else if (tab is BrowserTabItem browser)
         {
+            var renameItem = new MenuItem { Header = "이름 변경", Icon = BuildMenuIcon("IconPencil") };
+            renameItem.Click += (_, _) => RenameBrowserTab(browser);
+            cm.Items.Add(renameItem);
+            cm.Items.Add(new Separator());
+
             var closeItem = new MenuItem { Header = "닫기", Icon = BuildMenuIcon("IconX") };
             closeItem.Click += (_, _) => RequestCloseBrowserTab(browser);
             cm.Items.Add(closeItem);

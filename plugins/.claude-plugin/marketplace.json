@@ -1,0 +1,13 @@
+{
+  "name": "devezcode-local",
+  "owner": {
+    "name": "DevezCode"
+  },
+  "plugins": [
+    {
+      "name": "devez-relay",
+      "source": "./devez-relay",
+      "description": "DevezCode 세션 간 지시 릴레이 — /devez-relay:send-to 로 다른 세션에 프롬프트 전달"
+    }
+  ]
+}
