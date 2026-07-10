@@ -1285,24 +1285,15 @@
           }
           // 커버 걷기 시점 정책(에이전트별):
           // - alt-screen(claude 등): SIGWINCH 재렌더의 첫 출력 = 완성 프레임 → 첫 출력에 걷기(폴백 250ms).
-          // - gjc: 재페인트가 clear(2J)부터 여러 청크로 나뉘어 옴 → 첫 청크에 걷으면 빈/반쯤 그린 화면
-          //   노출(깜빡임). 출력이 120ms 잠잠해질 때까지 대기(무출력 폴백 300ms, 상한 900ms).
-          // - codex: 첫 출력이 재페인트가 아니라 '작은 상태줄 틱'일 수 있어 첫 출력 걷기는 조기
-          //   노출(깜빡임), quiet 대기는 유휴 틱이 계속 흘러 상한까지 끌림(느림). 재페인트 프레임은
-          //   pane 전체 diff 라 크다(12ms 코얼레싱 후 수 KB) → 큰 청크(≥500B)가 오면 즉시 걷고,
-          //   작은 틱만 오면 150ms quiet, 무출력 폴백 350ms, 상한 900ms.
+          // - gjc/codex(인라인 TUI): 재페인트가 여러 청크/버스트로 나뉘어 오고(codex 는 2026 마커 없는
+          //   diff 리페인트 구간도 많음), 첫 출력·큰 청크 기준의 조기 걷기는 전부 중간 프레임을 노출해
+          //   깜빡였다(둘 다 실측 실패). 출력이 120ms 잠잠해질 때까지 대기가 유일하게 안정적 —
+          //   무출력 폴백 300ms, 상한 900ms(유휴 틱이 계속 흐르는 codex 의 최악 지연).
           const armRevealWaiter = function (fireDone) {
-            if (e.agent === 'gajae') {
+            if (e.agent === 'gajae' || e.agent === 'codex') {
               let quietT = setTimeout(fireDone, 300);
               setTimeout(fireDone, 900);
               _xferDataWaiter = { room: room, fire: function () { clearTimeout(quietT); quietT = setTimeout(fireDone, 120); } };
-            } else if (e.agent === 'codex') {
-              let quietT = setTimeout(fireDone, 350);
-              setTimeout(fireDone, 900);
-              _xferDataWaiter = { room: room, fire: function (n) {
-                if ((n || 0) >= 500) { fireDone(); return; }
-                clearTimeout(quietT); quietT = setTimeout(fireDone, 150);
-              } };
             } else {
               _xferDataWaiter = { room: room, fire: fireDone };
               setTimeout(fireDone, 250);
