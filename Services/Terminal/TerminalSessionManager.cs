@@ -876,7 +876,30 @@ public sealed class TerminalSessionManager
         //  빈 세션 ID 고착(영원히 빈 화면)도 안 생긴다 — 이번 실행이 이미 새 세션(sessionId=null)으로 시작하기 때문.)
         if (sessionId != null && !resume)
         {
-            sessionId = null;
+            // 폴백: resume 은 새 sid 로 즉시 포크하고 SessionStart 훅이 그 sid 를 추적에 기록하지만,
+            // 새 .jsonl 은 첫 활동 전까지 생성되지 않는다(lazy). 그 사이 앱이 재시작되면 추적이
+            // transcript 없는 유령 sid 를 가리켜 방이 "빈 세션"으로 열리고, 이전 대화는 디스크에
+            // 멀쩡히 있는데 포인터만 잃는다. 훅이 보존한 직전 sid(.prev)의 transcript 가 있으면
+            // 그쪽으로 복원하고 추적 파일도 치유한다(재진입 배치 루프 %SID% 도 같은 결론을 보도록).
+            var prevSid = LoadPrevTrackedSessionId(roomId);
+            if (prevSid != null && !string.Equals(prevSid, sessionId, StringComparison.OrdinalIgnoreCase)
+                && ClaudeTranscriptExists(ccDir, prevSid))
+            {
+                DiagLog.Write($"launch[{roomId}]: 추적 sid={sessionId} transcript 없음(유령) → prev sid={prevSid} 로 복원");
+                sessionId = prevSid;
+                resume = true;
+                try
+                {
+                    File.WriteAllText(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt"), prevSid);
+                    SettingsService.SaveClaudeCodeRoomSession(roomId, prevSid);
+                }
+                catch { /* 치유 실패해도 이번 실행은 prevSid 로 resume — 다음 실행이 재시도 */ }
+            }
+            else
+            {
+                DiagLog.Write($"launch[{roomId}]: 추적 sid={sessionId} transcript 없음, prev 폴백 불가 → 새 세션으로 시작");
+                sessionId = null;
+            }
         }
 
         // 배치 본문: 세션 없으면 단발(새 세션), 있으면(=transcript 확인됨) resume → 실패(외부 삭제 등) 시
@@ -1169,6 +1192,10 @@ public sealed class TerminalSessionManager
                     $tfile = Join-Path $dir ($room + '.txt')
                     $prev = ''
                     try { if (Test-Path -LiteralPath $tfile) { $prev = (Get-Content -LiteralPath $tfile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
+                    # sid 가 바뀌면 이전 sid 를 .prev 로 보존 — resume 은 새 sid 로 포크하지만 새 .jsonl 은
+                    # 첫 활동 전까지 생성되지 않아(lazy), 그 사이 재시작하면 추적이 유령 sid 를 가리켜
+                    # 빈 세션으로 열린다. 실행 시(C# TryBuildDirectLaunch) transcript 없으면 .prev 로 복원.
+                    if ($prev -and $sid -ne $prev) { Write-State (Join-Path $dir ($room + '.prev.txt')) $prev }
                     Write-State $tfile $sid
                     if ($sid -ne $prev) {
                       $mdir = Join-Path $env:APPDATA 'DevezCode\claude\lastmsg'
@@ -1340,6 +1367,18 @@ public sealed class TerminalSessionManager
                     } catch { try { Set-Content -LiteralPath $path -Value $value -Encoding $encoding -Force } catch { } }
                   }
 
+                  # 세션 추적 기록. sid 가 바뀔 때 이전 sid 를 .prev 로 보존 — 추적 sid 의 transcript 가
+                  # 아직 없을 때(resume 포크 직후 활동 전 재시작 = 유령 sid) 실행부가 .prev 로 복원한다.
+                  function Write-Tracked($room, $sid) {
+                    $tdir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
+                    New-Item -ItemType Directory -Force -Path $tdir | Out-Null
+                    $tfile = Join-Path $tdir ($room + '.txt')
+                    $prevSid = ''
+                    try { if (Test-Path -LiteralPath $tfile) { $prevSid = (Get-Content -LiteralPath $tfile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
+                    if ($prevSid -and $sid -ne $prevSid) { Write-State (Join-Path $tdir ($room + '.prev.txt')) $prevSid }
+                    Write-State $tfile $sid
+                  }
+
                   function Touch-LiveSubruns($rd) {
                     try {
                       if (-not (Test-Path -LiteralPath $rd)) { return }
@@ -1436,9 +1475,7 @@ public sealed class TerminalSessionManager
                       # 사용자가 실제로 메시지를 보낸 세션 = 이 방의 진짜 현재 대화. 추적파일에 확정 기록(resume 용).
                       # tmp+교체(원자적) 쓰기 — 강제종료가 이 순간 끼어들어도 파일이 잘려서 세션을 통째로
                       # 잃는 일이 없도록 한다(직접 Set-Content 는 쓰기 도중 끊기면 손상/빈 파일이 남는다).
-                      $tdir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
-                      New-Item -ItemType Directory -Force -Path $tdir | Out-Null
-                      Write-State (Join-Path $tdir ($room + '.txt')) $sid
+                      Write-Tracked $room $sid
                     }
                     # 헤더 lastmsg 는 실제 텍스트 프롬프트가 있을 때만 기록.
                     if ($prompt -and -not $prompt.StartsWith('<task-notification>')) {
@@ -1457,9 +1494,7 @@ public sealed class TerminalSessionManager
                   # 응답 완료 시에도 현재 세션을 추적에 확정 기록 — running 훅을 놓쳤거나(경합) 첫 프롬프트가
                   # 비었어도(이미지·슬래시) 완결된 대화가 재실행 때 새 세션으로 유실되는 것을 막는 최종 앵커.
                   if ($sid) {
-                    $tdir = Join-Path $env:APPDATA 'DevezCode\claude\sessions'
-                    New-Item -ItemType Directory -Force -Path $tdir | Out-Null
-                    Write-State (Join-Path $tdir ($room + '.txt')) $sid
+                    Write-Tracked $room $sid
                   }
                   $evt = ''; try { $evt = '' + $j.hook_event_name } catch { }
                   if ($evt -eq 'SessionEnd') {
@@ -1575,6 +1610,21 @@ public sealed class TerminalSessionManager
         try
         {
             var path = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
+            if (!File.Exists(path)) return null;
+            var id = File.ReadAllText(path).Trim();
+            return Guid.TryParse(id, out _) ? id.ToLowerInvariant() : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>추적 sid 가 바뀌기 직전의 이전 sid(sessions\&lt;room&gt;.prev.txt, 훅 Write-Tracked 가 보존).
+    /// resume 은 새 sid 로 포크하지만 새 .jsonl 은 첫 활동 전까지 안 생기므로(lazy), 그 사이 재시작하면
+    /// 추적이 transcript 없는 유령 sid 가 된다 — 이때 이전 대화로 복원하는 폴백 체인용.</summary>
+    private static string? LoadPrevTrackedSessionId(string roomId)
+    {
+        try
+        {
+            var path = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".prev.txt");
             if (!File.Exists(path)) return null;
             var id = File.ReadAllText(path).Trim();
             return Guid.TryParse(id, out _) ? id.ToLowerInvariant() : null;
