@@ -40,6 +40,7 @@ Start-Process "bin\DevezCode.exe"
 | `Style.Setter.Value`/`Template` 인라인 자식 → connectionId 크래시 | `.knowledge/wpf-contextmenu-setter-value-connectionid-충돌.md` |
 | borderless 팝업 창의 라운드 코너 밖으로 자식 사각 모서리 삐져나옴 | `.knowledge/borderless-창-라운드-코너-클립.md` |
 | 프로젝트 폴더에 코드조각 이름의 0바이트 가비지 파일이 생김(원인=Claude Bash 툴, DevezCode 아님) | `.knowledge/프로젝트폴더-가비지파일-원인.md` |
+| 세션이 작업 중(스피너)에 간헐적으로 멈춤/작업 유실 → diag.log 로 원인 판별 | `.knowledge/세션-작업중-멈춤-진단.md` |
 
 > 위에 없는 일회성 버그 교훈(특정 컨트롤 트리거 등)은 `.knowledge/wpf-*.md` 로 남아 있으니, 비슷한 증상을 만나면 폴더를 이름으로 grep 해서 찾는다.
 
