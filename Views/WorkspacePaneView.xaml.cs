@@ -44,6 +44,14 @@ public partial class WorkspacePaneView : UserControl
         DependencyProperty.Register(nameof(SelectedTab), typeof(TabItemBase), typeof(WorkspacePaneView),
             new PropertyMetadata(null));
     public TabItemBase? SelectedTab => (TabItemBase?)GetValue(SelectedTabProperty);
+    public static readonly DependencyProperty IsPaneFocusedProperty =
+        DependencyProperty.Register(nameof(IsPaneFocused), typeof(bool), typeof(WorkspacePaneView),
+            new PropertyMetadata(false));
+    public bool IsPaneFocused
+    {
+        get => (bool)GetValue(IsPaneFocusedProperty);
+        private set => SetValue(IsPaneFocusedProperty, value);
+    }
 
     /// <summary>MainWindow 가 소유한 공유 프로젝트 컬렉션. 생성 후 한 번 주입한다.</summary>
     public ObservableCollection<ProjectItem> Projects { get; set; } = new();
@@ -368,11 +376,10 @@ public partial class WorkspacePaneView : UserControl
         CenterArea.BorderThickness = new Thickness(1, 0, show ? 1 : 0, 0);
     }
 
-    /// <summary>분할 중 포커스된 패널의 탭 타이틀 영역 우측 끝에 테마색 체크를 표시한다.</summary>
+    /// <summary>분할 중 포커스된 패널의 연결된 탭/타이틀 보더와 타이틀 우측 체크를 강조한다.</summary>
     public void SetFocusedVisual(bool focused)
     {
-        if (FocusCheck == null) return;
-        FocusCheck.Visibility = focused ? Visibility.Visible : Visibility.Collapsed;
+        IsPaneFocused = focused;
     }
     /// <summary>분할 접힘/펼침 애니메이션 중 줄바꿈을 꺼서 텍스트가 세로로 늘어나지 않게 한다.
     /// 완전히 보일 때만 Wrap 으로 복원한다.</summary>
