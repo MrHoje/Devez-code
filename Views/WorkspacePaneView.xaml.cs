@@ -366,23 +366,13 @@ public partial class WorkspacePaneView : UserControl
     public void SetRightChannelBorder(bool show)
     {
         CenterArea.BorderThickness = new Thickness(1, 0, show ? 1 : 0, 0);
-        // 채널 보더를 끄면 CenterArea 우측 두께가 0이 되어 포커스 프레임(FocusFrame) 우측 보더와
-        // WebView2 사이 여백이 1px 뿐이라, WebView2 HwndHost 가 DPI 반올림으로 1px 오버렌더하면
-        // airspace 로 포커스 보더를 덮어 가린다. 이때 FocusFrame 우측 여백 1px 을 줘 항상 2px 인셋을
-        // 유지한다(여백은 CenterArea 배경색이라 세로선은 안 보이고, 오버렌더는 그 여백에 떨어진다).
-        FocusFrame.Margin = new Thickness(0, 1, show ? 0 : 1, 0);
     }
 
-    /// <summary>분할 중 포커스 패널을 4면 테마색 보더로 표시. 포커스 시 PrimaryBrush, 아니면 투명.
-    /// 색만 바뀌고 두께(레이아웃)는 고정이라 터미널 리사이즈가 없다. SetResourceReference 로 연결해
-    /// 테마 변경 시 색이 자동으로 따라온다.</summary>
+    /// <summary>분할 중 포커스된 패널의 탭 타이틀 영역 우측 끝에 테마색 체크를 표시한다.</summary>
     public void SetFocusedVisual(bool focused)
     {
-        if (FocusFrame == null) return;
-        if (focused)
-            FocusFrame.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
-        else
-            FocusFrame.BorderBrush = System.Windows.Media.Brushes.Transparent;
+        if (FocusCheck == null) return;
+        FocusCheck.Visibility = focused ? Visibility.Visible : Visibility.Collapsed;
     }
     /// <summary>분할 접힘/펼침 애니메이션 중 줄바꿈을 꺼서 텍스트가 세로로 늘어나지 않게 한다.
     /// 완전히 보일 때만 Wrap 으로 복원한다.</summary>

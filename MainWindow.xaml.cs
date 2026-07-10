@@ -2913,8 +2913,8 @@ public partial class MainWindow : Window
         AnimatePaneSplit(1, 0, Finish);
     }
 
-    /// <summary>분할 중일 때 포커스된 패널을 4면 테마색 보더(각 패널의 FocusFrame)로 표시한다.
-    /// 단일 패널이면 모두 끈다. 보더는 패널 레이아웃을 따르므로 별도 위치 계산이 필요 없다.</summary>
+    /// <summary>분할 중일 때 포커스된 패널의 탭 타이틀 영역 우측 끝에 테마색 체크를 표시한다.
+    /// 단일 패널이면 모두 숨긴다.</summary>
     private void UpdatePaneFocusVisual(bool animate = true)
     {
         foreach (var p in _panes)
