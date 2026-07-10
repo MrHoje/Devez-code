@@ -16,7 +16,6 @@ public sealed class StatusLineService : IDisposable
     private FileSystemWatcher? _watcher;
     private System.Threading.Timer? _poll;
     private long _lastWriteTicks = -1; // 마지막으로 emit 한 파일 쓰기시각 — 중복 emit 방지
-    private RateLimitSnapshot? _lastSnapshot;
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
@@ -55,15 +54,12 @@ public sealed class StatusLineService : IDisposable
             }
         }
         catch { }
-        var snap = MergeWithLastSnapshot(TryRead());
+        // 누적 금지: 훅 파일의 최신 원본값만 그대로 알린다. 과거의 높은 값을 자기 자신에
+        // 되먹여 Math.Max 로 창 리셋 전까지 얼어붙던(주간 82% 고정) 문제 방지 — seven_day 는
+        // reset 이 미래라 만료 폐기도 안 걸린다. 소스 병합(비후퇴·창 채택)은 MainWindow 가
+        // hook/API '최신끼리' 수행하므로 여기서 다시 누적할 필요가 없다.
+        var snap = TryRead();
         if (snap != null) SnapshotUpdated?.Invoke(snap);
-    }
-
-    private RateLimitSnapshot? MergeWithLastSnapshot(RateLimitSnapshot? next)
-    {
-        var merged = RateLimitSnapshot.Merge(_lastSnapshot, next);
-        if (merged != null) _lastSnapshot = merged;
-        return merged;
     }
 
     /// <summary>파일을 읽어 스냅샷으로 파싱. 쓰기 경합 시 짧게 재시도. 실패/없음이면 null.</summary>

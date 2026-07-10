@@ -15,6 +15,8 @@ public static class OpenCodeGoCredentialStore
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "opencode-go.json");
 
+    private static string DisconnectedPath => OwnStorePath + ".disconnected";
+
     // ② opencode-quota 플러그인이 깔아둔 파일
     private static string PluginPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -25,6 +27,8 @@ public static class OpenCodeGoCredentialStore
 
     public static Creds? Resolve()
     {
+        if (File.Exists(DisconnectedPath)) return null;
+
         // ③ env
         var envWs = Environment.GetEnvironmentVariable("OPENCODE_GO_WORKSPACE_ID")?.Trim();
         var envCk = Environment.GetEnvironmentVariable("OPENCODE_GO_AUTH_COOKIE")?.Trim();
@@ -63,6 +67,23 @@ public static class OpenCodeGoCredentialStore
                 w.WriteEndObject();
             }
             File.WriteAllBytes(OwnStorePath, ms.ToArray());
+        }
+        catch { }
+    }
+
+    public static void Enable()
+    {
+        try { if (File.Exists(DisconnectedPath)) File.Delete(DisconnectedPath); } catch { }
+    }
+
+    /// <summary>DevezCode 자체 자격증명을 지우고 플러그인/환경변수 자동 인식도 중지한다.</summary>
+    public static void Disconnect()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(DisconnectedPath)!);
+            File.WriteAllText(DisconnectedPath, "");
+            if (File.Exists(OwnStorePath)) File.Delete(OwnStorePath);
         }
         catch { }
     }

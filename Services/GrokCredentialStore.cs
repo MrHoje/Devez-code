@@ -22,6 +22,8 @@ public static class GrokCredentialStore
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "grok-auth.json");
 
+    private static string DisconnectedPath => OwnStorePath + ".disconnected";
+
     private static string CliAuthPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".grok", "auth.json");
@@ -29,13 +31,30 @@ public static class GrokCredentialStore
     public static bool IsConnected() => Resolve() != null;
 
     public static Creds? Resolve()
-        => ReadOwnStore() ?? ReadCliAuth();
+        => File.Exists(DisconnectedPath) ? null : ReadOwnStore() ?? ReadCliAuth();
 
     public static string? ReadAccessToken() => Resolve()?.AccessToken;
 
     public static void Clear()
     {
         try { if (File.Exists(OwnStorePath)) File.Delete(OwnStorePath); } catch { }
+    }
+
+    public static void Enable()
+    {
+        try { if (File.Exists(DisconnectedPath)) File.Delete(DisconnectedPath); } catch { }
+    }
+
+    /// <summary>DevezCode 자체 토큰을 지우고 Grok CLI 토큰 자동 인식도 중지한다.</summary>
+    public static void Disconnect()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(DisconnectedPath)!);
+            File.WriteAllText(DisconnectedPath, "");
+            Clear();
+        }
+        catch { }
     }
 
     /// <summary>DevezCode 자체 스토어에 토큰 저장(로그인/refresh 결과).</summary>

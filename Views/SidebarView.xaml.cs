@@ -52,6 +52,9 @@ public partial class SidebarView : UserControl
     public event Action<FileTabItem>? OpenDocSelected;
     /// <summary>카드 문서 우클릭 "문서 닫기" — 해당 파일 탭을 닫는다(MainWindow 위임).</summary>
     public event Action<FileTabItem>? OpenDocCloseRequested;
+    /// <summary>카드의 웹 브라우저 탭 클릭/닫기 요청.</summary>
+    public event Action<BrowserTabItem>? BrowserTabSelected;
+    public event Action<BrowserTabItem>? BrowserTabCloseRequested;
     public event Action<SessionItem>? SessionDeleteRequested;
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
@@ -341,6 +344,19 @@ public partial class SidebarView : UserControl
         if (ItemOf<FileTabItem>(sender) is { } f) OpenDocCloseRequested?.Invoke(f);
     }
 
+    private void BrowserTab_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (_didDrag) { _didDrag = false; return; }
+        if (sender is FrameworkElement { DataContext: BrowserTabItem browser })
+            BrowserTabSelected?.Invoke(browser);
+    }
+
+    private void BrowserTabClose_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<BrowserTabItem>(sender) is { } browser)
+            BrowserTabCloseRequested?.Invoke(browser);
+    }
+
     private void OpenDocCopyPath_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<FileTabItem>(sender) is { } f)
@@ -484,6 +500,7 @@ public partial class SidebarView : UserControl
     private ReorderDrag<ProjectItem>? _projectDrag;
     private ReorderDrag<TabItemBase>? _tabDrag;
     private ReorderDrag<ProjectFile>? _fileDrag;
+    private Border? _sessionChildDropTarget;
     private bool _didDrag;
 
     private void ProjectRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -663,6 +680,13 @@ public partial class SidebarView : UserControl
                 // 대상이 같은 그룹 항목이라 ref 파티션이 유지돼 반대 그룹은 영향 없다. Tabs.Move → Sessions 동기 +
                 // 탭 스트립 반영, SessionsReordered → RefreshCardGroups 로 카드 순서 갱신.
                 int to = Math.Clamp(hostTarget, 0, groupItems.Count - 1);
+                int groupFrom = groupItems.IndexOf(item);
+                if (item is SessionItem movedSession && groupItems[to] is SessionItem targetSession)
+                {
+                    if (project.MoveSessionRelative(movedSession, targetSession, after: groupFrom < to))
+                        SessionsReordered?.Invoke(project);
+                    return Task.CompletedTask;
+                }
                 int fromIdx = project.Tabs.IndexOf(item);
                 int toIdx = project.Tabs.IndexOf(groupItems[to]);
                 if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx)
@@ -671,9 +695,31 @@ public partial class SidebarView : UserControl
                     SessionsReordered?.Invoke(project);
                 }
                 return Task.CompletedTask;
-            }, exactFollow: true);
+            }, exactFollow: true,
+            canDropInto: (source, target) => source is SessionItem child && target is SessionItem parent
+                && project.CanSetSessionParent(child, parent),
+            dropIntoPreviewChanged: SetSessionChildDropPreview,
+            onDropInto: (source, target) =>
+            {
+                if (source is SessionItem child && target is SessionItem parent
+                    && project.SetSessionParent(child, parent))
+                    SessionsReordered?.Invoke(project);
+                return Task.CompletedTask;
+            });
         if (_tabDrag != null) { _didDrag = true; CaptureMouse(); }
         _pendingTab = null;
+    }
+
+    private void SetSessionChildDropPreview(TabItemBase? target, FrameworkElement? container)
+    {
+        if (_sessionChildDropTarget != null)
+            _sessionChildDropTarget.ClearValue(Border.BorderBrushProperty);
+        _sessionChildDropTarget = null;
+
+        if (target is not SessionItem || container == null) return;
+        _sessionChildDropTarget = FindVisualChildren<Border>(container)
+            .FirstOrDefault(border => border.Name == "SessionRow");
+        _sessionChildDropTarget?.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
     }
 
     private void TryStartFileDrag(ProjectFile f)

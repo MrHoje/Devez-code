@@ -539,6 +539,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                         .Get(root.GetProperty("roomId").GetString()!)
                         ?.Resize(root.GetProperty("cols").GetInt32(), root.GetProperty("rows").GetInt32());
                     break;
+                case "diag": // 웹 레이어 진단 로그 → diag.log (codex 팝업 스윕 등)
+                    DevezCode.Services.DiagLog.Write("[web] " + (root.TryGetProperty("msg", out var dm) ? dm.GetString() : ""));
+                    break;
                 case "restart":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;

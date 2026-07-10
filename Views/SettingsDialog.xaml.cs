@@ -819,6 +819,37 @@ public partial class SettingsDialog : UserControl
             (Application.Current.MainWindow as MainWindow)?.RefreshGrokUsage();
     }
 
+    private void UsageDisconnect_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string provider }) return;
+
+        if (Application.Current.MainWindow is MainWindow main)
+        {
+            main.DisconnectUsageProvider(provider);
+        }
+        else
+        {
+            switch (provider)
+            {
+                case "codex": CodexCredentialStore.Disconnect(); break;
+                case "opencode-go": OpenCodeGoCredentialStore.Disconnect(); break;
+                case "grok": GrokCredentialStore.Disconnect(); break;
+                case "deepseek": DeepSeekCredentialStore.SaveApiKey(null); break;
+            }
+        }
+
+        if (provider == "deepseek")
+        {
+            _originalDeepSeekEnabled = false;
+            _selectedDeepSeekEnabled = false;
+            DeepSeekEnabledToggle.IsChecked = false;
+            DeepSeekKeyArea.Visibility = Visibility.Collapsed;
+            DeepSeekKeyStatus.Visibility = Visibility.Collapsed;
+        }
+
+        UpdateConnectionBadges();
+    }
+
     // ── DeepSeek API 키 토글/저장 ─────────────────────────────────
 
     private void DeepSeekToggle_Changed(object sender, RoutedEventArgs e)
@@ -855,6 +886,7 @@ public partial class SettingsDialog : UserControl
         // 저장 직후 입력 영역 숨김 — 토글만 켜진 상태 유지
         DeepSeekKeyArea.Visibility = Visibility.Collapsed;
         DeepSeekKeyStatus.Visibility = Visibility.Collapsed;
+        UpdateConnectionBadges();
 
         (Application.Current.MainWindow as MainWindow)?.RefreshDeepSeekUsage();
     }
@@ -862,11 +894,20 @@ public partial class SettingsDialog : UserControl
     /// <summary>provider 별 "연결됨" 배지를 현재 토큰/자격증명 상태로 갱신.</summary>
     private void UpdateConnectionBadges()
     {
+        bool codexConnected = CodexUsageService.IsConnected();
+        bool goConnected = OpenCodeGoCredentialStore.IsConnected();
+        bool deepSeekConnected = DeepSeekCredentialStore.IsConnected();
+        bool grokConnected = GrokUsageService.IsConnected();
+
         ClaudeConnectedBadge.Visibility = UsageApiService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
-        CodexConnectedBadge.Visibility = CodexUsageService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
-        GoConnectedBadge.Visibility = OpenCodeGoCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
-        DeepSeekConnectedBadge.Visibility = DeepSeekCredentialStore.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
-        GrokConnectedBadge.Visibility = GrokUsageService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
+        CodexConnectedBadge.Visibility = codexConnected ? Visibility.Visible : Visibility.Collapsed;
+        GoConnectedBadge.Visibility = goConnected ? Visibility.Visible : Visibility.Collapsed;
+        DeepSeekConnectedBadge.Visibility = deepSeekConnected ? Visibility.Visible : Visibility.Collapsed;
+        GrokConnectedBadge.Visibility = grokConnected ? Visibility.Visible : Visibility.Collapsed;
+        CodexDisconnectButton.Visibility = codexConnected ? Visibility.Visible : Visibility.Collapsed;
+        GoDisconnectButton.Visibility = goConnected ? Visibility.Visible : Visibility.Collapsed;
+        DeepSeekDisconnectButton.Visibility = deepSeekConnected ? Visibility.Visible : Visibility.Collapsed;
+        GrokDisconnectButton.Visibility = grokConnected ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── 알림 설정 (모두 [저장] 버튼에서만 디스크 반영 — 테스트 버튼은 저장된 값으로 동작) ──
@@ -1136,6 +1177,7 @@ public partial class SettingsDialog : UserControl
         {
             DeepSeekCredentialStore.SaveApiKey(null);
             DeepSeekConnectedBadge.Visibility = Visibility.Collapsed;
+            DeepSeekDisconnectButton.Visibility = Visibility.Collapsed;
             DeepSeekKeyArea.Visibility = Visibility.Collapsed;
             (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
             (Application.Current.MainWindow as MainWindow)?.RefreshDeepSeekUsage();

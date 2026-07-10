@@ -55,7 +55,9 @@ public static class GrokHookInstaller
             Directory.CreateDirectory(Path.GetDirectoryName(HooksJsonPath)!);
             EnsureScriptInstalled();
 
-            var hookCommand = $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{ScriptInstallPath}\"";
+            var hookCommand =
+                $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden " +
+                $"-File \"{ScriptInstallPath}\"";
             var events = new[] { "SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "StopFailure" };
 
             // 우리 전용 파일이라 매 설치 시 전체 덮어써 최신 이벤트 목록 유지(다른 훅 파일과 분리).

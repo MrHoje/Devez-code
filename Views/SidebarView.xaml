@@ -89,9 +89,19 @@
             </Style.Triggers>
         </Style>
 
+        <!-- 자식 드롭 대상 세션 전용: 프로젝트 카드 선택 보더와 같은 1.5px primary 하이라이트 기반. -->
+        <Style x:Key="SessionDropTargetCard" TargetType="Border" BasedOn="{StaticResource SessionCard}">
+            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Effect" Value="{x:Null}"/>
+            <Setter Property="SnapsToDevicePixels" Value="False"/>
+            <Setter Property="UseLayoutRounding" Value="False"/>
+            <Setter Property="RenderOptions.EdgeMode" Value="Unspecified"/>
+        </Style>
+
         <!-- ── 세션(하위 항목) 템플릿 — Claude 로고 + 상태 점 + 이름 + 호버 ⋯ 메뉴 ── -->
         <DataTemplate x:Key="SessionTemplate" DataType="{x:Type models:SessionItem}">
-            <Border x:Name="SessionRow" Style="{StaticResource SessionCard}"
+            <Border x:Name="SessionRow" Style="{StaticResource SessionDropTargetCard}"
                     MouseLeftButtonUp="Session_Click"
                     PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown">
                 <Border.ContextMenu>
@@ -152,14 +162,23 @@
                         </MenuItem>
                     </ContextMenu>
                 </Border.ContextMenu>
-                <Grid Margin="10,5,10,5">
+                <!-- 1.5px 보더의 가로 위치는 보정하고, 세로 여백은 기존 대비 약 20% 큰 행 높이로 확장. -->
+                <Grid Margin="8.5,6,8.5,6">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="{Binding TreeIndent}"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
+                    <!-- 자식 세션 트리 엘보. 깊이는 TreeIndent로 누적하고 마지막 단계 연결선만 표시. -->
+                    <Path Grid.Column="0" Data="M 1,0 L 1,8 L 9,8"
+                          Width="10" Height="16" Margin="0,0,4,0"
+                          HorizontalAlignment="Right" VerticalAlignment="Center"
+                          Stretch="None" Stroke="{DynamicResource LineBrush}" StrokeThickness="1.2"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                          Visibility="{Binding HasSessionParent, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                     <!-- 잠금 아이콘(에이전트 아이콘 왼쪽) + 세션 아이콘 -->
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLock}"
                               Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
                               Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
@@ -169,7 +188,7 @@
                                RenderOptions.BitmapScalingMode="HighQuality"/>
                     </StackPanel>
                     <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중). 탭 X 로 숨긴 세션은 추적중지 아이콘. -->
-                    <Grid Grid.Column="1" Width="12" Height="12" VerticalAlignment="Center">
+                    <Grid Grid.Column="2" Width="12" Height="12" VerticalAlignment="Center">
                         <Ellipse x:Name="StatusDot" Style="{StaticResource SessionDot}"/>
                         <Ellipse x:Name="BusySpinner" Width="12" Height="12" Visibility="Collapsed"
                                  models:SpinnerActivator.Track="True"
@@ -197,7 +216,7 @@
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               Fill="Transparent"/>
                     </Grid>
-                    <TextBlock Grid.Column="2" Text="{Binding Name}" Margin="10,0,0,0"
+                    <TextBlock Grid.Column="3" Text="{Binding Name}" Margin="10,0,0,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                FontSize="{DynamicResource Fs12}"
                                Foreground="{DynamicResource TextBrush}"/>
@@ -209,7 +228,7 @@
                     <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
                 </DataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
-                <DataTrigger Binding="{Binding Hidden}" Value="True">
+                <DataTrigger Binding="{Binding IsEffectivelyHidden}" Value="True">
                     <Setter TargetName="StatusDot" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="BusySpinner" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="HiddenIcon" Property="Visibility" Value="Visible"/>
@@ -219,14 +238,14 @@
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding Tag, RelativeSource={RelativeSource FindAncestor, AncestorType=ItemsControl}}" Value="False"/>
-                        <Condition Binding="{Binding Hidden}" Value="True"/>
+                        <Condition Binding="{Binding IsSidebarGloballyHidden}" Value="True"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="SessionRow" Property="Visibility" Value="Collapsed"/>
                 </MultiDataTrigger>
                 <!-- 요청 처리중 스피너: 숨김 세션(!Hidden)일 때만 동작. -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding Hidden}" Value="False"/>
+                        <Condition Binding="{Binding IsEffectivelyHidden}" Value="False"/>
                         <Condition Binding="{Binding IsBusy}" Value="True"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="StatusDot" Property="Visibility" Value="Collapsed"/>
@@ -236,7 +255,7 @@
                 <!-- 입력 대기(선택지 메뉴): 스피너 정지 + 느낌표. busy 보다 뒤에 둬서 우선 적용. -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding Hidden}" Value="False"/>
+                        <Condition Binding="{Binding IsEffectivelyHidden}" Value="False"/>
                         <Condition Binding="{Binding IsWaitingChoice}" Value="True"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="StatusDot" Property="Visibility" Value="Collapsed"/>
@@ -339,10 +358,48 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
-        <!-- 세션/문서 행을 타입별 템플릿으로 렌더(좌/우 그룹 ItemsControl 공유) -->
+        <!-- 중앙 웹 브라우저 탭 — 문서 행과 동일한 크기/선택 표현. -->
+        <DataTemplate x:Key="BrowserTabTemplate" DataType="{x:Type models:BrowserTabItem}">
+            <Border x:Name="BrowserRow" Style="{StaticResource SessionCard}"
+                    MouseLeftButtonUp="BrowserTab_Click"
+                    PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
+                    Cursor="Arrow">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="브라우저 닫기" Tag="{Binding}" Click="BrowserTabClose_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
+                                      Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <Grid Margin="10,5,10,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Grid.Column="0" Style="{StaticResource LucideIcon}" Data="{StaticResource IconGlobe}"
+                          Width="14" Height="14" Margin="0,0,10,0" VerticalAlignment="Center"
+                          Stroke="{DynamicResource TextMutedBrush}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Title}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource TextBrush}"/>
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter TargetName="BrowserRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 세션/문서/브라우저 행을 타입별 템플릿으로 렌더(좌/우 그룹 ItemsControl 공유) -->
         <models:TabRowTemplateSelector x:Key="TabRowSelector"
                                        SessionTemplate="{StaticResource SessionTemplate}"
-                                       FileTemplate="{StaticResource FileDocTemplate}"/>
+                                       FileTemplate="{StaticResource FileDocTemplate}"
+                                       BrowserTemplate="{StaticResource BrowserTabTemplate}"/>
 
         <!-- ── 프로젝트(상위 항목) 템플릿 — 카드 헤더(아이콘·이름·chevron·⋯) + 세션 row 리스트 ── -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">
@@ -568,22 +625,13 @@
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="ProjectBusySpinner" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
-                <!-- 일반 프로젝트 카드 호버: 보더색 변경 (스타일 레벨에서 제거 후 템플릿 레벨로 이동) -->
+                <!-- 프로젝트 카드 호버: 활성/보관함 모두 같은 보더색 변경 -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding IsArchived}" Value="False"/>
                         <Condition Binding="{Binding IsSelected}" Value="False"/>
                         <Condition Binding="{Binding IsMouseOver, ElementName=ProjectCardRoot}" Value="True"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="ProjectCardRoot" Property="BorderBrush" Value="{DynamicResource ProjectCardHoverBorderBrush}"/>
-                </MultiDataTrigger>
-                <!-- 보관함 카드 호버: 파일탐색기 파일 호버와 동일하게 배경 PanelSoftBrush -->
-                <MultiDataTrigger>
-                    <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding IsArchived}" Value="True"/>
-                        <Condition Binding="{Binding IsMouseOver, ElementName=ProjectCardRoot}" Value="True"/>
-                    </MultiDataTrigger.Conditions>
-                    <Setter TargetName="ProjectCardRoot" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
                 </MultiDataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>

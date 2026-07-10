@@ -944,16 +944,28 @@
                                                        FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
                                         </StackPanel>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Click="CodexLogin_Click" Style="{StaticResource UsageLoginButton}"
-                                            ToolTip="ChatGPT(Codex) 계정으로 로그인해 사용량 연결">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Image Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
-                                                   Width="13" Height="13" VerticalAlignment="Center"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
-                                            <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
-                                        </StackPanel>
-                                    </Button>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="CodexDisconnectButton" Tag="codex" Click="UsageDisconnect_Click"
+                                                Style="{StaticResource UsageLoginButton}" Margin="0,0,14,0"
+                                                ToolTip="Codex 계정 사용량 연결 끊기" Visibility="Collapsed">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconLogOut}"
+                                                      Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
+                                                <TextBlock Text="연결 끊기" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource DangerBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Click="CodexLogin_Click" Style="{StaticResource UsageLoginButton}"
+                                                ToolTip="ChatGPT(Codex) 계정으로 로그인해 사용량 연결">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
+                                                       Width="13" Height="13" VerticalAlignment="Center"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
 
                                 <Grid Margin="0,0,0,18">
@@ -971,16 +983,28 @@
                                                        FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
                                         </StackPanel>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Click="OpenCodeLogin_Click" Style="{StaticResource UsageLoginButton}"
-                                            ToolTip="opencode.ai 계정으로 로그인해 사용량 연결">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Image x:Name="OpenCodeLoginIcon" Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
-                                                   Width="13" Height="13" VerticalAlignment="Center"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
-                                            <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
-                                        </StackPanel>
-                                    </Button>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="GoDisconnectButton" Tag="opencode-go" Click="UsageDisconnect_Click"
+                                                Style="{StaticResource UsageLoginButton}" Margin="0,0,14,0"
+                                                ToolTip="OpenCode Go 계정 사용량 연결 끊기" Visibility="Collapsed">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconLogOut}"
+                                                      Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
+                                                <TextBlock Text="연결 끊기" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource DangerBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Click="OpenCodeLogin_Click" Style="{StaticResource UsageLoginButton}"
+                                                ToolTip="opencode.ai 계정으로 로그인해 사용량 연결">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image x:Name="OpenCodeLoginIcon" Source="pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_white_50.png"
+                                                       Width="13" Height="13" VerticalAlignment="Center"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
 
                                 <Grid Margin="0,0,0,18">
@@ -998,17 +1022,29 @@
                                                        FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
                                         </StackPanel>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Click="GrokLogin_Click" Style="{StaticResource UsageLoginButton}"
-                                            ToolTip="xAI 계정으로 로그인해 Grok Build 사용량 연결 (Grok CLI 토큰도 자동 인식)">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Image x:Name="GrokLoginIcon"
-                                                   Source="pack://application:,,,/Resources/Images/ShellPresets/grok_icon_white_50.png"
-                                                   Width="13" Height="13" VerticalAlignment="Center"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
-                                            <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
-                                        </StackPanel>
-                                    </Button>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="GrokDisconnectButton" Tag="grok" Click="UsageDisconnect_Click"
+                                                Style="{StaticResource UsageLoginButton}" Margin="0,0,14,0"
+                                                ToolTip="Grok Build 계정 사용량 연결 끊기" Visibility="Collapsed">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconLogOut}"
+                                                      Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
+                                                <TextBlock Text="연결 끊기" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource DangerBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Click="GrokLogin_Click" Style="{StaticResource UsageLoginButton}"
+                                                ToolTip="xAI 계정으로 로그인해 Grok Build 사용량 연결 (Grok CLI 토큰도 자동 인식)">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image x:Name="GrokLoginIcon"
+                                                       Source="pack://application:,,,/Resources/Images/ShellPresets/grok_icon_white_50.png"
+                                                       Width="13" Height="13" VerticalAlignment="Center"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
 
                                 <!-- DeepSeek (API 키) -->
@@ -1032,9 +1068,21 @@
                                                            FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
                                             </StackPanel>
                                         </StackPanel>
-                                        <CheckBox x:Name="DeepSeekEnabledToggle" Grid.Column="1"
-                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="DeepSeekToggle_Changed" Unchecked="DeepSeekToggle_Changed"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="DeepSeekDisconnectButton" Tag="deepseek" Click="UsageDisconnect_Click"
+                                                    Style="{StaticResource UsageLoginButton}" Margin="0,0,14,0"
+                                                    ToolTip="DeepSeek 계정 사용량 연결 끊기" Visibility="Collapsed">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconLogOut}"
+                                                          Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
+                                                    <TextBlock Text="연결 끊기" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource DangerBrush}"/>
+                                                    </StackPanel>
+                                            </Button>
+                                            <CheckBox x:Name="DeepSeekEnabledToggle"
+                                                      Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                      Checked="DeepSeekToggle_Changed" Unchecked="DeepSeekToggle_Changed"/>
+                                        </StackPanel>
                                     </Grid>
                                     <!-- API 키 입력 영역 (토글 ON 일 때만 표시) -->
                                     <Border x:Name="DeepSeekKeyArea" Grid.Row="1" Margin="0,10,0,0" Padding="12,10"

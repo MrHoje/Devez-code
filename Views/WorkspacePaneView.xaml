@@ -150,7 +150,7 @@
                                 <Style TargetType="Grid">
                                     <Setter Property="Visibility" Value="Visible"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Hidden}" Value="True">
+                                        <DataTrigger Binding="{Binding IsEffectivelyHidden}" Value="True">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -189,22 +189,21 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,7,0">
-                                        <!-- 잠금 아이콘(에이전트 아이콘 왼쪽) -->
-                                        <Path x:Name="TabLockIcon" Style="{StaticResource LucideIcon}"
-                                              Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
-                                              Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
-                                              Data="{StaticResource IconLock}"
-                                              Stroke="{DynamicResource TextMutedBrush}"/>
                                         <Grid>
                                             <Image x:Name="TabAgentIcon" Width="14" Height="14"
                                                    VerticalAlignment="Center"
                                                    Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
                                                    RenderOptions.BitmapScalingMode="HighQuality"/>
-                                            <Path x:Name="TabFileIcon" Width="14" Height="14"
-                                                  Stretch="Uniform" Visibility="Collapsed"
-                                                  Data="{StaticResource IconFileText}"
-                                                  Style="{StaticResource LucideIcon}"
-                                                  Stroke="{DynamicResource TextMutedBrush}"/>
+                                             <Path x:Name="TabFileIcon" Width="14" Height="14"
+                                                   Stretch="Uniform" Visibility="Collapsed"
+                                                   Data="{StaticResource IconFileText}"
+                                                   Style="{StaticResource LucideIcon}"
+                                                   Stroke="{DynamicResource TextMutedBrush}"/>
+                                             <Path x:Name="TabBrowserIcon" Width="14" Height="14"
+                                                   Stretch="Uniform" Visibility="Collapsed"
+                                                   Data="{StaticResource IconGlobe}"
+                                                   Style="{StaticResource LucideIcon}"
+                                                   Stroke="{DynamicResource TextMutedBrush}"/>
                                             <!-- 입력 대기(선택지 메뉴): 아이콘 자리에 ❗ 표시(에이전트 아이콘 위에 겹쳐 노출). -->
                                             <!-- 높이를 15→13 + 하단 Margin 2: 상단 고정, 아래만 2px 줄임. -->
                                             <Path x:Name="TabWaitingIcon" Width="15" Height="13" Margin="0,0,0,2"
@@ -231,7 +230,7 @@
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <Button Grid.Column="2" Width="16" Height="16" Margin="8,0,0,0"
+                                    <Button x:Name="TabCloseButton" Grid.Column="2" Width="16" Height="16" Margin="8,0,0,0"
                                             Click="TabHide_Click" Tag="{Binding}"
                                             Background="Transparent" BorderThickness="0"
                                             Cursor="Arrow" IsTabStop="False" FocusVisualStyle="{x:Null}"
@@ -283,10 +282,16 @@
                                 <Trigger SourceName="TabBd" Property="IsMouseOver" Value="True">
                                     <Setter TargetName="TabTitle" Property="Foreground" Value="{DynamicResource TextBrush}"/>
                                 </Trigger>
-                                <DataTrigger Binding="{Binding Kind}" Value="File">
-                                    <Setter TargetName="TabAgentIcon" Property="Visibility" Value="Collapsed"/>
-                                    <Setter TargetName="TabFileIcon" Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
+                                 <DataTrigger Binding="{Binding Kind}" Value="File">
+                                     <Setter TargetName="TabAgentIcon" Property="Visibility" Value="Collapsed"/>
+                                     <Setter TargetName="TabFileIcon" Property="Visibility" Value="Visible"/>
+                                     <Setter TargetName="TabCloseButton" Property="ToolTip" Value="닫기"/>
+                                 </DataTrigger>
+                                 <DataTrigger Binding="{Binding Kind}" Value="Browser">
+                                     <Setter TargetName="TabAgentIcon" Property="Visibility" Value="Collapsed"/>
+                                     <Setter TargetName="TabBrowserIcon" Property="Visibility" Value="Visible"/>
+                                     <Setter TargetName="TabCloseButton" Property="ToolTip" Value="닫기"/>
+                                 </DataTrigger>
                                 <!-- 입력 대기: 에이전트 아이콘 숨기고 ❗ 노출(File 트리거 뒤에 둬서 세션 탭에서 우선). -->
                                 <DataTrigger Binding="{Binding IsWaitingChoice}" Value="True">
                                     <Setter TargetName="TabAgentIcon" Property="Visibility" Value="Collapsed"/>
@@ -321,8 +326,24 @@
                 <Button x:Name="NewTabBtn" Click="NewTabBtn_Click"
                         IsTabStop="False" FocusVisualStyle="{x:Null}" Cursor="Arrow"
                         Width="24" Height="24" Margin="3,0,11,0" VerticalAlignment="Center"
-                        ToolTip="새 세션 추가" Visibility="Collapsed"
+                        ToolTip="새 탭 추가" Visibility="Collapsed"
                         Style="{StaticResource NewTabButton}">
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="새 세션" Click="NewSessionMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="웹 브라우저" Click="NewBrowserMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconGlobe}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </ContextMenu>
+                    </Button.ContextMenu>
                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
                           Width="11" Height="11" StrokeThickness="1.3"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
@@ -425,6 +446,7 @@
                             DragOver="TerminalHostContainer_DragOver"
                             Drop="TerminalHostContainer_Drop"/>
             <ContentControl x:Name="FileEditorHostContainer" Visibility="Collapsed"/>
+            <ContentControl x:Name="BrowserHostContainer" Visibility="Collapsed"/>
             <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
             <Border x:Name="TerminalCurtain" Background="{DynamicResource BgBrush}"

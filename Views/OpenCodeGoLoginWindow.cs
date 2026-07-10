@@ -132,6 +132,7 @@ public sealed class OpenCodeGoLoginWindow : Window
 
             _done = true;
             OpenCodeGoCredentialStore.Save(ws, auth);
+            OpenCodeGoCredentialStore.Enable();
             Captured = true;
             DialogResult = true;
             Close();

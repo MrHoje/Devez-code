@@ -26,8 +26,18 @@ public sealed class GrokUsageService : IDisposable
 
     public static bool IsConnected() => GrokCredentialStore.IsConnected();
 
+    public void Disconnect()
+    {
+        _memoryAccess = null;
+        _memoryRefresh = null;
+        _memoryExpires = null;
+        GrokCredentialStore.Disconnect();
+    }
+
     private async Task<string?> EnsureAccessTokenAsync()
     {
+        if (!GrokCredentialStore.IsConnected()) return null;
+
         var c = GrokCredentialStore.Resolve();
         var access = _memoryAccess ?? c?.AccessToken;
         var refresh = _memoryRefresh ?? c?.RefreshToken;

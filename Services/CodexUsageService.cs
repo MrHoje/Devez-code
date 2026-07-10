@@ -256,6 +256,8 @@ public sealed class CodexUsageService : IDisposable
     /// <summary>auth.json 에서 (accessToken, accountId, 만료여부). 없으면 (null,null,false).</summary>
     private static (string? token, string? accountId, bool expired) ReadAuth()
     {
+        if (CodexCredentialStore.IsDisconnected()) return (null, null, false);
+
         foreach (var path in AuthPaths())
         {
             try

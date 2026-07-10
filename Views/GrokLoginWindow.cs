@@ -176,6 +176,7 @@ public sealed class GrokLoginWindow : Window
         var expiresSec = r.TryGetProperty("expires_in", out var ei) && ei.ValueKind == JsonValueKind.Number
             ? ei.GetInt64() : 3600;
         GrokCredentialStore.Save(access, refresh, DateTimeOffset.UtcNow.AddSeconds(expiresSec));
+        GrokCredentialStore.Enable();
     }
 
     private static string RandomUrlSafe(int bytes)

@@ -12,11 +12,33 @@ public static class CodexCredentialStore
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "codex-auth.json");
 
+    private static string DisconnectedPath => StorePath + ".disconnected";
+
+    public static bool IsDisconnected() => File.Exists(DisconnectedPath);
+
+    public static void Enable()
+    {
+        try { if (File.Exists(DisconnectedPath)) File.Delete(DisconnectedPath); } catch { }
+    }
+
+    /// <summary>DevezCode 자체 토큰을 지우고 외부 opencode 토큰 자동 인식도 중지한다.</summary>
+    public static void Disconnect()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(DisconnectedPath)!);
+            File.WriteAllText(DisconnectedPath, "");
+            if (File.Exists(StorePath)) File.Delete(StorePath);
+        }
+        catch { }
+    }
+
     /// <summary>저장된 토큰을 읽는다. 없거나 access 가 없으면 null. expiresMs=0 이면 만료 정보 없음.</summary>
     public static (string access, string? refresh, long expiresMs)? Read()
     {
         try
         {
+            if (IsDisconnected()) return null;
             if (!File.Exists(StorePath)) return null;
             using var fs = new FileStream(StorePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var doc = JsonDocument.Parse(fs);

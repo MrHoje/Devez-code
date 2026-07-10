@@ -8,7 +8,8 @@ namespace DevezCode.Services;
 /// <summary>프로젝트/세션 트리를 %AppData%\DevezCode\workspace.json 에 저장·복원.</summary>
 public static class WorkspaceStore
 {
-    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } }
+    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public string? ParentId { get; set; } }
+    private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
     private sealed class ProjectDto
     {
@@ -22,15 +23,17 @@ public static class WorkspaceStore
         // 2열 보기에서의 컬럼(0=좌, 1=우). 1열 보기에선 무시. 기본 0.
         public int Column { get; set; }
         public List<SessionDto> Sessions { get; set; } = new();
+        // 중앙 웹 브라우저 탭. ID가 settings.json 의 탭별 방문 기록 키와 연결된다.
+        public List<BrowserDto> Browsers { get; set; } = new();
         // 프로젝트 메뉴에 등록한 바로가기 목록. 재시작 시 복원.
         public List<ShortcutDto> Files { get; set; } = new();
         // 숨김 세션 표시 여부 (카드 헤더 눈 아이콘 토글). 재시작 시 복원.
         public bool ShowHiddenSessions { get; set; } = true;
         // 직전에 열려 있던 파일 편집기 탭의 절대 경로 목록. 재시작 시 다시 탭으로 복원.
         public List<string> OpenFiles { get; set; } = new();
-        // 저장 시점 전체 탭 순서(세션+문서 섞임, "S:<id>"/"F:<path>"). 복원 시 이 순서로 Tabs 재배열(문서 끼임 순서 보존).
+        // 저장 시점 전체 탭 순서(세션+문서+브라우저, "S:<id>"/"F:<path>"/"B:<id>"). 복원 시 이 순서로 Tabs 재배열.
         public List<string> TabOrder { get; set; } = new();
-        // 마지막으로 활성화했던 탭 참조("S:<세션ID>"/"F:<파일경로>"). 프로젝트 재선택 시 복원.
+        // 마지막으로 활성화했던 탭 참조("S:<세션ID>"/"F:<파일경로>"/"B:<브라우저ID>"). 프로젝트 재선택 시 복원.
         public string? LastActiveTab { get; set; }
         // 이 프로젝트를 메인 패널에 열 때 분할을 함께 켤지 + 분할 파트너. 재시작/재선택 시 복원.
         public bool SplitEnabled { get; set; }
@@ -105,7 +108,10 @@ public static class WorkspaceStore
                 proj.Column = p.Column;
                 proj.ShowHiddenSessions = p.ShowHiddenSessions;
                 foreach (var s in p.Sessions)
-                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden, IsLocked = s.Locked });
+                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden, IsLocked = s.Locked, ParentSessionId = s.ParentId });
+                proj.NormalizeSessionTree();
+                foreach (var b in p.Browsers ?? new())
+                    proj.Tabs.Add(new BrowserTabItem { Id = b.Id, Name = string.IsNullOrWhiteSpace(b.Name) ? "웹 브라우저" : b.Name });
                 foreach (var f in p.Files)
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 proj.PendingOpenFiles = p.OpenFiles ?? new();   // 시작 시 RestoreFileTabs 가 1회 소비
@@ -156,7 +162,11 @@ public static class WorkspaceStore
         {
             Id = s.Id, Name = s.Name,
             Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
-            Hidden = s.Hidden, Locked = s.IsLocked,
+            Hidden = s.Hidden, Locked = s.IsLocked, ParentId = s.ParentSessionId,
+        }).ToList(),
+        Browsers = p.Tabs.OfType<BrowserTabItem>().Select(b => new BrowserDto
+        {
+            Id = b.Id, Name = b.Name,
         }).ToList(),
         Files = p.Files.Select(f => new ShortcutDto { Path = f.FilePath, Name = f.Name, RunAsAdmin = f.RunAsAdmin }).ToList(),
         // 숨김 세션 표시 여부
@@ -168,6 +178,7 @@ public static class WorkspaceStore
         {
             SessionItem s => "S:" + s.Id,
             FileTabItem f => "F:" + f.FilePath,
+            BrowserTabItem b => "B:" + b.Id,
             _ => "",
         }).Where(r => r.Length > 0).ToList(),
         LastActiveTab = p.LastActiveTabRef,

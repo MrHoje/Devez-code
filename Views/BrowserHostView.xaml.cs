@@ -46,6 +46,13 @@ public partial class BrowserHostView : UserControl
     }
     private string? _projectPath;
 
+    /// <summary>방문 기록 저장 키. 기존 우측 브라우저는 프로젝트 경로, 중앙 브라우저는 탭 ID 기반 키를 사용한다.</summary>
+    public string? StateKey
+    {
+        get => ProjectPath;
+        set => ProjectPath = value;
+    }
+
     public BrowserHostView()
     {
         InitializeComponent();
@@ -298,6 +305,7 @@ public partial class BrowserHostView : UserControl
     /// <summary>앱 종료 시 — WebView2 + 이벤트 해제(Edge 렌더러 프로세스 잔류 방지).</summary>
     public void DisposeAll()
     {
+        try { PersistHistory(); } catch { }
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
         try { if (_view != null) BrowserContent.Children.Remove(_view); } catch { }
         try { _view?.Dispose(); } catch { }

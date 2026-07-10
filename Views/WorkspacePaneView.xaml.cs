@@ -72,6 +72,10 @@ public partial class WorkspacePaneView : UserControl
     public event Action<SessionItem>? ExportSessionRequested;
     /// <summary>세션 탭 우클릭 "잠금/잠금 해제" → MainWindow 가 토글.</summary>
     public event Action<SessionItem>? ToggleSessionLockRequested;
+    /// <summary>세션 숨김/닫기/삭제는 부모-자식 서브트리 단위 처리를 위해 MainWindow에 위임.</summary>
+    public event Action<SessionItem>? HideSessionRequested;
+    public event Action<SessionItem>? StopTrackingSessionRequested;
+    public event Action<SessionItem>? DeleteSessionRequested;
     /// <summary>탭 드래그 중 매 이동 — 셸이 커서(screen)가 반대 패널 위면 그 패널에 삽입 프리뷰(탭 밀기)를 그리고
     /// true(크로스 중) 반환. 그러면 소스 패널은 자기 재정렬 프리뷰를 억제한다. ghostWidth=미는 폭.</summary>
     public Func<WorkspacePaneView, Point, double, bool>? TabDragHoverMoved;
@@ -87,6 +91,8 @@ public partial class WorkspacePaneView : UserControl
     /// 생성 패널에서 닫아 봤자 표시 패널이 갱신되지 않는다(활성 이웃 미선택·타이틀 잔류). 셸이 실제
     /// 표시(활성) 패널로 라우팅해 그 패널에서 닫도록 이 이벤트로 위임한다.</summary>
     public event Action<FileTabItem>? FileTabCloseRequested;
+    /// <summary>브라우저 탭 닫기를 실제 활성/표시 패널로 라우팅하도록 셸에 위임한다.</summary>
+    public event Action<BrowserTabItem>? BrowserTabCloseRequested;
 
     public TerminalHostView Terminal => _terminal;
 
@@ -217,6 +223,7 @@ public partial class WorkspacePaneView : UserControl
         var next = PickNeighborTab(_activeProject, idx); // 왼쪽 우선 이웃 + Hidden 세션 제외(PickNeighborTab 과 동일 규칙)
         if (next is SessionItem ns) ActivateSession(ns);
         else if (next is FileTabItem nf) ActivateFileTab(nf);
+        else if (next is BrowserTabItem nb) ActivateBrowserTab(nb);
         else ClearActiveSession();
     }
 
@@ -277,11 +284,12 @@ public partial class WorkspacePaneView : UserControl
     /// 떠서 이동 후 IsolateTab 으로 다시 얹는 용도(누적 유지).</summary>
     public List<TabItemBase>? CurrentIsolatedTabs() => _isolatedTabs?.ToList();
 
-    /// <summary>탭 참조 문자열("S:&lt;id&gt;"/"F:&lt;path&gt;"). 분할 상태 영속/복원용.</summary>
+    /// <summary>탭 참조 문자열("S:&lt;id&gt;"/"F:&lt;path&gt;"/"B:&lt;id&gt;"). 분할 상태 영속/복원용.</summary>
     public static string RefOf(TabItemBase? t) => t switch
     {
         SessionItem s => "S:" + s.Id,
         FileTabItem f => "F:" + f.FilePath,
+        BrowserTabItem b => "B:" + b.Id,
         _ => "",
     };
 
@@ -292,7 +300,7 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>이 패널 탭바에 실제로 보이는(FilterTab 통과) 탭들의 참조. 화이트리스트/블랙리스트 모드 무관하게
     /// "이 패널이 지금 보여주는 탭 집합"을 준다 — 분할 상태 저장 시 우측 전용 집합 계산에 쓴다.</summary>
     public List<string> VisibleTabRefs()
-        => _activeProject?.Tabs.Where(t => FilterTab(t) && !(t is SessionItem s && s.Hidden))
+        => _activeProject?.Tabs.Where(t => FilterTab(t) && !(t is SessionItem s && s.IsEffectivelyHidden))
                .Select(RefOf).Where(r => r.Length > 0).ToList() ?? new List<string>();
 
     /// <summary>이 패널 활성 탭의 참조.</summary>
@@ -306,15 +314,16 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>현재 이 패널이 파일 탭을 활성으로 보여주는지. 파일→세션 전환 시 세션 터미널 리플로우를 커버로 감추는 판정용.</summary>
     public bool ActiveIsFile => _activeTab is FileTabItem;
 
-    /// <summary>활성 프로젝트의 Tabs 에서 참조("S:id"/"F:path")에 해당하는 탭을 찾는다. 세션은 숨김 제외.</summary>
+    /// <summary>활성 프로젝트의 Tabs 에서 참조("S:id"/"F:path"/"B:id")에 해당하는 탭을 찾는다. 세션은 숨김 제외.</summary>
     public TabItemBase? FindTabByRef(string? @ref)
     {
         if (_activeProject == null || string.IsNullOrEmpty(@ref) || @ref!.Length < 2 || @ref[1] != ':') return null;
         var key = @ref[2..];
         return @ref[0] switch
         {
-            'S' => _activeProject.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden && s.Id == key),
+            'S' => _activeProject.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.IsEffectivelyHidden && s.Id == key),
             'F' => _activeProject.Tabs.OfType<FileTabItem>().FirstOrDefault(f => string.Equals(f.FilePath, key, StringComparison.OrdinalIgnoreCase)),
+            'B' => _activeProject.Tabs.OfType<BrowserTabItem>().FirstOrDefault(b => b.Id == key),
             _ => null,
         };
     }
@@ -325,6 +334,7 @@ public partial class WorkspacePaneView : UserControl
         var t = FindTabByRef(@ref);
         if (t is SessionItem s) { ActivateSession(s); return true; }
         if (t is FileTabItem f) { ActivateFileTab(f); return true; }
+        if (t is BrowserTabItem b) { ActivateBrowserTab(b); return true; }
         return false;
     }
 
@@ -388,7 +398,7 @@ public partial class WorkspacePaneView : UserControl
         if (!ReferenceEquals(_activeSession, s)) return;
         try { _terminal.CloseTerminal(s.Id); } catch { /* ignore */ }
         var parent = ParentOf(s);
-        var next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(x => !ReferenceEquals(x, s) && !x.Hidden);
+        var next = parent?.Tabs.OfType<SessionItem>().FirstOrDefault(x => !ReferenceEquals(x, s) && !x.IsEffectivelyHidden);
         if (next != null) ActivateSession(next);
         else ClearActiveSession();
     }
@@ -601,7 +611,7 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>이 패널에 보이는(FilterTab 통과 + Hidden 아님) 세션 탭이 하나라도 있는지.
     /// 없으면(전부 다른 패널로 이동/닫힘, 파일 탭만 있음, 빈 패널 등) 브랜치·터미널 폰트 정보를 숨긴다.</summary>
     private bool PaneHasAnySessionTab()
-        => _activeProject != null && _activeProject.Tabs.Any(t => t is SessionItem s && !s.Hidden && FilterTab(t));
+        => _activeProject != null && _activeProject.Tabs.Any(t => t is SessionItem s && !s.IsEffectivelyHidden && FilterTab(t));
 
     /// <summary>탭 이동/숨김/복원 등 "이 패널에 보이는 탭 집합"이 바뀌는 지점에서 호출 —
     /// 세션 탭이 하나도 없어지면 브랜치·터미널 폰트 정보를 같이 숨긴다.</summary>
@@ -636,33 +646,32 @@ public partial class WorkspacePaneView : UserControl
         });
     }
 
-    /// <summary>프로젝트 선택 — 탭 교체 후 세션 하나 활성화.
-    /// 우선순위: 이전 활성 세션 → 열려있는(실행 중) 세션 중 가장 위 → 첫 세션.
-    /// (첫 세션이 안 열렸고 다른 세션만 열려있으면 그 열린 세션으로 연다.)</summary>
+    /// <summary>프로젝트 선택 — 탭 교체 후 직전 탭을 복원하고, 없으면 세션/파일/브라우저 순으로 연다.</summary>
     public void SelectProject(ProjectItem proj)
     {
         SetActiveProject(proj);
 
         // 이전 활성 세션이 이 프로젝트 소속이면 그대로 유지.
-        if (_activeSession != null && proj.Tabs.Contains(_activeSession) && !_activeSession.Hidden)
+        if (_activeSession != null && proj.Tabs.Contains(_activeSession) && !_activeSession.IsEffectivelyHidden)
         {
             ActivateSession(_activeSession, unHide: false);
             return;
         }
 
-        // 이 프로젝트에서 마지막으로 봤던 탭(세션/파일)을 복원 시도.
+        // 이 프로젝트에서 마지막으로 봤던 탭(세션/파일/브라우저)을 복원 시도.
         if (TryActivateLastTab(proj)) return;
 
-        // 폴백: 실행 중 세션 중 가장 위 → 첫 세션 → 없으면 비움.
-        var sessions = proj.Tabs.OfType<SessionItem>().Where(s => !s.Hidden).ToList();
+        // 폴백: 실행 중 세션 중 가장 위 → 첫 세션 → 첫 파일/브라우저 탭 → 없으면 비움.
+        var sessions = proj.Tabs.OfType<SessionItem>().Where(s => !s.IsEffectivelyHidden).ToList();
         var target = sessions.FirstOrDefault(s => s.IsAlive) ?? sessions.FirstOrDefault();
         if (target != null) ActivateSession(target, unHide: false);
+        else if (proj.Tabs.FirstOrDefault(t => t is not SessionItem s || !s.IsEffectivelyHidden) is FileTabItem file) ActivateFileTab(file);
+        else if (proj.Tabs.FirstOrDefault(t => t is not SessionItem s || !s.IsEffectivelyHidden) is BrowserTabItem browser) ActivateBrowserTab(browser);
         else ClearActiveSession();
         ActiveChanged?.Invoke(this);
     }
 
-    /// <summary>proj.LastActiveTabRef("S:&lt;id&gt;"/"F:&lt;path&gt;")가 가리키는 탭을 찾아 활성화. 성공 시 true.
-    /// 세션은 숨김 제외, 파일은 현재 열린 탭 중에서 찾는다(못 찾으면 false → 기본 폴백).</summary>
+    /// <summary>proj.LastActiveTabRef("S:&lt;id&gt;"/"F:&lt;path&gt;"/"B:&lt;id&gt;")가 가리키는 탭을 활성화한다.</summary>
     private bool TryActivateLastTab(ProjectItem proj)
     {
         var rf = proj.LastActiveTabRef;
@@ -671,7 +680,7 @@ public partial class WorkspacePaneView : UserControl
         switch (rf[0])
         {
             case 'S':
-                var sess = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.Hidden && s.Id == key);
+                var sess = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => !s.IsEffectivelyHidden && s.Id == key);
                 if (sess == null) return false;
                 ActivateSession(sess, unHide: false);
                 return true;
@@ -680,6 +689,11 @@ public partial class WorkspacePaneView : UserControl
                     .FirstOrDefault(f => string.Equals(f.FilePath, key, StringComparison.OrdinalIgnoreCase));
                 if (file == null) return false;
                 ActivateFileTab(file);
+                return true;
+            case 'B':
+                var browser = proj.Tabs.OfType<BrowserTabItem>().FirstOrDefault(b => b.Id == key);
+                if (browser == null) return false;
+                ActivateBrowserTab(browser);
                 return true;
             default:
                 return false;
@@ -708,7 +722,7 @@ public partial class WorkspacePaneView : UserControl
     {
         foreach (var s in proj.Tabs.OfType<SessionItem>())
         {
-            if (ReferenceEquals(s, except) || s.Hidden) continue;
+            if (ReferenceEquals(s, except) || s.IsEffectivelyHidden) continue;
             if (IsSessionActiveElsewhere?.Invoke(s) == true) continue; // 다른 패널이 표시 중 — 그 패널이 최종 폭으로 생성
             SettingsService.SaveClaudeCodeRoomDir(s.Id, proj.Path);
             _terminal.PreloadTerminal(s.Id);
@@ -720,6 +734,8 @@ public partial class WorkspacePaneView : UserControl
     {
         if (!ReferenceEquals(_activeProject, proj)) return;
         if (_activeSession != null) _activeSession.IsActive = false;
+        if (_activeTab is BrowserTabItem browser) browser.IsActive = false;
+        if (BrowserHostContainer != null) BrowserHostContainer.Content = null;
         _activeProject = null; _activeSession = null; _activeTab = null;
         if (next != null) SelectProject(next);
         else { ApplyTabsSource(null); ClearActiveSession(); ActiveChanged?.Invoke(this); }
@@ -740,7 +756,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void GotoSession(int index)
     {
-        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.Hidden).ToList();
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.IsEffectivelyHidden).ToList();
         if (sessionTabs == null || sessionTabs.Count == 0) return;
         int i = index < 0 ? sessionTabs.Count - 1 : index;
         if (i < 0 || i >= sessionTabs.Count) return;
@@ -749,7 +765,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void CycleSession(int dir)
     {
-        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.Hidden).ToList();
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.IsEffectivelyHidden).ToList();
         if (_activeProject == null || _activeSession == null || sessionTabs == null || sessionTabs.Count < 2) return;
         int idx = sessionTabs.IndexOf(_activeSession);
         if (idx < 0) return;
@@ -762,7 +778,7 @@ public partial class WorkspacePaneView : UserControl
     /// false 를 보면 반대편 패널로 포커스를 넘길지 판단한다.</summary>
     public bool CycleActiveSession(bool next)
     {
-        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.Hidden).ToList();
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.IsEffectivelyHidden).ToList();
         if (_activeProject == null || _activeSession == null || sessionTabs == null) return false;
         int idx = sessionTabs.IndexOf(_activeSession);
         if (idx < 0) return false;
@@ -776,7 +792,7 @@ public partial class WorkspacePaneView : UserControl
     /// 반대편 패널 경계에서 넘어올 때 진입 지점을 정하는 데 쓴다.</summary>
     public bool SelectEdgeSession(bool first)
     {
-        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.Hidden).ToList();
+        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.IsEffectivelyHidden).ToList();
         if (sessionTabs == null || sessionTabs.Count == 0) return false;
         OpenSession(first ? sessionTabs[0] : sessionTabs[^1]);
         return true;
@@ -792,6 +808,20 @@ public partial class WorkspacePaneView : UserControl
             if (m.Success && int.TryParse(m.Groups[1].Value, out var n) && n > max) max = n;
         }
         return $"세션 {max + 1}";
+    }
+
+    private static string NextBrowserName(ProjectItem proj)
+    {
+        int max = 0;
+        var rx = new System.Text.RegularExpressions.Regex(@"^웹 브라우저(?:\s+(\d+))?$");
+        foreach (var browser in proj.Tabs.OfType<BrowserTabItem>())
+        {
+            var match = rx.Match(browser.Name);
+            if (!match.Success) continue;
+            int n = match.Groups[1].Success && int.TryParse(match.Groups[1].Value, out var parsed) ? parsed : 1;
+            if (n > max) max = n;
+        }
+        return max == 0 ? "웹 브라우저" : $"웹 브라우저 {max + 1}";
     }
 
     public void AddSession(ProjectItem proj)
@@ -919,6 +949,15 @@ public partial class WorkspacePaneView : UserControl
         ActivateFileTab(tab);
     }
 
+    /// <summary>브라우저 탭 클릭/분할 이동 — 필요하면 소속 프로젝트로 전환한 뒤 활성화.</summary>
+    public void OpenBrowserTab(BrowserTabItem tab)
+    {
+        var parent = ParentOfTab(tab);
+        if (parent == null) return;
+        if (!ReferenceEquals(_activeProject, parent)) SetActiveProject(parent);
+        ActivateBrowserTab(tab);
+    }
+
     // 이 패널에서 (패널 폭으로) 한 번이라도 표시한 세션들. 프리로드는 기본폭(80)으로 ConPTY 를 만들므로,
     // 이 패널에서 처음 표시되는 프리로드 세션은 패널 폭으로 리플로우되며 스크롤이 팍 튄다 → 그 첫 표시만 커버로 감춘다.
     private readonly HashSet<string> _shownSessions = new();
@@ -954,14 +993,10 @@ public partial class WorkspacePaneView : UserControl
         var parent = ParentOf(session);
         if (parent == null) return;
 
-        if (unHide && session.Hidden)
+        if (unHide && session.IsEffectivelyHidden)
         {
-            // 숨김 해제 시 원래 위치가 아니라 탭바 맨 오른쪽(끝)으로 옮긴다.
-            int idx = parent.Tabs.IndexOf(session);
-            if (idx >= 0 && idx != parent.Tabs.Count - 1) parent.Tabs.Move(idx, parent.Tabs.Count - 1);
-            session.Hidden = false;
-            // 3초 유예 종료 예약이 있으면 취소 — 프로세스 살려 둔 채 바로 복귀.
-            CancelPendingHideStop(session.Id);
+            // 직접 숨김 + 숨긴 조상 경로를 함께 해제. 새로 보이게 된 서브트리의 종료 예약도 취소.
+            foreach (var visible in parent.UnhideSessionPath(session)) CancelPendingHideStop(visible.Id);
             WorkspaceStore.Save(Projects);
         }
         // 접혀 있던 프로젝트의 세션이 선택되면 자동으로 펼쳐서 보이게 한다.
@@ -969,6 +1004,7 @@ public partial class WorkspacePaneView : UserControl
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
 
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false; // 세션으로 전환 → 이전 활성 문서 해제
+        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
         _activeTab = session; // SelectedTab DP 갱신 → 이 패널 탭바만 이 탭을 선택 강조(패널별 독립)
         _activeSession = session;
         session.IsActive = true;
@@ -1144,6 +1180,7 @@ public partial class WorkspacePaneView : UserControl
         ClearIsolationIfMismatch(tab);
 
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false; // 이전 활성 문서 하이라이트 해제
+        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
         _activeTab = tab; // SelectedTab DP 갱신 → 이 패널 탭바만 이 탭을 선택 강조(패널별 독립)
         tab.IsActive = true; // 사이드바 카드 문서 하이라이트(세션 IsActive 대응)
         if (_activeSession != null) _activeSession.IsActive = false;
@@ -1166,6 +1203,38 @@ public partial class WorkspacePaneView : UserControl
         UpdateEmptyState();
         EnsureSelectedTabVisible(tab);
         tab.Editor.Focus();
+        RefreshModelEffortDock();
+        ActiveChanged?.Invoke(this);
+    }
+
+    private void ActivateBrowserTab(BrowserTabItem tab)
+    {
+        var parent = ParentOfTab(tab);
+        if (parent == null) return;
+        ClearIsolationIfMismatch(tab);
+
+        if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false;
+        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
+        if (_activeSession != null) _activeSession.IsActive = false;
+
+        _activeTab = tab;
+        _activeSession = null;
+        tab.IsActive = true;
+        RecordActiveTab(parent, "B:" + tab.Id);
+
+        HideSessionLoading();
+        var browser = tab.Browser;
+        browser.StateKey = tab.PersistenceKey;
+        if (!ReferenceEquals(browser.Parent, BrowserHostContainer))
+        {
+            if (browser.Parent is ContentControl previousHost) previousHost.Content = null;
+            if (ReferenceEquals(BrowserHostContainer.Content, browser)) BrowserHostContainer.Content = null;
+            BrowserHostContainer.Content = browser;
+        }
+        UpdateEmptyState();
+        browser.EnsureStarted();
+        browser.ResumeContent();
+        EnsureSelectedTabVisible(tab);
         RefreshModelEffortDock();
         ActiveChanged?.Invoke(this);
     }
@@ -1314,7 +1383,35 @@ public partial class WorkspacePaneView : UserControl
             ConfirmDialog.Alert("프로젝트 없음", "먼저 왼쪽 사이드바에서 프로젝트를 추가하세요.");
             return;
         }
-        AddSession(_activeProject);
+        if (NewTabBtn.ContextMenu is not { } menu) return;
+        menu.PlacementTarget = NewTabBtn;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private void NewSessionMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeProject != null) AddSession(_activeProject);
+    }
+
+    private void NewBrowserMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeProject != null) AddBrowserTab(_activeProject);
+    }
+
+    public BrowserTabItem AddBrowserTab(ProjectItem proj)
+    {
+        var tab = new BrowserTabItem { Name = NextBrowserName(proj) };
+        proj.Tabs.Add(tab);
+        proj.IsExpanded = true;
+
+        bool isolated = _isolatedTabs != null && ReferenceEquals(_activeProject, proj);
+        if (isolated) IsolateTab(tab);
+        if (!ReferenceEquals(_activeProject, proj)) SetActiveProject(proj);
+        ActivateBrowserTab(tab);
+        WorkspaceStore.Save(Projects);
+        if (isolated) IsolatedTabOpened?.Invoke(this, tab);
+        return tab;
     }
 
     // ── 세션 로딩 스피너 ─────────────────────────────────────────
@@ -1360,6 +1457,7 @@ public partial class WorkspacePaneView : UserControl
     {
         if (_activeSession != null) _activeSession.IsActive = false;
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false;
+        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
         _activeSession = null;
         _activeTab = null; // SelectedTab DP=null → 이 패널 탭바 선택 강조 해제
         if (FileEditorHostContainer != null) FileEditorHostContainer.Content = null;
@@ -1380,26 +1478,27 @@ public partial class WorkspacePaneView : UserControl
     }
 
     public void DeleteSession(SessionItem session)
-    {
-        if (!ConfirmDialog.Show("세션 삭제",
-                $"'{session.Name}' 세션을 영구 삭제할까요?\n대화 기록(.jsonl)도 디스크에서 함께 삭제되며 복구할 수 없습니다.",
-                okLabel: "삭제", danger: true))
-            return;
-        RemoveSession(session, purge: true);
-    }
+        => DeleteSessionRequested?.Invoke(session);
 
     /// <summary>사이드바 컨텍스트 메뉴 "세션 숨기기" / 탭 X — 탭에서 숨기고,
     /// 이미 띄워 둔 ConPTY 는 <see cref="HideStopDelayMs"/> 유예 후 graceful 종료한다.
     /// 유예 안에 다시 열면 종료를 취소해 프로세스·대화 상태를 그대로 복구한다.
     /// 유예 후에는 transcript·훅 flush 후 프로세스만 내리고 추적 파일은 보존(다시 열면 resume).</summary>
     public void HideSession(SessionItem session)
+        => HideSessionRequested?.Invoke(session);
+
+    /// <summary>셸이 서브트리 숨김 상태를 적용한 뒤 각 패널의 활성 탭을 표시 가능한 이웃으로 교체.</summary>
+    public void OnSessionsHidden(IReadOnlyCollection<SessionItem> hiddenSessions)
     {
-        if (session.Hidden) return;
-        session.Hidden = true;
-        WorkspaceStore.Save(Projects);
-        ActivateNeighborAfterHide(session);
-        ScheduleGracefulStopAfterHide(session);
+        if (_activeSession != null && hiddenSessions.Contains(_activeSession))
+            ActivateNeighborAfterHide(_activeSession);
     }
+
+    /// <summary>셸이 선택한 실제 소유 패널에서 세션 하나의 지연 종료를 예약.</summary>
+    public void ScheduleSessionHide(SessionItem session) => ScheduleGracefulStopAfterHide(session);
+
+    /// <summary>조상 숨김 해제 등으로 다시 표시된 세션의 지연 종료 예약 취소.</summary>
+    public void CancelSessionHide(string roomId) => CancelPendingHideStop(roomId);
 
     /// <summary>숨김 세션의 지연 종료 예약을 취소한다(다시 열기·삭제·프로젝트 제거 공통).</summary>
     private void CancelPendingHideStop(string roomId)
@@ -1445,7 +1544,7 @@ public partial class WorkspacePaneView : UserControl
             try { cts.Dispose(); } catch { /* ignore */ }
 
             // 유예 동안 다시 열렸으면 죽이지 않는다.
-            if (!session.Hidden) return;
+            if (!session.IsEffectivelyHidden) return;
             if (TerminalSessionManager.Instance.Get(roomId) is not { IsAlive: true })
                 return;
 
@@ -1466,7 +1565,7 @@ public partial class WorkspacePaneView : UserControl
                 // dispose 플래그 해제 — 사이드바에서 다시 열 때 WireSession 이 막히지 않게.
                 try { TerminalSessionManager.Instance.ClearDisposedRoom(roomId); } catch { /* ignore */ }
 
-                if (session.Hidden)
+                if (session.IsEffectivelyHidden)
                 {
                     session.IsAlive = false;
                     session.IsBusy = false;
@@ -1478,7 +1577,7 @@ public partial class WorkspacePaneView : UserControl
                 _gracefulStopRoomIds.Remove(roomId);
                 // 종료 중에 다시 연 경우 — 아직 이 탭을 보고 있으면 이제 안전하게 resume 연결.
                 if (_pendingReactivateAfterHideStop.Remove(roomId)
-                    && !session.Hidden
+                    && !session.IsEffectivelyHidden
                     && ReferenceEquals(_activeSession, session))
                 {
                     _activeSession.IsActive = false;
@@ -1501,32 +1600,7 @@ public partial class WorkspacePaneView : UserControl
     }
 
     public void StopTrackingSession(SessionItem session)
-    {
-        if (!ConfirmDialog.Show("세션 추적 중단",
-                $"'{session.Name}' 세션을 목록에서 제거할까요?\n대화 기록은 디스크에 그대로 보존됩니다.",
-                okLabel: "중단"))
-            return;
-        RemoveSession(session, purge: false);
-    }
-
-    private void RemoveSession(SessionItem session, bool purge)
-    {
-        var parent = ParentOf(session);
-        bool wasActive = ReferenceEquals(_activeSession, session);
-        int idx = parent?.Tabs.IndexOf(session) ?? -1;
-
-        DisposeSessionProcess(session, purge);
-        parent?.Tabs.Remove(session);
-        WorkspaceStore.Save(Projects);
-
-        if (wasActive)
-        {
-            var next = PickNeighborTab(parent, idx);
-            if (next is SessionItem s) ActivateSession(s);
-            else if (next is FileTabItem f) ActivateFileTab(f);
-            else ClearActiveSession();
-        }
-    }
+        => StopTrackingSessionRequested?.Invoke(session);
 
     /// <summary>닫힌 탭(원래 idx) 기준 왼쪽 우선, 없으면 오른쪽에서 표시 가능한 탭 선택.
     /// FilterTab 을 함께 봐 "이 패널에 실제로 보이는" 탭만 고른다 — 분할 시 반대쪽 패널로 넘긴(이 패널에선
@@ -1534,7 +1608,7 @@ public partial class WorkspacePaneView : UserControl
     private TabItemBase? PickNeighborTab(ProjectItem? parent, int removedIdx)
     {
         if (parent == null || removedIdx < 0) return null;
-        bool Visible(TabItemBase t) => !(t is SessionItem s && s.Hidden) && FilterTab(t);
+        bool Visible(TabItemBase t) => !(t is SessionItem s && s.IsEffectivelyHidden) && FilterTab(t);
         for (int i = removedIdx - 1; i >= 0; i--)
             if (Visible(parent.Tabs[i])) return parent.Tabs[i];
         for (int i = removedIdx; i < parent.Tabs.Count; i++)
@@ -1552,6 +1626,7 @@ public partial class WorkspacePaneView : UserControl
         var next = PickNeighborTab(parent, idx);
         if (next is SessionItem ns) ActivateSession(ns);
         else if (next is FileTabItem nf) ActivateFileTab(nf);
+        else if (next is BrowserTabItem nb) ActivateBrowserTab(nb);
         else ClearActiveSession();
     }
 
@@ -1575,6 +1650,51 @@ public partial class WorkspacePaneView : UserControl
             var next = PickNeighborTab(parent, idx);
             if (next is SessionItem s) ActivateSession(s);
             else if (next is FileTabItem f) ActivateFileTab(f);
+            else if (next is BrowserTabItem b) ActivateBrowserTab(b);
+            else ClearActiveSession();
+        }
+    }
+
+    /// <summary>셸이 세션 서브트리를 컬렉션에서 제거한 뒤 활성 참조와 이웃 선택을 정리.</summary>
+    public void OnSessionsRemoved(ProjectItem parent, IReadOnlyCollection<SessionItem> removed, int removedIndex)
+    {
+        if (_activeSession == null || !removed.Contains(_activeSession)) return;
+        _activeSession.IsActive = false;
+        _activeSession = null;
+        _activeTab = null;
+        var next = PickNeighborTab(parent, removedIndex);
+        if (next is SessionItem s) ActivateSession(s, unHide: false);
+        else if (next is FileTabItem f) ActivateFileTab(f);
+        else if (next is BrowserTabItem b) ActivateBrowserTab(b);
+        else ClearActiveSession();
+    }
+
+    public void CloseBrowserTab(BrowserTabItem tab) => RemoveBrowserTab(tab);
+
+    private void RequestCloseBrowserTab(BrowserTabItem tab)
+    {
+        if (BrowserTabCloseRequested != null) BrowserTabCloseRequested(tab);
+        else RemoveBrowserTab(tab);
+    }
+
+    private void RemoveBrowserTab(BrowserTabItem tab)
+    {
+        var parent = ParentOfTab(tab);
+        bool wasActive = ReferenceEquals(_activeTab, tab);
+        int idx = parent?.Tabs.IndexOf(tab) ?? -1;
+        if (ReferenceEquals(BrowserHostContainer.Content, tab.Browser))
+            BrowserHostContainer.Content = null;
+        tab.Browser.DisposeAll();
+        SettingsService.RemoveBrowserLastUrl(tab.PersistenceKey);
+        parent?.Tabs.Remove(tab);
+        PersistWorkspace();
+
+        if (wasActive)
+        {
+            var next = PickNeighborTab(parent, idx);
+            if (next is SessionItem s) ActivateSession(s);
+            else if (next is FileTabItem f) ActivateFileTab(f);
+            else if (next is BrowserTabItem b) ActivateBrowserTab(b);
             else ClearActiveSession();
         }
     }
@@ -1745,6 +1865,7 @@ public partial class WorkspacePaneView : UserControl
         {
             if (tab is SessionItem s) OpenSession(s);
             else if (tab is FileTabItem f) ActivateFileTab(f);
+            else if (tab is BrowserTabItem b) ActivateBrowserTab(b);
         }
     }
 
@@ -1773,6 +1894,25 @@ public partial class WorkspacePaneView : UserControl
 
             cm.Items.Add(new Separator());
             cm.Items.Add(BuildSplitMoveItem(file));
+        }
+        else if (tab is BrowserTabItem browser)
+        {
+            var closeItem = new MenuItem { Header = "닫기", Icon = BuildMenuIcon("IconX") };
+            closeItem.Click += (_, _) => RequestCloseBrowserTab(browser);
+            cm.Items.Add(closeItem);
+
+            var closeOthers = new MenuItem { Header = "다른 브라우저 모두 닫기", Icon = BuildMenuIcon("IconX") };
+            closeOthers.Click += (_, _) =>
+            {
+                var parent = ParentOfTab(browser);
+                if (parent == null) return;
+                foreach (var other in parent.Tabs.OfType<BrowserTabItem>().ToList())
+                    if (!ReferenceEquals(other, browser)) RequestCloseBrowserTab(other);
+            };
+            cm.Items.Add(closeOthers);
+
+            cm.Items.Add(new Separator());
+            cm.Items.Add(BuildSplitMoveItem(browser));
         }
         else if (tab is SessionItem s)
         {
@@ -1882,6 +2022,10 @@ public partial class WorkspacePaneView : UserControl
         else if (tab is FileTabItem f)
         {
             f.Editor.RequestClose();
+        }
+        else if (tab is BrowserTabItem b)
+        {
+            RequestCloseBrowserTab(b);
         }
     }
 
@@ -2437,6 +2581,7 @@ public partial class WorkspacePaneView : UserControl
         // md 를 파킹해 걷으면 이미 페인트된 터미널이 그대로 드러난다.
         UnparkTerminalHost();
         ParkFileEditorHost();
+        ParkBrowserHost();
         // 준비된 세션이면 커버를 즉시(페이드) 걷는다 — 콜드면 TerminalReady 가 HideSessionLoadingIf 로 걷는다.
         if (_terminal.IsReady(s.Id)) HideSessionLoading();
     }
@@ -2497,6 +2642,32 @@ public partial class WorkspacePaneView : UserControl
         FileEditorHostContainer.Visibility = Visibility.Visible; // 다이얼로그 suspend(Collapsed) 복귀 포함
     }
 
+    private bool _browserParked;
+
+    private void ParkBrowserHost()
+    {
+        if (_browserParked) return;
+        _browserParked = true;
+        BrowserHostContainer.Width = 0;
+        BrowserHostContainer.Height = 0;
+        BrowserHostContainer.HorizontalAlignment = HorizontalAlignment.Left;
+        BrowserHostContainer.VerticalAlignment = VerticalAlignment.Top;
+        BrowserHostContainer.Visibility = Visibility.Visible;
+    }
+
+    private void UnparkBrowserHost()
+    {
+        if (_browserParked)
+        {
+            _browserParked = false;
+            BrowserHostContainer.Width = double.NaN;
+            BrowserHostContainer.Height = double.NaN;
+            BrowserHostContainer.HorizontalAlignment = HorizontalAlignment.Stretch;
+            BrowserHostContainer.VerticalAlignment = VerticalAlignment.Stretch;
+        }
+        BrowserHostContainer.Visibility = Visibility.Visible;
+    }
+
     private void UpdateEmptyState()
     {
         bool hasActive = _activeTab != null;
@@ -2505,12 +2676,13 @@ public partial class WorkspacePaneView : UserControl
         {
             // 콜드 게이트 중이면 unpark 과 파일 에디터 파킹 둘 다 ACK(RevealTerminalAfterGate)까지 미룬다 —
             // 파일(md)에서 세션 전환 시 md 를 먼저 파킹하면 airspace 갭에 검정이 새므로, md 를 띄워둔 채 대기.
-            if (!_gateUnpark) { UnparkTerminalHost(); ParkFileEditorHost(); }
+            if (!_gateUnpark) { UnparkTerminalHost(); ParkFileEditorHost(); ParkBrowserHost(); }
             TerminalHostContainer.Visibility = Visibility.Visible;
         }
         else if (_activeTab is FileTabItem)
         {
             ParkTerminalHost();
+            ParkBrowserHost();
             // 전환 커버 중이면 파일 에디터(md=WebView2 는 airspace 로 WPF 커튼에 안 가려짐)를 0×0 주차로
             // 감추고 TerminalCurtain(단색)으로 대신 가린다 → reveal 동기화 시 함께 나타나게(파일 조기표시 방지).
             // Collapsed 로 감추면 md HWND 생성/재표시가 reveal 순간으로 밀려 컴포지터 첫 프레임(검정)이
@@ -2518,15 +2690,23 @@ public partial class WorkspacePaneView : UserControl
             if (_coverActive) ParkFileEditorHost();
             else UnparkFileEditorHost();
         }
+        else if (_activeTab is BrowserTabItem)
+        {
+            ParkTerminalHost();
+            ParkFileEditorHost();
+            if (_coverActive) ParkBrowserHost();
+            else UnparkBrowserHost();
+        }
         else
         {
             ParkTerminalHost();
             ParkFileEditorHost();
+            ParkBrowserHost();
         }
 
         // 파일 패널 커버: 커버 중 & 파일 탭일 때만 단색 커튼 노출(세션은 웹 레이어 #xfer-cover 가 담당).
         // 숨김은 EndCover 가 처리(fade). (커튼은 다이얼로그 suspend 와도 공유하지만 프로젝트 전환과 시점이 안 겹침.)
-        if (_coverActive && _activeTab is FileTabItem)
+        if (_coverActive && _activeTab is FileTabItem or BrowserTabItem)
         { TerminalCurtain.Opacity = 1; TerminalCurtain.Visibility = Visibility.Visible; }
 
         EmptyState.Visibility = hasActive ? Visibility.Collapsed : Visibility.Visible;
@@ -2536,8 +2716,9 @@ public partial class WorkspacePaneView : UserControl
             NewTabBtn.Visibility = (!_tabDragActive && _activeProject != null) ? Visibility.Visible : Visibility.Collapsed;
         ApplyProjectInfoHeaderVisibility();
 
-        SessionHeaderBar.Visibility = hasActive ? Visibility.Visible : Visibility.Collapsed;
-        if (hasActive)
+        SessionHeaderBar.Visibility = hasActive && _activeTab is not BrowserTabItem
+            ? Visibility.Visible : Visibility.Collapsed;
+        if (hasActive && _activeTab is not BrowserTabItem)
         {
             if (_activeTab is SessionItem sess)
             {
@@ -2655,6 +2836,16 @@ public partial class WorkspacePaneView : UserControl
         return tab;
     }
 
+    /// <summary>분할 복원용 — 저장된 ID의 브라우저 탭을 지정 프로젝트에서 열어 반환.</summary>
+    public BrowserTabItem? OpenBrowserTabForPartner(ProjectItem proj, string id)
+    {
+        if (!ReferenceEquals(_activeProject, proj)) SetActiveProject(proj);
+        var tab = proj.Tabs.OfType<BrowserTabItem>().FirstOrDefault(b => b.Id == id);
+        if (tab == null) return null;
+        ActivateBrowserTab(tab);
+        return tab;
+    }
+
     /// <summary>지정 프로젝트에 파일 편집기 탭을 만들어 Tabs 에 추가하고 반환(활성화는 호출부 담당).
     /// 같은 경로 탭이 이미 있으면 그것을 반환, 경로가 비었거나 로드 실패면 null.</summary>
     private FileTabItem? CreateFileTab(ProjectItem proj, string path)
@@ -2702,6 +2893,11 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>터미널 WebView2 를 스냅샷/커튼으로 대체하고 숨긴다. FileExplorer 는 셸이 처리.</summary>
     public async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
+        if (_activeTab is BrowserTabItem browser)
+        {
+            await browser.Browser.SuspendContentAsync();
+            return;
+        }
         // 파일 편집기(WebView2) 처리
         if (_activeTab is FileTabItem file)
     {
@@ -2751,6 +2947,11 @@ public partial class WorkspacePaneView : UserControl
             TerminalHostContainer.Visibility = Visibility.Visible;
         if (_activeTab is FileTabItem)
             FileEditorHostContainer.Visibility = Visibility.Visible;
+        if (_activeTab is BrowserTabItem browser)
+        {
+            UnparkBrowserHost();
+            browser.Browser.ResumeContent();
+        }
         TerminalSnapshot.Visibility = Visibility.Collapsed;
         TerminalSnapshot.Source = null;
         TerminalCurtain.Visibility = Visibility.Collapsed;
@@ -2762,6 +2963,11 @@ public partial class WorkspacePaneView : UserControl
     /// 한 번에 크게 변하는 전환용(좌상단 고정은 커지는 쪽 영역이 배경색만 남아 '비어' 보인다).</summary>
     public async Task SuspendTerminalOnlyAsync(bool anchorTopLeft = false, bool webCover = false, bool stretchCover = false)
     {
+        if (_activeTab is BrowserTabItem browser)
+        {
+            await browser.Browser.SuspendContentAsync();
+            return;
+        }
         if (_activeSession == null) return;
         double cw = TerminalHostContainer.ActualWidth, ch = TerminalHostContainer.ActualHeight;
 
@@ -2824,6 +3030,11 @@ public partial class WorkspacePaneView : UserControl
             _shutdownHide = ShutdownHide.FileEditor;
             return;
         }
+        if (_activeTab is BrowserTabItem browser)
+        {
+            await browser.Browser.SuspendContentAsync();
+            return;
+        }
         if (_activeSession == null) return;
         var png = await _terminal.CapturePngAsync();
         if (png != null)
@@ -2865,6 +3076,12 @@ public partial class WorkspacePaneView : UserControl
 
     public void ResumeTerminalOnly(bool webCover = false)
     {
+        if (_activeTab is BrowserTabItem browser)
+        {
+            UnparkBrowserHost();
+            browser.Browser.ResumeContent();
+            return;
+        }
         // webCover: HWND 를 숨긴 적이 없으므로 되살릴 것도, WPF 스냅샷도 없다. 최종 폭을 확정(UpdateLayout)해
         // JS 에 넘겨, clientWidth 가 거기 근접하면 fit 억제 해제 + fit + ConPTY 재동기 후 커버 이미지를
         // 라이브 터미널로 크로스페이드한다 → resume 리플로우가 커버 아래서 일어나 안 보이고, HWND 전환 플래시도 없다.

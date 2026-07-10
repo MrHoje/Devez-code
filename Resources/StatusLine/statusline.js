@@ -1,4 +1,4 @@
-// DEVEZCODE-STATUSLINE v8 — Devez/DevezCode 공용 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
+// DEVEZCODE-STATUSLINE v9 — Devez/DevezCode 공용 관리 스크립트. 번들과 내용이 다르면 앱이 동기화한다.
 // 두 앱(devez, DevezCode)이 같은 사용자 ~/.claude 를 공유하므로 이 파일도 공유·동일 내용으로 관리된다.
 const _fs = require("fs"), _path = require("path"), _os = require("os");
 const _cfgFile = _path.join(_os.homedir(), ".claude", "statusline-config.json");
@@ -77,13 +77,18 @@ process.stdin.on("end", () => {
       const startDir = j.cwd || (j.workspace && j.workspace.current_dir);
       if (startDir) gitBranch = findGitBranch(startDir);
     } catch (e) {}
-    // rate_limits: claude 가 넘긴 live 값 우선. 없으면(세션 외/미지원) DevezCode 가 OAuth API 로
-    // 3분마다 떨군 폴백 파일을 읽어 5h/주간 표시를 유지한다(같은 모양: used_percentage + resets_at(unix초)).
+    // 장기 실행 Claude daemon 은 로그인 전환 뒤에도 이전 계정의 rate_limits 를 내보낼 수 있다.
+    // DevezCode 가 현재 OAuth 자격증명으로 3분마다 기록한 API 값이 최근(10분 이내)이면 기준값으로
+    // 사용하고, 앱 미실행/네트워크 오류로 API 파일이 오래됐을 때만 세션 live 값을 사용한다.
     let rl = j.rate_limits || {};
-    if (!(rl.five_hour && rl.five_hour.used_percentage != null) && process.env.APPDATA) {
+    if (process.env.APPDATA) {
       try {
-        const _apiRl = JSON.parse(_fs.readFileSync(_path.join(process.env.APPDATA, "DevezCode", "claude", "api-usage.json"), "utf8"));
-        if (_apiRl && (_apiRl.five_hour || _apiRl.seven_day)) rl = _apiRl;
+        const _apiPath = _path.join(process.env.APPDATA, "DevezCode", "claude", "api-usage.json");
+        const _apiAgeMs = Date.now() - _fs.statSync(_apiPath).mtimeMs;
+        if (_apiAgeMs <= 10 * 60 * 1000) {
+          const _apiRl = JSON.parse(_fs.readFileSync(_apiPath, "utf8"));
+          if (_apiRl && (_apiRl.five_hour || _apiRl.seven_day)) rl = _apiRl;
+        }
       } catch (e) {}
     }
     const rl5h = rl.five_hour && rl.five_hour.used_percentage != null ? Math.round(rl.five_hour.used_percentage) : null;

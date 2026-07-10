@@ -20,6 +20,7 @@ public static class UserStatusLineInstaller
     private static string ClaudeDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
     private static string StatusLineJsPath => Path.Combine(ClaudeDir, "statusline.js");
+    private static string StatusLineProxyPath => Path.Combine(ClaudeDir, "devezcode-statusline-proxy.ps1");
     private static string SettingsJsonPath => Path.Combine(ClaudeDir, "settings.json");
 
     private static string BundledScriptPath => Path.Combine(
@@ -56,7 +57,9 @@ public static class UserStatusLineInstaller
             if (!sl.TryGetProperty("command", out var cmd)) return false;
             if (cmd.ValueKind != JsonValueKind.String) return false;
             var cmdStr = cmd.GetString() ?? "";
-            return cmdStr.Contains("statusline.js", StringComparison.OrdinalIgnoreCase);
+            return cmdStr.Contains("statusline.js", StringComparison.OrdinalIgnoreCase) &&
+                   cmdStr.Contains("devezcode-statusline-proxy.ps1", StringComparison.OrdinalIgnoreCase) &&
+                   cmdStr.Contains("-WindowStyle Hidden", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }
@@ -66,7 +69,69 @@ public static class UserStatusLineInstaller
     public static void EnsureInstalled()
     {
         try { InstallScript(); } catch { /* best effort */ }
+        try { EnsureProxyInstalled(); } catch { /* best effort */ }
         if (!IsInstalled()) { try { InstallSettingsEntry(); } catch { /* best effort */ } }
+    }
+
+    /// <summary>
+    /// 콘솔용 node.exe 를 CreateNoWindow 로 실행하고 stdin/stdout 을 그대로 중계하는 hidden PowerShell
+    /// proxy command. Claude 전역/방별 statusLine 이 별도 콘솔 창을 만들지 않게 공용 사용한다.
+    /// </summary>
+    public static string? TryBuildHiddenNodeCommand(string scriptPath, string? scriptArg = null)
+    {
+        var node = ResolveNodePath();
+        if (node is null) return null;
+        try { EnsureProxyInstalled(); } catch { return null; }
+        if (!File.Exists(StatusLineProxyPath)) return null;
+
+        var command =
+            $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden " +
+            $"-File \"{StatusLineProxyPath}\" -NodePath \"{node}\" -ScriptPath \"{scriptPath}\"";
+        if (!string.IsNullOrEmpty(scriptArg)) command += $" -ScriptArg \"{scriptArg}\"";
+        return command;
+    }
+
+    private static void EnsureProxyInstalled()
+    {
+        Directory.CreateDirectory(ClaudeDir);
+        const string script = """
+            param(
+              [Parameter(Mandatory=$true)][string]$NodePath,
+              [Parameter(Mandatory=$true)][string]$ScriptPath,
+              [string]$ScriptArg = ''
+            )
+            $ErrorActionPreference = 'SilentlyContinue'
+            try {
+              $reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)
+              $raw = $reader.ReadToEnd()
+              $reader.Dispose()
+
+              $psi = New-Object System.Diagnostics.ProcessStartInfo
+              $psi.FileName = $NodePath
+              $escapedScript = $ScriptPath.Replace('"', '\"')
+              $psi.Arguments = '"' + $escapedScript + '"'
+              if ($ScriptArg) { $psi.Arguments += ' "' + $ScriptArg.Replace('"', '\"') + '"' }
+              $psi.UseShellExecute = $false
+              $psi.CreateNoWindow = $true
+              $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+              $psi.RedirectStandardInput = $true
+              $psi.RedirectStandardOutput = $true
+              $psi.RedirectStandardError = $true
+
+              $p = [System.Diagnostics.Process]::Start($psi)
+              if (-not $p) { exit 0 }
+              $outTask = $p.StandardOutput.ReadToEndAsync()
+              $errTask = $p.StandardError.ReadToEndAsync()
+              $p.StandardInput.Write($raw)
+              $p.StandardInput.Close()
+              $p.WaitForExit()
+              $out = $outTask.GetAwaiter().GetResult()
+              [Console]::Out.Write($out)
+              exit $p.ExitCode
+            } catch { exit 0 }
+            """;
+        if (!File.Exists(StatusLineProxyPath) || File.ReadAllText(StatusLineProxyPath) != script)
+            File.WriteAllText(StatusLineProxyPath, script, new UTF8Encoding(false));
     }
 
     /// <summary>번들 statusline.js 를 ~/.claude\statusline.js 로 동기화.
@@ -107,22 +172,15 @@ public static class UserStatusLineInstaller
         catch { root = JsonNode.Parse("{}"); }
         if (root is not JsonObject rootObj) rootObj = JsonNode.Parse("{}") as JsonObject ?? new JsonObject();
 
-        // 이미 우리 statusline.js 를 가리키는 statusLine 이 있으면 그대로 둠
-        if (rootObj["statusLine"] is JsonObject existing &&
-            existing["command"]?.GetValue<string>()?.Contains("statusline.js", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return;
-        }
-
-        var node = FindNodePath();
-        if (node is null) return; // node 가 없으면 statusline 도 의미 없음 — 조용히 스킵
+        var command = TryBuildHiddenNodeCommand(StatusLineJsPath);
+        if (command is null) return; // node 가 없으면 statusline 도 의미 없음 — 조용히 스킵
 
         // refreshInterval 은 의도적으로 넣지 않음 — event-driven 으로 충분,
         // 명시 주기는 idle 중 CPU 낭비.
         rootObj["statusLine"] = new JsonObject
         {
             ["type"] = "command",
-            ["command"] = $"\"{node}\" \"{StatusLineJsPath}\"",
+            ["command"] = command,
         };
 
         Directory.CreateDirectory(ClaudeDir);

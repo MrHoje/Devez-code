@@ -21,7 +21,7 @@ public abstract class NotifyBase : INotifyPropertyChanged
 }
 
 /// <summary>중앙 탭 종류. 탭 아이콘·콘텐츠 분기에 사용.</summary>
-public enum TabKind { Session, File }
+public enum TabKind { Session, File, Browser }
 
 /// <summary>분할(2분할) 시 이 프로젝트가 어느 패널에 떠 있는지. 사이드바 카드의 패널 배지 표시에 사용.
 /// None=어느 패널에도 없음(또는 비분할), Left=좌 패널(PaneA), Right=우 패널(PaneB).</summary>
@@ -90,6 +90,47 @@ public sealed class SessionItem : TabItemBase
     /// 동일 위치에 "잠금 해제"를 표시한다. 프로젝트 삭제 시 잠긴 세션이 있으면 차단.</summary>
     private bool _isLocked;
     public bool IsLocked { get => _isLocked; set => Set(ref _isLocked, value); }
+
+    /// <summary>사이드바 세션 트리의 직접 부모 ID. null이면 최상위 세션. workspace.json에 영속.</summary>
+    private string? _parentSessionId;
+    public string? ParentSessionId
+    {
+        get => _parentSessionId;
+        set => Set(ref _parentSessionId, string.IsNullOrWhiteSpace(value) ? null : value);
+    }
+
+    /// <summary>자기 또는 조상 세션이 직접 숨김이면 true. 탭/프로세스 표시 판정용 런타임 파생 상태.</summary>
+    private bool _isEffectivelyHidden;
+    public bool IsEffectivelyHidden { get => _isEffectivelyHidden; private set => Set(ref _isEffectivelyHidden, value); }
+
+    /// <summary>최상위 루트가 숨김이면 true. 사이드바 하단 전역 숨김 목록 이동 판정용.</summary>
+    private bool _isSidebarGloballyHidden;
+    public bool IsSidebarGloballyHidden { get => _isSidebarGloballyHidden; private set => Set(ref _isSidebarGloballyHidden, value); }
+
+    private int _treeDepth;
+    public int TreeDepth
+    {
+        get => _treeDepth;
+        private set
+        {
+            if (!Set(ref _treeDepth, value)) return;
+            OnPropertyChanged(nameof(TreeIndent));
+        }
+    }
+
+    private bool _hasSessionParent;
+    public bool HasSessionParent { get => _hasSessionParent; private set => Set(ref _hasSessionParent, value); }
+
+    /// <summary>사이드바 행의 트리 들여쓰기 폭.</summary>
+    public System.Windows.GridLength TreeIndent => new(TreeDepth * 14d);
+
+    internal void ApplyTreePresentation(int depth, bool hasParent, bool effectivelyHidden, bool globallyHidden)
+    {
+        TreeDepth = Math.Max(0, depth);
+        HasSessionParent = hasParent;
+        IsEffectivelyHidden = effectivelyHidden;
+        IsSidebarGloballyHidden = globallyHidden;
+    }
 }
 
 /// <summary>우측 세션 완료 기록 패널에 쌓는 런타임 완료 이벤트. 최신 항목이 위에 표시된다.</summary>
@@ -165,6 +206,29 @@ public sealed class FileTabItem : TabItemBase
     public event EventHandler? CloseRequested;
 
     internal void RaiseCloseRequested() => CloseRequested?.Invoke(this, EventArgs.Empty);
+}
+
+/// <summary>중앙 영역에 표시하는 WebView2 브라우저 탭. 탭 ID를 키로 방문 기록을 로컬 저장한다.</summary>
+public sealed class BrowserTabItem : TabItemBase
+{
+    public override TabKind Kind => TabKind.Browser;
+    public override string Title => Name;
+
+    private string _name = "웹 브라우저";
+    public string Name
+    {
+        get => _name;
+        set { if (Set(ref _name, value)) OnPropertyChanged(nameof(Title)); }
+    }
+
+    /// <summary>settings.json 의 브라우저 URL/히스토리 저장 키. 프로젝트 경로와 분리해 탭별 상태를 유지한다.</summary>
+    public string PersistenceKey => "__workspace_browser_tab__:" + Id;
+
+    /// <summary>탭마다 독립 WebView2 인스턴스와 방문 기록을 가진다.</summary>
+    public BrowserHostView Browser { get; init; } = new();
+
+    private bool _isActive;
+    public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
 }
 
 /// <summary>프로젝트에 등록한 바로가기. 대상 파일 경로 + 표시 이름 + 관리자 실행 여부를 보관하고
@@ -254,7 +318,7 @@ public sealed class ProjectItem : NotifyBase
     public string ArchivedDateDisplay => string.IsNullOrEmpty(ArchivedAt) ? ""
         : "보관: " + (ArchivedAt.Length >= 10 ? ArchivedAt[..10] : ArchivedAt);
 
-    /// <summary>중앙 탭 스트립에 그대로 바인딩되는 통합 컬렉션(세션 + 파일 탭).
+    /// <summary>중앙 탭 스트립에 그대로 바인딩되는 통합 컬렉션(세션 + 파일 + 브라우저 탭).
     /// 사이드바는 Sessions(동기 뷰)로 세션만 골라 렌더한다.</summary>
     public ObservableCollection<TabItemBase> Tabs { get; } = new();
 
@@ -263,11 +327,11 @@ public sealed class ProjectItem : NotifyBase
     /// 한 번 소비해 실제 FileTabItem 으로 만든다.</summary>
     public List<string> PendingOpenFiles { get; set; } = new();
 
-    /// <summary>재시작 복원용 — 저장 시점의 전체 탭 순서(세션+문서 섞인 순서, "S:id"/"F:path"). 시작 시
-    /// 세션+파일 탭이 모두 복원된 뒤 이 순서로 Tabs 를 1회 재배열한다(문서가 끝으로 몰려 끼임 순서를 잃는 것 방지).</summary>
+    /// <summary>재시작 복원용 — 저장 시점의 전체 탭 순서(세션+문서+브라우저, "S:id"/"F:path"/"B:id"). 시작 시
+    /// 세션+파일+브라우저 탭이 모두 복원된 뒤 이 순서로 Tabs 를 1회 재배열한다(문서가 끝으로 몰려 끼임 순서를 잃는 것 방지).</summary>
     public List<string> PendingTabOrder { get; set; } = new();
 
-    /// <summary>이 프로젝트에서 마지막으로 활성화했던 탭 참조. 형식: "S:&lt;세션ID&gt;" 또는 "F:&lt;파일경로&gt;".
+    /// <summary>이 프로젝트에서 마지막으로 활성화했던 탭 참조. 형식: "S:&lt;세션ID&gt;", "F:&lt;파일경로&gt;", "B:&lt;브라우저ID&gt;".
     /// 프로젝트를 다시 선택할 때 이 탭을 복원한다(없거나 못 찾으면 기본 우선순위로 폴백). workspace.json 에 영속.</summary>
     public string? LastActiveTabRef { get; set; }
 
@@ -281,7 +345,7 @@ public sealed class ProjectItem : NotifyBase
     /// <summary>분할 파트너 파일 경로(우측 패널이 파일 탭이었을 때). 세션ID보다 우선순위 낮음. workspace.json 에 영속.</summary>
     public string? SplitPartnerFilePath { get; set; }
 
-    /// <summary>같은 프로젝트를 분할했을 때 우측 패널에 격리해 둔 탭들의 참조 목록("S:&lt;id&gt;"/"F:&lt;path&gt;").
+    /// <summary>같은 프로젝트를 분할했을 때 우측 패널에 격리해 둔 탭들의 참조 목록("S:&lt;id&gt;"/"F:&lt;path&gt;"/"B:&lt;id&gt;").
     /// 파트너 하나만이 아니라 우측 전체 탭 집합을 복원하기 위함(비면 파트너 필드로 폴백). workspace.json 에 영속.</summary>
     public List<string> SplitRightTabRefs { get; set; } = new();
 
@@ -291,6 +355,8 @@ public sealed class ProjectItem : NotifyBase
     public ObservableCollection<TabItemBase> LeftItems { get; } = new();
     /// <summary>카드 하단 그룹 = 분할일 때 '우측 패널' 탭(세션+열린 문서). 비분할이면 빈다. 사이드바 바인딩.</summary>
     public ObservableCollection<TabItemBase> RightItems { get; } = new();
+    private List<TabItemBase>? _liveLeftSource;
+    private List<TabItemBase>? _liveRightSource;
 
     private bool _isSplitView;
     /// <summary>이 프로젝트가 지금 실제로 분할(좌/우) 표시 중인지 — 카드가 좌/우 그룹 라벨/우측그룹을 보일지 분기.</summary>
@@ -302,19 +368,21 @@ public sealed class ProjectItem : NotifyBase
     /// <summary>라이브 분할 그룹 적용 — MainWindow 가 좌/우 패널의 실제 표시 탭으로 밀어넣는다(세션+문서).</summary>
     public void ApplyLiveGroups(IReadOnlyList<TabItemBase> left, IReadOnlyList<TabItemBase> right)
     {
-        SyncObservable(LeftItems, left);
-        SyncObservable(RightItems, right);
+        _liveLeftSource = left.ToList();
+        _liveRightSource = right.ToList();
         HasRightItems = right.Count > 0;
         IsSplitView = right.Count > 0;
+        RefreshSidebarGroups();
     }
 
     /// <summary>비분할(단일 목록)로 되돌림 — 상단 그룹=전체 탭, 우측 그룹 비움.</summary>
     public void ClearLiveGroups()
     {
-        SyncObservable(LeftItems, Tabs);
-        SyncObservable(RightItems, System.Array.Empty<TabItemBase>());
+        _liveLeftSource = null;
+        _liveRightSource = null;
         HasRightItems = false;
         IsSplitView = false;
+        RefreshSidebarGroups();
     }
 
     /// <summary>desired 와 최소 변경(제거/삽입/이동)으로 동기화. Clear+전체 재추가를 쓰면 Count 가
@@ -415,7 +483,7 @@ public sealed class ProjectItem : NotifyBase
             if (e.NewItems != null)
                 foreach (SessionItem s in e.NewItems) s.PropertyChanged += OnSessionPropChanged;
             RaiseSessionStatus();
-            RefreshHiddenSessions();
+            RefreshSessionTree();
         };
         HiddenSessions.CollectionChanged += (_, _) =>
         {
@@ -430,30 +498,272 @@ public sealed class ProjectItem : NotifyBase
         // '삭제'만은 즉시 반영한다 — 안 그러면 탭 헤더에선 지워져도 카드엔 남는다(새로고침 누락).
         Tabs.CollectionChanged += (_, e) =>
         {
-            if (!IsSplitView) { SyncObservable(LeftItems, Tabs); return; }
+            if (!IsSplitView) { RefreshSidebarGroups(); return; }
             if (e.Action is NotifyCollectionChangedAction.Remove or NotifyCollectionChangedAction.Reset)
             {
                 var live = new HashSet<TabItemBase>(Tabs);
-                for (int i = LeftItems.Count - 1; i >= 0; i--) if (!live.Contains(LeftItems[i])) LeftItems.RemoveAt(i);
-                for (int i = RightItems.Count - 1; i >= 0; i--) if (!live.Contains(RightItems[i])) RightItems.RemoveAt(i);
-                HasRightItems = RightItems.Count > 0;
+                _liveLeftSource?.RemoveAll(t => !live.Contains(t));
+                _liveRightSource?.RemoveAll(t => !live.Contains(t));
             }
+            RefreshSidebarGroups();
         };
-        SyncObservable(LeftItems, Tabs);
+        RefreshSidebarGroups();
     }
 
     private void OnSessionPropChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(SessionItem.IsAlive) or nameof(SessionItem.IsBusy))
             RaiseSessionStatus();
-        if (e.PropertyName == nameof(SessionItem.Hidden))
-            RefreshHiddenSessions();
+        if (e.PropertyName is nameof(SessionItem.Hidden) or nameof(SessionItem.ParentSessionId))
+            RefreshSessionTree();
     }
 
-    /// <summary>HiddenSessions 를 Sessions 기준(Hidden=true만)으로 재계산. 내용/순서가 같으면 그대로 두어
-    /// 사이드바 깜빡임을 방지한다.</summary>
-    private void RefreshHiddenSessions()
-        => SyncObservable(HiddenSessions, Sessions.Where(s => s.Hidden).ToList());
+    /// <summary>부모 관계·직접 숨김 상태에서 깊이/유효 숨김/전역 숨김을 계산하고 표시 컬렉션을 갱신.</summary>
+    public void RefreshSessionTree()
+    {
+        var byId = Sessions.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        foreach (var session in Sessions)
+        {
+            int depth = 0;
+            bool effectivelyHidden = session.Hidden;
+            bool hasParent = false;
+            var root = session;
+            var current = session;
+            var visited = new HashSet<string>(StringComparer.Ordinal) { session.Id };
+
+            while (!string.IsNullOrEmpty(current.ParentSessionId)
+                   && byId.TryGetValue(current.ParentSessionId, out var parent)
+                   && visited.Add(parent.Id))
+            {
+                hasParent = true;
+                depth++;
+                effectivelyHidden |= parent.Hidden;
+                root = parent;
+                current = parent;
+            }
+
+            session.ApplyTreePresentation(depth, hasParent, effectivelyHidden, root.Hidden);
+        }
+
+        SyncObservable(HiddenSessions, BuildHiddenTreeOrder());
+        RefreshSidebarGroups();
+    }
+
+    /// <summary>로드 완료 후 끊어진 부모 참조와 순환 관계를 제거.</summary>
+    public void NormalizeSessionTree()
+    {
+        var byId = Sessions.ToDictionary(s => s.Id, StringComparer.Ordinal);
+        foreach (var session in Sessions)
+        {
+            if (string.IsNullOrEmpty(session.ParentSessionId)) continue;
+            if (!byId.ContainsKey(session.ParentSessionId) || session.ParentSessionId == session.Id)
+            {
+                session.ParentSessionId = null;
+                continue;
+            }
+
+            var visited = new HashSet<string>(StringComparer.Ordinal) { session.Id };
+            var current = session;
+            while (!string.IsNullOrEmpty(current.ParentSessionId)
+                   && byId.TryGetValue(current.ParentSessionId, out var parent))
+            {
+                if (!visited.Add(parent.Id))
+                {
+                    session.ParentSessionId = null;
+                    break;
+                }
+                current = parent;
+            }
+        }
+        RefreshSessionTree();
+    }
+
+    public SessionItem? SessionParentOf(SessionItem session)
+        => string.IsNullOrEmpty(session.ParentSessionId)
+            ? null
+            : Sessions.FirstOrDefault(s => s.Id == session.ParentSessionId);
+
+    public IReadOnlyList<SessionItem> GetSessionSubtree(SessionItem root)
+    {
+        var result = new List<SessionItem>();
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        void Add(SessionItem item)
+        {
+            if (!visited.Add(item.Id)) return;
+            result.Add(item);
+            foreach (var child in Sessions.Where(s => s.ParentSessionId == item.Id)) Add(child);
+        }
+        if (Sessions.Contains(root)) Add(root);
+        return result;
+    }
+
+    public bool CanSetSessionParent(SessionItem child, SessionItem parent)
+        => Sessions.Contains(child) && Sessions.Contains(parent)
+           && !ReferenceEquals(child, parent)
+           && !GetSessionSubtree(child).Contains(parent);
+
+    /// <summary>child 서브트리를 parent의 마지막 자식으로 붙이고 세션 탭 상대 순서도 트리 순서로 맞춤.</summary>
+    public bool SetSessionParent(SessionItem child, SessionItem parent)
+    {
+        if (!CanSetSessionParent(child, parent)) return false;
+        var subtree = GetSessionSubtree(child).ToList();
+        var order = Sessions.Where(s => !subtree.Contains(s)).ToList();
+        bool relationChanged = child.ParentSessionId != parent.Id;
+        child.ParentSessionId = parent.Id;
+
+        int insertAt = order.FindLastIndex(s => ReferenceEquals(s, parent) || IsDescendantOf(s, parent)) + 1;
+        if (insertAt < 0) insertAt = order.Count;
+        order.InsertRange(Math.Clamp(insertAt, 0, order.Count), subtree);
+        ApplySessionOrder(FlattenSessionOrder(order));
+        RefreshSessionTree();
+        return relationChanged || order.Count > 0;
+    }
+
+    /// <summary>상/하 드롭: 대상과 같은 부모 레벨로 옮긴 뒤 대상 앞/뒤에 서브트리 단위 배치.</summary>
+    public bool MoveSessionRelative(SessionItem source, SessionItem target, bool after)
+    {
+        if (!Sessions.Contains(source) || !Sessions.Contains(target) || ReferenceEquals(source, target)) return false;
+        var subtree = GetSessionSubtree(source).ToList();
+        if (subtree.Contains(target)) return false;
+
+        var newParent = SessionParentOf(target);
+        if (newParent != null && !CanSetSessionParent(source, newParent)) return false;
+        source.ParentSessionId = newParent?.Id;
+
+        var order = Sessions.Where(s => !subtree.Contains(s)).ToList();
+        int targetIndex = order.IndexOf(target);
+        if (targetIndex < 0) return false;
+        int insertAt = targetIndex;
+        if (after)
+            insertAt = order.FindLastIndex(s => ReferenceEquals(s, target) || IsDescendantOf(s, target)) + 1;
+        order.InsertRange(Math.Clamp(insertAt, 0, order.Count), subtree);
+        ApplySessionOrder(FlattenSessionOrder(order));
+        RefreshSessionTree();
+        return true;
+    }
+
+    /// <summary>클릭한 숨김 세션과 숨긴 조상만 직접 숨김 해제. 새로 표시 가능해진 세션 반환.</summary>
+    public IReadOnlyList<SessionItem> UnhideSessionPath(SessionItem session)
+    {
+        var before = Sessions.Where(s => s.IsEffectivelyHidden).ToHashSet();
+        var current = session;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (visited.Add(current.Id))
+        {
+            current.Hidden = false;
+            var parent = SessionParentOf(current);
+            if (parent == null) break;
+            current = parent;
+        }
+        RefreshSessionTree();
+        return Sessions.Where(s => before.Contains(s) && !s.IsEffectivelyHidden).ToList();
+    }
+
+    private bool IsDescendantOf(SessionItem candidate, SessionItem ancestor)
+    {
+        var current = candidate;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (!string.IsNullOrEmpty(current.ParentSessionId) && visited.Add(current.Id))
+        {
+            var parent = SessionParentOf(current);
+            if (parent == null) return false;
+            if (ReferenceEquals(parent, ancestor)) return true;
+            current = parent;
+        }
+        return false;
+    }
+
+    private List<SessionItem> FlattenSessionOrder(IReadOnlyList<SessionItem> baseOrder)
+    {
+        var set = baseOrder.ToHashSet();
+        var result = new List<SessionItem>();
+        var emitted = new HashSet<SessionItem>();
+        void Emit(SessionItem session)
+        {
+            if (!emitted.Add(session)) return;
+            result.Add(session);
+            foreach (var child in baseOrder.Where(s => s.ParentSessionId == session.Id)) Emit(child);
+        }
+        foreach (var session in baseOrder)
+            if (SessionParentOf(session) is not { } parent || !set.Contains(parent)) Emit(session);
+        foreach (var session in baseOrder) Emit(session);
+        return result;
+    }
+
+    private void ApplySessionOrder(IReadOnlyList<SessionItem> desiredSessions)
+    {
+        int sessionIndex = 0;
+        var desiredTabs = Tabs.Select(tab => tab is SessionItem ? desiredSessions[sessionIndex++] : tab).ToList();
+        SyncObservable(Tabs, desiredTabs);
+    }
+
+    private List<SessionItem> BuildHiddenTreeOrder()
+    {
+        var hidden = Sessions.Where(s => s.IsSidebarGloballyHidden).ToList();
+        var hiddenSet = hidden.ToHashSet();
+        var result = new List<SessionItem>();
+        var emitted = new HashSet<SessionItem>();
+        void Emit(SessionItem session)
+        {
+            if (!emitted.Add(session)) return;
+            result.Add(session);
+            var children = hidden.Where(s => s.ParentSessionId == session.Id)
+                .OrderBy(s => s.Hidden ? 1 : 0);
+            foreach (var child in children) Emit(child);
+        }
+        foreach (var session in hidden)
+            if (SessionParentOf(session) is not { } parent || !hiddenSet.Contains(parent)) Emit(session);
+        foreach (var session in hidden) Emit(session);
+        return result;
+    }
+
+    private void RefreshSidebarGroups()
+    {
+        IReadOnlyList<TabItemBase> leftSource;
+        IReadOnlyList<TabItemBase> rightSource;
+        if (IsSplitView && _liveLeftSource != null && _liveRightSource != null)
+        {
+            var leftSet = _liveLeftSource.ToHashSet();
+            var rightSet = _liveRightSource.ToHashSet();
+            leftSource = Tabs.Where(leftSet.Contains).ToList();
+            rightSource = Tabs.Where(rightSet.Contains).ToList();
+        }
+        else
+        {
+            leftSource = Tabs.ToList();
+            rightSource = Array.Empty<TabItemBase>();
+        }
+        SyncObservable(LeftItems, BuildSidebarItems(leftSource));
+        SyncObservable(RightItems, BuildSidebarItems(rightSource));
+    }
+
+    private List<TabItemBase> BuildSidebarItems(IReadOnlyList<TabItemBase> source)
+    {
+        var sourceSessions = source.OfType<SessionItem>()
+            .Where(s => !s.IsSidebarGloballyHidden).ToList();
+        var sessionSet = sourceSessions.ToHashSet();
+        var result = new List<TabItemBase>();
+        var emitted = new HashSet<SessionItem>();
+
+        void Emit(SessionItem session)
+        {
+            if (!emitted.Add(session)) return;
+            result.Add(session);
+            var children = sourceSessions.Where(s => s.ParentSessionId == session.Id)
+                .OrderBy(s => s.Hidden ? 1 : 0);
+            foreach (var child in children) Emit(child);
+        }
+
+        foreach (var item in source)
+        {
+            if (item is not SessionItem session) { result.Add(item); continue; }
+            if (!sessionSet.Contains(session)) continue;
+            if (SessionParentOf(session) is { } parent && sessionSet.Contains(parent)) continue;
+            Emit(session);
+        }
+        foreach (var session in sourceSessions) Emit(session);
+        return result;
+    }
 
     private void RaiseSessionStatus()
     {

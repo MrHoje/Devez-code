@@ -48,14 +48,15 @@ public partial class MainWindow : Window
     private string? _explorerDir;                      // 우측 파일탐색기가 보고 있는 경로(중복 ShowDirectory 방지)
     private readonly PerfMonitorService _perfMonitor = new();
     private readonly ThermalMonitorService _thermalMonitor = new();
-    // 계정 사용량: statusLine 훅(세션 활성 시 거의 실시간) + OAuth API(세션 없어도 3분 주기) 두 소스를 병합.
+    // 계정 사용량: OAuth API 를 기준값으로 사용. statusLine 훅은 API 값이 오래됐을 때만 폴백.
+    // 장기 실행 Claude daemon 은 로그인 전환 뒤에도 이전 계정의 rate_limits 를 계속 내보낼 수 있어
+    // 여러 세션의 훅 값을 섞으면 주간 사용량이 82%/15%처럼 왕복한다.
     private readonly StatusLineService _statusLine = new();
     private readonly UsageApiService _usageApi = new();
-    // 소스별 "최신" 스냅샷만 보관 — 병합 결과를 자기 자신에 되먹이면(누적) 과거의 높은 값이
-    // PickWindow 의 Math.Max 로 윈도우 리셋 전까지 얼어붙는다(주간 82% 고정 버그).
-    private Models.RateLimitSnapshot? _rlHook;   // statusLine 훅 최신
-    private Models.RateLimitSnapshot? _rlApi;    // OAuth API 최신
-    private Models.RateLimitSnapshot? _rlMerged; // 두 소스 최신을 합친 푸터 표시값
+    private static readonly TimeSpan ClaudeApiFreshness = TimeSpan.FromMinutes(10);
+    private Models.RateLimitSnapshot? _rlHook;   // statusLine 훅 최신(폴백 전용)
+    private Models.RateLimitSnapshot? _rlApi;    // OAuth API 최신(기준값)
+    private Models.RateLimitSnapshot? _rlMerged; // 실제 푸터 표시값
     // 추가 provider 사용량(푸터): codex(openai) + opencode-go.
     private readonly CodexUsageService _codex = new();
     private readonly OpenCodeGoUsageService _openCodeGo = new();
@@ -121,8 +122,8 @@ public partial class MainWindow : Window
         ShowFullPrompt = SettingsService.LoadShowFullPrompt();
 
         _projects = WorkspaceStore.Load(out var archived);
-        UpdateSessionBusyDisplay();
         _archivedProjects = archived;
+        UpdateSessionBusyDisplay();
         // 워크스페이스에 더 이상 없는(활성+보관 통틀어) roomId 의 claude 추적/캐시 파일 정리(3일 유예, GC).
         // 실제 대화 기록(.jsonl)은 안 건드림 — 앱 자체 북키핑 파일만.
         // WorkspaceStore 가 손상 복구로 빈 트리를 반환한 경우는 건너뛴다 — 그 상태에서 돌리면
@@ -163,6 +164,8 @@ public partial class MainWindow : Window
         Sidebar.SessionSelected        += OpenSessionFromSidebar;
         Sidebar.OpenDocSelected        += OpenDocFromSidebar;
         Sidebar.OpenDocCloseRequested  += CloseDocFromSidebar;
+        Sidebar.BrowserTabSelected     += OpenBrowserFromSidebar;
+        Sidebar.BrowserTabCloseRequested += CloseBrowserFromSidebar;
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
@@ -455,6 +458,8 @@ public partial class MainWindow : Window
             GlobalTabHotkey.Uninstall();
             App.ThemeChanged -= OnThemeChanged_UpdatePanels;
             foreach (var pane in _panes) pane.DisposeTerminal();
+            foreach (var browser in _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<BrowserTabItem>())
+                browser.Browser.DisposeAll();
             _perfMonitor.Dispose();
             _thermalMonitor.Dispose();
             _statusLine.Dispose();
@@ -644,8 +649,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── 계정 사용량 (statusLine 훅 + OAuth API 병합 → 푸터) ─────────────
-    // 두 소스 스냅샷을 RateLimitSnapshot.Merge 로 합쳐(새 윈도우 채택·동일 윈도우 비후퇴) 푸터에 표시.
+    // ── 계정 사용량 (OAuth API 우선 + statusLine 훅 폴백 → 푸터) ────────
     private void StartStatusLine()
     {
         _statusLine.SnapshotUpdated += s => OnRlSnapshot(s, fromApi: false);
@@ -784,37 +788,26 @@ public partial class MainWindow : Window
 
         var local = expires.Value.ToLocalTime();
         var expiry = local.ToString("M월 d일 HH:mm");
-
-        var span = local - DateTimeOffset.Now;
-        string daysText;
-        bool soon;
-        if (span.TotalHours < 0)
-        {
-            daysText = "만료됨";
-            soon = true;
-        }
-        else if (span.TotalDays < 1)
-        {
-            daysText = "오늘 만료";
-            soon = true;
-        }
-        else if (span.TotalDays < 2)
-        {
-            daysText = "내일 만료";
-            soon = true;
-        }
-        else
-        {
-            daysText = $"{(int)Math.Ceiling(span.TotalDays)}일 남음";
-            soon = span.TotalDays <= 3;
-        }
+        var expiryStatus = FormatResetCreditExpiry(local, DateTimeOffset.Now);
 
         return new Models.ResetCreditRowVM
         {
             ExpiryText = $"~ {expiry}",
-            DaysLeftText = daysText,
-            IsExpiringSoon = soon,
+            DaysLeftText = expiryStatus.Text,
+            IsExpiringSoon = expiryStatus.IsExpiringSoon,
         };
+    }
+
+    private static (string Text, bool IsExpiringSoon) FormatResetCreditExpiry(DateTimeOffset expiry, DateTimeOffset now)
+    {
+        if (expiry < now) return ("만료됨", true);
+
+        var span = expiry - now;
+        if (span.TotalDays < 1) return ("오늘 만료", true);
+
+        // 달력 날짜가 아니라 실제 남은 시간을 24시간 단위로 계산한다.
+        var daysLeft = (int)span.TotalDays;
+        return ($"{daysLeft}일 남음", daysLeft <= 3);
     }
 
     /// <summary>사용률 값이 있을 때만 행을 추가. 단기 윈도우는 "남은 시간", 그 외는 "초기화 일시"로 안내.</summary>
@@ -873,8 +866,11 @@ public partial class MainWindow : Window
         => Dispatcher.InvokeAsync(() =>
         {
             if (fromApi) _rlApi = snap; else _rlHook = snap;
-            // 누적 금지: 두 소스의 최신값만 매번 새로 병합해 과거 높은 값이 얼어붙지 않게 한다.
-            _rlMerged = Models.RateLimitSnapshot.Merge(_rlHook, _rlApi);
+            // API 파일과 현재 OAuth 자격증명이 계정 기준점이다. 훅은 장기 실행 daemon 이
+            // 이전 계정 값을 보낼 수 있으므로 API 가 최근이면 절대 섞지 않는다.
+            var apiFresh = _rlApi is { HasData: true } api
+                && api.CapturedAt >= DateTime.Now - ClaudeApiFreshness;
+            _rlMerged = apiFresh ? _rlApi : _rlHook;
             if (_rlMerged != null) ApplyRateLimit(_rlMerged); // 하단 푸터
             RefreshUsagePanelIfVisible();                     // 우측 사이드바
         });
@@ -896,6 +892,13 @@ public partial class MainWindow : Window
     /// <summary>codex/opencode-go 스냅샷 저장 후 하단 푸터 + 우측 사이드바 갱신.</summary>
     private void ApplyProviderUsage(Models.ProviderUsage u)
     {
+        // 연결 끊기 직전 시작된 비동기 폴링 결과가 늦게 도착해 카드를 되살리지 않게 막는다.
+        if (!IsUsageProviderConnected(u.Provider))
+        {
+            ClearProviderUsage(u.Provider);
+            return;
+        }
+
         switch (u.Provider)
         {
             case "codex":
@@ -958,6 +961,65 @@ public partial class MainWindow : Window
 
     /// <summary>Grok 토큰/설정 변경 직후 즉시 폴링.</summary>
     public void RefreshGrokUsage() => _grok.RefreshNow();
+
+    /// <summary>DevezCode 사용량 연결만 끊는다. 외부 CLI 자격증명은 삭제하지 않는다.</summary>
+    public void DisconnectUsageProvider(string provider)
+    {
+        switch (provider)
+        {
+            case "codex":
+                CodexCredentialStore.Disconnect();
+                break;
+            case "opencode-go":
+                OpenCodeGoCredentialStore.Disconnect();
+                break;
+            case "grok":
+                _grok.Disconnect();
+                break;
+            case "deepseek":
+                DeepSeekCredentialStore.SaveApiKey(null);
+                break;
+            default:
+                return;
+        }
+
+        ClearProviderUsage(provider);
+    }
+
+    private void ClearProviderUsage(string provider)
+    {
+        switch (provider)
+        {
+            case "codex":
+                _lastCodex = null;
+                CodexPanel.Visibility = Visibility.Collapsed;
+                break;
+            case "opencode-go":
+                _lastGo = null;
+                GoPanel.Visibility = Visibility.Collapsed;
+                break;
+            case "grok":
+                _lastGrok = null;
+                GrokPanel.Visibility = Visibility.Collapsed;
+                break;
+            case "deepseek":
+                _lastDeepSeek = null;
+                DeepSeekPanel.Visibility = Visibility.Collapsed;
+                break;
+        }
+
+        UpdateFooterDivider();
+        RefreshUsagePanelIfVisible();
+    }
+
+    private static bool IsUsageProviderConnected(string provider) => provider switch
+    {
+        "codex" => CodexUsageService.IsConnected(),
+        "opencode-go" => OpenCodeGoCredentialStore.IsConnected(),
+        "grok" => GrokUsageService.IsConnected(),
+        "deepseek" => DeepSeekCredentialStore.IsConnected(),
+        _ => true,
+    };
 
     /// <summary>Grok Build 주간 한도를 하단 푸터에 반영 (CLI /usage 와 동일 format=credits).</summary>
     private void ApplyGrokFooter(Models.ProviderUsage u)
@@ -1142,9 +1204,8 @@ public partial class MainWindow : Window
             foreach (var c in u.ResetCredits)
             {
                 var expiry = c.ExpiresAt?.ToLocalTime();
-                var daysLeft = expiry != null ? (int)Math.Ceiling((expiry.Value - now).TotalDays) : 0;
                 var expiryStr = expiry != null ? expiry.Value.ToString("M월 d일 HH:mm") : "—";
-                var daysStr = expiry == null ? "" : daysLeft < 0 ? "만료됨" : daysLeft == 0 ? "오늘 만료" : $"{daysLeft}일 남음";
+                var daysStr = expiry == null ? "" : FormatResetCreditExpiry(expiry.Value, now).Text;
                 sb.Append($"\n  ~ {expiryStr}  {daysStr}");
             }
         }
@@ -1316,8 +1377,6 @@ public partial class MainWindow : Window
     private double _sidebarMinWidth = 190;  // 프로젝트 1열=190, 2열=380. ApplyProjectColumns 가 갱신.
     private double _fileExpWidth = 300;
     private double _fileExpMinWidth;       // 탭 버튼 4개가 온전히 보이는 최소 폭(런타임 측정)
-    private Action? _leftAnimCancel;
-    private Action? _rightAnimCancel;
 
     // ── 반응형: 좁은 창에서 우측 패널을 오버레이 드로어로 ───────────────
     // 창 폭이 이 값 미만이면 우측 패널(탐색기/DIFF)을 레이아웃에서 빼고, 토글 시
@@ -1326,7 +1385,6 @@ public partial class MainWindow : Window
     private bool? _narrow;                 // null=미초기화. 폭 변화로 모드 전환 감지
     private bool _rightOverlayOpen;        // 좁은 창에서 오버레이가 열려 있는지
     private readonly System.Windows.Media.TranslateTransform _rightT = new();
-    private Action? _overlayAnimCancel;
 
     // GridSplitter 수동 드래그
     private void PaneSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e) => UpdatePaneFocusVisual(animate: false);
@@ -1402,11 +1460,8 @@ public partial class MainWindow : Window
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
     }
 
-    // 패널 토글은 AnimatePanelAndSplitter 로 부드럽게 0/원래 폭을 보간한다(200ms, EaseIn).
-    // 자식 컨트롤(Sidebar/FileExplorer)을 cacheTarget 으로 잡아 매 프레임 폭이 바뀌어도
-    // 내부 트리·WebView2 가 다시 그려지는 깜빡임을 BitmapCache 로 차단한다 — HideEditorColumn 과 동일 패턴.
-    /// <summary>좌/우/사용량 패널 토글로 중앙 `*` 컬럼이 리사이즈될 때, 보이는 워크스페이스 패널의
-    /// 터미널 WebView2 를 스냅샷으로 정지해 매 프레임 reflow 깜빡임을 막는다(분할 애니메이션과 동일 처리).</summary>
+    /// <summary>창 크기 전환 중 중앙 `*` 컬럼이 리사이즈될 때, 보이는 워크스페이스 패널의
+    /// 터미널 WebView2 를 스냅샷으로 정지해 reflow 깜빡임을 막는다.</summary>
     private Task FreezeWorkspaceTerminalsAsync(bool stretchCover = false)
         => Task.WhenAll(_panes.Where(p => p.Visibility == Visibility.Visible)
                               .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true, stretchCover: stretchCover)));
@@ -1418,108 +1473,87 @@ public partial class MainWindow : Window
             p.ResumeTerminalOnly(webCover: true);
     }
 
-    private async void LeftPanelBtn_Click(object sender, RoutedEventArgs e)
+    private bool _panelCoverBusy; // 패널 토글 커버 진행 중(연타 무시 — 커버/리빌 순서 꼬임 방지)
+
+    /// <summary>애니메이션 없는 즉시 패널 토글을 터미널 webCover 로 감싸 실행.
+    /// 커버(캡처) 아래에서 컬럼 폭을 바꾸고, 최종 폭에서 fit·재동기 후 크로스페이드 —
+    /// 즉시 토글의 터미널 reflow 깜빡임(claude 포함)을 감춘다. 세션 없으면 freeze/reveal 모두 no-op.</summary>
+    private async void RunPanelToggleCovered(Action change)
     {
-        _leftAnimCancel?.Invoke();
-        await FreezeWorkspaceTerminalsAsync();
+        if (_panelCoverBusy) return;
+        _panelCoverBusy = true;
+        try
+        {
+            await FreezeWorkspaceTerminalsAsync();
+            change();
+            UnfreezeWorkspaceTerminals();
+        }
+        finally { _panelCoverBusy = false; }
+    }
+
+    private void LeftPanelBtn_Click(object sender, RoutedEventArgs e) => RunPanelToggleCovered(ToggleLeftPanel);
+
+    private void ToggleLeftPanel()
+    {
         if (_leftCollapsed)
         {
             _leftCollapsed = false;
             Sidebar.Visibility = Visibility.Visible;
-            // 우측 패널과 동일: 시작 전엔 MinWidth 0 으로 두어 폭 0 부터 부드럽게 보간하고,
-            // 완료 후 최소폭을 복원한다. (시작 전에 걸면 첫 프레임부터 최소폭으로 점프해 "확 뜬다".)
-            SetMinWidth(0, SidebarCol, FooterSidebarCol);
-            _leftAnimCancel = AnimatePanelAndSplitter(
-                SidebarCol, _sidebarWidth,
-                SidebarSplitterCol, 4,
-                durationMs: 200, easeIn: false,
-                colMirrors: new[] { FooterSidebarCol },
-                splitterMirrors: Array.Empty<ColumnDefinition>(),
-                cacheTarget: Sidebar,
-                onComplete: () =>
-                {
-                    SetMinWidth(_sidebarMinWidth, SidebarCol, FooterSidebarCol);
-                    _leftAnimCancel = null;
-                    UnfreezeWorkspaceTerminals();
-                });
+            SetMinWidth(_sidebarMinWidth, SidebarCol, FooterSidebarCol);
+            SidebarCol.Width = new GridLength(_sidebarWidth);
+            FooterSidebarCol.Width = new GridLength(_sidebarWidth);
+            SetSplitterWidth(SidebarSplitterCol, 4);
         }
         else
         {
             _leftCollapsed = true;
             _sidebarWidth = SidebarCol.Width.IsAbsolute ? SidebarCol.Width.Value : SidebarCol.ActualWidth;
             SetMinWidth(0, SidebarCol, FooterSidebarCol);
-            _leftAnimCancel = AnimatePanelAndSplitter(
-                SidebarCol, 0,
-                SidebarSplitterCol, 0,
-                durationMs: 200, easeIn: true,
-                colMirrors: new[] { FooterSidebarCol },
-                splitterMirrors: Array.Empty<ColumnDefinition>(),
-                cacheTarget: Sidebar,
-                onComplete: () =>
-                {
-                    Sidebar.Visibility = Visibility.Collapsed;
-                    _leftAnimCancel = null;
-                    UnfreezeWorkspaceTerminals();
-                });
+            SidebarCol.Width = new GridLength(0);
+            FooterSidebarCol.Width = new GridLength(0);
+            SetSplitterWidth(SidebarSplitterCol, 0);
+            Sidebar.Visibility = Visibility.Collapsed;
         }
         SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
         UpdatePanelToggleVisual();
     }
 
-    private async void RightPanelBtn_Click(object sender, RoutedEventArgs e)
+    private void RightPanelBtn_Click(object sender, RoutedEventArgs e)
     {
-        // 좁은 창: 도킹 대신 오버레이 드로어를 토글한다.
+        // 좁은 창: 도킹 대신 오버레이 드로어를 토글한다(자체 스냅샷 정지 경로 사용 — 커버 불필요).
         if (_narrow == true)
         {
             if (_rightOverlayOpen) CloseRightOverlay();
             else _ = OpenRightOverlay();
             return;
         }
+        RunPanelToggleCovered(ToggleRightPanel);
+    }
 
-        _rightAnimCancel?.Invoke();
-        await FreezeWorkspaceTerminalsAsync();
+    private void ToggleRightPanel()
+    {
         if (_rightCollapsed)
         {
             _rightCollapsed = false;
             FileExplorer.Visibility = Visibility.Visible;
-            SetMinWidth(0, FileExpCol, FooterFileExpCol);
             // 우측 완료기록/사용량이 열려 있으면 그만큼 자리를 비워, 파일탐색기를 남는 폭까지만 편다.
             double openTarget = Math.Min(_fileExpWidth, ComputeMaxFileExpWidth());
-            _rightAnimCancel = AnimatePanelAndSplitter(
-                FileExpCol, openTarget,
-                FileExpSplitterCol, 4,
-                durationMs: 200, easeIn: false,
-                colMirrors: new[] { FooterFileExpCol },
-                splitterMirrors: new[] { FooterFileExpSplitterCol },
-                cacheTarget: FileExplorer,
-                onComplete: () =>
-                {
-                    // 확장 완료 → 탭 버튼 폭을 최소 폭으로 복원(접힘 직전 0 으로 내렸던 것).
-                    if (_fileExpMinWidth > 0) SetMinWidth(_fileExpMinWidth, FileExpCol, FooterFileExpCol);
-                    _rightAnimCancel = null;
-                    UnfreezeWorkspaceTerminals();
-                    UpdateUsageSidebarBorder(); // 채널 복원 완료 후 사용량 보더 복구
-                });
+            FileExpCol.Width = new GridLength(openTarget);
+            FooterFileExpCol.Width = new GridLength(openTarget);
+            SetSplitterWidth(FileExpSplitterCol, 4, FooterFileExpSplitterCol);
+            if (_fileExpMinWidth > 0) SetMinWidth(_fileExpMinWidth, FileExpCol, FooterFileExpCol);
+            UpdateUsageSidebarBorder();
         }
         else
         {
             _rightCollapsed = true;
             _fileExpWidth = FileExpCol.Width.IsAbsolute ? FileExpCol.Width.Value : FileExpCol.ActualWidth;
             SetMinWidth(0, FileExpCol, FooterFileExpCol);
-            _rightAnimCancel = AnimatePanelAndSplitter(
-                FileExpCol, 0,
-                FileExpSplitterCol, 0,
-                durationMs: 200, easeIn: true,
-                colMirrors: new[] { FooterFileExpCol },
-                splitterMirrors: new[] { FooterFileExpSplitterCol },
-                cacheTarget: FileExplorer,
-                onComplete: () =>
-                {
-                    FileExplorer.Visibility = Visibility.Collapsed;
-                    _rightAnimCancel = null;
-                    UnfreezeWorkspaceTerminals();
-                    UpdateUsageSidebarBorder(); // 패널이 완전히 닫힌 뒤에 사용량 보더 보정(미리 사라지지 않게)
-                });
+            FileExpCol.Width = new GridLength(0);
+            FooterFileExpCol.Width = new GridLength(0);
+            SetSplitterWidth(FileExpSplitterCol, 0, FooterFileExpSplitterCol);
+            FileExplorer.Visibility = Visibility.Collapsed;
+            UpdateUsageSidebarBorder();
         }
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
@@ -1537,14 +1571,12 @@ public partial class MainWindow : Window
     private const int MaxSessionDoneRecords = 30;
     private bool _usageOpen;
     private bool _sessionHistoryOpen;
-    private Action? _usageAnimCancel;
-    private Action? _sessionHistoryAnimCancel;
 
     private void UsagePanelBtn_Click(object sender, RoutedEventArgs e)
-        => SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
+        => RunPanelToggleCovered(() => SetUsagePanelOpen(!_usageOpen, persist: true));
 
     private void SessionHistoryPanelBtn_Click(object sender, RoutedEventArgs e)
-        => SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true, animate: true);
+        => RunPanelToggleCovered(() => SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true));
 
     /// <summary>F1~F4 — 패널 토글 단축키.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
@@ -1563,55 +1595,35 @@ public partial class MainWindow : Window
         }
         if (e.Key == System.Windows.Input.Key.F3)
         {
-            SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true, animate: true);
+            RunPanelToggleCovered(() => SetSessionHistoryPanelOpen(!_sessionHistoryOpen, persist: true));
             e.Handled = true;
             return;
         }
         if (e.Key == System.Windows.Input.Key.F4)
         {
-            SetUsagePanelOpen(!_usageOpen, persist: true, animate: true);
+            RunPanelToggleCovered(() => SetUsagePanelOpen(!_usageOpen, persist: true));
             e.Handled = true;
             return;
         }
         base.OnPreviewKeyDown(e);
     }
 
-    /// <summary>최우측 사용량 사이드바를 펼치거나 접는다. animate=true 면 좌·우 패널과 같은 폭 트윈.</summary>
-    private void SetUsagePanelOpen(bool open, bool persist, bool animate = false)
+    /// <summary>최우측 사용량 사이드바를 즉시 펼치거나 접는다.</summary>
+    private void SetUsagePanelOpen(bool open, bool persist)
     {
         _usageOpen = open;
         if (open) SetSidebarUsageCards(BuildUsageCards()); // 펼칠 때 최신 스냅샷으로 카드 빌드
 
-        _usageAnimCancel?.Invoke();
-        _usageAnimCancel = null;
-        if (animate)
-        {
-            _ = FreezeThenAnimateUsageAsync(open);
-        }
-        else
-        {
-            UsageCol.Width = new GridLength(open ? UsagePanelWidth : 0);
-        }
+        UsageCol.Width = new GridLength(open ? UsagePanelWidth : 0);
 
         if (persist) SettingsService.SaveUsagePanelOpen(open);
-        if (open) ClampFileExpToFit(animate); // 사용량 패널 자리 확보를 위해 파일탐색기를 남는 폭까지 줄임
+        if (open) ClampFileExpToFit(); // 사용량 패널 자리 확보를 위해 파일탐색기를 남는 폭까지 줄임
         UpdatePanelToggleVisual();
         UpdateUsageSidebarBorder();
     }
 
-    /// <summary>사용량 패널 트윈 전 중앙 터미널을 스냅샷 정지 → 완료 시 복원(reflow 깜빡임 방지).</summary>
-    private async Task FreezeThenAnimateUsageAsync(bool open)
-    {
-        await FreezeWorkspaceTerminalsAsync();
-        _usageAnimCancel = AnimateColumn(
-            UsageCol, open ? UsagePanelWidth : 0,
-            durationMs: 200, easeIn: !open,
-            cacheTarget: UsageSidebar,
-            onComplete: () => { _usageAnimCancel = null; UnfreezeWorkspaceTerminals(); });
-    }
-
-    /// <summary>세션 완료 기록 사이드바를 펼치거나 접는다. 계정 사용량 패널과 같은 우측 보조 패널 패턴.</summary>
-    private void SetSessionHistoryPanelOpen(bool open, bool persist, bool animate = false)
+    /// <summary>세션 완료 기록 사이드바를 즉시 펼치거나 접는다.</summary>
+    private void SetSessionHistoryPanelOpen(bool open, bool persist)
     {
         _sessionHistoryOpen = open;
         double targetWidth = open ? SettingsService.LoadSessionHistoryWidth() : 0;
@@ -1625,37 +1637,17 @@ public partial class MainWindow : Window
         // 닫히면 파일탐색기는 다시 좌측 보더만 두어 우측 끝이 깔끔하게 끝난다.
         FileExplorer.BorderThickness = new Thickness(1, 0, open ? 1 : 0, 0);
 
-        // 닫을 때 MinWidth(150)가 남아 폭 0 으로 줘도 완전히 안 닫힘 → 닫힘 시 0.
-        // 열 때 즉시 150 주면 애니 시작 전 0→150 으로 툭 점프하므로, 애니 완료 후 복원한다.
+        // 닫을 때 MinWidth(150)가 남아 폭 0 으로 줘도 완전히 안 닫히므로 닫힘 시 0으로 내린다.
         // 드래그 클램프(MinWidth 사용)는 열린 상태에서만 동작하므로 리사이즈 동작엔 영향 없음.
         if (!open) SessionHistoryCol.MinWidth = 0;
 
-        _sessionHistoryAnimCancel?.Invoke();
-        _sessionHistoryAnimCancel = null;
-        if (animate)
-        {
-            _ = FreezeThenAnimateSessionHistoryAsync(open, targetWidth);
-        }
-        else
-        {
-            SessionHistoryCol.Width = new GridLength(targetWidth);
-            if (open) SessionHistoryCol.MinWidth = 150;
-        }
+        SessionHistoryCol.Width = new GridLength(targetWidth);
+        if (open) SessionHistoryCol.MinWidth = 150;
 
         if (persist) SettingsService.SaveSessionHistoryPanelOpen(open);
-        if (open) ClampFileExpToFit(animate); // 완료기록 패널 자리 확보를 위해 파일탐색기를 남는 폭까지 줄임
+        if (open) ClampFileExpToFit(); // 완료기록 패널 자리 확보를 위해 파일탐색기를 남는 폭까지 줄임
         UpdatePanelToggleVisual();
         UpdateUsageSidebarBorder();
-    }
-
-    private async Task FreezeThenAnimateSessionHistoryAsync(bool open, double targetWidth)
-    {
-        await FreezeWorkspaceTerminalsAsync();
-        _sessionHistoryAnimCancel = AnimateColumn(
-            SessionHistoryCol, targetWidth,
-            durationMs: 200, easeIn: !open,
-            cacheTarget: SessionHistorySidebar,
-            onComplete: () => { _sessionHistoryAnimCancel = null; if (open) SessionHistoryCol.MinWidth = 150; UnfreezeWorkspaceTerminals(); });
     }
 
     /// <summary>설정에 저장된 사이드 패널 뷰 전환 버튼 표시 여부를 우측 패널에 반영한다.</summary>
@@ -1712,7 +1704,7 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
     /// <summary>탭 버튼 4개가 온전히 보이는 폭을 측정해 우측 패널(확장 상태)의 최소 폭으로 적용.
-    /// 접힘/오버레이(좁은 창) 상태에서는 적용하지 않는다(접기 애니메이션은 MinWidth 0 필요).</summary>
+    /// 접힘/오버레이(좁은 창) 상태에서는 폭 0 유지를 위해 적용하지 않는다.</summary>
     private void ApplyFileExpMinWidth()
     {
         _fileExpMinWidth = 190; // 좌측 패널과 동일 최소 폭
@@ -1841,123 +1833,6 @@ public partial class MainWindow : Window
         var rightmost = _splitActive ? RightPane : PaneA;
         foreach (var p in _panes) p.SetRightChannelBorder(true);
         rightmost.SetRightChannelBorder(anyRightOpen);
-    }
-
-    // 프레임 동기(CompositionTarget.Rendering) 컬럼 폭 애니메이션. DispatcherTimer 는
-    // 프레임 클럭과 어긋나 끊김이 생겨, devez 처럼 렌더 펄스에 맞춰 갱신한다.
-    // mirrors: col 과 SharedSizeGroup 으로 폭을 공유하는 헤더/푸터 컬럼들. 공유 그룹은
-    // 멤버 중 최대 폭을 채택하므로, col 만 0 으로 줄여도 헤더/푸터의 고정 폭(262/300)이
-    // 남아 영역이 안 줄어든다. 같은 폭을 미러 컬럼에도 매 프레임 써 줘야 실제로 접힌다.
-    // clampCol: 폭을 col 과 함께 움직이되 clampMin 아래로는 안 내려가는 컬럼(헤더 메타용).
-    private static Action AnimateColumn(ColumnDefinition col, double toWidth, int durationMs,
-        bool easeIn, Action? onComplete = null, UIElement? cacheTarget = null,
-        ColumnDefinition[]? mirrors = null, ColumnDefinition? clampCol = null, double clampMin = 0)
-    {
-        var from = col.Width.IsAbsolute ? col.Width.Value : col.ActualWidth;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        bool cancelled = false;
-
-        if (cacheTarget != null)
-            cacheTarget.CacheMode = new System.Windows.Media.BitmapCache();
-
-        void SetWidth(GridLength gl)
-        {
-            col.Width = gl;
-            if (mirrors != null) foreach (var m in mirrors) m.Width = gl;
-            if (clampCol != null) clampCol.Width = new GridLength(Math.Max(gl.Value, clampMin));
-        }
-
-        EventHandler? handler = null;
-        handler = (_, _) =>
-        {
-            if (cancelled)
-            {
-                System.Windows.Media.CompositionTarget.Rendering -= handler!;
-                return;
-            }
-            var t = Math.Min(1.0, sw.ElapsedMilliseconds / (double)durationMs);
-            var easedT = easeIn ? EaseIn(t) : EaseInOut(t);
-            SetWidth(new GridLength(from + (toWidth - from) * easedT));
-            if (t >= 1.0)
-            {
-                System.Windows.Media.CompositionTarget.Rendering -= handler!;
-                SetWidth(new GridLength(toWidth));
-                if (cacheTarget != null) cacheTarget.CacheMode = null;
-                onComplete?.Invoke();
-            }
-        };
-        System.Windows.Media.CompositionTarget.Rendering += handler;
-
-        return () =>
-        {
-            if (cancelled) return;
-            cancelled = true;
-            if (cacheTarget != null) cacheTarget.CacheMode = null;
-            System.Windows.Media.CompositionTarget.Rendering -= handler;
-        };
-    }
-
-    private static double EaseInOut(double t) =>
-        t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
-
-    private static double EaseIn(double t) => t * t * t;
-
-    // 좌·우 패널 토글 전용: 패널 + 미러(헤더/푸터) + 스플리터 + 스플리터 미러를 한 트윈으로 묶어
-    // 완벽히 동기화된 애니메이션을 준다. HideEditorColumn 처럼 cacheTarget 으로 자식 컨트롤을
-    // BitmapCache 로 잡아 WebView2/탐색기가 폭 변화에 따라 글자나 트리를 다시 그리는 깜빡임을
-    // 차단한다. duration·easeIn 은 토글 방향에 따라 호출부에서 결정.
-    private static Action AnimatePanelAndSplitter(
-        ColumnDefinition col, double toCol,
-        ColumnDefinition splitter, double toSplitter,
-        int durationMs, bool easeIn,
-        ColumnDefinition[] colMirrors, ColumnDefinition[] splitterMirrors,
-        UIElement? cacheTarget, Action? onComplete = null)
-    {
-        double fromCol = col.Width.IsAbsolute ? col.Width.Value : col.ActualWidth;
-        double fromSpl = splitter.Width.IsAbsolute ? splitter.Width.Value : splitter.ActualWidth;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        bool cancelled = false;
-        if (cacheTarget != null) cacheTarget.CacheMode = new System.Windows.Media.BitmapCache();
-
-        void SetAll(double cw, double spw)
-        {
-            var cgl = new GridLength(cw);
-            var sgl = new GridLength(spw);
-            col.Width = cgl;
-            foreach (var m in colMirrors) m.Width = cgl;
-            splitter.Width = sgl;
-            foreach (var m in splitterMirrors) m.Width = sgl;
-        }
-
-        EventHandler? handler = null;
-        handler = (_, _) =>
-        {
-            if (cancelled)
-            {
-                System.Windows.Media.CompositionTarget.Rendering -= handler!;
-                return;
-            }
-            var t = Math.Min(1.0, sw.ElapsedMilliseconds / (double)durationMs);
-            var easedT = easeIn ? EaseIn(t) : EaseInOut(t);
-            SetAll(fromCol + (toCol - fromCol) * easedT,
-                   fromSpl + (toSplitter - fromSpl) * easedT);
-            if (t >= 1.0)
-            {
-                System.Windows.Media.CompositionTarget.Rendering -= handler!;
-                SetAll(toCol, toSplitter);
-                if (cacheTarget != null) cacheTarget.CacheMode = null;
-                onComplete?.Invoke();
-            }
-        };
-        System.Windows.Media.CompositionTarget.Rendering += handler;
-
-        return () =>
-        {
-            if (cancelled) return;
-            cancelled = true;
-            if (cacheTarget != null) cacheTarget.CacheMode = null;
-            System.Windows.Media.CompositionTarget.Rendering -= handler;
-        };
     }
 
     // ── 자동 업데이트 ──────────────────────────────────────────────
@@ -2199,12 +2074,16 @@ public partial class MainWindow : Window
         pane.SplitViewRequested += OnPaneSplitViewRequested;
         pane.ExportSessionRequested += ExportSession;
         pane.ToggleSessionLockRequested += ToggleSessionLock;
+        pane.HideSessionRequested += HideSessionFromSidebar;
+        pane.StopTrackingSessionRequested += StopTrackingSession;
+        pane.DeleteSessionRequested += DeleteSession;
         pane.TabDragHoverMoved = OnTabDragHoverMoved;
         pane.TryCommitCrossDrop = OnTryCommitCrossTabDrop;
         pane.SetPanesTabDragActive = on => { LeftPane.SetTabDragActive(on); RightPane.SetTabDragActive(on); };
         pane.RevealPrepared += OnPaneRevealPrepared;
         pane.IsolatedTabOpened += OnPaneIsolatedTabOpened;
         pane.FileTabCloseRequested += OnFileTabCloseRequested;
+        pane.BrowserTabCloseRequested += OnBrowserTabCloseRequested;
         _panes.Add(pane);
     }
 
@@ -2555,7 +2434,7 @@ public partial class MainWindow : Window
         return true;
     }
 
-    /// <summary>참조("S:id"/"F:path")가 가리키는 세션/파일을 지정 패널에서 연다(우측 복원용).</summary>
+    /// <summary>참조("S:id"/"F:path"/"B:id")가 가리키는 탭을 지정 패널에서 연다(우측 복원용).</summary>
     private void OpenRefInPane(WorkspacePaneView pane, ProjectItem proj, string? @ref)
     {
         if (string.IsNullOrEmpty(@ref) || @ref!.Length < 2 || @ref[1] != ':') return;
@@ -2569,9 +2448,13 @@ public partial class MainWindow : Window
         {
             pane.OpenFileTabForPartner(proj, key);
         }
+        else if (@ref[0] == 'B')
+        {
+            pane.OpenBrowserTabForPartner(proj, key);
+        }
     }
 
-    /// <summary>분할 파트너가 "같은 프로젝트(proj)"의 세션/파일이면 = "분할 보기"로 그 탭만 우측에 띄웠던 상태다.
+    /// <summary>분할 파트너가 "같은 프로젝트(proj)"의 세션/파일/브라우저면 = "분할 보기"로 그 탭만 우측에 띄웠던 상태다.
     /// 격리/숨김 필터는 휘발성이라 프로젝트를 떠나면 사라지므로 복원 시 재현한다:
     /// 우측은 그 탭만 격리, 좌측은 그 탭 숨김. 파일 파트너는 우측 패널에 파일을 새로 열어 활성화한 뒤 격리한다.</summary>
     private void RestorePartner(ProjectItem proj, SessionItem? partnerSession, string? partnerFile)
@@ -2595,7 +2478,7 @@ public partial class MainWindow : Window
 
     /// <summary>탭 헤더 우클릭 → "분할 보기"/"이동" → 분할 생성(비분할 시) 또는 반대쪽 패널로 이동(분할 중).
     /// 원본 패널의 탭바에서는 탭을 숨기고(HideTabInPane), 세션/ConPTY·파일 에디터는 그대로 둔 채
-    /// 반대쪽 패널에 띄운다. 세션 탭·파일 탭 모두 지원.
+    /// 반대쪽 패널에 띄운다. 세션·파일·브라우저 탭을 지원한다.
     /// 반대쪽이 이미 격리(화이트리스트) 중이었거나 프로젝트가 바뀌면, 원래 보이던 화이트리스트를
     /// 스냅샷해뒀다가 이동 후 그대로 다시 얹고 새 탭을 더한다(누적 — 기존 탭들이 사라지지 않고
     /// 뒤에 쌓임). 반대쪽이 이미 같은 프로젝트를 "격리 없이" 보여주던 중이면(전체 탭 목록 공유)
@@ -2675,6 +2558,7 @@ public partial class MainWindow : Window
                 {
                     if (tab is SessionItem movedFirstS) target.OpenSession(movedFirstS);
                     else if (tab is FileTabItem movedFirstF) target.OpenFileTab(movedFirstF);
+                    else if (tab is BrowserTabItem movedFirstB) target.OpenBrowserTab(movedFirstB);
                     _focusedPane = target;
                 }
                 // 그 외엔 포커스를 원본에 그대로 둔다(대상 활성 탭을 안 바꾸므로).
@@ -2685,6 +2569,7 @@ public partial class MainWindow : Window
                 // 이동 탭만 격리해 대상엔 그 탭만 보이게 한다(전체 목록 복사 방지).
                 if (tab is SessionItem session) target.OpenSession(session);
                 else if (tab is FileTabItem file) target.OpenFileTab(file);
+                else if (tab is BrowserTabItem browser) target.OpenBrowserTab(browser);
                 else return;
                 target.IsolateTab(tab);
                 _focusedPane = target;
@@ -2715,6 +2600,12 @@ public partial class MainWindow : Window
             EnableSplit(animate: false);
             PaneB.OpenFileTab(f);
             PaneB.IsolateTab(f);
+        }
+        else if (tab is BrowserTabItem browser)
+        {
+            EnableSplit(animate: false);
+            PaneB.OpenBrowserTab(browser);
+            PaneB.IsolateTab(browser);
         }
         if (pane.ActiveProject != null) MoveTabToEnd(tab, pane.ActiveProject);
         PaneB.ScrollTabIntoView(tab);
@@ -2838,8 +2729,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>분할 펼침: 두 패널 터미널을 webCover(HWND 유지+DOM 커버)로 정지한 뒤
-    /// PaneB 를 0%→저장된 비율로 펼치고, 완료 시 라이브 터미널로 크로스페이드 복원한다.
-    /// 좌우 사이드패널 토글(FreezeWorkspaceTerminalsAsync)과 동일 경로 — collapse→visible 재합성 플래시 없음.</summary>
+    /// PaneB 를 0%→저장된 비율로 펼치고, 완료 시 라이브 터미널로 크로스페이드 복원한다.</summary>
     private async Task AnimateSplitOpenAsync()
     {
         await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true));
@@ -3036,7 +2926,7 @@ public partial class MainWindow : Window
     }
 
     private SessionItem? FindSession(string id)
-        => _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
+        => _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
 
     /// <summary>완료기록 헤더("진행중/응답 대기 중 N개")·대기 카드를 IsBusy/IsWaitingChoice 와 주기 동기화.
     /// 대기/진행 감지는 모두 훅·이벤트(Notification/jsonl/플러그인)가 담당하고, 여기선 화면 스크래핑 없이
@@ -3069,7 +2959,7 @@ public partial class MainWindow : Window
 
     private void AddSessionCompletionRecord(SessionItem s)
     {
-        var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
+        var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
         var projName = proj?.Name ?? "";
         var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
 
@@ -3094,7 +2984,7 @@ public partial class MainWindow : Window
     /// <summary>시작 시 모든 세션의 IsBusy 를 false 로 초기화. 프로그램 종료 시 진행 중이던 상태는 취소됨.</summary>
     private void ResetAllSessionBusy()
     {
-        foreach (var p in _projects)
+        foreach (var p in _projects.Concat(_archivedProjects))
             foreach (var t in p.Tabs)
                 if (t is SessionItem s) { s.IsBusy = false; s.IsWaitingChoice = false; }
     }
@@ -3102,7 +2992,7 @@ public partial class MainWindow : Window
     private void UpdateSessionBusyDisplay()
     {
         int count = 0, waiting = 0;
-        foreach (var p in _projects)
+        foreach (var p in _projects.Concat(_archivedProjects))
             foreach (var t in p.Tabs)
                 if (t is SessionItem s)
                 {
@@ -3289,7 +3179,7 @@ public partial class MainWindow : Window
     private void EmitSessionFinished(SessionItem s)
     {
         AddSessionCompletionRecord(s);
-        var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
+        var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
@@ -3311,7 +3201,7 @@ public partial class MainWindow : Window
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
-        var proj = _projects.FirstOrDefault(p => p.Tabs.Contains(s));
+        var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
         var projName = proj?.Name ?? "";
         var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
         var title = string.IsNullOrEmpty(projName) ? sessName : projName;
@@ -3403,6 +3293,15 @@ public partial class MainWindow : Window
     {
         MarkSessionRead(session.Id);
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
+        if (session.IsEffectivelyHidden && parent != null)
+        {
+            var newlyVisible = parent.UnhideSessionPath(session);
+            foreach (var pane in _panes)
+                foreach (var visible in newlyVisible)
+                    pane.CancelSessionHide(visible.Id);
+            WorkspaceStore.Save(_projects, _archivedProjects);
+            RefreshCardGroups();
+        }
 
         // 이 세션의 프로젝트가 이미 어느 패널에 떠 있으면 그 패널에서 세션만 활성화(재로딩 없음).
         // 같은 프로젝트를 분할한 경우엔 세션이 실제로 보이는 패널(예: 우측 격리)을 우선 고른다 —
@@ -3422,17 +3321,20 @@ public partial class MainWindow : Window
     private void OpenSessionFromSidebar(SessionItem s)
     {
         var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
-        bool reopeningHidden = s.Hidden;
+        bool reopeningHidden = s.IsEffectivelyHidden;
+        if (reopeningHidden && parent != null)
+        {
+            var newlyVisible = parent.UnhideSessionPath(s);
+            foreach (var pane in _panes)
+                foreach (var visible in newlyVisible)
+                    pane.CancelSessionHide(visible.Id);
+            WorkspaceStore.Save(_projects, _archivedProjects);
+            RefreshCardGroups();
+        }
         EnsureProjectSplitOpen(parent);
 
         if (reopeningHidden && _splitActive)
         {
-            if (parent != null)
-            {
-                int idx = parent.Tabs.IndexOf(s);
-                if (idx >= 0 && idx != parent.Tabs.Count - 1)
-                    parent.Tabs.Move(idx, parent.Tabs.Count - 1);
-            }
             OpenSessionIntoPane(LeftPane, s, isNewProjectLoad: false);
             return;
         }
@@ -3494,6 +3396,37 @@ public partial class MainWindow : Window
         var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc)) ?? _focusedPane;
         pane.CloseFileTab(doc);
         RefreshCardGroups();
+    }
+
+    private void OnBrowserTabCloseRequested(BrowserTabItem tab)
+    {
+        var pane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveTab, tab))
+                   ?? _panes.FirstOrDefault(p => p.ShowsTab(tab))
+                   ?? _focusedPane;
+        pane.CloseBrowserTab(tab);
+        RefreshCardGroups();
+    }
+
+    private void OpenBrowserFromSidebar(BrowserTabItem browser)
+    {
+        var parent = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(browser));
+        if (parent != null && !_panes.Any(p => ReferenceEquals(p.ActiveProject, parent)))
+            SelectProjectFromSidebar(parent);
+        else
+            EnsureProjectSplitOpen(parent);
+        EnsureRightGroupIsolation(browser);
+        var pane = _panes.FirstOrDefault(p => p.ShowsTab(browser))
+            ?? (parent != null ? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, parent)) : null)
+            ?? _focusedPane;
+        _focusedPane = pane;
+        pane.OpenBrowserTab(browser);
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+    }
+
+    private void CloseBrowserFromSidebar(BrowserTabItem browser)
+    {
+        OnBrowserTabCloseRequested(browser);
     }
 
     private void OpenSessionIntoPane(WorkspacePaneView pane, SessionItem session, bool isNewProjectLoad)
@@ -3625,7 +3558,19 @@ public partial class MainWindow : Window
 
     private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
     private void RenameSession(SessionItem session) { PaneFor(session).RenameSession(session); SyncRecordsForSessionRename(session); }
-    private void DeleteSession(SessionItem session) => PaneFor(session).DeleteSession(session);
+    private void DeleteSession(SessionItem session)
+    {
+        var project = ProjectFor(session);
+        if (project == null) return;
+        var subtree = project.GetSessionSubtree(session).ToList();
+        if (!EnsureSessionSubtreeUnlocked(subtree, "세션 삭제")) return;
+        string children = subtree.Count > 1 ? $"\n하위 세션 {subtree.Count - 1}개도 함께 영구 삭제됩니다." : "";
+        if (!ConfirmDialog.Show("세션 삭제",
+                $"'{session.Name}' 세션을 영구 삭제할까요?{children}\n대화 기록(.jsonl)도 디스크에서 함께 삭제되며 복구할 수 없습니다.",
+                okLabel: "삭제", danger: true))
+            return;
+        RemoveSessionSubtree(project, subtree, purge: true);
+    }
 
     /// <summary>세션 이름 변경 → 동일 SessionId 의 완료 기록 카드 이름도 동기화하고 저장.</summary>
     private void SyncRecordsForSessionRename(SessionItem session)
@@ -3638,9 +3583,75 @@ public partial class MainWindow : Window
                 new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
     }
 
-    private void StopTrackingSession(SessionItem session) => PaneFor(session).StopTrackingSession(session);
+    private void StopTrackingSession(SessionItem session)
+    {
+        var project = ProjectFor(session);
+        if (project == null) return;
+        var subtree = project.GetSessionSubtree(session).ToList();
+        if (!EnsureSessionSubtreeUnlocked(subtree, "세션 추적 중단")) return;
+        string children = subtree.Count > 1 ? $"\n하위 세션 {subtree.Count - 1}개도 함께 목록에서 제거됩니다." : "";
+        if (!ConfirmDialog.Show("세션 추적 중단",
+                $"'{session.Name}' 세션을 목록에서 제거할까요?{children}\n대화 기록은 디스크에 그대로 보존됩니다.",
+                okLabel: "중단"))
+            return;
+        RemoveSessionSubtree(project, subtree, purge: false);
+    }
 
-    private void HideSessionFromSidebar(SessionItem session) => PaneFor(session).HideSession(session);
+    private void HideSessionFromSidebar(SessionItem session)
+    {
+        if (session.Hidden) return;
+        var project = ProjectFor(session);
+        if (project == null) return;
+        var subtree = project.GetSessionSubtree(session).ToList();
+        var owners = subtree.ToDictionary(s => s, PaneFor);
+
+        session.Hidden = true;
+        foreach (var pane in _panes) pane.OnSessionsHidden(subtree);
+        foreach (var hidden in subtree) owners[hidden].ScheduleSessionHide(hidden);
+
+        RefreshCardGroups();
+        WorkspaceStore.Save(_projects, _archivedProjects);
+    }
+
+    private ProjectItem? ProjectFor(SessionItem session)
+        => _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(session));
+
+    private bool EnsureSessionSubtreeUnlocked(IReadOnlyCollection<SessionItem> subtree, string action)
+    {
+        var locked = subtree.FirstOrDefault(s => s.IsLocked);
+        if (locked == null) return true;
+        bool unlock = ConfirmDialog.AlertWithLink(
+            $"{action} 불가",
+            $"'{locked.Name}' 하위 세션이 잠겨 있습니다.\n잠금을 해제한 후 다시 시도하세요.",
+            linkLabel: "잠금 해제 후 계속");
+        if (!unlock) return false;
+        foreach (var item in subtree.Where(s => s.IsLocked)) item.IsLocked = false;
+        WorkspaceStore.Save(_projects, _archivedProjects);
+        return true;
+    }
+
+    private void RemoveSessionSubtree(ProjectItem project, IReadOnlyList<SessionItem> subtree, bool purge)
+    {
+        if (subtree.Count == 0) return;
+        var owners = subtree.ToDictionary(s => s, PaneFor);
+        int removedIndex = subtree.Select(project.Tabs.IndexOf).Where(i => i >= 0).DefaultIfEmpty(0).Min();
+
+        foreach (var pane in _panes)
+            foreach (var item in subtree)
+                pane.CancelSessionHide(item.Id);
+        foreach (var item in subtree)
+            owners[item].DisposeSessionProcess(item, purge);
+
+        foreach (var item in subtree.OrderByDescending(project.Tabs.IndexOf))
+            project.Tabs.Remove(item);
+        project.NormalizeSessionTree();
+
+        foreach (var pane in _panes) pane.OnSessionsRemoved(project, subtree, removedIndex);
+        RefreshCardGroups();
+        PaneA.RefreshSelectedTabSeam();
+        PaneB.RefreshSelectedTabSeam();
+        WorkspaceStore.Save(_projects, _archivedProjects);
+    }
 
     private void ForkSession(SessionItem session) => PaneFor(session).ForkSession(session);
 
@@ -3733,6 +3744,11 @@ public partial class MainWindow : Window
 
         foreach (var s in proj.Tabs.OfType<SessionItem>().ToList())
             foreach (var pane in _panes) pane.DisposeSessionProcess(s, purge: false);
+        foreach (var browser in proj.Tabs.OfType<BrowserTabItem>().ToList())
+        {
+            browser.Browser.DisposeAll();
+            SettingsService.RemoveBrowserLastUrl(browser.PersistenceKey);
+        }
 
         if (fromArchive) _archivedProjects.Remove(proj);
         else _projects.Remove(proj);
@@ -4382,7 +4398,7 @@ public partial class MainWindow : Window
         }
 
         // 도킹 모드: 파일탐색기가 중앙 최소폭 + 우측 보조 패널을 창 밖으로 밀어내지 않게 클램프.
-        ClampFileExpToFit(animate: false);
+        ClampFileExpToFit();
     }
 
     /// <summary>도킹 모드에서 파일탐색기가 가질 수 있는 최대 폭.
@@ -4404,7 +4420,7 @@ public partial class MainWindow : Window
     /// <summary>파일탐색기가 열려 있고 우측 보조 패널을 밀어낼 만큼 넓으면 남는 공간까지만 줄인다.
     /// 사용자가 선호한 폭(_fileExpWidth)은 보존하므로, 창이 넓어지거나 우측 패널을 닫은 뒤
     /// 파일탐색기를 다시 토글하면 원래 폭으로 복원된다.</summary>
-    private void ClampFileExpToFit(bool animate)
+    private void ClampFileExpToFit()
     {
         if (_narrow == true || _rightCollapsed) return;
         if (BodyGrid.ActualWidth <= 0) return;
@@ -4412,21 +4428,9 @@ public partial class MainWindow : Window
         double current = FileExpCol.Width.IsAbsolute ? FileExpCol.Width.Value : FileExpCol.ActualWidth;
         if (current <= max + 0.5) return;
 
-        if (animate)
-        {
-            _rightAnimCancel?.Invoke();
-            _rightAnimCancel = AnimateColumn(
-                FileExpCol, max, durationMs: 200, easeIn: true,
-                cacheTarget: FileExplorer,
-                mirrors: new[] { FooterFileExpCol },
-                onComplete: () => _rightAnimCancel = null);
-        }
-        else
-        {
-            // SharedSizeGroup 은 멤버 중 최대 폭을 채택하므로 푸터 미러도 함께 줄여야 실제로 줄어든다.
-            FileExpCol.Width = new GridLength(max);
-            FooterFileExpCol.Width = new GridLength(max);
-        }
+        // SharedSizeGroup 은 멤버 중 최대 폭을 채택하므로 푸터 미러도 함께 줄여야 실제로 줄어든다.
+        FileExpCol.Width = new GridLength(max);
+        FooterFileExpCol.Width = new GridLength(max);
     }
 
     /// <summary>오버레이 드로어 폭. 중앙이 일부 보이도록 창 폭에 따라 제한.
@@ -4457,8 +4461,6 @@ public partial class MainWindow : Window
     /// (표시 중이었으면 오버레이로 계속 표시, 접혀 있었으면 오버레이도 닫힘).</summary>
     private void EnterNarrowMode(bool shown)
     {
-        _rightAnimCancel?.Invoke();
-        _overlayAnimCancel?.Invoke();
         // 우측 컬럼 제거(폭 0). SharedSizeGroup 을 풀어야 폭 0 이 실제로 먹는다.
         FileExpSplitterCol.SharedSizeGroup = null;
         FileExpCol.SharedSizeGroup = null;
@@ -4483,7 +4485,6 @@ public partial class MainWindow : Window
     /// <summary>좁은 창 → 도킹: 오버레이를 걷고 우측 컬럼으로 되돌리며 표시 상태를 이어받는다.</summary>
     private void EnterWideMode(bool shown)
     {
-        _overlayAnimCancel?.Invoke();
         _rightOverlayOpen = false;
         RightOverlayHost.Visibility = Visibility.Collapsed;
         ResumeTerminalOnly();   // 오버레이가 열린 채 넓어졌다면 터미널 복원
@@ -4501,65 +4502,34 @@ public partial class MainWindow : Window
         UpdatePanelToggleVisual();
     }
 
-    /// <summary>좁은 창에서 우측 패널을 오버레이로 연다(우측에서 슬라이드 인 + 스크림).
+    /// <summary>좁은 창에서 우측 패널 오버레이와 스크림을 즉시 연다.
     /// 중앙 터미널 WebView2 는 native HWND 라 WPF 오버레이를 뚫고 올라오므로 스냅샷으로 정지한다.</summary>
     private async Task OpenRightOverlay()
     {
-        _overlayAnimCancel?.Invoke();
         await SuspendTerminalOnlyAsync();   // airspace 우회: 터미널을 스냅샷으로 정지
-        double w = OverlayWidth();
-        RightOverlayPanel.Width = w;
+        RightOverlayPanel.Width = OverlayWidth();
         ReparentToOverlay();
+        _rightT.X = 0;
         RightOverlayHost.Visibility = Visibility.Visible;
         _rightOverlayOpen = true;
-        _overlayAnimCancel = AnimateOverlayX(w, 0, 200, easeIn: false);
         UpdatePanelToggleVisual();
         UpdateUsageSidebarBorder();
     }
 
-    /// <summary>오버레이를 닫는다(우측으로 슬라이드 아웃 후 숨김 + 도킹 위치로 복귀).</summary>
+    /// <summary>오버레이를 즉시 닫고 도킹 위치로 복귀한다.</summary>
     private void CloseRightOverlay()
     {
-        _overlayAnimCancel?.Invoke();
-        double w = RightOverlayPanel.ActualWidth > 0 ? RightOverlayPanel.ActualWidth : OverlayWidth();
         _rightOverlayOpen = false;
-        _overlayAnimCancel = AnimateOverlayX(0, w, 180, easeIn: true, onComplete: () =>
-        {
-            RightOverlayHost.Visibility = Visibility.Collapsed;
-            _rightT.X = 0;
-            DockFileExplorer();
-            FileExplorer.Visibility = Visibility.Collapsed; // 좁은 창에서는 닫힘=숨김
-            ResumeTerminalOnly();                            // 터미널 복원
-            UpdateUsageSidebarBorder();
-        });
+        RightOverlayHost.Visibility = Visibility.Collapsed;
+        _rightT.X = 0;
+        DockFileExplorer();
+        FileExplorer.Visibility = Visibility.Collapsed; // 좁은 창에서는 닫힘=숨김
+        ResumeTerminalOnly();                            // 터미널 복원
+        UpdateUsageSidebarBorder();
         UpdatePanelToggleVisual();
     }
 
     private void RightScrim_Click(object sender, MouseButtonEventArgs e) => CloseRightOverlay();
-
-    /// <summary>오버레이 슬라이드 애니메이션(TranslateTransform.X) — 렌더 펄스 동기.</summary>
-    private Action AnimateOverlayX(double from, double to, int durationMs, bool easeIn, Action? onComplete = null)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        bool cancelled = false;
-        _rightT.X = from;
-        EventHandler? handler = null;
-        handler = (_, _) =>
-        {
-            if (cancelled) { System.Windows.Media.CompositionTarget.Rendering -= handler!; return; }
-            var t = Math.Min(1.0, sw.ElapsedMilliseconds / (double)durationMs);
-            var eased = easeIn ? EaseIn(t) : EaseInOut(t);
-            _rightT.X = from + (to - from) * eased;
-            if (t >= 1.0)
-            {
-                System.Windows.Media.CompositionTarget.Rendering -= handler!;
-                _rightT.X = to;
-                onComplete?.Invoke();
-            }
-        };
-        System.Windows.Media.CompositionTarget.Rendering += handler;
-        return () => { if (!cancelled) { cancelled = true; System.Windows.Media.CompositionTarget.Rendering -= handler; } };
-    }
 
     private void MaxBtn_Click(object sender, RoutedEventArgs e) => ToggleMaximizeOrFullScreen();
 

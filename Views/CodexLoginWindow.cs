@@ -151,6 +151,7 @@ public sealed class CodexLoginWindow : Window
             ? ei.GetInt64() : 3600;
         var expiresMs = DateTimeOffset.Now.ToUnixTimeMilliseconds() + expiresSec * 1000;
         CodexCredentialStore.Save(access, refresh, expiresMs);
+        CodexCredentialStore.Enable();
     }
 
     private static string RandomUrlSafe(int bytes)

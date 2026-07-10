@@ -374,8 +374,9 @@
       }
       if (stick) requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
     }
-    // 전환 커버가 '리사이즈 후 첫 재렌더 출력'을 기다리는 중이면 지금 걷는다(앱 재페인트 도착).
-    if (_xferDataWaiter && terms[_xferDataWaiter.room] === t) { const w = _xferDataWaiter; w.fire(); }
+    // 전환 커버가 '리사이즈 후 재렌더 출력'을 기다리는 중이면 통지(청크 크기 포함 — codex 는
+    // 큰 프레임=재페인트 판정, gjc 는 quiet 디바운스, 그 외는 첫 호출에 즉시 걷는다).
+    if (_xferDataWaiter && terms[_xferDataWaiter.room] === t) { const w = _xferDataWaiter; w.fire((bytes && bytes.length) || 0); }
   }
 
   // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
@@ -884,7 +885,7 @@
       roPending = true;
       requestAnimationFrame(function () {
         roPending = false;
-        if (roomId === activeRoomId) { try { entry.fit.fit(); } catch (e) {} }
+        if (roomId === activeRoomId) fitKeepBottom(entry, roomId); // 바닥 추종 보존(스플리터 드래그 등)
       });
     });
     ro.observe(el);
@@ -1013,6 +1014,21 @@
     if (Math.abs(vp.scrollTop - target) > 1) vp.scrollTop = target;
   }
 
+  // fit 전 논리적 바닥(viewportY>=baseY) 여부를 기억했다가, fit 리플로우로 뷰포트가 밀렸으면
+  // 바닥 추종을 복원한다(WT 정합: 바닥에서 리사이즈하면 리사이즈 후에도 바닥). 위로 읽는 중이거나
+  // suppressScroll 진행 중이면 개입 안 함. 비커버 리사이즈(창 드래그·Aero snap·스플리터)용 —
+  // 커버 전환은 _xferWasAtBottom 이 같은 역할을 한다.
+  function fitKeepBottom(entry, roomId) {
+    let atBottom = false;
+    try { const b = entry.term.buffer.active; atBottom = b.viewportY >= b.baseY; } catch (e) {}
+    try { entry.fit.fit(); } catch (e) {}
+    if (atBottom && _scrollSuppress <= 0)
+      requestAnimationFrame(function () {
+        try { entry.term.scrollToBottom(); } catch (e) {}
+        resyncViewportScroll(roomId);
+      });
+  }
+
   // show/재진입 직후 레이아웃이 안정되길 기다려 여러 번 재측정 fit. 활성 방일 때만.
   function refitSoon(roomId) {
     function tryFit(sync) {
@@ -1020,7 +1036,7 @@
       if (!t || roomId !== activeRoomId) return;
       if (_fitSuppressed) return;                                // 전환 중 — reveal 이 최종 폭에서 fit
       if (t.el.clientWidth < 2 || t.el.clientHeight < 2) return; // 아직 0폭이면 다음 타이밍에
-      try { t.fit.fit(); } catch (e) {}
+      fitKeepBottom(t, roomId); // 재진입 fit 리플로우로 바닥 추종이 끊기지 않게 보존
       // 마지막 패스: 그리드가 안 변해 onResize 가 안 떠도 ConPTY 를 현재 그리드 크기로 재동기.
       // 숨겨진 다른 패널의 낡은 방 등이 ConPTY 만 딴 크기로 바꿔놓은 경우(그리드↔ConPTY 어긋남 =
       // TUI 가 좁은 폭으로 그림) 탭을 열 때마다 여기서 자가치유된다. 같은 크기면 C# 이 no-op.
@@ -1074,7 +1090,13 @@
     const mq = window.matchMedia('(resolution: ' + window.devicePixelRatio + 'dppx)');
     const onChange = function () {
       for (const id in terms) disposeWebglIfFractional(terms[id]);
-      if (activeRoomId && terms[activeRoomId]) { try { terms[activeRoomId].fit.fit(); } catch (e) {} }
+      // 전환(커버) 중이면 중간 폭 fit 금지 — reveal/fadeNow 가 최종 폭에서 교정 fit 한다.
+      const act = !_fitSuppressed && activeRoomId ? terms[activeRoomId] : null;
+      if (act && act.el.clientWidth >= 2 && act.el.clientHeight >= 2) {
+        fitKeepBottom(act, activeRoomId); // 다른 배율 모니터로 창 이동 — 바닥 추종 보존
+        // 그리드가 안 변해도 셀 픽셀 메트릭이 바뀌었으므로 글리프 전체 재페인트 강제.
+        try { act.term.refresh(0, act.term.rows - 1); } catch (e) {}
+      }
       watchDevicePixelRatio(); // 새 배율 기준으로 재구독
     };
     try { mq.addEventListener('change', onChange, { once: true }); }
@@ -1089,7 +1111,7 @@
     // 0/극소폭 가드: 패널 접힘(0폭)에서 fit 하면 FitAddon 이 2x1 을 제안 → ConPTY 가 2컬럼으로
     // 리사이즈돼 TUI 화면이 붕괴된다(다시 펴져도 어긋난 채 남음). 측정 가능할 때만 fit.
     if (t.el.clientWidth < 2 || t.el.clientHeight < 2) return;
-    t.fit.fit();
+    fitKeepBottom(t, activeRoomId); // 창 가장자리 드래그·Aero snap 등 비커버 리사이즈에서 바닥 추종 보존
   });
 
   window.chrome.webview.addEventListener('message', function (e) {
@@ -1172,6 +1194,15 @@
           var a = activeRoomId ? terms[activeRoomId] : null; // 미뤄둔 ConPTY 생성 폴백
           if (a && a.needCreate) { a.needCreate = false; try { a.fit.fit(); } catch (e) {} post({ type: 'created', roomId: activeRoomId, cols: a.term.cols, rows: a.term.rows }); }
           else if (a && a.el.clientWidth >= 2 && a.el.clientHeight >= 2) { try { a.fit.fit(); } catch (e) {} } // 억제 중 놓친 크기 변화 교정
+          // 커버 시점에 하단이었으면 교정 fit 리플로우 후에도 하단 복원(+이어지는 재렌더 동안 pin) —
+          // xferReveal.finish 와 대칭. 폴백으로 끝나는 전환이 스크롤 밀린 채 남지 않게.
+          // codex(인라인)는 항상 하단 스냅(finish 와 동일 정책).
+          if (a && (_xferWasAtBottom || a.agent === 'codex')) {
+            try { a.term.scrollToBottom(); } catch (e) {}
+            _pinBottomUntil = Date.now() + 1200;
+            if (a.agent === 'codex') a.follow = true;
+          }
+          _xferWasAtBottom = false; // 소비 완료 — 커버 없는 후속 fadeNow(ClearForHide)가 낡은 값으로 pin 하지 않게
           cov.style.transition = 'opacity 0.14s ease'; cov.style.opacity = '0';
           setTimeout(function () { if (gen === _xferGen) { cov.style.display = 'none'; cov.style.backgroundImage = ''; } }, 200);
         }, 2000);
@@ -1196,6 +1227,15 @@
         } else if (fa && fa.el.clientWidth >= 2 && fa.el.clientHeight >= 2) {
           try { fa.fit.fit(); } catch (e) {} // 억제 중 놓친 크기 변화 교정(이미 맞으면 no-op)
         }
+        // 커버 시점 하단이었으면 하단 복원 + 재렌더 pin — xferReveal 없이 fadeNow 로만 끝나는
+        // 전환(활성 탭이 파일/빈 패널인 synced reveal 의 세션 패널 쪽 등)의 스크롤 밀림 방지.
+        // codex(인라인)는 항상 하단 스냅(finish 와 동일 정책).
+        if (fa && (_xferWasAtBottom || fa.agent === 'codex')) {
+          try { fa.term.scrollToBottom(); } catch (e) {}
+          _pinBottomUntil = Date.now() + 1200;
+          if (fa.agent === 'codex') fa.follow = true;
+        }
+        _xferWasAtBottom = false; // 소비 완료 — 커버 없는 후속 fadeNow 가 낡은 값으로 pin 하지 않게
         cov.style.transition = 'none';
         cov.style.opacity = '0';
         cov.style.display = 'none';
@@ -1237,14 +1277,52 @@
           }
           // 커버 시점에 하단이었다면 리사이즈 reflow 로 viewport 가 위로 밀렸어도 하단 복원 +
           // 이어지는 TUI 재렌더 출력 동안에도 하단 유지(pin) — 전체화면/창모드 전환 스크롤 튐 방지.
-          if (_xferWasAtBottom) {
+          // codex(인라인 TUI)는 리사이즈 후 뷰포트가 애매한 위치에 남기 쉬워 '항상' 하단으로 스냅.
+          if (_xferWasAtBottom || e.agent === 'codex') {
             try { e.term.scrollToBottom(); } catch (err) {}
             _pinBottomUntil = Date.now() + 1200;
+            if (e.agent === 'codex') e.follow = true; // writeOut 추종도 재개 — 이어지는 재렌더 동안 하단 유지
           }
-          if (synced) { post({ type: 'revealPrepared' }); return; } // 커버 유지 — C# 이 양쪽 준비되면 fadeNow 로 동시 걷음
+          // 커버 걷기 시점 정책(에이전트별):
+          // - alt-screen(claude 등): SIGWINCH 재렌더의 첫 출력 = 완성 프레임 → 첫 출력에 걷기(폴백 250ms).
+          // - gjc: 재페인트가 clear(2J)부터 여러 청크로 나뉘어 옴 → 첫 청크에 걷으면 빈/반쯤 그린 화면
+          //   노출(깜빡임). 출력이 120ms 잠잠해질 때까지 대기(무출력 폴백 300ms, 상한 900ms).
+          // - codex: 첫 출력이 재페인트가 아니라 '작은 상태줄 틱'일 수 있어 첫 출력 걷기는 조기
+          //   노출(깜빡임), quiet 대기는 유휴 틱이 계속 흘러 상한까지 끌림(느림). 재페인트 프레임은
+          //   pane 전체 diff 라 크다(12ms 코얼레싱 후 수 KB) → 큰 청크(≥500B)가 오면 즉시 걷고,
+          //   작은 틱만 오면 150ms quiet, 무출력 폴백 350ms, 상한 900ms.
+          const armRevealWaiter = function (fireDone) {
+            if (e.agent === 'gajae') {
+              let quietT = setTimeout(fireDone, 300);
+              setTimeout(fireDone, 900);
+              _xferDataWaiter = { room: room, fire: function () { clearTimeout(quietT); quietT = setTimeout(fireDone, 120); } };
+            } else if (e.agent === 'codex') {
+              let quietT = setTimeout(fireDone, 350);
+              setTimeout(fireDone, 900);
+              _xferDataWaiter = { room: room, fire: function (n) {
+                if ((n || 0) >= 500) { fireDone(); return; }
+                clearTimeout(quietT); quietT = setTimeout(fireDone, 150);
+              } };
+            } else {
+              _xferDataWaiter = { room: room, fire: fireDone };
+              setTimeout(fireDone, 250);
+            }
+          };
+          if (synced) {
+            // 기본(alt-screen) 에이전트는 기존대로 즉시 보고 — C# 이 양쪽 준비되면 fadeNow 로 동시 걷음.
+            if (e.agent !== 'gajae' && e.agent !== 'codex') { post({ type: 'revealPrepared' }); return; }
+            let done = false;
+            const report = function () {
+              if (done || gen !== _xferGen) return;
+              done = true; _xferDataWaiter = null;
+              post({ type: 'revealPrepared' }); // 커버 유지 — C# 이 양쪽 준비되면 fadeNow
+            };
+            armRevealWaiter(report);
+            return;
+          }
           // 폭이 바뀌면 alt-screen TUI(claude 등)는 SIGWINCH 로 '비동기' 재렌더한다. 그 출력이 오기 전에
           // 커버를 걷으면 리사이즈됐지만 아직 안 그려진 빈/틀어진 화면(텍스트 갈라짐·스크롤 튐)이 잠깐
-          // 보인다(분할 닫기 후 좌측 세션 증상). 첫 재렌더 출력이 올 때(writeOut) 또는 폴백 타임아웃에
+          // 보인다(분할 닫기 후 좌측 세션 증상). 재렌더 출력이 올 때(writeOut→waiter) 또는 폴백 타임아웃에
           // refresh(전체 재페인트 강제) 후 커버를 걷는다.
           let faded = false;
           const doFade = function () {
@@ -1257,8 +1335,7 @@
               requestAnimationFrame(fadeOut);
             });
           };
-          _xferDataWaiter = { room: room, fire: doFade };
-          setTimeout(doFade, 250); // 폴백 — 재렌더 출력이 안 와도(정적 화면·일반 셸) 커버는 걷는다
+          armRevealWaiter(doFade);
         };
         let waited = 0;
         const step = function () {
@@ -1271,7 +1348,7 @@
             // 지났을 수 있다 — 여기서 직접 교정해야 낡은(좁은) 그리드로 남지 않는다.
             const cur = activeRoomId ? terms[activeRoomId] : null;
             if (cur && cur !== e && cur.el.clientWidth >= 2 && cur.el.clientHeight >= 2) {
-              try { cur.fit.fit(); } catch (err) {}
+              fitKeepBottom(cur, activeRoomId); // 교정 fit + scrollTop 재동기(show 의 resync 타이머는 이미 지났을 수 있음)
               if (cur.needCreate) { cur.needCreate = false; post({ type: 'created', roomId: activeRoomId, cols: cur.term.cols, rows: cur.term.rows }); }
             }
             if (synced) post({ type: 'revealPrepared' }); else fadeOut();
