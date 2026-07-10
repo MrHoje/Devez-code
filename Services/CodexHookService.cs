@@ -47,6 +47,7 @@ public sealed class CodexHookService : IDisposable
             };
             _lastmsgWatcher.Changed += (_, e) => EmitLastmsg(e.FullPath);
             _lastmsgWatcher.Created += (_, e) => EmitLastmsg(e.FullPath);
+            _lastmsgWatcher.Renamed += (_, e) => EmitLastmsg(e.FullPath);
             foreach (var f in Directory.EnumerateFiles(LastmsgDir, "*.txt")) EmitLastmsg(f);
 
             _busyWatcher = new FileSystemWatcher(BusyDir, "*.txt")
@@ -56,6 +57,7 @@ public sealed class CodexHookService : IDisposable
             };
             _busyWatcher.Changed += (_, e) => EmitBusy(e.FullPath);
             _busyWatcher.Created += (_, e) => EmitBusy(e.FullPath);
+            _busyWatcher.Renamed += (_, e) => EmitBusy(e.FullPath);
 
             _sessionWatcher = new FileSystemWatcher(SessionDir, "*.txt")
             {
@@ -64,6 +66,7 @@ public sealed class CodexHookService : IDisposable
             };
             _sessionWatcher.Changed += (_, e) => EmitSession(e.FullPath);
             _sessionWatcher.Created += (_, e) => EmitSession(e.FullPath);
+            _sessionWatcher.Renamed += (_, e) => EmitSession(e.FullPath);
             // 시작 시 저장된 세션 ID 1회 emit → TerminalSessionManager 가 첫 --resume 결정
             foreach (var f in Directory.EnumerateFiles(SessionDir, "*.txt")) EmitSession(f);
         }
