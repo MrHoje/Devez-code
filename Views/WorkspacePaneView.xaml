@@ -407,7 +407,7 @@
 
         <!-- 세션 타이틀 영역 (devez HeaderBar 정합) -->
         <Border x:Name="SessionHeaderBar" Grid.Row="2" Height="35"
-                Background="{DynamicResource PanelBrush}" BorderThickness="1.5,0,1.5,1.5"
+                Background="{DynamicResource PanelBrush}" BorderThickness="1.5,0,1.5,0"
                 Visibility="Collapsed">
             <Border.Style>
                 <Style TargetType="Border">
