@@ -66,7 +66,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.13.1", "2026-07-09", true, new[]
+        ("v1.13.2", "2026-07-10", true, new[]
+        {
+            "조기 한도 초기화(정기 초기화일 이전에 한도가 초기화되는 경우) 시 계정 사용량 패널과 하단 푸터의 Claude 사용량이 이전 최고치로 잘못 고정되던 문제를 수정했습니다.",
+        }),
+        ("v1.13.1", "2026-07-09", false, new[]
         {
             "사소한 UX 버그를 수정했습니다.",
         }),
