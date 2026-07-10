@@ -1667,6 +1667,7 @@ public sealed class TerminalSessionManager
         List<KeyValuePair<string, TerminalSession>> snapshot;
         lock (_lock) snapshot = _sessions.ToList();
         if (snapshot.Count == 0) return;
+        DiagLog.Write($"GracefulShutdownAll: {snapshot.Count} sessions");
 
         try
         {
@@ -1845,6 +1846,7 @@ public sealed class TerminalSessionManager
         List<KeyValuePair<string, TerminalSession>> snapshot;
         lock (_lock) snapshot = _sessions.Where(kv => idSet.Contains(kv.Key)).ToList();
         if (snapshot.Count == 0) return;
+        DiagLog.Write($"GracefulDisposeRooms: {string.Join(",", snapshot.Select(kv => kv.Key))}");
 
         try
         {
@@ -1892,6 +1894,9 @@ public sealed class TerminalSessionManager
         {
             MarkClaudeQuitting(roomId);
             bool escFirst = !IsClaudeWaitingOnUser(roomId) && IsClaudeBusyRunning(roomId);
+            // "작업 중 세션이 간헐적으로 멈춤" 조사 계측: 앱이 진행중 턴을 ESC 로 취소하는 지점은 여기뿐.
+            // 다음 발생 때 diag.log 에서 이 줄이 있으면 원인=앱 종료/재시작, 없으면 claude 스스로 턴 종료.
+            if (escFirst) DiagLog.Write($"GracefulExit: room={roomId} claude busy → ESC(진행중 턴 취소)+/exit");
             return (false, "/exit\r\n", escFirst);
         }
         if (agent == "codex")

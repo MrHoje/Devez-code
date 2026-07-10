@@ -26,6 +26,9 @@ public sealed class SessionBusyService : IDisposable
     private FileSystemWatcher? _watcher;
     private FileSystemWatcher? _waitingWatcher;
     private System.Threading.Timer? _reconcileTimer;
+    // 방별 마지막으로 로그에 남긴 busy 값 — watcher 중복 이벤트(쓰기당 여러 Changed)로 같은 값이
+    // 반복 기록되는 것을 걸러 diag.log 를 전이 시점만 남긴다. 여러 watcher 스레드에서 접근.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastEmitted = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중.</summary>
     public event Action<string, bool>? BusyChanged;
@@ -119,6 +122,8 @@ public sealed class SessionBusyService : IDisposable
                 if (cur == null && !truth) continue;
                 bool curBusy = string.Equals(cur, "running", StringComparison.OrdinalIgnoreCase);
                 if (curBusy == truth) continue; // 이미 일치 → 훅과 안 싸운다.
+                // 계측: reconcile 이 훅 기록과 다른 판정을 내린 순간 — 스피너 오표시("작업 중인데 꺼짐"류) 조사용.
+                DiagLog.Write($"busy[{room}] reconcile 정정: {(curBusy ? "running" : "idle")}→{(truth ? "running" : "idle")}");
                 try { File.WriteAllText(busyFile, truth ? "running" : "idle"); } catch { /* 훅 쓰기와 경합 가능, 무시 */ }
                 BusyChanged?.Invoke(room, truth);
             }
@@ -191,6 +196,12 @@ public sealed class SessionBusyService : IDisposable
         bool waiting = status.Equals("waiting", StringComparison.OrdinalIgnoreCase)
             || status.Equals("permission", StringComparison.OrdinalIgnoreCase)
             || status.Equals("input", StringComparison.OrdinalIgnoreCase);
+        // 계측: ❗(입력 대기) 무장/해제 시각 — "멈춘 줄 알았는데 실은 권한/질문 대기였다" 판별용.
+        if (!string.Equals(status, _lastEmitted.GetValueOrDefault("wait:" + room), StringComparison.OrdinalIgnoreCase))
+        {
+            _lastEmitted["wait:" + room] = status;
+            DiagLog.Write($"wait[{room}]={status}");
+        }
         WaitingChoiceChanged?.Invoke(room, waiting);
     }
 
@@ -204,6 +215,13 @@ public sealed class SessionBusyService : IDisposable
         // 빈 파일을 읽으면 status="" 가 되어 "running 아님"=idle 로 오인되고, busy→idle 전이로 잡혀 가짜
         // "응답 완료" 알림이 뜬다(서브에이전트 작업 중 매 상태 기록마다 깜빡임). 빈 읽기는 쓰기 중 과도상태이므로 무시.
         if (string.IsNullOrWhiteSpace(status)) return;
+        // 계측: 훅이 쓴 busy 전이 기록. "작업 미완인데 스피너 꺼짐" 발생 시각의 마지막 전이가
+        // (hook)idle 이면 Stop 훅이 실제 발화한 것(=턴이 정말 끝남), 앱 ESC 는 GracefulExit 줄로 구분.
+        if (!string.Equals(status, _lastEmitted.GetValueOrDefault(room), StringComparison.OrdinalIgnoreCase))
+        {
+            _lastEmitted[room] = status;
+            DiagLog.Write($"busy[{room}]={status} (hook)");
+        }
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
         // busy 파일이 방금 바뀜 → 곧바로 reconcile 해 (특히 잘못 쓰인 idle 인지) 교차확인. 유휴 모드여도 즉시 깨움.
         try { _reconcileTimer?.Change(ReconcileWakeMs, System.Threading.Timeout.Infinite); } catch { }

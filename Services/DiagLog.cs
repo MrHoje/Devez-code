@@ -27,8 +27,8 @@ public static class DiagLog
                     File.Move(LogPath, old);
                 }
                 File.AppendAllText(LogPath,
-                    $"[{DateTime.Now:HH:mm:ss.fff}] [T{Environment.CurrentManagedThreadId}] {msg}\r\n",
-                    System.Text.Encoding.UTF8); // 세션 이름(한글) 깨짐 방지
+                    $"[{DateTime.Now:MM-dd HH:mm:ss.fff}] [T{Environment.CurrentManagedThreadId}] {msg}\r\n",
+                    System.Text.Encoding.UTF8); // 세션 이름(한글) 깨짐 방지. 날짜 포함 — 간헐 이슈를 여러 날 로그에서 대조하기 위함.
             }
         }
         catch { /* 진단 로그 실패는 무시 */ }
