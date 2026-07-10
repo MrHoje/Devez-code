@@ -11,7 +11,7 @@
     <Border x:Name="CenterArea" Background="{DynamicResource BgBrush}"
             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,1,0"
             MouseLeftButtonDown="Pane_PreviewInteract" PreviewMouseLeftButtonDown="Pane_PreviewInteract">
-      <!-- 분할 포커스 표시는 탭 타이틀 영역 우측 끝의 체크 아이콘으로 표시한다. -->
+      <!-- 분할 포커스 표시는 선택 탭/타이틀 보더와 타이틀 좌측 꺾쇠를 테마색으로 강조한다. -->
       <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -432,9 +432,20 @@
                           Stroke="{DynamicResource TextMutedBrush}" Visibility="Collapsed"/>
                     <TextBlock x:Name="LastMessageSep" Text="❯"
                                Margin="0,0,8,0" VerticalAlignment="Center"
-                                FontSize="{DynamicResource Fs13}"
-                                Foreground="{DynamicResource TextMutedBrush}"
-                               Visibility="Collapsed"/>
+                               FontSize="{DynamicResource Fs13}"
+                               Visibility="Collapsed">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
+                                                 Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                      <!-- 파일명·dirty점·경로를 한 TextBlock의 inline으로 두어 폰트 크기가 달라도
                           글자 밑선(baseline)이 항상 맞도록 한다. (박스 하단 정렬로는 descent 차이로 어긋남) -->
                      <TextBlock x:Name="SessionHeaderTitle"
@@ -455,27 +466,18 @@
                               Foreground="{DynamicResource TextMutedBrush}"/>
                      </TextBlock>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <StackPanel x:Name="FileHeaderActions" Orientation="Horizontal"
-                                VerticalAlignment="Center" Visibility="Collapsed">
-                        <TextBlock x:Name="FileSizeText" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Fs13}" FontWeight="Normal"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="0,0,12,0"/>
-                        <Button x:Name="FileSaveBtn" Style="{StaticResource TabNavButton}"
-                                Click="FileSaveBtn_Click" ToolTip="저장 (Ctrl+S)">
-                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSave}"
-                                  Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
-                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                        </Button>
-                    </StackPanel>
-                    <Path x:Name="FocusCheck" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconCheck}" Width="14" Height="14"
-                          Margin="8,0,0,0" Stretch="Uniform"
-                          Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="2.2"
-                          Visibility="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView},
-                                               Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
-                          IsHitTestVisible="False"/>
+                <StackPanel x:Name="FileHeaderActions" Grid.Column="1" Orientation="Horizontal"
+                            VerticalAlignment="Center" Visibility="Collapsed">
+                    <TextBlock x:Name="FileSizeText" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs13}" FontWeight="Normal"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Margin="0,0,12,0"/>
+                    <Button x:Name="FileSaveBtn" Style="{StaticResource TabNavButton}"
+                            Click="FileSaveBtn_Click" ToolTip="저장 (Ctrl+S)">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSave}"
+                              Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>

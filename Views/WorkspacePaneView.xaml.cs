@@ -376,7 +376,7 @@ public partial class WorkspacePaneView : UserControl
         CenterArea.BorderThickness = new Thickness(1, 0, show ? 1 : 0, 0);
     }
 
-    /// <summary>분할 중 포커스된 패널의 연결된 탭/타이틀 보더와 타이틀 우측 체크를 강조한다.</summary>
+    /// <summary>분할 중 포커스된 패널의 연결된 탭/타이틀 보더와 타이틀 좌측 꺾쇠를 강조한다.</summary>
     public void SetFocusedVisual(bool focused)
     {
         IsPaneFocused = focused;

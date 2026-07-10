@@ -2920,8 +2920,8 @@ public partial class MainWindow : Window
         AnimatePaneSplit(1, 0, Finish);
     }
 
-    /// <summary>분할 중일 때 포커스된 패널의 선택 탭부터 타이틀 영역까지 이어진 보더와 체크를 강조한다.
-    /// 단일 패널이면 모두 기본 보더로 복원하고 체크를 숨긴다.</summary>
+    /// <summary>분할 중일 때 포커스된 패널의 선택 탭부터 타이틀 영역까지 이어진 보더와 좌측 꺾쇠를 강조한다.
+    /// 단일 패널이면 모두 기본 색상으로 복원한다.</summary>
     private void UpdatePaneFocusVisual(bool animate = true)
     {
         foreach (var p in _panes)
