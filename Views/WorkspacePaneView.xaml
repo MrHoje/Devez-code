@@ -265,7 +265,7 @@
                                   HorizontalAlignment="Left" VerticalAlignment="Bottom"
                                   Margin="-10,0,0,-1"
                                   Stroke="{DynamicResource LineBrush}" StrokeThickness="1"
-                                  Data="M10,-3 L10,0 A10,13 0 0 1 0,13"
+                                  Data="M10,0 A10,13 0 0 1 0,13"
                                   Visibility="Collapsed"/>
                             <Path x:Name="TabFootRightFill"
                                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
@@ -277,7 +277,7 @@
                                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                   Margin="0,0,-10,-1"
                                   Stroke="{DynamicResource LineBrush}" StrokeThickness="1"
-                                  Data="M1,-3 L1,0 A10,13 0 0 0 11,13"
+                                  Data="M1,0 A10,13 0 0 0 11,13"
                                   Visibility="Collapsed"/>
                           </Grid>
                             <DataTemplate.Triggers>
