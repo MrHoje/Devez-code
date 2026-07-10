@@ -6,8 +6,8 @@ namespace DevezCode.Services;
 
 /// <summary>세션 간 지시 릴레이(수동 오케스트레이션) 수신부 + 자식 세션 위임.
 ///
-/// (1) 지시 주입(/devez-send): commands\ 에 떨군 명령 파일을 감지해 대상 세션 터미널에 프롬프트를 주입.
-/// (2) 자식 위임(/devez-send-new): action="new-child" 명령이 오면 ChildSessionRequested 이벤트로 MainWindow(UI스레드)에
+/// (1) 지시 주입(/devez:send): commands\ 에 떨군 명령 파일을 감지해 대상 세션 터미널에 프롬프트를 주입.
+/// (2) 자식 위임(/devez:child): action="new-child" 명령이 오면 ChildSessionRequested 이벤트로 MainWindow(UI스레드)에
 ///     "부모 A의 자식 세션 생성"을 요청. 생성 후 InjectWhenReady 가 자식 부팅 완료를 기다렸다 브리핑을 주입한다.
 ///
 /// 단방향(fire-and-forget) — 대상/자식의 완료를 발신자로 되돌리는 콜백은 없다.
