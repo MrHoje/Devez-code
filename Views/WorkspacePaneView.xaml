@@ -407,7 +407,7 @@
 
         <!-- 세션 타이틀 영역 (devez HeaderBar 정합) -->
         <Border x:Name="SessionHeaderBar" Grid.Row="2" Height="35"
-                Background="{DynamicResource PanelBrush}" BorderThickness="0,0,0,1"
+                Background="{DynamicResource PanelBrush}" BorderThickness="1.5,0,1.5,1.5"
                 Visibility="Collapsed">
             <Border.Style>
                 <Style TargetType="Border">
@@ -416,7 +416,6 @@
                         <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
                                      Value="True">
                             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                            <Setter Property="BorderThickness" Value="0,0,0,1.5"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
@@ -482,9 +481,21 @@
             </Grid>
         </Border>
 
-        <!-- 콘텐츠: 활성 탭에 따라 터미널(공유) 또는 파일 에디터(탭당 1개) 표시.
-             ClipToBounds: 분할 애니메이션 중 좌상단 고정된 스냅샷이 패널 밖으로 넘치지 않게 잘라낸다. -->
-        <Grid Grid.Row="3" ClipToBounds="True">
+        <!-- 콘텐츠: 타이틀 좌우선에서 이어져 패널 하단까지 감싸는 고정 1.5px 프레임.
+             두께를 항상 예약해 포커스 전환 때 터미널 크기가 바뀌지 않게 한다. -->
+        <Border Grid.Row="3" BorderThickness="1.5,0,1.5,1.5">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
+                                     Value="True">
+                            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+        <Grid ClipToBounds="True">
             <ContentControl x:Name="TerminalHostContainer"
                             AllowDrop="True"
                             DragOver="TerminalHostContainer_DragOver"
@@ -530,6 +541,7 @@
                 </StackPanel>
             </Grid>
         </Grid>
+        </Border>
       </Grid>
     </Border>
 </UserControl>
