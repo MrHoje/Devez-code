@@ -107,6 +107,7 @@
                         <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
                                      Value="True">
                             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1.5"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
@@ -334,8 +335,11 @@
                                                    Value="True"/>
                                     </MultiDataTrigger.Conditions>
                                     <Setter TargetName="TabBd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                    <Setter TargetName="TabBd" Property="BorderThickness" Value="1.5,1.5,1.5,0"/>
                                     <Setter TargetName="TabFootLeftLine" Property="Stroke" Value="{DynamicResource PrimaryBrush}"/>
+                                    <Setter TargetName="TabFootLeftLine" Property="StrokeThickness" Value="1.5"/>
                                     <Setter TargetName="TabFootRightLine" Property="Stroke" Value="{DynamicResource PrimaryBrush}"/>
+                                    <Setter TargetName="TabFootRightLine" Property="StrokeThickness" Value="1.5"/>
                                 </MultiDataTrigger>
                              </DataTemplate.Triggers>
                          </DataTemplate>
@@ -412,6 +416,7 @@
                         <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
                                      Value="True">
                             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1.5"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
