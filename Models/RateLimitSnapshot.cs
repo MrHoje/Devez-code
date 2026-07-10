@@ -54,6 +54,12 @@ public class RateLimitSnapshot
     public static (double? pct, DateTimeOffset? reset) PickWindow(
         double? oldPct, DateTimeOffset? oldReset, double? newPct, DateTimeOffset? newReset)
     {
+        // reset 시각이 이미 지난 값은 죽은 창의 값 — max 누적으로 새 창까지 넘어가 이전 창
+        // 최고치에 얼어붙던 "주간 82% 고정" 방지. reset 없는 값은 판정 불가라 유지.
+        var now = DateTimeOffset.Now;
+        if (oldReset is DateTimeOffset ore && ore + WindowTolerance < now) { oldPct = null; oldReset = null; }
+        if (newReset is DateTimeOffset nre && nre + WindowTolerance < now) { newPct = null; newReset = null; }
+
         if (newPct is not double n) return (oldPct, oldReset); // next 데이터 없음 → 이전 유지
         if (oldPct is not double) return (newPct, newReset);
         if (oldReset is DateTimeOffset orr && newReset is DateTimeOffset nrr)

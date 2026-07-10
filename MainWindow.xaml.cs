@@ -51,7 +51,11 @@ public partial class MainWindow : Window
     // 계정 사용량: statusLine 훅(세션 활성 시 거의 실시간) + OAuth API(세션 없어도 3분 주기) 두 소스를 병합.
     private readonly StatusLineService _statusLine = new();
     private readonly UsageApiService _usageApi = new();
-    private Models.RateLimitSnapshot? _rlMerged; // 두 소스를 합친 푸터 표시값
+    // 소스별 "최신" 스냅샷만 보관 — 병합 결과를 자기 자신에 되먹이면(누적) 과거의 높은 값이
+    // PickWindow 의 Math.Max 로 윈도우 리셋 전까지 얼어붙는다(주간 82% 고정 버그).
+    private Models.RateLimitSnapshot? _rlHook;   // statusLine 훅 최신
+    private Models.RateLimitSnapshot? _rlApi;    // OAuth API 최신
+    private Models.RateLimitSnapshot? _rlMerged; // 두 소스 최신을 합친 푸터 표시값
     // 추가 provider 사용량(푸터): codex(openai) + opencode-go.
     private readonly CodexUsageService _codex = new();
     private readonly OpenCodeGoUsageService _openCodeGo = new();
@@ -644,8 +648,8 @@ public partial class MainWindow : Window
     // 두 소스 스냅샷을 RateLimitSnapshot.Merge 로 합쳐(새 윈도우 채택·동일 윈도우 비후퇴) 푸터에 표시.
     private void StartStatusLine()
     {
-        _statusLine.SnapshotUpdated += OnRlSnapshot;
-        _usageApi.SnapshotUpdated  += OnRlSnapshot;
+        _statusLine.SnapshotUpdated += s => OnRlSnapshot(s, fromApi: false);
+        _usageApi.SnapshotUpdated  += s => OnRlSnapshot(s, fromApi: true);
         _statusLine.Start();
         _usageApi.Start();
 
@@ -865,10 +869,12 @@ public partial class MainWindow : Window
 
     private const double UsageBarTrack = 102; // 사용량 패널 막대 트랙 폭(XAML 과 일치)
 
-    private void OnRlSnapshot(Models.RateLimitSnapshot snap)
+    private void OnRlSnapshot(Models.RateLimitSnapshot snap, bool fromApi)
         => Dispatcher.InvokeAsync(() =>
         {
-            _rlMerged = Models.RateLimitSnapshot.Merge(_rlMerged, snap);
+            if (fromApi) _rlApi = snap; else _rlHook = snap;
+            // 누적 금지: 두 소스의 최신값만 매번 새로 병합해 과거 높은 값이 얼어붙지 않게 한다.
+            _rlMerged = Models.RateLimitSnapshot.Merge(_rlHook, _rlApi);
             if (_rlMerged != null) ApplyRateLimit(_rlMerged); // 하단 푸터
             RefreshUsagePanelIfVisible();                     // 우측 사이드바
         });
