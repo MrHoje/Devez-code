@@ -29,6 +29,14 @@ public sealed class CodexUsageService : IDisposable
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private System.Threading.Timer? _poll;
+    // Timer 주기와 로그인/수동 새로고침이 겹치면 오래된 요청이 나중에 도착해 최신값을 덮을 수 있다.
+    private readonly SemaphoreSlim _pollGate = new(1, 1);
+    private readonly object _usageLock = new();
+    private ProviderUsage? _lastPublished;
+    private string? _lastAccountId;
+
+    // 같은 reset window 인데 reset_at 이 서버별로 1초 정도 흔들리는 경우를 같은 창으로 본다.
+    private static readonly TimeSpan ResetWindowTolerance = TimeSpan.FromMinutes(1);
 
     public event Action<ProviderUsage>? Updated;
 
@@ -74,6 +82,8 @@ public sealed class CodexUsageService : IDisposable
 
     private async Task PollAsync()
     {
+        // 이미 폴링 중이면 이번 요청은 생략. 이전 요청이 늦게 끝나 최신 스냅샷을 되돌리는 것을 막는다.
+        if (!_pollGate.Wait(0)) return;
         try
         {
             await EnsureFreshAsync().ConfigureAwait(false);
@@ -107,9 +117,69 @@ public sealed class CodexUsageService : IDisposable
             // 초기화권 정보는 별도 엔드포인트 — 실패해도 사용량은 정상 전달
             var credits = await FetchResetCreditsAsync(token, accountId, _http).ConfigureAwait(false);
 
-            Updated?.Invoke(new ProviderUsage { Provider = "codex", Primary = primary, Weekly = weekly, PlanLabel = plan, ResetCredits = credits });
+            var usage = StabilizeUsage(new ProviderUsage
+            {
+                Provider = "codex",
+                Primary = primary,
+                Weekly = weekly,
+                PlanLabel = plan,
+                ResetCredits = credits,
+            }, accountId);
+            Updated?.Invoke(usage);
         }
         catch { /* 일시 오류 — 직전 값 유지 */ }
+        finally { _pollGate.Release(); }
+    }
+
+    /// <summary>동일한 reset window 에서는 사용률이 감소할 수 없으므로 최고값을 유지한다.
+    /// API 캐시/CLI 병행 세션의 오래된 응답이 54%를 2%로 되돌리는 현상을 차단한다.
+    /// reset 시각이 다음 창으로 바뀌었거나 기존 창이 끝났으면 새 창의 낮은 값을 정상 수용한다.</summary>
+    private ProviderUsage StabilizeUsage(ProviderUsage candidate, string? accountId)
+    {
+        lock (_usageLock)
+        {
+            if (!string.Equals(_lastAccountId, accountId, StringComparison.Ordinal))
+                _lastPublished = null; // 계정 전환 시 이전 계정 최고값을 섞지 않는다.
+
+            var now = DateTimeOffset.Now;
+            var stable = new ProviderUsage
+            {
+                Provider = candidate.Provider,
+                Primary = StabilizeWindow(_lastPublished?.Primary, candidate.Primary, now),
+                Weekly = StabilizeWindow(_lastPublished?.Weekly, candidate.Weekly, now),
+                Monthly = candidate.Monthly,
+                PlanLabel = candidate.PlanLabel,
+                Error = candidate.Error,
+                ResetCredits = candidate.ResetCredits,
+                Balances = candidate.Balances,
+            };
+            _lastAccountId = accountId;
+            _lastPublished = stable;
+            return stable;
+        }
+    }
+
+    private static UsageWindow? StabilizeWindow(UsageWindow? previous, UsageWindow? candidate, DateTimeOffset now)
+    {
+        if (previous == null) return candidate;
+        if (candidate == null)
+            return previous.ResetsAt is { } previousReset && previousReset <= now ? null : previous;
+
+        // 기존 창이 실제로 끝났으면 새 창 값(대개 낮음)을 즉시 수용한다.
+        if (previous.ResetsAt is { } endedAt && endedAt <= now) return candidate;
+
+        if (previous.ResetsAt is { } oldReset && candidate.ResetsAt is { } newReset)
+        {
+            var resetDelta = newReset - oldReset;
+            if (resetDelta > ResetWindowTolerance) return candidate;  // 다음 reset window
+            if (resetDelta < -ResetWindowTolerance) return previous; // 늦게 도착한 이전 window
+        }
+
+        return new UsageWindow
+        {
+            UsedPercent = Math.Max(previous.UsedPercent, candidate.UsedPercent),
+            ResetsAt = candidate.ResetsAt ?? previous.ResetsAt,
+        };
     }
 
     /// <summary>window 객체에서 used_percent + reset_at(epoch초)/reset_after_seconds 를 읽어 UsageWindow 로.</summary>
