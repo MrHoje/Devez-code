@@ -30,6 +30,10 @@ public partial class PluginControlDialog : UserControl
     private string _discQuery = "";   // 하단 Discover 검색어
     private ClaudeMarketplace? _selectedMarket;   // 상세 열린(선택된) 마켓
     private ClaudePlugin? _selectedPlugin;   // 상세 열린(선택된) 플러그인
+    // 카드 상세 조회는 비동기라, 빠르게 다른 카드를 누르면 이전 요청이 나중에 완료될 수 있다.
+    // 번호가 현재 선택과 다르면 결과를 버려 카드/출력/Discover 상태를 섞지 않는다.
+    private int _pluginDetailRequest;
+    private int _marketDetailRequest;
     // 출력은 탭별로 분리 저장 — 탭 전환 시 서로의 내용이 유지되지 않는다.
     private string _outPlugins = "";
     private string _outMarket = "";
@@ -148,6 +152,8 @@ public partial class PluginControlDialog : UserControl
     private void SetTabVisual(string tab)
     {
         _tab = tab;
+        _pluginDetailRequest++;
+        _marketDetailRequest++;
         bool plugins = tab == "plugins";
         bool market = tab == "marketplaces";
         bool skills = tab == "skills";
@@ -296,7 +302,9 @@ public partial class PluginControlDialog : UserControl
         _selectedPlugin = p;
         p.IsSelected = true;
         ShowOutput($"details · {p.Name}", "조회 중…");
+        var request = ++_pluginDetailRequest;
         var result = await ClaudePluginService.DetailsAsync(p.Id);
+        if (_disposed || request != _pluginDetailRequest || !ReferenceEquals(_selectedPlugin, p)) return;
         ShowOutput($"details · {p.Name}", string.IsNullOrWhiteSpace(result) ? "(출력 없음)" : result);
     }
 
@@ -408,6 +416,8 @@ public partial class PluginControlDialog : UserControl
     {
         if (MarketOf(sender) is not ClaudeMarketplace m) return;
 
+        var request = ++_marketDetailRequest;
+
         var sb = new System.Text.StringBuilder();
         if (!string.IsNullOrWhiteSpace(m.Source)) sb.AppendLine($"소스: {m.Source}");
         if (!string.IsNullOrWhiteSpace(m.Repo)) sb.AppendLine($"저장소: {m.Repo}");
@@ -431,7 +441,7 @@ public partial class PluginControlDialog : UserControl
         try
         {
             var list = await ClaudePluginService.AvailableAsync();
-            if (_disposed) return;
+            if (_disposed || request != _marketDetailRequest || !ReferenceEquals(_selectedMarket, m)) return;
             // 설치된 것을 상단에 모은다(설치됨 → 설치 수 내림차순).
             foreach (var a in list.Where(a => string.Equals(a.Marketplace, m.Name, StringComparison.OrdinalIgnoreCase))
                                    .OrderByDescending(a => a.IsInstalled)
@@ -441,7 +451,7 @@ public partial class PluginControlDialog : UserControl
         catch { }
         finally
         {
-            if (!_disposed)
+            if (!_disposed && request == _marketDetailRequest && ReferenceEquals(_selectedMarket, m))
             {
                 DiscoverSpinner.Visibility = Visibility.Collapsed;
                 DiscoverEmpty.Visibility = _avail.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -452,6 +462,7 @@ public partial class PluginControlDialog : UserControl
     // 하단 Discover 패널을 닫고 출력이 전체 높이를 차지하도록 되돌린다.
     private void CloseDiscover()
     {
+        _marketDetailRequest++;
         if (_selectedMarket != null) { _selectedMarket.IsSelected = false; _selectedMarket = null; }
         OutputRow.Height = new GridLength(1, GridUnitType.Star);
         DiscoverRow.Height = new GridLength(0);
