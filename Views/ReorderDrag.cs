@@ -49,6 +49,7 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly bool _commitUnchanged;
     private readonly bool _hitTestSlots;
     private readonly bool _suppressDisplacement;
+    private readonly bool _useLiveLayoutPlaceholder;
     private readonly double? _hitTestXOverride; // 고스트는 실제 포인터를 따르고 드롭 순서 판정 X만 고정.
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
@@ -73,7 +74,7 @@ internal sealed class ReorderDrag<T> where T : class
         int columns, double gridMidX, double grabOffsetX, double grabOffsetY,
         Func<T, T, bool>? canDropInto, Action<T?, FrameworkElement?>? dropIntoPreviewChanged,
         Func<T, T, Task>? onDropInto, bool commitUnchanged,
-        bool hitTestSlots, bool suppressDisplacement,
+        bool hitTestSlots, bool suppressDisplacement, bool useLiveLayoutPlaceholder,
         Action<T?, FrameworkElement?, bool>? reorderPreviewChanged,
         double? hitTestXOverride)
     {
@@ -83,6 +84,7 @@ internal sealed class ReorderDrag<T> where T : class
         _canDropInto = canDropInto; _dropIntoPreviewChanged = dropIntoPreviewChanged;
         _onDropInto = onDropInto; _commitUnchanged = commitUnchanged;
         _hitTestSlots = hitTestSlots; _suppressDisplacement = suppressDisplacement;
+        _useLiveLayoutPlaceholder = useLiveLayoutPlaceholder;
         _reorderPreviewChanged = reorderPreviewChanged;
         _hitTestXOverride = hitTestXOverride;
         if (IsGrid)
@@ -167,7 +169,10 @@ internal sealed class ReorderDrag<T> where T : class
         bool suppressDisplacement = false,
         bool preserveRowOrder = false,
         double? hitTestXOverride = null,
-        bool includeElementMarginsInBounds = false)
+        bool includeElementMarginsInBounds = false,
+        bool useLiveLayoutPlaceholder = false,
+        FrameworkElement? ghostBackgroundTarget = null,
+        Brush? ghostBackground = null)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -254,7 +259,11 @@ internal sealed class ReorderDrag<T> where T : class
         else
         {
             grabPt = Mouse.GetPosition(sourceElement);
-            ghost = DragHelper.BeginManualDrag(ghostSource ?? sourceElement, sourceElement);
+            ghost = DragHelper.BeginManualDrag(
+                ghostSource ?? sourceElement,
+                sourceElement,
+                ghostBackgroundTarget,
+                ghostBackground);
         }
         if (ghost == null) return null;
 
@@ -269,7 +278,8 @@ internal sealed class ReorderDrag<T> where T : class
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
             columns, gridMidX, reorderGrabX, reorderGrabY, canDropInto, dropIntoPreviewChanged,
             onDropInto, commitUnchanged,
-            hitTestSlots, suppressDisplacement, reorderPreviewChanged, hitTestXOverride);
+            hitTestSlots, suppressDisplacement, useLiveLayoutPlaceholder,
+            reorderPreviewChanged, hitTestXOverride);
     }
 
     /// <summary>자식 드래그 시작 즉시 원래 자리를 접어 부모에서 빠져나오는 프리뷰를 표시.
@@ -327,8 +337,7 @@ internal sealed class ReorderDrag<T> where T : class
         // 2열 전체폭 폴더는 컬렉션 자체를 라이브 재배치하므로, 밀려나는 대상 카드의 중앙은
         // 폴더 높이/FLIP 애니메이션에 따라 계속 움직인다. 고정 X 판정을 쓰는 폴더 경로에서는
         // 숨겨진 source가 현재 차지하는 자리의 중앙을 기준으로 인접한 한 칸만 넘긴다.
-        if (_hitTestSlots && _suppressDisplacement && _reorderPreviewChanged != null
-            && _hitTestXOverride != null)
+        if (_useLiveLayoutPlaceholder)
         {
             UpdateLiveLayoutTarget(pointer);
             return;

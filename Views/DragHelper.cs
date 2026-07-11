@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -22,7 +23,10 @@ internal static class DragHelper
         void MoveToMouse();
     }
 
-    internal static Brush CaptureSnapshot(FrameworkElement source)
+    internal static Brush CaptureSnapshot(
+        FrameworkElement source,
+        FrameworkElement? backgroundTarget = null,
+        Brush? background = null)
     {
         var w = Math.Max(1, source.ActualWidth);
         var h = Math.Max(1, source.ActualHeight);
@@ -35,7 +39,34 @@ internal static class DragHelper
         var vb = new VisualBrush(source) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top };
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
+        {
+            if (backgroundTarget != null && background != null)
+            {
+                try
+                {
+                    var origin = ReferenceEquals(source, backgroundTarget)
+                        ? new Point()
+                        : backgroundTarget.TransformToAncestor(source).Transform(new Point());
+                    var radius = backgroundTarget is Border border
+                        ? Math.Max(Math.Max(border.CornerRadius.TopLeft, border.CornerRadius.TopRight),
+                            Math.Max(border.CornerRadius.BottomLeft, border.CornerRadius.BottomRight))
+                        : 0;
+                    dc.DrawRoundedRectangle(
+                        background,
+                        null,
+                        new Rect(origin.X, origin.Y,
+                            Math.Max(1, backgroundTarget.ActualWidth),
+                            Math.Max(1, backgroundTarget.ActualHeight)),
+                        radius,
+                        radius);
+                }
+                catch (InvalidOperationException)
+                {
+                    // 캡처 직전 시각 트리에서 분리되면 기존 투명 스냅샷으로 폴백한다.
+                }
+            }
             dc.DrawRectangle(vb, null, new Rect(0, 0, w, h));
+        }
         bitmap.Render(dv);
         bitmap.Freeze();
         var brush = new ImageBrush(bitmap) { Stretch = Stretch.Fill, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top };
@@ -87,13 +118,18 @@ internal static class DragHelper
         private bool _disposed;
 
         internal ManualDragSession(Window window, AdornerLayer layer, UIElement root,
-            FrameworkElement snapshotSource, FrameworkElement hideTarget)
+            FrameworkElement snapshotSource, FrameworkElement hideTarget,
+            FrameworkElement? snapshotBackgroundTarget, Brush? snapshotBackground)
         {
             _window = window;
             _layer = layer;
             _grab = Mouse.GetPosition(snapshotSource);
             _ghostH = snapshotSource.ActualHeight;
-            _adorner = new DragAdorner(root, snapshotSource);
+            _adorner = new DragAdorner(
+                root,
+                snapshotSource,
+                snapshotBackgroundTarget,
+                snapshotBackground);
             _layer.Add(_adorner);
             _hideTargets = HideTargets(new[] { hideTarget });
             MoveToMouse();
@@ -154,7 +190,11 @@ internal static class DragHelper
         }
     }
 
-    public static ManualDragSession? BeginManualDrag(FrameworkElement source, FrameworkElement? hideTarget = null)
+    public static ManualDragSession? BeginManualDrag(
+        FrameworkElement source,
+        FrameworkElement? hideTarget = null,
+        FrameworkElement? snapshotBackgroundTarget = null,
+        Brush? snapshotBackground = null)
     {
         var window = Window.GetWindow(source);
         if (window == null) return null;
@@ -167,7 +207,14 @@ internal static class DragHelper
         var root = window.Content as UIElement ?? source;
         if (layer == null) return null;
 
-        return new ManualDragSession(window, layer, root, source, hideTarget ?? source);
+        return new ManualDragSession(
+            window,
+            layer,
+            root,
+            source,
+            hideTarget ?? source,
+            snapshotBackgroundTarget,
+            snapshotBackground);
     }
 
     public static ManualDragSession? BeginManualDrag(
@@ -220,10 +267,14 @@ internal static class DragHelper
         private readonly Rectangle _ghost;
         private double _x, _y;
 
-        public DragAdorner(UIElement root, FrameworkElement source)
+        public DragAdorner(
+            UIElement root,
+            FrameworkElement source,
+            FrameworkElement? snapshotBackgroundTarget,
+            Brush? snapshotBackground)
             : this(
                 root,
-                CaptureSnapshot(source),
+                CaptureSnapshot(source, snapshotBackgroundTarget, snapshotBackground),
                 new Size(Math.Max(1, source.ActualWidth), Math.Max(1, source.ActualHeight)))
         {
         }

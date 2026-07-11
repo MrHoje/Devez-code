@@ -1632,62 +1632,57 @@ public partial class SidebarView : UserControl
                 ApplyPreviewLayout();
         }
 
-        var folderGhostBackground = folderGhostSource != null
-            ? TryFindResource("PanelBrush") as Brush
-            : null;
-        if (folderGhostBackground != null)
-            folderGhostSource!.Background = folderGhostBackground;
-        try
-        {
-            _rootDrag = ReorderDrag<object>.TryStart(
-                this, rows, item, source.Element,
-                (sourceItem, hostTarget, _) =>
+        var folderGhostBackground = folderGhostSource == null
+            ? null
+            : FindVisualChildren<Border>(folderGhostSource)
+                .FirstOrDefault(border => border.Name == "ProjectCardRoot")?.Background
+                ?? (TryFindResource("PanelBrush") as Brush);
+        _rootDrag = ReorderDrag<object>.TryStart(
+            this, rows, item, source.Element,
+            (sourceItem, hostTarget, _) =>
+            {
+                bool columnChanged = false;
+                if (sourceItem is ProjectItem project && _projectColumns >= 2 &&
+                    !double.IsPositiveInfinity(gridMidX))
                 {
-                    bool columnChanged = false;
-                    if (sourceItem is ProjectItem project && _projectColumns >= 2 &&
-                        !double.IsPositiveInfinity(gridMidX))
-                    {
-                        int targetColumn = Mouse.GetPosition(this).X >= gridMidX ? 1 : 0;
-                        columnChanged = project.Column != targetColumn;
-                        project.Column = targetColumn;
-                    }
+                    int targetColumn = Mouse.GetPosition(this).X >= gridMidX ? 1 : 0;
+                    columnChanged = project.Column != targetColumn;
+                    project.Column = targetColumn;
+                }
 
-                    bool orderChanged;
-                    if (sourceItem is ProjectFolderItem
-                        && _projectColumns >= 2
-                        && lastFolderPreviewOrder != null)
-                    {
-                        orderChanged = ApplyRootOrderWithinVisible(
-                            lastFolderPreviewOrder, visibleItems, archived);
-                    }
-                    else
-                    {
-                        orderChanged = MoveRootItemWithinVisible(
-                            sourceItem, hostTarget, visibleItems, archived);
-                    }
-                    if (columnChanged && !orderChanged)
-                    {
-                        panel?.InvalidateMeasure();
-                        panel?.InvalidateArrange();
-                    }
-                    if (orderChanged || columnChanged)
-                        ProjectsReordered?.Invoke();
-                    return Task.CompletedTask;
-                },
-                exactFollow: true,
-                commitUnchanged: item is ProjectItem && _projectColumns >= 2,
-                reorderPreviewChanged: PreviewRootMove,
-                hitTestSlots: true,
-                suppressDisplacement: _projectColumns >= 2,
-                preserveRowOrder: true,
-                hitTestXOverride: folderHitTestX);
-        }
-        finally
-        {
-            // FolderRoot의 실제 스타일은 투명 배경이다. 캡처 직후 로컬 값을 지워 원상복구한다.
-            if (folderGhostBackground != null)
-                folderGhostSource!.ClearValue(Border.BackgroundProperty);
-        }
+                bool orderChanged;
+                if (sourceItem is ProjectFolderItem
+                    && _projectColumns >= 2
+                    && lastFolderPreviewOrder != null)
+                {
+                    orderChanged = ApplyRootOrderWithinVisible(
+                        lastFolderPreviewOrder, visibleItems, archived);
+                }
+                else
+                {
+                    orderChanged = MoveRootItemWithinVisible(
+                        sourceItem, hostTarget, visibleItems, archived);
+                }
+                if (columnChanged && !orderChanged)
+                {
+                    panel?.InvalidateMeasure();
+                    panel?.InvalidateArrange();
+                }
+                if (orderChanged || columnChanged)
+                    ProjectsReordered?.Invoke();
+                return Task.CompletedTask;
+            },
+            exactFollow: true,
+            commitUnchanged: item is ProjectItem && _projectColumns >= 2,
+            reorderPreviewChanged: PreviewRootMove,
+            hitTestSlots: true,
+            suppressDisplacement: _projectColumns >= 2,
+            preserveRowOrder: true,
+            hitTestXOverride: folderHitTestX,
+            useLiveLayoutPlaceholder: _projectColumns >= 2 && item is ProjectFolderItem,
+            ghostSource: folderGhostSource,
+            ghostBackgroundTarget: folderGhostSource,
+            ghostBackground: folderGhostBackground);
 
         if (_rootDrag != null)
         {
