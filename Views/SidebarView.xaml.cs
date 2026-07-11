@@ -1680,6 +1680,7 @@ public partial class SidebarView : UserControl
             preserveRowOrder: true,
             hitTestXOverride: folderHitTestX,
             useLiveLayoutPlaceholder: _projectColumns >= 2 && item is ProjectFolderItem,
+            useFixedLayoutPlaceholder: _projectColumns < 2,
             ghostSource: folderGhostSource,
             ghostBackgroundTarget: folderGhostSource,
             ghostBackground: folderGhostBackground);
@@ -1795,7 +1796,7 @@ public partial class SidebarView : UserControl
                     if (MoveProjectWithinVisible(coll, project, hostTarget, visibleItems))
                         ProjectsReordered?.Invoke();
                     return Task.CompletedTask;
-                }, exactFollow: true);
+                }, exactFollow: true, useFixedLayoutPlaceholder: true);
         }
 
         if (_projectDrag != null)

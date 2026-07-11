@@ -50,6 +50,7 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly bool _hitTestSlots;
     private readonly bool _suppressDisplacement;
     private readonly bool _useLiveLayoutPlaceholder;
+    private readonly bool _useFixedLayoutPlaceholder;
     private readonly double? _hitTestXOverride; // 고스트는 실제 포인터를 따르고 드롭 순서 판정 X만 고정.
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
@@ -74,7 +75,8 @@ internal sealed class ReorderDrag<T> where T : class
         int columns, double gridMidX, double grabOffsetX, double grabOffsetY,
         Func<T, T, bool>? canDropInto, Action<T?, FrameworkElement?>? dropIntoPreviewChanged,
         Func<T, T, Task>? onDropInto, bool commitUnchanged,
-        bool hitTestSlots, bool suppressDisplacement, bool useLiveLayoutPlaceholder,
+        bool hitTestSlots, bool suppressDisplacement,
+        bool useLiveLayoutPlaceholder, bool useFixedLayoutPlaceholder,
         Action<T?, FrameworkElement?, bool>? reorderPreviewChanged,
         double? hitTestXOverride)
     {
@@ -85,6 +87,7 @@ internal sealed class ReorderDrag<T> where T : class
         _onDropInto = onDropInto; _commitUnchanged = commitUnchanged;
         _hitTestSlots = hitTestSlots; _suppressDisplacement = suppressDisplacement;
         _useLiveLayoutPlaceholder = useLiveLayoutPlaceholder;
+        _useFixedLayoutPlaceholder = useFixedLayoutPlaceholder;
         _reorderPreviewChanged = reorderPreviewChanged;
         _hitTestXOverride = hitTestXOverride;
         if (IsGrid)
@@ -171,6 +174,7 @@ internal sealed class ReorderDrag<T> where T : class
         double? hitTestXOverride = null,
         bool includeElementMarginsInBounds = false,
         bool useLiveLayoutPlaceholder = false,
+        bool useFixedLayoutPlaceholder = false,
         FrameworkElement? ghostBackgroundTarget = null,
         Brush? ghostBackground = null)
     {
@@ -278,7 +282,8 @@ internal sealed class ReorderDrag<T> where T : class
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
             columns, gridMidX, reorderGrabX, reorderGrabY, canDropInto, dropIntoPreviewChanged,
             onDropInto, commitUnchanged,
-            hitTestSlots, suppressDisplacement, useLiveLayoutPlaceholder,
+            hitTestSlots, suppressDisplacement,
+            useLiveLayoutPlaceholder, useFixedLayoutPlaceholder,
             reorderPreviewChanged, hitTestXOverride);
     }
 
@@ -339,7 +344,14 @@ internal sealed class ReorderDrag<T> where T : class
         // 숨겨진 source가 현재 차지하는 자리의 중앙을 기준으로 인접한 한 칸만 넘긴다.
         if (_useLiveLayoutPlaceholder)
         {
-            UpdateLiveLayoutTarget(pointer);
+            UpdatePlaceholderTarget(pointer, liveLayout: true);
+            return;
+        }
+        // 1열 카드 목록은 이동 중인 대상의 RenderTransform을 다시 hit-test하지 않고,
+        // 캡처된 삽입 자리 중앙만 사용해 다음 카드가 조기에 들썩이는 피드백 루프를 차단한다.
+        if (_useFixedLayoutPlaceholder)
+        {
+            UpdatePlaceholderTarget(pointer, liveLayout: false);
             return;
         }
 
@@ -433,16 +445,27 @@ internal sealed class ReorderDrag<T> where T : class
         ApplyDisplacement();
     }
 
-    private void UpdateLiveLayoutTarget(Point pointer)
+    private void UpdatePlaceholderTarget(Point pointer, bool liveLayout)
     {
         ClearDropIntoTarget();
         var cursor = _horizontal ? pointer.X : pointer.Y;
         var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
         var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
-        var sourceBounds = CurrentPrimaryBounds(_slots[_sourceIndex]);
-        var currentAreaCenter = _horizontal
-            ? sourceBounds.Left + sourceBounds.Width / 2
-            : sourceBounds.Top + sourceBounds.Height / 2;
+        double currentAreaCenter;
+        if (liveLayout)
+        {
+            var sourceBounds = CurrentPrimaryBounds(_slots[_sourceIndex]);
+            currentAreaCenter = _horizontal
+                ? sourceBounds.Left + sourceBounds.Width / 2
+                : sourceBounds.Top + sourceBounds.Height / 2;
+        }
+        else
+        {
+            // 변환 애니메이션만 쓰는 1열 목록에서 source 원본은 시작 위치에 숨겨져 있다.
+            // 현재 삽입 인덱스의 캡처 위치를 source가 확보한 가상 빈자리로 사용한다.
+            var placeholder = _slots[Math.Clamp(_targetIndex, 0, _slots.Count - 1)];
+            currentAreaCenter = AxisPos(placeholder) + AxisSize(_slots[_sourceIndex]) / 2;
+        }
         var capturedSourceBounds = CapturedPrimaryBounds(_slots[_sourceIndex]);
         var previousCenter = _liveLastDraggedCenter ?? (_horizontal
             ? capturedSourceBounds.Left + capturedSourceBounds.Width / 2
@@ -493,6 +516,8 @@ internal sealed class ReorderDrag<T> where T : class
         _liveTransitionDirection = transitionDirection;
         _liveTransitionCenter = transitionCenter;
         SetReorderPreviewForTargetIndex(newTarget);
+        if (!liveLayout)
+            ApplyDisplacement();
     }
 
     private void SetReorderPreviewForTargetIndex(int targetIndex)
