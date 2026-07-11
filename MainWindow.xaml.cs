@@ -432,7 +432,7 @@ public partial class MainWindow : Window
             RestoreLastSession();
             WorkspaceStore.ExportSessionsIndex(_projects); // 세션 릴레이용 인덱스 시작 시 최신화
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
-            RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
+            RestoreSplitState(); // 직전 실행 시 분할 상태였으면 패널 B 복원
             _wakeScheduler.Start();
             RefreshCardGroups(); // 시작 시에도 분할 설정 프로젝트 카드는 좌/우 파티션으로(영속 refs 기반)
             CheckHookSetup();
@@ -863,7 +863,8 @@ public partial class MainWindow : Window
     private void AddRow(List<Models.UsageRowVM> rows, string label, double? percent, DateTimeOffset? resetsAt, bool isShortWindow, bool showEstimate = false)
     {
         if (percent is not double p) return;
-        var c = Math.Clamp(p, 0, 100);
+        var displayPercent = DisplayUsagePercent(p);
+        var c = Math.Clamp(displayPercent, 0, 100);
         string reset = isShortWindow
             ? (resetsAt != null ? $"↻ {FormatRemaining(resetsAt)}" : "")
             : (resetsAt != null ? $"↻ {FormatResetDate(resetsAt)}" : "");
@@ -900,12 +901,12 @@ public partial class MainWindow : Window
         rows.Add(new Models.UsageRowVM
       {
             Label = label,
-            PercentText = $"{p:F0}%",
+            PercentText = $"{displayPercent:F0}%",
             ResetText = reset,
             EstimateText = estimateText,
             EstimateBrush = estimateBrush,
             BarWidth = UsageBarTrack * c / 100.0,
-            BarBrush = RlBrush(c),
+            BarBrush = RlBrush(Math.Clamp(p, 0, 100)),
         });
    }
 
@@ -1146,9 +1147,9 @@ public partial class MainWindow : Window
             return "Grok Build\n" + u.Error;
         var sb = new System.Text.StringBuilder("Grok Build");
         if (u.Weekly?.UsedPercent is double w)
-            sb.Append($"\n주간 한도 {w:F0}%");
+            sb.Append($"\n주간 한도 {FormatUsagePercent(w)}");
         if (u.Monthly?.UsedPercent is double m)
-            sb.Append($"\n월간 {m:F0}%");
+            sb.Append($"\n월간 한도 {FormatUsagePercent(m)}");
         var reset = u.Weekly?.ResetsAt ?? u.Monthly?.ResetsAt;
         if (reset is DateTimeOffset r)
             sb.Append($"  ·  초기화 {FormatResetDate(r)}");
@@ -1204,10 +1205,11 @@ public partial class MainWindow : Window
         label.Text = labelText;
         if (pct is double v)
         {
-            var c = Math.Clamp(v, 0, 100);
+            var displayPercent = DisplayUsagePercent(v);
+            var c = Math.Clamp(displayPercent, 0, 100);
             bar.Width = RlTrackWidth * c / 100.0;
-            bar.Background = RlBrush(c);
-            pctText.Text = $"{v:F0}%";
+            bar.Background = RlBrush(Math.Clamp(v, 0, 100));
+            pctText.Text = $"{displayPercent:F0}%";
         }
         else { bar.Width = 0; pctText.Text = "--"; }
     }
@@ -1215,8 +1217,19 @@ public partial class MainWindow : Window
     /// <summary>고정 라벨 윈도우 막대(주간·월간) 갱신.</summary>
     private void SetWindowBar(Border bar, TextBlock pct, double? usedPercent)
     {
-        if (usedPercent is double p) { var c = Math.Clamp(p, 0, 100); bar.Width = RlTrackWidth * c / 100.0; bar.Background = RlBrush(c); pct.Text = $"{p:F0}%"; }
-        else { bar.Width = 0; pct.Text = "--"; }
+        if (usedPercent is double p)
+        {
+            var displayPercent = DisplayUsagePercent(p);
+            var c = Math.Clamp(displayPercent, 0, 100);
+            bar.Width = RlTrackWidth * c / 100.0;
+            bar.Background = RlBrush(Math.Clamp(p, 0, 100));
+            pct.Text = $"{displayPercent:F0}%";
+        }
+        else
+        {
+            bar.Width = 0;
+            pct.Text = "--";
+        }
     }
 
     /// <summary>provider 패널 사이 리딩 구분선(|) 동적 표시 — 앞 패널이 보일 때만.</summary>
@@ -1240,7 +1253,7 @@ public partial class MainWindow : Window
        sb.Append(planLabel);
         if (snap.FiveHourPercent is double f)
        {
-            sb.Append($"\n5시간 한도 {f:F0}%  ·  초기화까지 {FormatRemaining(snap.FiveHourResetsAt)}");
+            sb.Append($"\n5시간 한도 {FormatUsagePercent(f)}  ·  초기화까지 {FormatRemaining(snap.FiveHourResetsAt)}");
             if (showEst)
             {
                 var est5h = EstimateLimitReached(f, snap.FiveHourResetsAt, TimeSpan.FromHours(5));
@@ -1250,7 +1263,7 @@ public partial class MainWindow : Window
        }
         if (snap.SevenDayPercent is double w)
        {
-            sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(snap.SevenDayResetsAt)}");
+            sb.Append($"\n주간 한도 {FormatUsagePercent(w)}  ·  초기화 {FormatResetDate(snap.SevenDayResetsAt)}");
             if (showEst)
             {
                 var est7d = EstimateLimitReached(w, snap.SevenDayResetsAt, TimeSpan.FromDays(7));
@@ -1259,7 +1272,7 @@ public partial class MainWindow : Window
             }
        }
         if (snap.FableWeeklyPercent is double fwt)
-            sb.Append($"\nFable 주간 한도 {fwt:F0}%  ·  초기화 {FormatResetDate(snap.FableWeeklyResetsAt)}");
+            sb.Append($"\nFable 주간 한도 {FormatUsagePercent(fwt)}  ·  초기화 {FormatResetDate(snap.FableWeeklyResetsAt)}");
         return sb.ToString();
        }
 
@@ -1271,7 +1284,7 @@ public partial class MainWindow : Window
         if (u.PlanLabel != null) sb.Append("  ·  ").Append(u.PlanLabel);
         if (u.Primary?.UsedPercent is double p)
         {
-            sb.Append($"\n5시간 한도 {p:F0}%  ·  초기화까지 {FormatRemaining(u.Primary.ResetsAt)}");
+            sb.Append($"\n5시간 한도 {FormatUsagePercent(p)}  ·  초기화까지 {FormatRemaining(u.Primary.ResetsAt)}");
             if (showEst)
             {
                 var estP = EstimateLimitReached(p, u.Primary.ResetsAt, TimeSpan.FromHours(5));
@@ -1281,7 +1294,7 @@ public partial class MainWindow : Window
         }
         if (u.Weekly?.UsedPercent is double w)
         {
-            sb.Append($"\n주간 한도 {w:F0}%  ·  초기화 {FormatResetDate(u.Weekly.ResetsAt)}");
+            sb.Append($"\n주간 한도 {FormatUsagePercent(w)}  ·  초기화 {FormatResetDate(u.Weekly.ResetsAt)}");
             if (showEst)
             {
                 var estW = EstimateLimitReached(w, u.Weekly.ResetsAt, TimeSpan.FromDays(7));
@@ -1291,7 +1304,7 @@ public partial class MainWindow : Window
         }
         if (u.Monthly?.UsedPercent is double m)
         {
-            sb.Append($"\n월간 한도 {m:F0}%  ·  초기화 {FormatResetDate(u.Monthly.ResetsAt)}");
+            sb.Append($"\n월간 한도 {FormatUsagePercent(m)}  ·  초기화 {FormatResetDate(u.Monthly.ResetsAt)}");
             if (showEst)
             {
                 var estM = EstimateLimitReached(m, u.Monthly.ResetsAt, TimeSpan.FromDays(30));
@@ -1391,6 +1404,17 @@ public partial class MainWindow : Window
     /// <summary>초기화 일자/시각 ("6월 24일 09:00").</summary>
     private static string FormatResetDate(DateTimeOffset? resetsAt)
         => resetsAt is DateTimeOffset r ? r.ToLocalTime().ToString("M월 d일 HH:mm") : "—";
+
+    private static double DisplayUsagePercent(double usedPercent)
+    {
+        var used = Math.Clamp(usedPercent, 0, 100);
+        return SettingsService.LoadShowRemainingUsage() ? 100 - used : used;
+    }
+
+    private static string FormatUsagePercent(double usedPercent)
+        => SettingsService.LoadShowRemainingUsage()
+            ? $"{DisplayUsagePercent(usedPercent):F0}% 남음"
+            : $"{usedPercent:F0}%";
 
     /// <summary>현재 사용률과 초기화 시각으로, 지금까지의 평균 소비 속도가 유지된다고 가정할 때
     /// 한도(100%)에 도달하는 예상 시각을 계산한다. 충분한 데이터가 없으면 null.</summary>

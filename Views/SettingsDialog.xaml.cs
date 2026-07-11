@@ -51,9 +51,9 @@ public partial class SettingsDialog : UserControl
     private bool _originalShowDirView, _originalShowQueueView, _originalShowBrowserView, _originalShowDiffView;
     private bool _selectedShowDirView, _selectedShowQueueView, _selectedShowBrowserView, _selectedShowDiffView;
 
-    // 푸터 사용량 표시(provider별) + 한도예상 표시 — [저장] 시점에만 디스크 반영.
-    private bool _originalShowFooterClaude, _originalShowFooterCodex, _originalShowFooterGo, _originalShowFooterDeepSeek, _originalShowFooterGrok, _originalShowEstimate;
-    private bool _selectedShowFooterClaude, _selectedShowFooterCodex, _selectedShowFooterGo, _selectedShowFooterDeepSeek, _selectedShowFooterGrok, _selectedShowEstimate;
+    // 푸터 사용량 표시(provider별) + 사용량 표시 방식 — [저장] 시점에만 디스크 반영.
+    private bool _originalShowFooterClaude, _originalShowFooterCodex, _originalShowFooterGo, _originalShowFooterDeepSeek, _originalShowFooterGrok, _originalShowEstimate, _originalShowRemainingUsage;
+    private bool _selectedShowFooterClaude, _selectedShowFooterCodex, _selectedShowFooterGo, _selectedShowFooterDeepSeek, _selectedShowFooterGrok, _selectedShowEstimate, _selectedShowRemainingUsage;
 
     // 알림 상세(자동닫힘/모니터) — [저장] 시점에만 디스크 반영. 위치는 기존 _notifyPos/_originalNotifyPos 사용.
     private int    _originalNotifyAutoCloseSec, _selectedNotifyAutoCloseSec;
@@ -834,6 +834,8 @@ public partial class SettingsDialog : UserControl
         // 한도 도달 예상 표시 토글
         _originalShowEstimate = _selectedShowEstimate = SettingsService.LoadShowEstimate();
         ShowEstimateToggle.IsChecked = _originalShowEstimate;
+        _originalShowRemainingUsage = _selectedShowRemainingUsage = SettingsService.LoadShowRemainingUsage();
+        ShowRemainingUsageToggle.IsChecked = _originalShowRemainingUsage;
         _loadingFooterUsage = false;
 
         // DeepSeek 연결 토글 상태 복원 — 키가 이미 저장되어 있으면 입력 영역은 숨김
@@ -859,6 +861,12 @@ public partial class SettingsDialog : UserControl
     {
         if (_loadingFooterUsage) return;
         _selectedShowEstimate = ShowEstimateToggle.IsChecked == true;
+    }
+
+    private void RemainingUsageToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loadingFooterUsage) return;
+        _selectedShowRemainingUsage = ShowRemainingUsageToggle.IsChecked == true;
     }
 
     // ── 계정 사용량 로그인/재연결 — OAuth 창을 띄운다(갱신은 설정 닫힐 때 MainWindow 가 RefreshNow). ──
@@ -1208,6 +1216,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) return true;
         if (_selectedShowFooterGrok != _originalShowFooterGrok) return true;
         if (_selectedShowEstimate != _originalShowEstimate) return true;
+        if (_selectedShowRemainingUsage != _originalShowRemainingUsage) return true;
         if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec) return true;
         if (_selectedNotifyMonitor != _originalNotifyMonitor) return true;
         if (_notifyPos != _originalNotifyPos) return true;
@@ -1308,6 +1317,13 @@ public partial class SettingsDialog : UserControl
             (Application.Current.MainWindow as MainWindow)?.RefreshUsagePanelIfVisible();
         }
         _originalShowEstimate = _selectedShowEstimate;
+
+        if (_selectedShowRemainingUsage != _originalShowRemainingUsage)
+        {
+            SettingsService.SaveShowRemainingUsage(_selectedShowRemainingUsage);
+            (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
+        }
+        _originalShowRemainingUsage = _selectedShowRemainingUsage;
 
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext)
         {
@@ -1412,6 +1428,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) { _selectedShowFooterDeepSeek = _originalShowFooterDeepSeek; ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek; }
         if (_selectedShowFooterGrok != _originalShowFooterGrok) { _selectedShowFooterGrok = _originalShowFooterGrok; ShowFooterGrokToggle.IsChecked = _originalShowFooterGrok; }
         if (_selectedShowEstimate != _originalShowEstimate) { _selectedShowEstimate = _originalShowEstimate; ShowEstimateToggle.IsChecked = _originalShowEstimate; }
+        if (_selectedShowRemainingUsage != _originalShowRemainingUsage) { _selectedShowRemainingUsage = _originalShowRemainingUsage; ShowRemainingUsageToggle.IsChecked = _originalShowRemainingUsage; }
         // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)
         CancelShortcutCapture();
         _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;

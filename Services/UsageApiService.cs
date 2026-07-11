@@ -40,6 +40,7 @@ public sealed class UsageApiService : IDisposable
     private System.Threading.Timer? _poll;
     private readonly SemaphoreSlim _pollGate = new(1, 1);
     private static string? _lastSuccessfulSubscriptionType;
+    private readonly UsageDropGuard _dropGuard = new();
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
@@ -178,11 +179,31 @@ public sealed class UsageApiService : IDisposable
                     DiagLog.Write("ClaudeUsage discarded: credentials changed during request");
                     return;
                 }
+                var samples = new List<UsageDropGuard.WindowSample>(3);
+                if (snap.FiveHourPercent is double fiveHour)
+                    samples.Add(new("5h", fiveHour, snap.FiveHourResetsAt));
+                if (snap.SevenDayPercent is double sevenDay)
+                    samples.Add(new("weekly", sevenDay, snap.SevenDayResetsAt));
+                if (snap.FableWeeklyPercent is double fableWeekly)
+                    samples.Add(new("fable", fableWeekly, snap.FableWeeklyResetsAt));
+                if (!_dropGuard.ShouldPublish(samples, DateTimeOffset.Now, out var dropReason))
+                {
+                    DiagLog.Write(
+                        $"ClaudeUsage deferred suspicious drop: {dropReason} "
+                        + $"({credential.Source}, credential={credential.Fingerprint})");
+                    return;
+                }
+                if (dropReason != null)
+                    DiagLog.Write(
+                        $"ClaudeUsage accepted confirmed drop: {dropReason} "
+                        + $"({credential.Source}, credential={credential.Fingerprint})");
 
                 WriteFallback(snap, credential.Fingerprint);
                 Volatile.Write(ref _lastSuccessfulSubscriptionType, credential.SubscriptionType);
                 DiagLog.Write(
-                    $"ClaudeUsage updated: 5h={snap.FiveHourPercent:F0}, weekly={snap.SevenDayPercent:F0} ({credential.Source})");
+                    $"ClaudeUsage updated: 5h={snap.FiveHourPercent:F0} reset5={snap.FiveHourResetsAt:O}, "
+                    + $"weekly={snap.SevenDayPercent:F0} resetW={snap.SevenDayResetsAt:O} "
+                    + $"({credential.Source}, credential={credential.Fingerprint})");
                 SnapshotUpdated?.Invoke(snap);
                 return;
             }

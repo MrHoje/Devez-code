@@ -884,7 +884,8 @@
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
                         <Button x:Name="WakeControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
-                                Click="WakeControlBtn_Click" ToolTip="깨우기" Margin="0,0,2,0">
+                                Click="WakeControlBtn_Click" ToolTip="루틴" Margin="0,0,2,0"
+                                Visibility="Collapsed">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconAlarmClock}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>

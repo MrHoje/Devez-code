@@ -5,8 +5,8 @@ using DevezCode.Models;
 namespace DevezCode.Services;
 
 /// <summary>claude statusLine 훅(statusline-hook.ps1)이 떨군 rate_limits JSON 을 감시해
-/// 최신 계정 사용량을 알린다. 여러 세션이 같은 파일을 덮어쓰므로 같은 reset window 에서
-/// 더 낮은 사용률은 이전 세션의 낡은 스냅샷으로 보고 무시한다.</summary>
+/// 최신 계정 사용량을 알린다. 같은 reset window 에서 한 번만 관측된 큰 급락은 보류하고,
+/// 다음 파일 갱신에서도 확인될 때 실제 조기 초기화로 채택한다.</summary>
 public sealed class StatusLineService : IDisposable
 {
     private static string Dir => Path.Combine(
@@ -17,6 +17,7 @@ public sealed class StatusLineService : IDisposable
     private System.Threading.Timer? _poll;
     private long _lastWriteTicks = -1; // 마지막으로 emit 한 파일 쓰기시각 — 중복 emit 방지
     private readonly object _emitLock = new();
+    private readonly UsageDropGuard _dropGuard = new();
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
@@ -63,6 +64,20 @@ public sealed class StatusLineService : IDisposable
             var snap = TryRead();
             if (snap == null) return;
             _lastWriteTicks = ticks;
+
+            var samples = new List<UsageDropGuard.WindowSample>(2);
+            if (snap.FiveHourPercent is double fiveHour)
+                samples.Add(new("5h", fiveHour, snap.FiveHourResetsAt));
+            if (snap.SevenDayPercent is double sevenDay)
+                samples.Add(new("weekly", sevenDay, snap.SevenDayResetsAt));
+            if (!_dropGuard.ShouldPublish(samples, DateTimeOffset.Now, out var dropReason))
+            {
+                DiagLog.Write($"ClaudeStatusLine deferred suspicious drop: {dropReason}");
+                return;
+            }
+            if (dropReason != null)
+                DiagLog.Write($"ClaudeStatusLine accepted confirmed drop: {dropReason}");
+
             SnapshotUpdated?.Invoke(snap);
         }
     }

@@ -128,6 +128,8 @@ public static class SettingsService
         public bool ShowFooterGrok { get; set; } = false;
         // 계정 사용량 사이드바/툴팁에 한도 도달 예상 시간 표시. 기본 켜짐.
         public bool ShowEstimate { get; set; } = false;
+        // 계정 사용량을 사용한 양 대신 남은 양(100%-사용률)으로 표시. 기본 꺼짐.
+        public bool ShowRemainingUsage { get; set; } = false;
         // 탭 이동 전역 단축키(가상키코드). 기본 한자(0x19) + 좌(0x25)/우(0x27) 방향키.
         public int TabHotkeyModifierVk { get; set; } = 0x19;
         public int TabHotkeyPrevVk     { get; set; } = 0x25;
@@ -287,6 +289,10 @@ public static class SettingsService
     // ── 계정 사용량 한도 도달 예상 표시 ──────────────────────────
     public static bool LoadShowEstimate() => Current.ShowEstimate;
     public static void SaveShowEstimate(bool v) { Current.ShowEstimate = v; Save(); }
+
+    // ── 계정 사용량 남은 수치 표시 ────────────────────────────────
+    public static bool LoadShowRemainingUsage() => Current.ShowRemainingUsage;
+    public static void SaveShowRemainingUsage(bool v) { Current.ShowRemainingUsage = v; Save(); }
 
     // ── 탭 이동 전역 단축키 (수정자 + 이전/다음 키, 가상키코드) ──────
     public static (int mod, int prev, int next) LoadTabHotkey()

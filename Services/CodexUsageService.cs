@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DevezCode.Models;
@@ -33,6 +34,7 @@ public sealed class CodexUsageService : IDisposable
     // Timer 주기와 로그인/수동 새로고침이 겹치면 오래된 요청이 나중에 도착해 최신값을 덮을 수 있다.
     private readonly SemaphoreSlim _pollGate = new(1, 1);
     private readonly HashSet<string> _rejectedTokens = new(StringComparer.Ordinal);
+    private readonly UsageDropGuard _dropGuard = new();
 
     public event Action<ProviderUsage>? Updated;
 
@@ -91,7 +93,7 @@ public sealed class CodexUsageService : IDisposable
         try
         {
             await EnsureFreshAsync().ConfigureAwait(false);
-            var (token, accountId, expired) = ReadAuth(_rejectedTokens);
+            var (token, accountId, expired, credentialSource) = ReadAuth(_rejectedTokens);
             if (token == null)
             {
                 if (_rejectedTokens.Count > 0)
@@ -140,15 +142,40 @@ public sealed class CodexUsageService : IDisposable
             string? plan = root.TryGetProperty("plan_type", out var pt) && pt.ValueKind == JsonValueKind.String
                 ? DerivePlanLabel(pt.GetString()) : null;
 
-            // 초기화권 정보는 별도 엔드포인트 — 실패해도 사용량은 정상 전달
-            var credits = await FetchResetCreditsAsync(token, accountId, _http).ConfigureAwait(false);
-            var (currentToken, currentAccountId, _) = ReadAuth(_rejectedTokens);
+            var (currentToken, currentAccountId, _, _) = ReadAuth(_rejectedTokens);
             if (!string.Equals(token, currentToken, StringComparison.Ordinal)
                 || !string.Equals(accountId, currentAccountId, StringComparison.Ordinal))
             {
                 DiagLog.Write("CodexUsage response discarded: auth changed while request was in flight");
                 return;
             }
+
+            // 초기화권 정보는 별도 엔드포인트 — 실패해도 사용량은 정상 전달
+            var credits = await FetchResetCreditsAsync(token, accountId, _http).ConfigureAwait(false);
+            (currentToken, currentAccountId, _, _) = ReadAuth(_rejectedTokens);
+            if (!string.Equals(token, currentToken, StringComparison.Ordinal)
+                || !string.Equals(accountId, currentAccountId, StringComparison.Ordinal))
+            {
+                DiagLog.Write("CodexUsage response discarded: auth changed while fetching reset credits");
+                return;
+            }
+
+            var samples = new List<UsageDropGuard.WindowSample>(2);
+            if (primary != null)
+                samples.Add(new("5h", primary.UsedPercent, primary.ResetsAt));
+            if (weekly != null)
+                samples.Add(new("weekly", weekly.UsedPercent, weekly.ResetsAt));
+            if (!_dropGuard.ShouldPublish(samples, DateTimeOffset.Now, out var dropReason))
+            {
+                DiagLog.Write(
+                    $"CodexUsage deferred suspicious drop: {dropReason} "
+                    + $"({credentialSource}, credential={Fingerprint(token)})");
+                return;
+            }
+            if (dropReason != null)
+                DiagLog.Write(
+                    $"CodexUsage accepted confirmed drop: {dropReason} "
+                    + $"({credentialSource}, credential={Fingerprint(token)})");
 
             var usage = new ProviderUsage
             {
@@ -159,7 +186,9 @@ public sealed class CodexUsageService : IDisposable
                 ResetCredits = credits,
             };
             DiagLog.Write(
-                $"CodexUsage updated: 5h={primary?.UsedPercent:F0}, weekly={weekly?.UsedPercent:F0}");
+                $"CodexUsage updated: 5h={primary?.UsedPercent:F0} reset5={primary?.ResetsAt:O}, "
+                + $"weekly={weekly?.UsedPercent:F0} resetW={weekly?.ResetsAt:O} "
+                + $"({credentialSource}, credential={Fingerprint(token)})");
             Updated?.Invoke(usage);
         }
         catch (Exception ex)
@@ -168,7 +197,6 @@ public sealed class CodexUsageService : IDisposable
         }
         finally { _pollGate.Release(); }
     }
-
 
     /// <summary>window 객체에서 used_percent + reset_at(epoch초)/reset_after_seconds 를 읽어 UsageWindow 로.</summary>
     private static UsageWindow? ReadWindow(JsonElement rl, string key)
@@ -183,6 +211,9 @@ public sealed class CodexUsageService : IDisposable
             reset = DateTimeOffset.Now.AddSeconds(rs.GetDouble());
         return new UsageWindow { UsedPercent = rawPct, ResetsAt = reset };
     }
+
+    private static string Fingerprint(string token)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)))[..12];
 
     private static string DerivePlanLabel(string? planType)
     {
@@ -239,11 +270,11 @@ public sealed class CodexUsageService : IDisposable
         return null;
     }
 
-    /// <summary>auth.json 에서 (accessToken, accountId, 만료여부). 없으면 (null,null,false).</summary>
-    private static (string? token, string? accountId, bool expired) ReadAuth(
+    /// <summary>auth.json 에서 토큰, account ID, 만료 여부, 인증 출처를 읽는다.</summary>
+    private static (string? token, string? accountId, bool expired, string? source) ReadAuth(
         ISet<string>? excludedTokens = null)
     {
-        if (CodexCredentialStore.IsDisconnected()) return (null, null, false);
+        if (CodexCredentialStore.IsDisconnected()) return (null, null, false, null);
 
         foreach (var path in AuthPaths())
         {
@@ -266,7 +297,7 @@ public sealed class CodexUsageService : IDisposable
                     var cliExpiry = ExpirationFromJwt(cliToken);
                     if (cliExpiry is { } expiry && expiry <= DateTimeOffset.UtcNow)
                         continue;
-                    return (cliToken, AccountIdFromJwt(cliToken), false);
+                    return (cliToken, AccountIdFromJwt(cliToken), false, AuthSource(path));
                 }
                 foreach (var key in AuthKeys)
                 {
@@ -282,12 +313,22 @@ public sealed class CodexUsageService : IDisposable
                     if (expired) continue;
                     var accountId = AccountIdFromJwt(token)
                                     ?? (e.TryGetProperty("accountId", out var ac) && ac.ValueKind == JsonValueKind.String ? ac.GetString() : null);
-                    return (token, accountId, false);
+                    return (token, accountId, false, AuthSource(path));
                 }
             }
             catch { }
         }
-        return (null, null, false);
+        return (null, null, false, null);
+    }
+
+    private static string AuthSource(string path)
+    {
+        if (string.Equals(path, CodexCredentialStore.StorePath, StringComparison.OrdinalIgnoreCase))
+            return "DevezCode";
+        return path.Contains($"{Path.DirectorySeparatorChar}.codex{Path.DirectorySeparatorChar}",
+            StringComparison.OrdinalIgnoreCase)
+            ? "Codex CLI"
+            : "opencode";
     }
 
     /// <summary>JWT payload 의 "https://api.openai.com/auth".chatgpt_account_id 추출.</summary>

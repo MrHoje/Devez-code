@@ -54,7 +54,7 @@ public partial class WakeSchedulerWindow : Window
     };
 
     private void Add_Click(object sender, RoutedEventArgs e) {
-        if (_providers.Count == 0) { MessageBox.Show(this, "활성화된 Claude 또는 Codex가 없습니다.", "깨우기", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        if (_providers.Count == 0) { MessageBox.Show(this, "활성화된 Claude 또는 Codex가 없습니다.", "루틴", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         if (_selected != null && !ApplyEditor()) return;
         var entry = new WakeScheduleEntry { Provider = _providers[0], Weekdays = new List<DayOfWeek> { DateTime.Now.DayOfWeek } };
         _entries.Add(entry); ScheduleList.SelectedItem = entry;
@@ -100,9 +100,9 @@ public partial class WakeSchedulerWindow : Window
 
     private void Save_Click(object sender, RoutedEventArgs e) {
         if (_selected != null && !ApplyEditor()) return;
-        if (_entries.Any(e => e.Weekdays.Count == 0)) { MessageBox.Show(this, "요일을 하나 이상 선택하세요.", "깨우기", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        if (_entries.Any(e => e.Weekdays.Count == 0)) { MessageBox.Show(this, "요일을 하나 이상 선택하세요.", "루틴", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         if (!SettingsService.SaveWakeSchedules(_hiddenEntries.Concat(_entries))) {
-            MessageBox.Show(this, "설정을 저장하지 못했습니다. 잠시 후 다시 시도하세요.", "깨우기", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, "설정을 저장하지 못했습니다. 잠시 후 다시 시도하세요.", "루틴", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
         Saved = true;
@@ -111,11 +111,11 @@ public partial class WakeSchedulerWindow : Window
 
     private bool ApplyEditor() {
         if (!TimeSpan.TryParseExact(TimeBox.Text.Trim(), @"hh\:mm", CultureInfo.InvariantCulture, out _)) {
-            MessageBox.Show(this, "시간은 24시간 형식으로 입력하세요. (예: 09:00)", "깨우기", MessageBoxButton.OK, MessageBoxImage.Information); return false;
+            MessageBox.Show(this, "시간은 24시간 형식으로 입력하세요. (예: 09:00)", "루틴", MessageBoxButton.OK, MessageBoxImage.Information); return false;
         }
         var days = GetDays();
-        if (days.Count == 0) { MessageBox.Show(this, "요일을 하나 이상 선택하세요.", "깨우기", MessageBoxButton.OK, MessageBoxImage.Information); return false; }
-        if (_providers.Count == 0) { MessageBox.Show(this, "활성화된 Claude 또는 Codex가 없습니다.", "깨우기", MessageBoxButton.OK, MessageBoxImage.Information); return false; }
+        if (days.Count == 0) { MessageBox.Show(this, "요일을 하나 이상 선택하세요.", "루틴", MessageBoxButton.OK, MessageBoxImage.Information); return false; }
+        if (_providers.Count == 0) { MessageBox.Show(this, "활성화된 Claude 또는 Codex가 없습니다.", "루틴", MessageBoxButton.OK, MessageBoxImage.Information); return false; }
         _selected.Provider = (ProviderCombo.SelectedItem as string) ?? _providers[0];
         _selected.Time = TimeBox.Text.Trim();
         _selected.Weekdays = days;
