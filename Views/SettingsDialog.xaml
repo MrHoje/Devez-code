@@ -448,10 +448,10 @@
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
                                 <TextBlock Text="2열로 두면 좌측 패널 최소 너비가 넓어지고, 카드를 가로로 끌어 옮길 수 있습니다."
                                            FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,16"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <TextBlock Text="목록 열 수" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}" Margin="0,4,0,12"/>
+                                           Foreground="{DynamicResource TextBrush}" Margin="0,16,0,12"/>
                                 <StackPanel Orientation="Horizontal">
                                     <!-- 1열 -->
                                     <Border x:Name="ColCard_1" Tag="1" Width="120" Height="56"
@@ -496,7 +496,45 @@
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
                                 <TextBlock Text="세션 추가 시 사용할 에이전트(CLI)를 선택합니다. PATH 에서 자동 감지합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,18"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+
+                                <!-- 실행 시 자동 업데이트 토글 (설정 동기화, 기본 켜짐) -->
+                                <Border Margin="0,16,0,18" Padding="0,0,0,18"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="실행 시 에이전트 자동 업데이트" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="앱을 켤 때 켜진 에이전트 CLI 를 최신 버전으로 자동 업데이트합니다." FontSize="{DynamicResource Fs11}"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <!-- 즉시 업데이트 링크 (ConfirmDialog LinkText 스타일 정합) -->
+                                            <TextBlock Text="즉시 업데이트" Cursor="Hand" Margin="0,0,14,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource PrimaryBrush}"
+                                                       MouseLeftButtonUp="InstantUpdateAgents_Click">
+                                                <TextBlock.Style>
+                                                    <!-- BasedOn 필수: 전역 암시적 TextBlock 스타일(Pretendard) 유지. -->
+                                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Opacity" Value="0.75"/>
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <CheckBox x:Name="AutoUpdateAgentsToggle" VerticalAlignment="Center"
+                                                      Style="{StaticResource ToggleSwitch}"
+                                                      Checked="AutoUpdateAgentsToggle_Changed" Unchecked="AutoUpdateAgentsToggle_Changed"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
 
                                 <ItemsControl x:Name="AgentList">
                                     <ItemsControl.ItemTemplate>
@@ -599,14 +637,15 @@
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
                                 <TextBlock Text="DevezCode에서 관리중이지 않은 세션을 조회하고 정리합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,18"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- 켜진 클리너 대상 에이전트가 없을 때 -->
                                 <TextBlock x:Name="CleanerEmptyText" Visibility="Collapsed" TextWrapping="Wrap"
                                            Text="설정 &gt; 에이전트에서 Claude, OpenCode, Gajae Code 중 사용할 에이전트를 켜면 여기에 표시됩니다."
-                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
+                                           Margin="0,16,0,0"/>
 
-                                <StackPanel x:Name="CleanerBody">
+                                <StackPanel x:Name="CleanerBody" Margin="0,16,0,0">
                                     <!-- 에이전트 선택 (가로 pill 버튼, 켜진 것만 노출) -->
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                                         <Button x:Name="ClaudeCatBtn" Tag="claude" Style="{StaticResource CleanerPill}" Click="CleanerAgent_Click">
@@ -710,9 +749,9 @@
                                 <TextBlock Text="opencode 의 MCP(Model Context Protocol) 서버를 추가·편집·삭제합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
                                 <TextBlock Text="저장 시 ~/.config/opencode/opencode.json 의 mcp 섹션만 갱신합니다. 다른 필드는 보존됩니다."
-                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,16"/>
+                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
                                 <Button Style="{StaticResource PrimaryButton}" Click="OpenMcpManager_Click"
-                                        Height="40" HorizontalAlignment="Left" Padding="18,0">
+                                        Height="40" HorizontalAlignment="Left" Padding="18,0" Margin="0,16,0,0">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconServer}"
                                               Width="13" Height="13" Margin="0,0,8,0" Stroke="White"/>
@@ -723,15 +762,17 @@
 
                             <!-- 업데이트 내역(Changelog) 패널 — devez 정합 -->
                             <StackPanel x:Name="ChangelogPanel" Margin="28,22,28,20" Visibility="Collapsed">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconClock}"
-                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
-                                          Stroke="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="업데이트 내역" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                                </StackPanel>
+                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconClock}"
+                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                           Stroke="{DynamicResource TextBrush}"/>
+                                     <TextBlock Text="업데이트 내역" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                 </StackPanel>
+                                <TextBlock Text="버전별 주요 변경 사항을 확인합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
-                                <!-- 버전 카드는 코드비하인드에서 동적 생성 -->
+                                 <!-- 버전 카드는 코드비하인드에서 동적 생성 -->
                                 <StackPanel x:Name="ChangelogItemsHost" Margin="0,16,0,0"/>
 
                                 <!-- 페이지네이션 -->
@@ -880,11 +921,11 @@
                                 </StackPanel>
                                 <TextBlock Text="계정을 연결하면 사용량 탭과 하단 푸터에서 사용량(5시간/주간/크레딧 등 한도)을 확인할 수 있습니다."
                                            FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- 그룹 1: 계정 연결(로그인/재연결) -->
                                 <TextBlock Text="계정 연결" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,24,0,12"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,16,0,12"/>
 
                                 <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
@@ -1233,7 +1274,7 @@
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- 수식키 -->
-                                <Grid Margin="0,0,0,14">
+                                <Grid Margin="0,16,0,14">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -1268,10 +1309,10 @@
                                 </StackPanel>
 
                                 <TextBlock Text="앱 전체에 적용되는 색 테마를 선택합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,16"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- 테마 카드 3종 (클릭 시 즉시 적용·저장) -->
-                                <StackPanel Orientation="Horizontal">
+                                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
 
                                     <!-- ── 심플 (minimal) ─────────────────────────── -->
                                     <Border x:Name="ThemeCard_Minimal" Tag="minimal"
@@ -1484,7 +1525,7 @@
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- 세션 종료 알림 토글 + 알림 테스트(토글 왼쪽, devez 정합) -->
-                                <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,4,0,0">
+                                <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid MinHeight="32">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>

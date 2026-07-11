@@ -94,6 +94,8 @@ public static class SettingsService
         public bool AutoLoadLastProject { get; set; } = false;
         // 세션 탭 위의 프로젝트 정보 헤더(MetaBar: 프로젝트명~effort) 숨김 여부. 기본 false = 표시.
         public bool HideProjectInfoHeader { get; set; } = false;
+        // 프로그램 실행 시 켜진 에이전트 CLI 를 최신 버전으로 자동 업데이트할지 여부. 기본 true.
+        public bool AutoUpdateAgents { get; set; } = true;
         // 최대화 시 작업표시줄까지 덮는 전체화면 동작 여부. 기본 false = 작업영역에만 맞춤.
         public bool UseFullScreen { get; set; } = false;
         // devez 마켓플레이스 자동설치 1회 확인 완료 여부. true 면 시작 시 CLI 체크를 건너뛴다(가벼움).
@@ -608,6 +610,9 @@ public static class SettingsService
 
     public static bool LoadHideProjectInfoHeader() => Current.HideProjectInfoHeader;
     public static void SaveHideProjectInfoHeader(bool v) { Current.HideProjectInfoHeader = v; Save(); }
+
+    public static bool LoadAutoUpdateAgents() => Current.AutoUpdateAgents;
+    public static void SaveAutoUpdateAgents(bool v) { Current.AutoUpdateAgents = v; Save(); }
 
     public static bool LoadUseFullScreen() => Current.UseFullScreen;
     public static void SaveUseFullScreen(bool v) { Current.UseFullScreen = v; Save(); }

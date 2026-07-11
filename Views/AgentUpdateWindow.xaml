@@ -1,0 +1,80 @@
+<Window x:Class="DevezCode.Views.AgentUpdateWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="에이전트 업데이트"
+        Width="460" Height="340"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="True"
+        Topmost="True"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        FontFamily="{StaticResource PretendardFont}">
+
+    <Grid Margin="{DynamicResource WindowShadowOuterMargin}">
+        <!-- Shadow layer -->
+        <Border Background="{DynamicResource BgBrush}" CornerRadius="{DynamicResource WindowShadowCornerRadius}"
+                Margin="{DynamicResource WindowShadowInnerMargin}"
+                SnapsToDevicePixels="True">
+            <Border.Effect>
+                <DropShadowEffect ShadowDepth="0" BlurRadius="{DynamicResource WindowShadowBlurRadius}" Direction="270"
+                                  Color="{DynamicResource ShadowColor}" Opacity="{DynamicResource ShadowOpacity}"/>
+            </Border.Effect>
+        </Border>
+        <!-- Content layer -->
+        <Border CornerRadius="14"
+                Background="{DynamicResource BgBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                ClipToBounds="True"
+                SnapsToDevicePixels="True">
+            <Grid Margin="22,20,22,18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 헤더 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBot}"
+                          Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,9,0"
+                          Stroke="{DynamicResource TextBrush}"/>
+                    <TextBlock x:Name="HeaderText" Text="에이전트 업데이트 체크중입니다…"
+                               FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- 진행 표시 -->
+                <ProgressBar x:Name="Progress" Grid.Row="1" Height="3" Margin="0,14,0,0"
+                             IsIndeterminate="True" Background="Transparent" BorderThickness="0"
+                             Foreground="{DynamicResource PrimaryBrush}"/>
+
+                <!-- 로그 -->
+                <Border Grid.Row="2" Margin="0,14,0,0" CornerRadius="8"
+                        Background="{DynamicResource PanelSoftBrush}"
+                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                    <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto" Padding="12,10">
+                        <TextBlock x:Name="LogText" TextWrapping="Wrap"
+                                   FontFamily="Consolas, D2Coding, monospace" FontSize="{DynamicResource Fs12}"
+                                   Foreground="{DynamicResource TextMutedBrush}" LineHeight="18"/>
+                    </ScrollViewer>
+                </Border>
+
+                <!-- 하단 버튼: 처음엔 숨김(로그가 전체 높이). 완료 시 '닫기', 지연 후 '건너뛰고 시작'으로
+                     아래에서 자라나며 등장(코드비하인드 RevealButton 애니메이션). 하단을 꽉 채운다. -->
+                <Button x:Name="ProceedButton" Grid.Row="3" Margin="0"
+                        HorizontalAlignment="Stretch" Content="건너뛰고 시작"
+                        Style="{StaticResource PrimaryButton}"
+                        FontSize="{DynamicResource Fs13}"
+                        Visibility="Collapsed"
+                        Click="ProceedButton_Click"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

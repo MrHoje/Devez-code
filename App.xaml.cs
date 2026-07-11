@@ -122,11 +122,37 @@ public partial class App : Application
         // [개발 중단] Grok — config.toml theme 매핑(UI 비노출·통합 보류). 재개 시 유지.
         Services.Terminal.GrokCustomThemes.Apply(CurrentTheme);
 
-        new MainWindow().Show();
+        StartupSequence();
+    }
 
-        // 켜진(설치된) 에이전트 CLI 를 최신 버전으로 자동 업데이트. 시작을 막지 않도록 백그라운드(fire-and-forget).
-        // 각 CLI 자체 업데이터를 쓰며 이미 최신이면 no-op. 결과는 %AppData%\DevezCode\agent-update.log.
-        _ = AgentUpdateService.UpdateEnabledAgentsAsync();
+    /// <summary>메인 창 표시 순서. 설정에서 '실행 시 에이전트 자동 업데이트'가 켜져 있으면,
+    /// 메인 창이 뜨기 전에 진행 모달을 먼저 띄워 업데이트 결과를 보여준 뒤 메인 창을 연다.</summary>
+    private async void StartupSequence()
+    {
+        if (!SettingsService.LoadAutoUpdateAgents())
+        {
+            new MainWindow().Show();
+            return;
+        }
+
+        // 모달을 닫는 순간(메인 창 열기 전) 열린 창이 0개가 되어 앱이 종료되는 것을 막기 위해
+        // 시퀀스 동안 ShutdownMode 를 명시적 종료로 바꾸고, 메인 창을 띄운 뒤 원복한다.
+        var prevMode = ShutdownMode;
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        // 창이 업데이트 실행·진행표시·완료/건너뛰기 타이밍을 모두 담당한다. 여기선 닫힐 때까지 대기만 한다.
+        // (건너뛰기 시 업데이트는 백그라운드로 계속 진행 — npm/bun 설치 중 강제 종료는 손상 위험이 있어 하지 않음.)
+        var win = new Views.AgentUpdateWindow { AutoCloseOnComplete = true };
+        var done = new System.Threading.Tasks.TaskCompletionSource();
+        win.Closed += (_, _) => done.TrySetResult();
+        win.ProceedRequested += () => { try { win.Close(); } catch { } };
+        win.Show();
+        await done.Task;
+
+        var mw = new MainWindow();
+        this.MainWindow = mw;
+        mw.Show();
+        ShutdownMode = prevMode; // 원래대로(기본 OnLastWindowClose) 복원
     }
 
     /// <summary>토스트 알림을 표시한다(설정 위치에 스택). UI 스레드가 아니어도 안전.</summary>

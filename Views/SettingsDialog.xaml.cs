@@ -26,6 +26,7 @@ public partial class SettingsDialog : UserControl
     private bool   _originalPreloadAllSessions;
     private bool   _originalAutoLoadLastProject;
     private bool   _originalHideProjectInfoHeader;
+    private bool   _originalAutoUpdateAgents;
     private bool   _originalUseFullScreen;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
@@ -36,6 +37,7 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedPreloadAllSessions;
     private bool   _selectedAutoLoadLastProject;
     private bool   _selectedHideProjectInfoHeader;
+    private bool   _selectedAutoUpdateAgents;
     private bool   _selectedUseFullScreen;
     private int    _selectedProjectColumns;
     // DeepSeek 연결 토글 — 다른 설정과 동일하게 [저장] 시점에만 디스크 반영(끄고 저장 시 키 삭제).
@@ -66,7 +68,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.14.0", "2026-07-11", true, new[]
+        ("v1.14.1", "2026-07-11", true, new[]
+        {
+            "에이전트 자동 업데이트 기능이 추가되었습니다.",
+            "계정 사용량 표시의 정확도를 개선했습니다.",
+        }),
+        ("v1.14.0", "2026-07-11", false, new[]
         {
             "프로젝트 패널에 폴더를 만들어 프로젝트를 정리할 수 있는 기능을 추가했습니다.",
             "세션을 드래그 드롭으로 트리 구조로 묶어 관리할 수 있는 기능을 추가했습니다.",
@@ -302,6 +309,9 @@ public partial class SettingsDialog : UserControl
         _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
         _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
         HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        _originalAutoUpdateAgents = SettingsService.LoadAutoUpdateAgents();
+        _selectedAutoUpdateAgents = _originalAutoUpdateAgents;
+        AutoUpdateAgentsToggle.IsChecked = _selectedAutoUpdateAgents;
         _originalUseFullScreen = SettingsService.LoadUseFullScreen();
         _selectedUseFullScreen = _originalUseFullScreen;
         UseFullScreenToggle.IsChecked = _selectedUseFullScreen;
@@ -596,6 +606,33 @@ public partial class SettingsDialog : UserControl
     private void HideProjectInfoHeaderToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedHideProjectInfoHeader = HideProjectInfoHeaderToggle.IsChecked == true;
+    }
+
+    private void AutoUpdateAgentsToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedAutoUpdateAgents = AutoUpdateAgentsToggle.IsChecked == true;
+    }
+
+    private bool _instantUpdating;
+
+    /// <summary>'즉시 업데이트' 링크 — 켜진 에이전트를 지금 최신화. 모달(ShowDialog)로 띄운다.
+    /// 업데이트 실행·진행표시는 창이 스스로 담당(Loaded). 완료 후 자동으로 닫지 않고 사용자가 '닫기'로 종료.</summary>
+    private void InstantUpdateAgents_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (_instantUpdating) return;
+        _instantUpdating = true;
+        try
+        {
+            var win = new AgentUpdateWindow
+            {
+                Owner = Window.GetWindow(this),
+                ShowInTaskbar = false,
+                AutoCloseOnComplete = false,
+            };
+            win.ProceedRequested += () => { try { win.Close(); } catch { } };
+            win.ShowDialog();
+        }
+        finally { _instantUpdating = false; }
     }
 
     private void UseFullScreenToggle_Changed(object sender, RoutedEventArgs e)
@@ -1149,6 +1186,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
+        if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
         if (_selectedProjectColumns != _originalProjectColumns) return true;
         if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled) return true;
@@ -1186,6 +1224,8 @@ public partial class SettingsDialog : UserControl
             SettingsService.SaveHideProjectInfoHeader(_selectedHideProjectInfoHeader);
             (Application.Current.MainWindow as MainWindow)?.ApplyProjectInfoHeaderVisibility();
         }
+        if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents)
+            SettingsService.SaveAutoUpdateAgents(_selectedAutoUpdateAgents);
         if (_selectedUseFullScreen != _originalUseFullScreen)
         {
             SettingsService.SaveUseFullScreen(_selectedUseFullScreen);
@@ -1273,6 +1313,7 @@ public partial class SettingsDialog : UserControl
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
         _originalAutoLoadLastProject = _selectedAutoLoadLastProject;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
+        _originalAutoUpdateAgents = _selectedAutoUpdateAgents;
         _originalUseFullScreen = _selectedUseFullScreen;
         _originalProjectColumns = _selectedProjectColumns;
         _originalHkMod = _selectedHkMod; _originalHkPrev = _selectedHkPrev; _originalHkNext = _selectedHkNext;
@@ -1311,6 +1352,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
             HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        }
+        if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents)
+        {
+            _selectedAutoUpdateAgents = _originalAutoUpdateAgents;
+            AutoUpdateAgentsToggle.IsChecked = _selectedAutoUpdateAgents;
         }
         if (_selectedUseFullScreen != _originalUseFullScreen)
         {
