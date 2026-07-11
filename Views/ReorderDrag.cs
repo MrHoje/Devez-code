@@ -396,22 +396,6 @@ internal sealed class ReorderDrag<T> where T : class
 
     private enum DropZone { Before, Into, After }
 
-    private Rect CurrentBounds(Slot slot)
-    {
-        if (!_hitTestSlots || !_suppressDisplacement)
-            return new Rect(slot.PrimaryLeft, slot.PrimaryTop, slot.PrimaryWidth, slot.PrimaryHeight);
-
-        try
-        {
-            var point = slot.Element.TransformToAncestor(_coordHost).Transform(new Point(0, 0));
-            return new Rect(point.X, point.Y, Math.Max(1, slot.Element.ActualWidth), Math.Max(1, slot.Element.ActualHeight));
-        }
-        catch
-        {
-            return new Rect(slot.PrimaryLeft, slot.PrimaryTop, slot.PrimaryWidth, slot.PrimaryHeight);
-        }
-    }
-
     /// <summary>자식 드롭을 허용한 항목은 포인터 기준 상단 25%=앞, 중앙 50%=자식, 하단 25%=뒤.</summary>
     private bool TryGetDropZone(Point pointer, out Slot target, out DropZone zone)
     {
@@ -424,22 +408,25 @@ internal sealed class ReorderDrag<T> where T : class
             if (ReferenceEquals(slot, _slots[_sourceIndex])) continue;
             bool canDropInto = _canDropInto?.Invoke(_source, slot.Item) == true;
             if (!canDropInto && !_hitTestSlots) continue;
-            // 시프트 애니메이션으로 대상 카드가 움직여도 드롭 구역까지 같이 도망가지 않게
-            // 드래그 시작 시 캡처한 논리 슬롯을 사용한다. 중앙 진입 시 displacement가 원복되고
-            // 실제 대상 SessionRow가 원래 자리로 돌아오며 보더 하이라이트된다.
-            var bounds = CurrentBounds(slot);
+            // 애니메이션 중인 카드의 현재 위치를 판정에 쓰면 커서가 고정돼도 타깃이 왕복한다.
+            // 드래그 시작 시 캡처한 논리 슬롯을 끝까지 사용해 피드백 루프를 차단한다.
+            var bounds = CapturedPrimaryBounds(slot);
             if (!bounds.Contains(pointer)) continue;
 
             double relative = _horizontal
                 ? (pointer.X - bounds.Left) / bounds.Width
                 : (pointer.Y - bounds.Top) / bounds.Height;
-            zone = canDropInto
-                ? relative < 0.25
+            if (canDropInto)
+            {
+                zone = relative < 0.25
                     ? DropZone.Before
-                    : relative > 0.75 ? DropZone.After : DropZone.Into
-                : relative < 0.5
-                    ? DropZone.Before
-                    : DropZone.After;
+                    : relative > 0.75 ? DropZone.After : DropZone.Into;
+            }
+            else
+            {
+                bool after = ResolveReorderAfter(slot, relative >= 0.5, pointer);
+                zone = after ? DropZone.After : DropZone.Before;
+            }
             target = slot;
             return true;
         }
@@ -452,7 +439,7 @@ internal sealed class ReorderDrag<T> where T : class
         after = false;
         var candidates = _slots
             .Where(slot => !ReferenceEquals(slot, _slots[_sourceIndex]))
-            .Select(slot => (Slot: slot, Bounds: CurrentBounds(slot)))
+            .Select(slot => (Slot: slot, Bounds: CapturedPrimaryBounds(slot)))
             .ToList();
         if (candidates.Count == 0) return false;
 
@@ -521,7 +508,25 @@ internal sealed class ReorderDrag<T> where T : class
         after = _horizontal
             ? pointer.X >= target.PrimaryLeft + target.PrimaryWidth / 2
             : pointer.Y >= target.PrimaryTop + target.PrimaryHeight / 2;
+        after = ResolveReorderAfter(target, after, pointer);
         return true;
+    }
+
+    private bool ResolveReorderAfter(Slot target, bool proposedAfter, Point pointer)
+    {
+        if (!ReferenceEquals(_reorderPreviewTarget, target)) return proposedAfter;
+
+        double axisPosition = _horizontal ? pointer.X : pointer.Y;
+        double axisStart = _horizontal ? target.PrimaryLeft : target.PrimaryTop;
+        double axisSize = _horizontal ? target.PrimaryWidth : target.PrimaryHeight;
+        double midpoint = axisStart + axisSize / 2;
+        double hysteresis = Math.Min(8, axisSize * 0.2);
+
+        // 현재 방향을 유지하다가 중앙선을 충분히 넘어선 경우에만 반전한다.
+        // 경계 부근 1~2px 입력 흔들림과 애니메이션 프레임 변화로 인한 위/아래 왕복을 막는다.
+        return _reorderPreviewAfter
+            ? axisPosition >= midpoint - hysteresis
+            : axisPosition > midpoint + hysteresis;
     }
 
     private static Rect CapturedPrimaryBounds(Slot slot) => new(
