@@ -59,6 +59,9 @@ public static class SettingsService
         public Dictionary<string, string> RoomAgents { get; set; } = new();
         // 사용자가 활성화한 에이전트 ID 목록. 빈 값이면 모든 설치된 에이전트 활성화로 간주.
         public List<string> EnabledAgents { get; set; } = new();
+        // 레거시 설정에는 필드가 없으므로 false+빈 목록만 "첫 실행 기본값"으로 해석한다.
+        public bool EnabledAgentsConfigured { get; set; }
+        public List<WakeScheduleEntry> WakeSchedules { get; set; } = new();
         // 마지막으로 활성이던 프로젝트/세션. 정상 종료(CleanShutdown=true) 때만 복원한다.
         public string? LastActiveProjectPath { get; set; }
         public string? LastActiveSessionId { get; set; }
@@ -172,7 +175,7 @@ public static class SettingsService
         catch { return false; }
     }
 
-    private static void Save()
+    private static bool TrySave()
     {
         lock (_lock)
         {
@@ -180,10 +183,13 @@ public static class SettingsService
             {
                 AtomicFile.WriteAllText(SettingsPath,
                     JsonSerializer.Serialize(_current, new JsonSerializerOptions { WriteIndented = true }));
+                return true;
             }
-            catch { /* non-critical */ }
+            catch { return false; }
         }
     }
+
+    private static void Save() => _ = TrySave();
 
     // ── 터미널 폰트 크기 ──────────────────────────────────────────
     public static int LoadTerminalFontSizePt() => Current.TerminalFontSizePt;
@@ -379,8 +385,9 @@ public static class SettingsService
     /// grok 등 UI 숨김 에이전트는 기본 false(목록 미포함).</summary>
     public static IReadOnlyList<string> LoadEnabledAgents()
     {
-        var list = Current.EnabledAgents;
-        if (list.Count == 0)
+        var current = Current;
+        var list = current.EnabledAgents;
+        if (list.Count == 0 && !current.EnabledAgentsConfigured)
             return AgentRegistry.All
                 .Where(a => a.Id != "opencode" && !AgentRegistry.HiddenFromUI.Contains(a.Id))
                 .Select(a => a.Id).ToList();
@@ -390,7 +397,88 @@ public static class SettingsService
     public static void SaveEnabledAgents(IEnumerable<string> agents)
     {
         Current.EnabledAgents = agents.ToList();
+        Current.EnabledAgentsConfigured = true;
         Save();
+    }
+    // ── wake 일정 ──────────────────────────────────────────────────
+    public static IReadOnlyList<WakeScheduleEntry> LoadWakeSchedules()
+    {
+        lock (_lock)
+        {
+            Current.WakeSchedules ??= new();
+            return Current.WakeSchedules.Where(e => e is not null).Select(e => e.Clone()).ToList();
+        }
+    }
+
+    public static bool SaveWakeSchedules(IEnumerable<WakeScheduleEntry> schedules)
+    {
+        if (schedules is null) throw new ArgumentNullException(nameof(schedules));
+        lock (_lock)
+        {
+            Current.WakeSchedules ??= new();
+            var previous = Current.WakeSchedules;
+            var existingById = previous
+                .Where(e => e is not null && !string.IsNullOrWhiteSpace(e.Id))
+                .GroupBy(e => e.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var replacement = new List<WakeScheduleEntry>();
+            foreach (var schedule in schedules)
+            {
+                var copy = schedule.Clone();
+                if (existingById.TryGetValue(copy.Id, out var existing))
+                {
+                    // 스케줄러가 소유하는 실행 메타데이터는 열린 편집기의 오래된 복사본으로 덮지 않는다.
+                    copy.LastOccurrenceKey = existing.LastOccurrenceKey;
+                    copy.LastResult = existing.LastResult;
+                }
+                replacement.Add(copy);
+            }
+
+            Current.WakeSchedules = replacement;
+            if (TrySave()) return true;
+            Current.WakeSchedules = previous;
+            return false;
+        }
+    }
+
+    public static bool TryClaimWakeSchedule(string scheduleId, string occurrenceKey)
+    {
+        if (string.IsNullOrWhiteSpace(scheduleId) || string.IsNullOrWhiteSpace(occurrenceKey))
+            return false;
+
+        lock (_lock)
+        {
+            Current.WakeSchedules ??= new();
+            var entry = Current.WakeSchedules.FirstOrDefault(e =>
+                string.Equals(e.Id, scheduleId, StringComparison.OrdinalIgnoreCase));
+            if (entry is null || !entry.Enabled ||
+                string.Equals(entry.LastOccurrenceKey, occurrenceKey, StringComparison.Ordinal))
+                return false;
+
+            var previousKey = entry.LastOccurrenceKey;
+            entry.LastOccurrenceKey = occurrenceKey;
+            if (TrySave()) return true;
+            entry.LastOccurrenceKey = previousKey;
+            return false;
+        }
+    }
+
+    public static bool TrySaveWakeResult(string scheduleId, string occurrenceKey, string result)
+    {
+        lock (_lock)
+        {
+            Current.WakeSchedules ??= new();
+            var entry = Current.WakeSchedules.FirstOrDefault(e =>
+                string.Equals(e.Id, scheduleId, StringComparison.OrdinalIgnoreCase));
+            if (entry is null || !string.Equals(entry.LastOccurrenceKey, occurrenceKey, StringComparison.Ordinal))
+                return false;
+
+            var previousResult = entry.LastResult;
+            entry.LastResult = result ?? "";
+            if (TrySave()) return true;
+            entry.LastResult = previousResult;
+            return false;
+        }
     }
 
     // ── Claude 세션 ID ────────────────────────────────────────────

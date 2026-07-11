@@ -92,6 +92,8 @@ public partial class MainWindow : Window
     private readonly OpenCodeBusyService _opencodeBusy = new();
     // gjc(가재코드) — 훅 미지원. 방별 세션 .jsonl 을 폴링해 마지막 user 메시지를 헤더에 반영.
     private readonly GajaeLastMessageService _gajaeLastMsg = new();
+    private readonly WakeSchedulerService _wakeScheduler;
+    private readonly HashSet<string> _wakeRoomIds = new(StringComparer.Ordinal);
 
     static MainWindow()
     {
@@ -116,6 +118,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _wakeScheduler = new WakeSchedulerService(DispatchWakeAsync);
         CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
         SessionHistoryList.ItemsSource = _sessionDoneRecords;
@@ -430,6 +433,7 @@ public partial class MainWindow : Window
             WorkspaceStore.ExportSessionsIndex(_projects); // 세션 릴레이용 인덱스 시작 시 최신화
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
             RestoreSplitState(); // 직전 실행이 분할 상태였으면 패널 B 복원
+            _wakeScheduler.Start();
             RefreshCardGroups(); // 시작 시에도 분할 설정 프로젝트 카드는 좌/우 파티션으로(영속 refs 기반)
             CheckHookSetup();
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
@@ -500,6 +504,10 @@ public partial class MainWindow : Window
             _gajaeLastMsg.Dispose();
             _agentLastMsg.Dispose();
             FileExplorer.DisposeBrowser();
+            _wakeScheduler.Dispose();
+            WakeTerminal.Dispose();
+            foreach (var roomId in _wakeRoomIds)
+                TerminalSessionManager.Instance.DisposeRoom(roomId, purgeTracking: false);
         };
     }
 
@@ -548,6 +556,7 @@ public partial class MainWindow : Window
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         SaveWindowPlacement();
+        _wakeScheduler.Stop();
 
         if (_shuttingDown) return; // 2차 진입(graceful 완료 후 Close()) — 그대로 종료 허용
         if (!TerminalSessionManager.Instance.HasSessionsToClose()) return; // 닫을 세션 없음(ConPTY 미생성)
@@ -4321,6 +4330,68 @@ public partial class MainWindow : Window
         dlg.Loaded += (_, _) => Views.WindowCenter.CenterOverOwner(dlg);
         dlg.Closed += (_, _) => ResumeTerminal();
         dlg.ShowDialog();
+    }
+
+    private void WakeControlBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new WakeSchedulerWindow(this);
+        dlg.ShowDialog();
+        if (dlg.Saved) _wakeScheduler.NotifySchedulesChanged();
+    }
+
+    private async Task<WakeDispatchResult> DispatchWakeAsync(WakeScheduleEntry schedule, CancellationToken cancellationToken)
+    {
+        string? directory = _focusedPane?.ActiveProject?.Path;
+        if (string.IsNullOrWhiteSpace(directory) || !System.IO.Directory.Exists(directory))
+            return WakeDispatchResult.Failed("활성 프로젝트가 없어 깨우기 터미널을 시작하지 않았습니다.");
+
+        var canonicalDirectory = System.IO.Path.TrimEndingDirectorySeparator(
+            System.IO.Path.GetFullPath(directory));
+        var pathBytes = System.Text.Encoding.UTF8.GetBytes(canonicalDirectory.ToUpperInvariant());
+        var pathKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pathBytes))[..12];
+        var provider = string.Equals(schedule.Provider, "codex", StringComparison.OrdinalIgnoreCase)
+            ? "codex" : "claude";
+        string roomId = $"devezcode-wake-{provider}-{pathKey.ToLowerInvariant()}";
+        _wakeRoomIds.Add(roomId);
+
+        SettingsService.SaveClaudeCodeRoomDir(roomId, canonicalDirectory);
+        SettingsService.SaveAgentForRoom(roomId, provider);
+
+        var ready = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool sessionStartedSeen = false;
+        Action<string> sessionStarted = id => { if (string.Equals(id, roomId, StringComparison.Ordinal)) sessionStartedSeen = true; };
+        Action<string> terminalReady = id => { if (string.Equals(id, roomId, StringComparison.Ordinal)) ready.TrySetResult("ready"); };
+        Action<string> trustPrompt = id => { if (string.Equals(id, roomId, StringComparison.Ordinal)) ready.TrySetResult("trust"); };
+        WakeTerminal.SessionStarted += sessionStarted;
+        WakeTerminal.TerminalReady += terminalReady;
+        WakeTerminal.TrustPromptDetected += trustPrompt;
+        try
+        {
+            WakeTerminal.PreloadTerminal(roomId);
+            if (WakeTerminal.IsReady(roomId)) ready.TrySetResult("ready");
+            var readiness = await ready.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (readiness == "trust")
+            {
+                WakeTerminal.CloseTerminal(roomId);
+                TerminalSessionManager.Instance.DisposeRoom(roomId, purgeTracking: false);
+                TerminalSessionManager.Instance.ClearDisposedRoom(roomId);
+                return WakeDispatchResult.Failed("프로젝트 신뢰 확인이 필요합니다. 해당 프로젝트에서 에이전트를 한 번 직접 실행하세요.");
+            }
+            var session = TerminalSessionManager.Instance.Get(roomId);
+            if (session is not { IsAlive: true }) return WakeDispatchResult.Failed("터미널을 시작하지 못했습니다.");
+            return session.TryWrite("HI Good Morning\r")
+                ? WakeDispatchResult.Succeeded() : WakeDispatchResult.Failed("터미널 입력에 실패했습니다.");
+        }
+        catch (TimeoutException) { return WakeDispatchResult.Failed(sessionStartedSeen ? "터미널 준비 시간이 초과되었습니다." : "터미널 세션을 시작하지 못했습니다."); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return WakeDispatchResult.Failed(ex.Message); }
+        finally
+        {
+            WakeTerminal.SessionStarted -= sessionStarted;
+            WakeTerminal.TerminalReady -= terminalReady;
+            WakeTerminal.TrustPromptDetected -= trustPrompt;
+        }
     }
 
     private void PluginControlBtn_Click(object sender, RoutedEventArgs e)

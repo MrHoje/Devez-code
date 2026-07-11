@@ -22,6 +22,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>해당 방의 셸이 첫 출력을 내보내(=터미널이 그려질 준비) 발생. roomId 전달.</summary>
     public event Action<string>? TerminalReady;
+    /// <summary>자동 입력하면 안 되는 폴더 신뢰 확인 화면을 감지했을 때 발생.</summary>
+    public event Action<string>? TrustPromptDetected;
     /// <summary>방의 ConPTY 세션이 생성/배선되어 살아있음. roomId 전달.</summary>
     public event Action<string>? SessionStarted;
     /// <summary>사용자가 단독 ESC 로 응답 취소를 요청. roomId 전달 — 구독자가 busy 스피너를 끈다.</summary>
@@ -239,6 +241,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 _readyScan.Remove(roomId);
                 _inlineFirstOutTick.Remove(roomId);
                 _altSeenTick[roomId] = Environment.TickCount;
+                TrustPromptDetected?.Invoke(roomId);
                 NotifyReady(roomId);
                 return;
             }
