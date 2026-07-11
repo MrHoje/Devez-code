@@ -966,6 +966,8 @@
     entry.el.style.transition = 'none';
     entry.el.style.opacity = '';
 
+    const preCols = entry.term.cols, preRows = entry.term.rows; // settle 바운스 판단용(이 show 에서 크기가 바뀌었나)
+    const plainShow = !_fitSuppressed; // 전환(커버) 중 show 는 reveal 이 fit·재동기·커버로 처리 — 바운스 제외
     if (!_fitSuppressed) entry.fit.fit(); // 전환(커버) 중이면 중간 폭 fit 억제 → reveal 이 최종 폭에서 fit
     entry.term.focus();
     if (isNew) {
@@ -997,6 +999,23 @@
     // 한 칸 휠에 과거로 크게 점프. 표시 직후 버퍼 위치에 맞춰 scrollTop 재동기.
     requestAnimationFrame(function () { requestAnimationFrame(function () { resyncViewportScroll(roomId); }); });
     setTimeout(function () { resyncViewportScroll(roomId); }, 220); // refitSoon(180ms) 리플로우 이후 한 번 더
+    // settle 바운스 — 숨겨진 사이 패널 폭이 바뀐(분할 열림 등) 방을 처음 열면 fit→resize 로 conhost
+    // 재방출과 TUI(claude) 재렌더가 '동시에' 흘러들며 간헐적으로 하단 줄/입력영역이 어긋난 채 굳는다.
+    // 추가 출력이 없으면(idle) 재방출 계기가 없어 탭 전환으로도 안 돌아오고, 사용자가 스플리터로
+    // 실제 크기를 바꿔야(=ConPTY 재방출 유도) 회복되던 증상. → 그 수동 회복을 자동화한다:
+    // 크기 변화가 있었던 plain show 에 한해, 초기 재방출이 가라앉은 뒤 ConPTY 만 rows-1→rows 로
+    // 바운스해 깨끗한 전체 재방출을 1회 유도한다. xterm 그리드는 안 건드려(버퍼 클리핑 없음),
+    // cols 바운스와 달리 줄바꿈 reflow 왕복도 없다. 크기가 안 바뀐 일반 탭 전환에선 발동하지 않는다.
+    if (!isNew && plainShow) {
+      setTimeout(function () {
+        const t = terms[roomId];
+        if (!t || roomId !== activeRoomId || t.dead || _fitSuppressed) return;
+        if (t.term.cols === preCols && t.term.rows === preRows) return; // 이 show 에서 크기 무변화 — 불필요
+        if (t.term.cols <= 2 || t.term.rows <= 2) return;
+        post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows - 1 });
+        post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows });
+      }, 450);
+    }
   }
 
   // DOM 뷰포트 scrollTop 을 xterm 버퍼 위치(viewportY)에 맞춘다. 값이 이미 맞으면 no-op.
