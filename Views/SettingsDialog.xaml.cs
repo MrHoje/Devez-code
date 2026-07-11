@@ -71,7 +71,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.14.1", "2026-07-11", true, new[]
+        ("v1.14.2", "2026-07-12", true, new[]
+        {
+            "계정 사용량을 남은 수치로 표시하는 기능을 추가했습니다.",
+            "프로젝트 영역의 드래그 사용성을 개선했습니다.",
+            "프로젝트 카드를 Ctrl 또는 Shift 클릭으로 여러 개 선택할 수 있는 기능을 추가했습니다.",
+        }),
+        ("v1.14.1", "2026-07-11", false, new[]
         {
             "에이전트 자동 업데이트 기능이 추가되었습니다.",
             "계정 사용량 표시의 정확도를 개선했습니다.",
