@@ -93,6 +93,50 @@ internal sealed class ReorderDrag<T> where T : class
 
     public T Source => _source;
 
+    /// <summary>호스트가 컬렉션/열을 라이브 재배치할 때 현재 화면 위치에서 새 레이아웃 위치까지
+    /// 2축 FLIP 애니메이션을 적용한다. 복잡한 2열+전체폭 폴더 배치는 단순 세로 shift로 표현할 수 없어 사용.</summary>
+    public void AnimateLayoutChange(Action applyLayoutChange)
+    {
+        if (_finished)
+        {
+            applyLayoutChange();
+            return;
+        }
+
+        _coordHost.UpdateLayout();
+        var sourceElements = _slots[_sourceIndex].Elements.ToHashSet();
+        var allElements = _slots
+            .SelectMany(slot => slot.Elements)
+            .Distinct()
+            .ToList();
+        var oldPositions = new Dictionary<FrameworkElement, Point>();
+        foreach (var element in allElements)
+        {
+            if (sourceElements.Contains(element)) continue;
+            try
+            {
+                oldPositions[element] = element.TransformToAncestor(_coordHost).Transform(new Point());
+            }
+            catch { /* 레이아웃 변경 중 분리된 컨테이너는 애니메이션에서 제외 */ }
+        }
+
+        // 진행 중 애니메이션의 현재 화면 위치는 위에서 캡처했다. 기존 변환을 지운 뒤 새 레이아웃을
+        // 계산하고 그 차이만큼 역이동시켜, 연속 드래그에서도 순간이동 없이 이어 붙인다.
+        foreach (var element in allElements) ResetPosition(element);
+        applyLayoutChange();
+        _coordHost.UpdateLayout();
+
+        foreach (var (element, oldPosition) in oldPositions)
+        {
+            try
+            {
+                var newPosition = element.TransformToAncestor(_coordHost).Transform(new Point());
+                AnimatePosition(element, oldPosition.X - newPosition.X, oldPosition.Y - newPosition.Y);
+            }
+            catch { /* 제거/재생성된 컨테이너는 최종 레이아웃에 그대로 둔다 */ }
+        }
+    }
+
     public static ReorderDrag<T>? TryStart(
         UIElement coordHost,
         IEnumerable<(T Item, FrameworkElement Element)> rows,
@@ -664,7 +708,8 @@ internal sealed class ReorderDrag<T> where T : class
         _ghost.Dispose();
         foreach (var slot in _slots)
             foreach (var element in slot.Elements)
-                ResetAxis(element);
+                if (_suppressDisplacement) ResetPosition(element);
+                else ResetAxis(element);
 
         if (!commit) return;
         if (dropIntoTarget != null)
@@ -730,6 +775,39 @@ internal sealed class ReorderDrag<T> where T : class
         var prop = _horizontal ? TranslateTransform.XProperty : TranslateTransform.YProperty;
         tt.BeginAnimation(prop, null);
         if (_horizontal) tt.X = 0; else tt.Y = 0;
+    }
+
+    private void AnimatePosition(UIElement el, double offsetX, double offsetY)
+    {
+        var tt = EnsureTranslate(el);
+        AnimatePositionAxis(tt, TranslateTransform.XProperty, offsetX);
+        AnimatePositionAxis(tt, TranslateTransform.YProperty, offsetY);
+    }
+
+    private static void AnimatePositionAxis(
+        TranslateTransform transform,
+        DependencyProperty property,
+        double offset)
+    {
+        if (Math.Abs(offset) < 0.5) return;
+        var animation = new DoubleAnimation
+        {
+            From = offset,
+            To = 0,
+            Duration = TimeSpan.FromMilliseconds(AnimMs),
+            FillBehavior = FillBehavior.Stop,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        transform.BeginAnimation(property, animation, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private static void ResetPosition(UIElement el)
+    {
+        var tt = EnsureTranslate(el);
+        tt.BeginAnimation(TranslateTransform.XProperty, null);
+        tt.BeginAnimation(TranslateTransform.YProperty, null);
+        tt.X = 0;
+        tt.Y = 0;
     }
 
     private static TranslateTransform EnsureTranslate(UIElement el)

@@ -1254,17 +1254,29 @@ public partial class SidebarView : UserControl
                     preview.Insert(targetIndex, item);
                 }
             }
-            SyncCollection(visibleRoots, preview);
 
-            if (item is ProjectItem project)
+            ProjectItem? project = item as ProjectItem;
+            int targetColumn = project == null || targetItem == null || double.IsPositiveInfinity(gridMidX)
+                ? originalColumn
+                : Mouse.GetPosition(this).X >= gridMidX ? 1 : 0;
+            bool orderChanged = !visibleRoots.SequenceEqual(preview);
+            bool columnChanged = project != null && project.Column != targetColumn;
+            if (!orderChanged && !columnChanged) return;
+
+            void ApplyPreviewLayout()
             {
-                int column = targetItem == null || double.IsPositiveInfinity(gridMidX)
-                    ? originalColumn
-                    : Mouse.GetPosition(this).X >= gridMidX ? 1 : 0;
-                project.Column = column;
+                SyncCollection(visibleRoots, preview);
+                if (project != null) project.Column = targetColumn;
+                panel?.InvalidateMeasure();
+                panel?.InvalidateArrange();
             }
-            panel?.InvalidateMeasure();
-            panel?.InvalidateArrange();
+
+            // EndDrag는 필드를 먼저 비운 뒤 프리뷰를 원복하므로 종료/취소 시에는 즉시 정리하고,
+            // 실제 드래그 중 레이아웃 변경에만 2축 이동 애니메이션을 적용한다.
+            if (_rootDrag != null)
+                _rootDrag.AnimateLayoutChange(ApplyPreviewLayout);
+            else
+                ApplyPreviewLayout();
         }
 
         _rootDrag = ReorderDrag<object>.TryStart(
