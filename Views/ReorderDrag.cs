@@ -357,14 +357,14 @@ internal sealed class ReorderDrag<T> where T : class
         // 숨겨진 source가 현재 차지하는 자리의 중앙을 기준으로 인접한 한 칸만 넘긴다.
         if (_useLiveLayoutPlaceholder)
         {
-            UpdatePlaceholderTarget(pointer, liveLayout: true);
+            UpdateLiveLayoutTarget(pointer);
             return;
         }
-        // 1열 카드 목록은 이동 중인 대상의 RenderTransform을 다시 hit-test하지 않고,
-        // 캡처된 삽입 자리 중앙만 사용해 다음 카드가 조기에 들썩이는 피드백 루프를 차단한다.
+        // 1열 카드 목록은 이동 중인 대상의 RenderTransform이나 앞 카드가 비운 자리를
+        // 다시 판정하지 않고, 진행 방향의 다음 실제 카드 중앙을 고정 기준으로 사용한다.
         if (_useFixedLayoutPlaceholder)
         {
-            UpdatePlaceholderTarget(pointer, liveLayout: false);
+            UpdateFixedTarget(pointer);
             return;
         }
 
@@ -458,26 +458,16 @@ internal sealed class ReorderDrag<T> where T : class
         ApplyDisplacement();
     }
 
-    private void UpdatePlaceholderTarget(Point pointer, bool liveLayout)
+    private void UpdateLiveLayoutTarget(Point pointer)
     {
         ClearDropIntoTarget();
         var cursor = _horizontal ? pointer.X : pointer.Y;
         var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
         var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
-        double currentAreaCenter;
-        if (liveLayout)
-        {
-            var sourceBounds = CurrentPrimaryBounds(_slots[_sourceIndex]);
-            currentAreaCenter = _horizontal
-                ? sourceBounds.Left + sourceBounds.Width / 2
-                : sourceBounds.Top + sourceBounds.Height / 2;
-        }
-        else
-        {
-            // 변환 애니메이션만 쓰는 1열 목록에서 source 원본은 시작 위치에 숨겨져 있다.
-            // 현재 삽입 인덱스의 캡처 위치를 source가 확보한 가상 빈자리로 사용한다.
-            currentAreaCenter = FixedPlaceholderCenter(_targetIndex);
-        }
+        var sourceBounds = CurrentPrimaryBounds(_slots[_sourceIndex]);
+        double currentAreaCenter = _horizontal
+            ? sourceBounds.Left + sourceBounds.Width / 2
+            : sourceBounds.Top + sourceBounds.Height / 2;
         var capturedSourceBounds = CapturedPrimaryBounds(_slots[_sourceIndex]);
         var previousCenter = _liveLastDraggedCenter ?? (_horizontal
             ? capturedSourceBounds.Left + capturedSourceBounds.Width / 2
@@ -528,31 +518,48 @@ internal sealed class ReorderDrag<T> where T : class
         _liveTransitionDirection = transitionDirection;
         _liveTransitionCenter = transitionCenter;
         SetReorderPreviewForTargetIndex(newTarget);
-        if (!liveLayout)
-            ApplyDisplacement();
     }
 
-    private double FixedPlaceholderCenter(int targetIndex)
+    private void UpdateFixedTarget(Point pointer)
     {
+        ClearDropIntoTarget();
         var source = _slots[_sourceIndex];
-        double sourceSize = AxisSize(source);
-        if (targetIndex == _sourceIndex)
-            return AxisPos(source) + sourceSize / 2;
-
+        var cursor = _horizontal ? pointer.X : pointer.Y;
+        var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
+        double draggedCenter = cursor - grabOffset + AxisSize(source) / 2;
+        double previousCenter = _liveLastDraggedCenter ?? (AxisPos(source) + AxisSize(source) / 2);
+        _liveLastDraggedCenter = draggedCenter;
+        int movementDirection = draggedCenter > previousCenter + 0.25
+            ? 1
+            : draggedCenter < previousCenter - 0.25 ? -1 : 0;
         var others = _slots
             .Where(slot => !ReferenceEquals(slot, source))
             .ToList();
-        double placeholderStart;
-        if (targetIndex < _sourceIndex)
+
+        int newTarget = _targetIndex;
+        if (movementDirection > 0 && newTarget < others.Count)
         {
-            placeholderStart = AxisPos(others[Math.Clamp(targetIndex, 0, others.Count - 1)]);
+            double threshold = AxisPos(others[newTarget]) + AxisSize(others[newTarget]) / 2;
+            if (_liveTransitionDirection < 0)
+                threshold += LiveReversalHysteresis;
+            if (draggedCenter >= threshold)
+                newTarget++;
         }
-        else
+        else if (movementDirection < 0 && newTarget > 0)
         {
-            var previous = others[Math.Clamp(targetIndex - 1, 0, others.Count - 1)];
-            placeholderStart = AxisPos(previous) + AxisSize(previous) - sourceSize;
+            double threshold = AxisPos(others[newTarget - 1]) + AxisSize(others[newTarget - 1]) / 2;
+            if (_liveTransitionDirection > 0)
+                threshold -= LiveReversalHysteresis;
+            if (draggedCenter <= threshold)
+                newTarget--;
         }
-        return placeholderStart + sourceSize / 2;
+
+        if (!_needsReapply && newTarget == _targetIndex) return;
+        _needsReapply = false;
+        _liveTransitionDirection = Math.Sign(newTarget - _targetIndex);
+        _targetIndex = newTarget;
+        SetReorderPreviewForTargetIndex(newTarget);
+        ApplyDisplacement();
     }
 
     private void SetReorderPreviewForTargetIndex(int targetIndex)
@@ -823,10 +830,8 @@ internal sealed class ReorderDrag<T> where T : class
         {
             _targetColumn = newColumn;
             _targetIndex = ComputeCapturedColumnTarget(newColumn, cy);
-            _liveLayoutOrderMoved = true;
             _liveLastDraggedCenter = cy;
             _liveTransitionDirection = 0;
-            _liveTransitionCenter = GridPlaceholderCenter(newColumn, _targetIndex);
             ApplyGridDisplacement();
             return;
         }
@@ -838,58 +843,32 @@ internal sealed class ReorderDrag<T> where T : class
             ? 1
             : cy < previousCenter - 0.25 ? -1 : 0;
 
+        var targetSlots = _slots
+            .Where(slot => !ReferenceEquals(slot, source) && ColumnOf(slot) == newColumn)
+            .OrderBy(slot => slot.Top)
+            .ToList();
         int newTarget = _targetIndex;
-        double currentAreaCenter = GridPlaceholderCenter(newColumn, _targetIndex);
-        double transitionCenter = currentAreaCenter;
-        int originColumn = ColumnOf(source);
-        int sourceWithin = WithinColumnIndex(_sourceIndex, originColumn);
-        if (!_liveLayoutOrderMoved && newColumn == originColumn && _targetIndex == sourceWithin)
+        if (movementDirection > 0 && newTarget < targetSlots.Count)
         {
-            int initialTarget = ComputeInitialColumnTarget(newColumn, cy);
-            newTarget = initialTarget == _targetIndex
-                ? _targetIndex
-                : _targetIndex + Math.Sign(initialTarget - _targetIndex);
-            if (newTarget != _targetIndex)
-            {
-                movementDirection = Math.Sign(newTarget - _targetIndex);
-                transitionCenter = cy;
-            }
-        }
-        else
-        {
-            bool reversing = _liveTransitionDirection == -movementDirection;
-            transitionCenter = reversing ? _liveTransitionCenter : currentAreaCenter;
-            double threshold = transitionCenter
-                + (reversing ? movementDirection * LiveReversalHysteresis : 0);
-            int columnCount = _slots.Count(slot =>
-                !ReferenceEquals(slot, source) && ColumnOf(slot) == newColumn);
-            if (movementDirection > 0 && cy > threshold && newTarget < columnCount)
+            double threshold = targetSlots[newTarget].Top + targetSlots[newTarget].Height / 2;
+            if (_liveTransitionDirection < 0)
+                threshold += LiveReversalHysteresis;
+            if (cy >= threshold)
                 newTarget++;
-            else if (movementDirection < 0 && cy < threshold && newTarget > 0)
+        }
+        else if (movementDirection < 0 && newTarget > 0)
+        {
+            double threshold = targetSlots[newTarget - 1].Top + targetSlots[newTarget - 1].Height / 2;
+            if (_liveTransitionDirection > 0)
+                threshold -= LiveReversalHysteresis;
+            if (cy <= threshold)
                 newTarget--;
         }
 
         if (newTarget == _targetIndex) return;
-        int transitionDirection = Math.Sign(newTarget - _targetIndex);
+        _liveTransitionDirection = Math.Sign(newTarget - _targetIndex);
         _targetIndex = newTarget;
-        _liveLayoutOrderMoved = true;
-        _liveTransitionDirection = transitionDirection;
-        _liveTransitionCenter = transitionCenter;
         ApplyGridDisplacement();
-    }
-
-    private int ComputeInitialColumnTarget(int column, double center)
-    {
-        var source = _slots[_sourceIndex];
-        double half = source.Height / 2;
-        int target = 0;
-        foreach (var slot in _slots)
-        {
-            if (ReferenceEquals(slot, source) || ColumnOf(slot) != column) continue;
-            double edge = slot.Top < source.Top ? center - half : center + half;
-            if (edge >= slot.Top + slot.Height / 2) target++;
-        }
-        return target;
     }
 
     private int ComputeCapturedColumnTarget(int column, double center)
@@ -903,33 +882,6 @@ internal sealed class ReorderDrag<T> where T : class
         return target;
     }
 
-    private double GridPlaceholderCenter(int column, int targetIndex)
-    {
-        var source = _slots[_sourceIndex];
-        int originColumn = ColumnOf(source);
-        var targetSlots = _slots
-            .Where(slot => !ReferenceEquals(slot, source) && ColumnOf(slot) == column)
-            .OrderBy(slot => slot.Top)
-            .ToList();
-        if (column == originColumn)
-        {
-            int sourceWithin = WithinColumnIndex(_sourceIndex, originColumn);
-            if (targetIndex == sourceWithin)
-                return source.Top + source.Height / 2;
-            if (targetIndex < sourceWithin)
-                return targetSlots[Math.Clamp(targetIndex, 0, targetSlots.Count - 1)].Top
-                    + source.Height / 2;
-            var previous = targetSlots[Math.Clamp(targetIndex - 1, 0, targetSlots.Count - 1)];
-            return previous.Top + previous.Height - source.Height / 2;
-        }
-
-        if (targetSlots.Count == 0)
-            return _slots.Min(slot => slot.Top) + source.Height / 2;
-        if (targetIndex < targetSlots.Count)
-            return targetSlots[Math.Max(0, targetIndex)].Top + source.Height / 2;
-        var last = targetSlots[^1];
-        return last.Top + last.Height + source.Height / 2;
-    }
 
     /// <summary>그리드: 목표 컬럼 안에서 드래그 카드 중심 Y 가 들어갈 삽입 위치(0-based, source 제외).
     /// = 같은 컬럼의 (source 제외) 카드 중 중심 Y 가 위에 있는 개수.</summary>
