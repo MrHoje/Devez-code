@@ -135,6 +135,16 @@ public partial class App : Application
             return;
         }
 
+        // 시작 시 자동 업데이트는 하루 1회만. 오늘 이미 실행했으면 모달 없이 바로 메인 창.
+        // (설정의 '즉시 업데이트'는 이 게이트와 무관하게 언제나 동작한다.)
+        var today = DateTime.Now.ToString("yyyy-MM-dd");
+        if (SettingsService.LoadLastAgentAutoUpdateDate() == today)
+        {
+            new MainWindow().Show();
+            return;
+        }
+        SettingsService.SaveLastAgentAutoUpdateDate(today);
+
         // 모달을 닫는 순간(메인 창 열기 전) 열린 창이 0개가 되어 앱이 종료되는 것을 막기 위해
         // 시퀀스 동안 ShutdownMode 를 명시적 종료로 바꾸고, 메인 창을 띄운 뒤 원복한다.
         var prevMode = ShutdownMode;
