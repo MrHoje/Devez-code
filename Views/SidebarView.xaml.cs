@@ -1283,23 +1283,6 @@ public partial class SidebarView : UserControl
             ? ComputeColumnsMidX(source.Element)
             : double.PositiveInfinity;
         var visibleItems = rows.Select(row => row.Item).ToList();
-        var initialBounds = new Dictionary<object, Rect>();
-        if (_projectColumns >= 2 && item is ProjectFolderItem)
-        {
-            foreach (var row in rows)
-            {
-                try
-                {
-                    var origin = row.Element.TransformToAncestor(this).Transform(new Point());
-                    initialBounds[row.Item] = new Rect(
-                        origin.X,
-                        origin.Y,
-                        Math.Max(1, row.Element.ActualWidth),
-                        Math.Max(1, row.Element.ActualHeight));
-                }
-                catch { /* 연결이 끊긴 컨테이너는 단일 타깃으로 판정 */ }
-            }
-        }
         var panel = FindVisualChildren<ProjectColumnsPanel>(host).FirstOrDefault();
         var visibleRoots = archived ? _archivedRootItems : _activeRootItems;
         int originalColumn = item is ProjectItem sourceProject ? sourceProject.Column : 0;
@@ -1319,8 +1302,7 @@ public partial class SidebarView : UserControl
         {
             if (_projectColumns < 2) return;
 
-            var preview = BuildRootPreviewOrder(
-                item, targetItem, after, visibleItems, initialBounds);
+            var preview = BuildRootPreviewOrder(item, targetItem, after, visibleItems);
             if (item is ProjectFolderItem && _rootDrag != null)
                 lastFolderPreviewOrder = targetItem == null ? null : preview;
 
@@ -1405,27 +1387,10 @@ public partial class SidebarView : UserControl
         object source,
         object? target,
         bool after,
-        IReadOnlyList<object> visibleItems,
-        IReadOnlyDictionary<object, Rect> initialBounds)
+        IReadOnlyList<object> visibleItems)
     {
         var preview = visibleItems.ToList();
         if (target == null || ReferenceEquals(target, source)) return preview;
-
-        // 전체폭 폴더는 왼쪽 프로젝트를 타깃으로 삼되, 그 프로젝트와 세로 영역이 겹치는
-        // 오른쪽 프로젝트까지 같은 가로 밴드로 취급한다. 앞=밴드 전체 앞, 뒤=밴드 전체 뒤.
-        if (source is ProjectFolderItem
-            && target is ProjectItem
-            && initialBounds.TryGetValue(target, out var targetBounds))
-        {
-            var bandItems = visibleItems
-                .Where(item => item is ProjectItem
-                    && initialBounds.TryGetValue(item, out var bounds)
-                    && bounds.Top < targetBounds.Bottom - 0.5
-                    && bounds.Bottom > targetBounds.Top + 0.5)
-                .ToList();
-            if (bandItems.Count > 0)
-                target = after ? bandItems[^1] : bandItems[0];
-        }
 
         preview.Remove(source);
         int targetIndex = preview.IndexOf(target);

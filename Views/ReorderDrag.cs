@@ -497,10 +497,18 @@ internal sealed class ReorderDrag<T> where T : class
                 : pointer.X >= bounds.Left && pointer.X <= bounds.Right;
         }
 
+        bool HasPointerOnMainAxis(Rect bounds)
+        {
+            return _horizontal
+                ? pointer.X >= bounds.Left && pointer.X <= bounds.Right
+                : pointer.Y >= bounds.Top && pointer.Y <= bounds.Bottom;
+        }
+
         double minCrossSize = candidates.Min(candidate =>
             _horizontal ? candidate.Bounds.Height : candidate.Bounds.Width);
         bool hasSameLane = candidates.Any(candidate =>
             HasPointerOnCrossAxis(candidate.Bounds)
+            && HasPointerOnMainAxis(candidate.Bounds)
             && (_horizontal ? candidate.Bounds.Height : candidate.Bounds.Width) <= minCrossSize * 1.5);
         double bestDistance = double.PositiveInfinity;
         foreach (var candidate in candidates)
