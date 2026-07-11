@@ -589,12 +589,12 @@ internal sealed class ReorderDrag<T> where T : class
         _reorderPreviewChanged?.Invoke(target.Item, target.Element, after);
     }
 
-    private void ClearReorderPreview()
+    private void ClearReorderPreview(bool notify = true)
     {
         if (_reorderPreviewTarget == null) return;
         _reorderPreviewTarget = null;
         _reorderPreviewAfter = false;
-        _reorderPreviewChanged?.Invoke(null, null, false);
+        if (notify) _reorderPreviewChanged?.Invoke(null, null, false);
     }
 
     private void ResetDisplacementPreview()
@@ -726,40 +726,61 @@ internal sealed class ReorderDrag<T> where T : class
         _finished = true;
 
         var dropIntoTarget = _dropIntoTarget;
-        ClearDropIntoTarget();
-        ClearReorderPreview();
-
-        _ghost.Dispose();
-        foreach (var slot in _slots)
-            foreach (var element in slot.Elements)
-                if (_suppressDisplacement) ResetPosition(element);
-                else ResetAxis(element);
-
-        if (!commit) return;
-        if (dropIntoTarget != null)
+        bool hadLiveReorderPreview = _reorderPreviewTarget != null;
+        bool committed = false;
+        try
         {
-            if (_onDropInto != null)
+            if (!commit) return;
+            if (dropIntoTarget != null)
             {
-                try { await _onDropInto(_source, dropIntoTarget.Item); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ReorderDrag child commit failed: {ex}"); }
+                if (_onDropInto != null)
+                {
+                    try
+                    {
+                        await _onDropInto(_source, dropIntoTarget.Item);
+                        committed = true;
+                    }
+                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ReorderDrag child commit failed: {ex}"); }
+                }
+                return;
             }
-            return;
-        }
 
-        if (IsGrid)
-        {
-            // 그리드: (목표 컬럼, 컬럼 내 삽입 위치)를 그대로 전달. 변경 여부 판단은 commit 콜백이 한다.
-            try { await _onCommit(_source, _targetColumn, _targetIndex); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ReorderDrag grid commit failed: {ex}"); }
-            return;
-        }
+            if (IsGrid)
+            {
+                // 그리드: 프리뷰 변환을 유지한 채 모델 열/순서를 먼저 확정한다. 시각 상태를 먼저
+                // 원복하면 저장·컬렉션 동기화 동안 원래 폴더 높이가 한 프레임 노출된다.
+                try
+                {
+                    await _onCommit(_source, _targetColumn, _targetIndex);
+                    committed = true;
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ReorderDrag grid commit failed: {ex}"); }
+                return;
+            }
 
-        if (_commitUnchanged || _targetIndex != _sourceIndex)
+            if (_commitUnchanged || _targetIndex != _sourceIndex)
+            {
+                int hostSource = SlotToHostIndex(_sourceIndex, skipSource: false);
+                int hostTarget = SlotToHostIndex(_targetIndex, skipSource: !_exactFollow);
+                try
+                {
+                    await _onCommit(_source, hostTarget, hostSource);
+                    committed = true;
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ReorderDrag commit failed: {ex}"); }
+            }
+        }
+        finally
         {
-            int hostSource = SlotToHostIndex(_sourceIndex, skipSource: false);
-            int hostTarget = SlotToHostIndex(_targetIndex, skipSource: !_exactFollow);
-            try { await _onCommit(_source, hostTarget, hostSource); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"ReorderDrag commit failed: {ex}"); }
+            ClearDropIntoTarget();
+            // 라이브 순서 프리뷰가 성공적으로 커밋된 경우 null 콜백은 원순서를 다시 적용하므로
+            // 내부 마킹만 지운다. 취소·실패 때만 콜백으로 원래 레이아웃을 복원한다.
+            ClearReorderPreview(notify: !(committed && hadLiveReorderPreview));
+            _ghost.Dispose();
+            foreach (var slot in _slots)
+                foreach (var element in slot.Elements)
+                    if (_suppressDisplacement) ResetPosition(element);
+                    else ResetAxis(element);
         }
     }
 
