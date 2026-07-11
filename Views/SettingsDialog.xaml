@@ -674,7 +674,7 @@
                                         </Button>
                                         <Button x:Name="CodexCatBtn" Tag="codex" Style="{StaticResource CleanerPill}" Click="CleanerAgent_Click">
                                             <StackPanel Orientation="Horizontal">
-                                                <Image Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
+                                                <Image x:Name="CodexCatIcon" Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
                                                        Source="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}, Converter={x:Static models:AgentImageConverter.Instance}}"
                                                        RenderOptions.BitmapScalingMode="HighQuality"/>
                                                 <TextBlock Text="Codex" VerticalAlignment="Center"/>
@@ -983,7 +983,8 @@
                                         <Button Click="CodexLogin_Click" Style="{StaticResource UsageLoginButton}"
                                                 ToolTip="ChatGPT(Codex) 계정으로 로그인해 사용량 연결">
                                             <StackPanel Orientation="Horizontal">
-                                                <Image Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
+                                                <Image x:Name="CodexLoginIcon"
+                                                       Source="pack://application:,,,/Resources/Images/ShellPresets/chatgpt_icon_white_50.png"
                                                        Width="13" Height="13" VerticalAlignment="Center"
                                                        RenderOptions.BitmapScalingMode="HighQuality"/>
                                                 <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"

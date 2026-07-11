@@ -296,6 +296,8 @@ public partial class SettingsDialog : UserControl
     public SettingsDialog()
     {
         InitializeComponent();
+        CodexLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
+        CodexCatIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         _originalTheme       = App.CurrentTheme;
         _selectedTheme       = App.CurrentTheme;
         _originalFontScale   = SettingsService.LoadFontScale();
@@ -765,6 +767,8 @@ public partial class SettingsDialog : UserControl
             if (ChangelogItemsHost.Children.Count > 0)
                 RenderChangelogPage();
 
+            CodexLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
+            CodexCatIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
             OpenCodeLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri));
             OpenCodeCatIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri));
             GrokLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));

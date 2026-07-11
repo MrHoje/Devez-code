@@ -79,7 +79,9 @@
     <!-- Claude Code 아이콘 이미지 (탭 헤더·세션 행) -->
     <Resource Include="Resources\Images\ShellPresets\claude_code.png" />
     <!-- 에이전트 아이콘 (devez 이식) — 세션 행에 에이전트별 로고 표시 -->
-    <Resource Include="Resources\Images\ShellPresets\codex.png" />
+    <!-- Codex: ChatGPT/OpenAI Blossom, dark=white glyph, light=black glyph -->
+    <Resource Include="Resources\Images\ShellPresets\chatgpt_icon_black_50.png" />
+    <Resource Include="Resources\Images\ShellPresets\chatgpt_icon_white_50.png" />
     <Resource Include="Resources\Images\ShellPresets\opencode_icon_black_50.png" />
     <Resource Include="Resources\Images\ShellPresets\opencode_icon_white_50.png" />
     <Resource Include="Resources\Images\ShellPresets\gajae_code.png" />

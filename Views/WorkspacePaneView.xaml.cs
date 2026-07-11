@@ -2361,7 +2361,7 @@ public partial class WorkspacePaneView : UserControl
     private void OnThemeChanged_UpdateSeam(string _key) => Dispatcher.BeginInvoke(new Action(() =>
     {
         UpdateSelectedTabSeam();
-        // 테마 변경 → 에이전트 아이콘(opencode 흑/백 등) 재평가. 값 변경 없이 바인딩만 다시 돌린다.
+        // 테마 변경 → 에이전트 아이콘(codex/opencode 흑/백 등) 재평가. 값 변경 없이 바인딩만 다시 돌린다.
         foreach (var proj in AllProjects)
             foreach (var s in proj.Tabs.OfType<SessionItem>())
                 s.RefreshAgentIcon();

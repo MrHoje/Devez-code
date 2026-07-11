@@ -116,6 +116,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
         SessionHistoryList.ItemsSource = _sessionDoneRecords;
         WaitingList.ItemsSource = _waitingSessions;
@@ -712,8 +713,7 @@ public partial class MainWindow : Window
             });
         }
 
-        AddProviderCard(cards, _lastCodex, "Codex",
-            "pack://application:,,,/Resources/Images/ShellPresets/codex.png");
+        AddProviderCard(cards, _lastCodex, "Codex", App.CodexIconUri);
         AddProviderCard(cards, _lastGo, "OpenCode Go", App.OpenCodeIconUri);
         AddGrokCard(cards);
         AddDeepSeekCard(cards);
@@ -4027,6 +4027,7 @@ public partial class MainWindow : Window
     {
         UpdatePanelToggleVisual();
         ApplyFooterUsageVisibility();
+        CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         GoFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
         GrokFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
         RefreshUsagePanelIfVisible();                                                                      // 사용량 카드 아이콘도 재빌드
@@ -4035,7 +4036,7 @@ public partial class MainWindow : Window
 
     /// <summary>완료기록(SessionHistoryList) 카드의 AgentId→아이콘 바인딩을 강제로 재평가한다.
     /// AgentId 는 불변(init) 값이라 값 자체는 안 바뀌므로, 테마 전환 시 컨버터가 재호출되지 않아
-    /// opencode 흑/백 아이콘이 즉시 반영되지 않는 문제를 SessionItem.RefreshAgentIcon() 과 동일한
+    /// codex/opencode 흑/백 아이콘이 즉시 반영되지 않는 문제를 SessionItem.RefreshAgentIcon() 과 동일한
     /// PropertyChanged(AgentId) 트리거 방식으로 해결(스크롤 위치 보존, 컨테이너 재생성 없음).
     /// WaitingList(SessionItem)는 WorkspacePaneView.OnThemeChanged_UpdateSeam 이 같은 인스턴스를
     /// 이미 갱신하므로 여기서는 손대지 않는다.</summary>
