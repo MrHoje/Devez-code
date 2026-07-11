@@ -61,6 +61,7 @@ internal sealed class ReorderDrag<T> where T : class
     private bool _reorderPreviewAfter;
     private double? _lastPointerAxisPosition;
     private int _lastTransitionDirection;
+    private bool _detachedSourcePreview;
     private bool _finished;
     private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
     private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
@@ -296,15 +297,46 @@ internal sealed class ReorderDrag<T> where T : class
     /// <summary>자식 드래그 시작 즉시 원래 자리를 접어 부모에서 빠져나오는 프리뷰를 표시.
     /// 실제 부모 관계 변경은 드롭 커밋 시 수행한다.</summary>
     public void ShowDetachedSourcePreview()
+        => SetDetachedSourcePreview(true);
+
+    public void SetDetachedSourcePreview(bool detached)
     {
-        if (_finished || IsGrid) return;
-        double shift = RowPitch();
-        for (int i = 0; i < _slots.Count; i++)
+        if (_finished || _detachedSourcePreview == detached) return;
+        _detachedSourcePreview = detached;
+        ClearDropIntoTarget();
+        ClearReorderPreview();
+        if (!detached)
         {
-            if (i == _sourceIndex) { AnimateSlot(_slots[i], 0); continue; }
-            AnimateSlot(_slots[i], i > _sourceIndex ? -shift : 0);
+            _needsReapply = true;
+            if (IsGrid) ApplyGridDisplacement();
+            else ApplyDisplacement();
+            return;
         }
-        _needsReapply = true;
+
+        if (IsGrid)
+        {
+            int originColumn = ColumnOf(_slots[_sourceIndex]);
+            int sourceWithin = WithinColumnIndex(_sourceIndex, originColumn);
+            double sourceHeight = _slots[_sourceIndex].Height;
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                if (i == _sourceIndex) { AnimateSlot(_slots[i], 0); continue; }
+                int column = ColumnOf(_slots[i]);
+                int within = WithinColumnIndex(i, column);
+                AnimateSlot(_slots[i], column == originColumn && within >= sourceWithin
+                    ? -sourceHeight
+                    : 0);
+            }
+        }
+        else
+        {
+            double shift = RowPitch();
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                if (i == _sourceIndex) { AnimateSlot(_slots[i], 0); continue; }
+                AnimateSlot(_slots[i], i > _sourceIndex ? -shift : 0);
+            }
+        }
     }
 
     /// <summary>크로스 패널 드래그 중 커서가 반대 패널에 있을 때 호출 — 소스가 이 리스트에서 '나간' 것처럼
@@ -324,6 +356,7 @@ internal sealed class ReorderDrag<T> where T : class
     {
         if (_finished) return;
         _ghost.MoveToMouse();
+        if (_detachedSourcePreview) return;
         if (_suppressed) return; // 반대 패널 위 → 이 리스트 프리뷰 억제(고스트만 이동).
         if (IsGrid)
         {
