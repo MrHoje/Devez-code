@@ -997,6 +997,8 @@ public partial class SidebarView : UserControl
     private double _projectGridRightHeight;
     private double _projectGridSourceHeight;
     private double _projectGridHeightOffset;
+    private ProjectItem? _projectGridSourceProject;
+    private string? _projectGridSourceFolderId;
     private int _projectGridOriginColumn = -1;
     private int _projectGridPreviewColumn = -1;
     private bool HasActiveDrag =>
@@ -1526,6 +1528,8 @@ public partial class SidebarView : UserControl
             .First(row => ReferenceEquals(row.Item, source)).Element);
         _projectGridHeightOffset = panel.ActualHeight
             - Math.Max(_projectGridLeftHeight, _projectGridRightHeight);
+        _projectGridSourceProject = source;
+        _projectGridSourceFolderId = source.FolderId;
         _projectGridOriginColumn = source.Column == 1 ? 1 : 0;
         _projectGridPreviewColumn = _projectGridOriginColumn;
     }
@@ -1537,15 +1541,18 @@ public partial class SidebarView : UserControl
         if (panel == null || targetColumn == _projectGridPreviewColumn) return;
         _projectGridPreviewColumn = targetColumn;
 
+        AnimateProjectGridPanelHeight(panel, ProjectGridHeightForColumn(targetColumn));
+    }
+
+    private double ProjectGridHeightForColumn(int? targetColumn)
+    {
         double left = _projectGridLeftHeight;
         double right = _projectGridRightHeight;
         if (_projectGridOriginColumn == 0) left -= _projectGridSourceHeight;
         else right -= _projectGridSourceHeight;
-        if (targetColumn == 0) left += _projectGridSourceHeight;
-        else right += _projectGridSourceHeight;
-        AnimateProjectGridPanelHeight(
-            panel,
-            Math.Max(left, right) + _projectGridHeightOffset);
+        if (targetColumn == 1) right += _projectGridSourceHeight;
+        else if (targetColumn == 0) left += _projectGridSourceHeight;
+        return Math.Max(0, Math.Max(left, right) + _projectGridHeightOffset);
     }
 
     private static double ProjectGridRowPitch(FrameworkElement element) =>
@@ -1568,29 +1575,43 @@ public partial class SidebarView : UserControl
     private void FinishProjectGridHeightPreview()
     {
         var panel = _projectGridHeightPanel;
+        var source = _projectGridSourceProject;
+        int? finalColumn = source != null && source.FolderId == _projectGridSourceFolderId
+            ? source.Column == 1 ? 1 : 0
+            : null;
+        double finalHeight = panel == null
+            ? 0
+            : ProjectGridHeightForColumn(finalColumn);
         _projectGridHeightPanel = null;
         _projectGridLeftHeight = 0;
         _projectGridRightHeight = 0;
         _projectGridSourceHeight = 0;
         _projectGridHeightOffset = 0;
+        _projectGridSourceProject = null;
+        _projectGridSourceFolderId = null;
         _projectGridOriginColumn = -1;
         _projectGridPreviewColumn = -1;
         if (panel == null) return;
 
-        double from = panel.ActualHeight;
+        // 드롭 시 프리뷰 애니메이션을 먼저 제거하고 UpdateLayout 결과를 다시 목표로 삼으면,
+        // 모델 열 이동이 정착되기 전의 원래 높이를 한 프레임 거쳐 접혔다가 다시 늘어날 수 있다.
+        // 현재 애니메이션 값을 그대로 이어 받아 실제 확정된 Column의 계산 높이로 마무리한다.
+        double from = panel.Height;
+        if (double.IsNaN(from) || double.IsInfinity(from)) from = panel.ActualHeight;
         panel.BeginAnimation(FrameworkElement.HeightProperty, null);
-        panel.ClearValue(FrameworkElement.HeightProperty);
-        panel.InvalidateMeasure();
-        panel.InvalidateArrange();
-        panel.UpdateLayout();
-        double to = panel.ActualHeight;
-        if (Math.Abs(from - to) < 0.5) return;
+        if (Math.Abs(from - finalHeight) < 0.5)
+        {
+            panel.ClearValue(FrameworkElement.HeightProperty);
+            panel.InvalidateMeasure();
+            panel.InvalidateArrange();
+            return;
+        }
 
         panel.Height = from;
         var animation = new DoubleAnimation
         {
             From = from,
-            To = to,
+            To = finalHeight,
             Duration = TimeSpan.FromMilliseconds(160),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
