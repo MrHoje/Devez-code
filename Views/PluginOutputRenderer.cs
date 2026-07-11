@@ -51,7 +51,7 @@ internal static class PluginOutputRenderer
             inventory.BorderBrush = lineBrush;
             inventory.BorderThickness = new Thickness(0, 1, 0, 1);
             inventory.Padding = new Thickness(0, 8, 0, 8);
-            inventory.Margin = new Thickness(0, 8, 0, 8);
+            inventory.Margin = new Thickness(0, 12, 0, 12);
             AddParagraph(doc, lines, afterStart, lines.Length, def, ok, err);
             return;
         }
