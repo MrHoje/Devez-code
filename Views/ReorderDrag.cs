@@ -95,6 +95,7 @@ internal sealed class ReorderDrag<T> where T : class
     }
 
     public T Source => _source;
+    public int CurrentTargetColumn => _targetColumn;
 
     /// <summary>호스트가 컬렉션/열을 라이브 재배치할 때 현재 화면 위치에서 새 레이아웃 위치까지
     /// 2축 FLIP 애니메이션을 적용한다. 복잡한 2열+전체폭 폴더 배치는 단순 세로 shift로 표현할 수 없어 사용.</summary>

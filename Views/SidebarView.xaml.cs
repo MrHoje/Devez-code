@@ -992,6 +992,12 @@ public partial class SidebarView : UserControl
     private ProjectItem? _draggedProject;
     private ProjectFolderItem? _projectFolderDropTarget;
     private Border? _projectFolderDropBorder;
+    private ProjectColumnsPanel? _projectGridHeightPanel;
+    private double _projectGridLeftHeight;
+    private double _projectGridRightHeight;
+    private double _projectGridSourceHeight;
+    private int _projectGridOriginColumn = -1;
+    private int _projectGridPreviewColumn = -1;
     private bool HasActiveDrag =>
         _rootDrag != null || _projectDrag != null || _tabDrag != null || _fileDrag != null;
 
@@ -1093,6 +1099,7 @@ public partial class SidebarView : UserControl
         if (_projectDrag != null)
         {
             _projectDrag.Update(e);
+            UpdateProjectGridHeightPreview(_projectDrag.CurrentTargetColumn);
             UpdateProjectFolderDropPreview(e.GetPosition(this));
             return true;
         }
@@ -1135,6 +1142,7 @@ public partial class SidebarView : UserControl
             await projectDrag.FinishAsync(commit && !droppedOnFolderHeader);
         if (moveIntoFolder && MoveProjectIntoFolder(draggedProject!, dropFolder!))
             ProjectsReordered?.Invoke();
+        FinishProjectGridHeightPreview();
         if (tabDrag != null) await tabDrag.FinishAsync(commit);
         if (fileDrag != null) await fileDrag.FinishAsync(commit);
         if (applyDeferredSearch) ApplySidebarSearch();
@@ -1442,11 +1450,12 @@ public partial class SidebarView : UserControl
 
         var coll = CurrentProjects;
         var visibleItems = rows.Select(row => row.Item).ToList();
+        ProjectColumnsPanel? gridPanel = null;
 
         if (_projectColumns >= 2)
         {
             double midX = ComputeColumnsMidX(src.Element);
-            var panel = FindVisualAncestor<ProjectColumnsPanel>(src.Element);
+            gridPanel = FindVisualAncestor<ProjectColumnsPanel>(src.Element);
             _projectDrag = ReorderDrag<ProjectItem>.TryStart(this, rows, p, src.Element,
                 (project, targetColumn, targetIndex) =>
                 {
@@ -1454,8 +1463,8 @@ public partial class SidebarView : UserControl
                             coll, project, targetColumn, targetIndex, visibleItems))
                     {
                         // Column은 일반 모델 속성이므로 컬렉션 순서가 그대로인 열 이동도 패널을 직접 갱신한다.
-                        panel?.InvalidateMeasure();
-                        panel?.InvalidateArrange();
+                        gridPanel?.InvalidateMeasure();
+                        gridPanel?.InvalidateArrange();
                         ProjectsReordered?.Invoke();
                     }
                     return Task.CompletedTask;
@@ -1474,11 +1483,101 @@ public partial class SidebarView : UserControl
 
         if (_projectDrag != null)
         {
+            if (gridPanel != null)
+                BeginProjectGridHeightPreview(gridPanel, rows, p);
             _draggedProject = p;
             _didDrag = true;
             CaptureMouse();
         }
         _pendingProject = null;
+    }
+
+    private void BeginProjectGridHeightPreview(
+        ProjectColumnsPanel panel,
+        IReadOnlyList<(ProjectItem Item, FrameworkElement Element)> rows,
+        ProjectItem source)
+    {
+        panel.BeginAnimation(FrameworkElement.HeightProperty, null);
+        panel.ClearValue(FrameworkElement.HeightProperty);
+        _projectGridHeightPanel = panel;
+        _projectGridLeftHeight = rows
+            .Where(row => row.Item.Column == 0)
+            .Sum(row => Math.Max(1, row.Element.ActualHeight));
+        _projectGridRightHeight = rows
+            .Where(row => row.Item.Column == 1)
+            .Sum(row => Math.Max(1, row.Element.ActualHeight));
+        _projectGridSourceHeight = Math.Max(1, rows
+            .First(row => ReferenceEquals(row.Item, source)).Element.ActualHeight);
+        _projectGridOriginColumn = source.Column == 1 ? 1 : 0;
+        _projectGridPreviewColumn = _projectGridOriginColumn;
+    }
+
+    private void UpdateProjectGridHeightPreview(int targetColumn)
+    {
+        var panel = _projectGridHeightPanel;
+        targetColumn = targetColumn == 1 ? 1 : 0;
+        if (panel == null || targetColumn == _projectGridPreviewColumn) return;
+        _projectGridPreviewColumn = targetColumn;
+
+        double left = _projectGridLeftHeight;
+        double right = _projectGridRightHeight;
+        if (_projectGridOriginColumn == 0) left -= _projectGridSourceHeight;
+        else right -= _projectGridSourceHeight;
+        if (targetColumn == 0) left += _projectGridSourceHeight;
+        else right += _projectGridSourceHeight;
+        AnimateProjectGridPanelHeight(panel, Math.Max(left, right));
+    }
+
+    private static void AnimateProjectGridPanelHeight(ProjectColumnsPanel panel, double targetHeight)
+    {
+        double currentHeight = panel.ActualHeight;
+        if (Math.Abs(currentHeight - targetHeight) < 0.5) return;
+        var animation = new DoubleAnimation
+        {
+            From = currentHeight,
+            To = Math.Max(0, targetHeight),
+            Duration = TimeSpan.FromMilliseconds(160),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        panel.BeginAnimation(FrameworkElement.HeightProperty, animation, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void FinishProjectGridHeightPreview()
+    {
+        var panel = _projectGridHeightPanel;
+        _projectGridHeightPanel = null;
+        _projectGridLeftHeight = 0;
+        _projectGridRightHeight = 0;
+        _projectGridSourceHeight = 0;
+        _projectGridOriginColumn = -1;
+        _projectGridPreviewColumn = -1;
+        if (panel == null) return;
+
+        double from = panel.ActualHeight;
+        panel.BeginAnimation(FrameworkElement.HeightProperty, null);
+        panel.ClearValue(FrameworkElement.HeightProperty);
+        panel.InvalidateMeasure();
+        panel.InvalidateArrange();
+        panel.UpdateLayout();
+        double to = panel.ActualHeight;
+        if (Math.Abs(from - to) < 0.5) return;
+
+        panel.Height = from;
+        var animation = new DoubleAnimation
+        {
+            From = from,
+            To = to,
+            Duration = TimeSpan.FromMilliseconds(160),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        animation.Completed += (_, _) =>
+        {
+            panel.BeginAnimation(FrameworkElement.HeightProperty, null);
+            panel.ClearValue(FrameworkElement.HeightProperty);
+            panel.InvalidateMeasure();
+            panel.InvalidateArrange();
+        };
+        panel.BeginAnimation(FrameworkElement.HeightProperty, animation, HandoffBehavior.SnapshotAndReplace);
     }
 
 
