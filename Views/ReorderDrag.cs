@@ -380,10 +380,10 @@ internal sealed class ReorderDrag<T> where T : class
                     ApplyDisplacement();
                 }
             }
-            else if (TryGetNearestCapturedTarget(pointer, out var nearestTarget, out bool nearestAfter))
+            else if (TryGetNearestCurrentTarget(pointer, out var nearestTarget, out bool nearestAfter))
             {
                 // 2열의 컬럼 사이/짧은 컬럼 아래 빈 공간은 라이브 배치가 움직여도 변하지 않는
-                // 시작 슬롯을 기준으로 가장 가까운 항목 앞뒤를 선택한다.
+                // 현재 화면 위치를 기준으로 가장 가까운 항목 앞뒤를 선택한다.
                 SetReorderPreview(nearestTarget, nearestAfter);
                 int nearestIndex = TargetIndexAround(nearestTarget, nearestAfter);
                 if (_needsReapply || nearestIndex != _targetIndex)
@@ -422,9 +422,9 @@ internal sealed class ReorderDrag<T> where T : class
             if (ReferenceEquals(slot, _slots[_sourceIndex])) continue;
             bool canDropInto = _canDropInto?.Invoke(_source, slot.Item) == true;
             if (!canDropInto && !_hitTestSlots) continue;
-            // 애니메이션 중인 카드의 현재 위치를 판정에 쓰면 커서가 고정돼도 타깃이 왕복한다.
-            // 드래그 시작 시 캡처한 논리 슬롯을 끝까지 사용해 피드백 루프를 차단한다.
-            var bounds = CapturedPrimaryBounds(slot);
+            // 카드가 밀렸으면 판정 영역도 그 현재 화면 위치를 따라간다. 방향 전환은
+            // ResolveReorderAfter의 히스테리시스로 경계 왕복을 억제한다.
+            var bounds = CurrentPrimaryBounds(slot);
             if (!bounds.Contains(pointer)) continue;
 
             double relative = _horizontal
@@ -453,7 +453,7 @@ internal sealed class ReorderDrag<T> where T : class
         after = false;
         var candidates = _slots
             .Where(slot => !ReferenceEquals(slot, _slots[_sourceIndex]))
-            .Select(slot => (Slot: slot, Bounds: CapturedPrimaryBounds(slot)))
+            .Select(slot => (Slot: slot, Bounds: CurrentPrimaryBounds(slot)))
             .ToList();
         if (candidates.Count == 0) return false;
 
@@ -477,35 +477,36 @@ internal sealed class ReorderDrag<T> where T : class
         return true;
     }
 
-    private bool TryGetNearestCapturedTarget(Point pointer, out Slot target, out bool after)
+    private bool TryGetNearestCurrentTarget(Point pointer, out Slot target, out bool after)
     {
         target = null!;
         after = false;
         var candidates = _slots
             .Where(slot => !ReferenceEquals(slot, _slots[_sourceIndex]))
+            .Select(slot => (Slot: slot, Bounds: CurrentPrimaryBounds(slot)))
             .ToList();
         if (candidates.Count == 0) return false;
 
         // 2열의 짧은 컬럼 아래에서는 같은 Y의 반대 컬럼 카드보다, 포인터가 속한 컬럼의
         // 마지막 카드를 우선해야 한다. 해당 축을 덮는 일반 폭 슬롯이 있을 때만 같은 lane으로 제한한다.
         // 전체 폭 폴더만 포인터를 덮거나 빈 컬럼처럼 기준 슬롯이 없으면 전체 중 가장 가까운 항목으로 폴백한다.
-        bool HasPointerOnCrossAxis(Slot slot)
+        bool HasPointerOnCrossAxis(Rect bounds)
         {
-            var bounds = CapturedPrimaryBounds(slot);
             return _horizontal
                 ? pointer.Y >= bounds.Top && pointer.Y <= bounds.Bottom
                 : pointer.X >= bounds.Left && pointer.X <= bounds.Right;
         }
 
-        double minCrossSize = candidates.Min(slot => _horizontal ? slot.PrimaryHeight : slot.PrimaryWidth);
-        bool hasSameLane = candidates.Any(slot =>
-            HasPointerOnCrossAxis(slot)
-            && (_horizontal ? slot.PrimaryHeight : slot.PrimaryWidth) <= minCrossSize * 1.5);
+        double minCrossSize = candidates.Min(candidate =>
+            _horizontal ? candidate.Bounds.Height : candidate.Bounds.Width);
+        bool hasSameLane = candidates.Any(candidate =>
+            HasPointerOnCrossAxis(candidate.Bounds)
+            && (_horizontal ? candidate.Bounds.Height : candidate.Bounds.Width) <= minCrossSize * 1.5);
         double bestDistance = double.PositiveInfinity;
-        foreach (var slot in candidates)
+        foreach (var candidate in candidates)
         {
-            if (hasSameLane && !HasPointerOnCrossAxis(slot)) continue;
-            var bounds = CapturedPrimaryBounds(slot);
+            var bounds = candidate.Bounds;
+            if (hasSameLane && !HasPointerOnCrossAxis(bounds)) continue;
             double dx = pointer.X < bounds.Left
                 ? bounds.Left - pointer.X
                 : pointer.X > bounds.Right ? pointer.X - bounds.Right : 0;
@@ -515,13 +516,14 @@ internal sealed class ReorderDrag<T> where T : class
             double distance = dx * dx + dy * dy;
             if (distance >= bestDistance) continue;
             bestDistance = distance;
-            target = slot;
+            target = candidate.Slot;
         }
 
         if (target == null) return false;
+        var targetBounds = CurrentPrimaryBounds(target);
         after = _horizontal
-            ? pointer.X >= target.PrimaryLeft + target.PrimaryWidth / 2
-            : pointer.Y >= target.PrimaryTop + target.PrimaryHeight / 2;
+            ? pointer.X >= targetBounds.Left + targetBounds.Width / 2
+            : pointer.Y >= targetBounds.Top + targetBounds.Height / 2;
         after = ResolveReorderAfter(target, after, pointer);
         return true;
     }
@@ -530,9 +532,10 @@ internal sealed class ReorderDrag<T> where T : class
     {
         if (!ReferenceEquals(_reorderPreviewTarget, target)) return proposedAfter;
 
+        var bounds = CurrentPrimaryBounds(target);
         double axisPosition = _horizontal ? pointer.X : pointer.Y;
-        double axisStart = _horizontal ? target.PrimaryLeft : target.PrimaryTop;
-        double axisSize = _horizontal ? target.PrimaryWidth : target.PrimaryHeight;
+        double axisStart = _horizontal ? bounds.Left : bounds.Top;
+        double axisSize = _horizontal ? bounds.Width : bounds.Height;
         double midpoint = axisStart + axisSize / 2;
         double hysteresis = Math.Min(8, axisSize * 0.2);
 
@@ -548,6 +551,23 @@ internal sealed class ReorderDrag<T> where T : class
         slot.PrimaryTop,
         slot.PrimaryWidth,
         slot.PrimaryHeight);
+
+    private Rect CurrentPrimaryBounds(Slot slot)
+    {
+        try
+        {
+            var point = slot.Element.TransformToAncestor(_coordHost).Transform(new Point());
+            return new Rect(
+                point.X,
+                point.Y,
+                Math.Max(1, slot.Element.ActualWidth),
+                Math.Max(1, slot.Element.ActualHeight));
+        }
+        catch
+        {
+            return CapturedPrimaryBounds(slot);
+        }
+    }
 
     private int TargetIndexAround(Slot target, bool after)
     {
@@ -612,7 +632,8 @@ internal sealed class ReorderDrag<T> where T : class
             if (i == _sourceIndex) continue;
             var s = _slots[i];
             if (ColumnOf(s) != column) continue;
-            if (cy >= s.Top + s.Height / 2) target++;
+            var bounds = CurrentPrimaryBounds(s);
+            if (cy >= bounds.Top + bounds.Height / 2) target++;
         }
         return target;
     }
@@ -675,7 +696,10 @@ internal sealed class ReorderDrag<T> where T : class
             for (int i = 0; i < _slots.Count; i++)
             {
                 if (i == _sourceIndex) continue;
-                double mid = AxisPos(_slots[i]) + AxisSize(_slots[i]) / 2;
+                var bounds = CurrentPrimaryBounds(_slots[i]);
+                double mid = _horizontal
+                    ? bounds.Left + bounds.Width / 2
+                    : bounds.Top + bounds.Height / 2;
                 double edge = i < _sourceIndex ? center - half : center + half;
                 if (edge >= mid) target++;
             }
@@ -684,7 +708,11 @@ internal sealed class ReorderDrag<T> where T : class
         for (int i = 0; i < _slots.Count; i++)
         {
             if (i == _sourceIndex) continue;
-            if (center < AxisPos(_slots[i]) + AxisSize(_slots[i]) / 2) return i;
+            var bounds = CurrentPrimaryBounds(_slots[i]);
+            double mid = _horizontal
+                ? bounds.Left + bounds.Width / 2
+                : bounds.Top + bounds.Height / 2;
+            if (center < mid) return i;
         }
         return _slots.Count;
     }
