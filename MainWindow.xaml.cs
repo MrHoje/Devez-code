@@ -4094,15 +4094,23 @@ public partial class MainWindow : Window
     }
 
     // ── airspace 우회 (오버레이가 뜰 때 터미널 WebView2 정지) ────────────
+    /// <summary>설정/MCP 오버레이로 터미널이 스냅샷+Collapsed 정지 중 — 이 동안 전체화면/최대화
+    /// post-hoc 커버가 개입하면(설정의 전체화면 토글이 대표) reveal 의 EndCover 가 오버레이용
+    /// 정지 상태(숨긴 컨테이너·커튼)를 되살려 상태가 꼬인다. 정지 중엔 커버 개입을 건너뛴다 —
+    /// 오버레이가 화면을 가리고 있고, ResumeTerminal 후 window.resize→fit 이 크기를 회복한다.</summary>
+    private bool _overlaySuspended;
+
     /// <summary>모든 패널 터미널 + 우측 브라우저를 정지(스냅샷/커튼). 설정·MCP 오버레이용.</summary>
     private async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
+        _overlaySuspended = true;
         await FileExplorer.SuspendBrowserAsync();
         foreach (var pane in _panes) await pane.SuspendTerminalWithSnapshotAsync(blankCurtain);
     }
 
     private void ResumeTerminal()
     {
+        _overlaySuspended = false;
         FileExplorer.ResumeBrowser();
         foreach (var pane in _panes) pane.ResumeTerminal();
     }
@@ -4168,17 +4176,22 @@ public partial class MainWindow : Window
         // 이 시점엔 OS 최대화 리사이즈가 이미 끝난 뒤라 사전 캡처가 불가(찍으면 틀어진 중간 화면) →
         // 단색(post-hoc) 커버로 감싼다. 조건은 change 시점 재확인 — await 사이 상태가 바뀌었으면 no-op.
         if (_useFullScreen && WindowState == WindowState.Maximized && !_inFullScreen)
-            RunFullScreenTransitionCovered(() =>
+        {
+            // 오버레이(설정/MCP) 정지 중엔 커버 개입 없이 전환만 — reveal 이 정지 상태를 되살리는 꼬임 방지.
+            if (_overlaySuspended) EnterFullScreen();
+            else RunFullScreenTransitionCovered(() =>
             {
                 if (_useFullScreen && WindowState == WindowState.Maximized && !_inFullScreen)
                     EnterFullScreen();
             }, solidCover: true);
+        }
         // 전체화면 미사용: OS 주도 최대화/복원(드래그 상단 스냅, 최대화 상태에서 캡션 끌어내리기,
         // Win+화살표, 작업표시줄 등) — 리사이즈가 이미 일어난 뒤 통지되므로 post-hoc 단색 커버로
         // 재fit·ConPTY 재동기·하단 복원만 수행한다. 우리 래퍼가 주도한 전환(_fsCoverBusy)은 자체 처리.
         // (최소화↔복원은 크기가 안 변하므로 Normal↔Maximized 간 전환만 해당.)
-        else if ((prev == WindowState.Maximized && WindowState == WindowState.Normal)
-              || (prev == WindowState.Normal && WindowState == WindowState.Maximized))
+        else if (!_overlaySuspended
+              && ((prev == WindowState.Maximized && WindowState == WindowState.Normal)
+               || (prev == WindowState.Normal && WindowState == WindowState.Maximized)))
             RunFullScreenTransitionCovered(() => { }, solidCover: true);
         UpdateMaxBtnVisual();
     }
@@ -4302,7 +4315,9 @@ public partial class MainWindow : Window
             }
             change();
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
-            if (solidCover) foreach (var p in covered) p.RevealAfterTransition(kick: true);
+            // bounce: post-hoc 경로는 리사이즈·재방출이 커버 '전'에 무방비로 일어났다 — reveal fit 이
+            // 무변화면 재방출이 없어 tear 가 고착될 수 있으므로 커버 아래서 rows 바운스로 재방출을 강제.
+            if (solidCover) foreach (var p in covered) p.RevealAfterTransition(kick: true, bounce: true);
             else UnfreezeWorkspaceTerminals();
         }
         finally { _fsCoverBusy = false; }
@@ -4489,10 +4504,11 @@ public partial class MainWindow : Window
         SetWindowPos(_mainHwnd, IntPtr.Zero, px, py, pw, ph, SWP_NOZORDER | SWP_NOACTIVATE);
         ApplyCornerPreference();
         // 리사이즈 반영 후 커버 해제(fit·재동기·크로스페이드). 드래그 이동(WM_MOUSEMOVE)은 리사이즈가
-        // 아니므로 reveal 뒤에도 터미널은 안정 상태를 유지한다.
+        // 아니므로 reveal 뒤에도 터미널은 안정 상태를 유지한다. bounce: 커버 post 와 리사이즈가 경합해
+        // 리사이즈가 커버보다 먼저 그려졌을 수 있는 경로 — fit 무변화 시 재방출을 강제해 tear 고착 방지.
         Dispatcher.InvokeAsync(() =>
         {
-            foreach (var p in dragCovered) p.RevealAfterTransition(kick: true);
+            foreach (var p in dragCovered) p.RevealAfterTransition(kick: true, bounce: true);
         }, System.Windows.Threading.DispatcherPriority.Background);
 
         // 그랩 오프셋 고정 — 이후 WM_MOUSEMOVE 마다 이 오프셋만큼 커서에서 뺀 위치로 직접 이동.

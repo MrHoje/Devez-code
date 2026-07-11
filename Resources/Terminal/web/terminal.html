@@ -178,6 +178,7 @@
 
   // roomId → { term, fit, el, dead }
   const terms = {};
+  const disposedRooms = new Set(); // 삭제된 방 — 유예된 preload 재시도가 좀비 xterm 을 재생성하지 않게 차단
   let cfg = { theme: {}, fontFamily: 'Cascadia Mono', fontSize: 16 };
   let activeRoomId = null;
   let _scrollSuppress = 0; // >0이면 출력 쓰기 후 스크롤 복원
@@ -955,6 +956,7 @@
   }
 
   function show(roomId, agent, fontSizeOverride) {
+    disposedRooms.delete(roomId); // 같은 id 재사용(재추가 등) — preload 차단 해제
     let entry = terms[roomId];
     const isNew = !entry;
     if (isNew) entry = createTerm(roomId, agent, fontSizeOverride);
@@ -1009,11 +1011,8 @@
     if (!isNew && plainShow) {
       setTimeout(function () {
         const t = terms[roomId];
-        if (!t || roomId !== activeRoomId || t.dead || _fitSuppressed) return;
-        if (t.term.cols === preCols && t.term.rows === preRows) return; // 이 show 에서 크기 무변화 — 불필요
-        if (t.term.cols <= 2 || t.term.rows <= 2) return;
-        post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows - 1 });
-        post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows });
+        if (!t || t.term.cols === preCols && t.term.rows === preRows) return; // 이 show 에서 크기 무변화 — 불필요
+        scheduleSettleBounce(roomId, 0); // 가드(활성/dead/억제)는 헬퍼가 재확인
       }, 450);
     }
   }
@@ -1048,6 +1047,20 @@
       });
   }
 
+  // settle 바운스(§6.6 공용 헬퍼) — 크기가 바뀐 fit 뒤엔 conhost 전체 재방출과 TUI 재렌더가
+  // 인터리브되며 간헐적으로 어긋난 화면이 고착될 수 있다(idle 이면 재방출 계기가 없어 회복 불가).
+  // 안정 후 ConPTY 만 rows-1→rows 로 바운스해 깨끗한 전체 재방출을 1회 유도한다.
+  // xterm 그리드는 건드리지 않는다(버퍼 클리핑·레이아웃 흔들림 없음).
+  function scheduleSettleBounce(roomId, delay) {
+    setTimeout(function () {
+      const t = terms[roomId];
+      if (!t || roomId !== activeRoomId || t.dead || _fitSuppressed) return;
+      if (t.term.cols <= 2 || t.term.rows <= 2) return;
+      post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows - 1 });
+      post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows });
+    }, delay == null ? 450 : delay); // 0 도 유효한 지연(호출부가 이미 대기한 경우)
+  }
+
   // show/재진입 직후 레이아웃이 안정되길 기다려 여러 번 재측정 fit. 활성 방일 때만.
   function refitSoon(roomId) {
     function tryFit(sync) {
@@ -1076,6 +1089,7 @@
   // 억제가 풀릴 때까지 프리로드 자체를 미룬다(최대 ~5s 후 폴백 진행).
   function preload(roomId, agent, fontSizeOverride, tries) {
     if (terms[roomId]) return; // 이미 생성됨
+    if (disposedRooms.has(roomId)) return; // 유예 중 방이 삭제됨 — 좀비 재생성 방지(C# WireSession 도 거부)
     if (_fitSuppressed && (tries || 0) < 25) {
       setTimeout(function () { preload(roomId, agent, fontSizeOverride, (tries || 0) + 1); }, 200);
       return;
@@ -1212,7 +1226,11 @@
           _fitSuppressed = false;
           var a = activeRoomId ? terms[activeRoomId] : null; // 미뤄둔 ConPTY 생성 폴백
           if (a && a.needCreate) { a.needCreate = false; try { a.fit.fit(); } catch (e) {} post({ type: 'created', roomId: activeRoomId, cols: a.term.cols, rows: a.term.rows }); }
-          else if (a && a.el.clientWidth >= 2 && a.el.clientHeight >= 2) { try { a.fit.fit(); } catch (e) {} } // 억제 중 놓친 크기 변화 교정
+          else if (a && a.el.clientWidth >= 2 && a.el.clientHeight >= 2) {
+            var apc = a.term.cols, apr = a.term.rows;
+            try { a.fit.fit(); } catch (e) {} // 억제 중 놓친 크기 변화 교정
+            if (a.term.cols !== apc || a.term.rows !== apr) scheduleSettleBounce(activeRoomId); // 교정 리사이즈 tear 고착 방지
+          }
           // 커버 시점에 하단이었으면 교정 fit 리플로우 후에도 하단 복원(+이어지는 재렌더 동안 pin) —
           // xferReveal.finish 와 대칭. 폴백으로 끝나는 전환이 스크롤 밀린 채 남지 않게.
           // codex(인라인)는 항상 하단 스냅(finish 와 동일 정책).
@@ -1244,7 +1262,9 @@
           try { fa.fit.fit(); } catch (e) {}
           post({ type: 'created', roomId: activeRoomId, cols: fa.term.cols, rows: fa.term.rows });
         } else if (fa && fa.el.clientWidth >= 2 && fa.el.clientHeight >= 2) {
+          const fpc = fa.term.cols, fpr = fa.term.rows;
           try { fa.fit.fit(); } catch (e) {} // 억제 중 놓친 크기 변화 교정(이미 맞으면 no-op)
+          if (fa.term.cols !== fpc || fa.term.rows !== fpr) scheduleSettleBounce(activeRoomId); // 교정 리사이즈 tear 고착 방지
         }
         // 커버 시점 하단이었으면 하단 복원 + 재렌더 pin — xferReveal 없이 fadeNow 로만 끝나는
         // 전환(활성 탭이 파일/빈 패널인 synced reveal 의 세션 패널 쪽 등)의 스크롤 밀림 방지.
@@ -1271,6 +1291,7 @@
         const cov = document.getElementById('xfer-cover');
         const room = msg.roomId;
         const kick = !!msg.kick;
+        const bounce = !!msg.bounce; // post-hoc 전환(리사이즈가 커버 '전'에 이미 발생): fit 무변화면 재방출 강제
         const synced = !!msg.synced; // true 면 fade 하지 않고 준비 완료만 C# 에 보고 → C# 이 양쪽 준비 후 fadeNow 로 동시 걷음
         const expectW = msg.expectWidth || 0; // C# 이 확정한 최종 목표 폭(px). clientWidth 가 여기 근접할 때까지 대기.
         const fadeOut = function () {
@@ -1283,12 +1304,21 @@
           });
         };
         const finish = function (e) {
+          const preC = e.term.cols, preR = e.term.rows; // bounce 판단용 — 이 reveal 의 fit 이 크기를 바꿨나
           _fitSuppressed = false;                 // 억제 해제 후 최종 폭에서 한 번만 fit
           try { e.fit.fit(); } catch (err) {}
           if (e.needCreate) {
             // 미뤄둔 ConPTY 생성을 지금(최종 폭)에서 수행 → claude 가 처음부터 최종 폭으로 그려 리플로우 없음.
             e.needCreate = false;
             post({ type: 'created', roomId: room, cols: e.term.cols, rows: e.term.rows });
+          } else if (bounce && e.term.cols === preC && e.term.rows === preR
+                     && e.term.cols > 2 && e.term.rows > 2 && !e.dead) {
+            // post-hoc 전환(OS 주도 최대화/복원 등): 리사이즈·재방출·TUI 재렌더가 커버 '전'에 무방비로
+            // 인터리브됐다(tear 가능). fit 이 무변화면 same-size 킥은 no-op 이라 재방출이 없어 tear 가
+            // 고착된다 → rows-1→rows 바운스로 커버 아래서 깨끗한 전체 재방출을 강제. 그 출력을
+            // 아래 waiter 가 받아 걷으므로 무깜빡이다. (fit 이 크기를 바꿨으면 그 자체가 재방출 ✓)
+            post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows - 1 });
+            post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
           } else if (kick && e.term.cols > 2 && e.term.rows > 1) {
             // 재배선 세션(분할 보기): ConPTY 를 xterm 현재 크기로 강제 재동기(xterm 미변경 → 스크롤백
             // 리플로우 없음). 늦게 오는 WireSession resize 와의 경쟁에서 이 값이 마지막이 되고 SIGWINCH 로 재렌더.
@@ -1358,8 +1388,10 @@
             // 지났을 수 있다 — 여기서 직접 교정해야 낡은(좁은) 그리드로 남지 않는다.
             const cur = activeRoomId ? terms[activeRoomId] : null;
             if (cur && cur !== e && cur.el.clientWidth >= 2 && cur.el.clientHeight >= 2) {
+              const cpc = cur.term.cols, cpr = cur.term.rows;
               fitKeepBottom(cur, activeRoomId); // 교정 fit + scrollTop 재동기(show 의 resync 타이머는 이미 지났을 수 있음)
               if (cur.needCreate) { cur.needCreate = false; post({ type: 'created', roomId: activeRoomId, cols: cur.term.cols, rows: cur.term.rows }); }
+              else if (cur.term.cols !== cpc || cur.term.rows !== cpr) scheduleSettleBounce(activeRoomId); // 교정 리사이즈 tear 고착 방지
             }
             if (synced) post({ type: 'revealPrepared' }); else fadeOut();
             return;
@@ -1593,6 +1625,7 @@
       }
       case 'dispose': {
         // 방 삭제 시 — xterm 인스턴스·DOM·버퍼 해제 (메모리 회수)
+        disposedRooms.add(msg.roomId); // 유예된 preload 재시도의 좀비 재생성 차단
         const t = terms[msg.roomId];
         if (t) {
           // codex 지연 타이머 해제 — dispose 된 term 에 늦은 write/커서 표시가 가지 않게.

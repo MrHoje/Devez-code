@@ -1293,8 +1293,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 뒤 커튼을 fade-out 한다. roomId 는 fit 대상(활성 세션). 없으면 그냥 커튼만 걷는다.</summary>
     /// <summary>expectWidth: C# 이 UpdateLayout 으로 확정한 전환 후 최종 폭(px). JS 는 컨테이너 clientWidth 가
     /// 이 목표에 근접할 때까지 기다렸다 fit 한다 — 전체폭→절반 전환의 중간 전체폭 plateau(HWND 지연)를 건너뛰기 위함.</summary>
-    public void RevealAfterTransition(string? roomId, bool kick = false, double expectWidth = 0)
-        => PostJson(new { type = "xferReveal", roomId, kick, expectWidth });
+    /// <summary>bounce=true: post-hoc 전환(리사이즈가 커버 '전'에 이미 발생 — OS 주도 최대화/복원 등)용.
+    /// reveal 의 fit 이 무변화면 same-size 킥은 no-op 이라 재방출이 없어 무방비 리사이즈의 tear 가
+    /// 고착될 수 있다 → rows-1→rows 바운스로 커버 아래서 깨끗한 전체 재방출을 강제한다.</summary>
+    public void RevealAfterTransition(string? roomId, bool kick = false, double expectWidth = 0, bool bounce = false)
+        => PostJson(new { type = "xferReveal", roomId, kick, expectWidth, bounce });
 
     /// <summary>동시(synced) reveal 준비 — 폭 안정·fit·재동기까지만 하고 커튼은 유지한 채 RevealPrepared 를 낸다.
     /// 셸이 좌우 모두의 준비를 받으면 FadeNow 로 동시에 걷는다(느린 쪽 기준으로 함께 표시).</summary>

@@ -503,7 +503,7 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>전환 후 — 최종 폭으로 fit 재측정 후 커튼을 fade-out(활성 세션 기준). 세션이 없으면 커튼만 걷는다.
     /// kick=true 면 fit 후 resize-kick(cols-1→cols)으로 SIGWINCH 를 내 TUI 를 강제 리페인트한다 — 처음 표시되며
     /// 재배선된 세션(분할 보기 등)이 스크롤/뷰포트 정지 프레임으로 남는 것을 막는다(스플리터 nudge 자동화).</summary>
-    public void RevealAfterTransition(bool kick = false)
+    public void RevealAfterTransition(bool kick = false, bool bounce = false)
     {
         // md 에디터가 콜드 로드 중이면 준비될 때까지 커튼을 유지(단일 패널 파일 전환의 "까매졌다 열림" 방지).
         if (_activeSession == null && _activeTab is FileTabItem { Editor: MarkdownFileEditorView md } tab && !md.IsEditorShellReady)
@@ -512,21 +512,21 @@ public partial class WorkspacePaneView : UserControl
             {
                 if (!ReferenceEquals(_activeTab, tab)) return; // 그 사이 탭/전환이 바뀜 — 낡은 reveal 폐기
                 await WaitForFramesAsync(2);
-                DoRevealAfterTransition(kick);
+                DoRevealAfterTransition(kick, bounce);
             });
             return;
         }
-        DoRevealAfterTransition(kick);
+        DoRevealAfterTransition(kick, bounce);
     }
 
-    private void DoRevealAfterTransition(bool kick)
+    private void DoRevealAfterTransition(bool kick, bool bounce = false)
     {
         // 전환 컬럼 변경을 즉시 레이아웃에 반영해 '최종 목표 폭'을 읽는다. WPF 레이아웃은 동기라 여기서
         // ActualWidth 는 이미 최종(절반)이다 — WebView2 HWND 만 지연되므로, 이 목표를 JS 에 넘겨 clientWidth 가
         // 거기 근접할 때까지 기다리게 하면 중간 전체폭 plateau 를 확실히 건너뛴다.
         UpdateLayout();
         double target = TerminalHostContainer?.ActualWidth ?? 0;
-        _terminal.RevealAfterTransition(_activeSession?.Id, kick, target);
+        _terminal.RevealAfterTransition(_activeSession?.Id, kick, target, bounce);
         EndCover(); // 파일 커튼도 함께 걷는다(단일 패널 파일 전환)
     }
 
