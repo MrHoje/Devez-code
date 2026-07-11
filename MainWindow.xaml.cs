@@ -183,6 +183,10 @@ public partial class MainWindow : Window
         Sidebar.SessionForkRequested += ForkSession;
         Sidebar.SessionExportRequested += ExportSession;
         Sidebar.SessionLockRequested += ToggleSessionLock;
+        Sidebar.SessionsDeleteRequested += DeleteSessions;
+        Sidebar.SessionsStopTrackingRequested += StopTrackingSessions;
+        Sidebar.SessionsHideRequested += HideSessionsFromSidebar;
+        Sidebar.SessionsLockRequested += SetSessionsLocked;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
 
         // 세션 요청 처리중 스피너: claude 훅(busy-hook.ps1)이 떨군 상태 파일을 감시 (clude-blinker 방식).
@@ -1686,6 +1690,20 @@ public partial class MainWindow : Window
     /// <summary>F1~F4 — 패널 토글 단축키.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
     {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == System.Windows.Input.Key.P)
+        {
+            var item = QuickOpenWindow.Pick(this, BuildQuickOpenItems());
+            if (item != null) OpenQuickOpenItem(item);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == System.Windows.Input.Key.Escape && Sidebar.HasSessionMultiSelection)
+        {
+            Sidebar.ClearSessionMultiSelection();
+            e.Handled = true;
+            return;
+        }
         if (e.Key == System.Windows.Input.Key.F1)
         {
             LeftPanelBtn_Click(this, new RoutedEventArgs());
@@ -2175,6 +2193,7 @@ public partial class MainWindow : Window
         pane.ExportSessionRequested += ExportSession;
         pane.ToggleSessionLockRequested += ToggleSessionLock;
         pane.HideSessionRequested += HideSessionFromSidebar;
+        pane.HideStopFinished += OnPaneHideStopFinished;
         pane.StopTrackingSessionRequested += StopTrackingSession;
         pane.DeleteSessionRequested += DeleteSession;
         pane.TabDragHoverMoved = OnTabDragHoverMoved;
@@ -2762,6 +2781,96 @@ public partial class MainWindow : Window
         target.RevealAfterTransition();                   // md 콜드 로드 대기 후 커튼 fade(준비됐으면 즉시)
     }
 
+    private IEnumerable<Models.QuickOpenItem> BuildQuickOpenItems()
+    {
+        var allProjects = _projects.Concat(_archivedProjects);
+        var items = new List<Models.QuickOpenItem>(Math.Max(256, allProjects.Sum(p => 4 + p.Tabs.Count + p.Files.Count)));
+        var seenFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var project in allProjects)
+        {
+            var projectName = string.IsNullOrWhiteSpace(project.Name) ? project.Path : project.Name;
+            items.Add(new Models.QuickOpenItem(
+                Models.QuickOpenKind.Project,
+                projectName,
+                project.Path,
+                project));
+
+            foreach (var session in project.Tabs.OfType<SessionItem>())
+            {
+                items.Add(new Models.QuickOpenItem(
+                    Models.QuickOpenKind.Session,
+                    session.Name,
+                    projectName,
+                    project,
+                    session));
+            }
+
+            foreach (var file in project.Files)
+            {
+                if (string.IsNullOrWhiteSpace(file.FilePath)) continue;
+                if (!seenFilePaths.Add(file.FilePath)) continue;
+                var fileName = System.IO.Path.GetFileName(file.FilePath);
+                items.Add(new Models.QuickOpenItem(
+                    Models.QuickOpenKind.File,
+                    fileName,
+                    $"{projectName}\n{file.FilePath}",
+                    project,
+                    filePath: file.FilePath));
+            }
+
+            foreach (var tab in project.Tabs.OfType<FileTabItem>())
+            {
+                if (string.IsNullOrWhiteSpace(tab.FilePath)) continue;
+                if (!seenFilePaths.Add(tab.FilePath)) continue;
+                var fileName = System.IO.Path.GetFileName(tab.FilePath);
+                items.Add(new Models.QuickOpenItem(
+                    Models.QuickOpenKind.File,
+                    fileName,
+                    $"{projectName}\n{tab.FilePath}",
+                    project,
+                    filePath: tab.FilePath));
+            }
+        }
+
+        return items;
+    }
+
+    private void OpenQuickOpenItem(Models.QuickOpenItem item)
+    {
+        switch (item.Kind)
+        {
+            case Models.QuickOpenKind.Project:
+                if (item.Project != null) SelectProject(item.Project);
+                break;
+            case Models.QuickOpenKind.Session:
+                if (item.Session != null) OpenSession(item.Session);
+                break;
+            case Models.QuickOpenKind.File:
+                if (item.Project == null || string.IsNullOrWhiteSpace(item.FilePath)) break;
+                OpenQuickOpenFile(item.Project, item.FilePath);
+                break;
+        }
+    }
+
+    private void OpenQuickOpenFile(ProjectItem project, string filePath)
+    {
+        var existingPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, project));
+        if (existingPane != null)
+        {
+            FocusPaneOnly(existingPane);
+            if (_focusedPane.OpenFileAsTab(filePath) is null) return;
+            _focusedPane.RevealAfterTransition();
+            return;
+        }
+
+        // 포커스 패널에 프로젝트를 올린 뒤 기존 파일 오픈 루틴을 재사용.
+        if (!ReferenceEquals(_focusedPane.ActiveProject, project))
+            _focusedPane.SelectProject(project);
+
+        OpenFileFromExplorer(filePath);
+    }
+
     /// <summary>격리(분할 파트너) 패널에서 탭(파일/세션)이 새로 열림 → 반대 패널에서 그 탭을 숨긴다.
     /// 탭은 공유 proj.Tabs 에 추가되므로, 안 숨기면 '전체 표시' 쪽 패널에도 함께 떠 좌우 양쪽에 보인다.
     /// (분할 보기의 IsolateTab+HideTabInPane 패턴과 동일 — 여는 패널은 이미 격리를 유지하므로 파트너 숨김만.)</summary>
@@ -3014,8 +3123,8 @@ public partial class MainWindow : Window
         AnimatePaneSplit(1, 0, Finish);
     }
 
-    /// <summary>분할 중일 때 포커스된 패널의 선택 탭부터 타이틀 영역까지 이어진 보더와 좌측 꺾쇠를 강조한다.
-    /// 단일 패널이면 모두 기본 색상으로 복원한다.</summary>
+    /// <summary>분할 중일 때 포커스된 패널을 1px 테마색 프레임으로 표시한다.
+    /// 단일 패널이면 모두 끈다.</summary>
     private void UpdatePaneFocusVisual(bool animate = true)
     {
         foreach (var p in _panes)
@@ -3766,6 +3875,33 @@ public partial class MainWindow : Window
         RemoveSessionSubtree(project, new[] { session }, purge: true);
     }
 
+    private void DeleteSessions(IReadOnlyList<SessionItem> sessions)
+    {
+        var targets = sessions.Distinct().Where(session => ProjectFor(session) != null).ToList();
+        if (targets.Count == 0) return;
+        if (!EnsureSessionSubtreeUnlocked(targets, "세션 삭제")) return;
+
+        var selected = targets.ToHashSet();
+        var detached = targets
+            .SelectMany(session => ProjectFor(session)!.GetSessionSubtree(session).Skip(1))
+            .Where(session => !selected.Contains(session))
+            .Distinct()
+            .ToList();
+        string childNotice = detached.Count > 0
+            ? $"\n선택하지 않은 하위 세션 {detached.Count}개는 삭제하지 않고 최상위로 이동합니다."
+            : "";
+        if (!ConfirmDialog.Show("세션 일괄 삭제",
+                $"선택한 세션 {targets.Count}개를 영구 삭제할까요?{childNotice}\n대화 기록(.jsonl)도 디스크에서 함께 삭제되며 복구할 수 없습니다.",
+                okLabel: "모두 삭제", danger: true))
+            return;
+
+        foreach (var child in detached) child.ParentSessionId = null;
+        foreach (var group in targets.GroupBy(ProjectFor))
+            if (group.Key is { } project)
+                RemoveSessionSubtree(project, group.OrderBy(project.Tabs.IndexOf).ToList(), purge: true);
+        Sidebar.ClearSessionMultiSelection();
+    }
+
     /// <summary>세션 이름 변경 → 동일 SessionId 의 완료 기록 카드 이름도 동기화하고 저장.</summary>
     private void SyncRecordsForSessionRename(SessionItem session)
     {
@@ -3794,6 +3930,33 @@ public partial class MainWindow : Window
         RemoveSessionSubtree(project, new[] { session }, purge: false);
     }
 
+    private void StopTrackingSessions(IReadOnlyList<SessionItem> sessions)
+    {
+        var targets = sessions.Distinct().Where(session => ProjectFor(session) != null).ToList();
+        if (targets.Count == 0) return;
+        if (!EnsureSessionSubtreeUnlocked(targets, "세션 추적 중단")) return;
+
+        var selected = targets.ToHashSet();
+        var detached = targets
+            .SelectMany(session => ProjectFor(session)!.GetSessionSubtree(session).Skip(1))
+            .Where(session => !selected.Contains(session))
+            .Distinct()
+            .ToList();
+        string childNotice = detached.Count > 0
+            ? $"\n선택하지 않은 하위 세션 {detached.Count}개는 목록에 남기고 최상위로 이동합니다."
+            : "";
+        if (!ConfirmDialog.Show("세션 일괄 추적 중단",
+                $"선택한 세션 {targets.Count}개를 목록에서 제거할까요?{childNotice}\n대화 기록은 디스크에 그대로 보존됩니다.",
+                okLabel: "모두 중단"))
+            return;
+
+        foreach (var child in detached) child.ParentSessionId = null;
+        foreach (var group in targets.GroupBy(ProjectFor))
+            if (group.Key is { } project)
+                RemoveSessionSubtree(project, group.OrderBy(project.Tabs.IndexOf).ToList(), purge: false);
+        Sidebar.ClearSessionMultiSelection();
+    }
+
     private void HideSessionFromSidebar(SessionItem session)
     {
         if (session.Hidden) return;
@@ -3805,8 +3968,67 @@ public partial class MainWindow : Window
         foreach (var pane in _panes) pane.OnSessionsHidden(new[] { session });
         owner.ScheduleSessionHide(session);
 
+        ReturnHiddenChildToParentPane(project, session);
+
+        // 숨김 graceful 종료는 owner 패널의 방(xterm)만 닫는다 — 다른 패널 WebView 에 남은 방은
+        // 종료 후 "[세션 종료됨 — Enter로 재시작]" 죽은 방이 되고, 재오픈(항상 좌측 패널)이 그 방에
+        // 붙으면 자동 resume 이 안 된다. 숨김 시점에 owner 외 패널의 방을 미리 정리해 재오픈이
+        // 항상 "방 없음 → 새로 생성(reattach/resume)" 경로를 타게 한다. 프로세스가 이미 죽어
+        // graceful 종료가 no-op 이면 owner 방도 죽은 방이므로 함께 정리한다.
+        bool aliveNow = TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true };
+        foreach (var pane in _panes)
+            if (!aliveNow || !ReferenceEquals(pane, owner))
+                pane.CloseTerminalRoom(session.Id);
+
         RefreshCardGroups();
         WorkspaceStore.Save(_projects, _archivedProjects);
+    }
+
+    private void HideSessionsFromSidebar(IReadOnlyList<SessionItem> sessions)
+    {
+        foreach (var session in sessions.Distinct().Where(session => !session.Hidden).ToList())
+            HideSessionFromSidebar(session);
+        Sidebar.ClearSessionMultiSelection();
+    }
+
+    /// <summary>어느 패널에서든 숨김 graceful 종료가 끝나면 모든 패널로 중계 — 각 패널이 종료 중 생긴
+    /// 죽은/빈 방을 정리하고, 종료 중 그 세션을 열어 대기하던 패널은 새 세션으로 resume 재연결한다.</summary>
+    private void OnPaneHideStopFinished(SessionItem session)
+    {
+        foreach (var pane in _panes) pane.OnHideStopFinished(session);
+    }
+
+    /// <summary>숨긴 자식 세션이 분할로 부모와 반대 패널에 있으면 즉시 부모 패널 소속으로 되돌린다 —
+    /// 사이드바 카드에서 프로젝트 전환을 기다리지 않고 바로 원래 부모 아래(숨김 상태)로 보이게.</summary>
+    private void ReturnHiddenChildToParentPane(ProjectItem project, SessionItem session)
+    {
+        if (project.SessionParentOf(session) is not { } parentSession) return;
+
+        // 라이브 분할(같은 프로젝트 좌/우 표시) 중이면 패널 필터 소속을 직접 이동.
+        if (_splitActive && ReferenceEquals(LeftPane.ActiveProject, project)
+            && ReferenceEquals(RightPane.ActiveProject, project))
+        {
+            var sessionPane = _panes.FirstOrDefault(p => p.ShowsTab(session));
+            var parentPane = _panes.FirstOrDefault(p => p.ShowsTab(parentSession));
+            if (sessionPane == null || parentPane == null || ReferenceEquals(sessionPane, parentPane))
+                return;
+            sessionPane.HideTabInPane(session);
+            parentPane.UnhideTabInPane(session);
+            PersistSplitState(); // SplitRightTabRefs 갱신 — 복원 시 반대 패널로 되돌아가지 않게
+            return;
+        }
+
+        // 비활성(배경) 분할 프로젝트는 영속 refs(우측 집합)만 부모 쪽으로 맞춘다.
+        if (project.SplitRightTabRefs.Count == 0) return;
+        string childRef = WorkspacePaneView.RefOf(session);
+        string parentRef = WorkspacePaneView.RefOf(parentSession);
+        bool childRight = project.SplitRightTabRefs.Contains(childRef, StringComparer.OrdinalIgnoreCase);
+        bool parentRight = project.SplitRightTabRefs.Contains(parentRef, StringComparer.OrdinalIgnoreCase);
+        if (childRight == parentRight) return;
+        if (childRight)
+            project.SplitRightTabRefs.RemoveAll(r => StringComparer.OrdinalIgnoreCase.Equals(r, childRef));
+        else
+            project.SplitRightTabRefs.Add(childRef);
     }
 
     private ProjectItem? ProjectFor(SessionItem session)
@@ -3855,6 +4077,19 @@ public partial class MainWindow : Window
     {
         session.IsLocked = !session.IsLocked;
         WorkspaceStore.Save(_projects, _archivedProjects);
+    }
+
+    private void SetSessionsLocked(IReadOnlyList<SessionItem> sessions, bool locked)
+    {
+        bool changed = false;
+        foreach (var session in sessions.Distinct())
+        {
+            if (session.IsLocked == locked) continue;
+            session.IsLocked = locked;
+            changed = true;
+        }
+        if (changed)
+            WorkspaceStore.Save(_projects, _archivedProjects);
     }
 
     /// <summary>세션 대화를 마크다운(.md)으로 내보낸다(옵션 A: user/assistant 텍스트만). 파싱은 백그라운드에서

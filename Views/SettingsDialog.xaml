@@ -578,6 +578,14 @@
                                                                       Stroke="{DynamicResource TextMutedBrush}"/>
                                                             </Button>
                                                         </StackPanel>
+                                                        <TextBlock FontSize="{DynamicResource Fs11}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   Margin="0,3,0,0">
+                                                            <Run Text="버전: "/>
+                                                            <Run Text="{Binding VersionText}"/>
+                                                            <Run Text="  ·  마지막 업데이트: "/>
+                                                            <Run Text="{Binding LastUpdatedText}"/>
+                                                        </TextBlock>
                                                     </StackPanel>
                                                     <!-- 새로고침(설치 상태 재스캔) + 활성화 토글 -->
                                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -620,8 +628,6 @@
                                                    Foreground="{DynamicResource TextBrush}" LineHeight="17">
                                             <Run Text="Claude Code의 OAuth 토큰을 외부 서드파티 툴이나 커스텀 에이전트에 연동하는 경우, 약관 위반으로 계정이 정지될 수 있습니다."/>
                                             <Run Text="외부 연동은 반드시 정식 API Key 또는 다른 정액제 플랜을 사용하세요."/>
-                                            <LineBreak/>
-                                            <Run Text="- OpenCode, Gajae Code"/>
                                         </TextBlock>
                                     </Grid>
                                 </Border>

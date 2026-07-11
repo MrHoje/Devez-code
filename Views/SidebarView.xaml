@@ -112,12 +112,23 @@
                     b:TreeExpander.IsExpanded="{Binding IsSessionTreeVisible}">
             <Grid x:Name="SessionRowLayout"
                   Visibility="{Binding IsSearchVisible, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="{Binding TreeIndent}"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
+                <!-- 분할로 부모가 반대 패널 그룹에 있는 자식: 원래 부모 자리에 보더 없는 이름 라벨만 표시. -->
+                <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="2,4,0,2"
+                           Text="{Binding DetachedParentSession.Name}"
+                           TextTrimming="CharacterEllipsis"
+                           FontSize="{DynamicResource Fs12}"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Visibility="{Binding HasDetachedParentLabel, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                 <!-- 자식 연결선: 가로선은 행 중앙을 유지하고 세로선만 카드 윗 보더까지 연장한다. -->
-                <Grid Grid.Column="0" Width="10"
+                <Grid Grid.Row="1" Grid.Column="0" Width="10"
                       HorizontalAlignment="Right" VerticalAlignment="Stretch"
                       Visibility="{Binding HasSessionParent, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                     <Grid.RowDefinitions>
@@ -131,14 +142,15 @@
                             HorizontalAlignment="Left" VerticalAlignment="Top"
                             Background="{DynamicResource LineBrush}" CornerRadius="0.6"/>
                 </Grid>
-                <Border x:Name="SessionRow" Grid.Column="1" Style="{StaticResource SessionDropTargetCard}"
+                <Border x:Name="SessionRow" Grid.Row="1" Grid.Column="1" Style="{StaticResource SessionDropTargetCard}"
                         MouseLeftButtonUp="Session_Click"
                         MouseEnter="SessionRow_MouseEnter"
                         MouseLeave="SessionRow_MouseLeave"
-                        PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown">
+                        PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
+                        PreviewMouseRightButtonDown="SessionRow_PreviewMouseRightButtonDown">
                 <Border.ContextMenu>
-                    <ContextMenu>
-                        <MenuItem Header="꺼내기" Tag="{Binding}" Click="SessionDetach_Click"
+                    <ContextMenu Opened="SessionMenu_Opened">
+                        <MenuItem Header="꺼내기" Tag="{Binding}" CommandParameter="Single" Click="SessionDetach_Click"
                                   Visibility="{Binding HasSessionParent, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLogOut}"
@@ -146,33 +158,33 @@
                             </MenuItem.Icon>
                         </MenuItem>
                         <Separator Visibility="{Binding HasSessionParent, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                        <MenuItem Header="이름 변경" Tag="{Binding}" Click="SessionRename_Click">
+                        <MenuItem Header="이름 변경" Tag="{Binding}" CommandParameter="Single" Click="SessionRename_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPencil}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <MenuItem Header="포크" Tag="{Binding}" Click="SessionFork_Click">
+                        <MenuItem Header="포크" Tag="{Binding}" CommandParameter="Single" Click="SessionFork_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconGitBranch}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <MenuItem Header="내보내기" Tag="{Binding}" Click="SessionExport_Click">
+                        <MenuItem Header="내보내기" Tag="{Binding}" CommandParameter="Single" Click="SessionExport_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
                         <!-- Lock toggle -->
-                        <MenuItem Header="세션 잠금" Tag="{Binding}" Click="SessionLock_Click"
+                        <MenuItem Header="세션 잠금" Tag="{Binding}" CommandParameter="Lock" Click="SessionLock_Click"
                                   Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLock}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <MenuItem Header="잠금 해제" Tag="{Binding}" Click="SessionLock_Click"
+                        <MenuItem Header="잠금 해제" Tag="{Binding}" CommandParameter="Unlock" Click="SessionLock_Click"
                                   Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLockOpen}"
@@ -180,21 +192,21 @@
                             </MenuItem.Icon>
                         </MenuItem>
                         <Separator/>
-                        <MenuItem Header="세션 숨기기" Tag="{Binding}" Click="SessionHide_Click"
+                        <MenuItem Header="세션 숨기기" Tag="{Binding}" CommandParameter="Hide" Click="SessionHide_Click"
                                   Visibility="{Binding Hidden, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEyeOff}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <MenuItem Header="세션 닫기" Tag="{Binding}" Click="SessionStopTracking_Click"
+                        <MenuItem Header="세션 닫기" Tag="{Binding}" CommandParameter="Close" Click="SessionStopTracking_Click"
                                   Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <MenuItem Header="세션 삭제" Tag="{Binding}" Click="SessionDelete_Click" Foreground="{DynamicResource DangerBrush}"
+                        <MenuItem Header="세션 삭제" Tag="{Binding}" CommandParameter="Delete" Click="SessionDelete_Click" Foreground="{DynamicResource DangerBrush}"
                                   Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
@@ -208,12 +220,19 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <!-- 잠금 아이콘(에이전트 아이콘 왼쪽) + 세션 아이콘 -->
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
+                    <CheckBox Grid.Column="0" Width="14" Height="14" Margin="0,0,8,0"
+                              VerticalAlignment="Center" Tag="14"
+                              Style="{StaticResource ModernCheckBox}"
+                              IsChecked="{Binding IsMultiSelected, Mode=TwoWay}"
+                              Click="SessionMultiSelect_Click"
+                              Visibility="{Binding IsMultiSelectMode, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,8,0" VerticalAlignment="Center">
                         <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconLock}"
                               Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
                               Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
@@ -223,7 +242,7 @@
                                RenderOptions.BitmapScalingMode="HighQuality"/>
                     </StackPanel>
                     <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중). 탭 X 로 숨긴 세션은 추적중지 아이콘. -->
-                    <Grid Grid.Column="1" Width="12" Height="12" VerticalAlignment="Center">
+                    <Grid Grid.Column="2" Width="12" Height="12" VerticalAlignment="Center">
                         <Ellipse x:Name="StatusDot" Style="{StaticResource SessionDot}"/>
                         <Ellipse x:Name="BusySpinner" Width="12" Height="12" Visibility="Collapsed"
                                  models:SpinnerActivator.Track="True"
@@ -251,16 +270,16 @@
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               Fill="Transparent"/>
                     </Grid>
-                    <TextBlock Grid.Column="2" Text="{Binding Name}" Margin="10,0,0,0"
+                    <TextBlock Grid.Column="3" Text="{Binding Name}" Margin="10,0,0,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                FontSize="{DynamicResource Fs12}"
                                Foreground="{DynamicResource TextBrush}"/>
-                    <TextBlock Grid.Column="3" Text="{Binding SessionChildCount}"
+                    <TextBlock Grid.Column="4" Text="{Binding SessionChildCount}"
                                Margin="6,0,0,0" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs11}"
                                Foreground="{DynamicResource TextMutedBrush}"
                                Visibility="{Binding HasSessionChildren, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                    <Button Grid.Column="4" Width="18" Height="18" Margin="4,0,0,0"
+                    <Button Grid.Column="5" Width="18" Height="18" Margin="4,0,0,0"
                             Tag="{Binding}" Click="SessionChevron_Click"
                             Style="{StaticResource IconButton}" Padding="3"
                             Cursor="Arrow" VerticalAlignment="Center"
@@ -930,6 +949,9 @@
                     <TextBlock x:Name="HeaderTitle" Text="프로젝트" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}"/>
+                    <TextBlock x:Name="SelectionCountText" Visibility="Collapsed" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryBrush}"/>
                 </StackPanel>
                 <!-- 보관함 열기: 프로젝트 보기에서 보관함으로 슬라이드 전환 -->
                 <Button x:Name="ArchiveToggleBtn" Grid.Column="1"

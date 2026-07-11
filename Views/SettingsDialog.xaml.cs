@@ -1,8 +1,11 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -1470,6 +1473,7 @@ public partial class SettingsDialog : UserControl
             // UI 노출 제외 (codex 등) — 세션 생성 피커와 동일한 정책 유지
             if (AgentRegistry.HiddenFromUI.Contains(agent.Id)) continue;
             bool installed = AgentRegistry.IsInstalled(agent);
+            var path = installed ? AgentRegistry.ResolvePath(agent) : null;
             _agentItems.Add(new AgentItem
             {
                 Id = agent.Id,
@@ -1480,6 +1484,10 @@ public partial class SettingsDialog : UserControl
                 InstalledBrush = installed
                     ? (Brush)FindResource("PrimaryBrush")
                     : muted,
+                VersionText = installed ? "확인 중…" : "—",
+                LastUpdatedText = path != null
+                    ? File.GetLastWriteTime(path).ToString("yyyy-MM-dd")
+                    : "—",
                 Enabled = installed && enabledSet.Contains(agent.Id),
                 IsClaudeCode = agent.Id == "claude",
                 RetentionDays = agent.Id == "claude"
@@ -1492,6 +1500,61 @@ public partial class SettingsDialog : UserControl
         _originalRetentionDays = _agentItems.FirstOrDefault(a => a.IsClaudeCode)?.RetentionDays
             ?? ClaudeGlobalSettings.DefaultCleanupPeriodDays;
         AgentList.ItemsSource = _agentItems;
+        _ = RefreshAgentVersionsAsync(_agentItems.Where(a => a.Installed).ToList());
+    }
+
+    private static async Task RefreshAgentVersionsAsync(IEnumerable<AgentItem> items)
+    {
+        await Task.WhenAll(items.Select(async item =>
+        {
+            var agent = AgentRegistry.Find(item.Id);
+            if (agent == null) return;
+            var version = await GetAgentVersionAsync(agent);
+            item.VersionText = string.IsNullOrWhiteSpace(version) ? "확인 실패" : version;
+        }));
+    }
+
+    private static async Task<string> GetAgentVersionAsync(AgentDef agent)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("-NoProfile");
+            psi.ArgumentList.Add("-NonInteractive");
+            psi.ArgumentList.Add("-Command");
+            psi.ArgumentList.Add($"& {agent.Command} --version");
+
+            using var process = new Process { StartInfo = psi };
+            var output = new StringBuilder();
+            process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); };
+            process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); };
+            if (!process.Start()) return "";
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try { await process.WaitForExitAsync(timeout.Token); }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return "";
+            }
+
+            lock (output)
+            {
+                return output.ToString()
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .FirstOrDefault() ?? "";
+            }
+        }
+        catch { return ""; }
     }
 
     private void UpdateAgentEnabledInSettings()
@@ -1520,7 +1583,7 @@ public partial class SettingsDialog : UserControl
     }
 
     /// <summary>PATH 재스캔 후 해당 에이전트 설치 상태 배지·토글 활성 갱신.</summary>
-    private void RefreshAgentInstall_Click(object sender, RoutedEventArgs e)
+    private async void RefreshAgentInstall_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string id } || string.IsNullOrWhiteSpace(id)) return;
         var item = _agentItems.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
@@ -1535,6 +1598,16 @@ public partial class SettingsDialog : UserControl
         item.Installed = installed;
         item.InstalledLabel = installed ? "설치됨" : "미설치";
         item.InstalledBrush = installed ? primary : muted;
+        var path = installed ? AgentRegistry.ResolvePath(agent) : null;
+        item.LastUpdatedText = path != null
+            ? File.GetLastWriteTime(path).ToString("yyyy-MM-dd")
+            : "—";
+        item.VersionText = installed ? "확인 중…" : "—";
+        if (installed)
+        {
+            var version = await GetAgentVersionAsync(agent);
+            item.VersionText = string.IsNullOrWhiteSpace(version) ? "확인 실패" : version;
+        }
         // 미설치면 토글 강제 off (IsEnabled 가 false 이므로 켤 수 없음)
         if (!installed) item.Enabled = false;
     }
@@ -1571,6 +1644,20 @@ public sealed class AgentItem : INotifyPropertyChanged
 
     private bool _enabled;
     public bool Enabled { get => _enabled; set { if (_enabled != value) { _enabled = value; OnPropertyChanged(); } } }
+
+    private string _versionText = "—";
+    public string VersionText
+    {
+        get => _versionText;
+        set { if (_versionText != value) { _versionText = value; OnPropertyChanged(); } }
+    }
+
+    private string _lastUpdatedText = "—";
+    public string LastUpdatedText
+    {
+        get => _lastUpdatedText;
+        set { if (_lastUpdatedText != value) { _lastUpdatedText = value; OnPropertyChanged(); } }
+    }
 
     /// <summary>Claude Code 항목에만 세션 유지기간 설정 노출.</summary>
     public bool IsClaudeCode { get; set; }

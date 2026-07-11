@@ -4,15 +4,31 @@ using System.Text;
 
 namespace DevezCode.Services;
 
+/// <summary>에이전트 1개의 업데이트 판정 상태.
+///  - Updated   : 실행 전/후 --version 문자열이 다름 → 실제 교체 확정(가장 신뢰할 수 있는 근거).
+///  - UpToDate  : 종료코드 0 + 버전 동일(no-op).
+///  - Failed    : 설치 프로세스 종료코드 != 0 또는 예외.
+///  - InProgress: 타임아웃으로 대기만 끝냄 — 설치는 백그라운드로 계속(완료 시점에 별도 토스트).</summary>
+public enum AgentUpdateStatus { Updated, UpToDate, Failed, InProgress }
+
+/// <summary>에이전트 1개의 업데이트 결과. 시작 시퀀스의 완료 토스트/설정 모달 로그 공용.</summary>
+public sealed record AgentUpdateResult(
+    string Id, string DisplayName, string Before, string After,
+    AgentUpdateStatus Status, int ExitCode);
+
 /// <summary>앱 시작 시(또는 설정의 '즉시 업데이트'), 켜져 있고 실제 설치된 에이전트 CLI 를 최신 버전으로
 /// 업데이트한다. 각 에이전트의 자체 업데이터/패키지 매니저 명령(<see cref="AgentDef.UpdateCommand"/>)을
 /// PowerShell 로 실행. 업데이트 명령은 이미 최신이면 no-op 이라 매 실행 호출해도 안전.
+///
+/// 결과 판정: 실행 전/후 --version 비교(Updated) + 설치 프로세스 종료코드(Failed) 조합.
+/// 호출자는 반환된 <see cref="AgentUpdateResult"/> 목록으로 성공/실패 팝업을 띄운다.
 ///
 /// 견고성(중단 안전):
 ///  - 설치 프로세스는 부모(앱)와 <b>파이프로 연결하지 않고</b>, 셸 안에서 출력을 파일로 리다이렉트한다.
 ///    따라서 사용자가 '건너뛰고 시작'을 누르거나 앱을 통째로 닫아도, 설치 프로세스는 끊기지 않고
 ///    <b>독립적으로 끝까지 완료</b>된다(npm/bun 반쪽 설치 방지).
-///  - 타임아웃 시에도 프로세스를 <b>죽이지 않는다</b>(설치 중 강제 종료가 손상을 유발하므로). 기다림만 멈춘다.
+///  - 타임아웃 시에도 프로세스를 <b>죽이지 않는다</b>(설치 중 강제 종료가 손상을 유발하므로). 기다림만 멈추고
+///    완주를 백그라운드로 감시해 끝나면 최종 성공/실패를 토스트로 알린다.
 ///
 /// 남는 경미한 리스크: 세션이 이미 해당 exe 를 띄운 뒤면 Windows 파일 잠금으로 덮어쓰기가 실패할 수 있으나,
 /// npm/bun/claude 는 temp→rename/staging 방식이라 구버전이 그대로 유지되고 다음 실행 때 재시도된다(안전 실패).</summary>
@@ -21,16 +37,29 @@ public static class AgentUpdateService
     private static string DevezDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode");
 
-    /// <summary>앱 측 요약 로그(에이전트별 before→after, 상태).</summary>
+    /// <summary>앱 측 요약 로그(에이전트별 before→after, 종료코드, 상태).</summary>
     private static string LogPath => Path.Combine(DevezDir, "agent-update.log");
 
     /// <summary>설치 프로세스의 원시 출력 로그(에이전트별). 병렬 append 충돌을 막기 위해 파일을 분리한다.</summary>
-    private static string DetachedLogPath(AgentDef agent) => Path.Combine(DevezDir, $"agent-update-{agent.Id}.log");
+    private static string DetachedLogPath(string agentId) => Path.Combine(DevezDir, $"agent-update-{agentId}.log");
 
-    /// <summary>켜진+설치된 에이전트를 병렬로 최신화. 전체 실패는 무시(best-effort).</summary>
-    /// <param name="report">진행 상황 콜백(모달 로그용). null 이면 조용히 실행하고 실제 업데이트 시 토스트로 알림.</param>
-    public static async Task UpdateEnabledAgentsAsync(Action<string>? report = null)
+    /// <summary>실패 토스트 클릭 시 원시 설치 로그를 기본 편집기로 연다.</summary>
+    public static void OpenDetachedLog(string agentId)
     {
+        try
+        {
+            var path = DetachedLogPath(agentId);
+            if (File.Exists(path))
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch { /* 뷰어 실행 실패는 무시 */ }
+    }
+
+    /// <summary>켜진+설치된 에이전트를 병렬로 최신화하고 에이전트별 결과를 반환. 전체 실패는 무시(best-effort).</summary>
+    /// <param name="report">진행 상황 콜백(모달 로그용). null 이어도 결과는 반환된다.</param>
+    public static async Task<IReadOnlyList<AgentUpdateResult>> UpdateEnabledAgentsAsync(Action<string>? report = null)
+    {
+        var results = new List<AgentUpdateResult>();
         try
         {
             var agents = AgentRegistry.GetEnabledAndInstalled()
@@ -39,12 +68,12 @@ public static class AgentUpdateService
             if (agents.Count == 0)
             {
                 report?.Invoke("업데이트할 에이전트가 없습니다.");
-                return;
+                return results;
             }
 
             Log($"=== 자동 업데이트 시작 ({agents.Count}개): {string.Join(", ", agents.Select(a => a.Id))} ===");
             report?.Invoke($"대상 {agents.Count}개: {string.Join(", ", agents.Select(a => a.DisplayName))}");
-            await Task.WhenAll(agents.Select(a => UpdateOneAsync(a, report)));
+            results.AddRange(await Task.WhenAll(agents.Select(a => UpdateOneAsync(a, report))));
             report?.Invoke("완료되었습니다.");
         }
         catch (Exception ex)
@@ -52,63 +81,101 @@ public static class AgentUpdateService
             Log($"UpdateEnabledAgentsAsync ERROR: {ex.Message}");
             report?.Invoke($"오류: {ex.Message}");
         }
+        return results;
     }
 
-    private static async Task UpdateOneAsync(AgentDef agent, Action<string>? report)
+    private static async Task<AgentUpdateResult> UpdateOneAsync(AgentDef agent, Action<string>? report)
     {
+        var before = "";
         try
         {
             report?.Invoke($"{agent.DisplayName} 확인 중…");
-            var before = await GetVersionAsync(agent);
+            before = await GetVersionAsync(agent);
 
             // 설치는 파이프에 의존하지 않는 분리 실행 — 앱을 닫아도 끊기지 않고 독립적으로 완료된다.
-            var exited = await RunDetachedUpdateAsync(agent, TimeSpan.FromMinutes(5));
+            var (exited, exitCode, running) = await RunDetachedUpdateAsync(agent, TimeSpan.FromMinutes(5));
             if (!exited)
             {
-                // 아직 진행 중(타임아웃) — 죽이지 않고 백그라운드로 계속 완료되게 둔다.
+                // 아직 진행 중(타임아웃) — 죽이지 않고 완주를 감시, 끝나면 최종 결과를 토스트로 알린다.
                 Log($"{agent.Id}: 아직 진행 중(분리 실행) — 백그라운드로 계속됨");
                 report?.Invoke($"{agent.DisplayName}: 백그라운드에서 계속 진행 중…");
-                return;
+                if (running != null) _ = WatchDetachedCompletionAsync(agent, running, before);
+                return new(agent.Id, agent.DisplayName, before, "", AgentUpdateStatus.InProgress, 0);
             }
 
             var after = await GetVersionAsync(agent);
-            Log($"{agent.Id}: '{before}' -> '{after}'");
+            Log($"{agent.Id}: '{before}' -> '{after}' (exit {exitCode})");
 
+            // 버전 변화가 최우선 근거 — 경고(예: temp 정리 EPERM)로 종료코드가 더러워져도 교체됐으면 성공.
             bool changed = !string.IsNullOrEmpty(after) && !string.IsNullOrEmpty(before) &&
                            !string.Equals(before, after, StringComparison.Ordinal);
-
             if (changed)
             {
                 report?.Invoke($"{agent.DisplayName}: {before} → {after} (업데이트됨)");
-                // 모달 로그가 없을 때(백그라운드)만 토스트 — 모달이 있으면 중복 방지.
-                if (report == null)
-                    DevezCode.App.ShowNotification($"{agent.DisplayName} 업데이트됨", $"{before} → {after}");
+                return new(agent.Id, agent.DisplayName, before, after, AgentUpdateStatus.Updated, exitCode);
             }
-            else
+            if (exitCode != 0)
             {
-                var v = string.IsNullOrEmpty(after) ? "" : $" ({after})";
-                report?.Invoke($"{agent.DisplayName}: 최신{v}");
+                report?.Invoke($"{agent.DisplayName}: 실패 (종료 코드 {exitCode}) — 로그: agent-update-{agent.Id}.log");
+                return new(agent.Id, agent.DisplayName, before, after, AgentUpdateStatus.Failed, exitCode);
             }
+            var v = string.IsNullOrEmpty(after) ? "" : $" ({after})";
+            report?.Invoke($"{agent.DisplayName}: 최신{v}");
+            return new(agent.Id, agent.DisplayName, before, after, AgentUpdateStatus.UpToDate, exitCode);
         }
         catch (Exception ex)
         {
             Log($"{agent.Id}: ERROR {ex.Message}");
             report?.Invoke($"{agent.DisplayName}: 실패 ({ex.Message})");
+            return new(agent.Id, agent.DisplayName, before, "", AgentUpdateStatus.Failed, -1);
         }
+    }
+
+    /// <summary>타임아웃으로 넘긴 분리 설치의 완주를 감시한다(앱이 살아있는 동안).
+    /// 끝나면 버전 재확인으로 성공/실패를 판정해 결과 모달(중앙)로 알린다. '최신'(no-op)은 무음.</summary>
+    private static async Task WatchDetachedCompletionAsync(AgentDef agent, Process proc, string before)
+    {
+        try
+        {
+            await proc.WaitForExitAsync();
+            int exitCode = proc.ExitCode;
+            var after = await GetVersionAsync(agent);
+            Log($"{agent.Id}: 지연 완료 '{before}' -> '{after}' (exit {exitCode})");
+
+            bool changed = !string.IsNullOrEmpty(after) && !string.IsNullOrEmpty(before) &&
+                           !string.Equals(before, after, StringComparison.Ordinal);
+            if (changed)
+                DevezCode.App.ShowAgentUpdateResults(new[]
+                {
+                    new AgentUpdateResult(agent.Id, agent.DisplayName, before, after, AgentUpdateStatus.Updated, exitCode),
+                });
+            else if (exitCode != 0)
+                DevezCode.App.ShowAgentUpdateResults(new[]
+                {
+                    new AgentUpdateResult(agent.Id, agent.DisplayName, before, after, AgentUpdateStatus.Failed, exitCode),
+                });
+        }
+        catch { /* 감시 실패는 무시 — 요약 로그로 추적 가능 */ }
+        finally { try { proc.Dispose(); } catch { } }
     }
 
     /// <summary>업데이트(설치) 명령을 분리 실행한다. 출력은 셸 안에서 파일(<see cref="DetachedLogPath"/>)로
     /// 리다이렉트하므로 부모 앱과 파이프로 연결되지 않는다 → 앱 종료/건너뛰기에도 설치가 끊기지 않는다.
-    /// 반환값: 타임아웃 안에 종료되면 true, 아직 진행 중이면 false(프로세스는 죽이지 않음).</summary>
-    private static async Task<bool> RunDetachedUpdateAsync(AgentDef agent, TimeSpan timeout)
+    /// 반환: 타임아웃 안에 종료되면 (true, 종료코드, null), 진행 중이면 (false, 0, 프로세스—호출자가 감시/해제).</summary>
+    private static async Task<(bool exited, int exitCode, Process? running)> RunDetachedUpdateAsync(
+        AgentDef agent, TimeSpan timeout)
     {
-        var logPath = DetachedLogPath(agent);
+        var logPath = DetachedLogPath(agent.Id);
         try { Directory.CreateDirectory(DevezDir); } catch { }
 
         // PowerShell 리터럴 문자열 안의 작은따옴표는 '' 로 이스케이프.
         var escapedLog = logPath.Replace("'", "''");
         // 모든 스트림(*)을 파일로 append. 부모에 파이프 리다이렉트를 걸지 않는 것이 이 보강의 핵심.
-        var command = $"& {{ {agent.UpdateCommand} }} *>> '{escapedLog}'";
+        // 종료코드 명시 전파: powershell -Command 는 네이티브 exit code 를 그대로 반환한다는 보장이 없어
+        // $LASTEXITCODE 를 직접 exit 한다. $ok 선캡처 필수 — if 조건 평가가 $? 를 덮어쓰기 때문.
+        // 명령 자체를 못 찾은 경우($LASTEXITCODE null + $? false)도 exit 1 로 실패 판정된다.
+        var command = $"& {{ {agent.UpdateCommand} }} *>> '{escapedLog}'"
+                    + "; $ok = $?; if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE } elseif ($ok) { exit 0 } else { exit 1 }";
 
         var psi = new ProcessStartInfo
         {
@@ -125,24 +192,30 @@ public static class AgentUpdateService
         var proc = new Process { StartInfo = psi };
         try
         {
-            if (!proc.Start()) return false;
-
-            using var cts = new System.Threading.CancellationTokenSource(timeout);
-            try
+            if (!proc.Start())
             {
-                await proc.WaitForExitAsync(cts.Token);
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                // 타임아웃 — Kill 하지 않는다(설치 중 강제 종료 = 손상 위험). 백그라운드로 계속 진행.
-                return false;
+                try { proc.Dispose(); } catch { }
+                return (true, -1, null);
             }
         }
-        finally
+        catch
         {
-            // Dispose 는 핸들만 닫고 프로세스는 죽이지 않는다(분리 실행 유지).
             try { proc.Dispose(); } catch { }
+            return (true, -1, null);
+        }
+
+        using var cts = new System.Threading.CancellationTokenSource(timeout);
+        try
+        {
+            await proc.WaitForExitAsync(cts.Token);
+            int code = proc.ExitCode;
+            try { proc.Dispose(); } catch { }
+            return (true, code, null);
+        }
+        catch (OperationCanceledException)
+        {
+            // 타임아웃 — Kill 하지 않는다(설치 중 강제 종료 = 손상 위험). 호출자가 완주를 감시한다.
+            return (false, 0, proc);
         }
     }
 

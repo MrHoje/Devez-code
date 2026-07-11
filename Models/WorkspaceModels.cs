@@ -93,6 +93,14 @@ public sealed class SessionItem : TabItemBase
     /// 동일 위치에 "잠금 해제"를 표시한다. 프로젝트 삭제 시 잠긴 세션이 있으면 차단.</summary>
     private bool _isLocked;
     public bool IsLocked { get => _isLocked; set => Set(ref _isLocked, value); }
+    /// <summary>사이드바 Ctrl+클릭 다중 선택 UI 상태. 런타임 전용이며 저장하지 않는다.</summary>
+    private bool _isMultiSelectMode;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsMultiSelectMode { get => _isMultiSelectMode; set => Set(ref _isMultiSelectMode, value); }
+
+    private bool _isMultiSelected;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsMultiSelected { get => _isMultiSelected; set => Set(ref _isMultiSelected, value); }
 
     /// <summary>사이드바 세션 트리의 직접 부모 ID. null이면 최상위 세션. workspace.json에 영속.</summary>
     private string? _parentSessionId;
@@ -146,6 +154,22 @@ public sealed class SessionItem : TabItemBase
 
     /// <summary>사이드바 자식 세션 행과 연결선의 트리 들여쓰기 폭.</summary>
     public System.Windows.GridLength TreeIndent => new(TreeDepth * 19d);
+
+    /// <summary>분할로 부모와 반대 패널 그룹에 표시될 때, 행 위(원래 부모 자리)에 라벨로 보여줄 부모 세션.
+    /// 같은 부모의 연속 자식 묶음에는 첫 자식에만 설정된다. 런타임 파생 상태(비영속).</summary>
+    private SessionItem? _detachedParentSession;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public SessionItem? DetachedParentSession
+    {
+        get => _detachedParentSession;
+        internal set
+        {
+            if (Set(ref _detachedParentSession, value))
+                OnPropertyChanged(nameof(HasDetachedParentLabel));
+        }
+    }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasDetachedParentLabel => _detachedParentSession != null;
 
     internal void ApplyTreePresentation(
         int depth,
@@ -566,6 +590,7 @@ public sealed class ProjectItem : NotifyBase
         _showAllSidebarSessions = showAllSessions;
         foreach (var session in Sessions)
             ApplySidebarSearch(session);
+        RefreshSidebarGroups(); // IsSearchVisible 이 라벨 캐리어 선정에 쓰이므로 재계산
     }
 
     private void ApplySidebarSearch(SessionItem session)
@@ -596,7 +621,12 @@ public sealed class ProjectItem : NotifyBase
     public bool ShowHiddenSessions
     {
         get => _showHiddenSessions;
-        set { if (Set(ref _showHiddenSessions, value)) OnPropertyChanged(nameof(ShowHiddenGroup)); }
+        set
+        {
+            if (!Set(ref _showHiddenSessions, value)) return;
+            OnPropertyChanged(nameof(ShowHiddenGroup));
+            RefreshSidebarGroups(); // 접힘 여부가 라벨 캐리어 선정에 쓰이므로 재계산
+        }
     }
 
     public ProjectItem()
@@ -678,7 +708,11 @@ public sealed class ProjectItem : NotifyBase
         if (e.PropertyName is nameof(SessionItem.IsAlive) or nameof(SessionItem.IsBusy))
             RaiseSessionStatus();
         if (e.PropertyName == nameof(SessionItem.Name) && sender is SessionItem session)
+        {
             ApplySidebarSearch(session);
+            // 검색 필터 중이면 이름 변경이 IsSearchVisible(라벨 캐리어 선정 조건)을 바꿀 수 있다.
+            if (!_showAllSidebarSessions) RefreshSidebarGroups();
+        }
         if (e.PropertyName is nameof(SessionItem.Hidden)
             or nameof(SessionItem.ParentSessionId)
             or nameof(SessionItem.AreSessionChildrenExpanded))
@@ -1078,8 +1112,43 @@ public sealed class ProjectItem : NotifyBase
             leftSource = Tabs.ToList();
             rightSource = Array.Empty<TabItemBase>();
         }
-        SyncObservable(LeftItems, BuildSidebarItems(leftSource));
-        SyncObservable(RightItems, BuildSidebarItems(rightSource));
+        var left = BuildSidebarItems(leftSource);
+        var right = BuildSidebarItems(rightSource);
+        ApplyDetachedParentLabels(left, right);
+        SyncObservable(LeftItems, left);
+        SyncObservable(RightItems, right);
+    }
+
+    /// <summary>부모가 반대 그룹에 표시 중인 자식 세션 위(원래 부모 자리)에 보더 없는 부모 이름 라벨을 표시하도록
+    /// DetachedParentSession 을 마킹. 같은 부모의 연속 자식 묶음에는 첫 자식에만 붙인다(부모 행은 트리에 한 번).</summary>
+    private void ApplyDetachedParentLabels(List<TabItemBase> left, List<TabItemBase> right)
+    {
+        var unvisited = Sessions.ToHashSet();
+        Mark(left, right);
+        Mark(right, left);
+        foreach (var session in unvisited) session.DetachedParentSession = null;
+
+        // 카드 그룹에서 실제로 접히는 행(검색 불일치·숨김 세션+표시 토글 꺼짐)은 라벨을 붙여도
+        // 안 보이므로 캐리어에서 제외하고 다음 표시 형제에게 넘긴다. 접힌 행은 run 을 끊지 않는다.
+        bool RowVisible(SessionItem s) => s.IsSearchVisible && (!s.Hidden || ShowHiddenSessions);
+
+        void Mark(List<TabItemBase> group, List<TabItemBase> other)
+        {
+            var here = group.OfType<SessionItem>().ToHashSet();
+            var there = other.OfType<SessionItem>().ToHashSet();
+            SessionItem? prevLabelParent = null;
+            foreach (var item in group)
+            {
+                if (item is not SessionItem session) { prevLabelParent = null; continue; }
+                unvisited.Remove(session);
+                if (!RowVisible(session)) { session.DetachedParentSession = null; continue; }
+                var parent = SessionParentOf(session);
+                bool detached = parent != null && !here.Contains(parent) && there.Contains(parent);
+                session.DetachedParentSession =
+                    detached && !ReferenceEquals(parent, prevLabelParent) ? parent : null;
+                prevLabelParent = detached ? parent : null;
+            }
+        }
     }
 
     private List<TabItemBase> BuildSidebarItems(IReadOnlyList<TabItemBase> source)

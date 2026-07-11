@@ -665,6 +665,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         // 삭제된 방이면 뒤늦게 도착한 생성 요청을 무시한다(삭제 후 claude 가 다시 떠 고아가 되는 것 방지)
         if (TerminalSessionManager.Instance.IsRoomDisposed(roomId)) return;
+        // 숨김 graceful 종료 진행 중 — 지금 배선하면 죽어가는 세션에 재부착돼 종료 트랜스크립트
+        // ("Resume this session with…")가 재생되고 "[세션 종료됨]" 죽은 방으로 굳는다(프리로드·뒤늦은
+        // 생성 요청 경로). 종료 완료 후 OnHideStopFinished 가 남은 방을 정리하고 새로 생성(resume)한다.
+        if (TerminalSessionManager.Instance.IsGracefulStopping(roomId)) return;
 
         TerminalSession session;
         try

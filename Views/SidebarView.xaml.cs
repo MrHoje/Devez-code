@@ -33,6 +33,8 @@ public partial class SidebarView : UserControl
         PreviewMouseMove += Sidebar_PreviewMouseMove;
         PreviewMouseLeftButtonUp += Sidebar_PreviewMouseUp;
         LostMouseCapture += Sidebar_LostCapture;
+        PreviewMouseLeftButtonDown += Sidebar_PreviewMouseLeftButtonDown;
+        PreviewKeyDown += Sidebar_PreviewKeyDown;
     }
 
     public event Action? AddProjectRequested;
@@ -81,6 +83,10 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionExportRequested;
     /// <summary>세션 메뉴 "잠금/잠금 해제" 요청(MainWindow 위임).</summary>
     public event Action<SessionItem>? SessionLockRequested;
+    public event Action<IReadOnlyList<SessionItem>, bool>? SessionsLockRequested;
+    public event Action<IReadOnlyList<SessionItem>>? SessionsHideRequested;
+    public event Action<IReadOnlyList<SessionItem>>? SessionsStopTrackingRequested;
+    public event Action<IReadOnlyList<SessionItem>>? SessionsDeleteRequested;
 
     // 프로젝트 목록 열 수(1/2). 2면 카드 2열 그리드 + 가로 드래그. 기본 1.
     /// <summary>숨김 세션 표시 토글 변경 → 영속 저장 트리거.</summary>
@@ -369,6 +375,7 @@ public partial class SidebarView : UserControl
     private void OpenArchivePanel()
     {
         if (_archiveOpen) return;
+        ClearSessionMultiSelection();
         _archiveOpen = true;
         UpdateArchiveEmptyState();
         UpdateExpandAllVisual();
@@ -388,6 +395,7 @@ public partial class SidebarView : UserControl
     private void CloseArchivePanel()
     {
         if (!_archiveOpen) return;
+        ClearSessionMultiSelection();
         _archiveOpen = false;
         if (SidebarSearchBox.Text.Length > 0) SidebarSearchBox.Clear();
 
@@ -595,7 +603,10 @@ public partial class SidebarView : UserControl
         if (_didDrag) { _didDrag = false; return; } // 드래그 직후의 클릭은 무시
         // 행 클릭은 '선택'만 — 접고/펴기는 우측 chevron 버튼 전용
         if (sender is FrameworkElement { DataContext: ProjectItem p })
+        {
+            ClearSessionMultiSelection();
             ProjectSelected?.Invoke(p);
+        }
     }
 
     private void ProjectChevron_Click(object sender, RoutedEventArgs e)
@@ -772,15 +783,198 @@ public partial class SidebarView : UserControl
             }
     }
 
+    private SessionItem? _sessionSelectionAnchor;
+    private ProjectItem? _sessionSelectionProject;
+
+    private void Sidebar_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!IsWithinSessionRow(e.OriginalSource as DependencyObject))
+            ClearSessionMultiSelection();
+    }
+
+    private void Sidebar_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || _sessionSelectionProject == null) return;
+        ClearSessionMultiSelection();
+        e.Handled = true;
+    }
+
+    private static bool IsWithinSessionRow(DependencyObject? current)
+    {
+        while (current != null)
+        {
+            if (current is Border { Name: "SessionRow" }) return true;
+            current = current switch
+            {
+                FrameworkContentElement content => content.Parent,
+                Visual _ => VisualTreeHelper.GetParent(current),
+                System.Windows.Media.Media3D.Visual3D _ => VisualTreeHelper.GetParent(current),
+                _ => LogicalTreeHelper.GetParent(current),
+            };
+        }
+        return false;
+    }
+
+    private ProjectItem? SessionProject(SessionItem session)
+        => CurrentProjects.FirstOrDefault(project => project.Sessions.Contains(session));
+
     private void Session_Click(object sender, MouseButtonEventArgs e)
     {
         if (_didDrag) { _didDrag = false; return; }
-        if (sender is FrameworkElement { DataContext: SessionItem s })
+        if (IsWithinButton(e.OriginalSource as DependencyObject)) return;
+        if (sender is not FrameworkElement { DataContext: SessionItem session }) return;
+
+        var modifiers = Keyboard.Modifiers;
+        bool control = (modifiers & ModifierKeys.Control) != 0;
+        bool shift = (modifiers & ModifierKeys.Shift) != 0;
+        if (shift)
         {
-            // 비선택 프로젝트 세션 클릭도 OpenSession 이 프로젝트 전환까지 처리.
-            // (ProjectSelected 를 따로 호출하면 첫 세션이 추가로 로드되므로 호출하지 않음)
-            SessionSelected?.Invoke(s);
+            SelectSessionRange(session, additive: control);
+            e.Handled = true;
+            return;
         }
+        if (control)
+        {
+            SetSessionMultiSelected(session, !session.IsMultiSelected);
+            _sessionSelectionAnchor = session;
+            e.Handled = true;
+            return;
+        }
+
+        // 파일 탐색기처럼 보조키 없는 클릭은 기존 다중 선택을 해제하고 클릭한 항목을 기준점으로 삼는다.
+        ClearSessionMultiSelection();
+        _sessionSelectionAnchor = session;
+
+        // 비선택 프로젝트 세션 클릭도 OpenSession 이 프로젝트 전환까지 처리.
+        // (ProjectSelected 를 따로 호출하면 첫 세션이 추가로 로드되므로 호출하지 않음)
+        SessionSelected?.Invoke(session);
+    }
+
+    private void SessionMultiSelect_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is not { } session) return;
+        var modifiers = Keyboard.Modifiers;
+        if ((modifiers & ModifierKeys.Shift) != 0)
+            SelectSessionRange(session, additive: (modifiers & ModifierKeys.Control) != 0);
+        else
+        {
+            _sessionSelectionAnchor = session;
+            UpdateSessionMultiSelectMode();
+        }
+        e.Handled = true;
+    }
+
+    private void SetSessionMultiSelected(SessionItem session, bool selected)
+    {
+        var project = SessionProject(session);
+        if (project == null) return;
+        if (selected && _sessionSelectionProject != null
+            && !ReferenceEquals(_sessionSelectionProject, project))
+            ClearSessionMultiSelection();
+
+        session.IsMultiSelected = selected;
+        _sessionSelectionProject = selected
+            ? project
+            : project.Sessions.Any(item => item.IsMultiSelected) ? project : null;
+        UpdateSessionMultiSelectMode();
+    }
+
+    private void SelectSessionRange(SessionItem target, bool additive)
+    {
+        var project = SessionProject(target);
+        if (project == null) return;
+        if (_sessionSelectionProject != null && !ReferenceEquals(_sessionSelectionProject, project))
+            ClearSessionMultiSelection();
+
+        var anchor = _sessionSelectionAnchor;
+        if (anchor == null || !project.Sessions.Contains(anchor))
+            anchor = target;
+        var ordered = VisibleSessionOrder(project);
+        int anchorIndex = ordered.IndexOf(anchor);
+        int targetIndex = ordered.IndexOf(target);
+
+        if (!additive)
+            ClearSessionMultiSelection(clearAnchor: false);
+
+        if (anchorIndex < 0 || targetIndex < 0)
+        {
+            target.IsMultiSelected = true;
+        }
+        else
+        {
+            int first = Math.Min(anchorIndex, targetIndex);
+            int last = Math.Max(anchorIndex, targetIndex);
+            for (int i = first; i <= last; i++)
+                ordered[i].IsMultiSelected = true;
+        }
+
+        _sessionSelectionProject = project;
+        _sessionSelectionAnchor ??= target;
+        UpdateSessionMultiSelectMode();
+    }
+
+    private List<SessionItem> VisibleSessionOrder(ProjectItem project)
+    {
+        var root = _archiveOpen ? (DependencyObject)ArchivePanel : ActivePanel;
+        var rows = new List<(SessionItem Session, Point Position)>();
+        var seen = new HashSet<SessionItem>();
+        foreach (var border in FindVisualChildren<Border>(root))
+        {
+            if (border.Name != "SessionRow" || !border.IsVisible
+                || border.DataContext is not SessionItem session
+                || !project.Sessions.Contains(session) || !seen.Add(session))
+                continue;
+            try
+            {
+                rows.Add((session, border.TransformToAncestor(this).Transform(new Point(0, 0))));
+            }
+            catch (InvalidOperationException)
+            {
+                // 레이아웃 갱신 중 트리에서 빠진 행은 현재 범위 선택 대상이 아니다.
+            }
+        }
+
+        return rows.OrderBy(row => row.Position.Y)
+            .ThenBy(row => row.Position.X)
+            .Select(row => row.Session)
+            .ToList();
+    }
+
+    private void UpdateSessionMultiSelectMode()
+    {
+        var sessions = CurrentProjects.SelectMany(project => project.Sessions).ToList();
+        var selected = sessions.Where(item => item.IsMultiSelected).ToList();
+        _sessionSelectionProject = selected.Count == 0 ? null : SessionProject(selected[0]);
+        foreach (var item in sessions)
+            item.IsMultiSelectMode = _sessionSelectionProject?.Sessions.Contains(item) == true;
+
+        SelectionCountText.Text = $"{selected.Count}개 선택됨";
+        SelectionCountText.Visibility = selected.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        HeaderTitle.Visibility = selected.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private IReadOnlyList<SessionItem> SessionActionTargets(object sender)
+    {
+        if (ItemOf<SessionItem>(sender) is not { } target) return Array.Empty<SessionItem>();
+        if (!target.IsMultiSelected) return new[] { target };
+        var project = SessionProject(target);
+        if (project == null) return Array.Empty<SessionItem>();
+        return project.Sessions.Where(session => session.IsMultiSelected).ToList();
+    }
+
+    public bool HasSessionMultiSelection => _sessionSelectionProject != null;
+    public void ClearSessionMultiSelection(bool clearAnchor = true)
+    {
+        foreach (var session in Projects.Concat(ArchivedProjects).SelectMany(project => project.Sessions))
+        {
+            session.IsMultiSelected = false;
+            session.IsMultiSelectMode = false;
+        }
+        if (clearAnchor)
+            _sessionSelectionAnchor = null;
+        _sessionSelectionProject = null;
+        SelectionCountText.Visibility = Visibility.Collapsed;
+        HeaderTitle.Visibility = Visibility.Visible;
     }
 
     private void SessionRow_MouseEnter(object sender, MouseEventArgs e)
@@ -930,6 +1124,70 @@ public partial class SidebarView : UserControl
         parent.Items.Add(add);
     }
 
+    private void SessionMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu cm) return;
+        var target = cm.DataContext as SessionItem
+                     ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as SessionItem;
+        if (target == null) return;
+
+        var targets = target.IsMultiSelected
+            ? SessionProject(target)?.Sessions.Where(session => session.IsMultiSelected).ToList() ?? new()
+            : new List<SessionItem> { target };
+        bool batch = targets.Count > 1;
+        bool showCount = target.IsMultiSelected;
+        int count = targets.Count;
+        var separators = cm.Items.OfType<Separator>().ToList();
+        bool anyLocked = targets.Any(session => session.IsLocked);
+        bool anyUnlocked = targets.Any(session => !session.IsLocked);
+        bool anyVisible = targets.Any(session => !session.Hidden);
+
+        foreach (var item in cm.Items.OfType<MenuItem>())
+        {
+            string action = item.CommandParameter as string ?? "";
+            bool destructive = action is "Close" or "Delete";
+            item.IsEnabled = !destructive || !anyLocked;
+            item.ToolTip = item.IsEnabled || !destructive
+                ? null
+                : "잠긴 세션이 포함되어 있어 실행할 수 없습니다.";
+            if (action == "Single")
+            {
+                item.Visibility = batch ? Visibility.Collapsed : Visibility.Visible;
+                if (!batch && Equals(item.Header, "꺼내기"))
+                    item.Visibility = target.HasSessionParent ? Visibility.Visible : Visibility.Collapsed;
+                continue;
+            }
+
+            item.Visibility = action switch
+            {
+                "Lock" => (batch ? anyUnlocked : !target.IsLocked)
+                    ? Visibility.Visible : Visibility.Collapsed,
+                "Unlock" => (batch ? anyLocked : target.IsLocked)
+                    ? Visibility.Visible : Visibility.Collapsed,
+                "Hide" => (batch ? anyVisible : !target.Hidden)
+                    ? Visibility.Visible : Visibility.Collapsed,
+                "Close" or "Delete" => Visibility.Visible,
+                _ => item.Visibility,
+            };
+
+            item.Header = action switch
+            {
+                "Lock" => showCount ? $"세션 {count}개 잠금" : "세션 잠금",
+                "Unlock" => showCount ? $"세션 {count}개 잠금 해제" : "잠금 해제",
+                "Hide" => showCount ? $"세션 {count}개 숨기기" : "세션 숨기기",
+                "Close" => showCount ? $"세션 {count}개 닫기" : "세션 닫기",
+                "Delete" => showCount ? $"세션 {count}개 삭제" : "세션 삭제",
+                _ => item.Header,
+            };
+        }
+
+        if (separators.Count > 0)
+            separators[0].Visibility = !batch && target.HasSessionParent
+                ? Visibility.Visible : Visibility.Collapsed;
+        if (separators.Count > 1)
+            separators[1].Visibility = Visibility.Visible;
+    }
+
     private void SessionDetach_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<SessionItem>(sender) is not { ParentSessionId: not null } session) return;
@@ -940,7 +1198,12 @@ public partial class SidebarView : UserControl
 
     private void SessionDelete_Click(object sender, RoutedEventArgs e)
     {
-        if (ItemOf<SessionItem>(sender) is { } s) SessionDeleteRequested?.Invoke(s);
+        var target = ItemOf<SessionItem>(sender);
+        var targets = SessionActionTargets(sender);
+        if (target?.IsMultiSelected == true)
+            SessionsDeleteRequested?.Invoke(targets);
+        else if (targets.Count == 1)
+            SessionDeleteRequested?.Invoke(targets[0]);
     }
 
     private void SessionRename_Click(object sender, RoutedEventArgs e)
@@ -960,17 +1223,38 @@ public partial class SidebarView : UserControl
 
     private void SessionStopTracking_Click(object sender, RoutedEventArgs e)
     {
-        if (ItemOf<SessionItem>(sender) is { } s) SessionStopTrackingRequested?.Invoke(s);
+        var target = ItemOf<SessionItem>(sender);
+        var targets = SessionActionTargets(sender);
+        if (target?.IsMultiSelected == true)
+            SessionsStopTrackingRequested?.Invoke(targets);
+        else if (targets.Count == 1)
+            SessionStopTrackingRequested?.Invoke(targets[0]);
     }
 
     private void SessionHide_Click(object sender, RoutedEventArgs e)
     {
-        if (ItemOf<SessionItem>(sender) is { } s) SessionHideRequested?.Invoke(s);
+        var target = ItemOf<SessionItem>(sender);
+        var targets = SessionActionTargets(sender).Where(session => !session.Hidden).ToList();
+        if (target?.IsMultiSelected == true)
+            SessionsHideRequested?.Invoke(targets);
+        else if (targets.Count == 1)
+            SessionHideRequested?.Invoke(targets[0]);
     }
 
     private void SessionLock_Click(object sender, RoutedEventArgs e)
     {
-        if (ItemOf<SessionItem>(sender) is { } s) SessionLockRequested?.Invoke(s);
+        var target = ItemOf<SessionItem>(sender);
+        var targets = SessionActionTargets(sender);
+        if (targets.Count == 0 || target == null) return;
+        if (target.IsMultiSelected && targets.Count > 1)
+        {
+            bool locked = sender is MenuItem { CommandParameter: "Lock" };
+            SessionsLockRequested?.Invoke(targets, locked);
+        }
+        else
+        {
+            SessionLockRequested?.Invoke(targets[0]);
+        }
     }
 
     /// <summary>이벤트 소스에서 데이터 항목을 얻는다. 컨텍스트 메뉴 항목은 Tag, 행 요소는 DataContext.</summary>
@@ -1049,12 +1333,23 @@ public partial class SidebarView : UserControl
     {
         _pressOrigin = e.GetPosition(this);
         _pendingTab = IsWithinButton(e.OriginalSource as DependencyObject)
+                      || (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0
             ? null
             : (sender as FrameworkElement)?.DataContext as TabItemBase;
         _pendingFolder = null;
         _pendingProject = null;
         _pendingFile = null;
         _didDrag = false;
+    }
+
+    private void SessionRow_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SessionItem session }) return;
+
+        // 선택된 항목 우클릭은 기존 묶음을 유지한다. 선택되지 않은 항목 우클릭은
+        // 기존 선택만 해제하고 일반 단일 세션 컨텍스트 메뉴를 연다.
+        if (!session.IsMultiSelected)
+            ClearSessionMultiSelection();
     }
 
     private void ProjectFileRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

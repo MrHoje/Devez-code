@@ -47,14 +47,6 @@ public partial class WorkspacePaneView : UserControl
         DependencyProperty.Register(nameof(SelectedTab), typeof(TabItemBase), typeof(WorkspacePaneView),
             new PropertyMetadata(null));
     public TabItemBase? SelectedTab => (TabItemBase?)GetValue(SelectedTabProperty);
-    public static readonly DependencyProperty IsPaneFocusedProperty =
-        DependencyProperty.Register(nameof(IsPaneFocused), typeof(bool), typeof(WorkspacePaneView),
-            new PropertyMetadata(false));
-    public bool IsPaneFocused
-    {
-        get => (bool)GetValue(IsPaneFocusedProperty);
-        private set => SetValue(IsPaneFocusedProperty, value);
-    }
 
     /// <summary>MainWindow 가 소유한 공유 프로젝트 컬렉션. 생성 후 한 번 주입한다.</summary>
     public ObservableCollection<ProjectItem> Projects { get; set; } = new();
@@ -377,12 +369,19 @@ public partial class WorkspacePaneView : UserControl
     public void SetRightChannelBorder(bool show)
     {
         CenterArea.BorderThickness = new Thickness(1, 0, show ? 1 : 0, 0);
+        // 채널 보더가 없을 때도 WebView2 HwndHost 의 DPI 오버렌더가 포커스 보더를 덮지 않게
+        // 우측 1px 여백을 확보한다.
+        FocusFrame.Margin = new Thickness(0, 1, show ? 0 : 1, 0);
     }
 
-    /// <summary>분할 중 포커스된 패널의 연결된 탭/타이틀 보더와 타이틀 좌측 꺾쇠를 강조한다.</summary>
+    /// <summary>분할 중 포커스 패널을 고정 1px 프레임의 색상으로 표시한다.</summary>
     public void SetFocusedVisual(bool focused)
     {
-        IsPaneFocused = focused;
+        if (FocusFrame == null) return;
+        if (focused)
+            FocusFrame.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
+        else
+            FocusFrame.BorderBrush = System.Windows.Media.Brushes.Transparent;
     }
     /// <summary>분할 접힘/펼침 애니메이션 중 줄바꿈을 꺼서 텍스트가 세로로 늘어나지 않게 한다.
     /// 완전히 보일 때만 Wrap 으로 복원한다.</summary>
@@ -1042,8 +1041,12 @@ public partial class WorkspacePaneView : UserControl
             return;
         }
 
-        // 숨김 graceful 종료 중이면 옛 프로세스에 붙지 않는다 — 종료 완료 후 아래에서 재연결.
-        if (_gracefulStopRoomIds.Contains(session.Id))
+        // 숨김 graceful 종료 중이면 옛 프로세스에 붙지 않는다 — 종료 완료 후 재연결(OnHideStopFinished).
+        // 종료는 owner 패널에서 돌므로(_gracefulStopRoomIds 는 그 패널 전용) 다른 패널의 재오픈은
+        // 매니저의 전역 종료중 플래그로 판별한다 — 안 하면 죽어가는 세션에 재부착돼 종료 트랜스크립트가
+        // 재생되고 "[세션 종료됨 — Enter로 재시작]" 죽은 방으로 굳는다(자동 resume 불가).
+        if (_gracefulStopRoomIds.Contains(session.Id)
+            || TerminalSessionManager.Instance.IsGracefulStopping(session.Id))
         {
             _pendingReactivateAfterHideStop.Add(session.Id);
             UpdateEmptyState();
@@ -1520,6 +1523,33 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>조상 숨김 해제 등으로 다시 표시된 세션의 지연 종료 예약 취소.</summary>
     public void CancelSessionHide(string roomId) => CancelPendingHideStop(roomId);
 
+    /// <summary>이 패널 WebView 에 남아 있는 방(xterm)만 정리한다 — ConPTY 프로세스는 건드리지 않는다.
+    /// 숨김 graceful 종료가 owner 패널 방만 닫으므로, 반대 패널에 남을 죽은 방(재부착 시
+    /// "[세션 종료됨 — Enter로 재시작]" 상태로 열려 자동 resume 불가) 정리용. 방이 없으면 no-op.</summary>
+    public void CloseTerminalRoom(string roomId)
+    {
+        try { _terminal.CloseTerminal(roomId); } catch { /* ignore */ }
+    }
+
+    /// <summary>숨김 graceful 종료가 완료됨(이 패널에서 종료가 실행됨) — 셸이 모든 패널로 중계한다.</summary>
+    public event Action<SessionItem>? HideStopFinished;
+
+    /// <summary>숨김 graceful 종료 완료 통지(어느 패널에서 돌았든). 종료 중 이 패널에 생긴 죽은/빈 방을
+    /// 정리해 다음 표시가 항상 "방 없음 → 새로 생성(resume)" 경로를 타게 하고, 종료 중 이 세션을 열어
+    /// 대기했다면(_pendingReactivateAfterHideStop) 이제 안전하게 새 세션으로 재연결한다.</summary>
+    public void OnHideStopFinished(SessionItem session)
+    {
+        var roomId = session.Id;
+        bool pending = _pendingReactivateAfterHideStop.Remove(roomId);
+        if (TerminalSessionManager.Instance.Get(roomId) is not { IsAlive: true })
+            CloseTerminalRoom(roomId);
+        if (!pending || session.IsEffectivelyHidden || !ReferenceEquals(_activeSession, session)) return;
+        _activeSession.IsActive = false;
+        _activeSession = null;
+        _activeTab = null;
+        ActivateSession(session, unHide: false);
+    }
+
     /// <summary>숨김 세션의 지연 종료 예약을 취소한다(다시 열기·삭제·프로젝트 제거 공통).</summary>
     private void CancelPendingHideStop(string roomId)
     {
@@ -1546,6 +1576,7 @@ public partial class WorkspacePaneView : UserControl
     private async Task GracefullyStopHiddenSessionAsync(SessionItem session, CancellationTokenSource cts)
     {
         var roomId = session.Id;
+        bool notifiedStopFinished = false;
         try
         {
             try
@@ -1595,16 +1626,7 @@ public partial class WorkspacePaneView : UserControl
             finally
             {
                 _gracefulStopRoomIds.Remove(roomId);
-                // 종료 중에 다시 연 경우 — 아직 이 탭을 보고 있으면 이제 안전하게 resume 연결.
-                if (_pendingReactivateAfterHideStop.Remove(roomId)
-                    && !session.IsEffectivelyHidden
-                    && ReferenceEquals(_activeSession, session))
-                {
-                    _activeSession.IsActive = false;
-                    _activeSession = null;
-                    _activeTab = null;
-                    ActivateSession(session, unHide: false);
-                }
+                NotifyStopFinished();
             }
         }
         catch (Exception ex)
@@ -1616,6 +1638,17 @@ public partial class WorkspacePaneView : UserControl
                 _pendingHideStopCts.Remove(roomId);
                 try { cts.Dispose(); } catch { /* ignore */ }
             }
+            NotifyStopFinished();
+        }
+
+        // 종료 완료(성공/실패 공통, 1회) — 셸이 모든 패널로 중계해 죽은/빈 방을 정리하고,
+        // 종료 중 이 세션을 열어 대기하던 패널(반대 패널 포함)을 resume 재연결한다(OnHideStopFinished).
+        void NotifyStopFinished()
+        {
+            if (notifiedStopFinished) return;
+            notifiedStopFinished = true;
+            if (HideStopFinished != null) HideStopFinished(session);
+            else OnHideStopFinished(session);
         }
     }
 

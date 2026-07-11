@@ -36,6 +36,17 @@ public sealed class TerminalSessionManager
         lock (_lock) _disposedRooms.Remove(roomId);
     }
 
+    /// <summary>graceful 종료(숨김 지연 종료·부분 재시작)가 진행 중인 방. 이 동안(최대 수 초) 새 배선/
+    /// 재부착을 막는다 — 죽어가는 세션에 붙으면 종료 트랜스크립트가 재생되고 "[세션 종료됨]" 죽은 방으로
+    /// 굳어 자동 resume 이 안 된다(다른 패널에서의 재오픈·프리로드 경로).</summary>
+    private readonly HashSet<string> _gracefulStopping = new();
+
+    /// <summary>이 방이 graceful 종료 진행 중인지 — WireSession/ActivateSession 재부착 가드용.</summary>
+    public bool IsGracefulStopping(string roomId)
+    {
+        lock (_lock) return _gracefulStopping.Contains(roomId);
+    }
+
     /// <summary>방별 "셸 준비 후 주입" 초기 커맨드. 직접 실행(cmd /k) 방·일반 방은 null.
     /// GetOrCreate 가 결정해 채우고 GetInitialCommand 가 1회 소비한다.</summary>
     private readonly Dictionary<string, string?> _pendingInitial = new();
@@ -1920,7 +1931,12 @@ public sealed class TerminalSessionManager
     {
         var idSet = new HashSet<string>(roomIds);
         List<KeyValuePair<string, TerminalSession>> snapshot;
-        lock (_lock) snapshot = _sessions.Where(kv => idSet.Contains(kv.Key)).ToList();
+        lock (_lock)
+        {
+            snapshot = _sessions.Where(kv => idSet.Contains(kv.Key)).ToList();
+            // 종료 진행 표시 — 이 동안 WireSession/ActivateSession 이 죽어가는 세션에 재부착하지 않게.
+            foreach (var kv in snapshot) _gracefulStopping.Add(kv.Key);
+        }
         if (snapshot.Count == 0) return;
         DiagLog.Write($"GracefulDisposeRooms: {string.Join(",", snapshot.Select(kv => kv.Key))}");
 
@@ -1948,6 +1964,7 @@ public sealed class TerminalSessionManager
                 _opencodeRoomDirs.Remove(kv.Key);
                 _pendingInitial.Remove(kv.Key);
                 _disposedRooms.Add(kv.Key); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
+                _gracefulStopping.Remove(kv.Key); // 종료 완료 — 이후 생성은 새 세션(resume)으로 정상 진행
             }
         }
     }

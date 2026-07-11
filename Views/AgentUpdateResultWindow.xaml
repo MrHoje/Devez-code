@@ -1,0 +1,57 @@
+<Window x:Class="DevezCode.Views.AgentUpdateResultWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="에이전트 업데이트 결과"
+        Width="460" SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        FontFamily="{StaticResource PretendardFont}">
+
+    <Grid Margin="{DynamicResource WindowShadowOuterMargin}">
+        <!-- Shadow layer -->
+        <Border Background="{DynamicResource BgBrush}" CornerRadius="{DynamicResource WindowShadowCornerRadius}"
+                Margin="{DynamicResource WindowShadowInnerMargin}"
+                SnapsToDevicePixels="True">
+            <Border.Effect>
+                <DropShadowEffect ShadowDepth="0" BlurRadius="{DynamicResource WindowShadowBlurRadius}" Direction="270"
+                                  Color="{DynamicResource ShadowColor}" Opacity="{DynamicResource ShadowOpacity}"/>
+            </Border.Effect>
+        </Border>
+        <!-- Content layer -->
+        <Border CornerRadius="14"
+                Background="{DynamicResource BgBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                ClipToBounds="True"
+                SnapsToDevicePixels="True">
+            <StackPanel Margin="22,20,22,18">
+                <!-- 헤더 (업데이트 진행 모달과 동일 스타일) -->
+                <StackPanel Orientation="Horizontal">
+                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBot}"
+                          Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,9,0"
+                          Stroke="{DynamicResource TextBrush}"/>
+                    <TextBlock Text="에이전트 업데이트 결과"
+                               FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- 결과 행 (코드비하인드에서 채움: 성공=체크, 실패=X+로그 열기) -->
+                <StackPanel x:Name="ResultList" Margin="0,16,0,0"/>
+
+                <!-- 확인: 하단 꽉 채움. IsCancel 로 Esc 도 닫힘 -->
+                <Button x:Name="OkButton" Content="확인" Height="38" Margin="0,16,0,0"
+                        HorizontalAlignment="Stretch"
+                        Style="{StaticResource PrimaryButton}"
+                        FontSize="{DynamicResource Fs13}"
+                        IsCancel="True" Click="OkButton_Click"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

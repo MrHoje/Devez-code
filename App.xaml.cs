@@ -166,6 +166,45 @@ public partial class App : Application
         this.MainWindow = mw;
         mw.Show();
         ShutdownMode = prevMode; // 원래대로(기본 OnLastWindowClose) 복원
+
+        // 메인 창이 뜬 뒤 업데이트 최종 결과를 팝업으로 알린다.
+        // '건너뛰고 시작'으로 모달을 닫았어도 Task 는 계속 돌므로, 끝나는 시점에 알림이 온다.
+        _ = NotifyAgentUpdateResultsAsync(win.UpdateTask);
+    }
+
+    /// <summary>시작 시 자동 업데이트의 최종 결과 — 성공(버전 변경)/실패를 모아 중앙 모달 1개로 보여준다.
+    /// '이미 최신'은 무음(매일 뜨면 성가심). 타임아웃으로 백그라운드 계속(InProgress)인 항목은
+    /// 서비스의 완주 감시가 끝나는 시점에 같은 모달로 따로 알린다.</summary>
+    private static async System.Threading.Tasks.Task NotifyAgentUpdateResultsAsync(
+        System.Threading.Tasks.Task<IReadOnlyList<AgentUpdateResult>>? updateTask)
+    {
+        if (updateTask == null) return;
+        IReadOnlyList<AgentUpdateResult> results;
+        try { results = await updateTask; } catch { return; }
+
+        var show = results
+            .Where(r => r.Status is AgentUpdateStatus.Updated or AgentUpdateStatus.Failed)
+            .ToList();
+        if (show.Count > 0) ShowAgentUpdateResults(show);
+    }
+
+    /// <summary>업데이트 결과 모달(중앙)을 띄운다. UI 스레드가 아니어도 안전(디스패치).
+    /// 메인 창이 있으면 Owner 로 걸어 그 중앙에, 없으면 화면 중앙에 표시.</summary>
+    public static void ShowAgentUpdateResults(IReadOnlyList<AgentUpdateResult> results)
+    {
+        var app = Current;
+        if (app == null || results.Count == 0) return;
+        app.Dispatcher.InvokeAsync(() =>
+        {
+            try
+            {
+                var win = new Views.AgentUpdateResultWindow(results);
+                var owner = app.MainWindow;
+                if (owner != null && owner.IsVisible) win.Owner = owner;
+                win.ShowDialog();
+            }
+            catch { /* best effort — 결과 표시 실패가 앱을 막지 않도록 */ }
+        });
     }
 
     /// <summary>토스트 알림을 표시한다(설정 위치에 스택). UI 스레드가 아니어도 안전.</summary>

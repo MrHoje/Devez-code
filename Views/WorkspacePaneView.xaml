@@ -11,7 +11,9 @@
     <Border x:Name="CenterArea" Background="{DynamicResource BgBrush}"
             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,1,0"
             MouseLeftButtonDown="Pane_PreviewInteract" PreviewMouseLeftButtonDown="Pane_PreviewInteract">
-      <!-- 분할 포커스 표시는 선택 탭/타이틀 보더와 타이틀 좌측 꺾쇠를 테마색으로 강조한다. -->
+      <!-- 분할 포커스 프레임: 1px 공간은 항상 예약하고 색상만 바꿔 터미널 리사이즈를 막는다. -->
+      <Border x:Name="FocusFrame" BorderThickness="1" BorderBrush="Transparent"
+              Margin="0,1,0,0" UseLayoutRounding="True" SnapsToDevicePixels="True">
       <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -98,20 +100,9 @@
 
         <!-- Tab strip (devez 브라우저식 탭: 둥근 상단 + 선택 탭이 헤더와 이어짐) -->
         <Border x:Name="TabBar" Grid.Row="1" Height="35" Background="{DynamicResource BgBrush}"
-                BorderThickness="0,0,0,1" Padding="0,4,12,0"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                Padding="0,4,12,0"
                 PreviewMouseWheel="TabBar_PreviewMouseWheel">
-            <Border.Style>
-                <Style TargetType="Border">
-                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
-                                     Value="True">
-                            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                            <Setter Property="BorderThickness" Value="0,0,0,1.5"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Border.Style>
           <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -259,25 +250,25 @@
                                   HorizontalAlignment="Left" VerticalAlignment="Bottom"
                                   Margin="-10,0,0,-1"
                                   Fill="{DynamicResource PanelBrush}"
-                                  Data="M13,0 L10,0 A10,13 0 0 1 0,13 L13,13 Z"
+                                  Data="M11,0 L10,0 A10,13 0 0 1 0,13 L11,13 Z"
                                   Visibility="Collapsed"/>
                             <Path x:Name="TabFootLeftLine"
                                   HorizontalAlignment="Left" VerticalAlignment="Bottom"
                                   Margin="-10,0,0,-1"
                                   Stroke="{DynamicResource LineBrush}" StrokeThickness="1"
-                                  Data="M10,0 A10,13 0 0 1 0,13"
+                                  Data="M10,-3 L10,0 A10,13 0 0 1 0,13"
                                   Visibility="Collapsed"/>
                             <Path x:Name="TabFootRightFill"
                                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                   Margin="0,0,-10,-1"
                                   Fill="{DynamicResource PanelBrush}"
-                                  Data="M-2,0 L1,0 A10,13 0 0 0 11,13 L-2,13 Z"
+                                  Data="M0,0 L1,0 A10,13 0 0 0 11,13 L0,13 Z"
                                   Visibility="Collapsed"/>
                             <Path x:Name="TabFootRightLine"
                                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                   Margin="0,0,-10,-1"
                                   Stroke="{DynamicResource LineBrush}" StrokeThickness="1"
-                                  Data="M1,0 A10,13 0 0 0 11,13"
+                                  Data="M1,-3 L1,0 A10,13 0 0 0 11,13"
                                   Visibility="Collapsed"/>
                           </Grid>
                             <DataTemplate.Triggers>
@@ -321,26 +312,6 @@
                                     <Setter TargetName="TabFootRightFill" Property="Visibility" Value="Visible"/>
                                     <Setter TargetName="TabFootRightLine" Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
-                                <MultiDataTrigger>
-                                    <MultiDataTrigger.Conditions>
-                                        <Condition Value="True">
-                                            <Condition.Binding>
-                                                <MultiBinding Converter="{x:Static models:TabActiveConverter.Instance}">
-                                                    <Binding/>
-                                                    <Binding Path="SelectedTab" RelativeSource="{RelativeSource AncestorType=v:WorkspacePaneView}"/>
-                                                </MultiBinding>
-                                            </Condition.Binding>
-                                        </Condition>
-                                        <Condition Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
-                                                   Value="True"/>
-                                    </MultiDataTrigger.Conditions>
-                                    <Setter TargetName="TabBd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                                    <Setter TargetName="TabBd" Property="BorderThickness" Value="1.5,1.5,1.5,0"/>
-                                    <Setter TargetName="TabFootLeftLine" Property="Stroke" Value="{DynamicResource PrimaryBrush}"/>
-                                    <Setter TargetName="TabFootLeftLine" Property="StrokeThickness" Value="1.5"/>
-                                    <Setter TargetName="TabFootRightLine" Property="Stroke" Value="{DynamicResource PrimaryBrush}"/>
-                                    <Setter TargetName="TabFootRightLine" Property="StrokeThickness" Value="1.5"/>
-                                </MultiDataTrigger>
                              </DataTemplate.Triggers>
                          </DataTemplate>
                      </ItemsControl.ItemTemplate>
@@ -400,26 +371,16 @@
           </Grid>
         </Border>
 
-        <Border x:Name="SelectedTabSeam" Grid.Row="1" Height="1.5"
+        <Border x:Name="SelectedTabSeam" Grid.Row="1" Height="1"
                 VerticalAlignment="Bottom" HorizontalAlignment="Left"
                 Background="{DynamicResource PanelBrush}"
                 Visibility="Collapsed" IsHitTestVisible="False" Panel.ZIndex="100"/>
 
         <!-- 세션 타이틀 영역 (devez HeaderBar 정합) -->
         <Border x:Name="SessionHeaderBar" Grid.Row="2" Height="35"
-                Background="{DynamicResource PanelBrush}" BorderThickness="1.5,0,1.5,0"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Visibility="Collapsed">
-            <Border.Style>
-                <Style TargetType="Border">
-                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
-                                     Value="True">
-                            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Border.Style>
             <Grid Margin="11,0,8,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -432,19 +393,8 @@
                     <TextBlock x:Name="LastMessageSep" Text="❯"
                                Margin="0,0,8,0" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs13}"
-                               Visibility="Collapsed">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
-                                                 Value="True">
-                                        <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Visibility="Collapsed"/>
                      <!-- 파일명·dirty점·경로를 한 TextBlock의 inline으로 두어 폰트 크기가 달라도
                           글자 밑선(baseline)이 항상 맞도록 한다. (박스 하단 정렬로는 descent 차이로 어긋남) -->
                      <TextBlock x:Name="SessionHeaderTitle"
@@ -481,21 +431,9 @@
             </Grid>
         </Border>
 
-        <!-- 콘텐츠: 타이틀 좌우선에서 이어져 패널 하단까지 감싸는 고정 1.5px 프레임.
-             두께를 항상 예약해 포커스 전환 때 터미널 크기가 바뀌지 않게 한다. -->
-        <Border Grid.Row="3" BorderThickness="1.5,0,1.5,1.5">
-            <Border.Style>
-                <Style TargetType="Border">
-                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsPaneFocused, RelativeSource={RelativeSource AncestorType=v:WorkspacePaneView}}"
-                                     Value="True">
-                            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Border.Style>
-        <Grid ClipToBounds="True">
+        <!-- 콘텐츠: 활성 탭에 따라 터미널(공유) 또는 파일 에디터(탭당 1개) 표시.
+             ClipToBounds: 분할 애니메이션 중 좌상단 고정된 스냅샷이 패널 밖으로 넘치지 않게 잘라낸다. -->
+        <Grid Grid.Row="3" ClipToBounds="True">
             <ContentControl x:Name="TerminalHostContainer"
                             AllowDrop="True"
                             DragOver="TerminalHostContainer_DragOver"
@@ -541,7 +479,7 @@
                 </StackPanel>
             </Grid>
         </Grid>
-        </Border>
       </Grid>
+      </Border>
     </Border>
 </UserControl>

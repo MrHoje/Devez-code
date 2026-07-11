@@ -22,6 +22,10 @@ public partial class AgentUpdateWindow : Window
     /// <summary>업데이트 완료 후 창을 자동으로 닫을지. 시작 시퀀스=true(잠깐 보여주고 진입), 설정 모달=false(사용자가 닫음).</summary>
     public bool AutoCloseOnComplete { get; set; }
 
+    /// <summary>업데이트 결과 Task. '건너뛰고 시작'으로 창을 닫아도 계속 실행되므로,
+    /// App 이 메인 창을 띄운 뒤 이 Task 를 await 해 성공/실패 팝업을 띄운다.</summary>
+    public Task<IReadOnlyList<AgentUpdateResult>>? UpdateTask { get; private set; }
+
     private bool _closed, _started, _buttonShown;
 
     // '곧 시작됩니다' 점 애니메이션(1→2→3→4→1…).
@@ -42,6 +46,7 @@ public partial class AgentUpdateWindow : Window
         _started = true;
 
         var updateTask = AgentUpdateService.UpdateEnabledAgentsAsync(Report);
+        UpdateTask = updateTask;
 
         // 지연(테스트 2s / 최종 10s) 후에도 안 끝났으면 '건너뛰고 시작' 노출.
         _ = Task.Delay(TimeSpan.FromSeconds(SkipRevealSeconds)).ContinueWith(_ =>
