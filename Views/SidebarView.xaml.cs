@@ -1001,6 +1001,7 @@ public partial class SidebarView : UserControl
     private string? _projectGridSourceFolderId;
     private int _projectGridOriginColumn = -1;
     private int _projectGridPreviewColumn = -1;
+    private bool _endingDrag;
     private bool HasActiveDrag =>
         _rootDrag != null || _projectDrag != null || _tabDrag != null || _fileDrag != null;
 
@@ -1117,49 +1118,60 @@ public partial class SidebarView : UserControl
 
     private async Task EndDragAsync(bool commit)
     {
-        var rootDrag = _rootDrag;
-        var projectDrag = _projectDrag;
-        var tabDrag = _tabDrag;
-        var fileDrag = _fileDrag;
-        var draggedProject = _draggedProject;
-        var dropFolder = _projectFolderDropTarget;
-        bool applyDeferredSearch = _sidebarSearchDeferredForDrag;
-        _sidebarSearchDeferredForDrag = false;
-        _rootDrag = null;
-        _projectDrag = null;
-        _tabDrag = null;
-        _fileDrag = null;
-        _pendingFolder = null;
-        _pendingProject = null;
-        _pendingTab = null;
-        _pendingFile = null;
-        _draggedProject = null;
-        ClearProjectFolderDropPreview();
-        if (Mouse.Captured == this) ReleaseMouseCapture();
-
-        bool droppedOnFolderHeader = commit && draggedProject != null && dropFolder != null;
-        bool moveIntoFolder = droppedOnFolderHeader && draggedProject!.FolderId != dropFolder!.Id;
-        if (rootDrag != null)
-            await rootDrag.FinishAsync(commit && !droppedOnFolderHeader);
+        if (_endingDrag) return;
+        _endingDrag = true;
         try
         {
-            if (projectDrag != null)
-                await projectDrag.FinishAsync(commit && !droppedOnFolderHeader);
-            if (moveIntoFolder && MoveProjectIntoFolder(draggedProject!, dropFolder!))
-                ProjectsReordered?.Invoke();
-            if (projectDrag != null && applyDeferredSearch)
+            var rootDrag = _rootDrag;
+            var projectDrag = _projectDrag;
+            var tabDrag = _tabDrag;
+            var fileDrag = _fileDrag;
+            var draggedProject = _draggedProject;
+            var dropFolder = draggedProject == null
+                ? null
+                : FindProjectFolderDropTarget(Mouse.GetPosition(this), draggedProject).Folder;
+            bool applyDeferredSearch = _sidebarSearchDeferredForDrag;
+            _sidebarSearchDeferredForDrag = false;
+            _rootDrag = null;
+            _projectDrag = null;
+            _tabDrag = null;
+            _fileDrag = null;
+            _pendingFolder = null;
+            _pendingProject = null;
+            _pendingTab = null;
+            _pendingFile = null;
+            _draggedProject = null;
+            ClearProjectFolderDropPreview();
+            if (Mouse.Captured == this) ReleaseMouseCapture();
+
+            bool droppedOnFolder = commit && draggedProject != null && dropFolder != null;
+            bool moveIntoFolder = droppedOnFolder && draggedProject!.FolderId != dropFolder!.Id;
+            if (rootDrag != null)
+                await rootDrag.FinishAsync(commit && !droppedOnFolder);
+            try
             {
-                ApplySidebarSearch();
-                applyDeferredSearch = false;
+                if (projectDrag != null)
+                    await projectDrag.FinishAsync(commit && !droppedOnFolder);
+                if (moveIntoFolder && MoveProjectIntoFolder(draggedProject!, dropFolder!))
+                    ProjectsReordered?.Invoke();
+                if (projectDrag != null && applyDeferredSearch)
+                {
+                    ApplySidebarSearch();
+                    applyDeferredSearch = false;
+                }
             }
+            finally
+            {
+                FinishProjectGridHeightPreview();
+            }
+            if (tabDrag != null) await tabDrag.FinishAsync(commit);
+            if (fileDrag != null) await fileDrag.FinishAsync(commit);
+            if (applyDeferredSearch) ApplySidebarSearch();
         }
         finally
         {
-            FinishProjectGridHeightPreview();
+            _endingDrag = false;
         }
-        if (tabDrag != null) await tabDrag.FinishAsync(commit);
-        if (fileDrag != null) await fileDrag.FinishAsync(commit);
-        if (applyDeferredSearch) ApplySidebarSearch();
     }
 
     /// <summary>프로젝트를 대상 폴더의 마지막 프로젝트로 옮긴다.</summary>
@@ -1200,21 +1212,37 @@ public partial class SidebarView : UserControl
     private void UpdateProjectFolderDropPreview(Point point)
     {
         ClearProjectFolderDropPreview();
-        if (_draggedProject == null) return;
+        var draggedProject = _draggedProject;
+        if (draggedProject == null) return;
 
+        var target = FindProjectFolderDropTarget(point, draggedProject);
+        if (target.Folder == null) return;
+        _projectFolderDropTarget = target.Folder;
+        if (draggedProject.FolderId == target.Folder.Id) return;
+
+        _projectFolderDropBorder = target.PreviewBorder;
+        _projectFolderDropBorder?.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
+    }
+
+    /// <summary>프로젝트 드롭 대상 폴더를 현재 포인터에서 직접 판정한다. 같은 폴더 내부 카드는
+    /// 기존 재정렬을 유지하고, 다른 폴더는 헤더뿐 아니라 폴더 전체 영역에서 받아들인다.</summary>
+    private (ProjectFolderItem? Folder, Border? PreviewBorder) FindProjectFolderDropTarget(
+        Point point,
+        ProjectItem draggedProject)
+    {
         for (DependencyObject? current = InputHitTest(point) as DependencyObject;
              current != null && !ReferenceEquals(current, this);
              current = VisualTreeHelper.GetParent(current))
         {
-            if (current is not Border { Name: "FolderHeader", DataContext: ProjectFolderItem folder } header)
+            if (current is not Border { DataContext: ProjectFolderItem folder } border)
                 continue;
-            // 같은 폴더 헤더도 드롭 영역으로 기록한다. 커밋 시 내부 재정렬을 취소해
-            // 헤더에 되놓았을 뿐인데 프로젝트 순서가 맨 앞/뒤로 바뀌는 일을 막는다.
-            _projectFolderDropTarget = folder;
-            if (_draggedProject.FolderId == folder.Id) return;
 
-            var previewBorder = header;
-            for (DependencyObject? parent = VisualTreeHelper.GetParent(header);
+            if (border.Name == "FolderRoot" && draggedProject.FolderId != folder.Id)
+                return (folder, border);
+            if (border.Name != "FolderHeader") continue;
+
+            var previewBorder = border;
+            for (DependencyObject? parent = VisualTreeHelper.GetParent(border);
                  parent != null && !ReferenceEquals(parent, this);
                  parent = VisualTreeHelper.GetParent(parent))
             {
@@ -1224,11 +1252,9 @@ public partial class SidebarView : UserControl
                     break;
                 }
             }
-
-            _projectFolderDropBorder = previewBorder;
-            previewBorder.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
-            return;
+            return (folder, previewBorder);
         }
+        return (null, null);
     }
 
     private void ClearProjectFolderDropPreview()
