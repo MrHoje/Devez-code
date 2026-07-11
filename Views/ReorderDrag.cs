@@ -14,6 +14,7 @@ namespace DevezCode.Views;
 internal sealed class ReorderDrag<T> where T : class
 {
     private const double AnimMs = 160;
+    private const double LiveReversalHysteresis = 6;
 
     // Left/Top/Width/Height: 그룹 전체 사각형. Primary*: 실제 대표 행의 드롭 사각형.
     private sealed record Slot(
@@ -54,6 +55,10 @@ internal sealed class ReorderDrag<T> where T : class
     private Slot? _dropIntoTarget;         // 중앙 50%: 자식 드롭 프리뷰/커밋 대상.
     private Slot? _reorderPreviewTarget;
     private bool _reorderPreviewAfter;
+    private bool _liveLayoutOrderMoved;
+    private double? _liveLastDraggedCenter;
+    private int _liveTransitionDirection;
+    private double _liveTransitionCenter;
     private bool _finished;
     private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
     private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
@@ -318,6 +323,17 @@ internal sealed class ReorderDrag<T> where T : class
 
         var pointer = e.GetPosition(_coordHost);
         if (_hitTestXOverride is double hitTestX) pointer.X = hitTestX;
+
+        // 2열 전체폭 폴더는 컬렉션 자체를 라이브 재배치하므로, 밀려나는 대상 카드의 중앙은
+        // 폴더 높이/FLIP 애니메이션에 따라 계속 움직인다. 고정 X 판정을 쓰는 폴더 경로에서는
+        // 숨겨진 source가 현재 차지하는 자리의 중앙을 기준으로 인접한 한 칸만 넘긴다.
+        if (_hitTestSlots && _suppressDisplacement && _reorderPreviewChanged != null
+            && _hitTestXOverride != null)
+        {
+            UpdateLiveLayoutTarget(pointer);
+            return;
+        }
+
         if (TryGetDropZone(pointer, out var hovered, out var zone))
         {
             if (zone == DropZone.Into)
@@ -406,6 +422,91 @@ internal sealed class ReorderDrag<T> where T : class
         _needsReapply = false;
         _targetIndex = newTarget;
         ApplyDisplacement();
+    }
+
+    private void UpdateLiveLayoutTarget(Point pointer)
+    {
+        ClearDropIntoTarget();
+        var cursor = _horizontal ? pointer.X : pointer.Y;
+        var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
+        var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
+        var sourceBounds = CurrentPrimaryBounds(_slots[_sourceIndex]);
+        var currentAreaCenter = _horizontal
+            ? sourceBounds.Left + sourceBounds.Width / 2
+            : sourceBounds.Top + sourceBounds.Height / 2;
+        var capturedSourceBounds = CapturedPrimaryBounds(_slots[_sourceIndex]);
+        var previousCenter = _liveLastDraggedCenter ?? (_horizontal
+            ? capturedSourceBounds.Left + capturedSourceBounds.Width / 2
+            : capturedSourceBounds.Top + capturedSourceBounds.Height / 2);
+        _liveLastDraggedCenter = draggedCenter;
+        int movementDirection = draggedCenter > previousCenter + 0.25
+            ? 1
+            : draggedCenter < previousCenter - 0.25 ? -1 : 0;
+
+        int newTarget;
+        double transitionCenter = currentAreaCenter;
+        if (!_liveLayoutOrderMoved && _targetIndex == _sourceIndex)
+        {
+            // 최초 한 칸은 기존의 '이웃 절반 통과' 기준을 유지한다. 시작 슬롯 중앙만으로
+            // 판정하면 최소 드래그 거리를 넘는 즉시 첫 이웃이 밀리는 문제가 생긴다.
+            int initialTarget = ComputeTargetIndex(draggedCenter);
+            newTarget = initialTarget == _sourceIndex
+                ? _sourceIndex
+                : _sourceIndex + Math.Sign(initialTarget - _sourceIndex);
+            if (newTarget != _sourceIndex)
+            {
+                movementDirection = Math.Sign(newTarget - _sourceIndex);
+                transitionCenter = draggedCenter;
+            }
+        }
+        else
+        {
+            newTarget = _targetIndex;
+            bool reversing = _liveTransitionDirection == -movementDirection;
+            transitionCenter = reversing ? _liveTransitionCenter : currentAreaCenter;
+            double threshold = transitionCenter
+                + (reversing ? movementDirection * LiveReversalHysteresis : 0);
+            if (movementDirection > 0 && draggedCenter > threshold
+                && newTarget < _slots.Count - 1)
+                newTarget++;
+            else if (movementDirection < 0 && draggedCenter < threshold && newTarget > 0)
+                newTarget--;
+        }
+
+        if (!_needsReapply && newTarget == _targetIndex)
+            return;
+
+        _needsReapply = false;
+        int transitionDirection = Math.Sign(newTarget - _targetIndex);
+        _targetIndex = newTarget;
+        if (newTarget != _sourceIndex)
+            _liveLayoutOrderMoved = true;
+        _liveTransitionDirection = transitionDirection;
+        _liveTransitionCenter = transitionCenter;
+        SetReorderPreviewForTargetIndex(newTarget);
+    }
+
+    private void SetReorderPreviewForTargetIndex(int targetIndex)
+    {
+        if (targetIndex == _sourceIndex)
+        {
+            ClearReorderPreview();
+            return;
+        }
+
+        var otherSlots = _slots
+            .Where(slot => !ReferenceEquals(slot, _slots[_sourceIndex]))
+            .ToList();
+        if (otherSlots.Count == 0)
+        {
+            ClearReorderPreview();
+            return;
+        }
+
+        if (targetIndex <= 0)
+            SetReorderPreview(otherSlots[0], false);
+        else
+            SetReorderPreview(otherSlots[Math.Min(targetIndex - 1, otherSlots.Count - 1)], true);
     }
 
     private enum DropZone { Before, Into, After }
