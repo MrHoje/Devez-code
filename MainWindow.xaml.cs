@@ -3753,14 +3753,17 @@ public partial class MainWindow : Window
     {
         var project = ProjectFor(session);
         if (project == null) return;
-        var subtree = project.GetSessionSubtree(session).ToList();
-        if (!EnsureSessionSubtreeUnlocked(subtree, "세션 삭제")) return;
-        string children = subtree.Count > 1 ? $"\n하위 세션 {subtree.Count - 1}개도 함께 영구 삭제됩니다." : "";
+        if (!EnsureSessionSubtreeUnlocked(new[] { session }, "세션 삭제")) return;
+        var children = project.GetSessionSubtree(session).Skip(1).ToList();
+        string childNotice = children.Count > 0
+            ? $"\n하위 세션 {children.Count}개는 삭제하지 않고 최상위로 이동합니다."
+            : "";
         if (!ConfirmDialog.Show("세션 삭제",
-                $"'{session.Name}' 세션을 영구 삭제할까요?{children}\n대화 기록(.jsonl)도 디스크에서 함께 삭제되며 복구할 수 없습니다.",
+                $"'{session.Name}' 세션을 영구 삭제할까요?{childNotice}\n이 세션의 대화 기록(.jsonl)도 디스크에서 함께 삭제되며 복구할 수 없습니다.",
                 okLabel: "삭제", danger: true))
             return;
-        RemoveSessionSubtree(project, subtree, purge: true);
+        foreach (var child in children) child.ParentSessionId = null;
+        RemoveSessionSubtree(project, new[] { session }, purge: true);
     }
 
     /// <summary>세션 이름 변경 → 동일 SessionId 의 완료 기록 카드 이름도 동기화하고 저장.</summary>
@@ -3778,14 +3781,17 @@ public partial class MainWindow : Window
     {
         var project = ProjectFor(session);
         if (project == null) return;
-        var subtree = project.GetSessionSubtree(session).ToList();
-        if (!EnsureSessionSubtreeUnlocked(subtree, "세션 추적 중단")) return;
-        string children = subtree.Count > 1 ? $"\n하위 세션 {subtree.Count - 1}개도 함께 목록에서 제거됩니다." : "";
+        if (!EnsureSessionSubtreeUnlocked(new[] { session }, "세션 추적 중단")) return;
+        var children = project.GetSessionSubtree(session).Skip(1).ToList();
+        string childNotice = children.Count > 0
+            ? $"\n하위 세션 {children.Count}개는 목록에 남기고 최상위로 이동합니다."
+            : "";
         if (!ConfirmDialog.Show("세션 추적 중단",
-                $"'{session.Name}' 세션을 목록에서 제거할까요?{children}\n대화 기록은 디스크에 그대로 보존됩니다.",
+                $"'{session.Name}' 세션을 목록에서 제거할까요?{childNotice}\n이 세션의 대화 기록은 디스크에 그대로 보존됩니다.",
                 okLabel: "중단"))
             return;
-        RemoveSessionSubtree(project, subtree, purge: false);
+        foreach (var child in children) child.ParentSessionId = null;
+        RemoveSessionSubtree(project, new[] { session }, purge: false);
     }
 
     private void HideSessionFromSidebar(SessionItem session)
@@ -3793,12 +3799,11 @@ public partial class MainWindow : Window
         if (session.Hidden) return;
         var project = ProjectFor(session);
         if (project == null) return;
-        var subtree = project.GetSessionSubtree(session).ToList();
-        var owners = subtree.ToDictionary(s => s, PaneFor);
+        var owner = PaneFor(session);
 
-        foreach (var hidden in subtree) hidden.Hidden = true;
-        foreach (var pane in _panes) pane.OnSessionsHidden(subtree);
-        foreach (var hidden in subtree) owners[hidden].ScheduleSessionHide(hidden);
+        session.Hidden = true;
+        foreach (var pane in _panes) pane.OnSessionsHidden(new[] { session });
+        owner.ScheduleSessionHide(session);
 
         RefreshCardGroups();
         WorkspaceStore.Save(_projects, _archivedProjects);
@@ -3813,7 +3818,7 @@ public partial class MainWindow : Window
         if (locked == null) return true;
         bool unlock = ConfirmDialog.AlertWithLink(
             $"{action} 불가",
-            $"'{locked.Name}' 하위 세션이 잠겨 있습니다.\n잠금을 해제한 후 다시 시도하세요.",
+            $"'{locked.Name}' 세션이 잠겨 있습니다.\n잠금을 해제한 후 다시 시도하세요.",
             linkLabel: "잠금 해제 후 계속");
         if (!unlock) return false;
         foreach (var item in subtree.Where(s => s.IsLocked)) item.IsLocked = false;

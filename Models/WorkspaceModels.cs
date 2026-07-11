@@ -42,8 +42,7 @@ public abstract class TabItemBase : NotifyBase
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 
     /// <summary>세션 탭 전용 직접 숨김 상태. true면 탭 스트립에서 숨기고 터미널/기록은 보존한다.
-    /// 최상위 세션은 사이드바 하단 숨김 목록으로, 자식 세션은 부모 아래 숨김 자식 후순위로 표시한다.
-    /// 조상 숨김까지 포함한 실제 표시 판정은 SessionItem.IsEffectivelyHidden을 사용한다.</summary>
+    /// 부모/자식의 숨김은 서로 전파하지 않는다. 트리 전체가 숨김일 때만 사이드바 하단으로 이동한다.</summary>
     private bool _hidden;
     public bool Hidden { get => _hidden; set => Set(ref _hidden, value); }
 }
@@ -111,11 +110,11 @@ public sealed class SessionItem : TabItemBase
         set => Set(ref _areSessionChildrenExpanded, value);
     }
 
-    /// <summary>자기 또는 조상 세션이 직접 숨김이면 true. 탭/프로세스 표시 판정용 런타임 파생 상태.</summary>
+    /// <summary>이 세션 자체가 숨김이면 true. 탭/프로세스 표시 판정용 런타임 파생 상태.</summary>
     private bool _isEffectivelyHidden;
     public bool IsEffectivelyHidden { get => _isEffectivelyHidden; private set => Set(ref _isEffectivelyHidden, value); }
 
-    /// <summary>최상위 루트가 숨김이면 true. 사이드바 하단 전역 숨김 목록 이동 판정용.</summary>
+    /// <summary>이 세션이 속한 트리 전체가 숨김이면 true. 사이드바 하단 숨김 목록 이동 판정용.</summary>
     private bool _isSidebarGloballyHidden;
     public bool IsSidebarGloballyHidden { get => _isSidebarGloballyHidden; private set => Set(ref _isSidebarGloballyHidden, value); }
 
@@ -573,8 +572,8 @@ public sealed class ProjectItem : NotifyBase
         => session.IsSearchVisible = _showAllSidebarSessions ||
             session.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>직접 숨긴 최상위 세션과 그 자식 트리를 모은 뷰. 자식 단독 숨김은 여기에 넣지 않고
-    /// 원래 부모 아래에서 표시 자식 뒤로 정렬한다.</summary>
+    /// <summary>구성원 전체가 숨겨진 최상위 세션 트리를 모은 뷰. 일부 자식이 보이면 트리 전체를
+    /// 원래 위치에 유지하고 숨긴 자식만 부모 아래에서 후순위로 표시한다.</summary>
     public ObservableCollection<SessionItem> HiddenSessions { get; } = new();
     /// <summary>숨김 세션이 하나라도 있는지 — 하단 그룹 세퍼레이터/표시 여부.</summary>
     public bool HasHiddenSessions => HiddenSessions.Count > 0;
@@ -686,14 +685,14 @@ public sealed class ProjectItem : NotifyBase
             RefreshSessionTree();
     }
 
-    /// <summary>부모 관계·직접 숨김 상태에서 깊이/유효 숨김/전역 숨김을 계산하고 표시 컬렉션을 갱신.</summary>
+    /// <summary>부모 관계·직접 숨김 상태에서 깊이와 트리 전체 숨김 여부를 계산하고 표시 컬렉션을 갱신.</summary>
     public void RefreshSessionTree()
     {
         var byId = Sessions.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var presentations = new List<(SessionItem Session, int Depth, bool HasParent, int ChildCount, bool TreeVisible, SessionItem Root)>();
         foreach (var session in Sessions)
         {
             int depth = 0;
-            bool effectivelyHidden = session.Hidden;
             bool treeVisible = true;
             bool hasParent = false;
             var root = session;
@@ -707,20 +706,27 @@ public sealed class ProjectItem : NotifyBase
                 hasParent = true;
                 depth++;
                 treeVisible &= parent.AreSessionChildrenExpanded;
-                effectivelyHidden |= parent.Hidden;
                 root = parent;
                 current = parent;
             }
 
             int childCount = Sessions.Count(child =>
                 StringComparer.Ordinal.Equals(child.ParentSessionId, session.Id));
-            session.ApplyTreePresentation(
-                depth,
-                hasParent,
-                childCount,
-                treeVisible,
-                effectivelyHidden,
-                root.Hidden);
+            presentations.Add((session, depth, hasParent, childCount, treeVisible, root));
+        }
+
+        var rootHasVisibleSession = presentations
+            .GroupBy(p => p.Root)
+            .ToDictionary(group => group.Key, group => group.Any(p => !p.Session.Hidden));
+        foreach (var p in presentations)
+        {
+            p.Session.ApplyTreePresentation(
+                p.Depth,
+                p.HasParent,
+                p.ChildCount,
+                p.TreeVisible,
+                p.Session.Hidden,
+                !rootHasVisibleSession[p.Root]);
         }
 
         SyncObservable(HiddenSessions, BuildHiddenTreeOrder());
@@ -990,21 +996,12 @@ public sealed class ProjectItem : NotifyBase
         return true;
     }
 
-    /// <summary>클릭한 숨김 세션과 숨긴 조상만 직접 숨김 해제. 새로 표시 가능해진 세션 반환.</summary>
+    /// <summary>클릭한 세션만 숨김 해제한다. 부모/자식 숨김 상태는 유지한다.</summary>
     public IReadOnlyList<SessionItem> UnhideSessionPath(SessionItem session)
     {
-        var before = Sessions.Where(s => s.IsEffectivelyHidden).ToHashSet();
-        var current = session;
-        var visited = new HashSet<string>(StringComparer.Ordinal);
-        while (visited.Add(current.Id))
-        {
-            current.Hidden = false;
-            var parent = SessionParentOf(current);
-            if (parent == null) break;
-            current = parent;
-        }
-        RefreshSessionTree();
-        return Sessions.Where(s => before.Contains(s) && !s.IsEffectivelyHidden).ToList();
+        if (!Sessions.Contains(session) || !session.Hidden) return Array.Empty<SessionItem>();
+        session.Hidden = false;
+        return new[] { session };
     }
 
     private bool IsDescendantOf(SessionItem candidate, SessionItem ancestor)
