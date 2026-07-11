@@ -306,10 +306,10 @@ internal sealed class ReorderDrag<T> where T : class
                 // 1열 루트 목록의 원본 자리나 카드 사이 여백에서는 명시적 hit 대상이 없다.
                 // 이때도 현재 드래그 카드 중심으로 재계산해야 직전 타깃이 남지 않는다.
                 ClearReorderPreview();
-                var cursor = _horizontal ? pointer.X : pointer.Y;
-                var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
-                var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
-                int gapTarget = ComputeTargetIndex(draggedCenter);
+                var gapCursor = _horizontal ? pointer.X : pointer.Y;
+                var gapGrab = _horizontal ? _grabOffsetX : _grabOffsetY;
+                var gapCenter = gapCursor - gapGrab + AxisSize(_slots[_sourceIndex]) / 2;
+                int gapTarget = ComputeTargetIndex(gapCenter);
                 if (_needsReapply || gapTarget != _targetIndex)
                 {
                     _needsReapply = false;
