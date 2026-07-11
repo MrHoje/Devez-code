@@ -59,10 +59,8 @@ internal sealed class ReorderDrag<T> where T : class
     private Slot? _dropIntoTarget;         // 중앙 50%: 자식 드롭 프리뷰/커밋 대상.
     private Slot? _reorderPreviewTarget;
     private bool _reorderPreviewAfter;
-    private bool _liveLayoutOrderMoved;
-    private double? _liveLastDraggedCenter;
-    private int _liveTransitionDirection;
-    private double _liveTransitionCenter;
+    private double? _lastPointerAxisPosition;
+    private int _lastTransitionDirection;
     private bool _finished;
     private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
     private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
@@ -329,13 +327,12 @@ internal sealed class ReorderDrag<T> where T : class
         if (_suppressed) return; // 반대 패널 위 → 이 리스트 프리뷰 억제(고스트만 이동).
         if (IsGrid)
         {
-            // 2열: 드래그 카드 중심의 X로 목표 컬럼을, Y로 그 컬럼 안의 삽입 위치를 정한다.
+            // 2열: 마우스 X로 목표 컬럼을, 마우스 Y로 그 컬럼 안의 삽입 위치를 정한다.
             // 좌/우 컬럼은 각각 독립된 세로 리스트로 시프트 애니메이션한다 — 같은 컬럼이면 그 안에서
             // 재정렬, 다른 컬럼으로 넘기면 원래 컬럼은 빈자리를 위로 메우고 목표 컬럼은 자리를 연다.
             var p = e.GetPosition(_coordHost);
-            var src = _slots[_sourceIndex];
-            double cx = p.X - _grabOffsetX + src.Width / 2;
-            double cy = p.Y - _grabOffsetY + src.Height / 2;
+            double cx = p.X;
+            double cy = p.Y;
             if (_useGridPlaceholder)
             {
                 UpdateGridPlaceholder(cx, cy);
@@ -352,19 +349,18 @@ internal sealed class ReorderDrag<T> where T : class
         var pointer = e.GetPosition(_coordHost);
         if (_hitTestXOverride is double hitTestX) pointer.X = hitTestX;
 
-        // 2열 전체폭 폴더는 컬렉션 자체를 라이브 재배치하므로, 밀려나는 대상 카드의 중앙은
-        // 폴더 높이/FLIP 애니메이션에 따라 계속 움직인다. 고정 X 판정을 쓰는 폴더 경로에서는
-        // 숨겨진 source가 현재 차지하는 자리의 중앙을 기준으로 인접한 한 칸만 넘긴다.
+        // 2열 전체폭 폴더는 컬렉션 자체를 라이브 재배치하므로, 고정 X를 유지하면서
+        // 마우스 Y가 다음 카드의 최종 레이아웃 중앙을 넘을 때 인접한 한 칸만 이동한다.
         if (_useLiveLayoutPlaceholder)
         {
-            UpdateLiveLayoutTarget(pointer);
+            UpdatePointerTarget(pointer, liveLayout: true);
             return;
         }
         // 1열 카드 목록은 이동 중인 대상의 RenderTransform이나 앞 카드가 비운 자리를
         // 다시 판정하지 않고, 진행 방향의 다음 실제 카드 중앙을 고정 기준으로 사용한다.
         if (_useFixedLayoutPlaceholder)
         {
-            UpdateFixedTarget(pointer);
+            UpdatePointerTarget(pointer, liveLayout: false);
             return;
         }
 
@@ -458,80 +454,18 @@ internal sealed class ReorderDrag<T> where T : class
         ApplyDisplacement();
     }
 
-    private void UpdateLiveLayoutTarget(Point pointer)
-    {
-        ClearDropIntoTarget();
-        var cursor = _horizontal ? pointer.X : pointer.Y;
-        var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
-        var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
-        var sourceBounds = CurrentPrimaryBounds(_slots[_sourceIndex]);
-        double currentAreaCenter = _horizontal
-            ? sourceBounds.Left + sourceBounds.Width / 2
-            : sourceBounds.Top + sourceBounds.Height / 2;
-        var capturedSourceBounds = CapturedPrimaryBounds(_slots[_sourceIndex]);
-        var previousCenter = _liveLastDraggedCenter ?? (_horizontal
-            ? capturedSourceBounds.Left + capturedSourceBounds.Width / 2
-            : capturedSourceBounds.Top + capturedSourceBounds.Height / 2);
-        _liveLastDraggedCenter = draggedCenter;
-        int movementDirection = draggedCenter > previousCenter + 0.25
-            ? 1
-            : draggedCenter < previousCenter - 0.25 ? -1 : 0;
-
-        int newTarget;
-        double transitionCenter = currentAreaCenter;
-        if (!_liveLayoutOrderMoved && _targetIndex == _sourceIndex)
-        {
-            // 최초 한 칸은 기존의 '이웃 절반 통과' 기준을 유지한다. 시작 슬롯 중앙만으로
-            // 판정하면 최소 드래그 거리를 넘는 즉시 첫 이웃이 밀리는 문제가 생긴다.
-            int initialTarget = ComputeTargetIndex(draggedCenter);
-            newTarget = initialTarget == _sourceIndex
-                ? _sourceIndex
-                : _sourceIndex + Math.Sign(initialTarget - _sourceIndex);
-            if (newTarget != _sourceIndex)
-            {
-                movementDirection = Math.Sign(newTarget - _sourceIndex);
-                transitionCenter = draggedCenter;
-            }
-        }
-        else
-        {
-            newTarget = _targetIndex;
-            bool reversing = _liveTransitionDirection == -movementDirection;
-            transitionCenter = reversing ? _liveTransitionCenter : currentAreaCenter;
-            double threshold = transitionCenter
-                + (reversing ? movementDirection * LiveReversalHysteresis : 0);
-            if (movementDirection > 0 && draggedCenter > threshold
-                && newTarget < _slots.Count - 1)
-                newTarget++;
-            else if (movementDirection < 0 && draggedCenter < threshold && newTarget > 0)
-                newTarget--;
-        }
-
-        if (!_needsReapply && newTarget == _targetIndex)
-            return;
-
-        _needsReapply = false;
-        int transitionDirection = Math.Sign(newTarget - _targetIndex);
-        _targetIndex = newTarget;
-        if (newTarget != _sourceIndex)
-            _liveLayoutOrderMoved = true;
-        _liveTransitionDirection = transitionDirection;
-        _liveTransitionCenter = transitionCenter;
-        SetReorderPreviewForTargetIndex(newTarget);
-    }
-
-    private void UpdateFixedTarget(Point pointer)
+    private void UpdatePointerTarget(Point pointer, bool liveLayout)
     {
         ClearDropIntoTarget();
         var source = _slots[_sourceIndex];
-        var cursor = _horizontal ? pointer.X : pointer.Y;
-        var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
-        double draggedCenter = cursor - grabOffset + AxisSize(source) / 2;
-        double previousCenter = _liveLastDraggedCenter ?? (AxisPos(source) + AxisSize(source) / 2);
-        _liveLastDraggedCenter = draggedCenter;
-        int movementDirection = draggedCenter > previousCenter + 0.25
+        double pointerPosition = _horizontal ? pointer.X : pointer.Y;
+        double initialPointerPosition = AxisPos(source)
+            + (_horizontal ? _grabOffsetX : _grabOffsetY);
+        double previousPosition = _lastPointerAxisPosition ?? initialPointerPosition;
+        _lastPointerAxisPosition = pointerPosition;
+        int movementDirection = pointerPosition > previousPosition + 0.25
             ? 1
-            : draggedCenter < previousCenter - 0.25 ? -1 : 0;
+            : pointerPosition < previousPosition - 0.25 ? -1 : 0;
         var others = _slots
             .Where(slot => !ReferenceEquals(slot, source))
             .ToList();
@@ -539,27 +473,38 @@ internal sealed class ReorderDrag<T> where T : class
         int newTarget = _targetIndex;
         if (movementDirection > 0 && newTarget < others.Count)
         {
-            double threshold = AxisPos(others[newTarget]) + AxisSize(others[newTarget]) / 2;
-            if (_liveTransitionDirection < 0)
+            var bounds = liveLayout
+                ? LogicalPrimaryBounds(others[newTarget])
+                : CapturedPrimaryBounds(others[newTarget]);
+            double threshold = _horizontal
+                ? bounds.Left + bounds.Width / 2
+                : bounds.Top + bounds.Height / 2;
+            if (_lastTransitionDirection < 0)
                 threshold += LiveReversalHysteresis;
-            if (draggedCenter >= threshold)
+            if (pointerPosition >= threshold)
                 newTarget++;
         }
         else if (movementDirection < 0 && newTarget > 0)
         {
-            double threshold = AxisPos(others[newTarget - 1]) + AxisSize(others[newTarget - 1]) / 2;
-            if (_liveTransitionDirection > 0)
+            var bounds = liveLayout
+                ? LogicalPrimaryBounds(others[newTarget - 1])
+                : CapturedPrimaryBounds(others[newTarget - 1]);
+            double threshold = _horizontal
+                ? bounds.Left + bounds.Width / 2
+                : bounds.Top + bounds.Height / 2;
+            if (_lastTransitionDirection > 0)
                 threshold -= LiveReversalHysteresis;
-            if (draggedCenter <= threshold)
+            if (pointerPosition <= threshold)
                 newTarget--;
         }
 
         if (!_needsReapply && newTarget == _targetIndex) return;
         _needsReapply = false;
-        _liveTransitionDirection = Math.Sign(newTarget - _targetIndex);
+        _lastTransitionDirection = Math.Sign(newTarget - _targetIndex);
         _targetIndex = newTarget;
         SetReorderPreviewForTargetIndex(newTarget);
-        ApplyDisplacement();
+        if (!liveLayout)
+            ApplyDisplacement();
     }
 
     private void SetReorderPreviewForTargetIndex(int targetIndex)
@@ -756,9 +701,14 @@ internal sealed class ReorderDrag<T> where T : class
 
     private Rect HitTestPrimaryBounds(Slot slot)
     {
-        var bounds = CurrentPrimaryBounds(slot);
-        if (!_useLogicalHitTestBounds) return bounds;
+        return _useLogicalHitTestBounds
+            ? LogicalPrimaryBounds(slot)
+            : CurrentPrimaryBounds(slot);
+    }
 
+    private Rect LogicalPrimaryBounds(Slot slot)
+    {
+        var bounds = CurrentPrimaryBounds(slot);
         var transform = slot.Element.RenderTransform switch
         {
             TranslateTransform translate => translate,
@@ -830,18 +780,18 @@ internal sealed class ReorderDrag<T> where T : class
         {
             _targetColumn = newColumn;
             _targetIndex = ComputeCapturedColumnTarget(newColumn, cy);
-            _liveLastDraggedCenter = cy;
-            _liveTransitionDirection = 0;
+            _lastPointerAxisPosition = cy;
+            _lastTransitionDirection = 0;
             ApplyGridDisplacement();
             return;
         }
 
         var source = _slots[_sourceIndex];
-        double previousCenter = _liveLastDraggedCenter ?? (source.Top + source.Height / 2);
-        _liveLastDraggedCenter = cy;
-        int movementDirection = cy > previousCenter + 0.25
+        double previousPosition = _lastPointerAxisPosition ?? (source.Top + _grabOffsetY);
+        _lastPointerAxisPosition = cy;
+        int movementDirection = cy > previousPosition + 0.25
             ? 1
-            : cy < previousCenter - 0.25 ? -1 : 0;
+            : cy < previousPosition - 0.25 ? -1 : 0;
 
         var targetSlots = _slots
             .Where(slot => !ReferenceEquals(slot, source) && ColumnOf(slot) == newColumn)
@@ -851,7 +801,7 @@ internal sealed class ReorderDrag<T> where T : class
         if (movementDirection > 0 && newTarget < targetSlots.Count)
         {
             double threshold = targetSlots[newTarget].Top + targetSlots[newTarget].Height / 2;
-            if (_liveTransitionDirection < 0)
+            if (_lastTransitionDirection < 0)
                 threshold += LiveReversalHysteresis;
             if (cy >= threshold)
                 newTarget++;
@@ -859,14 +809,14 @@ internal sealed class ReorderDrag<T> where T : class
         else if (movementDirection < 0 && newTarget > 0)
         {
             double threshold = targetSlots[newTarget - 1].Top + targetSlots[newTarget - 1].Height / 2;
-            if (_liveTransitionDirection > 0)
+            if (_lastTransitionDirection > 0)
                 threshold -= LiveReversalHysteresis;
             if (cy <= threshold)
                 newTarget--;
         }
 
         if (newTarget == _targetIndex) return;
-        _liveTransitionDirection = Math.Sign(newTarget - _targetIndex);
+        _lastTransitionDirection = Math.Sign(newTarget - _targetIndex);
         _targetIndex = newTarget;
         ApplyGridDisplacement();
     }
@@ -883,8 +833,8 @@ internal sealed class ReorderDrag<T> where T : class
     }
 
 
-    /// <summary>그리드: 목표 컬럼 안에서 드래그 카드 중심 Y 가 들어갈 삽입 위치(0-based, source 제외).
-    /// = 같은 컬럼의 (source 제외) 카드 중 중심 Y 가 위에 있는 개수.</summary>
+    /// <summary>그리드: 목표 컬럼 안에서 마우스 Y가 들어갈 삽입 위치(0-based, source 제외).
+    /// = 같은 컬럼의 (source 제외) 카드 중 중앙이 마우스보다 위에 있는 개수.</summary>
     private int ComputeColumnTarget(int column, double cy)
     {
         int target = 0;
