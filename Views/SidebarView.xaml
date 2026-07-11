@@ -180,7 +180,8 @@
                             </MenuItem.Icon>
                         </MenuItem>
                         <Separator/>
-                        <MenuItem Header="세션 숨기기" Tag="{Binding}" Click="SessionHide_Click">
+                        <MenuItem Header="세션 숨기기" Tag="{Binding}" Click="SessionHide_Click"
+                                  Visibility="{Binding Hidden, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconEyeOff}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
