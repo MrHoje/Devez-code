@@ -77,8 +77,18 @@ internal sealed class ReorderDrag<T> where T : class
         _onDropInto = onDropInto; _commitUnchanged = commitUnchanged;
         _hitTestSlots = hitTestSlots; _suppressDisplacement = suppressDisplacement;
         _reorderPreviewChanged = reorderPreviewChanged;
-        _targetIndex = sourceIndex;
-        _targetColumn = -1; // 그리드: 첫 Update 가 항상 displacement 를 적용하도록 미지정으로 시작.
+        if (IsGrid)
+        {
+            // 드래그 임계값을 넘긴 직후 추가 MouseMove 없이 놓여도 원래 컬럼/위치가 유지되어야 한다.
+            // -1로 시작하면 FinishAsync가 이를 0번 컬럼으로 정규화해 우측 카드가 좌측으로 이동할 수 있다.
+            _targetColumn = ColumnOf(_slots[_sourceIndex]);
+            _targetIndex = WithinColumnIndex(_sourceIndex, _targetColumn);
+        }
+        else
+        {
+            _targetIndex = sourceIndex;
+            _targetColumn = -1;
+        }
     }
 
     public T Source => _source;
@@ -280,6 +290,27 @@ internal sealed class ReorderDrag<T> where T : class
                     _needsReapply = false;
                     _targetIndex = outerIndex;
                     ApplyDisplacement();
+                }
+            }
+            else if (!_suppressDisplacement)
+            {
+                // 1열 루트 목록은 원본 행을 투명하게만 만들므로 그 자리로 돌아왔을 때도
+                // 명시적으로 원래 인덱스를 복원해야 한다. 그렇지 않으면 마지막 타깃이 남는다.
+                var source = _slots[_sourceIndex];
+                var sourceBounds = new Rect(
+                    source.PrimaryLeft,
+                    source.PrimaryTop,
+                    source.PrimaryWidth,
+                    source.PrimaryHeight);
+                if (sourceBounds.Contains(pointer))
+                {
+                    ClearReorderPreview();
+                    if (_needsReapply || _targetIndex != _sourceIndex)
+                    {
+                        _needsReapply = false;
+                        _targetIndex = _sourceIndex;
+                        ApplyDisplacement();
+                    }
                 }
             }
             return;

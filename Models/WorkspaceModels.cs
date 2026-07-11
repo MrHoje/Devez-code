@@ -803,16 +803,26 @@ public sealed class ProjectItem : NotifyBase
         bool relationChanged = child.ParentSessionId != parent.Id;
         child.ParentSessionId = parent.Id;
 
-        int insertAt = order.FindLastIndex(s => ReferenceEquals(s, parent) || IsDescendantOf(s, parent)) + 1;
+        int insertAt = !child.Hidden
+            ? order.FindIndex(s =>
+                StringComparer.Ordinal.Equals(s.ParentSessionId, parent.Id) && s.Hidden)
+            : -1;
+        if (insertAt < 0)
+            insertAt = order.FindLastIndex(s => ReferenceEquals(s, parent) || IsDescendantOf(s, parent)) + 1;
         if (insertAt < 0) insertAt = order.Count;
         order.InsertRange(Math.Clamp(insertAt, 0, order.Count), subtree);
         ApplySessionOrder(FlattenSessionOrder(order));
+        MakeSessionSubtreeContiguous(parent);
         RefreshSessionTree();
         return relationChanged || order.Count > 0;
     }
 
     /// <summary>같은 부모를 가진 자식 세션의 순서만 바꾸고 부모 관계는 유지한다.</summary>
-    public bool MoveSessionWithinSiblings(SessionItem source, SessionItem target, bool after)
+    public bool MoveSessionWithinSiblings(
+        SessionItem source,
+        SessionItem target,
+        bool after,
+        IReadOnlyCollection<SessionItem>? visibleSiblings = null)
     {
         string? parentId = source.ParentSessionId;
         if (string.IsNullOrEmpty(parentId)
@@ -821,8 +831,12 @@ public sealed class ProjectItem : NotifyBase
             || !StringComparer.Ordinal.Equals(parentId, target.ParentSessionId))
             return false;
 
+        var visibleSet = visibleSiblings?.ToHashSet();
+        bool IsMovable(SessionItem session) =>
+            StringComparer.Ordinal.Equals(session.ParentSessionId, parentId)
+            && (visibleSet == null || visibleSet.Contains(session));
         var siblings = Sessions
-            .Where(session => StringComparer.Ordinal.Equals(session.ParentSessionId, parentId))
+            .Where(IsMovable)
             .ToList();
         int oldIndex = siblings.IndexOf(source);
         if (oldIndex < 0) return false;
@@ -838,7 +852,7 @@ public sealed class ProjectItem : NotifyBase
         var desiredSessions = Sessions.ToList();
         int siblingIndex = 0;
         for (int i = 0; i < desiredSessions.Count; i++)
-            if (StringComparer.Ordinal.Equals(desiredSessions[i].ParentSessionId, parentId))
+            if (IsMovable(desiredSessions[i]))
                 desiredSessions[i] = siblings[siblingIndex++];
 
         ApplySessionOrder(desiredSessions);
@@ -847,7 +861,10 @@ public sealed class ProjectItem : NotifyBase
     }
 
     /// <summary>최상위 세션은 자식 서브트리를 한 블록으로 유지한 채 다른 최상위 행 앞/뒤로 이동한다.</summary>
-    public bool MoveSessionSubtreeRelativeToTab(SessionItem source, TabItemBase target, bool after)
+    public bool MoveSessionSubtreeRelativeToTab(
+        SessionItem source,
+        TabItemBase target,
+        bool after)
     {
         if (!Sessions.Contains(source)
             || !Tabs.Contains(target)
@@ -858,37 +875,111 @@ public sealed class ProjectItem : NotifyBase
         var subtree = GetSessionSubtree(source).ToList();
         if (target is SessionItem targetSession && subtree.Contains(targetSession)) return false;
 
-        var desiredTabs = Tabs
-            .Where(tab => tab is not SessionItem session || !subtree.Contains(session))
-            .ToList();
-        int targetIndex = desiredTabs.IndexOf(target);
-        if (targetIndex < 0) return false;
-
-        int insertAt = targetIndex;
-        if (after)
-        {
-            if (target is SessionItem rootTarget)
-            {
-                var targetSubtree = GetSessionSubtree(rootTarget).ToHashSet();
-                insertAt = desiredTabs.FindLastIndex(
-                    tab => tab is SessionItem session && targetSubtree.Contains(session)) + 1;
-            }
-            else
-            {
-                insertAt++;
-            }
-        }
-
         bool relationChanged = !string.IsNullOrEmpty(source.ParentSessionId);
         source.ParentSessionId = null;
-        desiredTabs.InsertRange(
-            Math.Clamp(insertAt, 0, desiredTabs.Count),
-            subtree.Cast<TabItemBase>());
-        if (Tabs.SequenceEqual(desiredTabs)) return relationChanged;
+        return MoveTopLevelTabBlock(source, target, after, relationChanged);
+    }
 
-        SyncObservable(Tabs, desiredTabs);
-        RefreshSessionTree();
-        return true;
+    /// <summary>문서/브라우저 행을 사이드바의 최상위 항목 앞뒤로 옮긴다.
+    /// 대상이 부모 세션이면 자식 서브트리 전체를 한 블록으로 보고 그 바깥에 배치한다.</summary>
+    public bool MoveStandaloneTabRelativeToTab(
+        TabItemBase source,
+        TabItemBase target,
+        bool after)
+    {
+        if (source is SessionItem
+            || !Tabs.Contains(source)
+            || !Tabs.Contains(target)
+            || ReferenceEquals(source, target))
+            return false;
+
+        return MoveTopLevelTabBlock(source, target, after, treeChanged: false);
+    }
+
+    /// <summary>사이드바 표시 순서와 같은 최상위 블록 목록을 만든다.</summary>
+    private List<List<TabItemBase>> BuildTopLevelTabBlocks()
+    {
+        var blocks = new List<List<TabItemBase>>();
+        var emitted = new HashSet<TabItemBase>();
+        foreach (var tab in Tabs)
+        {
+            if (emitted.Contains(tab)) continue;
+            if (tab is SessionItem session)
+            {
+                if (SessionParentOf(session) != null) continue;
+                var block = GetSessionSubtree(session)
+                    .Where(item => Tabs.Contains(item))
+                    .Cast<TabItemBase>()
+                    .ToList();
+                foreach (var item in block) emitted.Add(item);
+                blocks.Add(block);
+                continue;
+            }
+
+            emitted.Add(tab);
+            blocks.Add(new List<TabItemBase> { tab });
+        }
+
+        // 손상된 부모 참조 등으로 루트에서 도달하지 못한 항목도 유실하지 않는다.
+        foreach (var tab in Tabs)
+            if (emitted.Add(tab)) blocks.Add(new List<TabItemBase> { tab });
+        return blocks;
+    }
+
+    private bool MoveTopLevelTabBlock(
+        TabItemBase source,
+        TabItemBase target,
+        bool after,
+        bool treeChanged)
+    {
+        var blocks = BuildTopLevelTabBlocks();
+        var sourceBlock = blocks.FirstOrDefault(block => block.Contains(source));
+        var targetBlock = blocks.FirstOrDefault(block => block.Contains(target));
+        if (sourceBlock == null || targetBlock == null || ReferenceEquals(sourceBlock, targetBlock))
+        {
+            if (treeChanged) RefreshSessionTree();
+            return treeChanged;
+        }
+
+        // 실제로 관계된 소스/대상 두 블록만 연속 배치한다. 나머지 탭의 상대 순서는 유지해
+        // 분할 반대 패널을 불필요하게 재정렬하지 않으면서, 부모와 자식 사이에 문서가 끼는 것도 막는다.
+        var affected = sourceBlock.Concat(targetBlock).ToHashSet();
+        int targetAnchor = targetBlock
+            .Select(item => Tabs.IndexOf(item))
+            .Where(index => index >= 0)
+            .DefaultIfEmpty(Tabs.Count)
+            .Min();
+        int insertAt = Tabs.Take(targetAnchor).Count(tab => !affected.Contains(tab));
+        var desiredTabs = Tabs.Where(tab => !affected.Contains(tab)).ToList();
+        var orderedBlocks = after
+            ? targetBlock.Concat(sourceBlock)
+            : sourceBlock.Concat(targetBlock);
+        desiredTabs.InsertRange(insertAt, orderedBlocks);
+
+        bool orderChanged = !Tabs.SequenceEqual(desiredTabs);
+        if (orderChanged) SyncObservable(Tabs, desiredTabs);
+        if (treeChanged) RefreshSessionTree();
+        return orderChanged || treeChanged;
+    }
+
+    private void MakeSessionSubtreeContiguous(SessionItem root)
+    {
+        var subtree = GetSessionSubtree(root)
+            .Where(item => Tabs.Contains(item))
+            .Cast<TabItemBase>()
+            .ToList();
+        if (subtree.Count < 2) return;
+
+        var subtreeSet = subtree.ToHashSet();
+        int anchor = subtree
+            .Select(item => Tabs.IndexOf(item))
+            .Where(index => index >= 0)
+            .DefaultIfEmpty(Tabs.Count)
+            .Min();
+        int insertAt = Tabs.Take(anchor).Count(tab => !subtreeSet.Contains(tab));
+        var desiredTabs = Tabs.Where(tab => !subtreeSet.Contains(tab)).ToList();
+        desiredTabs.InsertRange(insertAt, subtree);
+        if (!Tabs.SequenceEqual(desiredTabs)) SyncObservable(Tabs, desiredTabs);
     }
 
 
@@ -897,15 +988,10 @@ public sealed class ProjectItem : NotifyBase
     {
         if (!Sessions.Contains(source) || string.IsNullOrEmpty(source.ParentSessionId)) return false;
         var oldParent = SessionParentOf(source);
-        var subtree = GetSessionSubtree(source).ToList();
-        var order = Sessions.Where(s => !subtree.Contains(s)).ToList();
         source.ParentSessionId = null;
+        if (oldParent != null)
+            return MoveTopLevelTabBlock(source, oldParent, after: true, treeChanged: true);
 
-        int insertAt = oldParent == null
-            ? order.Count
-            : order.FindLastIndex(s => ReferenceEquals(s, oldParent) || IsDescendantOf(s, oldParent)) + 1;
-        order.InsertRange(Math.Clamp(insertAt, 0, order.Count), subtree);
-        ApplySessionOrder(FlattenSessionOrder(order));
         RefreshSessionTree();
         return true;
     }
