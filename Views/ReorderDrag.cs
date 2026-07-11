@@ -475,7 +475,7 @@ internal sealed class ReorderDrag<T> where T : class
         {
             var bounds = liveLayout
                 ? LogicalPrimaryBounds(others[newTarget])
-                : CapturedPrimaryBounds(others[newTarget]);
+                : FixedDisplacedPrimaryBounds(others[newTarget]);
             double threshold = _horizontal
                 ? bounds.Left + bounds.Width / 2
                 : bounds.Top + bounds.Height / 2;
@@ -488,7 +488,7 @@ internal sealed class ReorderDrag<T> where T : class
         {
             var bounds = liveLayout
                 ? LogicalPrimaryBounds(others[newTarget - 1])
-                : CapturedPrimaryBounds(others[newTarget - 1]);
+                : FixedDisplacedPrimaryBounds(others[newTarget - 1]);
             double threshold = _horizontal
                 ? bounds.Left + bounds.Width / 2
                 : bounds.Top + bounds.Height / 2;
@@ -505,6 +505,27 @@ internal sealed class ReorderDrag<T> where T : class
         SetReorderPreviewForTargetIndex(newTarget);
         if (!liveLayout)
             ApplyDisplacement();
+    }
+
+    private Rect FixedDisplacedPrimaryBounds(Slot slot)
+    {
+        // 애니메이션의 진행 중 좌표가 아니라 현재 target에서 도달할 최종 변위를 더한다.
+        // 따라서 되돌아갈 때는 이미 밀려난 카드의 새 중앙이 안정된 기준점이 된다.
+        var bounds = CapturedPrimaryBounds(slot);
+        double offset = FixedDisplacement(slot);
+        bounds.Offset(_horizontal ? offset : 0, _horizontal ? 0 : offset);
+        return bounds;
+    }
+
+    private double FixedDisplacement(Slot slot)
+    {
+        int index = _slots.IndexOf(slot);
+        double shift = RowPitch();
+        if (_targetIndex < _sourceIndex && index >= _targetIndex && index < _sourceIndex)
+            return shift;
+        if (_targetIndex > _sourceIndex && index > _sourceIndex && index <= _targetIndex)
+            return -shift;
+        return 0;
     }
 
     private void SetReorderPreviewForTargetIndex(int targetIndex)
@@ -800,7 +821,8 @@ internal sealed class ReorderDrag<T> where T : class
         int newTarget = _targetIndex;
         if (movementDirection > 0 && newTarget < targetSlots.Count)
         {
-            double threshold = targetSlots[newTarget].Top + targetSlots[newTarget].Height / 2;
+            var target = targetSlots[newTarget];
+            double threshold = target.Top + target.Height / 2 + GridDisplacement(target);
             if (_lastTransitionDirection < 0)
                 threshold += LiveReversalHysteresis;
             if (cy >= threshold)
@@ -808,7 +830,8 @@ internal sealed class ReorderDrag<T> where T : class
         }
         else if (movementDirection < 0 && newTarget > 0)
         {
-            double threshold = targetSlots[newTarget - 1].Top + targetSlots[newTarget - 1].Height / 2;
+            var target = targetSlots[newTarget - 1];
+            double threshold = target.Top + target.Height / 2 + GridDisplacement(target);
             if (_lastTransitionDirection > 0)
                 threshold -= LiveReversalHysteresis;
             if (cy <= threshold)
@@ -867,32 +890,41 @@ internal sealed class ReorderDrag<T> where T : class
     ///   목표 컬럼은 삽입 위치 이후 카드를 아래로 밀어 자리를 연다.</summary>
     private void ApplyGridDisplacement()
     {
-        int originCol = ColumnOf(_slots[_sourceIndex]);
-        double srcH = _slots[_sourceIndex].Height;
-        int srcWithin = WithinColumnIndex(_sourceIndex, originCol);
-
         for (int i = 0; i < _slots.Count; i++)
         {
             if (i == _sourceIndex) { AnimateSlot(_slots[i], 0); continue; }
-            int col = ColumnOf(_slots[i]);
-            int w = WithinColumnIndex(i, col);
-            double to = 0;
-            if (col == originCol && col == _targetColumn)
-            {
-                // 같은 컬럼 내 재정렬 (w 는 source 제외 인덱스).
-                if (_targetIndex < srcWithin && w >= _targetIndex && w < srcWithin) to = srcH;
-                else if (_targetIndex > srcWithin && w >= srcWithin && w < _targetIndex) to = -srcH;
-            }
-            else if (col == originCol)
-            {
-                if (w >= srcWithin) to = -srcH; // source 가 떠난 컬럼: 아래 카드 위로 당김
-            }
-            else if (col == _targetColumn)
-            {
-                if (w >= _targetIndex) to = srcH; // 들어올 컬럼: 삽입 위치 이후 아래로 밂
-            }
-            AnimateSlot(_slots[i], to);
+            AnimateSlot(_slots[i], GridDisplacement(_slots[i]));
         }
+    }
+
+    private double GridDisplacement(Slot slot)
+    {
+        // ApplyGridDisplacement와 드롭 임계값이 반드시 같은 최종 위치를 공유해야
+        // 밀려난 카드의 원래 위치가 복귀 기준으로 재사용되지 않는다.
+        var source = _slots[_sourceIndex];
+        if (ReferenceEquals(slot, source)) return 0;
+
+        int originColumn = ColumnOf(source);
+        int column = ColumnOf(slot);
+        int sourceWithin = WithinColumnIndex(_sourceIndex, originColumn);
+        int within = WithinColumnIndex(_slots.IndexOf(slot), column);
+        double sourceHeight = source.Height;
+        if (column == originColumn && column == _targetColumn)
+        {
+            if (_targetIndex < sourceWithin && within >= _targetIndex && within < sourceWithin)
+                return sourceHeight;
+            if (_targetIndex > sourceWithin && within >= sourceWithin && within < _targetIndex)
+                return -sourceHeight;
+        }
+        else if (column == originColumn)
+        {
+            if (within >= sourceWithin) return -sourceHeight;
+        }
+        else if (column == _targetColumn)
+        {
+            if (within >= _targetIndex) return sourceHeight;
+        }
+        return 0;
     }
 
     private int ComputeTargetIndex(double center)
@@ -948,14 +980,10 @@ internal sealed class ReorderDrag<T> where T : class
     private void ApplyDisplacement()
     {
         if (_suppressDisplacement) return;
-        double shift = RowPitch();
         for (int i = 0; i < _slots.Count; i++)
         {
             if (i == _sourceIndex) { AnimateSlot(_slots[i], 0); continue; }
-            double to = 0;
-            if (_targetIndex < _sourceIndex && i >= _targetIndex && i < _sourceIndex) to = shift;
-            else if (_targetIndex > _sourceIndex && i > _sourceIndex && i <= _targetIndex) to = -shift;
-            AnimateSlot(_slots[i], to);
+            AnimateSlot(_slots[i], FixedDisplacement(_slots[i]));
         }
     }
 
