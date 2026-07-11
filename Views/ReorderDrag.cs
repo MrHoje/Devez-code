@@ -48,6 +48,7 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly bool _commitUnchanged;
     private readonly bool _hitTestSlots;
     private readonly bool _suppressDisplacement;
+    private readonly double? _hitTestXOverride; // 고스트는 실제 포인터를 따르고 드롭 순서 판정 X만 고정.
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
     private Slot? _dropIntoTarget;         // 중앙 50%: 자식 드롭 프리뷰/커밋 대상.
@@ -68,7 +69,8 @@ internal sealed class ReorderDrag<T> where T : class
         Func<T, T, bool>? canDropInto, Action<T?, FrameworkElement?>? dropIntoPreviewChanged,
         Func<T, T, Task>? onDropInto, bool commitUnchanged,
         bool hitTestSlots, bool suppressDisplacement,
-        Action<T?, FrameworkElement?, bool>? reorderPreviewChanged)
+        Action<T?, FrameworkElement?, bool>? reorderPreviewChanged,
+        double? hitTestXOverride)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
@@ -77,6 +79,7 @@ internal sealed class ReorderDrag<T> where T : class
         _onDropInto = onDropInto; _commitUnchanged = commitUnchanged;
         _hitTestSlots = hitTestSlots; _suppressDisplacement = suppressDisplacement;
         _reorderPreviewChanged = reorderPreviewChanged;
+        _hitTestXOverride = hitTestXOverride;
         if (IsGrid)
         {
             // 드래그 임계값을 넘긴 직후 추가 MouseMove 없이 놓여도 원래 컬럼/위치가 유지되어야 한다.
@@ -156,7 +159,8 @@ internal sealed class ReorderDrag<T> where T : class
         bool hitTestSlots = false,
         Action<T?, FrameworkElement?, bool>? reorderPreviewChanged = null,
         bool suppressDisplacement = false,
-        bool preserveRowOrder = false)
+        bool preserveRowOrder = false,
+        double? hitTestXOverride = null)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -246,7 +250,7 @@ internal sealed class ReorderDrag<T> where T : class
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
             columns, gridMidX, grabPt.X, grabPt.Y, canDropInto, dropIntoPreviewChanged, onDropInto, commitUnchanged,
-            hitTestSlots, suppressDisplacement, reorderPreviewChanged);
+            hitTestSlots, suppressDisplacement, reorderPreviewChanged, hitTestXOverride);
     }
 
     /// <summary>자식 드래그 시작 즉시 원래 자리를 접어 부모에서 빠져나오는 프리뷰를 표시.
@@ -299,6 +303,7 @@ internal sealed class ReorderDrag<T> where T : class
         }
 
         var pointer = e.GetPosition(_coordHost);
+        if (_hitTestXOverride is double hitTestX) pointer.X = hitTestX;
         if (TryGetDropZone(pointer, out var hovered, out var zone))
         {
             if (zone == DropZone.Into)

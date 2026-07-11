@@ -1238,6 +1238,16 @@ public partial class SidebarView : UserControl
         var panel = FindVisualChildren<ProjectColumnsPanel>(host).FirstOrDefault();
         var visibleRoots = archived ? _archivedRootItems : _activeRootItems;
         int originalColumn = item is ProjectItem sourceProject ? sourceProject.Column : 0;
+        double? folderHitTestX = null;
+        if (_projectColumns >= 2 && item is ProjectFolderItem)
+        {
+            try
+            {
+                var sourceOrigin = source.Element.TransformToAncestor(this).Transform(new Point());
+                folderHitTestX = sourceOrigin.X + source.Element.ActualWidth / 4;
+            }
+            catch { /* 연결이 끊긴 컨테이너면 기존 포인터 판정으로 폴백 */ }
+        }
 
         void PreviewRootMove(object? targetItem, FrameworkElement? _, bool after)
         {
@@ -1308,7 +1318,8 @@ public partial class SidebarView : UserControl
             reorderPreviewChanged: PreviewRootMove,
             hitTestSlots: true,
             suppressDisplacement: _projectColumns >= 2,
-            preserveRowOrder: true);
+            preserveRowOrder: true,
+            hitTestXOverride: folderHitTestX);
 
         if (_rootDrag != null)
         {
