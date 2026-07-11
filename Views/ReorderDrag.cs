@@ -114,6 +114,23 @@ internal sealed class ReorderDrag<T> where T : class
     /// <summary>호스트가 컬렉션/열을 라이브 재배치할 때 현재 화면 위치에서 새 레이아웃 위치까지
     /// 2축 FLIP 애니메이션을 적용한다. 복잡한 2열+전체폭 폴더 배치는 단순 세로 shift로 표현할 수 없어 사용.</summary>
     public void AnimateLayoutChange(Action applyLayoutChange)
+        => AnimateLayoutChangeCore(
+            _slots.SelectMany(slot => slot.Elements).Distinct().ToList(),
+            _slots[_sourceIndex].Elements.ToHashSet(),
+            applyLayoutChange);
+
+    public void AnimateExternalLayoutChange(
+        IEnumerable<FrameworkElement> elements,
+        Action applyLayoutChange)
+        => AnimateLayoutChangeCore(
+            elements.Distinct().ToList(),
+            new HashSet<FrameworkElement>(),
+            applyLayoutChange);
+
+    private void AnimateLayoutChangeCore(
+        IReadOnlyList<FrameworkElement> allElements,
+        IReadOnlySet<FrameworkElement> excludedElements,
+        Action applyLayoutChange)
     {
         if (_finished)
         {
@@ -122,15 +139,10 @@ internal sealed class ReorderDrag<T> where T : class
         }
 
         _coordHost.UpdateLayout();
-        var sourceElements = _slots[_sourceIndex].Elements.ToHashSet();
-        var allElements = _slots
-            .SelectMany(slot => slot.Elements)
-            .Distinct()
-            .ToList();
         var oldPositions = new Dictionary<FrameworkElement, Point>();
         foreach (var element in allElements)
         {
-            if (sourceElements.Contains(element)) continue;
+            if (excludedElements.Contains(element)) continue;
             try
             {
                 oldPositions[element] = element.TransformToAncestor(_coordHost).Transform(new Point());

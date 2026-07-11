@@ -1273,6 +1273,8 @@ public partial class SidebarView : UserControl
     private string? _projectGridSourceFolderId;
     private Border? _projectDragSourceFolderRoot;
     private bool _projectDragDetached;
+    private ObservableCollection<object>? _projectRootPreviewItems;
+    private ItemsControl? _projectRootPreviewHost;
     private bool _projectGridTwoColumn;
     private int _projectGridOriginColumn = -1;
     private int _projectGridPreviewColumn = -1;
@@ -1390,6 +1392,8 @@ public partial class SidebarView : UserControl
         {
             UpdateProjectDetachedPreview(e.GetPosition(this));
             _projectDrag.Update(e);
+            if (_projectDragDetached)
+                UpdateProjectRootPreview(e.GetPosition(this));
             UpdateProjectGridHeightPreview(_projectDragDetached
                 ? null
                 : (_projectColumns >= 2 ? _projectDrag.CurrentTargetColumn : 0));
@@ -1425,6 +1429,155 @@ public partial class SidebarView : UserControl
         if (_projectDragDetached == detached) return;
         _projectDragDetached = detached;
         drag.SetDetachedSourcePreview(detached);
+        if (detached) BeginProjectRootPreview();
+        else EndProjectRootPreview(commit: false);
+    }
+
+    private void BeginProjectRootPreview()
+    {
+        var drag = _projectDrag;
+        var project = _draggedProject;
+        if (drag == null || project?.FolderId == null || _projectRootPreviewItems != null) return;
+        var folder = WorkspaceStore.ProjectFolders.FirstOrDefault(item => item.Id == project.FolderId);
+        if (folder == null) return;
+
+        var items = folder.IsArchived ? _archivedRootItems : _activeRootItems;
+        var host = folder.IsArchived ? ArchivedHost : ProjectsHost;
+        var elements = GetRootPreviewElements(host);
+        int folderIndex = items.IndexOf(folder);
+        int insertIndex = folderIndex >= 0 ? folderIndex + 1 : items.Count;
+        drag.AnimateExternalLayoutChange(elements, () => items.Insert(insertIndex, project));
+        _projectRootPreviewItems = items;
+        _projectRootPreviewHost = host;
+        HideProjectRootPreviewContainer();
+    }
+
+    private void UpdateProjectRootPreview(Point point)
+    {
+        var drag = _projectDrag;
+        var project = _draggedProject;
+        var items = _projectRootPreviewItems;
+        var host = _projectRootPreviewHost;
+        if (drag == null || project == null || items == null || host == null) return;
+
+        var others = items.Where(item => !ReferenceEquals(item, project)).ToList();
+        var candidates = others
+            .Select(item => (Item: item, Element: host.ItemContainerGenerator.ContainerFromItem(item) as FrameworkElement))
+            .Where(entry => entry.Element != null)
+            .Select(entry => (entry.Item, Element: entry.Element!, Bounds: RootPreviewBounds(entry.Element!)))
+            .ToList();
+        if (candidates.Count == 0) return;
+
+        var sameLane = candidates.Where(candidate =>
+            point.X >= candidate.Bounds.Left && point.X <= candidate.Bounds.Right).ToList();
+        var pool = sameLane.Count > 0 ? sameLane : candidates;
+        var nearest = pool
+            .OrderBy(candidate => point.Y < candidate.Bounds.Top
+                ? candidate.Bounds.Top - point.Y
+                : point.Y > candidate.Bounds.Bottom ? point.Y - candidate.Bounds.Bottom : 0)
+            .ThenBy(candidate => Math.Abs(point.Y - (candidate.Bounds.Top + candidate.Bounds.Height / 2)))
+            .First();
+        int targetIndex = others.IndexOf(nearest.Item);
+        if (point.Y >= nearest.Bounds.Top + nearest.Bounds.Height / 2) targetIndex++;
+
+        var desired = others.ToList();
+        desired.Insert(Math.Clamp(targetIndex, 0, desired.Count), project);
+        if (items.SequenceEqual(desired)) return;
+
+        drag.AnimateExternalLayoutChange(GetRootPreviewElements(host), () => SyncCollection(items, desired));
+        HideProjectRootPreviewContainer();
+    }
+
+    private void EndProjectRootPreview(bool commit)
+    {
+        var drag = _projectDrag;
+        var project = _draggedProject;
+        var items = _projectRootPreviewItems;
+        var host = _projectRootPreviewHost;
+        if (items == null || project == null)
+        {
+            _projectRootPreviewItems = null;
+            _projectRootPreviewHost = null;
+            return;
+        }
+
+        ShowProjectRootPreviewContainer();
+        if (!commit && items.Contains(project))
+        {
+            void RemovePreview() => items.Remove(project);
+            if (drag != null && host != null)
+                drag.AnimateExternalLayoutChange(GetRootPreviewElements(host), RemovePreview);
+            else
+                RemovePreview();
+        }
+        _projectRootPreviewItems = null;
+        _projectRootPreviewHost = null;
+    }
+
+    private bool CommitProjectRootPreview(ProjectItem project)
+    {
+        var items = _projectRootPreviewItems;
+        if (items == null || !items.Contains(project)) return MoveProjectOutOfFolder(project);
+        var previewOrder = items.ToList();
+        bool archived = project.IsArchived;
+        EndProjectRootPreview(commit: true);
+
+        project.FolderId = null;
+        var allRoots = GetAllRootItems(archived);
+        var previewSet = previewOrder.ToHashSet();
+        int previewIndex = 0;
+        for (int i = 0; i < allRoots.Count && previewIndex < previewOrder.Count; i++)
+            if (previewSet.Contains(allRoots[i]))
+                allRoots[i] = previewOrder[previewIndex++];
+        ApplyRootOrder(allRoots);
+        SyncUngroupedProjectCollection(archived ? ArchivedProjects : Projects, allRoots);
+        RefreshProjectGroups();
+        return true;
+    }
+
+    private List<FrameworkElement> GetRootPreviewElements(ItemsControl host) =>
+        host.Items.Cast<object>()
+            .Select(item => host.ItemContainerGenerator.ContainerFromItem(item) as FrameworkElement)
+            .Where(element => element != null)
+            .Cast<FrameworkElement>()
+            .ToList();
+
+    private Rect RootPreviewBounds(FrameworkElement element)
+    {
+        try
+        {
+            var point = element.TransformToAncestor(this).Transform(new Point());
+            if (element.RenderTransform is TranslateTransform translate)
+                point.Offset(-translate.X, -translate.Y);
+            else if (element.RenderTransform is TransformGroup group
+                     && group.Children.OfType<TranslateTransform>().FirstOrDefault() is { } groupedTranslate)
+                point.Offset(-groupedTranslate.X, -groupedTranslate.Y);
+            return new Rect(point.X, point.Y,
+                Math.Max(1, element.ActualWidth), Math.Max(1, element.ActualHeight));
+        }
+        catch (InvalidOperationException)
+        {
+            return Rect.Empty;
+        }
+    }
+
+    private void HideProjectRootPreviewContainer()
+    {
+        if (_projectRootPreviewHost?.ItemContainerGenerator.ContainerFromItem(_draggedProject) is not FrameworkElement element)
+            return;
+        if (_projectGridSourceHeight > 0)
+            element.Height = _projectGridSourceHeight;
+        element.Opacity = 0;
+        element.IsHitTestVisible = false;
+    }
+
+    private void ShowProjectRootPreviewContainer()
+    {
+        if (_projectRootPreviewHost?.ItemContainerGenerator.ContainerFromItem(_draggedProject) is not FrameworkElement element)
+            return;
+        element.ClearValue(FrameworkElement.HeightProperty);
+        element.ClearValue(UIElement.OpacityProperty);
+        element.IsHitTestVisible = true;
     }
 
     private async void Sidebar_PreviewMouseUp(object sender, MouseButtonEventArgs e) => await EndDragAsync(commit: true);
@@ -1453,14 +1606,12 @@ public partial class SidebarView : UserControl
             bool applyDeferredSearch = _sidebarSearchDeferredForDrag;
             _sidebarSearchDeferredForDrag = false;
             _rootDrag = null;
-            _projectDrag = null;
             _tabDrag = null;
             _fileDrag = null;
             _pendingFolder = null;
             _pendingProject = null;
             _pendingTab = null;
             _pendingFile = null;
-            _draggedProject = null;
             _projectDragSourceFolderRoot = null;
             _projectDragDetached = false;
             ClearProjectFolderDropPreview();
@@ -1474,9 +1625,11 @@ public partial class SidebarView : UserControl
             {
                 if (projectDrag != null)
                     await projectDrag.FinishAsync(commit && !droppedOnFolder && !detachToRoot);
+                if (!detachToRoot)
+                    EndProjectRootPreview(commit: false);
                 if (moveIntoFolder && MoveProjectIntoFolder(draggedProject!, dropFolder!))
                     ProjectsReordered?.Invoke();
-                if (detachToRoot && MoveProjectOutOfFolder(draggedProject!))
+                if (detachToRoot && CommitProjectRootPreview(draggedProject!))
                     ProjectsReordered?.Invoke();
                 if (projectDrag != null && applyDeferredSearch)
                 {
@@ -1494,6 +1647,9 @@ public partial class SidebarView : UserControl
         }
         finally
         {
+            EndProjectRootPreview(commit: false);
+            _projectDrag = null;
+            _draggedProject = null;
             _endingDrag = false;
         }
     }
