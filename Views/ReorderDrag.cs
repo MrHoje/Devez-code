@@ -161,7 +161,8 @@ internal sealed class ReorderDrag<T> where T : class
         Action<T?, FrameworkElement?, bool>? reorderPreviewChanged = null,
         bool suppressDisplacement = false,
         bool preserveRowOrder = false,
-        double? hitTestXOverride = null)
+        double? hitTestXOverride = null,
+        bool includeElementMarginsInBounds = false)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -182,11 +183,14 @@ internal sealed class ReorderDrag<T> where T : class
                 foreach (var element in elements)
                 {
                     var point = element.TransformToAncestor(coordHost).Transform(new Point(0, 0));
+                    var margin = includeElementMarginsInBounds
+                        ? element.Margin
+                        : new Thickness();
                     var elementBounds = new Rect(
-                        point.X,
-                        point.Y,
-                        Math.Max(1, element.ActualWidth),
-                        Math.Max(1, element.ActualHeight));
+                        point.X - margin.Left,
+                        point.Y - margin.Top,
+                        Math.Max(1, element.ActualWidth + margin.Left + margin.Right),
+                        Math.Max(1, element.ActualHeight + margin.Top + margin.Bottom));
                     bounds = bounds.IsEmpty ? elementBounds : Rect.Union(bounds, elementBounds);
                 }
             }
@@ -249,8 +253,17 @@ internal sealed class ReorderDrag<T> where T : class
         }
         if (ghost == null) return null;
 
+        double reorderGrabX = grabPt.X;
+        double reorderGrabY = grabPt.Y;
+        if (includeElementMarginsInBounds && sourceSlot.Elements.Count == 1)
+        {
+            reorderGrabX += sourceElement.Margin.Left;
+            reorderGrabY += sourceElement.Margin.Top;
+        }
+
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
-            columns, gridMidX, grabPt.X, grabPt.Y, canDropInto, dropIntoPreviewChanged, onDropInto, commitUnchanged,
+            columns, gridMidX, reorderGrabX, reorderGrabY, canDropInto, dropIntoPreviewChanged,
+            onDropInto, commitUnchanged,
             hitTestSlots, suppressDisplacement, reorderPreviewChanged, hitTestXOverride);
     }
 

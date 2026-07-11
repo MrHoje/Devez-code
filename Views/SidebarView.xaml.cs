@@ -996,6 +996,7 @@ public partial class SidebarView : UserControl
     private double _projectGridLeftHeight;
     private double _projectGridRightHeight;
     private double _projectGridSourceHeight;
+    private double _projectGridHeightOffset;
     private int _projectGridOriginColumn = -1;
     private int _projectGridPreviewColumn = -1;
     private bool HasActiveDrag =>
@@ -1138,11 +1139,22 @@ public partial class SidebarView : UserControl
         bool moveIntoFolder = droppedOnFolderHeader && draggedProject!.FolderId != dropFolder!.Id;
         if (rootDrag != null)
             await rootDrag.FinishAsync(commit && !droppedOnFolderHeader);
-        if (projectDrag != null)
-            await projectDrag.FinishAsync(commit && !droppedOnFolderHeader);
-        if (moveIntoFolder && MoveProjectIntoFolder(draggedProject!, dropFolder!))
-            ProjectsReordered?.Invoke();
-        FinishProjectGridHeightPreview();
+        try
+        {
+            if (projectDrag != null)
+                await projectDrag.FinishAsync(commit && !droppedOnFolderHeader);
+            if (moveIntoFolder && MoveProjectIntoFolder(draggedProject!, dropFolder!))
+                ProjectsReordered?.Invoke();
+            if (projectDrag != null && applyDeferredSearch)
+            {
+                ApplySidebarSearch();
+                applyDeferredSearch = false;
+            }
+        }
+        finally
+        {
+            FinishProjectGridHeightPreview();
+        }
         if (tabDrag != null) await tabDrag.FinishAsync(commit);
         if (fileDrag != null) await fileDrag.FinishAsync(commit);
         if (applyDeferredSearch) ApplySidebarSearch();
@@ -1468,7 +1480,8 @@ public partial class SidebarView : UserControl
                         ProjectsReordered?.Invoke();
                     }
                     return Task.CompletedTask;
-                }, exactFollow: true, columns: 2, gridMidX: midX);
+                }, exactFollow: true, columns: 2, gridMidX: midX,
+                includeElementMarginsInBounds: true);
         }
         else
         {
@@ -1499,15 +1512,20 @@ public partial class SidebarView : UserControl
     {
         panel.BeginAnimation(FrameworkElement.HeightProperty, null);
         panel.ClearValue(FrameworkElement.HeightProperty);
+        panel.InvalidateMeasure();
+        panel.InvalidateArrange();
+        panel.UpdateLayout();
         _projectGridHeightPanel = panel;
         _projectGridLeftHeight = rows
-            .Where(row => row.Item.Column == 0)
-            .Sum(row => Math.Max(1, row.Element.ActualHeight));
+            .Where(row => row.Item.Column != 1)
+            .Sum(row => ProjectGridRowPitch(row.Element));
         _projectGridRightHeight = rows
             .Where(row => row.Item.Column == 1)
-            .Sum(row => Math.Max(1, row.Element.ActualHeight));
-        _projectGridSourceHeight = Math.Max(1, rows
-            .First(row => ReferenceEquals(row.Item, source)).Element.ActualHeight);
+            .Sum(row => ProjectGridRowPitch(row.Element));
+        _projectGridSourceHeight = ProjectGridRowPitch(rows
+            .First(row => ReferenceEquals(row.Item, source)).Element);
+        _projectGridHeightOffset = panel.ActualHeight
+            - Math.Max(_projectGridLeftHeight, _projectGridRightHeight);
         _projectGridOriginColumn = source.Column == 1 ? 1 : 0;
         _projectGridPreviewColumn = _projectGridOriginColumn;
     }
@@ -1525,8 +1543,13 @@ public partial class SidebarView : UserControl
         else right -= _projectGridSourceHeight;
         if (targetColumn == 0) left += _projectGridSourceHeight;
         else right += _projectGridSourceHeight;
-        AnimateProjectGridPanelHeight(panel, Math.Max(left, right));
+        AnimateProjectGridPanelHeight(
+            panel,
+            Math.Max(left, right) + _projectGridHeightOffset);
     }
+
+    private static double ProjectGridRowPitch(FrameworkElement element) =>
+        Math.Max(1, element.ActualHeight + element.Margin.Top + element.Margin.Bottom);
 
     private static void AnimateProjectGridPanelHeight(ProjectColumnsPanel panel, double targetHeight)
     {
@@ -1549,6 +1572,7 @@ public partial class SidebarView : UserControl
         _projectGridLeftHeight = 0;
         _projectGridRightHeight = 0;
         _projectGridSourceHeight = 0;
+        _projectGridHeightOffset = 0;
         _projectGridOriginColumn = -1;
         _projectGridPreviewColumn = -1;
         if (panel == null) return;
