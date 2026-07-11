@@ -51,6 +51,8 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly bool _suppressDisplacement;
     private readonly bool _useLiveLayoutPlaceholder;
     private readonly bool _useFixedLayoutPlaceholder;
+    private readonly bool _useGridPlaceholder;
+    private readonly bool _useLogicalHitTestBounds;
     private readonly double? _hitTestXOverride; // 고스트는 실제 포인터를 따르고 드롭 순서 판정 X만 고정.
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
@@ -77,6 +79,7 @@ internal sealed class ReorderDrag<T> where T : class
         Func<T, T, Task>? onDropInto, bool commitUnchanged,
         bool hitTestSlots, bool suppressDisplacement,
         bool useLiveLayoutPlaceholder, bool useFixedLayoutPlaceholder,
+        bool useGridPlaceholder, bool useLogicalHitTestBounds,
         Action<T?, FrameworkElement?, bool>? reorderPreviewChanged,
         double? hitTestXOverride)
     {
@@ -88,6 +91,8 @@ internal sealed class ReorderDrag<T> where T : class
         _hitTestSlots = hitTestSlots; _suppressDisplacement = suppressDisplacement;
         _useLiveLayoutPlaceholder = useLiveLayoutPlaceholder;
         _useFixedLayoutPlaceholder = useFixedLayoutPlaceholder;
+        _useGridPlaceholder = useGridPlaceholder;
+        _useLogicalHitTestBounds = useLogicalHitTestBounds;
         _reorderPreviewChanged = reorderPreviewChanged;
         _hitTestXOverride = hitTestXOverride;
         if (IsGrid)
@@ -175,6 +180,8 @@ internal sealed class ReorderDrag<T> where T : class
         bool includeElementMarginsInBounds = false,
         bool useLiveLayoutPlaceholder = false,
         bool useFixedLayoutPlaceholder = false,
+        bool useGridPlaceholder = false,
+        bool useLogicalHitTestBounds = false,
         FrameworkElement? ghostBackgroundTarget = null,
         Brush? ghostBackground = null)
     {
@@ -284,6 +291,7 @@ internal sealed class ReorderDrag<T> where T : class
             onDropInto, commitUnchanged,
             hitTestSlots, suppressDisplacement,
             useLiveLayoutPlaceholder, useFixedLayoutPlaceholder,
+            useGridPlaceholder, useLogicalHitTestBounds,
             reorderPreviewChanged, hitTestXOverride);
     }
 
@@ -328,6 +336,11 @@ internal sealed class ReorderDrag<T> where T : class
             var src = _slots[_sourceIndex];
             double cx = p.X - _grabOffsetX + src.Width / 2;
             double cy = p.Y - _grabOffsetY + src.Height / 2;
+            if (_useGridPlaceholder)
+            {
+                UpdateGridPlaceholder(cx, cy);
+                return;
+            }
             int newCol = cx >= _gridMidX ? 1 : 0;
             int newIdx = ComputeColumnTarget(newCol, cy);
             if (newCol == _targetColumn && newIdx == _targetIndex) return;
@@ -463,8 +476,7 @@ internal sealed class ReorderDrag<T> where T : class
         {
             // 변환 애니메이션만 쓰는 1열 목록에서 source 원본은 시작 위치에 숨겨져 있다.
             // 현재 삽입 인덱스의 캡처 위치를 source가 확보한 가상 빈자리로 사용한다.
-            var placeholder = _slots[Math.Clamp(_targetIndex, 0, _slots.Count - 1)];
-            currentAreaCenter = AxisPos(placeholder) + AxisSize(_slots[_sourceIndex]) / 2;
+            currentAreaCenter = FixedPlaceholderCenter(_targetIndex);
         }
         var capturedSourceBounds = CapturedPrimaryBounds(_slots[_sourceIndex]);
         var previousCenter = _liveLastDraggedCenter ?? (_horizontal
@@ -520,6 +532,29 @@ internal sealed class ReorderDrag<T> where T : class
             ApplyDisplacement();
     }
 
+    private double FixedPlaceholderCenter(int targetIndex)
+    {
+        var source = _slots[_sourceIndex];
+        double sourceSize = AxisSize(source);
+        if (targetIndex == _sourceIndex)
+            return AxisPos(source) + sourceSize / 2;
+
+        var others = _slots
+            .Where(slot => !ReferenceEquals(slot, source))
+            .ToList();
+        double placeholderStart;
+        if (targetIndex < _sourceIndex)
+        {
+            placeholderStart = AxisPos(others[Math.Clamp(targetIndex, 0, others.Count - 1)]);
+        }
+        else
+        {
+            var previous = others[Math.Clamp(targetIndex - 1, 0, others.Count - 1)];
+            placeholderStart = AxisPos(previous) + AxisSize(previous) - sourceSize;
+        }
+        return placeholderStart + sourceSize / 2;
+    }
+
     private void SetReorderPreviewForTargetIndex(int targetIndex)
     {
         if (targetIndex == _sourceIndex)
@@ -557,9 +592,9 @@ internal sealed class ReorderDrag<T> where T : class
             if (ReferenceEquals(slot, _slots[_sourceIndex])) continue;
             bool canDropInto = _canDropInto?.Invoke(_source, slot.Item) == true;
             if (!canDropInto && !_hitTestSlots) continue;
-            // 카드가 밀렸으면 판정 영역도 그 현재 화면 위치를 따라간다. 방향 전환은
-            // ResolveReorderAfter의 히스테리시스로 경계 왕복을 억제한다.
-            var bounds = CurrentPrimaryBounds(slot);
+            // 일반 목록은 밀려난 현재 위치를 따르고, 2열 라이브 레이아웃은 FLIP 변위를 뺀
+            // 최종 배치 위치를 쓴다. 방향 전환은 히스테리시스로 경계 왕복을 억제한다.
+            var bounds = HitTestPrimaryBounds(slot);
             if (!bounds.Contains(pointer)) continue;
 
             double relative = _horizontal
@@ -588,7 +623,7 @@ internal sealed class ReorderDrag<T> where T : class
         after = false;
         var candidates = _slots
             .Where(slot => !ReferenceEquals(slot, _slots[_sourceIndex]))
-            .Select(slot => (Slot: slot, Bounds: CurrentPrimaryBounds(slot)))
+            .Select(slot => (Slot: slot, Bounds: HitTestPrimaryBounds(slot)))
             .ToList();
         if (candidates.Count == 0) return false;
 
@@ -618,7 +653,7 @@ internal sealed class ReorderDrag<T> where T : class
         after = false;
         var candidates = _slots
             .Where(slot => !ReferenceEquals(slot, _slots[_sourceIndex]))
-            .Select(slot => (Slot: slot, Bounds: CurrentPrimaryBounds(slot)))
+            .Select(slot => (Slot: slot, Bounds: HitTestPrimaryBounds(slot)))
             .ToList();
         if (candidates.Count == 0) return false;
 
@@ -663,7 +698,7 @@ internal sealed class ReorderDrag<T> where T : class
         }
 
         if (target == null) return false;
-        var targetBounds = CurrentPrimaryBounds(target);
+        var targetBounds = HitTestPrimaryBounds(target);
         after = _horizontal
             ? pointer.X >= targetBounds.Left + targetBounds.Width / 2
             : pointer.Y >= targetBounds.Top + targetBounds.Height / 2;
@@ -675,7 +710,7 @@ internal sealed class ReorderDrag<T> where T : class
     {
         if (!ReferenceEquals(_reorderPreviewTarget, target)) return proposedAfter;
 
-        var bounds = CurrentPrimaryBounds(target);
+        var bounds = HitTestPrimaryBounds(target);
         double axisPosition = _horizontal ? pointer.X : pointer.Y;
         double axisStart = _horizontal ? bounds.Left : bounds.Top;
         double axisSize = _horizontal ? bounds.Width : bounds.Height;
@@ -710,6 +745,22 @@ internal sealed class ReorderDrag<T> where T : class
         {
             return CapturedPrimaryBounds(slot);
         }
+    }
+
+    private Rect HitTestPrimaryBounds(Slot slot)
+    {
+        var bounds = CurrentPrimaryBounds(slot);
+        if (!_useLogicalHitTestBounds) return bounds;
+
+        var transform = slot.Element.RenderTransform switch
+        {
+            TranslateTransform translate => translate,
+            TransformGroup group => group.Children.OfType<TranslateTransform>().FirstOrDefault(),
+            _ => null,
+        };
+        if (transform != null)
+            bounds.Offset(-transform.X, -transform.Y);
+        return bounds;
     }
 
     private int TargetIndexAround(Slot target, bool after)
@@ -763,6 +814,121 @@ internal sealed class ReorderDrag<T> where T : class
     private void ResetDisplacementPreview()
     {
         foreach (var slot in _slots) AnimateSlot(slot, 0);
+    }
+
+    private void UpdateGridPlaceholder(double cx, double cy)
+    {
+        int newColumn = cx >= _gridMidX ? 1 : 0;
+        if (newColumn != _targetColumn)
+        {
+            _targetColumn = newColumn;
+            _targetIndex = ComputeCapturedColumnTarget(newColumn, cy);
+            _liveLayoutOrderMoved = true;
+            _liveLastDraggedCenter = cy;
+            _liveTransitionDirection = 0;
+            _liveTransitionCenter = GridPlaceholderCenter(newColumn, _targetIndex);
+            ApplyGridDisplacement();
+            return;
+        }
+
+        var source = _slots[_sourceIndex];
+        double previousCenter = _liveLastDraggedCenter ?? (source.Top + source.Height / 2);
+        _liveLastDraggedCenter = cy;
+        int movementDirection = cy > previousCenter + 0.25
+            ? 1
+            : cy < previousCenter - 0.25 ? -1 : 0;
+
+        int newTarget = _targetIndex;
+        double currentAreaCenter = GridPlaceholderCenter(newColumn, _targetIndex);
+        double transitionCenter = currentAreaCenter;
+        int originColumn = ColumnOf(source);
+        int sourceWithin = WithinColumnIndex(_sourceIndex, originColumn);
+        if (!_liveLayoutOrderMoved && newColumn == originColumn && _targetIndex == sourceWithin)
+        {
+            int initialTarget = ComputeInitialColumnTarget(newColumn, cy);
+            newTarget = initialTarget == _targetIndex
+                ? _targetIndex
+                : _targetIndex + Math.Sign(initialTarget - _targetIndex);
+            if (newTarget != _targetIndex)
+            {
+                movementDirection = Math.Sign(newTarget - _targetIndex);
+                transitionCenter = cy;
+            }
+        }
+        else
+        {
+            bool reversing = _liveTransitionDirection == -movementDirection;
+            transitionCenter = reversing ? _liveTransitionCenter : currentAreaCenter;
+            double threshold = transitionCenter
+                + (reversing ? movementDirection * LiveReversalHysteresis : 0);
+            int columnCount = _slots.Count(slot =>
+                !ReferenceEquals(slot, source) && ColumnOf(slot) == newColumn);
+            if (movementDirection > 0 && cy > threshold && newTarget < columnCount)
+                newTarget++;
+            else if (movementDirection < 0 && cy < threshold && newTarget > 0)
+                newTarget--;
+        }
+
+        if (newTarget == _targetIndex) return;
+        int transitionDirection = Math.Sign(newTarget - _targetIndex);
+        _targetIndex = newTarget;
+        _liveLayoutOrderMoved = true;
+        _liveTransitionDirection = transitionDirection;
+        _liveTransitionCenter = transitionCenter;
+        ApplyGridDisplacement();
+    }
+
+    private int ComputeInitialColumnTarget(int column, double center)
+    {
+        var source = _slots[_sourceIndex];
+        double half = source.Height / 2;
+        int target = 0;
+        foreach (var slot in _slots)
+        {
+            if (ReferenceEquals(slot, source) || ColumnOf(slot) != column) continue;
+            double edge = slot.Top < source.Top ? center - half : center + half;
+            if (edge >= slot.Top + slot.Height / 2) target++;
+        }
+        return target;
+    }
+
+    private int ComputeCapturedColumnTarget(int column, double center)
+    {
+        int target = 0;
+        foreach (var slot in _slots)
+        {
+            if (ReferenceEquals(slot, _slots[_sourceIndex]) || ColumnOf(slot) != column) continue;
+            if (center >= slot.Top + slot.Height / 2) target++;
+        }
+        return target;
+    }
+
+    private double GridPlaceholderCenter(int column, int targetIndex)
+    {
+        var source = _slots[_sourceIndex];
+        int originColumn = ColumnOf(source);
+        var targetSlots = _slots
+            .Where(slot => !ReferenceEquals(slot, source) && ColumnOf(slot) == column)
+            .OrderBy(slot => slot.Top)
+            .ToList();
+        if (column == originColumn)
+        {
+            int sourceWithin = WithinColumnIndex(_sourceIndex, originColumn);
+            if (targetIndex == sourceWithin)
+                return source.Top + source.Height / 2;
+            if (targetIndex < sourceWithin)
+                return targetSlots[Math.Clamp(targetIndex, 0, targetSlots.Count - 1)].Top
+                    + source.Height / 2;
+            var previous = targetSlots[Math.Clamp(targetIndex - 1, 0, targetSlots.Count - 1)];
+            return previous.Top + previous.Height - source.Height / 2;
+        }
+
+        if (targetSlots.Count == 0)
+            return _slots.Min(slot => slot.Top) + source.Height / 2;
+        if (targetIndex < targetSlots.Count)
+            return targetSlots[Math.Max(0, targetIndex)].Top + source.Height / 2;
+        var last = targetSlots[^1];
+        return last.Top + last.Height + source.Height / 2;
     }
 
     /// <summary>그리드: 목표 컬럼 안에서 드래그 카드 중심 Y 가 들어갈 삽입 위치(0-based, source 제외).

@@ -1642,12 +1642,14 @@ public partial class SidebarView : UserControl
             (sourceItem, hostTarget, _) =>
             {
                 bool columnChanged = false;
+                bool columnChangedFromOriginal = false;
                 if (sourceItem is ProjectItem project && _projectColumns >= 2 &&
                     !double.IsPositiveInfinity(gridMidX))
                 {
                     int targetColumn = Mouse.GetPosition(this).X >= gridMidX ? 1 : 0;
                     columnChanged = project.Column != targetColumn;
                     project.Column = targetColumn;
+                    columnChangedFromOriginal = project.Column != originalColumn;
                 }
 
                 bool orderChanged;
@@ -1668,7 +1670,7 @@ public partial class SidebarView : UserControl
                     panel?.InvalidateMeasure();
                     panel?.InvalidateArrange();
                 }
-                if (orderChanged || columnChanged)
+                if (orderChanged || columnChanged || columnChangedFromOriginal)
                     ProjectsReordered?.Invoke();
                 return Task.CompletedTask;
             },
@@ -1681,6 +1683,7 @@ public partial class SidebarView : UserControl
             hitTestXOverride: folderHitTestX,
             useLiveLayoutPlaceholder: _projectColumns >= 2 && item is ProjectFolderItem,
             useFixedLayoutPlaceholder: _projectColumns < 2,
+            useLogicalHitTestBounds: _projectColumns >= 2 && item is ProjectItem,
             ghostSource: folderGhostSource,
             ghostBackgroundTarget: folderGhostSource,
             ghostBackground: folderGhostBackground);
@@ -1786,6 +1789,7 @@ public partial class SidebarView : UserControl
                     }
                     return Task.CompletedTask;
                 }, exactFollow: true, columns: 2, gridMidX: midX,
+                useGridPlaceholder: true,
                 includeElementMarginsInBounds: true);
         }
         else
