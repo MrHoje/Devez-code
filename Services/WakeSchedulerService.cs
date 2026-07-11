@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows.Threading;
+using System.Text.Json.Serialization;
 
 namespace DevezCode.Services;
 
@@ -13,6 +14,37 @@ public sealed class WakeScheduleEntry
     public bool Enabled { get; set; } = true;
     public string LastOccurrenceKey { get; set; } = "";
     public string LastResult { get; set; } = "";
+    [JsonIgnore]
+    public string ProviderDisplayName => string.Equals(Provider, "codex", StringComparison.OrdinalIgnoreCase)
+        ? "Codex" : "Claude";
+
+    [JsonIgnore]
+    public string ScheduleSummary
+    {
+        get
+        {
+            var days = Weekdays
+                .Distinct()
+                .OrderBy(day => day == DayOfWeek.Sunday ? 7 : (int)day)
+                .Select(DayLabel);
+            return $"{string.Join(" · ", days)}  {Time}";
+        }
+    }
+
+    [JsonIgnore]
+    public string StatusDisplay => string.IsNullOrWhiteSpace(LastResult) ? "아직 실행 기록이 없습니다" : LastResult;
+
+    private static string DayLabel(DayOfWeek day) => day switch
+    {
+        DayOfWeek.Monday => "월",
+        DayOfWeek.Tuesday => "화",
+        DayOfWeek.Wednesday => "수",
+        DayOfWeek.Thursday => "목",
+        DayOfWeek.Friday => "금",
+        DayOfWeek.Saturday => "토",
+        DayOfWeek.Sunday => "일",
+        _ => "",
+    };
 
     internal WakeScheduleEntry Clone() => new()
     {
