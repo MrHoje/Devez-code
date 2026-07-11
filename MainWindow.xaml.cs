@@ -391,6 +391,8 @@ public partial class MainWindow : Window
             // /send-new: 인박스가 자식 세션 생성을 요청하면 UI 스레드에서 생성·시작한다.
             _sessionCommandInbox.ChildSessionRequested += (parentRoomId, sessionName, brief) =>
                 Dispatcher.BeginInvoke(() => CreateChildAndDispatch(parentRoomId, sessionName, brief));
+            _sessionCommandInbox.DormantSessionRequested += (roomId, message, submit, commandPath) =>
+                Dispatcher.BeginInvoke(() => StartDormantSessionAndDispatch(roomId, message, submit, commandPath));
             _sessionCommandInbox.Start();  // 세션 간 지시 릴레이 수신 시작
             StartBusyDisplaySync();
             _modelEffort.Start();
@@ -2182,6 +2184,7 @@ public partial class MainWindow : Window
         pane.IsolatedTabOpened += OnPaneIsolatedTabOpened;
         pane.FileTabCloseRequested += OnFileTabCloseRequested;
         pane.BrowserTabCloseRequested += OnBrowserTabCloseRequested;
+        pane.SessionTerminalReady += _sessionCommandInbox.NotifyTerminalReady;
         _panes.Add(pane);
     }
 
@@ -3058,10 +3061,50 @@ public partial class MainWindow : Window
             SettingsService.SaveAgentForRoom(child.Id, agentId);
             WorkspaceStore.Save(_projects);
 
-            OpenSession(child);   // 자식 세션 터미널 시작(v1: 포커스가 자식으로 이동)
+            // 부모가 표시된 패널에서 터미널만 백그라운드 시작한다. 현재 탭 선택과 포커스는 유지.
+            var hostPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveSession, parent))
+                ?? _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, proj))
+                ?? _focusedPane;
+            hostPane.PreloadSession(child);
             _sessionCommandInbox.InjectWhenReady(child.Id, brief);
         }
         catch { /* best-effort */ }
+    }
+
+    /// <summary>/dvzc:send 대상이 꺼져 있으면 선택·포커스를 바꾸지 않고 기존 세션을 복원한 뒤 지시한다.
+    /// 명령 파일은 실제 터미널 주입이 성공한 뒤에만 인박스가 삭제하므로 앱 재시작에도 보존된다.</summary>
+    private void StartDormantSessionAndDispatch(string roomId, string message, bool submit, string commandPath)
+    {
+        try
+        {
+            var target = FindSession(roomId);
+            var proj = target == null ? null : _projects.FirstOrDefault(p => p.Tabs.Contains(target));
+            if (target == null || proj == null)
+            {
+                _sessionCommandInbox.DiscardPendingCommand(commandPath);
+                return;
+            }
+
+            var agentId = string.IsNullOrEmpty(target.AgentId)
+                ? SettingsService.LoadAgentForRoom(target.Id) : target.AgentId;
+            if (string.IsNullOrEmpty(agentId)) agentId = AgentRegistry.DefaultAgentId;
+
+            var running = TerminalSessionManager.Instance.Get(target.Id) is { IsAlive: true };
+            var terminalReady = _panes.Any(p => p.IsTerminalReady(target.Id));
+            // 새 시작 신호의 기준 시각을 preload 전에 캡처해야 이전 실행의 추적 파일을 준비 완료로 오인하지 않는다.
+            _sessionCommandInbox.InjectPendingWhenReady(
+                target.Id, message, submit, commandPath, agentId, requireFreshReadySignal: !terminalReady);
+
+            if (running) return;
+
+            var hostPane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, proj)) ?? _focusedPane;
+            hostPane.PreloadSession(target);
+        }
+        catch
+        {
+            // 복구 가능한 일시 오류일 수 있으므로 명령 파일을 폐기하지 않는다.
+            _sessionCommandInbox.RetryPendingCommand(commandPath);
+        }
     }
 
     /// <summary>완료기록 헤더("진행중/응답 대기 중 N개")·대기 카드를 IsBusy/IsWaitingChoice 와 주기 동기화.

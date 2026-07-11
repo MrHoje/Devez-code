@@ -23,6 +23,9 @@ namespace DevezCode.Views;
 /// </summary>
 public partial class WorkspacePaneView : UserControl
 {
+    /// <summary>백그라운드 프리로드를 포함해 해당 방의 TUI가 입력 가능한 상태가 됐을 때 알린다.</summary>
+    public event Action<string>? SessionTerminalReady;
+
     private readonly TerminalHostView _terminal = new();
 
     private ProjectItem? _activeProject;
@@ -120,7 +123,7 @@ public partial class WorkspacePaneView : UserControl
 
         _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
         _terminal.SessionExited += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; s.IsWaitingChoice = false; } HideSessionLoadingIf(id); };
-        _terminal.TerminalReady += id => HideSessionLoadingIf(id);
+        _terminal.TerminalReady += id => { HideSessionLoadingIf(id); SessionTerminalReady?.Invoke(id); };
         // 에이전트 /exit·Ctrl+C 자동 재실행(claude·gjc=배치 루프 플래그, opencode=onExited 재배선) 동안
         // 배치 에코·부팅 출력이 보이지 않게 즉시 커버. 재실행된 TUI 의 준비 신호(alt-screen/인라인 마커)가
         // TerminalReady 로 커버를 걷는다(실패 시 폴백 6~8s·로딩 타임아웃 20s).
@@ -936,6 +939,17 @@ public partial class WorkspacePaneView : UserControl
         if (!ReferenceEquals(_activeProject, parent)) SetActiveProject(parent);
         ActivateSession(session);
     }
+
+    /// <summary>세션을 선택하거나 포커스를 옮기지 않고 터미널만 백그라운드에서 시작한다.</summary>
+    public void PreloadSession(SessionItem session)
+    {
+        var parent = ParentOf(session);
+        if (parent == null) return;
+        SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
+        _terminal.PreloadTerminal(session.Id);
+    }
+
+    public bool IsTerminalReady(string roomId) => _terminal.IsReady(roomId);
 
     /// <summary>다른 패널로 "분할 보기" 이동된 파일 탭을 이 패널에서 연다(필요 시 프로젝트 전환).</summary>
     public void OpenFileTab(FileTabItem tab)

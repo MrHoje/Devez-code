@@ -261,14 +261,23 @@ public sealed class TerminalSession : IDisposable
     }
 
     /// <summary>키 입력 등 텍스트를 셸 stdin으로 전달.</summary>
-    public void Write(string text)
+    public void Write(string text) => TryWrite(text);
+
+    /// <summary>텍스트를 셸 stdin에 기록하고 실제 파이프 쓰기 성공 여부를 반환한다.</summary>
+    public bool TryWrite(string text)
     {
-        if (_disposed || !IsAlive || _inputStream == null) return;
+        if (_disposed || !IsAlive || _inputStream == null) return false;
         var bytes = Encoding.UTF8.GetBytes(text);
         lock (_writeLock)
         {
-            try { _inputStream.Write(bytes, 0, bytes.Length); _inputStream.Flush(); }
-            catch (Exception) { /* 파이프 닫힘 */ }
+            if (_disposed || !IsAlive || _inputStream == null) return false;
+            try
+            {
+                _inputStream.Write(bytes, 0, bytes.Length);
+                _inputStream.Flush();
+                return true;
+            }
+            catch (Exception) { return false; /* 파이프 닫힘 */ }
         }
     }
 
