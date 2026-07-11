@@ -100,6 +100,10 @@ public partial class App : Application
         Environment.SetEnvironmentVariable("FORCE_COLOR", "3");
         Environment.SetEnvironmentVariable("COLORTERM", "truecolor");
 
+        // Claude Code 세션 기록(트랜스크립트)을 자동 정리하지 않도록 매 실행 시 영구 보관으로 강제한다.
+        // (~/.claude/settings.json 의 cleanupPeriodDays. 설정 UI 의 콤보는 제거했고 항상 이 값으로 고정.)
+        ClaudeGlobalSettings.SetCleanupPeriodDays(ClaudeGlobalSettings.PermanentDays);
+
         SetFontScale(SettingsService.LoadFontScale());
         SetTheme(LoadSavedTheme());
 
@@ -119,6 +123,10 @@ public partial class App : Application
         Services.Terminal.GrokCustomThemes.Apply(CurrentTheme);
 
         new MainWindow().Show();
+
+        // 켜진(설치된) 에이전트 CLI 를 최신 버전으로 자동 업데이트. 시작을 막지 않도록 백그라운드(fire-and-forget).
+        // 각 CLI 자체 업데이터를 쓰며 이미 최신이면 no-op. 결과는 %AppData%\DevezCode\agent-update.log.
+        _ = AgentUpdateService.UpdateEnabledAgentsAsync();
     }
 
     /// <summary>토스트 알림을 표시한다(설정 위치에 스택). UI 스레드가 아니어도 안전.</summary>

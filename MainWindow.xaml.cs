@@ -54,9 +54,15 @@ public partial class MainWindow : Window
     private readonly StatusLineService _statusLine = new();
     private readonly UsageApiService _usageApi = new();
     private static readonly TimeSpan ClaudeApiFreshness = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ProviderUsageFreshness = TimeSpan.FromMinutes(10);
     private Models.RateLimitSnapshot? _rlHook;   // statusLine 훅 최신(폴백 전용)
     private Models.RateLimitSnapshot? _rlApi;    // OAuth API 최신(기준값)
     private Models.RateLimitSnapshot? _rlMerged; // 실제 푸터 표시값
+    private readonly System.Windows.Threading.DispatcherTimer _claudeFreshnessTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(30),
+    };
+    private bool _claudeUsageStale;
     // 추가 provider 사용량(푸터): codex(openai) + opencode-go.
     private readonly CodexUsageService _codex = new();
     private readonly OpenCodeGoUsageService _openCodeGo = new();
@@ -471,6 +477,7 @@ public partial class MainWindow : Window
             _perfMonitor.Dispose();
             _thermalMonitor.Dispose();
             _statusLine.Dispose();
+            _claudeFreshnessTimer.Stop();
             _usageApi.Dispose();
             _codex.Dispose();
             _openCodeGo.Dispose();
@@ -664,6 +671,8 @@ public partial class MainWindow : Window
         _usageApi.SnapshotUpdated  += s => OnRlSnapshot(s, fromApi: true);
         _statusLine.Start();
         _usageApi.Start();
+        _claudeFreshnessTimer.Tick += (_, _) => ReevaluateClaudeUsage();
+        _claudeFreshnessTimer.Start();
 
         // codex·opencode-go·deepseek·grok 사용량 폴링 → 푸터 패널(데이터 오면 자동 표시).
         _codex.Updated       += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
@@ -695,6 +704,8 @@ public partial class MainWindow : Window
                 Name = "Claude",
                 Plan = claudePlan,
                 IconPath = "pack://application:,,,/Resources/Images/ShellPresets/claude_code.png",
+                CapturedAt = new DateTimeOffset(rl.CapturedAt),
+                IsStale = _claudeUsageStale,
                 Rows = rows,
             });
         }
@@ -723,6 +734,8 @@ public partial class MainWindow : Window
                 Name = "Grok Build",
                 Plan = _lastGrok.PlanLabel,
                 IconPath = App.GrokIconUri,
+                CapturedAt = _lastGrok.CapturedAt,
+                IsStale = _lastGrok.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness,
                 Rows = rows,
             });
             return;
@@ -733,6 +746,8 @@ public partial class MainWindow : Window
             Name = "Grok Build",
             Plan = _lastGrok.Error,
             IconPath = App.GrokIconUri,
+            CapturedAt = _lastGrok.CapturedAt,
+            IsStale = _lastGrok.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness,
             Rows = Array.Empty<Models.UsageRowVM>(),
         });
     }
@@ -760,6 +775,8 @@ public partial class MainWindow : Window
             Name = "DeepSeek",
             Plan = null,
             IconPath = "pack://application:,,,/Resources/Images/ShellPresets/deepseek.png",
+            CapturedAt = u.CapturedAt,
+            IsStale = u.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness,
             Rows = rows,
         });
     }
@@ -784,6 +801,8 @@ public partial class MainWindow : Window
             Name = name,
             Plan = u.PlanLabel,
             IconPath = iconPath,
+            CapturedAt = u.CapturedAt,
+            IsStale = u.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness,
             Rows = rows,
             ResetCredits = credits,
         });
@@ -881,14 +900,54 @@ public partial class MainWindow : Window
         => Dispatcher.InvokeAsync(() =>
         {
             if (fromApi) _rlApi = snap; else _rlHook = snap;
-            // API 파일과 현재 OAuth 자격증명이 계정 기준점이다. 훅은 장기 실행 daemon 이
-            // 이전 계정 값을 보낼 수 있으므로 API 가 최근이면 절대 섞지 않는다.
-            var apiFresh = _rlApi is { HasData: true } api
-                && api.CapturedAt >= DateTime.Now - ClaudeApiFreshness;
-            _rlMerged = apiFresh ? _rlApi : _rlHook;
-            if (_rlMerged != null) ApplyRateLimit(_rlMerged); // 하단 푸터
-            RefreshUsagePanelIfVisible();                     // 우측 사이드바
+            ReevaluateClaudeUsage();
         });
+
+    /// <summary>API를 계정 기준값으로 사용하고 훅은 API 성공 전 폴백으로만 사용한다.
+    /// 시간 경과만으로도 stale/만료 상태가 바뀌므로 30초 타이머에서도 호출한다.</summary>
+    private void ReevaluateClaudeUsage()
+    {
+        var source = _rlApi ?? _rlHook;
+        if (source == null)
+        {
+            _rlMerged = null;
+            _claudeUsageStale = false;
+            RateLimitPanel.Visibility = Visibility.Collapsed;
+            UpdateFooterDivider();
+            if (_lastCodex != null)
+                SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct,
+                    CxSevenBar, CxSevenPct, _lastCodex, "Codex");
+            RefreshUsagePanelIfVisible();
+            return;
+        }
+
+        _claudeUsageStale = source.CapturedAt < DateTime.Now - ClaudeApiFreshness;
+        var merged = RemoveExpiredClaudeWindows(source, DateTimeOffset.Now);
+        _rlMerged = merged;
+        ApplyRateLimit(merged);
+        if (_lastCodex != null)
+            SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct,
+                CxSevenBar, CxSevenPct, _lastCodex, "Codex");
+        RefreshUsagePanelIfVisible();
+    }
+
+    private static Models.RateLimitSnapshot RemoveExpiredClaudeWindows(
+        Models.RateLimitSnapshot source, DateTimeOffset now)
+    {
+        var fiveValid = source.FiveHourResetsAt is not { } fiveReset || fiveReset > now;
+        var weekValid = source.SevenDayResetsAt is not { } weekReset || weekReset > now;
+        var fableValid = source.FableWeeklyResetsAt is not { } fableReset || fableReset > now;
+        return new Models.RateLimitSnapshot
+        {
+            CapturedAt = source.CapturedAt,
+            FiveHourPercent = fiveValid ? source.FiveHourPercent : null,
+            FiveHourResetsAt = fiveValid ? source.FiveHourResetsAt : null,
+            SevenDayPercent = weekValid ? source.SevenDayPercent : null,
+            SevenDayResetsAt = weekValid ? source.SevenDayResetsAt : null,
+            FableWeeklyPercent = fableValid ? source.FableWeeklyPercent : null,
+            FableWeeklyResetsAt = fableValid ? source.FableWeeklyResetsAt : null,
+        };
+    }
 
     /// <summary>사용량 사이드바가 열려 있으면 최신 스냅샷으로 카드를 다시 빌드 — 시작 시/폴링 시 자동 반영.</summary>
     internal void RefreshUsagePanelIfVisible()
@@ -901,7 +960,19 @@ public partial class MainWindow : Window
     {
         SidebarUsageList.ItemsSource = cards;
         SidebarUsageEmpty.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        SidebarUsageUpdated.Text = cards.Count == 0 ? "" : $"{DateTime.Now:HH:mm} 기준";
+        if (cards.Count == 0)
+        {
+            SidebarUsageUpdated.Text = "";
+            return;
+        }
+
+        var capturedAt = cards
+            .Where(card => card.CapturedAt.HasValue)
+            .Select(card => card.CapturedAt!.Value)
+            .DefaultIfEmpty(DateTimeOffset.Now)
+            .Min();
+        SidebarUsageUpdated.Text = $"{capturedAt.ToLocalTime():HH:mm} 기준"
+            + (cards.Any(card => card.IsStale) ? " · 갱신 지연" : "");
     }
 
     /// <summary>codex/opencode-go 스냅샷 저장 후 하단 푸터 + 우측 사이드바 갱신.</summary>
@@ -1090,7 +1161,8 @@ public partial class MainWindow : Window
             SetWindowBar(RlFableBar, RlFablePct, fw);
         }
         else RlFableGroup.Visibility = Visibility.Collapsed;
-        RateLimitPanel.ToolTip = BuildRlTooltip(snap);
+        RateLimitPanel.ToolTip = BuildRlTooltip(snap)
+            + (_claudeUsageStale ? $"\n갱신 지연 · 마지막 성공 {snap.CapturedAt:HH:mm}" : "");
     }
 
     /// <summary>codex/go 사용량을 해당 푸터 패널에 반영. 데이터 없거나 설정 off 면 숨김.</summary>
@@ -1104,7 +1176,10 @@ public partial class MainWindow : Window
         SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
         SetWindowBar(wBar, wPct, u.Weekly?.UsedPercent);
         if (mBar != null && mPct != null) SetWindowBar(mBar, mPct, u.Monthly?.UsedPercent);
-        panel.ToolTip = BuildProviderTooltip(u, name);
+        panel.ToolTip = BuildProviderTooltip(u, name)
+            + (u.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness
+                ? $"\n갱신 지연 · 마지막 성공 {u.CapturedAt.ToLocalTime():HH:mm}"
+                : "");
         UpdateFooterDivider();
     }
 
@@ -1250,7 +1325,14 @@ public partial class MainWindow : Window
     {
         var win = new Views.CodexLoginWindow(this);
         win.ShowDialog();
-        if (win.Captured) _codex.RefreshNow();
+        if (win.Captured)
+        {
+            _lastCodex = null;
+            CodexPanel.Visibility = Visibility.Collapsed;
+            UpdateFooterDivider();
+            RefreshUsagePanelIfVisible();
+            _codex.RefreshNow();
+        }
     }
 
     /// <summary>Claude(claude.ai) OAuth 로그인 창을 띄우고 성공 시 사용량을 즉시 갱신.</summary>
@@ -1258,7 +1340,13 @@ public partial class MainWindow : Window
     {
         var win = new Views.ClaudeLoginWindow(this);
         win.ShowDialog();
-        if (win.Captured) _usageApi.RefreshNow();
+        if (win.Captured)
+        {
+            _rlApi = null;
+            _rlHook = null;
+            ReevaluateClaudeUsage();
+            _usageApi.RefreshNow();
+        }
     }
 
     /// <summary>설정의 '하단 푸터 표시' 토글 변경 시 — 마지막 스냅샷으로 각 푸터 패널 가시성을 다시 평가.

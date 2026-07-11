@@ -46,6 +46,10 @@ public sealed class UsageCardVM
     public required string Name { get; init; }
     public string? Plan { get; init; }
     public required string IconPath { get; init; }        // pack:// 이미지 경로
+    /// <summary>카드 데이터의 실제 마지막 정상 수집 시각.</summary>
+    public System.DateTimeOffset? CapturedAt { get; init; }
+    /// <summary>최근 갱신 실패/장기 미갱신 상태.</summary>
+    public bool IsStale { get; init; }
     public IReadOnlyList<UsageRowVM> Rows { get; init; } = System.Array.Empty<UsageRowVM>();
 
     /// <summary>초기화권 만료일/잔여기간 행. codex 만 채워짐.</summary>

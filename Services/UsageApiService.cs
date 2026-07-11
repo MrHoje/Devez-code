@@ -1,4 +1,7 @@
 using System.IO;
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -16,8 +19,8 @@ namespace DevezCode.Services;
 public sealed class UsageApiService : IDisposable
 {
     private const string UsageUrl = "https://api.anthropic.com/api/oauth/usage";
-    // claude CLI 로 위장한 User-Agent. 없으면 영구 429. claude 업데이트 시 갱신.
-    private const string UserAgent = "claude-code/2.1.186";
+    // 실제 설치된 Claude CLI 버전을 사용한다. 조회 실패 시에도 claude-code 형식은 유지한다.
+    private static readonly Lazy<string> UserAgent = new(DetectUserAgent);
     private const int PollMs = 3 * 60 * 1000; // 3분 — UA 포함 시 안전한 최소 간격
 
     // 토큰 후보 경로: claude CLI 파일(있으면 최신) → DevezCode 자체 로그인(ClaudeLoginWindow) 파일.
@@ -35,20 +38,23 @@ public sealed class UsageApiService : IDisposable
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private System.Threading.Timer? _poll;
+    private readonly SemaphoreSlim _pollGate = new(1, 1);
+    private static string? _lastSuccessfulSubscriptionType;
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
     public void Start()
     {
-        // 즉시 1회 + 이후 3분 주기. 폴링은 백그라운드 스레드에서 비동기로 돈다.
-        _poll = new System.Threading.Timer(_ => _ = PollAsync(), null, 0, PollMs);
+        // 즉시 1회 + 이후 3분 주기. 주기 폴링은 겹치면 생략한다.
+        _poll = new System.Threading.Timer(
+            _ => _ = PollAsync(waitForTurn: false), null, 0, PollMs);
     }
 
     /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
-    public void RefreshNow() => _ = PollAsync();
+    public void RefreshNow() => _ = PollAsync(waitForTurn: true);
 
-    /// <summary>Claude OAuth 토큰이 있어 연결된 상태인지(claude CLI 또는 DevezCode 자체 로그인).</summary>
-    public static bool IsConnected() => ReadToken() != null;
+    /// <summary>유효한 Claude OAuth 토큰이 하나라도 있는지.</summary>
+    public static bool IsConnected() => ReadCredentials().Count > 0;
 
     // DevezCode 자체 로그인(ClaudeLoginWindow) 토큰의 refresh 용 — claude CLI 와 동일 값.
     private const string OAuthClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
@@ -77,71 +83,125 @@ public sealed class UsageApiService : IDisposable
             if (string.IsNullOrEmpty(access)) return;
             var refresh = r.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : c.refresh; // 회전 시 교체
             var exp = r.TryGetProperty("expires_in", out var ei) && ei.ValueKind == JsonValueKind.Number ? ei.GetInt64() : 3600;
-            ClaudeCredentialStore.Save(access!, refresh, DateTimeOffset.Now.ToUnixTimeMilliseconds() + exp * 1000);
+            if (!ClaudeCredentialStore.TrySaveIfCurrent(
+                    c.access, c.refresh, access!, refresh,
+                    DateTimeOffset.Now.ToUnixTimeMilliseconds() + exp * 1000))
+                DiagLog.Write("ClaudeUsage refresh discarded: app credential changed");
         }
         catch { /* 일시 오류 — 기존 토큰 유지 */ }
     }
 
-    private async Task PollAsync()
+    private async Task PollAsync(bool waitForTurn)
     {
+        // 수동 새로고침은 진행 중 요청 뒤에 반드시 실행하고, 타이머 중복만 생략한다.
+        if (waitForTurn)
+            await _pollGate.WaitAsync().ConfigureAwait(false);
+        else if (!_pollGate.Wait(0))
+            return;
         try
         {
             await EnsureFreshClaudeAsync().ConfigureAwait(false);
-            var token = ReadToken();
-            if (token == null) return; // 자격증명/토큰 없음 — 직전 값 유지
-
-            using var req = new HttpRequestMessage(HttpMethod.Get, UsageUrl);
-            req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
-            req.Headers.TryAddWithoutValidation("anthropic-beta", "oauth-2025-04-20");
-            req.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
-
-            using var res = await _http.SendAsync(req).ConfigureAwait(false);
-            // 429/401/5xx 등 — 이번 주기 건너뛰고 직전 값 유지(다음 주기 3분 뒤 재시도).
-            if (res.StatusCode == HttpStatusCode.TooManyRequests || !res.IsSuccessStatusCode) return;
-
-            await using var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false);
-            using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
-            var root = doc.RootElement;
-
-            // Fable 주간 전용 한도: limits 배열에서 weekly_scoped + scope.model.display_name == "Fable" 찾기
-            double? fableWeeklyPct = null;
-            DateTimeOffset? fableWeeklyReset = null;
-            if (root.TryGetProperty("limits", out var limits) && limits.ValueKind == JsonValueKind.Array)
+            var credentials = ReadCredentials();
+            if (credentials.Count == 0)
             {
-                foreach (var item in limits.EnumerateArray())
+                DiagLog.Write("ClaudeUsage skipped: no valid OAuth credential");
+                return;
+            }
+            var credentialGeneration = string.Join(",", credentials.Select(item => item.Fingerprint));
+            InvalidateFallbackUnlessAnyAccountMatches(
+                credentials.Select(item => item.Fingerprint));
+
+            foreach (var credential in credentials)
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, UsageUrl);
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + credential.Token);
+                req.Headers.TryAddWithoutValidation("anthropic-beta", "oauth-2025-04-20");
+                req.Headers.TryAddWithoutValidation("User-Agent", UserAgent.Value);
+
+                using var res = await _http.SendAsync(req).ConfigureAwait(false);
+                if (res.StatusCode == HttpStatusCode.Unauthorized)
                 {
-                    if (!item.TryGetProperty("kind", out var kind) || kind.GetString() != "weekly_scoped") continue;
-                    if (!item.TryGetProperty("scope", out var scope) || scope.ValueKind != JsonValueKind.Object) continue;
-                    if (!scope.TryGetProperty("model", out var model) || model.ValueKind != JsonValueKind.Object) continue;
-                    if (!model.TryGetProperty("display_name", out var dn) || dn.GetString() != "Fable") continue;
-                    if (item.TryGetProperty("percent", out var pct) && pct.ValueKind == JsonValueKind.Number)
-                        fableWeeklyPct = pct.GetDouble();
-                    if (item.TryGetProperty("resets_at", out var rs) && rs.ValueKind == JsonValueKind.String
-                        && DateTimeOffset.TryParse(rs.GetString(), out var dt))
-                        fableWeeklyReset = dt;
-                    break;
+                    DiagLog.Write($"ClaudeUsage HTTP 401 ({credential.Source}); trying next credential");
+                    InvalidateFallbackForAccount(credential.Fingerprint);
+                    continue;
                 }
+                if (!res.IsSuccessStatusCode)
+                {
+                    DiagLog.Write($"ClaudeUsage HTTP {(int)res.StatusCode} ({credential.Source})");
+                    return;
+                }
+
+                await using var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
+                var root = doc.RootElement;
+
+                double? fableWeeklyPct = null;
+                DateTimeOffset? fableWeeklyReset = null;
+                if (root.TryGetProperty("limits", out var limits) && limits.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in limits.EnumerateArray())
+                    {
+                        if (!item.TryGetProperty("kind", out var kind) || kind.GetString() != "weekly_scoped") continue;
+                        if (!item.TryGetProperty("scope", out var scope) || scope.ValueKind != JsonValueKind.Object) continue;
+                        if (!scope.TryGetProperty("model", out var model) || model.ValueKind != JsonValueKind.Object) continue;
+                        if (!model.TryGetProperty("display_name", out var dn) || dn.GetString() != "Fable") continue;
+                        if (item.TryGetProperty("percent", out var pct) && pct.ValueKind == JsonValueKind.Number)
+                            fableWeeklyPct = pct.GetDouble();
+                        if (item.TryGetProperty("resets_at", out var rs) && rs.ValueKind == JsonValueKind.String
+                            && DateTimeOffset.TryParse(rs.GetString(), out var dt))
+                            fableWeeklyReset = dt;
+                        break;
+                    }
+                }
+
+                var snap = new RateLimitSnapshot
+                {
+                    CapturedAt = DateTime.Now,
+                    FiveHourPercent = ReadPct(root, "five_hour"),
+                    SevenDayPercent = ReadPct(root, "seven_day"),
+                    FiveHourResetsAt = ReadReset(root, "five_hour"),
+                    SevenDayResetsAt = ReadReset(root, "seven_day"),
+                    FableWeeklyPercent = fableWeeklyPct,
+                    FableWeeklyResetsAt = fableWeeklyReset,
+                };
+                if (!snap.HasData)
+                {
+                    DiagLog.Write($"ClaudeUsage response has no usage windows ({credential.Source})");
+                    return;
+                }
+
+                // 요청 중 로그인/계정 구성이 바뀌었으면 이전 세대 응답을 게시하지 않는다.
+                var currentGeneration = string.Join(
+                    ",", ReadCredentials().Select(item => item.Fingerprint));
+                if (!string.Equals(currentGeneration, credentialGeneration, StringComparison.Ordinal))
+                {
+                    DiagLog.Write("ClaudeUsage discarded: credentials changed during request");
+                    return;
+                }
+
+                WriteFallback(snap, credential.Fingerprint);
+                Volatile.Write(ref _lastSuccessfulSubscriptionType, credential.SubscriptionType);
+                DiagLog.Write(
+                    $"ClaudeUsage updated: 5h={snap.FiveHourPercent:F0}, weekly={snap.SevenDayPercent:F0} ({credential.Source})");
+                SnapshotUpdated?.Invoke(snap);
+                return;
             }
 
-            var snap = new RateLimitSnapshot
-            {
-                FiveHourPercent  = ReadPct(root, "five_hour"),
-                SevenDayPercent  = ReadPct(root, "seven_day"),
-                FiveHourResetsAt = ReadReset(root, "five_hour"),
-                SevenDayResetsAt = ReadReset(root, "seven_day"),
-                FableWeeklyPercent = fableWeeklyPct,
-                FableWeeklyResetsAt = fableWeeklyReset,
-            };
-            if (!snap.HasData) return;
-            WriteFallback(snap); // statusline.js 폴백용
-            SnapshotUpdated?.Invoke(snap);
+            DiagLog.Write("ClaudeUsage failed: all OAuth credentials rejected");
         }
-        catch { /* 일시 오류 — 직전 값 유지 */ }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"ClaudeUsage poll failed: {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            _pollGate.Release();
+        }
     }
 
     /// <summary>statusline.js 가 live rate_limits 부재 시 읽을 폴백 파일을 쓴다.
-    /// claude statusLine JSON 의 rate_limits 와 같은 모양(resets_at = unix 초).</summary>
-    private static void WriteFallback(RateLimitSnapshot snap)
+    /// 수집 시각과 계정 지문을 함께 기록해 오래된/다른 계정 데이터를 진단할 수 있게 한다.</summary>
+    private static void WriteFallback(RateLimitSnapshot snap, string accountFingerprint)
     {
         try
         {
@@ -150,6 +210,8 @@ public sealed class UsageApiService : IDisposable
             using (var w = new Utf8JsonWriter(ms))
             {
                 w.WriteStartObject();
+                w.WriteString("fetched_at", snap.CapturedAt.ToUniversalTime().ToString("O"));
+                w.WriteString("account_fingerprint", accountFingerprint);
                 WriteWindow(w, "five_hour", snap.FiveHourPercent, snap.FiveHourResetsAt);
                 WriteWindow(w, "seven_day", snap.SevenDayPercent, snap.SevenDayResetsAt);
                 w.WriteEndObject();
@@ -168,10 +230,55 @@ public sealed class UsageApiService : IDisposable
         w.WriteEndObject();
     }
 
-    /// <summary>credentials.json 에서 subscriptionType(claude plan)을 추출.
-    /// 후보 경로를 순서대로 시도. 없으면 null.</summary>
-    public static string? ReadSubscriptionType()
+    private static void InvalidateFallbackUnlessAnyAccountMatches(
+        IEnumerable<string> accountFingerprints)
     {
+        try
+        {
+            if (!File.Exists(FallbackPath)) return;
+            using var doc = JsonDocument.Parse(File.ReadAllText(FallbackPath));
+            var root = doc.RootElement;
+            var stored = root.TryGetProperty("account_fingerprint", out var value)
+                && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+            var currentAccounts = accountFingerprints.ToHashSet(StringComparer.Ordinal);
+            if (stored == null || !currentAccounts.Contains(stored))
+                File.Delete(FallbackPath);
+        }
+        catch
+        {
+            try { File.Delete(FallbackPath); } catch { }
+        }
+    }
+
+    private static void InvalidateFallbackForAccount(string accountFingerprint)
+    {
+        try
+        {
+            if (!File.Exists(FallbackPath)) return;
+            using var doc = JsonDocument.Parse(File.ReadAllText(FallbackPath));
+            var root = doc.RootElement;
+            var stored = root.TryGetProperty("account_fingerprint", out var value)
+                && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+            if (string.Equals(stored, accountFingerprint, StringComparison.Ordinal))
+                File.Delete(FallbackPath);
+        }
+        catch
+        {
+            try { File.Delete(FallbackPath); } catch { }
+        }
+    }
+    private sealed record OAuthCredential(
+        string Token,
+        string Source,
+        string Fingerprint,
+        string? SubscriptionType);
+
+    /// <summary>유효한 자격증명을 우선순위대로 읽는다. 만료된 CLI 토큰이 앱 로그인을
+    /// 가리지 않도록 만료 시각을 검사하고 다음 후보로 넘어간다.</summary>
+    private static IReadOnlyList<OAuthCredential> ReadCredentials()
+    {
+        var result = new List<OAuthCredential>();
+        var nowMs = DateTimeOffset.Now.ToUnixTimeMilliseconds();
         foreach (var path in CredentialPaths())
         {
             try
@@ -180,57 +287,86 @@ public sealed class UsageApiService : IDisposable
                 using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var doc = JsonDocument.Parse(fs);
                 var root = doc.RootElement;
-                if (root.TryGetProperty("claudeAiOauth", out var oauth)
-                    && oauth.TryGetProperty("subscriptionType", out var st)
-                    && st.ValueKind == JsonValueKind.String)
+                var oauth = root.TryGetProperty("claudeAiOauth", out var nested)
+                    && nested.ValueKind == JsonValueKind.Object ? nested : root;
+                string? token = null;
+                foreach (var key in new[] { "accessToken", "access_token", "token" })
                 {
-                    var raw = st.GetString();
-                    if (!string.IsNullOrEmpty(raw)) return raw;
+                    if (oauth.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String)
+                    {
+                        token = value.GetString()?.Trim();
+                        if (!string.IsNullOrEmpty(token)) break;
+                    }
                 }
+                if (string.IsNullOrEmpty(token)) continue;
+
+                long expiresAt = oauth.TryGetProperty("expiresAt", out var expires)
+                    && expires.ValueKind == JsonValueKind.Number ? expires.GetInt64() : 0;
+                if (expiresAt > 0 && expiresAt <= nowMs)
+                {
+                    DiagLog.Write($"ClaudeUsage skipped expired credential: {Path.GetFileName(path)}");
+                    continue;
+                }
+
+                string? subscription = oauth.TryGetProperty("subscriptionType", out var plan)
+                    && plan.ValueKind == JsonValueKind.String ? plan.GetString() : null;
+                result.Add(new OAuthCredential(
+                    token,
+                    path == ClaudeCredentialStore.StorePath ? "DevezCode" : "Claude CLI",
+                    Fingerprint(token),
+                    subscription));
             }
-            catch { }
+            catch (Exception ex)
+            {
+                DiagLog.Write($"ClaudeUsage credential read failed ({Path.GetFileName(path)}): {ex.GetType().Name}");
+            }
         }
-        return null;
+        return result;
     }
+
+    public static string? ReadSubscriptionType()
+        => Volatile.Read(ref _lastSuccessfulSubscriptionType)
+            ?? ReadCredentials().FirstOrDefault()?.SubscriptionType;
 
     /// <summary>subscriptionType 문자열을 표시용 라벨로 변환("pro" → "Claude (Pro)").</summary>
     public static string FormatPlanLabel(string? subscriptionType)
     {
         if (string.IsNullOrEmpty(subscriptionType)) return "Claude";
-        var lower = subscriptionType.ToLowerInvariant();
-        var plan = lower switch
+        var plan = subscriptionType.ToLowerInvariant() switch
         {
             "pro" => "Pro",
             "max" => "Max",
             "team" => "Team",
             "enterprise" => "Enterprise",
-            _ => subscriptionType, // 그대로 표시
+            _ => subscriptionType,
         };
         return $"Claude ({plan})";
     }
 
-    /// <summary>credentials.json 에서 OAuth 액세스 토큰 추출(느슨한 매칭). 후보 경로를 순서대로 시도.</summary>
-    private static string? ReadToken()
+    private static string Fingerprint(string token)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)))[..16];
+
+    private static string DetectUserAgent()
     {
-        foreach (var path in CredentialPaths())
+        try
         {
-            try
+            using var process = Process.Start(new ProcessStartInfo
             {
-                if (!File.Exists(path)) continue;
-                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var doc = JsonDocument.Parse(fs);
-                var root = doc.RootElement;
-                if (root.TryGetProperty("claudeAiOauth", out var oauth)
-                    && oauth.TryGetProperty("accessToken", out var at)
-                    && at.ValueKind == JsonValueKind.String)
-                    return at.GetString();
-                foreach (var key in new[] { "accessToken", "access_token", "token" })
-                    if (root.TryGetProperty(key, out var t) && t.ValueKind == JsonValueKind.String)
-                        return t.GetString();
+                FileName = "claude",
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            var output = process?.StandardOutput.ReadLine();
+            if (process != null && process.WaitForExit(3000) && process.ExitCode == 0)
+            {
+                var version = output?.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(version)) return "claude-code/" + version;
             }
-            catch { }
         }
-        return null;
+        catch { }
+        return "claude-code/2";
     }
 
     /// <summary>윈도우의 utilization(사용률 %)을 읽는다. 없으면 null.</summary>

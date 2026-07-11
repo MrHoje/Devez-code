@@ -15,6 +15,9 @@ public sealed class AgentDef
     public string Command { get; init; } = "";
     /// <summary>설정 UI에 보여줄 설치 명령(Windows 기준 권장 한 줄). 복사 버튼 대상.</summary>
     public string InstallCommand { get; init; } = "";
+    /// <summary>최신 버전으로 갱신하는 명령(PowerShell 한 줄). 가능하면 각 CLI 자체 업데이터 사용.
+    /// 이미 최신이면 no-op 이어야 함(앱 시작 시 매번 호출됨). 빈 값이면 자동 업데이트 대상에서 제외.</summary>
+    public string UpdateCommand { get; init; } = "";
     /// <summary>Claude 만 — SessionStart/UserPromptSubmit 훅으로 busy 스피너·lastmsg 헤더 지원.</summary>
     public bool SupportsHooks { get; init; }
     /// <summary>alt-screen(풀스크린 TUI) 대신 인라인으로 렌더하는 에이전트(gjc 등).
@@ -40,6 +43,7 @@ public static class AgentRegistry
             ExeNames = new[] { "claude.exe", "claude.cmd", "claude.bat", "claude.ps1", "claude" },
             Command = "claude",
             InstallCommand = "irm https://claude.ai/install.ps1 | iex",
+            UpdateCommand = "claude update",
             SupportsHooks = true,
         },
         new()
@@ -50,6 +54,7 @@ public static class AgentRegistry
             // 스탠드얼론 install.ps1 은 PS 5.1 에서 OSArchitecture 속성 오류로 실패(openai/codex#19559).
             // Windows 실사용은 npm 경로가 안정적(공식 대안). Node.js 필요.
             InstallCommand = "npm install -g @openai/codex",
+            UpdateCommand = "npm install -g @openai/codex@latest",
             ResumeFlag = "--last",
             SupportsHooks = true, // ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적 (Claude 정합)
             InlineTui = true,     // codex 는 alt-screen(?1049h) 미사용 인라인 TUI — ?2026h 프레임 마커로
@@ -61,6 +66,7 @@ public static class AgentRegistry
             ExeNames = new[] { "opencode.exe", "opencode.cmd", "opencode.bat", "opencode.ps1", "opencode" },
             Command = "opencode",
             InstallCommand = "npm install -g opencode-ai",
+            UpdateCommand = "opencode upgrade",
             ResumeFlag = "-c",
         },
         new()
@@ -73,6 +79,7 @@ public static class AgentRegistry
             ExeNames = new[] { "gjc.exe", "gjc.cmd", "gjc.bat", "gjc.ps1", "gjc" },
             Command = "gjc",
             InstallCommand = "bun install -g gajae-code",
+            UpdateCommand = "bun install -g gajae-code@latest",
             InlineTui = true,
         },
         // [개발 중단] Grok 통합 보류 — HiddenFromUI. 재개 시 이 항목·관련 서비스 활성화.

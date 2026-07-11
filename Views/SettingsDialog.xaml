@@ -283,7 +283,7 @@
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconTerminal}" Width="15" Height="15"
+                                              Data="{StaticResource IconBot}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="에이전트" VerticalAlignment="Center"/>
                                     </StackPanel>
@@ -539,22 +539,6 @@
                                                                       Width="12" Height="12"
                                                                       Stroke="{DynamicResource TextMutedBrush}"/>
                                                             </Button>
-                                                        </StackPanel>
-                                                        <!-- Claude Code 전용: 세션 유지기간 (~/.claude/settings.json 의 cleanupPeriodDays) -->
-                                                        <StackPanel Margin="0,12,0,0"
-                                                                    Visibility="{Binding IsClaudeCode, Converter={x:Static models:BoolVisibilityConverter.Instance}}">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="마지막 접근 후" FontSize="{DynamicResource Fs12}"
-                                                                           Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                                                                <ComboBox Style="{StaticResource DockComboBox}" Margin="10,0,0,0" Width="108"
-                                                                          VerticalAlignment="Center"
-                                                                          ItemsSource="{Binding RetentionOptions}"
-                                                                          DisplayMemberPath="Label" SelectedValuePath="Days"
-                                                                          SelectedValue="{Binding RetentionDays, Mode=TwoWay}"/>
-                                                            </StackPanel>
-                                                            <TextBlock Text="설정 기간 동안 다시 열리지 않은 세션 기록을 Claude Code 가 자동 정리합니다. (전역설정)"
-                                                                       FontSize="{DynamicResource Fs11}" Margin="0,6,0,0" TextWrapping="Wrap"
-                                                                       Foreground="{DynamicResource TextMutedBrush}"/>
                                                         </StackPanel>
                                                     </StackPanel>
                                                     <!-- 새로고침(설치 상태 재스캔) + 활성화 토글 -->

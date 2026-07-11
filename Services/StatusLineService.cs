@@ -16,6 +16,7 @@ public sealed class StatusLineService : IDisposable
     private FileSystemWatcher? _watcher;
     private System.Threading.Timer? _poll;
     private long _lastWriteTicks = -1; // 마지막으로 emit 한 파일 쓰기시각 — 중복 emit 방지
+    private readonly object _emitLock = new();
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
@@ -43,23 +44,27 @@ public sealed class StatusLineService : IDisposable
 
     private void Emit()
     {
-        try
+        lock (_emitLock)
         {
-            // 쓰기시각이 그대로면 파싱 스킵(폴링이 매번 파일을 안 깨물도록).
-            if (File.Exists(FilePath))
+            long ticks;
+            try
             {
-                var ticks = File.GetLastWriteTimeUtc(FilePath).Ticks;
+                if (!File.Exists(FilePath)) return;
+                ticks = File.GetLastWriteTimeUtc(FilePath).Ticks;
                 if (ticks == _lastWriteTicks) return;
-                _lastWriteTicks = ticks;
             }
+            catch
+            {
+                return;
+            }
+
+            // 파싱 성공 뒤에만 쓰기 시각을 소비한다. 훅이 파일을 쓰는 도중 3회 재시도가
+            // 모두 실패해도 다음 2초 폴링에서 같은 파일을 다시 읽을 수 있다.
+            var snap = TryRead();
+            if (snap == null) return;
+            _lastWriteTicks = ticks;
+            SnapshotUpdated?.Invoke(snap);
         }
-        catch { }
-        // 누적 금지: 훅 파일의 최신 원본값만 그대로 알린다. 과거의 높은 값을 자기 자신에
-        // 되먹여 Math.Max 로 창 리셋 전까지 얼어붙던(주간 82% 고정) 문제 방지 — seven_day 는
-        // reset 이 미래라 만료 폐기도 안 걸린다. 소스 병합(비후퇴·창 채택)은 MainWindow 가
-        // hook/API '최신끼리' 수행하므로 여기서 다시 누적할 필요가 없다.
-        var snap = TryRead();
-        if (snap != null) SnapshotUpdated?.Invoke(snap);
     }
 
     /// <summary>파일을 읽어 스냅샷으로 파싱. 쓰기 경합 시 짧게 재시도. 실패/없음이면 null.</summary>
@@ -75,6 +80,7 @@ public sealed class StatusLineService : IDisposable
                 if (!doc.RootElement.TryGetProperty("rate_limits", out var rl)) return null;
                 return new RateLimitSnapshot
                 {
+                    CapturedAt = File.GetLastWriteTime(FilePath),
                     FiveHourPercent  = ReadPct(rl, "five_hour"),
                     SevenDayPercent  = ReadPct(rl, "seven_day"),
                     FiveHourResetsAt = ReadReset(rl, "five_hour"),

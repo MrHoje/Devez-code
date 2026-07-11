@@ -6,8 +6,8 @@ using DevezCode.Models;
 
 namespace DevezCode.Services;
 
-/// <summary>codex/openai 사용량을 폴링한다. opencode 의 <c>auth.json</c> OAuth 토큰으로
-/// <c>GET chatgpt.com/backend-api/wham/usage</c> 를 호출(@slkiser/opencode-quota 의 openai.js 와 동일 방식).
+/// <summary>codex/openai 사용량을 폴링한다. Codex CLI 또는 DevezCode/opencode 의 OAuth 토큰으로
+/// <c>GET chatgpt.com/backend-api/wham/usage</c> 를 호출한다.
 /// primary_window=5h, secondary_window=주간. 토큰 만료/오류 시 직전 값 유지.</summary>
 public sealed class CodexUsageService : IDisposable
 {
@@ -16,12 +16,13 @@ public sealed class CodexUsageService : IDisposable
     private const int PollMs = 3 * 60 * 1000;
     private static readonly string[] AuthKeys = { "openai", "codex", "chatgpt", "opencode" };
 
-    // auth.json 후보 경로. DevezCode 자체 로그인(CodexLoginWindow) 토큰을 최우선으로 보고,
-    // 없으면 opencode 가 깔아둔 토큰을 재사용한다.
+    // auth.json 후보 경로. CLI 표시값과 같은 계정/토큰을 쓰도록 Codex CLI 인증을 최우선으로 보고,
+    // 없으면 DevezCode 자체 로그인과 opencode 인증을 사용한다.
     private static IEnumerable<string> AuthPaths()
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        yield return Path.Combine(home, ".codex", "auth.json");
         yield return CodexCredentialStore.StorePath;
         yield return Path.Combine(home, ".local", "share", "opencode", "auth.json");
         yield return Path.Combine(appData, "opencode", "auth.json");
@@ -31,19 +32,15 @@ public sealed class CodexUsageService : IDisposable
     private System.Threading.Timer? _poll;
     // Timer 주기와 로그인/수동 새로고침이 겹치면 오래된 요청이 나중에 도착해 최신값을 덮을 수 있다.
     private readonly SemaphoreSlim _pollGate = new(1, 1);
-    private readonly object _usageLock = new();
-    private ProviderUsage? _lastPublished;
-    private string? _lastAccountId;
-
-    // 같은 reset window 인데 reset_at 이 서버별로 1초 정도 흔들리는 경우를 같은 창으로 본다.
-    private static readonly TimeSpan ResetWindowTolerance = TimeSpan.FromMinutes(1);
+    private readonly HashSet<string> _rejectedTokens = new(StringComparer.Ordinal);
 
     public event Action<ProviderUsage>? Updated;
 
-    public void Start() => _poll = new System.Threading.Timer(_ => _ = PollAsync(), null, 0, PollMs);
+    public void Start() => _poll = new System.Threading.Timer(
+        _ => _ = PollAsync(waitForTurn: false, resetRejected: true), null, 0, PollMs);
 
     /// <summary>지금 즉시 1회 폴링(로그인 직후 갱신용).</summary>
-    public void RefreshNow() => _ = PollAsync();
+    public void RefreshNow() => _ = PollAsync(waitForTurn: true, resetRejected: true);
 
     /// <summary>Codex OAuth 토큰이 있어 연결된 상태인지(DevezCode 자체 로그인 또는 opencode).</summary>
     public static bool IsConnected() => ReadAuth().token != null;
@@ -75,20 +72,32 @@ public sealed class CodexUsageService : IDisposable
             if (string.IsNullOrEmpty(access)) return;
             var refresh = r.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : c.refresh;
             var exp = r.TryGetProperty("expires_in", out var ei) && ei.ValueKind == JsonValueKind.Number ? ei.GetInt64() : 3600;
-            CodexCredentialStore.Save(access!, refresh, DateTimeOffset.Now.ToUnixTimeMilliseconds() + exp * 1000);
+            if (!CodexCredentialStore.TrySaveIfCurrent(
+                    c.access, c.refresh, access!, refresh,
+                    DateTimeOffset.Now.ToUnixTimeMilliseconds() + exp * 1000))
+                DiagLog.Write("CodexUsage refresh discarded: app credential changed or disconnected");
         }
         catch { /* 일시 오류 — 기존 토큰 유지 */ }
     }
 
-    private async Task PollAsync()
+    private async Task PollAsync(bool waitForTurn, bool resetRejected)
     {
-        // 이미 폴링 중이면 이번 요청은 생략. 이전 요청이 늦게 끝나 최신 스냅샷을 되돌리는 것을 막는다.
-        if (!_pollGate.Wait(0)) return;
+        // 수동 새로고침은 진행 중 요청 뒤에 반드시 실행하고, 타이머 중복만 생략한다.
+        if (waitForTurn)
+            await _pollGate.WaitAsync().ConfigureAwait(false);
+        else if (!_pollGate.Wait(0))
+            return;
+        if (resetRejected) _rejectedTokens.Clear();
         try
         {
             await EnsureFreshAsync().ConfigureAwait(false);
-            var (token, accountId, expired) = ReadAuth();
-            if (token == null) return;            // 미연결 — 직전 값 유지
+            var (token, accountId, expired) = ReadAuth(_rejectedTokens);
+            if (token == null)
+            {
+                if (_rejectedTokens.Count > 0)
+                    DiagLog.Write("CodexUsage failed: all OAuth credentials rejected");
+                return;
+            }
             if (expired) { Updated?.Invoke(new ProviderUsage { Provider = "codex", Error = "토큰 만료 — 재로그인 필요" }); return; }
 
             using var req = new HttpRequestMessage(HttpMethod.Get, UsageUrl);
@@ -97,7 +106,20 @@ public sealed class CodexUsageService : IDisposable
             if (accountId != null) req.Headers.TryAddWithoutValidation("ChatGPT-Account-Id", accountId);
 
             using var res = await _http.SendAsync(req).ConfigureAwait(false);
-            if (!res.IsSuccessStatusCode) return; // 401/429/5xx — 직전 값 유지
+            if (!res.IsSuccessStatusCode)
+            {
+                DiagLog.Write($"CodexUsage usage HTTP {(int)res.StatusCode}");
+                if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    _rejectedTokens.Add(token);
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(250).ConfigureAwait(false);
+                        await PollAsync(waitForTurn: true, resetRejected: false).ConfigureAwait(false);
+                    });
+                }
+                return; // 직전 값 유지
+            }
 
             await using var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
@@ -109,78 +131,44 @@ public sealed class CodexUsageService : IDisposable
                 primary = ReadWindow(rl, "primary_window");
                 weekly  = ReadWindow(rl, "secondary_window");
             }
-            if (primary == null && weekly == null) return;
+            if (primary == null && weekly == null)
+            {
+                DiagLog.Write("CodexUsage response has no rate-limit windows");
+                return;
+            }
 
             string? plan = root.TryGetProperty("plan_type", out var pt) && pt.ValueKind == JsonValueKind.String
                 ? DerivePlanLabel(pt.GetString()) : null;
 
             // 초기화권 정보는 별도 엔드포인트 — 실패해도 사용량은 정상 전달
             var credits = await FetchResetCreditsAsync(token, accountId, _http).ConfigureAwait(false);
+            var (currentToken, currentAccountId, _) = ReadAuth(_rejectedTokens);
+            if (!string.Equals(token, currentToken, StringComparison.Ordinal)
+                || !string.Equals(accountId, currentAccountId, StringComparison.Ordinal))
+            {
+                DiagLog.Write("CodexUsage response discarded: auth changed while request was in flight");
+                return;
+            }
 
-            var usage = StabilizeUsage(new ProviderUsage
+            var usage = new ProviderUsage
             {
                 Provider = "codex",
                 Primary = primary,
                 Weekly = weekly,
                 PlanLabel = plan,
                 ResetCredits = credits,
-            }, accountId);
+            };
+            DiagLog.Write(
+                $"CodexUsage updated: 5h={primary?.UsedPercent:F0}, weekly={weekly?.UsedPercent:F0}");
             Updated?.Invoke(usage);
         }
-        catch { /* 일시 오류 — 직전 값 유지 */ }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"CodexUsage poll failed: {ex.GetType().Name}: {ex.Message}");
+        }
         finally { _pollGate.Release(); }
     }
 
-    /// <summary>동일한 reset window 에서는 사용률이 감소할 수 없으므로 최고값을 유지한다.
-    /// API 캐시/CLI 병행 세션의 오래된 응답이 54%를 2%로 되돌리는 현상을 차단한다.
-    /// reset 시각이 다음 창으로 바뀌었거나 기존 창이 끝났으면 새 창의 낮은 값을 정상 수용한다.</summary>
-    private ProviderUsage StabilizeUsage(ProviderUsage candidate, string? accountId)
-    {
-        lock (_usageLock)
-        {
-            if (!string.Equals(_lastAccountId, accountId, StringComparison.Ordinal))
-                _lastPublished = null; // 계정 전환 시 이전 계정 최고값을 섞지 않는다.
-
-            var now = DateTimeOffset.Now;
-            var stable = new ProviderUsage
-            {
-                Provider = candidate.Provider,
-                Primary = StabilizeWindow(_lastPublished?.Primary, candidate.Primary, now),
-                Weekly = StabilizeWindow(_lastPublished?.Weekly, candidate.Weekly, now),
-                Monthly = candidate.Monthly,
-                PlanLabel = candidate.PlanLabel,
-                Error = candidate.Error,
-                ResetCredits = candidate.ResetCredits,
-                Balances = candidate.Balances,
-            };
-            _lastAccountId = accountId;
-            _lastPublished = stable;
-            return stable;
-        }
-    }
-
-    private static UsageWindow? StabilizeWindow(UsageWindow? previous, UsageWindow? candidate, DateTimeOffset now)
-    {
-        if (previous == null) return candidate;
-        if (candidate == null)
-            return previous.ResetsAt is { } previousReset && previousReset <= now ? null : previous;
-
-        // 기존 창이 실제로 끝났으면 새 창 값(대개 낮음)을 즉시 수용한다.
-        if (previous.ResetsAt is { } endedAt && endedAt <= now) return candidate;
-
-        if (previous.ResetsAt is { } oldReset && candidate.ResetsAt is { } newReset)
-        {
-            var resetDelta = newReset - oldReset;
-            if (resetDelta > ResetWindowTolerance) return candidate;  // 다음 reset window
-            if (resetDelta < -ResetWindowTolerance) return previous; // 늦게 도착한 이전 window
-        }
-
-        return new UsageWindow
-        {
-            UsedPercent = Math.Max(previous.UsedPercent, candidate.UsedPercent),
-            ResetsAt = candidate.ResetsAt ?? previous.ResetsAt,
-        };
-    }
 
     /// <summary>window 객체에서 used_percent + reset_at(epoch초)/reset_after_seconds 를 읽어 UsageWindow 로.</summary>
     private static UsageWindow? ReadWindow(JsonElement rl, string key)
@@ -188,8 +176,6 @@ public sealed class CodexUsageService : IDisposable
         if (!rl.TryGetProperty(key, out var w) || w.ValueKind != JsonValueKind.Object) return null;
         if (!w.TryGetProperty("used_percent", out var up) || up.ValueKind != JsonValueKind.Number) return null;
         var rawPct = up.GetDouble();
-        // ChatGPT API는 미사용 상태에서도 used_percent=1을 최소값으로 반환하는 경우가 있음 → 0으로
-        if (rawPct <= 1) rawPct = 0;
         DateTimeOffset? reset = null;
         if (w.TryGetProperty("reset_at", out var ra) && ra.ValueKind == JsonValueKind.Number && ra.GetDouble() > 0)
             reset = DateTimeOffset.FromUnixTimeSeconds(ra.GetInt64());
@@ -254,7 +240,8 @@ public sealed class CodexUsageService : IDisposable
     }
 
     /// <summary>auth.json 에서 (accessToken, accountId, 만료여부). 없으면 (null,null,false).</summary>
-    private static (string? token, string? accountId, bool expired) ReadAuth()
+    private static (string? token, string? accountId, bool expired) ReadAuth(
+        ISet<string>? excludedTokens = null)
     {
         if (CodexCredentialStore.IsDisconnected()) return (null, null, false);
 
@@ -266,6 +253,21 @@ public sealed class CodexUsageService : IDisposable
                 using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var doc = JsonDocument.Parse(fs);
                 var root = doc.RootElement;
+                // Codex CLI 전용 스키마:
+                // { "tokens": { "access_token": "..." }, ... }
+                if (root.TryGetProperty("tokens", out var tokens) && tokens.ValueKind == JsonValueKind.Object
+                    && tokens.TryGetProperty("access_token", out var cliAccess)
+                    && cliAccess.ValueKind == JsonValueKind.String)
+                {
+                    var cliToken = cliAccess.GetString()?.Trim();
+                    if (string.IsNullOrEmpty(cliToken)
+                        || excludedTokens?.Contains(cliToken) == true)
+                        continue;
+                    var cliExpiry = ExpirationFromJwt(cliToken);
+                    if (cliExpiry is { } expiry && expiry <= DateTimeOffset.UtcNow)
+                        continue;
+                    return (cliToken, AccountIdFromJwt(cliToken), false);
+                }
                 foreach (var key in AuthKeys)
                 {
                     if (!root.TryGetProperty(key, out var e) || e.ValueKind != JsonValueKind.Object) continue;
@@ -273,12 +275,14 @@ public sealed class CodexUsageService : IDisposable
                     if (!e.TryGetProperty("access", out var a) || a.ValueKind != JsonValueKind.String) continue;
                     var token = a.GetString()?.Trim();
                     if (string.IsNullOrEmpty(token)) continue;
+                    if (excludedTokens?.Contains(token) == true) continue;
 
                     bool expired = e.TryGetProperty("expires", out var ex) && ex.ValueKind == JsonValueKind.Number
                                    && ex.GetDouble() > 0 && ex.GetDouble() < DateTimeOffset.Now.ToUnixTimeMilliseconds();
+                    if (expired) continue;
                     var accountId = AccountIdFromJwt(token)
                                     ?? (e.TryGetProperty("accountId", out var ac) && ac.ValueKind == JsonValueKind.String ? ac.GetString() : null);
-                    return (token, accountId, expired);
+                    return (token, accountId, false);
                 }
             }
             catch { }
@@ -301,6 +305,26 @@ public sealed class CodexUsageService : IDisposable
                 ? id.GetString() : null;
         }
         catch { return null; }
+    }
+
+    private static DateTimeOffset? ExpirationFromJwt(string token)
+    {
+        try
+        {
+            var parts = token.Split('.');
+            if (parts.Length != 3) return null;
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+            using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(payload)));
+            return doc.RootElement.TryGetProperty("exp", out var exp)
+                && exp.ValueKind == JsonValueKind.Number
+                ? DateTimeOffset.FromUnixTimeSeconds(exp.GetInt64())
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public void Dispose()

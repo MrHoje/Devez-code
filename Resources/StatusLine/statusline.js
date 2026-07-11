@@ -77,17 +77,21 @@ process.stdin.on("end", () => {
       const startDir = j.cwd || (j.workspace && j.workspace.current_dir);
       if (startDir) gitBranch = findGitBranch(startDir);
     } catch (e) {}
-    // 장기 실행 Claude daemon 은 로그인 전환 뒤에도 이전 계정의 rate_limits 를 내보낼 수 있다.
-    // DevezCode 가 현재 OAuth 자격증명으로 3분마다 기록한 API 값이 최근(10분 이내)이면 기준값으로
-    // 사용하고, 앱 미실행/네트워크 오류로 API 파일이 오래됐을 때만 세션 live 값을 사용한다.
+    // 장기 실행 Claude daemon 은 계정 전환 뒤에도 이전 계정의 live rate_limits 를
+    // 내보낼 수 있다. DevezCode가 현재 자격증명으로 성공 수집한 API 값이 10분 이내면
+    // 이를 기준값으로 사용한다. UsageApiService가 자격증명 변경/401 때 파일을 무효화한다.
     let rl = j.rate_limits || {};
     if (process.env.APPDATA) {
       try {
         const _apiPath = _path.join(process.env.APPDATA, "DevezCode", "claude", "api-usage.json");
-        const _apiAgeMs = Date.now() - _fs.statSync(_apiPath).mtimeMs;
-        if (_apiAgeMs <= 10 * 60 * 1000) {
-          const _apiRl = JSON.parse(_fs.readFileSync(_apiPath, "utf8"));
-          if (_apiRl && (_apiRl.five_hour || _apiRl.seven_day)) rl = _apiRl;
+        const _apiRl = JSON.parse(_fs.readFileSync(_apiPath, "utf8"));
+        const _fetchedAt = Date.parse(_apiRl.fetched_at || "");
+        const _apiAgeMs = Number.isFinite(_fetchedAt)
+          ? Date.now() - _fetchedAt
+          : Date.now() - _fs.statSync(_apiPath).mtimeMs;
+        if (_apiAgeMs >= 0 && _apiAgeMs <= 10 * 60 * 1000
+            && (_apiRl.five_hour || _apiRl.seven_day)) {
+          rl = _apiRl;
         }
       } catch (e) {}
     }

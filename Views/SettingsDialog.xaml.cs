@@ -1450,9 +1450,8 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveEnabledAgents(enabled);
         AgentRegistry.InvalidateCache();
 
-        // Claude Code 세션 유지기간 → ~/.claude/settings.json 전역설정
-        var claude = _agentItems.FirstOrDefault(a => a.IsClaudeCode);
-        if (claude != null) ClaudeGlobalSettings.SetCleanupPeriodDays(claude.RetentionDays);
+        // Claude Code 세션 유지기간(cleanupPeriodDays)은 설정 UI 에서 노출하지 않고,
+        // App 시작 시 항상 '영구 보관'으로 강제한다(App.OnStartup). 여기서 덮어쓰지 않는다.
     }
 
     /// <summary>토글 변경 시 저장 (UI 토글은 즉시 반영되지만, 디스크 저장은 [저장] 버튼에서만 — 다른 설정과 동일).</summary>

@@ -13,63 +13,100 @@ public static class CodexCredentialStore
         "DevezCode", "codex-auth.json");
 
     private static string DisconnectedPath => StorePath + ".disconnected";
+    private static readonly object Sync = new();
 
     public static bool IsDisconnected() => File.Exists(DisconnectedPath);
 
     public static void Enable()
     {
-        try { if (File.Exists(DisconnectedPath)) File.Delete(DisconnectedPath); } catch { }
+        lock (Sync)
+        {
+            try { if (File.Exists(DisconnectedPath)) File.Delete(DisconnectedPath); } catch { }
+        }
     }
 
     /// <summary>DevezCode 자체 토큰을 지우고 외부 opencode 토큰 자동 인식도 중지한다.</summary>
     public static void Disconnect()
     {
-        try
+        lock (Sync)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(DisconnectedPath)!);
-            File.WriteAllText(DisconnectedPath, "");
-            if (File.Exists(StorePath)) File.Delete(StorePath);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(DisconnectedPath)!);
+                File.WriteAllText(DisconnectedPath, "");
+                if (File.Exists(StorePath)) File.Delete(StorePath);
+            }
+            catch { }
         }
-        catch { }
     }
 
     /// <summary>저장된 토큰을 읽는다. 없거나 access 가 없으면 null. expiresMs=0 이면 만료 정보 없음.</summary>
     public static (string access, string? refresh, long expiresMs)? Read()
     {
-        try
-        {
-            if (IsDisconnected()) return null;
-            if (!File.Exists(StorePath)) return null;
-            using var fs = new FileStream(StorePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var doc = JsonDocument.Parse(fs);
-            if (!doc.RootElement.TryGetProperty("openai", out var o)) return null;
-            var a = o.TryGetProperty("access", out var at) ? at.GetString() : null;
-            if (string.IsNullOrEmpty(a)) return null;
-            var r = o.TryGetProperty("refresh", out var rt) ? rt.GetString() : null;
-            var e = o.TryGetProperty("expires", out var ex) && ex.ValueKind == JsonValueKind.Number
-                ? ex.GetInt64() : 0;
-            return (a, r, e);
-        }
-        catch { return null; }
+        lock (Sync) return ReadCore();
     }
 
     /// <summary>OAuth 토큰을 저장. expiresMs 는 만료 시각(unix epoch 밀리초).</summary>
     public static void Save(string access, string? refresh, long expiresMs)
     {
+        lock (Sync) SaveCore(access, refresh, expiresMs);
+    }
+
+    /// <summary>refresh 시작 시의 자격증명이 유지되고 연결 해제되지 않았을 때만 갱신한다.</summary>
+    public static bool TrySaveIfCurrent(
+        string expectedAccess, string? expectedRefresh,
+        string access, string? refresh, long expiresMs)
+    {
+        lock (Sync)
+        {
+            if (IsDisconnected()) return false;
+            var current = ReadCore();
+            if (current is not { } value
+                || !string.Equals(value.access, expectedAccess, StringComparison.Ordinal)
+                || !string.Equals(value.refresh, expectedRefresh, StringComparison.Ordinal))
+                return false;
+            SaveCore(access, refresh, expiresMs);
+            return true;
+        }
+    }
+
+    private static (string access, string? refresh, long expiresMs)? ReadCore()
+    {
+        try
+        {
+            if (IsDisconnected() || !File.Exists(StorePath)) return null;
+            using var fs = new FileStream(StorePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var doc = JsonDocument.Parse(fs);
+            if (!doc.RootElement.TryGetProperty("openai", out var o)) return null;
+            var access = o.TryGetProperty("access", out var at) ? at.GetString() : null;
+            if (string.IsNullOrEmpty(access)) return null;
+            var refresh = o.TryGetProperty("refresh", out var rt) ? rt.GetString() : null;
+            var expires = o.TryGetProperty("expires", out var ex) && ex.ValueKind == JsonValueKind.Number
+                ? ex.GetInt64() : 0;
+            return (access, refresh, expires);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void SaveCore(string access, string? refresh, long expiresMs)
+    {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
             using var ms = new MemoryStream();
-            using (var w = new Utf8JsonWriter(ms))
+            using (var writer = new Utf8JsonWriter(ms))
             {
-                w.WriteStartObject();
-                w.WriteStartObject("openai");
-                w.WriteString("type", "oauth");
-                w.WriteString("access", access);
-                if (!string.IsNullOrEmpty(refresh)) w.WriteString("refresh", refresh);
-                w.WriteNumber("expires", expiresMs);
-                w.WriteEndObject();
-                w.WriteEndObject();
+                writer.WriteStartObject();
+                writer.WriteStartObject("openai");
+                writer.WriteString("type", "oauth");
+                writer.WriteString("access", access);
+                if (!string.IsNullOrEmpty(refresh)) writer.WriteString("refresh", refresh);
+                writer.WriteNumber("expires", expiresMs);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
             }
             File.WriteAllBytes(StorePath, ms.ToArray());
         }

@@ -11,9 +11,38 @@ public static class ClaudeCredentialStore
     public static string StorePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "claude-auth.json");
+    private static readonly object Sync = new();
 
     /// <summary>저장된 토큰을 읽는다. 없거나 access 가 없으면 null. expiresMs=0 이면 만료 정보 없음.</summary>
     public static (string access, string? refresh, long expiresMs)? Read()
+    {
+        lock (Sync) return ReadCore();
+    }
+
+    /// <summary>OAuth 토큰을 저장. expiresMs 는 만료 시각(unix epoch 밀리초).</summary>
+    public static void Save(string access, string? refresh, long expiresMs)
+    {
+        lock (Sync) SaveCore(access, refresh, expiresMs);
+    }
+
+    /// <summary>refresh 요청을 시작할 때 읽은 자격증명이 아직 그대로일 때만 갱신한다.</summary>
+    public static bool TrySaveIfCurrent(
+        string expectedAccess, string? expectedRefresh,
+        string access, string? refresh, long expiresMs)
+    {
+        lock (Sync)
+        {
+            var current = ReadCore();
+            if (current is not { } value
+                || !string.Equals(value.access, expectedAccess, StringComparison.Ordinal)
+                || !string.Equals(value.refresh, expectedRefresh, StringComparison.Ordinal))
+                return false;
+            SaveCore(access, refresh, expiresMs);
+            return true;
+        }
+    }
+
+    private static (string access, string? refresh, long expiresMs)? ReadCore()
     {
         try
         {
@@ -21,32 +50,34 @@ public static class ClaudeCredentialStore
             using var fs = new FileStream(StorePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var doc = System.Text.Json.JsonDocument.Parse(fs);
             if (!doc.RootElement.TryGetProperty("claudeAiOauth", out var o)) return null;
-            var a = o.TryGetProperty("accessToken", out var at) ? at.GetString() : null;
-            if (string.IsNullOrEmpty(a)) return null;
-            var r = o.TryGetProperty("refreshToken", out var rt) ? rt.GetString() : null;
-            var e = o.TryGetProperty("expiresAt", out var ex) && ex.ValueKind == System.Text.Json.JsonValueKind.Number
-                ? ex.GetInt64() : 0;
-            return (a, r, e);
+            var access = o.TryGetProperty("accessToken", out var at) ? at.GetString() : null;
+            if (string.IsNullOrEmpty(access)) return null;
+            var refresh = o.TryGetProperty("refreshToken", out var rt) ? rt.GetString() : null;
+            var expires = o.TryGetProperty("expiresAt", out var ex)
+                && ex.ValueKind == System.Text.Json.JsonValueKind.Number ? ex.GetInt64() : 0;
+            return (access, refresh, expires);
         }
-        catch { return null; }
+        catch
+        {
+            return null;
+        }
     }
 
-    /// <summary>OAuth 토큰을 저장. expiresMs 는 만료 시각(unix epoch 밀리초).</summary>
-    public static void Save(string access, string? refresh, long expiresMs)
+    private static void SaveCore(string access, string? refresh, long expiresMs)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
             using var ms = new MemoryStream();
-            using (var w = new System.Text.Json.Utf8JsonWriter(ms))
+            using (var writer = new System.Text.Json.Utf8JsonWriter(ms))
             {
-                w.WriteStartObject();
-                w.WriteStartObject("claudeAiOauth");
-                w.WriteString("accessToken", access);
-                if (!string.IsNullOrEmpty(refresh)) w.WriteString("refreshToken", refresh);
-                w.WriteNumber("expiresAt", expiresMs);
-                w.WriteEndObject();
-                w.WriteEndObject();
+                writer.WriteStartObject();
+                writer.WriteStartObject("claudeAiOauth");
+                writer.WriteString("accessToken", access);
+                if (!string.IsNullOrEmpty(refresh)) writer.WriteString("refreshToken", refresh);
+                writer.WriteNumber("expiresAt", expiresMs);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
             }
             File.WriteAllBytes(StorePath, ms.ToArray());
         }

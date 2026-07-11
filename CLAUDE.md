@@ -1,5 +1,10 @@
 # DevezCode 작업 지침
 
+## 동기화 규칙
+
+- `AGENTS.md`와 `CLAUDE.md`는 동일한 규칙 문서로 유지한다.
+- 어느 한 쪽을 수정하면 즉시 다른 쪽도 동일하게 갱신한다.
+
 ## 빌드 및 재시작 프로세스
 
 코드 변경 후 항상 다음 프로세스를 따르십시오:
@@ -43,6 +48,7 @@ Start-Process "bin\DevezCode.exe"
 | 세션이 작업 중(스피너)에 간헐적으로 멈춤/작업 유실 → diag.log 로 원인 판별 | `.knowledge/세션-작업중-멈춤-진단.md` |
 | 세션 작업 끝났는데 스피너 안 꺼짐(stuck-ON), 훅이 방별 상태 파일(busy 등) 쓰기 | `.knowledge/훅-상태파일-원자적쓰기.md` |
 | 외부 터미널에서 codex 세션이 프롬프트/응답 시 창 최소화(전역 훅 -WindowStyle Hidden) | `.knowledge/훅-windowstyle-hidden-외부터미널-최소화.md` |
+| Claude/Codex 사용량 0%·고정·계정불일치, 예정일 전 공급자 즉시 초기화, 인증 전환·fallback·stale 처리 | `.knowledge/claude-codex-사용량-즉시초기화-인증-신선도.md` |
 
 > 위에 없는 일회성 버그 교훈(특정 컨트롤 트리거 등)은 `.knowledge/wpf-*.md` 로 남아 있으니, 비슷한 증상을 만나면 폴더를 이름으로 grep 해서 찾는다.
 

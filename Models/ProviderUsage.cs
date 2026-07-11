@@ -24,6 +24,8 @@ public sealed class ProviderUsage
 {
     /// <summary>provider 키 — "codex" | "opencode-go" | "deepseek" | "grok".</summary>
     public required string Provider { get; init; }
+    /// <summary>공급자 API에서 마지막으로 정상 수집한 시각.</summary>
+    public DateTimeOffset CapturedAt { get; init; } = DateTimeOffset.Now;
 
     public UsageWindow? Primary { get; init; }   // 단기(5h/hourly/rolling)
     public UsageWindow? Weekly  { get; init; }    // 주간
