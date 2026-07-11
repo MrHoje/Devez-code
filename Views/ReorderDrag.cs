@@ -281,7 +281,8 @@ internal sealed class ReorderDrag<T> where T : class
         if (_hitTestSlots)
         {
             ClearDropIntoTarget();
-            if (TryGetOuterDropTarget(pointer, out var outerTarget, out bool after))
+            if (!_suppressDisplacement
+                && TryGetOuterDropTarget(pointer, out var outerTarget, out bool after))
             {
                 SetReorderPreview(outerTarget, after);
                 int outerIndex = TargetIndexAround(outerTarget, after);
@@ -292,25 +293,41 @@ internal sealed class ReorderDrag<T> where T : class
                     ApplyDisplacement();
                 }
             }
+            else if (CapturedPrimaryBounds(_slots[_sourceIndex]).Contains(pointer))
+            {
+                // 라이브 2열 이동으로 원래 컬럼이 비어도 시작 슬롯으로 돌아오면 원래 순서/열을 복원한다.
+                ClearReorderPreview();
+                _needsReapply = false;
+                _targetIndex = _sourceIndex;
+                ApplyDisplacement();
+            }
             else if (!_suppressDisplacement)
             {
-                // 1열 루트 목록은 원본 행을 투명하게만 만들므로 그 자리로 돌아왔을 때도
-                // 명시적으로 원래 인덱스를 복원해야 한다. 그렇지 않으면 마지막 타깃이 남는다.
-                var source = _slots[_sourceIndex];
-                var sourceBounds = new Rect(
-                    source.PrimaryLeft,
-                    source.PrimaryTop,
-                    source.PrimaryWidth,
-                    source.PrimaryHeight);
-                if (sourceBounds.Contains(pointer))
+                // 1열 루트 목록의 원본 자리나 카드 사이 여백에서는 명시적 hit 대상이 없다.
+                // 이때도 현재 드래그 카드 중심으로 재계산해야 직전 타깃이 남지 않는다.
+                ClearReorderPreview();
+                var cursor = _horizontal ? pointer.X : pointer.Y;
+                var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
+                var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
+                int gapTarget = ComputeTargetIndex(draggedCenter);
+                if (_needsReapply || gapTarget != _targetIndex)
                 {
-                    ClearReorderPreview();
-                    if (_needsReapply || _targetIndex != _sourceIndex)
-                    {
-                        _needsReapply = false;
-                        _targetIndex = _sourceIndex;
-                        ApplyDisplacement();
-                    }
+                    _needsReapply = false;
+                    _targetIndex = gapTarget;
+                    ApplyDisplacement();
+                }
+            }
+            else if (TryGetNearestCapturedTarget(pointer, out var nearestTarget, out bool nearestAfter))
+            {
+                // 2열의 컬럼 사이/짧은 컬럼 아래 빈 공간은 라이브 배치가 움직여도 변하지 않는
+                // 시작 슬롯을 기준으로 가장 가까운 항목 앞뒤를 선택한다.
+                SetReorderPreview(nearestTarget, nearestAfter);
+                int nearestIndex = TargetIndexAround(nearestTarget, nearestAfter);
+                if (_needsReapply || nearestIndex != _targetIndex)
+                {
+                    _needsReapply = false;
+                    _targetIndex = nearestIndex;
+                    ApplyDisplacement();
                 }
             }
             return;
@@ -409,6 +426,60 @@ internal sealed class ReorderDrag<T> where T : class
         after = true;
         return true;
     }
+
+    private bool TryGetNearestCapturedTarget(Point pointer, out Slot target, out bool after)
+    {
+        target = null!;
+        after = false;
+        var candidates = _slots
+            .Where(slot => !ReferenceEquals(slot, _slots[_sourceIndex]))
+            .ToList();
+        if (candidates.Count == 0) return false;
+
+        // 2열의 짧은 컬럼 아래에서는 같은 Y의 반대 컬럼 카드보다, 포인터가 속한 컬럼의
+        // 마지막 카드를 우선해야 한다. 해당 축을 덮는 일반 폭 슬롯이 있을 때만 같은 lane으로 제한한다.
+        // 전체 폭 폴더만 포인터를 덮거나 빈 컬럼처럼 기준 슬롯이 없으면 전체 중 가장 가까운 항목으로 폴백한다.
+        bool HasPointerOnCrossAxis(Slot slot)
+        {
+            var bounds = CapturedPrimaryBounds(slot);
+            return _horizontal
+                ? pointer.Y >= bounds.Top && pointer.Y <= bounds.Bottom
+                : pointer.X >= bounds.Left && pointer.X <= bounds.Right;
+        }
+
+        double minCrossSize = candidates.Min(slot => _horizontal ? slot.PrimaryHeight : slot.PrimaryWidth);
+        bool hasSameLane = candidates.Any(slot =>
+            HasPointerOnCrossAxis(slot)
+            && (_horizontal ? slot.PrimaryHeight : slot.PrimaryWidth) <= minCrossSize * 1.5);
+        double bestDistance = double.PositiveInfinity;
+        foreach (var slot in candidates)
+        {
+            if (hasSameLane && !HasPointerOnCrossAxis(slot)) continue;
+            var bounds = CapturedPrimaryBounds(slot);
+            double dx = pointer.X < bounds.Left
+                ? bounds.Left - pointer.X
+                : pointer.X > bounds.Right ? pointer.X - bounds.Right : 0;
+            double dy = pointer.Y < bounds.Top
+                ? bounds.Top - pointer.Y
+                : pointer.Y > bounds.Bottom ? pointer.Y - bounds.Bottom : 0;
+            double distance = dx * dx + dy * dy;
+            if (distance >= bestDistance) continue;
+            bestDistance = distance;
+            target = slot;
+        }
+
+        if (target == null) return false;
+        after = _horizontal
+            ? pointer.X >= target.PrimaryLeft + target.PrimaryWidth / 2
+            : pointer.Y >= target.PrimaryTop + target.PrimaryHeight / 2;
+        return true;
+    }
+
+    private static Rect CapturedPrimaryBounds(Slot slot) => new(
+        slot.PrimaryLeft,
+        slot.PrimaryTop,
+        slot.PrimaryWidth,
+        slot.PrimaryHeight);
 
     private int TargetIndexAround(Slot target, bool after)
     {

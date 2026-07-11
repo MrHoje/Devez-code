@@ -944,11 +944,9 @@ public sealed class ProjectItem : NotifyBase
         // 실제로 관계된 소스/대상 두 블록만 연속 배치한다. 나머지 탭의 상대 순서는 유지해
         // 분할 반대 패널을 불필요하게 재정렬하지 않으면서, 부모와 자식 사이에 문서가 끼는 것도 막는다.
         var affected = sourceBlock.Concat(targetBlock).ToHashSet();
-        int targetAnchor = targetBlock
-            .Select(item => Tabs.IndexOf(item))
-            .Where(index => index >= 0)
-            .DefaultIfEmpty(Tabs.Count)
-            .Min();
+        // 자식 탭이 원시 Tabs 순서에서 부모보다 앞서 있어도, 사이드바 최상위 행인 target 위치를
+        // 블록의 기준점으로 삼아야 그 사이의 문서/반대 패널 탭을 건너뛰지 않는다.
+        int targetAnchor = Tabs.IndexOf(target);
         int insertAt = Tabs.Take(targetAnchor).Count(tab => !affected.Contains(tab));
         var desiredTabs = Tabs.Where(tab => !affected.Contains(tab)).ToList();
         var orderedBlocks = after
@@ -971,11 +969,7 @@ public sealed class ProjectItem : NotifyBase
         if (subtree.Count < 2) return;
 
         var subtreeSet = subtree.ToHashSet();
-        int anchor = subtree
-            .Select(item => Tabs.IndexOf(item))
-            .Where(index => index >= 0)
-            .DefaultIfEmpty(Tabs.Count)
-            .Min();
+        int anchor = Tabs.IndexOf(root);
         int insertAt = Tabs.Take(anchor).Count(tab => !subtreeSet.Contains(tab));
         var desiredTabs = Tabs.Where(tab => !subtreeSet.Contains(tab)).ToList();
         desiredTabs.InsertRange(insertAt, subtree);

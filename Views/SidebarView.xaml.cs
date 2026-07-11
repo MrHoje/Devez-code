@@ -20,6 +20,11 @@ public partial class SidebarView : UserControl
         _sidebarSearchDebounce.Tick += (_, _) =>
         {
             _sidebarSearchDebounce.Stop();
+            if (HasActiveDrag)
+            {
+                _sidebarSearchDeferredForDrag = true;
+                return;
+            }
             ApplySidebarSearch();
         };
         ProjectsHost.ItemsSource = _activeRootItems;
@@ -123,6 +128,7 @@ public partial class SidebarView : UserControl
     {
         Interval = TimeSpan.FromMilliseconds(180)
     };
+    private bool _sidebarSearchDeferredForDrag;
 
     private void Projects_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
@@ -535,6 +541,13 @@ public partial class SidebarView : UserControl
     // ── 검색 (프로젝트/세션 이름 필터) — devez 정합 ──────────────
     private void SidebarSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (HasActiveDrag)
+        {
+            _sidebarSearchDebounce.Stop();
+            _sidebarSearchDeferredForDrag = true;
+            return;
+        }
+
         // devez PanelSearch와 동일: 지우기는 즉시 반영하고, 입력은 멈춘 뒤 180ms 후 검색한다.
         if (string.IsNullOrEmpty(SidebarSearchBox.Text))
         {
@@ -979,6 +992,8 @@ public partial class SidebarView : UserControl
     private ProjectItem? _draggedProject;
     private ProjectFolderItem? _projectFolderDropTarget;
     private Border? _projectFolderDropBorder;
+    private bool HasActiveDrag =>
+        _rootDrag != null || _projectDrag != null || _tabDrag != null || _fileDrag != null;
 
     private void ProjectRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -1044,20 +1059,8 @@ public partial class SidebarView : UserControl
 
     private void Sidebar_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_rootDrag != null)
-        {
-            _rootDrag.Update(e);
-            if (_draggedProject != null) UpdateProjectFolderDropPreview(e.GetPosition(this));
-            return;
-        }
-        if (_projectDrag != null)
-        {
-            _projectDrag.Update(e);
-            UpdateProjectFolderDropPreview(e.GetPosition(this));
-            return;
-        }
-        if (_tabDrag != null) { _tabDrag.Update(e); return; }
-        if (_fileDrag != null) { _fileDrag.Update(e); return; }
+        if (UpdateActiveDrag(e)) return;
+
         if (e.LeftButton != MouseButtonState.Pressed) return;
 
         var diff = _pressOrigin - e.GetPosition(this);
@@ -1068,10 +1071,39 @@ public partial class SidebarView : UserControl
         else if (_pendingProject != null) TryStartProjectDrag(_pendingProject);
         else if (_pendingTab != null) TryStartTabDrag(_pendingTab);
         else if (_pendingFile != null) TryStartFileDrag(_pendingFile);
+
+        if (HasActiveDrag && _sidebarSearchDebounce.IsEnabled)
+        {
+            _sidebarSearchDebounce.Stop();
+            _sidebarSearchDeferredForDrag = true;
+        }
+
+        // 임계값을 넘긴 현재 이벤트가 유일한 큰 이동일 수도 있으므로 시작 직후 바로 목표를 계산한다.
+        UpdateActiveDrag(e);
+    }
+
+    private bool UpdateActiveDrag(MouseEventArgs e)
+    {
+        if (_rootDrag != null)
+        {
+            _rootDrag.Update(e);
+            if (_draggedProject != null) UpdateProjectFolderDropPreview(e.GetPosition(this));
+            return true;
+        }
+        if (_projectDrag != null)
+        {
+            _projectDrag.Update(e);
+            UpdateProjectFolderDropPreview(e.GetPosition(this));
+            return true;
+        }
+        if (_tabDrag != null) { _tabDrag.Update(e); return true; }
+        if (_fileDrag != null) { _fileDrag.Update(e); return true; }
+        return false;
     }
 
     private async void Sidebar_PreviewMouseUp(object sender, MouseButtonEventArgs e) => await EndDragAsync(commit: true);
-    private async void Sidebar_LostCapture(object sender, MouseEventArgs e) => await EndDragAsync(commit: true);
+    private async void Sidebar_LostCapture(object sender, MouseEventArgs e)
+        => await EndDragAsync(commit: e.LeftButton != MouseButtonState.Pressed);
 
     private async Task EndDragAsync(bool commit)
     {
@@ -1081,6 +1113,8 @@ public partial class SidebarView : UserControl
         var fileDrag = _fileDrag;
         var draggedProject = _draggedProject;
         var dropFolder = _projectFolderDropTarget;
+        bool applyDeferredSearch = _sidebarSearchDeferredForDrag;
+        _sidebarSearchDeferredForDrag = false;
         _rootDrag = null;
         _projectDrag = null;
         _tabDrag = null;
@@ -1103,6 +1137,7 @@ public partial class SidebarView : UserControl
             ProjectsReordered?.Invoke();
         if (tabDrag != null) await tabDrag.FinishAsync(commit);
         if (fileDrag != null) await fileDrag.FinishAsync(commit);
+        if (applyDeferredSearch) ApplySidebarSearch();
     }
 
     /// <summary>프로젝트를 대상 폴더의 마지막 프로젝트로 옮긴다.</summary>
