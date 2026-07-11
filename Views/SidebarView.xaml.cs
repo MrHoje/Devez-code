@@ -1235,13 +1235,27 @@ public partial class SidebarView : UserControl
             ? ComputeColumnsMidX(source.Element)
             : double.PositiveInfinity;
         var visibleItems = rows.Select(row => row.Item).ToList();
-        var visibleItemSet = visibleItems.ToHashSet();
-        var initialRootItems = GetAllRootItems(archived);
+        var initialBounds = new Dictionary<object, Rect>();
+        if (_projectColumns >= 2 && item is ProjectFolderItem)
+        {
+            foreach (var row in rows)
+            {
+                try
+                {
+                    var origin = row.Element.TransformToAncestor(this).Transform(new Point());
+                    initialBounds[row.Item] = new Rect(
+                        origin.X,
+                        origin.Y,
+                        Math.Max(1, row.Element.ActualWidth),
+                        Math.Max(1, row.Element.ActualHeight));
+                }
+                catch { /* 연결이 끊긴 컨테이너는 단일 타깃으로 판정 */ }
+            }
+        }
         var panel = FindVisualChildren<ProjectColumnsPanel>(host).FirstOrDefault();
         var visibleRoots = archived ? _archivedRootItems : _activeRootItems;
         int originalColumn = item is ProjectItem sourceProject ? sourceProject.Column : 0;
-        object? lastPreviewTarget = null;
-        bool lastPreviewAfter = false;
+        List<object>? lastFolderPreviewOrder = null;
         double? folderHitTestX = null;
         if (_projectColumns >= 2 && item is ProjectFolderItem)
         {
@@ -1257,20 +1271,10 @@ public partial class SidebarView : UserControl
         {
             if (_projectColumns < 2) return;
 
-            if (targetItem != null)
-            {
-                lastPreviewTarget = targetItem;
-                lastPreviewAfter = after;
-            }
-            else if (_rootDrag != null)
-            {
-                // 드래그 중 원래 자리로 돌아온 경우만 커밋 타깃을 비운다.
-                // FinishAsync의 프리뷰 정리는 EndDrag가 필드를 비운 뒤 호출되므로 마지막 타깃을 보존한다.
-                lastPreviewTarget = null;
-            }
-
             var preview = BuildRootPreviewOrder(
-                item, targetItem, after, visibleItems, visibleItemSet, initialRootItems);
+                item, targetItem, after, visibleItems, initialBounds);
+            if (item is ProjectFolderItem && _rootDrag != null)
+                lastFolderPreviewOrder = targetItem == null ? null : preview;
 
             ProjectItem? project = item as ProjectItem;
             int targetColumn = project == null || targetItem == null || double.IsPositiveInfinity(gridMidX)
@@ -1310,27 +1314,12 @@ public partial class SidebarView : UserControl
                 }
 
                 bool orderChanged;
-                if (sourceItem is ProjectFolderItem sourceFolder
+                if (sourceItem is ProjectFolderItem
                     && _projectColumns >= 2
-                    && lastPreviewTarget != null
-                    && TryBuildTwoColumnFolderOrder(
-                        GetAllRootItems(archived),
-                        sourceFolder,
-                        lastPreviewTarget,
-                        lastPreviewAfter,
-                        visibleItemSet,
-                        out var folderOrder))
+                    && lastFolderPreviewOrder != null)
                 {
-                    var currentOrder = GetAllRootItems(archived);
-                    orderChanged = !currentOrder.SequenceEqual(folderOrder);
-                    if (orderChanged)
-                    {
-                        ApplyRootOrder(folderOrder);
-                        SyncUngroupedProjectCollection(
-                            archived ? ArchivedProjects : Projects,
-                            folderOrder);
-                        RefreshProjectGroups();
-                    }
+                    orderChanged = ApplyRootOrderWithinVisible(
+                        lastFolderPreviewOrder, visibleItems, archived);
                 }
                 else
                 {
@@ -1369,22 +1358,26 @@ public partial class SidebarView : UserControl
         object? target,
         bool after,
         IReadOnlyList<object> visibleItems,
-        IReadOnlySet<object> visibleItemSet,
-        IReadOnlyList<object> allRootItems)
+        IReadOnlyDictionary<object, Rect> initialBounds)
     {
-        if (source is ProjectFolderItem sourceFolder
-            && target != null
-            && TryBuildTwoColumnFolderOrder(
-                allRootItems,
-                sourceFolder,
-                target,
-                after,
-                visibleItemSet,
-                out var folderOrder))
-            return folderOrder.Where(visibleItemSet.Contains).ToList();
-
         var preview = visibleItems.ToList();
         if (target == null || ReferenceEquals(target, source)) return preview;
+
+        // 전체폭 폴더는 왼쪽 프로젝트를 타깃으로 삼되, 그 프로젝트와 세로 영역이 겹치는
+        // 오른쪽 프로젝트까지 같은 가로 밴드로 취급한다. 앞=밴드 전체 앞, 뒤=밴드 전체 뒤.
+        if (source is ProjectFolderItem
+            && target is ProjectItem
+            && initialBounds.TryGetValue(target, out var targetBounds))
+        {
+            var bandItems = visibleItems
+                .Where(item => item is ProjectItem
+                    && initialBounds.TryGetValue(item, out var bounds)
+                    && bounds.Top < targetBounds.Bottom - 0.5
+                    && bounds.Bottom > targetBounds.Top + 0.5)
+                .ToList();
+            if (bandItems.Count > 0)
+                target = after ? bandItems[^1] : bandItems[0];
+        }
 
         preview.Remove(source);
         int targetIndex = preview.IndexOf(target);
@@ -1394,58 +1387,24 @@ public partial class SidebarView : UserControl
         return preview;
     }
 
-    /// <summary>
-    /// 2열 전체폭 폴더를 왼쪽 프로젝트 기준으로 옮길 때, 사이에 있는 보이는 왼쪽 프로젝트만
-    /// 폴더 경계를 통과시킨다. 오른쪽 프로젝트는 기존 경계 쪽에 남겨 불필요한 밀림을 막는다.
-    /// 다른 전체폭 폴더를 가로지르는 이동은 섹션 전체 순서가 바뀌므로 일반 루트 이동으로 폴백한다.
-    /// </summary>
-    private static bool TryBuildTwoColumnFolderOrder(
-        IReadOnlyList<object> ordered,
-        ProjectFolderItem source,
-        object target,
-        bool after,
-        IReadOnlySet<object> movableItems,
-        out List<object> desired)
+    private bool ApplyRootOrderWithinVisible(
+        IReadOnlyList<object> orderedVisible,
+        IReadOnlyList<object> visibleItems,
+        bool archived)
     {
-        desired = new List<object>();
-        if (target is not ProjectItem { Column: 0 }) return false;
+        if (visibleItems.SequenceEqual(orderedVisible)) return false;
 
-        var orderedList = ordered.ToList();
-        int sourceIndex = orderedList.IndexOf(source);
-        int targetIndex = orderedList.IndexOf(target);
-        if (sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex) return false;
+        var visibleSet = visibleItems.ToHashSet();
+        var desired = GetAllRootItems(archived);
+        int visibleIndex = 0;
+        for (int i = 0; i < desired.Count; i++)
+            if (visibleSet.Contains(desired[i]))
+                desired[i] = orderedVisible[visibleIndex++];
 
-        int betweenStart = Math.Min(sourceIndex, targetIndex) + 1;
-        int betweenCount = Math.Abs(sourceIndex - targetIndex) - 1;
-        if (betweenCount > 0
-            && orderedList.Skip(betweenStart).Take(betweenCount).Any(item => item is ProjectFolderItem))
-            return false;
-
-        bool IsMovableLeftProject(object item) =>
-            movableItems.Contains(item) && item is ProjectItem { Column: 0 };
-
-        if (targetIndex < sourceIndex)
-        {
-            int split = after ? targetIndex + 1 : targetIndex;
-            var interval = orderedList.Skip(split).Take(sourceIndex - split).ToList();
-            desired.AddRange(orderedList.Take(split));
-            desired.AddRange(interval.Where(item => !IsMovableLeftProject(item)));
-            desired.Add(source);
-            desired.AddRange(interval.Where(IsMovableLeftProject));
-            desired.AddRange(orderedList.Skip(sourceIndex + 1));
-        }
-        else
-        {
-            int split = after ? targetIndex + 1 : targetIndex;
-            var interval = orderedList.Skip(sourceIndex + 1).Take(split - sourceIndex - 1).ToList();
-            desired.AddRange(orderedList.Take(sourceIndex));
-            desired.AddRange(interval.Where(IsMovableLeftProject));
-            desired.Add(source);
-            desired.AddRange(interval.Where(item => !IsMovableLeftProject(item)));
-            desired.AddRange(orderedList.Skip(split));
-        }
-
-        return desired.Count == orderedList.Count;
+        ApplyRootOrder(desired);
+        SyncUngroupedProjectCollection(archived ? ArchivedProjects : Projects, desired);
+        RefreshProjectGroups();
+        return true;
     }
 
     private bool MoveRootItemWithinVisible(
@@ -1463,18 +1422,7 @@ public partial class SidebarView : UserControl
 
         ordered.RemoveAt(oldIndex);
         ordered.Insert(targetIndex, source);
-
-        var visibleSet = visibleItems.ToHashSet();
-        var desired = GetAllRootItems(archived);
-        int visibleIndex = 0;
-        for (int i = 0; i < desired.Count; i++)
-            if (visibleSet.Contains(desired[i]))
-                desired[i] = ordered[visibleIndex++];
-
-        ApplyRootOrder(desired);
-        SyncUngroupedProjectCollection(archived ? ArchivedProjects : Projects, desired);
-        RefreshProjectGroups();
-        return true;
+        return ApplyRootOrderWithinVisible(ordered, visibleItems, archived);
     }
 
     private void TryStartProjectDrag(ProjectItem p)
