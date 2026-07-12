@@ -185,30 +185,6 @@
                                 </Grid>
                             </Border>
 
-                            <TextBlock Text="보낼 메시지" Style="{StaticResource WakeSectionLabel}" Margin="0,22,0,8"/>
-                            <Border Padding="14,12" CornerRadius="10"
-                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1.5"
-                                    Background="{DynamicResource PanelBrush}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Width="32" Height="32" CornerRadius="8"
-                                            Background="{DynamicResource PrimarySoftBrush}" VerticalAlignment="Top">
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBot}"
-                                              Width="15" Height="15" Stroke="{DynamicResource PrimaryBrush}"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="11,0,0,0">
-                                        <TextBlock Text="HI Good Morning" FontSize="{DynamicResource Fs13}"
-                                                   FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="이 메시지는 고정되어 있으며 변경할 수 없습니다."
-                                                   Margin="0,4,0,0" FontSize="{DynamicResource Fs10}"
-                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
                             <Border Margin="0,22,0,0" Padding="14,12" CornerRadius="10"
                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                                     Background="{DynamicResource PanelSoftBrush}">
