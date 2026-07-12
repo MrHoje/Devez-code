@@ -10,9 +10,11 @@ namespace DevezCode.Views;
 public partial class WakeSchedulerWindow : Window
 {
     private static readonly DayOfWeek[] EveryDay = Enum.GetValues<DayOfWeek>();
+    private readonly IReadOnlyList<AgentDef> _agents;
     private readonly List<WakeScheduleEntry> _entries;
     private readonly List<WakeScheduleEntry> _hiddenEntries;
     private WakeScheduleEntry? _selectedSchedule;
+    private AgentDef? _untrustedAgent;
     private bool _timeFormatting;
     public bool Saved { get; private set; }
 
@@ -21,12 +23,12 @@ public partial class WakeSchedulerWindow : Window
         InitializeComponent();
         Owner = owner;
 
-        var agents = AgentRegistry.GetEnabledAndInstalled()
+        _agents = AgentRegistry.GetEnabledAndInstalled()
             .Where(a => string.Equals(a.Id, "claude", StringComparison.OrdinalIgnoreCase)
                      || string.Equals(a.Id, "codex", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        var providerIds = agents.Select(a => a.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var providerIds = _agents.Select(a => a.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var schedules = SettingsService.LoadWakeSchedules().Select(Copy).ToList();
         _entries = schedules.Where(e => providerIds.Contains(e.Provider)).ToList();
         _hiddenEntries = schedules.Where(e => !providerIds.Contains(e.Provider)).ToList();
@@ -38,16 +40,17 @@ public partial class WakeSchedulerWindow : Window
         TimeCombo.ItemsSource = times;
         TimeCombo.Loaded += TimeCombo_SetupInput;
 
-        AgentList.ItemsSource = agents;
-        EmptyHint.Visibility = agents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        EditorPanel.IsEnabled = agents.Count > 0;
-        if (agents.Count > 0) AgentList.SelectedIndex = 0;
+        AgentList.ItemsSource = _agents;
+        EmptyHint.Visibility = _agents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        EditorPanel.IsEnabled = _agents.Count > 0;
+        if (_agents.Count > 0) AgentList.SelectedIndex = 0;
 
         RootContent.SizeChanged += (_, _) => ApplyRoundedClip();
         Loaded += (_, _) =>
         {
             WindowCenter.CenterOverOwner(this);
             ApplyRoundedClip();
+            RefreshTrustState();
         };
     }
 
@@ -79,11 +82,15 @@ public partial class WakeSchedulerWindow : Window
         TimeCombo.Text = _selectedSchedule.Time;
         EnabledToggle.IsChecked = _selectedSchedule.Enabled;
         LastStatus.Text = _selectedSchedule.StatusDisplay;
+        RefreshTrustState();
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         ApplyEditorToSelectedSchedule();
+        RefreshTrustState();
+        if (_untrustedAgent != null) return;
+
         var invalid = _entries.FirstOrDefault(entry =>
             !TimeSpan.TryParseExact(entry.Time, @"hh\:mm", CultureInfo.InvariantCulture, out _));
         if (invalid != null)
@@ -102,6 +109,38 @@ public partial class WakeSchedulerWindow : Window
 
         Saved = true;
         DialogResult = true;
+    }
+
+    private void RefreshTrustState()
+    {
+        _untrustedAgent = _agents.FirstOrDefault(agent =>
+            _entries.Any(entry => entry.Enabled &&
+                string.Equals(entry.Provider, agent.Id, StringComparison.OrdinalIgnoreCase)) &&
+            !WakeTrustService.IsTrusted(agent.Id));
+        bool trusted = _untrustedAgent == null;
+        SaveButton.IsEnabled = trusted && _agents.Count > 0;
+        TrustPanel.Visibility = trusted ? Visibility.Collapsed : Visibility.Visible;
+        if (_untrustedAgent != null)
+        {
+            TrustMessage.Text = $"{_untrustedAgent.DisplayName}: 프로젝트 경로의 신뢰 설정이 필요합니다.\n" +
+                                WakeTrustService.InstallDirectory;
+        }
+    }
+
+    private void EnabledToggle_Click(object sender, RoutedEventArgs e)
+    {
+        ApplyEditorToSelectedSchedule();
+        RefreshTrustState();
+    }
+
+    private void OpenTrustSession_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshTrustState();
+        if (_untrustedAgent == null || Owner is not MainWindow mainWindow) return;
+
+        string agentId = _untrustedAgent.Id;
+        mainWindow.Dispatcher.BeginInvoke(() => mainWindow.OpenWakeTrustSession(agentId));
+        DialogResult = false;
     }
 
     private void ApplyEditorToSelectedSchedule()

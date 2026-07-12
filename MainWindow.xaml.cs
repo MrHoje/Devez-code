@@ -4363,18 +4363,60 @@ public partial class MainWindow : Window
         if (dlg.Saved) _wakeScheduler.NotifySchedulesChanged();
     }
 
+    public void OpenWakeTrustSession(string agentId)
+    {
+        var agent = AgentRegistry.Find(agentId);
+        if (agent == null || !AgentRegistry.IsInstalled(agent) ||
+            (agent.Id != "claude" && agent.Id != "codex"))
+        {
+            ConfirmDialog.Alert("신뢰 설정", "사용 가능한 Claude 또는 Codex를 찾을 수 없습니다.");
+            return;
+        }
+
+        string directory = WakeTrustService.InstallDirectory;
+        var project = _projects.FirstOrDefault(item =>
+            string.Equals(Path.TrimEndingDirectorySeparator(item.Path), directory, StringComparison.OrdinalIgnoreCase));
+        if (project == null)
+        {
+            project = ProjectItem.FromPath(directory);
+            project.Name = "DevezCode 설치 경로";
+            _projects.Add(project);
+        }
+
+        string sessionName = $"신뢰 설정 ({agent.DisplayName})";
+        var session = project.Tabs.OfType<SessionItem>().FirstOrDefault(item =>
+            string.Equals(item.AgentId, agent.Id, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.Name, sessionName, StringComparison.Ordinal));
+        if (session == null)
+        {
+            session = new SessionItem { Name = sessionName, AgentId = agent.Id };
+            project.Tabs.Add(session);
+        }
+
+        project.IsExpanded = true;
+        SettingsService.SaveClaudeCodeRoomDir(session.Id, directory);
+        SettingsService.SaveAgentForRoom(session.Id, agent.Id);
+        WorkspaceStore.Save(_projects, _archivedProjects);
+        RefreshCardGroups();
+        OpenSession(session);
+        Activate();
+    }
+
     private async Task<WakeDispatchResult> DispatchWakeAsync(WakeScheduleEntry schedule, CancellationToken cancellationToken)
     {
-        string? directory = _focusedPane?.ActiveProject?.Path;
-        if (string.IsNullOrWhiteSpace(directory) || !System.IO.Directory.Exists(directory))
-            return WakeDispatchResult.Failed("활성 프로젝트가 없어 깨우기 터미널을 시작하지 않았습니다.");
+        var provider = string.Equals(schedule.Provider, "codex", StringComparison.OrdinalIgnoreCase)
+            ? "codex" : "claude";
+        if (!WakeTrustService.IsTrusted(provider))
+            return WakeDispatchResult.Failed("DevezCode 설치 경로의 신뢰 설정이 필요합니다.");
+
+        string directory = WakeTrustService.InstallDirectory;
+        if (!System.IO.Directory.Exists(directory))
+            return WakeDispatchResult.Failed("DevezCode 설치 경로를 찾을 수 없습니다.");
 
         var canonicalDirectory = System.IO.Path.TrimEndingDirectorySeparator(
             System.IO.Path.GetFullPath(directory));
         var pathBytes = System.Text.Encoding.UTF8.GetBytes(canonicalDirectory.ToUpperInvariant());
         var pathKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pathBytes))[..12];
-        var provider = string.Equals(schedule.Provider, "codex", StringComparison.OrdinalIgnoreCase)
-            ? "codex" : "claude";
         string roomId = $"devezcode-wake-{provider}-{pathKey.ToLowerInvariant()}";
         _wakeRoomIds.Add(roomId);
 

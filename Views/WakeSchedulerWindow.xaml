@@ -240,7 +240,7 @@
                                     <TextBlock Text="깨우기 사용" Margin="0,0,9,0" VerticalAlignment="Center"
                                                FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                                     <CheckBox x:Name="EnabledToggle" Style="{StaticResource ToggleSwitchSmall}"
-                                              IsChecked="True"/>
+                                              IsChecked="True" Click="EnabledToggle_Click"/>
                                 </StackPanel>
                             </Grid>
 
@@ -268,6 +268,30 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
+
+                            <Border x:Name="TrustPanel" Margin="0,14,0,0" Padding="14,12" CornerRadius="10"
+                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                    Background="{DynamicResource PanelSoftBrush}" Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconShield}"
+                                          Width="15" Height="15" Margin="2,2,11,0" VerticalAlignment="Top"
+                                          Stroke="{DynamicResource TextMutedBrush}"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock x:Name="TrustMessage"
+                                                   Text="DevezCode 설치 경로의 신뢰 설정이 필요합니다."
+                                                   TextWrapping="Wrap" FontSize="{DynamicResource Fs12}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <Button Content="신뢰 설정 세션 열기" Click="OpenTrustSession_Click"
+                                                Margin="0,10,0,0" Height="34" Padding="12,0"
+                                                HorizontalAlignment="Left" Style="{StaticResource SecondaryButton}"
+                                                FontSize="{DynamicResource Fs12}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
@@ -282,7 +306,7 @@
                             <Button Content="취소" Click="Cancel_Click" Width="100" Height="38"
                                     Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs13}"
                                     Margin="0,0,8,0"/>
-                            <Button Content="저장" Click="Save_Click" Width="100" Height="38"
+                            <Button x:Name="SaveButton" Content="저장" Click="Save_Click" Width="100" Height="38"
                                     Style="{StaticResource PrimaryButton}" FontSize="{DynamicResource Fs13}"/>
                         </StackPanel>
                     </Grid>
