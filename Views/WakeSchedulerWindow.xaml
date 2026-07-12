@@ -17,6 +17,34 @@
             <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
 
+        <Style x:Key="WakeDayToggle" TargetType="ToggleButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="DayChip" CornerRadius="8" BorderThickness="1"
+                                BorderBrush="{DynamicResource LineBrush}"
+                                Background="{DynamicResource PanelBrush}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="DayChip" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="DayChip" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                                <Setter TargetName="DayChip" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="ThemedComboItem" TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
@@ -244,7 +272,18 @@
                                 </StackPanel>
                             </Grid>
 
-                            <TextBlock Text="시간" Style="{StaticResource WakeSectionLabel}"/>
+                            <TextBlock Text="요일" Style="{StaticResource WakeSectionLabel}"/>
+                            <UniformGrid Columns="7">
+                                <ToggleButton x:Name="Mon" Content="월" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
+                                <ToggleButton x:Name="Tue" Content="화" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
+                                <ToggleButton x:Name="Wed" Content="수" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
+                                <ToggleButton x:Name="Thu" Content="목" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
+                                <ToggleButton x:Name="Fri" Content="금" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
+                                <ToggleButton x:Name="Sat" Content="토" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
+                                <ToggleButton x:Name="Sun" Content="일" IsChecked="True" Style="{StaticResource WakeDayToggle}" Margin="0"/>
+                            </UniformGrid>
+
+                            <TextBlock Text="시간" Style="{StaticResource WakeSectionLabel}" Margin="0,20,0,8"/>
                             <ComboBox x:Name="TimeCombo" Style="{StaticResource EditableTimeCombo}"
                                       LostFocus="TimeCombo_LostFocus"/>
 
@@ -260,9 +299,9 @@
                                           Width="15" Height="15" Margin="2,2,11,0" VerticalAlignment="Top"
                                           Stroke="{DynamicResource TextMutedBrush}"/>
                                     <StackPanel Grid.Column="1">
-                                        <TextBlock Text="최근 실행 상태" FontSize="{DynamicResource Fs11}"
+                                        <TextBlock Text="최근 실행 일시" FontSize="{DynamicResource Fs11}"
                                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                                        <TextBlock x:Name="LastStatus" Text="아직 실행 기록이 없습니다"
+                                        <TextBlock x:Name="LastExecutionText" Text="아직 실행 기록이 없습니다"
                                                    Margin="0,4,0,0" TextWrapping="Wrap"
                                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                                     </StackPanel>

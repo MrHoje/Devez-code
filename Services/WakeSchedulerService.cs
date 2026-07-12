@@ -32,7 +32,19 @@ public sealed class WakeScheduleEntry
     }
 
     [JsonIgnore]
-    public string StatusDisplay => string.IsNullOrWhiteSpace(LastResult) ? "아직 실행 기록이 없습니다" : LastResult;
+    public string LastExecutionDisplay
+    {
+        get
+        {
+            if (DateTime.TryParseExact(LastResult, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var executedAt))
+                return executedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            if (DateTime.TryParseExact(LastOccurrenceKey, "yyyy-MM-dd'T'HH:mm", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var occurrence))
+                return occurrence.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            return "아직 실행 기록이 없습니다";
+        }
+    }
 
     private static string DayLabel(DayOfWeek day) => day switch
     {
@@ -142,20 +154,18 @@ public sealed class WakeSchedulerService : IDisposable
                 if (!SettingsService.TryClaimWakeSchedule(schedule.Id, occurrenceKey)) continue;
                 if (token.IsCancellationRequested || revision != Volatile.Read(ref _revision)) break;
 
-                WakeDispatchResult result;
                 try
                 {
-                    result = await _dispatch(schedule, token).ConfigureAwait(true)
-                        ?? WakeDispatchResult.Failed("Dispatch returned no result.");
+                    await _dispatch(schedule, token).ConfigureAwait(true);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
-                catch (Exception ex) { result = WakeDispatchResult.Failed(ex.Message); }
+                catch { /* 실행 시도 시각은 아래에서 동일하게 기록 */ }
 
-                // A schedule edit/stop wins over an in-flight callback's stale result.
+                // 일정 수정/중지가 진행 중 실행의 오래된 실행 시각 기록보다 우선한다.
                 if (!token.IsCancellationRequested && revision == Volatile.Read(ref _revision))
                 {
-                    string status = result.Success ? "success" : "failed: " + (result.Error ?? "unknown error");
-                    SettingsService.TrySaveWakeResult(schedule.Id, occurrenceKey, status);
+                    string executedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+                    SettingsService.TrySaveWakeResult(schedule.Id, occurrenceKey, executedAt);
                 }
             }
         }
