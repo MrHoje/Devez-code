@@ -236,12 +236,13 @@
                                                Margin="0,4,0,0" FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                                    <TextBlock Text="깨우기 사용" Margin="0,0,9,0" VerticalAlignment="Center"
+                                <Grid Margin="0,12,0,0">
+                                    <TextBlock Text="깨우기 사용" VerticalAlignment="Center"
                                                FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                                    <CheckBox x:Name="EnabledToggle" Style="{StaticResource ToggleSwitchSmall}"
+                                    <CheckBox x:Name="EnabledToggle" HorizontalAlignment="Right"
+                                              Style="{StaticResource ToggleSwitchSmall}"
                                               IsChecked="True" Click="EnabledToggle_Click"/>
-                                </StackPanel>
+                                </Grid>
                             </StackPanel>
 
                             <TextBlock Text="시간" Style="{StaticResource WakeSectionLabel}"/>
