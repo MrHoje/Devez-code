@@ -240,7 +240,7 @@
                                     <TextBlock Text="깨우기 사용" VerticalAlignment="Center"
                                                FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                                     <CheckBox x:Name="EnabledToggle" HorizontalAlignment="Right"
-                                              Style="{StaticResource ToggleSwitchSmall}"
+                                              Style="{StaticResource ToggleSwitch}"
                                               IsChecked="True" Click="EnabledToggle_Click"/>
                                 </Grid>
                             </StackPanel>
