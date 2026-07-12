@@ -5,8 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace DevezCode.Services.Terminal;
 
-/// <summary>[개발 중단] Grok 통합 보류 — UI 비노출. 코드는 재개용으로 유지.
-/// Grok Build CLI 테마 — DevezCode dark/soft/minimal 을 grok 내장 테마 이름으로 매핑.
+/// <summary>Grok Build CLI 테마 — DevezCode dark/soft/minimal 을 grok 내장 테마 이름으로 매핑.
 /// Grok 은 커스텀 팔레트 JSON 을 지원하지 않으므로(claude/opencode/gjc 와 다름)
 /// <c>~/.grok/config.toml</c> 의 <c>[ui] theme</c> 만 갱신한다.
 /// dark → groknight, soft/minimal → grokday (라이트 계열 공유, codex 와 동일한 수준).

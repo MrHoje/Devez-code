@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -429,6 +430,7 @@ public partial class SettingsDialog : UserControl
         SetCleanerAgentVisible(CleanerAgentKind.OpenCode, OpenCodeCatBtn, enabled.Contains("opencode"));
         SetCleanerAgentVisible(CleanerAgentKind.Gajae, GajaeCatBtn, enabled.Contains("gajae"));
         SetCleanerAgentVisible(CleanerAgentKind.Codex, CodexCatBtn, enabled.Contains("codex"));
+        SetCleanerAgentVisible(CleanerAgentKind.Grok, GrokCatBtn, enabled.Contains("grok"));
 
         CleanerEmptyText.Visibility = _cleanerVisible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         CleanerBody.Visibility = _cleanerVisible.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -454,6 +456,7 @@ public partial class SettingsDialog : UserControl
             "opencode" => CleanerAgentKind.OpenCode,
             "gajae" => CleanerAgentKind.Gajae,
             "codex" => CleanerAgentKind.Codex,
+            "grok" => CleanerAgentKind.Grok,
             _ => CleanerAgentKind.Claude,
         });
         ApplyCleanerCount();
@@ -471,6 +474,7 @@ public partial class SettingsDialog : UserControl
         ApplyCleanerPill(OpenCodeCatBtn, kind == CleanerAgentKind.OpenCode, active, primary, line, text);
         ApplyCleanerPill(GajaeCatBtn, kind == CleanerAgentKind.Gajae, active, primary, line, text);
         ApplyCleanerPill(CodexCatBtn, kind == CleanerAgentKind.Codex, active, primary, line, text);
+        ApplyCleanerPill(GrokCatBtn, kind == CleanerAgentKind.Grok, active, primary, line, text);
 
         VacuumSection.Visibility = kind == CleanerAgentKind.OpenCode ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -565,6 +569,7 @@ public partial class SettingsDialog : UserControl
             CleanerAgentKind.OpenCode => "OpenCode",
             CleanerAgentKind.Gajae => "Gajae Code",
             CleanerAgentKind.Codex => "Codex",
+            CleanerAgentKind.Grok => "Grok",
             _ => "Claude",
         };
         var extra = _cleanerCurrent == CleanerAgentKind.OpenCode
@@ -1541,6 +1546,9 @@ public partial class SettingsDialog : UserControl
     {
         try
         {
+            var executablePath = AgentRegistry.ResolvePath(agent);
+            if (string.IsNullOrWhiteSpace(executablePath)) return "";
+
             var psi = new ProcessStartInfo
             {
                 FileName = "powershell.exe",
@@ -1552,7 +1560,11 @@ public partial class SettingsDialog : UserControl
             psi.ArgumentList.Add("-NoProfile");
             psi.ArgumentList.Add("-NonInteractive");
             psi.ArgumentList.Add("-Command");
-            psi.ArgumentList.Add($"& {agent.Command} --version");
+            var escapedPath = executablePath.Replace("'", "''");
+            var versionArgument = agent.Id.Equals("grok", StringComparison.OrdinalIgnoreCase)
+                ? "version"
+                : "--version";
+            psi.ArgumentList.Add($"& '{escapedPath}' {versionArgument}");
 
             using var process = new Process { StartInfo = psi };
             var output = new StringBuilder();
@@ -1572,9 +1584,11 @@ public partial class SettingsDialog : UserControl
 
             lock (output)
             {
-                return output.ToString()
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .FirstOrDefault() ?? "";
+                var match = Regex.Match(
+                    output.ToString(),
+                    @"(?<![\d.])\d+\.\d+\.\d+(?![\d.])",
+                    RegexOptions.CultureInvariant);
+                return match.Success ? "v" + match.Value : "";
             }
         }
         catch { return ""; }

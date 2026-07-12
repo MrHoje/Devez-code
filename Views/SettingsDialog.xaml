@@ -647,7 +647,7 @@
 
                                 <!-- 켜진 클리너 대상 에이전트가 없을 때 -->
                                 <TextBlock x:Name="CleanerEmptyText" Visibility="Collapsed" TextWrapping="Wrap"
-                                           Text="설정 &gt; 에이전트에서 Claude, OpenCode, Gajae Code 중 사용할 에이전트를 켜면 여기에 표시됩니다."
+                                           Text="설정 &gt; 에이전트에서 사용할 에이전트를 켜면 여기에 표시됩니다."
                                            FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"
                                            Margin="0,16,0,0"/>
 
@@ -684,6 +684,14 @@
                                                        Source="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}, Converter={x:Static models:AgentImageConverter.Instance}}"
                                                        RenderOptions.BitmapScalingMode="HighQuality"/>
                                                 <TextBlock Text="Codex" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="GrokCatBtn" Tag="grok" Style="{StaticResource CleanerPill}" Click="CleanerAgent_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
+                                                       Source="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <TextBlock Text="Grok" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>

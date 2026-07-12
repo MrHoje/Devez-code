@@ -6,9 +6,9 @@ using Microsoft.Data.Sqlite;
 
 namespace DevezCode.Services;
 
-public sealed record SessionCleanerCounts(int Claude, int OpenCode, int Gajae, int Codex)
+public sealed record SessionCleanerCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok)
 {
-    public int Total => Claude + OpenCode + Gajae + Codex;
+    public int Total => Claude + OpenCode + Gajae + Codex + Grok;
 }
 
 public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCleanerCounts Deleted, SessionCleanerCounts Failed)
@@ -16,12 +16,12 @@ public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCl
     public int DeletedTotal => Deleted.Total;
     public int FailedTotal => Failed.Total;
 }
-public enum CleanerAgentKind { Claude, OpenCode, Gajae, Codex }
+public enum CleanerAgentKind { Claude, OpenCode, Gajae, Codex, Grok }
 public sealed record CleanerScanInfo(int Count, long Bytes);
 
-public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, int Codex, bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex)
+public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok, bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok)
 {
-    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0) + (ShowCodex ? Codex : 0);
+    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0) + (ShowCodex ? Codex : 0) + (ShowGrok ? Grok : 0);
 }
 
 
@@ -42,10 +42,12 @@ public static class SessionCleanerService
             OpenCode: enabled.ShowOpenCode ? EnumerateUnmanagedOpenCode(managed).Count : 0,
             Gajae: enabled.ShowGajae ? EnumerateUnmanagedGajae(managed).Count : 0,
             Codex: enabled.ShowCodex ? EnumerateUnmanagedCodex(managed).Count : 0,
+            Grok: enabled.ShowGrok ? EnumerateUnmanagedGrok(managed).Count : 0,
             enabled.ShowClaude,
             enabled.ShowOpenCode,
             enabled.ShowGajae,
-            enabled.ShowCodex);
+            enabled.ShowCodex,
+            enabled.ShowGrok);
     }
 
     public static int GetCount(CleanerAgentKind kind) => GetScanInfo(kind).Count;
@@ -59,6 +61,7 @@ public static class SessionCleanerService
             CleanerAgentKind.OpenCode => new CleanerScanInfo(EnumerateUnmanagedOpenCode(managed).Count, OpenCodeStoreBytes()),
             CleanerAgentKind.Gajae => FromFiles(EnumerateUnmanagedGajae(managed)),
             CleanerAgentKind.Codex => FromFiles(EnumerateUnmanagedCodex(managed)),
+            CleanerAgentKind.Grok => FromDirectories(EnumerateUnmanagedGrok(managed)),
             _ => new CleanerScanInfo(0, 0),
         };
     }
@@ -73,6 +76,21 @@ public static class SessionCleanerService
         return new CleanerScanInfo(files.Count, bytes);
     }
 
+    private static CleanerScanInfo FromDirectories(IReadOnlyCollection<string> directories)
+    {
+        long bytes = 0;
+        foreach (var directory in directories)
+        {
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+                    try { bytes += new FileInfo(file).Length; } catch { }
+            }
+            catch { }
+        }
+        return new CleanerScanInfo(directories.Count, bytes);
+    }
+
 
 
     public static SessionCleanerResult DeleteUnmanaged()
@@ -84,11 +102,12 @@ public static class SessionCleanerService
         (int deleted, int failed) od = enabled.ShowOpenCode ? DeleteUnmanaged(CleanerAgentKind.OpenCode) : (0, 0);
         (int deleted, int failed) gd = enabled.ShowGajae ? DeleteUnmanaged(CleanerAgentKind.Gajae) : (0, 0);
         (int deleted, int failed) xd = enabled.ShowCodex ? DeleteUnmanaged(CleanerAgentKind.Codex) : (0, 0);
+        (int deleted, int failed) rd = enabled.ShowGrok ? DeleteUnmanaged(CleanerAgentKind.Grok) : (0, 0);
 
         return new SessionCleanerResult(
-            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae, before.Codex),
-            new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted, xd.deleted),
-            new SessionCleanerCounts(cd.failed, od.failed, gd.failed, xd.failed));
+            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae, before.Codex, before.Grok),
+            new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted, xd.deleted, rd.deleted),
+            new SessionCleanerCounts(cd.failed, od.failed, gd.failed, xd.failed, rd.failed));
     }
 
     public static (int deleted, int failed) DeleteUnmanaged(CleanerAgentKind kind)
@@ -100,32 +119,36 @@ public static class SessionCleanerService
             CleanerAgentKind.OpenCode => DeleteOpenCode(EnumerateUnmanagedOpenCode(managed)),
             CleanerAgentKind.Gajae => DeleteFiles(EnumerateUnmanagedGajae(managed)),
             CleanerAgentKind.Codex => DeleteFiles(EnumerateUnmanagedCodex(managed)),
+            CleanerAgentKind.Grok => DeleteGrok(EnumerateUnmanagedGrok(managed)),
             _ => (0, 0),
         };
     }
 
 
-    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> CodexIds, HashSet<string> RoomIds)
+    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> CodexIds, HashSet<string> GrokIds, HashSet<string> RoomIds)
     {
         public static ManagedSnapshot Load()
         {
-            var (claude, opencode, gajae, codex, rooms) = SettingsService.LoadManagedSessionSnapshot();
+            var (claude, opencode, gajae, codex, grok, rooms) = SettingsService.LoadManagedSessionSnapshot();
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             var claudeIds = ToSet(claude);
             var openCodeIds = ToSet(opencode);
             var gajaeIds = ToSet(gajae);
             var codexIds = ToSet(codex);
+            var grokIds = ToSet(grok);
 
             AddTrackedFileIds(claudeIds, Path.Combine(appData, "DevezCode", "claude", "sessions"), GuidRegex);
             AddTrackedFileIds(openCodeIds, Path.Combine(appData, "DevezCode", "opencode", "sessions"), new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled));
             AddTrackedFileIds(gajaeIds, Path.Combine(appData, "DevezCode", "gajae", "sessions"), GuidRegex, fromGajaeRoomDir: true);
             AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "codex", "sessions"), GuidRegex);
+            AddTrackedFileIds(grokIds, Path.Combine(appData, "DevezCode", "grok", "sessions"), GuidRegex);
 
             return new ManagedSnapshot(
                 claudeIds,
                 openCodeIds,
                 gajaeIds,
                 codexIds,
+                grokIds,
                 ToSet(rooms));
         }
 
@@ -158,7 +181,7 @@ public static class SessionCleanerService
             catch { }
         }
     }
-    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex)
+    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok)
     {
         public static EnabledSnapshot Load()
         {
@@ -167,7 +190,8 @@ public static class SessionCleanerService
                 enabled.Contains("claude"),
                 enabled.Contains("opencode"),
                 enabled.Contains("gajae"),
-                enabled.Contains("codex"));
+                enabled.Contains("codex"),
+                enabled.Contains("grok"));
         }
     }
 
@@ -256,6 +280,64 @@ public static class SessionCleanerService
         }
         catch { }
         return list;
+    }
+
+    private static List<string> EnumerateUnmanagedGrok(ManagedSnapshot managed)
+    {
+        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "sessions");
+        if (!Directory.Exists(root)) return new();
+        var directories = new List<string>();
+        try
+        {
+            foreach (var summary in Directory.EnumerateFiles(root, "summary.json", SearchOption.AllDirectories))
+            {
+                var directory = Path.GetDirectoryName(summary);
+                if (string.IsNullOrWhiteSpace(directory)) continue;
+                var id = Path.GetFileName(directory);
+                if (!GuidRegex.IsMatch(id) || managed.GrokIds.Contains(id)) continue;
+                directories.Add(directory);
+            }
+        }
+        catch { }
+        return directories.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static (int deleted, int failed) DeleteGrok(IEnumerable<string> directories)
+    {
+        var agent = AgentRegistry.Find("grok");
+        var executable = agent == null ? null : AgentRegistry.ResolvePath(agent);
+        if (string.IsNullOrWhiteSpace(executable)) return (0, directories.Count());
+
+        int deleted = 0, failed = 0;
+        foreach (var directory in directories)
+        {
+            var id = Path.GetFileName(directory);
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = executable,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                psi.ArgumentList.Add("sessions");
+                psi.ArgumentList.Add("delete");
+                psi.ArgumentList.Add(id);
+                using var process = Process.Start(psi);
+                if (process == null || !process.WaitForExit(15000))
+                {
+                    try { process?.Kill(true); } catch { }
+                    failed++;
+                    continue;
+                }
+                if (process.ExitCode == 0 && !Directory.Exists(directory)) deleted++;
+                else failed++;
+            }
+            catch { failed++; }
+        }
+        return (deleted, failed);
     }
 
     private static List<string> EnumerateUnmanagedOpenCode(ManagedSnapshot managed)

@@ -137,7 +137,6 @@ public sealed class TerminalSessionManager
             }
             else if (ccDir != null && agent.Id == "grok")
             {
-                // [개발 중단] Grok 통합 보류(UI 비노출). 기존 방 복원용 경로 유지.
                 // grok: 훅 + `grok -r <id>` 복원. 앱레벨 자동 재진입(codex 패턴).
                 startDir = ccDir;
                 var direct = TryBuildGrokDirectLaunch(roomId, out inject);
@@ -290,7 +289,8 @@ public sealed class TerminalSessionManager
     }
 
     /// <summary>codex 방의 codex 를 cmd /k 배치로 직접 실행 (Claude 의 TryBuildDirectLaunch 와 동일 패턴).
-    /// 첫 실행은 <c>codex</c> (codex 가 새 session_id 발급), 그 후엔 <c>codex resume &lt;sessionId&gt;</c> 로
+    /// 첫 실행은 <c>codex --no-alt-screen</c> (codex 가 새 session_id 발급), 그 후엔
+    /// <c>codex resume --no-alt-screen &lt;sessionId&gt;</c> 로
     /// 같은 대화 복원. SessionStart 훅이 실제 codex session_id 를 <see cref="CodexRoomSessions"/> 에
     /// 갱신 — /clear·수동 재실행으로 ID가 어긋나도 다음 실행 때 최신 ID 로 resume.
     /// (참고: codex CLI 는 <c>--session-id</c> 플래그가 없음 — <c>codex resume &lt;id&gt;</c> 만 가능.)</summary>
@@ -314,10 +314,13 @@ public sealed class TerminalSessionManager
         //   재진입이 막힌다. 재개 실패(세션 삭제 등)는 앱 재진입이 반복하다 AllowAutoRestart 3회 캡에서
         //   'Enter 로 재시작' 프롬프트로 폴백된다.
         string body;
+        // DevezCode 는 Codex 를 인라인 TUI 로 렌더한다. 이 플래그를 생략하면 Codex 버전/환경에 따라
+        // alternate-screen 으로 재개되어, rollout 문맥에는 남은 마지막 응답이 일반 스크롤백 화면에는
+        // 재생되지 않는 경우가 있다. 신규/재개 모두 명시해 대화 표시와 실제 복원 문맥을 일치시킨다.
         if (string.IsNullOrEmpty(sessionId))
-            body = "codex\r\nexit";                       // session_id 없음 — codex 가 새 세션 생성(훅이 저장)
+            body = "codex --no-alt-screen\r\nexit";                       // session_id 없음 — codex 가 새 세션 생성(훅이 저장)
         else
-            body = $"codex resume {sessionId}\r\nexit";   // 저장된 session_id 로 resume
+            body = $"codex resume --no-alt-screen {sessionId}\r\nexit";   // 저장된 session_id 로 resume
 
         try
         {
@@ -470,8 +473,7 @@ public sealed class TerminalSessionManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "grok", "launch");
 
-    /// <summary>[개발 중단] Grok 통합 보류. 재개 시 사용.
-    /// grok 방 직접 실행. 훅 설치 후 저장된 session_id 가 있으면 <c>grok -r &lt;id&gt;</c>,
+    /// <summary>Grok 방 직접 실행. 훅 설치 후 저장된 session_id 가 있으면 <c>grok -r &lt;id&gt;</c>,
     /// 없으면 <c>grok</c> 신규. 포크 마커가 있으면 <c>-r src --fork-session</c>.
     /// 배치 끝 exit + cmd /c → ConPTY 종료 → IsAutoReenterRoom 앱레벨 재진입.</summary>
     private string? TryBuildGrokDirectLaunch(string roomId, out string? injectFallback)
@@ -479,6 +481,12 @@ public sealed class TerminalSessionManager
         injectFallback = null;
         GrokHookInstaller.EnsureInstalled();
         GrokCustomThemes.Apply(DevezCode.App.CurrentTheme);
+
+        var grokAgent = AgentRegistry.Find("grok");
+        var grokPath = grokAgent == null ? null : AgentRegistry.ResolvePath(grokAgent);
+        var grokCommand = string.IsNullOrWhiteSpace(grokPath)
+            ? "grok"
+            : $"\"{grokPath.Replace("\"", "\"\"")}\"";
 
         // 훅 파일이 settings 보다 최신이면 동기화
         var tracked = GrokHookService.LoadTrackedSessionId(roomId);
@@ -501,21 +509,23 @@ public sealed class TerminalSessionManager
             if (diverged)
             {
                 SettingsService.RemoveRoomForkSource(roomId);
-                body = $"grok -r {sessionId}\r\nexit";
+                body = $"{grokCommand} -r {sessionId}\r\nexit";
             }
             else if (System.Text.RegularExpressions.Regex.IsMatch(forkSrc, @"^[A-Za-z0-9_\-]+$"))
             {
-                body = $"grok -r {forkSrc} --fork-session\r\nexit";
+                body = $"{grokCommand} -r {forkSrc} --fork-session\r\nexit";
             }
             else
             {
-                body = string.IsNullOrEmpty(sessionId) ? "grok\r\nexit" : $"grok -r {sessionId}\r\nexit";
+                body = string.IsNullOrEmpty(sessionId)
+                    ? $"{grokCommand}\r\nexit"
+                    : $"{grokCommand} -r {sessionId}\r\nexit";
             }
         }
         else if (string.IsNullOrEmpty(sessionId))
-            body = "grok\r\nexit";
+            body = $"{grokCommand}\r\nexit";
         else
-            body = $"grok -r {sessionId}\r\nexit";
+            body = $"{grokCommand} -r {sessionId}\r\nexit";
 
         try
         {
@@ -1915,7 +1925,7 @@ public sealed class TerminalSessionManager
                             SettingsService.SaveCodexRoomSession(roomId, cx);
                     }
                     break;
-                case "grok": // [개발 중단] Grok 통합 보류
+                case "grok":
                     var gk = GrokHookService.LoadTrackedSessionId(roomId);
                     if (gk != null && gk != SettingsService.LoadGrokRoomSession(roomId))
                         SettingsService.SaveGrokRoomSession(roomId, gk);
@@ -2127,6 +2137,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(grokDir, "sessions", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(grokDir, "lastmsg", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(grokDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(grokDir, "waiting", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(GrokLaunchDir(), roomFile + ".cmd"));
 
         var opencodeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode");
@@ -2204,6 +2215,7 @@ public sealed class TerminalSessionManager
             Collect(Path.Combine(appData, "DevezCode", "codex", "lastmsg"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "grok", "sessions"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "grok", "busy"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "grok", "waiting"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "grok", "lastmsg"), ".txt");
             // statusline-cache-<room>-<sig>.txt 는 ClaudeTrackDir 루트에 바로 있고 접두사 매칭 필요.
             try

@@ -17,13 +17,15 @@ public static class SessionExporter
     /// 호출부는 백그라운드 스레드에서 부르는 게 좋다.)</summary>
     public static string? BuildMarkdown(string roomId, string agentId, string sessionName, string? cwd)
     {
+        if (agentId == "grok")
+            return ExportGrokMarkdown(roomId);
+
         var turns = agentId switch
         {
             "claude"   => FromClaude(roomId, cwd),
             "opencode" => FromOpenCode(roomId),
             "gajae"    => FromGajae(roomId),
             "codex"    => FromCodex(roomId),
-            "grok"     => FromGrok(roomId), // [개발 중단] Grok 통합 보류
             _          => new List<(string role, string text)>(),
         };
         if (turns.Count == 0) return null;
@@ -49,30 +51,46 @@ public static class SessionExporter
         "codex" => "Codex", "grok" => "Grok", _ => a,
     };
 
-    // ── [개발 중단] grok: ~/.grok/sessions/**/<sid>/chat_history.jsonl ──
-    private static List<(string role, string text)> FromGrok(string roomId)
+    // ── grok: 최신 CLI는 transcript를 SQLite에 저장하므로 공식 export 명령을 사용 ──
+    private static string? ExportGrokMarkdown(string roomId)
     {
-        var turns = new List<(string, string)>();
         var sid = SettingsService.LoadGrokRoomSession(roomId);
-        var path = TerminalSessionManager.FindGrokChatHistoryPath(sid);
-        if (path == null) return turns;
-        foreach (var line in ReadLinesShared(path))
+        if (string.IsNullOrWhiteSpace(sid)) return null;
+
+        var agent = AgentRegistry.Find("grok");
+        var executablePath = agent == null ? null : AgentRegistry.ResolvePath(agent);
+        if (string.IsNullOrWhiteSpace(executablePath)) return null;
+
+        try
         {
-            try
+            var psi = new ProcessStartInfo
             {
-                using var d = JsonDocument.Parse(line);
-                var o = d.RootElement;
-                if (!TryStr(o, "type", out var role) || (role != "user" && role != "assistant")) continue;
-                var text = ExtractContentText(o);
-                if (string.IsNullOrWhiteSpace(text)) continue;
-                // 시스템/스킬 주입 덩어리는 제외
-                if (role == "user" && (text.Contains("<system-reminder>", StringComparison.Ordinal)
-                    || text.StartsWith("You are Grok", StringComparison.Ordinal))) continue;
-                turns.Add((role, text.Trim()));
+                FileName = executablePath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            };
+            psi.ArgumentList.Add("export");
+            psi.ArgumentList.Add(sid);
+
+            using var process = Process.Start(psi);
+            if (process == null) return null;
+            var output = new StringBuilder();
+            process.OutputDataReceived += (_, e) => { if (e.Data != null) output.AppendLine(e.Data); };
+            process.ErrorDataReceived += (_, __) => { };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            if (!process.WaitForExit(20000))
+            {
+                try { process.Kill(true); } catch { }
+                return null;
             }
-            catch { }
+            var markdown = output.ToString().Trim();
+            return markdown.Length == 0 ? null : markdown + "\n";
         }
-        return turns;
+        catch { return null; }
     }
 
     // ── codex: ~/.codex/sessions/**/rollout-*-<sid>.jsonl (type=response_item, payload.type=message,

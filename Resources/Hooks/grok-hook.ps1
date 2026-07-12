@@ -1,4 +1,3 @@
-# [개발 중단] Grok 통합 보류 — UI 비노출. 재개 시 사용.
 # DevezCode grok hook (UserPromptSubmit / Stop / SessionStart / SessionEnd)
 # ~/.grok/hooks/devezcode-room-tracker.json 에 등록. stdin 으로 JSON (hookEventName, sessionId, …).
 # 세션 추적은 $env:DEVEZCODE_ROOM_ID (앱이 ConPTY/배치 env 로 주입) 로 식별.
@@ -31,10 +30,26 @@ $event = [string]$event
 # 정규화: session_start / SessionStart / user_prompt_submit 등 → 비교용
 $eventKey = ($event -replace '[_\-]', '').ToLowerInvariant()
 
+function Write-State([string]$path, [string]$value, [string]$encoding = 'UTF8') {
+    $dir = Split-Path -Parent $path
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $tmp = $path + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        Set-Content -LiteralPath $tmp -Value $value -Encoding $encoding -Force
+        Move-Item -LiteralPath $tmp -Destination $path -Force
+    } finally {
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
+    }
+}
+
 function Write-Busy([string]$status) {
     $busyDir = Join-Path $base 'busy'
-    New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
-    Set-Content -LiteralPath (Join-Path $busyDir ($roomSafe + '.txt')) -Value $status -Encoding Ascii -Force
+    Write-State (Join-Path $busyDir ($roomSafe + '.txt')) $status 'Ascii'
+}
+
+function Write-Waiting([string]$status) {
+    $waitingDir = Join-Path $base 'waiting'
+    Write-State (Join-Path $waitingDir ($roomSafe + '.txt')) $status 'Ascii'
 }
 
 function Write-SessionId {
@@ -43,13 +58,13 @@ function Write-SessionId {
     if (-not $sid) { $sid = $env:GROK_SESSION_ID }
     if (-not $sid) { return }
     $sDir = Join-Path $base 'sessions'
-    New-Item -ItemType Directory -Force -Path $sDir | Out-Null
-    Set-Content -LiteralPath (Join-Path $sDir ($roomSafe + '.txt')) -Value ([string]$sid).Trim() -Encoding Ascii -Force
+    Write-State (Join-Path $sDir ($roomSafe + '.txt')) ([string]$sid).Trim() 'Ascii'
 }
 
 switch -Regex ($eventKey) {
     '^(userpromptsubmit|beforesubmitprompt)$' {
         Write-Busy 'running'
+        Write-Waiting 'idle'
         Write-SessionId
 
         $prompt = $j.prompt
@@ -68,12 +83,21 @@ switch -Regex ($eventKey) {
             $prompt = ([string]$prompt -replace '\s+', ' ').Trim()
             if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
             $mDir = Join-Path $base 'lastmsg'
-            New-Item -ItemType Directory -Force -Path $mDir | Out-Null
-            Set-Content -LiteralPath (Join-Path $mDir ($roomSafe + '.txt')) -Value $prompt -Encoding UTF8 -Force
+            Write-State (Join-Path $mDir ($roomSafe + '.txt')) $prompt 'UTF8'
         }
+    }
+    '^(notification)$' {
+        $notice = "$($j.notification_type) $($j.type) $($j.message) $($env:GROK_EVENT) $($env:GROK_MESSAGE)".ToLowerInvariant()
+        if ($notice -match '(approval|required|permission|input|prompt)') {
+            Write-Waiting 'waiting'
+        }
+    }
+    '^(pretooluse|posttooluse|posttoolusefailure)$' {
+        Write-Waiting 'idle'
     }
     '^(stop|stopfailure)$' {
         Write-Busy 'idle'
+        Write-Waiting 'idle'
         Write-SessionId
     }
     '^(sessionstart)$' {
@@ -81,6 +105,7 @@ switch -Regex ($eventKey) {
     }
     '^(sessionend)$' {
         Write-Busy 'idle'
+        Write-Waiting 'idle'
         Write-SessionId
     }
 }

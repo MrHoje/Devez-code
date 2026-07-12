@@ -8,8 +8,7 @@ using System.Text.Json.Nodes;
 
 namespace DevezCode.Services;
 
-/// <summary>[개발 중단] Grok 통합 보류 — UI 비노출. 재개 시 사용.
-/// grok 훅(grok-hook.ps1) 설치/유지.
+/// <summary>Grok 훅(grok-hook.ps1) 설치/유지.
 /// 1) 스크립트를 %LOCALAPPDATA%\DevezCode\grok\hook.ps1 에 항상 최신본으로 기록.
 /// 2) ~/.grok/hooks/devezcode-room-tracker.json 에 SessionStart/UserPromptSubmit/Stop/SessionEnd 등록.</summary>
 public static class GrokHookInstaller
@@ -60,7 +59,11 @@ public static class GrokHookInstaller
             var hookCommand =
                 $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass " +
                 $"-File \"{ScriptInstallPath}\"";
-            var events = new[] { "SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "StopFailure" };
+            var events = new[]
+            {
+                "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
+                "Notification", "Stop", "SessionEnd", "StopFailure",
+            };
 
             // 우리 전용 파일이라 매 설치 시 전체 덮어써 최신 이벤트 목록 유지(다른 훅 파일과 분리).
             var hooksObj = new JsonObject();

@@ -62,6 +62,18 @@ public static class AgentRegistry
         },
         new()
         {
+            // Grok Build CLI (xAI). 기본 설치: %USERPROFILE%\.grok\bin\grok.exe
+            // Tier1: ResumeFlag -c (cwd 최근 세션). 방별 정확 복원은 Tier2 전용 런치에서 -r <id>.
+            // 기본 TUI 는 alt-screen — InlineTui=false. 테마는 xterm 스킴 + (선택) 유저 프롬프트 recolor.
+            Id = "grok", DisplayName = "Grok", Provider = "xAI",
+            ExeNames = new[] { "grok.exe", "grok.cmd", "grok.bat", "grok.ps1", "grok" },
+            Command = "grok",
+            InstallCommand = "irm https://x.ai/cli/install.ps1 | iex",
+            UpdateCommand = "grok update",
+            ResumeFlag = "-c",
+        },
+        new()
+        {
             Id = "opencode", DisplayName = "OpenCode", Provider = "OpenCode",
             ExeNames = new[] { "opencode.exe", "opencode.cmd", "opencode.bat", "opencode.ps1", "opencode" },
             Command = "opencode",
@@ -81,18 +93,6 @@ public static class AgentRegistry
             InstallCommand = "bun install -g gajae-code",
             UpdateCommand = "bun install -g gajae-code@latest",
             InlineTui = true,
-        },
-        // [개발 중단] Grok 통합 보류 — HiddenFromUI. 재개 시 이 항목·관련 서비스 활성화.
-        new()
-        {
-            // Grok Build CLI (xAI). 기본 설치: %USERPROFILE%\.grok\bin\grok.exe
-            // Tier1: ResumeFlag -c (cwd 최근 세션). 방별 정확 복원은 Tier2 전용 런치에서 -r <id>.
-            // 기본 TUI 는 alt-screen — InlineTui=false. 테마는 xterm 스킴 + (선택) 유저 프롬프트 recolor.
-            Id = "grok", DisplayName = "Grok", Provider = "xAI",
-            ExeNames = new[] { "grok.exe", "grok.cmd", "grok.bat", "grok.ps1", "grok" },
-            Command = "grok",
-            InstallCommand = "irm https://x.ai/cli/install.ps1 | iex",
-            ResumeFlag = "-c",
         },
     };
 
@@ -173,8 +173,6 @@ public static class AgentRegistry
     /// 백엔드 코드(훅·런치 등)는 그대로 유지 — 나중에 다시 노출할 때 여기만 비우면 됨.</summary>
     public static readonly HashSet<string> HiddenFromUI = new(StringComparer.OrdinalIgnoreCase)
     {
-        // [개발 중단] Grok 통합 보류 — 설정/피커 숨김·기본 비활성. 재개 시 이 항목 제거.
-        "grok",
     };
 
     /// <summary>UI 노출 대상에서 제외한 에이전트만 반환.</summary>

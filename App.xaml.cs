@@ -122,7 +122,7 @@ public partial class App : Application
         // SetTheme 안에서도 호출되지만, 시작 시 한 번 확실히 적용.
         Services.Terminal.GajaeCustomThemes.Apply(CurrentTheme);
 
-        // [개발 중단] Grok — config.toml theme 매핑(UI 비노출·통합 보류). 재개 시 유지.
+        // Grok — config.toml theme 매핑.
         Services.Terminal.GrokCustomThemes.Apply(CurrentTheme);
 
         StartupSequence();
@@ -605,7 +605,7 @@ public partial class App : Application
         // 가재코드(gjc) — devez.json 팔레트 덮어쓰기. gjc의 테마는 전역 파일 하나(watch)라 외부 세션도 영향받지만,
         // 이 호출을 빼면 DevezCode 안 세션도 못 따라간다. (Claude/OpenCode는 per-project 설정이라 이런 문제 없음)
         Services.Terminal.GajaeCustomThemes.Apply(theme);
-        // [개발 중단] Grok — config.toml theme 갱신(통합 보류).
+        // Grok — config.toml theme 갱신.
         Services.Terminal.GrokCustomThemes.Apply(theme);
         ThemeChanged?.Invoke(theme);
     }

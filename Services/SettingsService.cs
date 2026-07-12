@@ -51,7 +51,7 @@ public static class SettingsService
         // 가재코드(gjc) 방별 세션 ID. gjc 는 사전 발급 플래그가 없어, 방별 격리 --session-dir 의
         // 최신 .jsonl 파일명에서 추출한 ID 를 영속 → 재오픈 시 `gjc -r <id>` 로 같은 대화 복원.
         public Dictionary<string, string> GajaeRoomSessions { get; set; } = new();
-        // [개발 중단] Grok 통합 보류. 방별 세션 ID (훅 sessions\<room>.txt → `grok -r <id>`).
+        // Grok 방별 세션 ID (훅 sessions\<room>.txt → `grok -r <id>`).
         public Dictionary<string, string> GrokRoomSessions { get; set; } = new();
         // 세션 포크: 새 방(roomId) → 포크 원본 세션 ID. 새 방 첫 실행에 --fork-session/--fork 로 1회 소비.
         public Dictionary<string, string> RoomForkSources { get; set; } = new();
@@ -361,7 +361,7 @@ public static class SettingsService
       }
     }
     /// <summary>클리너 보호 목록용: DevezCode 가 현재 관리 중인 room/session ID 스냅샷.</summary>
-    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Codex, IReadOnlyCollection<string> Rooms)
+    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Codex, IReadOnlyCollection<string> Grok, IReadOnlyCollection<string> Rooms)
         LoadManagedSessionSnapshot()
     {
         lock (_lock)
@@ -371,6 +371,7 @@ public static class SettingsService
                 Current.OpenCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.GajaeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.CodexRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                Current.GrokRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.ClaudeCodeRoomDirs.Keys.Where(v => !string.IsNullOrWhiteSpace(v)).ToList()
             );
         }
@@ -387,8 +388,7 @@ public static class SettingsService
     }
 
     // ── 사용자가 활성화한 에이전트 목록 ────────────────────────────
-    /// <summary>빈 값이면 HiddenFromUI·opencode 제외 에이전트를 활성화한 것으로 간주(첫 실행 기본값).
-    /// grok 등 UI 숨김 에이전트는 기본 false(목록 미포함).</summary>
+    /// <summary>빈 값이면 HiddenFromUI·opencode 제외 에이전트를 활성화한 것으로 간주(첫 실행 기본값).</summary>
     public static IReadOnlyList<string> LoadEnabledAgents()
     {
         var current = Current;
@@ -778,7 +778,7 @@ public static class SettingsService
         Save();
     }
 
-    // ── [개발 중단] grok 세션 ID (훅 → settings 영속) ─────
+    // ── grok 세션 ID (훅 → settings 영속) ─────
     public static string? LoadGrokRoomSession(string roomId)
         => Current.GrokRoomSessions.TryGetValue(roomId, out var s) ? s : null;
 

@@ -178,6 +178,7 @@ public partial class McpManagerDialog : UserControl
         "opencode" => OpenCodeMcpBackend.ConfigPath,
         "claude"   => ClaudeMcpBackend.ConfigPath,
         "codex"    => CodexMcpBackend.ConfigPath,
+        "grok"     => GrokMcpBackend.ConfigPath,
         _          => null,
     };
 

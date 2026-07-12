@@ -82,7 +82,6 @@ public partial class MainWindow : Window
     private readonly SessionLastMessageService _sessionLastMsg = new();
     // codex — Claude 와 동일하게 ~/.codex/hooks.json 으로 lastmsg/busy/session_id 추적.
     private readonly CodexHookService _codexHook = new();
-    // [개발 중단] Grok 통합 보류(UI 비노출). 재개 시 유지.
     // grok — ~/.grok/hooks + 방별 상태 파일로 lastmsg/busy/session_id 추적 (codex 패턴).
     private readonly GrokHookService _grokHook = new();
     // 비-Claude 비-codex (opencode/gjc) 의 last prompt 추적. codex 는 위 훅 서비스가 처리.
@@ -348,7 +347,7 @@ public partial class MainWindow : Window
         _codexHook.CodexSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() => SettingsService.SaveCodexRoomSession(roomId, sid));
 
-        // [개발 중단] Grok — codex 와 동일 roomId 키 즉시 갱신.
+        // Grok — codex 와 동일 roomId 키 즉시 갱신.
         _grokHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -363,7 +362,17 @@ public partial class MainWindow : Window
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
+                if (!busy && s != null) s.IsWaitingChoice = false;
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateSessionBusyDisplay();
+            });
+        _grokHook.WaitingChoiceChanged += (roomId, waiting) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                bool wasWaiting = s?.IsWaitingChoice ?? false;
+                if (s != null) s.IsWaitingChoice = waiting;
+                NotifyIfSessionWaiting(s, wasWaiting, waiting);
                 UpdateSessionBusyDisplay();
             });
         _grokHook.GrokSessionChanged += (roomId, sid) =>
@@ -410,7 +419,7 @@ public partial class MainWindow : Window
             CodexHookInstaller.EnsureScriptInstalled();
             CodexHookInstaller.InstallHooksJson();
             _codexHook.Start();
-            // [개발 중단] Grok 훅 — UI 비노출 중이어도 기존 grok 방 대비 설치·감시 유지.
+            // Grok 훅 설치·감시.
             GrokHookInstaller.EnsureInstalled();
             _grokHook.Start();
             // opencode 플러그인 — 매 시작 시 ~/.config\opencode\plugin\devezcode-room-tracker.js 갱신.

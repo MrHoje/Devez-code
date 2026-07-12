@@ -5,8 +5,7 @@ using System.Threading;
 
 namespace DevezCode.Services;
 
-/// <summary>[개발 중단] Grok 통합 보류 — UI 비노출. 재개 시 사용.
-/// grok 훅이 방별로 떨군 lastmsg/busy/sessions 파일을 감시.
+/// <summary>Grok 훅이 방별로 떨군 lastmsg/busy/sessions 파일을 감시.
 /// CodexHookService 와 동일 패턴 (roomId 키).</summary>
 public sealed class GrokHookService : IDisposable
 {
@@ -14,14 +13,17 @@ public sealed class GrokHookService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "grok");
     private static string LastmsgDir => Path.Combine(BaseDir, "lastmsg");
     private static string BusyDir => Path.Combine(BaseDir, "busy");
+    private static string WaitingDir => Path.Combine(BaseDir, "waiting");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
 
     private FileSystemWatcher? _lastmsgWatcher;
     private FileSystemWatcher? _busyWatcher;
+    private FileSystemWatcher? _waitingWatcher;
     private FileSystemWatcher? _sessionWatcher;
 
     public event Action<string, string>? MessageChanged;
     public event Action<string, bool>? BusyChanged;
+    public event Action<string, bool>? WaitingChoiceChanged;
     public event Action<string, string>? GrokSessionChanged;
 
     public void Start()
@@ -30,9 +32,12 @@ public sealed class GrokHookService : IDisposable
         {
             Directory.CreateDirectory(LastmsgDir);
             Directory.CreateDirectory(BusyDir);
+            Directory.CreateDirectory(WaitingDir);
             Directory.CreateDirectory(SessionDir);
 
             foreach (var f in Directory.EnumerateFiles(BusyDir, "*.txt"))
+                try { File.Delete(f); } catch { }
+            foreach (var f in Directory.EnumerateFiles(WaitingDir, "*.txt"))
                 try { File.Delete(f); } catch { }
 
             _lastmsgWatcher = new FileSystemWatcher(LastmsgDir, "*.txt")
@@ -42,6 +47,7 @@ public sealed class GrokHookService : IDisposable
             };
             _lastmsgWatcher.Changed += (_, e) => EmitLastmsg(e.FullPath);
             _lastmsgWatcher.Created += (_, e) => EmitLastmsg(e.FullPath);
+            _lastmsgWatcher.Renamed += (_, e) => EmitLastmsg(e.FullPath);
             foreach (var f in Directory.EnumerateFiles(LastmsgDir, "*.txt")) EmitLastmsg(f);
 
             _busyWatcher = new FileSystemWatcher(BusyDir, "*.txt")
@@ -51,6 +57,16 @@ public sealed class GrokHookService : IDisposable
             };
             _busyWatcher.Changed += (_, e) => EmitBusy(e.FullPath);
             _busyWatcher.Created += (_, e) => EmitBusy(e.FullPath);
+            _busyWatcher.Renamed += (_, e) => EmitBusy(e.FullPath);
+
+            _waitingWatcher = new FileSystemWatcher(WaitingDir, "*.txt")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+            _waitingWatcher.Changed += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Created += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Renamed += (_, e) => EmitWaiting(e.FullPath);
 
             _sessionWatcher = new FileSystemWatcher(SessionDir, "*.txt")
             {
@@ -59,6 +75,7 @@ public sealed class GrokHookService : IDisposable
             };
             _sessionWatcher.Changed += (_, e) => EmitSession(e.FullPath);
             _sessionWatcher.Created += (_, e) => EmitSession(e.FullPath);
+            _sessionWatcher.Renamed += (_, e) => EmitSession(e.FullPath);
             foreach (var f in Directory.EnumerateFiles(SessionDir, "*.txt")) EmitSession(f);
         }
         catch { /* 감시 실패해도 앱은 계속 */ }
@@ -77,8 +94,31 @@ public sealed class GrokHookService : IDisposable
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
-        if (status == null || string.IsNullOrWhiteSpace(status)) return;
+        if (status == null || string.IsNullOrWhiteSpace(status))
+        {
+            ReEmitBusyAfterSettleAsync(path, room);
+            return;
+        }
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async void ReEmitBusyAfterSettleAsync(string path, string room)
+    {
+        await System.Threading.Tasks.Task.Delay(120);
+        var status = TryRead(path);
+        BusyChanged?.Invoke(room,
+            !string.IsNullOrWhiteSpace(status)
+            && status.Equals("running", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void EmitWaiting(string path)
+    {
+        var room = Path.GetFileNameWithoutExtension(path);
+        if (string.IsNullOrEmpty(room)) return;
+        var status = TryRead(path);
+        WaitingChoiceChanged?.Invoke(room,
+            !string.IsNullOrWhiteSpace(status)
+            && status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
     }
 
     private void EmitSession(string path)
@@ -131,6 +171,7 @@ public sealed class GrokHookService : IDisposable
     {
         _lastmsgWatcher?.Dispose();
         _busyWatcher?.Dispose();
+        _waitingWatcher?.Dispose();
         _sessionWatcher?.Dispose();
     }
 }
