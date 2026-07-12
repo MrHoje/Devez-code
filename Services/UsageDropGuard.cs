@@ -1,8 +1,12 @@
 namespace DevezCode.Services;
 
 /// <summary>
-/// 같은 초기화 구간에서 한 번만 관측된 큰 사용률 급락을 보류한다.
-/// 공급자의 실제 조기 초기화도 가능하므로 연속된 두 응답이 급락을 확인하면 새 값을 채택한다.
+/// 이전에 채택한 윈도우가 아직 끝나지 않았는데 관측된 큰 사용률 급락을 보류한다.
+/// 같은 reset 구간의 단발 급락뿐 아니라 reset_at 이 바뀐(윈도우 교체 주장) 급락도,
+/// 서버가 같은 계정에 두 사용량 레코드를 갖고 간헐적으로 다른 쪽을 반환하는 플립일 수
+/// 있으므로 연속된 두 응답이 같은 급락을 확인할 때만 채택한다. 공급자의 실제 조기
+/// 초기화는 최대 한 폴링 주기만 지연된다. 이전 윈도우의 reset 이 이미 경과했다면
+/// 정상 윈도우 전환이므로 즉시 채택한다.
 /// </summary>
 internal sealed class UsageDropGuard
 {
@@ -11,6 +15,25 @@ internal sealed class UsageDropGuard
 
     private IReadOnlyDictionary<string, WindowSample>? _accepted;
     private IReadOnlyDictionary<string, WindowSample>? _pending;
+
+    /// <summary>재시작 직후 기준값이 없어 첫 응답(가짜 급락 포함)을 무조건 채택하는 구멍을
+    /// 막기 위해, 직전 실행이 저장한 스냅샷을 기준값으로 놓는다. 이미 실제 응답을 채택한
+    /// 뒤에는 무시한다. reset 이 경과한 기준값은 자연히 의심 판정에서 제외된다.</summary>
+    public void Seed(IEnumerable<WindowSample> samples)
+    {
+        if (_accepted != null) return;
+        var seeded = samples.ToDictionary(sample => sample.Name, StringComparer.Ordinal);
+        if (seeded.Count == 0) return;
+        _accepted = seeded;
+    }
+
+    /// <summary>인증(계정)이 바뀌면 이전 계정의 기준값으로 새 계정의 정상값을 보류하지
+    /// 않도록 상태를 비운다.</summary>
+    public void Reset()
+    {
+        _accepted = null;
+        _pending = null;
+    }
 
     public bool ShouldPublish(
         IEnumerable<WindowSample> samples,
@@ -64,8 +87,10 @@ internal sealed class UsageDropGuard
         var drops = new List<Drop>();
         foreach (var (name, current) in candidate)
         {
+            // 이전 윈도우의 reset 이 없거나 이미 지났으면 정상 전환 — 의심하지 않는다.
             if (!accepted.TryGetValue(name, out var previous)
-                || !SameActiveWindow(previous.ResetsAt, current.ResetsAt, now))
+                || previous.ResetsAt is not { } previousReset
+                || previousReset <= now)
                 continue;
 
             var amount = previous.UsedPercent - current.UsedPercent;
@@ -89,24 +114,21 @@ internal sealed class UsageDropGuard
         var currentNames = currentDrops.Select(drop => drop.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var drop in pendingDrops)
         {
+            // 두 응답이 같은 윈도우(같은 reset_at 주장)로 급락을 유지해야 실제 초기화로 본다.
             if (!currentNames.Contains(drop.Name)
                 || !candidate.TryGetValue(drop.Name, out var current)
-                || !SameActiveWindow(drop.ResetsAt, current.ResetsAt, now)
+                || !SameWindowClaim(drop.ResetsAt, current.ResetsAt)
                 || drop.PreviousPercent - current.UsedPercent < SuspiciousDropPercent)
                 return false;
         }
         return true;
     }
 
-    private static bool SameActiveWindow(
-        DateTimeOffset? previousReset,
-        DateTimeOffset? currentReset,
-        DateTimeOffset now)
-        => previousReset is { } previous
-           && currentReset is { } current
-           && previous > now
-           && current > now
-           && (previous - current).Duration() <= ResetTolerance;
+    private static bool SameWindowClaim(DateTimeOffset? a, DateTimeOffset? b)
+    {
+        if (a is null || b is null) return a is null && b is null;
+        return (a.Value - b.Value).Duration() <= ResetTolerance;
+    }
 
     private static string FormatDrops(IEnumerable<Drop> drops)
         => string.Join(", ", drops.Select(drop =>

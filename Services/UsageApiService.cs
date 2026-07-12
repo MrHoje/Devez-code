@@ -41,6 +41,9 @@ public sealed class UsageApiService : IDisposable
     private readonly SemaphoreSlim _pollGate = new(1, 1);
     private static string? _lastSuccessfulSubscriptionType;
     private readonly UsageDropGuard _dropGuard = new();
+    // Claude 토큰은 opaque 라 계정 ID 를 얻을 수 없다(토큰 회전과 계정 전환을 구분 불가).
+    // 그래서 가드 리셋은 두지 않고, 시드만 폴백 파일 지문이 현재 토큰과 일치할 때 수행한다.
+    private bool _guardSeeded;
 
     public event Action<RateLimitSnapshot>? SnapshotUpdated;
 
@@ -111,6 +114,13 @@ public sealed class UsageApiService : IDisposable
             var credentialGeneration = string.Join(",", credentials.Select(item => item.Fingerprint));
             InvalidateFallbackUnlessAnyAccountMatches(
                 credentials.Select(item => item.Fingerprint));
+            // 재시작 직후 첫 응답(가짜 급락 가능)이 기준값 없이 무조건 채택되지 않도록
+            // 직전 실행의 폴백 파일로 드롭 가드 기준값을 복원한다.
+            if (!_guardSeeded)
+            {
+                _guardSeeded = true;
+                SeedDropGuardFromFallback(credentials.Select(item => item.Fingerprint));
+            }
 
             foreach (var credential in credentials)
             {
@@ -249,6 +259,46 @@ public sealed class UsageApiService : IDisposable
         w.WriteNumber("used_percentage", p);
         if (reset is DateTimeOffset r) w.WriteNumber("resets_at", r.ToUnixTimeSeconds());
         w.WriteEndObject();
+    }
+
+    /// <summary>직전 실행이 저장한 폴백 파일을 드롭 가드 기준값으로 시드한다.
+    /// 계정 지문이 현재 자격증명과 일치하고 48시간 이내일 때만 사용한다. reset 이
+    /// 이미 지난 기준값은 가드가 자연히 무시하므로 추가 검사하지 않는다.</summary>
+    private void SeedDropGuardFromFallback(IEnumerable<string> accountFingerprints)
+    {
+        try
+        {
+            if (!File.Exists(FallbackPath)) return;
+            using var doc = JsonDocument.Parse(File.ReadAllText(FallbackPath));
+            var root = doc.RootElement;
+            var stored = root.TryGetProperty("account_fingerprint", out var fp)
+                && fp.ValueKind == JsonValueKind.String ? fp.GetString() : null;
+            if (stored == null || !accountFingerprints.Contains(stored, StringComparer.Ordinal)) return;
+            if (!root.TryGetProperty("fetched_at", out var fa) || fa.ValueKind != JsonValueKind.String
+                || !DateTimeOffset.TryParse(fa.GetString(), out var fetchedAt)
+                || DateTimeOffset.Now - fetchedAt > TimeSpan.FromHours(48))
+                return;
+
+            var samples = new List<UsageDropGuard.WindowSample>(2);
+            AddFallbackSample(samples, root, "five_hour", "5h");
+            AddFallbackSample(samples, root, "seven_day", "weekly");
+            if (samples.Count == 0) return;
+            _dropGuard.Seed(samples);
+            DiagLog.Write(
+                $"ClaudeUsage drop guard seeded from fallback (fetched {fetchedAt:O}, credential={stored})");
+        }
+        catch { /* 폴백 손상 — 무시하고 첫 응답을 기준값으로 사용 */ }
+    }
+
+    private static void AddFallbackSample(
+        List<UsageDropGuard.WindowSample> samples, JsonElement root, string key, string name)
+    {
+        if (!root.TryGetProperty(key, out var w) || w.ValueKind != JsonValueKind.Object) return;
+        if (!w.TryGetProperty("used_percentage", out var up) || up.ValueKind != JsonValueKind.Number) return;
+        DateTimeOffset? reset = null;
+        if (w.TryGetProperty("resets_at", out var ra) && ra.ValueKind == JsonValueKind.Number)
+            reset = DateTimeOffset.FromUnixTimeSeconds(ra.GetInt64());
+        samples.Add(new(name, up.GetDouble(), reset));
     }
 
     private static void InvalidateFallbackUnlessAnyAccountMatches(

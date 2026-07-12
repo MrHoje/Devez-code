@@ -29,12 +29,19 @@ public sealed class CodexUsageService : IDisposable
         yield return Path.Combine(appData, "opencode", "auth.json");
     }
 
+    // 마지막 성공 사용량 스냅샷 — 재시작 직후 드롭 가드 기준값 시드용(_pollGate 안에서만 접근).
+    private static string SnapshotPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "codex-usage.json");
+
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private System.Threading.Timer? _poll;
     // Timer 주기와 로그인/수동 새로고침이 겹치면 오래된 요청이 나중에 도착해 최신값을 덮을 수 있다.
     private readonly SemaphoreSlim _pollGate = new(1, 1);
     private readonly HashSet<string> _rejectedTokens = new(StringComparer.Ordinal);
     private readonly UsageDropGuard _dropGuard = new();
+    private bool _guardSeeded;
+    private string? _guardAccountKey; // 가드 기준값을 만든 계정 키(토큰 회전에도 안정적인 account ID 지문)
 
     public event Action<ProviderUsage>? Updated;
 
@@ -101,6 +108,20 @@ public sealed class CodexUsageService : IDisposable
                 return;
             }
             if (expired) { Updated?.Invoke(new ProviderUsage { Provider = "codex", Error = "토큰 만료 — 재로그인 필요" }); return; }
+
+            var fingerprint = Fingerprint(token); // 로그용 — 어떤 토큰이 쓰였는지
+            // 가드/스냅샷 키는 토큰이 아니라 계정 기준이어야 한다. 토큰은 CLI refresh 로
+            // 수시로 회전하므로 토큰 지문을 쓰면 같은 계정인데도 기준값이 무효화된다.
+            var accountKey = Fingerprint(accountId ?? token);
+            // 계정이 바뀌면 이전 계정 기준값으로 새 계정의 정상값을 보류하지 않도록 가드를 비운다.
+            if (_guardAccountKey != null && !string.Equals(_guardAccountKey, accountKey, StringComparison.Ordinal))
+                _dropGuard.Reset();
+            _guardAccountKey = accountKey;
+            if (!_guardSeeded)
+            {
+                _guardSeeded = true;
+                SeedDropGuard(accountKey);
+            }
 
             using var req = new HttpRequestMessage(HttpMethod.Get, UsageUrl);
             req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
@@ -169,13 +190,13 @@ public sealed class CodexUsageService : IDisposable
             {
                 DiagLog.Write(
                     $"CodexUsage deferred suspicious drop: {dropReason} "
-                    + $"({credentialSource}, credential={Fingerprint(token)})");
+                    + $"({credentialSource}, credential={fingerprint})");
                 return;
             }
             if (dropReason != null)
                 DiagLog.Write(
                     $"CodexUsage accepted confirmed drop: {dropReason} "
-                    + $"({credentialSource}, credential={Fingerprint(token)})");
+                    + $"({credentialSource}, credential={fingerprint})");
 
             var usage = new ProviderUsage
             {
@@ -185,10 +206,11 @@ public sealed class CodexUsageService : IDisposable
                 PlanLabel = plan,
                 ResetCredits = credits,
             };
+            WriteSnapshot(primary, weekly, accountKey);
             DiagLog.Write(
                 $"CodexUsage updated: 5h={primary?.UsedPercent:F0} reset5={primary?.ResetsAt:O}, "
                 + $"weekly={weekly?.UsedPercent:F0} resetW={weekly?.ResetsAt:O} "
-                + $"({credentialSource}, credential={Fingerprint(token)})");
+                + $"({credentialSource}, credential={fingerprint})");
             Updated?.Invoke(usage);
         }
         catch (Exception ex)
@@ -214,6 +236,81 @@ public sealed class CodexUsageService : IDisposable
 
     private static string Fingerprint(string token)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)))[..12];
+
+    /// <summary>직전 실행이 저장한 사용량 스냅샷을 드롭 가드 기준값으로 시드한다.
+    /// 서버가 같은 계정에 두 사용량 레코드를 갖고 간헐적으로 낮은 쪽(가짜 급락)을 반환하는
+    /// 문제가 재시작 직후 첫 응답에 걸리면 기준값이 없어 그대로 표시되므로, 계정 키가 일치하는
+    /// 신선한 스냅샷으로 기준값을 복원해 실행 중과 동일하게 보류·확인하게 한다.</summary>
+    private void SeedDropGuard(string accountKey)
+    {
+        try
+        {
+            if (!File.Exists(SnapshotPath)) return;
+            using var doc = JsonDocument.Parse(File.ReadAllText(SnapshotPath));
+            var root = doc.RootElement;
+            var stored = root.TryGetProperty("account_fingerprint", out var fp)
+                && fp.ValueKind == JsonValueKind.String ? fp.GetString() : null;
+            if (!string.Equals(stored, accountKey, StringComparison.Ordinal)) return;
+            if (!root.TryGetProperty("fetched_at", out var fa) || fa.ValueKind != JsonValueKind.String
+                || !DateTimeOffset.TryParse(fa.GetString(), out var fetchedAt)
+                || DateTimeOffset.Now - fetchedAt > TimeSpan.FromHours(48))
+                return;
+
+            var samples = new List<UsageDropGuard.WindowSample>(2);
+            AddSnapshotSample(samples, root, "five_hour", "5h");
+            AddSnapshotSample(samples, root, "weekly", "weekly");
+            if (samples.Count == 0) return;
+            _dropGuard.Seed(samples);
+            DiagLog.Write(
+                $"CodexUsage drop guard seeded from snapshot (fetched {fetchedAt:O}, account={accountKey})");
+        }
+        catch { /* 스냅샷 손상 — 무시하고 첫 응답을 기준값으로 사용 */ }
+    }
+
+    private static void AddSnapshotSample(
+        List<UsageDropGuard.WindowSample> samples, JsonElement root, string key, string name)
+    {
+        if (!root.TryGetProperty(key, out var w) || w.ValueKind != JsonValueKind.Object) return;
+        if (!w.TryGetProperty("used_percent", out var up) || up.ValueKind != JsonValueKind.Number) return;
+        DateTimeOffset? reset = null;
+        if (w.TryGetProperty("resets_at", out var ra) && ra.ValueKind == JsonValueKind.Number)
+            reset = DateTimeOffset.FromUnixTimeSeconds(ra.GetInt64());
+        samples.Add(new(name, up.GetDouble(), reset));
+    }
+
+    /// <summary>게시한 사용량을 스냅샷 파일로 남긴다(다음 실행의 가드 시드용).
+    /// 토큰 원문은 기록하지 않고 계정 ID 기반 지문만 기록한다 — 토큰 회전에도 유지되도록.</summary>
+    private static void WriteSnapshot(UsageWindow? primary, UsageWindow? weekly, string accountKey)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SnapshotPath)!);
+            using var ms = new MemoryStream();
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                w.WriteString("fetched_at", DateTimeOffset.UtcNow.ToString("O"));
+                w.WriteString("account_fingerprint", accountKey);
+                WriteSnapshotWindow(w, "five_hour", primary);
+                WriteSnapshotWindow(w, "weekly", weekly);
+                w.WriteEndObject();
+            }
+            // 쓰다 만 파일을 다음 실행이 읽지 않도록 임시 파일 후 교체.
+            var tmp = SnapshotPath + ".tmp";
+            File.WriteAllBytes(tmp, ms.ToArray());
+            File.Move(tmp, SnapshotPath, overwrite: true);
+        }
+        catch { }
+    }
+
+    private static void WriteSnapshotWindow(Utf8JsonWriter w, string key, UsageWindow? win)
+    {
+        if (win == null) return;
+        w.WriteStartObject(key);
+        w.WriteNumber("used_percent", win.UsedPercent);
+        if (win.ResetsAt is { } reset) w.WriteNumber("resets_at", reset.ToUnixTimeSeconds());
+        w.WriteEndObject();
+    }
 
     private static string DerivePlanLabel(string? planType)
     {
