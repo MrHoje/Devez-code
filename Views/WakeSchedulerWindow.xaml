@@ -84,9 +84,16 @@
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                         MouseLeftButtonDown="Header_DragMove">
                     <Grid>
-                        <TextBlock Text="깨우기" VerticalAlignment="Center" Margin="16,0,0,0"
-                                   FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextBrush}"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                            <Path Style="{StaticResource LucideIcon}"
+                                  Data="{StaticResource IconAlarmClock}"
+                                  Width="16" Height="16" VerticalAlignment="Center"
+                                  Stroke="{DynamicResource TextBrush}"
+                                  Margin="0,-1,11,0"/>
+                            <TextBlock Text="깨우기" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
                         <Button Click="Cancel_Click" HorizontalAlignment="Right" VerticalAlignment="Center"
                                 Width="40" Height="32" Margin="0,0,8,0"
                                 Style="{StaticResource WinCloseBtn}">
@@ -104,19 +111,7 @@
                     <Border Grid.Column="0" Background="{DynamicResource PanelSoftBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
                         <Grid Margin="10,16">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <StackPanel Margin="8,0,8,12">
-                                <TextBlock Text="에이전트" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextBrush}"/>
-                                <TextBlock Text="설정에서 사용 중인 에이전트"
-                                           Margin="0,4,0,0" FontSize="{DynamicResource Fs10}"
-                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                            </StackPanel>
-
-                            <Grid Grid.Row="1">
+                            <Grid>
                                 <ListBox x:Name="AgentList" Background="Transparent" BorderThickness="0"
                                          ItemContainerStyle="{StaticResource WakeAgentItem}"
                                          SelectionChanged="AgentList_SelectionChanged"
@@ -229,7 +224,7 @@
                                     <StackPanel Grid.Column="1">
                                         <TextBlock Text="최근 실행 상태" FontSize="{DynamicResource Fs11}"
                                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                                        <TextBlock Text="아직 실행 기록이 없습니다"
+                                        <TextBlock x:Name="LastStatus" Text="아직 실행 기록이 없습니다"
                                                    Margin="0,4,0,0" TextWrapping="Wrap"
                                                    FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                                     </StackPanel>
