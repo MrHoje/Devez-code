@@ -13,6 +13,7 @@ public partial class WakeSchedulerWindow : Window
     private readonly List<WakeScheduleEntry> _entries;
     private readonly List<WakeScheduleEntry> _hiddenEntries;
     private WakeScheduleEntry? _selectedSchedule;
+    private bool _timeFormatting;
     public bool Saved { get; private set; }
 
     public WakeSchedulerWindow(Window owner)
@@ -29,6 +30,13 @@ public partial class WakeSchedulerWindow : Window
         var schedules = SettingsService.LoadWakeSchedules().Select(Copy).ToList();
         _entries = schedules.Where(e => providerIds.Contains(e.Provider)).ToList();
         _hiddenEntries = schedules.Where(e => !providerIds.Contains(e.Provider)).ToList();
+
+        var times = new List<string>();
+        for (int hour = 0; hour < 24; hour++)
+            for (int minute = 0; minute < 60; minute += 30)
+                times.Add($"{hour:D2}:{minute:D2}");
+        TimeCombo.ItemsSource = times;
+        TimeCombo.Loaded += TimeCombo_SetupInput;
 
         AgentList.ItemsSource = agents;
         EmptyHint.Visibility = agents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -68,7 +76,7 @@ public partial class WakeSchedulerWindow : Window
             _entries.Add(_selectedSchedule);
         }
 
-        TimeBox.Text = _selectedSchedule.Time;
+        TimeCombo.Text = _selectedSchedule.Time;
         EnabledToggle.IsChecked = _selectedSchedule.Enabled;
         LastStatus.Text = _selectedSchedule.StatusDisplay;
     }
@@ -99,8 +107,82 @@ public partial class WakeSchedulerWindow : Window
     private void ApplyEditorToSelectedSchedule()
     {
         if (_selectedSchedule == null) return;
-        _selectedSchedule.Time = TimeBox.Text.Trim();
+        _selectedSchedule.Time = TimeCombo.Text.Trim();
         _selectedSchedule.Enabled = EnabledToggle.IsChecked == true;
+    }
+
+    private void TimeCombo_SetupInput(object sender, RoutedEventArgs e)
+    {
+        if (TimeCombo.Template.FindName("PART_EditableTextBox", TimeCombo) is not TextBox textBox) return;
+        textBox.PreviewTextInput += TimeTextBox_PreviewTextInput;
+        textBox.TextChanged += TimeTextBox_AutoFormat;
+        DataObject.AddPastingHandler(textBox, TimeTextBox_Pasting);
+    }
+
+    private static void TimeTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        e.Handled = !e.Text.All(char.IsDigit);
+    }
+
+    private void TimeTextBox_AutoFormat(object sender, TextChangedEventArgs e)
+    {
+        if (_timeFormatting || sender is not TextBox textBox) return;
+        var digits = new string(textBox.Text.Where(char.IsDigit).ToArray());
+        if (digits.Length > 4) digits = digits[..4];
+        var formatted = digits.Length <= 2 ? digits : $"{digits[..2]}:{digits[2..]}";
+        if (formatted == textBox.Text) return;
+        _timeFormatting = true;
+        textBox.Text = formatted;
+        textBox.CaretIndex = formatted.Length;
+        _timeFormatting = false;
+    }
+
+    private static void TimeTextBox_Pasting(object sender, DataObjectPastingEventArgs e)
+    {
+        if (!e.DataObject.GetDataPresent(typeof(string)))
+        {
+            e.CancelCommand();
+            return;
+        }
+
+        var digits = new string(((e.DataObject.GetData(typeof(string)) as string) ?? "")
+            .Where(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+        {
+            e.CancelCommand();
+            return;
+        }
+
+        var data = new DataObject();
+        data.SetData(DataFormats.UnicodeText, digits);
+        e.DataObject = data;
+    }
+
+    private void TimeCombo_LostFocus(object sender, RoutedEventArgs e)
+    {
+        var text = TimeCombo.Text?.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+        var (time, valid) = TryParseTime(text);
+        TimeCombo.Text = valid ? $"{time.Hours:D2}:{time.Minutes:D2}" : "23:59";
+    }
+
+    private static (TimeSpan time, bool valid) TryParseTime(string text)
+    {
+        text = text.Trim();
+        if (TimeSpan.TryParse(text, out var time) && time >= TimeSpan.Zero && time < TimeSpan.FromDays(1))
+            return (new TimeSpan(time.Hours, time.Minutes, 0), true);
+
+        var digits = new string(text.Where(char.IsDigit).ToArray());
+        if (digits.Length is 1 or 2 && int.TryParse(digits, out var hour) && hour < 24)
+            return (new TimeSpan(hour, 0, 0), true);
+        if (digits.Length is 3 or 4)
+        {
+            var hour = int.Parse(digits[..^2]);
+            var minute = int.Parse(digits[^2..]);
+            if (hour < 24 && minute < 60) return (new TimeSpan(hour, minute, 0), true);
+        }
+
+        return (TimeSpan.Zero, false);
     }
 
     private static WakeScheduleEntry Copy(WakeScheduleEntry entry) => new()
