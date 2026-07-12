@@ -260,7 +260,7 @@
                                 <StackPanel>
                                     <TextBlock Text="{Binding DisplayName}" FontSize="{DynamicResource Fs15}"
                                                FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="정해진 시간에 고정 메시지를 한 번 보냅니다"
+                                    <TextBlock Text="정해진 시간에 고정된 메세지를 보내 5h limit 타이머를 시작시킵니다."
                                                Margin="0,4,0,0" FontSize="{DynamicResource Fs11}"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                 </StackPanel>
