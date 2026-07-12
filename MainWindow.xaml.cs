@@ -4373,7 +4373,10 @@ public partial class MainWindow : Window
         if (dlg.Saved) _wakeScheduler.NotifySchedulesChanged();
     }
 
-    public async Task<bool> EnsureWakeTrustAsync(string agentId)
+    public Task<bool> EnsureWakeTrustAsync(string agentId)
+        => EnsureWakeTrustAsync(agentId, CancellationToken.None);
+
+    private async Task<bool> EnsureWakeTrustAsync(string agentId, CancellationToken cancellationToken)
     {
         var agent = AgentRegistry.Find(agentId);
         if (agent == null || !AgentRegistry.IsInstalled(agent) ||
@@ -4412,11 +4415,12 @@ public partial class MainWindow : Window
             while (DateTime.UtcNow < deadline)
             {
                 if (WakeTrustService.IsTrusted(agent.Id)) return true;
-                await Task.Delay(200);
+                await Task.Delay(200, cancellationToken);
             }
             DiagLog.Write($"Wake trust timeout agent={agent.Id} approvalSent={approvalSent}");
             return false;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             DiagLog.Write($"Wake trust failed agent={agent.Id}: {ex.Message}");
@@ -4436,8 +4440,8 @@ public partial class MainWindow : Window
     {
         var provider = string.Equals(schedule.Provider, "codex", StringComparison.OrdinalIgnoreCase)
             ? "codex" : "claude";
-        if (!WakeTrustService.IsTrusted(provider))
-            return WakeDispatchResult.Failed("DevezCode 설치 경로의 신뢰 설정이 필요합니다.");
+        if (!await EnsureWakeTrustAsync(provider, cancellationToken))
+            return WakeDispatchResult.Failed("DevezCode 설치 경로의 신뢰 설정을 자동으로 완료하지 못했습니다.");
 
         string directory = WakeTrustService.InstallDirectory;
         if (!System.IO.Directory.Exists(directory))
