@@ -139,7 +139,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="20">
+    <Grid x:Name="RootLayer" Margin="20">
         <Border Background="{DynamicResource BgBrush}" CornerRadius="14">
             <Border.Effect>
                 <DropShadowEffect ShadowDepth="0" BlurRadius="40"
@@ -240,7 +240,7 @@
                                     <TextBlock Text="깨우기 사용" VerticalAlignment="Center"
                                                FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                                     <CheckBox x:Name="EnabledToggle" HorizontalAlignment="Right"
-                                              Style="{StaticResource ToggleSwitch}"
+                                              Style="{StaticResource ToggleSwitchSmall}"
                                               IsChecked="True" Click="EnabledToggle_Click"/>
                                 </Grid>
                             </StackPanel>

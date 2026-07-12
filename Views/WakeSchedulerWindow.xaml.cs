@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
@@ -25,6 +26,8 @@ public partial class WakeSchedulerWindow : Window
         InitializeComponent();
         Owner = owner;
         _ensureTrust = ensureTrust;
+        Opacity = 0;
+        ContentRendered += (_, _) => AnimateOpen();
 
         _agents = AgentRegistry.GetEnabledAndInstalled()
             .Where(a => string.Equals(a.Id, "claude", StringComparison.OrdinalIgnoreCase)
@@ -268,6 +271,18 @@ public partial class WakeSchedulerWindow : Window
         double height = RootContent.ActualHeight;
         if (width <= 0 || height <= 0) return;
         RootContent.Clip = new RectangleGeometry(new Rect(0, 0, width, height), 13, 13);
+    }
+
+    private void AnimateOpen()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        RootLayer.CacheMode = new BitmapCache { RenderAtScale = dpi.DpiScaleX };
+
+        var duration = new Duration(TimeSpan.FromMilliseconds(220));
+        var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var animation = new DoubleAnimation(0, 1, duration) { EasingFunction = easing };
+        animation.Completed += (_, _) => RootLayer.CacheMode = null;
+        BeginAnimation(OpacityProperty, animation);
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;
