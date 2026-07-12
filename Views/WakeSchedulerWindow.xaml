@@ -32,7 +32,6 @@
 
         <!-- 설정창 왼쪽 카테고리와 같은 단일 선택 행 -->
         <Style x:Key="WakeAgentItem" TargetType="ListBoxItem">
-            <Setter Property="Focusable" Value="False"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0,0,0,4"/>
