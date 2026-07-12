@@ -4438,6 +4438,7 @@ public partial class MainWindow : Window
 
     private async Task<WakeDispatchResult> DispatchWakeAsync(WakeScheduleEntry schedule, CancellationToken cancellationToken)
     {
+        const string wakeMessage = "HI Good Morning";
         var provider = string.Equals(schedule.Provider, "codex", StringComparison.OrdinalIgnoreCase)
             ? "codex" : "claude";
         if (!await EnsureWakeTrustAsync(provider, cancellationToken))
@@ -4458,18 +4459,74 @@ public partial class MainWindow : Window
         SettingsService.SaveAgentForRoom(roomId, provider);
 
         var ready = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var outcome = new TaskCompletionSource<WakeDispatchResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var outputBuffer = new System.Text.StringBuilder();
+        var outputLock = new object();
+        TerminalSession? observedSession = null;
         bool sessionStartedSeen = false;
-        Action<string> sessionStarted = id => { if (string.Equals(id, roomId, StringComparison.Ordinal)) sessionStartedSeen = true; };
+        Action<byte[]> outputReceived = bytes =>
+        {
+            lock (outputLock)
+            {
+                outputBuffer.Append(System.Text.Encoding.UTF8.GetString(bytes));
+                if (outputBuffer.Length > 4096) outputBuffer.Remove(0, outputBuffer.Length - 4096);
+                if (ContainsWakeAuthenticationError(outputBuffer.ToString()))
+                    outcome.TrySetResult(WakeDispatchResult.Failed("로그인 또는 인증이 필요합니다."));
+            }
+        };
+        Action sessionExited = () => outcome.TrySetResult(WakeDispatchResult.Failed("에이전트 프로세스가 종료되었습니다."));
+        void ObserveSession(TerminalSession? session)
+        {
+            if (session == null || ReferenceEquals(observedSession, session)) return;
+            if (observedSession != null)
+            {
+                observedSession.OutputReceived -= outputReceived;
+                observedSession.Exited -= sessionExited;
+            }
+            observedSession = session;
+            observedSession.OutputReceived += outputReceived;
+            observedSession.Exited += sessionExited;
+        }
+        Action<string> sessionStarted = id =>
+        {
+            if (!string.Equals(id, roomId, StringComparison.Ordinal)) return;
+            sessionStartedSeen = true;
+            ObserveSession(TerminalSessionManager.Instance.Get(roomId));
+        };
         Action<string> terminalReady = id => { if (string.Equals(id, roomId, StringComparison.Ordinal)) ready.TrySetResult("ready"); };
         Action<string> trustPrompt = id => { if (string.Equals(id, roomId, StringComparison.Ordinal)) ready.TrySetResult("trust"); };
+        Action<string, string> messageChanged = (id, message) =>
+        {
+            if (string.Equals(id, roomId, StringComparison.Ordinal) &&
+                string.Equals(message.Trim(), wakeMessage, StringComparison.OrdinalIgnoreCase))
+                outcome.TrySetResult(WakeDispatchResult.Succeeded());
+        };
+        Action<string, bool> busyChanged = (id, busy) =>
+        {
+            if (busy && string.Equals(id, roomId, StringComparison.Ordinal))
+                outcome.TrySetResult(WakeDispatchResult.Succeeded());
+        };
         WakeTerminal.SessionStarted += sessionStarted;
         WakeTerminal.TerminalReady += terminalReady;
         WakeTerminal.TrustPromptDetected += trustPrompt;
+        if (provider == "codex")
+        {
+            _codexHook.MessageChanged += messageChanged;
+            _codexHook.BusyChanged += busyChanged;
+        }
+        else
+        {
+            _sessionLastMsg.MessageChanged += messageChanged;
+            _sessionBusy.BusyChanged += busyChanged;
+        }
         try
         {
             WakeTerminal.PreloadTerminal(roomId);
             if (WakeTerminal.IsReady(roomId)) ready.TrySetResult("ready");
-            var readiness = await ready.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+            var startup = await Task.WhenAny(ready.Task, outcome.Task)
+                .WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+            if (ReferenceEquals(startup, outcome.Task)) return await outcome.Task;
+            var readiness = await ready.Task;
             cancellationToken.ThrowIfCancellationRequested();
             if (readiness == "trust")
             {
@@ -4480,8 +4537,11 @@ public partial class MainWindow : Window
             }
             var session = TerminalSessionManager.Instance.Get(roomId);
             if (session is not { IsAlive: true }) return WakeDispatchResult.Failed("터미널을 시작하지 못했습니다.");
-            return session.TryWrite("HI Good Morning\r")
-                ? WakeDispatchResult.Succeeded() : WakeDispatchResult.Failed("터미널 입력에 실패했습니다.");
+            ObserveSession(session);
+            if (!session.TryWrite(wakeMessage + "\r"))
+                return WakeDispatchResult.Failed("터미널 입력에 실패했습니다.");
+            try { return await outcome.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken); }
+            catch (TimeoutException) { return WakeDispatchResult.Failed("에이전트가 메시지 접수를 확인하지 않았습니다."); }
         }
         catch (TimeoutException) { return WakeDispatchResult.Failed(sessionStartedSeen ? "터미널 준비 시간이 초과되었습니다." : "터미널 세션을 시작하지 못했습니다."); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -4491,7 +4551,32 @@ public partial class MainWindow : Window
             WakeTerminal.SessionStarted -= sessionStarted;
             WakeTerminal.TerminalReady -= terminalReady;
             WakeTerminal.TrustPromptDetected -= trustPrompt;
+            if (provider == "codex")
+            {
+                _codexHook.MessageChanged -= messageChanged;
+                _codexHook.BusyChanged -= busyChanged;
+            }
+            else
+            {
+                _sessionLastMsg.MessageChanged -= messageChanged;
+                _sessionBusy.BusyChanged -= busyChanged;
+            }
+            if (observedSession != null)
+            {
+                observedSession.OutputReceived -= outputReceived;
+                observedSession.Exited -= sessionExited;
+            }
         }
+    }
+
+    private static bool ContainsWakeAuthenticationError(string output)
+    {
+        var text = output.ToLowerInvariant();
+        return text.Contains("not logged in") || text.Contains("please log in") ||
+               text.Contains("login required") || text.Contains("authentication failed") ||
+               text.Contains("unauthorized") || text.Contains("invalid api key") ||
+               text.Contains("sign in to") || text.Contains("please run /login") ||
+               text.Contains("401 unauthorized");
     }
 
     private void PluginControlBtn_Click(object sender, RoutedEventArgs e)

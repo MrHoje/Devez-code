@@ -258,6 +258,7 @@ public partial class WakeSchedulerWindow : Window
         Time = entry.Time,
         Enabled = entry.Enabled,
         LastOccurrenceKey = entry.LastOccurrenceKey,
+        LastExecutedAt = entry.LastExecutedAt,
         LastResult = entry.LastResult,
     };
 

@@ -228,25 +228,21 @@
 
                     <ScrollViewer x:Name="EditorPanel" Grid.Column="1" VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="26,22,26,20">
-                            <Grid Margin="0,0,0,22">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Margin="0,0,18,0">
+                            <StackPanel Margin="0,0,0,22">
+                                <StackPanel>
                                     <TextBlock Text="{Binding DisplayName}" FontSize="{DynamicResource Fs15}"
                                                FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                     <TextBlock Text="정해진 시간에 고정된 메세지를 보내 5h limit 타이머를 시작시킵니다."
                                                Margin="0,4,0,0" FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
                                     <TextBlock Text="깨우기 사용" Margin="0,0,9,0" VerticalAlignment="Center"
                                                FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                                     <CheckBox x:Name="EnabledToggle" Style="{StaticResource ToggleSwitchSmall}"
                                               IsChecked="True" Click="EnabledToggle_Click"/>
                                 </StackPanel>
-                            </Grid>
+                            </StackPanel>
 
                             <TextBlock Text="시간" Style="{StaticResource WakeSectionLabel}"/>
                             <ComboBox x:Name="TimeCombo" Style="{StaticResource EditableTimeCombo}"

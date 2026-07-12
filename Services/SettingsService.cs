@@ -435,6 +435,7 @@ public static class SettingsService
                 {
                     // 스케줄러가 소유하는 실행 메타데이터는 열린 편집기의 오래된 복사본으로 덮지 않는다.
                     copy.LastOccurrenceKey = existing.LastOccurrenceKey;
+                    copy.LastExecutedAt = existing.LastExecutedAt;
                     copy.LastResult = existing.LastResult;
                 }
                 replacement.Add(copy);
@@ -469,7 +470,7 @@ public static class SettingsService
         }
     }
 
-    public static bool TrySaveWakeResult(string scheduleId, string occurrenceKey, string result)
+    public static bool TrySaveWakeResult(string scheduleId, string occurrenceKey, string executedAt, string result)
     {
         lock (_lock)
         {
@@ -479,9 +480,12 @@ public static class SettingsService
             if (entry is null || !string.Equals(entry.LastOccurrenceKey, occurrenceKey, StringComparison.Ordinal))
                 return false;
 
+            var previousExecutedAt = entry.LastExecutedAt;
             var previousResult = entry.LastResult;
+            entry.LastExecutedAt = executedAt ?? "";
             entry.LastResult = result ?? "";
             if (TrySave()) return true;
+            entry.LastExecutedAt = previousExecutedAt;
             entry.LastResult = previousResult;
             return false;
         }
