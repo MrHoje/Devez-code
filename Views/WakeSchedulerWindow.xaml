@@ -17,34 +17,6 @@
             <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
 
-        <Style x:Key="WakeDayToggle" TargetType="ToggleButton">
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Height" Value="34"/>
-            <Setter Property="Margin" Value="0,0,6,0"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="DayChip" CornerRadius="8" BorderThickness="1"
-                                BorderBrush="{DynamicResource LineBrush}"
-                                Background="{DynamicResource PanelBrush}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="DayChip" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="DayChip" Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
-                                <Setter TargetName="DayChip" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <Style x:Key="ThemedComboItem" TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
@@ -257,14 +229,18 @@
                     <ScrollViewer x:Name="EditorPanel" Grid.Column="1" VerticalScrollBarVisibility="Auto">
                         <StackPanel Margin="26,22,26,20">
                             <Grid Margin="0,0,0,22">
-                                <StackPanel>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,18,0">
                                     <TextBlock Text="{Binding DisplayName}" FontSize="{DynamicResource Fs15}"
                                                FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                     <TextBlock Text="정해진 시간에 고정된 메세지를 보내 5h limit 타이머를 시작시킵니다."
-                                               Margin="0,4,0,0" FontSize="{DynamicResource Fs11}"
+                                               Margin="0,4,0,0" FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                Foreground="{DynamicResource TextMutedBrush}"/>
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="깨우기 사용" Margin="0,0,9,0" VerticalAlignment="Center"
                                                FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                                     <CheckBox x:Name="EnabledToggle" Style="{StaticResource ToggleSwitchSmall}"
@@ -272,18 +248,7 @@
                                 </StackPanel>
                             </Grid>
 
-                            <TextBlock Text="요일" Style="{StaticResource WakeSectionLabel}"/>
-                            <UniformGrid Columns="7">
-                                <ToggleButton x:Name="Mon" Content="월" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
-                                <ToggleButton x:Name="Tue" Content="화" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
-                                <ToggleButton x:Name="Wed" Content="수" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
-                                <ToggleButton x:Name="Thu" Content="목" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
-                                <ToggleButton x:Name="Fri" Content="금" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
-                                <ToggleButton x:Name="Sat" Content="토" IsChecked="True" Style="{StaticResource WakeDayToggle}"/>
-                                <ToggleButton x:Name="Sun" Content="일" IsChecked="True" Style="{StaticResource WakeDayToggle}" Margin="0"/>
-                            </UniformGrid>
-
-                            <TextBlock Text="시간" Style="{StaticResource WakeSectionLabel}" Margin="0,20,0,8"/>
+                            <TextBlock Text="시간" Style="{StaticResource WakeSectionLabel}"/>
                             <ComboBox x:Name="TimeCombo" Style="{StaticResource EditableTimeCombo}"
                                       LostFocus="TimeCombo_LostFocus"/>
 

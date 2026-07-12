@@ -175,7 +175,6 @@ public sealed class WakeSchedulerService : IDisposable
     private static bool TryGetDueOccurrence(WakeScheduleEntry schedule, DateTime now, out string key)
     {
         key = "";
-        if (schedule.Weekdays is null || !schedule.Weekdays.Contains(now.DayOfWeek)) return false;
         if (!TimeSpan.TryParseExact(schedule.Time, @"hh\:mm", CultureInfo.InvariantCulture, out var time)) return false;
         var occurrence = now.Date + time;
         if (now < occurrence || now >= occurrence + Grace) return false;

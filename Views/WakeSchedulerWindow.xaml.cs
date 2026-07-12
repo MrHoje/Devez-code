@@ -35,6 +35,7 @@ public partial class WakeSchedulerWindow : Window
         var schedules = SettingsService.LoadWakeSchedules().Select(Copy).ToList();
         _entries = schedules.Where(e => providerIds.Contains(e.Provider)).ToList();
         _hiddenEntries = schedules.Where(e => !providerIds.Contains(e.Provider)).ToList();
+        foreach (var entry in _entries) entry.Weekdays = EveryDay.ToList();
 
         var times = new List<string>();
         for (int hour = 0; hour < 24; hour++)
@@ -84,7 +85,6 @@ public partial class WakeSchedulerWindow : Window
         }
 
         TimeCombo.Text = _selectedSchedule.Time;
-        SetDays(_selectedSchedule.Weekdays);
         EnabledToggle.IsChecked = _selectedSchedule.Enabled;
         LastExecutionText.Text = _selectedSchedule.LastExecutionDisplay;
         RefreshTrustState();
@@ -96,14 +96,6 @@ public partial class WakeSchedulerWindow : Window
         ApplyEditorToSelectedSchedule();
         RefreshTrustState();
         if (_untrustedAgent != null) return;
-
-        var missingDays = _entries.FirstOrDefault(entry => entry.Weekdays.Count == 0);
-        if (missingDays != null)
-        {
-            MessageBox.Show(this, $"{missingDays.ProviderDisplayName} 요일을 하나 이상 선택하세요.", "깨우기",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
 
         var invalid = _entries.FirstOrDefault(entry =>
             !TimeSpan.TryParseExact(entry.Time, @"hh\:mm", CultureInfo.InvariantCulture, out _));
@@ -181,31 +173,7 @@ public partial class WakeSchedulerWindow : Window
     {
         if (_selectedSchedule == null) return;
         _selectedSchedule.Time = TimeCombo.Text.Trim();
-        _selectedSchedule.Weekdays = GetDays();
         _selectedSchedule.Enabled = EnabledToggle.IsChecked == true;
-    }
-
-    private List<DayOfWeek> GetDays() => new[]
-    {
-        (Mon, DayOfWeek.Monday),
-        (Tue, DayOfWeek.Tuesday),
-        (Wed, DayOfWeek.Wednesday),
-        (Thu, DayOfWeek.Thursday),
-        (Fri, DayOfWeek.Friday),
-        (Sat, DayOfWeek.Saturday),
-        (Sun, DayOfWeek.Sunday),
-    }.Where(item => item.Item1.IsChecked == true).Select(item => item.Item2).ToList();
-
-    private void SetDays(IEnumerable<DayOfWeek> days)
-    {
-        var selected = days.ToHashSet();
-        Mon.IsChecked = selected.Contains(DayOfWeek.Monday);
-        Tue.IsChecked = selected.Contains(DayOfWeek.Tuesday);
-        Wed.IsChecked = selected.Contains(DayOfWeek.Wednesday);
-        Thu.IsChecked = selected.Contains(DayOfWeek.Thursday);
-        Fri.IsChecked = selected.Contains(DayOfWeek.Friday);
-        Sat.IsChecked = selected.Contains(DayOfWeek.Saturday);
-        Sun.IsChecked = selected.Contains(DayOfWeek.Sunday);
     }
 
     private void TimeCombo_SetupInput(object sender, RoutedEventArgs e)
