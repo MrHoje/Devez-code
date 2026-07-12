@@ -76,7 +76,7 @@
                 </StackPanel>
               </StackPanel>
 
-              <!-- 우측 dock: model/effort(claude 세션 전용) + 터미널 폰트 크기(항상 노출) -->
+              <!-- 우측 dock: model/effort(지원 에이전트) + 터미널 폰트 크기(항상 노출) -->
               <StackPanel Grid.Column="1" Orientation="Horizontal"
                           VerticalAlignment="Center" HorizontalAlignment="Right">
                   <StackPanel x:Name="ModelEffortDock" Orientation="Horizontal"
@@ -89,6 +89,17 @@
                                 SelectedValuePath="Value"
                                 SelectionChanged="EffortCombo_SelectionChanged"
                                 ToolTip="이 세션의 추론 강도(effort)"/>
+                  </StackPanel>
+                  <StackPanel x:Name="CodexModelEffortDock" Orientation="Horizontal"
+                              VerticalAlignment="Center" Visibility="Collapsed">
+                      <Border Style="{StaticResource DockValueBorder}" MinWidth="104" MaxWidth="180" Margin="0,4,0,4"
+                              ToolTip="이 Codex 세션의 모델(읽기 전용)">
+                          <TextBlock x:Name="CodexModelText" Style="{StaticResource DockValueText}"/>
+                      </Border>
+                      <Border x:Name="CodexEffortValueBorder" Style="{StaticResource DockValueBorder}"
+                              MinWidth="72" Margin="8,4,0,4" ToolTip="이 Codex 세션의 추론 강도(읽기 전용)">
+                          <TextBlock x:Name="CodexEffortText" Style="{StaticResource DockValueText}"/>
+                      </Border>
                   </StackPanel>
                   <ComboBox x:Name="FontSizeCombo" Style="{StaticResource DockComboBox}" MinWidth="72" Margin="8,4,0,4"
                             SelectedValuePath="Value"

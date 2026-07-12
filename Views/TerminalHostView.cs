@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -126,6 +127,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly HashSet<string> _outScheduled = new();
     /// <summary>Codex 렌더 확인 요청 이후 새 출력 도착 여부를 판별하는 방별 세대.</summary>
     private readonly Dictionary<string, long> _outputGenerations = new();
+    /// <summary>Grok SGR(CSI ... m)이 ConPTY 출력 청크 경계에서 잘렸을 때 다음 flush까지 보관.</summary>
+    private readonly Dictionary<string, byte[]> _grokCsiTails = new();
 
     /// <summary>claude 등 풀스크린 TUI가 떠서(alt-screen 진입) 준비된 방. UI 스레드에서만 접근.</summary>
     private readonly HashSet<string> _ready = new();
@@ -843,9 +846,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 색조로 치환해 '내 메시지'가 구분되게 한다. 상태바(39,39,39)·diff(48,58,48/58,48,48)는 보존.
         if (AgentFor(roomId) == "codex")
             merged = RecolorCodexUserMsgBg(merged);
-        // Grok: TUI 자체 truecolor 전면 배경 → xterm 스킴 배경 치환.
+        // Grok: 일반 TUI의 전경·액센트·의미색은 보존하고 중립 배경 팔레트만 앱 스킴에 상대 매핑.
         if (AgentFor(roomId) == "grok")
-            merged = RecolorGrokTerminalBg(merged);
+            merged = RecolorGrokTerminalBg(roomId, merged);
+        else
+            _grokCsiTails.Remove(roomId);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
     }
 
@@ -913,76 +918,193 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         return result.ToArray();
     }
 
-    // GrokNight 베이스/패널 배경 (바이너리 팔레트·커뮤니티 패치 노트 기준 truecolor).
-    private static readonly byte[][] _grokNightBgSrcs =
-    {
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;10;10;10m"),   // #0a0a0a bg_base
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;17;17;17m"),   // #111111
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;30;30;34m"),   // #1e1e22
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;36;36;36m"),   // #242424
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;60;60;65m"),   // #3c3c41
-    };
-    // GrokDay 베이스/패널 배경.
-    private static readonly byte[][] _grokDayBgSrcs =
-    {
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;245;245;245m"), // #f5f5f5 bg_base
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;234;234;234m"), // #eaeaea
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;222;222;222m"), // #dedede
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;228;228;228m"), // #e4e4e4
-        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;216;216;216m"), // #d8d8d8 여유
-    };
+    // SGR truecolor 배경의 두 표준 표기 + xterm 256색 배경. Foreground(38)는 의도적으로 대상에서 제외.
+    private static readonly Regex GrokBgRgbSemicolon = new(
+        @"(?<!\d)48;2;(?<r>\d{1,3});(?<g>\d{1,3});(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokBgRgbColonWithSpace = new(
+        @"(?<!\d)48:2::(?<r>\d{1,3}):(?<g>\d{1,3}):(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokBgRgbColonWithColorSpace = new(
+        @"(?<!\d)48:2:\d+:(?<r>\d{1,3}):(?<g>\d{1,3}):(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokBgRgbColon = new(
+        @"(?<!\d)48:2:(?<r>\d{1,3}):(?<g>\d{1,3}):(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokBgIndexed = new(
+        @"(?<!\d)48;5;(?<index>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokBgIndexedColon = new(
+        @"(?<!\d)48:5:(?<index>\d{1,3})(?!\d)", RegexOptions.Compiled);
 
-    /// <summary>현재 xterm 스킴 Background → ESC[48;2;r;g;bm. 파싱 실패 시 테마별 폴백.</summary>
-    private static byte[] SchemeBackgroundBgEscape()
+    /// <summary>GrokNight/GrokDay의 저채도 배경 계층을 DevezCode 배경 기준으로 평행 이동한다.
+    /// 의미색(diff/경고/선택 등 채도 높은 배경), 모든 전경색, 예상 범위 밖 색은 그대로 통과시킨다.</summary>
+    private byte[] RecolorGrokTerminalBg(string roomId, byte[] data)
+    {
+        byte[] input;
+        if (_grokCsiTails.Remove(roomId, out var tail) && tail.Length > 0)
+        {
+            input = new byte[tail.Length + data.Length];
+            Buffer.BlockCopy(tail, 0, input, 0, tail.Length);
+            Buffer.BlockCopy(data, 0, input, tail.Length, data.Length);
+        }
+        else input = data;
+
+        var output = new List<byte>(input.Length + 16);
+        int i = 0;
+        while (i < input.Length)
+        {
+            if (input[i] != 0x1b)
+            {
+                output.Add(input[i++]);
+                continue;
+            }
+
+            // ESC 자체가 마지막 바이트면 다음 flush에서 CSI/OSC 여부를 판정한다.
+            if (i + 1 >= input.Length)
+            {
+                _grokCsiTails[roomId] = input[i..];
+                break;
+            }
+            if (input[i + 1] != (byte)'[')
+            {
+                output.Add(input[i++]);
+                continue;
+            }
+
+            int end = i + 2;
+            while (end < input.Length && !(input[end] >= 0x40 && input[end] <= 0x7e)) end++;
+            if (end >= input.Length)
+            {
+                // 정상 CSI는 수십 바이트 이내다. 비정상 장문을 무한 보관하지 않고 원문 통과.
+                if (input.Length - i <= 128) _grokCsiTails[roomId] = input[i..];
+                else output.AddRange(input.AsSpan(i).ToArray());
+                break;
+            }
+
+            if (input[end] == (byte)'m' && ContainsGrokBackgroundMarker(input, i + 2, end))
+            {
+                var sgr = Encoding.ASCII.GetString(input, i, end - i + 1);
+                output.AddRange(Encoding.ASCII.GetBytes(TransformGrokBackgroundSgr(sgr)));
+            }
+            else
+            {
+                for (int p = i; p <= end; p++) output.Add(input[p]);
+            }
+            i = end + 1;
+        }
+        return output.ToArray();
+    }
+
+    private static bool ContainsGrokBackgroundMarker(byte[] data, int start, int end)
+    {
+        for (int i = start; i + 2 < end; i++)
+            if (data[i] == (byte)'4' && data[i + 1] == (byte)'8'
+                && (data[i + 2] == (byte)';' || data[i + 2] == (byte)':'))
+                return true;
+        return false;
+    }
+
+    private static string TransformGrokBackgroundSgr(string sgr)
+    {
+        if (!sgr.Contains("48;", StringComparison.Ordinal)
+            && !sgr.Contains("48:", StringComparison.Ordinal)) return sgr;
+
+        string ReplaceRgb(Match match)
+        {
+            if (!TryByteGroup(match, "r", out var r) || !TryByteGroup(match, "g", out var g)
+                || !TryByteGroup(match, "b", out var b) || !TryMapGrokNeutralBackground(r, g, b, out var mapped))
+                return match.Value;
+            return $"48;2;{mapped.R};{mapped.G};{mapped.B}";
+        }
+
+        // semicolon을 먼저 처리해야 colon→semicolon 변환 결과가 같은 호출에서 이중 변환되지 않는다.
+        var result = GrokBgRgbSemicolon.Replace(sgr, ReplaceRgb);
+        result = GrokBgRgbColonWithSpace.Replace(result, ReplaceRgb);
+        result = GrokBgRgbColonWithColorSpace.Replace(result, ReplaceRgb);
+        result = GrokBgRgbColon.Replace(result, ReplaceRgb);
+        string ReplaceIndexed(Match match)
+        {
+            if (!int.TryParse(match.Groups["index"].Value, out var index) || index is < 16 or > 255
+                || !TryXterm256Rgb(index, out var r, out var g, out var b)
+                || !TryMapGrokNeutralBackground(r, g, b, out var mapped,
+                    DevezCode.App.CurrentTheme == "dark" ? 18 : 238))
+                return match.Value;
+            return $"48;2;{mapped.R};{mapped.G};{mapped.B}";
+        }
+        result = GrokBgIndexed.Replace(result, ReplaceIndexed);
+        result = GrokBgIndexedColon.Replace(result, ReplaceIndexed);
+        return result;
+    }
+
+    private static bool TryMapGrokNeutralBackground(
+        int r, int g, int b, out (int R, int G, int B) mapped, int? sourceBaseOverride = null)
+    {
+        mapped = default;
+        if ((uint)r > 255 || (uint)g > 255 || (uint)b > 255) return false;
+
+        int max = Math.Max(r, Math.Max(g, b));
+        int min = Math.Min(r, Math.Min(g, b));
+        int chroma = max - min;
+        // 어두운 diff 배경(#303a30 등)은 절대 RGB 차가 작아도 상대 채도가 높다.
+        if (chroma > 12 || (max > 0 && chroma / (double)max > 0.14)) return false;
+
+        bool dark = DevezCode.App.CurrentTheme == "dark";
+        if (dark ? max > 96 : min < 180) return false; // 활성 내장 테마의 중립 배경군만 허용
+
+        var target = SchemeBackgroundRgb();
+        // Grok 0.2.93의 실제 ConPTY 출력에서 캔버스는 GrokNight #141414,
+        // GrokDay #EEEEEE를 쓴다. 터미널 기본 배경처럼 보여도 명시된 SGR 색이다.
+        // 이 기준 표면만 DevezCode Background에 정확히 붙이고, 다른 중립 패널은 상대 명도차를 보존한다.
+        int sourceBase = sourceBaseOverride ?? (dark ? 20 : 238);
+        int neutralLevel = (r + g + b) / 3;
+        bool baseSurface = Math.Abs(neutralLevel - sourceBase) <= 2;
+        if (baseSurface)
+        {
+            mapped = target;
+            return true;
+        }
+
+        mapped = (
+            Math.Clamp(target.R + r - sourceBase, 0, 255),
+            Math.Clamp(target.G + g - sourceBase, 0, 255),
+            Math.Clamp(target.B + b - sourceBase, 0, 255));
+        return true;
+    }
+
+    private static (int R, int G, int B) SchemeBackgroundRgb()
     {
         try
         {
             var hex = TerminalSessionManager.Instance.Config.Scheme.Background?.Trim();
-            if (!string.IsNullOrEmpty(hex) && hex[0] == '#' && hex.Length >= 7
-                && byte.TryParse(hex.AsSpan(1, 2), System.Globalization.NumberStyles.HexNumber, null, out var r)
-                && byte.TryParse(hex.AsSpan(3, 2), System.Globalization.NumberStyles.HexNumber, null, out var g)
-                && byte.TryParse(hex.AsSpan(5, 2), System.Globalization.NumberStyles.HexNumber, null, out var b))
-                return System.Text.Encoding.ASCII.GetBytes($"\x1b[48;2;{r};{g};{b}m");
+            if (!string.IsNullOrEmpty(hex) && hex.Length >= 7 && hex[0] == '#'
+                && int.TryParse(hex.AsSpan(1, 2), System.Globalization.NumberStyles.HexNumber, null, out var r)
+                && int.TryParse(hex.AsSpan(3, 2), System.Globalization.NumberStyles.HexNumber, null, out var g)
+                && int.TryParse(hex.AsSpan(5, 2), System.Globalization.NumberStyles.HexNumber, null, out var b))
+                return (r, g, b);
         }
         catch { }
-        return System.Text.Encoding.ASCII.GetBytes(DevezCode.App.CurrentTheme switch
+        return DevezCode.App.CurrentTheme switch
         {
-            "dark" => "\x1b[48;2;31;31;30m",      // #1F1F1E
-            "soft" => "\x1b[48;2;242;237;230m",   // #F2EDE6
-            _      => "\x1b[48;2;248;250;252m",   // #F8FAFC
-        });
+            "dark" => (31, 31, 30),
+            "soft" => (242, 237, 230),
+            _ => (248, 250, 252),
+        };
     }
 
-    /// <summary>Grok 가 칠하는 전면 배경 truecolor 를 DevezCode 터미널 스킴 배경으로 치환.
-    /// dark 앱테마 → GrokNight 팔레트 소스, soft/minimal → GrokDay 소스 (config 매핑과 정합).
-    /// 글자/액센트(38;2) 는 건드리지 않는다.</summary>
-    private static byte[] RecolorGrokTerminalBg(byte[] data)
-    {
-        var srcs = DevezCode.App.CurrentTheme == "dark" ? _grokNightBgSrcs : _grokDayBgSrcs;
-        bool any = false;
-        foreach (var s in srcs)
-            if (IndexOfBytes(data, s, 0) >= 0) { any = true; break; }
-        if (!any) return data;
+    private static bool TryByteGroup(Match match, string name, out int value) =>
+        int.TryParse(match.Groups[name].Value, out value) && value is >= 0 and <= 255;
 
-        var target = SchemeBackgroundBgEscape();
-        var result = new List<byte>(data.Length);
-        int i = 0;
-        while (i < data.Length)
+    private static bool TryXterm256Rgb(int index, out int r, out int g, out int b)
+    {
+        r = g = b = 0;
+        if (index is >= 232 and <= 255)
         {
-            bool hit = false;
-            foreach (var src in srcs)
-            {
-                if (i + src.Length <= data.Length && MatchesAt(data, i, src))
-                {
-                    result.AddRange(target);
-                    i += src.Length;
-                    hit = true;
-                    break;
-                }
-            }
-            if (!hit) { result.Add(data[i]); i++; }
+            r = g = b = 8 + (index - 232) * 10;
+            return true;
         }
-        return result.ToArray();
+        if (index is < 16 or > 231) return false;
+        int cube = index - 16;
+        int[] levels = { 0, 95, 135, 175, 215, 255 };
+        r = levels[cube / 36];
+        g = levels[(cube / 6) % 6];
+        b = levels[cube % 6];
+        return true;
     }
 
     private static int IndexOfBytes(byte[] data, byte[] pattern, int start)
@@ -1476,6 +1598,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();
         if (_fullscreenFallbackTimers.Remove(roomId, out var ft)) ft.Stop();
         _pendingPreload.Remove(roomId);
+        _grokCsiTails.Remove(roomId);
         lock (_outLock) { _outPending.Remove(roomId); _outScheduled.Remove(roomId); }
         if (_activeRoomId == roomId) _activeRoomId = null;
         if (_pendingShowRoomId == roomId) _pendingShowRoomId = null;
@@ -1486,6 +1609,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// 세션 자체(ConPTY)는 건드리지 않는다 — 이 TerminalHostView 의 구독만 끊는다.</summary>
     private void DetachSessionHandlers(string roomId)
     {
+        _grokCsiTails.Remove(roomId);
         if (!_sessionHandlers.Remove(roomId, out var h)) return;
         h.Session.OutputReceived -= h.OnOutput;
         h.Session.Exited -= h.OnExited;

@@ -343,9 +343,14 @@ public partial class MainWindow : Window
                 if (s != null) s.IsBusy = busy;
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
+                if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
         _codexHook.CodexSessionChanged += (roomId, sid) =>
-            Dispatcher.InvokeAsync(() => SettingsService.SaveCodexRoomSession(roomId, sid));
+            Dispatcher.InvokeAsync(() =>
+            {
+                SettingsService.SaveCodexRoomSession(roomId, sid);
+                foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
+            });
 
         // Grok — codex 와 동일 roomId 키 즉시 갱신.
         _grokHook.MessageChanged += (roomId, msg) =>
@@ -365,6 +370,7 @@ public partial class MainWindow : Window
                 if (!busy && s != null) s.IsWaitingChoice = false;
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
+                if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
         _grokHook.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
@@ -376,7 +382,11 @@ public partial class MainWindow : Window
                 UpdateSessionBusyDisplay();
             });
         _grokHook.GrokSessionChanged += (roomId, sid) =>
-            Dispatcher.InvokeAsync(() => SettingsService.SaveGrokRoomSession(roomId, sid));
+            Dispatcher.InvokeAsync(() =>
+            {
+                SettingsService.SaveGrokRoomSession(roomId, sid);
+                foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
+            });
 
         // 테마 변경 시 좌·우 패널 토글 아이콘 brush 재계산(seam 은 각 패널이 자체 처리)
         App.ThemeChanged += OnThemeChanged_UpdatePanels;
@@ -560,6 +570,7 @@ public partial class MainWindow : Window
     }
 
     private bool _shuttingDown;
+    private bool _readyToClose; // 안전 정리(스냅샷/오버레이/graceful) 완료 후 우리가 부른 Close() 만 통과시킨다.
 
     /// <summary>창 종료 가로채기: 살아있는 세션이 있으면 닫기를 보류하고, 오버레이를 띄운 채
     /// 모든 세션을 graceful 종료(claude/codex transcript flush 기회)한 뒤 실제로 닫는다.</summary>
@@ -568,7 +579,15 @@ public partial class MainWindow : Window
         SaveWindowPlacement();
         _wakeScheduler.Stop();
 
-        if (_shuttingDown) return; // 2차 진입(graceful 완료 후 Close()) — 그대로 종료 허용
+        if (_shuttingDown)
+        {
+            // 2차 진입. 안전 정리가 아직 끝나지 않았는데(우리가 Close() 를 부르기 전) 들어온 것이면
+            // 사용자의 재차 X 클릭·Alt+F4·작업표시줄 닫기이므로 반드시 취소한다. 여기서 그냥 통과시키면
+            // 진행 중이던 스냅샷·오버레이 단계를 건너뛴 채 창이 닫혀(App.OnExit 폴백만 graceful 수행)
+            // 안전 종료를 건너뛴 것처럼 '그냥 꺼진다'. 정리 완료(_readyToClose) 후 우리가 부른 Close() 만 통과.
+            if (!_readyToClose) e.Cancel = true;
+            return;
+        }
         if (!TerminalSessionManager.Instance.HasSessionsToClose()) return; // 닫을 세션 없음(ConPTY 미생성)
 
         e.Cancel = true;
@@ -580,9 +599,26 @@ public partial class MainWindow : Window
         try
         {
             DevezCode.Services.DiagLog.Write("Shutdown: prepare snapshots");
-            await FileExplorer.SuspendBrowserAsync();
-            await Task.WhenAll(_panes.Select(p => p.PrepareShutdownSnapshotAsync()));
-            await Views.WorkspacePaneView.WaitForFramesAsync(2); // 스냅샷 present 보장
+            // WebView 가 응답불가면 스냅샷 준비가 무한정 멈출 수 있다. 재진입을 취소하도록 바꾼 뒤로는
+            // 이 대기가 걸리면 X 로도 못 닫으므로, 상한을 두고 초과 시 그냥 숨김/종료로 넘어간다(best effort).
+            // 순서(브라우저 suspend → 패널 스냅샷 → 프레임 present 대기)는 깜빡임 방지에 필요하므로 유지.
+            async Task PrepareAsync()
+            {
+                await FileExplorer.SuspendBrowserAsync();
+                await Task.WhenAll(_panes.Select(p => p.PrepareShutdownSnapshotAsync()));
+                await Views.WorkspacePaneView.WaitForFramesAsync(2); // 스냅샷 present 보장
+            }
+            var prep = PrepareAsync();
+            if (await Task.WhenAny(prep, Task.Delay(3000)) == prep)
+            {
+                await prep; // 완료 → 예외였다면 기존처럼 catch 로 전파(CommitShutdownHide 스킵)
+            }
+            else
+            {
+                DevezCode.Services.DiagLog.Write("Shutdown: prepare timed out → 강제 진행");
+                // 뒤늦게 fault 나도 UnobservedTaskException(crash.log 오염)이 되지 않게 관찰만 해 둔다.
+                _ = prep.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+            }
             foreach (var p in _panes) p.CommitShutdownHide();
             DevezCode.Services.DiagLog.Write("Shutdown: HWNDs hidden");
         }
@@ -592,7 +628,8 @@ public partial class MainWindow : Window
         ShutdownOverlay.Visibility = Visibility.Visible;
         try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500); }
         catch { /* best effort */ }
-        Close(); // _shuttingDown=true 라 재진입 시 즉시 종료
+        _readyToClose = true; // 이제부터의 재진입(아래 Close())만 통과 — 그 전 재진입은 위에서 취소됨.
+        Close();
     }
 
     private void CheckHookSetup()
@@ -2127,24 +2164,10 @@ public partial class MainWindow : Window
         // 같은 경로 중복 등록 허용 — 경로키 설정(작업큐/브라우저URL)은 중복끼리 공유.
         // 복원/조회는 전역 유일한 세션ID 기준이라 충돌 없음.
         var proj = ProjectItem.FromPath(path);
-        // 프로젝트 연결 시 기본 세션 1개 자동 생성. 피커 없이 기본 에이전트(없으면 첫 번째)로 자동 선택.
-        var available = AgentRegistry.GetEnabledAndInstalled();
-        if (available.Count == 0)
-        {
-            ConfirmDialog.Alert("에이전트 없음",
-                "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
-            return;
-        }
-        string defaultAgentId =
-            available.FirstOrDefault(a => a.Id.Equals(AgentRegistry.DefaultAgentId, StringComparison.OrdinalIgnoreCase))?.Id
-            ?? available[0].Id;
-        var session = new SessionItem { Name = "세션 1", AgentId = defaultAgentId };
-        proj.Tabs.Add(session);
-        SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
-        SettingsService.SaveAgentForRoom(session.Id, defaultAgentId);
+        // 프로젝트만 등록하고 세션은 만들지 않는다. (세션은 사용자가 직접 추가)
         _projects.Add(proj);
         WorkspaceStore.Save(_projects);
-        SelectProject(proj);   // 탭을 이 프로젝트 세션으로 교체 + 기본 세션 활성화
+        SelectProject(proj);
         UpdateStatus();
     }
 
@@ -2247,6 +2270,7 @@ public partial class MainWindow : Window
         pane.FileTabCloseRequested += OnFileTabCloseRequested;
         pane.BrowserTabCloseRequested += OnBrowserTabCloseRequested;
         pane.SessionTerminalReady += _sessionCommandInbox.NotifyTerminalReady;
+        TerminalSessionManager.Instance.AgentModelCatalogRefreshRequested += pane.NotifyAgentModelCatalogRefreshRequested;
         _panes.Add(pane);
     }
 

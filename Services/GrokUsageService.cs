@@ -9,7 +9,10 @@ namespace DevezCode.Services;
 /// → creditUsagePercent(주간) + billingPeriodEnd.</summary>
 public sealed class GrokUsageService : IDisposable
 {
-    private const string BillingUrl = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+    // credits: 주간 크레딧 계정용(creditUsagePercent). usage: 월간 구독 계정용(used/monthlyLimit).
+    // 통합/월간 계정은 credits 응답에 사용량 필드가 없으므로 usage 로 폴백한다.
+    private const string BillingCreditsUrl = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+    private const string BillingUsageUrl = "https://cli-chat-proxy.grok.com/v1/billing";
     private const int PollMs = 3 * 60 * 1000;
 
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
@@ -102,6 +105,17 @@ public sealed class GrokUsageService : IDisposable
         }
     }
 
+    private static HttpRequestMessage NewReq(string url, string token)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+        req.Headers.TryAddWithoutValidation("x-xai-token-auth", "xai-grok-cli");
+        req.Headers.TryAddWithoutValidation("Accept", "application/json");
+        req.Headers.TryAddWithoutValidation("User-Agent", "xai-grok-cli");
+        req.Headers.TryAddWithoutValidation("x-grok-client-version", "0.2.93");
+        return req;
+    }
+
     private async Task PollAsync()
     {
         try
@@ -118,21 +132,17 @@ public sealed class GrokUsageService : IDisposable
                 return;
             }
 
-            using var req = new HttpRequestMessage(HttpMethod.Get, BillingUrl);
-            req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
-            req.Headers.TryAddWithoutValidation("x-xai-token-auth", "xai-grok-cli");
-            req.Headers.TryAddWithoutValidation("Accept", "application/json");
-            req.Headers.TryAddWithoutValidation("User-Agent", "xai-grok-cli");
-            req.Headers.TryAddWithoutValidation("x-grok-client-version", "0.2.93");
+            var (authFailed, usage) = await FetchUsageAsync(token).ConfigureAwait(false);
 
-            using var res = await _http.SendAsync(req).ConfigureAwait(false);
-
-            // 401 → 강제 refresh 1회 재시도
-            if (res.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            // 401/403 → 강제 refresh 1회 재시도
+            if (authFailed)
             {
                 _memoryExpires = DateTimeOffset.UtcNow.AddMinutes(-1); // 강제 만료
                 var retry = await EnsureAccessTokenAsync().ConfigureAwait(false);
-                if (string.IsNullOrEmpty(retry) || retry == token)
+                if (!string.IsNullOrEmpty(retry) && retry != token)
+                    (authFailed, usage) = await FetchUsageAsync(retry).ConfigureAwait(false);
+
+                if (authFailed)
                 {
                     Updated?.Invoke(new ProviderUsage
                     {
@@ -141,64 +151,77 @@ public sealed class GrokUsageService : IDisposable
                     });
                     return;
                 }
-                using var req2 = new HttpRequestMessage(HttpMethod.Get, BillingUrl);
-                req2.Headers.TryAddWithoutValidation("Authorization", "Bearer " + retry);
-                req2.Headers.TryAddWithoutValidation("x-xai-token-auth", "xai-grok-cli");
-                req2.Headers.TryAddWithoutValidation("Accept", "application/json");
-                req2.Headers.TryAddWithoutValidation("User-Agent", "xai-grok-cli");
-                req2.Headers.TryAddWithoutValidation("x-grok-client-version", "0.2.93");
-                using var res2 = await _http.SendAsync(req2).ConfigureAwait(false);
-                if (!res2.IsSuccessStatusCode)
-                {
-                    Updated?.Invoke(new ProviderUsage
-                    {
-                        Provider = "grok",
-                        Error = "세션 만료 — 설정에서 Grok 재로그인",
-                    });
-                    return;
-                }
-                await ParseAndEmitAsync(res2).ConfigureAwait(false);
-                return;
             }
 
-            if (!res.IsSuccessStatusCode) return;
-            await ParseAndEmitAsync(res).ConfigureAwait(false);
+            if (usage != null) Updated?.Invoke(usage);
         }
         catch { }
     }
 
-    private async Task ParseAndEmitAsync(HttpResponseMessage res)
+    /// <summary>credits 조회 → 사용량 필드 없으면 usage 로 폴백.
+    /// authFailed=true 는 401/403(재로그인 필요), usage=null 은 데이터 없음/일시 오류.</summary>
+    private async Task<(bool authFailed, ProviderUsage? usage)> FetchUsageAsync(string token)
+    {
+        using var res = await _http.SendAsync(NewReq(BillingCreditsUrl, token)).ConfigureAwait(false);
+        if (res.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            return (true, null);
+        if (res.IsSuccessStatusCode)
+        {
+            var fromCredits = await ParseAsync(res).ConfigureAwait(false);
+            if (fromCredits != null) return (false, fromCredits);
+        }
+
+        // credits 응답에 사용량 필드 없음(월간/통합 구독 계정) → 기본 billing 재조회
+        using var res2 = await _http.SendAsync(NewReq(BillingUsageUrl, token)).ConfigureAwait(false);
+        if (res2.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            return (true, null);
+        if (!res2.IsSuccessStatusCode) return (false, null);
+        return (false, await ParseAsync(res2).ConfigureAwait(false));
+    }
+
+    private static async Task<ProviderUsage?> ParseAsync(HttpResponseMessage res)
     {
         await using var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
         var root = doc.RootElement;
         if (!root.TryGetProperty("config", out var config) || config.ValueKind != JsonValueKind.Object)
-            return;
+            return null;
 
-        if (config.TryGetProperty("creditUsagePercent", out var cup) && cup.ValueKind == JsonValueKind.Number)
+        // 주간 창: creditUsagePercent 가 있으면 그 값, 없더라도 주간 currentPeriod 이 있으면 0%
+        // (통합/월간 계정은 이 필드가 생략됨 = proto 기본값 0 → CLI usage 의 "Weekly limit: 0%" 와 동일).
+        bool hasCredit = config.TryGetProperty("creditUsagePercent", out var cup) && cup.ValueKind == JsonValueKind.Number;
+        if (hasCredit || HasWeeklyPeriod(config))
         {
-            var pct = Math.Clamp(cup.GetDouble(), 0, 100);
-            DateTimeOffset? periodEnd = ReadPeriodEnd(config);
-            Updated?.Invoke(new ProviderUsage
+            var pct = hasCredit ? Math.Clamp(cup.GetDouble(), 0, 100) : 0;
+            return new ProviderUsage
             {
                 Provider = "grok",
-                Weekly = new UsageWindow { UsedPercent = pct, ResetsAt = periodEnd },
-            });
-            return;
+                Weekly = new UsageWindow { UsedPercent = pct, ResetsAt = ReadPeriodEnd(config) },
+            };
         }
 
         double? used = ReadVal(config, "used");
         double? limit = ReadVal(config, "monthlyLimit");
-        if (used is not double u || limit is not double lim || lim <= 0) return;
+        if (used is not double u || limit is not double lim || lim <= 0) return null;
         DateTimeOffset? pe = null;
         if (config.TryGetProperty("billingPeriodEnd", out var peEl) && peEl.ValueKind == JsonValueKind.String
             && DateTimeOffset.TryParse(peEl.GetString(), out var dt))
             pe = dt;
-        Updated?.Invoke(new ProviderUsage
+        return new ProviderUsage
         {
             Provider = "grok",
             Monthly = new UsageWindow { UsedPercent = Math.Clamp(u / lim * 100.0, 0, 100), ResetsAt = pe },
-        });
+        };
+    }
+
+    /// <summary>currentPeriod 이 주간 창인지. type 이 없으면 currentPeriod 존재만으로 주간 취급.</summary>
+    private static bool HasWeeklyPeriod(JsonElement config)
+    {
+        if (!config.TryGetProperty("currentPeriod", out var cp) || cp.ValueKind != JsonValueKind.Object)
+            return false;
+        if (cp.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String)
+            return t.GetString()?.Contains("WEEKLY", StringComparison.OrdinalIgnoreCase) ?? false;
+        return true;
     }
 
     private static DateTimeOffset? ReadPeriodEnd(JsonElement config)

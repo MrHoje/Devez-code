@@ -218,7 +218,9 @@ public static class UpdateService
             $"$dst = '{dstLit}'\n" +
             $"$expected = {newSize}\n" +
             $"$ok = $false\n" +
-            $"for ($i = 0; $i -lt 20; $i++) {{\n" +
+            // 재시도 상한은 안전 종료 소요(스냅샷 cap 3s + grace 2.5s + 훅 flush cap 5s + Dispose 마진)보다
+            // 넉넉해야 한다. 짧으면 exe 잠금이 풀리기 전에 소진돼 멀쩡한 업데이트가 --update-failed 로 빠진다.
+            $"for ($i = 0; $i -lt 40; $i++) {{\n" +
             $"    Start-Sleep -Milliseconds 700\n" +
             $"    try {{\n" +
             $"        Copy-Item -Force $src $dst -ErrorAction Stop\n" +
@@ -249,6 +251,21 @@ public static class UpdateService
             WindowStyle = ProcessWindowStyle.Hidden
         });
 
-        Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown());
+        // Shutdown() 을 직접 부르면 MainWindow.OnWindowClosing 의 안전 종료(스냅샷·오버레이·graceful)를
+        // 우회한다 → 세션이 안전 경로를 못 타고 App.OnExit 폴백으로만 정리된다. 메인 창을 Close() 해
+        // 안전 경로를 태운다. 단 ShutdownMode 기본값(OnLastWindowClose)에서는 토스트(NotificationPopup)나
+        // 결과 모달 등 다른 창이 열려 있으면 메인 창만 닫혀도 프로세스가 안 내려가 exe 잠금이 유지되고,
+        // 교체 스크립트가 재시도를 소진해 멀쩡한 업데이트가 실패 처리된다 → Closed 에서 Shutdown() 을
+        // 명시 호출해 종료를 보장한다(이 시점엔 안전 경로가 이미 완주했으므로 우회가 아니다).
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            var mw = Application.Current.MainWindow;
+            if (mw != null)
+            {
+                mw.Closed += (_, _) => Application.Current.Shutdown();
+                mw.Close();
+            }
+            else Application.Current.Shutdown();
+        });
     }
 }

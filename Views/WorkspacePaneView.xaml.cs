@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -115,7 +116,12 @@ public partial class WorkspacePaneView : UserControl
 
         _terminal.SessionStarted += id => { var s = FindSession(id); if (s != null) s.IsAlive = true; };
         _terminal.SessionExited += id => { var s = FindSession(id); if (s != null) { s.IsAlive = false; s.IsBusy = false; s.IsWaitingChoice = false; } HideSessionLoadingIf(id); };
-        _terminal.TerminalReady += id => { HideSessionLoadingIf(id); SessionTerminalReady?.Invoke(id); };
+        _terminal.TerminalReady += id =>
+        {
+            HideSessionLoadingIf(id);
+            if (_activeSession?.Id == id) RefreshModelEffortDock();
+            SessionTerminalReady?.Invoke(id);
+        };
         // 에이전트 /exit·Ctrl+C 자동 재실행(claude·gjc=배치 루프 플래그, opencode=onExited 재배선) 동안
         // 배치 에코·부팅 출력이 보이지 않게 즉시 커버. 재실행된 TUI 의 준비 신호(alt-screen/인라인 마커)가
         // TerminalReady 로 커버를 걷는다(실패 시 폴백 6~8s·로딩 타임아웃 20s).
@@ -144,6 +150,9 @@ public partial class WorkspacePaneView : UserControl
         FontSizeCombo.ItemsSource = FontSizeOptions;
         _terminal.FontSizePxChanged += SyncFontSizeCombo;
         Loaded += (_, _) => SyncFontSizeCombo(_terminal.EffectiveFontSizePx);
+        _agentModelStateTimer.Tick += (_, _) => RefreshExternalAgentModelStateIfChanged();
+        Loaded += (_, _) => _agentModelStateTimer.Start();
+        Unloaded += (_, _) => _agentModelStateTimer.Stop();
         // 로딩 중 레이아웃이 바뀌면(예: 시작 시 전체폭으로 세션 복원 → 곧바로 분할 적용) 웹 스피너의
         // px 앵커 좌표를 재전송해 카드가 항상 최종 중앙에 있게 한다.
         TerminalLoadingOverlay.SizeChanged += (_, e) =>
@@ -1266,22 +1275,36 @@ public partial class WorkspacePaneView : UserControl
     private readonly HashSet<IFileTabEditor> _interactHooked = new();
 
     // ── 메타바 model/effort dock ─────────────────────────────────
-    private static readonly ModelEffortOption[] ModelOptions =
+    private static readonly ModelEffortOption[] ClaudeModelOptions =
     {
         new("Opus", "opus"), new("Sonnet", "sonnet"),
         new("Haiku", "haiku"), new("Fable", "fable"),
     };
-    private static readonly ModelEffortOption[] EffortOptions =
+    private static readonly ModelEffortOption[] ClaudeEffortOptions =
     {
         new("low", "low"), new("medium", "medium"), new("high", "high"),
         new("xhigh", "xhigh"), new("max", "max"),
     };
     private const string DefaultModelValue = "opus";
     private const string DefaultEffortValue = "high";
+    private static readonly object ClaudeDefaultsLock = new();
+    private static DateTime _claudeDefaultsWriteUtc;
+    private static (string? Model, string? Effort) _claudeDefaults;
+    private static readonly object CodexSessionMetaLock = new();
+    private static readonly Dictionary<string, (DateTime WriteUtc, long Length, string? Model, string? Effort)> CodexSessionMetaCache = new();
+
+    private sealed record AgentModelOption(
+        string Label, string Value, string? DefaultEffort, ModelEffortOption[] Efforts);
 
     private bool _suppressModelEffort;
     private readonly Dictionary<string, string> _pendingModel = new();
     private readonly Dictionary<string, string> _pendingEffort = new();
+    private AgentModelOption[] _visibleAgentModels = Array.Empty<AgentModelOption>();
+    private readonly System.Windows.Threading.DispatcherTimer _agentModelStateTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(750),
+    };
+    private string? _lastAgentModelStateSignature;
 
     // ── 메타바 터미널 폰트 크기 dock(claude 여부와 무관, 항상 노출) ─────────
     private static readonly ModelEffortOption[] FontSizeOptions =
@@ -1309,6 +1332,51 @@ public partial class WorkspacePaneView : UserControl
         _terminal.SetRoomFontSizePt(_activeSession.Id, pt); // 지금 보고 있는 방에만 적용, 다른 방/새 방엔 영향 없음
     }
 
+    private void RefreshExternalAgentModelStateIfChanged()
+    {
+        var session = _activeSession;
+        if (session == null || session.IsBusy) return;
+        var agentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
+        if (agentId is not ("codex" or "grok")) return;
+        var signature = BuildAgentModelStateSignature(session, agentId);
+        if (signature == _lastAgentModelStateSignature) return;
+        _lastAgentModelStateSignature = signature;
+        RefreshModelEffortDock();
+    }
+
+    private static string BuildAgentModelStateSignature(SessionItem session, string agentId)
+    {
+        var sessionId = agentId == "codex"
+            ? SettingsService.LoadCodexRoomSession(session.Id)
+            : SettingsService.LoadGrokRoomSession(session.Id);
+        var transcript = agentId == "codex"
+            ? TerminalSessionManager.FindCodexTranscriptPath(sessionId)
+            : FindGrokSummaryPath(sessionId);
+        var config = agentId == "codex"
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "config.toml")
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "models_cache.json");
+        return session.Id + "|" + sessionId + "|" + FileStamp(transcript) + "|" + FileStamp(config);
+    }
+
+    private static string FileStamp(string? path)
+    {
+        try
+        {
+            if (path == null) return "-";
+            var info = new FileInfo(path);
+            return info.Exists ? info.LastWriteTimeUtc.Ticks + ":" + info.Length : "-";
+        }
+        catch { return "-"; }
+    }
+
+    private static string? FindGrokSummaryPath(string? sessionId)
+    {
+        var history = TerminalSessionManager.FindGrokChatHistoryPath(sessionId);
+        if (history == null) return null;
+        var path = Path.Combine(Path.GetDirectoryName(history)!, "summary.json");
+        return File.Exists(path) ? path : null;
+    }
+
     private void RefreshModelEffortDock()
     {
         RefreshHeaderSessionGate(); // 세션 탭이 하나도 없으면 브랜치·터미널 폰트 정보도 같이 숨김
@@ -1319,20 +1387,69 @@ public partial class WorkspacePaneView : UserControl
         if (s != null) SyncFontSizeCombo(_terminal.RoomEffectiveFontSizePx(s.Id));
 
         var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
-        bool isClaude = s != null && agentId == "claude";
-        ModelEffortDock.Visibility = isClaude ? Visibility.Visible : Visibility.Collapsed;
-        if (!isClaude) return;
+        bool supportsSelection = s != null && agentId is "claude" or "grok";
+        ModelEffortDock.Visibility = supportsSelection ? Visibility.Visible : Visibility.Collapsed;
+        bool isCodex = s != null && agentId == "codex";
+        CodexModelEffortDock.Visibility = isCodex ? Visibility.Visible : Visibility.Collapsed;
+        if (isCodex)
+        {
+            RefreshCodexModelEffortDisplay(s!);
+            return;
+        }
+        if (!supportsSelection) return;
 
-        var (liveModelId, liveEffort) = ModelEffort?.Read(s!.Id) ?? (null, null);
-        var model = ModelIdToValue(liveModelId) ?? SettingsService.LoadClaudeCodeRoomModel(s!.Id) ?? DefaultModelValue;
-        var effort = (IsKnownEffort(liveEffort) ? liveEffort : null) ?? SettingsService.LoadClaudeCodeRoomEffort(s!.Id) ?? DefaultEffortValue;
+        _visibleAgentModels = LoadAgentModelOptions(agentId!);
+        if (_visibleAgentModels.Length == 0)
+        {
+            ModelEffortDock.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        string? liveModelId = null;
+        string? liveEffort = null;
+        if (agentId == "claude") (liveModelId, liveEffort) = ModelEffort?.Read(s!.Id) ?? (null, null);
+
+        var savedModel = agentId == "claude"
+            ? SettingsService.LoadClaudeCodeRoomModel(s!.Id)
+            : SettingsService.LoadAgentRoomModel(s!.Id, agentId!);
+        var savedEffort = agentId == "claude"
+            ? SettingsService.LoadClaudeCodeRoomEffort(s!.Id)
+            : SettingsService.LoadAgentRoomEffort(s!.Id, agentId!);
+        var grokLive = agentId == "grok" ? LoadGrokSessionModelEffort(s!.Id) : (Model: (string?)null, Effort: (string?)null);
+        if (agentId == "grok")
+        {
+            if (grokLive.Model != null && grokLive.Model != savedModel)
+                SettingsService.SaveAgentRoomModel(s!.Id, "grok", grokLive.Model);
+            if (grokLive.Effort != null && grokLive.Effort != savedEffort)
+                SettingsService.SaveAgentRoomEffort(s!.Id, "grok", grokLive.Effort);
+            else if (grokLive.Model != null && grokLive.Effort == null && savedEffort != null
+                && _visibleAgentModels.FirstOrDefault(m => m.Value == grokLive.Model)?.Efforts.Length == 0)
+                SettingsService.SaveAgentRoomEffort(s!.Id, "grok", null);
+        }
+        (string? Model, string? Effort) configuredClaude = agentId == "claude"
+            ? LoadClaudeConfiguredDefaults()
+            : (null, null);
+        var model = agentId == "claude"
+            ? ModelIdToValue(liveModelId) ?? savedModel ?? configuredClaude.Model
+            : grokLive.Model ?? savedModel;
+        model ??= agentId == "claude" ? DefaultModelValue : _visibleAgentModels[0].Value;
+        var selectedModel = _visibleAgentModels.FirstOrDefault(m => m.Value == model) ?? _visibleAgentModels[0];
+        var effort = (agentId == "claude" && IsKnownEffort(liveEffort) ? liveEffort : null)
+            ?? grokLive.Effort
+            ?? savedEffort
+            ?? configuredClaude.Effort;
+        if (effort != null && !selectedModel.Efforts.Any(e => e.Value == effort))
+            effort = null;
+        if (effort == null)
+            effort = selectedModel.DefaultEffort ?? selectedModel.Efforts.FirstOrDefault()?.Value;
 
         _suppressModelEffort = true;
         try
         {
-            if (ModelCombo.ItemsSource == null) ModelCombo.ItemsSource = ModelOptions;
-            if (EffortCombo.ItemsSource == null) EffortCombo.ItemsSource = EffortOptions;
-            ModelCombo.SelectedValue = model;
+            ModelCombo.ItemsSource = _visibleAgentModels.Select(m => new ModelEffortOption(m.Label, m.Value)).ToArray();
+            ModelCombo.SelectedValue = selectedModel.Value;
+            EffortCombo.ItemsSource = selectedModel.Efforts;
+            EffortCombo.Visibility = selectedModel.Efforts.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             EffortCombo.SelectedValue = effort;
         }
         finally { _suppressModelEffort = false; }
@@ -1352,6 +1469,237 @@ public partial class WorkspacePaneView : UserControl
     private static bool IsKnownEffort(string? e)
         => e is "low" or "medium" or "high" or "xhigh" or "max";
 
+    /// <summary>Claude는 전체 버전 카탈로그 파일이 없으므로 settings.json의 현재 alias/effort만 읽는다.
+    /// alias는 ModelIdToValue로 Opus/Sonnet 등 계열명으로만 표시한다. 파일이 그대로면 파싱도 생략.</summary>
+    private static (string? Model, string? Effort) LoadClaudeConfiguredDefaults()
+    {
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "settings.json");
+            var writeUtc = File.GetLastWriteTimeUtc(path);
+            lock (ClaudeDefaultsLock)
+            {
+                if (writeUtc == _claudeDefaultsWriteUtc) return _claudeDefaults;
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var root = doc.RootElement;
+                var rawModel = root.TryGetProperty("model", out var modelNode) ? modelNode.GetString() : null;
+                var effort = root.TryGetProperty("effortLevel", out var effortNode) ? effortNode.GetString() : null;
+                _claudeDefaults = (ModelIdToValue(rawModel), IsKnownEffort(effort) ? effort : null);
+                _claudeDefaultsWriteUtc = writeUtc;
+                return _claudeDefaults;
+            }
+        }
+        catch { return _claudeDefaults; }
+    }
+
+    private void RefreshCodexModelEffortDisplay(SessionItem session)
+    {
+        var configured = LoadCodexConfiguredDefaults(SettingsService.LoadClaudeCodeRoomDir(session.Id));
+        var sessionMeta = LoadCodexSessionModelEffort(session.Id);
+        var model = sessionMeta.Model ?? configured.Model;
+        var effort = sessionMeta.Effort ?? configured.Effort;
+        CodexModelText.Text = CodexModelDisplayName(model);
+        CodexEffortText.Text = effort ?? "—";
+        CodexEffortValueBorder.Visibility = string.IsNullOrWhiteSpace(effort)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    /// <summary>Codex rollout의 thread_settings_applied/turn_context에 실제 모델/effort가 함께 기록된다.
+    /// 파일이 바뀌지 않았으면 캐시를 반환하고, 읽을 때는 활성 세션과 충돌하지 않게 공유 읽기한다.</summary>
+    private static (string? Model, string? Effort) LoadCodexSessionModelEffort(string roomId)
+    {
+        try
+        {
+            var sessionId = SettingsService.LoadCodexRoomSession(roomId);
+            var path = TerminalSessionManager.FindCodexTranscriptPath(sessionId);
+            if (path == null) return (null, null);
+            var info = new FileInfo(path);
+            lock (CodexSessionMetaLock)
+            {
+                if (CodexSessionMetaCache.TryGetValue(path, out var cached)
+                    && cached.WriteUtc == info.LastWriteTimeUtc && cached.Length == info.Length)
+                    return (cached.Model, cached.Effort);
+            }
+
+            var (model, effort) = ReadLatestCodexTurnContext(path);
+            lock (CodexSessionMetaLock)
+                CodexSessionMetaCache[path] = (info.LastWriteTimeUtc, info.Length, model, effort);
+            return (model, effort);
+        }
+        catch { return (null, null); }
+    }
+
+    /// <summary>파일 끝 64KB부터 역방향으로 넓혀 최신 모델 상태 이벤트 하나만 찾는다.
+    /// 큰 rollout 전체를 매 턴 파싱하지 않아 읽기 전용 표시 갱신이 UI를 막지 않는다.</summary>
+    private static (string? Model, string? Effort) ReadLatestCodexTurnContext(string path)
+    {
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var length = fs.Length;
+        if (length == 0) return (null, null);
+        long window = Math.Min(length, 64 * 1024L);
+        while (true)
+        {
+            var start = length - window;
+            fs.Seek(start, SeekOrigin.Begin);
+            var bytes = new byte[checked((int)window)];
+            int read = 0;
+            while (read < bytes.Length)
+            {
+                var n = fs.Read(bytes, read, bytes.Length - read);
+                if (n == 0) break;
+                read += n;
+            }
+            var text = System.Text.Encoding.UTF8.GetString(bytes, 0, read);
+            var lines = text.Split('\n');
+            for (int i = lines.Length - 1; i >= 0; i--)
+            {
+                // 중간 바이트에서 시작한 첫 줄은 불완전할 수 있으므로 다음 확장 구간에서 처리한다.
+                if (start > 0 && i == 0) continue;
+                var line = lines[i].TrimEnd('\r');
+                if (line.Length == 0 || (!line.Contains("\"turn_context\"", StringComparison.Ordinal)
+                    && !line.Contains("\"thread_settings_applied\"", StringComparison.Ordinal))) continue;
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+                    if (!root.TryGetProperty("payload", out var payload)) continue;
+                    if (root.TryGetProperty("type", out var type) && type.GetString() == "turn_context")
+                    {
+                        var model = payload.TryGetProperty("model", out var modelNode) ? modelNode.GetString() : null;
+                        var effort = payload.TryGetProperty("effort", out var effortNode) ? effortNode.GetString() : null;
+                        return (model, effort);
+                    }
+                    if (payload.TryGetProperty("type", out var eventType)
+                        && eventType.GetString() == "thread_settings_applied"
+                        && payload.TryGetProperty("thread_settings", out var settings))
+                    {
+                        var model = settings.TryGetProperty("model", out var modelNode) ? modelNode.GetString() : null;
+                        var effort = settings.TryGetProperty("reasoning_effort", out var effortNode) ? effortNode.GetString() : null;
+                        return (model, effort);
+                    }
+                }
+                catch { /* append 중인 마지막 불완전 라인은 건너뜀 */ }
+            }
+            if (start == 0) return (null, null);
+            window = Math.Min(length, window * 4);
+        }
+    }
+
+    private static (string? Model, string? Effort) LoadCodexConfiguredDefaults(string? projectDir)
+    {
+        string? model = null;
+        string? effort = null;
+        void Read(string path)
+        {
+            try
+            {
+                var text = File.ReadAllText(path);
+                var modelMatch = System.Text.RegularExpressions.Regex.Match(text,
+                    @"(?m)^\s*model\s*=\s*[\""']?([^\""'\s#]+)");
+                var effortMatch = System.Text.RegularExpressions.Regex.Match(text,
+                    @"(?m)^\s*model_reasoning_effort\s*=\s*[\""']?([^\""'\s#]+)");
+                if (modelMatch.Success) model = modelMatch.Groups[1].Value;
+                if (effortMatch.Success) effort = effortMatch.Groups[1].Value;
+            }
+            catch { /* 파일 없음/교체 중이면 상위 설정 유지 */ }
+        }
+
+        Read(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "config.toml"));
+        if (!string.IsNullOrWhiteSpace(projectDir)) Read(Path.Combine(projectDir, ".codex", "config.toml"));
+        return (model, effort);
+    }
+
+    private static string CodexModelDisplayName(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model)) return "—";
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "models_cache.json");
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.TryGetProperty("models", out var models))
+            {
+                foreach (var item in models.EnumerateArray())
+                {
+                    if (!item.TryGetProperty("slug", out var slug) || slug.GetString() != model) continue;
+                    if (item.TryGetProperty("display_name", out var display) && display.GetString() is { Length: > 0 } label)
+                        return label;
+                }
+            }
+        }
+        catch { /* 캐시가 없으면 raw model ID 표시 */ }
+        return model;
+    }
+
+    private static AgentModelOption[] LoadAgentModelOptions(string agentId)
+    {
+        if (agentId == "claude")
+            return ClaudeModelOptions
+                .Select(m => new AgentModelOption(m.Label, m.Value, DefaultEffortValue, ClaudeEffortOptions))
+                .ToArray();
+
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "models_cache.json");
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var loaded = ReadGrokModels(doc.RootElement);
+            if (loaded.Length > 0) return loaded;
+            throw new InvalidDataException("모델 캐시에 표시 가능한 모델이 없습니다.");
+        }
+        catch
+        {
+            // CLI를 아직 한 번도 실행하지 않아 캐시가 없거나, 업데이트 중 파일이 교체된 순간이면 안전한 기본 목록.
+            return new[]
+                {
+                    new AgentModelOption("Grok 4.5", "grok-4.5", "high", ReasoningOptions("low", "medium", "high")),
+                    new AgentModelOption("Composer 2.5", "grok-composer-2.5-fast", null, Array.Empty<ModelEffortOption>()),
+                };
+        }
+    }
+
+    private static (string? Model, string? Effort) LoadGrokSessionModelEffort(string roomId)
+    {
+        try
+        {
+            var sessionId = SettingsService.LoadGrokRoomSession(roomId);
+            var path = FindGrokSummaryPath(sessionId);
+            if (path == null) return (null, null);
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var root = doc.RootElement;
+            var model = root.TryGetProperty("current_model_id", out var modelNode) ? modelNode.GetString() : null;
+            var effort = root.TryGetProperty("reasoning_effort", out var effortNode) ? effortNode.GetString() : null;
+            return (model, effort);
+        }
+        catch { return (null, null); }
+    }
+
+    private static AgentModelOption[] ReadGrokModels(JsonElement root)
+    {
+        var result = new List<AgentModelOption>();
+        if (!root.TryGetProperty("models", out var models) || models.ValueKind != JsonValueKind.Object) return result.ToArray();
+        foreach (var property in models.EnumerateObject())
+        {
+            if (!property.Value.TryGetProperty("info", out var info)) continue;
+            if (info.TryGetProperty("hidden", out var hidden) && hidden.ValueKind == JsonValueKind.True) continue;
+            var id = info.TryGetProperty("id", out var idNode) ? idNode.GetString() : property.Name;
+            if (string.IsNullOrWhiteSpace(id)) continue;
+            var label = info.TryGetProperty("name", out var labelNode) ? labelNode.GetString() : null;
+            var defaultEffort = info.TryGetProperty("reasoning_effort", out var defaultNode) ? defaultNode.GetString() : null;
+            var efforts = new List<ModelEffortOption>();
+            if (info.TryGetProperty("reasoning_efforts", out var levels) && levels.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var level in levels.EnumerateArray())
+                    if (level.TryGetProperty("value", out var effortNode) && effortNode.GetString() is { Length: > 0 } effort)
+                        efforts.Add(new ModelEffortOption(effort, effort));
+            }
+            result.Add(new AgentModelOption(label ?? id!, id!, defaultEffort, efforts.ToArray()));
+        }
+        return result.ToArray();
+    }
+
+    private static ModelEffortOption[] ReasoningOptions(params string[] values)
+        => values.Select(v => new ModelEffortOption(v, v)).ToArray();
+
     private void ModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         => OnModelEffortPicked(isModel: true);
     private void EffortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1365,20 +1713,101 @@ public partial class WorkspacePaneView : UserControl
         var val = (isModel ? ModelCombo : EffortCombo).SelectedValue as string;
         if (string.IsNullOrEmpty(val)) return;
 
-        if (isModel) SettingsService.SaveClaudeCodeRoomModel(s.Id, val);
-        else SettingsService.SaveClaudeCodeRoomEffort(s.Id, val);
+        var agentId = string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
+        if (agentId is not ("claude" or "grok")) return;
+
+        if (isModel)
+        {
+            SaveRoomModel(s.Id, agentId, val);
+            var selectedModel = _visibleAgentModels.FirstOrDefault(m => m.Value == val);
+            if (selectedModel != null)
+            {
+                // 현재 콤보에는 Claude 훅의 라이브 effort까지 반영돼 있으므로 저장값보다 우선 보존한다.
+                var oldEffort = EffortCombo.SelectedValue as string
+                    ?? (agentId == "claude"
+                        ? SettingsService.LoadClaudeCodeRoomEffort(s.Id)
+                        : SettingsService.LoadAgentRoomEffort(s.Id, agentId));
+                var effectiveEffort = selectedModel.Efforts.Any(x => x.Value == oldEffort)
+                    ? oldEffort
+                    : selectedModel.DefaultEffort ?? selectedModel.Efforts.FirstOrDefault()?.Value;
+                SaveRoomEffort(s.Id, agentId, effectiveEffort);
+                _suppressModelEffort = true;
+                try
+                {
+                    EffortCombo.ItemsSource = selectedModel.Efforts;
+                    EffortCombo.Visibility = selectedModel.Efforts.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                    EffortCombo.SelectedValue = effectiveEffort;
+                }
+                finally { _suppressModelEffort = false; }
+            }
+        }
+        else
+        {
+            // 저장값이 없어서 config/캐시 기본 모델을 표시 중이어도 effort 변경 시 그 모델을 함께 고정해야
+            // 런처가 모델별 지원 여부를 검증하고 같은 조합으로 재개할 수 있다.
+            if (agentId != "claude" && ModelCombo.SelectedValue is string visibleModel)
+                SaveRoomModel(s.Id, agentId, visibleModel);
+            SaveRoomEffort(s.Id, agentId, val);
+        }
 
         if (s.IsBusy)
             (isModel ? _pendingModel : _pendingEffort)[s.Id] = val;
-        else
-            SendModelEffortSlash(s.Id, isModel, val);
+        else if (agentId == "grok")
+        {
+            SendGrokModelEffortSlash(s.Id, isModel, val);
+        }
+        else SendModelEffortSlash(s.Id, isModel, val);
     }
 
     /// <summary>응답 종료(busy→idle) 시 보류된 model/effort 변경을 라이브 주입. 셸이 호출.</summary>
     public void FlushPendingModelEffort(string roomId)
     {
-        if (_pendingModel.Remove(roomId, out var m)) SendModelEffortSlash(roomId, isModel: true, m);
-        if (_pendingEffort.Remove(roomId, out var ef)) SendModelEffortSlash(roomId, isModel: false, ef);
+        var session = FindSession(roomId);
+        var agentId = session == null || string.IsNullOrEmpty(session.AgentId)
+            ? AgentRegistry.DefaultAgentId
+            : session.AgentId;
+        bool grokModelIncludedEffort = false;
+        if (_pendingModel.Remove(roomId, out var m))
+        {
+            if (agentId == "grok")
+            {
+                SendGrokModelEffortSlash(roomId, isModel: true, m);
+                grokModelIncludedEffort = true;
+            }
+            else SendModelEffortSlash(roomId, isModel: true, m);
+        }
+        if (_pendingEffort.Remove(roomId, out var ef))
+        {
+            if (agentId == "grok")
+            {
+                if (!grokModelIncludedEffort) SendGrokModelEffortSlash(roomId, isModel: false, ef);
+            }
+            else SendModelEffortSlash(roomId, isModel: false, ef);
+        }
+    }
+
+    /// <summary>세션 신규/재개 직전 로컬 모델 설정을 다시 반영한다. 다른 에이전트의 활성 패널은 건드리지 않는다.</summary>
+    public void NotifyAgentModelCatalogRefreshRequested(string agentId)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var s = _activeSession;
+            if (s == null) return;
+            var activeAgent = string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
+            if (activeAgent == agentId) RefreshModelEffortDock();
+        });
+    }
+
+    private static void SaveRoomModel(string roomId, string agentId, string? value)
+    {
+        if (agentId == "claude") SettingsService.SaveClaudeCodeRoomModel(roomId, value);
+        else SettingsService.SaveAgentRoomModel(roomId, agentId, value);
+    }
+
+    private static void SaveRoomEffort(string roomId, string agentId, string? value)
+    {
+        if (agentId == "claude") SettingsService.SaveClaudeCodeRoomEffort(roomId, value);
+        else SettingsService.SaveAgentRoomEffort(roomId, agentId, value);
     }
 
     private void SendModelEffortSlash(string roomId, bool isModel, string value)
@@ -1387,6 +1816,23 @@ public partial class WorkspacePaneView : UserControl
         if (sess is not { IsAlive: true }) return;
         _terminal.SuppressScroll(5);
         sess.Write((isModel ? "/model " : "/effort ") + value + "\r");
+    }
+
+    /// <summary>Grok은 현재 세션에서 모델과 effort를 직접 바꿀 수 있다. 모델 변경 시 저장된 effort를
+    /// 두 번째 인자로 함께 보내 모델 선택 직후 별도 재실행이나 추가 명령이 필요 없게 한다.</summary>
+    private void SendGrokModelEffortSlash(string roomId, bool isModel, string value)
+    {
+        var sess = TerminalSessionManager.Instance.Get(roomId);
+        if (sess is not { IsAlive: true }) return;
+        string command;
+        if (isModel)
+        {
+            var effort = SettingsService.LoadAgentRoomEffort(roomId, "grok");
+            command = "/model " + value + (string.IsNullOrEmpty(effort) ? "" : " " + effort);
+        }
+        else command = "/effort " + value;
+        _terminal.SuppressScroll(5);
+        sess.Write(command + "\r");
     }
 
     private void NewTabBtn_Click(object sender, RoutedEventArgs e)

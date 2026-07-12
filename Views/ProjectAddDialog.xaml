@@ -60,7 +60,7 @@
                 Background="{DynamicResource BgBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                 ClipToBounds="True" SnapsToDevicePixels="True">
-            <Grid>
+            <Grid x:Name="ContentRoot">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>

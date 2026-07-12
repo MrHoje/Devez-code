@@ -80,7 +80,13 @@ switch -Regex ($eventKey) {
             $prompt = ($parts -join ' ')
         }
         if ($prompt) {
-            $prompt = ([string]$prompt -replace '\s+', ' ').Trim()
+            $prompt = [string]$prompt
+            # Grok 0.2.93은 일부 훅 payload의 prompt를
+            # <user_query> ... </user_query>… 로 감싼다. 헤더에는 실제 질문만 표시.
+            if ($prompt -match '(?is)^\s*<user_query>\s*(.*?)\s*</user_query>\s*(?:…|\.\.\.)?\s*$') {
+                $prompt = $Matches[1]
+            }
+            $prompt = ($prompt -replace '\s+', ' ').Trim()
             if ($prompt.Length -gt 200) { $prompt = $prompt.Substring(0, 200) }
             $mDir = Join-Path $base 'lastmsg'
             Write-State (Join-Path $mDir ($roomSafe + '.txt')) $prompt 'UTF8'

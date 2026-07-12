@@ -427,6 +427,23 @@
     const ta = el.querySelector('.xterm-helper-textarea');
     if (!ta) return;
     const isCodex = (agent === 'codex');
+    let isImeComposing = false;
+    let lastCodexCaret = null;
+
+    function rememberCodexCaret() {
+      if (!isCodex || isImeComposing) return;
+      const buf = term.buffer.active;
+      const row = buf.cursorY, col = buf.cursorX;
+      if (row < (term.rows >> 1) || row < 0 || row >= term.rows) return;
+      lastCodexCaret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
+    }
+
+    // 조합 시작 직전의 입력창 캐럿을 기억한다. codex 는 리페인트 중 논리 커서를 상단 출력영역으로
+    // 잠깐 옮기므로 compositionstart 시점의 cursorY 만 믿으면 helper-textarea 가 좌상단으로 튄다.
+    if (isCodex) {
+      rememberCodexCaret();
+      try { term.onCursorMove(rememberCodexCaret); } catch (e) {}
+    }
 
     function findBlockCursor() {
       // codex 는 응답 렌더링 중 화면 곳곳에 반전 셀(구문강조·스피너 등)을 뿌려서 반전셀 스캔이
@@ -436,12 +453,14 @@
       const buf = term.buffer.active;
       if (isCodex) {
         const row = buf.cursorY, col = buf.cursorX;
-        if (row < 0 || row >= term.rows) return null;
+        if (row < 0 || row >= term.rows) return lastCodexCaret;
         // 응답 렌더링 중 커서가 출력영역(상단)으로 잠깐 옮겨가는 순간을 배제한다. codex 입력창은
         // 항상 화면 하단 바에 있으므로, 커서가 하단 절반에 있을 때만 유효 입력 캐럿으로 인정하고
-        // 상단으로 튄 순간은 null 반환 → apply 가 직전 위치를 유지(조합뷰 blip 방지).
-        if (row < (term.rows >> 1)) return null;
-        return { row: row, col: col };
+        // 상단으로 튄 순간은 마지막 정상 위치를 반환해 조합뷰 blip 을 막는다.
+        if (row < (term.rows >> 1)) return lastCodexCaret;
+        const caret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
+        lastCodexCaret = caret;
+        return caret;
       }
       // 입력란은 화면 하단부 → 아래에서 위로 스캔 (맨 아래 1줄=상태바 제외)
       for (let row = term.rows - 2; row >= 0; row--) {
@@ -458,7 +477,11 @@
     }
 
     function apply() {
-      const caret = findBlockCursor();
+      let caret = findBlockCursor();
+      // 첫 조합 전에 정상 캐럿을 아직 관찰하지 못했어도 xterm 기본값(좌상단)으로 떨어뜨리지 않는다.
+      // codex 입력창은 하단에 있으므로 상태바 바로 위를 안전한 초기 기준점으로 사용한다.
+      if (!caret && isCodex)
+        caret = { row: Math.max(0, term.rows - 2), col: 0 };
       if (!caret) return;
       const screen = el.querySelector('.xterm-screen');
       if (!screen) return;
@@ -470,12 +493,15 @@
     }
 
     ta.addEventListener('compositionstart', function () {
+      isImeComposing = true;
       apply();
       setTimeout(apply, 60); // 직전 확정 글자가 TUI에 반영된 뒤 위치 재계산
     });
     ta.addEventListener('compositionupdate', function () { setTimeout(apply, 0); });
     ta.addEventListener('compositionend', function () {
+      isImeComposing = false;
       el.classList.remove('ime-fixed'); // 조합 종료 → xterm 기본 동작 복귀
+      rememberCodexCaret();
       // 조합 중 Ctrl+Enter 가 눌렸으면 — 확정 글자가 PTY로 전송된 뒤(setTimeout 0)
       // 줄바꿈을 보낸다. 순서를 보장해 마지막 글자가 새 줄로 내려가지 않게 한다.
       if (pendingComposeNewline) {

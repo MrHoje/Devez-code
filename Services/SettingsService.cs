@@ -38,6 +38,9 @@ public static class SettingsService
         // 방별 model/effort 선택 (claude --model / --effort 런치 플래그). 빈 값/미존재 = 미적용(claude 기본). 로컬 전용.
         public Dictionary<string, string> ClaudeCodeRoomModel { get; set; } = new();
         public Dictionary<string, string> ClaudeCodeRoomEffort { get; set; } = new();
+        // 비-Claude 방별 model/effort. 키는 "roomId|agentId"라 에이전트를 바꿔도 이전 선택이 섞이지 않는다.
+        public Dictionary<string, string> AgentRoomModel { get; set; } = new();
+        public Dictionary<string, string> AgentRoomEffort { get; set; } = new();
         // 방별 터미널 폰트 크기(pt) — 지정 없으면 전역 TerminalFontSizePt 사용. 에이전트 종류 무관.
         public Dictionary<string, string> TerminalRoomFontSizePt { get; set; } = new();
         // 범용 — "roomId|agentId" 키로 첫 실행 여부 추적. 비-Claude 에이전트도 같은 메커니즘으로
@@ -350,6 +353,8 @@ public static class SettingsService
         changed |= Current.RoomAgents.Remove(roomId);
         changed |= Current.ClaudeCodeRoomModel.Remove(roomId);
         changed |= Current.ClaudeCodeRoomEffort.Remove(roomId);
+        changed |= RemoveWhere(Current.AgentRoomModel, k => k.StartsWith(roomId + "|", StringComparison.Ordinal));
+        changed |= RemoveWhere(Current.AgentRoomEffort, k => k.StartsWith(roomId + "|", StringComparison.Ordinal));
         changed |= Current.TerminalRoomFontSizePt.Remove(roomId);
         changed |= Current.CodexRoomSessions.Remove(roomId);
         changed |= Current.OpenCodeRoomSessions.Remove(roomId);
@@ -529,6 +534,34 @@ public static class SettingsService
     public static void SaveClaudeCodeRoomEffort(string roomId, string? value)
     { SetOrRemove(Current.ClaudeCodeRoomEffort, roomId, value); Save(); }
 
+    public static string? LoadAgentRoomModel(string roomId, string agentId)
+    {
+        lock (_lock)
+        {
+            var key = roomId + "|" + agentId;
+            return Current.AgentRoomModel.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v) ? v : null;
+        }
+    }
+
+    public static void SaveAgentRoomModel(string roomId, string agentId, string? value)
+    {
+        lock (_lock) { SetOrRemove(Current.AgentRoomModel, roomId + "|" + agentId, value); Save(); }
+    }
+
+    public static string? LoadAgentRoomEffort(string roomId, string agentId)
+    {
+        lock (_lock)
+        {
+            var key = roomId + "|" + agentId;
+            return Current.AgentRoomEffort.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v) ? v : null;
+        }
+    }
+
+    public static void SaveAgentRoomEffort(string roomId, string agentId, string? value)
+    {
+        lock (_lock) { SetOrRemove(Current.AgentRoomEffort, roomId + "|" + agentId, value); Save(); }
+    }
+
     public static int? LoadTerminalRoomFontSizePt(string roomId)
         => Current.TerminalRoomFontSizePt.TryGetValue(roomId, out var v) && int.TryParse(v, out var pt) ? pt : null;
     public static void SaveTerminalRoomFontSizePt(string roomId, int? pt)
@@ -539,6 +572,13 @@ public static class SettingsService
     {
         if (string.IsNullOrEmpty(value)) map.Remove(key);
         else map[key] = value;
+    }
+
+    private static bool RemoveWhere(Dictionary<string, string> map, Func<string, bool> predicate)
+    {
+        var keys = map.Keys.Where(predicate).ToArray();
+        foreach (var key in keys) map.Remove(key);
+        return keys.Length > 0;
     }
 
     // ── 마지막 활성 프로젝트/세션 (정상 종료 시에만 복원) ────────

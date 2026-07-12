@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace DevezCode.Services;
@@ -86,7 +87,18 @@ public sealed class GrokHookService : IDisposable
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
         var msg = TryRead(path);
-        if (msg != null) MessageChanged?.Invoke(room, msg);
+        if (msg != null) MessageChanged?.Invoke(room, NormalizeLastMessage(msg));
+    }
+
+    /// <summary>Grok 훅 payload가 추가하는 user_query 래퍼를 제거.
+    /// 기존 lastmsg 파일과 구버전 훅 출력도 헤더에 노출되지 않게 앱에서 한 번 더 방어한다.</summary>
+    internal static string NormalizeLastMessage(string message)
+    {
+        var match = Regex.Match(message,
+            @"^\s*<user_query>\s*(.*?)\s*</user_query>\s*(?:…|\.\.\.)?\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (match.Success) message = match.Groups[1].Value;
+        return Regex.Replace(message, @"\s+", " ").Trim();
     }
 
     private void EmitBusy(string path)

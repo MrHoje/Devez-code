@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace DevezCode.Views;
 
@@ -17,6 +18,8 @@ public partial class ProjectAddDialog : Window
     private ProjectAddDialog()
     {
         InitializeComponent();
+        ContentRoot.SizeChanged += (_, _) => ApplyRoundedClip();
+        Loaded += (_, _) => ApplyRoundedClip();
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;
@@ -24,6 +27,13 @@ public partial class ProjectAddDialog : Window
             DialogResult = false;
             e.Handled = true;
         };
+    }
+
+    private void ApplyRoundedClip()
+    {
+        double w = ContentRoot.ActualWidth, h = ContentRoot.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        ContentRoot.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 13, 13);
     }
 
     public static ProjectAddKind? Pick(Window owner)

@@ -10,6 +10,10 @@ public sealed class TerminalSessionManager
 {
     public static TerminalSessionManager Instance { get; } = new();
 
+    /// <summary>신규/재개 세션을 실제 생성하기 직전 발생. UI가 에이전트 로컬 설정/모델 캐시를
+    /// 다시 읽어 프로젝트 정보 패널의 model/effort 콤보를 갱신한다.</summary>
+    public event Action<string>? AgentModelCatalogRefreshRequested;
+
     private readonly Dictionary<string, TerminalSession> _sessions = new();
     private readonly Dictionary<string, string> _opencodeRoomDirs = new();
     private readonly object _lock = new();
@@ -126,6 +130,8 @@ public sealed class TerminalSessionManager
             // 방별 에이전트 조회. Claude 만 풀 통합(훅/resume/세션ID 추적), 그 외는 단순 cmd /k <command> 실행.
             var agentId = SettingsService.LoadAgentForRoom(roomId);
             var agent = AgentRegistry.Find(agentId) ?? AgentRegistry.GetDefault();
+            if (agent.Id is "claude" or "codex" or "grok")
+                AgentModelCatalogRefreshRequested?.Invoke(agent.Id);
 
             if (ccDir != null && agent.Id == "codex")
             {
@@ -304,6 +310,8 @@ public sealed class TerminalSessionManager
         if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
         SettingsService.MarkAgentRoomLaunched(roomId, "codex"); // 추적용
 
+        string options = "--no-alt-screen";
+
         // 배치 본문. 저장된 session_id(훅이 기록) 가 있으면 무조건 resume(실패 시 fresh 폴백).
         // launched 플래그에 의존하지 않는다 — 작업 중 강제 종료로 플래그가 유실돼도 session_id 가
         // 살아있으면 이어가야 하기 때문. codex 가 정상 시작하면 뒤 폴백 줄은 실행되지 않음.
@@ -318,9 +326,9 @@ public sealed class TerminalSessionManager
         // alternate-screen 으로 재개되어, rollout 문맥에는 남은 마지막 응답이 일반 스크롤백 화면에는
         // 재생되지 않는 경우가 있다. 신규/재개 모두 명시해 대화 표시와 실제 복원 문맥을 일치시킨다.
         if (string.IsNullOrEmpty(sessionId))
-            body = "codex --no-alt-screen\r\nexit";                       // session_id 없음 — codex 가 새 세션 생성(훅이 저장)
+            body = $"codex {options}\r\nexit";                           // session_id 없음 — codex 가 새 세션 생성(훅이 저장)
         else
-            body = $"codex resume --no-alt-screen {sessionId}\r\nexit";   // 저장된 session_id 로 resume
+            body = $"codex resume {options} {sessionId}\r\nexit";         // 저장된 session_id 로 resume
 
         try
         {
@@ -499,6 +507,18 @@ public sealed class TerminalSessionManager
         if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
         SettingsService.MarkAgentRoomLaunched(roomId, "grok");
 
+        var selectedModel = SettingsService.LoadAgentRoomModel(roomId, "grok");
+        var selectedEffort = SettingsService.LoadAgentRoomEffort(roomId, "grok");
+        if (!IsCachedGrokSelection(selectedModel, selectedEffort))
+        {
+            SettingsService.SaveAgentRoomModel(roomId, "grok", null);
+            SettingsService.SaveAgentRoomEffort(roomId, "grok", null);
+            selectedModel = selectedEffort = null;
+        }
+        string options = "";
+        if (IsSafeFlagValue(selectedModel)) options += $" --model {selectedModel}";
+        if (IsSafeFlagValue(selectedEffort)) options += $" --reasoning-effort {selectedEffort}";
+
         // 포크: 첫 실행에 원본 resume + --fork-session. 추적 ID 가 원본과 달라지면 마커 소비.
         var forkSrc = SettingsService.LoadRoomForkSource(roomId);
         string body;
@@ -509,23 +529,23 @@ public sealed class TerminalSessionManager
             if (diverged)
             {
                 SettingsService.RemoveRoomForkSource(roomId);
-                body = $"{grokCommand} -r {sessionId}\r\nexit";
+                body = $"{grokCommand}{options} -r {sessionId}\r\nexit";
             }
             else if (System.Text.RegularExpressions.Regex.IsMatch(forkSrc, @"^[A-Za-z0-9_\-]+$"))
             {
-                body = $"{grokCommand} -r {forkSrc} --fork-session\r\nexit";
+                body = $"{grokCommand}{options} -r {forkSrc} --fork-session\r\nexit";
             }
             else
             {
                 body = string.IsNullOrEmpty(sessionId)
-                    ? $"{grokCommand}\r\nexit"
-                    : $"{grokCommand} -r {sessionId}\r\nexit";
+                    ? $"{grokCommand}{options}\r\nexit"
+                    : $"{grokCommand}{options} -r {sessionId}\r\nexit";
             }
         }
         else if (string.IsNullOrEmpty(sessionId))
-            body = $"{grokCommand}\r\nexit";
+            body = $"{grokCommand}{options}\r\nexit";
         else
-            body = $"{grokCommand} -r {sessionId}\r\nexit";
+            body = $"{grokCommand}{options} -r {sessionId}\r\nexit";
 
         try
         {
@@ -1102,9 +1122,33 @@ public sealed class TerminalSessionManager
     private static string LaunchDir => Path.Combine(ClaudeTrackDir, "launch");
     private static string LaunchBatchPath(string roomId) => Path.Combine(LaunchDir, SafeRoomFileName(roomId) + ".cmd");
 
-    /// <summary>런치 플래그 값 안전성 — 영숫자/하이픈만(공백·따옴표·세미콜론 등 주입 차단). 빈 값은 false.</summary>
+    /// <summary>런치 플래그 값 안전성 — 모델 ID에 쓰이는 영숫자/점/밑줄/하이픈만 허용
+    /// (공백·따옴표·세미콜론 등 명령 주입 문자는 차단). 빈 값은 false.</summary>
     private static bool IsSafeFlagValue(string? v)
-        => !string.IsNullOrEmpty(v) && System.Text.RegularExpressions.Regex.IsMatch(v, @"^[A-Za-z0-9\-]+$");
+        => !string.IsNullOrEmpty(v) && System.Text.RegularExpressions.Regex.IsMatch(v, @"^[A-Za-z0-9._\-]+$");
+
+    /// <summary>Grok 캐시가 있으면 저장된 모델/effort가 현재도 지원되는지 확인한다.
+    /// 캐시가 없거나 업데이트 도중 읽기 실패면 UI의 폴백 목록을 허용하고, 명백히 제거된 값만 차단한다.</summary>
+    private static bool IsCachedGrokSelection(string? model, string? effort)
+    {
+        if (model == null) return effort == null; // 기본 모델에서는 모델별 지원 effort를 확정할 수 없다.
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "models_cache.json");
+            if (!File.Exists(path)) return true;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            if (!doc.RootElement.TryGetProperty("models", out var grokModels)
+                || !grokModels.TryGetProperty(model, out var grokModel)
+                || !grokModel.TryGetProperty("info", out var info)) return false;
+            if (info.TryGetProperty("hidden", out var hidden) && hidden.ValueKind == System.Text.Json.JsonValueKind.True)
+                return false;
+            if (effort == null) return true;
+            if (!info.TryGetProperty("reasoning_efforts", out var grokLevels)) return false;
+            return grokLevels.EnumerateArray().Any(level =>
+                level.TryGetProperty("value", out var value) && value.GetString() == effort);
+        }
+        catch { return true; }
+    }
 
     /// <summary>roomId를 파일명으로 안전하게 (훅 ps1의 -replace 와 동일 규칙).</summary>
     private static string SafeRoomFileName(string roomId)
