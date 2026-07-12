@@ -282,13 +282,9 @@
                                           Stroke="{DynamicResource TextMutedBrush}"/>
                                     <StackPanel Grid.Column="1">
                                         <TextBlock x:Name="TrustMessage"
-                                                   Text="DevezCode 설치 경로의 신뢰 설정이 필요합니다."
+                                                   Text="프로젝트 경로의 신뢰 설정을 자동으로 확인하고 있습니다."
                                                    TextWrapping="Wrap" FontSize="{DynamicResource Fs12}"
                                                    Foreground="{DynamicResource TextBrush}"/>
-                                        <Button Content="신뢰 설정 세션 열기" Click="OpenTrustSession_Click"
-                                                Margin="0,10,0,0" Height="34" Padding="12,0"
-                                                HorizontalAlignment="Left" Style="{StaticResource SecondaryButton}"
-                                                FontSize="{DynamicResource Fs12}"/>
                                     </StackPanel>
                                 </Grid>
                             </Border>

@@ -4368,48 +4368,68 @@ public partial class MainWindow : Window
 
     private void WakeControlBtn_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new WakeSchedulerWindow(this);
+        var dlg = new WakeSchedulerWindow(this, EnsureWakeTrustAsync);
         dlg.ShowDialog();
         if (dlg.Saved) _wakeScheduler.NotifySchedulesChanged();
     }
 
-    public void OpenWakeTrustSession(string agentId)
+    public async Task<bool> EnsureWakeTrustAsync(string agentId)
     {
         var agent = AgentRegistry.Find(agentId);
         if (agent == null || !AgentRegistry.IsInstalled(agent) ||
             (agent.Id != "claude" && agent.Id != "codex"))
-        {
-            ConfirmDialog.Alert("신뢰 설정", "사용 가능한 Claude 또는 Codex를 찾을 수 없습니다.");
-            return;
-        }
+            return false;
+        if (WakeTrustService.IsTrusted(agent.Id)) return true;
 
         string directory = WakeTrustService.InstallDirectory;
-        var project = _projects.FirstOrDefault(item =>
-            string.Equals(Path.TrimEndingDirectorySeparator(item.Path), directory, StringComparison.OrdinalIgnoreCase));
-        if (project == null)
-        {
-            project = ProjectItem.FromPath(directory);
-            project.Name = "DevezCode 설치 경로";
-            _projects.Add(project);
-        }
+        if (!Directory.Exists(directory)) return false;
 
-        string sessionName = $"신뢰 설정 ({agent.DisplayName})";
-        var session = project.Tabs.OfType<SessionItem>().FirstOrDefault(item =>
-            string.Equals(item.AgentId, agent.Id, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(item.Name, sessionName, StringComparison.Ordinal));
-        if (session == null)
-        {
-            session = new SessionItem { Name = sessionName, AgentId = agent.Id };
-            project.Tabs.Add(session);
-        }
+        var pathBytes = System.Text.Encoding.UTF8.GetBytes(directory.ToUpperInvariant());
+        var pathKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pathBytes))[..12];
+        string roomId = $"devezcode-wake-trust-{agent.Id}-{pathKey.ToLowerInvariant()}";
+        _wakeRoomIds.Add(roomId);
 
-        project.IsExpanded = true;
-        SettingsService.SaveClaudeCodeRoomDir(session.Id, directory);
-        SettingsService.SaveAgentForRoom(session.Id, agent.Id);
-        WorkspaceStore.Save(_projects, _archivedProjects);
-        RefreshCardGroups();
-        OpenSession(session);
-        Activate();
+        // 이전 자동 확인이 신뢰 화면에서 멈췄다면 준비 상태까지 함께 버리고 새로 시작한다.
+        WakeTerminal.CloseTerminal(roomId);
+        TerminalSessionManager.Instance.DisposeRoom(roomId, purgeTracking: false);
+        TerminalSessionManager.Instance.ClearDisposedRoom(roomId);
+        SettingsService.RemoveClaudeCodeRoomDir(roomId);
+        SettingsService.SaveClaudeCodeRoomDir(roomId, directory);
+        SettingsService.SaveAgentForRoom(roomId, agent.Id);
+
+        bool approvalSent = false;
+        Action<string> trustPrompt = id =>
+        {
+            if (!string.Equals(id, roomId, StringComparison.Ordinal)) return;
+            var session = TerminalSessionManager.Instance.Get(roomId);
+            if (session is { IsAlive: true } && session.TryWrite("\r")) approvalSent = true;
+        };
+        WakeTerminal.TrustPromptDetected += trustPrompt;
+        try
+        {
+            WakeTerminal.PreloadTerminal(roomId);
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(25);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (WakeTrustService.IsTrusted(agent.Id)) return true;
+                await Task.Delay(200);
+            }
+            DiagLog.Write($"Wake trust timeout agent={agent.Id} approvalSent={approvalSent}");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"Wake trust failed agent={agent.Id}: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            WakeTerminal.TrustPromptDetected -= trustPrompt;
+            WakeTerminal.CloseTerminal(roomId);
+            TerminalSessionManager.Instance.DisposeRoom(roomId, purgeTracking: false);
+            TerminalSessionManager.Instance.ClearDisposedRoom(roomId);
+            SettingsService.RemoveClaudeCodeRoomDir(roomId);
+        }
     }
 
     private async Task<WakeDispatchResult> DispatchWakeAsync(WakeScheduleEntry schedule, CancellationToken cancellationToken)

@@ -10,18 +10,21 @@ namespace DevezCode.Views;
 public partial class WakeSchedulerWindow : Window
 {
     private static readonly DayOfWeek[] EveryDay = Enum.GetValues<DayOfWeek>();
+    private readonly Func<string, Task<bool>> _ensureTrust;
     private readonly IReadOnlyList<AgentDef> _agents;
     private readonly List<WakeScheduleEntry> _entries;
     private readonly List<WakeScheduleEntry> _hiddenEntries;
     private WakeScheduleEntry? _selectedSchedule;
     private AgentDef? _untrustedAgent;
+    private bool _trustCheckInProgress;
     private bool _timeFormatting;
     public bool Saved { get; private set; }
 
-    public WakeSchedulerWindow(Window owner)
+    public WakeSchedulerWindow(Window owner, Func<string, Task<bool>> ensureTrust)
     {
         InitializeComponent();
         Owner = owner;
+        _ensureTrust = ensureTrust;
 
         _agents = AgentRegistry.GetEnabledAndInstalled()
             .Where(a => string.Equals(a.Id, "claude", StringComparison.OrdinalIgnoreCase)
@@ -46,11 +49,12 @@ public partial class WakeSchedulerWindow : Window
         if (_agents.Count > 0) AgentList.SelectedIndex = 0;
 
         RootContent.SizeChanged += (_, _) => ApplyRoundedClip();
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
             WindowCenter.CenterOverOwner(this);
             ApplyRoundedClip();
             RefreshTrustState();
+            await EnsureRequiredTrustAsync();
         };
     }
 
@@ -83,6 +87,7 @@ public partial class WakeSchedulerWindow : Window
         EnabledToggle.IsChecked = _selectedSchedule.Enabled;
         LastStatus.Text = _selectedSchedule.StatusDisplay;
         RefreshTrustState();
+        if (IsLoaded) _ = EnsureRequiredTrustAsync();
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
@@ -122,7 +127,7 @@ public partial class WakeSchedulerWindow : Window
         TrustPanel.Visibility = trusted ? Visibility.Collapsed : Visibility.Visible;
         if (_untrustedAgent != null)
         {
-            TrustMessage.Text = $"{_untrustedAgent.DisplayName}: 프로젝트 경로의 신뢰 설정이 필요합니다.\n" +
+            TrustMessage.Text = $"{_untrustedAgent.DisplayName}: 프로젝트 경로의 신뢰 설정을 자동으로 확인하고 있습니다.\n" +
                                 WakeTrustService.InstallDirectory;
         }
     }
@@ -131,16 +136,36 @@ public partial class WakeSchedulerWindow : Window
     {
         ApplyEditorToSelectedSchedule();
         RefreshTrustState();
+        _ = EnsureRequiredTrustAsync();
     }
 
-    private void OpenTrustSession_Click(object sender, RoutedEventArgs e)
+    private async Task EnsureRequiredTrustAsync()
     {
-        RefreshTrustState();
-        if (_untrustedAgent == null || Owner is not MainWindow mainWindow) return;
+        if (_trustCheckInProgress) return;
+        _trustCheckInProgress = true;
+        try
+        {
+            while (IsVisible)
+            {
+                ApplyEditorToSelectedSchedule();
+                RefreshTrustState();
+                var agent = _untrustedAgent;
+                if (agent == null) return;
 
-        string agentId = _untrustedAgent.Id;
-        mainWindow.Dispatcher.BeginInvoke(() => mainWindow.OpenWakeTrustSession(agentId));
-        DialogResult = false;
+                TrustMessage.Text = $"{agent.DisplayName}: 프로젝트 경로의 신뢰 설정을 자동으로 처리하고 있습니다.\n" +
+                                    WakeTrustService.InstallDirectory;
+                if (!await _ensureTrust(agent.Id))
+                {
+                    RefreshTrustState();
+                    TrustMessage.Text = $"{agent.DisplayName} 신뢰 설정을 자동으로 완료하지 못했습니다.";
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            _trustCheckInProgress = false;
+        }
     }
 
     private void ApplyEditorToSelectedSchedule()

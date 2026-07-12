@@ -22,7 +22,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>해당 방의 셸이 첫 출력을 내보내(=터미널이 그려질 준비) 발생. roomId 전달.</summary>
     public event Action<string>? TerminalReady;
-    /// <summary>자동 입력하면 안 되는 폴더 신뢰 확인 화면을 감지했을 때 발생.</summary>
+    /// <summary>폴더 신뢰 확인 화면을 감지했을 때 발생. 호출자가 경로를 검증한 뒤 승인 여부를 결정한다.</summary>
     public event Action<string>? TrustPromptDetected;
     /// <summary>방의 ConPTY 세션이 생성/배선되어 살아있음. roomId 전달.</summary>
     public event Action<string>? SessionStarted;
@@ -233,10 +233,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 문자열이 없다(실측). 그래서 escape 를 정규화(커서전진→공백, 나머지 제거)한 뒤 매칭한다.
         // 시그니처가 보이면 즉시 준비로 간주해 오버레이를 내린다(입력 대기라 더 흐를 출력 없음. 응답 후 뜨는
         // 실제 TUI 는 이미 ready 라 재통지 없이 정상 렌더). 문구는 claude 2.1.x 실측(둘 중 하나만 걸려도 동작).
-        if (text.Contains("trust")) // 값싼 사전필터 — 콜드스타트 초기 구간에만 도달
+        if (text.Contains("trust", StringComparison.OrdinalIgnoreCase)) // 값싼 사전필터 — 콜드스타트 초기 구간에만 도달
         {
-            var norm = StripAnsi(text);
-            if (norm.Contains("trust this folder") || norm.Contains("one you trust"))
+            var norm = StripAnsi(text).ToLowerInvariant();
+            if (norm.Contains("trust this folder") || norm.Contains("one you trust") ||
+                norm.Contains("trust the contents of this directory") || norm.Contains("trust this directory"))
             {
                 _ready.Add(roomId);
                 _readyScan.Remove(roomId);
