@@ -173,8 +173,8 @@ public partial class WakeSchedulerWindow : Window
             return (new TimeSpan(time.Hours, time.Minutes, 0), true);
 
         var digits = new string(text.Where(char.IsDigit).ToArray());
-        if (digits.Length is 1 or 2 && int.TryParse(digits, out var hour) && hour < 24)
-            return (new TimeSpan(hour, 0, 0), true);
+        if (digits.Length is 1 or 2 && int.TryParse(digits, out var parsedHour) && parsedHour < 24)
+            return (new TimeSpan(parsedHour, 0, 0), true);
         if (digits.Length is 3 or 4)
         {
             var hour = int.Parse(digits[..^2]);
