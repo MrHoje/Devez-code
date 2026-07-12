@@ -1465,6 +1465,28 @@
       case 'preload':
         preload(msg.roomId, msg.agent, msg.fontSize);
         break;
+      case 'readyPaintProbe': {
+        const t = terms[msg.roomId];
+        // xterm write 뒤 두 번의 rAF 를 건너 실제 브라우저 페인트 시점에서 화면 내용을 확인한다.
+        // 커서만 있는 초기 Codex 프레임은 ready 로 인정하지 않는다.
+        requestAnimationFrame(function () { requestAnimationFrame(function () {
+          let chars = 0;
+          if (t) {
+            const b = t.term.buffer.active;
+            for (let row = 0; row < t.term.rows && chars < 4; row++) {
+              const line = b.getLine(b.viewportY + row);
+              if (!line) continue;
+              for (let col = 0; col < t.term.cols && chars < 4; col++) {
+                const cell = line.getCell(col);
+                const s = cell && cell.getChars();
+                if (s && s.trim()) chars += Array.from(s).length;
+              }
+            }
+          }
+          post({ type: 'readyPainted', roomId: msg.roomId, generation: msg.generation, hasContent: chars >= 4 });
+        }); });
+        break;
+      }
       case 'output': {
         const t = terms[msg.roomId];
         if (t) {

@@ -125,6 +125,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private readonly object _outLock = new();
     private readonly Dictionary<string, List<byte[]>> _outPending = new();
     private readonly HashSet<string> _outScheduled = new();
+    /// <summary>Codex 렌더 확인 요청 이후 새 출력 도착 여부를 판별하는 방별 세대.</summary>
+    private readonly Dictionary<string, long> _outputGenerations = new();
 
     /// <summary>claude 등 풀스크린 TUI가 떠서(alt-screen 진입) 준비된 방. UI 스레드에서만 접근.</summary>
     private readonly HashSet<string> _ready = new();
@@ -250,11 +252,17 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 인라인 렌더 에이전트(gjc 등)는 alt-screen 시퀀스가 없다. 단 첫 출력을 준비로 보면
         // cmd/ConPTY 초기화 노이즈(\e[?9001h\e[?1004h 등)가 gjc 본체보다 먼저 나와, 스피너가 빈 화면에서
         // 꺼진 뒤 gjc 가 수백ms~수초 후 실제 페인트하는 갭이 보인다. gjc 가 입력/첫 프레임을 그릴 때 내는
-        // 마커로 실제 준비를 판정한다: \e[?2004h(bracketed paste=입력 준비) / \e[?2026h(synchronized update=프레임).
+        // 마커로 실제 준비를 판정한다: 일반 인라인 TUI 는 \e[?2004h(입력 준비)/\e[?2026h(프레임 시작),
+        // Codex 는 복원 본문보다 먼저 입력 준비·프레임 시작을 내므로 \e[?2026l(프레임 종료)을 사용한다.
         // (cmd 초기화는 ?9001/?1004 만 써서 안 걸린다.)
         if (DevezCode.Services.AgentRegistry.Find(AgentFor(roomId))?.InlineTui == true)
         {
-            bool marker = text.Contains("[?2004h") || text.Contains("[?2026h");
+            var agentId = AgentFor(roomId);
+            // Codex 의 ?2004h 는 입력 가능, ?2026h 는 프레임 '시작'일 뿐이라 이때 ready 로 잡으면
+            // 커버가 먼저 걷히고 빈 화면의 커서만 노출된다. 동기화 프레임 종료(?2026l)까지 확인한다.
+            bool marker = agentId == "codex"
+                ? text.Contains("[?2026l")
+                : text.Contains("[?2004h") || text.Contains("[?2026h");
             // 폴백: 마커가 안 오는 변종/환경에서도 첫 출력 후 일정 시간 지나면 준비로(무한 스피너 방지).
             if (!_inlineFirstOutTick.TryGetValue(roomId, out var first))
                 _inlineFirstOutTick[roomId] = first = Environment.TickCount;
@@ -382,7 +390,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             {
                 t.Stop();
                 _settleTimers.Remove(roomId);
-                NotifyReady(roomId);
+                if (AgentFor(roomId) == "codex") RequestReadyPaint(roomId);
+                else NotifyReady(roomId);
             };
             _settleTimers[roomId] = t;
         }
@@ -500,6 +509,19 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "loadingShown":
                     LoadingShown?.Invoke();
                     break;
+                case "readyPainted":
+                {
+                    var roomId = root.GetProperty("roomId").GetString()!;
+                    var generation = root.GetProperty("generation").GetInt64();
+                    bool hasContent = root.GetProperty("hasContent").GetBoolean();
+                    if (_ready.Contains(roomId) && !_readyNotified.Contains(roomId) &&
+                        _outputGenerations.TryGetValue(roomId, out var current) && current == generation)
+                    {
+                        if (hasContent) NotifyReady(roomId);
+                        else BumpSettle(roomId); // 커서뿐이면 다음 페인트/출력을 기다린다.
+                    }
+                    break;
+                }
                 case "pageReady":
                     OnPageReady();
                     break;
@@ -641,14 +663,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         });
         var pending = _pendingShowRoomId ?? _activeRoomId;
         _pendingShowRoomId = null;
-        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomFontSizeOverridePx(pending) }); PinBottomIfInline(pending); }
 
-        // 콜드스타트 동안 보류된 로딩 스피너 적용(기대 크기 포함 — px 앵커로 위치 튐 방지)
+        // 콜드스타트 동안 보류된 로딩 커버를 show 보다 먼저 적용한다. 반대 순서면 빠른 codex 가
+        // 포커스되며 커서가 한 프레임 노출된 뒤에야 커버가 켜진다.
         if (_pendingLoading is { } pl)
         {
             _pendingLoading = null;
             PostJson(new { type = "loading", on = true, expectW = pl.w, expectH = pl.h, label = pl.label });
         }
+        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomFontSizeOverridePx(pending) }); PinBottomIfInline(pending); }
 
         // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
         foreach (var r in _pendingPreload)
@@ -805,6 +828,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 foreach (var b in list) { Buffer.BlockCopy(b, 0, merged, off, b.Length); off += b.Length; }
             }
         }
+        _outputGenerations[roomId] = _outputGenerations.TryGetValue(roomId, out var generation)
+            ? generation + 1
+            : 1;
         ScanForReady(roomId, merged); // claude 화면이 뜨면 로딩 스피너 종료(누적 버퍼라 합쳐도 동일 판정)
         // soft 테마에서 claude 가 클래스명/식별자 등에 쓰는 색 — 실측 결과 테마 override 토큰도,
         // ANSI 팔레트(Blue)도 아닌 claude 내부 고정 truecolor 상수(RGB 87,105,247)였다
@@ -1327,6 +1353,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         }
     }
 
+    /// <summary>Codex 출력 정지 후 xterm 쓰기와 브라우저 페인트가 끝났는지 확인한다.</summary>
+    private void RequestReadyPaint(string roomId)
+    {
+        if (!_outputGenerations.TryGetValue(roomId, out var generation)) return;
+        PostJson(new { type = "readyPaintProbe", roomId, generation });
+    }
+
     /// <summary>인라인 TUI(gjc) 방이면 show 직후 짧은 창 동안 스크롤을 맨 아래로 고정(open 시 최신 표시).
     /// 이후엔 일반 동작 — gjc 는 멀티플렉서 모드(STY)로 스크롤백을 보존하므로 휠로 과거 대화를 스크롤할 수 있다.</summary>
     private void PinBottomIfInline(string roomId)
@@ -1438,6 +1471,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _ready.Remove(roomId);
         _readyScan.Remove(roomId);
         _readyNotified.Remove(roomId);
+        _outputGenerations.Remove(roomId);
         _altSeenTick.Remove(roomId);
         _inlineFirstOutTick.Remove(roomId);
         if (_settleTimers.Remove(roomId, out var st)) st.Stop();

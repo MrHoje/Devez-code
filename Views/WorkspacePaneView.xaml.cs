@@ -1062,13 +1062,10 @@ public partial class WorkspacePaneView : UserControl
         var sessionAgentId = string.IsNullOrEmpty(session.AgentId) ? AgentRegistry.DefaultAgentId : session.AgentId;
         if (sessionAgentId != "claude")
             AgentLastMsg?.TrackSession(parent.Path, sessionAgentId);
-        _terminal.ShowTerminal(session.Id);
-        _terminal.FocusTerminal();
         // 콜드(미준비) 세션: UpdateEmptyState 가 UnparkTerminalHost 로 webview 를 0×0→풀사이즈로 드러내는데,
-        // 그 순간~아래 ShowSessionLoading(web 단색 커버) 사이 한 프레임 동안 빈/콜드 터미널이 노출돼
-        // 프로젝트 선택 시 깜빡인다(준비된 프리로드 세션은 위 coverReflow 커튼이 가려 사각지대는 콜드뿐).
-        // unpark '전에' 웹 로딩 커버를 먼저 켜 그 프레임을 없앤다(WPF 오버레이도 함께 켜 주차 구간부터
-        // 단색 덮개가 끊기지 않게). 정확한 스피너 앵커는 UpdateEmptyState 로 최종 크기 확정 후 재전송한다.
+        // 그 전에 웹 로딩 커버부터 켜야 한다. ShowTerminal 을 먼저 보내면 빠른 codex 는 커서가 한 프레임
+        // 노출된 뒤 loading 메시지를 받아 스피너가 뒤늦게 뜬다. 정확한 스피너 앵커는 UpdateEmptyState 로
+        // 최종 크기 확정 후 재전송한다.
         bool sessionReady = _terminal.IsReady(session.Id);
         // 게이트 조건 = 콜드(미준비) 이거나, 파일에서 오는 전환(airspace 스왑 은닉). 둘 다 unpark 을 web 커버
         // ACK 까지 미루고 md 파킹도 그때 함께 한다(RevealTerminalAfterGate) → 검정 갭 제거.
@@ -1084,6 +1081,9 @@ public partial class WorkspacePaneView : UserControl
             ArmUnparkFallback(); // ACK 누락 대비 — 그때도 unpark 은 보장
         }
         else _unparkFallback?.Stop(); // 직전 게이트 취소(빠른 재전환)
+        // 콜드 세션은 loading ON 을 먼저 큐에 넣은 뒤 show 해야 커서/부팅 프레임이 커버 아래서 시작된다.
+        _terminal.ShowTerminal(session.Id);
+        _terminal.FocusTerminal();
         UpdateEmptyState();
         // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
         // 기대 크기를 캡처해야 웹 스피너 게이트(뷰포트=목표 일치 대기)의 목표가 처음부터 정확하다.
