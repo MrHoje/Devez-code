@@ -28,7 +28,7 @@ public static class WakeTrustService
 
             foreach (var project in projects.EnumerateObject())
             {
-                if (!IsSameOrAncestor(project.Name, InstallDirectory)) continue;
+                if (!MatchesInstallProject(project.Name)) continue;
                 if (project.Value.ValueKind == JsonValueKind.Object &&
                     project.Value.TryGetProperty("hasTrustDialogAccepted", out var accepted) &&
                     accepted.ValueKind == JsonValueKind.True)
@@ -62,7 +62,7 @@ public static class WakeTrustService
 
                 if (projectPath != null &&
                     Regex.IsMatch(line, """^trust_level\s*=\s*["']trusted["']\s*$""", RegexOptions.IgnoreCase) &&
-                    IsSameOrAncestor(projectPath, InstallDirectory))
+                    MatchesInstallProject(projectPath))
                     return true;
             }
         }
@@ -82,16 +82,24 @@ public static class WakeTrustService
         return value;
     }
 
-    private static bool IsSameOrAncestor(string candidate, string directory)
+    private static bool MatchesInstallProject(string candidate)
     {
         try
         {
-            var parent = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate.Replace('/', Path.DirectorySeparatorChar)));
-            var child = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
-            var relative = Path.GetRelativePath(parent, child);
-            return relative == "." ||
-                   (!Path.IsPathRooted(relative) && relative != ".." &&
-                    !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal));
+            var trustedPath = Path.TrimEndingDirectorySeparator(
+                Path.GetFullPath(candidate.Replace('/', Path.DirectorySeparatorChar)));
+            if (trustedPath.Equals(InstallDirectory, StringComparison.OrdinalIgnoreCase)) return true;
+
+            for (var directory = new DirectoryInfo(InstallDirectory); directory != null; directory = directory.Parent)
+            {
+                string gitMarker = Path.Combine(directory.FullName, ".git");
+                if (!Directory.Exists(gitMarker) && !File.Exists(gitMarker)) continue;
+                return trustedPath.Equals(
+                    Path.TrimEndingDirectorySeparator(directory.FullName),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
         }
         catch { return false; }
     }
