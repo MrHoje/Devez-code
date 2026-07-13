@@ -1030,11 +1030,19 @@ public sealed class ProjectItem : NotifyBase
         return true;
     }
 
-    /// <summary>클릭한 세션만 숨김 해제한다. 부모/자식 숨김 상태는 유지한다.</summary>
+    /// <summary>클릭한 세션만 숨김 해제하고, 부모/자식 트리 블록을 현재 탭 목록 끝으로 옮긴다.
+    /// 부모/자식 숨김 상태와 관계는 유지한다.</summary>
     public IReadOnlyList<SessionItem> UnhideSessionPath(SessionItem session)
     {
         if (!Sessions.Contains(session) || !session.Hidden) return Array.Empty<SessionItem>();
         session.Hidden = false;
+
+        var blocks = BuildTopLevelTabBlocks();
+        var sourceBlock = blocks.FirstOrDefault(block => block.Contains(session));
+        var lastOtherBlock = blocks.LastOrDefault(block => !ReferenceEquals(block, sourceBlock));
+        if (lastOtherBlock != null)
+            MoveTopLevelTabBlock(session, lastOtherBlock[0], after: true, treeChanged: false);
+
         return new[] { session };
     }
 
