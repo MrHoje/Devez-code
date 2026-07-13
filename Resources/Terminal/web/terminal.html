@@ -466,11 +466,8 @@
   function setupImeCaretFix(term, el, agent, roomId) {
     const ta = el.querySelector('.xterm-helper-textarea');
     if (!ta) return;
-    const isCodex = (agent === 'codex');
     const isClaude = (agent === 'claude');
-    const needsCaretFix = isCodex || isClaude;
     let isImeComposing = false;
-    let lastCodexCaret = null;
     let lastClaudeCaret = null;
     let lastClaudeCaretAt = 0;
     let lastClaudeScanAt = 0;
@@ -545,19 +542,6 @@
       requestAnimationFrame(tryReset);
     };
 
-    function rememberCodexCaret() {
-      if (!isCodex || isImeComposing) return false;
-      const buf = term.buffer.active;
-      const row = buf.cursorY, col = buf.cursorX;
-      // codex --no-alt-screen 은 새 세션/짧은 대화에서 입력란이 화면 상단에도 온다.
-      // 하단 절반만 허용하면 정상 좌표를 버리고 조합 글자가 별도 폴백 위치에 나타난다.
-      if (row < 0 || row >= term.rows) return false;
-      const next = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
-      if (lastCodexCaret && lastCodexCaret.row === next.row && lastCodexCaret.col === next.col) return false;
-      lastCodexCaret = next;
-      return true;
-    }
-
     function scanClaudeBlockCursor() {
       const buf = term.buffer.active;
       // Claude 의 자체 입력 커서 = 반전된 빈 셀. 현재 보이는 viewport 만 아래→위로 훑는다.
@@ -586,15 +570,9 @@
       lastClaudeCaretAt = now;
     }
 
-    // 조합 전에는 xterm 이 helper-textarea 를 논리 커서와 동기화하도록 둔다.
-    // Codex 는 논리 커서를, Claude 는 자체 블록 커서를 기억하고 조합 중에만 그 위치를 고정한다.
-    if (isCodex) {
-      rememberCodexCaret();
-      try {
-        term.onCursorMove(rememberCodexCaret);
-        term.onResize(function () { if (isImeComposing) apply(); });
-      } catch (e) {}
-    } else if (isClaude) {
+    // Claude 만 자체 블록 커서를 기억해 조합 중 위치를 고정한다. Codex/GJC/기타는 xterm 이
+    // 논리 커서 이동을 따라 composition-view 를 갱신하므로 기본 동기화를 그대로 사용한다.
+    if (isClaude) {
       rememberClaudeCaret();
       try {
         term.onRender(rememberClaudeCaret);
@@ -603,18 +581,6 @@
     }
 
     function findBlockCursor() {
-      // Codex 는 논리 커서, Claude 는 자체 블록 커서를 쓴다. GJC 는 자체 CURSOR_MARKER로 하드웨어
-      // 커서를 IME 위치에 두므로 xterm 기본 동기화를 그대로 사용한다. 다른 에이전트도 임의 추정하지 않는다.
-      const buf = term.buffer.active;
-      if (isCodex) {
-        const row = buf.cursorY, col = buf.cursorX;
-        if (row < 0 || row >= term.rows) return lastCodexCaret;
-        // 조합 시작 시점의 논리 커서가 실제 입력 위치다. 조합 중에는 CSS 고정으로 이후 리페인트가
-        // 이 좌표를 움직이지 못하게 하므로 화면 상/하단 어느 위치든 그대로 인정한다.
-        const caret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
-        lastCodexCaret = caret;
-        return caret;
-      }
       if (isClaude) {
         const caret = scanClaudeBlockCursor();
         if (caret) {
@@ -629,7 +595,7 @@
     }
 
     function apply() {
-      if (!needsCaretFix) return; // GJC/기타 에이전트는 xterm·TUI가 제공한 하드웨어 커서 좌표 사용
+      if (!isClaude) return; // Codex/GJC/기타는 xterm·TUI가 제공한 논리 커서 좌표 사용
       const caret = frozenImeCaret || findBlockCursor();
       if (!caret) return;
       frozenImeCaret = caret; // 한 조합 동안에는 리페인트가 와도 최초 입력 위치 유지
@@ -657,7 +623,6 @@
       isImeComposing = false;
       frozenImeCaret = null;
       el.classList.remove('ime-fixed'); // 다음 조합 전에는 xterm 이 textarea 를 현재 논리 커서와 동기화
-      rememberCodexCaret();
       // 조합 중 Ctrl+Enter 가 눌렸으면 — 확정 글자가 PTY로 전송된 뒤(setTimeout 0)
       // 줄바꿈을 보낸다. 순서를 보장해 마지막 글자가 새 줄로 내려가지 않게 한다.
       if (pendingComposeNewline) {
