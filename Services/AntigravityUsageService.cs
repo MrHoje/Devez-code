@@ -38,30 +38,30 @@ public sealed class AntigravityUsageService : IDisposable
     {
         try
         {
-            var cred = AntigravityCredentialStore.Read();
+            var cred = AntigravityCredentialStore.Resolve();
             if (cred == null)
             {
                 Updated?.Invoke(new ProviderUsage
                 {
                     Provider = "antigravity",
-                    Error = "로그인 필요 — agy 에서 Google 로그인",
+                    Error = "로그인 필요 — 설정에서 Antigravity 로그인",
                 });
                 return;
             }
 
-            // 만료 토큰이면 agy 가 갱신할 때까지 안내 (읽기 전용 정책 — refresh 미수행).
-            if (cred.Value.expiresMs > 0
-                && DateTimeOffset.FromUnixTimeMilliseconds(cred.Value.expiresMs) <= DateTimeOffset.UtcNow)
+            var token = await EnsureFreshTokenAsync(cred.Value).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(token))
             {
                 Updated?.Invoke(new ProviderUsage
                 {
                     Provider = "antigravity",
-                    Error = "토큰 만료 — agy 를 한 번 실행해 갱신",
+                    // 자체 스토어는 재로그인, 키링은 agy 실행으로 갱신.
+                    Error = cred.Value.FromOwnStore
+                        ? "세션 만료 — 설정에서 Antigravity 재로그인"
+                        : "토큰 만료 — agy 를 한 번 실행해 갱신",
                 });
                 return;
             }
-
-            var token = cred.Value.access;
 
             // 매 폴링마다 loadCodeAssist 재조회 — project id 외에 플랜 티어/월간 프롬프트
             // 크레딧(유료 플랜)이 여기서만 와서, 플랜 변경·크레딧 소진이 표시에 따라온다.
@@ -71,6 +71,51 @@ public sealed class AntigravityUsageService : IDisposable
             if (usage != null) Updated?.Invoke(usage);
         }
         catch { /* 다음 폴링 */ }
+    }
+
+    /// <summary>만료(또는 5분 이내 임박) 시 refresh 로 갱신한 access token 반환. 갱신 불가면 기존 토큰,
+    /// refresh 폐기(invalid_grant)면 null. 자체 스토어 원천일 때만 새 토큰을 파일에 되쓴다.</summary>
+    private async Task<string?> EnsureFreshTokenAsync(AntigravityCredentialStore.Creds cred)
+    {
+        bool expiring = cred.ExpiresMs > 0
+            && DateTimeOffset.FromUnixTimeMilliseconds(cred.ExpiresMs) - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(5);
+        if (!expiring) return cred.AccessToken;
+
+        // 키링 원천은 agy 가 갱신 — 앱은 refresh 하지 않고, 만료면 안내로 넘긴다.
+        if (!cred.FromOwnStore || string.IsNullOrEmpty(cred.RefreshToken)) return null;
+
+        try
+        {
+            using var body = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["client_id"] = AntigravityCredentialStore.OAuthClientId,
+                ["client_secret"] = AntigravityCredentialStore.OAuthClientSecret,
+                ["refresh_token"] = cred.RefreshToken!,
+            });
+            using var res = await _http.PostAsync(AntigravityCredentialStore.OAuthTokenUrl, body).ConfigureAwait(false);
+            var text = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (!res.IsSuccessStatusCode)
+            {
+                // refresh 폐기 — 재로그인 유도.
+                if (text.Contains("invalid_grant", StringComparison.OrdinalIgnoreCase))
+                {
+                    AntigravityCredentialStore.Disconnect();
+                    return null;
+                }
+                return cred.AccessToken; // 일시 오류 — 기존 토큰으로 시도
+            }
+            using var doc = JsonDocument.Parse(text);
+            var r = doc.RootElement;
+            var access = r.TryGetProperty("access_token", out var a) ? a.GetString() : null;
+            if (string.IsNullOrEmpty(access)) return cred.AccessToken;
+            var newRefresh = r.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : cred.RefreshToken;
+            var expSec = r.TryGetProperty("expires_in", out var ei) && ei.ValueKind == JsonValueKind.Number ? ei.GetInt64() : 3600;
+            var expMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expSec * 1000;
+            AntigravityCredentialStore.SaveRefreshedIfOwn(cred, access!, newRefresh, expMs);
+            return access;
+        }
+        catch { return cred.AccessToken; }
     }
 
     private async Task LoadCodeAssistAsync(string token)

@@ -1203,6 +1203,9 @@ public partial class MainWindow : Window
             case "grok":
                 _grok.Disconnect();
                 break;
+            case "antigravity":
+                AntigravityCredentialStore.Disconnect();
+                break;
             case "deepseek":
                 DeepSeekCredentialStore.SaveApiKey(null);
                 break;

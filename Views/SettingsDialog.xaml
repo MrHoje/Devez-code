@@ -1095,7 +1095,7 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Antigravity (agy 키링 자동 인식 — 앱이 자격증명을 만들거나 지우지 않음) -->
+                                <!-- Antigravity (Google OAuth 로그인 — agy 키링 토큰도 자동 인식) -->
                                 <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -1111,10 +1111,28 @@
                                                        FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
                                         </StackPanel>
                                     </StackPanel>
-                                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                                               Text="agy 에서 Google 로그인하면 자동 연결"
-                                               ToolTip="Antigravity CLI(agy)가 저장한 Google 토큰을 자동 인식합니다. 연결이 안 보이면 터미널에서 agy 를 한 번 실행해 로그인하세요."
-                                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="AntigravityDisconnectButton" Tag="antigravity" Click="UsageDisconnect_Click"
+                                                Style="{StaticResource UsageLoginButton}" Margin="0,0,14,0"
+                                                ToolTip="Antigravity 계정 사용량 연결 끊기 (agy CLI 로그인은 유지)" Visibility="Collapsed">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconLogOut}"
+                                                      Width="13" Height="13" Stroke="{DynamicResource DangerBrush}"/>
+                                                <TextBlock Text="연결 끊기" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource DangerBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Click="AntigravityLogin_Click" Style="{StaticResource UsageLoginButton}"
+                                                ToolTip="Google 계정으로 로그인해 Antigravity 사용량 연결 (agy CLI 토큰도 자동 인식)">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image Source="pack://application:,,,/Resources/Images/ShellPresets/anti.png"
+                                                       Width="13" Height="13" VerticalAlignment="Center"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <TextBlock Text="로그인 / 재연결" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                           FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextBrush}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
 
                                 <!-- DeepSeek (API 키) -->

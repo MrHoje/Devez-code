@@ -922,6 +922,15 @@ public partial class SettingsDialog : UserControl
             (Application.Current.MainWindow as MainWindow)?.RefreshGrokUsage();
     }
 
+    private void AntigravityLogin_Click(object sender, RoutedEventArgs e)
+    {
+        var win = new AntigravityLoginWindow(Window.GetWindow(this));
+        win.ShowDialog();
+        UpdateConnectionBadges();
+        if (win.Captured)
+            (Application.Current.MainWindow as MainWindow)?.RefreshAntigravityUsage();
+    }
+
     private void UsageDisconnect_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string provider }) return;
@@ -1005,6 +1014,7 @@ public partial class SettingsDialog : UserControl
 
         ClaudeConnectedBadge.Visibility = UsageApiService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
         AntigravityConnectedBadge.Visibility = antigravityConnected ? Visibility.Visible : Visibility.Collapsed;
+        AntigravityDisconnectButton.Visibility = antigravityConnected ? Visibility.Visible : Visibility.Collapsed;
         CodexConnectedBadge.Visibility = codexConnected ? Visibility.Visible : Visibility.Collapsed;
         GoConnectedBadge.Visibility = goConnected ? Visibility.Visible : Visibility.Collapsed;
         DeepSeekConnectedBadge.Visibility = deepSeekConnected ? Visibility.Visible : Visibility.Collapsed;
