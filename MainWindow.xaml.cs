@@ -860,6 +860,7 @@ public partial class MainWindow : Window
             var showEst = SettingsService.LoadShowEstimate();
             AddRow(rows, "5시간", _lastAntigravity.Primary?.UsedPercent, _lastAntigravity.Primary?.ResetsAt, isShortWindow: true, showEstimate: showEst);
             AddRow(rows, "주간", _lastAntigravity.Weekly?.UsedPercent, _lastAntigravity.Weekly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
+            AddRow(rows, "월간 크레딧", _lastAntigravity.Monthly?.UsedPercent, _lastAntigravity.Monthly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
             cards.Add(new Models.UsageCardVM
             {
                 Name = "Antigravity",
@@ -1319,6 +1320,8 @@ public partial class MainWindow : Window
             if (u.Weekly.ResetsAt is DateTimeOffset r)
                 sb.Append($"  ·  초기화 {FormatResetDate(r)}");
         }
+        if (u.Monthly?.UsedPercent is double m)
+            sb.Append($"\n월간 크레딧 {FormatUsagePercent(m)}");
         return sb.ToString();
     }
 

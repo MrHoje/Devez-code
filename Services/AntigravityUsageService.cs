@@ -22,6 +22,9 @@ public sealed class AntigravityUsageService : IDisposable
     private System.Threading.Timer? _poll;
     private string? _projectId;
     private string? _planLabel;
+    // 유료 플랜 월간 프롬프트 크레딧 (loadCodeAssist) — 무료 티어는 null.
+    private double? _monthlyCredits;
+    private double? _availableCredits;
 
     public event Action<ProviderUsage>? Updated;
 
@@ -60,9 +63,9 @@ public sealed class AntigravityUsageService : IDisposable
 
             var token = cred.Value.access;
 
-            // project id 캐시 없으면 loadCodeAssist 로 확보(+플랜 라벨).
-            if (_projectId == null)
-                await LoadCodeAssistAsync(token).ConfigureAwait(false);
+            // 매 폴링마다 loadCodeAssist 재조회 — project id 외에 플랜 티어/월간 프롬프트
+            // 크레딧(유료 플랜)이 여기서만 와서, 플랜 변경·크레딧 소진이 표시에 따라온다.
+            await LoadCodeAssistAsync(token).ConfigureAwait(false);
 
             var usage = await FetchModelsUsageAsync(token).ConfigureAwait(false);
             if (usage != null) Updated?.Invoke(usage);
@@ -96,6 +99,17 @@ public sealed class AntigravityUsageService : IDisposable
                 && tier.TryGetProperty("name", out var name)
                 && name.ValueKind == JsonValueKind.String)
                 _planLabel = name.GetString();
+
+            // 유료 플랜 월간 프롬프트 크레딧 — planInfo.monthlyPromptCredits(총량) +
+            // availablePromptCredits(잔여). 무료 티어는 필드가 없어 null 유지.
+            double? monthly = null, available = null;
+            if (root.TryGetProperty("planInfo", out var plan) && plan.ValueKind == JsonValueKind.Object
+                && plan.TryGetProperty("monthlyPromptCredits", out var mc) && mc.ValueKind == JsonValueKind.Number)
+                monthly = mc.GetDouble();
+            if (root.TryGetProperty("availablePromptCredits", out var ac) && ac.ValueKind == JsonValueKind.Number)
+                available = ac.GetDouble();
+            _monthlyCredits = monthly;
+            _availableCredits = available;
         }
         catch { }
     }
@@ -165,11 +179,21 @@ public sealed class AntigravityUsageService : IDisposable
         // 오분류될 수 있는 절충 — 5시간 플랜은 항상 정확.
         var window = new UsageWindow { UsedPercent = bestUsed.Value, ResetsAt = bestReset };
         bool shortWindow = bestReset != null && bestReset.Value - DateTimeOffset.UtcNow <= TimeSpan.FromHours(6);
+
+        // 유료 플랜이면 월간 프롬프트 크레딧 사용률을 Monthly 로 병행 표시.
+        UsageWindow? monthlyWindow = null;
+        if (_monthlyCredits is double total and > 0 && _availableCredits is double avail)
+            monthlyWindow = new UsageWindow
+            {
+                UsedPercent = Math.Clamp((total - avail) / total * 100.0, 0, 100),
+            };
+
         return new ProviderUsage
         {
             Provider = "antigravity",
             Primary = shortWindow ? window : null,
             Weekly = shortWindow ? null : window,
+            Monthly = monthlyWindow,
             PlanLabel = _planLabel,
         };
     }
