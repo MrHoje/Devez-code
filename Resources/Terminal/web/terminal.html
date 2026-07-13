@@ -469,7 +469,6 @@
     const isClaude = (agent === 'claude');
     let isImeComposing = false;
     let lastClaudeCaret = null;
-    let lastClaudeCaretAt = 0;
     let lastClaudeScanAt = 0;
     let frozenImeCaret = null;
     let pendingResponseReset = false;
@@ -559,24 +558,36 @@
       return null;
     }
 
-    function rememberClaudeCaret() {
+    function rememberClaudeCaret(force) {
       if (!isClaude || isImeComposing) return;
       const now = Date.now();
-      if (now - lastClaudeScanAt < 80) return; // 고빈도 리페인트 중 전체 셀 스캔 제한
+      if (!force && now - lastClaudeScanAt < 80) return; // 고빈도 리페인트 중 전체 셀 스캔 제한
       lastClaudeScanAt = now;
       const caret = scanClaudeBlockCursor();
       if (!caret) return;
       lastClaudeCaret = caret;
-      lastClaudeCaretAt = now;
     }
+
+    // 숨겨졌던 Claude 탭은 onRender가 생략되거나 블록커서가 꺼진 프레임에서 다시 표시될 수 있다.
+    // show 직후 즉시 한 번, 리페인트가 안정된 뒤 한 번 더 읽어 첫 한글 입력 전에 좌표를 준비한다.
+    el._prepareImeCaret = function () {
+      if (!isClaude) return;
+      rememberClaudeCaret(true);
+      setTimeout(function () {
+        if (roomId === activeRoomId && !isImeComposing) rememberClaudeCaret(true);
+      }, 80);
+    };
 
     // Claude 만 자체 블록 커서를 기억해 조합 중 위치를 고정한다. Codex/GJC/기타는 xterm 이
     // 논리 커서 이동을 따라 composition-view 를 갱신하므로 기본 동기화를 그대로 사용한다.
     if (isClaude) {
       rememberClaudeCaret();
       try {
-        term.onRender(rememberClaudeCaret);
-        term.onResize(function () { if (isImeComposing) apply(); });
+        term.onRender(function () { rememberClaudeCaret(false); });
+        term.onResize(function () {
+          if (isImeComposing) apply();
+          else rememberClaudeCaret(true);
+        });
       } catch (e) {}
     }
 
@@ -585,11 +596,15 @@
         const caret = scanClaudeBlockCursor();
         if (caret) {
           lastClaudeCaret = caret;
-          lastClaudeCaretAt = Date.now();
           return caret;
         }
-        // 커서 blink/repaint 한 프레임에서 반전 셀이 사라졌다면 직전의 최근 좌표만 사용한다.
-        if (lastClaudeCaret && Date.now() - lastClaudeCaretAt < 1200) return lastClaudeCaret;
+        // blink/repaint 한 프레임에서 반전 셀이 사라져도 좌상단 기본값으로 떨어지지 않게 마지막 정상
+        // 좌표를 임시 사용한다. cached 표시는 후속 compositionupdate/60ms 재스캔이 교정할 수 있게 한다.
+        if (lastClaudeCaret) return {
+          row: Math.max(0, Math.min(lastClaudeCaret.row, term.rows - 1)),
+          col: Math.max(0, Math.min(lastClaudeCaret.col, term.cols - 1)),
+          cached: true
+        };
       }
       return null;
     }
@@ -598,7 +613,8 @@
       if (!isClaude) return; // Codex/GJC/기타는 xterm·TUI가 제공한 논리 커서 좌표 사용
       const caret = frozenImeCaret || findBlockCursor();
       if (!caret) return;
-      frozenImeCaret = caret; // 한 조합 동안에는 리페인트가 와도 최초 입력 위치 유지
+      // 실시간 스캔 좌표만 동결한다. 캐시 폴백은 60ms/조합 갱신 때 실제 커서가 나타나면 교정한다.
+      if (!caret.cached) frozenImeCaret = caret;
       const screen = el.querySelector('.xterm-screen');
       if (!screen) return;
       const cw = screen.clientWidth / term.cols;
@@ -1130,6 +1146,7 @@
     const preCols = entry.term.cols, preRows = entry.term.rows; // settle 바운스 판단용(이 show 에서 크기가 바뀌었나)
     const plainShow = !_fitSuppressed; // 전환(커버) 중 show 는 reveal 이 fit·재동기·커버로 처리 — 바운스 제외
     if (!_fitSuppressed) entry.fit.fit(); // 전환(커버) 중이면 중간 폭 fit 억제 → reveal 이 최종 폭에서 fit
+    if (typeof entry.el._prepareImeCaret === 'function') entry.el._prepareImeCaret();
     entry.term.focus();
     if (isNew && typeof entry.el._resetImeOnInitialFocus === 'function')
       entry.el._resetImeOnInitialFocus();
