@@ -1773,14 +1773,26 @@
         const active = document.activeElement;
         if (active && active.classList && active.classList.contains('xterm-helper-textarea'))
           active.blur();
-        requestAnimationFrame(function () {
-          if (activeRoomId !== roomId || !document.hasFocus()) return; // 빠른 재전환/외부 클릭이면 포커스 강탈 금지
+
+        // 전역 탭 단축키는 C#에서 탭을 먼저 바꾸고 그 직후 앱 창을 포그라운드로 올린다. 첫 프레임의
+        // document.hasFocus()가 false여도 요청을 버리지 말고 창 활성화가 도착할 때까지만 짧게 기다린다.
+        // 같은 방의 새 요청이나 빠른 재전환이 오면 generation/activeRoomId 가 이전 재시도를 폐기한다.
+        const focusGen = (t._focusGen || 0) + 1;
+        t._focusGen = focusGen;
+        let retries = 8;
+        const applyFocus = function () {
+          if (activeRoomId !== roomId || t._focusGen !== focusGen) return;
+          if (!document.hasFocus()) {
+            if (--retries > 0) setTimeout(applyFocus, 32);
+            return;
+          }
           t.term.focus();
           try {
             const row = t.term.buffer.active.cursorY;
             t.term.refresh(row, row); // 새 포커스 뒤 helper-textarea 좌표를 현재 커서와 즉시 동기화
           } catch (e) {}
-        });
+        };
+        requestAnimationFrame(applyFocus);
         break;
       }
       case 'paste': {
