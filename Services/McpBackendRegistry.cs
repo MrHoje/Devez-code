@@ -13,6 +13,7 @@ public static class McpBackendRegistry
         new ClaudeMcpBackend(),
         new CodexMcpBackend(),
         new GrokMcpBackend(),
+        new AntigravityMcpBackend(),
     };
 
     public static IMcpBackend? Get(string id) => All.FirstOrDefault(b =>

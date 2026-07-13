@@ -694,6 +694,14 @@
                                                 <TextBlock Text="Grok" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
+                                        <Button x:Name="AntigravityCatBtn" Tag="antigravity" Style="{StaticResource CleanerPill}" Click="CleanerAgent_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
+                                                       Source="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <TextBlock Text="Antigravity" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
 
                                     <!-- 카운트 카드 -->
@@ -1282,6 +1290,22 @@
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <CheckBox x:Name="ShowFooterGrokToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                </Grid>
+
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="Antigravity" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="Antigravity 모델 5시간 창 사용률" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowFooterAntigravityToggle" Grid.Column="1"
                                               Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                               Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
                                 </Grid>

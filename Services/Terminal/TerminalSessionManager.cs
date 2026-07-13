@@ -166,6 +166,15 @@ public sealed class TerminalSessionManager
                 var direct = TryBuildGajaeDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
             }
+            else if (ccDir != null && agent.Id == "antigravity")
+            {
+                // agy: 훅(conversation_id) + `agy --conversation <id>` 복원. 사전 발급이 없어 훅 미기록 방은
+                // agy 자체 cwd→conversation 매핑(last_conversations.json)으로 폴백 추종.
+                // 앱레벨 자동 재진입(codex/grok 패턴). SupportsHooks=true 지만 훅 스키마가 달라 별도 경로.
+                startDir = ccDir;
+                var direct = TryBuildAntigravityDirectLaunch(roomId, out inject);
+                if (direct != null) commandLine = direct;
+            }
             else if (ccDir != null && agent.SupportsHooks)
             {
                 startDir = ccDir;
@@ -566,6 +575,132 @@ public sealed class TerminalSessionManager
         }
     }
 
+    private static string AntigravityLaunchDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "antigravity", "launch");
+
+    /// <summary>agy CLI 데이터 루트. 대화는 conversations\&lt;id&gt;.db(SQLite), cwd→conversation 매핑은
+    /// cache\last_conversations.json 에 저장된다.</summary>
+    internal static string AntigravityCliDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".gemini", "antigravity-cli");
+
+    /// <summary>안티그래비티(agy) 방 직접 실행. 훅이 기록한 conversation_id 가 있으면
+    /// <c>agy --conversation &lt;id&gt;</c>, 없으면 agy 자체 cwd→conversation 매핑
+    /// (~/.gemini/antigravity-cli/cache/last_conversations.json)으로 폴백 추종.
+    /// conversation db(.db)가 실제로 있을 때만 resume — 없으면(빈/유실 ID) 폐기 후 새 대화
+    /// (claude 의 빈 세션 탈출과 동일, 잘못된 ID 고착으로 매번 빈 화면이 되는 것 방지).
+    /// resume 실패(외부 삭제 등) 시 errorlevel 폴백으로 fresh 기동.
+    /// 배치 끝 exit + cmd /c → ConPTY 종료 → IsAutoReenterRoom 앱레벨 재진입.
+    /// <para>주의: agy 자체 매핑은 작업폴더당 conversation 1개라 같은 폴더 다중 방이 섞일 수 있는데,
+    /// 훅(DEVEZCODE_ROOM_ID 기반 sessions\&lt;room&gt;.txt)이 방별로 추적을 분리해 준다.</para></summary>
+    private string? TryBuildAntigravityDirectLaunch(string roomId, out string? injectFallback)
+    {
+        injectFallback = null;
+        AntigravityHookInstaller.EnsureInstalled();
+        AntigravityCustomThemes.Apply(DevezCode.App.CurrentTheme);
+
+        var agyAgent = AgentRegistry.Find("antigravity");
+        var agyPath = agyAgent == null ? null : AgentRegistry.ResolvePath(agyAgent);
+        var agyCommand = string.IsNullOrWhiteSpace(agyPath)
+            ? "agy"
+            : $"\"{agyPath.Replace("\"", "\"\"")}\"";
+
+        const string flags = "--dangerously-skip-permissions";
+
+        // 훅 파일이 settings 보다 최신이면 동기화 (방별 정확 추적 — cwd 매핑보다 우선)
+        var tracked = AntigravityHookService.LoadTrackedSessionId(roomId);
+        var sessionId = SettingsService.LoadAntigravityRoomSession(roomId);
+        if (tracked != null && tracked != sessionId)
+        {
+            sessionId = tracked;
+            SettingsService.SaveAntigravityRoomSession(roomId, tracked);
+        }
+        // 불변식: conversation ID 는 GUID. 비정상 값(설정 변조 등)은 무시 → 배치 주입 차단.
+        if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
+
+        // 훅 미기록 방(첫 도입/훅 실패)은 agy 자체 cwd→conversation 매핑으로 폴백 추종.
+        var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+        if (sessionId == null)
+        {
+            var byCwd = FindAntigravityConversationByCwd(ccDir);
+            if (byCwd != null)
+            {
+                sessionId = byCwd;
+                SettingsService.SaveAntigravityRoomSession(roomId, byCwd);
+            }
+        }
+
+        // db 가 실제로 있을 때만 resume. 없으면 빈/유실 ID → 폐기하고 새 대화(무한 빈 세션 방지).
+        bool resume = sessionId != null && AntigravityConversationExists(sessionId);
+        if (sessionId != null && !resume)
+        {
+            SettingsService.RemoveAntigravityRoomSession(roomId);
+            sessionId = null;
+        }
+
+        SettingsService.MarkAgentRoomLaunched(roomId, "antigravity");
+
+        string body = sessionId != null
+            ? $"{agyCommand} --conversation {sessionId} {flags}\r\nif errorlevel 1 {agyCommand} {flags}\r\nexit"
+            : $"{agyCommand} {flags}\r\nexit";
+
+        try
+        {
+            var dir = AntigravityLaunchDir();
+            Directory.CreateDirectory(dir);
+            var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
+            // DEVEZCODE_ROOM_ID 를 배치에서도 set — ConPTY env 상속 실패 대비 (훅 room 식별).
+            File.WriteAllText(batchPath,
+                "@echo off\r\n" +
+                $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                body + "\r\n");
+            return $"cmd.exe /c \"{batchPath}\"";
+        }
+        catch
+        {
+            injectFallback = (sessionId != null
+                ? $"agy --conversation {sessionId} {flags}"
+                : $"agy {flags}") + "\r";
+            return null;
+        }
+    }
+
+    /// <summary>agy 의 cwd→conversation 매핑(last_conversations.json)에서 작업폴더에 해당하는
+    /// conversation ID. 없거나 GUID 가 아니면 null.</summary>
+    private static string? FindAntigravityConversationByCwd(string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(workingDir)) return null;
+        try
+        {
+            var path = Path.Combine(AntigravityCliDir(), "cache", "last_conversations.json");
+            if (!File.Exists(path)) return null;
+            var norm = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                try
+                {
+                    if (!string.Equals(Path.GetFullPath(prop.Name).TrimEnd('\\', '/'), norm, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var id = prop.Value.GetString();
+                    return id != null && Guid.TryParse(id, out _) ? id : null;
+                }
+                catch (Exception) { /* 비정상 키 무시하고 다음 후보 */ }
+            }
+        }
+        catch (Exception) { }
+        return null;
+    }
+
+    /// <summary>agy conversation transcript(conversations\&lt;id&gt;.db)가 실제 디스크에 있는지.</summary>
+    internal static bool AntigravityConversationExists(string? conversationId)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId)) return false;
+        try { return File.Exists(Path.Combine(AntigravityCliDir(), "conversations", conversationId + ".db")); }
+        catch (Exception) { return false; }
+    }
+
     private static string OpenCodeLaunchDir() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "opencode", "launch");
@@ -716,6 +851,42 @@ public sealed class TerminalSessionManager
             return newId;
         }
         catch { return null; }
+    }
+
+    /// <summary>안티그래비티(agy) 세션 포크 — 네이티브 fork 플래그가 없어(TUI 내 /fork 만 존재),
+    /// 원본 conversation db(SQLite)를 새 GUID 파일명으로 복사해 심는다. 새 방은 이 새 id 로
+    /// `--conversation` resume → 원본과 독립. SQLite 바이너리라 내부 id 치환은 불가 — agy 가
+    /// 파일명 기준으로 로드하면 정상 동작(런타임 검증 항목), 거부해도 배치 fresh 폴백으로 무해.
+    /// 활성 세션이 열어둔 db 대비 FileShare.ReadWrite + -wal/-shm 사이드카도 함께 복사.</summary>
+    public static string? TryForkAntigravitySession(string sourceConversationId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(sourceConversationId) || !Guid.TryParse(sourceConversationId, out _)) return null;
+            var convDir = Path.Combine(AntigravityCliDir(), "conversations");
+            var srcPath = Path.Combine(convDir, sourceConversationId + ".db");
+            if (!File.Exists(srcPath)) return null;
+
+            var newId = Guid.NewGuid().ToString("D").ToLowerInvariant();
+            CopyShared(srcPath, Path.Combine(convDir, newId + ".db"));
+            // 활성 세션의 미체크포인트 변경분(-wal)도 최대한 동반 복사 (없으면 스킵).
+            foreach (var suffix in new[] { ".db-wal", ".db-shm" })
+            {
+                var side = Path.Combine(convDir, sourceConversationId + suffix);
+                if (File.Exists(side))
+                    try { CopyShared(side, Path.Combine(convDir, newId + suffix)); } catch { }
+            }
+            return newId;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>다른 프로세스가 열어둔 파일도 읽을 수 있게 FileShare.ReadWrite 로 바이너리 복사.</summary>
+    private static void CopyShared(string src, string dest)
+    {
+        using var input = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var output = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None);
+        input.CopyTo(output);
     }
 
     /// <summary>claude 세션 포크 — CLI 의 --fork-session(지연 분기) 대신 원본 transcript(.jsonl)를
@@ -1974,6 +2145,11 @@ public sealed class TerminalSessionManager
                     if (gk != null && gk != SettingsService.LoadGrokRoomSession(roomId))
                         SettingsService.SaveGrokRoomSession(roomId, gk);
                     break;
+                case "antigravity":
+                    var ag = AntigravityHookService.LoadTrackedSessionId(roomId);
+                    if (ag != null && ag != SettingsService.LoadAntigravityRoomSession(roomId))
+                        SettingsService.SaveAntigravityRoomSession(roomId, ag);
+                    break;
             }
         }
         catch (Exception) { /* 스냅샷 실패 — 종료는 계속 */ }
@@ -2060,6 +2236,11 @@ public sealed class TerminalSessionManager
             // grok 도 cmd /c 배치 + /quit|/exit. busy 중이면 Esc 선행(codex 와 동일).
             return (false, "/quit\r\n", IsGrokBusyRunning(roomId));
         }
+        if (agent == "antigravity")
+        {
+            // agy 도 cmd /c 배치 + /quit(슬래시 명령 실측 확인). busy 중이면 Esc 선행(codex 와 동일).
+            return (false, "/quit\r\n", IsAntigravityBusyRunning(roomId));
+        }
         return agent switch
         {
             "gajae" => (false, "", false),
@@ -2074,6 +2255,21 @@ public sealed class TerminalSessionManager
         {
             var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "DevezCode", "grok", "busy", SafeRoomFileName(roomId) + ".txt");
+            if (!File.Exists(path)) return false;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var sr = new StreamReader(fs);
+            return sr.ReadToEnd().Trim() == "running";
+        }
+        catch { return false; }
+    }
+
+    /// <summary>antigravity 훅 busy\&lt;room&gt;.txt 가 running 인가.</summary>
+    private static bool IsAntigravityBusyRunning(string roomId)
+    {
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "antigravity", "busy", SafeRoomFileName(roomId) + ".txt");
             if (!File.Exists(path)) return false;
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var sr = new StreamReader(fs);
@@ -2135,6 +2331,7 @@ public sealed class TerminalSessionManager
             SettingsService.LoadOpenCodeRoomSession(roomId),
             SettingsService.LoadGajaeRoomSession(roomId),
             SettingsService.LoadGrokRoomSession(roomId),
+            SettingsService.LoadAntigravityRoomSession(roomId),
         };
         DisposeRoom(roomId);
 
@@ -2193,6 +2390,11 @@ public sealed class TerminalSessionManager
 
         TryDeleteFile(Path.Combine(GajaeLaunchDir(), roomFile + ".cmd"));
         TryDeleteDirectory(GajaeSessionDir(roomId));
+
+        var antigravityDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "antigravity");
+        TryDeleteFile(Path.Combine(antigravityDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(antigravityDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(AntigravityLaunchDir(), roomFile + ".cmd"));
     }
 
     private static void TryDeleteFile(string path)

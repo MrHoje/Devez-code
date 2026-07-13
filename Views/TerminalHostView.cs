@@ -90,7 +90,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             var a = DevezCode.Services.SettingsService.LoadAgentForRoom(roomId);
             return string.Equals(a, "opencode", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(a, "codex", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(a, "grok", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(a, "grok", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(a, "antigravity", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }

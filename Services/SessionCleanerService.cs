@@ -6,9 +6,9 @@ using Microsoft.Data.Sqlite;
 
 namespace DevezCode.Services;
 
-public sealed record SessionCleanerCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok)
+public sealed record SessionCleanerCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok, int Antigravity)
 {
-    public int Total => Claude + OpenCode + Gajae + Codex + Grok;
+    public int Total => Claude + OpenCode + Gajae + Codex + Grok + Antigravity;
 }
 
 public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCleanerCounts Deleted, SessionCleanerCounts Failed)
@@ -16,12 +16,12 @@ public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCl
     public int DeletedTotal => Deleted.Total;
     public int FailedTotal => Failed.Total;
 }
-public enum CleanerAgentKind { Claude, OpenCode, Gajae, Codex, Grok }
+public enum CleanerAgentKind { Claude, OpenCode, Gajae, Codex, Grok, Antigravity }
 public sealed record CleanerScanInfo(int Count, long Bytes);
 
-public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok, bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok)
+public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok, int Antigravity, bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok, bool ShowAntigravity)
 {
-    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0) + (ShowCodex ? Codex : 0) + (ShowGrok ? Grok : 0);
+    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0) + (ShowCodex ? Codex : 0) + (ShowGrok ? Grok : 0) + (ShowAntigravity ? Antigravity : 0);
 }
 
 
@@ -43,11 +43,13 @@ public static class SessionCleanerService
             Gajae: enabled.ShowGajae ? EnumerateUnmanagedGajae(managed).Count : 0,
             Codex: enabled.ShowCodex ? EnumerateUnmanagedCodex(managed).Count : 0,
             Grok: enabled.ShowGrok ? EnumerateUnmanagedGrok(managed).Count : 0,
+            Antigravity: enabled.ShowAntigravity ? EnumerateUnmanagedAntigravity(managed).Count : 0,
             enabled.ShowClaude,
             enabled.ShowOpenCode,
             enabled.ShowGajae,
             enabled.ShowCodex,
-            enabled.ShowGrok);
+            enabled.ShowGrok,
+            enabled.ShowAntigravity);
     }
 
     public static int GetCount(CleanerAgentKind kind) => GetScanInfo(kind).Count;
@@ -62,6 +64,7 @@ public static class SessionCleanerService
             CleanerAgentKind.Gajae => FromFiles(EnumerateUnmanagedGajae(managed)),
             CleanerAgentKind.Codex => FromFiles(EnumerateUnmanagedCodex(managed)),
             CleanerAgentKind.Grok => FromDirectories(EnumerateUnmanagedGrok(managed)),
+            CleanerAgentKind.Antigravity => FromFiles(EnumerateUnmanagedAntigravity(managed)),
             _ => new CleanerScanInfo(0, 0),
         };
     }
@@ -103,11 +106,12 @@ public static class SessionCleanerService
         (int deleted, int failed) gd = enabled.ShowGajae ? DeleteUnmanaged(CleanerAgentKind.Gajae) : (0, 0);
         (int deleted, int failed) xd = enabled.ShowCodex ? DeleteUnmanaged(CleanerAgentKind.Codex) : (0, 0);
         (int deleted, int failed) rd = enabled.ShowGrok ? DeleteUnmanaged(CleanerAgentKind.Grok) : (0, 0);
+        (int deleted, int failed) ad = enabled.ShowAntigravity ? DeleteUnmanaged(CleanerAgentKind.Antigravity) : (0, 0);
 
         return new SessionCleanerResult(
-            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae, before.Codex, before.Grok),
-            new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted, xd.deleted, rd.deleted),
-            new SessionCleanerCounts(cd.failed, od.failed, gd.failed, xd.failed, rd.failed));
+            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae, before.Codex, before.Grok, before.Antigravity),
+            new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted, xd.deleted, rd.deleted, ad.deleted),
+            new SessionCleanerCounts(cd.failed, od.failed, gd.failed, xd.failed, rd.failed, ad.failed));
     }
 
     public static (int deleted, int failed) DeleteUnmanaged(CleanerAgentKind kind)
@@ -120,28 +124,31 @@ public static class SessionCleanerService
             CleanerAgentKind.Gajae => DeleteFiles(EnumerateUnmanagedGajae(managed)),
             CleanerAgentKind.Codex => DeleteFiles(EnumerateUnmanagedCodex(managed)),
             CleanerAgentKind.Grok => DeleteGrok(EnumerateUnmanagedGrok(managed)),
+            CleanerAgentKind.Antigravity => DeleteAntigravity(EnumerateUnmanagedAntigravity(managed)),
             _ => (0, 0),
         };
     }
 
 
-    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> CodexIds, HashSet<string> GrokIds, HashSet<string> RoomIds)
+    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> CodexIds, HashSet<string> GrokIds, HashSet<string> AntigravityIds, HashSet<string> RoomIds)
     {
         public static ManagedSnapshot Load()
         {
-            var (claude, opencode, gajae, codex, grok, rooms) = SettingsService.LoadManagedSessionSnapshot();
+            var (claude, opencode, gajae, codex, grok, antigravity, rooms) = SettingsService.LoadManagedSessionSnapshot();
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             var claudeIds = ToSet(claude);
             var openCodeIds = ToSet(opencode);
             var gajaeIds = ToSet(gajae);
             var codexIds = ToSet(codex);
             var grokIds = ToSet(grok);
+            var antigravityIds = ToSet(antigravity);
 
             AddTrackedFileIds(claudeIds, Path.Combine(appData, "DevezCode", "claude", "sessions"), GuidRegex);
             AddTrackedFileIds(openCodeIds, Path.Combine(appData, "DevezCode", "opencode", "sessions"), new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled));
             AddTrackedFileIds(gajaeIds, Path.Combine(appData, "DevezCode", "gajae", "sessions"), GuidRegex, fromGajaeRoomDir: true);
             AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "codex", "sessions"), GuidRegex);
             AddTrackedFileIds(grokIds, Path.Combine(appData, "DevezCode", "grok", "sessions"), GuidRegex);
+            AddTrackedFileIds(antigravityIds, Path.Combine(appData, "DevezCode", "antigravity", "sessions"), GuidRegex);
 
             return new ManagedSnapshot(
                 claudeIds,
@@ -149,6 +156,7 @@ public static class SessionCleanerService
                 gajaeIds,
                 codexIds,
                 grokIds,
+                antigravityIds,
                 ToSet(rooms));
         }
 
@@ -181,7 +189,7 @@ public static class SessionCleanerService
             catch { }
         }
     }
-    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok)
+    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok, bool ShowAntigravity)
     {
         public static EnabledSnapshot Load()
         {
@@ -191,7 +199,8 @@ public static class SessionCleanerService
                 enabled.Contains("opencode"),
                 enabled.Contains("gajae"),
                 enabled.Contains("codex"),
-                enabled.Contains("grok"));
+                enabled.Contains("grok"),
+                enabled.Contains("antigravity"));
         }
     }
 
@@ -300,6 +309,48 @@ public static class SessionCleanerService
         }
         catch { }
         return directories.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>agy 대화 db: ~/.gemini/antigravity-cli/conversations/&lt;guid&gt;.db.
+    /// 관리 중이지 않은 GUID 파일명만 대상 (사이드카 -wal/-shm 은 삭제 시 함께 정리).</summary>
+    private static List<string> EnumerateUnmanagedAntigravity(ManagedSnapshot managed)
+    {
+        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".gemini", "antigravity-cli", "conversations");
+        if (!Directory.Exists(root)) return new();
+        var list = new List<string>();
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(root, "*.db", SearchOption.TopDirectoryOnly))
+            {
+                var id = Path.GetFileNameWithoutExtension(f);
+                if (!GuidRegex.IsMatch(id)) continue;
+                if (managed.AntigravityIds.Contains(id)) continue;
+                list.Add(f);
+            }
+        }
+        catch { }
+        return list;
+    }
+
+    private static (int deleted, int failed) DeleteAntigravity(IEnumerable<string> files)
+    {
+        int deleted = 0, failed = 0;
+        foreach (var f in files)
+        {
+            try
+            {
+                if (File.Exists(f)) File.Delete(f);
+                foreach (var suffix in new[] { "-wal", "-shm" })
+                {
+                    var side = f + suffix;
+                    try { if (File.Exists(side)) File.Delete(side); } catch { }
+                }
+                deleted++;
+            }
+            catch { failed++; }
+        }
+        return (deleted, failed);
     }
 
     private static (int deleted, int failed) DeleteGrok(IEnumerable<string> directories)

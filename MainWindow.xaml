@@ -858,6 +858,24 @@
                             <TextBlock x:Name="GrokWeekPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
+                        <!-- Antigravity (모델 5시간 창 — fetchAvailableModels quotaInfo) -->
+                        <StackPanel x:Name="AntigravityPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
+                                    Background="Transparent" Cursor="Arrow"
+                                    ToolTip="Antigravity 5시간 창">
+                            <Border x:Name="AntigravityLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                            <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
+                                   Source="pack://application:,,,/Resources/Images/ShellPresets/anti.png"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <TextBlock x:Name="AntigravityFiveLabel" Text="5h" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                <Border x:Name="AntigravityFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                            </Border>
+                            <TextBlock x:Name="AntigravityFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                        </StackPanel>
                         <!-- DeepSeek (API 키 잔액) -->
                         <StackPanel x:Name="DeepSeekPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
                                     Background="Transparent" Cursor="Arrow">

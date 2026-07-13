@@ -74,6 +74,19 @@ public static class AgentRegistry
         },
         new()
         {
+            // Google Antigravity CLI(agy). 기본 설치: %LOCALAPPDATA%\agy\bin\agy.exe (백그라운드 자체 업데이트).
+            // 세션 사전 발급 플래그가 없어 ResumeFlag 단순 경로 미사용 — 방별 정확 복원은
+            // TryBuildAntigravityDirectLaunch 가 cwd→conversation 매핑(last_conversations.json) 추종 +
+            // `agy --conversation <id>` 로 처리. 훅(hooks.json: SessionStart/Stop 등)으로 busy/lastmsg 추적.
+            Id = "antigravity", DisplayName = "Antigravity", Provider = "Google",
+            ExeNames = new[] { "agy.exe", "agy.cmd", "agy.bat", "agy.ps1", "agy" },
+            Command = "agy",
+            InstallCommand = "irm https://antigravity.google/cli/install.ps1 | iex",
+            UpdateCommand = "", // 자체 업데이트 — 앱 시작 시 갱신 명령 불필요
+            SupportsHooks = true,
+        },
+        new()
+        {
             Id = "opencode", DisplayName = "OpenCode", Provider = "OpenCode",
             ExeNames = new[] { "opencode.exe", "opencode.cmd", "opencode.bat", "opencode.ps1", "opencode" },
             Command = "opencode",
@@ -130,6 +143,16 @@ public static class AgentRegistry
                     {
                         dirs.Insert(0, Path.Combine(
                             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "bin"));
+                    }
+                    catch { }
+                }
+                // agy 기본 설치 경로 (PATH 미등록 환경 대비)
+                if (agent.Id.Equals("antigravity", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        dirs.Insert(0, Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "agy", "bin"));
                     }
                     catch { }
                 }

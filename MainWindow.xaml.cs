@@ -69,11 +69,13 @@ public partial class MainWindow : Window
     private readonly OpenCodeGoUsageService _openCodeGo = new();
     private readonly DeepSeekUsageService _deepSeek = new();
     private readonly GrokUsageService _grok = new();
+    private readonly AntigravityUsageService _antigravityUsage = new();
     // 사용량 팝오버(우측 사이드바)용 최신 스냅샷 보관 — 데이터 있는 provider 만 카드로 노출.
     private Models.ProviderUsage? _lastCodex;
     private Models.ProviderUsage? _lastGo;
     private Models.ProviderUsage? _lastDeepSeek;
     private Models.ProviderUsage? _lastGrok;
+    private Models.ProviderUsage? _lastAntigravity;
     private readonly SessionBusyService _sessionBusy = new();
     // 세션 간 지시 릴레이(/devez-relay:send-to) 수신부 — commands\<uuid>.json 감시 → 대상 세션 터미널에 주입.
     private readonly SessionCommandInboxService _sessionCommandInbox = new();
@@ -84,6 +86,10 @@ public partial class MainWindow : Window
     private readonly CodexHookService _codexHook = new();
     // grok — ~/.grok/hooks + 방별 상태 파일로 lastmsg/busy/session_id 추적 (codex 패턴).
     private readonly GrokHookService _grokHook = new();
+    // antigravity(agy) — hooks.json + 방별 상태 파일로 busy/conversation_id 추적 (grok 패턴).
+    // agy 훅에는 UserPromptSubmit 이 없어 lastmsg/waiting(❗) 신호는 현재 미지원
+    // (agy 설치 후 transcript.jsonl 실측되면 gajae식 폴링 추가 후보).
+    private readonly AntigravityHookService _antigravityHook = new();
     // 비-Claude 비-codex (opencode/gjc) 의 last prompt 추적. codex 는 위 훅 서비스가 처리.
     private readonly AgentLastMessageService _agentLastMsg = new();
     // opencode — 플러그인이 lastmsg\<room>.txt 에 저장한 user prompt 를 FileSystemWatcher 로 즉시 반영 (claude 와 동일 패턴).
@@ -388,6 +394,20 @@ public partial class MainWindow : Window
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
 
+        // Antigravity(agy) — busy 스피너 + conversation_id 라이브 저장 (grok 패턴).
+        // 훅에 UserPromptSubmit 이 없어 waiting(❗)/lastmsg 신호는 없음.
+        _antigravityHook.BusyChanged += (roomId, busy) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                bool was = s?.IsBusy ?? false;
+                if (s != null) s.IsBusy = busy;
+                NotifyIfSessionFinished(s, was, busy);
+                UpdateSessionBusyDisplay();
+            });
+        _antigravityHook.SessionChanged += (roomId, sid) =>
+            Dispatcher.InvokeAsync(() => SettingsService.SaveAntigravityRoomSession(roomId, sid));
+
         // 테마 변경 시 좌·우 패널 토글 아이콘 brush 재계산(seam 은 각 패널이 자체 처리)
         App.ThemeChanged += OnThemeChanged_UpdatePanels;
 
@@ -432,6 +452,9 @@ public partial class MainWindow : Window
             // Grok 훅 설치·감시.
             GrokHookInstaller.EnsureInstalled();
             _grokHook.Start();
+            // Antigravity(agy) 훅 설치·감시.
+            AntigravityHookInstaller.EnsureInstalled();
+            _antigravityHook.Start();
             // opencode 플러그인 — 매 시작 시 ~/.config\opencode\plugin\devezcode-room-tracker.js 갱신.
             // session.created/updated → sessions\<room>.txt (세션 ID 복원용)
             // message.updated( role=user ) → lastmsg\<room>.txt (헤더 타이틀 즉시 표시)
@@ -514,11 +537,13 @@ public partial class MainWindow : Window
             _openCodeGo.Dispose();
             _deepSeek.Dispose();
             _grok.Dispose();
+            _antigravityUsage.Dispose();
             _sessionBusy.Dispose();
             _modelEffort.Dispose();
             _sessionLastMsg.Dispose();
             _codexHook.Dispose();
             _grokHook.Dispose();
+            _antigravityHook.Dispose();
             _opencodeLastMsg.Dispose();
             _opencodeBusy.Dispose();
             _gajaeLastMsg.Dispose();
@@ -742,10 +767,12 @@ public partial class MainWindow : Window
         _openCodeGo.Updated  += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _deepSeek.Updated    += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _grok.Updated        += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _antigravityUsage.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _codex.Start();
         _openCodeGo.Start();
         _deepSeek.Start();
         _grok.Start();
+        _antigravityUsage.Start();
     }
 
     /// <summary>표시 가능한(데이터 있는) provider 만 사용량 카드로 변환. Claude → Codex → OpenCode Go 순.</summary>
@@ -776,6 +803,7 @@ public partial class MainWindow : Window
         AddProviderCard(cards, _lastCodex, "Codex", App.CodexIconUri);
         AddProviderCard(cards, _lastGo, "OpenCode Go", App.OpenCodeIconUri);
         AddGrokCard(cards);
+        AddAntigravityCard(cards);
         AddDeepSeekCard(cards);
 
         return cards;
@@ -810,6 +838,39 @@ public partial class MainWindow : Window
             IconPath = App.GrokIconUri,
             CapturedAt = _lastGrok.CapturedAt,
             IsStale = _lastGrok.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness,
+            Rows = Array.Empty<Models.UsageRowVM>(),
+        });
+    }
+
+    private void AddAntigravityCard(List<Models.UsageCardVM> cards)
+    {
+        if (_lastAntigravity is null) return;
+        const string iconPath = "pack://application:,,,/Resources/Images/ShellPresets/anti.png";
+        if (_lastAntigravity.HasData)
+        {
+            // agy 는 모델별 5시간 창만 제공 — 주간/월간 행은 만들지 않는다.
+            var rows = new List<Models.UsageRowVM>();
+            var showEst = SettingsService.LoadShowEstimate();
+            AddRow(rows, "5시간", _lastAntigravity.Primary?.UsedPercent, _lastAntigravity.Primary?.ResetsAt, isShortWindow: true, showEstimate: showEst);
+            cards.Add(new Models.UsageCardVM
+            {
+                Name = "Antigravity",
+                Plan = _lastAntigravity.PlanLabel,
+                IconPath = iconPath,
+                CapturedAt = _lastAntigravity.CapturedAt,
+                IsStale = _lastAntigravity.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness,
+                Rows = rows,
+            });
+            return;
+        }
+        if (string.IsNullOrEmpty(_lastAntigravity.Error)) return;
+        cards.Add(new Models.UsageCardVM
+        {
+            Name = "Antigravity",
+            Plan = _lastAntigravity.Error,
+            IconPath = iconPath,
+            CapturedAt = _lastAntigravity.CapturedAt,
+            IsStale = _lastAntigravity.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness,
             Rows = Array.Empty<Models.UsageRowVM>(),
         });
     }
@@ -1070,6 +1131,10 @@ public partial class MainWindow : Window
                 _lastGrok = u;
                 ApplyGrokFooter(u);
                 break;
+            case "antigravity":
+                _lastAntigravity = u;
+                ApplyAntigravityFooter(u);
+                break;
         }
         RefreshUsagePanelIfVisible();
     }
@@ -1155,6 +1220,10 @@ public partial class MainWindow : Window
                 _lastGrok = null;
                 GrokPanel.Visibility = Visibility.Collapsed;
                 break;
+            case "antigravity":
+                _lastAntigravity = null;
+                AntigravityPanel.Visibility = Visibility.Collapsed;
+                break;
             case "deepseek":
                 _lastDeepSeek = null;
                 DeepSeekPanel.Visibility = Visibility.Collapsed;
@@ -1171,6 +1240,7 @@ public partial class MainWindow : Window
         "opencode-go" => OpenCodeGoCredentialStore.IsConnected(),
         "grok" => GrokUsageService.IsConnected(),
         "deepseek" => DeepSeekCredentialStore.IsConnected(),
+        "antigravity" => AntigravityUsageService.IsConnected(),
         _ => true,
     };
 
@@ -1206,6 +1276,40 @@ public partial class MainWindow : Window
             sb.Append($"  ·  초기화 {FormatResetDate(r)}");
         return sb.ToString();
     }
+
+    /// <summary>Antigravity(agy) 5시간 창 사용률을 하단 푸터에 반영 (모델별 quotaInfo 대표값).</summary>
+    private void ApplyAntigravityFooter(Models.ProviderUsage u)
+    {
+        bool show = SettingsService.LoadShowFooterAntigravity();
+        if (!show || (!u.HasData && string.IsNullOrEmpty(u.Error)))
+        { AntigravityPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
+
+        AntigravityPanel.Visibility = Visibility.Visible;
+        UpdateFooterDivider();
+        var pct = u.Primary?.UsedPercent;
+        SetWindowBar(AntigravityFiveBar, AntigravityFivePct, pct);
+        AntigravityFiveLabel.Text = !string.IsNullOrEmpty(u.Error) ? "!"
+            : FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h";
+        if (!string.IsNullOrEmpty(u.Error) && pct is null)
+            AntigravityFivePct.Text = "--";
+        AntigravityPanel.ToolTip = BuildAntigravityTooltip(u);
+    }
+
+    private static string BuildAntigravityTooltip(Models.ProviderUsage u)
+    {
+        if (!string.IsNullOrEmpty(u.Error))
+            return "Antigravity\n" + u.Error;
+        var sb = new System.Text.StringBuilder("Antigravity");
+        if (!string.IsNullOrEmpty(u.PlanLabel)) sb.Append("  ·  ").Append(u.PlanLabel);
+        if (u.Primary?.UsedPercent is double p)
+            sb.Append($"\n5시간 창 {FormatUsagePercent(p)}");
+        if (u.Primary?.ResetsAt is DateTimeOffset r)
+            sb.Append($"  ·  초기화 {FormatResetDate(r)}");
+        return sb.ToString();
+    }
+
+    /// <summary>agy 토큰/설정 변경 직후 즉시 폴링.</summary>
+    public void RefreshAntigravityUsage() => _antigravityUsage.RefreshNow();
 
     /* ── 하단 푸터 계정 사용량 (우측 사이드바와 별개; 설정의 '하단 푸터 표시' 토글로 provider별 on/off) ── */
 
@@ -1299,10 +1403,12 @@ public partial class MainWindow : Window
         bool codex = CodexPanel.Visibility == Visibility.Visible;
         bool go = GoPanel.Visibility == Visibility.Visible;
         bool grok = GrokPanel.Visibility == Visibility.Visible;
+        bool antigravity = AntigravityPanel.Visibility == Visibility.Visible;
         if (CxLeadDivider != null) CxLeadDivider.Visibility = claude ? Visibility.Visible : Visibility.Collapsed;
         if (GoLeadDivider != null) GoLeadDivider.Visibility = (claude || codex) ? Visibility.Visible : Visibility.Collapsed;
         if (GrokLeadDivider != null) GrokLeadDivider.Visibility = (claude || codex || go) ? Visibility.Visible : Visibility.Collapsed;
-        if (DeepSeekLeadDivider != null) DeepSeekLeadDivider.Visibility = (claude || codex || go || grok) ? Visibility.Visible : Visibility.Collapsed;
+        if (AntigravityLeadDivider != null) AntigravityLeadDivider.Visibility = (claude || codex || go || grok) ? Visibility.Visible : Visibility.Collapsed;
+        if (DeepSeekLeadDivider != null) DeepSeekLeadDivider.Visibility = (claude || codex || go || grok || antigravity) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static string BuildRlTooltip(Models.RateLimitSnapshot snap)
@@ -1446,6 +1552,7 @@ public partial class MainWindow : Window
         if (_lastCodex != null) ApplyProviderUsage(_lastCodex); else { CodexPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastGo != null)       ApplyProviderUsage(_lastGo);       else { GoPanel.Visibility       = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastGrok != null)     ApplyProviderUsage(_lastGrok);     else { GrokPanel.Visibility     = Visibility.Collapsed; UpdateFooterDivider(); }
+        if (_lastAntigravity != null) ApplyProviderUsage(_lastAntigravity); else { AntigravityPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastDeepSeek != null) ApplyProviderUsage(_lastDeepSeek); else { DeepSeekPanel.Visibility  = Visibility.Collapsed; UpdateFooterDivider(); }
         RefreshUsagePanelIfVisible();
     }

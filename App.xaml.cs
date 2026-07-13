@@ -125,6 +125,9 @@ public partial class App : Application
         // Grok — config.toml theme 매핑.
         Services.Terminal.GrokCustomThemes.Apply(CurrentTheme);
 
+        // 안티그래비티(agy) — settings.json colorScheme 매핑.
+        Services.Terminal.AntigravityCustomThemes.Apply(CurrentTheme);
+
         StartupSequence();
     }
 
@@ -607,6 +610,8 @@ public partial class App : Application
         Services.Terminal.GajaeCustomThemes.Apply(theme);
         // Grok — config.toml theme 갱신.
         Services.Terminal.GrokCustomThemes.Apply(theme);
+        // 안티그래비티(agy) — settings.json colorScheme 갱신 (세션 재시작 시 반영).
+        Services.Terminal.AntigravityCustomThemes.Apply(theme);
         ThemeChanged?.Invoke(theme);
     }
 

@@ -56,6 +56,9 @@ public static class SettingsService
         public Dictionary<string, string> GajaeRoomSessions { get; set; } = new();
         // Grok 방별 세션 ID (훅 sessions\<room>.txt → `grok -r <id>`).
         public Dictionary<string, string> GrokRoomSessions { get; set; } = new();
+        // 안티그래비티(agy) 방별 conversation ID. agy 는 사전 발급이 없어 cwd→conversation
+        // 매핑(last_conversations.json)·훅에서 추종한 ID 를 영속 → `agy --conversation <id>` 복원.
+        public Dictionary<string, string> AntigravityRoomSessions { get; set; } = new();
         // 세션 포크: 새 방(roomId) → 포크 원본 세션 ID. 새 방 첫 실행에 --fork-session/--fork 로 1회 소비.
         public Dictionary<string, string> RoomForkSources { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
@@ -129,6 +132,7 @@ public static class SettingsService
         public bool ShowFooterGo     { get; set; } = false;
         public bool ShowFooterDeepSeek { get; set; } = false;
         public bool ShowFooterGrok { get; set; } = false;
+        public bool ShowFooterAntigravity { get; set; } = false;
         // 계정 사용량 사이드바/툴팁에 한도 도달 예상 시간 표시. 기본 켜짐.
         public bool ShowEstimate { get; set; } = false;
         // 계정 사용량을 사용한 양 대신 남은 양(100%-사용률)으로 표시. 기본 꺼짐.
@@ -288,6 +292,8 @@ public static class SettingsService
     public static void SaveShowFooterDeepSeek(bool v) { Current.ShowFooterDeepSeek = v; Save(); }
     public static bool LoadShowFooterGrok() => Current.ShowFooterGrok;
     public static void SaveShowFooterGrok(bool v) { Current.ShowFooterGrok = v; Save(); }
+    public static bool LoadShowFooterAntigravity() => Current.ShowFooterAntigravity;
+    public static void SaveShowFooterAntigravity(bool v) { Current.ShowFooterAntigravity = v; Save(); }
 
     // ── 계정 사용량 한도 도달 예상 표시 ──────────────────────────
     public static bool LoadShowEstimate() => Current.ShowEstimate;
@@ -360,13 +366,14 @@ public static class SettingsService
         changed |= Current.OpenCodeRoomSessions.Remove(roomId);
         changed |= Current.GajaeRoomSessions.Remove(roomId);
         changed |= Current.GrokRoomSessions.Remove(roomId);
+        changed |= Current.AntigravityRoomSessions.Remove(roomId);
         changed |= Current.RoomForkSources.Remove(roomId);
         changed |= Current.AgentRoomsLaunched.RemoveAll(k => k.StartsWith(roomId + "|", StringComparison.Ordinal)) > 0;
         if (changed) Save();
       }
     }
     /// <summary>클리너 보호 목록용: DevezCode 가 현재 관리 중인 room/session ID 스냅샷.</summary>
-    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Codex, IReadOnlyCollection<string> Grok, IReadOnlyCollection<string> Rooms)
+    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Codex, IReadOnlyCollection<string> Grok, IReadOnlyCollection<string> Antigravity, IReadOnlyCollection<string> Rooms)
         LoadManagedSessionSnapshot()
     {
         lock (_lock)
@@ -377,6 +384,7 @@ public static class SettingsService
                 Current.GajaeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.CodexRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.GrokRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                Current.AntigravityRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.ClaudeCodeRoomDirs.Keys.Where(v => !string.IsNullOrWhiteSpace(v)).ToList()
             );
         }
@@ -853,6 +861,23 @@ public static class SettingsService
         if (string.IsNullOrWhiteSpace(sessionId)) return;
         Current.GajaeRoomSessions[roomId] = sessionId;
         Save();
+    }
+
+    // ── 안티그래비티(agy) conversation ID ────────────────────────
+    public static string? LoadAntigravityRoomSession(string roomId)
+        => Current.AntigravityRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+
+    public static void SaveAntigravityRoomSession(string roomId, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        Current.AntigravityRoomSessions[roomId] = sessionId;
+        Save();
+    }
+
+    /// <summary>방의 추적 conversation ID 를 제거. transcript(.db) 없는 빈/유실 ID 고착을 풀 때 호출.</summary>
+    public static void RemoveAntigravityRoomSession(string roomId)
+    {
+        if (Current.AntigravityRoomSessions.Remove(roomId)) Save();
     }
 }
 

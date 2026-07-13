@@ -57,6 +57,10 @@
     <Content Include="Resources\Hooks\grok-hook.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- antigravity(agy) 훅 스크립트. AntigravityHookInstaller 가 %LOCALAPPDATA%\DevezCode\antigravity\hook.ps1 로 재기록. -->
+    <Content Include="Resources\Hooks\antigravity-hook.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- opencode 플러그인 (Resources\Plugins\opencode-room-tracker.js).
          OpenCodePluginInstaller 가 매 시작 시 ~/.config\opencode\plugin\ 으로 복사. -->
     <Content Include="Resources\Plugins\opencode-room-tracker.js">
@@ -87,6 +91,7 @@
     <Resource Include="Resources\Images\ShellPresets\grok_icon_black_50.png" />
     <Resource Include="Resources\Images\ShellPresets\grok_icon_white_50.png" />
     <Resource Include="Resources\Images\ShellPresets\deepseek.png" />
+    <Resource Include="Resources\Images\ShellPresets\anti.png" />
     <!-- 앱 로고 이미지 (좌상단 타이틀바, 데스크탑 image.png 기반) -->
     <Resource Include="Resources\Logos\logo.png" />
     <!-- 창 아이콘(Window.Icon pack URI). ApplicationIcon(EXE 아이콘)과 별개로
