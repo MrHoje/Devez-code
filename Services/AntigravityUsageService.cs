@@ -158,10 +158,18 @@ public sealed class AntigravityUsageService : IDisposable
         }
 
         if (bestUsed == null) return null;
+
+        // 창 종류는 플랜별로 다르다(유료=5시간, 무료 티어=주간 — 실측 리셋 7일 뒤).
+        // API 가 창 종류를 안 주므로 리셋까지 남은 시간으로 판별: 6시간 이내면 5시간 창(Primary),
+        // 그 외(또는 리셋 미상)는 주간 창(Weekly). 주간 창의 마지막 6시간 동안만 잠깐 5시간으로
+        // 오분류될 수 있는 절충 — 5시간 플랜은 항상 정확.
+        var window = new UsageWindow { UsedPercent = bestUsed.Value, ResetsAt = bestReset };
+        bool shortWindow = bestReset != null && bestReset.Value - DateTimeOffset.UtcNow <= TimeSpan.FromHours(6);
         return new ProviderUsage
         {
             Provider = "antigravity",
-            Primary = new UsageWindow { UsedPercent = bestUsed.Value, ResetsAt = bestReset },
+            Primary = shortWindow ? window : null,
+            Weekly = shortWindow ? null : window,
             PlanLabel = _planLabel,
         };
     }

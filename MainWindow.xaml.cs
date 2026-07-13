@@ -855,10 +855,11 @@ public partial class MainWindow : Window
         const string iconPath = "pack://application:,,,/Resources/Images/ShellPresets/anti.png";
         if (_lastAntigravity.HasData)
         {
-            // agy 는 모델별 한도 창 하나만 제공(리셋 주기는 플랜별 상이 — 실측 주 단위).
+            // agy 는 창 하나만 제공 — 서비스가 리셋 시각으로 5시간(Primary)/주간(Weekly)을 판별.
             var rows = new List<Models.UsageRowVM>();
             var showEst = SettingsService.LoadShowEstimate();
-            AddRow(rows, "한도", _lastAntigravity.Primary?.UsedPercent, _lastAntigravity.Primary?.ResetsAt, isShortWindow: false, showEstimate: showEst);
+            AddRow(rows, "5시간", _lastAntigravity.Primary?.UsedPercent, _lastAntigravity.Primary?.ResetsAt, isShortWindow: true, showEstimate: showEst);
+            AddRow(rows, "주간", _lastAntigravity.Weekly?.UsedPercent, _lastAntigravity.Weekly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
             cards.Add(new Models.UsageCardVM
             {
                 Name = "Antigravity",
@@ -1284,8 +1285,8 @@ public partial class MainWindow : Window
         return sb.ToString();
     }
 
-    /// <summary>Antigravity(agy) 모델 한도 사용률을 하단 푸터에 반영 (모델별 quotaInfo 대표값 —
-    /// 리셋 주기는 플랜별 상이(실측: 주 단위)라 고정 표기 대신 "한도" 라벨 사용).</summary>
+    /// <summary>Antigravity(agy) 모델 한도 사용률을 하단 푸터에 반영. 창 종류는 플랜별로 달라
+    /// 서비스가 리셋 시각으로 판별해 Primary(5시간)/Weekly(주간) 중 한쪽만 채운다 — grok 패턴.</summary>
     private void ApplyAntigravityFooter(Models.ProviderUsage u)
     {
         bool show = SettingsService.LoadShowFooterAntigravity();
@@ -1294,9 +1295,11 @@ public partial class MainWindow : Window
 
         AntigravityPanel.Visibility = Visibility.Visible;
         UpdateFooterDivider();
-        var pct = u.Primary?.UsedPercent;
+        var pct = u.Primary?.UsedPercent ?? u.Weekly?.UsedPercent;
         SetWindowBar(AntigravityFiveBar, AntigravityFivePct, pct);
-        AntigravityFiveLabel.Text = !string.IsNullOrEmpty(u.Error) ? "!" : "한도";
+        AntigravityFiveLabel.Text = !string.IsNullOrEmpty(u.Error) ? "!"
+            : u.Primary != null ? (FormatRemainingShort(u.Primary.ResetsAt) ?? "5h")
+            : "주간";
         if (!string.IsNullOrEmpty(u.Error) && pct is null)
             AntigravityFivePct.Text = "--";
         AntigravityPanel.ToolTip = BuildAntigravityTooltip(u);
@@ -1309,9 +1312,13 @@ public partial class MainWindow : Window
         var sb = new System.Text.StringBuilder("Antigravity");
         if (!string.IsNullOrEmpty(u.PlanLabel)) sb.Append("  ·  ").Append(u.PlanLabel);
         if (u.Primary?.UsedPercent is double p)
-            sb.Append($"\n모델 한도 {FormatUsagePercent(p)}");
-        if (u.Primary?.ResetsAt is DateTimeOffset r)
-            sb.Append($"  ·  초기화 {FormatResetDate(r)}");
+            sb.Append($"\n5시간 한도 {FormatUsagePercent(p)}  ·  초기화까지 {FormatRemaining(u.Primary.ResetsAt)}");
+        if (u.Weekly?.UsedPercent is double w)
+        {
+            sb.Append($"\n주간 한도 {FormatUsagePercent(w)}");
+            if (u.Weekly.ResetsAt is DateTimeOffset r)
+                sb.Append($"  ·  초기화 {FormatResetDate(r)}");
+        }
         return sb.ToString();
     }
 
