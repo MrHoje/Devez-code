@@ -4517,6 +4517,12 @@ public partial class MainWindow : Window
         if (dlg.Saved) _wakeScheduler.NotifySchedulesChanged();
     }
 
+    private void CommunityBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new CommunityWindow(this);
+        window.ShowDialog();
+    }
+
     public Task<bool> EnsureWakeTrustAsync(string agentId)
         => EnsureWakeTrustAsync(agentId, CancellationToken.None);
 

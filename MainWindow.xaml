@@ -905,6 +905,11 @@
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconZap}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
+                        <Button x:Name="CommunityBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
+                                Click="CommunityBtn_Click" ToolTip="커뮤니티" Margin="0,0,2,0">
+                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconMessageSquare}"
+                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
                         <Button x:Name="WakeControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
                                 Click="WakeControlBtn_Click" ToolTip="깨우기" Margin="0,0,2,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconAlarmClock}"
