@@ -17,8 +17,11 @@ set "base=%APPDATA%\DevezCode\antigravity"
 set "room=%DEVEZCODE_ROOM_ID%"
 if not exist "%base%\sessions" mkdir "%base%\sessions" >nul 2>&1
 if not exist "%base%\busy" mkdir "%base%\busy" >nul 2>&1
+rem PreToolUse writes "running-tool" (a tool is in flight) so the app-side transcript poller
+rem never declares idle while a long tool is still running; PostToolUse downgrades to "running".
+rem Anything starting with "running" counts as busy on the app side.
 if not "%ANTIGRAVITY_CONVERSATION_ID%"=="" call :write "%base%\sessions\%room%.txt" "%ANTIGRAVITY_CONVERSATION_ID%"
-if /i "%~1"=="PreToolUse"  call :write "%base%\busy\%room%.txt" "running"
+if /i "%~1"=="PreToolUse"  call :write "%base%\busy\%room%.txt" "running-tool"
 if /i "%~1"=="PostToolUse" call :write "%base%\busy\%room%.txt" "running"
 if /i "%~1"=="Stop"        call :write "%base%\busy\%room%.txt" "idle"
 if /i "%~1"=="SessionEnd"  call :write "%base%\busy\%room%.txt" "idle"

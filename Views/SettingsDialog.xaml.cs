@@ -1001,8 +1001,10 @@ public partial class SettingsDialog : UserControl
         bool goConnected = OpenCodeGoCredentialStore.IsConnected();
         bool deepSeekConnected = DeepSeekCredentialStore.IsConnected();
         bool grokConnected = GrokUsageService.IsConnected();
+        bool antigravityConnected = AntigravityUsageService.IsConnected();
 
         ClaudeConnectedBadge.Visibility = UsageApiService.IsConnected() ? Visibility.Visible : Visibility.Collapsed;
+        AntigravityConnectedBadge.Visibility = antigravityConnected ? Visibility.Visible : Visibility.Collapsed;
         CodexConnectedBadge.Visibility = codexConnected ? Visibility.Visible : Visibility.Collapsed;
         GoConnectedBadge.Visibility = goConnected ? Visibility.Visible : Visibility.Collapsed;
         DeepSeekConnectedBadge.Visibility = deepSeekConnected ? Visibility.Visible : Visibility.Collapsed;

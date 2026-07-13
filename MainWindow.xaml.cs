@@ -86,9 +86,8 @@ public partial class MainWindow : Window
     private readonly CodexHookService _codexHook = new();
     // grok — ~/.grok/hooks + 방별 상태 파일로 lastmsg/busy/session_id 추적 (codex 패턴).
     private readonly GrokHookService _grokHook = new();
-    // antigravity(agy) — hooks.json + 방별 상태 파일로 busy/conversation_id 추적 (grok 패턴).
-    // agy 훅에는 UserPromptSubmit 이 없어 lastmsg/waiting(❗) 신호는 현재 미지원
-    // (agy 설치 후 transcript.jsonl 실측되면 gajae식 폴링 추가 후보).
+    // antigravity(agy) — hooks.json 훅(busy/conversation_id) + transcript_full.jsonl 폴링
+    // (빠른 idle 확정 + lastmsg). waiting(❗)만 미지원(권한 프롬프트 신호 없음).
     private readonly AntigravityHookService _antigravityHook = new();
     // 비-Claude 비-codex (opencode/gjc) 의 last prompt 추적. codex 는 위 훅 서비스가 처리.
     private readonly AgentLastMessageService _agentLastMsg = new();
@@ -395,7 +394,7 @@ public partial class MainWindow : Window
             });
 
         // Antigravity(agy) — busy 스피너 + conversation_id 라이브 저장 (grok 패턴).
-        // 훅에 UserPromptSubmit 이 없어 waiting(❗)/lastmsg 신호는 없음.
+        // waiting(❗)은 미지원(권한 프롬프트 신호 없음). lastmsg 는 transcript 폴링에서 추출.
         _antigravityHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -407,6 +406,14 @@ public partial class MainWindow : Window
             });
         _antigravityHook.SessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() => SettingsService.SaveAntigravityRoomSession(roomId, sid));
+        _antigravityHook.MessageChanged += (roomId, msg) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s == null) return;
+                s.LastMessage = msg;
+                foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
+            });
 
         // 테마 변경 시 좌·우 패널 토글 아이콘 brush 재계산(seam 은 각 패널이 자체 처리)
         App.ThemeChanged += OnThemeChanged_UpdatePanels;

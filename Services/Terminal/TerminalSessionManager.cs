@@ -2232,7 +2232,7 @@ public sealed class TerminalSessionManager
         catch { return false; }
     }
 
-    /// <summary>antigravity 훅 busy\&lt;room&gt;.txt 가 running 인가.</summary>
+    /// <summary>antigravity 훅 busy\&lt;room&gt;.txt 가 running 계열("running"/"running-tool")인가.</summary>
     private static bool IsAntigravityBusyRunning(string roomId)
     {
         try
@@ -2242,7 +2242,7 @@ public sealed class TerminalSessionManager
             if (!File.Exists(path)) return false;
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var sr = new StreamReader(fs);
-            return sr.ReadToEnd().Trim() == "running";
+            return sr.ReadToEnd().Trim().StartsWith("running", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }

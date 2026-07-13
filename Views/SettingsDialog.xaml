@@ -1095,6 +1095,28 @@
                                     </StackPanel>
                                 </Grid>
 
+                                <!-- Antigravity (agy 키링 자동 인식 — 앱이 자격증명을 만들거나 지우지 않음) -->
+                                <Grid Margin="0,0,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Antigravity" VerticalAlignment="Center"
+                                                   FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                        <StackPanel x:Name="AntigravityConnectedBadge" Orientation="Horizontal" Visibility="Collapsed"
+                                                    Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource SuccessBrush}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="연결됨" Margin="5,0,0,0" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource SuccessBrush}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                               Text="agy 에서 Google 로그인하면 자동 연결"
+                                               ToolTip="Antigravity CLI(agy)가 저장한 Google 토큰을 자동 인식합니다. 연결이 안 보이면 터미널에서 agy 를 한 번 실행해 로그인하세요."
+                                               FontSize="{DynamicResource Fs11}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                </Grid>
+
                                 <!-- DeepSeek (API 키) -->
                                 <Grid>
                                     <Grid.RowDefinitions>

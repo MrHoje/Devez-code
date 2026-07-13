@@ -1,15 +1,24 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace DevezCode.Services;
 
-/// <summary>안티그래비티(agy) 훅이 방별로 떨군 busy/sessions 파일을 감시.
-/// GrokHookService 와 동일 패턴 (roomId 키). agy 훅에는 UserPromptSubmit 이 없어
-/// lastmsg/waiting 파일은 없다 — busy 는 PreToolUse/PostToolUse(running)/Stop(idle) 기준.
-/// 실측(2026-07-13): agy 는 Stop/SessionStart 훅 프로세스를 조기 취소할 수 있어(--print 확인)
-/// idle 전이가 유실될 수 있다 — stale failsafe 타이머가 오래 갱신 없는 running 을 idle 로 강제 전이.</summary>
+/// <summary>안티그래비티(agy) 훅이 방별로 떨군 busy/sessions 파일 감시 + transcript 폴링.
+/// GrokHookService 와 동일 패턴 (roomId 키).
+/// 실측(agy 1.1.1, 2026-07-13):
+/// · 훅에는 UserPromptSubmit 이 없고 Stop/SessionStart 훅 프로세스는 조기 취소될 수 있다
+///   (대화형에서도 Stop 유실 확인) — busy-ON 은 PreToolUse("running-tool")/PostToolUse("running"),
+///   busy-OFF 는 transcript 폴러가 주력, stale failsafe(120s)가 최후 보루.
+/// · agy 는 대화별 transcript 를 ~/.gemini/antigravity-cli/brain/&lt;conv&gt;/.system_generated/logs/
+///   transcript_full.jsonl 에 실시간 기록한다(레코드: type=USER_INPUT|PLANNER_RESPONSE|도구…).
+///   마지막 레코드가 PLANNER_RESPONSE 이고 정착 시간이 지나면 idle, USER_INPUT/도구면 running.
+///   PLANNER_RESPONSE 는 도구 실행 직전에도 나오므로 "running-tool"(도구 in-flight) 동안은
+///   settle-idle 을 봉인해 장시간 도구 중 오탐 idle 을 막는다.
+/// · lastmsg 는 마지막 USER_INPUT 레코드의 &lt;USER_REQUEST&gt; 에서 추출.</summary>
 public sealed class AntigravityHookService : IDisposable
 {
     private static string BaseDir => Path.Combine(
@@ -17,17 +26,29 @@ public sealed class AntigravityHookService : IDisposable
     private static string BusyDir => Path.Combine(BaseDir, "busy");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
 
-    /// <summary>running 파일이 이 시간 넘게 갱신 없으면 idle 로 강제 전이(Stop 훅 유실 대비).
-    /// 도구 사이 간격이 긴 작업(장시간 빌드 등)에서 이보다 길게 조용하면 스피너가 일찍 꺼질 수
-    /// 있으나, 다음 PreToolUse/PostToolUse 가 다시 켠다 — stuck-ON 보다 낫다.</summary>
+    /// <summary>running 파일이 이 시간 넘게 갱신 없으면 idle 로 강제 전이(최후 보루 —
+    /// 평시엔 transcript 폴러가 훨씬 먼저 idle 을 확정한다).</summary>
     private static readonly TimeSpan StaleBusyTtl = TimeSpan.FromSeconds(120);
+
+    /// <summary>마지막 레코드가 PLANNER_RESPONSE 인 채 이 시간 지나면 응답 종료로 판정.
+    /// 도구 사이 "생각" 구간이 이보다 길면 스피너가 잠깐 꺼졌다 다음 도구에서 다시 켜질 수
+    /// 있는 절충값 — stuck-ON(120s) 보다 낫다.</summary>
+    private static readonly TimeSpan ResponseSettle = TimeSpan.FromSeconds(10);
+
+    /// <summary>transcript 가 이보다 오래되면 running 승격 근거로 안 씀(크래시 잔재 방지).</summary>
+    private static readonly TimeSpan TranscriptFreshCap = TimeSpan.FromMinutes(3);
 
     private FileSystemWatcher? _busyWatcher;
     private FileSystemWatcher? _sessionWatcher;
     private System.Threading.Timer? _staleTimer;
+    private System.Threading.Timer? _transcriptTimer;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastEmittedMsg = new();
+    private int _transcriptPolling; // 재진입 방지
 
     public event Action<string, bool>? BusyChanged;
     public event Action<string, string>? SessionChanged;
+    /// <summary>(roomId, 마지막 user prompt) — transcript 폴링에서 추출.</summary>
+    public event Action<string, string>? MessageChanged;
 
     public void Start()
     {
@@ -61,12 +82,142 @@ public sealed class AntigravityHookService : IDisposable
 
             _staleTimer = new System.Threading.Timer(_ => SweepStaleBusy(), null,
                 TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(15));
+            _transcriptTimer = new System.Threading.Timer(_ => PollTranscripts(), null,
+                TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(2));
         }
         catch { /* 감시 실패해도 앱은 계속 */ }
     }
 
-    /// <summary>오래 갱신 없는 running 파일을 idle 로 강제 전이. 파일을 실제로 고쳐 써서
-    /// (원자적 temp+move) 워처 경유로 BusyChanged(false) 가 자연히 발화되게 한다.
+    // ── transcript 폴링 — 빠른 idle 확정 + lastmsg ─────────────────
+
+    private void PollTranscripts()
+    {
+        if (Interlocked.Exchange(ref _transcriptPolling, 1) == 1) return;
+        try
+        {
+            if (!Directory.Exists(SessionDir)) return;
+            foreach (var sessionFile in Directory.EnumerateFiles(SessionDir, "*.txt"))
+            {
+                try { PollRoomTranscript(sessionFile); }
+                catch { /* 다음 방 */ }
+            }
+        }
+        catch { }
+        finally { Interlocked.Exchange(ref _transcriptPolling, 0); }
+    }
+
+    private void PollRoomTranscript(string sessionFile)
+    {
+        var room = Path.GetFileNameWithoutExtension(sessionFile);
+        if (string.IsNullOrEmpty(room)) return;
+        var conv = TryRead(sessionFile);
+        if (conv == null || !Guid.TryParse(conv, out _)) return;
+
+        var transcript = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".gemini", "antigravity-cli", "brain", conv, ".system_generated", "logs", "transcript_full.jsonl");
+        if (!File.Exists(transcript)) return;
+
+        var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(transcript);
+        var (lastType, lastUserText) = ReadTranscriptTail(transcript);
+        if (lastType == null) return;
+
+        // lastmsg — 마지막 user prompt 를 헤더에 (변화 있을 때만 emit).
+        if (lastUserText != null)
+        {
+            var compact = OneLine(lastUserText);
+            if (compact.Length > 0
+                && (!_lastEmittedMsg.TryGetValue(room, out var prev) || prev != compact))
+            {
+                _lastEmittedMsg[room] = compact;
+                MessageChanged?.Invoke(room, compact);
+            }
+        }
+
+        var busyPath = Path.Combine(BusyDir, room + ".txt");
+        var busyNow = TryRead(busyPath) ?? "";
+        bool busyRunning = busyNow.StartsWith("running", StringComparison.OrdinalIgnoreCase);
+        bool toolInFlight = busyNow.Equals("running-tool", StringComparison.OrdinalIgnoreCase);
+
+        if (lastType == "PLANNER_RESPONSE")
+        {
+            // 응답 종료 후보 — 도구 in-flight 가 아니고 정착 시간이 지났으면 idle 확정.
+            // (PLANNER_RESPONSE 는 도구 직전에도 기록되므로 settle 없이 즉시 idle 은 오탐.)
+            if (busyRunning && !toolInFlight && age >= ResponseSettle)
+                WriteBusyFile(busyPath, "idle");
+        }
+        else if (!busyRunning && age <= TranscriptFreshCap)
+        {
+            // USER_INPUT/도구/시스템 레코드가 방금 기록됨 = 턴 진행 중 — 훅이 못 켠 스피너 보강
+            // (순수 텍스트 응답은 Pre/PostToolUse 훅이 안 와서 이 경로가 유일한 busy-ON).
+            WriteBusyFile(busyPath, "running");
+        }
+    }
+
+    /// <summary>transcript 끝부분에서 (마지막 레코드 type, 마지막 USER_INPUT 본문) 추출.
+    /// 큰 파일 대비 끝 64KB 만 읽는다. 실패 시 (null, null).</summary>
+    private static (string? lastType, string? lastUserText) ReadTranscriptTail(string path)
+    {
+        try
+        {
+            const int tailBytes = 64 * 1024;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (fs.Length > tailBytes) fs.Seek(-tailBytes, SeekOrigin.End);
+            using var sr = new StreamReader(fs, Encoding.UTF8);
+            var text = sr.ReadToEnd();
+
+            string? lastType = null, lastUser = null;
+            foreach (var line in text.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                // tail 절단으로 깨진 첫 줄 등은 파싱 실패로 자연히 스킵.
+                if (trimmed.Length == 0 || trimmed[0] != '{') continue;
+                try
+                {
+                    using var doc = JsonDocument.Parse(trimmed);
+                    if (!doc.RootElement.TryGetProperty("type", out var t) || t.ValueKind != JsonValueKind.String)
+                        continue;
+                    lastType = t.GetString();
+                    if (lastType == "USER_INPUT"
+                        && doc.RootElement.TryGetProperty("content", out var c)
+                        && c.ValueKind == JsonValueKind.String)
+                        lastUser = ExtractUserRequest(c.GetString() ?? "");
+                }
+                catch { /* 불완전 줄 무시 */ }
+            }
+            return (lastType, lastUser);
+        }
+        catch { return (null, null); }
+    }
+
+    /// <summary>USER_INPUT content 의 &lt;USER_REQUEST&gt;…&lt;/USER_REQUEST&gt; 본문. 래퍼 없으면 원문.</summary>
+    internal static string ExtractUserRequest(string content)
+    {
+        var m = Regex.Match(content, @"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>",
+            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        return m.Success ? m.Groups[1].Value : content;
+    }
+
+    private static string OneLine(string s)
+    {
+        s = Regex.Replace(s, @"\s+", " ").Trim();
+        return s.Length > 200 ? s.Substring(0, 200) : s;
+    }
+
+    /// <summary>busy 파일 원자적 쓰기(temp+move) — 워처 경유로 BusyChanged 가 자연히 발화된다.</summary>
+    private static void WriteBusyFile(string path, string value)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllText(tmp, value);
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch { }
+    }
+
+    /// <summary>오래 갱신 없는 running 파일을 idle 로 강제 전이(최후 보루).
     /// mtime 은 매 스윕마다 새로 읽는다(캐시된 stale mtime 함정 방지).</summary>
     private void SweepStaleBusy()
     {
@@ -78,12 +229,9 @@ public sealed class AntigravityHookService : IDisposable
                 try
                 {
                     var status = TryRead(f);
-                    if (status == null || !status.Equals("running", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (status == null || !status.StartsWith("running", StringComparison.OrdinalIgnoreCase)) continue;
                     if (DateTime.UtcNow - File.GetLastWriteTimeUtc(f) < StaleBusyTtl) continue;
-
-                    var tmp = f + "." + Guid.NewGuid().ToString("N") + ".tmp";
-                    File.WriteAllText(tmp, "idle");
-                    File.Move(tmp, f, overwrite: true);
+                    WriteBusyFile(f, "idle");
                 }
                 catch { /* 다음 스윕 */ }
             }
@@ -102,7 +250,7 @@ public sealed class AntigravityHookService : IDisposable
             ReEmitBusyAfterSettleAsync(path, room);
             return;
         }
-        BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
+        BusyChanged?.Invoke(room, status.StartsWith("running", StringComparison.OrdinalIgnoreCase));
     }
 
     private async void ReEmitBusyAfterSettleAsync(string path, string room)
@@ -111,7 +259,7 @@ public sealed class AntigravityHookService : IDisposable
         var status = TryRead(path);
         BusyChanged?.Invoke(room,
             !string.IsNullOrWhiteSpace(status)
-            && status.Equals("running", StringComparison.OrdinalIgnoreCase));
+            && status.StartsWith("running", StringComparison.OrdinalIgnoreCase));
     }
 
     private void EmitSession(string path)
@@ -165,5 +313,6 @@ public sealed class AntigravityHookService : IDisposable
         _busyWatcher?.Dispose();
         _sessionWatcher?.Dispose();
         _staleTimer?.Dispose();
+        _transcriptTimer?.Dispose();
     }
 }
