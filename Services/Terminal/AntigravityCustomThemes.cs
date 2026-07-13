@@ -12,8 +12,7 @@ namespace DevezCode.Services.Terminal;
 /// 다른 설정 키는 보존(merge). 이미 떠 있는 agy 세션은 세션 재시작 후 반영. 실패해도 무해.
 /// 스킴 값은 대소문자 구분 소문자+공백 형식 (agy 1.1.1 실기 검증: "Dark" 는
 /// "unrecognized value" 로 거부되어 TUI 시작 시 Settings Error 화면이 뜬다).
-/// 바이너리 검증 상수: "solarized dark" / "solarized light" / "colorblind-friendly dark" /
-/// "colorblind-friendly light" — 기본 스킴은 그 슬러그 규칙대로 "dark".</summary>
+/// 밝은 앱 테마는 agy 의 "terminal" 스킴으로 매핑해 DevezCode 터미널 팔레트를 그대로 상속한다.</summary>
 public static class AntigravityCustomThemes
 {
     private static string SettingsJsonPath => Path.Combine(
@@ -24,7 +23,7 @@ public static class AntigravityCustomThemes
     public static string MapToAntigravityScheme(string devezCodeTheme) => devezCodeTheme switch
     {
         "dark" => "dark",
-        "soft" or "minimal" => "solarized light",
+        "soft" or "minimal" => "terminal",
         _ => "dark",
     };
 

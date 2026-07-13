@@ -276,7 +276,13 @@ public partial class CommunityWindow : Window
     }
 
     private async void RefreshBtn_Click(object sender, RoutedEventArgs e) => await RefreshAsync(_selectedPost?.Id);
-    private async void SearchBtn_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
+
+    private async void SearchClearBtn_Click(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Clear();
+        await RefreshAsync();
+        SearchBox.Focus();
+    }
 
     private async void SearchBox_KeyDown(object sender, KeyEventArgs e)
     {

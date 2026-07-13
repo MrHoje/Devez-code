@@ -843,13 +843,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // UTF-8 멀티바이트(한글) 와 겹칠 일이 없어 문자열 디코딩 없이 바이트 매칭만으로 안전하다.
         if (DevezCode.App.CurrentTheme == "soft")
             merged = RecolorClaudeIdentifierBlue(merged);
-        // codex: 사용자가 보낸 메시지 박스 배경(codex 고정 truecolor rgb 41,41,41)을 앱 테마별
-        // 색조로 치환해 '내 메시지'가 구분되게 한다. 상태바(39,39,39)·diff(48,58,48/58,48,48)는 보존.
+        // codex: 고정 다크 배경인 사용자 메시지·diff 영역을 앱 테마에 맞게 치환한다.
+        // 상태바(39,39,39)는 보존.
         if (AgentFor(roomId) == "codex")
-            merged = RecolorCodexUserMsgBg(merged);
-        // Grok: 일반 TUI의 전경·액센트·의미색은 보존하고 중립 배경 팔레트만 앱 스킴에 상대 매핑.
+            merged = RecolorCodexBackgrounds(merged);
+        // Grok: 중립 배경은 앱 스킴에 상대 매핑하고, 밝은 테마의 truecolor 전경·의미색도
+        // DevezCode soft/minimal 팔레트로 역할별 매핑한다. dark 전경색은 GrokNight 원본 유지.
         if (AgentFor(roomId) == "grok")
-            merged = RecolorGrokTerminalBg(roomId, merged);
+            merged = RecolorGrokTerminalColors(roomId, merged);
         else
             _grokCsiTails.Remove(roomId);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
@@ -888,8 +889,17 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     // codex 가 '사용자 메시지 박스' 배경에 쓰는 고정 truecolor(rgb 41,41,41, 테마 무관 UI 상수).
     private static readonly byte[] _codexUserMsgBgSrc =
         System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;41;41;41m");
+    private static readonly byte[] _codexDiffAddedBgSrc =
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;33;58;43m");
+    private static readonly byte[] _codexDiffRemovedBgSrc =
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;74;34;29m");
+    private static readonly byte[] _codexLegacyDiffAddedBgSrc =
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;48;58;48m");
+    private static readonly byte[] _codexLegacyDiffRemovedBgSrc =
+        System.Text.Encoding.ASCII.GetBytes("\x1b[48;2;58;48;48m");
 
-    // 앱 테마별 '내 메시지' 박스 배경 = gjc 와 동일하게 currentLine(배경에서 살짝 뜬 톤)로 맞춘다.
+    // 앱 테마별 '내 메시지' 박스 배경. 밝은 테마에서는 currentLine보다 반 단계 진하게 잡아
+    // 프롬프트·입력 영역이 터미널 바탕과 뭉개지지 않게 한다.
     // codex 는 xterm 스킴(DevezCode Dark/Soft/Minimal)을 따라 배경·기본전경이 테마별로 바뀌므로
     // (soft/minimal 은 밝은 배경+어두운 글자) 밝은 박스에서도 글자가 읽힌다.
     // 스킴 매핑(App.xaml.cs)과 동일 규칙: dark→Dark, soft→Soft, 그 외→Minimal.
@@ -897,29 +907,59 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         System.Text.Encoding.ASCII.GetBytes(DevezCode.App.CurrentTheme switch
         {
             "dark" => "\x1b[48;2;39;39;39m",     // gjc currentLine #272727
-            "soft" => "\x1b[48;2;236;231;222m",  // gjc currentLine #ECE7DE
-            _      => "\x1b[48;2;241;245;249m",  // minimal: gjc currentLine #F1F5F9
+            "soft" => "\x1b[48;2;231;224;213m",  // soft #E7E0D5
+            _      => "\x1b[48;2;234;240;245m",  // minimal #EAF0F5
         });
 
-    private static byte[] RecolorCodexUserMsgBg(byte[] data)
+    private static byte[] RecolorCodexBackgrounds(byte[] data)
     {
-        if (IndexOfBytes(data, _codexUserMsgBgSrc, 0) < 0) return data; // 없으면 빠른 통과
-        var target = CodexUserMsgBgTarget();
+        data = ReplaceCodexBackground(data, _codexUserMsgBgSrc, CodexUserMsgBgTarget());
+        if (DevezCode.App.CurrentTheme == "dark") return data;
+
+        bool isSoft = DevezCode.App.CurrentTheme == "soft";
+        var added = System.Text.Encoding.ASCII.GetBytes(isSoft
+            ? "\x1b[48;2;222;236;214m"  // Claude soft diffAdded #DEECD6
+            : "\x1b[48;2;219;234;254m"); // Claude minimal diffAdded #DBEAFE
+        var removed = System.Text.Encoding.ASCII.GetBytes(isSoft
+            ? "\x1b[48;2;242;214;214m"  // Claude soft diffRemoved #F2D6D6
+            : "\x1b[48;2;254;226;226m"); // Claude minimal diffRemoved #FEE2E2
+
+        data = ReplaceCodexBackground(data, _codexDiffAddedBgSrc, added);
+        data = ReplaceCodexBackground(data, _codexLegacyDiffAddedBgSrc, added);
+        data = ReplaceCodexBackground(data, _codexDiffRemovedBgSrc, removed);
+        return ReplaceCodexBackground(data, _codexLegacyDiffRemovedBgSrc, removed);
+    }
+
+    private static byte[] ReplaceCodexBackground(byte[] data, byte[] source, byte[] target)
+    {
+        if (IndexOfBytes(data, source, 0) < 0) return data;
         var result = new List<byte>(data.Length);
         int i = 0;
         while (i < data.Length)
         {
-            if (i + _codexUserMsgBgSrc.Length <= data.Length && MatchesAt(data, i, _codexUserMsgBgSrc))
+            if (i + source.Length <= data.Length && MatchesAt(data, i, source))
             {
                 result.AddRange(target);
-                i += _codexUserMsgBgSrc.Length;
+                i += source.Length;
             }
             else { result.Add(data[i]); i++; }
         }
         return result.ToArray();
     }
 
-    // SGR truecolor 배경의 두 표준 표기 + xterm 256색 배경. Foreground(38)는 의도적으로 대상에서 제외.
+    // SGR truecolor 전경/배경의 표준 표기 + xterm 256색.
+    private static readonly Regex GrokFgRgbSemicolon = new(
+        @"(?<!\d)38;2;(?<r>\d{1,3});(?<g>\d{1,3});(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokFgRgbColonWithSpace = new(
+        @"(?<!\d)38:2::(?<r>\d{1,3}):(?<g>\d{1,3}):(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokFgRgbColonWithColorSpace = new(
+        @"(?<!\d)38:2:\d+:(?<r>\d{1,3}):(?<g>\d{1,3}):(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokFgRgbColon = new(
+        @"(?<!\d)38:2:(?<r>\d{1,3}):(?<g>\d{1,3}):(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokFgIndexed = new(
+        @"(?<!\d)38;5;(?<index>\d{1,3})(?!\d)", RegexOptions.Compiled);
+    private static readonly Regex GrokFgIndexedColon = new(
+        @"(?<!\d)38:5:(?<index>\d{1,3})(?!\d)", RegexOptions.Compiled);
     private static readonly Regex GrokBgRgbSemicolon = new(
         @"(?<!\d)48;2;(?<r>\d{1,3});(?<g>\d{1,3});(?<b>\d{1,3})(?!\d)", RegexOptions.Compiled);
     private static readonly Regex GrokBgRgbColonWithSpace = new(
@@ -934,8 +974,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         @"(?<!\d)48:5:(?<index>\d{1,3})(?!\d)", RegexOptions.Compiled);
 
     /// <summary>GrokNight/GrokDay의 저채도 배경 계층을 DevezCode 배경 기준으로 평행 이동한다.
-    /// 의미색(diff/경고/선택 등 채도 높은 배경), 모든 전경색, 예상 범위 밖 색은 그대로 통과시킨다.</summary>
-    private byte[] RecolorGrokTerminalBg(string roomId, byte[] data)
+    /// soft/minimal에서는 GrokDay의 고정 truecolor 전경도 DevezCode 의미색으로 매핑한다.</summary>
+    private byte[] RecolorGrokTerminalColors(string roomId, byte[] data)
     {
         byte[] input;
         if (_grokCsiTails.Remove(roomId, out var tail) && tail.Length > 0)
@@ -978,10 +1018,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 break;
             }
 
-            if (input[end] == (byte)'m' && ContainsGrokBackgroundMarker(input, i + 2, end))
+            if (input[end] == (byte)'m' && ContainsGrokColorMarker(input, i + 2, end))
             {
                 var sgr = Encoding.ASCII.GetString(input, i, end - i + 1);
-                output.AddRange(Encoding.ASCII.GetBytes(TransformGrokBackgroundSgr(sgr)));
+                output.AddRange(Encoding.ASCII.GetBytes(TransformGrokColorSgr(sgr)));
             }
             else
             {
@@ -992,21 +1032,22 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         return output.ToArray();
     }
 
-    private static bool ContainsGrokBackgroundMarker(byte[] data, int start, int end)
+    private static bool ContainsGrokColorMarker(byte[] data, int start, int end)
     {
         for (int i = start; i + 2 < end; i++)
-            if (data[i] == (byte)'4' && data[i + 1] == (byte)'8'
+            if ((data[i] == (byte)'3' || data[i] == (byte)'4') && data[i + 1] == (byte)'8'
                 && (data[i + 2] == (byte)';' || data[i + 2] == (byte)':'))
                 return true;
         return false;
     }
 
-    private static string TransformGrokBackgroundSgr(string sgr)
+    private static string TransformGrokColorSgr(string sgr)
     {
-        if (!sgr.Contains("48;", StringComparison.Ordinal)
-            && !sgr.Contains("48:", StringComparison.Ordinal)) return sgr;
+        if (!sgr.Contains("38;", StringComparison.Ordinal) && !sgr.Contains("38:", StringComparison.Ordinal)
+            && !sgr.Contains("48;", StringComparison.Ordinal) && !sgr.Contains("48:", StringComparison.Ordinal))
+            return sgr;
 
-        string ReplaceRgb(Match match)
+        string ReplaceBackgroundRgb(Match match)
         {
             if (!TryByteGroup(match, "r", out var r) || !TryByteGroup(match, "g", out var g)
                 || !TryByteGroup(match, "b", out var b) || !TryMapGrokNeutralBackground(r, g, b, out var mapped))
@@ -1015,11 +1056,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         }
 
         // semicolon을 먼저 처리해야 colon→semicolon 변환 결과가 같은 호출에서 이중 변환되지 않는다.
-        var result = GrokBgRgbSemicolon.Replace(sgr, ReplaceRgb);
-        result = GrokBgRgbColonWithSpace.Replace(result, ReplaceRgb);
-        result = GrokBgRgbColonWithColorSpace.Replace(result, ReplaceRgb);
-        result = GrokBgRgbColon.Replace(result, ReplaceRgb);
-        string ReplaceIndexed(Match match)
+        var result = GrokBgRgbSemicolon.Replace(sgr, ReplaceBackgroundRgb);
+        result = GrokBgRgbColonWithSpace.Replace(result, ReplaceBackgroundRgb);
+        result = GrokBgRgbColonWithColorSpace.Replace(result, ReplaceBackgroundRgb);
+        result = GrokBgRgbColon.Replace(result, ReplaceBackgroundRgb);
+        string ReplaceBackgroundIndexed(Match match)
         {
             if (!int.TryParse(match.Groups["index"].Value, out var index) || index is < 16 or > 255
                 || !TryXterm256Rgb(index, out var r, out var g, out var b)
@@ -1028,9 +1069,98 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 return match.Value;
             return $"48;2;{mapped.R};{mapped.G};{mapped.B}";
         }
-        result = GrokBgIndexed.Replace(result, ReplaceIndexed);
-        result = GrokBgIndexedColon.Replace(result, ReplaceIndexed);
+        result = GrokBgIndexed.Replace(result, ReplaceBackgroundIndexed);
+        result = GrokBgIndexedColon.Replace(result, ReplaceBackgroundIndexed);
+
+        if (DevezCode.App.CurrentTheme == "dark") return result;
+
+        string ReplaceForegroundRgb(Match match)
+        {
+            if (!TryByteGroup(match, "r", out var r) || !TryByteGroup(match, "g", out var g)
+                || !TryByteGroup(match, "b", out var b) || !TryMapGrokForeground(r, g, b, out var mapped))
+                return match.Value;
+            return $"38;2;{mapped.R};{mapped.G};{mapped.B}";
+        }
+
+        result = GrokFgRgbSemicolon.Replace(result, ReplaceForegroundRgb);
+        result = GrokFgRgbColonWithSpace.Replace(result, ReplaceForegroundRgb);
+        result = GrokFgRgbColonWithColorSpace.Replace(result, ReplaceForegroundRgb);
+        result = GrokFgRgbColon.Replace(result, ReplaceForegroundRgb);
+        string ReplaceForegroundIndexed(Match match)
+        {
+            if (!int.TryParse(match.Groups["index"].Value, out var index) || index is < 16 or > 255
+                || !TryXterm256Rgb(index, out var r, out var g, out var b)
+                || !TryMapGrokForeground(r, g, b, out var mapped))
+                return match.Value;
+            return $"38;2;{mapped.R};{mapped.G};{mapped.B}";
+        }
+        result = GrokFgIndexed.Replace(result, ReplaceForegroundIndexed);
+        result = GrokFgIndexedColon.Replace(result, ReplaceForegroundIndexed);
         return result;
+    }
+
+    private static bool TryMapGrokForeground(int r, int g, int b, out (int R, int G, int B) mapped)
+    {
+        mapped = default;
+        if (DevezCode.App.CurrentTheme == "dark"
+            || (uint)r > 255 || (uint)g > 255 || (uint)b > 255) return false;
+
+        int max = Math.Max(r, Math.Max(g, b));
+        int min = Math.Min(r, Math.Min(g, b));
+        int chroma = max - min;
+        var scheme = TerminalSessionManager.Instance.Config.Scheme;
+
+        // GrokDay 0.2.99의 본문 #262626 ~ 비활성 #CFCFCF 중립 램프를 현재 스킴의
+        // Foreground→Background 사이로 옮겨 soft는 따뜻한 회색, minimal은 청회색 계층을 만든다.
+        if (chroma <= 12)
+        {
+            int level = (r + g + b) / 3;
+            if (level is < 24 or > 220
+                || !TryParseRgbHex(scheme.Foreground, out var foreground)
+                || !TryParseRgbHex(scheme.Background, out var background)) return false;
+
+            double t = Math.Clamp((level - 38) / 200.0, 0, 1);
+            mapped = (
+                (int)Math.Round(foreground.R + (background.R - foreground.R) * t),
+                (int)Math.Round(foreground.G + (background.G - foreground.G) * t),
+                (int)Math.Round(foreground.B + (background.B - foreground.B) * t));
+            return true;
+        }
+
+        // GrokDay가 직접 내보내는 truecolor 의미색을 색상 역할로 분류한다. 정확한 원본 RGB가
+        // 버전에서 바뀌어도 hue 역할은 유지되므로 Codex식 고정값 치환보다 업데이트에 강하다.
+        if (chroma < 24) return false;
+        double hue = RgbHue(r, g, b, max, chroma);
+        bool bright = max >= 185;
+        string target = hue < 20 || hue >= 340 ? (bright ? scheme.BrightRed : scheme.Red)
+            : hue < 70  ? (bright ? scheme.BrightYellow : scheme.Yellow)
+            : hue < 170 ? (bright ? scheme.BrightGreen : scheme.Green)
+            : hue < 200 ? (bright ? scheme.BrightCyan : scheme.Cyan)
+            : hue < 255 ? (bright ? scheme.BrightBlue : scheme.Blue)
+            :              (bright ? scheme.BrightPurple : scheme.Purple);
+        return TryParseRgbHex(target, out mapped);
+    }
+
+    private static double RgbHue(int r, int g, int b, int max, int chroma)
+    {
+        if (chroma == 0) return 0;
+        double hue = max == r ? 60.0 * ((g - b) / (double)chroma % 6)
+            : max == g ? 60.0 * ((b - r) / (double)chroma + 2)
+            :            60.0 * ((r - g) / (double)chroma + 4);
+        return hue < 0 ? hue + 360 : hue;
+    }
+
+    private static bool TryParseRgbHex(string? hex, out (int R, int G, int B) rgb)
+    {
+        rgb = default;
+        hex = hex?.Trim();
+        if (string.IsNullOrEmpty(hex) || hex.Length < 7 || hex[0] != '#') return false;
+        var style = System.Globalization.NumberStyles.HexNumber;
+        if (!int.TryParse(hex.AsSpan(1, 2), style, null, out var r)
+            || !int.TryParse(hex.AsSpan(3, 2), style, null, out var g)
+            || !int.TryParse(hex.AsSpan(5, 2), style, null, out var b)) return false;
+        rgb = (r, g, b);
+        return true;
     }
 
     private static bool TryMapGrokNeutralBackground(
@@ -1424,6 +1554,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>다음 N회의 출력 쓰기에서 xterm.js 스크롤을 억제(슬래시 명령 자동주입 시 사용).</summary>
     public void SuppressScroll(int count = 5) => PostJson(new { type = "suppressScroll", count });
+
+    /// <summary>에이전트 응답 완료 후 xterm/WebView2 의 잔류 IME 조합 상태를 정리한다.
+    /// JS 쪽에서 현재 활성·포커스된 해당 방인지 재확인하므로 비활성 패널 호출은 무해하다.</summary>
+    public void ResetImeAfterResponse(string roomId)
+    {
+        if (_pageReady) PostJson(new { type = "resetImeAfterResponse", roomId });
+    }
 
     /// <summary>Collapsed(0폭) 였다 되살아난(preserve) 패널을 자연스럽게 복원한다. JS 에서 컨테이너를 잠깐
     /// 투명(opacity:0, 아래 터미널 배경색만 노출)으로 덮은 뒤, 폭이 최종값으로 확정될 때까지 기다려 fit +

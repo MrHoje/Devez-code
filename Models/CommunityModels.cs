@@ -23,7 +23,11 @@ public static class CommunityCategories
     };
 }
 
-public sealed record CommunityCategoryOption(string Value, string Label);
+/// <summary>커스텀 ComboBox SelectionBox가 표시할 사용자용 라벨.</summary>
+public sealed record CommunityCategoryOption(string Value, string Label)
+{
+    public override string ToString() => Label;
+}
 
 public sealed class CommunityPostSummary
 {

@@ -709,6 +709,26 @@ public sealed class TerminalSessionManager
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "gajae", "launch");
 
+    private static string GajaeQuitFlagPath(string roomId) => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "gajae", "quitting", SafeRoomFileName(roomId) + ".txt");
+
+    private static void MarkGajaeQuitting(string roomId)
+    {
+        try
+        {
+            var path = GajaeQuitFlagPath(roomId);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "1");
+        }
+        catch { /* best effort — 실패해도 timeout 뒤 Job 하드 정리가 종료를 보장 */ }
+    }
+
+    private static void ClearGajaeQuitFlag(string roomId)
+    {
+        try { File.Delete(GajaeQuitFlagPath(roomId)); } catch { }
+    }
+
     /// <summary>방의 session-dir 에서 가장 최근 세션 .jsonl 의 ID(파일명 끝 UUID)를 추출. 없으면 null.
     /// gjc 파일명: <c>2026-06-24T06-43-03-266Z_019ef85e-31e2-7000-9b2a-e205d434126f.jsonl</c>
     /// → 마지막 '_' 뒤가 세션 ID. /clear·새 대화로 ID 가 바뀌어도 항상 최신을 집어 추종한다.</summary>
@@ -898,6 +918,7 @@ public sealed class TerminalSessionManager
     private string? TryBuildGajaeDirectLaunch(string roomId, out string? injectFallback)
     {
         injectFallback = null;
+        ClearGajaeQuitFlag(roomId);
         var sessionDir = GajaeSessionDir(roomId);
         try { Directory.CreateDirectory(sessionDir); } catch { }
 
@@ -926,7 +947,8 @@ public sealed class TerminalSessionManager
             // gjc 일반(비멀티플렉서) 모드로 실행 — 멀티플렉서 모드(STY)는 입력창 하단에 빈 줄을
             // 더 그려서 제외했다. 일반 모드가 풀 재페인트마다 보내는 스크롤백 클리어(\x1b[3J)는
             // terminal.html 파서에서 gjc 방 한정으로 삼켜 스크롤백/휠 스크롤을 보존한다.
-            File.WriteAllText(batchPath, "@echo off\r\n" + cmd + "\r\n" + GajaeReentryLoop(sd, RegisterReenterFlag(roomId)));
+            File.WriteAllText(batchPath, "@echo off\r\n" + cmd + "\r\n" +
+                GajaeReentryLoop(sd, GajaeQuitFlagPath(roomId), RegisterReenterFlag(roomId)));
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
@@ -1129,7 +1151,7 @@ public sealed class TerminalSessionManager
     }
 
     // ── 종료 시 같은 세션으로 자동 재진입 (cmd /k 배치 루프) ──────────────
-    // /exit·Ctrl+C 로 CLI 를 닫아도 셸로 빠지지 않고, 방이 살아있는 동안은 같은 세션으로 다시 띄운다.
+    // 에이전트별 종료 단축키로 CLI 를 닫아도 셸로 빠지지 않고, 방이 살아있는 동안은 같은 세션으로 다시 띄운다.
     // "진짜 종료"는 앱에서 방(탭)을 닫는 것으로만 한다. 각 에이전트의 첫 실행(fork/resume/신규 판정)
     // 배치 본문 뒤에 이 루프를 붙인다 — 루프는 매 반복 추적파일/세션-dir 에서 현재 세션을 다시 잡는다.
     // 안전장치: 연속 실행 실패(=CLI 미설치 등)가 5회 쌓이면 무한 스핀 대신 프롬프트를 남겨 진단 가능.
@@ -1187,7 +1209,7 @@ public sealed class TerminalSessionManager
     private static string ReentryTail() =>
         "if errorlevel 1 (set /a FAILS+=1) else (set \"FAILS=0\")\r\n" +
         "if %FAILS% geq 5 goto __giveup\r\n" +
-        "ping -n 2 127.0.0.1 >nul\r\n" +      // ≈1s 스로틀 — 정상 /exit 엔 무해, 크래시 루프 스핀 방지
+        "ping -n 2 127.0.0.1 >nul\r\n" +      // ≈1s 스로틀 — 정상 TUI 종료엔 무해, 크래시 루프 스핀 방지
         "goto __reenter\r\n" +
         ":__giveup\r\n" +
         "echo.\r\n" +
@@ -1229,18 +1251,25 @@ public sealed class TerminalSessionManager
         $"  call claude {flags}\r\n" +
         ")\r\n" +
         ReentryTail() +
-        ":__quitflag\r\n";
+        "goto :eof\r\n" + // giveup은 진단용 cmd 프롬프트를 유지; quitflag만 아래 exit로 셸까지 닫는다.
+        ":__quitflag\r\n" +
+        "exit\r\n";
     }
 
     /// <summary>가재(gjc) 재진입 루프 — 방별 --session-dir 로 격리돼 있어 -c(최신 이어가기)가 곧 이 방의
-    /// 마지막 대화. 앱의 session-dir 폴링(GajaeLastMessageService)이 재진입 세션도 그대로 추적한다.</summary>
-    private static string GajaeReentryLoop(string sd, string reenterFlagPath) =>
+    /// 마지막 대화. 앱의 session-dir 폴링(GajaeLastMessageService)이 재진입 세션도 그대로 추적한다.
+    /// 앱이 Ctrl+D 종료 전에 quitFlagPath를 남기면 새 gjc를 띄우지 않고 배치를 끝낸다.</summary>
+    private static string GajaeReentryLoop(string sd, string quitFlagPath, string reenterFlagPath) =>
         "set FAILS=0\r\n" +
         ":__reenter\r\n" +
+        $"if exist \"{quitFlagPath}\" goto __quitflag\r\n" +
         $"type nul >\"{reenterFlagPath}\"\r\n" + // 재실행 직전 앱 신호(touch) — 로딩 커버용. 첫 실행은 루프 밖
         $"call gjc {sd} -c\r\n" +   // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 루프로 복귀
         $"if errorlevel 1 call gjc {sd}\r\n" +
-        ReentryTail();
+        ReentryTail() +
+        "goto :eof\r\n" + // giveup은 진단용 cmd 프롬프트를 유지; quitflag만 아래 exit로 셸까지 닫는다.
+        ":__quitflag\r\n" +
+        "exit\r\n";
 
     // ── Claude 세션 ID 추적 (%APPDATA%\DevezCode\claude\) ──────────────
     // SessionStart 훅이 방별 현재 세션 ID를 sessions\<roomId>.txt 에 기록한다.
@@ -1930,7 +1959,7 @@ public sealed class TerminalSessionManager
         lock (_lock) return _sessions.Count > 0;
     }
 
-    /// <summary>앱 종료 시: 모든 세션을 동시에 graceful 종료(Ctrl+C×2 + exit)해 claude/codex 가
+    /// <summary>앱 종료 시: 일반 입력을 먼저 동결한 뒤 모든 세션에 에이전트별 종료 제어키만 보내
     /// transcript 를 flush 하고 Stop/SessionEnd 훅을 기록할 틈을 준 뒤, 잔여를 Dispose 로 하드 정리한다.
     /// 병렬 처리라 벽시계 시간은 가장 느린 세션 1개 기준(perGraceMs).
     /// WaitForExit 기반이라 빠르게 끝나는 세션은 즉시 통과 — timeout 을 키워도 정상 종료는 안 느려진다.
@@ -1948,14 +1977,15 @@ public sealed class TerminalSessionManager
         List<KeyValuePair<string, TerminalSession>> snapshot;
         lock (_lock) snapshot = _sessions.ToList();
         if (snapshot.Count == 0) return;
+        foreach (var kv in snapshot) kv.Value.BeginGracefulExit();
         DiagLog.Write($"GracefulShutdownAll: {snapshot.Count} sessions");
 
         try
         {
             await Task.WhenAll(snapshot.Select(kv =>
             {
-                var (sendShellExit, quitInput, escFirst) = GracefulExitPlan(kv.Key);
-                return kv.Value.TryGracefulExitAsync(perGraceMs, sendShellExit, quitInput, escFirst);
+                var (controlInput, repeatCount, escFirst) = GracefulExitPlan(kv.Key);
+                return kv.Value.TryGracefulExitAsync(perGraceMs, controlInput, repeatCount, escFirst);
             }));
         }
         catch { /* best effort */ }
@@ -2033,7 +2063,7 @@ public sealed class TerminalSessionManager
 
     /// <summary>claude 방이 권한/선택지 입력을 기다리는 중인가('permission'/'input', waiting 훅 파일).
     /// 이 상태에서 Esc 를 보내면 대기 중인 권한창·선택지가 취소되며 원치 않는 자동거부/중단이 날 수
-    /// 있어, 종료 시 Esc 시도 여부를 이걸로 가른다(대기 중이면 Esc 생략, /exit 만 시도).</summary>
+    /// 있어, 종료 시 Esc 시도 여부를 이걸로 가른다(대기 중이면 Esc 생략, Ctrl+D만 시도).</summary>
     private static bool IsClaudeWaitingOnUser(string roomId)
     {
         try
@@ -2051,7 +2081,7 @@ public sealed class TerminalSessionManager
     private static string ClaudeQuitFlagPath(string roomId) =>
         Path.Combine(ClaudeTrackDir, "quitting", SafeRoomFileName(roomId) + ".txt");
 
-    /// <summary>종료 시작 전에 방별 "종료중" 플래그를 남긴다. escFirst(Esc→/exit) 로 claude 가
+    /// <summary>종료 시작 전에 방별 "종료중" 플래그를 남긴다. escFirst(Esc→Ctrl+D) 로 claude 가
     /// 예상보다 빨리 정상 종료(errorlevel 0)하면, ClaudeReentryLoop 배치가 Dispose 로 ConPTY 를
     /// 닫기 전 그 틈에 goto __reenter 로 새 claude 를 띄우는 레이스가 있다 — 이 플래그를 배치가
     /// 재진입 직전에 확인해 그 레이스를 막는다.</summary>
@@ -2124,7 +2154,7 @@ public sealed class TerminalSessionManager
         catch (Exception) { /* 스냅샷 실패 — 종료는 계속 */ }
     }
 
-    /// <summary>테마 변경 등 부분 재시작 시: 지정된 세션들만 graceful 종료(Ctrl+C×2 + exit)해 훅 flush 기회를
+    /// <summary>테마 변경 등 부분 재시작 시: 일반 입력을 동결하고 지정 세션에 에이전트별 종료 제어키만 보내 훅 flush 기회를
     /// 준 뒤 Dispose 한다. GracefulShutdownAllAsync 와 동일 흐름이나 전체가 아닌 지정 room 만 대상.</summary>
     public async Task GracefulDisposeRoomsAsync(IEnumerable<string> roomIds, int perGraceMs = 2500, int postFlushMs = 3000)
     {
@@ -2137,14 +2167,15 @@ public sealed class TerminalSessionManager
             foreach (var kv in snapshot) _gracefulStopping.Add(kv.Key);
         }
         if (snapshot.Count == 0) return;
+        foreach (var kv in snapshot) kv.Value.BeginGracefulExit();
         DiagLog.Write($"GracefulDisposeRooms: {string.Join(",", snapshot.Select(kv => kv.Key))}");
 
         try
         {
             await Task.WhenAll(snapshot.Select(kv =>
             {
-                var (sendShellExit, quitInput, escFirst) = GracefulExitPlan(kv.Key);
-                return kv.Value.TryGracefulExitAsync(perGraceMs, sendShellExit, quitInput, escFirst);
+                var (controlInput, repeatCount, escFirst) = GracefulExitPlan(kv.Key);
+                return kv.Value.TryGracefulExitAsync(perGraceMs, controlInput, repeatCount, escFirst);
             }));
         }
         catch { /* best effort */ }
@@ -2168,18 +2199,10 @@ public sealed class TerminalSessionManager
         }
     }
 
-    /// <summary>graceful 종료 시 (셸에 exit 을 보내도 되는가, 종료를 요청할 때 무엇을 입력하는가).
-    /// claude/gajae 는 항상 재진입 배치 루프(cmd `goto __reenter`) 로 실행된다. 그 루프를 돌리는
-    /// cmd.exe 는 콘솔 Ctrl+C(CTRL_C_EVENT)를 배치 인터프리터 레벨에서도 독립적으로 받아 에이전트가
-    /// 스스로 정상 종료해도 무관하게 "Terminate batch job (Y/N)?"(일괄 작업을 끝내시겠습니까)로 멈춘다.
-    /// 그래서 claude 는 콘솔 브레이크를 만들지 않는 순수 텍스트 명령 "/exit"(claude 바이너리에 실제
-    /// 등록된 슬래시 명령, alias "quit")로 종료시키고, 이어 exit 도 보내지 않는다(루프가 셸까지 정리).
-    /// gajae 는 이런 텍스트 종료 명령이 확인되지 않아 아무 입력도 안 보내고 timeout 후 하드킬에 맡긴다.
-    /// 그 외(opencode 등)는 재진입 루프가 없는 플레인 셸이라 기존 Ctrl+C×2 + exit 그대로 사용.</summary>
-    /// <summary>claude 는 응답 생성 중(busy)이고 권한/선택지 대기(waiting)가 아닐 때만 Esc 를
-    /// 먼저 보낸다(escFirst) — REPL 이 idle 프롬프트로 복귀해야 "/exit" 가 씹히지 않는다.
-    /// claude 방이면 여기서 종료중 플래그도 남긴다(레이스 방지, <see cref="MarkClaudeQuitting"/>).</summary>
-    private static (bool sendShellExit, string? quitInput, bool escFirst) GracefulExitPlan(string roomId)
+    /// <summary>에이전트 TUI가 정의한 종료/입력 지우기 제어키 계획. CR/LF·Enter·슬래시 명령·셸 exit 는
+    /// 절대 보내지 않는다. 종료키가 모달/셸에 소비돼 정상 종료하지 못하면 timeout 뒤 Job 을 닫는 쪽이
+    /// 미완성 초안을 요청으로 제출하는 것보다 안전하다. 배치 재진입형 claude/gajae 는 종료 플래그도 먼저 남긴다.</summary>
+    private static (string controlInput, int repeatCount, bool escFirst) GracefulExitPlan(string roomId)
     {
         var agent = SettingsService.LoadAgentForRoom(roomId);
         if (agent == "claude")
@@ -2188,63 +2211,35 @@ public sealed class TerminalSessionManager
             bool escFirst = !IsClaudeWaitingOnUser(roomId) && IsClaudeBusyRunning(roomId);
             // "작업 중 세션이 간헐적으로 멈춤" 조사 계측: 앱이 진행중 턴을 ESC 로 취소하는 지점은 여기뿐.
             // 다음 발생 때 diag.log 에서 이 줄이 있으면 원인=앱 종료/재시작, 없으면 claude 스스로 턴 종료.
-            if (escFirst) DiagLog.Write($"GracefulExit: room={roomId} claude busy → ESC(진행중 턴 취소)+/exit");
-            return (false, "/exit\r\n", escFirst);
+            if (escFirst) DiagLog.Write($"GracefulExit: room={roomId} claude busy → ESC(진행중 턴 취소)+Ctrl+D");
+            return ("\x04", 1, escFirst); // Claude: Ctrl+D 종료
         }
         if (agent == "codex")
         {
-            // codex 는 cmd /c 배치(codex → exit)로 실행된다. 기본 경로(Ctrl+C×2)를 쓰면 배치
-            // 인터프리터가 콘솔 브레이크를 "Terminate batch job (Y/N)?" 로 붙잡아 cmd 가 안 닫혀
-            // 매번 perGraceMs 타임아웃 후 하드킬로만 정리됐다. codex TUI 의 슬래시 명령 "/quit" 으로
-            // 곱게 종료시키면 배치가 exit 까지 진행돼 cmd /c 가 스스로 닫힌다(sendShellExit 불필요).
-            // 응답 생성 중(busy)이면 composer 가 입력을 못 받으므로 claude 처럼 Esc 로 턴을 먼저 끊는다.
-            return (false, "/quit\r\n", IsCodexBusyRunning(roomId));
+            // 첫 Ctrl+C는 입력 초안을 지우고 두 번째는 종료. busy 면 Esc 로 현재 턴을 먼저 취소한다.
+            return ("\x03", 2, IsCodexBusyRunning(roomId));
         }
         if (agent == "grok")
         {
-            // grok 도 cmd /c 배치 + /quit|/exit. busy 중이면 Esc 선행(codex 와 동일).
-            return (false, "/quit\r\n", IsGrokBusyRunning(roomId));
+            // Ctrl+Q 두 번은 Grok의 전역 종료키. Esc는 실행 중 무시되고 Ctrl+D는 스크롤과 충돌한다.
+            return ("\x11", 2, false);
         }
         if (agent == "antigravity")
         {
-            // agy 도 cmd /c 배치 + /quit(슬래시 명령 실측 확인). busy 중이면 Esc 선행(codex 와 동일).
-            return (false, "/quit\r\n", IsAntigravityBusyRunning(roomId));
+            return ("\x04", 2, false); // 공식 종료키 Ctrl+D; 두 번 입력해야 하는 상태도 대응
         }
         return agent switch
         {
-            "gajae" => (false, "", false),
-            _       => (true, null, false),
+            "opencode" => ("\x03", 2, false), // 첫 Ctrl+C=입력 지우기, 두 번째=종료
+            "gajae"    => MarkGajaeAndBuildExitPlan(roomId),
+            _          => ("\x03", 2, false), // 미등록 에이전트도 Enter 없는 안전 폴백
         };
     }
 
-    /// <summary>grok 훅 busy\&lt;room&gt;.txt 가 running 인가.</summary>
-    private static bool IsGrokBusyRunning(string roomId)
+    private static (string controlInput, int repeatCount, bool escFirst) MarkGajaeAndBuildExitPlan(string roomId)
     {
-        try
-        {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "DevezCode", "grok", "busy", SafeRoomFileName(roomId) + ".txt");
-            if (!File.Exists(path)) return false;
-            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var sr = new StreamReader(fs);
-            return sr.ReadToEnd().Trim() == "running";
-        }
-        catch { return false; }
-    }
-
-    /// <summary>antigravity 훅 busy\&lt;room&gt;.txt 가 running 계열("running"/"running-tool")인가.</summary>
-    private static bool IsAntigravityBusyRunning(string roomId)
-    {
-        try
-        {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "DevezCode", "antigravity", "busy", SafeRoomFileName(roomId) + ".txt");
-            if (!File.Exists(path)) return false;
-            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var sr = new StreamReader(fs);
-            return sr.ReadToEnd().Trim().StartsWith("running", StringComparison.OrdinalIgnoreCase);
-        }
-        catch { return false; }
+        MarkGajaeQuitting(roomId);
+        return ("\x04", 1, false); // Ctrl+D → gjc shutdown()이 draft 저장·세션 flush
     }
 
     /// <summary>codex 훅(busy\&lt;room&gt;.txt)이 'running' 인가 — 종료 시 Esc 선행 여부 판단용.
@@ -2284,6 +2279,7 @@ public sealed class TerminalSessionManager
             try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".prev.txt")); }
             catch (Exception) { }
             try { File.Delete(LaunchBatchPath(roomId)); } catch (Exception) { }
+            try { File.Delete(GajaeQuitFlagPath(roomId)); } catch (Exception) { }
         }
     }
 
@@ -2330,6 +2326,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "room-settings", roomFile + ".json"));
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".prev.txt"));
+        TryDeleteFile(ClaudeQuitFlagPath(roomId));
         TryDeleteFiles(ClaudeTrackDir, "statusline-cache-" + roomFile + "-*.txt");
 
         // 서브에이전트 추적 상태(신규): 메인 턴 플래그 + 방별 run 파일 디렉터리.
@@ -2358,6 +2355,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(OpenCodeLaunchDir(), roomFile + ".cmd"));
 
         TryDeleteFile(Path.Combine(GajaeLaunchDir(), roomFile + ".cmd"));
+        TryDeleteFile(GajaeQuitFlagPath(roomId));
         TryDeleteDirectory(GajaeSessionDir(roomId));
 
         var antigravityDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "antigravity");

@@ -414,35 +414,152 @@
     if (bg === '#f8fafc') return '#C5D8F8'; // minimal(심플)
     return '#264F78';                        // dark
   }
+
+  // agy 의 terminal 스킴은 표준 16색뿐 아니라 xterm 256색을 직접 사용한다. 밝은 배경에서는
+  // diff 문맥/일반 요약(247, 252)이 거의 흰색으로 사라지고, 인라인 코드(124/188)가 삭제 표시처럼
+  // 보이므로 해당 인덱스만 앱 테마에 맞춘다. extendedAnsi 는 16~255 전체 배열을 요구하므로
+  // 나머지는 xterm 기본 팔레트를 그대로 재생성해 다른 구문색과 diff 의미색을 보존한다.
+  function antigravityExtendedAnsi(bg) {
+    const colors = [];
+    const levels = [0, 95, 135, 175, 215, 255];
+    const hex = n => n.toString(16).padStart(2, '0');
+    for (let r = 0; r < 6; r++) {
+      for (let g = 0; g < 6; g++) {
+        for (let b = 0; b < 6; b++) {
+          colors.push('#' + hex(levels[r]) + hex(levels[g]) + hex(levels[b]));
+        }
+      }
+    }
+    for (let i = 0; i < 24; i++) {
+      const v = 8 + i * 10;
+      colors.push('#' + hex(v) + hex(v) + hex(v));
+    }
+
+    const set = (index, color) => { colors[index - 16] = color; };
+    if (bg === '#f2ede6') {
+      set(124, '#4B463E'); // markdown inline-code foreground: deep red -> neutral text
+      set(188, '#E2D8CB'); // markdown inline-code background
+      set(247, '#756E64'); // summary heading / muted text
+      set(252, '#756E64'); // diff context / summary body
+    } else if (bg === '#f8fafc') {
+      set(124, '#334155');
+      set(188, '#E2E8F0');
+      set(247, '#64748B');
+      set(252, '#64748B');
+    }
+    return colors;
+  }
+
   function themeFor(agent) {
     const t = toXtermTheme(cfg.theme);
     if (agent === 'gajae') t.selectionBackground = gjcSelectionBg();
+    if (agent === 'antigravity') {
+      const bg = ((cfg.theme && cfg.theme.background) || '').toLowerCase();
+      if (bg === '#f2ede6' || bg === '#f8fafc') t.extendedAnsi = antigravityExtendedAnsi(bg);
+    }
     return t;
   }
 
   // ── IME 조합 위치 고정 ──────────────────────────────────────────────
   // claude 의 입력 캐럿 = 자체 블록 커서(반전 영상의 빈 셀, ESC[7m space).
   // 조합 시작 시 버퍼에서 이를 찾아 CSS 변수로 위치를 고정한다 (.ime-fixed).
-  function setupImeCaretFix(term, el, agent) {
+  function setupImeCaretFix(term, el, agent, roomId) {
     const ta = el.querySelector('.xterm-helper-textarea');
     if (!ta) return;
     const isCodex = (agent === 'codex');
     let isImeComposing = false;
     let lastCodexCaret = null;
+    let pendingResponseReset = false;
+    let responseResetTimer = 0;
+
+    function clearResponseResetTimer() {
+      if (!responseResetTimer) return;
+      clearTimeout(responseResetTimer);
+      responseResetTimer = 0;
+    }
+
+    function resetImeNow() {
+      clearResponseResetTimer();
+      pendingResponseReset = false;
+      // 완료 신호는 비활성/백그라운드 방에도 온다. 실제로 이 textarea 를 쓰는 중일 때만
+      // 사용자가 수동으로 포커스를 뺐다 넣는 것과 같은 초기화를 수행한다.
+      if (roomId !== activeRoomId || !document.hasFocus() || document.activeElement !== ta) return;
+
+      const view = el.querySelector('.composition-view');
+      const hadComposition = isImeComposing || !!(view && view.classList.contains('active'));
+      isImeComposing = false;
+      if (pendingComposeNewline && pendingComposeNewline.roomId === roomId) pendingComposeNewline = null;
+
+      // 먼저 값을 비워야 누락됐던 compositionend 를 강제해도 이전 확정 문자열이 PTY 로 재전송되지 않는다.
+      ta.value = '';
+      if (hadComposition) {
+        try { ta.dispatchEvent(new CompositionEvent('compositionend', { data: '' })); }
+        catch (e) { try { ta.dispatchEvent(new Event('compositionend')); } catch (ignore) {} }
+      }
+      if (view) { view.classList.remove('active'); view.textContent = ''; }
+
+      ta.blur(); // xterm _handleTextAreaBlur 가 textarea/IME 내부 상태를 함께 정리한다.
+      requestAnimationFrame(function () {
+        if (roomId === activeRoomId && document.hasFocus()) term.focus();
+      });
+    }
+
+    function armStaleCompositionReset() {
+      clearResponseResetTimer();
+      // 사용자가 응답 완료 직후 이미 다음 문장을 조합 중이면 정상 compositionend 를 우선 기다린다.
+      // WebView2 가 end 를 누락한 경우에만 3초 무입력 후 강제 초기화한다.
+      responseResetTimer = setTimeout(resetImeNow, 3000);
+    }
+
+    el._resetImeAfterResponse = function () {
+      if (roomId !== activeRoomId || !document.hasFocus() || document.activeElement !== ta) return;
+      if (isImeComposing) {
+        pendingResponseReset = true;
+        armStaleCompositionReset();
+        return;
+      }
+      resetImeNow();
+    };
+
+    // 새 xterm 이 처음 포커스를 받을 때 WPF 입력 컨트롤의 Windows IME 컨텍스트가 WebView2 에
+    // 이어지는 경우가 있다. 이 상태에서는 한글 확정 문자열이 두 번 들어가며, 사용자가 터미널 밖을
+    // 클릭했다 돌아오면 정상화된다. 최초 포커스에 한해서 그 동작을 그대로 재현한다. WebView HWND
+    // 포커스가 show 메시지보다 늦게 적용될 수 있어 짧게 재시도한다.
+    el._resetImeOnInitialFocus = function () {
+      let retries = 8;
+      const tryReset = function () {
+        if (roomId !== activeRoomId) return;
+        term.focus();
+        if (document.hasFocus() && document.activeElement === ta) {
+          resetImeNow();
+          return;
+        }
+        if (--retries > 0) setTimeout(tryReset, 32);
+      };
+      requestAnimationFrame(tryReset);
+    };
 
     function rememberCodexCaret() {
-      if (!isCodex || isImeComposing) return;
+      if (!isCodex || isImeComposing) return false;
       const buf = term.buffer.active;
       const row = buf.cursorY, col = buf.cursorX;
-      if (row < (term.rows >> 1) || row < 0 || row >= term.rows) return;
-      lastCodexCaret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
+      if (row < (term.rows >> 1) || row < 0 || row >= term.rows) return false;
+      const next = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
+      if (lastCodexCaret && lastCodexCaret.row === next.row && lastCodexCaret.col === next.col) return false;
+      lastCodexCaret = next;
+      return true;
     }
 
     // 조합 시작 직전의 입력창 캐럿을 기억한다. codex 는 리페인트 중 논리 커서를 상단 출력영역으로
     // 잠깐 옮기므로 compositionstart 시점의 cursorY 만 믿으면 helper-textarea 가 좌상단으로 튄다.
+    // Windows IME 는 compositionstart 보다 먼저 textarea 좌표를 읽을 수 있어 조합 사이에도 고정을 유지한다.
     if (isCodex) {
       rememberCodexCaret();
-      try { term.onCursorMove(rememberCodexCaret); } catch (e) {}
+      apply();
+      try {
+        term.onCursorMove(function () { if (rememberCodexCaret()) apply(); });
+        term.onResize(function () { apply(); });
+      } catch (e) {}
     }
 
     function findBlockCursor() {
@@ -494,14 +611,19 @@
 
     ta.addEventListener('compositionstart', function () {
       isImeComposing = true;
+      if (pendingResponseReset) armStaleCompositionReset();
       apply();
       setTimeout(apply, 60); // 직전 확정 글자가 TUI에 반영된 뒤 위치 재계산
     });
-    ta.addEventListener('compositionupdate', function () { setTimeout(apply, 0); });
+    ta.addEventListener('compositionupdate', function () {
+      if (pendingResponseReset) armStaleCompositionReset();
+      setTimeout(apply, 0);
+    });
     ta.addEventListener('compositionend', function () {
       isImeComposing = false;
-      el.classList.remove('ime-fixed'); // 조합 종료 → xterm 기본 동작 복귀
       rememberCodexCaret();
+      if (isCodex) apply();
+      else el.classList.remove('ime-fixed'); // codex 외에는 조합 종료 후 xterm 기본 동작 복귀
       // 조합 중 Ctrl+Enter 가 눌렸으면 — 확정 글자가 PTY로 전송된 뒤(setTimeout 0)
       // 줄바꿈을 보낸다. 순서를 보장해 마지막 글자가 새 줄로 내려가지 않게 한다.
       if (pendingComposeNewline) {
@@ -509,6 +631,15 @@
         pendingComposeNewline = null;
         setTimeout(function () { post({ type: 'input', roomId: pending.roomId, data: pending.data }); }, 0);
       }
+      if (pendingResponseReset) {
+        clearResponseResetTimer();
+        responseResetTimer = setTimeout(resetImeNow, 0);
+      }
+    });
+    ta.addEventListener('blur', function () {
+      isImeComposing = false;
+      pendingResponseReset = false;
+      clearResponseResetTimer();
     });
   }
 
@@ -920,7 +1051,7 @@
     ro.observe(el);
     entry.ro = ro;
 
-    setupImeCaretFix(term, el, agent);
+    setupImeCaretFix(term, el, agent, roomId);
     term.attachCustomKeyEventHandler(function (e) { return handleKey(e, entry, roomId); });
 
     // 마지막 비어있지 않은 선택을 기억(텍스트+시각) — gjc 재페인트가 선택을 지운 직후의
@@ -999,6 +1130,8 @@
     const plainShow = !_fitSuppressed; // 전환(커버) 중 show 는 reveal 이 fit·재동기·커버로 처리 — 바운스 제외
     if (!_fitSuppressed) entry.fit.fit(); // 전환(커버) 중이면 중간 폭 fit 억제 → reveal 이 최종 폭에서 fit
     entry.term.focus();
+    if (isNew && typeof entry.el._resetImeOnInitialFocus === 'function')
+      entry.el._resetImeOnInitialFocus();
     if (isNew) {
       if (_fitSuppressed) {
         // 전환 중 — ConPTY 생성을 reveal(최종 폭 확정)로 미룬다. 지금 만들면 중간(전체) 폭으로 만들어져
@@ -1511,6 +1644,12 @@
           }
           post({ type: 'readyPainted', roomId: msg.roomId, generation: msg.generation, hasContent: chars >= 4 });
         }); });
+        break;
+      }
+      case 'resetImeAfterResponse': {
+        const t = terms[msg.roomId];
+        if (t && t.el && typeof t.el._resetImeAfterResponse === 'function')
+          t.el._resetImeAfterResponse();
         break;
       }
       case 'output': {

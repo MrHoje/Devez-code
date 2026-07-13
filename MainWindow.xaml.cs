@@ -40,6 +40,9 @@ public partial class MainWindow : Window
     // 중앙 워크스페이스 패널들(분할 시 2개). _focusedPane = 사이드바/파일탐색기/단축키가 향하는 패널.
     private readonly List<WorkspacePaneView> _panes = new();
     private WorkspacePaneView _focusedPane = null!;   // 생성자에서 PaneA 로 초기화
+    // 테마 적용 중 추가 변경이 들어오면 현재 종료/복원을 겹쳐 실행하지 않는다. 실행 완료 시점에는
+    // App.CurrentTheme의 최신 값으로 세션을 시작하므로 중간 요청은 자연스럽게 합쳐진다.
+    private bool _themeReloadRunning;
 
     // 좌/우 위치 교환은 콘텐츠 이동 없이 패널의 물리 컬럼만 맞바꿔 표현한다(터미널 재부착=세션 재로딩 방지).
     // _panesSwapped=false → PaneA 가 좌(col0)/PaneB 가 우(col2), true → 반대. 비분할 시엔 항상 false 로 정규화.
@@ -3682,6 +3685,10 @@ public partial class MainWindow : Window
 
     private void EmitSessionFinished(SessionItem s)
     {
+        // Claude/Codex/OpenCode/Gajae/Grok/Antigravity 공통 busy→idle 확정 지점.
+        // 응답 리페인트 경계에서 WebView2 compositionend 가 누락되면 다음 한글이 중복될 수 있으므로,
+        // 현재 이 방의 터미널에 실제 포커스가 있는 패널만 JS 에서 blur→focus 초기화한다.
+        foreach (var pane in _panes) pane.Terminal.ResetImeAfterResponse(s.Id);
         AddSessionCompletionRecord(s);
         var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
         RequestTaskbarAttention();
@@ -4350,10 +4357,72 @@ public partial class MainWindow : Window
     /// <summary>MCP 저장 후 활성 Claude 세션 재시작.</summary>
     public bool TryRestartActiveClaudeSession() => _focusedPane.TryRestartActiveClaudeSession();
 
-    /// <summary>테마 변경 — 모든 패널 세션 재로드.</summary>
-    public void ReloadAllSessionsForTheme()
+    /// <summary>테마 변경 — 모든 패널의 배선을 먼저 끊고 전역 세션을 한 번만 종료한 뒤,
+    /// 실제로 보이는 패널의 활성 세션만 다시 연다. 비활성 세션은 클릭 시 저장 ID로 resume 한다.</summary>
+    public async void ReloadAllSessionsForTheme()
     {
-        foreach (var pane in _panes) pane.ReloadAllSessionsForTheme();
+        if (_themeReloadRunning)
+            return;
+
+        _themeReloadRunning = true;
+        try
+        {
+            await ReloadAllSessionsForThemeOnceAsync();
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"ReloadAllSessionsForTheme failed: {ex.Message}");
+        }
+        finally
+        {
+            _themeReloadRunning = false;
+        }
+    }
+
+    private async Task ReloadAllSessionsForThemeOnceAsync()
+    {
+        var allSessions = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList();
+        if (allSessions.Count == 0) return;
+
+        // 숨겨진 PaneB도 이전 분할 화면의 터미널 배선을 보존할 수 있다. 두 패널 모두 먼저 detach 해야
+        // 종료 이벤트가 codex/opencode 자동 재진입으로 오인되지 않는다. 실제 ConPTY 종료는 아래서 1회만 한다.
+        foreach (var pane in _panes)
+        {
+            try { pane.BeginThemeReload(allSessions); }
+            catch (Exception ex) { DiagLog.Write($"BeginThemeReload failed: {ex.Message}"); }
+        }
+
+        try
+        {
+            await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(allSessions.Select(s => s.Id));
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"Theme GracefulDisposeRooms failed: {ex.Message}");
+        }
+        finally
+        {
+            // 종료 중 삭제된 방의 tombstone은 되살리지 않는다. 아직 워크스페이스에 있는 방만 재생성 허용.
+            var remainingRoomIds = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>()
+                .Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+            foreach (var s in allSessions)
+            {
+                if (!remainingRoomIds.Contains(s.Id)) continue;
+                try { TerminalSessionManager.Instance.ClearDisposedRoom(s.Id); }
+                catch { /* best effort */ }
+                s.IsAlive = false;
+                s.IsBusy = false;
+                s.IsWaitingChoice = false;
+            }
+
+            // Dispose/Exited의 지연 콜백이 정리된 다음 새 ConPTY를 만들도록 짧게 양보한다.
+            await Task.Delay(150);
+            foreach (var pane in _panes)
+            {
+                try { pane.CompleteThemeReload(allSessions); }
+                catch (Exception ex) { DiagLog.Write($"CompleteThemeReload failed: {ex.Message}"); }
+            }
+        }
     }
 
     // ── 프로젝트 ──────────────────────────────────────────────────

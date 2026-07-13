@@ -143,6 +143,8 @@ public partial class App : Application
 
         // 시작 시 자동 업데이트는 하루 1회만. 오늘 이미 실행했으면 모달 없이 바로 메인 창.
         // (설정의 '즉시 업데이트'는 이 게이트와 무관하게 언제나 동작한다.)
+        // C(실패 시 재시도): 게이트는 여기서 선점 저장하되, 업데이트가 에이전트를 깨진(Failed) 채로 남기면
+        // NotifyAgentUpdateResultsAsync 가 게이트를 비워 다음 실행에서 다시 시도한다(조용히 하루 방치 방지).
         var today = DateTime.Now.ToString("yyyy-MM-dd");
         if (SettingsService.LoadLastAgentAutoUpdateDate() == today)
         {
@@ -184,6 +186,14 @@ public partial class App : Application
         if (updateTask == null) return;
         IReadOnlyList<AgentUpdateResult> results;
         try { results = await updateTask; } catch { return; }
+
+        // C: 우리 업데이트가 '동작하던' 에이전트를 깨뜨린 퇴행(before 정상 → after 실행불가)이고 B 의 자동복구까지
+        //    실패했을 때만 데일리 게이트를 비운다 → 다음 실행에서 다시 시도(조용히 하루 방치 방지).
+        //    · after 정상(업데이터만 non-zero)이면 재시도 안 함 — 매 실행 모달 회귀 방지.
+        //    · 처음부터 깨져 있던(before 빈값) 경우도 재시도 안 함 — 고칠 수 없는 에이전트의 나그 루프 방지.
+        if (results.Any(r => r.Status == AgentUpdateStatus.Failed
+                             && !string.IsNullOrEmpty(r.Before) && string.IsNullOrEmpty(r.After)))
+            SettingsService.SaveLastAgentAutoUpdateDate("");
 
         var show = results
             .Where(r => r.Status is AgentUpdateStatus.Updated or AgentUpdateStatus.Failed)
@@ -282,8 +292,9 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        // claude/codex 는 종료 시 transcript(.jsonl)를 flush 하므로, 하드 kill 전에 Ctrl+C×2 로 정상
-        // 종료시켜 마지막 대화를 보존한다. (예전엔 DisposeAll 로 즉시 kill → 대화가 디스크에 안 남아
+        // 에이전트는 종료 시 transcript(.jsonl)를 flush 하므로, 하드 kill 전에 에이전트별 제어키로 정상
+        // 종료를 시도해 마지막 대화를 보존한다. 종료 경로는 CR/LF를 보내지 않아 작성 중 초안을 제출하지 않는다.
+        // (예전엔 DisposeAll 로 즉시 kill → 대화가 디스크에 안 남아
         // 재실행 시 그 세션을 복원하지 못했다. opencode/gjc 는 실시간 추적이라 무관 → claude 만 증상이었다.)
         // UI 스레드 데드락을 피하려 Task.Run 으로 실행 후 상한 대기, 잔여는 DisposeAll 로 하드 정리.
         // 상한 = perGrace(2.5s) + postFlush cap(5s) + 정착(0.5s) + Dispose/스냅샷 여유.

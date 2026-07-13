@@ -30,8 +30,12 @@ public sealed record AgentUpdateResult(
 ///  - 타임아웃 시에도 프로세스를 <b>죽이지 않는다</b>(설치 중 강제 종료가 손상을 유발하므로). 기다림만 멈추고
 ///    완주를 백그라운드로 감시해 끝나면 최종 성공/실패를 토스트로 알린다.
 ///
-/// 남는 경미한 리스크: 세션이 이미 해당 exe 를 띄운 뒤면 Windows 파일 잠금으로 덮어쓰기가 실패할 수 있으나,
-/// npm/bun/claude 는 temp→rename/staging 방식이라 구버전이 그대로 유지되고 다음 실행 때 재시도된다(안전 실패).</summary>
+/// 깨짐 복구(B/C): npm/bun 전역 설치는 다단계(패키지 추출→shim 링크→optional 네이티브)라, 파일 잠금·백신·
+/// optional 누락으로 <b>중간에 끊기면 구버전 유지가 아니라 잡탕(temp-rename 잔재 + 네이티브 누락) 상태로 남을 수
+/// 있다</b>(자체 업데이터 claude/grok/opencode 는 원자적 교체라 대체로 안전). 이를 방어하기 위해:
+///  - B: 설치 직후 <c>before 정상 → after 실행불가</c> 퇴행을 감지하면 같은 명령을 1회 재실행해 회복
+///       (<see cref="TryRepairAsync"/>). npm/bun 이 누락분을 다시 채워 사용 가능 상태로 돌아온다.
+///  - C: 그래도 실패(Failed)면 호출부(App)가 데일리 게이트를 비워 다음 실행에서 재시도 → 조용히 하루 방치 없음.</summary>
 public static class AgentUpdateService
 {
     private static string DevezDir => Path.Combine(
@@ -106,6 +110,12 @@ public static class AgentUpdateService
             var after = await GetVersionAsync(agent);
             Log($"{agent.Id}: '{before}' -> '{after}' (exit {exitCode})");
 
+            // B(퇴행 자동복구): before 는 정상인데 after 가 비었으면(--version 실패) 이번 설치가 동작하던
+            // 에이전트를 망가뜨린 것(예: npm shim temp-rename 실패 + optional 네이티브 누락). 같은 명령을
+            // 1회 재실행해 회복을 시도한다(수동 재설치로 즉시 복구되는 것과 동일 원리). 깨졌을 때만 비용 발생.
+            if (!string.IsNullOrEmpty(before) && string.IsNullOrEmpty(after))
+                return await TryRepairAsync(agent, before, report);
+
             // 버전 변화가 최우선 근거 — 경고(예: temp 정리 EPERM)로 종료코드가 더러워져도 교체됐으면 성공.
             bool changed = !string.IsNullOrEmpty(after) && !string.IsNullOrEmpty(before) &&
                            !string.Equals(before, after, StringComparison.Ordinal);
@@ -131,6 +141,41 @@ public static class AgentUpdateService
         }
     }
 
+    /// <summary>B: 설치 직후 퇴행(before 정상 → after 실행불가) 감지 시 같은 <see cref="AgentDef.UpdateCommand"/> 를
+    /// <b>1회</b> 재실행해 회복을 시도한다. npm/bun 은 누락된 shim/네이티브 바이너리를 다시 채우므로, 원인(락·백신·
+    /// optional 누락)과 무관하게 사용 가능 상태로 되돌아온다(우리가 수동 재설치로 즉시 복구된 것과 동일).
+    ///  - 회복 성공: 버전 나오면 Updated(교체됨)/UpToDate(같은 버전으로 복구).
+    ///  - 회복 실패(여전히 깨짐): Failed 로 반환 → 호출부(App)가 데일리 게이트를 비워 <b>다음 실행에서 재시도</b>.
+    ///  - 복구가 타임아웃(느림): 죽이지 않고 완주 감시만 걸고 InProgress 반환.</summary>
+    private static async Task<AgentUpdateResult> TryRepairAsync(AgentDef agent, string before, Action<string>? report)
+    {
+        report?.Invoke($"{agent.DisplayName}: 설치 후 실행 불가 — 자동 복구 시도 중…");
+        Log($"{agent.Id}: 퇴행 감지(before='{before}', after=''), '{agent.UpdateCommand}' 1회 재실행");
+
+        var (exited, exitCode, running) = await RunDetachedUpdateAsync(agent, TimeSpan.FromMinutes(5));
+        if (!exited)
+        {
+            Log($"{agent.Id}: 복구 진행 중(분리 실행) — 백그라운드로 계속됨");
+            report?.Invoke($"{agent.DisplayName}: 복구를 백그라운드에서 계속 진행 중…");
+            if (running != null) _ = WatchDetachedCompletionAsync(agent, running, before);
+            return new(agent.Id, agent.DisplayName, before, "", AgentUpdateStatus.InProgress, 0);
+        }
+
+        var after = await GetVersionAsync(agent);
+        Log($"{agent.Id}: 복구 결과 '{before}' -> '{after}' (exit {exitCode})");
+
+        if (!string.IsNullOrEmpty(after))
+        {
+            report?.Invoke($"{agent.DisplayName}: 자동 복구됨 ({after})");
+            bool changed = !string.Equals(before, after, StringComparison.Ordinal);
+            return new(agent.Id, agent.DisplayName, before, after,
+                       changed ? AgentUpdateStatus.Updated : AgentUpdateStatus.UpToDate, exitCode);
+        }
+
+        report?.Invoke($"{agent.DisplayName}: 자동 복구 실패 — 다음 실행에서 재시도 (로그: agent-update-{agent.Id}.log)");
+        return new(agent.Id, agent.DisplayName, before, "", AgentUpdateStatus.Failed, exitCode == 0 ? -1 : exitCode);
+    }
+
     /// <summary>타임아웃으로 넘긴 분리 설치의 완주를 감시한다(앱이 살아있는 동안).
     /// 끝나면 버전 재확인으로 성공/실패를 판정해 결과 모달(중앙)로 알린다. '최신'(no-op)은 무음.</summary>
     private static async Task WatchDetachedCompletionAsync(AgentDef agent, Process proc, string before)
@@ -144,16 +189,24 @@ public static class AgentUpdateService
 
             bool changed = !string.IsNullOrEmpty(after) && !string.IsNullOrEmpty(before) &&
                            !string.Equals(before, after, StringComparison.Ordinal);
+            // 퇴행: before 는 정상인데 after 가 비면(--version 실패) 지연 설치가 에이전트를 깨뜨린 것.
+            bool regressed = !string.IsNullOrEmpty(before) && string.IsNullOrEmpty(after);
             if (changed)
                 DevezCode.App.ShowAgentUpdateResults(new[]
                 {
                     new AgentUpdateResult(agent.Id, agent.DisplayName, before, after, AgentUpdateStatus.Updated, exitCode),
                 });
-            else if (exitCode != 0)
+            else if (regressed || exitCode != 0)
+            {
+                // C: 우리 업데이트가 깨뜨린 퇴행(before 정상 → after 실행불가)일 때만 게이트를 비워 다음 실행에서 재시도
+                //    (백그라운드 완주 경로에서도 동일 보장). after 정상이면 non-zero 여도, 처음부터 깨졌어도 재시도 안 함.
+                if (regressed)
+                    SettingsService.SaveLastAgentAutoUpdateDate("");
                 DevezCode.App.ShowAgentUpdateResults(new[]
                 {
                     new AgentUpdateResult(agent.Id, agent.DisplayName, before, after, AgentUpdateStatus.Failed, exitCode),
                 });
+            }
         }
         catch { /* 감시 실패는 무시 — 요약 로그로 추적 가능 */ }
         finally { try { proc.Dispose(); } catch { } }
