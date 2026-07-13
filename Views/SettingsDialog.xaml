@@ -509,7 +509,7 @@
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="실행 시 에이전트 자동 업데이트" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="앱을 켤 때 켜진 에이전트 CLI 를 최신 버전으로 자동 업데이트합니다." FontSize="{DynamicResource Fs11}"
+                                            <TextBlock Text="매일 첫 실행 시 사용 설정된 에이전트 CLI 를 최신 버전으로 자동 업데이트합니다." FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0" TextWrapping="Wrap"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
