@@ -633,6 +633,8 @@ public partial class WorkspacePaneView : UserControl
     private async Task LoadBranchAsync(string repoDir, System.Threading.CancellationToken ct)
     {
         string? branch = null;
+        int ahead = 0;
+        int behind = 0;
         try
         {
             if (await GitService.IsRepoAsync(repoDir))
@@ -643,6 +645,17 @@ public partial class WorkspacePaneView : UserControl
                     var name = r.Output.Trim();
                     if (!string.IsNullOrEmpty(name) && name != "HEAD") branch = name;
                 }
+
+                if (branch != null)
+                {
+                    var sync = await GitService.RunAsync(repoDir, "rev-list", "--left-right", "--count", "HEAD...@{upstream}");
+                    var counts = sync.Output.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                    if (sync.Ok && counts.Length == 2)
+                    {
+                        int.TryParse(counts[0], out ahead);
+                        int.TryParse(counts[1], out behind);
+                    }
+                }
             }
         }
         catch { /* git 미설치 등 */ }
@@ -651,6 +664,15 @@ public partial class WorkspacePaneView : UserControl
         {
             BranchGroup.Visibility = branch != null ? Visibility.Visible : Visibility.Collapsed;
             if (branch != null) ProjectBranchText.Text = branch;
+
+            var syncParts = new List<string>(2);
+            if (behind > 0) syncParts.Add($"↓{behind}");
+            if (ahead > 0) syncParts.Add($"↑{ahead}");
+            ProjectSyncCountText.Text = string.Join(" / ", syncParts);
+            ProjectSyncCountText.Visibility = syncParts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            ProjectSyncCountText.ToolTip = syncParts.Count > 0
+                ? $"받을 커밋 {behind}개 · 보낼 커밋 {ahead}개"
+                : null;
         });
     }
 

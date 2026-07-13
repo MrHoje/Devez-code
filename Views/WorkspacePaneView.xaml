@@ -71,6 +71,11 @@
                                        FontFamily="{StaticResource PretendardFont}"
                                        FontSize="{DynamicResource Fs12}"
                                        Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock x:Name="ProjectSyncCountText" Margin="8,0,0,0" VerticalAlignment="Center"
+                                       FontFamily="{StaticResource PretendardFont}"
+                                       FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       Visibility="Collapsed"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
