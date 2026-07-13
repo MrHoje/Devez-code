@@ -39,7 +39,17 @@ internal sealed class UsageDropGuard
         IEnumerable<WindowSample> samples,
         DateTimeOffset now,
         out string? reason)
+        => ShouldPublish(samples, now, out reason, out _);
+
+    /// <summary>급락과 함께 reset 시각도 바뀌면 실제 초기화 가능성이 높으므로 호출자가
+    /// 정규 폴링을 기다리지 않고 한 번 빠르게 재확인할 수 있도록 알린다.</summary>
+    public bool ShouldPublish(
+        IEnumerable<WindowSample> samples,
+        DateTimeOffset now,
+        out string? reason,
+        out bool shouldRetrySoon)
     {
+        shouldRetrySoon = false;
         var candidate = samples.ToDictionary(sample => sample.Name, StringComparer.Ordinal);
         if (_accepted == null)
         {
@@ -63,7 +73,9 @@ internal sealed class UsageDropGuard
             return true;
         }
 
+        var hadPending = _pending != null;
         _pending = candidate;
+        shouldRetrySoon = !hadPending && suspicious.Any(drop => drop.ResetChanged);
         reason = $"awaiting confirmation: {FormatDrops(suspicious)}";
         return false;
     }
@@ -95,7 +107,12 @@ internal sealed class UsageDropGuard
 
             var amount = previous.UsedPercent - current.UsedPercent;
             if (amount >= SuspiciousDropPercent)
-                drops.Add(new Drop(name, previous.UsedPercent, current.UsedPercent, current.ResetsAt));
+                drops.Add(new Drop(
+                    name,
+                    previous.UsedPercent,
+                    current.UsedPercent,
+                    current.ResetsAt,
+                    !SameWindowClaim(previous.ResetsAt, current.ResetsAt)));
         }
         return drops;
     }
@@ -143,5 +160,6 @@ internal sealed class UsageDropGuard
         string Name,
         double PreviousPercent,
         double CurrentPercent,
-        DateTimeOffset? ResetsAt);
+        DateTimeOffset? ResetsAt,
+        bool ResetChanged);
 }

@@ -187,14 +187,8 @@ public partial class App : Application
         IReadOnlyList<AgentUpdateResult> results;
         try { results = await updateTask; } catch { return; }
 
-        // C: 우리 업데이트가 '동작하던' 에이전트를 깨뜨린 퇴행(before 정상 → after 실행불가)이고 B 의 자동복구까지
-        //    실패했을 때만 데일리 게이트를 비운다 → 다음 실행에서 다시 시도(조용히 하루 방치 방지).
-        //    · after 정상(업데이터만 non-zero)이면 재시도 안 함 — 매 실행 모달 회귀 방지.
-        //    · 처음부터 깨져 있던(before 빈값) 경우도 재시도 안 함 — 고칠 수 없는 에이전트의 나그 루프 방지.
-        if (results.Any(r => r.Status == AgentUpdateStatus.Failed
-                             && !string.IsNullOrEmpty(r.Before) && string.IsNullOrEmpty(r.After)))
-            SettingsService.SaveLastAgentAutoUpdateDate("");
-
+        // (C 의 데일리 게이트 비우기는 시작·설정 두 경로가 공유하는 AgentUpdateService.UpdateEnabledAgentsAsync
+        //  안에서 일원화 처리한다 — 여기서는 결과 모달 표시만 담당.)
         var show = results
             .Where(r => r.Status is AgentUpdateStatus.Updated or AgentUpdateStatus.Failed)
             .ToList();

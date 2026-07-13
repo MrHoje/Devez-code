@@ -188,11 +188,26 @@ public sealed class CodexUsageService : IDisposable
                 samples.Add(new("5h", primary.UsedPercent, primary.ResetsAt));
             if (weekly != null)
                 samples.Add(new("weekly", weekly.UsedPercent, weekly.ResetsAt));
-            if (!_dropGuard.ShouldPublish(samples, DateTimeOffset.Now, out var dropReason))
+            if (!_dropGuard.ShouldPublish(
+                    samples,
+                    DateTimeOffset.Now,
+                    out var dropReason,
+                    out var shouldRetrySoon))
             {
                 DiagLog.Write(
                     $"CodexUsage deferred suspicious drop: {dropReason} "
                     + $"({credentialSource}, credential={fingerprint})");
+                if (shouldRetrySoon)
+                {
+                    // 사용량 급락과 reset_at 변경이 함께 관측되면 초기화권 사용 가능성이 높다.
+                    // 서버의 단발성 가짜 프로필은 그대로 보류하되, 정규 3분 폴링 대신 한 번만
+                    // 빠르게 재조회해 같은 새 윈도우가 유지되는지 확인한다.
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+                        await PollAsync(waitForTurn: true, resetRejected: false).ConfigureAwait(false);
+                    });
+                }
                 return;
             }
             if (dropReason != null)

@@ -847,7 +847,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 상태바(39,39,39)는 보존.
         if (AgentFor(roomId) == "codex")
             merged = RecolorCodexBackgrounds(merged);
-        // Grok: 중립 배경은 앱 스킴에 상대 매핑하고, 밝은 테마의 truecolor 전경·의미색도
+        // Grok: 중립 배경은 앱 스킴에 상대 매핑하고, 밝은 테마의 truecolor/ANSI 전경·의미색도
         // DevezCode soft/minimal 팔레트로 역할별 매핑한다. dark 전경색은 GrokNight 원본 유지.
         if (AgentFor(roomId) == "grok")
             merged = RecolorGrokTerminalColors(roomId, merged);
@@ -1018,7 +1018,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 break;
             }
 
-            if (input[end] == (byte)'m' && ContainsGrokColorMarker(input, i + 2, end))
+            if (input[end] == (byte)'m')
             {
                 var sgr = Encoding.ASCII.GetString(input, i, end - i + 1);
                 output.AddRange(Encoding.ASCII.GetBytes(TransformGrokColorSgr(sgr)));
@@ -1032,20 +1032,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         return output.ToArray();
     }
 
-    private static bool ContainsGrokColorMarker(byte[] data, int start, int end)
-    {
-        for (int i = start; i + 2 < end; i++)
-            if ((data[i] == (byte)'3' || data[i] == (byte)'4') && data[i + 1] == (byte)'8'
-                && (data[i + 2] == (byte)';' || data[i + 2] == (byte)':'))
-                return true;
-        return false;
-    }
-
     private static string TransformGrokColorSgr(string sgr)
     {
-        if (!sgr.Contains("38;", StringComparison.Ordinal) && !sgr.Contains("38:", StringComparison.Ordinal)
-            && !sgr.Contains("48;", StringComparison.Ordinal) && !sgr.Contains("48:", StringComparison.Ordinal))
-            return sgr;
+        bool hasExtendedColor = sgr.Contains("38;", StringComparison.Ordinal)
+            || sgr.Contains("38:", StringComparison.Ordinal)
+            || sgr.Contains("48;", StringComparison.Ordinal)
+            || sgr.Contains("48:", StringComparison.Ordinal);
+        if (!hasExtendedColor)
+            return DevezCode.App.CurrentTheme == "dark" ? sgr : RemapGrokAnsiPurple(sgr);
 
         string ReplaceBackgroundRgb(Match match)
         {
@@ -1096,7 +1090,30 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         }
         result = GrokFgIndexed.Replace(result, ReplaceForegroundIndexed);
         result = GrokFgIndexedColon.Replace(result, ReplaceForegroundIndexed);
-        return result;
+        return RemapGrokAnsiPurple(result);
+    }
+
+    /// <summary>GrokDay의 주 강조색인 ANSI magenta(35/95)를 앱의 주 강조색인 blue(34/94) 슬롯으로 옮긴다.
+    /// RGB 구성값 안의 35/95를 건드리지 않도록 SGR 파라미터를 순회하며 extended color 구간은 건너뛴다.</summary>
+    private static string RemapGrokAnsiPurple(string sgr)
+    {
+        int bracket = sgr.IndexOf('[');
+        int end = sgr.LastIndexOf('m');
+        if (bracket < 0 || end <= bracket + 1) return sgr;
+
+        var parameters = sgr[(bracket + 1)..end].Split(';');
+        bool changed = false;
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            if ((parameters[i] == "38" || parameters[i] == "48") && i + 1 < parameters.Length)
+            {
+                if (parameters[i + 1] == "2") { i = Math.Min(i + 4, parameters.Length - 1); continue; }
+                if (parameters[i + 1] == "5") { i = Math.Min(i + 2, parameters.Length - 1); continue; }
+            }
+            if (parameters[i] == "35") { parameters[i] = "34"; changed = true; }
+            else if (parameters[i] == "95") { parameters[i] = "94"; changed = true; }
+        }
+        return changed ? sgr[..(bracket + 1)] + string.Join(';', parameters) + sgr[end..] : sgr;
     }
 
     private static bool TryMapGrokForeground(int r, int g, int b, out (int R, int G, int B) mapped)
@@ -1132,12 +1149,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (chroma < 24) return false;
         double hue = RgbHue(r, g, b, max, chroma);
         bool bright = max >= 185;
+        // GrokDay는 보라 계열을 주 강조색으로 쓰지만 DevezCode의 주 강조색 슬롯은 Blue다.
+        // 따라서 soft에서는 초록, minimal에서는 파랑으로 바뀌어 앱 테마와 같은 인상을 준다.
         string target = hue < 20 || hue >= 340 ? (bright ? scheme.BrightRed : scheme.Red)
             : hue < 70  ? (bright ? scheme.BrightYellow : scheme.Yellow)
             : hue < 170 ? (bright ? scheme.BrightGreen : scheme.Green)
             : hue < 200 ? (bright ? scheme.BrightCyan : scheme.Cyan)
             : hue < 255 ? (bright ? scheme.BrightBlue : scheme.Blue)
-            :              (bright ? scheme.BrightPurple : scheme.Purple);
+            :              (bright ? scheme.BrightBlue : scheme.Blue);
         return TryParseRgbHex(target, out mapped);
     }
 
@@ -1191,10 +1210,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             return true;
         }
 
+        // GrokDay의 패널은 캔버스보다 20~26 단계나 어두워 밝은 앱 테마에서 과하게 튄다.
+        // Codex/Claude 밝은 테마처럼 절반 대비만 유지해 diff·프롬프트 박스를 부드럽게 만든다.
+        double contrast = dark ? 1.0 : 0.5;
         mapped = (
-            Math.Clamp(target.R + r - sourceBase, 0, 255),
-            Math.Clamp(target.G + g - sourceBase, 0, 255),
-            Math.Clamp(target.B + b - sourceBase, 0, 255));
+            Math.Clamp((int)Math.Round(target.R + (r - sourceBase) * contrast), 0, 255),
+            Math.Clamp((int)Math.Round(target.G + (g - sourceBase) * contrast), 0, 255),
+            Math.Clamp((int)Math.Round(target.B + (b - sourceBase) * contrast), 0, 255));
         return true;
     }
 

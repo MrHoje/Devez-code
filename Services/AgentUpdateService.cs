@@ -79,6 +79,13 @@ public static class AgentUpdateService
             report?.Invoke($"대상 {agents.Count}개: {string.Join(", ", agents.Select(a => a.DisplayName))}");
             results.AddRange(await Task.WhenAll(agents.Select(a => UpdateOneAsync(a, report))));
             report?.Invoke("완료되었습니다.");
+
+            // C(일원화): 우리 업데이트가 '동작하던' 에이전트를 깨뜨린 퇴행(before 정상 → after 실행불가)이고 B 의
+            //  자동복구까지 실패했으면 데일리 게이트를 비운다 → 다음 앱 실행의 하루 1회 업데이트가 재시도.
+            //  시작·설정('즉시 업데이트') 두 경로가 공유하는 이 진입점에 두어 어느 쪽이든 일관 동작한다.
+            //  (타임아웃으로 백그라운드 완주하는 항목은 WatchDetachedCompletionAsync 가 완료 시점에 동일 처리.)
+            if (Regressed(results))
+                SettingsService.SaveLastAgentAutoUpdateDate("");
         }
         catch (Exception ex)
         {
@@ -87,6 +94,13 @@ public static class AgentUpdateService
         }
         return results;
     }
+
+    /// <summary>퇴행 판정: '동작하던' 에이전트를 이번 실행이 깨뜨렸는가(before 정상 → after 실행불가).
+    /// B 의 자동복구가 성공했으면 after 에 버전이 남으므로 여기에 걸리지 않는다.
+    /// 업데이터가 non-zero 여도 여전히 동작(after 정상)하거나, 처음부터 깨졌던(before 빈값) 경우는 제외.</summary>
+    private static bool Regressed(IEnumerable<AgentUpdateResult> results)
+        => results.Any(r => r.Status == AgentUpdateStatus.Failed
+                            && !string.IsNullOrEmpty(r.Before) && string.IsNullOrEmpty(r.After));
 
     private static async Task<AgentUpdateResult> UpdateOneAsync(AgentDef agent, Action<string>? report)
     {
