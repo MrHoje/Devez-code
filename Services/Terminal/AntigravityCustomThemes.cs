@@ -10,9 +10,10 @@ namespace DevezCode.Services.Terminal;
 /// agy 는 커스텀 팔레트 JSON 을 지원하지 않으므로(grok 과 동일한 수준)
 /// <c>~/.gemini/antigravity-cli/settings.json</c> 의 <c>colorScheme</c> 만 갱신한다.
 /// 다른 설정 키는 보존(merge). 이미 떠 있는 agy 세션은 세션 재시작 후 반영. 실패해도 무해.
-/// 주의: 스킴 값은 agy 1.1.1 바이너리 실측 후보(Solarized/Dark 계열) 기반 — 정확한 enum 은
-/// 런타임 검증 항목(설치 후 /settings 변경 → settings.json diff 로 확정). 알 수 없는 값이면
-/// agy 가 기본 스킴으로 폴백하므로 기동 자체는 깨지지 않는다.</summary>
+/// 스킴 값은 대소문자 구분 소문자+공백 형식 (agy 1.1.1 실기 검증: "Dark" 는
+/// "unrecognized value" 로 거부되어 TUI 시작 시 Settings Error 화면이 뜬다).
+/// 바이너리 검증 상수: "solarized dark" / "solarized light" / "colorblind-friendly dark" /
+/// "colorblind-friendly light" — 기본 스킴은 그 슬러그 규칙대로 "dark".</summary>
 public static class AntigravityCustomThemes
 {
     private static string SettingsJsonPath => Path.Combine(
@@ -22,9 +23,9 @@ public static class AntigravityCustomThemes
     /// <summary>DevezCode 테마 → agy 내장 colorScheme 값.</summary>
     public static string MapToAntigravityScheme(string devezCodeTheme) => devezCodeTheme switch
     {
-        "dark" => "Dark",
-        "soft" or "minimal" => "Solarized Light",
-        _ => "Dark",
+        "dark" => "dark",
+        "soft" or "minimal" => "solarized light",
+        _ => "dark",
     };
 
     /// <summary>앱 시작·테마 변경·세션 기동 시 호출. settings.json 의 colorScheme 을 매핑값으로 기록.</summary>
