@@ -848,10 +848,10 @@ public partial class MainWindow : Window
         const string iconPath = "pack://application:,,,/Resources/Images/ShellPresets/anti.png";
         if (_lastAntigravity.HasData)
         {
-            // agy 는 모델별 5시간 창만 제공 — 주간/월간 행은 만들지 않는다.
+            // agy 는 모델별 한도 창 하나만 제공(리셋 주기는 플랜별 상이 — 실측 주 단위).
             var rows = new List<Models.UsageRowVM>();
             var showEst = SettingsService.LoadShowEstimate();
-            AddRow(rows, "5시간", _lastAntigravity.Primary?.UsedPercent, _lastAntigravity.Primary?.ResetsAt, isShortWindow: true, showEstimate: showEst);
+            AddRow(rows, "한도", _lastAntigravity.Primary?.UsedPercent, _lastAntigravity.Primary?.ResetsAt, isShortWindow: false, showEstimate: showEst);
             cards.Add(new Models.UsageCardVM
             {
                 Name = "Antigravity",
@@ -1277,7 +1277,8 @@ public partial class MainWindow : Window
         return sb.ToString();
     }
 
-    /// <summary>Antigravity(agy) 5시간 창 사용률을 하단 푸터에 반영 (모델별 quotaInfo 대표값).</summary>
+    /// <summary>Antigravity(agy) 모델 한도 사용률을 하단 푸터에 반영 (모델별 quotaInfo 대표값 —
+    /// 리셋 주기는 플랜별 상이(실측: 주 단위)라 고정 표기 대신 "한도" 라벨 사용).</summary>
     private void ApplyAntigravityFooter(Models.ProviderUsage u)
     {
         bool show = SettingsService.LoadShowFooterAntigravity();
@@ -1288,8 +1289,7 @@ public partial class MainWindow : Window
         UpdateFooterDivider();
         var pct = u.Primary?.UsedPercent;
         SetWindowBar(AntigravityFiveBar, AntigravityFivePct, pct);
-        AntigravityFiveLabel.Text = !string.IsNullOrEmpty(u.Error) ? "!"
-            : FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h";
+        AntigravityFiveLabel.Text = !string.IsNullOrEmpty(u.Error) ? "!" : "한도";
         if (!string.IsNullOrEmpty(u.Error) && pct is null)
             AntigravityFivePct.Text = "--";
         AntigravityPanel.ToolTip = BuildAntigravityTooltip(u);
@@ -1302,7 +1302,7 @@ public partial class MainWindow : Window
         var sb = new System.Text.StringBuilder("Antigravity");
         if (!string.IsNullOrEmpty(u.PlanLabel)) sb.Append("  ·  ").Append(u.PlanLabel);
         if (u.Primary?.UsedPercent is double p)
-            sb.Append($"\n5시간 창 {FormatUsagePercent(p)}");
+            sb.Append($"\n모델 한도 {FormatUsagePercent(p)}");
         if (u.Primary?.ResetsAt is DateTimeOffset r)
             sb.Append($"  ·  초기화 {FormatResetDate(r)}");
         return sb.ToString();

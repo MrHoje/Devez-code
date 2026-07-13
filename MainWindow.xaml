@@ -858,16 +858,16 @@
                             <TextBlock x:Name="GrokWeekPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
-                        <!-- Antigravity (모델 5시간 창 — fetchAvailableModels quotaInfo) -->
+                        <!-- Antigravity (모델 한도 — fetchAvailableModels quotaInfo, 리셋 주기 플랜별 상이) -->
                         <StackPanel x:Name="AntigravityPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
                                     Background="Transparent" Cursor="Arrow"
-                                    ToolTip="Antigravity 5시간 창">
+                                    ToolTip="Antigravity 사용 한도">
                             <Border x:Name="AntigravityLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
                                     Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
                             <Image Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/anti.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
-                            <TextBlock x:Name="AntigravityFiveLabel" Text="5h" VerticalAlignment="Center"
+                            <TextBlock x:Name="AntigravityFiveLabel" Text="한도" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
                             <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
                                     Background="{DynamicResource LineBrush}" VerticalAlignment="Center">

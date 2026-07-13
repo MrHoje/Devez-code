@@ -1302,7 +1302,7 @@
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                         <TextBlock Text="Antigravity" FontSize="{DynamicResource Fs13}"
                                                    Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="Antigravity 모델 5시간 창 사용률" FontSize="{DynamicResource Fs11}"
+                                        <TextBlock Text="Antigravity 모델 사용 한도" FontSize="{DynamicResource Fs11}"
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <CheckBox x:Name="ShowFooterAntigravityToggle" Grid.Column="1"

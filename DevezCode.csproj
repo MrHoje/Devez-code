@@ -57,8 +57,9 @@
     <Content Include="Resources\Hooks\grok-hook.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- antigravity(agy) 훅 스크립트. AntigravityHookInstaller 가 %LOCALAPPDATA%\DevezCode\antigravity\hook.ps1 로 재기록. -->
-    <Content Include="Resources\Hooks\antigravity-hook.ps1">
+    <!-- antigravity(agy) 훅 배치. AntigravityHookInstaller 가 %LOCALAPPDATA%\DevezCode\antigravity\hook.cmd 로 재기록.
+         (PowerShell 은 agy 훅 조기취소에 기동이 못 버텨 배치 사용 — AntigravityHookInstaller 주석 참고) -->
+    <Content Include="Resources\Hooks\antigravity-hook.cmd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!-- opencode 플러그인 (Resources\Plugins\opencode-room-tracker.js).

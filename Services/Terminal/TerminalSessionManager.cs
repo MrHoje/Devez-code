@@ -853,41 +853,10 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
-    /// <summary>안티그래비티(agy) 세션 포크 — 네이티브 fork 플래그가 없어(TUI 내 /fork 만 존재),
-    /// 원본 conversation db(SQLite)를 새 GUID 파일명으로 복사해 심는다. 새 방은 이 새 id 로
-    /// `--conversation` resume → 원본과 독립. SQLite 바이너리라 내부 id 치환은 불가 — agy 가
-    /// 파일명 기준으로 로드하면 정상 동작(런타임 검증 항목), 거부해도 배치 fresh 폴백으로 무해.
-    /// 활성 세션이 열어둔 db 대비 FileShare.ReadWrite + -wal/-shm 사이드카도 함께 복사.</summary>
-    public static string? TryForkAntigravitySession(string sourceConversationId)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(sourceConversationId) || !Guid.TryParse(sourceConversationId, out _)) return null;
-            var convDir = Path.Combine(AntigravityCliDir(), "conversations");
-            var srcPath = Path.Combine(convDir, sourceConversationId + ".db");
-            if (!File.Exists(srcPath)) return null;
-
-            var newId = Guid.NewGuid().ToString("D").ToLowerInvariant();
-            CopyShared(srcPath, Path.Combine(convDir, newId + ".db"));
-            // 활성 세션의 미체크포인트 변경분(-wal)도 최대한 동반 복사 (없으면 스킵).
-            foreach (var suffix in new[] { ".db-wal", ".db-shm" })
-            {
-                var side = Path.Combine(convDir, sourceConversationId + suffix);
-                if (File.Exists(side))
-                    try { CopyShared(side, Path.Combine(convDir, newId + suffix)); } catch { }
-            }
-            return newId;
-        }
-        catch { return null; }
-    }
-
-    /// <summary>다른 프로세스가 열어둔 파일도 읽을 수 있게 FileShare.ReadWrite 로 바이너리 복사.</summary>
-    private static void CopyShared(string src, string dest)
-    {
-        using var input = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var output = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None);
-        input.CopyTo(output);
-    }
+    // antigravity(agy) 포크는 미지원 — db 복사 실측(2026-07-13) 결과 `--conversation <복사본>` 이
+    // "trajectory not found" 로 거부됨. 대화 db 내부(trajectory_meta.cascade_id + protobuf 블롭)에
+    // 원본 id 가 박혀 있고 서버측 trajectory 등록도 필요해 로컬 조작만으로는 분기 불가.
+    // agy TUI 내 /fork 명령만 유효 (WorkspacePaneView.ForkSession 이 안내).
 
     /// <summary>claude 세션 포크 — CLI 의 --fork-session(지연 분기) 대신 원본 transcript(.jsonl)를
     /// 새 GUID 로 즉시 복사(내부 sessionId 참조 치환)해 독립 세션을 만든다. 새 세션 id 반환(없으면 null).

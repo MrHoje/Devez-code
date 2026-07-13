@@ -878,19 +878,22 @@ public partial class WorkspacePaneView : UserControl
         var agentId = string.IsNullOrEmpty(source.AgentId)
             ? SettingsService.LoadAgentForRoom(source.Id) : source.AgentId;
 
-        // 포크 지원 에이전트만. claude/opencode/grok=CLI 네이티브, gajae/codex=jsonl 복사, antigravity=db 복사.
-        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae" && agentId != "codex" && agentId != "grok" && agentId != "antigravity")
+        // 포크 지원 에이전트만. claude/opencode/grok=CLI 네이티브, gajae/codex=jsonl 복사.
+        // antigravity 는 미지원 — db 복사 실측 결과 "trajectory not found"(대화가 서버측 trajectory 에
+        // 등록되어야 해 로컬 복사로 분기 불가, agy TUI 내 /fork 만 유효. 2026-07-13 실측).
+        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae" && agentId != "codex" && agentId != "grok")
         {
-            ConfirmDialog.Alert("포크 미지원", "포크는 Claude · OpenCode · 가재코드 · Codex · Grok · Antigravity 세션만 지원합니다.");
+            ConfirmDialog.Alert("포크 미지원", agentId == "antigravity"
+                ? "Antigravity 는 대화가 서버에 묶여 있어 앱에서 포크할 수 없습니다.\nagy 화면 안에서 /fork 명령을 사용하세요."
+                : "포크는 Claude · OpenCode · 가재코드 · Codex · Grok 세션만 지원합니다.");
             return;
         }
 
-        // 원본에 포크할 대화가 있는지 확인. claude/opencode/codex/grok/antigravity=추적 세션 ID, gajae=파일 복사 시점에 판정.
+        // 원본에 포크할 대화가 있는지 확인. claude/opencode/codex/grok=추적 세션 ID, gajae=파일 복사 시점에 판정.
         var srcSid = agentId == "claude"   ? SettingsService.LoadClaudeCodeRoomSession(source.Id)
                    : agentId == "opencode" ? SettingsService.LoadOpenCodeRoomSession(source.Id)
                    : agentId == "codex"    ? SettingsService.LoadCodexRoomSession(source.Id)
                    : agentId == "grok"     ? SettingsService.LoadGrokRoomSession(source.Id)
-                   : agentId == "antigravity" ? SettingsService.LoadAntigravityRoomSession(source.Id)
                    : null;
         if (agentId != "gajae" && string.IsNullOrWhiteSpace(srcSid))
         {
@@ -911,8 +914,6 @@ public partial class WorkspacePaneView : UserControl
             forkedId = TerminalSessionManager.TryForkClaudeSession(srcSid!, proj.Path);
         else if (agentId == "codex")
             forkedId = TerminalSessionManager.TryForkCodexSession(srcSid!);
-        else if (agentId == "antigravity")
-            forkedId = TerminalSessionManager.TryForkAntigravitySession(srcSid!);
         if (agentId != "opencode" && agentId != "grok" && forkedId == null)
         {
             ConfirmDialog.Alert("포크 불가",
@@ -930,8 +931,6 @@ public partial class WorkspacePaneView : UserControl
             SettingsService.SaveClaudeCodeRoomSession(session.Id, forkedId!); // 즉시 독립 세션 → 바로 resume
         else if (agentId == "codex")
             SettingsService.SaveCodexRoomSession(session.Id, forkedId!);   // 복사한 새 세션 id 로 바로 resume
-        else if (agentId == "antigravity")
-            SettingsService.SaveAntigravityRoomSession(session.Id, forkedId!); // 복사한 새 conversation 으로 바로 resume
         else
             SettingsService.SaveRoomForkSource(session.Id, srcSid!);        // opencode/grok: 첫 실행에 --fork 소비
         WorkspaceStore.Save(Projects);

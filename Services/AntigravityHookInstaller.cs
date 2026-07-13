@@ -9,18 +9,31 @@ using System.Text.Json.Nodes;
 
 namespace DevezCode.Services;
 
-/// <summary>안티그래비티(agy) 훅(antigravity-hook.ps1) 설치/유지.
-/// 1) 스크립트를 %LOCALAPPDATA%\DevezCode\antigravity\hook.ps1 에 항상 최신본으로 기록.
-/// 2) ~/.gemini/antigravity-cli/hooks.json 에 SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd 등록.
-///    agy 의 hooks.json 은 사용자 공유 파일이므로 codex 처럼 merge — 다른 훅은 보존.
-/// 주의: agy 에는 UserPromptSubmit 훅이 없다(바이너리 실측) — busy-ON 은 PreToolUse 가 담당.</summary>
+/// <summary>안티그래비티(agy) 훅(antigravity-hook.cmd) 설치/유지.
+/// 1) 배치를 %LOCALAPPDATA%\DevezCode\antigravity\hook.cmd 에 항상 최신본으로 기록.
+/// 2) ~/.gemini/config/hooks.json 에 SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd 등록(merge).
+/// PowerShell 대신 cmd 배치인 이유(실측 2026-07-13): agy 는 훅 프로세스를 기다리지 않고 조기
+/// 취소할 수 있어(--print 의 SessionStart/Stop) 기동 ~수백ms 인 powershell 은 실행 전에 죽는다.
+/// 이벤트명은 stdin JSON 에 없어 배치 인자(%1)로 전달한다.
+/// 주의: agy 에는 UserPromptSubmit 훅이 없다 — busy-ON 은 PreToolUse/PostToolUse 가 담당.</summary>
 public static class AntigravityHookInstaller
 {
     public static string ScriptInstallPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "antigravity", "hook.cmd");
+
+    /// <summary>구버전 PowerShell 훅 잔재 — 설치 시 정리.</summary>
+    private static string LegacyPs1Path => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "antigravity", "hook.ps1");
 
-    /// <summary>agy 글로벌 훅 파일. (경로는 agy 1.1.1 바이너리 실측 기반 추정 — 런타임 검증 항목)</summary>
+    /// <summary>agy 글로벌 훅 파일. 실측(1.1.1): agy 는 <c>~/.gemini/antigravity-cli/hooks.json</c> 을 발견하면
+    /// <c>~/.gemini/config/hooks.json</c> 으로 마이그레이션하고 이후 config 쪽만 읽는다(migrate.go 로그) —
+    /// 처음부터 config 경로에 쓴다.</summary>
     public static string HooksJsonPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini", "config", "hooks.json");
+
+    /// <summary>구버전(마이그레이션 전) 경로 — 여기 남은 우리 훅 파일은 agy 가 매번 재마이그레이션을
+    /// 시도하므로 설치 시 정리한다.</summary>
+    private static string LegacyHooksJsonPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini", "antigravity-cli", "hooks.json");
 
     private static readonly string[] HookEventNames =
@@ -30,14 +43,14 @@ public static class AntigravityHookInstaller
     {
         var asm = Assembly.GetExecutingAssembly();
         var names = asm.GetManifestResourceNames();
-        var match = names.FirstOrDefault(n => n.EndsWith("antigravity-hook.ps1", StringComparison.OrdinalIgnoreCase));
+        var match = names.FirstOrDefault(n => n.EndsWith("antigravity-hook.cmd", StringComparison.OrdinalIgnoreCase));
         if (match != null)
         {
             using var s = asm.GetManifestResourceStream(match)!;
             using var r = new StreamReader(s, Encoding.UTF8);
             return r.ReadToEnd();
         }
-        var src = Path.Combine(AppContext.BaseDirectory, "Resources", "Hooks", "antigravity-hook.ps1");
+        var src = Path.Combine(AppContext.BaseDirectory, "Resources", "Hooks", "antigravity-hook.cmd");
         if (File.Exists(src)) return File.ReadAllText(src);
         return File.ReadAllText(ScriptInstallPath);
     }
@@ -77,9 +90,8 @@ public static class AntigravityHookInstaller
                 root["hooks"] = hooksObj;
             }
 
-            var hookCommand = BuildHookCommand();
             foreach (var eventName in HookEventNames)
-                EnsureOurHook(hooksObj, eventName, hookCommand);
+                EnsureOurHook(hooksObj, eventName, BuildHookCommand(eventName));
 
             var opts = new JsonSerializerOptions { WriteIndented = true };
             File.WriteAllText(HooksJsonPath, root.ToJsonString(opts), new UTF8Encoding(false));
@@ -88,10 +100,30 @@ public static class AntigravityHookInstaller
         catch { return false; }
     }
 
-    private static string BuildHookCommand()
-        // -WindowStyle Hidden 금지 — codex 훅과 동일 이유(콘솔 상속 스폰 시 부모 터미널 창 최소화).
-        // 자세한 근거는 CodexHookInstaller.BuildHookCommand 참고.
-        => $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{ScriptInstallPath}\"";
+    private static string BuildHookCommand(string eventName)
+        // agy(1.1.1) 훅 command 제약 실측(json_hook_caller 로그):
+        //  · 큰따옴표를 벗기지 않고 인자로 넘김 → -File "path" 가 "Illegal characters in path" 실패
+        //  · cmd 계열 해석이라 & 가 명령 구분자 → -Command & 'path' 는 "must follow -Command" 실패
+        // ⇒ 따옴표·특수문자 없는 평문 경로 + 배치 직접 실행. 공백 포함 경로는 8.3 단축경로로 변환.
+        // 이벤트명은 stdin JSON 에 없어 인자로 전달.
+        => $"{ToArgSafePath(ScriptInstallPath)} {eventName}";
+
+    /// <summary>경로에 공백이 있으면 8.3 단축경로로 변환(따옴표 없이 인자로 쓸 수 있게). 실패 시 원본.</summary>
+    private static string ToArgSafePath(string path)
+    {
+        if (!path.Contains(' ')) return path;
+        try
+        {
+            var sb = new StringBuilder(260);
+            if (GetShortPathName(path, sb, sb.Capacity) > 0 && sb.Length > 0)
+                return sb.ToString();
+        }
+        catch { }
+        return path;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern int GetShortPathName(string longPath, StringBuilder shortPath, int bufferSize);
 
     /// <summary>이벤트 안의 DevezCode 훅을 최신 command 로 유지. 중복 제거, 다른 훅 보존
     /// (CodexHookInstaller.EnsureOurHook 과 동일 로직).</summary>
@@ -167,6 +199,53 @@ public static class AntigravityHookInstaller
     {
         EnsureScriptInstalled();
         InstallHooksJson();
+        CleanupLegacyHooksJson();
+        try { if (File.Exists(LegacyPs1Path)) File.Delete(LegacyPs1Path); } catch { }
+    }
+
+    /// <summary>구경로에 남은 파일에서 우리 훅만 제거(다른 훅은 보존). 우리 훅만 있었다면 파일 삭제.</summary>
+    private static void CleanupLegacyHooksJson()
+    {
+        try
+        {
+            if (!File.Exists(LegacyHooksJsonPath)) return;
+            var root = JsonNode.Parse(File.ReadAllText(LegacyHooksJsonPath));
+            if (root?["hooks"] is not JsonObject hooksObj) return;
+
+            bool changed = false, anyOtherHook = false;
+            foreach (var eventName in hooksObj.Select(p => p.Key).ToList())
+            {
+                if (hooksObj[eventName] is not JsonArray entries) continue;
+                for (int entryIndex = entries.Count - 1; entryIndex >= 0; entryIndex--)
+                {
+                    if (entries[entryIndex] is not JsonObject entry ||
+                        entry["hooks"] is not JsonArray inner) continue;
+                    for (int hookIndex = inner.Count - 1; hookIndex >= 0; hookIndex--)
+                    {
+                        if (inner[hookIndex] is JsonObject hook &&
+                            IsOurHookCommand(hook["command"]?.GetValue<string>()))
+                        {
+                            inner.RemoveAt(hookIndex);
+                            changed = true;
+                        }
+                        else anyOtherHook = true;
+                    }
+                    if (inner.Count == 0) entries.RemoveAt(entryIndex);
+                }
+                if (entries.Count == 0) hooksObj.Remove(eventName);
+            }
+
+            if (!anyOtherHook)
+            {
+                File.Delete(LegacyHooksJsonPath);
+            }
+            else if (changed)
+            {
+                var opts = new JsonSerializerOptions { WriteIndented = true };
+                File.WriteAllText(LegacyHooksJsonPath, root.ToJsonString(opts), new UTF8Encoding(false));
+            }
+        }
+        catch { /* best-effort */ }
     }
 
     public static bool HookAssetsHealthy()

@@ -7,7 +7,8 @@ namespace DevezCode.Services;
 /// <summary>Google Antigravity(Gemini Code Assist) 의 OAuth 토큰을 읽는다.
 /// Antigravity CLI(<c>agy</c>)/IDE 는 토큰을 디스크 평문이 아니라 Windows 자격증명 관리자
 /// (go-keyring → <c>LegacyGeneric:target=gemini:antigravity</c>, 타입 GENERIC)에 저장한다.
-/// 블롭은 UTF-8 JSON(필드명은 access_token/refresh_token/expiry 계열). 메모리에서만 사용한다.
+/// 블롭은 UTF-8 JSON — agy 1.1.1 실측: <c>{"token":{"access_token","token_type","refresh_token","expiry"},"auth_method"}</c>
+/// (oauth2.Token 이 "token" 키에 중첩). 평평한 구조 폴백도 유지. 메모리에서만 사용한다.
 /// 쓰기는 하지 않는다 — Antigravity 가 관리하는 자격증명을 덮어쓰지 않는다.</summary>
 public static class AntigravityCredentialStore
 {
@@ -31,10 +32,14 @@ public static class AntigravityCredentialStore
             using var doc = JsonDocument.Parse(txt);
             var root = doc.RootElement;
 
-            string? access = FirstString(root, "access_token", "accessToken", "token", "id_token");
+            // agy 실측 구조: 토큰 필드들이 "token" 객체 안에 중첩. 평평한 구조면 root 그대로.
+            var tok = root.TryGetProperty("token", out var nested) && nested.ValueKind == JsonValueKind.Object
+                ? nested : root;
+
+            string? access = FirstString(tok, "access_token", "accessToken", "token", "id_token");
             if (string.IsNullOrEmpty(access)) return null;
-            string? refresh = FirstString(root, "refresh_token", "refreshToken");
-            long exp = ReadExpiryMs(root);
+            string? refresh = FirstString(tok, "refresh_token", "refreshToken");
+            long exp = ReadExpiryMs(tok);
             return (access!, refresh, exp);
         }
         catch { return null; }
