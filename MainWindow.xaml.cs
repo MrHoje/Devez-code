@@ -979,7 +979,8 @@ public partial class MainWindow : Window
             UpdateFooterDivider();
             if (_lastCodex != null)
                 SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct,
-                    CxSevenBar, CxSevenPct, _lastCodex, "Codex");
+                    CxSevenBar, CxSevenPct, _lastCodex, "Codex",
+                    primaryGroup: CxFiveGroup, weeklyGroup: CxSevenGroup);
             RefreshUsagePanelIfVisible();
             return;
         }
@@ -990,7 +991,8 @@ public partial class MainWindow : Window
         ApplyRateLimit(merged);
         if (_lastCodex != null)
             SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct,
-                CxSevenBar, CxSevenPct, _lastCodex, "Codex");
+                CxSevenBar, CxSevenPct, _lastCodex, "Codex",
+                primaryGroup: CxFiveGroup, weeklyGroup: CxSevenGroup);
         RefreshUsagePanelIfVisible();
     }
 
@@ -1052,7 +1054,9 @@ public partial class MainWindow : Window
         {
             case "codex":
                 _lastCodex = u;
-                SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct, CxSevenBar, CxSevenPct, u, "Codex");
+                SetProviderPanel(CodexPanel, CxFiveLabel, CxFiveBar, CxFivePct,
+                    CxSevenBar, CxSevenPct, u, "Codex",
+                    primaryGroup: CxFiveGroup, weeklyGroup: CxSevenGroup);
                 break;
             case "opencode-go":
                 _lastGo = u;
@@ -1231,11 +1235,20 @@ public partial class MainWindow : Window
     /// <summary>codex/go 사용량을 해당 푸터 패널에 반영. 데이터 없거나 설정 off 면 숨김.</summary>
     private void SetProviderPanel(System.Windows.Controls.StackPanel panel,
         TextBlock fLabel, Border fBar, TextBlock fPct, Border wBar, TextBlock wPct,
-        Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null)
+        Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null,
+        StackPanel? primaryGroup = null, StackPanel? weeklyGroup = null)
     {
         bool show = u.Provider == "codex" ? SettingsService.LoadShowFooterCodex() : SettingsService.LoadShowFooterGo();
         if (!u.HasData || !show) { panel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
         panel.Visibility = Visibility.Visible;
+        if (primaryGroup != null) primaryGroup.Visibility = u.Primary != null ? Visibility.Visible : Visibility.Collapsed;
+        if (weeklyGroup != null)
+        {
+            weeklyGroup.Visibility = u.Weekly != null ? Visibility.Visible : Visibility.Collapsed;
+            weeklyGroup.Margin = u.Primary != null
+                ? new System.Windows.Thickness(14, 0, 0, 0)
+                : new System.Windows.Thickness(0);
+        }
         SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
         SetWindowBar(wBar, wPct, u.Weekly?.UsedPercent);
         if (mBar != null && mPct != null) SetWindowBar(mBar, mPct, u.Monthly?.UsedPercent);

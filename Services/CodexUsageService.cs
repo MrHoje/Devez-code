@@ -9,7 +9,8 @@ namespace DevezCode.Services;
 
 /// <summary>codex/openai 사용량을 폴링한다. Codex CLI 또는 DevezCode/opencode 의 OAuth 토큰으로
 /// <c>GET chatgpt.com/backend-api/wham/usage</c> 를 호출한다.
-/// primary_window=5h, secondary_window=주간. 토큰 만료/오류 시 직전 값 유지.</summary>
+/// primary/secondary 슬롯은 고정 의미가 아니므로 limit_window_seconds 로 5h/주간을 구분한다.
+/// 토큰 만료/오류 시 직전 값 유지.</summary>
 public sealed class CodexUsageService : IDisposable
 {
     private const string UsageUrl = "https://chatgpt.com/backend-api/wham/usage";
@@ -148,12 +149,13 @@ public sealed class CodexUsageService : IDisposable
             using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
             var root = doc.RootElement;
 
-            UsageWindow? primary = null, weekly = null;
+            ParsedWindow? primarySlot = null, secondarySlot = null;
             if (root.TryGetProperty("rate_limit", out var rl) && rl.ValueKind == JsonValueKind.Object)
             {
-                primary = ReadWindow(rl, "primary_window");
-                weekly  = ReadWindow(rl, "secondary_window");
+                primarySlot = ReadWindow(rl, "primary_window");
+                secondarySlot = ReadWindow(rl, "secondary_window");
             }
+            var (primary, weekly) = ClassifyWindows(primarySlot, secondarySlot);
             if (primary == null && weekly == null)
             {
                 DiagLog.Write("CodexUsage response has no rate-limit windows");
@@ -220,8 +222,33 @@ public sealed class CodexUsageService : IDisposable
         finally { _pollGate.Release(); }
     }
 
-    /// <summary>window 객체에서 used_percent + reset_at(epoch초)/reset_after_seconds 를 읽어 UsageWindow 로.</summary>
-    private static UsageWindow? ReadWindow(JsonElement rl, string key)
+    private readonly record struct ParsedWindow(UsageWindow Usage, long? LimitWindowSeconds);
+
+    /// <summary>API 슬롯을 실제 윈도우 길이로 분류한다. 5시간 한도가 임시 제거되면
+    /// 7일 창이 primary_window 로 이동하므로 슬롯 위치만으로 의미를 판단하면 안 된다.</summary>
+    private static (UsageWindow? Primary, UsageWindow? Weekly) ClassifyWindows(
+        ParsedWindow? primarySlot, ParsedWindow? secondarySlot)
+    {
+        UsageWindow? primary = null, weekly = null;
+        Assign(primarySlot, fallbackWeekly: false);
+        Assign(secondarySlot, fallbackWeekly: true);
+        return (primary, weekly);
+
+        void Assign(ParsedWindow? parsed, bool fallbackWeekly)
+        {
+            if (parsed is not { } value) return;
+            // 현재 Codex 윈도우는 5시간(18,000초) 또는 주간(604,800초)이다.
+            // 메타데이터가 없는 구형 응답만 기존 슬롯 의미로 폴백한다.
+            var isWeekly = value.LimitWindowSeconds is long seconds
+                ? seconds >= (long)TimeSpan.FromDays(6).TotalSeconds
+                : fallbackWeekly;
+            if (isWeekly) weekly ??= value.Usage;
+            else primary ??= value.Usage;
+        }
+    }
+
+    /// <summary>window 객체에서 사용률·초기화 시각·윈도우 길이를 읽는다.</summary>
+    private static ParsedWindow? ReadWindow(JsonElement rl, string key)
     {
         if (!rl.TryGetProperty(key, out var w) || w.ValueKind != JsonValueKind.Object) return null;
         if (!w.TryGetProperty("used_percent", out var up) || up.ValueKind != JsonValueKind.Number) return null;
@@ -231,7 +258,13 @@ public sealed class CodexUsageService : IDisposable
             reset = DateTimeOffset.FromUnixTimeSeconds(ra.GetInt64());
         else if (w.TryGetProperty("reset_after_seconds", out var rs) && rs.ValueKind == JsonValueKind.Number && rs.GetDouble() > 0)
             reset = DateTimeOffset.Now.AddSeconds(rs.GetDouble());
-        return new UsageWindow { UsedPercent = rawPct, ResetsAt = reset };
+        long? limitWindowSeconds = w.TryGetProperty("limit_window_seconds", out var lw)
+            && lw.ValueKind == JsonValueKind.Number && lw.TryGetInt64(out var seconds)
+            ? seconds
+            : null;
+        return new ParsedWindow(
+            new UsageWindow { UsedPercent = rawPct, ResetsAt = reset },
+            limitWindowSeconds);
     }
 
     private static string Fingerprint(string token)

@@ -786,22 +786,26 @@
                             <Image x:Name="CodexFooterIcon" Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
                                    Source="pack://application:,,,/Resources/Images/ShellPresets/codex.png"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
-                            <TextBlock x:Name="CxFiveLabel" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
-                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                <Border x:Name="CxFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                            </Border>
-                            <TextBlock x:Name="CxFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                            <TextBlock x:Name="CxSevenLabel" Text="주간" Margin="14,0,0,0" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
-                            <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
-                                    Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
-                                <Border x:Name="CxSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
-                            </Border>
-                            <TextBlock x:Name="CxSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            <StackPanel x:Name="CxFiveGroup" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="CxFiveLabel" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                        Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                    <Border x:Name="CxFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                                </Border>
+                                <TextBlock x:Name="CxFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <StackPanel x:Name="CxSevenGroup" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                                <TextBlock x:Name="CxSevenLabel" Text="주간" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                        Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                    <Border x:Name="CxSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                                </Border>
+                                <TextBlock x:Name="CxSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
                         </StackPanel>
                         <!-- opencode-go (클릭 시 재로그인) -->
                         <StackPanel x:Name="GoPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
