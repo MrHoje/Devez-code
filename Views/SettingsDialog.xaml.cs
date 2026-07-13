@@ -72,7 +72,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.15.0", "2026-07-13", true, new[]
+        ("v1.16.0", "2026-07-14", true, new[]
+        {
+            "Google Antigravity CLI 연결 기능이 추가되었습니다.",
+            "계정 사용량 표시에 Antigravity 정보가 추가되었습니다.",
+            "Codex 5시간 한도 정보가 없을 때 주간 한도가 정확히 표시되도록 개선했습니다.",
+            "에이전트 자동 업데이트의 안정성과 보안을 개선했습니다.",
+        }),
+        ("v1.15.0", "2026-07-13", false, new[]
         {
             "정해진 시간에 세션을 자동으로 깨워 메시지를 보내는 예약 실행(깨우기) 기능을 추가했습니다. (우측 하단에 깨우기 버튼 추가)",
             "Grok CLI 연결 기능이 추가되었습니다.",
@@ -642,14 +649,37 @@ public partial class SettingsDialog : UserControl
 
     private bool _instantUpdating;
 
-    /// <summary>'즉시 업데이트' 링크 — 켜진 에이전트를 지금 최신화. 모달(ShowDialog)로 띄운다.
-    /// 업데이트 실행·진행표시는 창이 스스로 담당(Loaded). 완료 후 자동으로 닫지 않고 사용자가 '닫기'로 종료.</summary>
+    /// <summary>'즉시 업데이트' 링크 — 켜진 에이전트를 지금 최신화.
+    /// · 실행 중인 세션이 없으면: 그 자리에서 인플레이스 업데이트(모달 ShowDialog, 완료 후 '닫기').
+    /// · 세션이 있으면: 인플레이스 설치는 실행 중 바이너리 잠금으로 실패/파손 위험 → 확인 후 앱을 안전 종료·
+    ///   재시작하며 업데이트한다(세션은 저장·복원). 시작 경로가 세션 생성 전에 돌아 깨끗이 설치된다.</summary>
     private void InstantUpdateAgents_Click(object sender, MouseButtonEventArgs e)
     {
         if (_instantUpdating) return;
         _instantUpdating = true;
         try
         {
+            if (Services.Terminal.TerminalSessionManager.Instance.HasLiveSessions())
+            {
+                if (!ConfirmDialog.Show(
+                        "재시작하고 업데이트",
+                        "실행 중인 세션이 있어 안전하게 업데이트하려면 앱을 재시작해야 합니다.\n" +
+                        "세션은 저장 후 자동으로 복원되며, 재시작하면서 에이전트를 최신 버전으로 업데이트합니다.\n\n" +
+                        "지금 재시작하고 업데이트할까요?",
+                        okLabel: "재시작하고 업데이트"))
+                    return;
+
+                // 모달 SettingsWindow 를 먼저 닫는다(CloseRequested → Window.Close(), 동기) — 안 그러면 이 창이
+                // 메인 창의 '안전하게 종료합니다' 종료 오버레이를 덮어 메시지가 안 보인다.
+                CloseRequested?.Invoke(this, EventArgs.Empty);
+
+                if (!App.RestartForAgentUpdate())
+                    ConfirmDialog.Show("재시작 실패",
+                        "재시작을 시작하지 못했습니다. 잠시 후 다시 시도하거나 앱을 직접 재시작해 주세요.",
+                        okLabel: "확인");
+                return; // 성공 시 앱이 곧 종료·재실행됨
+            }
+
             var win = new AgentUpdateWindow
             {
                 Owner = Window.GetWindow(this),

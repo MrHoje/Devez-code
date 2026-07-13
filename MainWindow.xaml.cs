@@ -607,6 +607,10 @@ public partial class MainWindow : Window
     private bool _shuttingDown;
     private bool _readyToClose; // 안전 정리(스냅샷/오버레이/graceful) 완료 후 우리가 부른 Close() 만 통과시킨다.
 
+    /// <summary>'재시작하고 업데이트'로 종료 중인가 — 종료 오버레이에 '업데이트 후 자동으로 다시 실행됩니다'
+    /// 안내를 함께 표시한다. <see cref="App.RestartForAgentUpdate"/> 가 Close() 직전에 설정한다.</summary>
+    public bool RestartingForUpdate;
+
     /// <summary>창 종료 가로채기: 살아있는 세션이 있으면 닫기를 보류하고, 오버레이를 띄운 채
     /// 모든 세션을 graceful 종료(claude/codex transcript flush 기회)한 뒤 실제로 닫는다.</summary>
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -660,6 +664,7 @@ public partial class MainWindow : Window
         catch { /* best effort */ }
         // 스냅샷이 실제로 한 프레임 그려진 뒤 오버레이를 올린다 → WebView 가 사라진 직후 빈 배경이 비치는 깜빡임 제거.
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+        if (RestartingForUpdate) ShutdownRestartNote.Visibility = Visibility.Visible;
         ShutdownOverlay.Visibility = Visibility.Visible;
         try { await TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500); }
         catch { /* best effort */ }

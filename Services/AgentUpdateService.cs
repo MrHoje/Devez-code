@@ -131,8 +131,9 @@ public static class AgentUpdateService
                 return await TryRepairAsync(agent, before, report);
 
             // 버전 변화가 최우선 근거 — 경고(예: temp 정리 EPERM)로 종료코드가 더러워져도 교체됐으면 성공.
+            // 비교는 SameVersion 으로 표기 흔들림(grok ' [stable]' 등)을 무시 — 안 그러면 거짓 '업데이트됨'이 뜬다.
             bool changed = !string.IsNullOrEmpty(after) && !string.IsNullOrEmpty(before) &&
-                           !string.Equals(before, after, StringComparison.Ordinal);
+                           !SameVersion(before, after);
             if (changed)
             {
                 report?.Invoke($"{agent.DisplayName}: {before} → {after} (업데이트됨)");
@@ -181,7 +182,7 @@ public static class AgentUpdateService
         if (!string.IsNullOrEmpty(after))
         {
             report?.Invoke($"{agent.DisplayName}: 자동 복구됨 ({after})");
-            bool changed = !string.Equals(before, after, StringComparison.Ordinal);
+            bool changed = !SameVersion(before, after);
             return new(agent.Id, agent.DisplayName, before, after,
                        changed ? AgentUpdateStatus.Updated : AgentUpdateStatus.UpToDate, exitCode);
         }
@@ -202,7 +203,7 @@ public static class AgentUpdateService
             Log($"{agent.Id}: 지연 완료 '{before}' -> '{after}' (exit {exitCode})");
 
             bool changed = !string.IsNullOrEmpty(after) && !string.IsNullOrEmpty(before) &&
-                           !string.Equals(before, after, StringComparison.Ordinal);
+                           !SameVersion(before, after);
             // 퇴행: before 는 정상인데 after 가 비면(--version 실패) 지연 설치가 에이전트를 깨뜨린 것.
             bool regressed = !string.IsNullOrEmpty(before) && string.IsNullOrEmpty(after);
             if (changed)
@@ -296,6 +297,19 @@ public static class AgentUpdateService
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault() ?? "";
         return firstLine.Trim();
+    }
+
+    /// <summary>버전 문자열 둘이 (표기 흔들림을 무시하고) 실질적으로 같은지. <c>grok --version</c> 이 채널 태그
+    /// <c> [stable]</c> 를 간헐적으로 붙였다 뗐다 해서, 첫 줄 전체 Ordinal 비교는 버전이 동일해도 before≠after 가 되어
+    /// 거짓 '업데이트됨'을 냈다. 대괄호 태그를 제거하고 공백을 정규화한 뒤 비교한다(빌드 해시는 남겨 실제 재빌드는 계속 감지).</summary>
+    private static bool SameVersion(string a, string b)
+        => string.Equals(NormalizeVersion(a), NormalizeVersion(b), StringComparison.Ordinal);
+
+    private static string NormalizeVersion(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var s = System.Text.RegularExpressions.Regex.Replace(raw, @"\s*\[[^\]]*\]", ""); // [stable] 등 채널 태그 제거
+        return System.Text.RegularExpressions.Regex.Replace(s.Trim(), @"\s+", " ");       // 연속 공백 정규화
     }
 
     /// <summary>짧은 조회용 — PowerShell 실행 후 stdout+stderr 를 캡처해 반환. 타임아웃 시 종료.</summary>

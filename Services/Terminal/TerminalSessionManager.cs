@@ -51,6 +51,18 @@ public sealed class TerminalSessionManager
         lock (_lock) return _gracefulStopping.Contains(roomId);
     }
 
+    /// <summary>살아있는(프로세스 실행 중) 세션이 하나라도 있는지. 에이전트 인플레이스 업데이트 전에
+    /// "세션이 바이너리를 잠그고 있는지"를 판단해, 있으면 안전 종료 후 재시작 업데이트로 우회하는 데 쓴다.</summary>
+    public bool HasLiveSessions()
+    {
+        lock (_lock)
+        {
+            foreach (var s in _sessions.Values)
+                if (s.IsAlive) return true;
+            return false;
+        }
+    }
+
     /// <summary>방별 "셸 준비 후 주입" 초기 커맨드. 직접 실행(cmd /k) 방·일반 방은 null.
     /// GetOrCreate 가 결정해 채우고 GetInitialCommand 가 1회 소비한다.</summary>
     private readonly Dictionary<string, string?> _pendingInitial = new();

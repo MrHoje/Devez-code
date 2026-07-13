@@ -36,6 +36,10 @@ public partial class App : Application
     private System.Threading.Mutex? _singleInstanceMutex;
     private const string SingleInstanceMutexName = @"Global\DevezCode.SingleInstance";
 
+    /// <summary>'지금 재시작하고 업데이트'(RestartForAgentUpdate)로 재실행됐는지 — 시작 시 에이전트 업데이트를
+    /// 데일리 게이트/자동업데이트 토글과 무관하게 강제 실행한다. --update-agents-now 인자로 전달.</summary>
+    private static bool _forceAgentUpdateNow;
+
     /// <summary>스타트업/런타임 크래시 진단 로그 경로(%AppData%\DevezCode\crash.log).
     /// 전역 예외가 아무 메시지 없이 앱을 죽일 때 원인을 남긴다.</summary>
     private static string CrashLogFile => Path.Combine(
@@ -72,6 +76,10 @@ public partial class App : Application
 
         // 자동 업데이트 재실행 플래그(단일 인스턴스 분기보다 먼저 읽어 둔다).
         UpdateFailedRelaunch = e.Args.Contains("--update-failed");
+
+        // '지금 재시작하고 업데이트'로 재실행된 경우 — 시작 시 에이전트 업데이트를 강제 실행
+        // (자동업데이트 토글 OFF·오늘 이미 업데이트했음과 무관하게). RestartForAgentUpdate 가 붙인 인자.
+        _forceAgentUpdateNow = e.Args.Contains("--update-agents-now");
 
 
         // 단일 인스턴스: 이미 떠 있으면 기존 창을 앞으로 가져오고 종료한다.
@@ -135,18 +143,21 @@ public partial class App : Application
     /// 메인 창이 뜨기 전에 진행 모달을 먼저 띄워 업데이트 결과를 보여준 뒤 메인 창을 연다.</summary>
     private async void StartupSequence()
     {
-        if (!SettingsService.LoadAutoUpdateAgents())
+        // '지금 재시작하고 업데이트'로 재실행된 경우 자동업데이트 토글/데일리 게이트를 모두 우회하고 강제 실행.
+        bool forced = _forceAgentUpdateNow;
+
+        if (!forced && !SettingsService.LoadAutoUpdateAgents())
         {
             new MainWindow().Show();
             return;
         }
 
         // 시작 시 자동 업데이트는 하루 1회만. 오늘 이미 실행했으면 모달 없이 바로 메인 창.
-        // (설정의 '즉시 업데이트'는 이 게이트와 무관하게 언제나 동작한다.)
+        // (설정의 '즉시 업데이트'/재시작 강제 실행은 이 게이트와 무관하게 언제나 동작한다.)
         // C(실패 시 재시도): 게이트는 여기서 선점 저장하되, 업데이트가 에이전트를 깨진(Failed) 채로 남기면
         // NotifyAgentUpdateResultsAsync 가 게이트를 비워 다음 실행에서 다시 시도한다(조용히 하루 방치 방지).
         var today = DateTime.Now.ToString("yyyy-MM-dd");
-        if (SettingsService.LoadLastAgentAutoUpdateDate() == today)
+        if (!forced && SettingsService.LoadLastAgentAutoUpdateDate() == today)
         {
             new MainWindow().Show();
             return;
@@ -175,6 +186,54 @@ public partial class App : Application
         // 메인 창이 뜬 뒤 업데이트 최종 결과를 팝업으로 알린다.
         // '건너뛰고 시작'으로 모달을 닫았어도 Task 는 계속 돌므로, 끝나는 시점에 알림이 온다.
         _ = NotifyAgentUpdateResultsAsync(win.UpdateTask);
+    }
+
+    /// <summary>실행 중인 세션을 안전 종료 경로로 닫고 앱을 재시작하면서 에이전트 업데이트를 강제 실행한다
+    /// (설정 '즉시 업데이트'에서 세션이 떠 있을 때 사용 — 인플레이스 설치는 바이너리 잠금으로 실패/파손 위험).
+    ///
+    /// 단일 인스턴스 뮤텍스 때문에 새 인스턴스는 현재 프로세스가 완전히 종료된 뒤에 떠야 한다 → PowerShell 헬퍼가
+    /// 현재 PID 종료를 기다렸다가 <c>--update-agents-now</c> 로 재실행한다(UpdateService 의 교체/재실행과 동일 원리).
+    /// 재실행된 인스턴스는 <see cref="StartupSequence"/> 에서 게이트/토글과 무관하게 업데이트 모달을 띄운다.
+    /// 종료 자체는 UpdateService 와 같이 메인 창 Close() 로 안전 경로(스냅샷·graceful 세션 종료)를 태운다.
+    ///
+    /// 반환: 재실행 헬퍼를 기동해 종료 절차를 시작했으면 true. 헬퍼 기동 실패 시 false(호출부가 안내) — 이때는
+    /// 앱을 닫지 않는다(닫으면 재실행 없이 그냥 꺼져 버리므로).</summary>
+    public static bool RestartForAgentUpdate()
+    {
+        try
+        {
+            var exe = Environment.ProcessPath!;
+            var pid = Environment.ProcessId;
+            var script = Path.Combine(Path.GetTempPath(), "devezcode_agentupdate_restart.ps1");
+            var exeLit = exe.Replace("'", "''");
+            // 현재 프로세스가 완전히 종료(=뮤텍스 해제)된 뒤에 새 인스턴스를 띄운다 → 단일 인스턴스 충돌 방지.
+            File.WriteAllText(script,
+                $"try {{ Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue }} catch {{ }}\n" +
+                $"Start-Process '{exeLit}' -ArgumentList '--update-agents-now' -WorkingDirectory (Split-Path '{exeLit}')\n");
+
+            var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"{script}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            });
+            if (p == null) return false;
+        }
+        catch { return false; }
+
+        // 헬퍼가 무장됐으면 안전 종료 시작. 모달(설정) 핸들러 안에서 호출될 수 있어 BeginInvoke 로 현재 스택을
+        // 먼저 되감은 뒤 실행한다(재진입 방지). 메인 창 Close() 가 MainWindow.OnWindowClosing 의 안전 경로를 태운다.
+        Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var mw = Application.Current.MainWindow;
+            // 종료 오버레이에 '업데이트 후 자동으로 다시 실행됩니다' 안내를 띄우도록 표시.
+            if (mw is MainWindow m) m.RestartingForUpdate = true;
+            if (mw != null) { mw.Closed += (_, _) => Application.Current.Shutdown(); mw.Close(); }
+            else Application.Current.Shutdown();
+        }));
+        return true;
     }
 
     /// <summary>시작 시 자동 업데이트의 최종 결과 — 성공(버전 변경)/실패를 모아 중앙 모달 1개로 보여준다.

@@ -985,6 +985,12 @@
                                    HorizontalAlignment="Center" TextAlignment="Center"
                                    FontSize="{DynamicResource Fs12}"
                                    Foreground="{DynamicResource TextMutedBrush}"/>
+                        <!-- '재시작하고 업데이트'로 종료할 때만 표시(코드에서 Visible). -->
+                        <TextBlock x:Name="ShutdownRestartNote" Visibility="Collapsed"
+                                   Text="업데이트 후 자동으로 다시 실행됩니다." Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" TextAlignment="Center"
+                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource PrimaryBrush}"/>
                     </StackPanel>
                 </Border>
             </Grid>
