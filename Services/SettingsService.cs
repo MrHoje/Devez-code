@@ -99,6 +99,9 @@ public static class SettingsService
         public double TaskQueueBubbleFontSize { get; set; } = 14;
         // 프로젝트 선택 시 모든 세션을 미리 켤지 여부. 기본 false = 첫/활성 세션만 실행.
         public bool PreloadAllProjectSessions { get; set; } = false;
+        // 표시하지 않은 유휴 세션 자동 종료 시간(분). 0=사용 안 함.
+        // 구버전 설정에는 필드가 없어 0으로 역직렬화되므로 기능은 명시적으로 켠 경우에만 동작한다.
+        public int IdleSessionShutdownMinutes { get; set; } = 0;
         // 프로그램 실행 시 마지막으로 보던 프로젝트를 자동으로 불러올지 여부. 기본 false = 미선택 상태로 시작.
         public bool AutoLoadLastProject { get; set; } = false;
         // 세션 탭 위의 프로젝트 정보 헤더(MetaBar: 프로젝트명~effort) 숨김 여부. 기본 false = 표시.
@@ -752,6 +755,16 @@ public static class SettingsService
     // ── 일반 설정 ────────────────────────────────────────────────
     public static bool LoadPreloadAllProjectSessions() => Current.PreloadAllProjectSessions;
     public static void SavePreloadAllProjectSessions(bool v) { Current.PreloadAllProjectSessions = v; Save(); }
+    public static int LoadIdleSessionShutdownMinutes()
+    {
+        var value = Current.IdleSessionShutdownMinutes;
+        return value is 60 or 120 or 240 or 480 ? value : 0;
+    }
+    public static void SaveIdleSessionShutdownMinutes(int minutes)
+    {
+        Current.IdleSessionShutdownMinutes = minutes is 60 or 120 or 240 or 480 ? minutes : 0;
+        Save();
+    }
 
     public static bool LoadAutoLoadLastProject() => Current.AutoLoadLastProject;
     public static void SaveAutoLoadLastProject(bool v) { Current.AutoLoadLastProject = v; Save(); }

@@ -42,6 +42,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<double>? FontSizePxChanged;
     /// <summary>사용자가 WebView2 터미널 표면을 클릭/조작함. WPF PreviewMouseDown 이 HWND 경계를 넘지 못해 별도 통지한다.</summary>
     public event Action? UserInteracted;
+    /// <summary>사용자가 특정 방의 터미널을 실제로 조작함. 유휴 종료 타이머 갱신용.</summary>
+    public event Action<string>? SessionActivity;
     /// <summary>터미널 출력에서 파일 경로를 Ctrl+클릭 → 에디터 탭으로 열기 요청.</summary>
     public event Action<string>? FileOpenRequested;
     /// <summary>synced reveal 준비 완료(폭 안정·fit·재동기 끝, 커튼은 아직 유지) — 셸이 양쪽 준비를 모아 동시에 걷는다.</summary>
@@ -506,6 +508,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 }
                 case "interact":
                     UserInteracted?.Invoke();
+                    if (_activeRoomId != null) SessionActivity?.Invoke(_activeRoomId);
                     break;
                 case "revealPrepared":
                     RevealPrepared?.Invoke();
@@ -553,6 +556,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     // focus-in/out 을 claude 로 전달하지 않아 항상 포커스 상태로 유지한다.
                     if (data is "\x1b[O" or "\x1b[I") break;
                     var inputRoom = root.GetProperty("roomId").GetString()!;
+                    SessionActivity?.Invoke(inputRoom);
                     // 단독 ESC = 응답 취소(인터럽트) 의도. agent 가 idle 신호를 안 줘도 스피너가
                     // 무한정 도는 것을 막기 위해 즉시 busy 해제를 요청한다(입력은 그대로 전달해 실제 취소도 수행).
                     if (data == "\x1b") InterruptRequested?.Invoke(inputRoom);

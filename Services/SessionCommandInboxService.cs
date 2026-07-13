@@ -34,6 +34,11 @@ public sealed class SessionCommandInboxService
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, object> _injectLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> _readyGeneration = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, int> _pendingByRoom = new(StringComparer.Ordinal);
+
+    /// <summary>부팅/준비를 기다리는 예약 주입이 있는지. 자동 유휴 종료가 전달 직전 세션을 닫지 않게 한다.</summary>
+    public bool HasPendingInjection(string roomId)
+        => _pendingByRoom.TryGetValue(roomId, out var count) && count > 0;
 
     /// <summary>자식 세션 생성 요청(부모 roomId, 세션명, 브리핑). FSW 백그라운드 스레드에서 발화 → 구독자(MainWindow)가 UI 스레드로 마샬링.</summary>
     public event Action<string, string, string>? ChildSessionRequested;
@@ -206,6 +211,7 @@ public sealed class SessionCommandInboxService
             catch { }
         }
 
+        _pendingByRoom.AddOrUpdate(roomId, 1, (_, count) => count + 1);
         _ = System.Threading.Tasks.Task.Run(async () =>
         {
             try
@@ -263,6 +269,11 @@ public sealed class SessionCommandInboxService
             {
                 // 파일을 남겨 다음 재시도/앱 재실행에서 다시 전달한다.
                 if (commandPath != null) ScheduleRetry(commandPath);
+            }
+            finally
+            {
+                if (_pendingByRoom.AddOrUpdate(roomId, 0, (_, count) => Math.Max(0, count - 1)) == 0)
+                    _pendingByRoom.TryRemove(roomId, out _);
             }
         });
     }

@@ -26,6 +26,8 @@ public partial class WorkspacePaneView : UserControl
 {
     /// <summary>백그라운드 프리로드를 포함해 해당 방의 TUI가 입력 가능한 상태가 됐을 때 알린다.</summary>
     public event Action<string>? SessionTerminalReady;
+    /// <summary>세션이 표시되거나 사용자가 해당 터미널을 조작함. 셸의 유휴 시간 추적용.</summary>
+    public event Action<string>? SessionActivity;
 
     private readonly TerminalHostView _terminal = new();
 
@@ -133,6 +135,7 @@ public partial class WorkspacePaneView : UserControl
         _terminal.MenuInputSubmitted += id => { var s = FindSession(id); if (s is { IsWaitingChoice: true }) s.IsWaitingChoice = false; };
         _terminal.SessionActionRequested += OnTerminalSessionAction;
         _terminal.UserInteracted += () => FocusRequested?.Invoke(this);
+        _terminal.SessionActivity += id => SessionActivity?.Invoke(id);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
         _terminal.FontSizePxChanged += ApplyHeaderFontSize;
         // 터미널 → 파일 경로 Ctrl+클릭 → 에디터 탭으로 열기
@@ -1024,6 +1027,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
+        SessionActivity?.Invoke(session.Id);
         if (ReferenceEquals(_activeSession, session)) return;
         // 이 패널에서 처음 표시되는 프리로드(ready) 세션: 기본폭→패널폭 ConPTY 리플로우로 스크롤이 튄다.
         // 셸이 이미 커버 중이 아니면 여기서 잠깐 커버하고, 아래에서 최종 폭 재동기(kick) 후 걷는다.

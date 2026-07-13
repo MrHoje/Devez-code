@@ -815,6 +815,32 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
+    /// <summary>현재 방을 종료한 뒤 동일 대화로 다시 들어갈 근거가 디스크에 있는지 확인한다.
+    /// 자동 유휴 종료는 이 검사를 통과한 방에만 적용한다. Antigravity는 권한 대기 상태를
+    /// 별도로 관측할 수 없어(false-idle 위험) 사용자가 직접 숨길 때만 종료한다.</summary>
+    public static bool CanSafelyResumeRoom(string roomId)
+    {
+        try
+        {
+            TrySnapshotRoomSession(roomId);
+            var agent = AgentRegistry.Find(SettingsService.LoadAgentForRoom(roomId)) ?? AgentRegistry.GetDefault();
+            return agent.Id switch
+            {
+                "claude" => ClaudeTranscriptExists(
+                    SettingsService.LoadClaudeCodeRoomDir(roomId),
+                    SettingsService.LoadClaudeCodeRoomSession(roomId)),
+                "codex" => FindCodexTranscriptPath(SettingsService.LoadCodexRoomSession(roomId)) != null,
+                "opencode" => OpenCodePluginInstaller.LoadTrackedSessionId(roomId) is { Length: > 0 } openCodeId
+                    && string.Equals(openCodeId, SettingsService.LoadOpenCodeRoomSession(roomId), StringComparison.Ordinal),
+                "gajae" => FindLatestGajaeTranscriptPath(roomId) != null
+                    && !string.IsNullOrWhiteSpace(SettingsService.LoadGajaeRoomSession(roomId)),
+                "grok" => FindGrokChatHistoryPath(SettingsService.LoadGrokRoomSession(roomId)) != null,
+                _ => false,
+            };
+        }
+        catch { return false; }
+    }
+
     /// <summary>가재코드(gjc) 세션 포크 — 네이티브 fork 가 없어, 원본 방의 최신 세션 jsonl 을 새 GUID 로
     /// (내부 id 참조 전역 치환) 복사해 새 방의 session-dir 에 심는다. 새 세션 id 반환(원본에 대화 없으면 null).
     /// gjc 는 --session-dir 로 격리되므로 새 방은 이 복사본만 resume → 원본과 완전 독립.</summary>

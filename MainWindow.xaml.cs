@@ -102,6 +102,14 @@ public partial class MainWindow : Window
     private readonly GajaeLastMessageService _gajaeLastMsg = new();
     private readonly WakeSchedulerService _wakeScheduler;
     private readonly HashSet<string> _wakeRoomIds = new(StringComparer.Ordinal);
+    // 화면에 표시하지 않은 세션만 대상으로 하는 보수적 유휴 종료기. 기본 설정 0=꺼짐.
+    private readonly System.Windows.Threading.DispatcherTimer _idleSessionShutdownTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(30),
+    };
+    private readonly Dictionary<string, DateTime> _sessionLastActivityUtc = new(StringComparer.Ordinal);
+    private int _idleSessionShutdownMinutes;
+    private bool _idleSessionShutdownChecking;
 
     static MainWindow()
     {
@@ -127,6 +135,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _wakeScheduler = new WakeSchedulerService(DispatchWakeAsync);
+        _idleSessionShutdownTimer.Tick += async (_, _) => await CheckIdleSessionsAsync();
         CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
         SessionHistoryList.ItemsSource = _sessionDoneRecords;
@@ -204,6 +213,7 @@ public partial class MainWindow : Window
         _sessionBusy.BusyChanged += (id, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(id);
                 var s = FindSession(id);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
@@ -221,6 +231,7 @@ public partial class MainWindow : Window
         _sessionBusy.WaitingChoiceChanged += (id, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(id);
                 var s = FindSession(id);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
@@ -283,6 +294,7 @@ public partial class MainWindow : Window
         _opencodeBusy.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
@@ -299,6 +311,7 @@ public partial class MainWindow : Window
         _opencodeBusy.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
@@ -310,6 +323,7 @@ public partial class MainWindow : Window
         _gajaeLastMsg.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
@@ -326,6 +340,7 @@ public partial class MainWindow : Window
         _gajaeLastMsg.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
@@ -346,6 +361,7 @@ public partial class MainWindow : Window
         _codexHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
@@ -372,6 +388,7 @@ public partial class MainWindow : Window
         _grokHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
@@ -383,6 +400,7 @@ public partial class MainWindow : Window
         _grokHook.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
@@ -401,6 +419,7 @@ public partial class MainWindow : Window
         _antigravityHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
@@ -487,6 +506,7 @@ public partial class MainWindow : Window
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
             RestoreSplitState(); // 직전 실행 시 분할 상태였으면 패널 B 복원
             _wakeScheduler.Start();
+            ApplyIdleSessionShutdownSettings();
             RefreshCardGroups(); // 시작 시에도 분할 설정 프로젝트 카드는 좌/우 파티션으로(영속 refs 기반)
             CheckHookSetup();
             ApplyFileExpMinWidth(); // 탭 버튼 4개 온전히 보이는 폭을 패널 최소 폭으로
@@ -529,6 +549,7 @@ public partial class MainWindow : Window
 
         Closed += (_, _) =>
         {
+            _idleSessionShutdownTimer.Stop();
             // 정상 종료: 분할 상태 + 마지막 활성 프로젝트/세션 기억 + 클린 종료 플래그 set
             if (_splitActive) PersistSplitState();
             SettingsService.SaveLastActive(_focusedPane.ActiveProject?.Path, _focusedPane.ActiveSession?.Id);
@@ -617,6 +638,7 @@ public partial class MainWindow : Window
     {
         SaveWindowPlacement();
         _wakeScheduler.Stop();
+        _idleSessionShutdownTimer.Stop();
 
         if (_shuttingDown)
         {
@@ -2417,7 +2439,12 @@ public partial class MainWindow : Window
         pane.IsolatedTabOpened += OnPaneIsolatedTabOpened;
         pane.FileTabCloseRequested += OnFileTabCloseRequested;
         pane.BrowserTabCloseRequested += OnBrowserTabCloseRequested;
-        pane.SessionTerminalReady += _sessionCommandInbox.NotifyTerminalReady;
+        pane.SessionTerminalReady += id =>
+        {
+            _sessionCommandInbox.NotifyTerminalReady(id);
+            MarkSessionActivity(id);
+        };
+        pane.SessionActivity += MarkSessionActivity;
         TerminalSessionManager.Instance.AgentModelCatalogRefreshRequested += pane.NotifyAgentModelCatalogRefreshRequested;
         _panes.Add(pane);
     }
@@ -4359,6 +4386,166 @@ public partial class MainWindow : Window
         var baseName = string.IsNullOrWhiteSpace(name) ? "session" : name;
         foreach (var ch in System.IO.Path.GetInvalidFileNameChars()) baseName = baseName.Replace(ch, '_');
         return baseName + ".md";
+    }
+
+    // ── 비활성 세션 자동 종료 ─────────────────────────────────────
+
+    private void MarkSessionActivity(string roomId)
+    {
+        if (!string.IsNullOrWhiteSpace(roomId))
+            _sessionLastActivityUtc[roomId] = DateTime.UtcNow;
+    }
+
+    /// <summary>설정 저장 직후/앱 시작 시 적용. 켜거나 시간을 바꾸면 기존 세션의 시계를 지금부터 다시 재어
+    /// 저장 직후 예상치 못한 즉시 종료가 발생하지 않게 한다.</summary>
+    public void ApplyIdleSessionShutdownSettings()
+    {
+        _idleSessionShutdownTimer.Stop();
+        _idleSessionShutdownMinutes = SettingsService.LoadIdleSessionShutdownMinutes();
+        _sessionLastActivityUtc.Clear();
+        if (_idleSessionShutdownMinutes <= 0)
+        {
+            DiagLog.Write("IdleSessionShutdown disabled");
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var session in AllWorkspaceSessions().Where(s => s.IsAlive))
+            _sessionLastActivityUtc[session.Id] = now;
+        _idleSessionShutdownTimer.Start();
+        DiagLog.Write($"IdleSessionShutdown enabled minutes={_idleSessionShutdownMinutes}");
+    }
+
+    private IEnumerable<SessionItem> AllWorkspaceSessions()
+        => _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<SessionItem>();
+
+    private bool IsSessionDisplayed(SessionItem session)
+        => _panes.Any(p => p.IsVisible && ReferenceEquals(p.ActiveSession, session));
+
+    private bool CanStopIdleSession(SessionItem session, DateTime nowUtc)
+    {
+        if (_shuttingDown || _themeReloadRunning || _idleSessionShutdownMinutes <= 0
+            || !session.IsAlive || session.IsEffectivelyHidden || session.IsLocked
+            || session.IsBusy || session.IsWaitingChoice || IsSessionDisplayed(session)
+            || _sessionCommandInbox.HasPendingInjection(session.Id))
+            return false;
+
+        if (TerminalSessionManager.Instance.Get(session.Id) is not { IsAlive: true }
+            || TerminalSessionManager.Instance.IsGracefulStopping(session.Id))
+            return false;
+
+        var agentId = string.IsNullOrWhiteSpace(session.AgentId)
+            ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId;
+        if (string.Equals(agentId, "claude", StringComparison.OrdinalIgnoreCase)
+            && _sessionBusy.IsRoomActive(session.Id))
+            return false;
+        if (HasBusyOrWaitingTrackingFile(agentId, session.Id))
+            return false;
+
+        if (!_sessionLastActivityUtc.TryGetValue(session.Id, out var lastActivity))
+        {
+            _sessionLastActivityUtc[session.Id] = nowUtc;
+            return false;
+        }
+        if (nowUtc - lastActivity < TimeSpan.FromMinutes(_idleSessionShutdownMinutes))
+            return false;
+
+        return TerminalSessionManager.CanSafelyResumeRoom(session.Id);
+    }
+
+    /// <summary>FileSystemWatcher 이벤트가 UI 큐에 아직 도착하지 않은 짧은 경합도 막는 최종 디스크 확인.
+    /// stale running은 종료를 보류하는 안전 방향으로만 작용하며 각 훅 서비스가 시작 시 정리한다.</summary>
+    private static bool HasBusyOrWaitingTrackingFile(string? agentId, string roomId)
+    {
+        var agent = (agentId ?? "claude").Trim().ToLowerInvariant();
+        if (agent is not ("codex" or "opencode" or "grok")) return false;
+        var safe = new string(roomId.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
+        if (safe.Length == 0) return true;
+        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "DevezCode", agent);
+        return ReadState("busy") == "running" || ReadState("waiting") is "waiting" or "permission" or "input";
+
+        string? ReadState(string folder)
+        {
+            try
+            {
+                var path = Path.Combine(root, folder, safe + ".txt");
+                if (!File.Exists(path)) return null;
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd().Trim().ToLowerInvariant();
+            }
+            catch { return "running"; } // 판독 실패도 이번 종료는 보류한다.
+        }
+    }
+
+    private async Task CheckIdleSessionsAsync()
+    {
+        if (_idleSessionShutdownChecking || _shuttingDown || _idleSessionShutdownMinutes <= 0) return;
+        _idleSessionShutdownChecking = true;
+        try
+        {
+            var existing = AllWorkspaceSessions().Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+            foreach (var stale in _sessionLastActivityUtc.Keys.Where(id => !existing.Contains(id)).ToList())
+                _sessionLastActivityUtc.Remove(stale);
+
+            var now = DateTime.UtcNow;
+            var candidate = AllWorkspaceSessions()
+                .Where(s => CanStopIdleSession(s, now))
+                .OrderBy(s => _sessionLastActivityUtc[s.Id])
+                .FirstOrDefault();
+            if (candidate == null) return;
+
+            // 타이머 만료와 사용자 클릭/예약 주입이 겹치는 경합을 흡수한다. 한 번에 한 방만 처리한다.
+            await Task.Delay(TimeSpan.FromSeconds(10));
+            if (!CanStopIdleSession(candidate, DateTime.UtcNow)) return;
+            await StopIdleSessionAsync(candidate);
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"IdleSessionShutdown check failed: {ex.Message}");
+        }
+        finally
+        {
+            _idleSessionShutdownChecking = false;
+        }
+    }
+
+    private async Task StopIdleSessionAsync(SessionItem session)
+    {
+        var roomId = session.Id;
+        var idleMinutes = _sessionLastActivityUtc.TryGetValue(roomId, out var last)
+            ? (DateTime.UtcNow - last).TotalMinutes : 0;
+        DiagLog.Write($"IdleSessionShutdown start room={roomId} agent={session.AgentId} idleMin={idleMinutes:F1}");
+
+        // 양쪽 xterm 배선을 먼저 끊어 Exited 자동 재진입을 막는다. GracefulDispose가 종료중 플래그를
+        // 세운 뒤 await하므로 이후 사용자가 열면 WorkspacePane이 완료 후 resume 대기 경로를 탄다.
+        foreach (var pane in _panes) pane.CloseTerminalRoom(roomId);
+        session.IsAlive = false;
+        session.IsBusy = false;
+        session.IsWaitingChoice = false;
+        try
+        {
+            await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { roomId });
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"IdleSessionShutdown dispose failed room={roomId}: {ex.Message}");
+        }
+        finally
+        {
+            try { TerminalSessionManager.Instance.ClearDisposedRoom(roomId); } catch { }
+            _sessionLastActivityUtc.Remove(roomId);
+            if (ReferenceEquals(FindSession(roomId), session))
+            {
+                session.IsAlive = false;
+                session.IsBusy = false;
+                session.IsWaitingChoice = false;
+                OnPaneHideStopFinished(session);
+            }
+            UpdateSessionBusyDisplay();
+        }
+        DiagLog.Write($"IdleSessionShutdown complete room={roomId}");
     }
 
     // ── 공개 API (외부 뷰가 호출) ─────────────────────────────────────

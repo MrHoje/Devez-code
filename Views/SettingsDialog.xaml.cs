@@ -28,6 +28,7 @@ public partial class SettingsDialog : UserControl
     private string _originalTheme;
     private int    _originalFontScale;
     private bool   _originalPreloadAllSessions;
+    private int    _originalIdleSessionShutdownMinutes;
     private bool   _originalAutoLoadLastProject;
     private bool   _originalHideProjectInfoHeader;
     private bool   _originalAutoUpdateAgents;
@@ -39,6 +40,7 @@ public partial class SettingsDialog : UserControl
     private string _selectedTheme;
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
+    private int    _selectedIdleSessionShutdownMinutes;
     private bool   _selectedAutoLoadLastProject;
     private bool   _selectedHideProjectInfoHeader;
     private bool   _selectedAutoUpdateAgents;
@@ -329,6 +331,9 @@ public partial class SettingsDialog : UserControl
         _originalPreloadAllSessions = SettingsService.LoadPreloadAllProjectSessions();
         _selectedPreloadAllSessions = _originalPreloadAllSessions;
         PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
+        _originalIdleSessionShutdownMinutes = SettingsService.LoadIdleSessionShutdownMinutes();
+        _selectedIdleSessionShutdownMinutes = _originalIdleSessionShutdownMinutes;
+        SelectComboByTag(IdleSessionShutdownCombo, _selectedIdleSessionShutdownMinutes.ToString());
         _originalAutoLoadLastProject = SettingsService.LoadAutoLoadLastProject();
         _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
         AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
@@ -630,6 +635,13 @@ public partial class SettingsDialog : UserControl
     private void PreloadAllSessionsToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedPreloadAllSessions = PreloadAllSessionsToggle.IsChecked == true;
+    }
+
+    private void IdleSessionShutdownCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (IdleSessionShutdownCombo.SelectedItem is ComboBoxItem item
+            && int.TryParse(item.Tag?.ToString(), out var minutes))
+            _selectedIdleSessionShutdownMinutes = minutes;
     }
 
     private void AutoLoadLastProjectToggle_Changed(object sender, RoutedEventArgs e)
@@ -1266,6 +1278,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedTheme != _originalTheme) return true;
         if (_selectedFontScale != _originalFontScale) return true;
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
+        if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes) return true;
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
@@ -1302,6 +1315,11 @@ public partial class SettingsDialog : UserControl
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);
         SettingsService.SavePreloadAllProjectSessions(_selectedPreloadAllSessions);
+        if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes)
+        {
+            SettingsService.SaveIdleSessionShutdownMinutes(_selectedIdleSessionShutdownMinutes);
+            (Application.Current.MainWindow as MainWindow)?.ApplyIdleSessionShutdownSettings();
+        }
         SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
         {
@@ -1405,6 +1423,7 @@ public partial class SettingsDialog : UserControl
         _originalTheme       = _selectedTheme;
         _originalFontScale   = _selectedFontScale;
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
+        _originalIdleSessionShutdownMinutes = _selectedIdleSessionShutdownMinutes;
         _originalAutoLoadLastProject = _selectedAutoLoadLastProject;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
         _originalAutoUpdateAgents = _selectedAutoUpdateAgents;
@@ -1436,6 +1455,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedPreloadAllSessions = _originalPreloadAllSessions;
             PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
+        }
+        if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes)
+        {
+            _selectedIdleSessionShutdownMinutes = _originalIdleSessionShutdownMinutes;
+            SelectComboByTag(IdleSessionShutdownCombo, _originalIdleSessionShutdownMinutes.ToString());
         }
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject)
         {
