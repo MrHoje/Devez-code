@@ -758,11 +758,11 @@ public static class SettingsService
     public static int LoadIdleSessionShutdownMinutes()
     {
         var value = Current.IdleSessionShutdownMinutes;
-        return value is 60 or 120 or 240 or 480 ? value : 0;
+        return value is 30 or 60 or 120 or 240 or 480 ? value : 0;
     }
     public static void SaveIdleSessionShutdownMinutes(int minutes)
     {
-        Current.IdleSessionShutdownMinutes = minutes is 60 or 120 or 240 or 480 ? minutes : 0;
+        Current.IdleSessionShutdownMinutes = minutes is 30 or 60 or 120 or 240 or 480 ? minutes : 0;
         Save();
     }
 

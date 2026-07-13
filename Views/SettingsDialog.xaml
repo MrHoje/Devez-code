@@ -392,6 +392,7 @@
                                                   Style="{StaticResource ThemedCombo}" VerticalAlignment="Center"
                                                   SelectionChanged="IdleSessionShutdownCombo_Changed">
                                             <ComboBoxItem Content="사용 안 함" Tag="0"/>
+                                            <ComboBoxItem Content="30분" Tag="30"/>
                                             <ComboBoxItem Content="1시간" Tag="60"/>
                                             <ComboBoxItem Content="2시간" Tag="120"/>
                                             <ComboBoxItem Content="4시간" Tag="240"/>
