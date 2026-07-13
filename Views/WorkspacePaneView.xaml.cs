@@ -2364,7 +2364,13 @@ public partial class WorkspacePaneView : UserControl
         if (_tabDidDrag) { _tabDidDrag = false; return; }
         if (sender is FrameworkElement { DataContext: TabItemBase tab })
         {
-            if (tab is SessionItem s) OpenSession(s);
+            // 이미 선택된 세션 탭도 다시 누르면 터미널에 실제 포커스를 재진입시킨다. 기존에는
+            // ActivateSession의 same-session 조기 반환으로 아무 일도 없어 IME 이상 상태를 복구할 수 없었다.
+            if (tab is SessionItem s)
+            {
+                if (ReferenceEquals(_activeSession, s)) _terminal.FocusTerminal();
+                else OpenSession(s);
+            }
             else if (tab is FileTabItem f) ActivateFileTab(f);
             else if (tab is BrowserTabItem b) ActivateBrowserTab(b);
         }

@@ -1808,6 +1808,8 @@
             const row = t.term.buffer.active.cursorY;
             t.term.refresh(row, row); // 새 포커스 뒤 helper-textarea 좌표를 현재 커서와 즉시 동기화
           } catch (e) {}
+          // show 없이 현재 탭을 다시 클릭한 경우에도 Claude 자체 블록커서를 즉시 다시 준비한다.
+          if (t.el && typeof t.el._prepareImeCaret === 'function') t.el._prepareImeCaret();
         };
         requestAnimationFrame(applyFocus);
         break;
