@@ -150,7 +150,7 @@ public sealed class TerminalSessionManager
                 // codex: 클로드와 동일한 "직접 실행" 패턴 (--session-id/--resume, 훅으로 lastmsg/busy/session_id 추적).
                 // SupportsHooks=true 인 Claude 의 TryBuildDirectLaunch 와 별도 경로 — 커맨드/훅 스키마가 다름.
                 startDir = ccDir;
-                var direct = TryBuildCodexDirectLaunch(roomId, out inject);
+                var direct = TryBuildCodexDirectLaunch(roomId, ccDir, out inject);
                 if (direct != null) commandLine = direct;
             }
             else if (ccDir != null && agent.Id == "grok")
@@ -321,14 +321,34 @@ public sealed class TerminalSessionManager
     /// 같은 대화 복원. SessionStart 훅이 실제 codex session_id 를 <see cref="CodexRoomSessions"/> 에
     /// 갱신 — /clear·수동 재실행으로 ID가 어긋나도 다음 실행 때 최신 ID 로 resume.
     /// (참고: codex CLI 는 <c>--session-id</c> 플래그가 없음 — <c>codex resume &lt;id&gt;</c> 만 가능.)</summary>
-    private string? TryBuildCodexDirectLaunch(string roomId, out string? injectFallback)
+    private string? TryBuildCodexDirectLaunch(string roomId, string? workingDir, out string? injectFallback)
     {
         injectFallback = null;
         CodexHookInstaller.EnsureScriptInstalled();
         CodexHookInstaller.InstallHooksJson();
 
         var sessionId = SettingsService.LoadCodexRoomSession(roomId);
-        if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
+        if (sessionId != null
+            && (!Guid.TryParse(sessionId, out _) || FindCodexTranscriptPath(sessionId) == null))
+        {
+            // 내부 Memory Writing Agent의 SessionStart가 부모 DEVEZCODE_ROOM_ID를 상속하면
+            // resume 불가능한 내부 ID가 구버전 훅을 통해 저장될 수 있다. 같은 cwd에서 그 오염
+            // 시점에 실제로 열려 있던 미할당 rollout을 찾아 기존 대화를 자동 복구한다.
+            var staleSessionId = sessionId;
+            sessionId = TryRecoverCodexSessionId(workingDir, staleSessionId);
+            if (sessionId != null)
+            {
+                SettingsService.SaveCodexRoomSession(roomId, sessionId);
+                SaveTrackedCodexSessionId(roomId, sessionId);
+                DiagLog.Write($"launch[{roomId}]: codex 내부/유령 sid={staleSessionId} → 실제 sid={sessionId} 복구");
+            }
+            else
+            {
+                SettingsService.ClearCodexRoomSession(roomId);
+                DeleteTrackedCodexSessionFile(roomId);
+                DiagLog.Write($"launch[{roomId}]: codex sid={staleSessionId} transcript 없음, 복구 후보 없음 → 새 세션");
+            }
+        }
         SettingsService.MarkAgentRoomLaunched(roomId, "codex"); // 추적용
 
         string options = "--no-alt-screen";
@@ -789,6 +809,114 @@ public sealed class TerminalSessionManager
                 .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()?.FullName;
         }
         catch { return null; }
+    }
+
+    private sealed record CodexTranscriptCandidate(
+        string SessionId, string WorkingDir, DateTimeOffset? CreatedAt, DateTime LastWriteTimeUtc);
+
+    /// <summary>resume 불가능한 내부/유령 ID로 오염된 방에서 실제 부모 Codex rollout을 복구한다.
+    /// 같은 cwd의 미할당 transcript 중 오염 UUIDv7 생성 시점에 실제로 열려 있던 후보만 사용한다.
+    /// 시점 판정이 불가능하면 후보가 정확히 하나일 때만 복구해 다른 방/외부 세션 혼입을 막는다.</summary>
+    private static string? TryRecoverCodexSessionId(string? workingDir, string? staleSessionId)
+    {
+        if (string.IsNullOrWhiteSpace(workingDir) || string.IsNullOrWhiteSpace(staleSessionId)) return null;
+        try
+        {
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "sessions");
+            if (!Directory.Exists(root)) return null;
+            var normalizedWorkingDir = Path.GetFullPath(workingDir).TrimEnd('\\', '/');
+            var claimed = SettingsService.LoadManagedSessionSnapshot().Codex
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            claimed.Remove(staleSessionId);
+
+            var candidates = new List<CodexTranscriptCandidate>();
+            foreach (var file in new DirectoryInfo(root).GetFiles("*.jsonl", SearchOption.AllDirectories))
+            {
+                var candidate = TryReadCodexTranscriptCandidate(file);
+                if (candidate == null || claimed.Contains(candidate.SessionId)) continue;
+                string candidateDir;
+                try { candidateDir = Path.GetFullPath(candidate.WorkingDir).TrimEnd('\\', '/'); }
+                catch { continue; }
+                if (string.Equals(candidateDir, normalizedWorkingDir, StringComparison.OrdinalIgnoreCase))
+                    candidates.Add(candidate);
+            }
+            if (candidates.Count == 0) return null;
+
+            var staleCreatedAt = TryGetUuidV7Timestamp(staleSessionId);
+            if (staleCreatedAt != null)
+            {
+                var margin = TimeSpan.FromMinutes(1);
+                var activeAtCorruption = candidates
+                    .Where(c => c.CreatedAt == null || c.CreatedAt <= staleCreatedAt.Value + margin)
+                    .Where(c => c.LastWriteTimeUtc >= staleCreatedAt.Value.UtcDateTime - margin)
+                    .OrderByDescending(c => c.CreatedAt ?? DateTimeOffset.MinValue)
+                    .ToList();
+                if (activeAtCorruption.Count > 0) return activeAtCorruption[0].SessionId;
+            }
+
+            return candidates.Count == 1 ? candidates[0].SessionId : null;
+        }
+        catch { return null; }
+    }
+
+    private static CodexTranscriptCandidate? TryReadCodexTranscriptCandidate(FileInfo file)
+    {
+        try
+        {
+            using var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(fs);
+            var firstLine = reader.ReadLine();
+            if (string.IsNullOrWhiteSpace(firstLine)) return null;
+            using var doc = System.Text.Json.JsonDocument.Parse(firstLine);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var type) || type.GetString() != "session_meta"
+                || !root.TryGetProperty("payload", out var payload)) return null;
+            string? id = null;
+            if (payload.TryGetProperty("id", out var idElement)) id = idElement.GetString();
+            if (id == null && payload.TryGetProperty("session_id", out var sidElement)) id = sidElement.GetString();
+            if (id == null || !Guid.TryParse(id, out _)
+                || !payload.TryGetProperty("cwd", out var cwdElement)
+                || string.IsNullOrWhiteSpace(cwdElement.GetString())) return null;
+            DateTimeOffset? createdAt = null;
+            if (payload.TryGetProperty("timestamp", out var timestampElement)
+                && DateTimeOffset.TryParse(timestampElement.GetString(), out var parsedTimestamp))
+                createdAt = parsedTimestamp;
+            return new CodexTranscriptCandidate(id, cwdElement.GetString()!, createdAt, file.LastWriteTimeUtc);
+        }
+        catch { return null; }
+    }
+
+    private static DateTimeOffset? TryGetUuidV7Timestamp(string sessionId)
+    {
+        try
+        {
+            if (sessionId.Length != 36 || sessionId[14] != '7') return null;
+            var hex = sessionId[..8] + sessionId.Substring(9, 4);
+            var unixMs = Convert.ToInt64(hex, 16);
+            return DateTimeOffset.FromUnixTimeMilliseconds(unixMs);
+        }
+        catch { return null; }
+    }
+
+    private static string CodexTrackedSessionPath(string roomId) => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "codex", "sessions", SafeRoomFileName(roomId) + ".txt");
+
+    private static void SaveTrackedCodexSessionId(string roomId, string sessionId)
+    {
+        try
+        {
+            var path = CodexTrackedSessionPath(roomId);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, sessionId);
+        }
+        catch { }
+    }
+
+    private static void DeleteTrackedCodexSessionFile(string roomId)
+    {
+        try { File.Delete(CodexTrackedSessionPath(roomId)); } catch { }
     }
 
     /// <summary>grok 세션 chat_history.jsonl.
@@ -2173,7 +2301,8 @@ public sealed class TerminalSessionManager
                     if (File.Exists(cxPath))
                     {
                         var cx = File.ReadAllText(cxPath).Trim();
-                        if (Guid.TryParse(cx, out _) && cx != SettingsService.LoadCodexRoomSession(roomId))
+                        if (Guid.TryParse(cx, out _) && FindCodexTranscriptPath(cx) != null
+                            && cx != SettingsService.LoadCodexRoomSession(roomId))
                             SettingsService.SaveCodexRoomSession(roomId, cx);
                     }
                     break;

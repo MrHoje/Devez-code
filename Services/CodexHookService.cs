@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading;
+using DevezCode.Services.Terminal;
 
 namespace DevezCode.Services;
 
@@ -116,7 +117,11 @@ public sealed class CodexHookService : IDisposable
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
         var sid = TryRead(path);
-        if (sid != null) CodexSessionChanged?.Invoke(room, sid);
+        // Codex 내부 Memory Writing Agent도 부모 DEVEZCODE_ROOM_ID를 상속해 SessionStart 훅을
+        // 발화할 수 있다. resume 가능한 실제 rollout이 없는 내부 ID는 settings로 전파하지 않는다.
+        if (sid != null && Guid.TryParse(sid, out _)
+            && TerminalSessionManager.FindCodexTranscriptPath(sid) != null)
+            CodexSessionChanged?.Invoke(room, sid);
     }
 
     private static string? TryRead(string path)

@@ -837,10 +837,15 @@ public static class SettingsService
 
     public static void SaveCodexRoomSession(string roomId, string sessionId)
     {
-        // 불변식: 비정상 값(빈 문자열 등) 은 무시 — 코드 안전성.
-        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        // 불변식: 비정상 값은 무시 — 실제 transcript 존재 여부는 훅/런처 경계에서 검증.
+        if (string.IsNullOrWhiteSpace(sessionId) || !Guid.TryParse(sessionId, out _)) return;
         Current.CodexRoomSessions[roomId] = sessionId;
         Save();
+    }
+
+    public static void ClearCodexRoomSession(string roomId)
+    {
+        if (Current.CodexRoomSessions.Remove(roomId)) Save();
     }
 
     // ── grok 세션 ID (훅 → settings 영속) ─────

@@ -39,6 +39,41 @@ function Write-State($path, $value, $encoding = 'Ascii') {
     } catch { try { Set-Content -LiteralPath $path -Value $value -Encoding $encoding -Force } catch { } }
 }
 
+# SessionStart 는 사용자 대화뿐 아니라 Codex 내부 Memory Writing Agent 같은 별도 thread 에서도
+# 발화한다. 내부 thread 도 부모 프로세스의 DEVEZCODE_ROOM_ID 를 상속하므로 session_id 를 그대로
+# 쓰면 방의 실제 대화 ID가 resume 불가능한 내부 ID로 오염된다. codex resume 이 읽는 영속
+# transcript(~/.codex/sessions)와 실제로 연결된 ID만 방 추적값으로 인정한다.
+function Test-ResumableSession($sid, $transcriptPath) {
+    $parsed = [Guid]::Empty
+    if (-not $sid -or -not [Guid]::TryParse([string]$sid, [ref]$parsed)) { return $false }
+
+    $sessionRoot = Join-Path $HOME '.codex\sessions'
+    if (-not (Test-Path -LiteralPath $sessionRoot)) { return $false }
+
+    try {
+        if ($transcriptPath -and (Test-Path -LiteralPath $transcriptPath)) {
+            $rootFull = [IO.Path]::GetFullPath($sessionRoot).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+            $pathFull = [IO.Path]::GetFullPath([string]$transcriptPath)
+            if ($pathFull.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) {
+                $first = Get-Content -LiteralPath $pathFull -TotalCount 1 -Encoding UTF8
+                if ($first) {
+                    $meta = $first | ConvertFrom-Json
+                    $metaId = if ($meta.payload.id) { $meta.payload.id } else { $meta.payload.session_id }
+                    if ($metaId -and [string]::Equals([string]$metaId, [string]$sid,
+                            [StringComparison]::OrdinalIgnoreCase)) { return $true }
+                }
+            }
+        }
+    } catch { }
+
+    # transcript_path 가 없는 구버전/엣지에서도 영속 rollout 파일이 있으면 허용.
+    try {
+        $match = Get-ChildItem -LiteralPath $sessionRoot -Recurse -File -Filter ('*' + $sid + '*.jsonl') |
+            Select-Object -First 1
+        return $null -ne $match
+    } catch { return $false }
+}
+
 switch ($event) {
     'UserPromptSubmit' {
         # 1) busy=running
@@ -64,9 +99,10 @@ switch ($event) {
     }
     'SessionStart' {
         # codex session_id 기록 — 다음 실행 때 --resume <id> 로 이어가기.
-        # SessionStart 의 source(startup/resume/clear/compact) 는 매칭 안 함 → 모든 세션 시작에서 덮어씀.
+        # SessionStart 의 source(startup/resume/clear/compact) 는 매칭 안 함 → 모든 사용자 세션 시작에서 갱신.
+        # transcript 없는 내부 Memory Writing Agent ID는 Test-ResumableSession 에서 차단.
         $sid = $j.session_id
-        if ($sid) {
+        if ($sid -and (Test-ResumableSession $sid $j.transcript_path)) {
             $sDir = Join-Path $base 'sessions'
             New-Item -ItemType Directory -Force -Path $sDir | Out-Null
             Write-State (Join-Path $sDir ($roomSafe + '.txt')) $sid
