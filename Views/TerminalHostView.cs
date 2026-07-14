@@ -568,10 +568,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     break;
                 }
                 case "resize":
-                    TerminalSessionManager.Instance
-                        .Get(root.GetProperty("roomId").GetString()!)
-                        ?.Resize(root.GetProperty("cols").GetInt32(), root.GetProperty("rows").GetInt32());
+                {
+                    var roomId = root.GetProperty("roomId").GetString()!;
+                    var cols = root.GetProperty("cols").GetInt32();
+                    var rows = root.GetProperty("rows").GetInt32();
+                    TerminalSessionManager.Instance.Get(roomId)?.Resize(cols, rows);
+                    TerminalDisplayOutputHub.PublishSize(roomId, cols, rows);
                     break;
+                }
                 case "diag": // 웹 레이어 진단 로그 → diag.log (codex 팝업 스윕 등)
                     DevezCode.Services.DiagLog.Write("[web] " + (root.TryGetProperty("msg", out var dm) ? dm.GetString() : ""));
                     break;
@@ -857,6 +861,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             merged = RecolorGrokTerminalColors(roomId, merged);
         else
             _grokCsiTails.Remove(roomId);
+        TerminalDisplayOutputHub.Publish(roomId, merged);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
     }
 
