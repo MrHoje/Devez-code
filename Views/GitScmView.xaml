@@ -12,7 +12,7 @@
 
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="4">
             <StackPanel>
-                <TextBlock Text="Staged Changes" Margin="6,6,0,2"
+                <TextBlock x:Name="StagedHeader" Text="Staged Changes" Margin="6,6,0,2"
                            FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextMutedBrush}"/>
                 <ItemsControl x:Name="StagedHost">
@@ -46,7 +46,7 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <TextBlock Text="Changes" Margin="6,10,0,2"
+                <TextBlock x:Name="ChangesHeader" Text="Changes" Margin="6,10,0,2"
                            FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextMutedBrush}"/>
                 <ItemsControl x:Name="UnstagedHost">
@@ -93,6 +93,29 @@
         <Border Grid.Row="1" Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="8">
             <StackPanel>
+                <!-- 동기화 헤더: 브랜치 + ↓N ↑N + pull/push/fetch 아이콘 -->
+                <Grid Margin="2,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="⎇" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextMutedBrush}" FontSize="{DynamicResource Fs13}"/>
+                    <TextBlock x:Name="BranchText" Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextBrush}" FontSize="{DynamicResource Fs12}"/>
+                    <Button x:Name="PullBtn" Grid.Column="2" Content="↓" Click="Pull_Click"
+                            Style="{StaticResource IconButton}" Width="24" Height="24" ToolTip="pull"/>
+                    <Button x:Name="PushBtn" Grid.Column="3" Content="↑" Click="Push_Click" Margin="2,0,0,0"
+                            Style="{StaticResource IconButton}" Width="24" Height="24" ToolTip="push"/>
+                    <Button x:Name="FetchBtn" Grid.Column="4" Content="⟳" Click="Fetch_Click" Margin="2,0,0,0"
+                            Style="{StaticResource IconButton}" Width="24" Height="24" ToolTip="fetch"/>
+                </Grid>
+
+                <!-- 커밋 메시지 카드 -->
                 <Border Background="{DynamicResource BgBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                         CornerRadius="10" Padding="10,6">
@@ -101,8 +124,9 @@
                                  Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource TextBrush}"
                                  FontFamily="{StaticResource PretendardFont}" FontSize="{DynamicResource Fs12}"
                                  MaxHeight="80" TextWrapping="Wrap" AcceptsReturn="True"
-                                 VerticalScrollBarVisibility="Auto" TextChanged="MsgBox_TextChanged"/>
-                        <TextBlock x:Name="MsgPlaceholder" Text="커밋 메시지" IsHitTestVisible="False"
+                                 VerticalScrollBarVisibility="Auto"
+                                 TextChanged="MsgBox_TextChanged" PreviewKeyDown="MsgBox_PreviewKeyDown"/>
+                        <TextBlock x:Name="MsgPlaceholder" Text="메시지 (Ctrl+Enter로 커밋)" IsHitTestVisible="False"
                                    VerticalAlignment="Center" Margin="1,0,0,0"
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    FontFamily="{StaticResource PretendardFont}" FontSize="{DynamicResource Fs12}">
@@ -119,23 +143,11 @@
                         </TextBlock>
                     </Grid>
                 </Border>
-                <Grid Margin="0,6,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <Button x:Name="CommitBtn" Grid.Column="0" Content="커밋" Click="Commit_Click"
-                            Style="{StaticResource PrimaryButton}" Height="30" IsEnabled="False"
-                            FontSize="{DynamicResource Fs12}"/>
-                    <Button x:Name="PullBtn" Grid.Column="1" Content="pull" Click="Pull_Click" Margin="6,0,0,0"
-                            Style="{StaticResource SecondaryButton}" Height="30" Padding="12,0" FontSize="{DynamicResource Fs12}"/>
-                    <Button x:Name="PushBtn" Grid.Column="2" Content="push" Click="Push_Click" Margin="6,0,0,0"
-                            Style="{StaticResource SecondaryButton}" Height="30" Padding="12,0" FontSize="{DynamicResource Fs12}"/>
-                    <Button x:Name="FetchBtn" Grid.Column="3" Content="fetch" Click="Fetch_Click" Margin="6,0,0,0"
-                            Style="{StaticResource SecondaryButton}" Height="30" Padding="12,0" FontSize="{DynamicResource Fs12}"/>
-                </Grid>
+
+                <!-- 커밋 버튼(전체 폭) -->
+                <Button x:Name="CommitBtn" Content="✓ 커밋" Click="Commit_Click" Margin="0,6,0,0"
+                        Style="{StaticResource PrimaryButton}" Height="30" IsEnabled="False"
+                        HorizontalAlignment="Stretch" FontSize="{DynamicResource Fs12}"/>
             </StackPanel>
         </Border>
     </Grid>

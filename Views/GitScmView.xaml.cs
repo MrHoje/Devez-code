@@ -50,9 +50,28 @@ public partial class GitScmView : UserControl
     private void UpdateButtons()
     {
         CommitBtn.IsEnabled = !_busy && _staged.Count > 0 && !string.IsNullOrWhiteSpace(MsgBox.Text);
-        PushBtn.Content = _branch.HasUpstream && _branch.Ahead > 0 ? $"push ↑{_branch.Ahead}" : "push";
-        PushBtn.IsEnabled = !_busy;
-        PullBtn.IsEnabled = FetchBtn.IsEnabled = !_busy && _branch.Branch != null;
+        PushBtn.IsEnabled = PullBtn.IsEnabled = FetchBtn.IsEnabled = !_busy && _branch.Branch != null;
+
+        StagedHeader.Text = $"Staged Changes {_staged.Count}";
+        StagedHeader.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ChangesHeader.Text = $"Changes {_unstaged.Count}";
+        ChangesHeader.Visibility = _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        var parts = new System.Collections.Generic.List<string>(2);
+        if (_branch.Behind > 0) parts.Add($"↓{_branch.Behind}");
+        if (_branch.Ahead > 0) parts.Add($"↑{_branch.Ahead}");
+        BranchText.Text = _branch.Branch == null
+            ? "(git 저장소 아님)"
+            : _branch.Branch + (parts.Count > 0 ? "  " + string.Join(" ", parts) : "");
+    }
+
+    private void MsgBox_PreviewKeyDown(object s, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            e.Handled = true;
+            if (CommitBtn.IsEnabled) Commit_Click(CommitBtn, new RoutedEventArgs());
+        }
     }
 
     private void MsgBox_TextChanged(object s, TextChangedEventArgs e) => UpdateButtons();
