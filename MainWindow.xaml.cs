@@ -169,6 +169,16 @@ public partial class MainWindow : Window
         Sidebar.ArchivedProjects = _archivedProjects;
         SetupPane(PaneA);
         SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
+        // SCM 패널 → 포커스 패널에 diff 탭 열기 / git 상태 변경 시 브랜치 버블 갱신.
+        FileExplorer.DiffFileActivated += (repo, rel, staged) =>
+        {
+            var proj = _focusedPane.ActiveProject;
+            if (proj != null) _focusedPane.OpenDiffTab(proj, repo, rel, staged);
+        };
+        FileExplorer.GitStateChanged += repo =>
+        {
+            foreach (var pane in _panes) pane.RefreshBranchIfRepo(repo);
+        };
         PaneB.IsRightPane = true;   // 분할 시 우측 패널 — 탭바 버튼이 X(분할 닫기)로 표시됨.
         CenterSplit.SizeChanged += (_, _) => UpdatePaneFocusVisual(animate: false);
         _focusedPane = PaneA;

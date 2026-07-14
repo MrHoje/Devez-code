@@ -338,7 +338,7 @@
         <v:BrowserHostView x:Name="Browser" Grid.Row="3" Visibility="Collapsed"/>
 
         <!-- DIFF 뷰 (DIFF 모드일 때만 표시) — git 변경 내역 + diff -->
-        <v:GitDiffView x:Name="DiffView" Grid.Row="3" Visibility="Collapsed"/>
+        <v:GitScmView x:Name="ScmView" Grid.Row="3" Visibility="Collapsed"/>
 
         <!-- 작업 큐 뷰 (큐 모드일 때만 표시) — 버블 입력 + 영속화 -->
         <v:TaskQueueView x:Name="QueueView" Grid.Row="3" Visibility="Collapsed"/>
