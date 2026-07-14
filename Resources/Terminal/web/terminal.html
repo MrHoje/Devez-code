@@ -468,11 +468,47 @@
     return t;
   }
 
-  // ── IME 조합 위치 고정 ──────────────────────────────────────────────
-  // claude 의 입력 캐럿 = 자체 블록 커서(반전 영상의 빈 셀, ESC[7m space).
-  // 조합 시작 시 버퍼에서 이를 찾아 CSS 변수로 위치를 고정한다 (.ime-fixed).
+  // ═══════════════════════════════════════════════════════════════════════
+  // 한글 IME 조합 처리 — 전체 아키텍처 (상세: .knowledge/터미널커스텀동작.md §5)
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // [문제 모델]
+  // IME 조합 문자열은 확정(compositionend) 전까지 PTY 로 가지 않는다 → TUI 는 조합의
+  // 존재 자체를 모른다 → xterm 이 DOM 오버레이(.composition-view)로 미리보기를 그리고,
+  // 그 위치를 "논리(하드웨어) 커서"(buffer.x/y)에 붙인다. 여기서 세 가지가 깨진다:
+  //
+  //  (1) TUI 는 논리 커서를 입력 캐럿에 두지 않는다 — claude 류는 커서를 숨기고 자체
+  //      캐럿을 셀로 그리며(커서는 아무데나 파킹), codex/opencode 도 응답 리페인트 중엔
+  //      커서가 출력영역/statusLine 을 왕복한다. → 조합뷰가 엉뚱한 곳에 뜨거나 튄다.
+  //  (2) xterm 내부 updateCompositionElements 는 커서가 viewport 밖이면 좌표 갱신을
+  //      아예 스킵한다 → 조합뷰가 CSS 초기값 (0,0) = 좌상단에 잔류하는 유령 조합.
+  //  (3) 확정 글자의 PTY echo 는 왕복 지연이 있다(codex 수십 ms, opencode 는 렌더
+  //      배칭으로 수백 ms 도 가능). 한글은 음절마다 compositionend→compositionstart 가
+  //      "같은 keydown 안에서" 연달아 발생하므로, 새 조합 시작 시점의 논리 커서는 항상
+  //      "직전 음절 echo 도착 전" 좌표다 → 연타 시 직전 글자를 조합뷰가 덮는다.
+  //
+  // [에이전트 분류] — 새 에이전트 추가 시 첫 판정 (에이전트추가규칙.md §11-2)
+  //  A. 자체커서형(claude/gajae/grok): DECTCEM 으로 hw 커서 숨김 + 자체 캐럿 렌더.
+  //     → claude 만 블록커서 스캔으로 별도 처리, gajae/grok 은 무개입(조합 위치 정상).
+  //  B. hw커서형(codex/opencode): hw 커서가 입력 캐럿에 있음. pinsLogicalCaret 에
+  //     agent id 한 줄 추가하면 아래 처방 4종(pin/chain/ghost/커서숨김) 전부 자동 적용.
+  //
+  // [처방 요약]
+  //  pin   : 조합 중 조합뷰+textarea 좌표 동결(.ime-fixed + !important CSS 변수)
+  //  chain : 음절 확정 시 확정 폭만큼 좌표 전진 예약 → 다음 조합이 소비 (echo 레이스 제거)
+  //  ghost : 확정 글자를 echo 도착까지 미리 그림 (chain 이 만든 빈칸 깜빡임 제거)
+  //  커서숨김: 조합/echo 대기 중 hw 커서를 테마색 위장으로 감춤 (A형과 동일한 UX)
+  //
+  // [금지 사항 — 실제 겪은 회귀]
+  //  · 조합 textarea/조합뷰 display:none 금지(조합 끊김), 오프스크린(-9999px) 이동도
+  //    금지(지연 apply 와 결합해 조합 전체가 안 보이는 회귀를 냈음 — 폐기된 접근).
+  //  · pin 제거 금지(d89754f 시도 → 응답 중 조합뷰가 입력란↔statusLine 왕복, 원복됨).
+  //  · apply() 의 isImeComposing 가드 제거 금지(지연 타이머가 조합 종료 후 발화).
+  // ═══════════════════════════════════════════════════════════════════════
 
-  // IME 확정 문자열의 셀 폭. 한글/CJK 전각 = 2셀 (한글 IME 경로 전용 — 정밀 wcwidth 불필요).
+  // IME 확정 문자열의 셀 폭 계산. 한글 음절(AC00-D7A3)·자모·CJK·전각 = 2셀, 그 외 1셀.
+  // 정밀 wcwidth 는 불필요 — 이 함수는 "방금 한글 IME 가 확정한 문자열"에만 쓰이므로
+  // 한글/CJK 위주 근사면 충분하다. (결합문자·제로폭은 IME 확정 경로에 사실상 안 나옴)
   function imeCellWidth(s) {
     let w = 0;
     for (const ch of s) {
@@ -486,42 +522,68 @@
     return w;
   }
 
+  // 방(세션)별로 1회 호출 — 모든 IME 상태는 이 클로저 안에 격리된다(방 간 오염 불가).
   function setupImeCaretFix(term, el, agent, roomId) {
-    const ta = el.querySelector('.xterm-helper-textarea');
+    const ta = el.querySelector('.xterm-helper-textarea'); // IME 조합이 실제로 일어나는 숨은 textarea
     if (!ta) return;
-    // codex/opencode: 입력 캐럿 = 논리 커서. 조합 중 리페인트가 커서를 viewport 밖/statusLine 으로
-    // 옮기면 xterm 이 composition-view 를 못 따라가거나(0,0 잔류) 여기저기 튄다 → 조합 중 고정.
+    // B형(hw커서형): 입력 캐럿 = 논리 커서. 조합 중 리페인트가 커서를 viewport 밖/statusLine
+    // 으로 옮기면 xterm 이 조합뷰를 못 따라가거나(0,0 잔류) 여기저기 튄다 → 조합 중 고정 대상.
+    // 새 B형 에이전트는 여기에 id 만 추가하면 pin/chain/ghost/커서숨김 전부 자동 적용된다.
     const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode');
+    // claude 는 A형(자체커서형)이지만 조합 위치가 틀어지는 유일한 A형이라 블록커서 스캔으로 처리.
     const isClaude = (agent === 'claude');
-    const needsCaretFix = pinsLogicalCaret || isClaude;
-    let isImeComposing = false;
-    let lastLogicalCaret = null;
-    // 음절 확정→다음 조합이 같은 keydown 안에서 연달아 일어나면 PTY echo 가 아직 안 와
-    // 논리 커서가 이전 자리다. 확정 폭만큼 전진한 예상 좌표를 다음 compositionstart 가 소비한다.
-    let chainCaret = null;
-    // 로컬 echo 고스트: chain 이 조합을 예측 위치에 두면 확정 글자 echo 도착까지 그 앞이
-    // 빈칸이라 연타 시 깜빡인다. 지연 창 동안 확정 문자열을 같은 자리에 미리 그려 채운다.
-    let ghost = null;      // { row, col, text } — 아직 echo 안 된 확정 문자열
-    let ghostEl = null;
-    let ghostTimer = 0;
+    const needsCaretFix = pinsLogicalCaret || isClaude; // 그 외(gajae/grok/셸)는 전부 무개입
+    let isImeComposing = false;   // compositionstart~end 사이 true. 모든 지연 콜백의 유효성 가드.
+    let lastLogicalCaret = null;  // B형: 마지막으로 관측한 유효 논리 커서(커서가 범위 밖일 때 폴백)
 
-    // 조합/고스트 표시 중 하드웨어 커서 숨김 — claude/gjc 처럼 TUI 가 커서를 직접 숨기는
-    // 에이전트와 달리 codex/opencode 는 하드웨어 커서가 켜져 있어 조합뷰·고스트 밑에서
-    // 깜빡인다. 커서색을 배경색으로 위장해 안 보이게 하고, 끝나면 원래 테마로 복원한다.
-    let savedCursorColors = null;
+    // [chain] 음절 확정→다음 조합이 "같은 keydown 안에서" 연달아 일어나면 PTY echo 가 아직
+    // 도착 전이라 논리 커서가 직전 음절 자리에 있다. 이때 확정 문자열의 셀 폭만큼 전진한
+    // "예상 좌표"를 예약해 두고, 직후의 compositionstart 가 1회 소비한다. echo 를 기다리지
+    // 않는 결정적 계산이므로 타이핑 속도와 무관하게 항상 정확하다. { row, col, at(예약시각) }
+    let chainCaret = null;
+
+    // [ghost] chain 이 조합뷰를 예측 위치(확정 글자 뒤)로 옮기면, 확정 글자 자리는 echo 가
+    // 도착할 때까지 빈칸이 된다 → 연타 시 음절마다 빈칸이 깜빡. 그 지연 창 동안 확정
+    // 문자열을 같은 자리에 우리가 미리 그려서(투명 배경 DOM div) 간극을 채운다.
+    // echo 가 같은 글리프를 그리는 순간 픽셀이 정확히 겹치므로 이음새가 안 보인다.
+    let ghost = null;      // { row, col, text } — 아직 echo 확인 안 된 확정 문자열(연속 확정은 이어붙임)
+    let ghostEl = null;    // .ime-echo-ghost div (lazy 생성, .xterm-screen 에 append)
+    let ghostTimer = 0;    // 600ms 안전망 타이머 — echo 가 영영 안 오는 경우(제출로 입력란 비움 등) 정리
+
+    // [커서숨김] 조합/고스트 표시 중 하드웨어 커서 숨김.
+    // A형(claude/gajae/grok)은 TUI 가 hw 커서를 직접 숨겨 조합 중 깜빡임이 없는데,
+    // B형(codex/opencode)은 hw 커서가 켜진 채라 조합뷰·고스트(배경 투명) 밑/옆에서
+    // 블록커서가 계속 깜빡여 부자연스럽다 → 조합 동안 A형과 동일한 UX 로 맞춘다.
+    //
+    // 방식: 테마의 cursor(블록 배경)를 터미널 배경색으로, cursorAccent(블록 위 글자색)를
+    // 전경색으로 위장 → 커서 셀이 일반 셀과 똑같이 렌더되어 시각적으로 소멸. 깜빡임도
+    // 배경색↔배경색 교대라 안 보인다.
+    //
+    // 왜 이 방식인가(대안 검토 결과):
+    //  · xterm 에 커서 숨김 공개 API 없음.
+    //  · DECTCEM(ESC[?25l) 전송 금지 — PTY 측 상태라 TUI 소유. 우리가 보내면 TUI 가
+    //    다시 켜거나 상태가 어긋난다.
+    //  · CSS 로 .xterm-cursor 숨기기 — WebGL 렌더러(canvas)에는 안 먹힘.
+    //  → 테마 커서색 교체만이 렌더러(DOM/WebGL) 불문 동작 + 완전 원복 가능.
+    let savedCursorColors = null; // 숨김 전의 { cursor, cursorAccent } (undefined = 테마에 미지정이었음)
     function hideHwCursor() {
-      if (savedCursorColors) return;
+      if (savedCursorColors) return; // 이미 숨김 상태 — 중복 저장하면 위장색을 원본으로 오인
       const th = term.options.theme || {};
       savedCursorColors = { cursor: th.cursor, cursorAccent: th.cursorAccent };
       term.options.theme = Object.assign({}, th, {
-        cursor: th.background || '#0C0C0C',
+        cursor: th.background || '#0C0C0C',      // 폴백은 기본 다크 배경(테마에 background 항상 있음)
         cursorAccent: th.foreground || '#CCCCCC'
       });
     }
+    // force=true(blur 등)면 조합/고스트 상태 무시하고 무조건 복원.
+    // force 없이 호출하면 "조합 끝났고 고스트도 없음"일 때만 복원 — 고스트가 echo 대기
+    // 중인데 복원하면 stale 위치에서 커서가 또 깜빡이므로 clearGhost() 시점까지 유지한다.
     function maybeRestoreHwCursor(force) {
       if (!savedCursorColors) return;
       if (!force && (isImeComposing || ghost)) return; // 아직 조합/echo 대기 중 — 숨김 유지
       const th = Object.assign({}, term.options.theme || {});
+      // 원래 테마에 cursor/cursorAccent 가 아예 없었다면(undefined) 키 자체를 지워
+      // xterm 기본값으로 되돌린다. 값이 있었다면 그 값으로 복원.
       if (savedCursorColors.cursor === undefined) delete th.cursor;
       else th.cursor = savedCursorColors.cursor;
       if (savedCursorColors.cursorAccent === undefined) delete th.cursorAccent;
@@ -529,56 +591,70 @@
       savedCursorColors = null;
       term.options.theme = th;
     }
-    // 라이브 테마 전환이 theme 을 통째로 교체하면 저장해둔 이전 테마 커서색이 낡는다 —
-    // 새 테마가 커서를 이미 정상 표시하므로 복원할 것도 없음. 저장분만 폐기.
+    // 라이브 테마 전환(message 'theme')이 term.options.theme 을 통째로 교체하면 저장해둔
+    // 이전 테마의 커서색이 낡는다 — 그대로 복원하면 새 테마에 옛 테마 커서색이 박힌다.
+    // 새 테마 객체는 커서를 이미 정상 표시하므로 복원할 것도 없음 → 저장분만 폐기.
+    // (호출처: 'theme' 핸들러가 setOption 직후 방마다 호출)
     el._onThemeSwapped = function () { savedCursorColors = null; };
 
+    // 고스트 제거 + (조합도 끝났다면) 커서 복원. 모든 고스트 소멸 경로가 이 함수 하나를
+    // 통과하므로 커서 복원 시점을 여기 한 곳에서만 판단하면 된다.
     function clearGhost() {
       ghost = null;
       if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = 0; }
-      if (ghostEl) ghostEl.style.display = 'none';
+      if (ghostEl) ghostEl.style.display = 'none'; // div 는 재사용(제거 안 함) — 연타 중 재생성 비용 절약
       maybeRestoreHwCursor();
     }
 
+    // 고스트를 현재 ghost 상태대로 그린다. 좌표계는 .xterm-screen 기준(조합뷰와 동일 원점).
     function showGhost() {
       if (!ghost) return;
       const screen = el.querySelector('.xterm-screen');
       if (!screen) return;
       if (!ghostEl) {
         ghostEl = document.createElement('div');
-        ghostEl.className = 'ime-echo-ghost';
-        screen.appendChild(ghostEl);
+        ghostEl.className = 'ime-echo-ghost'; // 스타일은 CSS 정의부 참조(투명 배경 + --term-fg)
+        screen.appendChild(ghostEl);          // canvas(WebGL) 위에 DOM 이 그려지므로 렌더러 불문 표시됨
       }
+      // 셀 픽셀 크기 = 스크린 실측 / 그리드 — apply() 와 동일한 계산식(둘이 어긋나면 고스트와
+      // 조합뷰가 서로 안 맞으므로 반드시 같은 식 유지).
       const cw = screen.clientWidth / term.cols;
       const chh = screen.clientHeight / term.rows;
       ghostEl.textContent = ghost.text;
       ghostEl.style.left = Math.round(ghost.col * cw) + 'px';
       ghostEl.style.top = Math.round(ghost.row * chh) + 'px';
-      ghostEl.style.lineHeight = Math.round(chh) + 'px';
+      ghostEl.style.lineHeight = Math.round(chh) + 'px'; // 셀 높이에 수직 정렬(터미널 글리프와 베이스라인 맞춤)
+      // 터미널과 동일 폰트 강제 — body 폰트와 다를 수 있어 상속에 맡기지 않는다.
       if (term.options.fontFamily) ghostEl.style.fontFamily = term.options.fontFamily;
       if (term.options.fontSize) ghostEl.style.fontSize = term.options.fontSize + 'px';
       ghostEl.style.display = 'block';
+      // 600ms 안전망: echo 가 영영 안 오는 경우 대비 — Enter 제출로 입력란이 통째로
+      // 비워졌거나(그 글자는 이제 화면에 안 그려짐), 죽은 세션, 응답 출력이 입력란을
+      // 밀어낸 경우 등. 정상 echo(수십~수백 ms)보다 넉넉하되 잔상으로 느껴지지 않는 값.
       if (ghostTimer) clearTimeout(ghostTimer);
-      ghostTimer = setTimeout(clearGhost, 600); // echo 미도착 안전망(제출로 지워진 입력란 등)
+      ghostTimer = setTimeout(clearGhost, 600);
     }
 
-    // echo 판정: 고스트 마지막 글자가 실제 버퍼 셀에 나타나면 TUI 가 다 그린 것 — 제거.
+    // echo 도착 판정 — 매 렌더마다 호출(onRender). 고스트 "마지막 글자"가 실제 버퍼 셀에
+    // 나타났으면 TUI 가 확정 문자열을 전부 그린 것이므로 고스트를 치운다.
+    // 마지막 글자 기준인 이유: 연타로 이어붙인 고스트("안녕하")에서 첫 글자만 확인하고
+    // 치우면 아직 echo 안 된 뒷글자 자리가 도로 빈칸이 된다.
     function checkGhostEchoed() {
       if (!ghost) return;
-      const chars = Array.from(ghost.text);
+      const chars = Array.from(ghost.text);   // 코드포인트 단위 분해(서러게이트 안전)
       const last = chars[chars.length - 1];
-      const lastCol = ghost.col + imeCellWidth(chars.slice(0, -1).join(''));
-      if (lastCol >= term.cols) { clearGhost(); return; }
+      const lastCol = ghost.col + imeCellWidth(chars.slice(0, -1).join('')); // 마지막 글자의 시작 col
+      if (lastCol >= term.cols) { clearGhost(); return; } // 리사이즈 등으로 그리드 밖 — 좌표 무효, 즉시 정리
       const buf = term.buffer.active;
-      const line = buf.getLine(buf.viewportY + ghost.row);
+      const line = buf.getLine(buf.viewportY + ghost.row); // ghost.row 는 viewport 상대 좌표
       if (!line) return;
       const cell = line.getCell(lastCol);
       if (cell && cell.getChars() === last) clearGhost();
     }
-    let lastClaudeCaret = null;
-    let lastClaudeScanAt = 0;
-    let frozenImeCaret = null;
-    let pendingResponseReset = false;
+    let lastClaudeCaret = null;      // claude: 마지막으로 스캔 성공한 블록커서 좌표(스캔 실패 프레임 폴백)
+    let lastClaudeScanAt = 0;        // claude: 전체 셀 스캔 스로틀 기준 시각
+    let frozenImeCaret = null;       // [pin] 이번 조합 동안 동결된 좌표 — 리페인트가 와도 안 바뀜
+    let pendingResponseReset = false; // 응답 완료 신호가 조합 중에 도착 — end 후 리셋 예약 플래그
     let responseResetTimer = 0;
 
     function clearResponseResetTimer() {
@@ -648,6 +724,10 @@
       requestAnimationFrame(tryReset);
     };
 
+    // B형: 조합 중이 아닐 때 논리 커서를 계속 기억해 둔다(onCursorMove 마다).
+    // 조합 시작 시 findBlockCursor 가 라이브 커서를 직접 읽지만, 커서가 순간적으로 범위 밖일 때
+    // 이 마지막 유효 좌표가 폴백이 된다. 조합 중엔 갱신 금지 — 리페인트가 커서를 출력영역으로
+    // 옮긴 좌표를 "입력 위치"로 오염시키면 안 되기 때문.
     function rememberLogicalCaret() {
       if (!pinsLogicalCaret || isImeComposing) return;
       const buf = term.buffer.active;
@@ -693,16 +773,18 @@
       }, 80);
     };
 
-    // Codex/opencode 는 조합 시작 시점의 논리 커서, Claude 는 자체 블록 커서를 기억한다. 조합
-    // 중에는 리페인트가 커서를 출력/statusLine으로 옮겨도 composition-view 위치를 바꾸지 않는다.
+    // ── 에이전트별 이벤트 구독 ──
+    // B형(codex/opencode): 논리 커서 추적 + 고스트 echo 감시.
+    // claude: 렌더마다 블록커서 재스캔(80ms 스로틀) — 숨김 탭에서도 parser 는 돌므로 항상 최신.
+    // 조합 중에는 어느 쪽도 앵커를 갱신하지 않는다(리페인트가 커서를 옮겨도 조합뷰는 그대로).
     if (pinsLogicalCaret) {
       rememberLogicalCaret();
       try {
         term.onCursorMove(rememberLogicalCaret);
-        term.onRender(checkGhostEchoed);
+        term.onRender(checkGhostEchoed); // 렌더 배치마다 고스트 echo 확인(고스트 없으면 즉시 return, 비용 무시 가능)
         term.onResize(function () {
-          clearGhost(); // 그리드 변경 — 픽셀 좌표 무효
-          if (isImeComposing) apply();
+          clearGhost(); // 그리드가 바뀌면 셀→픽셀 환산이 전부 무효 — 고스트는 즉시 정리
+          if (isImeComposing) apply(); // 조합 중이면 동결 좌표를 새 그리드 기준 픽셀로 재적용
         });
       } catch (e) {}
     } else if (isClaude) {
@@ -711,27 +793,35 @@
         term.onRender(function () { rememberClaudeCaret(false); });
         term.onResize(function () {
           if (isImeComposing) apply();
-          else rememberClaudeCaret(true);
+          else rememberClaudeCaret(true); // 리사이즈 후 좌표계가 바뀌므로 강제 재스캔
         });
       } catch (e) {}
     }
 
+    // 이번 조합의 앵커 좌표를 결정한다. 우선순위:
+    //  B형: ① chain 예약분(직전 확정의 전진 좌표, 250ms 내 1회) → ② 라이브 논리 커서
+    //       → ③ 마지막 유효 좌표(커서가 순간 범위 밖일 때)
+    //  claude: ① 블록커서 스캔 → ② 캐시(cached 마킹 — 이후 재스캔이 교정 가능하게)
     function findBlockCursor() {
       if (pinsLogicalCaret) {
-        // 직전 음절 확정 직후의 연속 조합 — echo 미도착 논리 커서 대신 예상 좌표 사용(1회 소비).
+        // [chain 소비] 직전 음절 확정 직후의 연속 조합 — echo 미도착 논리 커서 대신 예상 좌표.
+        // 250ms: 한글 연타의 음절 전환(확정→새 조합)은 같은 keydown 안이라 실질 0ms — 250ms 면
+        // 충분히 덮고, 이보다 오래 지난 예약은 그 사이 다른 일이 있었을 가능성이 커서 폐기.
+        // (창을 늘리면 stale 예약 오소비 위험만 커진다. Enter/스페이스 등은 keydown/keyup
+        // 무효화가 따로 있으니 이 창은 "아무 키도 안 눌린 순수 대기"에만 해당.)
         if (chainCaret && Date.now() - chainCaret.at < 250) {
-          const chained = { // 250ms 창 안에서 fit 리사이즈가 끼어들 수 있어 현재 그리드로 클램프
+          const chained = { // 예약~소비 사이 fit 리사이즈가 끼어들 수 있어 현재 그리드로 클램프
             row: Math.max(0, Math.min(chainCaret.row, term.rows - 1)),
             col: Math.max(0, Math.min(chainCaret.col, term.cols - 1))
           };
-          chainCaret = null;
+          chainCaret = null; // 1회 소비 — 같은 예약이 두 조합에 쓰이면 두 번째는 반드시 틀린다
           lastLogicalCaret = chained;
           return chained;
         }
-        chainCaret = null;
+        chainCaret = null; // 만료된 예약은 폐기(소비 실패 시에도 다음 조합에 새지 않게)
         const buf = term.buffer.active;
         const row = buf.cursorY, col = buf.cursorX;
-        if (row < 0 || row >= term.rows) return lastLogicalCaret;
+        if (row < 0 || row >= term.rows) return lastLogicalCaret; // 순간적 범위 밖 — 마지막 유효 좌표 폴백
         const caret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
         lastLogicalCaret = caret;
         return caret;
@@ -753,17 +843,26 @@
       return null;
     }
 
+    // [pin 적용] 앵커 좌표를 픽셀로 환산해 CSS 변수(--ime-left/top)에 쓰고 .ime-fixed 를
+    // 부착한다. xterm 은 0ms 루프로 조합뷰/textarea 의 인라인 left/top 을 계속 논리 커서로
+    // 되돌리므로, 인라인보다 우선하는 !important CSS 변수로 무력화한다(CSS 정의부 참조).
+    // 좌표가 없으면(claude 첫 조합 + 스캔 실패 + 캐시 없음) 아무것도 안 한다 — xterm 기본
+    // 동기화가 잠깐 어긋나 보일 수 있지만, 숨기는 시도(-9999px)는 지연 apply 와 결합해
+    // "조합 전체 안 보임" 회귀를 냈던 폐기된 접근이다. 어긋남 < 안 보임.
     function apply() {
-      if (!needsCaretFix) return; // GJC/기타는 xterm·TUI가 제공한 논리 커서 좌표 사용
-      // 지연 apply(compositionstart+60ms / update+0ms)가 조합 종료 후 발화하면 .ime-fixed 를
-      // 재부착하고 chain 을 소모해 다음 조합을 깨뜨린다 — 조합 중일 때만 동작.
+      if (!needsCaretFix) return; // gajae/grok/셸은 TUI·xterm 기본 동기화가 이미 정확 — 무개입
+      // [중요] 지연 apply(compositionstart+60ms / compositionupdate+0ms)는 빠른 타이핑에서
+      // 조합이 이미 끝난 뒤 발화할 수 있다. 그때 동작하면 .ime-fixed 를 재부착하고(다음
+      // 조합까지 잔류) chain 예약을 오소모해 다음 조합을 깨뜨린다 — 조합 중일 때만 동작.
       if (!isImeComposing) return;
-      const caret = frozenImeCaret || findBlockCursor();
+      const caret = frozenImeCaret || findBlockCursor(); // 동결분이 있으면 그대로(조합 중 부동)
       if (!caret) return;
-      // 실시간 스캔 좌표만 동결한다. 캐시 폴백은 60ms/조합 갱신 때 실제 커서가 나타나면 교정한다.
+      // 실시간 좌표만 동결한다. claude 캐시 폴백(cached)은 동결하지 않음 — 이후 60ms 재시도/
+      // compositionupdate 재적용 때 실제 블록커서가 나타나면 그쪽으로 교정될 여지를 남긴다.
       if (!caret.cached) frozenImeCaret = caret;
       const screen = el.querySelector('.xterm-screen');
       if (!screen) return;
+      // 셀 픽셀 크기 실측 환산 — showGhost() 와 동일 식(동일해야 고스트와 조합뷰가 정렬됨).
       const cw = screen.clientWidth / term.cols;
       const chh = screen.clientHeight / term.rows;
       el.style.setProperty('--ime-left', Math.round(caret.col * cw) + 'px');
@@ -771,31 +870,49 @@
       el.classList.add('ime-fixed');
     }
 
+    // ── 조합 이벤트 핸들러 ──
+    // 한글 IME 이벤트 순서(중요 — 이 순서에 로직 전체가 기대고 있다):
+    //  · 첫 자모 키:      keydown(229, isComposing=false) → compositionstart → compositionupdate
+    //  · 조합 중 자모 키:  keydown(229, isComposing=true) → compositionupdate
+    //  · 음절 전환 키:    keydown(229) → compositionend('안') → compositionstart → update('ㄴ')
+    //                     ※ 전부 같은 keydown 처리 안 — 이때 echo 는 아직 미도착(chain 이 필요한 이유)
+    //  · 스페이스 확정:   keydown(32, isComposing=true) → compositionend → keyup(32, isComposing=false)
+    //  · Enter 확정:      keydown(229) → compositionend → keydown(13, isComposing=false) (2번째 keydown)
     ta.addEventListener('compositionstart', function () {
       isImeComposing = true;
-      frozenImeCaret = null;
-      if (pinsLogicalCaret) hideHwCursor();
+      frozenImeCaret = null;              // 새 조합 — 앵커를 새로 잡는다(직전 동결분 폐기)
+      if (pinsLogicalCaret) hideHwCursor(); // B형: 조합 동안 블록커서 깜빡임 제거(A형과 동일 UX)
       if (pendingResponseReset) armStaleCompositionReset();
-      apply();
-      setTimeout(apply, 60); // 직전 확정 글자가 TUI에 반영된 뒤 위치 재계산
+      apply();                            // 여기서 chain 예약이 있으면 소비되어 앵커가 된다
+      // 60ms 재시도: claude 캐시 폴백(cached)으로 시작한 경우 직전 확정 글자가 TUI 에 반영돼
+      // 블록커서가 실좌표에 나타난 뒤 교정하기 위함. B형은 이미 동결돼 있어 no-op.
+      // (조합이 60ms 안에 끝나면 apply 의 isImeComposing 가드가 무해하게 흡수)
+      setTimeout(apply, 60);
     });
     ta.addEventListener('compositionupdate', function () {
       if (pendingResponseReset) armStaleCompositionReset();
+      // setTimeout 0: xterm 이 같은 이벤트에서 조합뷰 textContent/inline 좌표를 갱신한 "다음에"
+      // 우리 좌표를 다시 얹기 위한 태스크 양보. (claude cached 교정 경로이기도 함)
       setTimeout(apply, 0);
     });
     ta.addEventListener('compositionend', function (e) {
-      // 확정 문자열 폭만큼 고정 좌표를 전진 — 직후 이어지는 새 조합(다음 음절)이 방금 확정된
-      // 글자를 덮지 않게 한다. 우측 경계 근처(입력란 줄바꿈 가능)면 체인 포기 후 기본 경로.
+      // [chain 예약 + ghost 갱신] 확정 문자열 폭만큼 전진한 좌표를 예약해, 같은 keydown 에서
+      // 곧바로 이어질 다음 음절 조합이 "방금 확정된 글자를 덮지 않게" 한다.
+      // 조건: B형 + 이번 조합이 실제로 pin 됐고(frozenImeCaret) + 실제 확정 문자가 있음
+      // (e.data 빈 문자열 = 조합 취소/합성 리셋(resetImeNow) — 예약할 게 없다).
       if (pinsLogicalCaret && frozenImeCaret && e && e.data) {
         const nextCol = frozenImeCaret.col + imeCellWidth(e.data);
-        // 입력란은 테두리 때문에 term.cols 보다 몇 칸 일찍 줄바꿈된다 — 경계 근처면 체인을
-        // 포기하고 기본 경로(조합 시작 시점 논리 커서)로 둔다. 틀린 행 고정보다 낫다.
+        // cols-4 경계 가드: 입력란은 테두리·여백 때문에 term.cols 보다 몇 칸 일찍 줄바꿈된다
+        // (codex composer 기준 좌우 ~2칸씩). 전진 좌표가 실제로는 다음 줄일 수 있는 구간이면
+        // 예약을 포기하고 기본 경로(조합 시작 시점 라이브 커서)로 둔다 — 한 음절 겹침 가능성
+        // (원래 증상이 경계에서만 잔존)이 틀린 행에 고정되는 것보다 낫다.
         chainCaret = (nextCol < term.cols - 4)
           ? { row: frozenImeCaret.row, col: nextCol, at: Date.now() }
           : null;
-        // 고스트 갱신 — 직전 고스트가 아직 echo 전이고 바로 이어지는 위치면 이어붙여
-        // 연타 전체를 커버, 아니면 이번 확정 위치에서 새로 시작.
         if (chainCaret) {
+          // 고스트: 직전 고스트가 아직 echo 전이고 이번 확정이 바로 이어지는 위치면 문자열을
+          // 이어붙인다(연타에서 echo 가 밀려도 "안녕하" 전체가 끊김 없이 보임). 위치가 안
+          // 이어지면(다른 줄/중간 클릭 등) 이번 확정 위치에서 새로 시작.
           if (ghost && ghost.row === frozenImeCaret.row &&
               ghost.col + imeCellWidth(ghost.text) === frozenImeCaret.col) {
             ghost.text += e.data;
@@ -804,16 +921,18 @@
           }
           showGhost();
         } else {
-          clearGhost(); // 경계 근처 — 예측 포기했으니 고스트도 그리지 않음
+          clearGhost(); // 경계 근처 — 위치 예측을 포기했으니 선그리기도 하지 않는다(오표시 방지)
         }
       } else {
         chainCaret = null;
       }
       isImeComposing = false;
       frozenImeCaret = null;
-      el.classList.remove('ime-fixed'); // 다음 조합 전에는 xterm 이 textarea 를 현재 논리 커서와 동기화
-      rememberLogicalCaret();
-      maybeRestoreHwCursor(); // 고스트가 echo 대기 중이면 숨김 유지, 아니면 즉시 복원
+      // pin 해제 — 다음 조합 전까지는 xterm 이 textarea 를 논리 커서와 자유롭게 동기화하게
+      // 둔다(여기 잔류하면 IME 후보창 기준점이 낡은 위치에 고정된다).
+      el.classList.remove('ime-fixed');
+      rememberLogicalCaret(); // 조합 끝 — 논리 커서 추적 재개(이 시점 좌표는 echo 전일 수 있으나 폴백용일 뿐)
+      maybeRestoreHwCursor(); // 고스트가 echo 대기 중이면 커서 숨김 유지(clearGhost 가 복원), 아니면 즉시 복원
       // 조합 중 Ctrl+Enter 가 눌렸으면 — 확정 글자가 PTY로 전송된 뒤(setTimeout 0)
       // 줄바꿈을 보낸다. 순서를 보장해 마지막 글자가 새 줄로 내려가지 않게 한다.
       if (pendingComposeNewline) {
@@ -827,13 +946,25 @@
         responseResetTimer = setTimeout(resetImeNow, 0);
       }
     });
-    // 조합 외 실제 키(Enter 제출/Backspace/화살표/단축키)는 커서를 움직인다 — 예상 좌표 무효화.
-    // 한글 자모 키는 전부 keyCode 229(조합 중)라 체인이 유지된다. handleKey 가 키를 삼켜도
-    // (확정 Enter 흡수 등) DOM keydown 은 textarea 에 그대로 도달하므로 여기서 항상 잡힌다.
-    // Enter/Backspace/Escape/Delete 는 입력란 내용 자체를 바꾼다(제출로 비움/글자 삭제) —
-    // 남은 고스트가 지워진 글자를 계속 보여주지 않게 즉시 제거.
+    // ── chain/ghost 무효화 (조합 외 키 입력) ──
+    // chain 예약은 "확정 직후 아무 일도 없이 바로 다음 조합이 이어진다"는 가정 위의 예측이다.
+    // 그 사이 비조합 키가 하나라도 끼면 커서가 예측과 다르게 움직이므로 예약을 버린다.
+    //
+    //  · 한글 자모 키는 keydown 이 전부 keyCode 229(+조합 중이면 isComposing=true)라 안 걸림
+    //    → 순수 한글 연타에서는 chain 이 끝까지 유지된다(의도).
+    //  · handleKey(attachCustomKeyEventHandler)가 키를 삼켜도(false 반환 — 확정 Enter 흡수 등)
+    //    DOM keydown/keyup 리스너는 같은 요소에서 그대로 발화하므로 여기서 항상 잡힌다.
+    //  · keydown 만으로는 부족한 케이스가 "스페이스 확정": 그 keydown 은 isComposing=true 라
+    //    통과하는데 스페이스 문자가 PTY 로 가서 커서가 예측보다 1칸 더 간다. 스페이스 keyup 은
+    //    조합 종료 후(isComposing=false) 발화하므로 keyup 리스너가 그 구멍을 막는다.
+    //    (자모 키 keyup 은 조합 지속 중이라 isComposing=true → chain 유지, 안 걸림)
+    //
+    // 고스트 제거는 별도 기준: Enter(제출로 입력란 통째 비움)/Backspace·Delete(글자 삭제)/
+    // Escape(입력 취소)는 화면에서 그 글자 자체가 사라질 수 있는 키 — 고스트가 지워진 글자를
+    // 600ms 잔상으로 보여주지 않게 즉시 제거한다. 스페이스·문장부호·화살표는 확정 글자가
+    // 제자리에 남으므로 고스트 유지(echo 판정/타임아웃이 알아서 정리).
     function isLineMutatingKey(e) {
-      return e.keyCode === 13 || e.keyCode === 8 || e.keyCode === 27 || e.keyCode === 46;
+      return e.keyCode === 13 || e.keyCode === 8 || e.keyCode === 27 || e.keyCode === 46; // Enter/BS/Esc/Del
     }
     ta.addEventListener('keydown', function (e) {
       if (e.keyCode !== 229 && !e.isComposing) {
@@ -841,10 +972,6 @@
         if (isLineMutatingKey(e)) clearGhost();
       }
     });
-    // 스페이스 확정: keydown 은 조합 중(isComposing=true)이라 위에서 안 걸리지만 스페이스
-    // 문자가 PTY 로 가서 커서가 예상보다 1칸 더 간다. keyup 은 조합 종료 후 발화하므로
-    // 여기서 무효화. 자모 키 keyup 은 조합 지속 중(isComposing=true)이라 체인 유지.
-    // 고스트는 유지 — 확정 글자는 그 자리에 남고 스페이스만 뒤에 붙는 것이라 여전히 유효.
     ta.addEventListener('keyup', function (e) {
       if (e.keyCode !== 229 && !e.isComposing) {
         chainCaret = null;
@@ -852,12 +979,16 @@
       }
     });
 
+    // 포커스 이탈 — 탭 전환(새 탭 term.focus 가 이전 textarea 를 blur), 클릭 아웃 등.
+    // 모든 조합 상태를 즉시 초기화한다. 창 최소화/WPF 팝업처럼 HWND 단위로만 포커스가 빠지는
+    // 경우엔 element blur 가 안 올 수 있는데, 그땐 다음 compositionstart 가 상태를 새로 잡고
+    // resetImeNow(응답 완료 후 리셋 장치)가 stale 조합을 정리한다.
     ta.addEventListener('blur', function () {
       isImeComposing = false;
       frozenImeCaret = null;
       chainCaret = null;
       clearGhost();
-      maybeRestoreHwCursor(true); // 포커스 이탈 — 무조건 원래 테마로
+      maybeRestoreHwCursor(true); // force — 조합/고스트 상태와 무관하게 원래 테마로
       pendingResponseReset = false;
       clearResponseResetTimer();
       el.classList.remove('ime-fixed');
