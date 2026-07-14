@@ -19,7 +19,10 @@
         try {
           editor = monaco.editor.createDiffEditor(document.getElementById('c'), {
             readOnly: true, automaticLayout: true, renderSideBySide: true,
-            minimap: { enabled: true }, scrollBeyondLastLine: false
+            minimap: { enabled: true }, scrollBeyondLastLine: false,
+            renderOverviewRuler: true,          // 좌/우 오버뷰 룰러(변경 위치 빨강/초록)
+            renderMarginRevertIcon: false,      // 읽기전용 — revert 아이콘 숨김
+            scrollbar: { verticalScrollbarSize: 14, horizontalScrollbarSize: 14, useShadows: false }
           });
           ready = true;
           post({ type: 'pageReady' });
