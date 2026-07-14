@@ -94,6 +94,9 @@ public static class UserStatusLineInstaller
     private static void EnsureProxyInstalled()
     {
         Directory.CreateDirectory(ClaudeDir);
+        // Windows PowerShell 5.1 기본 콘솔/프로세스 인코딩은 CP949(한국어).
+        // node 는 UTF-8 로 쓰므로 StandardOutputEncoding 미지정 시 한글 브랜치명 등이 깨진다.
+        // stdin/stdout 모두 UTF-8 바이트로 중계한다(문자열 재인코딩 금지).
         const string script = """
             param(
               [Parameter(Mandatory=$true)][string]$NodePath,
@@ -102,7 +105,8 @@ public static class UserStatusLineInstaller
             )
             $ErrorActionPreference = 'SilentlyContinue'
             try {
-              $reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)
+              $utf8 = New-Object System.Text.UTF8Encoding $false
+              $reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), $utf8)
               $raw = $reader.ReadToEnd()
               $reader.Dispose()
 
@@ -117,16 +121,20 @@ public static class UserStatusLineInstaller
               $psi.RedirectStandardInput = $true
               $psi.RedirectStandardOutput = $true
               $psi.RedirectStandardError = $true
+              $psi.StandardOutputEncoding = $utf8
+              $psi.StandardErrorEncoding  = $utf8
 
               $p = [System.Diagnostics.Process]::Start($psi)
               if (-not $p) { exit 0 }
               $outTask = $p.StandardOutput.ReadToEndAsync()
-              $errTask = $p.StandardError.ReadToEndAsync()
-              $p.StandardInput.Write($raw)
+              $null = $p.StandardError.ReadToEndAsync()
+              $inBytes = $utf8.GetBytes($raw)
+              $p.StandardInput.BaseStream.Write($inBytes, 0, $inBytes.Length)
               $p.StandardInput.Close()
               $p.WaitForExit()
               $out = $outTask.GetAwaiter().GetResult()
-              [Console]::Out.Write($out)
+              $outBytes = $utf8.GetBytes($out)
+              [Console]::OpenStandardOutput().Write($outBytes, 0, $outBytes.Length)
               exit $p.ExitCode
             } catch { exit 0 }
             """;
