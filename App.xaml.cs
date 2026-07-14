@@ -123,7 +123,7 @@ public partial class App : Application
         Services.Terminal.ClaudeCustomThemes.EnsureInstalled();
 
         // opencode 커스텀 테마 (devezcode-soft / devezcode-minimal) 1회 설치.
-        // per-project tui.json theme 주입의 기반.
+        // DevezCode 전용 OPENCODE_TUI_CONFIG 주입의 기반.
         Services.Terminal.OpenCodeCustomThemes.EnsureInstalled();
 
         // 가재코드(gjc) 테마 — 현재 테마 팔레트를 ~/.gjc/agent/themes/devez.json 에 쓰고 config.yml 을 devez 로.

@@ -8,7 +8,7 @@ namespace DevezCode.Services.Terminal;
 /// <c>~/.config/opencode/themes/devez-{dark,soft,minimal}.json</c> 으로 매 시작 시 번들 내용으로
 /// 항상 재생성(statusline.js/ClaudeCustomThemes 와 동일한 관리 방식) — 팔레트를 코드에서 바꾸면
 /// 다음 실행에 바로 반영. 이 세 파일은 우리 전용 슬러그라 사용자가 직접 편집할 대상이 아니다.
-/// Per-project 로 <c>tui.json</c> 에 <c>"theme": "devez-dark"</c> 형태로 주입해서 사용.</summary>
+/// TUI 설정은 AppData에 두고 OPENCODE_TUI_CONFIG로 DevezCode 세션에만 주입한다.</summary>
 public static class OpenCodeCustomThemes
 {
     private const string ThemesDirName = "themes";
@@ -27,6 +27,10 @@ public static class OpenCodeCustomThemes
             return Path.Combine(configHome, "opencode", ThemesDirName);
         }
     }
+
+    public static string TuiConfigPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "opencode", "tui.json");
 
     /// <summary>앱 시작 시 호출. 매번 번들 내용으로 덮어써 최신 팔레트를 강제 반영한다.</summary>
     public static void EnsureInstalled()
@@ -51,6 +55,51 @@ public static class OpenCodeCustomThemes
         "minimal" => MinimalSlug,
         _         => DarkSlug,
     };
+
+    public static void Apply(string devezCodeTheme)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(TuiConfigPath)!);
+            var root = new System.Text.Json.Nodes.JsonObject
+            {
+                ["theme"] = MapToOpenCodeTheme(devezCodeTheme),
+            };
+            File.WriteAllText(TuiConfigPath,
+                root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                new UTF8Encoding(false));
+        }
+        catch { /* best-effort */ }
+    }
+
+    /// <summary>이전 버전이 프로젝트에 주입한 DevezCode 테마만 제거한다.</summary>
+    public static void RemoveLegacyProjectTheme(string workingDir)
+    {
+        try
+        {
+            var path = Path.Combine(workingDir, "tui.json");
+            if (!File.Exists(path)) return;
+
+            var root = System.Text.Json.Nodes.JsonNode.Parse(
+                File.ReadAllText(path),
+                documentOptions: new System.Text.Json.JsonDocumentOptions
+                {
+                    CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true,
+                }) as System.Text.Json.Nodes.JsonObject;
+            var theme = root?["theme"]?.GetValue<string>();
+            if (theme is not (DarkSlug or SoftSlug or MinimalSlug)) return;
+
+            root!.Remove("theme");
+            if (root.Count == 0)
+                File.Delete(path);
+            else
+                File.WriteAllText(path,
+                    root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                    new UTF8Encoding(false));
+        }
+        catch { /* 사용자 파일이면 그대로 둔다 */ }
+    }
 
     private const string DarkThemeJson = """
     {

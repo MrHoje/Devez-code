@@ -15,7 +15,6 @@ public sealed class TerminalSessionManager
     public event Action<string>? AgentModelCatalogRefreshRequested;
 
     private readonly Dictionary<string, TerminalSession> _sessions = new();
-    private readonly Dictionary<string, string> _opencodeRoomDirs = new();
     private readonly object _lock = new();
     private FileSystemWatcher? _claudeSessionWatcher;
     private WtTerminalConfig? _config;
@@ -142,6 +141,7 @@ public sealed class TerminalSessionManager
             // 방별 에이전트 조회. Claude 만 풀 통합(훅/resume/세션ID 추적), 그 외는 단순 cmd /k <command> 실행.
             var agentId = SettingsService.LoadAgentForRoom(roomId);
             var agent = AgentRegistry.Find(agentId) ?? AgentRegistry.GetDefault();
+            var isOpenCode = agent.Id == "opencode";
             if (agent.Id is "claude" or "codex" or "grok")
                 AgentModelCatalogRefreshRequested?.Invoke(agent.Id);
 
@@ -160,10 +160,12 @@ public sealed class TerminalSessionManager
                 var direct = TryBuildGrokDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
             }
-            else if (ccDir != null && agent.Id == "opencode")
+            else if (ccDir != null && isOpenCode)
             {
                 // opencode: Devez 패턴 — 플러그인이 sessions\<room>.txt 에 기록한 session_id 로 --session <id> 로 정확히 복원.
                 // 같은 폴더의 여러 방이 있어도 플러그인 $env:DEVEZCODE_ROOM_ID 로 분리됨.
+                OpenCodeCustomThemes.Apply(DevezCode.App.CurrentTheme);
+                OpenCodeCustomThemes.RemoveLegacyProjectTheme(ccDir);
                 startDir = ccDir;
                 var direct = TryBuildOpenCodeDirectLaunch(roomId, opencodeCwdSession, out inject);
                 if (direct != null) commandLine = direct;
@@ -207,96 +209,43 @@ public sealed class TerminalSessionManager
             // 시작되므로 프로젝트 local settings 를 따로 건드릴 필요가 없다(예전엔 건드렸으나, 그러면
             // 그 프로젝트 폴더에서 DevezCode 밖의 claude 를 켜도 테마가 새어나가는 부작용이 있었다).
 
-            // opencode 세션이면 시작 전에 프로젝트 tui.json 에 theme 을 기록한다.
-            var isOpenCode = agent.Id == "opencode";
-            if (isOpenCode && !string.IsNullOrWhiteSpace(ccDir))
-                ApplyOpenCodeProjectTheme(ccDir, DevezCode.App.CurrentTheme);
-
             TerminalSession session;
+            var previousOpenCodeTuiConfig = Environment.GetEnvironmentVariable("OPENCODE_TUI_CONFIG");
             try
             {
                 // SessionStart 훅(room-hook.ps1)이 어느 방의 claude 세션인지 알 수 있게
                 // 방 ID를 자식(cmd→claude→훅)에 상속시킨다. 생성 직후 해제해 다른 자식 프로세스로 새지 않게 한다.
                 // (Claude 외 에이전트는 훅이 없으므로 무해.)
                 Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", roomId);
+                if (isOpenCode)
+                    Environment.SetEnvironmentVariable("OPENCODE_TUI_CONFIG", OpenCodeCustomThemes.TuiConfigPath);
                 session = new TerminalSession(commandLine, startDir, cols, rows);
             }
             finally
             {
                 Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", null);
+                if (isOpenCode)
+                    Environment.SetEnvironmentVariable("OPENCODE_TUI_CONFIG", previousOpenCodeTuiConfig);
             }
             // 직접 실행이면 inject==null → 주입 없음. 폴백 셸이면 첫 출력 후 WireSession 에서 inject 전송.
             _pendingInitial[roomId] = inject;
             _sessions[roomId] = session;
 
-            // opencode 세션이면 room → working directory 기억.
-            if (isOpenCode)
-            {
-                if (!string.IsNullOrWhiteSpace(ccDir))
-                    _opencodeRoomDirs[roomId] = ccDir;
-            }
-
             return session;
         }
     }
 
-    /// <summary>App.ThemeChanged → 살아있는 opencode 세션의 프로젝트 tui.json 갱신.
-    /// opencode 는 tui.json 을 시작 시에만 읽으므로 세션 재시작이 필요한데,
+    /// <summary>App.ThemeChanged → DevezCode 전용 opencode TUI 설정 갱신.
+    /// opencode 는 TUI 설정을 시작 시에만 읽으므로 세션 재시작이 필요한데,
     /// 그 재시작은 JS 브리지를 가진 TerminalHostView 가 담당한다(rewire + "restarted" 통지로
-    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄움). 여기서는 tui.json 만 기록.
+    /// "Enter 로 재시작" 프롬프트 없이 매끄럽게 새 테마로 다시 띄움).
     /// claude 는 테마 변경 시 세션 자체가 재시작되고(SettingsDialog → ReloadAllSessionsForTheme),
     /// 재시작된 프로세스가 room-settings.json(--settings 커맨드라인)으로 새 테마를 받으므로
     /// 프로젝트 local settings 를 따로 건드릴 필요가 없다(예전엔 건드렸으나, 그 프로젝트 폴더에서
     /// DevezCode 밖의 claude 를 켜도 테마가 새어나가는 부작용만 있었다).</summary>
     private void OnAppThemeChanged_Broadcast(string theme)
     {
-        List<string> opencodeDirs;
-        lock (_lock)
-        {
-            opencodeDirs = new List<string>(_opencodeRoomDirs.Values);
-        }
-        foreach (var dir in opencodeDirs)
-            ApplyOpenCodeProjectTheme(dir, theme);
-    }
-
-    /// <summary>프로젝트 루트 tui.json 에 opencode theme 을 기록한다.
-    /// opencode 가 시작 시 또는 파일 변경을 감지해 반영한다.
-    /// 파일: &lt;workingDir&gt;/tui.json. 기존 설정은 보존.</summary>
-    private static void ApplyOpenCodeProjectTheme(string workingDir, string devezCodeTheme)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(workingDir) || !Directory.Exists(workingDir)) return;
-            var path = Path.Combine(workingDir, "tui.json");
-            var theme = OpenCodeCustomThemes.MapToOpenCodeTheme(devezCodeTheme);
-
-            System.Text.Json.Nodes.JsonObject root;
-            if (File.Exists(path))
-            {
-                try
-                {
-                    root = System.Text.Json.Nodes.JsonNode.Parse(
-                        File.ReadAllText(path),
-                        documentOptions: new System.Text.Json.JsonDocumentOptions
-                        {
-                            CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
-                            AllowTrailingCommas = true,
-                        }) as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
-                }
-                catch
-                {
-                    return;
-                }
-            }
-            else
-            {
-                root = new System.Text.Json.Nodes.JsonObject();
-            }
-
-            root["theme"] = theme;
-            File.WriteAllText(path, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch { /* tui.json 갱신 실패 — best-effort */ }
+        OpenCodeCustomThemes.Apply(theme);
     }
 
     /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.
@@ -488,6 +437,7 @@ public sealed class TerminalSessionManager
         // roomId 에 공백/특수문자 가능 — set "VAR=value" 형식으로 안전하게.
         string body = $"@echo off\r\n" +
                       $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                      $"set \"OPENCODE_TUI_CONFIG={OpenCodeCustomThemes.TuiConfigPath}\"\r\n" +
                       $"{opencodeCmd}\r\n";
 
         try
@@ -2358,7 +2308,6 @@ public sealed class TerminalSessionManager
             {
                 try { kv.Value.Dispose(); } catch (Exception) { }
                 _sessions.Remove(kv.Key);
-                _opencodeRoomDirs.Remove(kv.Key);
                 _pendingInitial.Remove(kv.Key);
                 _disposedRooms.Add(kv.Key); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
                 _gracefulStopping.Remove(kv.Key); // 종료 완료 — 이후 생성은 새 세션(resume)으로 정상 진행
@@ -2434,7 +2383,6 @@ public sealed class TerminalSessionManager
                 try { s.Dispose(); } catch (Exception) { }
                 _sessions.Remove(roomId);
             }
-            _opencodeRoomDirs.Remove(roomId);
             _pendingInitial.Remove(roomId);
             _disposedRooms.Add(roomId); // 이후 뒤늦은 생성 요청 차단(고아 claude 방지)
         }
