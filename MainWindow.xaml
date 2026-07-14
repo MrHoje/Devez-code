@@ -811,6 +811,9 @@
                                 <TextBlock x:Name="CxSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
                                            FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                             </StackPanel>
+                            <TextBlock x:Name="CxResetCreditsText" Margin="14,0,0,0" VerticalAlignment="Center"
+                                       Visibility="Collapsed" FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
                         </StackPanel>
                         <!-- opencode-go (클릭 시 재로그인) -->
                         <StackPanel x:Name="GoPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
