@@ -76,6 +76,11 @@ function Test-ResumableSession($sid, $transcriptPath) {
 
 switch ($event) {
     'UserPromptSubmit' {
+        # Memory Writing Agent 같은 내부 thread 도 부모 프로세스의 DEVEZCODE_ROOM_ID 를 상속하고
+        # UserPromptSubmit 을 발생시킨다. 내부 프롬프트를 사용자가 보낸 메시지로 오인해 헤더
+        # 타이틀과 busy 상태를 덮지 않도록, 실제 영속 transcript 에 연결된 사용자 세션만 처리한다.
+        if (-not (Test-ResumableSession $j.session_id $j.transcript_path)) { break }
+
         # 1) busy=running
         $busyDir = Join-Path $base 'busy'
         New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
@@ -92,6 +97,9 @@ switch ($event) {
         }
     }
     'Stop' {
+        # 내부 thread 종료가 실제 사용자 turn 의 busy 상태를 조기 해제하지 않게 한다.
+        if (-not (Test-ResumableSession $j.session_id $j.transcript_path)) { break }
+
         # 턴 종료 → idle
         $busyDir = Join-Path $base 'busy'
         New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
