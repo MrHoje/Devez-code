@@ -30,6 +30,7 @@ public sealed class OpenCodeLastMessageService : IDisposable
             };
             _watcher.Changed += (_, e) => Emit(e.FullPath);
             _watcher.Created += (_, e) => Emit(e.FullPath);
+            _watcher.Renamed += (_, e) => Emit(e.FullPath);
             // 시작 시 기존 값 1회 반영(앱 재시작 후 헤더 복원)
             foreach (var f in Directory.EnumerateFiles(Dir, "*.txt")) Emit(f);
         }

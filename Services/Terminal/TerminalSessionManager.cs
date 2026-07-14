@@ -1893,6 +1893,13 @@ public sealed class TerminalSessionManager
                     } catch { return 0 }
                   }
 
+                  # Hook runners may still be writing stdin when a status-only branch exits.
+                  # Always own/read the pipe through EOF first (also supplies agent_id below).
+                  $raw = ''
+                  try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
+                  $j = $null
+                  try { $j = $raw | ConvertFrom-Json } catch { }
+
                   # 입력 대기 ❗ 진입 신호.
                   #  • notify(PermissionRequest): 실제 권한창 → 서브 실행중이라도 항상 무장(서브가 툴 권한 대기).
                   #  • notifyidle(Notification 폴백): 살아있는 서브>0 이면 무장 안 함 — 이건 서브 완료를 기다리는
@@ -1918,11 +1925,6 @@ public sealed class TerminalSessionManager
                     Touch-LiveSubruns $runDir
                     exit 0
                   }
-
-                  $raw = ''
-                  try { $raw = [System.IO.StreamReader]::new([Console]::OpenStandardInput()).ReadToEnd() } catch { }
-                  $j = $null
-                  try { $j = $raw | ConvertFrom-Json } catch { }
 
                   # ── SubagentStart: run 파일 생성 → 즉시 busy=running (agent_id 로 개별 추적) ──
                   if ($status -eq 'substart') {
@@ -2059,6 +2061,7 @@ public sealed class TerminalSessionManager
                 SessionStart     = new[] { new { hooks = new[] { new { type = "command", command } } } },
                 UserPromptSubmit = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
                 Stop             = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
+                StopFailure      = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
                 SessionEnd       = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
                 // 선택지/권한 입력 대기 ❗ — 진입 신호 둘:
                 //  • PermissionRequest: 툴 권한 대화창이 뜨는 '즉시' 발화(matcher * = 모든 툴) → 지연 없음.
@@ -2068,9 +2071,13 @@ public sealed class TerminalSessionManager
                 // 해제는 PostToolUse/Stop + 답변 입력(즉시 UI).
                 PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
                 Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyIdleCommand } } } },
+                // AskUserQuestion 은 auto-allow라 PermissionRequest 없이 PreToolUse로 바로 온다.
+                // 정확한 matcher만 추가해 모든 툴에 훅 프로세스를 띄우는 비용은 피한다.
+                PreToolUse       = new[] { new { matcher = "AskUserQuestion", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
                 // PostToolUse: 툴 처리 재개 → 대기 해제(hidden PowerShell unwait). PreToolUse(pulse)는 서브런 keep-alive 가
                 // C# reconcile/SubMaxAge 와 중복 + 서브 실행 중엔 메인이 블로킹돼 발화도 안 해 실효 없음 → 제거(툴당 오버헤드 제거).
                 PostToolUse      = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
+                PostToolUseFailure = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
                 // 서브에이전트 생존 추적(스피너 조기소멸 방지): Start=run 파일 생성, Stop=삭제 → busy 재평가.
                 SubagentStart    = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStartCommand } } } },
                 SubagentStop     = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStopCommand } } } },
@@ -2645,6 +2652,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(codexDir, "sessions", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(codexDir, "lastmsg", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(codexDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(codexDir, "waiting", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(CodexLaunchDir(), roomFile + ".cmd"));
 
         var grokDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "grok");
@@ -2660,7 +2668,9 @@ public sealed class TerminalSessionManager
         var opencodeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode");
         TryDeleteFile(Path.Combine(opencodeDir, "sessions", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(opencodeDir, "lastmsg", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(opencodeDir, "lastreply", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(opencodeDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(opencodeDir, "waiting", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(opencodeDir, "todos", roomFile + ".json"));
         TryDeleteFile(Path.Combine(OpenCodeLaunchDir(), roomFile + ".cmd"));
 
@@ -2674,6 +2684,8 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(antigravityDir, "sessions", roomFile + ".root.txt"));
         TryDeleteFile(Path.Combine(antigravityDir, "sessions", roomFile + ".ended.txt"));
         TryDeleteFile(Path.Combine(antigravityDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(antigravityDir, "waiting", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(antigravityDir, "completed", roomFile + ".flag"));
         TryDeleteFile(Path.Combine(AntigravityLaunchDir(), roomFile + ".cmd"));
     }
 
@@ -2738,11 +2750,22 @@ public sealed class TerminalSessionManager
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             Collect(Path.Combine(appData, "DevezCode", "codex", "sessions"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "codex", "busy"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "codex", "waiting"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "codex", "lastmsg"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "grok", "sessions"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "grok", "busy"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "grok", "waiting"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "grok", "lastmsg"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "opencode", "sessions"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "opencode", "busy"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "opencode", "waiting"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "opencode", "lastmsg"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "opencode", "lastreply"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "opencode", "todos"), ".json");
+            Collect(Path.Combine(appData, "DevezCode", "antigravity", "sessions"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "antigravity", "busy"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "antigravity", "waiting"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "antigravity", "completed"), ".flag");
             // statusline-cache-<room>-<sig>.txt 는 ClaudeTrackDir 루트에 바로 있고 접두사 매칭 필요.
             try
             {

@@ -10,7 +10,7 @@ namespace DevezCode.Services;
 
 /// <summary>Grok 훅(grok-hook.ps1) 설치/유지.
 /// 1) 스크립트를 %LOCALAPPDATA%\DevezCode\grok\hook.ps1 에 항상 최신본으로 기록.
-/// 2) ~/.grok/hooks/devezcode-room-tracker.json 에 SessionStart/UserPromptSubmit/Stop/SessionEnd 등록.</summary>
+/// 2) ~/.grok/hooks/devezcode-room-tracker.json 에 상태 추적 이벤트를 등록.</summary>
 public static class GrokHookInstaller
 {
     public static string ScriptInstallPath => Path.Combine(
@@ -69,20 +69,25 @@ public static class GrokHookInstaller
             var hooksObj = new JsonObject();
             foreach (var eventName in events)
             {
-                hooksObj[eventName] = new JsonArray
+                var definition = new JsonObject
                 {
-                    new JsonObject
+                    ["hooks"] = new JsonArray
                     {
-                        ["hooks"] = new JsonArray
+                        new JsonObject
                         {
-                            new JsonObject
-                            {
-                                ["type"] = "command",
-                                ["command"] = hookCommand,
-                                ["timeout"] = 10,
-                            }
+                            ["type"] = "command",
+                            ["command"] = hookCommand,
+                            ["timeout"] = 10,
                         }
                     }
+                };
+                // Grok tool matchers are regular expressions. Bare '*' is invalid;
+                // explicit '.*' keeps old/new Grok builds firing every tool event.
+                if (eventName is "PreToolUse" or "PostToolUse" or "PostToolUseFailure")
+                    definition["matcher"] = ".*";
+                hooksObj[eventName] = new JsonArray
+                {
+                    definition
                 };
             }
 

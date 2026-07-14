@@ -137,9 +137,26 @@ public sealed class GrokHookService : IDisposable
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            _ = ReEmitWaitingAfterSettleAsync(path, room);
+            return;
+        }
         WaitingChoiceChanged?.Invoke(room,
-            !string.IsNullOrWhiteSpace(status)
-            && status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+            status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path, string room)
+    {
+        try
+        {
+            await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
+            var status = TryRead(path);
+            WaitingChoiceChanged?.Invoke(room,
+                !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+        }
+        catch { }
     }
 
     private void EmitSession(string path)

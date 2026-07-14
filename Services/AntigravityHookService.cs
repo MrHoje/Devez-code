@@ -24,6 +24,8 @@ public sealed class AntigravityHookService : IDisposable
     private static string BaseDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "antigravity");
     private static string BusyDir => Path.Combine(BaseDir, "busy");
+    private static string WaitingDir => Path.Combine(BaseDir, "waiting");
+    private static string CompletedDir => Path.Combine(BaseDir, "completed");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
 
     private static string SessionPath(string roomId) =>
@@ -48,6 +50,7 @@ public sealed class AntigravityHookService : IDisposable
     private static readonly TimeSpan TranscriptFreshCap = TimeSpan.FromMinutes(3);
 
     private FileSystemWatcher? _busyWatcher;
+    private FileSystemWatcher? _waitingWatcher;
     private FileSystemWatcher? _sessionWatcher;
     private System.Threading.Timer? _staleTimer;
     private System.Threading.Timer? _transcriptTimer;
@@ -55,6 +58,7 @@ public sealed class AntigravityHookService : IDisposable
     private int _transcriptPolling; // 재진입 방지
 
     public event Action<string, bool>? BusyChanged;
+    public event Action<string, bool>? WaitingChoiceChanged;
     public event Action<string, string>? SessionChanged;
     /// <summary>(roomId, 마지막 user prompt) — transcript 폴링에서 추출.</summary>
     public event Action<string, string>? MessageChanged;
@@ -64,10 +68,16 @@ public sealed class AntigravityHookService : IDisposable
         try
         {
             Directory.CreateDirectory(BusyDir);
+            Directory.CreateDirectory(WaitingDir);
+            Directory.CreateDirectory(CompletedDir);
             Directory.CreateDirectory(SessionDir);
 
             // 이전 실행이 남긴 busy 상태는 신뢰 불가 — 시작 시 리셋(스피너 stuck-ON 방지).
             foreach (var f in Directory.EnumerateFiles(BusyDir, "*.txt"))
+                try { File.Delete(f); } catch { }
+            foreach (var f in Directory.EnumerateFiles(WaitingDir, "*.txt"))
+                try { File.Delete(f); } catch { }
+            foreach (var f in Directory.EnumerateFiles(CompletedDir, "*.flag"))
                 try { File.Delete(f); } catch { }
 
             _busyWatcher = new FileSystemWatcher(BusyDir, "*.txt")
@@ -78,6 +88,15 @@ public sealed class AntigravityHookService : IDisposable
             _busyWatcher.Changed += (_, e) => EmitBusy(e.FullPath);
             _busyWatcher.Created += (_, e) => EmitBusy(e.FullPath);
             _busyWatcher.Renamed += (_, e) => EmitBusy(e.FullPath);
+
+            _waitingWatcher = new FileSystemWatcher(WaitingDir, "*.txt")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+            _waitingWatcher.Changed += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Created += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Renamed += (_, e) => EmitWaiting(e.FullPath);
 
             _sessionWatcher = new FileSystemWatcher(SessionDir, "*.txt")
             {
@@ -271,6 +290,32 @@ public sealed class AntigravityHookService : IDisposable
             && status.StartsWith("running", StringComparison.OrdinalIgnoreCase));
     }
 
+    private void EmitWaiting(string path)
+    {
+        var room = Path.GetFileNameWithoutExtension(path);
+        if (string.IsNullOrEmpty(room)) return;
+        var status = TryRead(path);
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            _ = ReEmitWaitingAfterSettleAsync(path, room);
+            return;
+        }
+        WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path, string room)
+    {
+        try
+        {
+            await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
+            var status = TryRead(path);
+            WaitingChoiceChanged?.Invoke(room,
+                !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+        }
+        catch { }
+    }
+
     private void EmitSession(string path)
     {
         var room = Path.GetFileNameWithoutExtension(path);
@@ -379,6 +424,7 @@ public sealed class AntigravityHookService : IDisposable
     public void Dispose()
     {
         _busyWatcher?.Dispose();
+        _waitingWatcher?.Dispose();
         _sessionWatcher?.Dispose();
         _staleTimer?.Dispose();
         _transcriptTimer?.Dispose();

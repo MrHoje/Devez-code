@@ -53,6 +53,11 @@
     <Content Include="Resources\Hooks\codex-hook.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- codex 권한/도구 전이 전용 경량 훅. 매 툴마다 PowerShell을 띄우지 않고
+         waiting 해제·busy 재무장만 빠르게 처리한다. -->
+    <Content Include="Resources\Hooks\codex-state-hook.cmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- grok 훅 스크립트. GrokHookInstaller 가 %LOCALAPPDATA%\DevezCode\grok\hook.ps1 로 재기록. -->
     <Content Include="Resources\Hooks\grok-hook.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -89,8 +89,8 @@ public partial class MainWindow : Window
     private readonly CodexHookService _codexHook = new();
     // grok — ~/.grok/hooks + 방별 상태 파일로 lastmsg/busy/session_id 추적 (codex 패턴).
     private readonly GrokHookService _grokHook = new();
-    // antigravity(agy) — hooks.json 훅(busy/conversation_id) + transcript_full.jsonl 폴링
-    // (빠른 idle 확정 + lastmsg). waiting(❗)만 미지원(권한 프롬프트 신호 없음).
+    // antigravity(agy) — hooks.json 훅(busy/waiting/conversation_id) + transcript_full.jsonl 폴링
+    // (빠른 idle 확정 + lastmsg). ask_question/ask_permission 은 waiting(❗)으로 분리한다.
     private readonly AntigravityHookService _antigravityHook = new();
     // 비-Claude 비-codex (opencode/gjc) 의 last prompt 추적. codex 는 위 훅 서비스가 처리.
     private readonly AgentLastMessageService _agentLastMsg = new();
@@ -364,10 +364,26 @@ public partial class MainWindow : Window
                 MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
-                if (s != null) s.IsBusy = busy;
+                if (s != null)
+                {
+                    s.IsBusy = busy;
+                    if (!busy) s.IsWaitingChoice = false;
+                }
                 NotifyIfSessionFinished(s, was, busy);
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
+            });
+        _codexHook.WaitingChoiceChanged += (roomId, waiting) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                MarkSessionActivity(roomId);
+                var s = FindSession(roomId);
+                bool wasWaiting = s?.IsWaitingChoice ?? false;
+                if (s != null) s.IsWaitingChoice = waiting;
+                // Codex 는 자동 승인으로 즉시 해소되는 PermissionRequest 도 내보낼 수 있다.
+                // ❗ 표시는 즉시 반영하되 OS 알림만 잠깐 유예해 불필요한 깜빡임을 막는다.
+                NotifyIfSessionWaiting(s, wasWaiting, waiting, notificationDelayMs: 1500);
+                UpdateSessionBusyDisplay();
             });
         _codexHook.CodexSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() =>
@@ -418,16 +434,30 @@ public partial class MainWindow : Window
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
 
-        // Antigravity(agy) — busy 스피너 + conversation_id 라이브 저장 (grok 패턴).
-        // waiting(❗)은 미지원(권한 프롬프트 신호 없음). lastmsg 는 transcript 폴링에서 추출.
+        // Antigravity(agy) — busy/선택지 대기 + conversation_id 라이브 저장 (grok 패턴).
+        // lastmsg 는 transcript 폴링에서 추출.
         _antigravityHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
                 MarkSessionActivity(roomId);
                 var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
-                if (s != null) s.IsBusy = busy;
+                if (s != null)
+                {
+                    s.IsBusy = busy;
+                    if (!busy) s.IsWaitingChoice = false;
+                }
                 NotifyIfSessionFinished(s, was, busy);
+                UpdateSessionBusyDisplay();
+            });
+        _antigravityHook.WaitingChoiceChanged += (roomId, waiting) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                MarkSessionActivity(roomId);
+                var s = FindSession(roomId);
+                bool wasWaiting = s?.IsWaitingChoice ?? false;
+                if (s != null) s.IsWaitingChoice = waiting;
+                NotifyIfSessionWaiting(s, wasWaiting, waiting);
                 UpdateSessionBusyDisplay();
             });
         _antigravityHook.SessionChanged += (roomId, sid) =>
@@ -483,7 +513,7 @@ public partial class MainWindow : Window
             StartBusyDisplaySync();
             _modelEffort.Start();
             _sessionLastMsg.Start();
-            // codex 훅 — 시작 시 스크립트/hooks.json 자동 설치. 사용자가 codex 첫 실행 시 trust 필요.
+            // codex 훅 — 시작 시 스크립트/hooks.json + 앱 소유 이벤트 신뢰 해시 자동 설치.
             CodexHookInstaller.EnsureScriptInstalled();
             CodexHookInstaller.InstallHooksJson();
             _codexHook.Start();
@@ -3693,6 +3723,7 @@ public partial class MainWindow : Window
     // emit 돼 가짜 완료기록이 찍힌다(직후 substart 가 running 재무장 → 스피너 재진입). 짧게 정착 대기 후
     // 그때도 여전히 idle 이면 진짜 완료로 기록한다. 정착 창 내 running 재무장 시 취소(레이스는 완료 아님).
     private readonly Dictionary<SessionItem, System.Windows.Threading.DispatcherTimer> _finishDebounce = new();
+    private readonly Dictionary<SessionItem, System.Windows.Threading.DispatcherTimer> _waitingNotificationDebounce = new();
     // 정착 창: 메인 Stop 훅 프로세스와 SubagentStart 훅 프로세스 발화 간극(보통 <1s)을 덮는다.
     // 이 시간이 지나면 SubagentStart 가 run 파일을 이미 썼을 것이므로 만료 시점의 파일시스템 진실이 확정적.
     private const int FinishSettleMs = 1200;
@@ -3751,9 +3782,41 @@ public partial class MainWindow : Window
         });
     }
 
-    private void NotifyIfSessionWaiting(SessionItem? s, bool wasWaiting, bool nowWaiting)
+    private void NotifyIfSessionWaiting(SessionItem? s, bool wasWaiting, bool nowWaiting, int notificationDelayMs = 0)
     {
-        if (s == null || wasWaiting || !nowWaiting) return;
+        if (s == null) return;
+        if (!nowWaiting)
+        {
+            if (_waitingNotificationDebounce.TryGetValue(s, out var pending))
+            {
+                pending.Stop();
+                _waitingNotificationDebounce.Remove(s);
+            }
+            return;
+        }
+        if (wasWaiting) return;
+        if (notificationDelayMs > 0)
+        {
+            if (_waitingNotificationDebounce.TryGetValue(s, out var existing)) existing.Stop();
+            var timer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(notificationDelayMs),
+            };
+            timer.Tick += (_, __) =>
+            {
+                timer.Stop();
+                _waitingNotificationDebounce.Remove(s);
+                if (s.IsWaitingChoice) EmitSessionWaiting(s);
+            };
+            _waitingNotificationDebounce[s] = timer;
+            timer.Start();
+            return;
+        }
+        EmitSessionWaiting(s);
+    }
+
+    private void EmitSessionWaiting(SessionItem s)
+    {
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
@@ -4475,12 +4538,14 @@ public partial class MainWindow : Window
     private static bool HasBusyOrWaitingTrackingFile(string? agentId, string roomId)
     {
         var agent = (agentId ?? "claude").Trim().ToLowerInvariant();
-        if (agent is not ("codex" or "opencode" or "grok")) return false;
+        if (agent is not ("codex" or "opencode" or "grok" or "antigravity")) return false;
         var safe = new string(roomId.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
         if (safe.Length == 0) return true;
         var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "DevezCode", agent);
-        return ReadState("busy") == "running" || ReadState("waiting") is "waiting" or "permission" or "input";
+        var busy = ReadState("busy");
+        return (busy?.StartsWith("running", StringComparison.Ordinal) ?? false)
+            || ReadState("waiting") is "waiting" or "permission" or "input";
 
         string? ReadState(string folder)
         {

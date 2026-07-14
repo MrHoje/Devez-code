@@ -1,8 +1,9 @@
 # DevezCode codex hook (UserPromptSubmit / Stop / SessionStart)
 # codex 훅 시스템: ~/.codex/hooks.json 에 등록. stdin 으로 JSON 받음.
 # 세션 추적은 $env:DEVEZCODE_ROOM_ID (앱이 ConPTY env 로 주입) 로 식별.
-# 동작: Claude 의 busy-hook.ps1 / room-hook.ps1 패턴 그대로 — 방별 파일 3종.
+# 동작: Claude 의 busy-hook.ps1 / room-hook.ps1 패턴 그대로 — 방별 파일 4종.
 #   busy\<room>.txt       = running|idle
+#   waiting\<room>.txt    = waiting|idle
 #   lastmsg\<room>.txt    = 마지막 user prompt (1줄 요약, 200자 제한)
 #   sessions\<room>.txt   = codex session_id (재오픈 시 --resume 용)
 
@@ -86,6 +87,12 @@ function Test-CurrentRoomSession($sid, $transcriptPath) {
     } catch { return $false }
 }
 
+function Write-Waiting([string]$status) {
+    $waitingDir = Join-Path $base 'waiting'
+    New-Item -ItemType Directory -Force -Path $waitingDir | Out-Null
+    Write-State (Join-Path $waitingDir ($roomSafe + '.txt')) $status
+}
+
 switch ($event) {
     'UserPromptSubmit' {
         # Memory Writing Agent 같은 내부 thread 도 부모 프로세스의 DEVEZCODE_ROOM_ID 를 상속하고
@@ -97,6 +104,7 @@ switch ($event) {
         $busyDir = Join-Path $base 'busy'
         New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
         Write-State (Join-Path $busyDir ($roomSafe + '.txt')) 'running'
+        Write-Waiting 'idle'
 
         # 2) 마지막 프롬프트 (1줄, 200자)
         $prompt = $j.prompt
@@ -116,6 +124,7 @@ switch ($event) {
         $busyDir = Join-Path $base 'busy'
         New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
         Write-State (Join-Path $busyDir ($roomSafe + '.txt')) 'idle'
+        Write-Waiting 'idle'
     }
     'SessionStart' {
         # codex session_id 기록 — 다음 실행 때 --resume <id> 로 이어가기.

@@ -6,7 +6,8 @@
 //
 // 진단 로그: %APPDATA%\DevezCode\opencode\plugin-debug.log
 //   - 플러그인 로드 시점, 첫 20개 event 의 type+구조, lastmsg 저장 성공/실패를 기록.
-export const DevezCodeRoomTracker = async () => {
+export const DevezCodeRoomTracker = async (_ctx) => {
+  const client = _ctx && _ctx.client;
   const room = process.env.DEVEZCODE_ROOM_ID;
   const fs = require("node:fs");
   const path = require("node:path");
@@ -33,12 +34,25 @@ export const DevezCodeRoomTracker = async () => {
 
   debug(`plugin loaded; DEVEZCODE_ROOM_ID=${room ? "set" : "EMPTY"} (safe=${safe})`);
 
+  // Every state/tracking write uses temp+rename. Direct writeFileSync truncates the
+  // destination first; if OpenCode exits in that window a permanent zero-byte file
+  // can leave the spinner or attention mark stuck until another event arrives.
+  const writeAtomic = (target, value) => {
+    const tmp = `${target}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+    try {
+      fs.writeFileSync(tmp, String(value));
+      fs.renameSync(tmp, target);
+    } finally {
+      try { fs.rmSync(tmp, { force: true }); } catch (e) {}
+    }
+  };
+
   const writeId = (id) => {
     try {
       if (!safe || !id) return;
       const dir = path.join(base, "DevezCode", "opencode", "sessions");
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, safe + ".txt"), String(id));
+      writeAtomic(path.join(dir, safe + ".txt"), String(id));
     } catch (e) { debug(`writeId failed: ${e.message}`); }
   };
 
@@ -72,7 +86,7 @@ export const DevezCodeRoomTracker = async () => {
       if (!safe) return;
       const dir = path.join(base, "DevezCode", "opencode", "busy");
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, safe + ".txt"), state);
+      writeAtomic(path.join(dir, safe + ".txt"), state);
       debug(`busy=${state}`);
     } catch (e) { debug(`writeBusy failed: ${e.message}`); }
   };
@@ -98,7 +112,7 @@ export const DevezCodeRoomTracker = async () => {
       if (!safe) return;
       const dir = path.join(base, "DevezCode", "opencode", "waiting");
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, safe + ".txt"), state);
+      writeAtomic(path.join(dir, safe + ".txt"), state);
       debug(`waiting=${state}`);
     } catch (e) { debug(`writeWaiting failed: ${e.message}`); }
   };
@@ -113,7 +127,7 @@ export const DevezCodeRoomTracker = async () => {
       let compact = String(text).replace(/\s+/g, " ").trim();
       if (compact.length > 200) compact = compact.substring(0, 200);
       if (compact) {
-        fs.writeFileSync(path.join(dir, safe + ".txt"), compact);
+        writeAtomic(path.join(dir, safe + ".txt"), compact);
         debug(`lastmsg saved (${compact.length} chars)`);
       }
     } catch (e) { debug(`writeLastmsg failed: ${e.message}`); }
@@ -126,7 +140,7 @@ export const DevezCodeRoomTracker = async () => {
       if (!safe) return;
       const dir = path.join(base, "DevezCode", "opencode", "lastreply");
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, safe + ".txt"), String(text || ""));
+      writeAtomic(path.join(dir, safe + ".txt"), String(text || ""));
     } catch (e) { debug(`writeLastreply failed: ${e.message}`); }
   };
 
@@ -141,7 +155,7 @@ export const DevezCodeRoomTracker = async () => {
       if (!safe) return;
       const dir = path.join(base, "DevezCode", "opencode", "lastmsg");
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, safe + ".txt"), "");
+      writeAtomic(path.join(dir, safe + ".txt"), "");
       debug("lastmsg cleared (new session)");
     } catch (e) { debug(`clearLastmsg failed: ${e.message}`); }
   };
@@ -150,6 +164,49 @@ export const DevezCodeRoomTracker = async () => {
   // user prompt 텍스트를 따로 떨어뜨릴 때 부모가 user 인지 빠르게 판별하는 데 쓴다.
   // (opencode 1.17.x 는 message.updated 의 info 에 role 이 있고 텍스트는 별도 part 이벤트로 흐름)
   const messageRole = {};
+
+  // oh-my-opencode style tools spawn child sessions that emit the same idle,
+  // permission and message events as the room's root session. Filter them so a
+  // child completion cannot turn off the parent's spinner or overwrite its prompt.
+  // Older OpenCode versions may call the plugin factory without a client; in that
+  // compatibility mode preserve the old behavior instead of dropping every event.
+  const childSessionById = new Map();
+  let warnedChildLookup = false;
+  const isChildSession = async (sessionID) => {
+    if (!sessionID || !client || !client.session || !client.session.list) return false;
+    if (childSessionById.has(sessionID)) return childSessionById.get(sessionID);
+    try {
+      const result = await client.session.list();
+      const sessions = Array.isArray(result && result.data) ? result.data :
+        (Array.isArray(result) ? result : []);
+      const session = sessions.find((entry) => entry && entry.id === sessionID);
+      // session.created can race the SDK list update. Do not cache an unknown id
+      // as root forever; the next event will retry after the list settles.
+      if (!session) return false;
+      const isChild = !!(session && session.parentID);
+      if (childSessionById.size >= 128) {
+        const first = childSessionById.keys().next().value;
+        if (first !== undefined) childSessionById.delete(first);
+      }
+      childSessionById.set(sessionID, isChild);
+      return isChild;
+    } catch (e) {
+      // With a modern SDK, fail closed for status accuracy: an unknown child idle
+      // is more damaging than dropping one transient event. A later event retries.
+      if (!warnedChildLookup) {
+        warnedChildLookup = true;
+        debug(`child session lookup failed: ${e && e.message ? e.message : e}`);
+      }
+      return true;
+    }
+  };
+
+  const eventSessionId = (type, props) => {
+    const info = props.info || {};
+    const part = props.part || {};
+    return props.sessionID || info.sessionID || part.sessionID ||
+      ((type === "session.created" || type === "session.updated" || type === "session.deleted") ? info.id : null);
+  };
 
   // user message 의 parts 들에서 text 추출. opencode export JSON 의 part 구조와 동일.
   const extractTextFromParts = (parts) => {
@@ -166,7 +223,7 @@ export const DevezCodeRoomTracker = async () => {
       if (!safe) return;
       const dir = path.join(base, "DevezCode", "opencode", "todos");
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, safe + ".json"), JSON.stringify(todos, null, 2));
+      writeAtomic(path.join(dir, safe + ".json"), JSON.stringify(todos, null, 2));
       debug(`todos saved (${Array.isArray(todos) ? todos.length : 0} items)`);
     } catch (e) { debug(`writeTodos failed: ${e.message}`); }
   };
@@ -181,38 +238,60 @@ export const DevezCodeRoomTracker = async () => {
       try {
         if (!event || !event.type) return;
         const props = event.properties || {};
+        const t = event.type;
 
         const info = props.info || {};
         const part = props.part || {};
-        const eventSessionId = props.sessionID || info.sessionID || part.sessionID || null;
 
-        // 선택지(ask) 응답 대기 ❗ — opencode 는 'question.asked' 로 사용자 선택지를 띄운다.
-        // 대기 진입 시 waiting 파일에 기록. 대기 중에는 이벤트가 흐르지 않으므로(블록), 답하면 generation
-        // 재개(message.part.updated reasoning/text) 또는 턴 종료(session.idle)에서 해제한다.
+        // Cache the role before the async child-session lookup. OpenCode emits
+        // message.updated and message.part.updated back-to-back; awaiting first
+        // would let the part race ahead and lose its user/assistant identity.
+        if (t === "message.updated") {
+          const info = props.info || {};
+          if (info.id && info.role) messageRole[info.id] = info.role;
+        }
+
+        const sessionID = eventSessionId(t, props);
+
+        // Prefer parentID carried by created/updated (works on old SDKs), then
+        // use the client lookup for child events that arrive without creation.
+        if (t === "session.created" || t === "session.updated") {
+          if (!acceptRootSession(info)) return;
+        } else {
+          if (!isRootSession(sessionID)) return;
+          if (sessionID && await isChildSession(sessionID)) return;
+        }
+
+        // 선택지와 툴 권한은 모두 실제 사용자 입력 경계다. lastStatus/busy는
+        // 건드리지 않아 답변 뒤 session.status busy가 정상적으로 작업을 재무장한다.
+        if (t === "question.asked" || t === "permission.asked") { setWaiting(); return; }
         // [진단] session.* / message.updated / message.part.updated 만 항상 로깅(노이즈 제외).
         // 실제 한 턴 동안 어떤 event 가 어떤 순서/sessionID/role/completed 로 흐르는지 확보용.
-        const t = event.type;
         const logPart = t === "message.part.updated" && partEvLogged < PART_EV_LOG_MAX;
         if (t.startsWith("session.") || t === "message.updated" || logPart) {
           if (logPart) partEvLogged++;
-          const sid = eventSessionId || "?";
+          const sid = sessionID || "?";
           const role = info.role || messageRole[part.messageID] || "-";
           const done = info.time && info.time.completed ? "completed" : "-";
           debug(`EV ${t} sid=${sid} role=${role} time=${done}` +
                  (part.type ? ` partType=${part.type}` : ""));
         }
 
-        if (event.type === "session.created" || event.type === "session.updated") {
-          if (!acceptRootSession(info)) return;
-        } else if (!isRootSession(eventSessionId)) {
-          return;
-        }
-
-        if (event.type === "question.asked") { setWaiting(); return; }
-
         // todowrite 업데이트 — 태스크 목록을 JSON 파일로 기록. DevezCode Task View 에서 사용.
         if (event.type === "todo.updated") {
           writeTodos(props.todos);
+        }
+        // OpenCode 1.17+의 권위 있는 재개 신호. 중간 session.idle 뒤 busy/retry가
+        // 오면 2.5초 idle 타이머를 취소해 작업 중 스피너가 꺼지는 것을 막는다.
+        if (event.type === "session.status") {
+          const statusType = (props.status && props.status.type) ||
+            (event.status && event.status.type) || null;
+          if (statusType === "busy" || statusType === "retry") {
+            clearWaiting();
+            setRunning();
+          } else if (statusType === "idle") {
+            scheduleIdle();
+          }
         }
         // 세션 처리 종료 신호 → 스피너 끄기. session.idle = 응답 완료, session.error = 실패.
         if (event.type === "session.idle" || event.type === "session.error") {
@@ -228,7 +307,7 @@ export const DevezCodeRoomTracker = async () => {
             if (safe && delId) {
               const p = path.join(base, "DevezCode", "opencode", "sessions", safe + ".txt");
               if (fs.existsSync(p) && fs.readFileSync(p, "utf8").trim() === String(delId)) {
-                fs.writeFileSync(p, "");
+                writeAtomic(p, "");
                 debug(`tracked session cleared (deleted: ${delId})`);
               }
             }
@@ -279,6 +358,7 @@ export const DevezCodeRoomTracker = async () => {
     "chat.message": async (input) => {
       try {
         if (!isRootSession(input && input.sessionID)) return;
+        if (input && input.sessionID && await isChildSession(input.sessionID)) return;
         if (input && input.sessionID) writeId(input.sessionID);
         if (input && input.message && input.message.role === "user") {
           // chat.message 는 message.updated 와 동시 또는 직전에 옴 → role 캐시도 함께 갱신.

@@ -15,16 +15,20 @@ public sealed class CodexHookService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "codex");
     private static string LastmsgDir => Path.Combine(BaseDir, "lastmsg");
     private static string BusyDir => Path.Combine(BaseDir, "busy");
+    private static string WaitingDir => Path.Combine(BaseDir, "waiting");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
 
     private FileSystemWatcher? _lastmsgWatcher;
     private FileSystemWatcher? _busyWatcher;
+    private FileSystemWatcher? _waitingWatcher;
     private FileSystemWatcher? _sessionWatcher;
 
     /// <summary>(roomId, message) — 마지막 user prompt (1줄 요약, 200자).</summary>
     public event Action<string, string>? MessageChanged;
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중 (스피너).</summary>
     public event Action<string, bool>? BusyChanged;
+    /// <summary>(roomId, waiting) — 권한/선택지 입력 대기 중(❗).</summary>
+    public event Action<string, bool>? WaitingChoiceChanged;
     /// <summary>(roomId, codexSessionId) — codex session_id 갱신. TerminalSessionManager 가 다음 --resume 에 사용.</summary>
     public event Action<string, string>? CodexSessionChanged;
 
@@ -34,10 +38,13 @@ public sealed class CodexHookService : IDisposable
         {
             Directory.CreateDirectory(LastmsgDir);
             Directory.CreateDirectory(BusyDir);
+            Directory.CreateDirectory(WaitingDir);
             Directory.CreateDirectory(SessionDir);
 
             // 앱 재시작 시 stale busy=running 이 남아 스피너가 영원히 도는 것 방지 (SessionBusyService 와 동일)
             foreach (var f in Directory.EnumerateFiles(BusyDir, "*.txt"))
+                try { File.Delete(f); } catch { }
+            foreach (var f in Directory.EnumerateFiles(WaitingDir, "*.txt"))
                 try { File.Delete(f); } catch { }
             // 세션 ID 는 보존 — 재오픈 시 이어가야 하므로 삭제 X
 
@@ -59,6 +66,15 @@ public sealed class CodexHookService : IDisposable
             _busyWatcher.Changed += (_, e) => EmitBusy(e.FullPath);
             _busyWatcher.Created += (_, e) => EmitBusy(e.FullPath);
             _busyWatcher.Renamed += (_, e) => EmitBusy(e.FullPath);
+
+            _waitingWatcher = new FileSystemWatcher(WaitingDir, "*.txt")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+            _waitingWatcher.Changed += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Created += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Renamed += (_, e) => EmitWaiting(e.FullPath);
 
             _sessionWatcher = new FileSystemWatcher(SessionDir, "*.txt")
             {
@@ -112,6 +128,32 @@ public sealed class CodexHookService : IDisposable
         catch { /* fire-and-forget — 재읽기 실패해도 앱 영향 없음 */ }
     }
 
+    private void EmitWaiting(string path)
+    {
+        var room = Path.GetFileNameWithoutExtension(path);
+        if (string.IsNullOrEmpty(room)) return;
+        var status = TryRead(path);
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            _ = ReEmitWaitingAfterSettleAsync(path, room);
+            return;
+        }
+        WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path, string room)
+    {
+        try
+        {
+            await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
+            var status = TryRead(path);
+            WaitingChoiceChanged?.Invoke(room,
+                !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+        }
+        catch { /* best effort */ }
+    }
+
     private void EmitSession(string path)
     {
         var room = Path.GetFileNameWithoutExtension(path);
@@ -145,6 +187,7 @@ public sealed class CodexHookService : IDisposable
     {
         _lastmsgWatcher?.Dispose();
         _busyWatcher?.Dispose();
+        _waitingWatcher?.Dispose();
         _sessionWatcher?.Dispose();
     }
 }

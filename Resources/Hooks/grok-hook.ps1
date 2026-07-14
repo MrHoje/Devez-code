@@ -142,12 +142,53 @@ switch -Regex ($eventKey) {
         }
     }
     '^(notification)$' {
-        $notice = "$($j.notification_type) $($j.type) $($j.message) $($env:GROK_EVENT) $($env:GROK_MESSAGE)".ToLowerInvariant()
-        if ($notice -match '(approval|required|permission|input|prompt)') {
+        $noticeType = $j.notificationType
+        if (-not $noticeType) { $noticeType = $j.notification_type }
+        if (-not $noticeType) { $noticeType = $j.type }
+        $noticeMessage = [string]$j.message
+        if (-not $noticeMessage) { $noticeMessage = [string]$env:GROK_MESSAGE }
+        $noticeLevel = [string]$j.level
+        $typeKey = ([string]$noticeType -replace '[_\-]', '').ToLowerInvariant()
+        $messageKey = $noticeMessage.Trim().ToLowerInvariant()
+        $levelKey = $noticeLevel.Trim().ToLowerInvariant()
+
+        # Grok sends this informational notification before every tool even when
+        # permissions are bypassed/auto-approved. It is progress, not human input.
+        if (($typeKey -eq 'permissionprompt' -or $messageKey -eq 'tool permission requested') -and
+            (-not $levelKey -or $levelKey -eq 'info')) {
+            exit 0
+        }
+
+        # Interrupt/return-to-prompt fallback: some Grok paths emit no Stop but do
+        # announce the input prompt again.
+        if ($messageKey -match '(type your message|enter send|shift-tab normal)') {
+            Write-Busy 'idle'
+            Write-Waiting 'idle'
+            exit 0
+        }
+
+        $permissionNotice = (
+            $typeKey -eq 'permissionprompt' -or
+            $messageKey -match '(permission|approval|approve|user input|needs your|requires your|feedback|clarif|question)'
+        )
+        if ($permissionNotice) {
+            Write-Busy 'running'
             Write-Waiting 'waiting'
         }
     }
-    '^(pretooluse|posttooluse|posttoolusefailure)$' {
+    '^(pretooluse)$' {
+        $toolName = $j.toolName
+        if (-not $toolName) { $toolName = $j.tool_name }
+        if (-not $toolName) { $toolName = $j.name }
+        $toolKey = ([string]$toolName -replace '[^a-zA-Z0-9]', '').ToLowerInvariant()
+        Write-Busy 'running'
+        # ask_user_question is auto-allowed and therefore arrives as PreToolUse,
+        # not PermissionRequest/Notification. This is the real human-input boundary.
+        if ($toolKey -eq 'askuserquestion') { Write-Waiting 'waiting' }
+        else { Write-Waiting 'idle' }
+    }
+    '^(posttooluse|posttoolusefailure)$' {
+        Write-Busy 'running'
         Write-Waiting 'idle'
     }
     '^(stop|stopfailure)$' {

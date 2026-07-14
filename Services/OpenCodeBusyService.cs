@@ -41,6 +41,7 @@ public sealed class OpenCodeBusyService : IDisposable
             };
             _watcher.Changed += (_, e) => Emit(e.FullPath);
             _watcher.Created += (_, e) => Emit(e.FullPath);
+            _watcher.Renamed += (_, e) => Emit(e.FullPath);
 
             _waitingWatcher?.Dispose();
             _waitingWatcher = new FileSystemWatcher(WaitingDir, "*.txt")
@@ -50,6 +51,7 @@ public sealed class OpenCodeBusyService : IDisposable
             };
             _waitingWatcher.Changed += (_, e) => EmitWaiting(e.FullPath);
             _waitingWatcher.Created += (_, e) => EmitWaiting(e.FullPath);
+            _waitingWatcher.Renamed += (_, e) => EmitWaiting(e.FullPath);
         }
         catch { /* 감시 실패해도 앱은 계속 — 스피너만 안 뜸 */ }
     }
@@ -60,9 +62,8 @@ public sealed class OpenCodeBusyService : IDisposable
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
         if (status == null) return;
-        // 쓰기(writeFileSync)가 파일을 truncate 하는 찰나에 watcher 가 빈 파일을 읽으면 idle 로 오인돼
-        // 가짜 "응답 완료" 알림이 뜬다(SessionBusyService 와 동일 경합). busy 파일은 정상값이 빈 적이 없으므로 무시.
-        if (string.IsNullOrWhiteSpace(status)) return;
+        // 구버전 플러그인의 직접 writeFileSync가 남긴 0바이트 파일도 복구한다.
+        if (string.IsNullOrWhiteSpace(status)) { _ = ReEmitBusyAfterSettleAsync(path, room); return; }
         BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -71,8 +72,34 @@ public sealed class OpenCodeBusyService : IDisposable
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
         var status = TryRead(path);
-        if (string.IsNullOrWhiteSpace(status)) return; // truncate 찰나의 빈 읽기 무시
+        if (string.IsNullOrWhiteSpace(status)) { _ = ReEmitWaitingAfterSettleAsync(path, room); return; }
         WaitingChoiceChanged?.Invoke(room, status.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async System.Threading.Tasks.Task ReEmitBusyAfterSettleAsync(string path, string room)
+    {
+        try
+        {
+            await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
+            var status = TryRead(path);
+            BusyChanged?.Invoke(room,
+                !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("running", StringComparison.OrdinalIgnoreCase));
+        }
+        catch { }
+    }
+
+    private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path, string room)
+    {
+        try
+        {
+            await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
+            var status = TryRead(path);
+            WaitingChoiceChanged?.Invoke(room,
+                !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("waiting", StringComparison.OrdinalIgnoreCase));
+        }
+        catch { }
     }
 
     private static string? TryRead(string path)

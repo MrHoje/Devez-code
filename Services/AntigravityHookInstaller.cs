@@ -11,11 +11,11 @@ namespace DevezCode.Services;
 
 /// <summary>안티그래비티(agy) 훅(antigravity-hook.cmd) 설치/유지.
 /// 1) 배치를 %LOCALAPPDATA%\DevezCode\antigravity\hook.cmd 에 항상 최신본으로 기록.
-/// 2) ~/.gemini/config/hooks.json 에 SessionStart/PreToolUse/PostToolUse/Stop/SessionEnd 등록(merge).
+/// 2) ~/.gemini/config/hooks.json 에 구·신버전 수명주기 이벤트를 함께 등록(merge).
 /// PowerShell 대신 cmd 배치인 이유(실측 2026-07-13): agy 는 훅 프로세스를 기다리지 않고 조기
 /// 취소할 수 있어(--print 의 SessionStart/Stop) 기동 ~수백ms 인 powershell 은 실행 전에 죽는다.
 /// 이벤트명은 stdin JSON 에 없어 배치 인자(%1)로 전달한다.
-/// 주의: agy 에는 UserPromptSubmit 훅이 없다 — busy-ON 은 PreToolUse/PostToolUse 가 담당.</summary>
+/// 주의: agy 에는 UserPromptSubmit 훅이 없다 — 구버전은 Tool 이벤트, 신버전은 Invocation 이벤트도 활용.</summary>
 public static class AntigravityHookInstaller
 {
     public static string ScriptInstallPath => Path.Combine(
@@ -37,7 +37,7 @@ public static class AntigravityHookInstaller
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini", "antigravity-cli", "hooks.json");
 
     private static readonly string[] HookEventNames =
-        { "SessionStart", "PreToolUse", "PostToolUse", "Stop", "SessionEnd" };
+        { "SessionStart", "PreInvocation", "PostInvocation", "PreToolUse", "PostToolUse", "Stop", "SessionEnd" };
 
     public static string ReadEmbeddedScript()
     {
@@ -92,6 +92,7 @@ public static class AntigravityHookInstaller
 
             foreach (var eventName in HookEventNames)
                 EnsureOurHook(hooksObj, eventName, BuildHookCommand(eventName));
+            RemoveStaleManagedHooks(hooksObj);
 
             var opts = new JsonSerializerOptions { WriteIndented = true };
             File.WriteAllText(HooksJsonPath, root.ToJsonString(opts), new UTF8Encoding(false));
@@ -171,6 +172,7 @@ public static class AntigravityHookInstaller
         var firstHook = (JsonObject)firstHooks[first.HookIndex]!;
         firstHook["type"] = "command";
         firstHook["command"] = command;
+        firstHook["timeout"] = 10;
 
         for (int i = locations.Count - 1; i >= 1; i--)
         {
@@ -192,7 +194,36 @@ public static class AntigravityHookInstaller
         if (string.IsNullOrWhiteSpace(command)) return false;
         var normalizedCommand = command.Replace('/', '\\');
         var normalizedPath = ScriptInstallPath.Replace('/', '\\');
-        return normalizedCommand.Contains(normalizedPath, StringComparison.OrdinalIgnoreCase);
+        var normalizedSafePath = ToArgSafePath(ScriptInstallPath).Replace('/', '\\');
+        var normalizedLegacyPath = LegacyPs1Path.Replace('/', '\\');
+        var normalizedLegacySafePath = ToArgSafePath(LegacyPs1Path).Replace('/', '\\');
+        return normalizedCommand.Contains(normalizedPath, StringComparison.OrdinalIgnoreCase)
+            || normalizedCommand.Contains(normalizedSafePath, StringComparison.OrdinalIgnoreCase)
+            || normalizedCommand.Contains(normalizedLegacyPath, StringComparison.OrdinalIgnoreCase)
+            || normalizedCommand.Contains(normalizedLegacySafePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>예전 버전이 더 이상 관리하지 않는 이벤트에 남긴 우리 명령만 제거한다.
+    /// 사용자/다른 플러그인의 훅과 현재 이벤트의 배열 위치는 보존한다.</summary>
+    private static void RemoveStaleManagedHooks(JsonObject hooksObj)
+    {
+        var managedEvents = new HashSet<string>(HookEventNames, StringComparer.Ordinal);
+        foreach (var eventName in hooksObj.Select(p => p.Key).ToList())
+        {
+            if (managedEvents.Contains(eventName) || hooksObj[eventName] is not JsonArray entries) continue;
+            for (int entryIndex = entries.Count - 1; entryIndex >= 0; entryIndex--)
+            {
+                if (entries[entryIndex] is not JsonObject entry || entry["hooks"] is not JsonArray inner) continue;
+                for (int hookIndex = inner.Count - 1; hookIndex >= 0; hookIndex--)
+                {
+                    if (inner[hookIndex] is JsonObject hook &&
+                        IsOurHookCommand(hook["command"]?.GetValue<string>()))
+                        inner.RemoveAt(hookIndex);
+                }
+                if (inner.Count == 0) entries.RemoveAt(entryIndex);
+            }
+            if (entries.Count == 0) hooksObj.Remove(eventName);
+        }
     }
 
     public static void EnsureInstalled()

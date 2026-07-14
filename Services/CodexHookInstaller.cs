@@ -2,7 +2,9 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -10,13 +12,16 @@ using System.Text.RegularExpressions;
 namespace DevezCode.Services;
 
 /// <summary>codex 훅(codex-hook.ps1) 을 사용자 머신에 설치/유지.
-/// 1) 스크립트 본문을 %LOCALAPPDATA%\DevezCode\codex\hook.ps1 에 항상 최신본으로 기록 (앱 시작 시).
-/// 2) ~/.codex/hooks.json 의 UserPromptSubmit / Stop / SessionStart 이벤트에 우리 훅을 등록
+/// 1) 스크립트 본문을 %LOCALAPPDATA%\DevezCode\codex\ 에 항상 최신본으로 기록 (앱 시작 시).
+/// 2) ~/.codex/hooks.json 의 세션·턴·권한·도구 이벤트에 우리 훅을 등록
 ///    (다른 훅은 보존 — merge).</summary>
 public static class CodexHookInstaller
 {
     public static string ScriptInstallPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "codex", "hook.ps1");
+
+    public static string FastStateScriptInstallPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "codex", "state-hook.cmd");
 
     public static string CodexHooksJsonPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "hooks.json");
@@ -24,14 +29,19 @@ public static class CodexHookInstaller
     public static string CodexConfigTomlPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "config.toml");
 
-    private static readonly string[] HookEventNames = { "UserPromptSubmit", "Stop", "SessionStart" };
+    private static readonly string[] HookEventNames =
+        { "SessionStart", "UserPromptSubmit", "PermissionRequest", "PreToolUse", "PostToolUse", "Stop" };
 
     private static readonly Regex HookStateHeaderRegex = new(
         @"^\s*\[hooks\.state\.'(?<key>[^']+)'\]\s*(?:#.*)?$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex DisabledStateRegex = new(
-        @"^(?<prefix>\s*enabled\s*=\s*)false(?<suffix>\s*(?:#.*)?)$",
+    private static readonly Regex EnabledStateRegex = new(
+        @"^(?<prefix>\s*enabled\s*=\s*)(?<value>true|false)(?<suffix>\s*(?:#.*)?)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex TrustedHashRegex = new(
+        @"^(?<prefix>\s*trusted_hash\s*=\s*)""(?<value>[^""]*)""(?<suffix>\s*(?:#.*)?)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>임베디드 리소스(Resources\Hooks\codex-hook.ps1) 의 내용을 읽어 반환.</summary>
@@ -56,6 +66,13 @@ public static class CodexHookInstaller
         return File.ReadAllText(ScriptInstallPath);
     }
 
+    private static string ReadFastStateScript()
+    {
+        var src = Path.Combine(AppContext.BaseDirectory, "Resources", "Hooks", "codex-state-hook.cmd");
+        if (File.Exists(src)) return File.ReadAllText(src);
+        return File.ReadAllText(FastStateScriptInstallPath);
+    }
+
     /// <summary>스크립트를 ScriptInstallPath 에 기록. 매 시작 시 호출해도 동일 내용이라 noop.</summary>
     public static void EnsureScriptInstalled()
     {
@@ -65,6 +82,9 @@ public static class CodexHookInstaller
             var content = ReadEmbeddedScript();
             if (!File.Exists(ScriptInstallPath) || File.ReadAllText(ScriptInstallPath) != content)
                 File.WriteAllText(ScriptInstallPath, content, new UTF8Encoding(false));
+            var fastContent = ReadFastStateScript();
+            if (!File.Exists(FastStateScriptInstallPath) || File.ReadAllText(FastStateScriptInstallPath) != fastContent)
+                File.WriteAllText(FastStateScriptInstallPath, fastContent, new UTF8Encoding(false));
         }
         catch { /* 권한 부족 등 — 무시 */ }
     }
@@ -77,13 +97,12 @@ public static class CodexHookInstaller
             if (!File.Exists(CodexHooksJsonPath)) return false;
             var root = JsonNode.Parse(File.ReadAllText(CodexHooksJsonPath));
             if (root?["hooks"] is not JsonObject hooksObj) return false;
-            var hookCommand = BuildHookCommand();
-            return HookEventNames.All(eventName => HasOurHook(hooksObj, eventName, hookCommand));
+            return HookEventNames.All(eventName => HasOurHook(hooksObj, eventName, BuildHookCommand(eventName)));
         }
         catch { return false; }
     }
 
-    /// <summary>~/.codex/hooks.json 에 UserPromptSubmit / Stop / SessionStart 훅을 등록 (merge).
+    /// <summary>~/.codex/hooks.json 에 상태 추적 훅을 등록 (merge).
     /// 다른 이벤트/훅은 보존됨. 성공 시 true.</summary>
     public static bool InstallHooksJson()
     {
@@ -107,7 +126,7 @@ public static class CodexHookInstaller
             }
             catch { root = JsonNode.Parse("{}"); }
 
-            if (root == null) root = JsonNode.Parse("{}");
+            root ??= new JsonObject();
 
             // root.hooks 객체 보장
             if (root["hooks"] is not JsonObject hooksObj)
@@ -117,31 +136,34 @@ public static class CodexHookInstaller
             }
 
             // 우리 커맨드 — 절대경로 (공백 있어도 안전)
-            var hookCommand = BuildHookCommand();
-
-            // 3개 이벤트에 등록. 구버전 command 가 있으면 같은 위치에서 최신 command 로 교체해
+            // 이벤트별 훅 등록. 구버전 command 가 있으면 같은 위치에서 최신 command 로 교체해
             // 기존 PC 에 옛 훅+새 훅이 중복 등록되지 않게 한다.
             foreach (var eventName in HookEventNames)
-                EnsureOurHook(hooksObj, eventName, hookCommand);
+                EnsureOurHook(hooksObj, eventName, BuildHookCommand(eventName));
 
             var opts = new JsonSerializerOptions { WriteIndented = true };
             File.WriteAllText(CodexHooksJsonPath, root.ToJsonString(opts), new UTF8Encoding(false));
 
-            // Codex 는 훅별 활성 상태를 config.toml 의 [hooks.state.'...'] 에 따로 저장한다.
-            // hooks.json 에 command 가 멀쩡히 있어도 여기서 enabled=false 면 해당 이벤트만 조용히
-            // 실행되지 않는다. 앱이 소유한 훅만 찾아 매 시작/세션 실행 때 재활성화한다.
-            return EnsureOurHookStatesEnabled(hooksObj, hookCommand);
+            // Codex 는 훅별 활성/신뢰 상태를 config.toml 의 [hooks.state.'...'] 에 따로 저장한다.
+            // command가 멀쩡해도 trusted_hash가 없거나 enabled=false면 실행되지 않으므로,
+            // 앱 소유 훅만 찾아 매 시작/세션 실행 때 신뢰·활성 상태를 보장한다.
+            return EnsureOurHookStatesTrusted(hooksObj);
         }
         catch { return false; }
     }
 
-    private static string BuildHookCommand()
+    private static string BuildHookCommand(string eventName)
         // -WindowStyle Hidden 금지: codex(Rust)는 훅 프로세스를 부모 콘솔을 상속해 스폰한다.
         // 상속된 powershell 에 -WindowStyle Hidden 을 주면 ShowWindow(GetConsoleWindow(), SW_HIDE) 가
         // '공유' 콘솔(외부 터미널 창)에 적용돼 세션 창이 최소화/숨김된다(프롬프트 전송·응답 완료 시점).
         // 콘솔을 상속하므로 새 창이 뜨지 않아 Hidden 없이도 flash 가 없고, DevezCode ConPTY(헤드리스)
         // 에서도 창이 없어 무해하다. (claude 는 windowsHide 로 스폰돼 Hidden 이 no-op 이라 영향 없었음.)
-        => $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{ScriptInstallPath}\"";
+        => eventName switch
+        {
+            "PermissionRequest" => $"\"{FastStateScriptInstallPath}\" waiting",
+            "PreToolUse" or "PostToolUse" => $"\"{FastStateScriptInstallPath}\" working",
+            _ => $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{ScriptInstallPath}\"",
+        };
 
     /// <summary>
     /// 이벤트 안의 DevezCode 훅을 최신 command 로 유지한다. command 옵션이 다른 구버전도
@@ -215,7 +237,9 @@ public static class CodexHookInstaller
         if (string.IsNullOrWhiteSpace(command)) return false;
         var normalizedCommand = command.Replace('/', '\\');
         var normalizedPath = ScriptInstallPath.Replace('/', '\\');
-        return normalizedCommand.Contains(normalizedPath, StringComparison.OrdinalIgnoreCase);
+        var normalizedFastPath = FastStateScriptInstallPath.Replace('/', '\\');
+        return normalizedCommand.Contains(normalizedPath, StringComparison.OrdinalIgnoreCase)
+            || normalizedCommand.Contains(normalizedFastPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasOurHook(JsonObject hooksObj, string eventName, string command)
@@ -238,9 +262,9 @@ public static class CodexHookInstaller
     }
 
     /// <summary>현재 hooks.json 배열 위치를 기준으로 우리 훅의 config.toml state key 를 계산한다.</summary>
-    private static HashSet<string> FindOurHookStateKeys(JsonObject hooksObj, string command)
+    private static Dictionary<string, string> FindOurHookStates(JsonObject hooksObj)
     {
-        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var states = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var eventName in HookEventNames)
         {
             if (hooksObj[eventName] is not JsonArray entries) continue;
@@ -251,62 +275,128 @@ public static class CodexHookInstaller
                 for (int hookIndex = 0; hookIndex < inner.Count; hookIndex++)
                 {
                     if (inner[hookIndex] is not JsonObject hook ||
-                        hook["command"]?.GetValue<string>() != command) continue;
+                        hook["command"]?.GetValue<string>() != BuildHookCommand(eventName)) continue;
                     var stateEvent = ToHookStateEventName(eventName);
-                    keys.Add(NormalizeHookStateKey(
-                        $"{CodexHooksJsonPath}:{stateEvent}:{entryIndex}:{hookIndex}"));
+                    var key = NormalizeHookStateKey(
+                        $"{CodexHooksJsonPath}:{stateEvent}:{entryIndex}:{hookIndex}");
+                    states[key] = ComputeTrustedHash(stateEvent, BuildHookCommand(eventName));
                 }
             }
         }
-        return keys;
+        return states;
     }
 
     /// <summary>
-    /// Codex 가 config.toml 에 명시적으로 비활성화한 DevezCode 훅만 enabled=true 로 복구한다.
-    /// 다른 사용자/플러그인 훅의 상태와 trusted_hash 는 건드리지 않는다.
+    /// Codex 0.129+는 config.toml의 이벤트별 trusted_hash가 없으면 훅을 실행하지 않는다.
+    /// 앱이 직접 설치한 DevezCode 훅만 Codex와 같은 정규화/해시 규칙으로 신뢰 등록하고,
+    /// 사용자·다른 플러그인 훅의 상태와 해시는 건드리지 않는다.
     /// </summary>
-    private static bool EnsureOurHookStatesEnabled(JsonObject hooksObj, string command)
+    private static bool EnsureOurHookStatesTrusted(JsonObject hooksObj)
     {
         try
         {
-            if (!File.Exists(CodexConfigTomlPath)) return true;
-            var ourStateKeys = FindOurHookStateKeys(hooksObj, command);
-            if (ourStateKeys.Count == 0) return false;
+            var ourStates = FindOurHookStates(hooksObj);
+            if (ourStates.Count == 0) return false;
 
-            var raw = File.ReadAllText(CodexConfigTomlPath);
+            var raw = File.Exists(CodexConfigTomlPath) ? File.ReadAllText(CodexConfigTomlPath) : "";
             var newline = raw.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-            var lines = raw.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-            string? activeStateKey = null;
+            var lines = raw.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
+            if (lines.Count == 1 && lines[0].Length == 0) lines.Clear();
+            var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var insertions = new List<(int Index, List<string> Lines)>();
             bool changed = false;
 
-            for (int i = 0; i < lines.Length; i++)
+            for (int i = 0; i < lines.Count; i++)
             {
                 var header = HookStateHeaderRegex.Match(lines[i]);
-                if (header.Success)
+                if (!header.Success) continue;
+                var key = NormalizeHookStateKey(header.Groups["key"].Value);
+                if (!ourStates.TryGetValue(key, out var expectedHash)) continue;
+                found.Add(key);
+
+                int end = i + 1;
+                while (end < lines.Count && !lines[end].TrimStart().StartsWith("[", StringComparison.Ordinal)) end++;
+                bool hasEnabled = false, hasHash = false;
+                for (int j = i + 1; j < end; j++)
                 {
-                    activeStateKey = NormalizeHookStateKey(header.Groups["key"].Value);
-                    continue;
+                    var enabled = EnabledStateRegex.Match(lines[j]);
+                    if (enabled.Success)
+                    {
+                        hasEnabled = true;
+                        if (!enabled.Groups["value"].Value.Equals("true", StringComparison.OrdinalIgnoreCase))
+                        {
+                            lines[j] = enabled.Groups["prefix"].Value + "true" + enabled.Groups["suffix"].Value;
+                            changed = true;
+                        }
+                        continue;
+                    }
+                    var trusted = TrustedHashRegex.Match(lines[j]);
+                    if (!trusted.Success) continue;
+                    hasHash = true;
+                    if (!trusted.Groups["value"].Value.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        lines[j] = trusted.Groups["prefix"].Value + expectedHash + trusted.Groups["suffix"].Value;
+                        changed = true;
+                    }
                 }
 
-                // 다른 TOML table 시작. 직전 hooks.state 범위 종료.
-                if (lines[i].TrimStart().StartsWith("[", StringComparison.Ordinal))
+                var additions = new List<string>();
+                if (!hasEnabled) additions.Add("enabled = true");
+                if (!hasHash) additions.Add($"trusted_hash = \"{expectedHash}\"");
+                if (additions.Count > 0)
                 {
-                    activeStateKey = null;
-                    continue;
+                    int insertAt = end;
+                    while (insertAt > i + 1 && string.IsNullOrWhiteSpace(lines[insertAt - 1])) insertAt--;
+                    insertions.Add((insertAt, additions));
+                    changed = true;
                 }
+            }
 
-                if (activeStateKey == null || !ourStateKeys.Contains(activeStateKey)) continue;
-                var disabled = DisabledStateRegex.Match(lines[i]);
-                if (!disabled.Success) continue;
-                lines[i] = disabled.Groups["prefix"].Value + "true" + disabled.Groups["suffix"].Value;
+            foreach (var insertion in insertions.OrderByDescending(x => x.Index))
+                lines.InsertRange(insertion.Index, insertion.Lines);
+
+            foreach (var pair in ourStates.Where(pair => !found.Contains(pair.Key)))
+            {
+                if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1])) lines.Add("");
+                lines.Add($"[hooks.state.'{pair.Key.Replace("'", "''", StringComparison.Ordinal)}']");
+                lines.Add("enabled = true");
+                lines.Add($"trusted_hash = \"{pair.Value}\"");
+                lines.Add("");
                 changed = true;
             }
 
             if (changed)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(CodexConfigTomlPath)!);
                 File.WriteAllText(CodexConfigTomlPath, string.Join(newline, lines), new UTF8Encoding(false));
+            }
             return true;
         }
         catch { return false; }
+    }
+
+    /// <summary>Codex command_hook_hash: canonical JSON(identity) SHA-256.</summary>
+    private static string ComputeTrustedHash(string eventLabel, string command)
+    {
+        // 키 삽입 순서는 사전순이다. JsonArray는 순서를 보존하므로 Codex canonical_json과 동일하다.
+        var handler = new JsonObject
+        {
+            ["async"] = false,
+            ["command"] = command,
+            ["timeout"] = 600,
+            ["type"] = "command",
+        };
+        var identity = new JsonObject
+        {
+            ["event_name"] = eventLabel,
+            ["hooks"] = new JsonArray(handler),
+        };
+        var json = identity.ToJsonString(new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        return "sha256:" + Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static string NormalizeHookStateKey(string key) => key.Replace('/', '\\');
@@ -326,16 +416,16 @@ public static class CodexHookInstaller
     /// <summary>codex 훅 사용 가능 여부 — 스크립트 설치 + hooks.json 등록 모두.</summary>
     public static bool HookAssetsHealthy()
     {
-        if (!File.Exists(ScriptInstallPath) || !IsHooksJsonInstalled()) return false;
+        if (!File.Exists(ScriptInstallPath) || !File.Exists(FastStateScriptInstallPath) || !IsHooksJsonInstalled()) return false;
         try
         {
             var root = JsonNode.Parse(File.ReadAllText(CodexHooksJsonPath));
             if (root?["hooks"] is not JsonObject hooksObj) return false;
-            var command = BuildHookCommand();
-            var stateKeys = FindOurHookStateKeys(hooksObj, command);
-            if (!File.Exists(CodexConfigTomlPath)) return stateKeys.Count == HookEventNames.Length;
+            var states = FindOurHookStates(hooksObj);
+            if (!File.Exists(CodexConfigTomlPath)) return false;
 
             string? activeStateKey = null;
+            var trusted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var line in File.ReadLines(CodexConfigTomlPath))
             {
                 var header = HookStateHeaderRegex.Match(line);
@@ -345,10 +435,16 @@ public static class CodexHookInstaller
                     continue;
                 }
                 if (line.TrimStart().StartsWith("[", StringComparison.Ordinal)) activeStateKey = null;
-                if (activeStateKey != null && stateKeys.Contains(activeStateKey) && DisabledStateRegex.IsMatch(line))
+                if (activeStateKey == null || !states.TryGetValue(activeStateKey, out var expectedHash)) continue;
+                var enabled = EnabledStateRegex.Match(line);
+                if (enabled.Success && !enabled.Groups["value"].Value.Equals("true", StringComparison.OrdinalIgnoreCase))
                     return false;
+                var hash = TrustedHashRegex.Match(line);
+                if (!hash.Success) continue;
+                if (!hash.Groups["value"].Value.Equals(expectedHash, StringComparison.OrdinalIgnoreCase)) return false;
+                trusted.Add(activeStateKey);
             }
-            return stateKeys.Count == HookEventNames.Length;
+            return states.Count == HookEventNames.Length && trusted.Count == states.Count;
         }
         catch { return false; }
     }
