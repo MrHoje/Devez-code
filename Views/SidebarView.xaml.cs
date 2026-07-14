@@ -1539,8 +1539,8 @@ public partial class SidebarView : UserControl
         {
             _projectFolderHoverTarget = target.Folder;
             _lastProjectDragPoint = point;
-            bool oppositeQuarter = reorderAfter ? relativeY < 0.25 : relativeY > 0.75;
-            if (oppositeQuarter) return ProjectFolderDropPreview.None;
+            bool crossedReorderQuarter = reorderAfter ? relativeY < 0.25 : relativeY > 0.75;
+            if (crossedReorderQuarter) return ProjectFolderDropPreview.None;
 
             _projectFolderDropTarget = target.Folder;
             _projectFolderDropBorder = target.PreviewBorder;
