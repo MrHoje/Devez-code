@@ -83,7 +83,7 @@ public static class GrokHookInstaller
             foreach (var eventName in events)
             {
                 var hookCommand = eventName is "PreToolUse" or "PostToolUse" or "PostToolUseFailure"
-                    ? $"\"{FastStateScriptInstallPath}\" {eventName}"
+                    ? BuildFastStateHookCommand(eventName)
                     : powershellCommand;
                 var definition = new JsonObject
                 {
@@ -138,7 +138,7 @@ public static class GrokHookInstaller
             })
             {
                 var expected = eventName is "PreToolUse" or "PostToolUse" or "PostToolUseFailure"
-                    ? $"\"{FastStateScriptInstallPath}\" {eventName}"
+                    ? BuildFastStateHookCommand(eventName)
                     : $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{ScriptInstallPath}\"";
                 if (hooks[eventName] is not JsonArray definitions ||
                     !definitions.Any(d => d is JsonObject definition &&
@@ -150,4 +150,35 @@ public static class GrokHookInstaller
         }
         catch { return false; }
     }
+
+    private static string BuildFastStateHookCommand(string eventName)
+    {
+        // Grok도 Windows에서 hook command를 현재 사용자 셸로 실행한다. PowerShell에서
+        // `call ...`은 명령이 아니고, 따옴표로 시작하는 .cmd 경로도 runner escaping에 취약하다.
+        // 명시적 cmd.exe + 공백 없는 경로로 셸 종류와 무관하게 빠른 상태 훅을 실행한다.
+        var path = ToCmdArgSafePath(FastStateScriptInstallPath);
+        if (!path.Contains(' ')) return $"cmd.exe /d /c call {path} {eventName}";
+
+        var escapedPath = FastStateScriptInstallPath.Replace("'", "''", StringComparison.Ordinal);
+        var script = $"& '{escapedPath}' {eventName}";
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        return $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded}";
+    }
+
+    private static string ToCmdArgSafePath(string path)
+    {
+        if (!path.Contains(' ')) return path;
+        try
+        {
+            var buffer = new StringBuilder(260);
+            if (GetShortPathName(path, buffer, buffer.Capacity) > 0 && buffer.Length > 0)
+                return buffer.ToString();
+        }
+        catch { }
+        return path;
+    }
+
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern int GetShortPathName(string longPath, StringBuilder shortPath, int bufferSize);
 }
