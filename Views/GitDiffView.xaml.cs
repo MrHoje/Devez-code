@@ -40,13 +40,6 @@ public partial class GitDiffView : UserControl
     // diff 행은 한 번에 만들어 ItemsSource 로 통째 할당(행마다 알림 없음 → 큰 파일도 빠름).
     private List<DiffRow> _diff = new();
 
-    /// <summary>커밋/푸시 성공 시 발생(repo 경로 전달). 브랜치 버블 갱신 신호.</summary>
-    public event Action<string>? GitStateChanged;
-
-    private bool _busy;          // 커밋/푸시 진행 중
-    private bool _hasUpstream;   // 현재 브랜치에 upstream 이 있는지
-    private int _ahead;          // 원격 대비 보낼 커밋 수(또는 첫 푸시 신호 1)
-
     /// <summary>diff 코드 글꼴 크기(Ctrl+휠로 조절). 라인 텍스트는 DiffList 에서 상속.</summary>
     private double _diffFontSize = 12;
     private const double MinFontSize = 8, MaxFontSize = 28;
@@ -67,37 +60,6 @@ public partial class GitDiffView : UserControl
         if (IsLoaded) DiffList.ItemsSource = null;
     }
 
-    /// <summary>커밋/푸시 버튼 활성·라벨 갱신. repoValid=false 면 바 전체 비활성.</summary>
-    private async Task RefreshCommitBarAsync(bool repoValid)
-    {
-        if (!repoValid || string.IsNullOrEmpty(_repo))
-        {
-            _hasUpstream = false; _ahead = 0;
-            CommitBtn.IsEnabled = false;
-            PushBtn.IsEnabled = false;
-            PushBtnText.Text = "푸시";
-            return;
-        }
-
-        (_hasUpstream, _ahead) = await GitService.PushStateAsync(_repo);
-        PushBtnText.Text = _hasUpstream ? $"푸시 ↑{_ahead}" : "푸시";
-        CommitBtn.IsEnabled = !_busy && _changes.Count > 0 && !string.IsNullOrWhiteSpace(MsgBox.Text);
-        PushBtn.IsEnabled = !_busy && _ahead > 0;
-    }
-
-    private void SetBusy(bool busy)
-    {
-        _busy = busy;
-        MsgBox.IsEnabled = !busy;
-        CommitBtn.IsEnabled = !busy && _changes.Count > 0 && !string.IsNullOrWhiteSpace(MsgBox.Text);
-        PushBtn.IsEnabled = !busy && _ahead > 0;
-    }
-
-    private void MsgBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        CommitBtn.IsEnabled = !_busy && _changes.Count > 0 && !string.IsNullOrWhiteSpace(MsgBox.Text);
-    }
-
     /// <summary>git 상태를 다시 읽어 변경 파일 목록을 채운다.
     /// 깜빡임 방지: 시작 시 보이는 데이터(리스트/본문/헤더/힌트/마커)를 비우지 않고,
     /// 새 데이터를 모은 뒤 끝에서 새 ObservableCollection 으로 ItemsSource 를 한 번에 교체한다.
@@ -107,13 +69,11 @@ public partial class GitDiffView : UserControl
         if (string.IsNullOrEmpty(_repo) || !Directory.Exists(_repo))
         {
             ApplyEmpty("프로젝트를 선택하면 git 변경 내역이 표시됩니다.");
-            await RefreshCommitBarAsync(false);
             return;
         }
         if (!await GitService.IsRepoAsync(_repo))
         {
             ApplyEmpty("git 저장소가 아니거나 git 이 설치되어 있지 않습니다.");
-            await RefreshCommitBarAsync(false);
             return;
         }
 
@@ -121,7 +81,6 @@ public partial class GitDiffView : UserControl
         if (!r.Ok)
         {
             ApplyEmpty(string.IsNullOrWhiteSpace(r.Error) ? "git 상태를 읽지 못했습니다." : r.Error.Trim());
-            await RefreshCommitBarAsync(false);
             return;
         }
 
@@ -146,7 +105,6 @@ public partial class GitDiffView : UserControl
         {
             // 진짜 빈 상태: 보이는 데이터 정리. (이전과 다른 결과이므로 깜빡임 아닌 정당한 상태 변화)
             ApplyEmpty("변경된 파일이 없습니다.");
-            await RefreshCommitBarAsync(true);
             return;
         }
 
@@ -165,8 +123,6 @@ public partial class GitDiffView : UserControl
             DiffHeader.Visibility = Visibility.Collapsed;
         }
         // _selected != null 이면 본문(_diff) 그대로 유지 — LoadDiffAsync 가 ItemsSource 를 설정함.
-
-        await RefreshCommitBarAsync(true);
     }
 
     /// <summary>결과 없음 / 에러: 리스트·본문·마커를 한 번에 정리하고 안내 문구 표시.</summary>
@@ -462,54 +418,5 @@ public partial class GitDiffView : UserControl
         var frac = Math.Clamp(e.GetPosition(MarkerStrip).Y / h, 0, 1);
         var idx = Math.Clamp((int)Math.Round(frac * (_diff.Count - 1)), 0, _diff.Count - 1);
         DiffList.ScrollIntoView(_diff[idx]);
-    }
-
-    private async void CommitBtn_Click(object sender, System.Windows.RoutedEventArgs e)
-    {
-        if (string.IsNullOrEmpty(_repo)) return;
-        var msg = MsgBox.Text.Trim();
-        if (msg.Length == 0 || _changes.Count == 0) return;
-
-        if (!await GitService.HasIdentityAsync(_repo))
-        {
-            ConfirmDialog.Alert("커밋 불가",
-                "git 사용자 정보가 없습니다.\ngit config user.name / user.email 설정 후 다시 시도하세요.");
-            return;
-        }
-
-        SetBusy(true);
-        var r = await GitService.CommitAllAsync(_repo, msg);
-        SetBusy(false);
-        if (!r.Ok)
-        {
-            ConfirmDialog.Alert("커밋 실패", string.IsNullOrWhiteSpace(r.Error) ? r.Output : r.Error);
-            return;
-        }
-
-        MsgBox.Clear();
-        await RefreshAsync();               // 목록(비게 됨) + 푸시 상태 갱신
-        GitStateChanged?.Invoke(_repo);     // 브랜치 버블 갱신 신호
-    }
-
-    private async void PushBtn_Click(object sender, System.Windows.RoutedEventArgs e)
-    {
-        if (string.IsNullOrEmpty(_repo)) return;
-        var msg = _hasUpstream
-            ? $"이 브랜치의 커밋 {_ahead}개를 원격에 푸시할까요?"
-            : "이 브랜치를 origin 에 처음 푸시할까요? (-u origin <branch>)";
-        if (!ConfirmDialog.Show("푸시", msg, "푸시")) return;
-
-        SetBusy(true);
-        var r = await GitService.PushAsync(_repo);
-        SetBusy(false);
-        if (!r.Ok)
-        {
-            ConfirmDialog.Alert("푸시 실패", string.IsNullOrWhiteSpace(r.Error) ? r.Output : r.Error);
-            return;
-        }
-
-        new NotificationPopup("푸시 완료", null).Show();
-        await RefreshCommitBarAsync(true);  // ahead=0 반영
-        GitStateChanged?.Invoke(_repo);
     }
 }

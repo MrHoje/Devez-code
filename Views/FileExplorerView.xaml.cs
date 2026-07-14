@@ -22,13 +22,9 @@ public partial class FileExplorerView : UserControl
     private readonly DispatcherTimer _fileRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool _subscribed;
 
-    /// <summary>DIFF 뷰의 커밋/푸시로 git 상태가 바뀌었을 때(repo 경로). MainWindow 가 구독.</summary>
-    public event Action<string>? GitStateChanged;
-
     public FileExplorerView()
     {
         InitializeComponent();
-        DiffView.GitStateChanged += repo => GitStateChanged?.Invoke(repo);
         _fileSearchDebounceTimer.Tick += (_, _) =>
         {
             _fileSearchDebounceTimer.Stop();
