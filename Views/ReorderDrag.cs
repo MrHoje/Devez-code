@@ -53,6 +53,7 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly bool _useFixedLayoutPlaceholder;
     private readonly bool _useGridPlaceholder;
     private readonly bool _useLogicalHitTestBounds;
+    private readonly Func<T, T, bool>? _useQuarterReorderHysteresis;
     private readonly double? _hitTestXOverride; // 고스트는 실제 포인터를 따르고 드롭 순서 판정 X만 고정.
     private int _targetIndex;             // 1축: host 인덱스 / 그리드: 목표 컬럼 내 삽입 위치
     private int _targetColumn;            // 그리드 전용: 목표 컬럼(0/1)
@@ -80,7 +81,8 @@ internal sealed class ReorderDrag<T> where T : class
         bool useLiveLayoutPlaceholder, bool useFixedLayoutPlaceholder,
         bool useGridPlaceholder, bool useLogicalHitTestBounds,
         Action<T?, FrameworkElement?, bool>? reorderPreviewChanged,
-        double? hitTestXOverride)
+        double? hitTestXOverride,
+        Func<T, T, bool>? useQuarterReorderHysteresis)
     {
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
@@ -92,6 +94,7 @@ internal sealed class ReorderDrag<T> where T : class
         _useFixedLayoutPlaceholder = useFixedLayoutPlaceholder;
         _useGridPlaceholder = useGridPlaceholder;
         _useLogicalHitTestBounds = useLogicalHitTestBounds;
+        _useQuarterReorderHysteresis = useQuarterReorderHysteresis;
         _reorderPreviewChanged = reorderPreviewChanged;
         _hitTestXOverride = hitTestXOverride;
         if (IsGrid)
@@ -182,7 +185,8 @@ internal sealed class ReorderDrag<T> where T : class
         bool useGridPlaceholder = false,
         bool useLogicalHitTestBounds = false,
         FrameworkElement? ghostBackgroundTarget = null,
-        Brush? ghostBackground = null)
+        Brush? ghostBackground = null,
+        Func<T, T, bool>? useQuarterReorderHysteresis = null)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -291,7 +295,7 @@ internal sealed class ReorderDrag<T> where T : class
             hitTestSlots, suppressDisplacement,
             useLiveLayoutPlaceholder, useFixedLayoutPlaceholder,
             useGridPlaceholder, useLogicalHitTestBounds,
-            reorderPreviewChanged, hitTestXOverride);
+            reorderPreviewChanged, hitTestXOverride, useQuarterReorderHysteresis);
     }
 
     /// <summary>자식 드래그 시작 즉시 원래 자리를 접어 부모에서 빠져나오는 프리뷰를 표시.
@@ -505,26 +509,30 @@ internal sealed class ReorderDrag<T> where T : class
         int newTarget = _targetIndex;
         if (movementDirection > 0 && newTarget < others.Count)
         {
+            var target = others[newTarget];
             var bounds = liveLayout
-                ? LogicalPrimaryBounds(others[newTarget])
-                : FixedDisplacedPrimaryBounds(others[newTarget]);
+                ? LogicalPrimaryBounds(target)
+                : FixedDisplacedPrimaryBounds(target);
+            bool quarterHysteresis = UsesQuarterReorderHysteresis(target);
             double threshold = _horizontal
-                ? bounds.Left + bounds.Width / 2
-                : bounds.Top + bounds.Height / 2;
-            if (_lastTransitionDirection < 0)
+                ? bounds.Left + bounds.Width * (quarterHysteresis ? 0.75 : 0.5)
+                : bounds.Top + bounds.Height * (quarterHysteresis ? 0.75 : 0.5);
+            if (!quarterHysteresis && _lastTransitionDirection < 0)
                 threshold += LiveReversalHysteresis;
             if (pointerPosition >= threshold)
                 newTarget++;
         }
         else if (movementDirection < 0 && newTarget > 0)
         {
+            var target = others[newTarget - 1];
             var bounds = liveLayout
-                ? LogicalPrimaryBounds(others[newTarget - 1])
-                : FixedDisplacedPrimaryBounds(others[newTarget - 1]);
+                ? LogicalPrimaryBounds(target)
+                : FixedDisplacedPrimaryBounds(target);
+            bool quarterHysteresis = UsesQuarterReorderHysteresis(target);
             double threshold = _horizontal
-                ? bounds.Left + bounds.Width / 2
-                : bounds.Top + bounds.Height / 2;
-            if (_lastTransitionDirection > 0)
+                ? bounds.Left + bounds.Width * (quarterHysteresis ? 0.25 : 0.5)
+                : bounds.Top + bounds.Height * (quarterHysteresis ? 0.25 : 0.5);
+            if (!quarterHysteresis && _lastTransitionDirection > 0)
                 threshold -= LiveReversalHysteresis;
             if (pointerPosition <= threshold)
                 newTarget--;
@@ -719,6 +727,15 @@ internal sealed class ReorderDrag<T> where T : class
         double axisPosition = _horizontal ? pointer.X : pointer.Y;
         double axisStart = _horizontal ? bounds.Left : bounds.Top;
         double axisSize = _horizontal ? bounds.Width : bounds.Height;
+        if (UsesQuarterReorderHysteresis(target))
+        {
+            // 폴더 앞/뒤 재정렬이 시작된 뒤에는 반대편 25%까지 상태를 유지한다.
+            // 레이아웃 이동으로 보더에 다시 닿아도 즉시 반전하지 않는다.
+            return _reorderPreviewAfter
+                ? axisPosition >= axisStart + axisSize * 0.25
+                : axisPosition > axisStart + axisSize * 0.75;
+        }
+
         double midpoint = axisStart + axisSize / 2;
         double hysteresis = Math.Min(8, axisSize * 0.2);
 
@@ -728,6 +745,13 @@ internal sealed class ReorderDrag<T> where T : class
             ? axisPosition >= midpoint - hysteresis
             : axisPosition > midpoint + hysteresis;
     }
+
+    private bool UsesQuarterReorderHysteresis(Slot target)
+        => _useQuarterReorderHysteresis?.Invoke(_source, target.Item) == true;
+
+    public bool IsReorderPreviewTarget(T target)
+        => _reorderPreviewTarget != null
+           && ReferenceEquals(_reorderPreviewTarget.Item, target);
 
     private static Rect CapturedPrimaryBounds(Slot slot) => new(
         slot.PrimaryLeft,

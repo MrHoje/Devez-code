@@ -1530,6 +1530,15 @@ public partial class SidebarView : UserControl
             return false;
         }
 
+        // 폴더 앞/뒤 재정렬이 이미 시작됐으면 레이아웃 이동 뒤 보더에 재접촉해도
+        // 새 내부 드롭 진입으로 취급하지 않는다. ReorderDrag의 25/75 반전 경계를 유지한다.
+        if (_rootDrag?.IsReorderPreviewTarget(target.Folder) == true)
+        {
+            _projectFolderHoverTarget = target.Folder;
+            _lastProjectDragPoint = point;
+            return false;
+        }
+
         if (!ReferenceEquals(_projectFolderHoverTarget, target.Folder))
         {
             _projectFolderHoverTarget = target.Folder;
@@ -1769,7 +1778,9 @@ public partial class SidebarView : UserControl
             useLogicalHitTestBounds: _projectColumns >= 2 && item is ProjectItem,
             ghostSource: folderGhostSource,
             ghostBackgroundTarget: folderGhostSource,
-            ghostBackground: folderGhostBackground);
+            ghostBackground: folderGhostBackground,
+            useQuarterReorderHysteresis: (sourceItem, targetItem) =>
+                sourceItem is ProjectItem && targetItem is ProjectFolderItem);
 
         if (_rootDrag != null)
         {
