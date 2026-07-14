@@ -537,6 +537,7 @@ public partial class WorkspacePaneView : UserControl
         // 거기 근접할 때까지 기다리게 하면 중간 전체폭 plateau 를 확실히 건너뛴다.
         UpdateLayout();
         double target = TerminalHostContainer?.ActualWidth ?? 0;
+        RememberActiveSessionWidth(target);
         _terminal.RevealAfterTransition(_activeSession?.Id, kick, target, bounce);
         EndCover(); // 파일 커튼도 함께 걷는다(단일 패널 파일 전환)
     }
@@ -1007,9 +1008,16 @@ public partial class WorkspacePaneView : UserControl
         ActivateBrowserTab(tab);
     }
 
-    // 이 패널에서 (패널 폭으로) 한 번이라도 표시한 세션들. 프리로드는 기본폭(80)으로 ConPTY 를 만들므로,
-    // 이 패널에서 처음 표시되는 프리로드 세션은 패널 폭으로 리플로우되며 스크롤이 팍 튄다 → 그 첫 표시만 커버로 감춘다.
-    private readonly HashSet<string> _shownSessions = new();
+    // 이 패널에서 세션별로 마지막 표시한 터미널 폭. 처음 표시되는 프리로드 세션뿐 아니라, 다른 탭을
+    // 보는 동안 사이드패널이 열고 닫혀 폭이 달라진 세션도 다음 show 전에 커버해야 한다. 단순 HashSet 으로
+    // "한 번 봤음"만 기억하면 그 복귀가 일반 show 로 빠져 Codex 입력영역의 리사이즈 중간 프레임이 노출된다.
+    private readonly Dictionary<string, double> _shownSessionWidths = new();
+
+    private void RememberActiveSessionWidth(double width)
+    {
+        if (_activeSession != null && width > 1)
+            _shownSessionWidths[_activeSession.Id] = width;
+    }
 
     // 테마 적용으로 종료 중인 방 id 들. 완료 전 사용자가 다른 탭을 눌러도 죽어가는 프로세스에 붙지 않고
     // 같은 안내 문구를 보여준 뒤, 정리가 끝났을 때 실제로 보고 있는 방만 다시 열기 위한 추적셋.
@@ -1030,11 +1038,21 @@ public partial class WorkspacePaneView : UserControl
     {
         SessionActivity?.Invoke(session.Id);
         if (ReferenceEquals(_activeSession, session)) return;
-        // 이 패널에서 처음 표시되는 프리로드(ready) 세션: 기본폭→패널폭 ConPTY 리플로우로 스크롤이 튄다.
-        // 셸이 이미 커버 중이 아니면 여기서 잠깐 커버하고, 아래에서 최종 폭 재동기(kick) 후 걷는다.
-        // (파일→세션·세션→세션, 사이드바 클릭·탭 클릭 모든 경로가 이 메서드로 온다.)
-        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && !_shownSessions.Contains(session.Id);
-        if (coverReflow) CoverForTransition();
+        // 처음 표시되는 프리로드 세션 또는 마지막 표시 이후 패널 폭이 달라진 ready 세션은 show 전에
+        // 커버한다. show 가 먼저 fit 하면 Codex 인라인 TUI 의 지움/재그리기 중간 프레임이 노출되고,
+        // 사후 opacity/refresh 로는 이미 어긋난 입력영역을 안정적으로 복구하지 못한다.
+        // 커버를 먼저 올리면 show 의 fit 이 억제되고, RevealAfterTransition 이 최종 폭에서 fit한 뒤
+        // Codex 출력이 quiet 해질 때까지 기다려 완성 프레임만 보여준다.
+        double currentTerminalWidth = TerminalHostContainer?.ActualWidth ?? 0;
+        bool hadPreviousWidth = _shownSessionWidths.TryGetValue(session.Id, out var previousWidth);
+        bool widthChanged = !hadPreviousWidth
+            || (currentTerminalWidth > 1 && Math.Abs(currentTerminalWidth - previousWidth) > 2);
+        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && widthChanged;
+        if (coverReflow)
+        {
+            DiagLog.Write($"ActivateSession reflow cover room={session.Id} width={(hadPreviousWidth ? previousWidth.ToString("F1") : "first")}->{currentTerminalWidth:F1}");
+            CoverForTransition();
+        }
         ClearIsolationIfMismatch(session);
         DiagLog.Write($"ActivateSession begin: '{session.Name}' room={session.Id} isReady={_terminal.IsReady(session.Id)} alive={session.IsAlive}");
         using var _diag = DiagLog.Time($"ActivateSession '{session.Name}'");
@@ -1072,7 +1090,7 @@ public partial class WorkspacePaneView : UserControl
             EnsureSelectedTabVisible(session);
             RefreshModelEffortDock();
             ActiveChanged?.Invoke(this);
-            // _shownSessions 는 여기서 추가하지 않는다 — 아직 실제로 터미널을 보여준 게 아니라
+            // _shownSessionWidths 는 여기서 추가하지 않는다 — 아직 실제로 터미널을 보여준 게 아니라
             // 스피너만 띄운 상태다. 잘못 마킹하면 나중에 진짜로 연결될 때 리플로우 감춤 커버가
             // "이미 이 폭으로 본 적 있음"으로 오판돼 스킵되고, 기본폭→패널폭 리플로우가 그대로
             // 노출돼 터미널이 화면 모서리에만 작게 뜨는 것처럼 보인다.
@@ -1132,7 +1150,7 @@ public partial class WorkspacePaneView : UserControl
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
         ActiveChanged?.Invoke(this);
-        _shownSessions.Add(session.Id);                     // 이 패널에서 표시됨 — 다음부턴 리플로우 커버 불필요
+        RememberActiveSessionWidth(TerminalHostContainer?.ActualWidth ?? 0);
         if (coverReflow) RevealAfterTransition(kick: true); // 최종 폭에서 세션 재동기 후 커버 걷기(리플로우 감춤)
     }
 
@@ -3619,6 +3637,7 @@ public partial class WorkspacePaneView : UserControl
             {
                 UpdateLayout();
                 double target = TerminalHostContainer?.ActualWidth ?? 0;
+                RememberActiveSessionWidth(target);
                 _terminal.RevealAfterTransition(_activeSession.Id, kick: true, expectWidth: target);
             }
             return;

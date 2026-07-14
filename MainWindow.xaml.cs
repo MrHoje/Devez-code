@@ -3937,6 +3937,16 @@ public partial class MainWindow : Window
         OpenSessionIntoPane(LeftPane, session, isNewProjectLoad: true);
     }
 
+    /// <summary>LAN 대시보드가 실행 전 세션을 선택했을 때 화면 선택을 바꾸지 않고 같은 터미널을 준비한다.</summary>
+    public bool StartSessionForLanDashboard(string roomId)
+    {
+        var session = _projects.SelectMany(project => project.Tabs.OfType<SessionItem>())
+            .FirstOrDefault(item => item.Id == roomId);
+        if (session == null) return false;
+        _focusedPane.PreloadSession(session);
+        return true;
+    }
+
     /// <summary>사이드바 카드에서 세션 클릭 — '오른쪽' 그룹이면 우측 격리를 유지한 채 연다(활성화가 격리를
     /// 풀어 우측에 전체 세션이 쏟아지는 것 방지). 숨김 세션 그룹(사이드바 맨 아래)에서 다시 불러오는
     /// 경우엔 이전에 어느 패널에 있었든 상관없이, 분할 중이면 항상 좌측 패널의 가장 오른쪽(마지막) 탭으로

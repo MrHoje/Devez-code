@@ -11,8 +11,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using DevezCode.Services;
+using QRCoder;
 
 namespace DevezCode.Views;
 
@@ -370,8 +372,9 @@ public partial class SettingsDialog : UserControl
         MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
         _originalLanDashboardEnabled = SettingsService.LoadLanDashboardEnabled();
         _selectedLanDashboardEnabled = _originalLanDashboardEnabled;
+        LanDashboardUrlLabel.Text = LanDashboardService.GetAccessUrls(SettingsService.LoadOrCreateLanDashboardToken()).FirstOrDefault() ?? "주소를 확인할 수 없습니다.";
         LanDashboardToggle.IsChecked = _selectedLanDashboardEnabled;
-        LanDashboardUrlText.Text = LanDashboardService.GetAccessUrls(SettingsService.LoadOrCreateLanDashboardToken()).FirstOrDefault() ?? "주소를 확인할 수 없습니다.";
+        UpdateLanDashboardVisual();
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
         UpdateProjectColumnsVisual();
@@ -435,6 +438,8 @@ public partial class SettingsDialog : UserControl
         CatChangelogBtn.Foreground = key == "changelog"  ? primary : text;
         CatShortcutBtn.Background  = key == "shortcut"   ? active : Brushes.Transparent;
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
+        CatLanDashboardBtn.Background = key == "lanDashboard" ? active : Brushes.Transparent;
+        CatLanDashboardBtn.Foreground = key == "lanDashboard" ? primary : text;
         CatNotifyBtn.Background    = key == "notify"     ? active : Brushes.Transparent;
         CatNotifyBtn.Foreground    = key == "notify"     ? primary : text;
 
@@ -448,6 +453,7 @@ public partial class SettingsDialog : UserControl
         McpPanel.Visibility        = key == "mcp"        ? Visibility.Visible : Visibility.Collapsed;
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
+        LanDashboardPanel.Visibility = key == "lanDashboard" ? Visibility.Visible : Visibility.Collapsed;
         NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
 
         if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
@@ -743,26 +749,62 @@ public partial class SettingsDialog : UserControl
     private void LanDashboardToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedLanDashboardEnabled = LanDashboardToggle.IsChecked == true;
+        UpdateLanDashboardVisual();
     }
 
     private void CopyLanDashboardUrl_Click(object sender, RoutedEventArgs e)
     {
-        try { Clipboard.SetText(LanDashboardUrlText.Text); }
+        try { Clipboard.SetText(LanDashboardUrlLabel.Text); }
         catch { ConfirmDialog.Alert("주소 복사", "클립보드를 사용할 수 없습니다."); }
     }
 
     private void OpenLanDashboard_Click(object sender, RoutedEventArgs e)
     {
-        try { Process.Start(new ProcessStartInfo(LanDashboardUrlText.Text) { UseShellExecute = true }); }
+        try { Process.Start(new ProcessStartInfo(LanDashboardUrlLabel.Text) { UseShellExecute = true }); }
         catch { ConfirmDialog.Alert("대시보드 열기", "대시보드를 열 수 없습니다. 기능을 켜고 저장했는지 확인해 주세요."); }
     }
 
-    private static async Task ApplyLanDashboardSettingAsync(bool enabled)
+    private async Task ApplyLanDashboardSettingAsync(bool enabled)
     {
         try { await LanDashboardService.Instance.ApplyEnabledAsync(enabled); }
         catch (Exception ex)
         {
-            ConfirmDialog.Alert("LAN 대시보드", "대시보드를 시작하지 못했습니다.\n" + ex.Message);
+            ConfirmDialog.Alert("웹 대시보드", "대시보드를 시작하지 못했습니다.\n" + ex.Message);
+        }
+        UpdateLanDashboardVisual();
+    }
+
+    private void UpdateLanDashboardVisual()
+    {
+        if (LanDashboardStatusLabel == null || LanDashboardQrPanel == null) return;
+        var connected = _selectedLanDashboardEnabled && LanDashboardService.Instance.IsRunning;
+        LanDashboardStatusLabel.Text = connected
+            ? "연결됨 · 모바일 카메라로 QR 코드를 스캔하세요."
+            : _selectedLanDashboardEnabled ? "저장하면 LAN 연결을 시작합니다." : "연결 안 됨";
+        LanDashboardStatusLabel.Foreground = (Brush)FindResource(connected ? "PrimaryBrush" : "TextMutedBrush");
+        LanDashboardQrPanel.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
+        if (!connected || string.IsNullOrWhiteSpace(LanDashboardUrlLabel.Text))
+        {
+            LanDashboardQrImage.Source = null;
+            return;
+        }
+
+        try
+        {
+            var png = PngByteQRCodeHelper.GetQRCode(
+                LanDashboardUrlLabel.Text, QRCodeGenerator.ECCLevel.Q, 8, drawQuietZones: true);
+            using var stream = new MemoryStream(png);
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            LanDashboardQrImage.Source = bitmap;
+        }
+        catch
+        {
+            LanDashboardQrPanel.Visibility = Visibility.Collapsed;
         }
     }
 

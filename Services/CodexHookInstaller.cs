@@ -53,6 +53,10 @@ public static class CodexHookInstaller
         @"^(?<prefix>\s*trusted_hash\s*=\s*)""(?<value>[^""]*)""(?<suffix>\s*(?:#.*)?)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex TrustedHashAssignmentRegex = new(
+        @"^(?<indent>\s*)trusted_hash\s*=",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>임베디드 리소스(Resources\Hooks\codex-hook.ps1) 의 내용을 읽어 반환.</summary>
     public static string ReadEmbeddedScript()
     {
@@ -150,17 +154,53 @@ public static class CodexHookInstaller
     }
 
     private static string BuildHookCommand(string eventName)
+    {
         // -WindowStyle Hidden 금지: codex(Rust)는 훅 프로세스를 부모 콘솔을 상속해 스폰한다.
         // 상속된 powershell 에 -WindowStyle Hidden 을 주면 ShowWindow(GetConsoleWindow(), SW_HIDE) 가
         // '공유' 콘솔(외부 터미널 창)에 적용돼 세션 창이 최소화/숨김된다(프롬프트 전송·응답 완료 시점).
         // 콘솔을 상속하므로 새 창이 뜨지 않아 Hidden 없이도 flash 가 없고, DevezCode ConPTY(헤드리스)
         // 에서도 창이 없어 무해하다. (claude 는 windowsHide 로 스폰돼 Hidden 이 no-op 이라 영향 없었음.)
-        => eventName switch
+        return eventName switch
         {
-            "PermissionRequest" => $"\"{FastStateScriptInstallPath}\" waiting",
-            "PreToolUse" or "PostToolUse" => $"\"{FastStateScriptInstallPath}\" working",
+            "PermissionRequest" => BuildFastStateHookCommand("waiting"),
+            "PreToolUse" or "PostToolUse" => BuildFastStateHookCommand("working"),
             _ => $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{ScriptInstallPath}\"",
         };
+    }
+
+    private static string BuildFastStateHookCommand(string state)
+    {
+        // Codex는 hook command를 현재 사용자 셸로 실행한다. Windows 기본 셸이 PowerShell이면
+        // `call ...`은 명령이 아니어서 exit 1이고, cmd에서는 따옴표로 시작하는 .cmd 경로가
+        // Rust 인자 escaping 뒤 리터럴 \"로 해석될 수 있다. 명시적 cmd.exe + 공백 없는 경로로
+        // 두 셸 모두에서 동일하게 실행한다.
+        var path = ToCmdArgSafePath(FastStateScriptInstallPath);
+        if (!path.Contains(' ')) return $"cmd.exe /d /c call {path} {state}";
+
+        // 8.3 이름이 비활성이고 프로필 경로에 공백이 있는 드문 환경은 인코딩된 PowerShell로 폴백한다.
+        // handler command 자체에는 따옴표가 없어 같은 cmd /C escaping 문제를 피한다.
+        var escapedPath = FastStateScriptInstallPath.Replace("'", "''", StringComparison.Ordinal);
+        var script = $"& '{escapedPath}' {state}";
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        return $"powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded}";
+    }
+
+    private static string ToCmdArgSafePath(string path)
+    {
+        if (!path.Contains(' ')) return path;
+        try
+        {
+            var buffer = new StringBuilder(260);
+            if (GetShortPathName(path, buffer, buffer.Capacity) > 0 && buffer.Length > 0)
+                return buffer.ToString();
+        }
+        catch { }
+        return path;
+    }
+
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern int GetShortPathName(string longPath, StringBuilder shortPath, int bufferSize);
 
     /// <summary>
     /// 이벤트 안의 DevezCode 훅을 최신 command 로 유지한다. command 옵션이 다른 구버전도
@@ -235,8 +275,12 @@ public static class CodexHookInstaller
         var normalizedCommand = command.Replace('/', '\\');
         var normalizedPath = ScriptInstallPath.Replace('/', '\\');
         var normalizedFastPath = FastStateScriptInstallPath.Replace('/', '\\');
+        var normalizedFastSafePath = ToCmdArgSafePath(FastStateScriptInstallPath).Replace('/', '\\');
         return normalizedCommand.Contains(normalizedPath, StringComparison.OrdinalIgnoreCase)
-            || normalizedCommand.Contains(normalizedFastPath, StringComparison.OrdinalIgnoreCase);
+            || normalizedCommand.Contains(normalizedFastPath, StringComparison.OrdinalIgnoreCase)
+            || normalizedCommand.Contains(normalizedFastSafePath, StringComparison.OrdinalIgnoreCase)
+            || command.Equals(BuildFastStateHookCommand("waiting"), StringComparison.OrdinalIgnoreCase)
+            || command.Equals(BuildFastStateHookCommand("working"), StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasOurHook(JsonObject hooksObj, string eventName, string command)
@@ -325,11 +369,25 @@ public static class CodexHookInstaller
                         continue;
                     }
                     var trusted = TrustedHashRegex.Match(lines[j]);
-                    if (!trusted.Success) continue;
-                    hasHash = true;
-                    if (!trusted.Groups["value"].Value.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                    var trustedAssignment = TrustedHashAssignmentRegex.Match(lines[j]);
+                    if (!trustedAssignment.Success) continue;
+
+                    // 구버전 갱신 버그로 따옴표 없는 hash 또는 중복 trusted_hash가 남아도
+                    // 첫 항목 하나만 올바른 TOML 문자열로 정규화해 config 전체를 자동 복구한다.
+                    if (hasHash)
                     {
-                        lines[j] = trusted.Groups["prefix"].Value + expectedHash + trusted.Groups["suffix"].Value;
+                        lines[j] = "";
+                        changed = true;
+                        continue;
+                    }
+
+                    hasHash = true;
+                    var expectedLine = trusted.Success
+                        ? trusted.Groups["prefix"].Value + "\"" + expectedHash + "\"" + trusted.Groups["suffix"].Value
+                        : trustedAssignment.Groups["indent"].Value + $"trusted_hash = \"{expectedHash}\"";
+                    if (!lines[j].Equals(expectedLine, StringComparison.Ordinal))
+                    {
+                        lines[j] = expectedLine;
                         changed = true;
                     }
                 }

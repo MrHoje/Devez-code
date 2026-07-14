@@ -236,24 +236,29 @@ public sealed class LanDashboardService
                 var session = string.IsNullOrWhiteSpace(roomId) ? null : TerminalSessionManager.Instance.Get(roomId!);
                 if (session is not { IsAlive: true })
                 {
-                    client.Queue(new { type = "error", message = "실행 중인 세션이 아닙니다." });
+                    var exists = WorkspaceStore.LoadDashboardSnapshot().Projects
+                        .SelectMany(project => project.Sessions)
+                        .Any(item => item.Id == roomId);
+                    if (!exists)
+                    {
+                        client.Queue(new { type = "error", message = "세션을 찾을 수 없습니다." });
+                        return;
+                    }
+                    lock (client.Sync)
+                    {
+                        client.SelectedRoomId = roomId;
+                        client.LastOutputSequence = 0;
+                    }
+                    client.Queue(new { type = "starting", roomId });
+                    _ = Task.Run(() => StartAndSubscribe(client, roomId!));
                     return;
                 }
-                // snapshot과 그 직후 live output의 순서를 client lock으로 원자화한다.
                 lock (client.Sync)
                 {
-                    var replay = GetReplay(roomId!, session);
                     client.SelectedRoomId = roomId;
-                    client.LastOutputSequence = replay.Sequence;
-                    client.Queue(new
-                    {
-                        type = "snapshot",
-                        roomId,
-                        cols = session.Cols,
-                        rows = session.Rows,
-                        data = Convert.ToBase64String(replay.Data),
-                    });
+                    client.LastOutputSequence = 0;
                 }
+                Subscribe(client, roomId!, session);
                 break;
             }
             case "claimControl":
@@ -275,6 +280,60 @@ public sealed class LanDashboardService
             case "refresh":
                 client.Queue(BuildSessionsMessage());
                 break;
+        }
+    }
+
+    private void StartAndSubscribe(Client client, string roomId)
+    {
+        try
+        {
+            var requested = false;
+            try
+            {
+                requested = System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    System.Windows.Application.Current.MainWindow is MainWindow main
+                    && main.StartSessionForLanDashboard(roomId));
+            }
+            catch { /* UI 프리로드가 불가능하면 아래 직접 생성으로 폴백 */ }
+
+            TerminalSession? session = null;
+            if (requested)
+            {
+                for (var i = 0; i < 100 && session is not { IsAlive: true }; i++)
+                {
+                    Thread.Sleep(50);
+                    session = TerminalSessionManager.Instance.Get(roomId);
+                }
+            }
+            if (session is not { IsAlive: true })
+                session = TerminalSessionManager.Instance.GetOrCreate(roomId, 120, 30);
+            Subscribe(client, roomId, session);
+            Broadcast(BuildSessionsMessage());
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write($"LAN dashboard start session {roomId}: {ex}");
+            client.Queue(new { type = "error", message = "세션을 시작하지 못했습니다." });
+        }
+    }
+
+    private static void Subscribe(Client client, string roomId, TerminalSession session)
+    {
+        // snapshot과 그 직후 live output의 순서를 client lock으로 원자화한다.
+        lock (client.Sync)
+        {
+            if (client.SelectedRoomId != roomId) return;
+            var replay = GetReplay(roomId, session);
+            client.SelectedRoomId = roomId;
+            client.LastOutputSequence = replay.Sequence;
+            client.Queue(new
+            {
+                type = "snapshot",
+                roomId,
+                cols = session.Cols,
+                rows = session.Rows,
+                data = Convert.ToBase64String(replay.Data),
+            });
         }
     }
 
@@ -304,27 +363,50 @@ public sealed class LanDashboardService
 
     private object BuildSessionsMessage()
     {
-        var names = LoadSessionNames();
         var config = TerminalSessionManager.Instance.Config;
-        var sessions = TerminalSessionManager.Instance.GetSessionsSnapshot()
+        var live = TerminalSessionManager.Instance.GetSessionsSnapshot()
             .Where(pair => pair.Value.IsAlive)
-            .Select(pair =>
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        var workspace = WorkspaceStore.LoadDashboardSnapshot();
+        var folders = workspace.Folders.Select(folder => new
+        {
+            id = folder.Id,
+            name = folder.Name,
+            rootOrder = folder.RootOrder,
+            isExpanded = folder.IsExpanded,
+        }).ToArray();
+        var projects = workspace.Projects.Select(project => new
+        {
+            path = project.Path,
+            name = project.Name,
+            folderId = project.FolderId,
+            rootOrder = project.RootOrder,
+            isExpanded = project.IsExpanded,
+            sessions = project.Sessions.Select(item =>
             {
-                names.TryGetValue(pair.Key, out var meta);
-                var agent = SettingsService.LoadAgentForRoom(pair.Key);
+                var alive = live.TryGetValue(item.Id, out var terminal);
                 return new
                 {
-                    roomId = pair.Key,
-                    name = meta?.Name ?? "세션",
-                    projectName = meta?.ProjectName ?? "",
-                    agent,
-                    cols = pair.Value.Cols,
-                    rows = pair.Value.Rows,
+                    roomId = item.Id,
+                    name = item.Name,
+                    projectName = project.Name,
+                    projectPath = project.Path,
+                    agent = string.IsNullOrWhiteSpace(item.Agent) ? SettingsService.LoadAgentForRoom(item.Id) : item.Agent,
+                    hidden = item.Hidden,
+                    parentId = item.ParentId,
+                    childrenExpanded = item.ChildrenExpanded,
+                    alive,
+                    cols = terminal?.Cols ?? 120,
+                    rows = terminal?.Rows ?? 30,
                 };
-            }).ToArray();
+            }).ToArray(),
+        }).ToArray();
+        var sessions = projects.SelectMany(project => project.sessions).ToArray();
         return new
         {
             type = "sessions",
+            folders,
+            projects,
             sessions,
             controllerId = CurrentControllerId(),
             appTheme = App.CurrentTheme,
@@ -352,27 +434,6 @@ public sealed class LanDashboardService
         "minimal" => new { bg = "#F8FAFC", panel = "#FFFFFF", panelSoft = "#F1F5F9", line = "#E2E8F0", text = "#0F172A", muted = "#475569", primary = "#2563EB", primarySoft = "#DBEAFE" },
         _ => new { bg = "#1F1F1E", panel = "#272727", panelSoft = "#2F2F2F", line = "#404040", text = "#E8E8E8", muted = "#AAAAAA", primary = "#C2622A", primarySoft = "#434343" },
     };
-
-    private static Dictionary<string, SessionMeta> LoadSessionNames()
-    {
-        try
-        {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "sessions-index.json");
-            if (!File.Exists(path)) return new(StringComparer.Ordinal);
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            var result = new Dictionary<string, SessionMeta>(StringComparer.Ordinal);
-            foreach (var item in doc.RootElement.EnumerateArray())
-            {
-                var room = item.TryGetProperty("roomId", out var r) ? r.GetString() : null;
-                if (string.IsNullOrWhiteSpace(room)) continue;
-                result[room] = new SessionMeta(
-                    item.TryGetProperty("name", out var n) ? n.GetString() ?? "세션" : "세션",
-                    item.TryGetProperty("projectName", out var p) ? p.GetString() ?? "" : "");
-            }
-            return result;
-        }
-        catch { return new(StringComparer.Ordinal); }
-    }
 
     private void BroadcastOutput(string roomId, long sequence, byte[] bytes)
     {
@@ -467,6 +528,4 @@ public sealed class LanDashboardService
             }
         }
     }
-
-    private sealed record SessionMeta(string Name, string ProjectName);
 }
