@@ -4,6 +4,89 @@
              xmlns:models="clr-namespace:DevezCode.Models"
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
+    <UserControl.Resources>
+        <!-- 컴팩트 TreeViewItem: 셰브론 + 행 + 자식(들여쓰기), 선택 하이라이트 제거 -->
+        <Style x:Key="ScmTreeItem" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TreeViewItem">
+                        <StackPanel>
+                            <Border x:Name="RowBd" CornerRadius="6" Background="Transparent" Padding="2,3">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="Chev" Grid.Column="0" Text="▾" TextAlignment="Center"
+                                               VerticalAlignment="Center" FontSize="9"
+                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                    <ContentPresenter Grid.Column="1" ContentSource="Header"/>
+                                </Grid>
+                            </Border>
+                            <ItemsPresenter x:Name="ItemsHost" Margin="12,0,0,0"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="False">
+                                <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="Chev" Property="Text" Value="▸"/>
+                            </Trigger>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="Chev" Property="Visibility" Value="Hidden"/>
+                            </Trigger>
+                            <Trigger SourceName="RowBd" Property="IsMouseOver" Value="True">
+                                <Setter TargetName="RowBd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 노드 행: 폴더(이름) 또는 파일(상태+이름+액션). ItemsSource=Children 로 재귀. -->
+        <HierarchicalDataTemplate x:Key="ScmNode" DataType="{x:Type models:ScmTreeNode}" ItemsSource="{Binding Children}">
+            <Grid Background="Transparent" MouseLeftButtonUp="Node_Click">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <!-- 파일 상태 글자(폴더면 빈칸) -->
+                <TextBlock Grid.Column="0" Text="{Binding Status}" Width="16" TextAlignment="Center"
+                           FontWeight="Bold" Foreground="{Binding StatusColor}"/>
+                <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="6,0,0,0"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Change.Path}"
+                           Foreground="{DynamicResource TextBrush}"/>
+                <!-- 파일 리프 액션: unstage(−) 또는 discard(↩)+stage(+). 폴더면 숨김. -->
+                <Button x:Name="UnstageBtn" Grid.Column="2" Content="−" Tag="{Binding Change}"
+                        Click="Unstage_Click" Style="{StaticResource IconButton}" Width="22" Height="22"
+                        Visibility="Collapsed" ToolTip="unstage"/>
+                <Button x:Name="DiscardBtn" Grid.Column="2" Content="↩" Tag="{Binding Change}"
+                        Click="Discard_Click" Style="{StaticResource IconButton}" Width="22" Height="22"
+                        Visibility="Collapsed" ToolTip="변경 취소"/>
+                <Button x:Name="StageBtn" Grid.Column="3" Content="+" Tag="{Binding Change}"
+                        Click="Stage_Click" Style="{StaticResource IconButton}" Width="22" Height="22"
+                        Visibility="Collapsed" ToolTip="stage"/>
+            </Grid>
+            <HierarchicalDataTemplate.Triggers>
+                <!-- 파일 & staged → unstage 버튼 -->
+                <DataTrigger Binding="{Binding Change.IsStaged}" Value="True">
+                    <Setter TargetName="UnstageBtn" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <!-- 파일 & unstaged → discard + stage. IsFolder=false 이고 Change!=null 인 경우만. -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsFolder}" Value="False"/>
+                        <Condition Binding="{Binding Change.IsStaged}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="DiscardBtn" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="StageBtn" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+            </HierarchicalDataTemplate.Triggers>
+        </HierarchicalDataTemplate>
+    </UserControl.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -15,74 +98,18 @@
                 <TextBlock x:Name="StagedHeader" Text="Staged Changes" Margin="6,6,0,2"
                            FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextMutedBrush}"/>
-                <ItemsControl x:Name="StagedHost">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type models:GitChange}">
-                            <Border x:Name="Row" CornerRadius="6" Background="Transparent"
-                                    Padding="8,5" Margin="0,1" MouseLeftButtonUp="Row_Click">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Status}" Width="16"
-                                               TextAlignment="Center" FontWeight="Bold"
-                                               Foreground="{Binding StatusColor}"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Path}" Margin="8,0,0,0"
-                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                    <Button Grid.Column="2" Content="−" Tag="{Binding}"
-                                            Click="Unstage_Click" Style="{StaticResource IconButton}"
-                                            Width="22" Height="22" ToolTip="unstage"/>
-                                </Grid>
-                            </Border>
-                            <DataTemplate.Triggers>
-                                <Trigger SourceName="Row" Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Row" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                </Trigger>
-                            </DataTemplate.Triggers>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <TreeView x:Name="StagedTree" Background="Transparent" BorderThickness="0"
+                          ItemContainerStyle="{StaticResource ScmTreeItem}"
+                          ItemTemplate="{StaticResource ScmNode}"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
 
                 <TextBlock x:Name="ChangesHeader" Text="Changes" Margin="6,10,0,2"
                            FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextMutedBrush}"/>
-                <ItemsControl x:Name="UnstagedHost">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type models:GitChange}">
-                            <Border x:Name="Row2" CornerRadius="6" Background="Transparent"
-                                    Padding="8,5" Margin="0,1" MouseLeftButtonUp="Row_Click">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Status}" Width="16"
-                                               TextAlignment="Center" FontWeight="Bold"
-                                               Foreground="{Binding StatusColor}"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Path}" Margin="8,0,0,0"
-                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                    <Button Grid.Column="2" Content="↩" Tag="{Binding}"
-                                            Click="Discard_Click" Style="{StaticResource IconButton}"
-                                            Width="22" Height="22" ToolTip="변경 취소"/>
-                                    <Button Grid.Column="3" Content="+" Tag="{Binding}"
-                                            Click="Stage_Click" Style="{StaticResource IconButton}"
-                                            Width="22" Height="22" ToolTip="stage"/>
-                                </Grid>
-                            </Border>
-                            <DataTemplate.Triggers>
-                                <Trigger SourceName="Row2" Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Row2" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
-                                </Trigger>
-                            </DataTemplate.Triggers>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <TreeView x:Name="UnstagedTree" Background="Transparent" BorderThickness="0"
+                          ItemContainerStyle="{StaticResource ScmTreeItem}"
+                          ItemTemplate="{StaticResource ScmNode}"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
 
                 <TextBlock x:Name="EmptyText" Text="변경된 파일이 없습니다." Visibility="Collapsed"
                            Margin="10" TextAlignment="Center"

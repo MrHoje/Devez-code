@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -25,8 +27,6 @@ public partial class GitScmView : UserControl
     public GitScmView()
     {
         InitializeComponent();
-        StagedHost.ItemsSource = _staged;
-        UnstagedHost.ItemsSource = _unstaged;
     }
 
     public void SetRepo(string? path) { if (_repo == path) return; _repo = path; }
@@ -36,6 +36,8 @@ public partial class GitScmView : UserControl
         if (string.IsNullOrEmpty(_repo) || !Directory.Exists(_repo) || !await GitService.IsRepoAsync(_repo))
         {
             _staged.Clear(); _unstaged.Clear();
+            StagedTree.ItemsSource = null;
+            UnstagedTree.ItemsSource = null;
             EmptyText.Visibility = Visibility.Visible;
             UpdateButtons(); return;
         }
@@ -43,6 +45,8 @@ public partial class GitScmView : UserControl
         _branch = await GitService.BranchStateAsync(_repo);
         _staged.Clear(); foreach (var c in st.Staged) _staged.Add(c);
         _unstaged.Clear(); foreach (var c in st.Unstaged) _unstaged.Add(c);
+        StagedTree.ItemsSource = BuildTree(st.Staged);
+        UnstagedTree.ItemsSource = BuildTree(st.Unstaged);
         EmptyText.Visibility = st.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         UpdateButtons();
     }
@@ -76,10 +80,52 @@ public partial class GitScmView : UserControl
 
     private void MsgBox_TextChanged(object s, TextChangedEventArgs e) => UpdateButtons();
 
-    private void Row_Click(object sender, MouseButtonEventArgs e)
+    private void Node_Click(object sender, MouseButtonEventArgs e)
     {
-        if (_repo == null || sender is not FrameworkElement { DataContext: GitChange c }) return;
-        DiffFileActivated?.Invoke(_repo, c.Path, c.IsStaged);
+        if (sender is not FrameworkElement { DataContext: ScmTreeNode node }) return;
+        if (node.IsFolder) { node.IsExpanded = !node.IsExpanded; return; }
+        if (_repo != null && node.Change != null)
+            DiffFileActivated?.Invoke(_repo, node.Change.Path, node.Change.IsStaged);
+    }
+
+    /// <summary>평면 변경 목록 → 전체 중첩 폴더 트리(폴더 우선·이름 오름차순).</summary>
+    private static List<ScmTreeNode> BuildTree(IEnumerable<GitChange> changes)
+    {
+        var roots = new List<ScmTreeNode>();
+        var folders = new Dictionary<string, ScmTreeNode>();   // 누적경로 → 폴더노드
+        foreach (var ch in changes)
+        {
+            var segs = ch.Path.Split('/');
+            IList<ScmTreeNode> siblings = roots;
+            var acc = "";
+            for (int i = 0; i < segs.Length - 1; i++)
+            {
+                acc = acc.Length == 0 ? segs[i] : acc + "/" + segs[i];
+                if (!folders.TryGetValue(acc, out var folder))
+                {
+                    folder = new ScmTreeNode { Name = segs[i], IsFolder = true };
+                    folders[acc] = folder;
+                    siblings.Add(folder);
+                }
+                siblings = folder.Children;   // ObservableCollection<T> 는 IList<T> 구현
+            }
+            siblings.Add(new ScmTreeNode { Name = segs[^1], IsFolder = false, Change = ch });
+        }
+        Sort(roots);
+        return roots;
+    }
+
+    private static void Sort(List<ScmTreeNode> nodes)
+    {
+        nodes.Sort((a, b) => a.IsFolder != b.IsFolder ? (a.IsFolder ? -1 : 1)
+            : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        foreach (var f in nodes) if (f.IsFolder)
+        {
+            var tmp = f.Children.ToList();
+            Sort(tmp);
+            f.Children.Clear();
+            foreach (var c in tmp) f.Children.Add(c);
+        }
     }
 
     private async void Stage_Click(object s, RoutedEventArgs e) => await Do(c => GitService.StageAsync(_repo!, c.Path), s);
