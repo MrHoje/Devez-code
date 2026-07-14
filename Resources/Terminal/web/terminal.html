@@ -620,9 +620,24 @@
       // 조합뷰가 서로 안 맞으므로 반드시 같은 식 유지).
       const cw = screen.clientWidth / term.cols;
       const chh = screen.clientHeight / term.rows;
-      ghostEl.textContent = ghost.text;
+      // 글자별 절대위치 렌더 — 통짜 텍스트로 흘리면 DOM 글리프 전진폭(폰트 advance)이
+      // xterm 의 셀 경계(한글=정확히 2×cw)와 미세하게 달라 여러 글자에서 어긋남이 누적된다.
+      // 그 상태로 앞 글자들이 echo 로 실제 그려지면 실글자 위에 고스트가 오프셋으로 겹쳐
+      // "좌우로 이중으로 보이는" 아티팩트가 남. xterm 과 동일하게 글자마다 셀 경계에 고정.
+      ghostEl.textContent = '';
+      let colOff = 0;
+      for (const ch of Array.from(ghost.text)) {
+        const span = document.createElement('span');
+        span.textContent = ch;
+        span.style.position = 'absolute';
+        span.style.left = Math.round(colOff * cw) + 'px';
+        span.style.top = '0';
+        ghostEl.appendChild(span);
+        colOff += imeCellWidth(ch);
+      }
       ghostEl.style.left = Math.round(ghost.col * cw) + 'px';
       ghostEl.style.top = Math.round(ghost.row * chh) + 'px';
+      ghostEl.style.height = Math.round(chh) + 'px';
       ghostEl.style.lineHeight = Math.round(chh) + 'px'; // 셀 높이에 수직 정렬(터미널 글리프와 베이스라인 맞춤)
       // 터미널과 동일 폰트 강제 — body 폰트와 다를 수 있어 상속에 맡기지 않는다.
       if (term.options.fontFamily) ghostEl.style.fontFamily = term.options.fontFamily;
@@ -635,21 +650,37 @@
       ghostTimer = setTimeout(clearGhost, 600);
     }
 
-    // echo 도착 판정 — 매 렌더마다 호출(onRender). 고스트 "마지막 글자"가 실제 버퍼 셀에
-    // 나타났으면 TUI 가 확정 문자열을 전부 그린 것이므로 고스트를 치운다.
-    // 마지막 글자 기준인 이유: 연타로 이어붙인 고스트("안녕하")에서 첫 글자만 확인하고
-    // 치우면 아직 echo 안 된 뒷글자 자리가 도로 빈칸이 된다.
+    // echo 도착 판정 + 부분 echo 트리밍 — 매 렌더마다 호출(onRender).
+    // 앞에서부터 "실제 버퍼 셀에 나타난" 글자를 고스트에서 잘라낸다: echo 로 그려진 글자를
+    // 고스트가 계속 덮어 그리면 픽셀이 완전히 일치해도 안티앨리어싱이 겹쳐 미세하게 번져
+    // 보일 수 있고, 조금이라도 어긋나면 좌우 이중상이 된다 — 실글자가 확인된 부분은 즉시
+    // 고스트에서 제외해 이중 描 자체를 없앤다. 전부 echo 되면 고스트 제거.
     function checkGhostEchoed() {
       if (!ghost) return;
-      const chars = Array.from(ghost.text);   // 코드포인트 단위 분해(서러게이트 안전)
-      const last = chars[chars.length - 1];
-      const lastCol = ghost.col + imeCellWidth(chars.slice(0, -1).join('')); // 마지막 글자의 시작 col
-      if (lastCol >= term.cols) { clearGhost(); return; } // 리사이즈 등으로 그리드 밖 — 좌표 무효, 즉시 정리
       const buf = term.buffer.active;
       const line = buf.getLine(buf.viewportY + ghost.row); // ghost.row 는 viewport 상대 좌표
       if (!line) return;
-      const cell = line.getCell(lastCol);
-      if (cell && cell.getChars() === last) clearGhost();
+      const chars = Array.from(ghost.text); // 코드포인트 단위 분해(서러게이트 안전)
+      let trimmed = false;
+      while (chars.length) {
+        if (ghost.col >= term.cols) { clearGhost(); return; } // 그리드 밖 — 좌표 무효, 즉시 정리
+        const cell = line.getCell(ghost.col);
+        if (!cell) break;
+        const cc = cell.getChars();
+        if (cc !== chars[0]) {
+          // 그 셀에 "다른 실글자"가 그려졌다 = 앵커가 틀렸던 것(직전 키 echo 지연으로 몇 칸
+          // 왼쪽에 예약된 경우 등) — 실제 텍스트는 다른 위치에 있고 이 고스트는 그 옆에
+          // 이중상으로 보이는 쓰레기다. 600ms 기다리지 말고 즉시 폐기.
+          // 셀이 아직 비어 있으면(공백/미기록) echo 미도착일 뿐이니 대기.
+          if (cc && cc !== ' ') { clearGhost(); return; }
+          break; // 첫 미도착 글자에서 중단(순차 echo 가정)
+        }
+        ghost.col += imeCellWidth(chars[0]); // 도착분만큼 앵커 전진
+        chars.shift();
+        trimmed = true;
+      }
+      if (!chars.length) { clearGhost(); return; } // 전부 도착 — 완료
+      if (trimmed) { ghost.text = chars.join(''); showGhost(); } // 남은 미도착분만 다시 그림
     }
     let lastClaudeCaret = null;      // claude: 마지막으로 스캔 성공한 블록커서 좌표(스캔 실패 프레임 폴백)
     let lastClaudeScanAt = 0;        // claude: 전체 셀 스캔 스로틀 기준 시각
@@ -780,11 +811,54 @@
     if (pinsLogicalCaret) {
       rememberLogicalCaret();
       try {
-        term.onCursorMove(rememberLogicalCaret);
+        // [행 고정 추종] 조합 중에도 "같은 행 안의" 커서 이동은 앵커 교정으로 받아들인다.
+        // 조합 시작 앵커는 직전 키(영문/스페이스/직전 음절)의 echo 가 아직 도착 전이면 몇 칸
+        // 왼쪽으로 틀릴 수 있는데, 그 echo 가 도착하면 커서가 입력란 행 안에서 오른쪽으로
+        // 이동한다 — 이를 따라가면 앵커가 스스로 맞춰진다(안 따라가면 chain 이 오차를
+        // 음절마다 전파해 확정 텍스트가 좌우로 이중으로 보인다).
+        // 행이 다른 이동(응답 리페인트의 출력영역/statusLine 왕복 — 원래 '커서 튐'의 원인)은
+        // 무시하므로 동결의 원래 목적은 유지된다. 같은 행 재묘화 스윕도 최종 위치가 입력
+        // 캐럿이라 페인트 시점엔 정확하다.
+        term.onCursorMove(function () {
+          if (isImeComposing && frozenImeCaret) {
+            const buf = term.buffer.active;
+            if (buf.cursorY === frozenImeCaret.row) {
+              const col = Math.max(0, Math.min(buf.cursorX, term.cols - 1));
+              if (col !== frozenImeCaret.col) {
+                frozenImeCaret = { row: frozenImeCaret.row, col: col };
+                apply();
+              }
+            }
+            return;
+          }
+          rememberLogicalCaret();
+        });
         term.onRender(checkGhostEchoed); // 렌더 배치마다 고스트 echo 확인(고스트 없으면 즉시 return, 비용 무시 가능)
         term.onResize(function () {
           clearGhost(); // 그리드가 바뀌면 셀→픽셀 환산이 전부 무효 — 고스트는 즉시 정리
           if (isImeComposing) apply(); // 조합 중이면 동결 좌표를 새 그리드 기준 픽셀로 재적용
+        });
+        // [스크롤 재고정] pin/ghost 좌표는 viewport 상대 행을 동결한 것 — 타이핑 중 위에서
+        // 응답 출력이 스크롤을 밀면 입력란이 행 단위로 이동하고, 동결 좌표는 옛 행에 남아
+        // "입력란 + 바로 윗줄 두 줄로 보이는" 유령이 생긴다. 스크롤이 나면:
+        //  · 고스트는 즉시 제거 — 행 기준이 무효라 echo 판정(checkGhostEchoed)도 옛 행을
+        //    보게 되어 600ms 내내 잔상으로 남기 때문. (출력 스크롤 중 한 음절 빈칸 깜빡은 감수)
+        //  · 조합뷰는 스크롤이 진정된 뒤(마지막 onScroll 로부터 80ms) 동결을 풀고 그 시점의
+        //    실제 논리 커서로 재고정 — 리페인트가 끝나면 codex/opencode 는 커서를 입력란
+        //    캐럿에 되돌려 놓으므로 그 좌표가 새 입력란 행이다. (즉시 재고정하면 리페인트
+        //    중간의 바운스 좌표를 잡을 수 있어 디바운스 필수)
+        let scrollReanchorTimer = 0;
+        term.onScroll(function () {
+          if (!isImeComposing && !ghost) return; // 평시 스크롤은 무관
+          clearGhost();
+          if (!isImeComposing) return;
+          if (scrollReanchorTimer) clearTimeout(scrollReanchorTimer);
+          scrollReanchorTimer = setTimeout(function () {
+            scrollReanchorTimer = 0;
+            if (!isImeComposing) return; // 조합이 그새 끝났으면 apply 가드와 이중 방어
+            frozenImeCaret = null;       // 동결 해제 — findBlockCursor 가 현재 커서를 새로 읽는다
+            apply();
+          }, 80);
         });
       } catch (e) {}
     } else if (isClaude) {
