@@ -43,6 +43,12 @@ public sealed class TerminalSession : IDisposable
         }
     }
 
+    /// <summary>표시 허브가 아직 비어 있을 때 쓰는 짧은 원본 ANSI 폴백.</summary>
+    public byte[] GetRecentOutputSnapshot()
+    {
+        lock (_recentLock) return Encoding.UTF8.GetBytes(_recent.ToString());
+    }
+
     /// <summary>셸(직속) 프로세스 ID — graceful 종료 대기에 사용.</summary>
     public int ProcessId { get; private set; }
 

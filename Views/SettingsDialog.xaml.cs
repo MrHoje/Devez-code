@@ -34,6 +34,7 @@ public partial class SettingsDialog : UserControl
     private bool   _originalAutoUpdateAgents;
     private bool   _originalUseFullScreen;
     private bool   _originalMinimizeOnClose;
+    private bool   _originalLanDashboardEnabled;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
@@ -47,6 +48,7 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedAutoUpdateAgents;
     private bool   _selectedUseFullScreen;
     private bool   _selectedMinimizeOnClose;
+    private bool   _selectedLanDashboardEnabled;
     private int    _selectedProjectColumns;
     // DeepSeek 연결 토글 — 다른 설정과 동일하게 [저장] 시점에만 디스크 반영(끄고 저장 시 키 삭제).
     private bool   _originalDeepSeekEnabled;
@@ -366,6 +368,10 @@ public partial class SettingsDialog : UserControl
         _originalMinimizeOnClose = SettingsService.LoadMinimizeOnClose();
         _selectedMinimizeOnClose = _originalMinimizeOnClose;
         MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
+        _originalLanDashboardEnabled = SettingsService.LoadLanDashboardEnabled();
+        _selectedLanDashboardEnabled = _originalLanDashboardEnabled;
+        LanDashboardToggle.IsChecked = _selectedLanDashboardEnabled;
+        LanDashboardUrlText.Text = LanDashboardService.GetAccessUrls(SettingsService.LoadOrCreateLanDashboardToken()).FirstOrDefault() ?? "주소를 확인할 수 없습니다.";
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
         UpdateProjectColumnsVisual();
@@ -732,6 +738,32 @@ public partial class SettingsDialog : UserControl
     private void MinimizeOnCloseToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedMinimizeOnClose = MinimizeOnCloseToggle.IsChecked == true;
+    }
+
+    private void LanDashboardToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedLanDashboardEnabled = LanDashboardToggle.IsChecked == true;
+    }
+
+    private void CopyLanDashboardUrl_Click(object sender, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText(LanDashboardUrlText.Text); }
+        catch { ConfirmDialog.Alert("주소 복사", "클립보드를 사용할 수 없습니다."); }
+    }
+
+    private void OpenLanDashboard_Click(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo(LanDashboardUrlText.Text) { UseShellExecute = true }); }
+        catch { ConfirmDialog.Alert("대시보드 열기", "대시보드를 열 수 없습니다. 기능을 켜고 저장했는지 확인해 주세요."); }
+    }
+
+    private static async Task ApplyLanDashboardSettingAsync(bool enabled)
+    {
+        try { await LanDashboardService.Instance.ApplyEnabledAsync(enabled); }
+        catch (Exception ex)
+        {
+            ConfirmDialog.Alert("LAN 대시보드", "대시보드를 시작하지 못했습니다.\n" + ex.Message);
+        }
     }
 
     // ── 프로젝트 목록 열 수 (1/2) — 적용은 [저장] 시점에만(라이브 미리보기 없음) ──
@@ -1309,6 +1341,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
         if (_selectedMinimizeOnClose != _originalMinimizeOnClose) return true;
+        if (_selectedLanDashboardEnabled != _originalLanDashboardEnabled) return true;
         if (_selectedProjectColumns != _originalProjectColumns) return true;
         if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled) return true;
         if (_selectedNotifyEnabled != _originalNotifyEnabled) return true;
@@ -1361,6 +1394,11 @@ public partial class SettingsDialog : UserControl
         }
         if (_selectedMinimizeOnClose != _originalMinimizeOnClose)
             SettingsService.SaveMinimizeOnClose(_selectedMinimizeOnClose);
+        if (_selectedLanDashboardEnabled != _originalLanDashboardEnabled)
+        {
+            SettingsService.SaveLanDashboardEnabled(_selectedLanDashboardEnabled);
+            _ = ApplyLanDashboardSettingAsync(_selectedLanDashboardEnabled);
+        }
         if (_selectedProjectColumns != _originalProjectColumns)
         {
             SettingsService.SaveProjectColumns(_selectedProjectColumns);
@@ -1457,6 +1495,7 @@ public partial class SettingsDialog : UserControl
         _originalAutoUpdateAgents = _selectedAutoUpdateAgents;
         _originalUseFullScreen = _selectedUseFullScreen;
         _originalMinimizeOnClose = _selectedMinimizeOnClose;
+        _originalLanDashboardEnabled = _selectedLanDashboardEnabled;
         _originalProjectColumns = _selectedProjectColumns;
         _originalHkMod = _selectedHkMod; _originalHkPrev = _selectedHkPrev; _originalHkNext = _selectedHkNext;
         _originalEnabledAgents = new HashSet<string>(
@@ -1514,6 +1553,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedMinimizeOnClose = _originalMinimizeOnClose;
             MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
+        }
+        if (_selectedLanDashboardEnabled != _originalLanDashboardEnabled)
+        {
+            _selectedLanDashboardEnabled = _originalLanDashboardEnabled;
+            LanDashboardToggle.IsChecked = _selectedLanDashboardEnabled;
         }
         if (_selectedProjectColumns != _originalProjectColumns)
         {
