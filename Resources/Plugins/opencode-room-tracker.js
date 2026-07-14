@@ -42,6 +42,29 @@ export const DevezCodeRoomTracker = async () => {
     } catch (e) { debug(`writeId failed: ${e.message}`); }
   };
 
+  // task/explore 서브에이전트도 부모 프로세스의 DEVEZCODE_ROOM_ID를 상속하고 이 플러그인의
+  // 이벤트 스트림에 나타난다. parentID가 있는 세션은 방의 루트 대화가 아니므로 모든 방 상태에서 제외한다.
+  let rootSessionId = null;
+  const nestedSessionIds = new Set();
+  const acceptRootSession = (info) => {
+    if (!info || !info.id) return false;
+    const parentId = info.parentID || info.parentId;
+    if (parentId) {
+      nestedSessionIds.add(String(info.id));
+      if (!rootSessionId) {
+        rootSessionId = String(parentId);
+        writeId(rootSessionId); // 잘못 추적된 자식 세션으로 재진입한 경우 부모 ID로 자동 치유.
+      }
+      debug(`nested session ignored: ${info.id} (root=${rootSessionId})`);
+      return false;
+    }
+    if (nestedSessionIds.has(String(info.id))) return false;
+    rootSessionId = String(info.id);
+    return true;
+  };
+  const isRootSession = (sessionId) =>
+    !sessionId || !rootSessionId || String(sessionId) === rootSessionId;
+
   // busy\<room>.txt = running|idle — 요청 처리중 스피너. claude busy hook 과 동일 패턴.
   // user 프롬프트 전송 → running, session.idle/error → idle.
   const writeBusy = (state) => {
@@ -159,24 +182,33 @@ export const DevezCodeRoomTracker = async () => {
         if (!event || !event.type) return;
         const props = event.properties || {};
 
+        const info = props.info || {};
+        const part = props.part || {};
+        const eventSessionId = props.sessionID || info.sessionID || part.sessionID || null;
+
         // 선택지(ask) 응답 대기 ❗ — opencode 는 'question.asked' 로 사용자 선택지를 띄운다.
         // 대기 진입 시 waiting 파일에 기록. 대기 중에는 이벤트가 흐르지 않으므로(블록), 답하면 generation
         // 재개(message.part.updated reasoning/text) 또는 턴 종료(session.idle)에서 해제한다.
-        if (event.type === "question.asked") { setWaiting(); return; }
         // [진단] session.* / message.updated / message.part.updated 만 항상 로깅(노이즈 제외).
         // 실제 한 턴 동안 어떤 event 가 어떤 순서/sessionID/role/completed 로 흐르는지 확보용.
         const t = event.type;
         const logPart = t === "message.part.updated" && partEvLogged < PART_EV_LOG_MAX;
         if (t.startsWith("session.") || t === "message.updated" || logPart) {
           if (logPart) partEvLogged++;
-          const info = props.info || {};
-          const part = props.part || {};
-          const sid = props.sessionID || info.sessionID || part.sessionID || "?";
+          const sid = eventSessionId || "?";
           const role = info.role || messageRole[part.messageID] || "-";
           const done = info.time && info.time.completed ? "completed" : "-";
           debug(`EV ${t} sid=${sid} role=${role} time=${done}` +
-                (part.type ? ` partType=${part.type}` : ""));
+                 (part.type ? ` partType=${part.type}` : ""));
         }
+
+        if (event.type === "session.created" || event.type === "session.updated") {
+          if (!acceptRootSession(info)) return;
+        } else if (!isRootSession(eventSessionId)) {
+          return;
+        }
+
+        if (event.type === "question.asked") { setWaiting(); return; }
 
         // todowrite 업데이트 — 태스크 목록을 JSON 파일로 기록. DevezCode Task View 에서 사용.
         if (event.type === "todo.updated") {
@@ -204,7 +236,6 @@ export const DevezCodeRoomTracker = async () => {
         }
         // 세션 생성/갱신 이벤트 — 최신 ID 덮어씀 (--clear·새 대화 시작 시 자동 갱신).
         if (event.type === "session.created" || event.type === "session.updated") {
-          const info = props.info;
           if (info && info.id) {
             // 같은 방에서 새 세션이 생성되면(/clear·/new) 이전 todos·lastmsg 를 초기화한다.
             if (event.type === "session.created") { writeTodos([]); clearLastmsg(); clearWaiting(); }
@@ -213,7 +244,6 @@ export const DevezCodeRoomTracker = async () => {
         }
         // message.updated — 메시지 메타( role, id ) 캐시. 텍스트 본문은 여기에 없음.
         else if (event.type === "message.updated") {
-          const info = props.info;
           if (info && info.id) {
             if (info.sessionID) writeId(info.sessionID);
             if (info.role) messageRole[info.id] = info.role;
@@ -222,7 +252,6 @@ export const DevezCodeRoomTracker = async () => {
         // message.part.updated — 실제 텍스트 본문이 여기 도착.
         //   type="text" + 부모 메시지가 user 일 때만 lastmsg 로 저장.
         else if (event.type === "message.part.updated") {
-          const part = props.part;
           if (!part) return;
           // 답변 후 generation 재개(reasoning/text/step-start) = 선택지 대기 해제. (tool part 는 ask 자체의 잔여라 제외)
           if (awaitingAnswer && part.type !== "tool") clearWaiting();
@@ -249,6 +278,7 @@ export const DevezCodeRoomTracker = async () => {
     },
     "chat.message": async (input) => {
       try {
+        if (!isRootSession(input && input.sessionID)) return;
         if (input && input.sessionID) writeId(input.sessionID);
         if (input && input.message && input.message.role === "user") {
           // chat.message 는 message.updated 와 동시 또는 직전에 옴 → role 캐시도 함께 갱신.

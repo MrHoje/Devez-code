@@ -487,15 +487,34 @@ public sealed class TerminalSessionManager
             ? "grok"
             : $"\"{grokPath.Replace("\"", "\"\"")}\"";
 
-        // 훅 파일이 settings 보다 최신이면 동기화
+        // 훅 root-session fence가 지킨 현재 ID, settings, 이전 ID 순으로 실제 이 작업폴더에
+        // transcript가 있는 후보만 채택. 잘못된 내부/자식 ID는 settings에 넣지 않는다.
         var tracked = GrokHookService.LoadTrackedSessionId(roomId);
-        var sessionId = SettingsService.LoadGrokRoomSession(roomId);
-        if (tracked != null && tracked != sessionId)
+        var saved = SettingsService.LoadGrokRoomSession(roomId);
+        var previous = GrokHookService.LoadPreviousTrackedSessionId(roomId);
+        var workingDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+        var fencedTracked = GrokHookService.IsRootTrackedSession(roomId, tracked) ? tracked : null;
+        string? sessionId = null;
+        // 구버전 훅이 남긴 un-fenced tracked는 settings보다 뒤에서만 고려한다.
+        foreach (var candidate in new[] { fencedTracked, saved, previous, tracked })
         {
-            sessionId = tracked;
-            SettingsService.SaveGrokRoomSession(roomId, tracked);
+            if (FindGrokChatHistoryPathForWorkingDirectory(candidate, workingDir) == null) continue;
+            sessionId = candidate;
+            break;
         }
-        if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
+        if (sessionId != null)
+        {
+            if (!string.Equals(saved, sessionId, StringComparison.OrdinalIgnoreCase))
+                SettingsService.SaveGrokRoomSession(roomId, sessionId);
+            if (!string.Equals(tracked, sessionId, StringComparison.OrdinalIgnoreCase)
+                || !GrokHookService.IsRootTrackedSession(roomId, sessionId))
+                GrokHookService.RestoreTrackedSessionId(roomId, sessionId);
+        }
+        else
+        {
+            SettingsService.RemoveGrokRoomSession(roomId);
+            GrokHookService.ResetTrackedSessionIds(roomId);
+        }
         SettingsService.MarkAgentRoomLaunched(roomId, "grok");
 
         var selectedModel = SettingsService.LoadAgentRoomModel(roomId, "grok");
@@ -590,16 +609,27 @@ public sealed class TerminalSessionManager
 
         const string flags = "--dangerously-skip-permissions";
 
-        // 훅 파일이 settings 보다 최신이면 동기화 (방별 정확 추적 — cwd 매핑보다 우선)
+        // 훅 root-session fence가 지킨 현재 ID를 우선하되, 실제 db가 없는 후보는 settings에
+        // 반영하지 않는다. current가 손상됐으면 settings/previous에서 정상 대화를 복구한다.
         var tracked = AntigravityHookService.LoadTrackedSessionId(roomId);
-        var sessionId = SettingsService.LoadAntigravityRoomSession(roomId);
-        if (tracked != null && tracked != sessionId)
+        var saved = SettingsService.LoadAntigravityRoomSession(roomId);
+        var previous = AntigravityHookService.LoadPreviousTrackedSessionId(roomId);
+        var fencedTracked = AntigravityHookService.IsRootTrackedSession(roomId, tracked) ? tracked : null;
+        string? sessionId = null;
+        foreach (var candidate in new[] { fencedTracked, saved, previous, tracked })
         {
-            sessionId = tracked;
-            SettingsService.SaveAntigravityRoomSession(roomId, tracked);
+            if (!AntigravityConversationExists(candidate)) continue;
+            sessionId = candidate;
+            break;
         }
-        // 불변식: conversation ID 는 GUID. 비정상 값(설정 변조 등)은 무시 → 배치 주입 차단.
-        if (sessionId != null && !Guid.TryParse(sessionId, out _)) sessionId = null;
+        if (sessionId != null)
+        {
+            if (!string.Equals(saved, sessionId, StringComparison.OrdinalIgnoreCase))
+                SettingsService.SaveAntigravityRoomSession(roomId, sessionId);
+            if (!string.Equals(tracked, sessionId, StringComparison.OrdinalIgnoreCase)
+                || !AntigravityHookService.IsRootTrackedSession(roomId, sessionId))
+                AntigravityHookService.RestoreTrackedSessionId(roomId, sessionId);
+        }
 
         // 훅 미기록 방(첫 도입/훅 실패)은 agy 자체 cwd→conversation 매핑으로 폴백 추종.
         var ccDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
@@ -610,15 +640,15 @@ public sealed class TerminalSessionManager
             {
                 sessionId = byCwd;
                 SettingsService.SaveAntigravityRoomSession(roomId, byCwd);
+                AntigravityHookService.RestoreTrackedSessionId(roomId, byCwd);
             }
         }
 
-        // db 가 실제로 있을 때만 resume. 없으면 빈/유실 ID → 폐기하고 새 대화(무한 빈 세션 방지).
-        bool resume = sessionId != null && AntigravityConversationExists(sessionId);
-        if (sessionId != null && !resume)
+        // 검증 가능한 후보가 하나도 없으면 stale 추적값을 모두 비우고 새 대화.
+        if (sessionId == null)
         {
             SettingsService.RemoveAntigravityRoomSession(roomId);
-            sessionId = null;
+            AntigravityHookService.ResetTrackedSessionIds(roomId);
         }
 
         SettingsService.MarkAgentRoomLaunched(roomId, "antigravity");
@@ -893,6 +923,55 @@ public sealed class TerminalSessionManager
         catch { return null; }
     }
 
+    /// <summary>Grok 세션이 이 방의 작업폴더에 실제로 속하는지까지 확인한다.
+    /// 내부/별도 Grok 프로세스가 DEVEZCODE_ROOM_ID를 상속해 다른 cwd의 ID를 기록하는 경우 차단.</summary>
+    public static string? FindGrokChatHistoryPathForWorkingDirectory(string? sessionId, string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(workingDir)
+            || string.IsNullOrWhiteSpace(sessionId)
+            || !Guid.TryParse(sessionId, out _)) return null;
+        try
+        {
+            var expected = Path.GetFullPath(workingDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "sessions");
+            if (!Directory.Exists(root)) return null;
+
+            // UUID가 다른 cwd 아래 중복될 수 있으므로 첫 전역 검색 결과를 믿지 않고 모든 후보의
+            // summary.info.cwd를 비교한다.
+            foreach (var cwdDir in Directory.EnumerateDirectories(root))
+            {
+                var historyPath = Path.Combine(cwdDir, sessionId, "chat_history.jsonl");
+                if (File.Exists(historyPath) && GrokHistoryMatchesWorkingDirectory(historyPath, expected))
+                    return historyPath;
+            }
+            foreach (var file in new DirectoryInfo(root).GetFiles("chat_history.jsonl", SearchOption.AllDirectories)
+                .Where(f => string.Equals(f.Directory?.Name, sessionId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(f => f.LastWriteTimeUtc))
+            {
+                if (GrokHistoryMatchesWorkingDirectory(file.FullName, expected)) return file.FullName;
+            }
+        }
+        catch { return null; }
+        return null;
+    }
+
+    private static bool GrokHistoryMatchesWorkingDirectory(string historyPath, string expectedWorkingDir)
+    {
+        try
+        {
+            var summaryPath = Path.Combine(Path.GetDirectoryName(historyPath)!, "summary.json");
+            if (!File.Exists(summaryPath)) return false;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(summaryPath));
+            if (!doc.RootElement.TryGetProperty("info", out var info)
+                || !info.TryGetProperty("cwd", out var cwdElement)) return false;
+            var sessionCwd = cwdElement.GetString();
+            if (string.IsNullOrWhiteSpace(sessionCwd)) return false;
+            var actual = Path.GetFullPath(sessionCwd).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.Equals(expectedWorkingDir, actual, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     /// <summary>현재 방을 종료한 뒤 동일 대화로 다시 들어갈 근거가 디스크에 있는지 확인한다.
     /// 자동 유휴 종료는 이 검사를 통과한 방에만 적용한다. Antigravity는 권한 대기 상태를
     /// 별도로 관측할 수 없어(false-idle 위험) 사용자가 직접 숨길 때만 종료한다.</summary>
@@ -912,7 +991,9 @@ public sealed class TerminalSessionManager
                     && string.Equals(openCodeId, SettingsService.LoadOpenCodeRoomSession(roomId), StringComparison.Ordinal),
                 "gajae" => FindLatestGajaeTranscriptPath(roomId) != null
                     && !string.IsNullOrWhiteSpace(SettingsService.LoadGajaeRoomSession(roomId)),
-                "grok" => FindGrokChatHistoryPath(SettingsService.LoadGrokRoomSession(roomId)) != null,
+                "grok" => FindGrokChatHistoryPathForWorkingDirectory(
+                    SettingsService.LoadGrokRoomSession(roomId),
+                    SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
                 _ => false,
             };
         }
@@ -2258,12 +2339,17 @@ public sealed class TerminalSessionManager
                     break;
                 case "grok":
                     var gk = GrokHookService.LoadTrackedSessionId(roomId);
-                    if (gk != null && gk != SettingsService.LoadGrokRoomSession(roomId))
+                    var gkDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+                    if (GrokHookService.IsRootTrackedSession(roomId, gk)
+                        && FindGrokChatHistoryPathForWorkingDirectory(gk, gkDir) != null
+                        && gk != SettingsService.LoadGrokRoomSession(roomId))
                         SettingsService.SaveGrokRoomSession(roomId, gk);
                     break;
                 case "antigravity":
                     var ag = AntigravityHookService.LoadTrackedSessionId(roomId);
-                    if (ag != null && ag != SettingsService.LoadAntigravityRoomSession(roomId))
+                    if (AntigravityHookService.IsRootTrackedSession(roomId, ag)
+                        && AntigravityConversationExists(ag)
+                        && ag != SettingsService.LoadAntigravityRoomSession(roomId))
                         SettingsService.SaveAntigravityRoomSession(roomId, ag);
                     break;
             }
@@ -2457,6 +2543,9 @@ public sealed class TerminalSessionManager
 
         var grokDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "grok");
         TryDeleteFile(Path.Combine(grokDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(grokDir, "sessions", roomFile + ".prev.txt"));
+        TryDeleteFile(Path.Combine(grokDir, "sessions", roomFile + ".root.txt"));
+        TryDeleteFile(Path.Combine(grokDir, "sessions", roomFile + ".ended.txt"));
         TryDeleteFile(Path.Combine(grokDir, "lastmsg", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(grokDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(grokDir, "waiting", roomFile + ".txt"));
@@ -2475,6 +2564,9 @@ public sealed class TerminalSessionManager
 
         var antigravityDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "antigravity");
         TryDeleteFile(Path.Combine(antigravityDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(antigravityDir, "sessions", roomFile + ".prev.txt"));
+        TryDeleteFile(Path.Combine(antigravityDir, "sessions", roomFile + ".root.txt"));
+        TryDeleteFile(Path.Combine(antigravityDir, "sessions", roomFile + ".ended.txt"));
         TryDeleteFile(Path.Combine(antigravityDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(AntigravityLaunchDir(), roomFile + ".cmd"));
     }

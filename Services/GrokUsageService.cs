@@ -289,14 +289,24 @@ public sealed class GrokUsageService : IDisposable
         };
     }
 
-    /// <summary>currentPeriod 이 주간 창인지. type 이 없으면 currentPeriod 존재만으로 주간 취급.</summary>
+    /// <summary>currentPeriod 이 주간 창인지. type 이 없으면 실제 기간 길이로 판별한다.</summary>
     private static bool HasWeeklyPeriod(JsonElement config)
     {
         if (!config.TryGetProperty("currentPeriod", out var cp) || cp.ValueKind != JsonValueKind.Object)
             return false;
         if (cp.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String)
             return t.GetString()?.Contains("WEEKLY", StringComparison.OrdinalIgnoreCase) ?? false;
-        return true;
+
+        if (cp.TryGetProperty("start", out var startEl) && startEl.ValueKind == JsonValueKind.String
+            && cp.TryGetProperty("end", out var endEl) && endEl.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(startEl.GetString(), out var start)
+            && DateTimeOffset.TryParse(endEl.GetString(), out var end))
+        {
+            var duration = end - start;
+            return duration >= TimeSpan.FromDays(6) && duration <= TimeSpan.FromDays(8);
+        }
+
+        return false;
     }
 
     private static DateTimeOffset? ReadPeriodEnd(JsonElement config)

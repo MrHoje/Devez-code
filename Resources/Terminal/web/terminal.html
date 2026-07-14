@@ -53,6 +53,14 @@
     top: var(--ime-top) !important;
   }
 
+  /* IME 확정 직후 PTY echo 도착 전까지 확정 글자를 미리 그리는 고스트(연타 깜빡임 제거).
+     배경 투명 — echo 가 같은 글리프를 그리는 순간 이음새 없이 겹쳐졌다가 제거된다. */
+  .ime-echo-ghost {
+    position: absolute; z-index: 1; display: none;
+    color: var(--term-fg, #CCCCCC); background: transparent;
+    white-space: pre; pointer-events: none;
+  }
+
   /* ── 터미널 내 검색창 (Ctrl+Shift+F) — Windows Terminal 검색바 정합 ── */
   #search-bar {
     position: absolute; top: 8px; right: 12px; z-index: 10;
@@ -463,11 +471,110 @@
   // ── IME 조합 위치 고정 ──────────────────────────────────────────────
   // claude 의 입력 캐럿 = 자체 블록 커서(반전 영상의 빈 셀, ESC[7m space).
   // 조합 시작 시 버퍼에서 이를 찾아 CSS 변수로 위치를 고정한다 (.ime-fixed).
+
+  // IME 확정 문자열의 셀 폭. 한글/CJK 전각 = 2셀 (한글 IME 경로 전용 — 정밀 wcwidth 불필요).
+  function imeCellWidth(s) {
+    let w = 0;
+    for (const ch of s) {
+      const cp = ch.codePointAt(0);
+      w += (cp >= 0x1100 && (cp <= 0x115F || (cp >= 0x2E80 && cp <= 0x303E) ||
+            (cp >= 0x3041 && cp <= 0x33FF) || (cp >= 0x3400 && cp <= 0x9FFF) ||
+            (cp >= 0xA000 && cp <= 0xA4CF) || (cp >= 0xAC00 && cp <= 0xD7A3) ||
+            (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0xFE30 && cp <= 0xFE4F) ||
+            (cp >= 0xFF00 && cp <= 0xFF60) || (cp >= 0xFFE0 && cp <= 0xFFE6))) ? 2 : 1;
+    }
+    return w;
+  }
+
   function setupImeCaretFix(term, el, agent, roomId) {
     const ta = el.querySelector('.xterm-helper-textarea');
     if (!ta) return;
+    // codex/opencode: 입력 캐럿 = 논리 커서. 조합 중 리페인트가 커서를 viewport 밖/statusLine 으로
+    // 옮기면 xterm 이 composition-view 를 못 따라가거나(0,0 잔류) 여기저기 튄다 → 조합 중 고정.
+    const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode');
     const isClaude = (agent === 'claude');
+    const needsCaretFix = pinsLogicalCaret || isClaude;
     let isImeComposing = false;
+    let lastLogicalCaret = null;
+    // 음절 확정→다음 조합이 같은 keydown 안에서 연달아 일어나면 PTY echo 가 아직 안 와
+    // 논리 커서가 이전 자리다. 확정 폭만큼 전진한 예상 좌표를 다음 compositionstart 가 소비한다.
+    let chainCaret = null;
+    // 로컬 echo 고스트: chain 이 조합을 예측 위치에 두면 확정 글자 echo 도착까지 그 앞이
+    // 빈칸이라 연타 시 깜빡인다. 지연 창 동안 확정 문자열을 같은 자리에 미리 그려 채운다.
+    let ghost = null;      // { row, col, text } — 아직 echo 안 된 확정 문자열
+    let ghostEl = null;
+    let ghostTimer = 0;
+
+    // 조합/고스트 표시 중 하드웨어 커서 숨김 — claude/gjc 처럼 TUI 가 커서를 직접 숨기는
+    // 에이전트와 달리 codex/opencode 는 하드웨어 커서가 켜져 있어 조합뷰·고스트 밑에서
+    // 깜빡인다. 커서색을 배경색으로 위장해 안 보이게 하고, 끝나면 원래 테마로 복원한다.
+    let savedCursorColors = null;
+    function hideHwCursor() {
+      if (savedCursorColors) return;
+      const th = term.options.theme || {};
+      savedCursorColors = { cursor: th.cursor, cursorAccent: th.cursorAccent };
+      term.options.theme = Object.assign({}, th, {
+        cursor: th.background || '#0C0C0C',
+        cursorAccent: th.foreground || '#CCCCCC'
+      });
+    }
+    function maybeRestoreHwCursor(force) {
+      if (!savedCursorColors) return;
+      if (!force && (isImeComposing || ghost)) return; // 아직 조합/echo 대기 중 — 숨김 유지
+      const th = Object.assign({}, term.options.theme || {});
+      if (savedCursorColors.cursor === undefined) delete th.cursor;
+      else th.cursor = savedCursorColors.cursor;
+      if (savedCursorColors.cursorAccent === undefined) delete th.cursorAccent;
+      else th.cursorAccent = savedCursorColors.cursorAccent;
+      savedCursorColors = null;
+      term.options.theme = th;
+    }
+    // 라이브 테마 전환이 theme 을 통째로 교체하면 저장해둔 이전 테마 커서색이 낡는다 —
+    // 새 테마가 커서를 이미 정상 표시하므로 복원할 것도 없음. 저장분만 폐기.
+    el._onThemeSwapped = function () { savedCursorColors = null; };
+
+    function clearGhost() {
+      ghost = null;
+      if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = 0; }
+      if (ghostEl) ghostEl.style.display = 'none';
+      maybeRestoreHwCursor();
+    }
+
+    function showGhost() {
+      if (!ghost) return;
+      const screen = el.querySelector('.xterm-screen');
+      if (!screen) return;
+      if (!ghostEl) {
+        ghostEl = document.createElement('div');
+        ghostEl.className = 'ime-echo-ghost';
+        screen.appendChild(ghostEl);
+      }
+      const cw = screen.clientWidth / term.cols;
+      const chh = screen.clientHeight / term.rows;
+      ghostEl.textContent = ghost.text;
+      ghostEl.style.left = Math.round(ghost.col * cw) + 'px';
+      ghostEl.style.top = Math.round(ghost.row * chh) + 'px';
+      ghostEl.style.lineHeight = Math.round(chh) + 'px';
+      if (term.options.fontFamily) ghostEl.style.fontFamily = term.options.fontFamily;
+      if (term.options.fontSize) ghostEl.style.fontSize = term.options.fontSize + 'px';
+      ghostEl.style.display = 'block';
+      if (ghostTimer) clearTimeout(ghostTimer);
+      ghostTimer = setTimeout(clearGhost, 600); // echo 미도착 안전망(제출로 지워진 입력란 등)
+    }
+
+    // echo 판정: 고스트 마지막 글자가 실제 버퍼 셀에 나타나면 TUI 가 다 그린 것 — 제거.
+    function checkGhostEchoed() {
+      if (!ghost) return;
+      const chars = Array.from(ghost.text);
+      const last = chars[chars.length - 1];
+      const lastCol = ghost.col + imeCellWidth(chars.slice(0, -1).join(''));
+      if (lastCol >= term.cols) { clearGhost(); return; }
+      const buf = term.buffer.active;
+      const line = buf.getLine(buf.viewportY + ghost.row);
+      if (!line) return;
+      const cell = line.getCell(lastCol);
+      if (cell && cell.getChars() === last) clearGhost();
+    }
     let lastClaudeCaret = null;
     let lastClaudeScanAt = 0;
     let frozenImeCaret = null;
@@ -541,6 +648,14 @@
       requestAnimationFrame(tryReset);
     };
 
+    function rememberLogicalCaret() {
+      if (!pinsLogicalCaret || isImeComposing) return;
+      const buf = term.buffer.active;
+      const row = buf.cursorY, col = buf.cursorX;
+      if (row < 0 || row >= term.rows) return;
+      lastLogicalCaret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
+    }
+
     function scanClaudeBlockCursor() {
       const buf = term.buffer.active;
       // Claude 의 자체 입력 커서 = 반전된 빈 셀. 현재 보이는 viewport 만 아래→위로 훑는다.
@@ -578,9 +693,19 @@
       }, 80);
     };
 
-    // Claude 만 자체 블록 커서를 기억해 조합 중 위치를 고정한다. Codex/GJC/기타는 xterm 이
-    // 논리 커서 이동을 따라 composition-view 를 갱신하므로 기본 동기화를 그대로 사용한다.
-    if (isClaude) {
+    // Codex/opencode 는 조합 시작 시점의 논리 커서, Claude 는 자체 블록 커서를 기억한다. 조합
+    // 중에는 리페인트가 커서를 출력/statusLine으로 옮겨도 composition-view 위치를 바꾸지 않는다.
+    if (pinsLogicalCaret) {
+      rememberLogicalCaret();
+      try {
+        term.onCursorMove(rememberLogicalCaret);
+        term.onRender(checkGhostEchoed);
+        term.onResize(function () {
+          clearGhost(); // 그리드 변경 — 픽셀 좌표 무효
+          if (isImeComposing) apply();
+        });
+      } catch (e) {}
+    } else if (isClaude) {
       rememberClaudeCaret();
       try {
         term.onRender(function () { rememberClaudeCaret(false); });
@@ -592,6 +717,25 @@
     }
 
     function findBlockCursor() {
+      if (pinsLogicalCaret) {
+        // 직전 음절 확정 직후의 연속 조합 — echo 미도착 논리 커서 대신 예상 좌표 사용(1회 소비).
+        if (chainCaret && Date.now() - chainCaret.at < 250) {
+          const chained = { // 250ms 창 안에서 fit 리사이즈가 끼어들 수 있어 현재 그리드로 클램프
+            row: Math.max(0, Math.min(chainCaret.row, term.rows - 1)),
+            col: Math.max(0, Math.min(chainCaret.col, term.cols - 1))
+          };
+          chainCaret = null;
+          lastLogicalCaret = chained;
+          return chained;
+        }
+        chainCaret = null;
+        const buf = term.buffer.active;
+        const row = buf.cursorY, col = buf.cursorX;
+        if (row < 0 || row >= term.rows) return lastLogicalCaret;
+        const caret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
+        lastLogicalCaret = caret;
+        return caret;
+      }
       if (isClaude) {
         const caret = scanClaudeBlockCursor();
         if (caret) {
@@ -610,7 +754,10 @@
     }
 
     function apply() {
-      if (!isClaude) return; // Codex/GJC/기타는 xterm·TUI가 제공한 논리 커서 좌표 사용
+      if (!needsCaretFix) return; // GJC/기타는 xterm·TUI가 제공한 논리 커서 좌표 사용
+      // 지연 apply(compositionstart+60ms / update+0ms)가 조합 종료 후 발화하면 .ime-fixed 를
+      // 재부착하고 chain 을 소모해 다음 조합을 깨뜨린다 — 조합 중일 때만 동작.
+      if (!isImeComposing) return;
       const caret = frozenImeCaret || findBlockCursor();
       if (!caret) return;
       // 실시간 스캔 좌표만 동결한다. 캐시 폴백은 60ms/조합 갱신 때 실제 커서가 나타나면 교정한다.
@@ -627,6 +774,7 @@
     ta.addEventListener('compositionstart', function () {
       isImeComposing = true;
       frozenImeCaret = null;
+      if (pinsLogicalCaret) hideHwCursor();
       if (pendingResponseReset) armStaleCompositionReset();
       apply();
       setTimeout(apply, 60); // 직전 확정 글자가 TUI에 반영된 뒤 위치 재계산
@@ -635,15 +783,43 @@
       if (pendingResponseReset) armStaleCompositionReset();
       setTimeout(apply, 0);
     });
-    ta.addEventListener('compositionend', function () {
+    ta.addEventListener('compositionend', function (e) {
+      // 확정 문자열 폭만큼 고정 좌표를 전진 — 직후 이어지는 새 조합(다음 음절)이 방금 확정된
+      // 글자를 덮지 않게 한다. 우측 경계 근처(입력란 줄바꿈 가능)면 체인 포기 후 기본 경로.
+      if (pinsLogicalCaret && frozenImeCaret && e && e.data) {
+        const nextCol = frozenImeCaret.col + imeCellWidth(e.data);
+        // 입력란은 테두리 때문에 term.cols 보다 몇 칸 일찍 줄바꿈된다 — 경계 근처면 체인을
+        // 포기하고 기본 경로(조합 시작 시점 논리 커서)로 둔다. 틀린 행 고정보다 낫다.
+        chainCaret = (nextCol < term.cols - 4)
+          ? { row: frozenImeCaret.row, col: nextCol, at: Date.now() }
+          : null;
+        // 고스트 갱신 — 직전 고스트가 아직 echo 전이고 바로 이어지는 위치면 이어붙여
+        // 연타 전체를 커버, 아니면 이번 확정 위치에서 새로 시작.
+        if (chainCaret) {
+          if (ghost && ghost.row === frozenImeCaret.row &&
+              ghost.col + imeCellWidth(ghost.text) === frozenImeCaret.col) {
+            ghost.text += e.data;
+          } else {
+            ghost = { row: frozenImeCaret.row, col: frozenImeCaret.col, text: e.data };
+          }
+          showGhost();
+        } else {
+          clearGhost(); // 경계 근처 — 예측 포기했으니 고스트도 그리지 않음
+        }
+      } else {
+        chainCaret = null;
+      }
       isImeComposing = false;
       frozenImeCaret = null;
       el.classList.remove('ime-fixed'); // 다음 조합 전에는 xterm 이 textarea 를 현재 논리 커서와 동기화
+      rememberLogicalCaret();
+      maybeRestoreHwCursor(); // 고스트가 echo 대기 중이면 숨김 유지, 아니면 즉시 복원
       // 조합 중 Ctrl+Enter 가 눌렸으면 — 확정 글자가 PTY로 전송된 뒤(setTimeout 0)
       // 줄바꿈을 보낸다. 순서를 보장해 마지막 글자가 새 줄로 내려가지 않게 한다.
       if (pendingComposeNewline) {
         const pending = pendingComposeNewline;
         pendingComposeNewline = null;
+        chainCaret = null; // 줄바꿈이 커서를 다음 줄로 옮기므로 예상 좌표 무효
         setTimeout(function () { post({ type: 'input', roomId: pending.roomId, data: pending.data }); }, 0);
       }
       if (pendingResponseReset) {
@@ -651,9 +827,37 @@
         responseResetTimer = setTimeout(resetImeNow, 0);
       }
     });
+    // 조합 외 실제 키(Enter 제출/Backspace/화살표/단축키)는 커서를 움직인다 — 예상 좌표 무효화.
+    // 한글 자모 키는 전부 keyCode 229(조합 중)라 체인이 유지된다. handleKey 가 키를 삼켜도
+    // (확정 Enter 흡수 등) DOM keydown 은 textarea 에 그대로 도달하므로 여기서 항상 잡힌다.
+    // Enter/Backspace/Escape/Delete 는 입력란 내용 자체를 바꾼다(제출로 비움/글자 삭제) —
+    // 남은 고스트가 지워진 글자를 계속 보여주지 않게 즉시 제거.
+    function isLineMutatingKey(e) {
+      return e.keyCode === 13 || e.keyCode === 8 || e.keyCode === 27 || e.keyCode === 46;
+    }
+    ta.addEventListener('keydown', function (e) {
+      if (e.keyCode !== 229 && !e.isComposing) {
+        chainCaret = null;
+        if (isLineMutatingKey(e)) clearGhost();
+      }
+    });
+    // 스페이스 확정: keydown 은 조합 중(isComposing=true)이라 위에서 안 걸리지만 스페이스
+    // 문자가 PTY 로 가서 커서가 예상보다 1칸 더 간다. keyup 은 조합 종료 후 발화하므로
+    // 여기서 무효화. 자모 키 keyup 은 조합 지속 중(isComposing=true)이라 체인 유지.
+    // 고스트는 유지 — 확정 글자는 그 자리에 남고 스페이스만 뒤에 붙는 것이라 여전히 유효.
+    ta.addEventListener('keyup', function (e) {
+      if (e.keyCode !== 229 && !e.isComposing) {
+        chainCaret = null;
+        if (isLineMutatingKey(e)) clearGhost();
+      }
+    });
+
     ta.addEventListener('blur', function () {
       isImeComposing = false;
       frozenImeCaret = null;
+      chainCaret = null;
+      clearGhost();
+      maybeRestoreHwCursor(true); // 포커스 이탈 — 무조건 원래 테마로
       pendingResponseReset = false;
       clearResponseResetTimer();
       el.classList.remove('ime-fixed');
@@ -1348,6 +1552,7 @@
           if (ent && ent.term) {
             const tObj = themeFor(ent.agent); // gjc 는 selectionBackground 오버라이드 유지
             try { ent.term.setOption('theme', tObj); } catch (e) { ent.term.options.theme = tObj; }
+            if (ent.el && typeof ent.el._onThemeSwapped === 'function') ent.el._onThemeSwapped();
             // 기존 셀까지 새 색으로 다시 칠하도록 강제 리프레시
             try { ent.term.refresh(0, ent.term.rows - 1); } catch (e) {}
           }

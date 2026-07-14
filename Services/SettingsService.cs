@@ -854,9 +854,15 @@ public static class SettingsService
 
     public static void SaveGrokRoomSession(string roomId, string sessionId)
     {
-        if (string.IsNullOrWhiteSpace(sessionId)) return;
-        Current.GrokRoomSessions[roomId] = sessionId;
+        if (!Guid.TryParse(sessionId, out var parsed)) return;
+        Current.GrokRoomSessions[roomId] = parsed.ToString();
         Save();
+    }
+
+    /// <summary>검증 가능한 transcript가 없는 Grok 세션 ID 고착을 해제.</summary>
+    public static void RemoveGrokRoomSession(string roomId)
+    {
+        if (Current.GrokRoomSessions.Remove(roomId)) Save();
     }
 
     // ── opencode 세션 ID (Devez 패턴 이식, 플러그인이 채움) ─────────────
@@ -887,8 +893,8 @@ public static class SettingsService
 
     public static void SaveAntigravityRoomSession(string roomId, string sessionId)
     {
-        if (string.IsNullOrWhiteSpace(sessionId)) return;
-        Current.AntigravityRoomSessions[roomId] = sessionId;
+        if (!Guid.TryParse(sessionId, out var parsed)) return;
+        Current.AntigravityRoomSessions[roomId] = parsed.ToString();
         Save();
     }
 

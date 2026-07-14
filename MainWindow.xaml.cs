@@ -410,6 +410,10 @@ public partial class MainWindow : Window
         _grokHook.GrokSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var workingDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
+                if (!GrokHookService.IsRootTrackedSession(roomId, sid)
+                    || TerminalSessionManager.FindGrokChatHistoryPathForWorkingDirectory(sid, workingDir) == null)
+                    return;
                 SettingsService.SaveGrokRoomSession(roomId, sid);
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
@@ -427,7 +431,12 @@ public partial class MainWindow : Window
                 UpdateSessionBusyDisplay();
             });
         _antigravityHook.SessionChanged += (roomId, sid) =>
-            Dispatcher.InvokeAsync(() => SettingsService.SaveAntigravityRoomSession(roomId, sid));
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (!AntigravityHookService.IsRootTrackedSession(roomId, sid)
+                    || !TerminalSessionManager.AntigravityConversationExists(sid)) return;
+                SettingsService.SaveAntigravityRoomSession(roomId, sid);
+            });
         _antigravityHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -1940,14 +1949,6 @@ public partial class MainWindow : Window
     /// <summary>F1~F4 — 패널 토글 단축키.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
     {
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == System.Windows.Input.Key.P)
-        {
-            var item = QuickOpenWindow.Pick(this, BuildQuickOpenItems());
-            if (item != null) OpenQuickOpenItem(item);
-            e.Handled = true;
-            return;
-        }
-
         if (e.Key == System.Windows.Input.Key.Escape && Sidebar.HasSessionMultiSelection)
         {
             Sidebar.ClearSessionMultiSelection();

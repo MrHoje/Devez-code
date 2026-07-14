@@ -52,13 +52,62 @@ function Write-Waiting([string]$status) {
     Write-State (Join-Path $waitingDir ($roomSafe + '.txt')) $status 'Ascii'
 }
 
-function Write-SessionId {
+function Get-SessionId {
     $sid = $j.sessionId
     if (-not $sid) { $sid = $j.session_id }
     if (-not $sid) { $sid = $env:GROK_SESSION_ID }
+    if (-not $sid) { return $null }
+    $parsed = [Guid]::Empty
+    if (-not [Guid]::TryParse(([string]$sid).Trim(), [ref]$parsed)) { return $null }
+    return $parsed.ToString()
+}
+
+function Read-SessionId([string]$path) {
+    try {
+        if (-not (Test-Path -LiteralPath $path)) { return $null }
+        $value = (Get-Content -LiteralPath $path -Raw).Trim()
+        $parsed = [Guid]::Empty
+        if ([Guid]::TryParse($value, [ref]$parsed)) { return $parsed.ToString() }
+    } catch { }
+    return $null
+}
+
+# Only the room's root Grok session may own sessions\<room>.txt.
+# A Grok process launched by a tool inherits DEVEZCODE_ROOM_ID, so blindly accepting every
+# SessionStart can replace the resumable parent with a child/internal session. A different ID is
+# accepted only after SessionEnd for the currently tracked root (normal /new or /clear transition).
+function Write-SessionId([bool]$allowEndedTransition = $false) {
+    $sid = Get-SessionId
     if (-not $sid) { return }
     $sDir = Join-Path $base 'sessions'
-    Write-State (Join-Path $sDir ($roomSafe + '.txt')) ([string]$sid).Trim() 'Ascii'
+    $path = Join-Path $sDir ($roomSafe + '.txt')
+    $prevPath = Join-Path $sDir ($roomSafe + '.prev.txt')
+    $rootPath = Join-Path $sDir ($roomSafe + '.root.txt')
+    $endedPath = Join-Path $sDir ($roomSafe + '.ended.txt')
+    $current = Read-SessionId $path
+
+    if ($current -and $current -ne $sid) {
+        $ended = if ($allowEndedTransition) { Read-SessionId $endedPath } else { $null }
+        if (-not $ended -or $ended -ne $current) { return }
+        Write-State $prevPath $current 'Ascii'
+    }
+
+    # Root marker first. If process dies between writes, app sees marker/current mismatch and
+    # falls back to saved/previous instead of trusting a half-committed transition.
+    Write-State $rootPath $sid 'Ascii'
+    Write-State $path $sid 'Ascii'
+    if (Test-Path -LiteralPath $endedPath) { Remove-Item -LiteralPath $endedPath -Force }
+}
+
+function Mark-SessionEnded {
+    $sid = Get-SessionId
+    if (-not $sid) { return }
+    $sDir = Join-Path $base 'sessions'
+    $path = Join-Path $sDir ($roomSafe + '.txt')
+    $current = Read-SessionId $path
+    if ($current -and $current -eq $sid) {
+        Write-State (Join-Path $sDir ($roomSafe + '.ended.txt')) $current 'Ascii'
+    }
 }
 
 switch -Regex ($eventKey) {
@@ -107,12 +156,12 @@ switch -Regex ($eventKey) {
         Write-SessionId
     }
     '^(sessionstart)$' {
-        Write-SessionId
+        Write-SessionId $true
     }
     '^(sessionend)$' {
         Write-Busy 'idle'
         Write-Waiting 'idle'
-        Write-SessionId
+        Mark-SessionEnded
     }
 }
 

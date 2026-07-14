@@ -26,6 +26,15 @@ public sealed class AntigravityHookService : IDisposable
     private static string BusyDir => Path.Combine(BaseDir, "busy");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
 
+    private static string SessionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".txt");
+    private static string PreviousSessionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".prev.txt");
+    private static string RootSessionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".root.txt");
+    private static string SessionTransitionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".ended.txt");
+
     /// <summary>running 파일이 이 시간 넘게 갱신 없으면 idle 로 강제 전이(최후 보루 —
     /// 평시엔 transcript 폴러가 훨씬 먼저 idle 을 확정한다).</summary>
     private static readonly TimeSpan StaleBusyTtl = TimeSpan.FromSeconds(120);
@@ -266,8 +275,12 @@ public sealed class AntigravityHookService : IDisposable
     {
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
+        if (room.EndsWith(".prev", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".root", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".ended", StringComparison.OrdinalIgnoreCase)) return;
         var sid = TryRead(path);
-        if (sid != null) SessionChanged?.Invoke(room, sid);
+        if (sid != null && Guid.TryParse(sid, out var parsed))
+            SessionChanged?.Invoke(room, parsed.ToString());
     }
 
     private static string? TryRead(string path)
@@ -289,14 +302,69 @@ public sealed class AntigravityHookService : IDisposable
 
     public static string? LoadTrackedSessionId(string roomId)
     {
+        return LoadSessionId(SessionPath(roomId));
+    }
+
+    public static string? LoadPreviousTrackedSessionId(string roomId)
+    {
+        return LoadSessionId(PreviousSessionPath(roomId));
+    }
+
+    public static bool IsRootTrackedSession(string roomId, string? sessionId)
+    {
+        if (!Guid.TryParse(sessionId, out var parsed)) return false;
+        return string.Equals(LoadSessionId(RootSessionPath(roomId)), parsed.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static void RestoreTrackedSessionId(string roomId, string sessionId)
+    {
+        if (!Guid.TryParse(sessionId, out var parsed)) return;
         try
         {
-            var path = Path.Combine(SessionDir, Sanitize(roomId) + ".txt");
+            Directory.CreateDirectory(SessionDir);
+            WriteAtomic(RootSessionPath(roomId), parsed.ToString());
+            WriteAtomic(SessionPath(roomId), parsed.ToString());
+            try { File.Delete(SessionTransitionPath(roomId)); } catch { }
+        }
+        catch { }
+    }
+
+    public static void ResetTrackedSessionIds(string roomId)
+    {
+        foreach (var path in new[]
+        {
+            SessionPath(roomId), PreviousSessionPath(roomId), RootSessionPath(roomId),
+            SessionTransitionPath(roomId)
+        })
+        {
+            try { File.Delete(path); } catch { }
+        }
+    }
+
+    private static string? LoadSessionId(string path)
+    {
+        try
+        {
             if (!File.Exists(path)) return null;
             var sid = File.ReadAllText(path).Trim();
-            return Guid.TryParse(sid, out _) ? sid : null;
+            return Guid.TryParse(sid, out var parsed) ? parsed.ToString() : null;
         }
         catch { return null; }
+    }
+
+    private static void WriteAtomic(string path, string value)
+    {
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, value, Encoding.ASCII);
+            File.Move(temp, path, true);
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+        }
     }
 
     /// <summary>훅 스크립트 roomSafe 규칙과 동일: 비-워드 문자 제거.</summary>

@@ -82,20 +82,48 @@ public sealed class GrokLoginWindow : Window
             _view.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
             await _view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("""
                 (() => {
+                    let lastCode = '';
+                    let lastPostAt = 0;
+
                     const reportGrokAuthCode = () => {
                         const text = document.body?.innerText || '';
-                        if (!text.includes('Grok Build') || !text.includes('finish signing in')) return;
+                        if (!text.includes('Grok Build') || !/finish signing in/i.test(text)) return;
 
-                        const code = Array.from(document.querySelectorAll('input, textarea'))
-                            .map(element => (element.value || '').trim())
-                            .find(value => value.length >= 20 && value.length <= 4096 && !/\s/.test(value));
-                        if (code) chrome.webview.postMessage({ type: 'grok-auth-code', code });
+                        const candidates = [];
+                        for (const element of document.querySelectorAll('input, textarea, code, [data-testid*="code" i]')) {
+                            candidates.push(element.value, element.getAttribute?.('value'), element.textContent);
+                        }
+                        candidates.push(...text.split(/\r?\n/));
+
+                        const code = candidates
+                            .map(value => (value || '').trim())
+                            .find(value => /^[A-Za-z0-9._~-]{20,4096}$/.test(value));
+                        if (!code) return;
+
+                        // 교환 실패 시 자동 재시도하되, 진행 중 중복 메시지는 제한한다.
+                        const now = Date.now();
+                        if (code === lastCode && now - lastPostAt < 3000) return;
+                        lastCode = code;
+                        lastPostAt = now;
+                        chrome.webview.postMessage({ type: 'grok-auth-code', code });
                     };
 
-                    new MutationObserver(reportGrokAuthCode).observe(document.documentElement,
-                        { subtree: true, childList: true, attributes: true, attributeFilter: ['value'] });
-                    document.addEventListener('DOMContentLoaded', reportGrokAuthCode, { once: true });
-                    window.addEventListener('load', reportGrokAuthCode, { once: true });
+                    const start = () => {
+                        reportGrokAuthCode();
+                        const observer = new MutationObserver(reportGrokAuthCode);
+                        observer.observe(document.documentElement || document,
+                            { subtree: true, childList: true, attributes: true, characterData: true });
+                        const poll = window.setInterval(reportGrokAuthCode, 500);
+                        window.setTimeout(() => {
+                            observer.disconnect();
+                            window.clearInterval(poll);
+                        }, 120000);
+                    };
+
+                    if (document.readyState === 'loading')
+                        document.addEventListener('DOMContentLoaded', start, { once: true });
+                    else
+                        start();
                 })();
                 """);
 
@@ -167,8 +195,8 @@ public sealed class GrokLoginWindow : Window
         try
         {
             var source = new Uri(e.Source);
-            if (!source.Host.Equals("auth.x.ai", StringComparison.OrdinalIgnoreCase)
-                && !source.Host.Equals("accounts.x.ai", StringComparison.OrdinalIgnoreCase))
+            if (!source.Host.Equals("x.ai", StringComparison.OrdinalIgnoreCase)
+                && !source.Host.EndsWith(".x.ai", StringComparison.OrdinalIgnoreCase))
                 return;
 
             using var doc = JsonDocument.Parse(e.WebMessageAsJson);
@@ -182,13 +210,16 @@ public sealed class GrokLoginWindow : Window
             if (string.IsNullOrEmpty(code) || code.Length > 4096 || code.Any(char.IsWhiteSpace))
                 return;
 
+            DiagLog.Write($"GrokLogin client-paste code detected host={source.Host}");
             _done = true;
             await ExchangeAsync(code, _tokenEndpoint);
             Captured = true;
             DialogResult = true;
         }
-        catch
+        catch (Exception ex)
         {
+            DiagLog.Write($"GrokLogin client-paste exchange failed: {ex.GetType().Name}: {ex.Message}");
+            Title = "Grok Build 로그인 실패: " + ex.Message;
             _done = false;
         }
     }

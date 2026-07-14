@@ -20,11 +20,49 @@ if not exist "%base%\busy" mkdir "%base%\busy" >nul 2>&1
 rem PreToolUse writes "running-tool" (a tool is in flight) so the app-side transcript poller
 rem never declares idle while a long tool is still running; PostToolUse downgrades to "running".
 rem Anything starting with "running" counts as busy on the app side.
-if not "%ANTIGRAVITY_CONVERSATION_ID%"=="" call :write "%base%\sessions\%room%.txt" "%ANTIGRAVITY_CONVERSATION_ID%"
+rem Do not let a nested agy process that inherited DEVEZCODE_ROOM_ID replace the room's root
+rem conversation. A different ID is accepted only after SessionEnd of the current root.
+if /i "%~1"=="SessionStart" call :trackstart
+if /i not "%~1"=="SessionStart" if /i not "%~1"=="SessionEnd" call :trackcurrent
+if /i "%~1"=="SessionEnd" call :markend
 if /i "%~1"=="PreToolUse"  call :write "%base%\busy\%room%.txt" "running-tool"
 if /i "%~1"=="PostToolUse" call :write "%base%\busy\%room%.txt" "running"
 if /i "%~1"=="Stop"        call :write "%base%\busy\%room%.txt" "idle"
 if /i "%~1"=="SessionEnd"  call :write "%base%\busy\%room%.txt" "idle"
+exit /b 0
+
+:trackstart
+if "%ANTIGRAVITY_CONVERSATION_ID%"=="" exit /b 0
+set "sid=%ANTIGRAVITY_CONVERSATION_ID%"
+set "current="
+if exist "%base%\sessions\%room%.txt" set /p "current="<"%base%\sessions\%room%.txt"
+if "%current%"=="" goto trackwrite
+if /i "%current%"=="%sid%" goto trackwrite
+set "ended="
+if exist "%base%\sessions\%room%.ended.txt" set /p "ended="<"%base%\sessions\%room%.ended.txt"
+if /i not "%ended%"=="%current%" exit /b 0
+call :write "%base%\sessions\%room%.prev.txt" "%current%"
+:trackwrite
+call :write "%base%\sessions\%room%.root.txt" "%sid%"
+call :write "%base%\sessions\%room%.txt" "%sid%"
+if exist "%base%\sessions\%room%.ended.txt" del /f /q "%base%\sessions\%room%.ended.txt" >nul 2>&1
+exit /b 0
+
+:trackcurrent
+if "%ANTIGRAVITY_CONVERSATION_ID%"=="" exit /b 0
+set "sid=%ANTIGRAVITY_CONVERSATION_ID%"
+set "current="
+if exist "%base%\sessions\%room%.txt" set /p "current="<"%base%\sessions\%room%.txt"
+if not "%current%"=="" if /i not "%current%"=="%sid%" exit /b 0
+call :write "%base%\sessions\%room%.txt" "%sid%"
+exit /b 0
+
+:markend
+if "%ANTIGRAVITY_CONVERSATION_ID%"=="" exit /b 0
+set "sid=%ANTIGRAVITY_CONVERSATION_ID%"
+set "current="
+if exist "%base%\sessions\%room%.txt" set /p "current="<"%base%\sessions\%room%.txt"
+if /i "%current%"=="%sid%" call :write "%base%\sessions\%room%.ended.txt" "%current%"
 exit /b 0
 
 :write

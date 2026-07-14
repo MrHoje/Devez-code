@@ -17,6 +17,15 @@ public sealed class GrokHookService : IDisposable
     private static string WaitingDir => Path.Combine(BaseDir, "waiting");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
 
+    private static string SessionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".txt");
+    private static string PreviousSessionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".prev.txt");
+    private static string RootSessionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".root.txt");
+    private static string SessionTransitionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".ended.txt");
+
     private FileSystemWatcher? _lastmsgWatcher;
     private FileSystemWatcher? _busyWatcher;
     private FileSystemWatcher? _waitingWatcher;
@@ -137,8 +146,13 @@ public sealed class GrokHookService : IDisposable
     {
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
+        // 복구용 sidecar(.prev.txt/.ended.txt)는 현재 방의 세션 변경 이벤트가 아니다.
+        if (room.EndsWith(".prev", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".root", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".ended", StringComparison.OrdinalIgnoreCase)) return;
         var sid = TryRead(path);
-        if (sid != null) GrokSessionChanged?.Invoke(room, sid);
+        if (sid != null && Guid.TryParse(sid, out var parsed))
+            GrokSessionChanged?.Invoke(room, parsed.ToString());
     }
 
     private static string? TryRead(string path)
@@ -160,14 +174,75 @@ public sealed class GrokHookService : IDisposable
 
     public static string? LoadTrackedSessionId(string roomId)
     {
+        return LoadSessionId(SessionPath(roomId));
+    }
+
+    /// <summary>루트 세션 전환 직전 ID. 상속된 DEVEZCODE_ROOM_ID 로 내부 Grok 프로세스가
+    /// 잘못 발화해도 정상 대화를 되살릴 수 있는 복구 후보.</summary>
+    public static string? LoadPreviousTrackedSessionId(string roomId)
+    {
+        return LoadSessionId(PreviousSessionPath(roomId));
+    }
+
+    /// <summary>현재 ID가 새 root-session fence를 통과해 기록된 값인지.</summary>
+    public static bool IsRootTrackedSession(string roomId, string? sessionId)
+    {
+        if (!Guid.TryParse(sessionId, out var parsed)) return false;
+        return string.Equals(LoadSessionId(RootSessionPath(roomId)), parsed.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>검증된 ID 로 현재 추적값을 복구. 다음 정상 SessionStart 가 stale 전환 마커의
+    /// 영향을 받지 않도록 마커도 제거한다.</summary>
+    public static void RestoreTrackedSessionId(string roomId, string sessionId)
+    {
+        if (!Guid.TryParse(sessionId, out var parsed)) return;
         try
         {
-            var path = Path.Combine(SessionDir, Sanitize(roomId) + ".txt");
+            Directory.CreateDirectory(SessionDir);
+            WriteAtomic(RootSessionPath(roomId), parsed.ToString());
+            WriteAtomic(SessionPath(roomId), parsed.ToString());
+            try { File.Delete(SessionTransitionPath(roomId)); } catch { }
+        }
+        catch { }
+    }
+
+    /// <summary>현재/이전/전환 추적값 제거. 실제 대화 파일은 건드리지 않는다.</summary>
+    public static void ResetTrackedSessionIds(string roomId)
+    {
+        foreach (var path in new[]
+        {
+            SessionPath(roomId), PreviousSessionPath(roomId), RootSessionPath(roomId),
+            SessionTransitionPath(roomId)
+        })
+        {
+            try { File.Delete(path); } catch { }
+        }
+    }
+
+    private static string? LoadSessionId(string path)
+    {
+        try
+        {
             if (!File.Exists(path)) return null;
             var sid = File.ReadAllText(path).Trim();
-            return Guid.TryParse(sid, out _) ? sid : null;
+            return Guid.TryParse(sid, out var parsed) ? parsed.ToString() : null;
         }
         catch { return null; }
+    }
+
+    private static void WriteAtomic(string path, string value)
+    {
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, value, Encoding.ASCII);
+            File.Move(temp, path, true);
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+        }
     }
 
     /// <summary>훅 스크립트 roomSafe 규칙과 동일: 비-워드 문자 제거 (underscore 치환 아님).</summary>
