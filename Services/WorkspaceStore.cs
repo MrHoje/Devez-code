@@ -10,7 +10,7 @@ public static class WorkspaceStore
 {
     public sealed record DashboardFolderSnapshot(string Id, string Name, int RootOrder, bool IsExpanded);
     public sealed record DashboardSessionSnapshot(string Id, string Name, string Agent, bool Hidden, string? ParentId, bool ChildrenExpanded);
-    public sealed record DashboardProjectSnapshot(string Path, string Name, string? FolderId, int RootOrder, bool IsExpanded, IReadOnlyList<DashboardSessionSnapshot> Sessions);
+    public sealed record DashboardProjectSnapshot(string Path, string Name, string? FolderId, int RootOrder, bool IsExpanded, bool ShowHiddenSessions, IReadOnlyList<DashboardSessionSnapshot> Sessions);
     public sealed record DashboardWorkspaceSnapshot(IReadOnlyList<DashboardFolderSnapshot> Folders, IReadOnlyList<DashboardProjectSnapshot> Projects);
 
     private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public string? ParentId { get; set; } public bool ChildrenExpanded { get; set; } = true; }
@@ -139,6 +139,7 @@ public static class WorkspaceStore
                         p.FolderId,
                         p.RootOrder ?? int.MaxValue,
                         p.IsExpanded,
+                        p.ShowHiddenSessions,
                         (p.Sessions ?? []).Select(s => new DashboardSessionSnapshot(
                             s.Id, s.Name, s.Agent ?? "", s.Hidden, s.ParentId, s.ChildrenExpanded)).ToArray()))
                     .ToArray();

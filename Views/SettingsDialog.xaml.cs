@@ -372,7 +372,7 @@ public partial class SettingsDialog : UserControl
         MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
         _originalLanDashboardEnabled = SettingsService.LoadLanDashboardEnabled();
         _selectedLanDashboardEnabled = _originalLanDashboardEnabled;
-        LanDashboardUrlLabel.Text = LanDashboardService.GetAccessUrls(SettingsService.LoadOrCreateLanDashboardToken()).FirstOrDefault() ?? "주소를 확인할 수 없습니다.";
+        LanDashboardUrlLabel.Text = LanDashboardService.GetAccessUrls().FirstOrDefault() ?? "주소를 확인할 수 없습니다.";
         LanDashboardToggle.IsChecked = _selectedLanDashboardEnabled;
         UpdateLanDashboardVisual();
         _originalProjectColumns = SettingsService.LoadProjectColumns();

@@ -562,7 +562,7 @@ public partial class MainWindow : Window
                 if (_splitActive && PaneB.IsVisible)
                     PaneB.Terminal.PrewarmWebView();
             }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            // 전역 단축키: (기본)한자 + 좌/우 방향키 → 포커스 패널의 세션 탭 이전/다음 이동.
+            // 전역 단축키: (기본)한자 + 좌/우 방향키 → 포커스 패널의 탭 이전/다음 이동(세션·파일·diff·브라우저 공통).
             // 우리 앱이 포그라운드가 아니어도(다른 앱/터미널 점유 중에도) 동작 — 전환 후 창을 앞으로.
             var (hkMod, hkPrev, hkNext) = SettingsService.LoadTabHotkey();
             GlobalTabHotkey.Configure(hkMod, hkPrev, hkNext);

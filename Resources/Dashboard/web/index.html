@@ -38,7 +38,17 @@
           <strong id="session-title"></strong>
           <span id="session-project"></span>
         </div>
-        <div class="session-meta"><span id="agent-pill"></span><span id="size-label"></span></div>
+        <div class="session-meta">
+          <label class="font-size-control" title="웹 터미널 글꼴 크기">
+            <select id="font-size" aria-label="웹 터미널 글꼴 크기">
+              <option value="11">11px</option><option value="12">12px</option>
+              <option value="13">13px</option><option value="14">14px</option>
+              <option value="15">15px</option><option value="16">16px</option>
+              <option value="18">18px</option><option value="20">20px</option>
+            </select>
+          </label>
+          <span id="agent-pill"></span><span id="size-label"></span>
+        </div>
       </div>
       <div id="terminal-scroll" class="terminal-scroll">
         <div id="empty" class="empty-state">
@@ -46,7 +56,11 @@
           <strong>세션을 선택하세요</strong>
           <span>DevezCode에서 실행 중인 터미널을 그대로 제어할 수 있습니다.</span>
         </div>
-        <div id="terminal-stage"><div id="terminal" aria-label="터미널"></div></div>
+        <div id="terminal-stage">
+          <div id="terminal-content">
+            <div id="terminal" aria-label="터미널"></div>
+          </div>
+        </div>
       </div>
       <div id="mobile-keys" class="mobile-keys">
         <button data-code="esc">Esc</button><button data-code="ctrlc">Ctrl+C</button>

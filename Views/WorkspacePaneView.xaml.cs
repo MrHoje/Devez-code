@@ -808,28 +808,46 @@ public partial class WorkspacePaneView : UserControl
         OpenSession(sessionTabs[((idx + dir) % n + n) % n]);
     }
 
-    /// <summary>전역 단축키(방향키)용 — 이 패널 안에서만 이전/다음 세션 탭으로 이동(래핑 없음).
+    /// <summary>이 패널 탭바에 실제로 보이는 탭들(세션·파일·diff·브라우저 전부)을 표시 순서대로 반환.
+    /// 단축키 이동이 세션뿐 아니라 열린 모든 탭을 동일하게 순회하도록 하는 근거 집합.</summary>
+    private List<TabItemBase> VisibleTabs()
+        => _activeProject?.Tabs.Where(t => FilterTab(t) && !(t is SessionItem s && s.IsEffectivelyHidden)).ToList()
+           ?? new List<TabItemBase>();
+
+    /// <summary>탭 종류(세션/파일·diff/브라우저)에 맞는 활성화 경로로 분기.</summary>
+    private void ActivateTab(TabItemBase tab)
+    {
+        switch (tab)
+        {
+            case SessionItem s:    ActivateSession(s); break;
+            case FileTabItem f:    ActivateFileTab(f); break;
+            case BrowserTabItem b: ActivateBrowserTab(b); break;
+        }
+    }
+
+    /// <summary>전역 단축키(방향키)용 — 이 패널 안에서만 이전/다음 탭으로 이동(래핑 없음).
+    /// 세션·파일·diff·브라우저를 구분하지 않고 보이는 모든 탭을 동일하게 순회한다.
     /// 경계(맨 끝)라 더 이동할 탭이 없으면 아무것도 바꾸지 않고 false 반환 — 호출자(MainWindow)가
     /// false 를 보면 반대편 패널로 포커스를 넘길지 판단한다.</summary>
     public bool CycleActiveSession(bool next)
     {
-        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.IsEffectivelyHidden).ToList();
-        if (_activeProject == null || _activeSession == null || sessionTabs == null) return false;
-        int idx = sessionTabs.IndexOf(_activeSession);
+        var tabs = VisibleTabs();
+        if (_activeProject == null || _activeTab == null || tabs.Count == 0) return false;
+        int idx = tabs.IndexOf(_activeTab);
         if (idx < 0) return false;
         int ni = idx + (next ? 1 : -1);
-        if (ni < 0 || ni >= sessionTabs.Count) return false; // 경계 — 더 이동 불가
-        OpenSession(sessionTabs[ni]);
+        if (ni < 0 || ni >= tabs.Count) return false; // 경계 — 더 이동 불가
+        ActivateTab(tabs[ni]);
         return true;
     }
 
-    /// <summary>전역 단축키 패널 간 이동용 — 이 패널의 첫/마지막 세션 탭을 선택.
+    /// <summary>전역 단축키 패널 간 이동용 — 이 패널의 첫/마지막 탭을 선택(종류 무관).
     /// 반대편 패널 경계에서 넘어올 때 진입 지점을 정하는 데 쓴다.</summary>
     public bool SelectEdgeSession(bool first)
     {
-        var sessionTabs = _activeProject?.Tabs.OfType<SessionItem>().Where(s => FilterTab(s) && !s.IsEffectivelyHidden).ToList();
-        if (sessionTabs == null || sessionTabs.Count == 0) return false;
-        OpenSession(first ? sessionTabs[0] : sessionTabs[^1]);
+        var tabs = VisibleTabs();
+        if (tabs.Count == 0) return false;
+        ActivateTab(first ? tabs[0] : tabs[^1]);
         return true;
     }
 

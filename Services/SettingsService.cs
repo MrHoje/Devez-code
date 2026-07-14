@@ -116,7 +116,6 @@ public static class SettingsService
         public bool MinimizeOnClose { get; set; } = false;
         // LAN 웹 대시보드. 기본 비활성 — 원격 입력은 로컬 사용자 권한으로 명령을 실행하므로 명시적으로 켠다.
         public bool LanDashboardEnabled { get; set; } = false;
-        public string LanDashboardToken { get; set; } = "";
         // devez 마켓플레이스 자동설치 1회 확인 완료 여부. true 면 시작 시 CLI 체크를 건너뛴다(가벼움).
         public bool DevezMarketplaceEnsured { get; set; } = false;
         // 좌측 프로젝트 목록 열 수(1 또는 2). 2면 좌측 패널 최소너비 2배 + 카드 2열 그리드 + 가로 드래그.
@@ -803,20 +802,6 @@ public static class SettingsService
 
     public static bool LoadLanDashboardEnabled() => Current.LanDashboardEnabled;
     public static void SaveLanDashboardEnabled(bool v) { Current.LanDashboardEnabled = v; Save(); }
-
-    /// <summary>LAN 대시보드 접근 토큰. 최초 조회 때 192-bit 난수로 만들고 로컬 설정에 영속한다.</summary>
-    public static string LoadOrCreateLanDashboardToken()
-    {
-        lock (_lock)
-        {
-            var current = Current;
-            if (!string.IsNullOrWhiteSpace(current.LanDashboardToken)) return current.LanDashboardToken;
-            current.LanDashboardToken = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24))
-                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-            Save();
-            return current.LanDashboardToken;
-        }
-    }
 
     public static bool LoadDevezMarketplaceEnsured() => Current.DevezMarketplaceEnsured;
     public static void SaveDevezMarketplaceEnsured(bool v) { Current.DevezMarketplaceEnsured = v; Save(); }

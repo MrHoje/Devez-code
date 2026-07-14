@@ -41,6 +41,10 @@
     <Content Include="Resources\Dashboard\web\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- 웹 대시보드 세션 카드에서도 데스크톱과 동일한 에이전트 아이콘을 사용한다. -->
+    <Content Include="Resources\Images\ShellPresets\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- xterm.js 번들을 실행 폴더로 복사 (WebView2 가상 호스트가 디스크에서 로드) -->
     <Content Include="Resources\Terminal\web\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

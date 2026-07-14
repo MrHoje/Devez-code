@@ -1473,7 +1473,7 @@
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                         <TextBlock Text="LAN 연결 허용" FontSize="{DynamicResource Fs13}"
                                                    Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="접속 토큰을 아는 같은 사설망 기기만 연결할 수 있습니다."
+                                        <TextBlock Text="같은 사설망에 연결된 기기에서 주소만으로 접속할 수 있습니다."
                                                    FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                     </StackPanel>

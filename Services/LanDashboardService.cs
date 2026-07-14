@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Net.WebSockets;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -39,9 +38,8 @@ public sealed class LanDashboardService
 
     private LanDashboardService() { }
 
-    public static IReadOnlyList<string> GetAccessUrls(string? token = null)
+    public static IReadOnlyList<string> GetAccessUrls()
     {
-        var suffix = string.IsNullOrWhiteSpace(token) ? "" : "/?token=" + Uri.EscapeDataString(token);
         var urls = new List<string>();
         try
         {
@@ -51,13 +49,13 @@ public sealed class LanDashboardService
                 foreach (var ua in nic.GetIPProperties().UnicastAddresses)
                 {
                     if (ua.Address.AddressFamily != AddressFamily.InterNetwork || !IsPrivateAddress(ua.Address)) continue;
-                    var url = $"http://{ua.Address}:{Port}{suffix}";
+                    var url = $"http://{ua.Address}:{Port}";
                     if (!urls.Contains(url, StringComparer.OrdinalIgnoreCase)) urls.Add(url);
                 }
             }
         }
         catch { /* 네트워크 어댑터 조회 실패 시 localhost만 제공 */ }
-        urls.Add($"http://localhost:{Port}{suffix}");
+        urls.Add($"http://localhost:{Port}");
         return urls;
     }
 
@@ -68,10 +66,10 @@ public sealed class LanDashboardService
         {
             if (_host != null) return;
             LastError = null;
-            var token = SettingsService.LoadOrCreateLanDashboardToken();
             var dashboardRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "Dashboard", "web");
             var terminalRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "Terminal", "web");
-            if (!Directory.Exists(dashboardRoot) || !Directory.Exists(terminalRoot))
+            var agentIconRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "Images", "ShellPresets");
+            if (!Directory.Exists(dashboardRoot) || !Directory.Exists(terminalRoot) || !Directory.Exists(agentIconRoot))
                 throw new DirectoryNotFoundException("LAN 대시보드 웹 자산을 찾을 수 없습니다.");
 
             var host = Host.CreateDefaultBuilder()
@@ -79,7 +77,7 @@ public sealed class LanDashboardService
                 .ConfigureWebHostDefaults(web =>
                 {
                     web.UseKestrel(options => options.ListenAnyIP(Port));
-                    web.Configure(app => ConfigureApp(app, token, dashboardRoot, terminalRoot));
+                    web.Configure(app => ConfigureApp(app, dashboardRoot, terminalRoot, agentIconRoot));
                 })
                 .Build();
             await host.StartAsync();
@@ -129,7 +127,7 @@ public sealed class LanDashboardService
         else await StopAsync();
     }
 
-    private void ConfigureApp(IApplicationBuilder app, string token, string dashboardRoot, string terminalRoot)
+    private void ConfigureApp(IApplicationBuilder app, string dashboardRoot, string terminalRoot, string agentIconRoot)
     {
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
         app.Use(async (context, next) =>
@@ -141,26 +139,6 @@ public sealed class LanDashboardService
                 return;
             }
 
-            var queryToken = context.Request.Query["token"].ToString();
-            if (TokenEquals(queryToken, token))
-            {
-                context.Response.Cookies.Append("devez_lan", token, new CookieOptions
-                {
-                    HttpOnly = true,
-                    SameSite = SameSiteMode.Strict,
-                    IsEssential = true,
-                    MaxAge = TimeSpan.FromDays(30),
-                });
-                context.Response.Redirect("/");
-                return;
-            }
-            if (!context.Request.Cookies.TryGetValue("devez_lan", out var cookie) || !TokenEquals(cookie, token))
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "text/html; charset=utf-8";
-                await context.Response.WriteAsync("<!doctype html><meta charset=utf-8><title>DevezCode</title><body style='font-family:sans-serif;padding:32px'>접근 토큰이 필요합니다.</body>");
-                return;
-            }
             await next();
         });
 
@@ -168,6 +146,10 @@ public sealed class LanDashboardService
         app.Map("/terminal-assets", branch => branch.UseStaticFiles(new StaticFileOptions
         {
             FileProvider = new PhysicalFileProvider(terminalRoot),
+        }));
+        app.Map("/agent-assets", branch => branch.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new PhysicalFileProvider(agentIconRoot),
         }));
         var dashboardProvider = new PhysicalFileProvider(dashboardRoot);
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = dashboardProvider });
@@ -380,9 +362,10 @@ public sealed class LanDashboardService
             path = project.Path,
             name = project.Name,
             folderId = project.FolderId,
-            rootOrder = project.RootOrder,
-            isExpanded = project.IsExpanded,
-            sessions = project.Sessions.Select(item =>
+                    rootOrder = project.RootOrder,
+                    isExpanded = project.IsExpanded,
+                    showHiddenSessions = project.ShowHiddenSessions,
+                    sessions = project.Sessions.Select(item =>
             {
                 var alive = live.TryGetValue(item.Id, out var terminal);
                 return new
@@ -487,14 +470,6 @@ public sealed class LanDashboardService
 
     private bool HasControl(Guid clientId) { lock (_controllerLock) return _controllerId == clientId; }
     private Guid? CurrentControllerId() { lock (_controllerLock) return _controllerId; }
-
-    private static bool TokenEquals(string? value, string expected)
-    {
-        if (string.IsNullOrEmpty(value)) return false;
-        var left = Encoding.UTF8.GetBytes(value);
-        var right = Encoding.UTF8.GetBytes(expected);
-        return left.Length == right.Length && CryptographicOperations.FixedTimeEquals(left, right);
-    }
 
     private static bool IsPrivateAddress(IPAddress? address)
     {
