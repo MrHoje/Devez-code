@@ -96,7 +96,7 @@ public static class AgentRegistry
         },
         new()
         {
-            // 가재코드: standalone CLI(`gjc`). 최신판은 명시적 --hook + JSONL 폴링, 구버전은 폴링만 사용.
+            // 가재코드: standalone CLI(`gjc`). 방별 JSONL 증분 폴링으로 상태를 추적한다.
             // 세션 복원은 TryBuildGajaeDirectLaunch 가 방별 --session-dir + 파일명 ID 추출 → `gjc -r <id>` 로 처리.
             // (cwd 공유 시 -c 가 방끼리 섞이므로 ResumeFlag 단순 경로 미사용.)
             // 인라인 렌더(alt-screen 미사용) → InlineTui=true 로 로딩 오버레이 첫 출력에 해제.

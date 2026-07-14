@@ -71,11 +71,6 @@
     <Content Include="Resources\Hooks\antigravity-hook.cmd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- GJC 명시적 hook 옵션 상태 추적기. GajaeHookInstaller가 LocalAppData에 설치하고,
-         구버전/로드 실패 시 기존 JSONL 폴링이 그대로 fallback 한다. -->
-    <Content Include="Resources\Hooks\gajae-room-tracker.js">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <!-- opencode 플러그인 (Resources\Plugins\opencode-room-tracker.js).
          OpenCodePluginInstaller 가 매 시작 시 ~/.config\opencode\plugin\ 으로 복사. -->
     <Content Include="Resources\Plugins\opencode-room-tracker.js">

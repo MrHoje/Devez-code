@@ -1111,8 +1111,7 @@ public sealed class TerminalSessionManager
     /// <summary>가재코드(gjc)를 cmd /k 배치로 직접 실행. 방별 --session-dir 로 세션을 격리하고,
     /// 그 폴더의 최신 세션 ID 를 영속(SettingsService)한 뒤 `gjc -r &lt;id&gt;` 로 같은 대화를 복원한다.
     /// 첫 실행(저장·추출 ID 모두 없음)은 plain `gjc` 로 새 세션 생성. resume 실패(외부 삭제 등) 시 fresh 폴백.
-    /// 최신 GJC는 명시적 --hook을 빠른 상태 신호로 함께 로드하고, 구버전/훅 실패 시 기존 JSONL 폴링만으로
-    /// 동일하게 동작한다. gjc 는 claude 의 --session-id 같은 사전 발급이 없어, 만들어진 ID 를 파일명에서
+    /// gjc 는 claude 의 --session-id 같은 사전 발급이 없어, 만들어진 ID 를 파일명에서
     /// 캡처하는 방식을 쓴다.</summary>
     private string? TryBuildGajaeDirectLaunch(string roomId, out string? injectFallback)
     {
@@ -1130,15 +1129,14 @@ public sealed class TerminalSessionManager
             SettingsService.SaveGajaeRoomSession(roomId, latest);
         }
 
-        // --session-dir/--hook 경로는 따옴표로 감싸 공백 안전. -r <id> 는 GUID 만(파일명 검증) → 주입 차단.
-        // --hook 미지원 구버전이나 capability probe/설치 실패면 hookArg=""라 실행 인자가 종전과 완전히 같다.
-        // 지원 버전에서도 JSONL 폴링은 fallback/reconciliation 경로로 계속 유지한다.
+        // --session-dir 경로는 따옴표로 감싸 공백 안전. -r <id> 는 GUID 만(파일명 검증) → 주입 차단.
+        // GJC 0.10.1/0.10.2는 --hook을 도움말에 노출하지만 실제 파서가 값을 사용자 메시지로 처리하므로
+        // 외부 훅 인자를 전달하지 않는다. 상태는 GJC 자체 세션 JSONL을 증분 폴링한다.
         string sd = $"--session-dir \"{sessionDir}\"";
-        string launchArgs = sd + GajaeHookInstaller.BuildExplicitHookArgument();
         // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 배치(재진입 루프)로 돌아오게 한다(.exe 엔 무해).
         string cmd = sessionId != null
-            ? $"call gjc {launchArgs} -r {sessionId}\r\nif errorlevel 1 call gjc {launchArgs}"
-            : $"call gjc {launchArgs}";
+            ? $"call gjc {sd} -r {sessionId}\r\nif errorlevel 1 call gjc {sd}"
+            : $"call gjc {sd}";
 
         try
         {
@@ -1150,14 +1148,13 @@ public sealed class TerminalSessionManager
             // terminal.html 파서에서 gjc 방 한정으로 삼켜 스크롤백/휠 스크롤을 보존한다.
             File.WriteAllText(batchPath,
                 "@echo off\r\n" +
-                $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                 cmd + "\r\n" +
-                GajaeReentryLoop(launchArgs, GajaeQuitFlagPath(roomId), RegisterReenterFlag(roomId)));
+                GajaeReentryLoop(sd, GajaeQuitFlagPath(roomId), RegisterReenterFlag(roomId)));
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
         {
-            injectFallback = (sessionId != null ? $"gjc {launchArgs} -r {sessionId}" : $"gjc {launchArgs}") + "\r";
+            injectFallback = (sessionId != null ? $"gjc {sd} -r {sessionId}" : $"gjc {sd}") + "\r";
             return null;
         }
     }
@@ -1487,13 +1484,13 @@ public sealed class TerminalSessionManager
     /// <summary>가재(gjc) 재진입 루프 — 방별 --session-dir 로 격리돼 있어 -c(최신 이어가기)가 곧 이 방의
     /// 마지막 대화. 앱의 session-dir 폴링(GajaeLastMessageService)이 재진입 세션도 그대로 추적한다.
     /// 앱이 Ctrl+D 종료 전에 quitFlagPath를 남기면 새 gjc를 띄우지 않고 배치를 끝낸다.</summary>
-    private static string GajaeReentryLoop(string launchArgs, string quitFlagPath, string reenterFlagPath) =>
+    private static string GajaeReentryLoop(string sd, string quitFlagPath, string reenterFlagPath) =>
         "set FAILS=0\r\n" +
         ":__reenter\r\n" +
         $"if exist \"{quitFlagPath}\" goto __quitflag\r\n" +
         $"type nul >\"{reenterFlagPath}\"\r\n" + // 재실행 직전 앱 신호(touch) — 로딩 커버용. 첫 실행은 루프 밖
-        $"call gjc {launchArgs} -c\r\n" +   // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 루프로 복귀
-        $"if errorlevel 1 call gjc {launchArgs}\r\n" +
+        $"call gjc {sd} -c\r\n" +   // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 루프로 복귀
+        $"if errorlevel 1 call gjc {sd}\r\n" +
         ReentryTail() +
         "goto :eof\r\n" + // giveup은 진단용 cmd 프롬프트를 유지; quitflag만 아래 exit로 셸까지 닫는다.
         ":__quitflag\r\n" +
@@ -2580,8 +2577,6 @@ public sealed class TerminalSessionManager
             catch (Exception) { }
             try { File.Delete(LaunchBatchPath(roomId)); } catch (Exception) { }
             try { File.Delete(GajaeQuitFlagPath(roomId)); } catch (Exception) { }
-            try { File.Delete(Path.Combine(GajaeHookInstaller.StateDir, SafeRoomFileName(roomId) + ".json")); }
-            catch (Exception) { }
         }
     }
 
@@ -2715,7 +2710,6 @@ public sealed class TerminalSessionManager
 
         TryDeleteFile(Path.Combine(GajaeLaunchDir(), roomFile + ".cmd"));
         TryDeleteFile(GajaeQuitFlagPath(roomId));
-        TryDeleteFile(Path.Combine(GajaeHookInstaller.StateDir, roomFile + ".json"));
         TryDeleteDirectory(GajaeSessionDir(roomId));
 
         var antigravityDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "antigravity");
@@ -2802,7 +2796,6 @@ public sealed class TerminalSessionManager
             Collect(Path.Combine(appData, "DevezCode", "opencode", "lastmsg"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "opencode", "lastreply"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "opencode", "todos"), ".json");
-            Collect(GajaeHookInstaller.StateDir, ".json");
             Collect(Path.Combine(appData, "DevezCode", "antigravity", "sessions"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "antigravity", "busy"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "antigravity", "waiting"), ".txt");
