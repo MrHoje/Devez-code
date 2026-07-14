@@ -117,6 +117,9 @@ public sealed class MonacoHost : ContentControl, IDisposable
             var root = doc.RootElement;
             switch (root.GetProperty("type").GetString())
             {
+                case "jsError":
+                    DiagLog.Write($"MonacoHost[JS] {root.GetProperty("where").GetString()}: {root.GetProperty("message").GetString()}");
+                    break;
                 case "pageReady":
                     _pageReady = true;
                     _readyTimeoutTimer?.Stop();

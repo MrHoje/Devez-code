@@ -8,5 +8,12 @@
 <body>
   <div id="c"></div>
   <div id="err">Monaco 자산이 없습니다. Resources/Monaco/web/vs 를 확인하세요.</div>
-  <script src="bridge.js"></script>
+  <script>
+    (function(){
+      var v = new URLSearchParams(location.search).get('v') || '';
+      var s = document.createElement('script');
+      s.src = 'bridge.js' + (v ? '?v=' + v : '');
+      document.body.appendChild(s);
+    })();
+  </script>
 </body></html>
