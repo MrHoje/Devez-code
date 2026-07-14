@@ -79,6 +79,25 @@ public sealed class GrokLoginWindow : Window
                 _view.CoreWebView2.Profile.PreferredColorScheme = CoreWebView2PreferredColorScheme.Dark;
 
             _view.CoreWebView2.NavigationStarting += OnNavigationStarting;
+            _view.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+            await _view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("""
+                (() => {
+                    const reportGrokAuthCode = () => {
+                        const text = document.body?.innerText || '';
+                        if (!text.includes('Grok Build') || !text.includes('finish signing in')) return;
+
+                        const code = Array.from(document.querySelectorAll('input, textarea'))
+                            .map(element => (element.value || '').trim())
+                            .find(value => value.length >= 20 && value.length <= 4096 && !/\s/.test(value));
+                        if (code) chrome.webview.postMessage({ type: 'grok-auth-code', code });
+                    };
+
+                    new MutationObserver(reportGrokAuthCode).observe(document.documentElement,
+                        { subtree: true, childList: true, attributes: true, attributeFilter: ['value'] });
+                    document.addEventListener('DOMContentLoaded', reportGrokAuthCode, { once: true });
+                    window.addEventListener('load', reportGrokAuthCode, { once: true });
+                })();
+                """);
 
             var (authEndpoint, tokenEndpoint) = await DiscoverAsync();
             _tokenEndpoint = tokenEndpoint;
@@ -136,6 +155,42 @@ public sealed class GrokLoginWindow : Window
         }
         catch { /* 실패 시 닫기 */ }
         Close();
+    }
+
+    /// <summary>xAI OIDC 는 loopback redirect 대신 페이지에 auth code를 표시해
+    /// CLI에 붙여넣게 하는 client-paste 폴백을 사용할 수 있다. WebView가 그 code를
+    /// 전달하면 일반 authorization_code + PKCE 교환으로 로그인을 완료한다.</summary>
+    private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        if (_done || _tokenEndpoint == null) return;
+
+        try
+        {
+            var source = new Uri(e.Source);
+            if (!source.Host.Equals("auth.x.ai", StringComparison.OrdinalIgnoreCase)
+                && !source.Host.Equals("accounts.x.ai", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var type)
+                || type.GetString() != "grok-auth-code"
+                || !root.TryGetProperty("code", out var codeElement))
+                return;
+
+            var code = codeElement.GetString()?.Trim();
+            if (string.IsNullOrEmpty(code) || code.Length > 4096 || code.Any(char.IsWhiteSpace))
+                return;
+
+            _done = true;
+            await ExchangeAsync(code, _tokenEndpoint);
+            Captured = true;
+            DialogResult = true;
+        }
+        catch
+        {
+            _done = false;
+        }
     }
 
     private static (string? code, string? state, string? error) ParseCallback(string uri)
