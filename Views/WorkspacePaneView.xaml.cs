@@ -1346,6 +1346,17 @@ public partial class WorkspacePaneView : UserControl
     private const double PtToPxRatio = 96.0 / 72.0;
     private bool _suppressFontSize;
 
+    private void DockCombo_DropDownClosed(object? sender, EventArgs e)
+    {
+        // ComboBox는 팝업이 닫혀도 키보드 포커스를 계속 가져 방향키로 값이 바뀐다.
+        // 닫힘 처리가 끝난 다음 WPF 포커스를 비우고, 세션 탭이면 WebView2/xterm에 입력을 돌려준다.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            Keyboard.ClearFocus();
+            if (_activeSession != null) _terminal.FocusTerminal();
+        }), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
     private void SyncFontSizeCombo(double px)
     {
         int pt = (int)Math.Round(px / PtToPxRatio);
