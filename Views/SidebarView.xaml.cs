@@ -1274,8 +1274,11 @@ public partial class SidebarView : UserControl
     private Border? _sessionChildDropTarget;
     private bool _didDrag;
     private ProjectItem? _draggedProject;
+    private ProjectFolderItem? _projectFolderHoverTarget;
     private ProjectFolderItem? _projectFolderDropTarget;
     private Border? _projectFolderDropBorder;
+    private ProjectFolderEntrySide _projectFolderEntrySide;
+    private Point? _lastProjectDragPoint;
     private ProjectColumnsPanel? _projectGridHeightPanel;
     private double _projectGridLeftHeight;
     private double _projectGridRightHeight;
@@ -1391,15 +1394,18 @@ public partial class SidebarView : UserControl
     {
         if (_rootDrag != null)
         {
+            bool folderDrop = _draggedProject != null
+                && UpdateProjectFolderDropPreview(e.GetPosition(this));
+            _rootDrag.SetExternalDropPreview(folderDrop);
             _rootDrag.Update(e);
-            if (_draggedProject != null) UpdateProjectFolderDropPreview(e.GetPosition(this));
             return true;
         }
         if (_projectDrag != null)
         {
+            bool folderDrop = UpdateProjectFolderDropPreview(e.GetPosition(this));
+            _projectDrag.SetExternalDropPreview(folderDrop);
             _projectDrag.Update(e);
             UpdateProjectGridHeightPreview(_projectDrag.CurrentTargetColumn);
-            UpdateProjectFolderDropPreview(e.GetPosition(this));
             return true;
         }
         if (_tabDrag != null) { _tabDrag.Update(e); return true; }
@@ -1422,9 +1428,7 @@ public partial class SidebarView : UserControl
             var tabDrag = _tabDrag;
             var fileDrag = _fileDrag;
             var draggedProject = _draggedProject;
-            var dropFolder = draggedProject == null
-                ? null
-                : FindProjectFolderDropTarget(Mouse.GetPosition(this), draggedProject).Folder;
+            var dropFolder = draggedProject == null ? null : _projectFolderDropTarget;
             bool applyDeferredSearch = _sidebarSearchDeferredForDrag;
             _sidebarSearchDeferredForDrag = false;
             _rootDrag = null;
@@ -1504,19 +1508,90 @@ public partial class SidebarView : UserControl
         return true;
     }
 
-    private void UpdateProjectFolderDropPreview(Point point)
+    private enum ProjectFolderEntrySide { None, Top, Bottom }
+
+    /// <summary>폴더에 처음 들어온 방향 쪽 75%는 내부 드롭, 반대쪽 25%는 폴더 앞/뒤
+    /// 재정렬로 남긴다. true면 호출자가 기존 재정렬 프리뷰를 억제해야 한다.</summary>
+    private bool UpdateProjectFolderDropPreview(Point point)
     {
-        ClearProjectFolderDropPreview();
+        ClearProjectFolderDropOutline();
         var draggedProject = _draggedProject;
-        if (draggedProject == null) return;
+        if (draggedProject == null)
+        {
+            ResetProjectFolderHover(point);
+            return false;
+        }
 
         var target = FindProjectFolderDropTarget(point, draggedProject);
-        if (target.Folder == null) return;
-        _projectFolderDropTarget = target.Folder;
-        if (draggedProject.FolderId == target.Folder.Id) return;
+        if (target.Folder == null || target.PreviewBorder == null
+            || draggedProject.FolderId == target.Folder.Id)
+        {
+            ResetProjectFolderHover(point);
+            return false;
+        }
 
+        if (!ReferenceEquals(_projectFolderHoverTarget, target.Folder))
+        {
+            _projectFolderHoverTarget = target.Folder;
+            _projectFolderEntrySide = ResolveProjectFolderEntrySide(
+                point, _lastProjectDragPoint, target.PreviewBorder);
+        }
+        _lastProjectDragPoint = point;
+
+        double relativeY = ProjectFolderRelativeY(point, target.PreviewBorder);
+        bool oppositeQuarter = _projectFolderEntrySide switch
+        {
+            ProjectFolderEntrySide.Top => relativeY > 0.75,
+            ProjectFolderEntrySide.Bottom => relativeY < 0.25,
+            _ => false,
+        };
+        if (oppositeQuarter) return false;
+
+        _projectFolderDropTarget = target.Folder;
         _projectFolderDropBorder = target.PreviewBorder;
         _projectFolderDropBorder?.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
+        return true;
+    }
+
+    private ProjectFolderEntrySide ResolveProjectFolderEntrySide(
+        Point point,
+        Point? previousPoint,
+        Border border)
+    {
+        try
+        {
+            var origin = border.TransformToAncestor(this).Transform(new Point());
+            double bottom = origin.Y + Math.Max(1, border.ActualHeight);
+            if (previousPoint is Point previous)
+            {
+                if (previous.Y <= origin.Y) return ProjectFolderEntrySide.Top;
+                if (previous.Y >= bottom) return ProjectFolderEntrySide.Bottom;
+                if (point.Y > previous.Y + 0.25) return ProjectFolderEntrySide.Top;
+                if (point.Y < previous.Y - 0.25) return ProjectFolderEntrySide.Bottom;
+            }
+        }
+        catch { /* 레이아웃 전환 중이면 현재 위치의 절반으로 판정 */ }
+
+        return ProjectFolderRelativeY(point, border) <= 0.5
+            ? ProjectFolderEntrySide.Top
+            : ProjectFolderEntrySide.Bottom;
+    }
+
+    private double ProjectFolderRelativeY(Point point, Border border)
+    {
+        try
+        {
+            var origin = border.TransformToAncestor(this).Transform(new Point());
+            return Math.Clamp((point.Y - origin.Y) / Math.Max(1, border.ActualHeight), 0, 1);
+        }
+        catch { return 0.5; }
+    }
+
+    private void ResetProjectFolderHover(Point point)
+    {
+        _projectFolderHoverTarget = null;
+        _projectFolderEntrySide = ProjectFolderEntrySide.None;
+        _lastProjectDragPoint = point;
     }
 
     /// <summary>프로젝트 드롭 대상 폴더를 현재 포인터에서 직접 판정한다. 같은 폴더 내부 카드는
@@ -1553,6 +1628,14 @@ public partial class SidebarView : UserControl
     }
 
     private void ClearProjectFolderDropPreview()
+    {
+        ClearProjectFolderDropOutline();
+        _projectFolderHoverTarget = null;
+        _projectFolderEntrySide = ProjectFolderEntrySide.None;
+        _lastProjectDragPoint = null;
+    }
+
+    private void ClearProjectFolderDropOutline()
     {
         if (_projectFolderDropBorder != null)
             _projectFolderDropBorder.ClearValue(Border.BorderBrushProperty);

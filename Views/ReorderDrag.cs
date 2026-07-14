@@ -63,6 +63,7 @@ internal sealed class ReorderDrag<T> where T : class
     private int _lastTransitionDirection;
     private bool _finished;
     private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
+    private bool _externalDropPreview;    // 폴더 등 외부 드롭 대상 위 → 재정렬 프리뷰를 원위치로 억제.
     private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
 
     private bool IsGrid => _columns > 1;
@@ -320,11 +321,42 @@ internal sealed class ReorderDrag<T> where T : class
         else _needsReapply = true;
     }
 
+    /// <summary>호스트가 별도 드롭 대상을 표시하는 동안 이 목록의 재정렬 프리뷰를 원위치로
+    /// 되돌리고 고스트만 계속 따라가게 한다. 해제 직후에는 현재 포인터로 재정렬을 다시 계산한다.</summary>
+    public void SetExternalDropPreview(bool on)
+    {
+        if (_finished || _externalDropPreview == on) return;
+        _externalDropPreview = on;
+        _lastPointerAxisPosition = null;
+        _lastTransitionDirection = 0;
+
+        if (!on)
+        {
+            _needsReapply = true;
+            return;
+        }
+
+        ClearDropIntoTarget();
+        ClearReorderPreview();
+        if (IsGrid)
+        {
+            _targetColumn = ColumnOf(_slots[_sourceIndex]);
+            _targetIndex = WithinColumnIndex(_sourceIndex, _targetColumn);
+            ApplyGridDisplacement();
+        }
+        else
+        {
+            _targetIndex = _sourceIndex;
+            ResetDisplacementPreview();
+        }
+        _needsReapply = false;
+    }
+
     public void Update(MouseEventArgs e)
     {
         if (_finished) return;
         _ghost.MoveToMouse();
-        if (_suppressed) return; // 반대 패널 위 → 이 리스트 프리뷰 억제(고스트만 이동).
+        if (_suppressed || _externalDropPreview) return; // 외부 드롭 대상 위 → 고스트만 이동.
         if (IsGrid)
         {
             // 2열: 마우스 X로 목표 컬럼을, 마우스 Y로 그 컬럼 안의 삽입 위치를 정한다.
