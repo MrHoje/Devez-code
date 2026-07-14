@@ -1427,42 +1427,11 @@ public partial class MainWindow : Window
         SetBar(fLabel, fBar, fPct, FormatRemainingShort(u.Primary?.ResetsAt) ?? "5h", u.Primary?.UsedPercent);
         SetWindowBar(wBar, wPct, u.Weekly?.UsedPercent);
         if (mBar != null && mPct != null) SetWindowBar(mBar, mPct, u.Monthly?.UsedPercent);
-        if (u.Provider == "codex") ApplyCodexResetCreditsFooter(u);
         panel.ToolTip = BuildProviderTooltip(u, name)
             + (u.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness
                 ? $"\n갱신 지연 · 마지막 성공 {u.CapturedAt.ToLocalTime():HH:mm}"
                 : "");
         UpdateFooterDivider();
-    }
-
-    /// <summary>Codex 초기화권 개수와 가장 늦게 만료되는 초기화권의 남은 시간을 푸터에 표시.</summary>
-    private void ApplyCodexResetCreditsFooter(Models.ProviderUsage u)
-    {
-        CxResetCreditsText.Text = FormatResetCreditSummary(u.ResetCredits, DateTimeOffset.Now);
-        CxResetCreditsText.Visibility = u.ResetCredits.Count > 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-    }
-
-    private static string FormatResetCreditSummary(
-        IReadOnlyList<Models.ResetCredit> credits, DateTimeOffset now)
-    {
-        if (credits.Count == 0) return "";
-
-        DateTimeOffset? latestExpiry = null;
-        foreach (var credit in credits)
-        {
-            if (credit.ExpiresAt is DateTimeOffset expiry
-                && (latestExpiry == null || expiry > latestExpiry.Value))
-            {
-                latestExpiry = expiry;
-            }
-        }
-
-        var summary = $"초기화 {credits.Count}회";
-        return latestExpiry is DateTimeOffset latest
-            ? $"{summary} ({FormatResetCreditExpiry(latest, now).Text})"
-            : summary;
     }
 
     /// <summary>한도 막대 1세트 갱신 — 라벨 / 채움 너비·색 / 퍼센트.</summary>
