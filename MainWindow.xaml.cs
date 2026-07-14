@@ -4109,7 +4109,11 @@ public partial class MainWindow : Window
         UpdatePaneFocusVisual();
     }
 
-    private void AddSession(ProjectItem proj) => _focusedPane.AddSession(proj);
+    private void AddSession(ProjectItem proj)
+    {
+        var session = _focusedPane.AddSession(proj);
+        if (session != null) OpenSession(session);
+    }
     private void RenameSession(SessionItem session) { PaneFor(session).RenameSession(session); SyncRecordsForSessionRename(session); }
     private void DeleteSession(SessionItem session)
     {

@@ -858,21 +858,21 @@ public partial class WorkspacePaneView : UserControl
         return max == 0 ? "웹 브라우저" : $"웹 브라우저 {max + 1}";
     }
 
-    public void AddSession(ProjectItem proj)
+    public SessionItem? AddSession(ProjectItem proj)
     {
         var available = AgentRegistry.GetEnabledAndInstalled();
         if (available.Count == 0)
         {
             ConfirmDialog.Alert("에이전트 없음",
                 "사용 가능한 에이전트가 없습니다.\n설정 → 에이전트 에서 하나 이상 활성화해 주세요.");
-            return;
+            return null;
         }
         string agentId;
         if (available.Count == 1) agentId = available[0].Id;
         else
         {
             var picked = AgentPickerDialog.Pick(Window.GetWindow(this), available, proj.Path);
-            if (picked == null) return;
+            if (picked == null) return null;
             agentId = picked;
         }
 
@@ -891,6 +891,7 @@ public partial class WorkspacePaneView : UserControl
             OpenSession(session);
             if (isolated) IsolatedTabOpened?.Invoke(this, session);
         }
+        return session;
     }
 
     /// <summary>세션 포크 — 원본 대화를 복사한 새 세션을 같은 프로젝트에 만들어 연다.
