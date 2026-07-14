@@ -81,18 +81,20 @@ public static class OpenCodePluginInstaller
         catch { /* 권한 부족 등 — 무시 (opencode 는 플러그인 없이도 동작) */ }
     }
 
+    /// <summary>현재·과거에 DevezCode가 사용한 모든 관리 대상 플러그인 경로.</summary>
+    private static string[] ManagedPluginCandidates() => new[]
+    {
+        Path.Combine(OpenCodeConfigDir, "plugin", "devezcode-room-tracker.js"),
+        Path.Combine(OpenCodeConfigDir, "plugins", "devezcode-room-tracker.js"),
+        Path.Combine(OpenCodeConfigDir, "plugin", "opencode-room-tracker.js"),
+        Path.Combine(OpenCodeConfigDir, "plugins", "opencode-room-tracker.js"),
+    };
+
     /// <summary>과거 단/복수 plugin 폴더·리소스명으로 설치된 우리 플러그인만 제거한다.
     /// 남겨두면 OpenCode가 두 복사본을 함께 로드해 busy/idle 이벤트를 중복 기록한다.</summary>
     private static void CleanupLegacyPluginCopies()
     {
-        var candidates = new[]
-        {
-            Path.Combine(OpenCodeConfigDir, "plugin", "devezcode-room-tracker.js"),
-            Path.Combine(OpenCodeConfigDir, "plugins", "devezcode-room-tracker.js"),
-            Path.Combine(OpenCodeConfigDir, "plugin", "opencode-room-tracker.js"),
-            Path.Combine(OpenCodeConfigDir, "plugins", "opencode-room-tracker.js"),
-        };
-        foreach (var path in candidates)
+        foreach (var path in ManagedPluginCandidates())
         {
             try
             {

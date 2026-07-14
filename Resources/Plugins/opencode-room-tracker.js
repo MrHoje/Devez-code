@@ -4,22 +4,28 @@
 // 2) 헤더 타이틀에 마지막 메시지 즉시 표시 (lastmsg\<room>.txt, claude busy hook 과 동일 패턴)
 // DEVEZCODE_ROOM_ID 가 없으면(사용자가 직접 쓰는 opencode) 아무 동작도 하지 않는다.
 //
-// 진단 로그: %APPDATA%\DevezCode\opencode\plugin-debug.log
-//   - 플러그인 로드 시점, 첫 20개 event 의 type+구조, lastmsg 저장 성공/실패를 기록.
+// 진단이 필요할 때만 DEVEZCODE_OPENCODE_PLUGIN_DEBUG=1 로 실행하면
+// %APPDATA%\DevezCode\opencode\plugin-debug.log 에 이벤트 흐름을 기록한다.
 export const DevezCodeRoomTracker = async (_ctx) => {
-  const client = _ctx && _ctx.client;
   const room = process.env.DEVEZCODE_ROOM_ID;
+  const safe = String(room || "").replace(/[^\w\-]/g, "");
+  // 플러그인은 OpenCode 전역 설정에서 로드된다. DevezCode가 띄운 세션이 아니면
+  // 파일 모듈 로드·클라이언트 조회·이벤트 핸들러 등록·진단 로그를 전부 생략한다.
+  if (!safe) return {};
+
+  const client = _ctx && _ctx.client;
   const fs = require("node:fs");
   const path = require("node:path");
   const os = require("node:os");
   const base = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-  const safe = String(room || "").replace(/[^\w\-]/g, "");
   const logPath = path.join(base, "DevezCode", "opencode", "plugin-debug.log");
+  const debugEnabled = process.env.DEVEZCODE_OPENCODE_PLUGIN_DEBUG === "1";
 
   // 로그 상한 1MB — message.part.updated 가 스트리밍 청크마다 발화해 무한 증식하므로
   // 초과 시 .1 로 로테이션(직전 1MB 는 진단용으로 보존, 그 이전은 폐기).
   const MAX_LOG_BYTES = 1024 * 1024;
   const debug = (msg) => {
+    if (!debugEnabled) return;
     try {
       fs.mkdirSync(path.dirname(logPath), { recursive: true });
       try {
@@ -32,7 +38,7 @@ export const DevezCodeRoomTracker = async (_ctx) => {
     } catch (e) {}
   };
 
-  debug(`plugin loaded; DEVEZCODE_ROOM_ID=${room ? "set" : "EMPTY"} (safe=${safe})`);
+  debug(`plugin loaded; room=${safe}`);
 
   // Every state/tracking write uses temp+rename. Direct writeFileSync truncates the
   // destination first; if OpenCode exits in that window a permanent zero-byte file
@@ -265,10 +271,9 @@ export const DevezCodeRoomTracker = async (_ctx) => {
         // 선택지와 툴 권한은 모두 실제 사용자 입력 경계다. lastStatus/busy는
         // 건드리지 않아 답변 뒤 session.status busy가 정상적으로 작업을 재무장한다.
         if (t === "question.asked" || t === "permission.asked") { setWaiting(); return; }
-        // [진단] session.* / message.updated / message.part.updated 만 항상 로깅(노이즈 제외).
-        // 실제 한 턴 동안 어떤 event 가 어떤 순서/sessionID/role/completed 로 흐르는지 확보용.
-        const logPart = t === "message.part.updated" && partEvLogged < PART_EV_LOG_MAX;
-        if (t.startsWith("session.") || t === "message.updated" || logPart) {
+        // 진단 모드에서만 실제 한 턴의 event 순서/sessionID/role/completed를 기록한다.
+        const logPart = debugEnabled && t === "message.part.updated" && partEvLogged < PART_EV_LOG_MAX;
+        if (debugEnabled && (t.startsWith("session.") || t === "message.updated" || logPart)) {
           if (logPart) partEvLogged++;
           const sid = sessionID || "?";
           const role = info.role || messageRole[part.messageID] || "-";

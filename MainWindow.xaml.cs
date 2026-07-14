@@ -513,19 +513,15 @@ public partial class MainWindow : Window
             StartBusyDisplaySync();
             _modelEffort.Start();
             _sessionLastMsg.Start();
-            // codex 훅 — 시작 시 스크립트/hooks.json + 앱 소유 이벤트 신뢰 해시 자동 설치.
+            // 전역 훅/플러그인을 매 시작마다 멱등 갱신한다. 일시적인 잠금·권한 실패나
+            // 구버전 앱 재실행으로 설정이 되돌아가도 다음 시작에서 자동 복구한다.
             CodexHookInstaller.EnsureScriptInstalled();
             CodexHookInstaller.InstallHooksJson();
             _codexHook.Start();
-            // Grok 훅 설치·감시.
             GrokHookInstaller.EnsureInstalled();
             _grokHook.Start();
-            // Antigravity(agy) 훅 설치·감시.
             AntigravityHookInstaller.EnsureInstalled();
             _antigravityHook.Start();
-            // opencode 플러그인 — 매 시작 시 ~/.config\opencode\plugin\devezcode-room-tracker.js 갱신.
-            // session.created/updated → sessions\<room>.txt (세션 ID 복원용)
-            // message.updated( role=user ) → lastmsg\<room>.txt (헤더 타이틀 즉시 표시)
             OpenCodePluginInstaller.EnsureInstalled();
             _opencodeLastMsg.Start();
             _opencodeBusy.Start();

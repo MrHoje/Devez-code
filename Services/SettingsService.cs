@@ -204,7 +204,6 @@ public static class SettingsService
     }
 
     private static void Save() => _ = TrySave();
-
     // ── 터미널 폰트 크기 ──────────────────────────────────────────
     public static int LoadTerminalFontSizePt() => Current.TerminalFontSizePt;
     public static void SaveTerminalFontSizePt(int pt) { Current.TerminalFontSizePt = pt; Save(); }

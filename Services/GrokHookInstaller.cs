@@ -109,8 +109,10 @@ public static class GrokHookInstaller
 
             var root = new JsonObject { ["hooks"] = hooksObj };
             var opts = new JsonSerializerOptions { WriteIndented = true };
-            AtomicFile.WriteAllText(HooksJsonPath, root.ToJsonString(opts));
-            return true;
+            var json = root.ToJsonString(opts);
+            // 전용 파일이므로 항상 최신 결과를 권위값으로 사용하되, 내용이 같으면
+            // AtomicFile.TryUpdateAllText가 실제 디스크 교체를 생략한다.
+            return AtomicFile.TryUpdateAllText(HooksJsonPath, _ => json);
         }
         catch { return false; }
     }
