@@ -62,6 +62,8 @@ internal sealed class ReorderDrag<T> where T : class
     private bool _reorderPreviewAfter;
     private Slot? _directionalDropTarget;
     private DropEntrySide _directionalDropEntrySide;
+    private Slot? _quarterReorderTarget;
+    private bool _quarterReorderAfter;
     private double? _lastDropZoneAxisPosition;
     private double? _lastPointerAxisPosition;
     private int _lastTransitionDirection;
@@ -345,6 +347,8 @@ internal sealed class ReorderDrag<T> where T : class
 
         ClearDropIntoTarget();
         ClearReorderPreview();
+        _quarterReorderTarget = null;
+        _directionalDropTarget = null;
         if (IsGrid)
         {
             _targetColumn = ColumnOf(_slots[_sourceIndex]);
@@ -523,7 +527,10 @@ internal sealed class ReorderDrag<T> where T : class
             if (!quarterHysteresis && _lastTransitionDirection < 0)
                 threshold += LiveReversalHysteresis;
             if (pointerPosition >= threshold)
+            {
+                TrackQuarterReorderTransition(target, after: true);
                 newTarget++;
+            }
         }
         else if (movementDirection < 0 && newTarget > 0)
         {
@@ -538,7 +545,10 @@ internal sealed class ReorderDrag<T> where T : class
             if (!quarterHysteresis && _lastTransitionDirection > 0)
                 threshold -= LiveReversalHysteresis;
             if (pointerPosition <= threshold)
+            {
+                TrackQuarterReorderTransition(target, after: false);
                 newTarget--;
+            }
         }
 
         if (!_needsReapply && newTarget == _targetIndex) return;
@@ -623,13 +633,21 @@ internal sealed class ReorderDrag<T> where T : class
                 ? (pointer.X - bounds.Left) / bounds.Width
                 : (pointer.Y - bounds.Top) / bounds.Height;
             bool directionalDrop = UsesQuarterReorderHysteresis(slot);
-            if (directionalDrop && ReferenceEquals(_reorderPreviewTarget, slot))
+            if (directionalDrop && ReferenceEquals(_quarterReorderTarget, slot))
             {
-                bool after = ResolveReorderAfter(slot, relative >= 0.5, pointer);
+                bool after = ResolveQuarterReorderAfter(slot, _quarterReorderAfter, pointer);
                 zone = after ? DropZone.After : DropZone.Before;
+                if (after != _quarterReorderAfter)
+                {
+                    // 반대편 25%까지 완전히 통과했으면 이번 반전까지만 재정렬로 처리한다.
+                    // 다음 MouseMove부터 중앙 75%의 자식/폴더 내부 드롭을 다시 허용한다.
+                    _quarterReorderTarget = null;
+                    _directionalDropTarget = null;
+                }
             }
             else if (directionalDrop)
             {
+                _quarterReorderTarget = null;
                 if (!ReferenceEquals(_directionalDropTarget, slot))
                 {
                     _directionalDropTarget = slot;
@@ -647,9 +665,15 @@ internal sealed class ReorderDrag<T> where T : class
                         : canDropInto ? DropZone.Into : DropZone.After,
                     _ => canDropInto ? DropZone.Into : DropZone.Before,
                 };
+                if (zone != DropZone.Into)
+                {
+                    _quarterReorderTarget = slot;
+                    _quarterReorderAfter = zone == DropZone.After;
+                }
             }
             else if (canDropInto)
             {
+                _quarterReorderTarget = null;
                 _directionalDropTarget = null;
                 zone = relative < 0.25
                     ? DropZone.Before
@@ -657,6 +681,7 @@ internal sealed class ReorderDrag<T> where T : class
             }
             else
             {
+                _quarterReorderTarget = null;
                 _directionalDropTarget = null;
                 bool after = ResolveReorderAfter(slot, relative >= 0.5, pointer);
                 zone = after ? DropZone.After : DropZone.Before;
@@ -667,12 +692,16 @@ internal sealed class ReorderDrag<T> where T : class
 
         // 재정렬로 이미 밀려난 대상과 커서 사이에 일시적인 빈 공간이 생겨도 상태를
         // 지우지 않는다. 실제 다른 슬롯에 들어갈 때까지 반대편 25% 경계를 계속 사용한다.
-        if (_reorderPreviewTarget is { } reorderTarget
-            && UsesQuarterReorderHysteresis(reorderTarget))
+        if (_quarterReorderTarget is { } reorderTarget)
         {
-            bool after = ResolveReorderAfter(reorderTarget, _reorderPreviewAfter, pointer);
+            bool after = ResolveQuarterReorderAfter(reorderTarget, _quarterReorderAfter, pointer);
             target = reorderTarget;
             zone = after ? DropZone.After : DropZone.Before;
+            if (after != _quarterReorderAfter)
+            {
+                _quarterReorderTarget = null;
+                _directionalDropTarget = null;
+            }
             return true;
         }
 
@@ -796,13 +825,9 @@ internal sealed class ReorderDrag<T> where T : class
         double axisPosition = _horizontal ? pointer.X : pointer.Y;
         double axisStart = _horizontal ? bounds.Left : bounds.Top;
         double axisSize = _horizontal ? bounds.Width : bounds.Height;
-        if (UsesQuarterReorderHysteresis(target))
+        if (ReferenceEquals(_quarterReorderTarget, target))
         {
-            // 폴더 앞/뒤 재정렬이 시작된 뒤에는 반대편 25%까지 상태를 유지한다.
-            // 레이아웃 이동으로 보더에 다시 닿아도 즉시 반전하지 않는다.
-            return _reorderPreviewAfter
-                ? axisPosition >= axisStart + axisSize * 0.25
-                : axisPosition > axisStart + axisSize * 0.75;
+            return ResolveQuarterReorderAfter(target, _quarterReorderAfter, pointer);
         }
 
         double midpoint = axisStart + axisSize / 2;
@@ -815,12 +840,37 @@ internal sealed class ReorderDrag<T> where T : class
             : axisPosition > midpoint + hysteresis;
     }
 
+    private bool ResolveQuarterReorderAfter(Slot target, bool currentAfter, Point pointer)
+    {
+        var bounds = HitTestPrimaryBounds(target);
+        double axisPosition = _horizontal ? pointer.X : pointer.Y;
+        double axisStart = _horizontal ? bounds.Left : bounds.Top;
+        double axisSize = _horizontal ? bounds.Width : bounds.Height;
+        return currentAfter
+            ? axisPosition >= axisStart + axisSize * 0.25
+            : axisPosition > axisStart + axisSize * 0.75;
+    }
+
+    private void TrackQuarterReorderTransition(Slot target, bool after)
+    {
+        if (!UsesQuarterReorderHysteresis(target)) return;
+        if (ReferenceEquals(_quarterReorderTarget, target) && _quarterReorderAfter != after)
+        {
+            _quarterReorderTarget = null;
+            _directionalDropTarget = null;
+            return;
+        }
+
+        _quarterReorderTarget = target;
+        _quarterReorderAfter = after;
+    }
+
     private bool UsesQuarterReorderHysteresis(Slot target)
         => _useQuarterReorderHysteresis?.Invoke(_source, target.Item) == true;
 
-    public bool IsReorderPreviewTarget(T target)
-        => _reorderPreviewTarget != null
-           && ReferenceEquals(_reorderPreviewTarget.Item, target);
+    public bool IsQuarterReorderLockedTarget(T target)
+        => _quarterReorderTarget != null
+           && ReferenceEquals(_quarterReorderTarget.Item, target);
 
     private static Rect CapturedPrimaryBounds(Slot slot) => new(
         slot.PrimaryLeft,

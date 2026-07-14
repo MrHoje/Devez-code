@@ -1532,7 +1532,7 @@ public partial class SidebarView : UserControl
 
         // 폴더 앞/뒤 재정렬이 이미 시작됐으면 레이아웃 이동 뒤 보더에 재접촉해도
         // 새 내부 드롭 진입으로 취급하지 않는다. ReorderDrag의 25/75 반전 경계를 유지한다.
-        if (_rootDrag?.IsReorderPreviewTarget(target.Folder) == true)
+        if (_rootDrag?.IsQuarterReorderLockedTarget(target.Folder) == true)
         {
             _projectFolderHoverTarget = target.Folder;
             _lastProjectDragPoint = point;
