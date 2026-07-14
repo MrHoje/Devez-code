@@ -49,6 +49,10 @@
     <Content Include="Resources\Markdown\web\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Monaco Editor 오프라인 번들(WebView2 가상 호스트 로드, diff 뷰) -->
+    <Content Include="Resources\Monaco\web\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- 델타 업데이트 복원 도구 (single-file 에도 포함됨) -->
     <Content Include="Resources\Tools\zstd.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

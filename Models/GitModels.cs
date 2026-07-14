@@ -11,6 +11,8 @@ public sealed class GitChange : INotifyPropertyChanged
     public string Path { get; init; } = "";
     /// <summary>추적되지 않은(신규) 파일 여부 — diff 대신 파일 내용을 추가로 표시.</summary>
     public bool IsUntracked { get; init; }
+    /// <summary>스테이징 영역(Staged Changes) 소속이면 true, 작업트리(Changes)면 false.</summary>
+    public bool IsStaged { get; init; }
 
     private bool _isSelected;
     /// <summary>목록에서 현재 선택된 파일인지(행 강조용).</summary>
@@ -50,4 +52,21 @@ public sealed class DiffRow
     public string RightNum { get; init; } = "";
     public string RightText { get; init; } = "";
     public DiffCellKind RightKind { get; init; }
+}
+
+/// <summary>git status 분류 결과 — 스테이징/작업트리 두 목록.</summary>
+public sealed class GitStatus
+{
+    public List<GitChange> Staged { get; init; } = new();
+    public List<GitChange> Unstaged { get; init; } = new();
+    public bool IsEmpty => Staged.Count == 0 && Unstaged.Count == 0;
+}
+
+/// <summary>현재 브랜치·업스트림·ahead/behind.</summary>
+public sealed class BranchState
+{
+    public string? Branch { get; init; }
+    public bool HasUpstream { get; init; }
+    public int Ahead { get; init; }
+    public int Behind { get; init; }
 }

@@ -22,9 +22,16 @@ public partial class FileExplorerView : UserControl
     private readonly DispatcherTimer _fileRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool _subscribed;
 
+    /// <summary>SCM 파일 클릭 → 중앙 diff 탭 요청.(repo, relPath, staged) MainWindow 가 구독.</summary>
+    public event Action<string, string, bool>? DiffFileActivated;
+    /// <summary>git 상태 변경(repo). MainWindow 가 구독해 브랜치 버블 갱신.</summary>
+    public event Action<string>? GitStateChanged;
+
     public FileExplorerView()
     {
         InitializeComponent();
+        ScmView.DiffFileActivated += (repo, rel, staged) => DiffFileActivated?.Invoke(repo, rel, staged);
+        ScmView.GitStateChanged += repo => GitStateChanged?.Invoke(repo);
         _fileSearchDebounceTimer.Tick += (_, _) =>
         {
             _fileSearchDebounceTimer.Stop();
@@ -205,10 +212,10 @@ public partial class FileExplorerView : UserControl
         SettingsService.SaveFileExpActiveTab(idx);
         Tree.Visibility      = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         Browser.Visibility   = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
-        DiffView.Visibility  = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
+        ScmView.Visibility  = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
         QueueView.Visibility = idx == 3 ? Visibility.Visible : Visibility.Collapsed;
         if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
-        if (idx == 2) _ = DiffView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
+        if (idx == 2) _ = ScmView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
 
         // 큐·브라우저 모드에서는 44px 헤더(row 1) 를 접어서 콘텐츠가 탭 바로 아래에 이어지게 한다.
         // (탭 자체가 각각 '작업 큐'·'브라우저' 제목 역할 → 중복 헤더 불필요)
@@ -283,7 +290,7 @@ public partial class FileExplorerView : UserControl
             DisposeFileWatcher();
             if (_mode == ViewMode.Directory) PathText.Text = "파일 탐색기";
             Tree.ItemsSource = null;
-            DiffView.SetRepo(null);
+            ScmView.SetRepo(null);
             // 큐도 null 로 전환 → 전역 큐 (해당 프로젝트 큐가 닫히면 사라지지 않게 빈도 모드)
             QueueView.ProjectPath = null;
             // 브라우저: 활성 프로젝트가 없으면 전역 상태(null) — 어떤 프로젝트 URL 도 표시하지 않음.
@@ -294,10 +301,10 @@ public partial class FileExplorerView : UserControl
         _rootPath = path;
         SetupFileWatcher(path);
         if (_mode == ViewMode.Directory) PathText.Text = path;
-        DiffView.SetRepo(path);
+        ScmView.SetRepo(path);
         // diff 탭이 현재 켜져 있으면 SetRepo 가 비워버리므로 즉시 새로 읽어 동기화.
         // (다른 탭이면 사용자가 diff 탭으로 진입할 때 SwitchTab 에서 RefreshAsync 가 호출됨.)
-        if (_mode == ViewMode.Diff) _ = DiffView.RefreshAsync();
+        if (_mode == ViewMode.Diff) _ = ScmView.RefreshAsync();
 
         // 작업 큐에 프로젝트 경로 통보 → 해당 프로젝트의 저장된 큐를 자동 로드.
         // (탭이 Queue 가 아니어도 즉시 로드해둠 — 사용자가 큐 탭으로 전환할 때 이미 준비됨)

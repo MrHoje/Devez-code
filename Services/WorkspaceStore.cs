@@ -267,12 +267,12 @@ public static class WorkspaceStore
         // 숨김 세션 표시 여부
         ShowHiddenSessions = p.ShowHiddenSessions,
         // 열린 파일 탭 경로 → 재시작 시 복원(Tabs 순서 그대로).
-        OpenFiles = p.Tabs.OfType<FileTabItem>().Select(f => f.FilePath).ToList(),
+        OpenFiles = p.Tabs.OfType<FileTabItem>().Where(f => !f.IsDiff).Select(f => f.FilePath).ToList(),
         // 전체 탭 순서(세션+문서) → 복원 시 이 순서로 재배열해 문서의 끼임 위치 보존.
         TabOrder = p.Tabs.Select(t => t switch
         {
             SessionItem s => "S:" + s.Id,
-            FileTabItem f => "F:" + f.FilePath,
+            FileTabItem f => f.IsDiff ? "" : "F:" + f.FilePath,
             BrowserTabItem b => "B:" + b.Id,
             _ => "",
         }).Where(r => r.Length > 0).ToList(),

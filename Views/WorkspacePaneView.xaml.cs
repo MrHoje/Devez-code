@@ -3417,6 +3417,42 @@ public partial class WorkspacePaneView : UserControl
         return tab;
     }
 
+    /// <summary>diff 파일 탭 생성(같은 repo/경로/staged 이미 있으면 재사용). Editor 는 Monaco diff.</summary>
+    private FileTabItem? CreateDiffTab(ProjectItem proj, string repo, string relPath, bool staged)
+    {
+        var abs = System.IO.Path.Combine(repo, relPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        var existing = proj.Tabs.OfType<FileTabItem>()
+            .FirstOrDefault(t => t.IsDiff && string.Equals(t.FilePath, abs, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) return existing;
+
+        var tab = new FileTabItem { FilePath = abs, IsDiff = true, Editor = new MonacoDiffHostView(repo, relPath, staged) };
+        tab.Editor.CloseRequested += (_, _) =>
+        {
+            if (FileTabCloseRequested != null) FileTabCloseRequested(tab);
+            else RemoveFileTab(tab);
+        };
+        proj.Tabs.Add(tab);
+        return tab;
+    }
+
+    /// <summary>SCM 패널의 파일 클릭 → 이 패널에 diff 탭을 열고 활성화.</summary>
+    public void OpenDiffTab(ProjectItem proj, string repo, string relPath, bool staged)
+    {
+        if (!ReferenceEquals(_activeProject, proj)) SetActiveProject(proj);
+        var tab = CreateDiffTab(proj, repo, relPath, staged);
+        if (tab != null) ActivateFileTab(tab);
+    }
+
+    /// <summary>지정 repo 가 이 패널의 활성 프로젝트와 같으면 브랜치 버블을 다시 읽는다.</summary>
+    public void RefreshBranchIfRepo(string repoDir)
+    {
+        if (_activeProject == null || string.IsNullOrEmpty(repoDir)) return;
+        var a = _activeProject.Path?.TrimEnd('\\', '/');
+        var b = repoDir.TrimEnd('\\', '/');
+        if (!string.IsNullOrEmpty(a) && string.Equals(a, b, StringComparison.OrdinalIgnoreCase))
+            UpdateProjectBranchBubble(_activeProject);
+    }
+
     /// <summary>재시작 복원: 저장돼 있던 파일 경로들을 탭으로 다시 연다(활성화 안 함, 저장 순서 유지).
     /// 삭제됐거나 로드 실패한 파일은 건너뛴다.</summary>
     public void RestoreFileTabs(ProjectItem proj, IEnumerable<string> paths)

@@ -251,7 +251,12 @@ public sealed class SessionCompletionRecord : NotifyBase
 public sealed class FileTabItem : TabItemBase
 {
     public override TabKind Kind => TabKind.File;
-    public override string Title => string.IsNullOrEmpty(FilePath) ? "파일" : Path.GetFileName(FilePath);
+    public override string Title => string.IsNullOrEmpty(FilePath)
+        ? "파일"
+        : Path.GetFileName(FilePath) + (IsDiff ? " (변경)" : "");
+
+    /// <summary>diff 뷰용 파일 탭인지. true 면 제목에 표시하고 workspace.json 영속화에서 제외(전환형).</summary>
+    public bool IsDiff { get; init; }
 
     /// <summary>편집 대상 절대 경로. 비교는 OrdinalIgnoreCase.</summary>
     public string FilePath { get; init; } = "";
