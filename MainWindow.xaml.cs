@@ -2101,9 +2101,14 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             var h = new WindowInteropHelper(this).Handle;
             if (h == IntPtr.Zero) return;
+            // 이미 우리 창이 포그라운드면 아무것도 하지 않는다. Alt 트릭(VK_MENU 탭)이 "Alt 단독 누름"으로
+            // 해석돼 메뉴 모드에 진입하면 이후 ↑/↓ 에 시스템 메뉴가 열리고, Activate() 가 WebView2(터미널)
+            // 포커스를 빼앗아 한글 조합이 창 좌상단 기본 IME 위치에 뜬다.
+            if (WindowState != WindowState.Minimized && GetAncestor(GetForegroundWindow(), GA_ROOT) == h)
+                return;
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
             keybd_event(VK_MENU, 0, 0, UIntPtr.Zero);
             SetForegroundWindow(h);
             keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
@@ -2112,8 +2117,11 @@ public partial class MainWindow : Window
         catch { }
     }
 
+    private const uint GA_ROOT = 2;
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
 
     /// <summary>탭 버튼 4개가 온전히 보이는 폭을 측정해 우측 패널(확장 상태)의 최소 폭으로 적용.
     /// 접힘/오버레이(좁은 창) 상태에서는 폭 0 유지를 위해 적용하지 않는다.</summary>
@@ -5395,6 +5403,8 @@ public partial class MainWindow : Window
     private const int DWMWCP_ROUND = 2;
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
 
+    private const int WM_SYSCOMMAND = 0x0112;
+    private const int SC_KEYMENU = 0xF100;
     private const int WM_NCLBUTTONDBLCLK = 0x00A3;
     private const int WM_NCLBUTTONDOWN = 0x00A1;
     private const int WM_MOUSEMOVE = 0x0200;
@@ -5415,6 +5425,11 @@ public partial class MainWindow : Window
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WM_GETMINMAXINFO) { WmGetMinMaxInfo(lParam); handled = true; }
+        // Alt 단독 탭/F10 의 메뉴 모드 진입 차단(lParam==0 인 SC_KEYMENU) — 전역 탭 단축키의 Alt 트릭이나
+        // 실제 Alt 탭 후 ↑/↓ 화살표에 시스템 메뉴(이전 크기로~닫기)가 열리는 것을 막는다.
+        // Alt+Space(lParam=' ')의 의도적 시스템 메뉴 호출은 통과.
+        else if (msg == WM_SYSCOMMAND && (wParam.ToInt64() & 0xFFF0) == SC_KEYMENU && lParam == IntPtr.Zero)
+            handled = true;
         // 상단바(캡션) 더블클릭: 전체화면 ON 은 기본 최대화 대신 전체화면 토글(기존 동작, hit-test 무관),
         // OFF 도 OS 기본 최대화 대신 우리 토글로 가로채 사전 캡처 커버를 적용한다(캡션에 한정 —
         // 테두리 더블클릭의 OS 수직 최대화 등 기타 NC 동작은 보존).
