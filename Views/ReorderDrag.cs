@@ -60,6 +60,9 @@ internal sealed class ReorderDrag<T> where T : class
     private Slot? _dropIntoTarget;         // 중앙 50%: 자식 드롭 프리뷰/커밋 대상.
     private Slot? _reorderPreviewTarget;
     private bool _reorderPreviewAfter;
+    private Slot? _directionalDropTarget;
+    private DropEntrySide _directionalDropEntrySide;
+    private double? _lastDropZoneAxisPosition;
     private double? _lastPointerAxisPosition;
     private int _lastTransitionDirection;
     private bool _finished;
@@ -592,13 +595,19 @@ internal sealed class ReorderDrag<T> where T : class
     }
 
     private enum DropZone { Before, Into, After }
+    private enum DropEntrySide { Before, After }
 
-    /// <summary>자식 드롭을 허용한 항목은 포인터 기준 상단 25%=앞, 중앙 50%=자식, 하단 25%=뒤.</summary>
+    /// <summary>기본 자식 드롭은 상단 25%=앞, 중앙 50%=자식, 하단 25%=뒤.
+    /// 방향형 대상은 진입한 쪽 75%=자식, 반대쪽 25%=재정렬로 판정한다.</summary>
     private bool TryGetDropZone(Point pointer, out Slot target, out DropZone zone)
     {
         target = null!;
         zone = DropZone.Before;
         if (_canDropInto == null && !_hitTestSlots) return false;
+
+        double axisPosition = _horizontal ? pointer.X : pointer.Y;
+        double? previousAxisPosition = _lastDropZoneAxisPosition;
+        _lastDropZoneAxisPosition = axisPosition;
 
         foreach (var slot in _slots)
         {
@@ -613,21 +622,81 @@ internal sealed class ReorderDrag<T> where T : class
             double relative = _horizontal
                 ? (pointer.X - bounds.Left) / bounds.Width
                 : (pointer.Y - bounds.Top) / bounds.Height;
-            if (canDropInto)
+            bool directionalDrop = UsesQuarterReorderHysteresis(slot);
+            if (directionalDrop && ReferenceEquals(_reorderPreviewTarget, slot))
             {
+                bool after = ResolveReorderAfter(slot, relative >= 0.5, pointer);
+                zone = after ? DropZone.After : DropZone.Before;
+            }
+            else if (directionalDrop)
+            {
+                if (!ReferenceEquals(_directionalDropTarget, slot))
+                {
+                    _directionalDropTarget = slot;
+                    _directionalDropEntrySide = ResolveDropEntrySide(
+                        bounds, axisPosition, previousAxisPosition, relative);
+                }
+
+                zone = _directionalDropEntrySide switch
+                {
+                    DropEntrySide.Before => relative > 0.75
+                        ? DropZone.After
+                        : canDropInto ? DropZone.Into : DropZone.Before,
+                    DropEntrySide.After => relative < 0.25
+                        ? DropZone.Before
+                        : canDropInto ? DropZone.Into : DropZone.After,
+                    _ => canDropInto ? DropZone.Into : DropZone.Before,
+                };
+            }
+            else if (canDropInto)
+            {
+                _directionalDropTarget = null;
                 zone = relative < 0.25
                     ? DropZone.Before
                     : relative > 0.75 ? DropZone.After : DropZone.Into;
             }
             else
             {
+                _directionalDropTarget = null;
                 bool after = ResolveReorderAfter(slot, relative >= 0.5, pointer);
                 zone = after ? DropZone.After : DropZone.Before;
             }
             target = slot;
             return true;
         }
+
+        // 재정렬로 이미 밀려난 대상과 커서 사이에 일시적인 빈 공간이 생겨도 상태를
+        // 지우지 않는다. 실제 다른 슬롯에 들어갈 때까지 반대편 25% 경계를 계속 사용한다.
+        if (_reorderPreviewTarget is { } reorderTarget
+            && UsesQuarterReorderHysteresis(reorderTarget))
+        {
+            bool after = ResolveReorderAfter(reorderTarget, _reorderPreviewAfter, pointer);
+            target = reorderTarget;
+            zone = after ? DropZone.After : DropZone.Before;
+            return true;
+        }
+
+        _directionalDropTarget = null;
         return false;
+    }
+
+    private DropEntrySide ResolveDropEntrySide(
+        Rect bounds,
+        double axisPosition,
+        double? previousAxisPosition,
+        double relative)
+    {
+        double axisStart = _horizontal ? bounds.Left : bounds.Top;
+        double axisEnd = _horizontal ? bounds.Right : bounds.Bottom;
+        if (previousAxisPosition is double previous)
+        {
+            if (previous <= axisStart) return DropEntrySide.Before;
+            if (previous >= axisEnd) return DropEntrySide.After;
+            if (axisPosition > previous + 0.25) return DropEntrySide.Before;
+            if (axisPosition < previous - 0.25) return DropEntrySide.After;
+        }
+
+        return relative <= 0.5 ? DropEntrySide.Before : DropEntrySide.After;
     }
 
     private bool TryGetOuterDropTarget(Point pointer, out Slot target, out bool after)

@@ -2222,7 +2222,10 @@ public partial class SidebarView : UserControl
                     SessionsReordered?.Invoke(project);
                 return Task.CompletedTask;
             },
-            groupedElements: GroupElements);
+            groupedElements: GroupElements,
+            hitTestSlots: true,
+            useQuarterReorderHysteresis: (source, target) =>
+                source is SessionItem && target is SessionItem);
         if (_tabDrag != null)
         {
             _didDrag = true;
