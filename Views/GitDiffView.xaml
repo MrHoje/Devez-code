@@ -5,6 +5,12 @@
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <!-- 기존 목록/diff 영역 (변경 없음) -->
+        <Grid Grid.Row="0">
         <Grid.ColumnDefinitions>
             <!-- 변경 파일 목록 (우측 보더 1px 가 채널의 좌측 선) -->
             <ColumnDefinition x:Name="ListCol" Width="200" MinWidth="130"/>
@@ -231,6 +237,74 @@
                        Text="변경 파일을 선택하면 전체 코드 비교가 표시됩니다.&#x0a;긴 줄은 다음 줄로 자동 줄바꿈됩니다."
                        FontSize="{DynamicResource Fs12}"
                        Foreground="{DynamicResource TextMutedBrush}"/>
+            </Grid>
+        </Border>
+        </Grid><!-- /Grid.Row=0 내부 열-그리드 -->
+
+        <!-- 커밋 바: TaskQueueView 입력 바 패턴 재사용. 모든 색은 테마 브러시. -->
+        <Border x:Name="CommitBar" Grid.Row="1"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
+                Padding="8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 메시지 입력 카드 (둥근 카드 + 플레이스홀더 오버레이) -->
+                <Border Grid.Column="0"
+                        Background="{DynamicResource BgBrush}"
+                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                        CornerRadius="10" Padding="10,6" VerticalAlignment="Center">
+                    <Grid>
+                        <TextBox x:Name="MsgBox"
+                                 BorderThickness="0" Background="Transparent"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource TextBrush}"
+                                 FontFamily="{StaticResource PretendardFont}"
+                                 FontSize="{DynamicResource Fs12}"
+                                 MaxHeight="80" TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 TextChanged="MsgBox_TextChanged"/>
+                        <TextBlock x:Name="MsgPlaceholder" Text="커밋 메시지"
+                                   IsHitTestVisible="False" VerticalAlignment="Center"
+                                   Margin="1,0,0,0"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontFamily="{StaticResource PretendardFont}"
+                                   FontSize="{DynamicResource Fs12}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=MsgBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+
+                <!-- 커밋 -->
+                <Button x:Name="CommitBtn" Grid.Column="1" Margin="8,0,0,0"
+                        Style="{StaticResource PrimaryButton}" Height="30" Padding="14,0"
+                        IsEnabled="False" VerticalAlignment="Center"
+                        FontSize="{DynamicResource Fs12}"
+                        Click="CommitBtn_Click">
+                    <TextBlock Text="커밋" Foreground="White"/>
+                </Button>
+
+                <!-- 푸시 -->
+                <Button x:Name="PushBtn" Grid.Column="2" Margin="6,0,0,0"
+                        Style="{StaticResource SecondaryButton}" Height="30" Padding="14,0"
+                        IsEnabled="False" VerticalAlignment="Center"
+                        FontSize="{DynamicResource Fs12}"
+                        Click="PushBtn_Click">
+                    <TextBlock x:Name="PushBtnText" Text="푸시"/>
+                </Button>
             </Grid>
         </Border>
     </Grid>
