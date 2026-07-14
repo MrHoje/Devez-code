@@ -43,12 +43,39 @@ DevezCode에는 이미 git 기반 diff 뷰어가 있다:
 └───────────────────────────────────────────────────┘
 ```
 
-- 메시지 `TextBox` — 멀티라인(`AcceptsReturn=True`, 2~3줄), `AppStyles.xaml` 전역 스타일 사용
-  (인라인 스타일 지양). 플레이스홀더 "커밋 메시지".
-- **커밋** 버튼 — 변경이 하나라도 있고 메시지가 비어있지 않을 때만 활성.
-- **푸시** 버튼 — ahead>0일 때만 활성, 라벨에 `↑N` 표시. 변경 없어도 보낼 커밋이 있으면 활성.
+- 메시지 `TextBox` — 멀티라인(`AcceptsReturn=True`, 2~3줄). **`TaskQueueView`의 입력 바 패턴을
+  그대로 재사용**: `PanelBrush` 배경 + `LineBrush` 1px 테두리 + `CornerRadius` 둥근 카드,
+  내부 `TextBox`는 `BorderThickness=0`/`Background=Transparent`/`Foreground=TextBrush`/
+  `CaretBrush=TextBrush`/`FontFamily=PretendardFont`, 그리고 빈 값일 때 `DataTrigger`로
+  "커밋 메시지" 플레이스홀더 `TextBlock`(`TextMutedBrush`) 오버레이.
+- **커밋** 버튼 — `AppStyles.xaml`의 `PrimaryButton` 스타일. 변경이 하나라도 있고 메시지가
+  비어있지 않을 때만 활성.
+- **푸시** 버튼 — `SecondaryButton` 스타일. ahead>0일 때만 활성, 라벨에 `↑N` 표시.
+  변경 없어도 보낼 커밋이 있으면 활성.
+- 바 컨테이너는 `TaskQueueView`의 `SelectionActionBar`처럼 `PanelBrush` 배경 + 상단
+  `LineBrush` 1px 구분선(기존 GitDiffView 보더 관례와 일치).
 - 변경이 전혀 없으면 커밋 바 전체를 흐리게(비활성) 처리.
-- 색상/폰트/버튼은 devez 디자인 시스템(`AppStyles.xaml`)을 따른다.
+- 폰트 크기는 `Fs11`~`Fs13` 토큰 사용. 인라인 색/치수 하드코딩 지양.
+
+## 테마 대응 & 컨트롤 재사용 (필수 요건)
+
+새 UI는 **기존 화면들과 시각적으로 동일**해야 하며, **테마 전환에 자동 대응**해야 한다.
+
+- **테마 대응** — 모든 색은 `AppStyles.xaml`의 `DynamicResource` 테마 브러시로만 지정한다
+  (`BgBrush`/`PanelBrush`/`PanelSoftBrush`/`LineBrush`/`TextBrush`/`TextMutedBrush`/
+  `PrimaryBrush`/`SuccessBrush`/`DangerBrush` 등). `DynamicResource`라야 테마 변경 시 자동
+  갱신된다. 하드코딩 색(`#RRGGBB`) 금지 — 예외는 기존 diff 셀 상태색(추가/삭제/수정)뿐이며
+  이는 이미 코드에 있는 값을 그대로 둔다.
+- **컨트롤/스타일 재사용** — 새 스타일을 만들지 말고 기존 것을 가져다 쓴다:
+  - 입력 카드: `Views/TaskQueueView.xaml`의 입력 바(`Row 2`) 구조를 축약 재사용.
+  - 버튼: `PrimaryButton`(커밋) / `SecondaryButton`(푸시). 필요 시 `IconButton`.
+  - 확인 다이얼로그: 기존 `Views/ConfirmDialog`.
+  - 알림: 기존 `Views/NotificationPopup`.
+  - 폰트: `PretendardFont`, 크기 토큰 `Fs11`~`Fs13`.
+- **레이아웃 관례** — 바 배경 `PanelBrush` + 상단 `LineBrush` 1px 구분선은 `GitDiffView`·
+  `TaskQueueView`의 기존 보더 관례와 맞춘다. 라운드/여백도 인접 화면과 통일.
+- 구현 시 유사 화면(TaskQueueView, GitDiffView, ConfirmDialog)을 먼저 열어 마크업을 참고한 뒤
+  같은 브러시·스타일 키로 배선한다.
 
 ## GitService 추가 (기존 RunAsync 재사용)
 
