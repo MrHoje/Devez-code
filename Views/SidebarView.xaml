@@ -532,16 +532,16 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <!-- 활성 프로젝트: 보관함 이동 / 보관 프로젝트: 꺼내기 (동일 템플릿 공유, IsActive/IsArchived 로 분기) -->
+                        <!-- 폴더 밖 활성 프로젝트: 보관함 이동 / 폴더 밖 보관 프로젝트: 꺼내기 -->
                         <MenuItem Header="보관함 이동" Tag="{Binding}" Click="ArchiveProject_Click"
-                                  Visibility="{Binding IsActive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                  Visibility="{Binding CanArchive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchive}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="꺼내기" Tag="{Binding}" Click="UnarchiveProject_Click"
-                                  Visibility="{Binding IsArchived, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                  Visibility="{Binding CanUnarchive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveRestore}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>

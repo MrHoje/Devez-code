@@ -414,11 +414,17 @@ public sealed class ProjectItem : NotifyBase
         {
             var normalized = string.IsNullOrWhiteSpace(value) ? null : value;
             if (Set(ref _folderId, normalized))
+            {
                 OnPropertyChanged(nameof(HasProjectFolder));
+                OnPropertyChanged(nameof(CanArchive));
+                OnPropertyChanged(nameof(CanUnarchive));
+            }
         }
     }
 
     public bool HasProjectFolder => FolderId != null;
+    public bool CanArchive => IsActive && !HasProjectFolder;
+    public bool CanUnarchive => IsArchived && !HasProjectFolder;
 
     private int _rootOrder = int.MaxValue;
     public int RootOrder { get => _rootOrder; set => Set(ref _rootOrder, Math.Max(0, value)); }
@@ -470,7 +476,15 @@ public sealed class ProjectItem : NotifyBase
     public string? ArchivedAt
     {
         get => _archivedAt;
-        set { if (Set(ref _archivedAt, value)) { OnPropertyChanged(nameof(IsArchived)); OnPropertyChanged(nameof(IsActive)); OnPropertyChanged(nameof(ArchivedDateDisplay)); } }
+        set
+        {
+            if (!Set(ref _archivedAt, value)) return;
+            OnPropertyChanged(nameof(IsArchived));
+            OnPropertyChanged(nameof(IsActive));
+            OnPropertyChanged(nameof(ArchivedDateDisplay));
+            OnPropertyChanged(nameof(CanArchive));
+            OnPropertyChanged(nameof(CanUnarchive));
+        }
     }
 
     /// <summary>보관함 소속 여부.</summary>
