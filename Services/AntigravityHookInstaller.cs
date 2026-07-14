@@ -1,49 +1,52 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace DevezCode.Services;
 
-/// <summary>안티그래비티(agy) 훅(antigravity-hook.cmd) 설치/유지.
-/// 1) 배치를 %LOCALAPPDATA%\DevezCode\antigravity\hook.cmd 에 항상 최신본으로 기록.
-/// 2) ~/.gemini/config/hooks.json 에 구·신버전 수명주기 이벤트를 함께 등록(merge).
-/// PowerShell 대신 cmd 배치인 이유(실측 2026-07-13): agy 는 훅 프로세스를 기다리지 않고 조기
-/// 취소할 수 있어(--print 의 SessionStart/Stop) 기동 ~수백ms 인 powershell 은 실행 전에 죽는다.
-/// 이벤트명은 stdin JSON 에 없어 배치 인자(%1)로 전달한다.
-/// 주의: agy 에는 UserPromptSubmit 훅이 없다 — 구버전은 Tool 이벤트, 신버전은 Invocation 이벤트도 활용.</summary>
+/// <summary>Antigravity(agy) 상태 훅 설치/마이그레이션.
+/// 최신 agy는 이름 있는 최상위 bundle + 이벤트별 flat/tool schema를 사용하고,
+/// 1.1.1 이전 빌드는 예전 hooks bundle schema로 설치한다. 어느 경우든 타사 훅은 보존한다.</summary>
 public static class AntigravityHookInstaller
 {
+    private const string BundleName = "devezcode-status";
+    private const string LegacyBundleName = "hooks";
+    private static readonly Version CurrentSchemaSince = new(1, 1, 1);
+
+    private static readonly string[] CurrentEvents =
+        { "PreInvocation", "PostInvocation", "PostToolUse", "Stop" };
+
+    private static readonly string[] LegacyEvents =
+        { "SessionStart", "PreInvocation", "PostInvocation", "PostToolUse", "Stop", "SessionEnd" };
+
+    private static readonly Lazy<Version?> InstalledVersion = new(DetectInstalledVersion);
+
     public static string ScriptInstallPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "antigravity", "hook.cmd");
 
-    /// <summary>구버전 PowerShell 훅 잔재 — 설치 시 정리.</summary>
     private static string LegacyPs1Path => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "antigravity", "hook.ps1");
 
-    /// <summary>agy 글로벌 훅 파일. 실측(1.1.1): agy 는 <c>~/.gemini/antigravity-cli/hooks.json</c> 을 발견하면
-    /// <c>~/.gemini/config/hooks.json</c> 으로 마이그레이션하고 이후 config 쪽만 읽는다(migrate.go 로그) —
-    /// 처음부터 config 경로에 쓴다.</summary>
     public static string HooksJsonPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini", "config", "hooks.json");
 
-    /// <summary>구버전(마이그레이션 전) 경로 — 여기 남은 우리 훅 파일은 agy 가 매번 재마이그레이션을
-    /// 시도하므로 설치 시 정리한다.</summary>
     private static string LegacyHooksJsonPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini", "antigravity-cli", "hooks.json");
 
-    private static readonly string[] HookEventNames =
-        { "SessionStart", "PreInvocation", "PostInvocation", "PreToolUse", "PostToolUse", "Stop", "SessionEnd" };
+    private static bool UseCurrentSchema => InstalledVersion.Value is not { } version || version >= CurrentSchemaSince;
 
     public static string ReadEmbeddedScript()
     {
         var asm = Assembly.GetExecutingAssembly();
-        var names = asm.GetManifestResourceNames();
-        var match = names.FirstOrDefault(n => n.EndsWith("antigravity-hook.cmd", StringComparison.OrdinalIgnoreCase));
+        var match = asm.GetManifestResourceNames()
+            .FirstOrDefault(n => n.EndsWith("antigravity-hook.cmd", StringComparison.OrdinalIgnoreCase));
         if (match != null)
         {
             using var s = asm.GetManifestResourceStream(match)!;
@@ -59,65 +62,107 @@ public static class AntigravityHookInstaller
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(ScriptInstallPath)!);
             var content = ReadEmbeddedScript();
             if (!File.Exists(ScriptInstallPath) || File.ReadAllText(ScriptInstallPath) != content)
-                File.WriteAllText(ScriptInstallPath, content, new UTF8Encoding(false));
+                AtomicFile.WriteAllText(ScriptInstallPath, content);
         }
         catch { /* best-effort */ }
     }
 
-    /// <summary>hooks.json 에 우리 훅을 merge 등록. 다른 이벤트/훅은 보존. 성공 시 true.</summary>
+    /// <summary>공유 hooks.json을 최신본과 재병합해 설치한다. 기존 파일이 손상됐으면 덮어쓰지 않는다.</summary>
     public static bool InstallHooksJson()
     {
-        try
+        var installed = AtomicFile.TryUpdateAllText(HooksJsonPath, raw =>
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(HooksJsonPath)!);
-
-            JsonNode? root;
-            try
-            {
-                root = File.Exists(HooksJsonPath)
-                    ? JsonNode.Parse(File.ReadAllText(HooksJsonPath))
-                    : JsonNode.Parse("{}");
-            }
-            catch { root = JsonNode.Parse("{}"); }
-            root ??= JsonNode.Parse("{}");
-
-            if (root!["hooks"] is not JsonObject hooksObj)
-            {
-                hooksObj = new JsonObject();
-                root["hooks"] = hooksObj;
-            }
-
-            foreach (var eventName in HookEventNames)
-                EnsureOurHook(hooksObj, eventName, BuildHookCommand(eventName));
-            RemoveStaleManagedHooks(hooksObj);
-
-            var opts = new JsonSerializerOptions { WriteIndented = true };
-            File.WriteAllText(HooksJsonPath, root.ToJsonString(opts), new UTF8Encoding(false));
-            return true;
-        }
-        catch { return false; }
+            var root = ParseRoot(raw);
+            RemoveManagedHooks(root);
+            if (UseCurrentSchema) InstallCurrentSchema(root);
+            else InstallLegacySchema(root);
+            return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        });
+        return installed && HookAssetsHealthy();
     }
 
+    private static JsonObject ParseRoot(string? raw)
+    {
+        if (raw == null) return new JsonObject();
+        return JsonNode.Parse(raw) as JsonObject
+            ?? throw new JsonException("Antigravity hooks root must be an object.");
+    }
+
+    private static void InstallCurrentSchema(JsonObject root)
+    {
+        var bundle = GetOrCreateBundle(root, BundleName);
+        foreach (var eventName in CurrentEvents)
+        {
+            var definitions = GetOrCreateDefinitions(bundle, eventName);
+            var handler = BuildHandler(BuildHookCommand(eventName));
+            if (eventName == "PostToolUse")
+            {
+                definitions.Add(new JsonObject
+                {
+                    ["matcher"] = "*",
+                    ["hooks"] = new JsonArray(handler),
+                });
+            }
+            else
+            {
+                definitions.Add(handler);
+            }
+        }
+    }
+
+    private static void InstallLegacySchema(JsonObject root)
+    {
+        var bundle = GetOrCreateBundle(root, LegacyBundleName);
+        foreach (var eventName in LegacyEvents)
+        {
+            var definition = new JsonObject
+            {
+                ["hooks"] = new JsonArray(BuildHandler(BuildHookCommand(eventName))),
+            };
+            if (eventName == "PostToolUse") definition["matcher"] = "*";
+            GetOrCreateDefinitions(bundle, eventName).Add(definition);
+        }
+    }
+
+    private static JsonObject GetOrCreateBundle(JsonObject root, string name)
+    {
+        if (root[name] is JsonObject existing) return existing;
+        if (root.ContainsKey(name)) throw new JsonException($"Antigravity hook bundle '{name}' must be an object.");
+        var created = new JsonObject();
+        root[name] = created;
+        return created;
+    }
+
+    private static JsonArray GetOrCreateDefinitions(JsonObject bundle, string eventName)
+    {
+        if (bundle[eventName] is JsonArray existing) return existing;
+        if (bundle.ContainsKey(eventName)) throw new JsonException($"Antigravity event '{eventName}' must be an array.");
+        var created = new JsonArray();
+        bundle[eventName] = created;
+        return created;
+    }
+
+    private static JsonObject BuildHandler(string command) => new()
+    {
+        ["type"] = "command",
+        ["command"] = command,
+        ["timeout"] = 10,
+    };
+
     private static string BuildHookCommand(string eventName)
-        // agy(1.1.1) 훅 command 제약 실측(json_hook_caller 로그):
-        //  · 큰따옴표를 벗기지 않고 인자로 넘김 → -File "path" 가 "Illegal characters in path" 실패
-        //  · cmd 계열 해석이라 & 가 명령 구분자 → -Command & 'path' 는 "must follow -Command" 실패
-        // ⇒ 따옴표·특수문자 없는 평문 경로 + 배치 직접 실행. 공백 포함 경로는 8.3 단축경로로 변환.
-        // 이벤트명은 stdin JSON 에 없어 인자로 전달.
+        // agy command는 Windows에서 cmd /c로 실행된다. 따옴표가 보존되는 구버전을 위해
+        // 공백 경로는 8.3 경로로 바꾸고 이벤트명은 안전한 고정 인자로 전달한다.
         => $"{ToArgSafePath(ScriptInstallPath)} {eventName}";
 
-    /// <summary>경로에 공백이 있으면 8.3 단축경로로 변환(따옴표 없이 인자로 쓸 수 있게). 실패 시 원본.</summary>
     private static string ToArgSafePath(string path)
     {
         if (!path.Contains(' ')) return path;
         try
         {
             var sb = new StringBuilder(260);
-            if (GetShortPathName(path, sb, sb.Capacity) > 0 && sb.Length > 0)
-                return sb.ToString();
+            if (GetShortPathName(path, sb, sb.Capacity) > 0 && sb.Length > 0) return sb.ToString();
         }
         catch { }
         return path;
@@ -126,159 +171,156 @@ public static class AntigravityHookInstaller
     [System.Runtime.InteropServices.DllImport("kernel32", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     private static extern int GetShortPathName(string longPath, StringBuilder shortPath, int bufferSize);
 
-    /// <summary>이벤트 안의 DevezCode 훅을 최신 command 로 유지. 중복 제거, 다른 훅 보존
-    /// (CodexHookInstaller.EnsureOurHook 과 동일 로직).</summary>
-    private static void EnsureOurHook(JsonObject hooksObj, string eventName, string command)
+    /// <summary>모든 구·신 bundle에서 DevezCode 명령만 제거한다. direct handler와 hooks wrapper를 모두 처리한다.</summary>
+    private static void RemoveManagedHooks(JsonObject root)
     {
-        JsonArray entries;
-        if (hooksObj[eventName] is JsonArray existing)
+        foreach (var topLevelName in root.Select(p => p.Key).ToList())
         {
-            entries = existing;
-        }
-        else
-        {
-            entries = new JsonArray();
-            hooksObj[eventName] = entries;
-        }
-
-        var locations = new List<(int EntryIndex, int HookIndex)>();
-        for (int entryIndex = 0; entryIndex < entries.Count; entryIndex++)
-        {
-            if (entries[entryIndex] is not JsonObject entry ||
-                entry["hooks"] is not JsonArray inner) continue;
-            for (int hookIndex = 0; hookIndex < inner.Count; hookIndex++)
+            if (root[topLevelName] is not JsonObject bundle) continue;
+            foreach (var eventName in bundle.Select(p => p.Key).ToList())
             {
-                if (inner[hookIndex] is JsonObject hook &&
-                    IsOurHookCommand(hook["command"]?.GetValue<string>()))
-                    locations.Add((entryIndex, hookIndex));
-            }
-        }
-
-        if (locations.Count == 0)
-        {
-            entries.Add(new JsonObject
-            {
-                ["hooks"] = new JsonArray
+                if (bundle[eventName] is not JsonArray definitions) continue;
+                for (int i = definitions.Count - 1; i >= 0; i--)
                 {
-                    new JsonObject { ["type"] = "command", ["command"] = command, ["timeout"] = 10 }
+                    if (definitions[i] is not JsonObject definition) continue;
+                    if (IsOurHookCommand(TryGetCommand(definition)))
+                    {
+                        definitions.RemoveAt(i);
+                        continue;
+                    }
+                    if (definition["hooks"] is not JsonArray handlers) continue;
+                    for (int h = handlers.Count - 1; h >= 0; h--)
+                    {
+                        if (handlers[h] is JsonObject handler && IsOurHookCommand(TryGetCommand(handler)))
+                            handlers.RemoveAt(h);
+                    }
+                    if (handlers.Count == 0) definitions.RemoveAt(i);
                 }
-            });
-            return;
+                if (definitions.Count == 0) bundle.Remove(eventName);
+            }
+            if (bundle.Count == 0 && (topLevelName == BundleName || topLevelName == LegacyBundleName))
+                root.Remove(topLevelName);
         }
+    }
 
-        var first = locations[0];
-        var firstEntry = (JsonObject)entries[first.EntryIndex]!;
-        var firstHooks = (JsonArray)firstEntry["hooks"]!;
-        var firstHook = (JsonObject)firstHooks[first.HookIndex]!;
-        firstHook["type"] = "command";
-        firstHook["command"] = command;
-        firstHook["timeout"] = 10;
-
-        for (int i = locations.Count - 1; i >= 1; i--)
-        {
-            var duplicate = locations[i];
-            if (entries[duplicate.EntryIndex] is not JsonObject entry ||
-                entry["hooks"] is not JsonArray inner) continue;
-            inner.RemoveAt(duplicate.HookIndex);
-        }
-        for (int entryIndex = entries.Count - 1; entryIndex >= 0; entryIndex--)
-        {
-            if (entries[entryIndex] is JsonObject entry &&
-                entry["hooks"] is JsonArray inner && inner.Count == 0)
-                entries.RemoveAt(entryIndex);
-        }
+    private static string? TryGetCommand(JsonObject node)
+    {
+        try { return node["command"]?.GetValue<string>(); }
+        catch { return null; }
     }
 
     private static bool IsOurHookCommand(string? command)
     {
         if (string.IsNullOrWhiteSpace(command)) return false;
-        var normalizedCommand = command.Replace('/', '\\');
-        var normalizedPath = ScriptInstallPath.Replace('/', '\\');
-        var normalizedSafePath = ToArgSafePath(ScriptInstallPath).Replace('/', '\\');
-        var normalizedLegacyPath = LegacyPs1Path.Replace('/', '\\');
-        var normalizedLegacySafePath = ToArgSafePath(LegacyPs1Path).Replace('/', '\\');
-        return normalizedCommand.Contains(normalizedPath, StringComparison.OrdinalIgnoreCase)
-            || normalizedCommand.Contains(normalizedSafePath, StringComparison.OrdinalIgnoreCase)
-            || normalizedCommand.Contains(normalizedLegacyPath, StringComparison.OrdinalIgnoreCase)
-            || normalizedCommand.Contains(normalizedLegacySafePath, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>예전 버전이 더 이상 관리하지 않는 이벤트에 남긴 우리 명령만 제거한다.
-    /// 사용자/다른 플러그인의 훅과 현재 이벤트의 배열 위치는 보존한다.</summary>
-    private static void RemoveStaleManagedHooks(JsonObject hooksObj)
-    {
-        var managedEvents = new HashSet<string>(HookEventNames, StringComparer.Ordinal);
-        foreach (var eventName in hooksObj.Select(p => p.Key).ToList())
+        var normalized = command.Replace('/', '\\');
+        foreach (var path in new[] { ScriptInstallPath, ToArgSafePath(ScriptInstallPath), LegacyPs1Path, ToArgSafePath(LegacyPs1Path) })
         {
-            if (managedEvents.Contains(eventName) || hooksObj[eventName] is not JsonArray entries) continue;
-            for (int entryIndex = entries.Count - 1; entryIndex >= 0; entryIndex--)
-            {
-                if (entries[entryIndex] is not JsonObject entry || entry["hooks"] is not JsonArray inner) continue;
-                for (int hookIndex = inner.Count - 1; hookIndex >= 0; hookIndex--)
-                {
-                    if (inner[hookIndex] is JsonObject hook &&
-                        IsOurHookCommand(hook["command"]?.GetValue<string>()))
-                        inner.RemoveAt(hookIndex);
-                }
-                if (inner.Count == 0) entries.RemoveAt(entryIndex);
-            }
-            if (entries.Count == 0) hooksObj.Remove(eventName);
+            if (normalized.Contains(path.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase)) return true;
         }
+        return false;
     }
 
     public static void EnsureInstalled()
     {
         EnsureScriptInstalled();
-        InstallHooksJson();
+        if (!InstallHooksJson() || !HookAssetsHealthy()) return;
+
+        // 새 설치가 검증된 뒤에만 구경로를 정리한다. 실패한 설치가 정상 구버전 훅을 없애지 않는다.
         CleanupLegacyHooksJson();
         try { if (File.Exists(LegacyPs1Path)) File.Delete(LegacyPs1Path); } catch { }
     }
 
-    /// <summary>구경로에 남은 파일에서 우리 훅만 제거(다른 훅은 보존). 우리 훅만 있었다면 파일 삭제.</summary>
     private static void CleanupLegacyHooksJson()
     {
+        if (!File.Exists(LegacyHooksJsonPath)) return;
+        bool emptyAfterCleanup = false;
+        var updated = AtomicFile.TryUpdateAllText(LegacyHooksJsonPath, raw =>
+        {
+            var root = ParseRoot(raw);
+            var before = root.ToJsonString();
+            RemoveManagedHooks(root);
+            emptyAfterCleanup = root.Count == 0;
+            return before == root.ToJsonString()
+                ? raw
+                : root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        });
+        if (!updated || !emptyAfterCleanup) return;
+
+        // 내용이 여전히 빈 객체일 때만 삭제한다. 타 프로세스가 새 훅을 썼다면 보존한다.
         try
         {
-            if (!File.Exists(LegacyHooksJsonPath)) return;
-            var root = JsonNode.Parse(File.ReadAllText(LegacyHooksJsonPath));
-            if (root?["hooks"] is not JsonObject hooksObj) return;
-
-            bool changed = false, anyOtherHook = false;
-            foreach (var eventName in hooksObj.Select(p => p.Key).ToList())
-            {
-                if (hooksObj[eventName] is not JsonArray entries) continue;
-                for (int entryIndex = entries.Count - 1; entryIndex >= 0; entryIndex--)
-                {
-                    if (entries[entryIndex] is not JsonObject entry ||
-                        entry["hooks"] is not JsonArray inner) continue;
-                    for (int hookIndex = inner.Count - 1; hookIndex >= 0; hookIndex--)
-                    {
-                        if (inner[hookIndex] is JsonObject hook &&
-                            IsOurHookCommand(hook["command"]?.GetValue<string>()))
-                        {
-                            inner.RemoveAt(hookIndex);
-                            changed = true;
-                        }
-                        else anyOtherHook = true;
-                    }
-                    if (inner.Count == 0) entries.RemoveAt(entryIndex);
-                }
-                if (entries.Count == 0) hooksObj.Remove(eventName);
-            }
-
-            if (!anyOtherHook)
-            {
-                File.Delete(LegacyHooksJsonPath);
-            }
-            else if (changed)
-            {
-                var opts = new JsonSerializerOptions { WriteIndented = true };
-                File.WriteAllText(LegacyHooksJsonPath, root.ToJsonString(opts), new UTF8Encoding(false));
-            }
+            var latest = JsonNode.Parse(File.ReadAllText(LegacyHooksJsonPath)) as JsonObject;
+            if (latest?.Count == 0) File.Delete(LegacyHooksJsonPath);
         }
-        catch { /* best-effort */ }
+        catch { }
     }
 
     public static bool HookAssetsHealthy()
-        => File.Exists(ScriptInstallPath) && File.Exists(HooksJsonPath);
+    {
+        try
+        {
+            if (!File.Exists(ScriptInstallPath) || !File.Exists(HooksJsonPath)) return false;
+            var root = JsonNode.Parse(File.ReadAllText(HooksJsonPath)) as JsonObject;
+            if (root == null) return false;
+            return UseCurrentSchema ? HasCurrentHooks(root) : HasLegacyHooks(root);
+        }
+        catch { return false; }
+    }
+
+    private static bool HasCurrentHooks(JsonObject root)
+    {
+        if (root[BundleName] is not JsonObject bundle) return false;
+        foreach (var eventName in CurrentEvents)
+        {
+            if (bundle[eventName] is not JsonArray definitions) return false;
+            var command = BuildHookCommand(eventName);
+            var found = definitions.Any(node => node is JsonObject definition &&
+                (TryGetCommand(definition) == command ||
+                 definition["hooks"] is JsonArray handlers && handlers.Any(h => h is JsonObject handler && TryGetCommand(handler) == command)));
+            if (!found) return false;
+        }
+        return true;
+    }
+
+    private static bool HasLegacyHooks(JsonObject root)
+    {
+        if (root[LegacyBundleName] is not JsonObject bundle) return false;
+        foreach (var eventName in LegacyEvents)
+        {
+            if (bundle[eventName] is not JsonArray definitions) return false;
+            var command = BuildHookCommand(eventName);
+            if (!definitions.Any(node => node is JsonObject definition &&
+                definition["hooks"] is JsonArray handlers &&
+                handlers.Any(h => h is JsonObject handler && TryGetCommand(handler) == command))) return false;
+        }
+        return true;
+    }
+
+    private static Version? DetectInstalledVersion()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/d /s /c \"agy --version\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var process = Process.Start(psi);
+            if (process == null) return null;
+            var output = process.StandardOutput.ReadToEndAsync();
+            if (!process.WaitForExit(1500))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return null;
+            }
+            if (!output.Wait(300)) return null;
+            var match = Regex.Match(output.Result, @"\d+(?:\.\d+){1,3}");
+            return match.Success && Version.TryParse(match.Value, out var version) ? version : null;
+        }
+        catch { return null; }
+    }
 }

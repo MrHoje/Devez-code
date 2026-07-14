@@ -124,7 +124,7 @@ public sealed class SessionBusyService : IDisposable
                 if (curBusy == truth) continue; // 이미 일치 → 훅과 안 싸운다.
                 // 계측: reconcile 이 훅 기록과 다른 판정을 내린 순간 — 스피너 오표시("작업 중인데 꺼짐"류) 조사용.
                 DiagLog.Write($"busy[{room}] reconcile 정정: {(curBusy ? "running" : "idle")}→{(truth ? "running" : "idle")}");
-                try { File.WriteAllText(busyFile, truth ? "running" : "idle"); } catch { /* 훅 쓰기와 경합 가능, 무시 */ }
+                try { AtomicFile.WriteAllText(busyFile, truth ? "running" : "idle"); } catch { /* 훅 쓰기와 경합 가능, 무시 */ }
                 BusyChanged?.Invoke(room, truth);
             }
         }

@@ -3,6 +3,13 @@ setlocal DisableDelayedExpansion
 rem DevezCode Antigravity hook. Event name arrives as %1.
 rem Keep this file ASCII-only: cmd.exe parses it with the active OEM codepage.
 rem Every branch owns stdin until EOF so the hook runner never writes to a closed pipe.
+rem Antigravity requires JSON stdout even for passive hooks. Stop needs a decision;
+rem an empty value allows the normal stop without changing agent behavior.
+if /i "%~1"=="Stop" (
+  echo {"decision":""}
+) else (
+  echo {}
+)
 if "%DEVEZCODE_ROOM_ID%"=="" (
   "%SystemRoot%\System32\more.com" >nul 2>nul
   exit /b 0
@@ -32,7 +39,6 @@ if errorlevel 1 (
   exit /b 0
 )
 
-if /i "%~1"=="PreToolUse" goto :pre_tool
 if /i "%~1"=="Stop" goto :stop
 
 "%SystemRoot%\System32\more.com" >nul 2>nul
@@ -62,21 +68,6 @@ if /i "%~1"=="SessionStart" (
   call :write "%busy%" "idle"
   call :write "%waiting%" "idle"
 )
-exit /b 0
-
-:pre_tool
-set "payload=%base%\payload-%RANDOM%%RANDOM%.tmp"
-"%SystemRoot%\System32\more.com" >"%payload%" 2>nul
-del /f /q "%completed%" >nul 2>&1
-"%SystemRoot%\System32\findstr.exe" /i /r /c:"toolName.*ask_question" /c:"tool_name.*ask_question" /c:"toolName.*ask_permission" /c:"tool_name.*ask_permission" "%payload%" >nul 2>nul
-if errorlevel 1 (
-  call :write "%busy%" "running-tool"
-  call :write "%waiting%" "idle"
-) else (
-  call :write "%busy%" "running"
-  call :write "%waiting%" "waiting"
-)
-del /f /q "%payload%" >nul 2>&1
 exit /b 0
 
 :stop

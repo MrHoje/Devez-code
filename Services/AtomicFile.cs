@@ -14,25 +14,62 @@ public static class AtomicFile
     {
         var dir = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(dir);
-        var tmp = path + ".tmp";
+        var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         var bak = path + ".bak";
 
-        using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
-        using (var sw = new StreamWriter(fs, new UTF8Encoding(false)))
+        try
         {
-            sw.Write(content);
-            sw.Flush();
-            fs.Flush(true); // OS 캐시까지 물리 디스크로 — 정전/크래시에도 tmp 는 온전
-        }
+            using (var fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var sw = new StreamWriter(fs, new UTF8Encoding(false)))
+            {
+                sw.Write(content);
+                sw.Flush();
+                fs.Flush(true); // OS 캐시까지 물리 디스크로 — 정전/크래시에도 tmp 는 온전
+            }
 
-        if (File.Exists(path))
-        {
-            try { File.Replace(tmp, path, bak, ignoreMetadataErrors: true); return; } // 원자 교체 + 백업
-            catch (IOException) { /* 일부 FS/잠금 — Move 폴백 */ }
-            catch (UnauthorizedAccessException) { /* 백업 생성 실패 — Move 폴백 */ }
-            try { if (File.Exists(path)) File.Copy(path, bak, overwrite: true); } catch { } // 폴백 전 수동 백업
+            if (File.Exists(path))
+            {
+                try { File.Replace(tmp, path, bak, ignoreMetadataErrors: true); return; } // 원자 교체 + 백업
+                catch (IOException) { /* 일부 FS/잠금 — Move 폴백 */ }
+                catch (UnauthorizedAccessException) { /* 백업 생성 실패 — Move 폴백 */ }
+                try { if (File.Exists(path)) File.Copy(path, bak, overwrite: true); } catch { } // 폴백 전 수동 백업
+            }
+            File.Move(tmp, path, overwrite: true);
         }
-        File.Move(tmp, path, overwrite: true);
+        finally
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+        }
+    }
+
+    /// <summary>공유 설정을 읽기-수정-쓰기한다. 쓰기 직전 원본이 달라졌으면 최신본으로 최대
+    /// <paramref name="maxAttempts"/>회 재병합한다. 변환기가 null을 반환하거나 파싱 예외를 내면
+    /// 기존 파일은 그대로 두고 false를 반환한다.</summary>
+    public static bool TryUpdateAllText(string path, Func<string?, string?> transform, int maxAttempts = 3)
+    {
+        for (int attempt = 0; attempt < Math.Max(1, maxAttempts); attempt++)
+        {
+            try
+            {
+                var existed = File.Exists(path);
+                var original = existed ? File.ReadAllText(path) : null;
+                var updated = transform(original);
+                if (updated == null) return false;
+                if (existed && string.Equals(original, updated, StringComparison.Ordinal)) return true;
+
+                // CLI나 다른 앱이 같은 공유 설정을 방금 갱신했다면 그 변경을 덮지 않고 재병합한다.
+                var stillExists = File.Exists(path);
+                if (stillExists != existed) continue;
+                if (stillExists && !string.Equals(File.ReadAllText(path), original, StringComparison.Ordinal)) continue;
+
+                WriteAllText(path, updated);
+                return true;
+            }
+            catch (IOException) when (attempt + 1 < Math.Max(1, maxAttempts)) { }
+            catch (UnauthorizedAccessException) when (attempt + 1 < Math.Max(1, maxAttempts)) { }
+            catch { return false; }
+        }
+        return false;
     }
 
     /// <summary>본 파일 → .bak 순으로 읽어 validate 를 통과하는 첫 내용을 반환.

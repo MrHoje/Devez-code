@@ -3,17 +3,23 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace DevezCode.Services;
 
 /// <summary>opencode room-tracker 플러그인 (Resources\Plugins\opencode-room-tracker.js) 을
-/// 사용자 머신에 설치. ~/.config\opencode\plugin\devezcode-room-tracker.js (XDG_CONFIG_HOME 우선).
+/// 사용자 머신에 설치. 최신판은 ~/.config\opencode\plugins, 구버전은 plugin을 사용한다
+/// (XDG_CONFIG_HOME 우선).
 /// 매 시작 시 항상 최신본으로 덮어써 자동 업데이트.
 /// <para>플러그인 추적 외에 <c>opencode session list</c> + <c>opencode export &lt;id&gt;</c> 로
 /// workingDir 매칭 세션 ID 를 찾는 백업 경로도 제공 — 플러그인 콜백이 어떤 이유로든
 /// 호출되지 않는 경우(버전 비호환 등)에도 같은 디렉터리의 마지막 세션을 복원한다.</para></summary>
 public static class OpenCodePluginInstaller
 {
+    private static readonly Version PluralPluginDirectorySince = new(1, 17, 20);
+    private static readonly Lazy<Version?> InstalledVersion = new(DetectInstalledVersion);
+
     private static string OpenCodeConfigDir
     {
         get
@@ -30,8 +36,10 @@ public static class OpenCodePluginInstaller
     {
         get
         {
-            // opencode 1.17.x 는 plugin/ (단수). 공식 docs 는 plugins/ (복수) 표기이지만 단수도 동작.
-            return Path.Combine(OpenCodeConfigDir, "plugin", "devezcode-room-tracker.js");
+            var folder = InstalledVersion.Value is { } version && version < PluralPluginDirectorySince
+                ? "plugin"
+                : "plugins";
+            return Path.Combine(OpenCodeConfigDir, folder, "devezcode-room-tracker.js");
         }
     }
 
@@ -67,7 +75,7 @@ public static class OpenCodePluginInstaller
 
             var content = ReadEmbeddedScript();
             if (!File.Exists(PluginInstallPath) || File.ReadAllText(PluginInstallPath) != content)
-                File.WriteAllText(PluginInstallPath, content, new UTF8Encoding(false));
+                AtomicFile.WriteAllText(PluginInstallPath, content);
             CleanupLegacyPluginCopies();
         }
         catch { /* 권한 부족 등 — 무시 (opencode 는 플러그인 없이도 동작) */ }
@@ -79,6 +87,7 @@ public static class OpenCodePluginInstaller
     {
         var candidates = new[]
         {
+            Path.Combine(OpenCodeConfigDir, "plugin", "devezcode-room-tracker.js"),
             Path.Combine(OpenCodeConfigDir, "plugins", "devezcode-room-tracker.js"),
             Path.Combine(OpenCodeConfigDir, "plugin", "opencode-room-tracker.js"),
             Path.Combine(OpenCodeConfigDir, "plugins", "opencode-room-tracker.js"),
@@ -87,6 +96,7 @@ public static class OpenCodePluginInstaller
         {
             try
             {
+                if (path.Equals(PluginInstallPath, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!File.Exists(path)) continue;
                 var text = File.ReadAllText(path);
                 if (text.Contains("DevezCodeRoomTracker", StringComparison.Ordinal)) File.Delete(path);
@@ -213,4 +223,31 @@ public static class OpenCodePluginInstaller
 
     private static string SafeRoomFileName(string roomId)
         => System.Text.RegularExpressions.Regex.Replace(roomId, @"[^\w\-]", "");
+
+    private static Version? DetectInstalledVersion()
+    {
+        try
+        {
+            // npm 전역 설치본은 package.json을 직접 읽으면 프로세스 기동 없이 빠르게 판별된다.
+            var packageJson = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "npm", "node_modules", "opencode-ai", "package.json");
+            if (File.Exists(packageJson))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(packageJson));
+                if (doc.RootElement.TryGetProperty("version", out var versionNode) &&
+                    Version.TryParse(versionNode.GetString(), out var packageVersion))
+                    return packageVersion;
+            }
+        }
+        catch { }
+
+        try
+        {
+            var output = RunOpenCode("--version", 1500);
+            var match = Regex.Match(output ?? "", @"\d+(?:\.\d+){1,3}");
+            return match.Success && Version.TryParse(match.Value, out var version) ? version : null;
+        }
+        catch { return null; }
+    }
 }

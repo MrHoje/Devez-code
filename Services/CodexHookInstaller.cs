@@ -23,11 +23,20 @@ public static class CodexHookInstaller
     public static string FastStateScriptInstallPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "codex", "state-hook.cmd");
 
-    public static string CodexHooksJsonPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "hooks.json");
+    private static string CodexHome
+    {
+        get
+        {
+            var configured = Environment.GetEnvironmentVariable("CODEX_HOME");
+            return string.IsNullOrWhiteSpace(configured)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
+                : Path.GetFullPath(Environment.ExpandEnvironmentVariables(configured));
+        }
+    }
 
-    public static string CodexConfigTomlPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "config.toml");
+    public static string CodexHooksJsonPath => Path.Combine(CodexHome, "hooks.json");
+
+    public static string CodexConfigTomlPath => Path.Combine(CodexHome, "config.toml");
 
     private static readonly string[] HookEventNames =
         { "SessionStart", "UserPromptSubmit", "PermissionRequest", "PreToolUse", "PostToolUse", "Stop" };
@@ -81,10 +90,10 @@ public static class CodexHookInstaller
             Directory.CreateDirectory(Path.GetDirectoryName(ScriptInstallPath)!);
             var content = ReadEmbeddedScript();
             if (!File.Exists(ScriptInstallPath) || File.ReadAllText(ScriptInstallPath) != content)
-                File.WriteAllText(ScriptInstallPath, content, new UTF8Encoding(false));
+                AtomicFile.WriteAllText(ScriptInstallPath, content);
             var fastContent = ReadFastStateScript();
             if (!File.Exists(FastStateScriptInstallPath) || File.ReadAllText(FastStateScriptInstallPath) != fastContent)
-                File.WriteAllText(FastStateScriptInstallPath, fastContent, new UTF8Encoding(false));
+                AtomicFile.WriteAllText(FastStateScriptInstallPath, fastContent);
         }
         catch { /* 권한 부족 등 — 무시 */ }
     }
@@ -106,31 +115,18 @@ public static class CodexHookInstaller
     /// 다른 이벤트/훅은 보존됨. 성공 시 true.</summary>
     public static bool InstallHooksJson()
     {
-        try
+        var updated = AtomicFile.TryUpdateAllText(CodexHooksJsonPath, raw =>
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(CodexHooksJsonPath)!);
-
-            // 기존 파일 파싱 (없으면 빈 객체로 시작)
-            JsonNode? root;
-            try
-            {
-                if (File.Exists(CodexHooksJsonPath))
-                {
-                    var raw = File.ReadAllText(CodexHooksJsonPath);
-                    root = JsonNode.Parse(raw);
-                }
-                else
-                {
-                    root = JsonNode.Parse("{}");
-                }
-            }
-            catch { root = JsonNode.Parse("{}"); }
-
-            root ??= new JsonObject();
+            // 손상·비객체 JSON은 빈 설정으로 초기화하지 않는다. 기존 파일을 그대로 두고 실패한다.
+            var root = raw == null
+                ? new JsonObject()
+                : JsonNode.Parse(raw) as JsonObject
+                    ?? throw new JsonException("Codex hooks root must be an object.");
 
             // root.hooks 객체 보장
             if (root["hooks"] is not JsonObject hooksObj)
             {
+                if (root.ContainsKey("hooks")) throw new JsonException("Codex hooks must be an object.");
                 hooksObj = new JsonObject();
                 root["hooks"] = hooksObj;
             }
@@ -141,13 +137,14 @@ public static class CodexHookInstaller
             foreach (var eventName in HookEventNames)
                 EnsureOurHook(hooksObj, eventName, BuildHookCommand(eventName));
 
-            var opts = new JsonSerializerOptions { WriteIndented = true };
-            File.WriteAllText(CodexHooksJsonPath, root.ToJsonString(opts), new UTF8Encoding(false));
+            return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        });
+        if (!updated) return false;
 
-            // Codex 는 훅별 활성/신뢰 상태를 config.toml 의 [hooks.state.'...'] 에 따로 저장한다.
-            // command가 멀쩡해도 trusted_hash가 없거나 enabled=false면 실행되지 않으므로,
-            // 앱 소유 훅만 찾아 매 시작/세션 실행 때 신뢰·활성 상태를 보장한다.
-            return EnsureOurHookStatesTrusted(hooksObj);
+        try
+        {
+            var root = JsonNode.Parse(File.ReadAllText(CodexHooksJsonPath)) as JsonObject;
+            return root?["hooks"] is JsonObject hooksObj && EnsureOurHookStatesTrusted(hooksObj);
         }
         catch { return false; }
     }
@@ -293,12 +290,12 @@ public static class CodexHookInstaller
     /// </summary>
     private static bool EnsureOurHookStatesTrusted(JsonObject hooksObj)
     {
-        try
-        {
-            var ourStates = FindOurHookStates(hooksObj);
-            if (ourStates.Count == 0) return false;
+        var ourStates = FindOurHookStates(hooksObj);
+        if (ourStates.Count == 0) return false;
 
-            var raw = File.Exists(CodexConfigTomlPath) ? File.ReadAllText(CodexConfigTomlPath) : "";
+        return AtomicFile.TryUpdateAllText(CodexConfigTomlPath, original =>
+        {
+            var raw = original ?? "";
             var newline = raw.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
             var lines = raw.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
             if (lines.Count == 1 && lines[0].Length == 0) lines.Clear();
@@ -323,11 +320,8 @@ public static class CodexHookInstaller
                     if (enabled.Success)
                     {
                         hasEnabled = true;
-                        if (!enabled.Groups["value"].Value.Equals("true", StringComparison.OrdinalIgnoreCase))
-                        {
-                            lines[j] = enabled.Groups["prefix"].Value + "true" + enabled.Groups["suffix"].Value;
-                            changed = true;
-                        }
+                        // 사용자가 /hooks에서 명시적으로 끈 상태는 보존한다. 해시만 최신화해
+                        // 나중에 다시 켰을 때 즉시 안전하게 실행되도록 한다.
                         continue;
                     }
                     var trusted = TrustedHashRegex.Match(lines[j]);
@@ -365,14 +359,8 @@ public static class CodexHookInstaller
                 changed = true;
             }
 
-            if (changed)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(CodexConfigTomlPath)!);
-                File.WriteAllText(CodexConfigTomlPath, string.Join(newline, lines), new UTF8Encoding(false));
-            }
-            return true;
-        }
-        catch { return false; }
+            return changed ? string.Join(newline, lines) : raw;
+        });
     }
 
     /// <summary>Codex command_hook_hash: canonical JSON(identity) SHA-256.</summary>
@@ -436,9 +424,7 @@ public static class CodexHookInstaller
                 }
                 if (line.TrimStart().StartsWith("[", StringComparison.Ordinal)) activeStateKey = null;
                 if (activeStateKey == null || !states.TryGetValue(activeStateKey, out var expectedHash)) continue;
-                var enabled = EnabledStateRegex.Match(line);
-                if (enabled.Success && !enabled.Groups["value"].Value.Equals("true", StringComparison.OrdinalIgnoreCase))
-                    return false;
+                // enabled=false도 사용자가 명시적으로 선택한 정상 설치 상태다.
                 var hash = TrustedHashRegex.Match(line);
                 if (!hash.Success) continue;
                 if (!hash.Groups["value"].Value.Equals(expectedHash, StringComparison.OrdinalIgnoreCase)) return false;

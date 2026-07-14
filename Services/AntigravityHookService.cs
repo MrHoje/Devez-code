@@ -11,13 +11,12 @@ namespace DevezCode.Services;
 /// GrokHookService 와 동일 패턴 (roomId 키).
 /// 실측(agy 1.1.1, 2026-07-13):
 /// · 훅에는 UserPromptSubmit 이 없고 Stop/SessionStart 훅 프로세스는 조기 취소될 수 있다
-///   (대화형에서도 Stop 유실 확인) — busy-ON 은 PreToolUse("running-tool")/PostToolUse("running"),
+///   (대화형에서도 Stop 유실 확인) — busy-ON 은 PreInvocation/PostToolUse,
 ///   busy-OFF 는 transcript 폴러가 주력, stale failsafe(120s)가 최후 보루.
 /// · agy 는 대화별 transcript 를 ~/.gemini/antigravity-cli/brain/&lt;conv&gt;/.system_generated/logs/
 ///   transcript_full.jsonl 에 실시간 기록한다(레코드: type=USER_INPUT|PLANNER_RESPONSE|도구…).
-///   마지막 레코드가 PLANNER_RESPONSE 이고 정착 시간이 지나면 idle, USER_INPUT/도구면 running.
-///   PLANNER_RESPONSE 는 도구 실행 직전에도 나오므로 "running-tool"(도구 in-flight) 동안은
-///   settle-idle 을 봉인해 장시간 도구 중 오탐 idle 을 막는다.
+///   내용이 있는 마지막 PLANNER_RESPONSE가 정착되면 idle, USER_INPUT/도구면 running.
+///   도구 실행 직전 PLANNER_RESPONSE는 내용이 비어 있으므로 장시간 도구 중 idle 오탐을 막는다.
 /// · lastmsg 는 마지막 USER_INPUT 레코드의 &lt;USER_REQUEST&gt; 에서 추출.</summary>
 public sealed class AntigravityHookService : IDisposable
 {
@@ -147,7 +146,7 @@ public sealed class AntigravityHookService : IDisposable
         if (!File.Exists(transcript)) return;
 
         var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(transcript);
-        var (lastType, lastUserText) = ReadTranscriptTail(transcript);
+        var (lastType, lastUserText, lastPlannerHasContent) = ReadTranscriptTail(transcript);
         if (lastType == null) return;
 
         // lastmsg — 마지막 user prompt 를 헤더에 (변화 있을 때만 emit).
@@ -165,13 +164,12 @@ public sealed class AntigravityHookService : IDisposable
         var busyPath = Path.Combine(BusyDir, room + ".txt");
         var busyNow = TryRead(busyPath) ?? "";
         bool busyRunning = busyNow.StartsWith("running", StringComparison.OrdinalIgnoreCase);
-        bool toolInFlight = busyNow.Equals("running-tool", StringComparison.OrdinalIgnoreCase);
 
         if (lastType == "PLANNER_RESPONSE")
         {
-            // 응답 종료 후보 — 도구 in-flight 가 아니고 정착 시간이 지났으면 idle 확정.
-            // (PLANNER_RESPONSE 는 도구 직전에도 기록되므로 settle 없이 즉시 idle 은 오탐.)
-            if (busyRunning && !toolInFlight && age >= ResponseSettle)
+            // 도구 직전의 빈 PLANNER_RESPONSE는 완료로 보지 않는다. 공식 PreToolUse는 권한 결정을
+            // 강제하므로 관찰 훅으로 쓸 수 없고, 이 구분이 장시간 도구의 busy를 안전하게 유지한다.
+            if (busyRunning && lastPlannerHasContent && age >= ResponseSettle)
                 WriteBusyFile(busyPath, "idle");
         }
         else if (!busyRunning && age <= TranscriptFreshCap)
@@ -182,9 +180,10 @@ public sealed class AntigravityHookService : IDisposable
         }
     }
 
-    /// <summary>transcript 끝부분에서 (마지막 레코드 type, 마지막 USER_INPUT 본문) 추출.
+    /// <summary>transcript 끝부분에서 (마지막 레코드 type, 마지막 USER_INPUT 본문,
+    /// 마지막 PLANNER_RESPONSE의 표시 내용 유무) 추출.
     /// 큰 파일 대비 끝 64KB 만 읽는다. 실패 시 (null, null).</summary>
-    private static (string? lastType, string? lastUserText) ReadTranscriptTail(string path)
+    private static (string? lastType, string? lastUserText, bool lastPlannerHasContent) ReadTranscriptTail(string path)
     {
         try
         {
@@ -195,6 +194,7 @@ public sealed class AntigravityHookService : IDisposable
             var text = sr.ReadToEnd();
 
             string? lastType = null, lastUser = null;
+            bool lastPlannerHasContent = false;
             foreach (var line in text.Split('\n'))
             {
                 var trimmed = line.Trim();
@@ -206,6 +206,12 @@ public sealed class AntigravityHookService : IDisposable
                     if (!doc.RootElement.TryGetProperty("type", out var t) || t.ValueKind != JsonValueKind.String)
                         continue;
                     lastType = t.GetString();
+                    if (lastType == "PLANNER_RESPONSE")
+                    {
+                        lastPlannerHasContent = doc.RootElement.TryGetProperty("content", out var plannerContent)
+                            && plannerContent.ValueKind == JsonValueKind.String
+                            && !string.IsNullOrWhiteSpace(plannerContent.GetString());
+                    }
                     if (lastType == "USER_INPUT"
                         && doc.RootElement.TryGetProperty("content", out var c)
                         && c.ValueKind == JsonValueKind.String)
@@ -213,9 +219,9 @@ public sealed class AntigravityHookService : IDisposable
                 }
                 catch { /* 불완전 줄 무시 */ }
             }
-            return (lastType, lastUser);
+            return (lastType, lastUser, lastPlannerHasContent);
         }
-        catch { return (null, null); }
+        catch { return (null, null, false); }
     }
 
     /// <summary>USER_INPUT content 의 &lt;USER_REQUEST&gt;…&lt;/USER_REQUEST&gt; 본문. 래퍼 없으면 원문.</summary>

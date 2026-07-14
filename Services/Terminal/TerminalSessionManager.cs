@@ -1497,6 +1497,7 @@ public sealed class TerminalSessionManager
 
     private static string ClaudeTrackDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude");
+    private static readonly Lazy<Version?> InstalledClaudeVersion = new(DetectInstalledClaudeVersion);
     private static string HookScriptPath => Path.Combine(ClaudeTrackDir, "room-hook.ps1");
     // 방별 claude --settings 파일. hook/statusLine command 에 roomId 인자가 박혀 있다(BuildRoomSettings).
     private static string RoomSettingsPath(string roomId) => Path.Combine(ClaudeTrackDir, "room-settings", SafeRoomFileName(roomId) + ".json");
@@ -2048,6 +2049,32 @@ public sealed class TerminalSessionManager
         // 3초 주기 절충: 빈 줄 자동 복구는 유지하되 다세션 idle 부하를 낮춘다(타임아웃이 없어
         // 느린 렌더도 죽지 않으므로 공격적 주기 불필요).
         var statusLine = new { type = "command", command = statusCommand, refreshInterval = 3000 };
+        var hooks = new Dictionary<string, object>
+        {
+            ["SessionStart"] = new[] { new { hooks = new[] { new { type = "command", command } } } },
+            ["UserPromptSubmit"] = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
+            ["Stop"] = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
+            ["SessionEnd"] = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
+            ["Notification"] = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyIdleCommand } } } },
+            ["PreToolUse"] = new[] { new { matcher = "AskUserQuestion", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
+            ["PostToolUse"] = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
+        };
+
+        // 알 수 없는 이벤트가 settings 전체를 거부하는 구버전을 위해 도입 버전별로만 추가한다.
+        // 버전 판별 실패 시 핵심 훅만 남겨 세션 자체는 항상 실행 가능하게 한다.
+        var claudeVersion = InstalledClaudeVersion.Value;
+        // PostToolUseFailure의 정확한 1.x 도입점은 보장되지 않으므로 2.x부터만 사용한다.
+        if (claudeVersion >= new Version(2, 0, 0))
+            hooks["PostToolUseFailure"] = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } };
+        if (claudeVersion >= new Version(1, 0, 41))
+            hooks["SubagentStop"] = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStopCommand } } } };
+        if (claudeVersion >= new Version(2, 0, 43))
+            hooks["SubagentStart"] = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStartCommand } } } };
+        if (claudeVersion >= new Version(2, 0, 45))
+            hooks["PermissionRequest"] = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } };
+        if (claudeVersion >= new Version(2, 1, 78))
+            hooks["StopFailure"] = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } };
+
         var settings = new
         {
             // 세션 기록 보존 기간 — 마지막 활동일부터 이 일수가 지나면 claude 가 트랜스크립트를 자동 삭제(resume 불가).
@@ -2056,32 +2083,7 @@ public sealed class TerminalSessionManager
             // theme 을 command-line scope(최우선)에 박아 auto(배경 자동감지) 경로를 제거 — ConPTY 에서 흰 화면 고착 방지.
             theme = ClaudeCustomThemes.MapToClaudeTheme(DevezCode.App.CurrentTheme),
             statusLine,
-            hooks = new
-            {
-                SessionStart     = new[] { new { hooks = new[] { new { type = "command", command } } } },
-                UserPromptSubmit = new[] { new { hooks = new[] { new { type = "command", command = busyRunCommand } } } },
-                Stop             = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
-                StopFailure      = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
-                SessionEnd       = new[] { new { hooks = new[] { new { type = "command", command = busyIdleCommand } } } },
-                // 선택지/권한 입력 대기 ❗ — 진입 신호 둘:
-                //  • PermissionRequest: 툴 권한 대화창이 뜨는 '즉시' 발화(matcher * = 모든 툴) → 지연 없음.
-                //  • Notification: 그 외 입력 대기(AskUserQuestion 등) 폴백(claude 측 타이밍상 수 초 지연 가능).
-                //    단 살아있는 서브에이전트가 있으면 이 Notification 은 '서브 완료 대기중 60초 idle' 오탐이므로
-                //    notifyidle 로 보내 subcount>0 일 때 무장하지 않는다(서브 도는 동안 ❗ 대신 스피너만 유지).
-                // 해제는 PostToolUse/Stop + 답변 입력(즉시 UI).
-                PermissionRequest = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
-                Notification     = new[] { new { hooks = new[] { new { type = "command", command = busyNotifyIdleCommand } } } },
-                // AskUserQuestion 은 auto-allow라 PermissionRequest 없이 PreToolUse로 바로 온다.
-                // 정확한 matcher만 추가해 모든 툴에 훅 프로세스를 띄우는 비용은 피한다.
-                PreToolUse       = new[] { new { matcher = "AskUserQuestion", hooks = new[] { new { type = "command", command = busyNotifyCommand } } } },
-                // PostToolUse: 툴 처리 재개 → 대기 해제(hidden PowerShell unwait). PreToolUse(pulse)는 서브런 keep-alive 가
-                // C# reconcile/SubMaxAge 와 중복 + 서브 실행 중엔 메인이 블로킹돼 발화도 안 해 실효 없음 → 제거(툴당 오버헤드 제거).
-                PostToolUse      = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
-                PostToolUseFailure = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busyUnwaitCommand } } } },
-                // 서브에이전트 생존 추적(스피너 조기소멸 방지): Start=run 파일 생성, Stop=삭제 → busy 재평가.
-                SubagentStart    = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStartCommand } } } },
-                SubagentStop     = new[] { new { matcher = "*", hooks = new[] { new { type = "command", command = busySubStopCommand } } } },
-            }
+            hooks,
         };
         var path = RoomSettingsPath(roomId);
         try
@@ -2091,6 +2093,34 @@ public sealed class TerminalSessionManager
         }
         catch (Exception) { /* 생성 실패 시 호출부가 파일 존재로 판단 */ }
         return path;
+    }
+
+    private static Version? DetectInstalledClaudeVersion()
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/d /s /c \"claude --version\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process == null) return null;
+            var output = process.StandardOutput.ReadToEndAsync();
+            if (!process.WaitForExit(1500))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return null;
+            }
+            if (!output.Wait(300)) return null;
+            var match = System.Text.RegularExpressions.Regex.Match(output.Result, @"\d+(?:\.\d+){1,3}");
+            return match.Success && Version.TryParse(match.Value, out var version) ? version : null;
+        }
+        catch { return null; }
     }
 
     /// <summary>방의 추적 세션 파일(sessions\<room>.txt)을 제거. 빈 세션 ID 고착을 풀 때 호출.</summary>

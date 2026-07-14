@@ -62,6 +62,10 @@
     <Content Include="Resources\Hooks\grok-hook.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- grok tool 이벤트 전용 경량 훅. PowerShell 프로세스 2회를 cmd로 대체한다. -->
+    <Content Include="Resources\Hooks\grok-state-hook.cmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- antigravity(agy) 훅 배치. AntigravityHookInstaller 가 %LOCALAPPDATA%\DevezCode\antigravity\hook.cmd 로 재기록.
          (PowerShell 은 agy 훅 조기취소에 기동이 못 버텨 배치 사용 — AntigravityHookInstaller 주석 참고) -->
     <Content Include="Resources\Hooks\antigravity-hook.cmd">
