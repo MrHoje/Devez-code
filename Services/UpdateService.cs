@@ -262,6 +262,7 @@ public static class UpdateService
             var mw = Application.Current.MainWindow;
             if (mw != null)
             {
+                if (mw is MainWindow m) m.ForceQuit = true; // '닫기 시 최소화' 무시하고 실제 종료
                 mw.Closed += (_, _) => Application.Current.Shutdown();
                 mw.Close();
             }

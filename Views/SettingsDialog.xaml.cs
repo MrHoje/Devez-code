@@ -33,6 +33,7 @@ public partial class SettingsDialog : UserControl
     private bool   _originalHideProjectInfoHeader;
     private bool   _originalAutoUpdateAgents;
     private bool   _originalUseFullScreen;
+    private bool   _originalMinimizeOnClose;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
@@ -45,6 +46,7 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedHideProjectInfoHeader;
     private bool   _selectedAutoUpdateAgents;
     private bool   _selectedUseFullScreen;
+    private bool   _selectedMinimizeOnClose;
     private int    _selectedProjectColumns;
     // DeepSeek 연결 토글 — 다른 설정과 동일하게 [저장] 시점에만 디스크 반영(끄고 저장 시 키 삭제).
     private bool   _originalDeepSeekEnabled;
@@ -352,6 +354,9 @@ public partial class SettingsDialog : UserControl
         _originalUseFullScreen = SettingsService.LoadUseFullScreen();
         _selectedUseFullScreen = _originalUseFullScreen;
         UseFullScreenToggle.IsChecked = _selectedUseFullScreen;
+        _originalMinimizeOnClose = SettingsService.LoadMinimizeOnClose();
+        _selectedMinimizeOnClose = _originalMinimizeOnClose;
+        MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
         UpdateProjectColumnsVisual();
@@ -713,6 +718,11 @@ public partial class SettingsDialog : UserControl
     private void UseFullScreenToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedUseFullScreen = UseFullScreenToggle.IsChecked == true;
+    }
+
+    private void MinimizeOnCloseToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedMinimizeOnClose = MinimizeOnCloseToggle.IsChecked == true;
     }
 
     // ── 프로젝트 목록 열 수 (1/2) — 적용은 [저장] 시점에만(라이브 미리보기 없음) ──
@@ -1289,6 +1299,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
+        if (_selectedMinimizeOnClose != _originalMinimizeOnClose) return true;
         if (_selectedProjectColumns != _originalProjectColumns) return true;
         if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled) return true;
         if (_selectedNotifyEnabled != _originalNotifyEnabled) return true;
@@ -1339,6 +1350,8 @@ public partial class SettingsDialog : UserControl
             SettingsService.SaveUseFullScreen(_selectedUseFullScreen);
             (Application.Current.MainWindow as MainWindow)?.ApplyFullScreen(_selectedUseFullScreen);
         }
+        if (_selectedMinimizeOnClose != _originalMinimizeOnClose)
+            SettingsService.SaveMinimizeOnClose(_selectedMinimizeOnClose);
         if (_selectedProjectColumns != _originalProjectColumns)
         {
             SettingsService.SaveProjectColumns(_selectedProjectColumns);
@@ -1434,6 +1447,7 @@ public partial class SettingsDialog : UserControl
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
         _originalAutoUpdateAgents = _selectedAutoUpdateAgents;
         _originalUseFullScreen = _selectedUseFullScreen;
+        _originalMinimizeOnClose = _selectedMinimizeOnClose;
         _originalProjectColumns = _selectedProjectColumns;
         _originalHkMod = _selectedHkMod; _originalHkPrev = _selectedHkPrev; _originalHkNext = _selectedHkNext;
         _originalEnabledAgents = new HashSet<string>(
@@ -1486,6 +1500,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedUseFullScreen = _originalUseFullScreen;
             UseFullScreenToggle.IsChecked = _selectedUseFullScreen;
+        }
+        if (_selectedMinimizeOnClose != _originalMinimizeOnClose)
+        {
+            _selectedMinimizeOnClose = _originalMinimizeOnClose;
+            MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
         }
         if (_selectedProjectColumns != _originalProjectColumns)
         {

@@ -354,6 +354,27 @@
                                 <TextBlock Text="프로젝트와 세션의 기본 동작을 설정합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
+                                <!-- ── 시작 · 세션 로드 ── -->
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="프로그램 실행 시 프로젝트 자동 로드" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="켜면 시작할 때 마지막으로 보던 프로젝트를 자동으로 불러옵니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="AutoLoadLastProjectToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="AutoLoadLastProjectToggle_Changed" Unchecked="AutoLoadLastProjectToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
                                 <Border Padding="0" CornerRadius="0"
                                         BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
@@ -401,6 +422,7 @@
                                     </Grid>
                                 </Border>
 
+                                <!-- ── 창 · 화면 표시 ── -->
                                 <Border Padding="0" CornerRadius="0"
                                         BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
@@ -409,15 +431,35 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="프로그램 실행 시 프로젝트 자동 로드" FontSize="{DynamicResource Fs13}"
+                                            <TextBlock Text="전체화면 사용" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="켜면 시작할 때 마지막으로 보던 프로젝트를 자동으로 불러옵니다."
+                                            <TextBlock Text="켜면 창을 최대화할 때 작업표시줄까지 덮는 전체화면으로 표시합니다."
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                         </StackPanel>
-                                        <CheckBox x:Name="AutoLoadLastProjectToggle" Grid.Column="1"
+                                        <CheckBox x:Name="UseFullScreenToggle" Grid.Column="1"
                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="AutoLoadLastProjectToggle_Changed" Unchecked="AutoLoadLastProjectToggle_Changed"/>
+                                                  Checked="UseFullScreenToggle_Changed" Unchecked="UseFullScreenToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="닫기 버튼으로 최소화" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="켜면 X(닫기) 버튼을 눌러도 종료하지 않고 창을 최소화합니다. 완전히 종료하려면 닫기 버튼을 우클릭하세요."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="MinimizeOnCloseToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="MinimizeOnCloseToggle_Changed" Unchecked="MinimizeOnCloseToggle_Changed"/>
                                     </Grid>
                                 </Border>
 
@@ -438,26 +480,6 @@
                                         <CheckBox x:Name="HideProjectInfoHeaderToggle" Grid.Column="1"
                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                                   Checked="HideProjectInfoHeaderToggle_Changed" Unchecked="HideProjectInfoHeaderToggle_Changed"/>
-                                    </Grid>
-                                </Border>
-
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="전체화면 사용" FontSize="{DynamicResource Fs13}"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="켜면 창을 최대화할 때 작업표시줄까지 덮는 전체화면으로 표시합니다."
-                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
-                                        </StackPanel>
-                                        <CheckBox x:Name="UseFullScreenToggle" Grid.Column="1"
-                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="UseFullScreenToggle_Changed" Unchecked="UseFullScreenToggle_Changed"/>
                                     </Grid>
                                 </Border>
                             </StackPanel>

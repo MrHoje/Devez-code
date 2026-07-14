@@ -112,6 +112,8 @@ public static class SettingsService
         public string LastAgentAutoUpdateDate { get; set; } = "";
         // 최대화 시 작업표시줄까지 덮는 전체화면 동작 여부. 기본 false = 작업영역에만 맞춤.
         public bool UseFullScreen { get; set; } = false;
+        // X(닫기) 버튼으로 종료하지 않고 창을 최소화할지 여부. 기본 false = 닫기 시 종료.
+        public bool MinimizeOnClose { get; set; } = false;
         // devez 마켓플레이스 자동설치 1회 확인 완료 여부. true 면 시작 시 CLI 체크를 건너뛴다(가벼움).
         public bool DevezMarketplaceEnsured { get; set; } = false;
         // 좌측 프로젝트 목록 열 수(1 또는 2). 2면 좌측 패널 최소너비 2배 + 카드 2열 그리드 + 가로 드래그.
@@ -780,6 +782,9 @@ public static class SettingsService
 
     public static bool LoadUseFullScreen() => Current.UseFullScreen;
     public static void SaveUseFullScreen(bool v) { Current.UseFullScreen = v; Save(); }
+
+    public static bool LoadMinimizeOnClose() => Current.MinimizeOnClose;
+    public static void SaveMinimizeOnClose(bool v) { Current.MinimizeOnClose = v; Save(); }
 
     public static bool LoadDevezMarketplaceEnsured() => Current.DevezMarketplaceEnsured;
     public static void SaveDevezMarketplaceEnsured(bool v) { Current.DevezMarketplaceEnsured = v; Save(); }

@@ -229,7 +229,7 @@ public partial class App : Application
         {
             var mw = Application.Current.MainWindow;
             // 종료 오버레이에 '업데이트 후 자동으로 다시 실행됩니다' 안내를 띄우도록 표시.
-            if (mw is MainWindow m) m.RestartingForUpdate = true;
+            if (mw is MainWindow m) { m.RestartingForUpdate = true; m.ForceQuit = true; } // '닫기 시 최소화' 무시하고 실제 종료
             if (mw != null) { mw.Closed += (_, _) => Application.Current.Shutdown(); mw.Close(); }
             else Application.Current.Shutdown();
         }));

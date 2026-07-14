@@ -637,6 +637,10 @@ public partial class MainWindow : Window
     private bool _shuttingDown;
     private bool _readyToClose; // 안전 정리(스냅샷/오버레이/graceful) 완료 후 우리가 부른 Close() 만 통과시킨다.
 
+    /// <summary>'닫기 버튼으로 최소화' 설정이 켜져 있어도 이번 Close() 만은 실제 종료로 통과시킨다
+    /// (닫기 버튼 우클릭 '완전히 종료', 업데이트 재시작 등). 최소화 가로채기 직전에 검사한다.</summary>
+    public bool ForceQuit;
+
     /// <summary>'재시작하고 업데이트'로 종료 중인가 — 종료 오버레이에 '업데이트 후 자동으로 다시 실행됩니다'
     /// 안내를 함께 표시한다. <see cref="App.RestartForAgentUpdate"/> 가 Close() 직전에 설정한다.</summary>
     public bool RestartingForUpdate;
@@ -645,6 +649,14 @@ public partial class MainWindow : Window
     /// 모든 세션을 graceful 종료(claude/codex transcript flush 기회)한 뒤 실제로 닫는다.</summary>
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // '닫기 버튼으로 최소화' 설정: 실제 종료(ForceQuit·이미 종료 진행 중)가 아니면 종료를 취소하고 최소화만.
+        if (!_shuttingDown && !ForceQuit && SettingsService.LoadMinimizeOnClose())
+        {
+            e.Cancel = true;
+            WindowState = WindowState.Minimized;
+            return;
+        }
+
         SaveWindowPlacement();
         _wakeScheduler.Stop();
         _idleSessionShutdownTimer.Stop();
@@ -5701,6 +5713,9 @@ public partial class MainWindow : Window
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>'닫기 버튼으로 최소화'가 켜져 있어도 강제로 실제 종료. (닫기 버튼 우클릭 메뉴)</summary>
+    private void QuitApp_Click(object sender, RoutedEventArgs e) { ForceQuit = true; Close(); }
 
     // ── 보더리스 창에 DWM 최대화/복원 애니메이션 부활 ─────────────────
     // WindowStyle=None 창은 WS_CAPTION 이 없어 DWM 이 최대화/복원/최소화 전환 애니메이션을

@@ -126,6 +126,11 @@
                     </Button>
                     <Button Style="{StaticResource WinCloseBtn}" Click="CloseBtn_Click">
                         <TextBlock Text="&#x2715;" FontSize="13"/>
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="완전히 종료" Click="QuitApp_Click"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
                     </Button>
                 </StackPanel>
             </Grid>
