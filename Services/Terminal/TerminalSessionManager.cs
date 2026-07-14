@@ -1297,8 +1297,32 @@ public sealed class TerminalSessionManager
             }
             else
             {
-                DiagLog.Write($"launch[{roomId}]: 추적 sid={sessionId} transcript 없음, prev 폴백 불가 → 새 세션으로 시작");
-                sessionId = null;
+                // prev 도 유령 — 방별 known-good 링(실활동 sid 이력, 최신순)에서 살아있는 transcript 를 가진
+                // 첫 sid 로 복원한다. 연속 무활동 재시작으로 tracked·prev 가 모두 유령이 돼도 실제 대화를 되찾는다.
+                // 방 단위 파일이라 cwd 공유 프로젝트에서 다른 방 대화를 끌어오지 않는다.
+                string? recovered = null;
+                foreach (var g in Enumerable.Reverse(LoadGoodTrackedSessionIds(roomId)))
+                {
+                    if (!string.Equals(g, sessionId, StringComparison.OrdinalIgnoreCase)
+                        && ClaudeTranscriptExists(ccDir, g)) { recovered = g; break; }
+                }
+                if (recovered != null)
+                {
+                    DiagLog.Write($"launch[{roomId}]: 추적 sid={sessionId}·prev 유령 → good 링 sid={recovered} 로 복원");
+                    sessionId = recovered;
+                    resume = true;
+                    try
+                    {
+                        File.WriteAllText(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt"), recovered);
+                        SettingsService.SaveClaudeCodeRoomSession(roomId, recovered);
+                    }
+                    catch { /* 치유 실패해도 이번 실행은 recovered 로 resume — 다음 실행이 재시도 */ }
+                }
+                else
+                {
+                    DiagLog.Write($"launch[{roomId}]: 추적 sid={sessionId} transcript 없음, prev·good 폴백 불가 → 새 세션으로 시작");
+                    sessionId = null;
+                }
             }
         }
 
@@ -1831,6 +1855,17 @@ public sealed class TerminalSessionManager
                     try { if (Test-Path -LiteralPath $tfile) { $prevSid = (Get-Content -LiteralPath $tfile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
                     if ($prevSid -and $sid -ne $prevSid) { Write-State (Join-Path $tdir ($room + '.prev.txt')) $prevSid }
                     Write-State $tfile $sid
+                    # known-good 링: 이 함수는 running/idle(실활동) 에서만 호출되므로 $sid 는 transcript 가
+                    # 보장된 '살아있는' 세션이다. 방별 최근 good sid 8개를 유지 — tracked·prev 가 동시에 유령이 되는
+                    # (연속 무활동 재시작) 최악 경우에도 실행부가 이 링에서 실제 대화를 복원한다. prev(1단) 보다 깊다.
+                    try {
+                      $gfile = Join-Path $tdir ($room + '.good.txt')
+                      $good = @()
+                      try { if (Test-Path -LiteralPath $gfile) { $good = @(Get-Content -LiteralPath $gfile -ErrorAction SilentlyContinue | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } } catch { }
+                      $good = @($good | Where-Object { $_ -ne $sid }) + $sid
+                      if ($good.Count -gt 8) { $good = $good[($good.Count-8)..($good.Count-1)] }
+                      Write-State $gfile ($good -join "`n")
+                    } catch { }
                   }
 
                   function Touch-LiveSubruns($rd) {
@@ -2056,8 +2091,10 @@ public sealed class TerminalSessionManager
     {
         try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt")); }
         catch (Exception) { }
-        // 고착 해제 = 이 방을 새 세션으로 리셋하려는 의도 — prev 를 남기면 실행부 폴백이 옛 대화를 되살린다.
+        // 고착 해제 = 이 방을 새 세션으로 리셋하려는 의도 — prev·good 를 남기면 실행부 폴백이 옛 대화를 되살린다.
         try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".prev.txt")); }
+        catch (Exception) { }
+        try { File.Delete(Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".good.txt")); }
         catch (Exception) { }
     }
 
@@ -2087,6 +2124,24 @@ public sealed class TerminalSessionManager
             return Guid.TryParse(id, out _) ? id.ToLowerInvariant() : null;
         }
         catch (Exception) { return null; }
+    }
+
+    /// <summary>훅이 실활동(running/idle) 시점에 적재한 방별 known-good sid 링(sessions\&lt;room&gt;.good.txt,
+    /// 최근 8개, 최신이 마지막 줄). tracked·prev 가 모두 유령(연속 무활동 재시작)일 때 살아있는 transcript 를
+    /// 가진 최신 good sid 로 복원하는 최종 폴백용. 방 단위 파일이라 cwd 공유 프로젝트에서도 다른 방 대화를 안 끌어온다.</summary>
+    private static List<string> LoadGoodTrackedSessionIds(string roomId)
+    {
+        try
+        {
+            var path = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".good.txt");
+            if (!File.Exists(path)) return new List<string>();
+            return File.ReadAllLines(path)
+                .Select(l => l.Trim())
+                .Where(l => Guid.TryParse(l, out _))
+                .Select(l => l.ToLowerInvariant())
+                .ToList();
+        }
+        catch (Exception) { return new List<string>(); }
     }
 
     /// <summary>해당 세션 ID의 claude 대화 transcript(.jsonl) 실제 경로. 없으면 null.
@@ -2493,12 +2548,17 @@ public sealed class TerminalSessionManager
             LoadTrackedSessionId(roomId),
             LoadPrevTrackedSessionId(roomId), // resume 포크 직전 세대의 transcript 도 이 방의 기록
             SettingsService.LoadClaudeCodeRoomSession(roomId),
+            // known-good 링의 이전 세대 sid 들도 이 방의 대화 → 방 삭제 시 함께 purge
+        };
+        ids.AddRange(LoadGoodTrackedSessionIds(roomId));
+        ids.AddRange(new List<string?>
+        {
             SettingsService.LoadCodexRoomSession(roomId),
             SettingsService.LoadOpenCodeRoomSession(roomId),
             SettingsService.LoadGajaeRoomSession(roomId),
             SettingsService.LoadGrokRoomSession(roomId),
             SettingsService.LoadAntigravityRoomSession(roomId),
-        };
+        });
         DisposeRoom(roomId);
 
         PurgeAppOwnedRoomArtifacts(roomId, ids);
@@ -2507,13 +2567,58 @@ public sealed class TerminalSessionManager
         // 예전엔 workingDir 인코딩을 직접 계산해 그 폴더만 지웠는데, 폴더 이동/인코딩 엣지면 못 지워
         // 대화가 디스크에 잔존했다. GUID 는 projects 전역에서 유일하므로 스캔 결과가 곧 이 방의 기록.
         // (GUID 검증은 FindClaudeTranscriptPath 내부에서 수행 — opencode ses_* 등은 null 로 걸러짐.)
+        //
+        // 오삭제 방어: cwd 를 공유하는 프로젝트에서 resume 로 sid 가 갈리면, 삭제 대상 방의 과거 tracked/prev/
+        // good/settings sid 이력에 '지금 살아있는 다른 방'의 세션 ID가 섞여 있을 수 있다. 그대로 전역 삭제하면
+        // 멀쩡한 방의 대화가 통째로 날아간다(실제 관측된 데이터 유실 원인). 다른 방이 현재 참조 중인 sid 는
+        // 삭제에서 제외한다 — 남겨도 claude 는 영구보관(cleanupPeriodDays=99999)이라 무해하다.
+        var otherRoomSids = SettingsService.ClaudeSessionIdsExcept(roomId);
+        otherRoomSids.UnionWith(CollectOtherRoomTrackedSids(roomId));
         foreach (var id in ids)
         {
             if (string.IsNullOrWhiteSpace(id)) continue;
+            if (otherRoomSids.Contains(id.ToLowerInvariant()))
+            {
+                DiagLog.Write($"purge[{roomId}]: sid={id} 는 다른 방이 참조 중 → transcript 삭제 스킵(오삭제 방지)");
+                continue;
+            }
             var tp = FindClaudeTranscriptPath(workingDir, id);
             if (tp != null)
                 try { File.Delete(tp); } catch (Exception) { }
         }
+    }
+
+    /// <summary>지정 방을 제외한 모든 방의 추적 파일(sessions\*.txt/.prev.txt/.good.txt)에 들어있는 claude
+    /// 세션 ID 집합(소문자). settings 에는 없고 훅 추적 파일에만 남은 이전 세대 sid 까지 포괄해, PurgeRoom 이
+    /// 살아있는 다른 방의 transcript 를 오삭제하는 것을 막는다.</summary>
+    private static HashSet<string> CollectOtherRoomTrackedSids(string exceptRoomId)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var except = SafeRoomFileName(exceptRoomId);
+            var dir = Path.Combine(ClaudeTrackDir, "sessions");
+            if (!Directory.Exists(dir)) return set;
+            foreach (var f in Directory.EnumerateFiles(dir, "*.txt"))
+            {
+                var fn = Path.GetFileName(f);
+                // 삭제 대상 방 자신의 파일(<except>.txt / .prev.txt / .good.txt)은 제외 — 그 sid 는 삭제 후보.
+                if (fn.Equals(except + ".txt", StringComparison.OrdinalIgnoreCase)
+                    || fn.Equals(except + ".prev.txt", StringComparison.OrdinalIgnoreCase)
+                    || fn.Equals(except + ".good.txt", StringComparison.OrdinalIgnoreCase)) continue;
+                try
+                {
+                    foreach (var line in File.ReadAllLines(f))
+                    {
+                        var id = line.Trim();
+                        if (Guid.TryParse(id, out _)) set.Add(id.ToLowerInvariant());
+                    }
+                }
+                catch (Exception) { }
+            }
+        }
+        catch (Exception) { }
+        return set;
     }
 
     private static void PurgeAppOwnedRoomArtifacts(string roomId, IEnumerable<string?> sessionIds)
@@ -2527,6 +2632,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "room-settings", roomFile + ".json"));
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".prev.txt"));
+        TryDeleteFile(Path.Combine(ClaudeTrackDir, "sessions", roomFile + ".good.txt"));
         TryDeleteFile(ClaudeQuitFlagPath(roomId));
         TryDeleteFiles(ClaudeTrackDir, "statusline-cache-" + roomFile + "-*.txt");
 

@@ -518,6 +518,19 @@ public static class SettingsService
         lock (_lock) { Current.ClaudeCodeRoomSessions[roomId] = sessionId; Save(); }
     }
 
+    /// <summary>지정 방을 제외한 모든 claude 방의 현재 세션 ID 집합(소문자). 세션 삭제(PurgeRoom)가
+    /// cwd 공유 프로젝트에서 살아있는 다른 방의 transcript 를 실수로 지우지 않는지 검사하는 용도.</summary>
+    public static HashSet<string> ClaudeSessionIdsExcept(string exceptRoomId)
+    {
+        lock (_lock)
+            return Current.ClaudeCodeRoomSessions
+                .Where(kv => !string.Equals(kv.Key, exceptRoomId, StringComparison.OrdinalIgnoreCase))
+                .Select(kv => kv.Value)
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v.ToLowerInvariant())
+                .ToHashSet();
+    }
+
     /// <summary>방의 추적 세션 ID 를 제거. transcript 없는 빈 세션 ID 고착을 풀 때 호출.</summary>
     public static void RemoveClaudeCodeRoomSession(string roomId)
     {
