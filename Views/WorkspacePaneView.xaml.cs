@@ -619,6 +619,16 @@ public partial class WorkspacePaneView : UserControl
         _ = LoadBranchAsync(proj.Path, _projectCts.Token);
     }
 
+    /// <summary>지정 repo 가 이 패널의 활성 프로젝트와 같으면 브랜치 버블(ahead/behind)을 다시 읽는다.</summary>
+    public void RefreshBranchIfRepo(string repoDir)
+    {
+        if (_activeProject == null || string.IsNullOrEmpty(repoDir)) return;
+        var a = _activeProject.Path?.TrimEnd('\\', '/');
+        var b = repoDir.TrimEnd('\\', '/');
+        if (!string.IsNullOrEmpty(a) && string.Equals(a, b, StringComparison.OrdinalIgnoreCase))
+            UpdateProjectBranchBubble(_activeProject);
+    }
+
     /// <summary>이 패널에 보이는(FilterTab 통과 + Hidden 아님) 세션 탭이 하나라도 있는지.
     /// 없으면(전부 다른 패널로 이동/닫힘, 파일 탭만 있음, 빈 패널 등) 브랜치·터미널 폰트 정보를 숨긴다.</summary>
     private bool PaneHasAnySessionTab()
