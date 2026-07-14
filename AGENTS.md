@@ -1,5 +1,12 @@
 # DevezCode 작업 지침
 
+## 최우선 규칙: 프로세스 강제 종료 금지
+
+- **빌드·게시·배포를 위해 실행 중인 DevezCode 프로세스를 절대로 강제 종료하지 않는다.** `taskkill /F`, `Stop-Process -Force`, `Process.Kill` 등 강제 종료 수단은 사용 금지.
+- 빌드가 필요하면 먼저 정상 종료를 요청하고 프로세스가 완전히 종료된 것을 확인한 뒤 빌드한다.
+- 정상 종료가 되지 않거나 제한 시간 내에 끝나지 않으면 강제 종료하거나 빌드를 진행하지 말고, 작업을 중단한 뒤 사용자에게 알린다.
+- 이 규칙은 아래의 모든 빌드·재시작·배포 절차보다 우선한다.
+
 ## 동기화 규칙
 
 - `AGENTS.md`와 `CLAUDE.md`는 동일한 규칙 문서로 유지한다.
@@ -10,11 +17,18 @@
 코드 변경 후 항상 다음 프로세스를 따르십시오:
 
 ```powershell
-# 1. 실행 중인 앱 중지. 실행 중이 아니면 오류 무시.
-taskkill /IM DevezCode.exe /F 2>$null
+# 1. 실행 중인 앱에 정상 종료를 요청하고 완전히 종료될 때까지 대기.
+$process = Get-Process -Name DevezCode -ErrorAction SilentlyContinue
+if ($process) {
+    $process.CloseMainWindow() | Out-Null
+    if (-not $process.WaitForExit(30000)) {
+        throw "DevezCode가 정상 종료되지 않아 빌드를 중단합니다. 강제 종료하지 마십시오."
+    }
+}
 
 # 2. Release 빌드.
 dotnet build -c Release --nologo -v quiet
+if ($LASTEXITCODE -ne 0) { throw "Release 빌드가 실패했습니다." }
 
 # 3. 빌드가 성공한 경우에만 앱 재시작.
 Start-Process "bin\DevezCode.exe"
