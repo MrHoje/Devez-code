@@ -74,7 +74,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.16.0", "2026-07-14", true, new[]
+        ("v1.16.1", "2026-07-14", true, new[]
+        {
+            "터미널 한글 입력 시 조합 글자의 커서 위치가 틀어지고 깜빡이던 문제를 개선했습니다.",
+            "opencode 세션에서 하위 에이전트로 인해 방 상태가 잘못 기록되던 문제를 방지했습니다.",
+            "Grok·Antigravity 세션 복원 정확도를 개선했습니다.",
+        }),
+        ("v1.16.0", "2026-07-14", false, new[]
         {
             "Google Antigravity CLI 연결 기능이 추가되었습니다.",
             "계정 사용량 표시에 Antigravity 정보가 추가되었습니다.",
