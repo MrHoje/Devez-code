@@ -98,7 +98,7 @@ public partial class MainWindow : Window
     private readonly OpenCodeLastMessageService _opencodeLastMsg = new();
     // opencode — 플러그인이 busy\<room>.txt 에 저장한 처리중 상태를 감시해 스피너 연동 (claude busy hook 과 동일 패턴).
     private readonly OpenCodeBusyService _opencodeBusy = new();
-    // gjc(가재코드) — 훅 미지원. 방별 세션 .jsonl 을 폴링해 마지막 user 메시지를 헤더에 반영.
+    // gjc(가재코드) — 명시적 훅으로 즉시 상태 반영 + 방별 세션 .jsonl 폴링 fallback/reconciliation.
     private readonly GajaeLastMessageService _gajaeLastMsg = new();
     private readonly WakeSchedulerService _wakeScheduler;
     private readonly HashSet<string> _wakeRoomIds = new(StringComparer.Ordinal);
@@ -280,7 +280,7 @@ public partial class MainWindow : Window
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
 
-        // gjc — 세션 .jsonl 폴링 결과를 roomId 키로 즉시 반영 (opencode lastmsg 와 동일 처리).
+        // gjc — 훅+세션 .jsonl 하이브리드 결과를 roomId 키로 즉시 반영 (opencode lastmsg 와 동일 처리).
         _gajaeLastMsg.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -319,7 +319,7 @@ public partial class MainWindow : Window
                 UpdateSessionBusyDisplay();
             });
 
-        // 가재코드 — 세션 .jsonl 폴링으로 busy 판정 → 스피너 (GajaeLastMessageService 가 lastmsg 와 함께 emit).
+        // 가재코드 — 명시적 훅 우선 + JSONL 재검증으로 busy 판정 → 스피너.
         _gajaeLastMsg.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -336,7 +336,7 @@ public partial class MainWindow : Window
             });
 
         // 가재코드 — 'ask' 선택지 응답 대기(❗). gjc 는 스피너 라인이 출력 버퍼를 도배해 화면 폴링이 불가하므로
-        // jsonl 의 'ask' 툴콜로 판정한다(busy 와 동일 경로).
+        // 훅 tool_call/result를 우선하고 jsonl의 'ask' 툴콜로 재검증한다(busy와 동일 경로).
         _gajaeLastMsg.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -527,9 +527,10 @@ public partial class MainWindow : Window
             // session.created/updated → sessions\<room>.txt (세션 ID 복원용)
             // message.updated( role=user ) → lastmsg\<room>.txt (헤더 타이틀 즉시 표시)
             OpenCodePluginInstaller.EnsureInstalled();
+            GajaeHookInstaller.EnsureInstalled();
             _opencodeLastMsg.Start();
             _opencodeBusy.Start();
-            // 가재코드 — 세션 .jsonl 폴링으로 헤더 lastmsg + 스피너 busy 둘 다 처리(확장/훅 불필요).
+            // 가재코드 — 명시적 훅의 즉시 신호 + 세션 .jsonl fallback으로 헤더/스피너/대기 처리.
             _gajaeLastMsg.Start();
             _agentLastMsg.Start();
             // devez 마켓플레이스 자동설치 — 없으면 콘솔 없이 조용히 추가. 시작 부하를 피해 지연 실행,
