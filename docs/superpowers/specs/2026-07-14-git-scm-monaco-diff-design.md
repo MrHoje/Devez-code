@@ -75,7 +75,8 @@ VS Code의 Source Control 경험을 DevezCode에 이식한다:
 - 모든 색 `DynamicResource`, 폰트 `PretendardFont`/`Fs*`.
 
 ### C. Monaco diff 탭 (중앙)
-- **새 탭 타입** `GitDiffItem : TabItemBase`(파일 경로·repo·staged 여부 보유). 브라우저 탭(`BrowserHostView`)이 Pane에 렌더되는 방식과 동일 경로로, `Views/MonacoDiffHostView`(WebView2)로 렌더.
+- **기존 `FileTabItem` 재사용**(전용 탭 타입 신설 안 함 — 통합 접점 최소화·리스크 감소). Monaco diff를 `IFileTabEditor` 구현체 `Views/MonacoDiffHostView`로 만들어 `FileTabItem.Editor`에 꽂는다. 본보기는 WebView2 기반 `IFileTabEditor`인 `Views/MarkdownFileEditorView`. 파일 탭의 열기/닫기/활성화/사이드바 배선이 그대로 재사용된다.
+- `FileTabItem`에 `bool IsDiff` 추가: 제목에 "(변경)" 표시 + 영속화 제외(전환형).
 - **오프라인 호스팅**: `Resources/Monaco/web/`에 Monaco 배포본 + `diff.html`/`bridge.js` 번들. 공유 `CoreWebView2Environment`(마크다운 에디터와 동일) + `SetVirtualHostNameToFolderMapping` → `https://<host>/diff.html` navigate.
 - **브리지(C#→JS)**: NavigationCompleted 후 `ExecuteScriptAsync`로 `{ path, language, originalText, modifiedText, readOnly:true, themeName }` 전달 → JS가 `monaco.editor.createDiffEditor` 생성 및 `setModel({original, modified})`.
 - **diff 원문 소스**:
