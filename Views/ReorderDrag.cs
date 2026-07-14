@@ -70,6 +70,7 @@ internal sealed class ReorderDrag<T> where T : class
     private bool _finished;
     private bool _suppressed;             // 크로스 패널 드래그 중 반대 패널 위 → 이 리스트 프리뷰 억제.
     private bool _externalDropPreview;    // 폴더 등 외부 드롭 대상 위 → 재정렬 프리뷰를 원위치로 억제.
+    private bool _externalDropPreservesReorder;
     private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
 
     private bool IsGrid => _columns > 1;
@@ -330,12 +331,16 @@ internal sealed class ReorderDrag<T> where T : class
         else _needsReapply = true;
     }
 
-    /// <summary>호스트가 별도 드롭 대상을 표시하는 동안 이 목록의 재정렬 프리뷰를 원위치로
-    /// 되돌리고 고스트만 계속 따라가게 한다. 해제 직후에는 현재 포인터로 재정렬을 다시 계산한다.</summary>
-    public void SetExternalDropPreview(bool on)
+    /// <summary>호스트가 별도 드롭 대상을 표시하는 동안 고스트만 계속 따라가게 한다.
+    /// preserveReorder=true면 이미 밀려난 재정렬 배치를 유지한 채 드롭 대상만 표시한다.</summary>
+    public void SetExternalDropPreview(bool on, bool preserveReorder = false)
     {
-        if (_finished || _externalDropPreview == on) return;
+        preserveReorder &= on;
+        if (_finished
+            || (_externalDropPreview == on
+                && _externalDropPreservesReorder == preserveReorder)) return;
         _externalDropPreview = on;
+        _externalDropPreservesReorder = preserveReorder;
         _lastPointerAxisPosition = null;
         _lastTransitionDirection = 0;
 
@@ -346,6 +351,12 @@ internal sealed class ReorderDrag<T> where T : class
         }
 
         ClearDropIntoTarget();
+        if (preserveReorder)
+        {
+            _needsReapply = false;
+            return;
+        }
+
         ClearReorderPreview();
         _quarterReorderTarget = null;
         _directionalDropTarget = null;
@@ -409,13 +420,18 @@ internal sealed class ReorderDrag<T> where T : class
 
         if (TryGetDropZone(pointer, out var hovered, out var zone))
         {
-            if (zone == DropZone.Into)
+            if (zone is DropZone.Into or DropZone.IntoPreserveReorder)
             {
-                ClearReorderPreview();
+                bool preserveReorder = zone == DropZone.IntoPreserveReorder;
+                if (!preserveReorder)
+                    ClearReorderPreview();
                 if (SetDropIntoTarget(hovered))
                 {
-                    _targetIndex = _sourceIndex;
-                    ResetDisplacementPreview();
+                    if (!preserveReorder)
+                    {
+                        _targetIndex = _sourceIndex;
+                        ResetDisplacementPreview();
+                    }
                 }
                 return;
             }
@@ -604,7 +620,7 @@ internal sealed class ReorderDrag<T> where T : class
             SetReorderPreview(otherSlots[Math.Min(targetIndex - 1, otherSlots.Count - 1)], true);
     }
 
-    private enum DropZone { Before, Into, After }
+    private enum DropZone { Before, Into, IntoPreserveReorder, After }
     private enum DropEntrySide { Before, After }
 
     /// <summary>기본 자식 드롭은 상단 25%=앞, 중앙 50%=자식, 하단 25%=뒤.
@@ -636,13 +652,22 @@ internal sealed class ReorderDrag<T> where T : class
             if (directionalDrop && ReferenceEquals(_quarterReorderTarget, slot))
             {
                 bool after = ResolveQuarterReorderAfter(slot, _quarterReorderAfter, pointer);
-                zone = after ? DropZone.After : DropZone.Before;
-                if (after != _quarterReorderAfter)
+                bool crossedOppositeQuarter = after != _quarterReorderAfter;
+                if (canDropInto && !crossedOppositeQuarter)
                 {
-                    // 반대편 25%까지 완전히 통과했으면 이번 반전까지만 재정렬로 처리한다.
-                    // 다음 MouseMove부터 중앙 75%의 자식/폴더 내부 드롭을 다시 허용한다.
-                    _quarterReorderTarget = null;
-                    _directionalDropTarget = null;
+                    zone = DropZone.IntoPreserveReorder;
+                }
+                else
+                {
+                    zone = after ? DropZone.After : DropZone.Before;
+                    if (crossedOppositeQuarter)
+                    {
+                        // 반대쪽 25%를 통과해 순서가 뒤집힌 뒤에도 같은 대상을 잠근다.
+                        // 잠금을 지우면 다음 MouseMove가 새 진입으로 판정되어 내부 75%가
+                        // 다시 재정렬 영역으로 바뀐다.
+                        _quarterReorderAfter = after;
+                        _directionalDropTarget = slot;
+                    }
                 }
             }
             else if (directionalDrop)
@@ -699,8 +724,8 @@ internal sealed class ReorderDrag<T> where T : class
             zone = after ? DropZone.After : DropZone.Before;
             if (after != _quarterReorderAfter)
             {
-                _quarterReorderTarget = null;
-                _directionalDropTarget = null;
+                _quarterReorderAfter = after;
+                _directionalDropTarget = reorderTarget;
             }
             return true;
         }
@@ -856,8 +881,8 @@ internal sealed class ReorderDrag<T> where T : class
         if (!UsesQuarterReorderHysteresis(target)) return;
         if (ReferenceEquals(_quarterReorderTarget, target) && _quarterReorderAfter != after)
         {
-            _quarterReorderTarget = null;
-            _directionalDropTarget = null;
+            _quarterReorderAfter = after;
+            _directionalDropTarget = target;
             return;
         }
 
@@ -868,9 +893,18 @@ internal sealed class ReorderDrag<T> where T : class
     private bool UsesQuarterReorderHysteresis(Slot target)
         => _useQuarterReorderHysteresis?.Invoke(_source, target.Item) == true;
 
-    public bool IsQuarterReorderLockedTarget(T target)
-        => _quarterReorderTarget != null
-           && ReferenceEquals(_quarterReorderTarget.Item, target);
+    public bool TryGetQuarterReorderLock(T target, out bool after)
+    {
+        if (_quarterReorderTarget != null
+            && ReferenceEquals(_quarterReorderTarget.Item, target))
+        {
+            after = _quarterReorderAfter;
+            return true;
+        }
+
+        after = false;
+        return false;
+    }
 
     private static Rect CapturedPrimaryBounds(Slot slot) => new(
         slot.PrimaryLeft,
