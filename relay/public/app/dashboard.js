@@ -48,7 +48,7 @@
     state.appTheme=appTheme||state.appTheme;
     if(ui)for(const [key,value] of Object.entries(ui))document.documentElement.style.setProperty('--'+key.replace(/[A-Z]/g,m=>'-'+m.toLowerCase()),value);
     if(term&&term.background)document.documentElement.style.setProperty('--term-bg',term.background);
-    const meta=document.querySelector('meta[name=theme-color]');if(meta&&ui)meta.content=ui.bg;
+    const meta=document.querySelector('meta[name=theme-color]');if(meta&&ui)meta.content=mobileQuery.matches?(ui.panel||ui.bg):ui.bg;
     document.documentElement.style.colorScheme=appTheme==='dark'?'dark':'light';if(state.term&&state.theme)state.term.options.theme=themeFor(state.agent);
   }
   function syncFontSizeControl(){
@@ -147,7 +147,7 @@
   function ensureTerminal(session){
     if(state.term&&state.agent===session.agent)return;disposeTerminal();state.agent=session.agent;
     const Ctor=session.agent==='codex'&&window.Terminal6?window.Terminal6:window.Terminal,term=new Ctor({theme:themeFor(session.agent),fontFamily:state.fontFamily+", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",fontSize:state.fontSize,cursorBlink:true,allowProposedApi:true,scrollback:5000,windowsPty:{backend:'conpty',buildNumber:0}});
-    const host=$('terminal');state.term=term;host.classList.add('ready');term.open(host);
+    const host=$('terminal');state.term=term;host.classList.add('ready');$('workspace').classList.add('has-terminal');term.open(host);
     // 모바일 키 입력은 독립 textarea가 담당한다. xterm의 숨은 textarea에서 나온 자모는 전부 무시한다.
     term.onData(data=>{if(!mobileQuery.matches)sendInput(normalizeIme(data))});
     term.attachCustomKeyEventHandler(e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='c'&&term.hasSelection()){copyText(term.getSelection());term.clearSelection();return false}return true});
@@ -221,7 +221,7 @@
     if(sizeChanged){cancelAnimationFrame(viewportFrame);viewportFrame=requestAnimationFrame(scheduleTerminalFit)}
   }
   function settleVisualViewport(){const gen=++viewportSettleGen;for(const delay of [0,60,140,260,440,700])setTimeout(()=>{if(gen!==viewportSettleGen)return;syncVisualViewport();scheduleTerminalFit()},delay)}
-  function disposeTerminal(){clearTimeout(state.outputTimer);clearTimeout(state.cursorTimer);clearTimeout(mobileInputTimer);state.outputTimer=state.cursorTimer=mobileInputTimer=0;state.outputChunks=[];if(state.terminalInputCleanup){try{state.terminalInputCleanup()}catch(e){}state.terminalInputCleanup=null}mobileInput.value='';mobileInputComposing=mobileCommitPending=false;updateMobileInputVisual();if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.follow=true;state.resizeRequest=null;state.mobileGrid=false;state.mobilePan=state.mobilePanMax=0;$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
+  function disposeTerminal(){clearTimeout(state.outputTimer);clearTimeout(state.cursorTimer);clearTimeout(mobileInputTimer);state.outputTimer=state.cursorTimer=mobileInputTimer=0;state.outputChunks=[];if(state.terminalInputCleanup){try{state.terminalInputCleanup()}catch(e){}state.terminalInputCleanup=null}mobileInput.value='';mobileInputComposing=mobileCommitPending=false;updateMobileInputVisual();if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.follow=true;state.resizeRequest=null;state.mobileGrid=false;state.mobilePan=state.mobilePanMax=0;$('workspace').classList.remove('has-terminal');$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
   function renderControl(){const active=hasControl(),b=$('control');b.classList.toggle('active',active);b.textContent=active?'제어 중':'제어권 가져오기'}
   function openSidebar(){$('sidebar').classList.add('open');$('scrim').classList.add('on')}function closeSidebar(){$('sidebar').classList.remove('open');$('scrim').classList.remove('on')}
 
