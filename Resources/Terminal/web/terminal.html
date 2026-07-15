@@ -115,6 +115,31 @@
     display: none; opacity: 0; pointer-events: none;
     background: var(--term-bg, #0C0C0C);
   }
+  /* 모바일 대시보드가 PTY 격자를 소유하는 동안 데스크톱 xterm 을 감춘다.
+     별도 WPF 레이어는 WebView2 위에 그릴 수 없으므로 terminal DOM 안에서 덮는다. */
+  #remote-control-cover {
+    position: absolute; inset: 0; z-index: 48;
+    display: none; opacity: 0; pointer-events: auto;
+    align-items: center; justify-content: center;
+    background: var(--term-bg, #0C0C0C);
+    color: var(--term-fg, #CCCCCC);
+    font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+  }
+  #remote-control-cover .remote-control-box {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 28px; text-align: center;
+  }
+  #remote-control-cover .remote-control-icon {
+    position: relative; width: 24px; height: 38px; margin-bottom: 15px;
+    border: 2px solid currentColor; border-radius: 7px; opacity: 0.72;
+  }
+  #remote-control-cover .remote-control-icon::after {
+    content: ''; position: absolute; left: 50%; bottom: 3px;
+    width: 3px; height: 3px; border-radius: 50%;
+    background: currentColor; transform: translateX(-50%);
+  }
+  #remote-control-cover .remote-control-title { font-size: 14px; font-weight: 600; }
+  #remote-control-cover .remote-control-detail { margin-top: 7px; font-size: 12px; opacity: 0.62; }
   /* devez 최초 실행 스피너와 동일: PrimaryBrush 점선 링(28 10) 회전, 0.85s, 두께 3. */
   #loading-overlay .ring {
     width: 36px; height: 36px;
@@ -172,6 +197,7 @@
 <body>
 <div id="loading-overlay"><div class="box"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div></div>
 <div id="xfer-cover"></div>
+<div id="remote-control-cover" tabindex="-1" aria-hidden="true"><div class="remote-control-box"><div class="remote-control-icon"></div><div class="remote-control-title">모바일 원격 제어 중</div><div class="remote-control-detail">연결이 끝나면 PC 화면으로 복원됩니다.</div></div></div>
 <div id="copy-toast"></div>
 <div id="search-bar">
   <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
@@ -201,6 +227,8 @@
   let _xferDataWaiter = null; // {room, fire} — reveal 시 폭이 바뀌면 alt-screen TUI 가 SIGWINCH 로 '비동기' 재렌더한다.
                               // 그 첫 출력이 올 때까지 커버를 유지해 '리사이즈됐지만 아직 안 그려진' 빈/틀어진 화면
                               // (분할 닫기 후 좌측 세션 텍스트 갈라짐·스크롤 튐)을 감춘다. writeOut 이 도착 시 fire.
+  let _remoteRestoreWaiter = null; // 모바일 제어 해제 후 데스크톱 격자 재렌더 출력의 quiet 구간을 기다린다.
+  let _remoteCoverGen = 0; // 빠른 잠금/해제·방 전환 시 이전 fade 타이머를 무효화한다.
   let _loadGen = 0; // 로딩 스피너 세대 — 새 loading 메시지마다 증가, 이전 카드 표시 대기 폴링을 무효화
   const DEFAULT_LOADING_LABEL = '세션 여는 중…';
   let _xferGen = 0; // 전환 세대 — cover/resync 시작마다 증가. 빠른 연속 전환 시 이전 전환의 지연 타이머(fade/step)를 무효화해 커튼이 엉뚱한 시점에 걷히는 깜빡임을 막는다.
@@ -208,6 +236,72 @@
                               // TUI 가 그 폭으로 그렸다 다시 리플로우돼 깨진다. 억제했다가 reveal 이 안정된 최종 폭에서 한 번만 fit.
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
+
+  const remoteControlCover = document.getElementById('remote-control-cover');
+
+  function cancelRemoteRestoreWaiter() {
+    if (_remoteRestoreWaiter && _remoteRestoreWaiter.cancel) _remoteRestoreWaiter.cancel();
+    _remoteRestoreWaiter = null;
+  }
+
+  function showRemoteControlCover() {
+    ++_remoteCoverGen;
+    cancelRemoteRestoreWaiter();
+    remoteControlCover.style.transition = 'none';
+    remoteControlCover.style.display = 'flex';
+    remoteControlCover.style.opacity = '1';
+    remoteControlCover.setAttribute('aria-hidden', 'false');
+    try { remoteControlCover.focus({ preventScroll: true }); } catch (e) { remoteControlCover.focus(); }
+  }
+
+  function hideRemoteControlCoverNow() {
+    ++_remoteCoverGen;
+    cancelRemoteRestoreWaiter();
+    remoteControlCover.style.transition = 'none';
+    remoteControlCover.style.opacity = '0';
+    remoteControlCover.style.display = 'none';
+    remoteControlCover.setAttribute('aria-hidden', 'true');
+  }
+
+  function restoreDesktopAndHideRemoteCover(roomId, entry) {
+    cancelRemoteRestoreWaiter();
+    const gen = ++_remoteCoverGen;
+    let finished = false;
+    let quietTimer = 0;
+    const hardTimer = setTimeout(finish, 900);
+
+    function cancel() {
+      clearTimeout(quietTimer);
+      clearTimeout(hardTimer);
+    }
+    function finish() {
+      if (finished || gen !== _remoteCoverGen) return;
+      finished = true;
+      cancel();
+      _remoteRestoreWaiter = null;
+      try { entry.term.refresh(0, entry.term.rows - 1); } catch (e) {}
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        if (gen !== _remoteCoverGen || activeRoomId !== roomId || entry.remoteGrid) return;
+        try { entry.term.refresh(0, entry.term.rows - 1); } catch (e) {}
+        remoteControlCover.style.transition = 'opacity 0.14s ease';
+        remoteControlCover.style.opacity = '0';
+        setTimeout(function () {
+          if (gen !== _remoteCoverGen) return;
+          remoteControlCover.style.display = 'none';
+          remoteControlCover.setAttribute('aria-hidden', 'true');
+          try { entry.term.focus(); } catch (e) {}
+        }, 180);
+      }); });
+    }
+    function onOutput() {
+      clearTimeout(quietTimer);
+      quietTimer = setTimeout(finish, 120);
+    }
+
+    // SIGWINCH 재렌더가 없거나 메시지보다 먼저 도착한 경우에도 오래 가리지 않도록 짧은 폴백을 둔다.
+    quietTimer = setTimeout(finish, 300);
+    _remoteRestoreWaiter = { room: roomId, fire: onOutput, cancel: cancel };
+  }
 
   function b64ToBytes(b64) {
     const bin = atob(b64);
@@ -388,6 +482,7 @@
     // 전환 커버가 '리사이즈 후 재렌더 출력'을 기다리는 중이면 통지(청크 크기 포함 — codex 는
     // 큰 프레임=재페인트 판정, gjc 는 quiet 디바운스, 그 외는 첫 호출에 즉시 걷는다).
     if (_xferDataWaiter && terms[_xferDataWaiter.room] === t) { const w = _xferDataWaiter; w.fire((bytes && bytes.length) || 0); }
+    if (_remoteRestoreWaiter && terms[_remoteRestoreWaiter.room] === t) { const w = _remoteRestoreWaiter; w.fire(); }
   }
 
   // ── 마우스 모드 그대로 전달 ──────────────────────────────────────────
@@ -1596,6 +1691,9 @@
     if (searchBar.classList.contains('open')) closeSearch(); // 방 전환 시 검색바 닫기
     for (const id in terms) terms[id].el.classList.toggle('active', id === roomId);
     activeRoomId = roomId;
+    // 원격 격자가 잠긴 방으로 전환하면 fit 전에 먼저 가려 좁은 중간 프레임이 보이지 않게 한다.
+    if (entry.remoteGrid) showRemoteControlCover();
+    else hideRemoteControlCoverNow();
     // returnResync 가 다른 방 전환으로 중단돼 투명(opacity:0)하게 남았을 수 있음 — 표시 시 복원.
     entry.el.style.transition = 'none';
     entry.el.style.opacity = '';
@@ -2106,12 +2204,18 @@
         clearTimeout(t.remoteGridTimer);
         t.remoteGridTimer = 0;
         if (msg.locked) {
+          // xterm 을 줄이기 전에 커버부터 동기적으로 표시한다.
+          if (activeRoomId === msg.roomId) showRemoteControlCover();
           t.remoteGrid = { cols: msg.cols, rows: msg.rows };
           if (t.term.cols !== msg.cols || t.term.rows !== msg.rows) {
             try { t.term.resize(msg.cols, msg.rows); } catch (e) {}
           }
         } else {
           t.remoteGrid = null;
+          if (activeRoomId === msg.roomId) {
+            // 복원 출력 대기를 fit 전에 걸어, fit 이 유발한 첫 SIGWINCH 출력도 놓치지 않는다.
+            restoreDesktopAndHideRemoteCover(msg.roomId, t);
+          }
           // 제어 종료 뒤에는 저장된 과거 크기보다 현재 데스크톱 패널의 실제 크기를 우선한다.
           if (t.el.clientWidth >= 2 && t.el.clientHeight >= 2) {
             try { t.fit.fit(); } catch (e) {}
