@@ -2,7 +2,7 @@
   'use strict';
   const $=id=>document.getElementById(id);
   const savedWebFontSize=(()=>{try{const value=Number(localStorage.getItem('devez-dashboard-font-size'));return value>=9&&value<=32?value:0}catch(e){return 0}})();
-  const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,resizeRequest:null,mobileGrid:false,autoClaimPending:false,follow:true,userScrollUntil:0,outputChunks:[],outputTimer:0,cursorTimer:0,terminalInputCleanup:null,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
+  const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,resizeRequest:null,mobileGrid:false,mobilePan:0,mobilePanMax:0,autoClaimPending:false,follow:true,userScrollUntil:0,outputChunks:[],outputTimer:0,cursorTimer:0,terminalInputCleanup:null,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
   const mobileQuery=matchMedia('(max-width:720px), (max-height:520px) and (pointer:coarse)');
   const svg={eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',eyeOff:'<svg viewBox="0 0 24 24"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 4.2A10.8 10.8 0 0 1 12 4c6.5 0 10 8 10 8a17 17 0 0 1-2 3M6.6 6.6C3.5 8.5 2 12 2 12s3.5 8 10 8a10 10 0 0 0 4.2-.9"/></svg>',chevronUp:'<svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',chevronDown:'<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',folder:'<svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>'};
   let toastTimer=0,fitFrame=0,viewportFrame=0,lastViewportWidth=0,lastViewportHeight=0,viewportSettleGen=0;
@@ -128,7 +128,7 @@
     if(state.term&&(state.term.cols!==s.cols||state.term.rows!==s.rows)){state.term.resize(Math.max(2,s.cols),Math.max(2,s.rows));sizeTerminal(s.cols,s.rows)}
   }
 
-  function sendInput(data){if(!data)return;if(!hasControl()){toast('먼저 제어권을 가져오세요.');return}if(state.agent==='codex'&&state.term){state.follow=true;try{state.term.scrollToBottom()}catch(e){}}send({type:'input',roomId:state.selected,data})}
+  function sendInput(data){if(!data)return;if(!hasControl()){toast('먼저 제어권을 가져오세요.');return}if(state.agent==='codex'&&state.term){state.follow=true;state.mobilePan=0;try{state.term.scrollToBottom()}catch(e){}applyMobilePan()}send({type:'input',roomId:state.selected,data})}
   // 모바일에서는 xterm의 숨은 textarea를 사용하지 않는다. 독립된 네이티브 textarea가 한글을 먼저
   // 조합한 뒤 확정 문자열만 PTY로 보내므로 xterm/Android 키보드별 이벤트 순서 차이에 영향받지 않는다.
   const mobileInput=$('mobile-ime-input'),hangulInitial='ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ',hangulVowel='ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ',hangulFinal=' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
@@ -153,20 +153,26 @@
     term.attachCustomKeyEventHandler(e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='c'&&term.hasSelection()){copyText(term.getSelection());term.clearSelection();return false}return true});
     term.onScroll(()=>{if(Date.now()>state.userScrollUntil)return;const buffer=term.buffer.active;state.follow=buffer.viewportY>=buffer.baseY});
     const onWheel=e=>{state.userScrollUntil=Date.now()+500;if(e.deltaY<0)state.follow=false};
-    let touchY=0,touchCarry=0,touchDistance=0;
-    const touchOptions={capture:true,passive:false};
-    const onTouchStart=e=>{if(!mobileQuery.matches||e.touches.length!==1)return;touchY=e.touches[0].clientY;touchCarry=0;touchDistance=0;state.userScrollUntil=Date.now()+1000;e.preventDefault();e.stopImmediatePropagation()};
-    const onTouchMove=e=>{if(!mobileQuery.matches||e.touches.length!==1)return;const y=e.touches[0].clientY,delta=touchY-y;touchY=y;touchCarry+=delta;touchDistance+=Math.abs(delta);state.userScrollUntil=Date.now()+1000;const screen=host.querySelector('.xterm-screen'),cellHeight=screen?screen.offsetHeight/Math.max(1,term.rows):Math.max(12,state.fontSize*1.2),lines=Math.trunc(touchCarry/Math.max(1,cellHeight));if(lines){term.scrollLines(lines);touchCarry-=lines*cellHeight;if(lines<0)state.follow=false;else{const buffer=term.buffer.active;if(buffer.viewportY>=buffer.baseY)state.follow=true}}e.preventDefault();e.stopImmediatePropagation()};
-    const onTouchEnd=e=>{if(!mobileQuery.matches)return;state.userScrollUntil=Date.now()+500;if(touchDistance<6)focusTerminalInput();else{const buffer=term.buffer.active;state.follow=buffer.viewportY>=buffer.baseY}touchY=touchCarry=touchDistance=0;e.preventDefault();e.stopImmediatePropagation()};
-    const onTouchCancel=()=>{touchY=touchCarry=touchDistance=0};
-    host.addEventListener('wheel',onWheel,{passive:true});host.addEventListener('touchstart',onTouchStart,touchOptions);host.addEventListener('touchmove',onTouchMove,touchOptions);host.addEventListener('touchend',onTouchEnd,touchOptions);host.addEventListener('touchcancel',onTouchCancel,touchOptions);
-    state.terminalInputCleanup=()=>{host.removeEventListener('wheel',onWheel);host.removeEventListener('touchstart',onTouchStart,touchOptions);host.removeEventListener('touchmove',onTouchMove,touchOptions);host.removeEventListener('touchend',onTouchEnd,touchOptions);host.removeEventListener('touchcancel',onTouchCancel,touchOptions)};
+    let pointerId=-1,pointerY=0,pointerCarry=0,pointerDistance=0;
+    const pointerOptions={capture:true,passive:false};
+    const onPointerDown=e=>{if(!mobileQuery.matches||e.pointerType!=='touch'||!e.isPrimary)return;pointerId=e.pointerId;pointerY=e.clientY;pointerCarry=0;pointerDistance=0;state.userScrollUntil=Date.now()+1000;try{host.setPointerCapture(pointerId)}catch(_){}e.preventDefault();e.stopImmediatePropagation()};
+    const onPointerMove=e=>{if(e.pointerId!==pointerId)return;const y=e.clientY,dy=y-pointerY;pointerY=y;pointerDistance+=Math.abs(dy);state.userScrollUntil=Date.now()+1000;let remainder=dy;if(remainder>0&&state.mobilePan<state.mobilePanMax){const used=Math.min(remainder,state.mobilePanMax-state.mobilePan);state.mobilePan+=used;remainder-=used}else if(remainder<0&&state.mobilePan>0){const used=Math.max(remainder,-state.mobilePan);state.mobilePan+=used;remainder-=used}applyMobilePan();pointerCarry+=remainder;const screen=host.querySelector('.xterm-screen'),cellHeight=screen?screen.offsetHeight/Math.max(1,term.rows):Math.max(12,state.fontSize*1.2),lines=Math.trunc(pointerCarry/Math.max(1,cellHeight));if(lines){term.scrollLines(-lines);pointerCarry-=lines*cellHeight;applyMobilePan()}e.preventDefault();e.stopImmediatePropagation()};
+    const finishPointer=(e,focus)=>{if(e.pointerId!==pointerId)return;try{host.releasePointerCapture(pointerId)}catch(_){}state.userScrollUntil=Date.now()+500;if(focus&&pointerDistance<6)focusTerminalInput();else applyMobilePan();pointerId=-1;pointerY=pointerCarry=pointerDistance=0;e.preventDefault();e.stopImmediatePropagation()};
+    const onPointerUp=e=>finishPointer(e,true),onPointerCancel=e=>finishPointer(e,false);
+    host.addEventListener('wheel',onWheel,{passive:true});host.addEventListener('pointerdown',onPointerDown,pointerOptions);host.addEventListener('pointermove',onPointerMove,pointerOptions);host.addEventListener('pointerup',onPointerUp,pointerOptions);host.addEventListener('pointercancel',onPointerCancel,pointerOptions);
+    state.terminalInputCleanup=()=>{host.removeEventListener('wheel',onWheel);host.removeEventListener('pointerdown',onPointerDown,pointerOptions);host.removeEventListener('pointermove',onPointerMove,pointerOptions);host.removeEventListener('pointerup',onPointerUp,pointerOptions);host.removeEventListener('pointercancel',onPointerCancel,pointerOptions)};
     term.element.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')setTimeout(focusTerminalInput,0)});if(!mobileQuery.matches)setTimeout(()=>term.focus(),0);
   }
   function sizeTerminal(cols,rows){
     const terminal=$('terminal'),pad=mobileQuery.matches?12:36;terminal.style.width=Math.max(240,Math.ceil(cols*state.fontSize*.66+pad))+'px';terminal.style.height=Math.max(120,Math.ceil(rows*state.fontSize*1.22+18))+'px';$('size-label').textContent=cols+' × '+rows;scheduleTerminalFit();
   }
   function scheduleTerminalFit(){cancelAnimationFrame(fitFrame);fitFrame=requestAnimationFrame(()=>requestAnimationFrame(fitTerminalToViewport))}
+  function applyMobilePan(){
+    if(!mobileQuery.matches||!state.mobileGrid)return;
+    state.mobilePan=Math.max(0,Math.min(state.mobilePanMax,state.mobilePan));
+    $('terminal-content').style.transform='translate3d(0,'+(-state.mobilePanMax+state.mobilePan)+'px,0)';
+    const buffer=state.term&&state.term.buffer.active;state.follow=state.mobilePan<.5&&(!buffer||buffer.viewportY>=buffer.baseY);
+  }
   function fitTerminalToViewport(){
     if(!state.term)return;
     const scroll=$('terminal-scroll'),stage=$('terminal-stage'),content=$('terminal-content'),terminal=$('terminal');
@@ -194,9 +200,10 @@
       stage.style.width=viewportW+'px';stage.style.height=viewportH+'px';
       // PTY rows는 키보드가 열려도 유지한다. 대신 실제 터미널 높이는 그대로 두고 전체를 위로 밀어
       // 마지막 입력 줄이 줄어든 visual viewport의 하단에 항상 맞닿게 한다.
-      const bottomOffset=Math.min(0,viewportH-naturalH);
-      content.style.width=viewportW+'px';content.style.height=naturalH+'px';content.style.transform='translate3d(0,'+bottomOffset+'px,0)';
+      state.mobilePanMax=Math.max(0,naturalH-viewportH);state.mobilePan=Math.min(state.mobilePan,state.mobilePanMax);
+      content.style.width=viewportW+'px';content.style.height=naturalH+'px';
       terminal.style.width=viewportW+'px';terminal.style.height=naturalH+'px';
+      applyMobilePan();
       return;
     }
     // 앱이 아직 새 resize 프로토콜을 처리하지 못하거나 다른 기기가 제어 중이면 안전한 축소 표시를 유지한다.
@@ -214,7 +221,7 @@
     if(sizeChanged){cancelAnimationFrame(viewportFrame);viewportFrame=requestAnimationFrame(scheduleTerminalFit)}
   }
   function settleVisualViewport(){const gen=++viewportSettleGen;for(const delay of [0,60,140,260,440,700])setTimeout(()=>{if(gen!==viewportSettleGen)return;syncVisualViewport();scheduleTerminalFit()},delay)}
-  function disposeTerminal(){clearTimeout(state.outputTimer);clearTimeout(state.cursorTimer);clearTimeout(mobileInputTimer);state.outputTimer=state.cursorTimer=mobileInputTimer=0;state.outputChunks=[];if(state.terminalInputCleanup){try{state.terminalInputCleanup()}catch(e){}state.terminalInputCleanup=null}mobileInput.value='';mobileInputComposing=mobileCommitPending=false;updateMobileInputVisual();if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.follow=true;state.resizeRequest=null;state.mobileGrid=false;$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
+  function disposeTerminal(){clearTimeout(state.outputTimer);clearTimeout(state.cursorTimer);clearTimeout(mobileInputTimer);state.outputTimer=state.cursorTimer=mobileInputTimer=0;state.outputChunks=[];if(state.terminalInputCleanup){try{state.terminalInputCleanup()}catch(e){}state.terminalInputCleanup=null}mobileInput.value='';mobileInputComposing=mobileCommitPending=false;updateMobileInputVisual();if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.follow=true;state.resizeRequest=null;state.mobileGrid=false;state.mobilePan=state.mobilePanMax=0;$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
   function renderControl(){const active=hasControl(),b=$('control');b.classList.toggle('active',active);b.textContent=active?'제어 중':'제어권 가져오기'}
   function openSidebar(){$('sidebar').classList.add('open');$('scrim').classList.add('on')}function closeSidebar(){$('sidebar').classList.remove('open');$('scrim').classList.remove('on')}
 
