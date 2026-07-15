@@ -5,38 +5,26 @@
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
-        <!-- 컴팩트 TreeViewItem: 셰브론 + 행 + 자식(들여쓰기), 선택 하이라이트 제거 -->
-        <Style x:Key="ScmTreeItem" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
-            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+        <!-- 펼침 삼각형: 파일 탐색기와 동일(펼치면 90° 회전) -->
+        <Style x:Key="ScmTreeExpander" TargetType="ToggleButton">
             <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="TreeViewItem">
-                        <StackPanel>
-                            <Border x:Name="RowBd" CornerRadius="6" Background="Transparent" Padding="2,3">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="16"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock x:Name="Chev" Grid.Column="0" Text="▾" TextAlignment="Center"
-                                               VerticalAlignment="Center" FontSize="9"
-                                               Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <ContentPresenter Grid.Column="1" ContentSource="Header"/>
-                                </Grid>
-                            </Border>
-                            <ItemsPresenter x:Name="ItemsHost" Margin="12,0,0,0"/>
-                        </StackPanel>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent" Width="16" Height="16">
+                            <Path x:Name="Arrow" Width="7" Height="7" Stretch="Uniform"
+                                  Fill="{DynamicResource TextMutedBrush}"
+                                  Data="M 0 0 L 4 4 L 0 8 Z"
+                                  RenderTransformOrigin="0.5,0.5"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsExpanded" Value="False">
-                                <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
-                                <Setter TargetName="Chev" Property="Text" Value="▸"/>
-                            </Trigger>
-                            <Trigger Property="HasItems" Value="False">
-                                <Setter TargetName="Chev" Property="Visibility" Value="Hidden"/>
-                            </Trigger>
-                            <Trigger SourceName="RowBd" Property="IsMouseOver" Value="True">
-                                <Setter TargetName="RowBd" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Arrow" Property="RenderTransform">
+                                    <Setter.Value><RotateTransform Angle="90"/></Setter.Value>
+                                </Setter>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -44,7 +32,50 @@
             </Setter>
         </Style>
 
-        <!-- 노드 행: 폴더(이름) 또는 파일(상태+이름+액션). ItemsSource=Children 로 재귀. -->
+        <!-- TreeViewItem: 파일 탐색기식(삼각형 + 행 + 들여쓴 자식) -->
+        <Style x:Key="ScmTreeItem" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TreeViewItem">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition MinWidth="16" Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <ToggleButton x:Name="Expander" Grid.Row="0" Grid.Column="0"
+                                          Style="{StaticResource ScmTreeExpander}"
+                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press" VerticalAlignment="Center"/>
+                            <Border x:Name="Bd" Grid.Row="0" Grid.Column="1"
+                                    CornerRadius="6" Background="Transparent"
+                                    Padding="4,3" SnapsToDevicePixels="True">
+                                <ContentPresenter ContentSource="Header" HorizontalAlignment="Stretch"/>
+                            </Border>
+                            <ItemsPresenter x:Name="ItemsHost" Grid.Row="1" Grid.Column="1"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="False">
+                                <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                            </Trigger>
+                            <Trigger SourceName="Bd" Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 노드 행: 폴더/파일 아이콘 + 이름 + (액션) + 우측 상태글자. ItemsSource=Children 로 재귀. -->
         <HierarchicalDataTemplate x:Key="ScmNode" DataType="{x:Type models:ScmTreeNode}" ItemsSource="{Binding Children}">
             <Grid Background="Transparent" MouseLeftButtonUp="Node_Click">
                 <Grid.ColumnDefinitions>
@@ -52,23 +83,31 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <!-- 파일 상태 글자(폴더면 빈칸) -->
-                <TextBlock Grid.Column="0" Text="{Binding Status}" Width="16" TextAlignment="Center"
-                           FontWeight="Bold" Foreground="{Binding StatusColor}"/>
-                <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="6,0,0,0"
-                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Change.Path}"
+                <!-- 폴더/파일 아이콘(파일 종류 구분 없이 일반 파일 아이콘) -->
+                <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                      Data="{Binding IsFolder, Converter={x:Static models:DirIconConverter.Instance}}"
+                      Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"
+                      VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="7,0,0,0"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Change.Path}"
                            Foreground="{DynamicResource TextBrush}"/>
-                <!-- 파일 리프 액션: unstage(−) 또는 discard(↩)+stage(+). 폴더면 숨김. -->
-                <Button x:Name="UnstageBtn" Grid.Column="2" Content="−" Tag="{Binding Change}"
-                        Click="Unstage_Click" Style="{StaticResource IconButton}" Width="22" Height="22"
-                        Visibility="Collapsed" ToolTip="unstage"/>
+                <!-- 파일 리프 액션: discard(↩)+stage(+) 또는 unstage(−). 폴더면 숨김. -->
                 <Button x:Name="DiscardBtn" Grid.Column="2" Content="↩" Tag="{Binding Change}"
                         Click="Discard_Click" Style="{StaticResource IconButton}" Width="22" Height="22"
                         Visibility="Collapsed" ToolTip="변경 취소"/>
                 <Button x:Name="StageBtn" Grid.Column="3" Content="+" Tag="{Binding Change}"
                         Click="Stage_Click" Style="{StaticResource IconButton}" Width="22" Height="22"
                         Visibility="Collapsed" ToolTip="stage"/>
+                <Button x:Name="UnstageBtn" Grid.Column="3" Content="−" Tag="{Binding Change}"
+                        Click="Unstage_Click" Style="{StaticResource IconButton}" Width="22" Height="22"
+                        Visibility="Collapsed" ToolTip="unstage"/>
+                <!-- 파일 상태 글자(폴더면 빈칸) — 우측 정렬 -->
+                <TextBlock Grid.Column="4" Text="{Binding Status}" Width="14" Margin="6,0,2,0"
+                           VerticalAlignment="Center" TextAlignment="Center"
+                           FontWeight="Bold" Foreground="{Binding StatusColor}"/>
             </Grid>
             <HierarchicalDataTemplate.Triggers>
                 <!-- 파일 & staged → unstage 버튼 -->
@@ -135,11 +174,14 @@
                                TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource TextBrush}" FontSize="{DynamicResource Fs12}"/>
                     <Button x:Name="PullBtn" Grid.Column="2" Content="↓" Click="Pull_Click"
-                            Style="{StaticResource IconButton}" Width="24" Height="24" ToolTip="pull"/>
+                            Style="{StaticResource IconButton}" Width="24" Height="24"
+                            FontSize="{DynamicResource Fs16}" ToolTip="pull"/>
                     <Button x:Name="PushBtn" Grid.Column="3" Content="↑" Click="Push_Click" Margin="2,0,0,0"
-                            Style="{StaticResource IconButton}" Width="24" Height="24" ToolTip="push"/>
+                            Style="{StaticResource IconButton}" Width="24" Height="24"
+                            FontSize="{DynamicResource Fs16}" ToolTip="push"/>
                     <Button x:Name="FetchBtn" Grid.Column="4" Content="⟳" Click="Fetch_Click" Margin="2,0,0,0"
-                            Style="{StaticResource IconButton}" Width="24" Height="24" ToolTip="fetch"/>
+                            Style="{StaticResource IconButton}" Width="24" Height="24"
+                            FontSize="{DynamicResource Fs16}" ToolTip="fetch"/>
                 </Grid>
 
                 <!-- 커밋 메시지 카드 -->
@@ -150,10 +192,10 @@
                         <TextBox x:Name="MsgBox" BorderThickness="0" Background="Transparent"
                                  Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource TextBrush}"
                                  FontFamily="{StaticResource PretendardFont}" FontSize="{DynamicResource Fs12}"
-                                 MaxHeight="80" TextWrapping="Wrap" AcceptsReturn="True"
-                                 VerticalScrollBarVisibility="Auto"
+                                 MaxHeight="120" TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
                                  TextChanged="MsgBox_TextChanged" PreviewKeyDown="MsgBox_PreviewKeyDown"/>
-                        <TextBlock x:Name="MsgPlaceholder" Text="메시지 (Ctrl+Enter로 커밋)" IsHitTestVisible="False"
+                        <TextBlock x:Name="MsgPlaceholder" Text="메시지 (Ctrl+S로 커밋)" IsHitTestVisible="False"
                                    VerticalAlignment="Center" Margin="1,0,0,0"
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    FontFamily="{StaticResource PretendardFont}" FontSize="{DynamicResource Fs12}">

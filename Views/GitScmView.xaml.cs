@@ -45,8 +45,8 @@ public partial class GitScmView : UserControl
         _branch = await GitService.BranchStateAsync(_repo);
         _staged.Clear(); foreach (var c in st.Staged) _staged.Add(c);
         _unstaged.Clear(); foreach (var c in st.Unstaged) _unstaged.Add(c);
-        StagedTree.ItemsSource = BuildTree(st.Staged);
-        UnstagedTree.ItemsSource = BuildTree(st.Unstaged);
+        StagedTree.ItemsSource = BuildTree(st.Staged, _repo);
+        UnstagedTree.ItemsSource = BuildTree(st.Unstaged, _repo);
         EmptyText.Visibility = st.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         UpdateButtons();
     }
@@ -71,7 +71,7 @@ public partial class GitScmView : UserControl
 
     private void MsgBox_PreviewKeyDown(object s, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        if (e.Key == Key.S && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             e.Handled = true;
             if (CommitBtn.IsEnabled) Commit_Click(CommitBtn, new RoutedEventArgs());
@@ -88,8 +88,9 @@ public partial class GitScmView : UserControl
             DiffFileActivated?.Invoke(_repo, node.Change.Path, node.Change.IsStaged);
     }
 
-    /// <summary>평면 변경 목록 → 전체 중첩 폴더 트리(폴더 우선·이름 오름차순).</summary>
-    private static List<ScmTreeNode> BuildTree(IEnumerable<GitChange> changes)
+    /// <summary>평면 변경 목록 → repo 루트(전체 경로) 아래 중첩 폴더 트리.
+    /// 단일 폴더 체인은 VS식으로 한 행("A/B/C")으로 압축한다.</summary>
+    private static List<ScmTreeNode> BuildTree(IEnumerable<GitChange> changes, string? repoPath)
     {
         var roots = new List<ScmTreeNode>();
         var folders = new Dictionary<string, ScmTreeNode>();   // 누적경로 → 폴더노드
@@ -111,8 +112,28 @@ public partial class GitScmView : UserControl
             }
             siblings.Add(new ScmTreeNode { Name = segs[^1], IsFolder = false, Change = ch });
         }
+        if (roots.Count == 0) return new List<ScmTreeNode>();
         Sort(roots);
-        return roots;
+        var root = new ScmTreeNode { Name = repoPath ?? "", IsFolder = true };
+        foreach (var n in roots) root.Children.Add(Compress(n));
+        return new List<ScmTreeNode> { root };
+    }
+
+    /// <summary>단일 하위 폴더만 있는 폴더 체인을 한 노드("부모\자식")로 병합(자식부터 재귀).</summary>
+    private static ScmTreeNode Compress(ScmTreeNode n)
+    {
+        if (!n.IsFolder) return n;
+        var kids = n.Children.Select(Compress).ToList();
+        if (kids.Count == 1 && kids[0].IsFolder)
+        {
+            var c = kids[0];
+            var merged = new ScmTreeNode { Name = n.Name + "\\" + c.Name, IsFolder = true };
+            foreach (var g in c.Children) merged.Children.Add(g);
+            return merged;
+        }
+        var res = new ScmTreeNode { Name = n.Name, IsFolder = true };
+        foreach (var k in kids) res.Children.Add(k);
+        return res;
     }
 
     private static void Sort(List<ScmTreeNode> nodes)
@@ -183,7 +204,6 @@ public partial class GitScmView : UserControl
         var r = await op();
         _busy = false;
         if (!r.Ok) ConfirmDialog.Alert($"{label} 실패", string.IsNullOrWhiteSpace(r.Error) ? r.Output : r.Error);
-        else new NotificationPopup($"{label} 완료", null).Show();
         await RefreshAsync();
         GitStateChanged?.Invoke(_repo);
     }
