@@ -424,6 +424,10 @@ public partial class WorkspacePaneView : UserControl
     }
 
     private bool _coverActive; // 전환 커버 중(파일 에디터를 숨기고 TerminalCurtain 으로 가리는 상태 판정용)
+    // 설정/MCP 창·종료 오버레이 등 스냅샷·커튼 suspend 중. 이 동안 에이전트 훅(lastmsg 갱신)이
+    // NotifySessionStateChanged → UpdateEmptyState 를 태우면 Visible 복원으로 라이브 HWND 가
+    // 스냅샷 위로 되살아난다(airspace) — suspend 중엔 표시 복원을 건너뛰게 하는 가드.
+    private bool _overlaySuspended;
 
     /// <summary>분할 열림/닫힘·프로젝트 전환 직전 — 세션은 웹 레이어 커튼(#xfer-cover)으로, 파일 에디터는
     /// 단색 커튼(TerminalCurtain, md=WebView2 는 airspace 라 에디터를 숨기고 덮음)으로 가려 리플로우/조기표시를 막는다.</summary>
@@ -895,7 +899,16 @@ public partial class WorkspacePaneView : UserControl
             agentId = picked;
         }
 
-        var session = new SessionItem { Name = NextSessionName(proj), AgentId = agentId };
+        var sessionName = NextSessionName(proj);
+        if (SettingsService.LoadPromptForNewSessionName())
+        {
+            var enteredName = PromptDialog.Show("새 세션 이름", "새 이름을 입력하세요.",
+                                                defaultValue: sessionName, maxLength: 60);
+            if (enteredName == null) return null;
+            sessionName = enteredName;
+        }
+
+        var session = new SessionItem { Name = sessionName, AgentId = agentId };
         proj.Tabs.Add(session);
         proj.IsExpanded = true;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, proj.Path);
@@ -3241,7 +3254,9 @@ public partial class WorkspacePaneView : UserControl
             // 콜드 게이트 중이면 unpark 과 파일 에디터 파킹 둘 다 ACK(RevealTerminalAfterGate)까지 미룬다 —
             // 파일(md)에서 세션 전환 시 md 를 먼저 파킹하면 airspace 갭에 검정이 새므로, md 를 띄워둔 채 대기.
             if (!_gateUnpark) { UnparkTerminalHost(); ParkFileEditorHost(); ParkBrowserHost(); }
-            TerminalHostContainer.Visibility = Visibility.Visible;
+            // suspend(스냅샷+Collapsed) 중 훅발 갱신이 HWND 를 되살리면 airspace 로 스냅샷을 뚫고
+            // 라이브 터미널이 보인다(설정창 열어둔 채 codex 응답 완료 등) — 복원은 ResumeTerminal 만.
+            if (!_overlaySuspended) TerminalHostContainer.Visibility = Visibility.Visible;
         }
         else if (_activeTab is FileTabItem)
         {
@@ -3252,14 +3267,14 @@ public partial class WorkspacePaneView : UserControl
             // Collapsed 로 감추면 md HWND 생성/재표시가 reveal 순간으로 밀려 컴포지터 첫 프레임(검정)이
             // 번쩍인다 — 주차는 HWND 를 안 보이게 살려 두므로 reveal 이 '리사이즈'가 되어 검정 프레임이 없다.
             if (_coverActive) ParkFileEditorHost();
-            else UnparkFileEditorHost();
+            else if (!_overlaySuspended) UnparkFileEditorHost(); // suspend 중 Visible 복원 금지(위 세션 분기와 동일)
         }
         else if (_activeTab is BrowserTabItem)
         {
             ParkTerminalHost();
             ParkFileEditorHost();
             if (_coverActive) ParkBrowserHost();
-            else UnparkBrowserHost();
+            else if (!_overlaySuspended) UnparkBrowserHost();
         }
         else
         {
@@ -3503,6 +3518,7 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>터미널 WebView2 를 스냅샷/커튼으로 대체하고 숨긴다. FileExplorer 는 셸이 처리.</summary>
     public async Task SuspendTerminalWithSnapshotAsync(bool blankCurtain = false)
     {
+        _overlaySuspended = true; // ResumeTerminal 이 해제 — 그 사이 훅발 UpdateEmptyState 의 표시 복원 차단
         if (_activeTab is BrowserTabItem browser)
         {
             await browser.Browser.SuspendContentAsync();
@@ -3553,6 +3569,7 @@ public partial class WorkspacePaneView : UserControl
 
     public void ResumeTerminal()
     {
+        _overlaySuspended = false;
         if (_activeSession != null)
             TerminalHostContainer.Visibility = Visibility.Visible;
         if (_activeTab is FileTabItem)
@@ -3630,6 +3647,7 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>①스냅샷만 올린다(HWND 유지). 숨길 대상은 기억해 뒀다 CommitShutdownHide 가 처리.</summary>
     public async Task PrepareShutdownSnapshotAsync()
     {
+        _overlaySuspended = true; // 종료 오버레이 중 훅발 UpdateEmptyState 가 HWND 를 되살리지 않게(해제 불필요 — 앱 종료)
         _shutdownHide = ShutdownHide.None;
         if (_activeTab is FileTabItem file)
         {

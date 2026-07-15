@@ -137,6 +137,13 @@ windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합
   - 터미널을 **리사이즈하는** 경로 → **`webCover:true`** 경로를 써야 reveal 깜빡임이 없다. (스냅샷+Collapsed 만 쓰면 옛 1~2 프레임 깜빡임이 되살아난다.)
     창/윈도우 단위 리사이즈(전체화면 등 새 창 크기 전환)면 여기에 **`stretchCover:true`** 까지 — 좌상단 고정 커버는 커지는 쪽이 비어 보인다.
 - `Hidden` 으로 숨기는 코드를 발견하면 `Collapsed` 로 고칠 것(HwndHost HWND 가 안 숨겨짐).
+- **suspend 중 표시 복원 우회 금지**: 에이전트 훅(lastmsg 갱신)이 `NotifySessionStateChanged` →
+  `UpdateEmptyState` 를 타고 `TerminalHostContainer.Visibility=Visible` 을 복원하면, 스냅샷+Collapsed 로
+  가려둔 라이브 HWND 가 airspace 로 스냅샷 위에 되살아난다("설정창 열어두면 조금 뒤 codex 터미널이 비침" —
+  전 에이전트 공통, 활성 세션의 상태 이벤트가 오면 발생). `_overlaySuspended` 플래그
+  (`SuspendTerminalWithSnapshotAsync`/`PrepareShutdownSnapshotAsync` 에서 set, `ResumeTerminal` 에서 해제)가
+  `UpdateEmptyState` 의 세션/파일/브라우저 세 분기 표시 복원을 차단한다. 표시를 복원하는 새 경로를 추가하면
+  이 플래그를 반드시 확인할 것.
 - 커버를 올리는(`xferCover`) 경로를 추가하면 **어떤 종결 경로로 끝나든 `_fitSuppressed` 해제·needCreate 처리**가
   보장되는지 확인할 것 — `fadeNow` 가 이를 빠뜨려 패널 fit 이 영구 잠겼던 버그는
   `분할패널-탭격리-파트너-포커스.md` §6.5 참조.

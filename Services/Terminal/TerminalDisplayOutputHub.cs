@@ -12,6 +12,7 @@ public static class TerminalDisplayOutputHub
 
     public static event Action<string, long, byte[]>? OutputReceived;
     public static event Action<string, int, int>? SizeChanged;
+    public static event Action<string, int, int, bool>? GridSizeRequested;
 
     internal static void Publish(string roomId, byte[] data)
     {
@@ -25,6 +26,9 @@ public static class TerminalDisplayOutputHub
     }
 
     internal static void PublishSize(string roomId, int cols, int rows) => SizeChanged?.Invoke(roomId, cols, rows);
+
+    internal static void RequestGridSize(string roomId, int cols, int rows, bool lockedByRemote)
+        => GridSizeRequested?.Invoke(roomId, cols, rows, lockedByRemote);
 
     public static TerminalDisplaySnapshot GetReplaySnapshot(string roomId)
     {

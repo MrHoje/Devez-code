@@ -116,6 +116,15 @@
     <Resource Include="Resources\Images\ShellPresets\grok_icon_white_50.png" />
     <Resource Include="Resources\Images\ShellPresets\deepseek.png" />
     <Resource Include="Resources\Images\ShellPresets\anti.png" />
+    <!-- Visual Studio 2022 Image Library 파일 형식 아이콘.
+         Microsoft Software License Terms 적용(MIT 아님) — 설정 > 라이선스에서 전문 제공. -->
+    <Resource Include="Resources\Images\FileTypes\VisualStudio2022\*.png" />
+    <Resource Include="Resources\Images\FileTypes\VisualStudio2022\Dark\*.png" />
+    <!-- 2017 채움형 폴더 아이콘. 같은 공식 다운로드 페이지의 버전별 EULA 적용. -->
+    <Resource Include="Resources\Images\FileTypes\VisualStudio2017\*.png" />
+    <Resource Include="Resources\Images\FileTypes\VisualStudio2017\Dark\*.png" />
+    <Resource Include="Resources\Licenses\VisualStudio2017ImageLibraryEULA.rtf" />
+    <Resource Include="Resources\Licenses\VisualStudio2022ImageLibraryEULA.rtf" />
     <!-- 앱 로고 이미지 (좌상단 타이틀바, 데스크탑 image.png 기반) -->
     <Resource Include="Resources\Logos\logo.png" />
     <!-- 창 아이콘(Window.Icon pack URI). ApplicationIcon(EXE 아이콘)과 별개로

@@ -25,6 +25,8 @@ namespace DevezCode.Views;
 /// [취소]·헤더 X·딤 배경은 미리보기를 원래값으로 되돌린다(미저장 변경이 있으면 저장 여부 확인).</summary>
 public partial class SettingsDialog : UserControl
 {
+    private const string RemoteDashboardPortalUrl = "https://" + RemoteDashboardConfig.DefaultRelayBaseUrl;
+
     /// <summary>닫기 요청 시 발생.</summary>
     public event EventHandler? CloseRequested;
 
@@ -34,6 +36,7 @@ public partial class SettingsDialog : UserControl
     private bool   _originalPreloadAllSessions;
     private int    _originalIdleSessionShutdownMinutes;
     private bool   _originalAutoLoadLastProject;
+    private bool   _originalPromptForNewSessionName;
     private bool   _originalHideProjectInfoHeader;
     private bool   _originalAutoUpdateAgents;
     private bool   _originalUseFullScreen;
@@ -47,6 +50,7 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedPreloadAllSessions;
     private int    _selectedIdleSessionShutdownMinutes;
     private bool   _selectedAutoLoadLastProject;
+    private bool   _selectedPromptForNewSessionName;
     private bool   _selectedHideProjectInfoHeader;
     private bool   _selectedAutoUpdateAgents;
     private bool   _selectedUseFullScreen;
@@ -77,6 +81,7 @@ public partial class SettingsDialog : UserControl
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
+    private bool _licenseTermsLoaded;
 
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
@@ -359,6 +364,9 @@ public partial class SettingsDialog : UserControl
         _originalAutoLoadLastProject = SettingsService.LoadAutoLoadLastProject();
         _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
         AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
+        _originalPromptForNewSessionName = SettingsService.LoadPromptForNewSessionName();
+        _selectedPromptForNewSessionName = _originalPromptForNewSessionName;
+        PromptForNewSessionNameToggle.IsChecked = _selectedPromptForNewSessionName;
         _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
         _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
         HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
@@ -374,6 +382,11 @@ public partial class SettingsDialog : UserControl
         _suppressRemoteToggle = true;
         RemoteDashboardToggle.IsChecked = RemoteDashboardConfig.Current.Enabled;
         _suppressRemoteToggle = false;
+        RemoteDashboardUrlLabel.Text = RemoteDashboardPortalUrl;
+        UpdateRemoteDashboardQr();
+        CatLanDashboardBtn.Visibility = SettingsService.LoadWebDashboardUnlockedToday()
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         UpdateRemoteDashboardVisual();
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
@@ -422,6 +435,8 @@ public partial class SettingsDialog : UserControl
         CatGeneralBtn.Foreground   = key == "general"    ? primary : text;
         CatProjectBtn.Background   = key == "project"    ? active : Brushes.Transparent;
         CatProjectBtn.Foreground   = key == "project"    ? primary : text;
+        CatSessionBtn.Background   = key == "session"    ? active : Brushes.Transparent;
+        CatSessionBtn.Foreground   = key == "session"    ? primary : text;
         CatThemeBtn.Background     = key == "theme"      ? active : Brushes.Transparent;
         CatThemeBtn.Foreground     = key == "theme"      ? primary : text;
         CatAgentBtn.Background     = key == "agent"      ? active : Brushes.Transparent;
@@ -436,6 +451,8 @@ public partial class SettingsDialog : UserControl
         CatMcpBtn.Foreground       = key == "mcp"        ? primary : text;
         CatChangelogBtn.Background = key == "changelog"  ? active : Brushes.Transparent;
         CatChangelogBtn.Foreground = key == "changelog"  ? primary : text;
+        CatLicensesBtn.Background  = key == "licenses"   ? active : Brushes.Transparent;
+        CatLicensesBtn.Foreground  = key == "licenses"   ? primary : text;
         CatShortcutBtn.Background  = key == "shortcut"   ? active : Brushes.Transparent;
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
         CatLanDashboardBtn.Background = key == "lanDashboard" ? active : Brushes.Transparent;
@@ -445,6 +462,7 @@ public partial class SettingsDialog : UserControl
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
+        SessionPanel.Visibility    = key == "session"    ? Visibility.Visible : Visibility.Collapsed;
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility      = key == "agent"      ? Visibility.Visible : Visibility.Collapsed;
         CleanerPanel.Visibility    = key == "cleaner"    ? Visibility.Visible : Visibility.Collapsed;
@@ -452,6 +470,7 @@ public partial class SettingsDialog : UserControl
         UsagePanel.Visibility      = key == "usage"      ? Visibility.Visible : Visibility.Collapsed;
         McpPanel.Visibility        = key == "mcp"        ? Visibility.Visible : Visibility.Collapsed;
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
+        LicensesPanel.Visibility   = key == "licenses"   ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
         LanDashboardPanel.Visibility = key == "lanDashboard" ? Visibility.Visible : Visibility.Collapsed;
         NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
@@ -461,8 +480,78 @@ public partial class SettingsDialog : UserControl
         if (key == "usage") LoadFooterUsageSettings();
         if (key == "notify") LoadNotifySettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
+        if (key == "licenses") LoadLicenseTerms();
         if (key == "cleaner") EnterCleaner();
     }
+
+    private void LoadLicenseTerms()
+    {
+        if (_licenseTermsLoaded) return;
+        _licenseTermsLoaded = true;
+        try
+        {
+            var licenses = new[]
+            {
+                ("Visual Studio 2017 Image Library", "VisualStudio2017ImageLibraryEULA.rtf"),
+                ("Visual Studio 2022 Image Library", "VisualStudio2022ImageLibraryEULA.rtf"),
+            };
+            var document = LicenseTermsBox.Document;
+            document.Blocks.Clear();
+            foreach (var (title, fileName) in licenses)
+            {
+                var uri = new Uri(
+                    $"pack://application:,,,/Resources/Licenses/{fileName}",
+                    UriKind.Absolute);
+                var resource = Application.GetResourceStream(uri)
+                    ?? throw new InvalidOperationException($"라이선스 리소스를 찾을 수 없습니다: {fileName}");
+                using (resource.Stream)
+                {
+                    var scratch = new System.Windows.Documents.FlowDocument();
+                    var range = new System.Windows.Documents.TextRange(
+                        scratch.ContentStart,
+                        scratch.ContentEnd);
+                    range.Load(resource.Stream, DataFormats.Rtf);
+                    document.Blocks.Add(new System.Windows.Documents.Paragraph(
+                        new System.Windows.Documents.Run(title))
+                    {
+                        FontWeight = FontWeights.SemiBold,
+                        Margin = new Thickness(0, document.Blocks.Count == 0 ? 0 : 24, 0, 10),
+                    });
+                    document.Blocks.Add(new System.Windows.Documents.Paragraph(
+                        new System.Windows.Documents.Run(range.Text.Trim()))
+                    {
+                        Margin = new Thickness(0),
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LicenseTermsBox.Document.Blocks.Clear();
+            LicenseTermsBox.Document.Blocks.Add(new System.Windows.Documents.Paragraph(
+                new System.Windows.Documents.Run($"라이선스 약관을 불러오지 못했습니다.\n{ex.Message}"))
+            {
+                Margin = new Thickness(0),
+            });
+        }
+    }
+
+    private void OpenVisualStudioImageLibrary_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(
+                "https://www.microsoft.com/en-us/download/details.aspx?id=35825")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            ConfirmDialog.Alert("페이지 열기 실패", ex.Message);
+        }
+    }
+
     // ── 세션 클리너 (SessionCleanerWindow 이식 — 설정창 내부 탭) ──────
     private CleanerAgentKind _cleanerCurrent;
     private bool _cleanerBuilt;
@@ -681,6 +770,11 @@ public partial class SettingsDialog : UserControl
         _selectedAutoLoadLastProject = AutoLoadLastProjectToggle.IsChecked == true;
     }
 
+    private void PromptForNewSessionNameToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedPromptForNewSessionName = PromptForNewSessionNameToggle.IsChecked == true;
+    }
+
     private void HideProjectInfoHeaderToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedHideProjectInfoHeader = HideProjectInfoHeaderToggle.IsChecked == true;
@@ -816,6 +910,34 @@ public partial class SettingsDialog : UserControl
         UpdateRemoteDashboardVisual();
     }
 
+    private void CopyRemoteDashboardUrl_Click(object sender, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText(RemoteDashboardPortalUrl); }
+        catch { ConfirmDialog.Alert("접속 주소", "클립보드를 사용할 수 없습니다."); }
+    }
+
+    private void UpdateRemoteDashboardQr()
+    {
+        try
+        {
+            var png = PngByteQRCodeHelper.GetQRCode(
+                RemoteDashboardPortalUrl, QRCodeGenerator.ECCLevel.Q, 8, drawQuietZones: true);
+            using var stream = new MemoryStream(png);
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            RemoteDashboardQrImage.Source = bitmap;
+        }
+        catch
+        {
+            RemoteDashboardQrImage.Source = null;
+            RemoteDashboardQrPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
     private void UpdateRemoteDashboardVisual()
     {
         if (RemoteDashboardStatusLabel == null) return;
@@ -825,6 +947,7 @@ public partial class SettingsDialog : UserControl
             : cfg.IsPaired ? (cfg.Enabled ? "연결 중…" : "페어링됨 · 꺼짐")
             : "페어링 안 됨";
         RemoteDashboardStatusLabel.Foreground = (Brush)FindResource(connected ? "PrimaryBrush" : "TextMutedBrush");
+        PairRemoteButton.Visibility = cfg.IsPaired ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private const string WebDashboardUnlockPassword = "devezwebdashboard";
@@ -836,14 +959,15 @@ public partial class SettingsDialog : UserControl
             SetActiveCategory("lanDashboard");
             return;
         }
-        var pw = CommunityPasswordDialog.Ask(Window.GetWindow(this), "웹 대시보드 잠금 해제", "비밀번호를 입력하세요.", "확인");
+        var pw = CommunityPasswordDialog.AskVisibleText(Window.GetWindow(this), "잠금 해제", "비밀번호를 입력하세요.", "확인");
         if (pw == null) return;
         if (pw == WebDashboardUnlockPassword)
         {
+            SettingsService.SaveWebDashboardUnlockedToday();
             CatLanDashboardBtn.Visibility = Visibility.Visible;
             SetActiveCategory("lanDashboard");
         }
-        else ConfirmDialog.Alert("웹 대시보드", "비밀번호가 올바르지 않습니다.");
+        else ConfirmDialog.Alert("웹 페어링", "비밀번호가 올바르지 않습니다.");
     }
 
     // ── 프로젝트 목록 열 수 (1/2) — 적용은 [저장] 시점에만(라이브 미리보기 없음) ──
@@ -1417,6 +1541,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
         if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes) return true;
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
+        if (_selectedPromptForNewSessionName != _originalPromptForNewSessionName) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
@@ -1459,6 +1584,7 @@ public partial class SettingsDialog : UserControl
             (Application.Current.MainWindow as MainWindow)?.ApplyIdleSessionShutdownSettings();
         }
         SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
+        SettingsService.SavePromptForNewSessionName(_selectedPromptForNewSessionName);
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
         {
             SettingsService.SaveHideProjectInfoHeader(_selectedHideProjectInfoHeader);
@@ -1565,6 +1691,7 @@ public partial class SettingsDialog : UserControl
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
         _originalIdleSessionShutdownMinutes = _selectedIdleSessionShutdownMinutes;
         _originalAutoLoadLastProject = _selectedAutoLoadLastProject;
+        _originalPromptForNewSessionName = _selectedPromptForNewSessionName;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
         _originalAutoUpdateAgents = _selectedAutoUpdateAgents;
         _originalUseFullScreen = _selectedUseFullScreen;
@@ -1606,6 +1733,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
             AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
+        }
+        if (_selectedPromptForNewSessionName != _originalPromptForNewSessionName)
+        {
+            _selectedPromptForNewSessionName = _originalPromptForNewSessionName;
+            PromptForNewSessionNameToggle.IsChecked = _selectedPromptForNewSessionName;
         }
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
         {

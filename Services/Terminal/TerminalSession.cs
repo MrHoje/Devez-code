@@ -76,6 +76,12 @@ public sealed class TerminalSession : IDisposable
         // 터미널 종류에 따른 잠재적 동작 차이를 줄인다.
         Environment.SetEnvironmentVariable("WT_SESSION", Guid.NewGuid().ToString());
         Environment.SetEnvironmentVariable("WT_PROFILE_ID", "{2ece5bfe-50ed-5f3a-ab87-5cd4baafed2b}");
+        // codex 등 TUI 의 라이트/다크 감지 폴백(rxvt 관례 "fg;bg", 0=검정 15=흰색).
+        // 1차 감지는 OSC 11 질의(TerminalHostView 가 즉시 프록시 응답)지만, 그 경로가
+        // 실패해도 밝기 판별이 앱 테마와 일치하도록 환경변수 폴백을 같이 깔아 둔다.
+        // 테마 변경은 세션 재시작을 타므로 세션 생성 시점 값이면 충분하다.
+        Environment.SetEnvironmentVariable("COLORFGBG",
+            DevezCode.App.CurrentTheme == "dark" ? "15;0" : "0;15");
 
         // 1) 파이프 2쌍: (셸이 읽는 stdin), (셸이 쓰는 stdout)
         if (!CreatePipe(out var inputRead, out var inputWriteRaw, IntPtr.Zero, 0))

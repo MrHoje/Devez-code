@@ -2,7 +2,7 @@
   'use strict';
   const $=id=>document.getElementById(id);
   const savedWebFontSize=(()=>{try{const value=Number(localStorage.getItem('devez-dashboard-font-size'));return value>=9&&value<=32?value:0}catch(e){return 0}})();
-  const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
+  const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,resizeRequest:null,mobileGrid:false,autoClaimPending:false,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
   const mobileQuery=matchMedia('(max-width:720px), (max-height:520px) and (pointer:coarse)');
   const svg={eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',eyeOff:'<svg viewBox="0 0 24 24"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 4.2A10.8 10.8 0 0 1 12 4c6.5 0 10 8 10 8a17 17 0 0 1-2 3M6.6 6.6C3.5 8.5 2 12 2 12s3.5 8 10 8a10 10 0 0 0 4.2-.9"/></svg>',chevronUp:'<svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',chevronDown:'<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',folder:'<svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>'};
   let toastTimer=0,fitFrame=0,viewportFrame=0;
@@ -28,19 +28,19 @@
 
   function handle(msg){
     if(msg.type==='offline'){state.offline=true;showEmpty('PC가 오프라인입니다','DevezCode가 실행 중이고 원격 접속이 켜져 있는지 확인해 주세요.','⏻');return}
-    if(msg.type==='hello'){state.offline=false;state.clientId=msg.clientId;state.controllerId=msg.controllerId;renderControl();if(state.selected)send({type:'subscribe',roomId:state.selected});return}
+    if(msg.type==='hello'){state.offline=false;state.clientId=msg.clientId;state.controllerId=msg.controllerId;state.autoClaimPending=false;renderControl();if(state.selected)send({type:'subscribe',roomId:state.selected});return}
     if(msg.type==='sessions'){
       state.offline=false;state.sessions=msg.sessions||[];state.projects=msg.projects||[];state.folders=msg.folders||[];state.controllerId=msg.controllerId;state.theme=msg.terminalTheme;state.fontFamily=msg.fontFamily||state.fontFamily;state.baseFontSize=msg.fontSize||16;if(!state.fontSizePinned)state.fontSize=state.baseFontSize;
       applyUiTheme(msg.uiTheme,msg.terminalTheme,msg.appTheme);rememberExpansion();syncFontSizeControl();renderSessions();renderControl();syncSelectedMeta();return;
     }
-    if(msg.type==='control'){state.controllerId=msg.controllerId;renderControl();return}
+    if(msg.type==='control'){state.controllerId=msg.controllerId;state.autoClaimPending=false;if(!hasControl()){state.resizeRequest=null;state.mobileGrid=false}renderControl();scheduleTerminalFit();return}
     if(msg.type==='starting'){if(msg.roomId===state.selected){state.starting=true;showEmpty('세션을 시작하는 중입니다','DevezCode의 기존 대화를 그대로 불러오고 있습니다.','…')}return}
     if(msg.type==='snapshot'){
       if(msg.roomId!==state.selected)return;state.starting=false;const session=sessionById(msg.roomId);if(!session)return;
-      session.alive=true;session.cols=msg.cols;session.rows=msg.rows;ensureTerminal(session);const term=state.term;term.reset();term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows);term.write(fromB64(msg.data),()=>{if(state.term!==term)return;term.scrollToBottom();scheduleTerminalFit()});$('empty').classList.add('hidden');renderSessions();return;
+      session.alive=true;session.cols=msg.cols;session.rows=msg.rows;state.resizeRequest=null;state.mobileGrid=false;ensureTerminal(session);const term=state.term;term.reset();term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows);term.write(fromB64(msg.data),()=>{if(state.term!==term)return;term.scrollToBottom();scheduleTerminalFit()});$('empty').classList.add('hidden');renderSessions();return;
     }
     if(msg.type==='output'){if(msg.roomId===state.selected&&state.term)state.term.write(fromB64(msg.data),scheduleTerminalFit);return}
-    if(msg.type==='size'){if(msg.roomId===state.selected&&state.term){state.term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows)}return}
+    if(msg.type==='size'){if(msg.roomId===state.selected&&state.term){const requested=state.resizeRequest&&state.resizeRequest.roomId===msg.roomId&&state.resizeRequest.cols===msg.cols&&state.resizeRequest.rows===msg.rows,current=state.mobileGrid&&state.term.cols===msg.cols&&state.term.rows===msg.rows;state.mobileGrid=!!(requested||current);if(requested)state.resizeRequest=null;const session=sessionById(msg.roomId);if(session){session.cols=msg.cols;session.rows=msg.rows}state.term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows)}return}
     if(msg.type==='error'){state.starting=false;toast(msg.message||'요청을 처리하지 못했습니다.');syncSelectedMeta()}
   }
 
@@ -56,7 +56,7 @@
   }
   function setWebFontSize(value){
     const size=Math.max(9,Math.min(32,Number(value)||16));state.fontSize=size;state.fontSizePinned=true;try{localStorage.setItem('devez-dashboard-font-size',String(size))}catch(e){}
-    if(state.term){state.term.options.fontSize=size;sizeTerminal(state.term.cols,state.term.rows);state.term.focus()}
+    if(state.term){state.mobileGrid=false;state.resizeRequest=null;state.term.options.fontSize=size;sizeTerminal(state.term.cols,state.term.rows);state.term.focus()}
   }
   function themeFor(agent){const t=Object.assign({},state.theme||{});if(agent==='gajae')t.selectionBackground=t.background&&t.background.toLowerCase()==='#f2ede6'?'#C2D8B0':t.background&&t.background.toLowerCase()==='#f8fafc'?'#C5D8F8':'#264F78';return t}
   function sessionById(id){return state.sessions.find(s=>s.roomId===id)}
@@ -154,7 +154,22 @@
     terminal.style.width=naturalW+'px';terminal.style.height=naturalH+'px';
     if(!mobileQuery.matches){stage.removeAttribute('style');content.removeAttribute('style');return}
     const viewportW=Math.max(1,scroll.clientWidth),viewportH=Math.max(1,scroll.clientHeight);
-    // PC의 실제 PTY 행·열을 유지해 TUI 구분선과 커서 위치가 어긋나지 않게 한다.
+    const cellW=screen.offsetWidth/Math.max(1,state.term.cols),cellH=screen.offsetHeight/Math.max(1,state.term.rows);
+    const targetCols=Math.max(20,Math.min(300,Math.floor((viewportW-paddingX)/Math.max(1,cellW))));
+    const targetRows=Math.max(8,Math.min(200,Math.floor((viewportH-paddingY)/Math.max(1,cellH))));
+    if(hasControl()){
+      if(state.term.cols===targetCols&&state.term.rows===targetRows){state.resizeRequest=null;state.mobileGrid=true}
+      else if(!state.resizeRequest||state.resizeRequest.roomId!==state.selected||state.resizeRequest.cols!==targetCols||state.resizeRequest.rows!==targetRows){
+        state.resizeRequest={roomId:state.selected,cols:targetCols,rows:targetRows};state.mobileGrid=false;send({type:'resize',roomId:state.selected,cols:targetCols,rows:targetRows});
+      }
+    }else if(!state.controllerId&&state.clientId&&!state.autoClaimPending){state.autoClaimPending=true;send({type:'claimControl'})}
+    if(state.mobileGrid){
+      stage.style.width=viewportW+'px';stage.style.height=viewportH+'px';
+      content.style.width=viewportW+'px';content.style.height=viewportH+'px';content.style.transform='none';
+      terminal.style.width=viewportW+'px';terminal.style.height=viewportH+'px';
+      return;
+    }
+    // 앱이 아직 새 resize 프로토콜을 처리하지 못하거나 다른 기기가 제어 중이면 안전한 축소 표시를 유지한다.
     const scale=Math.max(.01,viewportW/naturalW),scaledH=naturalH*scale;
     stage.style.width=viewportW+'px';stage.style.height=Math.max(viewportH,scaledH)+'px';
     content.style.width=naturalW+'px';content.style.height=naturalH+'px';
@@ -167,7 +182,7 @@
     root.style.setProperty('--viewport-left',Math.round(viewport?.offsetLeft||0)+'px');root.style.setProperty('--viewport-top',Math.round(viewport?.offsetTop||0)+'px');
     cancelAnimationFrame(viewportFrame);viewportFrame=requestAnimationFrame(scheduleTerminalFit);
   }
-  function disposeTerminal(){if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
+  function disposeTerminal(){if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.resizeRequest=null;state.mobileGrid=false;$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
   function renderControl(){const active=hasControl(),b=$('control');b.classList.toggle('active',active);b.textContent=active?'제어 중':'제어권 가져오기'}
   function openSidebar(){$('sidebar').classList.add('open');$('scrim').classList.add('on')}function closeSidebar(){$('sidebar').classList.remove('open');$('scrim').classList.remove('on')}
 

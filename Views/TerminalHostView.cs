@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using DevezCode.Services.Dashboard;
 using DevezCode.Services.Terminal;
 
 namespace DevezCode.Views;
@@ -172,6 +173,19 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         App.ThemeChanged += _themeChangedHandler;
         // 배치 재진입 신호(claude/gjc /exit·Ctrl+C 후 루프 재실행 직전) → 로딩 커버. Dispose 에서 해제.
         TerminalSessionManager.RoomReentering += OnRoomReentering;
+        TerminalDisplayOutputHub.GridSizeRequested += OnGridSizeRequested;
+    }
+
+    private void OnGridSizeRequested(string roomId, int cols, int rows, bool lockedByRemote)
+    {
+        if (_disposed) return;
+        void Send()
+        {
+            if (_disposed || !_pageReady || !_wired.ContainsKey(roomId)) return;
+            PostJson(new { type = "dashboardResize", roomId, cols, rows, locked = lockedByRemote });
+        }
+        if (Dispatcher.CheckAccess()) Send();
+        else Dispatcher.BeginInvoke(Send);
     }
 
     /// <summary>해당 방의 claude 화면이 이미 떠서 안정화까지 끝났는지(로딩 불필요).</summary>
@@ -572,6 +586,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     var roomId = root.GetProperty("roomId").GetString()!;
                     var cols = root.GetProperty("cols").GetInt32();
                     var rows = root.GetProperty("rows").GetInt32();
+                    if (!DashboardHub.Instance.AcceptLocalResize(roomId, cols, rows)) break;
                     TerminalSessionManager.Instance.Get(roomId)?.Resize(cols, rows);
                     TerminalDisplayOutputHub.PublishSize(roomId, cols, rows);
                     break;
@@ -735,6 +750,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 안 하면 OutputReceived 에 핸들러가 누적돼 출력이 2·3배로 중복 post 된다.
         DetachSessionHandlers(roomId);
         _wired[roomId] = session;
+        if (DashboardHub.Instance.TryGetRemoteGrid(roomId, out var remoteCols, out var remoteRows))
+            OnGridSizeRequested(roomId, remoteCols, remoteRows, lockedByRemote: true);
 
         // 셸 첫 출력(준비 완료 신호) 이후에 claude 커맨드 전송 — PSReadLine 초기화 완료 보장
         var initialCmd = TerminalSessionManager.Instance.GetInitialCommand(roomId);
@@ -852,9 +869,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (DevezCode.App.CurrentTheme == "soft")
             merged = RecolorClaudeIdentifierBlue(merged);
         // codex: 고정 다크 배경인 사용자 메시지·diff 영역을 앱 테마에 맞게 치환한다.
-        // 상태바(39,39,39)는 보존.
+        // 상태바(39,39,39)는 보존. OSC 10/11 색상 질의는 xterm 대신 즉시 프록시 응답.
         if (AgentFor(roomId) == "codex")
+        {
+            merged = AnswerCodexColorQueries(roomId, merged);
             merged = RecolorCodexBackgrounds(merged);
+        }
         // Grok: 중립 배경은 앱 스킴에 상대 매핑하고, 밝은 테마의 truecolor/ANSI 전경·의미색도
         // DevezCode soft/minimal 팔레트로 역할별 매핑한다. dark 전경색은 GrokNight 원본 유지.
         if (AgentFor(roomId) == "grok")
@@ -919,6 +939,59 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             "soft" => "\x1b[48;2;231;224;213m",  // soft #E7E0D5
             _      => "\x1b[48;2;234;240;245m",  // minimal #EAF0F5
         });
+
+    // ── codex OSC 10/11 색상 질의 프록시 응답 ──────────────────────────────
+    // codex(0.144+)는 시작 직후 OSC 11(배경색) 질의(ESC]11;?)로 터미널 라이트/다크를 판별해
+    // 컴포저(입력 영역) 색을 고른다. 앱 콜드 스타트의 세션 복원 경로에선 xterm(WebView2)이
+    // 아직 부팅 중이라 응답이 수 초 늦고, codex 는 타임아웃 → 라이트 팔레트 폴백(다크 테마에
+    // 흰 입력 영역). xterm 을 기다리지 않고 여기서 즉시 현재 스킴 색으로 응답한다.
+    // 질의 바이트는 스트림에서 삼킨다 — 남겨 두면 xterm 도 (늦게) 응답해 이중 응답이 되고,
+    // 소비자가 사라진 늦은 응답은 컴포저에 텍스트로 샌다(openai/codex#5107 유형).
+    // 질의가 flush 청크 경계에서 쪼개진 경우만 매칭 실패로 xterm 경로에 넘어간다(드묾, 무해).
+    private byte[] AnswerCodexColorQueries(string roomId, byte[] data)
+    {
+        List<byte>? kept = null; // 질의를 만나기 전까지는 무할당 통과(흔한 경로)
+        int copied = 0, i = 0;
+        while (i < data.Length)
+        {
+            // ESC ] 1 (0|1) ; ? (BEL | ESC \)
+            if (data[i] != 0x1B || i + 7 > data.Length
+                || data[i + 1] != (byte)']' || data[i + 2] != (byte)'1'
+                || (data[i + 3] != (byte)'0' && data[i + 3] != (byte)'1')
+                || data[i + 4] != (byte)';' || data[i + 5] != (byte)'?')
+            { i++; continue; }
+
+            int end; bool bel;
+            if (data[i + 6] == 0x07) { end = i + 7; bel = true; }
+            else if (data[i + 6] == 0x1B && i + 8 <= data.Length && data[i + 7] == (byte)'\\') { end = i + 8; bel = false; }
+            else { i++; continue; }
+
+            RespondCodexColorQuery(roomId, background: data[i + 3] == (byte)'1', bel);
+            kept ??= new List<byte>(data.Length);
+            for (int k = copied; k < i; k++) kept.Add(data[k]);
+            copied = end;
+            i = end;
+        }
+        if (kept == null) return data;
+        for (int k = copied; k < data.Length; k++) kept.Add(data[k]);
+        return kept.ToArray();
+    }
+
+    /// <summary>OSC 10(전경)/11(배경) 질의에 현재 xterm 스킴 색으로 즉시 응답. 종결자는 질의와 동일 형식.</summary>
+    private void RespondCodexColorQuery(string roomId, bool background, bool bel)
+    {
+        if (!_wired.TryGetValue(roomId, out var session)) return;
+        var scheme = TerminalSessionManager.Instance.Config.Scheme;
+        string hex = background ? scheme.Background : scheme.Foreground;
+        System.Drawing.Color c;
+        try { c = System.Drawing.ColorTranslator.FromHtml(string.IsNullOrWhiteSpace(hex) ? "#0C0C0C" : hex); }
+        catch { c = System.Drawing.Color.FromArgb(0x0C, 0x0C, 0x0C); }
+        // xterm 관례의 16bit/채널 표기 — 8bit 값을 두 번 이어 붙인다(0x1F → 1f1f).
+        string rgb = $"rgb:{c.R:x2}{c.R:x2}/{c.G:x2}{c.G:x2}/{c.B:x2}{c.B:x2}";
+        string reply = "\x1b]" + (background ? "11" : "10") + ";" + rgb + (bel ? "\a" : "\x1b\\");
+        session.Write(reply);
+        DevezCode.Services.DiagLog.Write($"codex OSC {(background ? 11 : 10)} 색상 질의 → 프록시 응답 {rgb} room={roomId}");
+    }
 
     private static byte[] RecolorCodexBackgrounds(byte[] data)
     {
@@ -1855,6 +1928,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _disposed = true;
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
         try { TerminalSessionManager.RoomReentering -= OnRoomReentering; } catch { }
+        try { TerminalDisplayOutputHub.GridSizeRequested -= OnGridSizeRequested; } catch { }
         try
         {
             if (_webView?.CoreWebView2 != null)

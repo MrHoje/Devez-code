@@ -1,4 +1,5 @@
 using DevezCode.Models;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -104,6 +105,8 @@ public static class SettingsService
         public int IdleSessionShutdownMinutes { get; set; } = 0;
         // 프로그램 실행 시 마지막으로 보던 프로젝트를 자동으로 불러올지 여부. 기본 false = 미선택 상태로 시작.
         public bool AutoLoadLastProject { get; set; } = false;
+        // 새 세션을 추가할 때 이름 입력 팝업을 바로 표시할지 여부. 기본 false = 자동 생성 이름 사용.
+        public bool PromptForNewSessionName { get; set; } = false;
         // 세션 탭 위의 프로젝트 정보 헤더(MetaBar: 프로젝트명~effort) 숨김 여부. 기본 false = 표시.
         public bool HideProjectInfoHeader { get; set; } = false;
         // 프로그램 실행 시 켜진 에이전트 CLI 를 최신 버전으로 자동 업데이트할지 여부. 기본 true.
@@ -116,6 +119,8 @@ public static class SettingsService
         public bool MinimizeOnClose { get; set; } = false;
         // LAN 웹 대시보드. 기본 비활성 — 원격 입력은 로컬 사용자 권한으로 명령을 실행하므로 명시적으로 켠다.
         public bool LanDashboardEnabled { get; set; } = false;
+        // 웹 대시보드 설정 메뉴를 마지막으로 잠금 해제한 로컬 날짜("yyyy-MM-dd"). 같은 날에만 잠금 해제 상태를 유지한다.
+        public string WebDashboardUnlockedDate { get; set; } = "";
         // devez 마켓플레이스 자동설치 1회 확인 완료 여부. true 면 시작 시 CLI 체크를 건너뛴다(가벼움).
         public bool DevezMarketplaceEnsured { get; set; } = false;
         // 좌측 프로젝트 목록 열 수(1 또는 2). 2면 좌측 패널 최소너비 2배 + 카드 2열 그리드 + 가로 드래그.
@@ -785,6 +790,9 @@ public static class SettingsService
     public static bool LoadAutoLoadLastProject() => Current.AutoLoadLastProject;
     public static void SaveAutoLoadLastProject(bool v) { Current.AutoLoadLastProject = v; Save(); }
 
+    public static bool LoadPromptForNewSessionName() => Current.PromptForNewSessionName;
+    public static void SavePromptForNewSessionName(bool v) { Current.PromptForNewSessionName = v; Save(); }
+
     public static bool LoadHideProjectInfoHeader() => Current.HideProjectInfoHeader;
     public static void SaveHideProjectInfoHeader(bool v) { Current.HideProjectInfoHeader = v; Save(); }
 
@@ -802,6 +810,15 @@ public static class SettingsService
 
     public static bool LoadLanDashboardEnabled() => Current.LanDashboardEnabled;
     public static void SaveLanDashboardEnabled(bool v) { Current.LanDashboardEnabled = v; Save(); }
+
+    public static bool LoadWebDashboardUnlockedToday()
+        => Current.WebDashboardUnlockedDate == DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    public static void SaveWebDashboardUnlockedToday()
+    {
+        Current.WebDashboardUnlockedDate = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        Save();
+    }
 
     public static bool LoadDevezMarketplaceEnsured() => Current.DevezMarketplaceEnsured;
     public static void SaveDevezMarketplaceEnsured(bool v) { Current.DevezMarketplaceEnsured = v; Save(); }

@@ -1,12 +1,9 @@
 using System.Net.Http;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
@@ -17,7 +14,7 @@ namespace DevezCode.Views;
 /// <para>주의: Google 은 임베디드 WebView 로그인을 정책으로 막을 수 있다("안전하지 않은 브라우저").
 /// 그 경우 disallowed_useragent 페이지가 뜨며, 시스템 브라우저+loopback 폴백이 필요하다
 /// (미구현 — 그때 확장). 로그인 실패해도 agy 키링 자동 인식으로 기존 동작은 유지.</para></summary>
-public sealed class AntigravityLoginWindow : Window
+public sealed class AntigravityLoginWindow : UsageLoginWindowBase
 {
     private const string ClientId = AntigravityCredentialStore.OAuthClientId;
     private const string ClientSecret = AntigravityCredentialStore.OAuthClientSecret;
@@ -26,61 +23,24 @@ public sealed class AntigravityLoginWindow : Window
     private const string Scope = AntigravityCredentialStore.OAuthScope;
     private const string Redirect = "http://127.0.0.1:8123/oauth2callback";
 
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-
-    private readonly WebView2 _view = new();
     private readonly string _verifier;
     private readonly string _state;
     private bool _done;
 
-    /// <summary>로그인·토큰 저장 성공 여부.</summary>
-    public bool Captured { get; private set; }
-
     public AntigravityLoginWindow(Window? owner)
+        : base(owner, "Antigravity(Google) 로그인 — 로그인하면 자동으로 연결됩니다")
     {
-        Owner = owner;
-        Title = "Antigravity(Google) 로그인 — 로그인하면 자동으로 연결됩니다";
-        Width = 520; Height = 680;
-        WindowStartupLocation = owner != null ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen;
-
-        bool dark = App.CurrentTheme == "dark";
-        Background = new System.Windows.Media.SolidColorBrush(
-            dark ? System.Windows.Media.Color.FromRgb(0x1e, 0x1e, 0x1e) : System.Windows.Media.Colors.White);
-        _view.DefaultBackgroundColor = dark
-            ? System.Drawing.Color.FromArgb(0x1e, 0x1e, 0x1e) : System.Drawing.Color.White;
-        Content = _view;
-
         _verifier = RandomUrlSafe(32);
         _state = RandomUrlSafe(16);
 
-        if (dark)
-            SourceInitialized += (_, _) =>
-            {
-                try
-                {
-                    var hwnd = new WindowInteropHelper(this).Handle;
-                    int on = 1;
-                    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
-                }
-                catch { }
-            };
-
         Loaded += async (_, _) => await InitAsync();
-        Closed += (_, _) => { try { _view.Dispose(); } catch { } };
     }
 
     private async Task InitAsync()
     {
         try
         {
-            var userDataDir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "WebView2");
-            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
-            await _view.EnsureCoreWebView2Async(env);
-            if (App.CurrentTheme == "dark")
-                _view.CoreWebView2.Profile.PreferredColorScheme = CoreWebView2PreferredColorScheme.Dark;
+            await InitializeBrowserAsync();
 
             _view.CoreWebView2.NavigationStarting += OnNavigationStarting;
 

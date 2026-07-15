@@ -897,7 +897,9 @@
         // 무효화가 따로 있으니 이 창은 "아무 키도 안 눌린 순수 대기"에만 해당.)
         if (chainCaret && Date.now() - chainCaret.at < 250) {
           const chained = { // 예약~소비 사이 fit 리사이즈가 끼어들 수 있어 현재 그리드로 클램프
-            row: Math.max(0, Math.min(chainCaret.row, term.rows - 1)),
+            // rows-2 상한: 입력란은 구조상 statusLine(rows-1) 위 — rows-1 로 클램프하면
+            // 리사이즈 축소 시 statusLine 에 앵커가 꽂혀 우측 끝 조합 표시가 재발한다.
+            row: Math.max(0, Math.min(chainCaret.row, term.rows - 2)),
             col: Math.max(0, Math.min(chainCaret.col, term.cols - 1))
           };
           chainCaret = null; // 1회 소비 — 같은 예약이 두 조합에 쓰이면 두 번째는 반드시 틀린다
@@ -908,17 +910,26 @@
         chainCaret = null; // 만료된 예약은 폐기(소비 실패 시에도 다음 조합에 새지 않게)
         const buf = term.buffer.active;
         const row = buf.cursorY, col = buf.cursorX;
+        // 폴백 좌표는 현재 그리드 기준으로 유효할 때만 신뢰 — 리사이즈로 행수가 줄면 기록해
+        // 둔 입력란 행이 지금은 statusLine(rows-1)일 수 있고, 그대로 폴백하면 아래 lastrow
+        // 가드를 스스로 무력화한다(statusLine 우측 끝 조합 표시 재발).
+        const lastValid = (lastLogicalCaret && lastLogicalCaret.row < term.rows - 1)
+          ? lastLogicalCaret : null;
         if (row < 0 || row >= term.rows) { // 순간적 범위 밖 — 마지막 유효 좌표 폴백
-          imeDiag('anchor=oob cur=' + row + ',' + col + ' last=' + JSON.stringify(lastLogicalCaret));
-          return lastLogicalCaret;
+          imeDiag('anchor=oob cur=' + row + ',' + col + ' last=' + JSON.stringify(lastValid));
+          return lastValid;
         }
         // 커서가 맨 아랫줄(statusLine)에 파킹된 순간 조합이 시작되면 그 좌표는 입력 캐럿이
         // 아니다(statusLine 재묘화 직후의 잔류 위치) — 마지막으로 기록된 입력란 좌표로 폴백.
         // 행 고정 추종은 "같은 행" 이동만 수용하므로 여기서 틀린 행을 잡으면 조합 내내 못
         // 벗어난다(statusLine 우측 끝에 조합 글자가 표시되다 확정 때 돌아오는 증상의 원인).
-        if (row === term.rows - 1 && lastLogicalCaret) {
-          imeDiag('anchor=lastrow-fallback cur=' + row + ',' + col + ' -> ' + lastLogicalCaret.row + ',' + lastLogicalCaret.col);
-          return lastLogicalCaret;
+        // 폴백조차 없으면 pin 을 포기(null)한다 — statusLine 좌표를 동결하면 chain 이 오류를
+        // 음절마다 전파하지만, null 이면 frozenImeCaret 이 비어 있어 compositionupdate 의
+        // 재적용이 커서가 입력란으로 복귀하는 즉시 정상 앵커로 자가 치유된다.
+        if (row === term.rows - 1) {
+          imeDiag('anchor=lastrow-fallback cur=' + row + ',' + col + ' -> ' +
+            (lastValid ? lastValid.row + ',' + lastValid.col : 'none(no-pin)'));
+          return lastValid;
         }
         const caret = { row: row, col: Math.max(0, Math.min(col, term.cols - 1)) };
         lastLogicalCaret = caret;
@@ -1558,6 +1569,16 @@
       post({ type: 'input', roomId: roomId, data: data });
     });
     term.onResize(function (size) {
+      // 모바일 원격 제어 중에는 데스크톱 FitAddon이 PTY를 다시 넓히지 못하게 한다.
+      // 컨테이너 리사이즈로 잠깐 다른 격자가 계산돼도 원격 목표로 즉시 되돌린다.
+      if (entry.remoteGrid && (size.cols !== entry.remoteGrid.cols || size.rows !== entry.remoteGrid.rows)) {
+        clearTimeout(entry.remoteGridTimer);
+        entry.remoteGridTimer = setTimeout(function () {
+          if (!entry.remoteGrid) return;
+          try { term.resize(entry.remoteGrid.cols, entry.remoteGrid.rows); } catch (e) {}
+        }, 0);
+        return;
+      }
       post({ type: 'resize', roomId: roomId, cols: size.cols, rows: size.rows });
       // fit 으로 그리드가 바뀌면 스크롤백이 리플로우되며 스크롤이 점프한다. pin 윈도우(인라인 TUI resume)
       // 동안엔 리사이즈 후에도 맨 아래로 고정해 위/아래 튐을 막는다.
@@ -2079,6 +2100,27 @@
       case 'preload':
         preload(msg.roomId, msg.agent, msg.fontSize);
         break;
+      case 'dashboardResize': {
+        const t = terms[msg.roomId];
+        if (!t) break;
+        clearTimeout(t.remoteGridTimer);
+        t.remoteGridTimer = 0;
+        if (msg.locked) {
+          t.remoteGrid = { cols: msg.cols, rows: msg.rows };
+          if (t.term.cols !== msg.cols || t.term.rows !== msg.rows) {
+            try { t.term.resize(msg.cols, msg.rows); } catch (e) {}
+          }
+        } else {
+          t.remoteGrid = null;
+          // 제어 종료 뒤에는 저장된 과거 크기보다 현재 데스크톱 패널의 실제 크기를 우선한다.
+          if (t.el.clientWidth >= 2 && t.el.clientHeight >= 2) {
+            try { t.fit.fit(); } catch (e) {}
+          } else if (msg.cols >= 2 && msg.rows >= 2) {
+            try { t.term.resize(msg.cols, msg.rows); } catch (e) {}
+          }
+        }
+        break;
+      }
       case 'readyPaintProbe': {
         const t = terms[msg.roomId];
         // xterm write 뒤 두 번의 rAF 를 건너 실제 브라우저 페인트 시점에서 화면 내용을 확인한다.

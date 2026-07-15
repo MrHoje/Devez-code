@@ -5,29 +5,43 @@ namespace DevezCode.Views;
 
 public partial class CommunityPasswordDialog : Window
 {
-    private CommunityPasswordDialog(Window owner, string title, string message, string okLabel)
+    private readonly bool _showPlainText;
+
+    private CommunityPasswordDialog(Window owner, string title, string message, string okLabel, bool showPlainText)
     {
         InitializeComponent();
+        _showPlainText = showPlainText;
         Owner = owner;
         Title = title;
         HeaderTitleText.Text = title;
         MessageText.Text = message;
         OkText.Text = okLabel;
-        Loaded += (_, _) => PasswordInput.Focus();
+        PasswordInput.Visibility = showPlainText ? Visibility.Collapsed : Visibility.Visible;
+        VisibleTextInput.Visibility = showPlainText ? Visibility.Visible : Visibility.Collapsed;
+        Loaded += (_, _) => ActiveInput.Focus();
     }
 
     public static string? Ask(Window owner, string title, string message, string okLabel)
     {
-        var dialog = new CommunityPasswordDialog(owner, title, message, okLabel);
-        return dialog.ShowDialog() == true ? dialog.PasswordInput.Password : null;
+        var dialog = new CommunityPasswordDialog(owner, title, message, okLabel, showPlainText: false);
+        return dialog.ShowDialog() == true ? dialog.InputValue : null;
     }
+
+    public static string? AskVisibleText(Window owner, string title, string message, string okLabel)
+    {
+        var dialog = new CommunityPasswordDialog(owner, title, message, okLabel, showPlainText: true);
+        return dialog.ShowDialog() == true ? dialog.InputValue : null;
+    }
+
+    private System.Windows.Controls.Control ActiveInput => _showPlainText ? VisibleTextInput : PasswordInput;
+    private string InputValue => _showPlainText ? VisibleTextInput.Text : PasswordInput.Password;
 
     private void TryAccept()
     {
-        if (PasswordInput.Password.Length < 4)
+        if (InputValue.Length < 4)
         {
             HintText.Visibility = Visibility.Visible;
-            PasswordInput.Focus();
+            ActiveInput.Focus();
             return;
         }
         DialogResult = true;

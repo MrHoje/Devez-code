@@ -1,11 +1,6 @@
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
-using System.Windows.Media;
-using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
 using DevezCode.Services;
 using DevezCode.Services.Dashboard;
 
@@ -14,23 +9,8 @@ namespace DevezCode.Views;
 /// <summary>외부 접속(릴레이) 페어링 창. 앱 내 WebView2 로 OAuth 로그인·승인 페이지를 열고,
 /// 동시에 백그라운드로 페어링 폴링을 돌려 승인이 감지되면 deviceId/deviceSecret 을 로컬 저장하고
 /// 외부 접속을 자동으로 켠 뒤 창을 닫는다.</summary>
-public sealed class RelayPairWindow : Window
+public sealed class RelayPairWindow : BrowserPopupWindowBase
 {
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-
-    // 타이틀바 아이콘 제거용 P/Invoke.
-    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hwnd, int index);
-    [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hwnd, int index, int value);
-    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
-    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
-    private const int GWL_EXSTYLE = -20;
-    private const int WS_EX_DLGMODALFRAME = 0x0001;
-    private const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOZORDER = 0x0004, SWP_FRAMECHANGED = 0x0020;
-    private const uint WM_SETICON = 0x0080;
-
-    private readonly WebView2 _view = new();
     private readonly CancellationTokenSource _cts = new();
     private TextBlock _statusText = null!;
     private ProgressBar _progress = null!;
@@ -39,107 +19,39 @@ public sealed class RelayPairWindow : Window
     /// <summary>페어링 성공 여부(성공 시 config 저장 + Enabled=true).</summary>
     public bool Paired { get; private set; }
 
-    public RelayPairWindow(Window? owner)
+    public RelayPairWindow(Window? owner) : base(owner, "DevezCode", 700)
     {
-        Owner = owner;
-        Title = "DevezCode";
-        Width = 520; Height = 700;
-        WindowStartupLocation = owner != null ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen;
-
-        bool dark = App.CurrentTheme == "dark";
-        var winBg = dark ? Color.FromRgb(0x1e, 0x1e, 0x1e) : Colors.White;
-        var barBg = dark ? Color.FromRgb(0x27, 0x27, 0x27) : Color.FromRgb(0xFA, 0xFA, 0xFA);
-        var barFg = dark ? Color.FromRgb(0xE8, 0xE8, 0xE8) : Color.FromRgb(0x2A, 0x26, 0x20);
-        var line = dark ? Color.FromRgb(0x40, 0x40, 0x40) : Color.FromRgb(0xD8, 0xD2, 0xC6);
-        Background = new SolidColorBrush(winBg);
-        _view.DefaultBackgroundColor = dark ? System.Drawing.Color.FromArgb(0x1e, 0x1e, 0x1e) : System.Drawing.Color.White;
-
-        // 상단 헤더: DevezCode 텍스트 로고(좌상단 로고와 동일 폰트), 아이콘 이미지 없음.
-        var logo = new TextBlock
-        {
-            Text = "DevezCode",
-            FontSize = 14,
-            FontWeight = FontWeights.Bold,
-            Foreground = new SolidColorBrush(barFg),
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(16, 0, 0, 0),
-        };
-        if (TryFindResource("BrunoAceSCFont") is FontFamily logoFont) logo.FontFamily = logoFont;
-        var header = new Border
-        {
-            Background = new SolidColorBrush(barBg),
-            BorderBrush = new SolidColorBrush(line),
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Height = 44,
-            Child = logo,
-        };
-
         _statusText = new TextBlock
         {
             Text = "승인을 기다리는 중… 승인하면 자동으로 완료됩니다.",
-            Foreground = new SolidColorBrush(barFg),
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 12, 0),
         };
+        _statusText.SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
         _progress = new ProgressBar { IsIndeterminate = true, Height = 4, Width = 120, VerticalAlignment = VerticalAlignment.Center };
         var barContent = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         barContent.Children.Add(_statusText);
         barContent.Children.Add(_progress);
         var statusBar = new Border
         {
-            Background = new SolidColorBrush(barBg),
-            BorderBrush = new SolidColorBrush(line),
             BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(14, 10, 14, 10),
             Child = barContent,
         };
-
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        Grid.SetRow(header, 0);
-        Grid.SetRow(_view, 1);
-        Grid.SetRow(statusBar, 2);
-        root.Children.Add(header);
-        root.Children.Add(_view);
-        root.Children.Add(statusBar);
-        Content = root;
-
-        SourceInitialized += (_, _) =>
-        {
-            try
-            {
-                var hwnd = new WindowInteropHelper(this).Handle;
-                if (dark) { int on = 1; DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int)); }
-                RemoveTitleBarIcon(hwnd);
-            }
-            catch { }
-        };
+        statusBar.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
+        statusBar.SetResourceReference(Border.BorderBrushProperty, "LineBrush");
+        SetFooterContent(statusBar);
 
         Loaded += async (_, _) => await InitAsync();
-        Closed += (_, _) => { try { _cts.Cancel(); } catch { } try { _view.Dispose(); } catch { } };
-    }
-
-    private static void RemoveTitleBarIcon(IntPtr hwnd)
-    {
-        SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_DLGMODALFRAME);
-        SendMessage(hwnd, WM_SETICON, new IntPtr(1), IntPtr.Zero); // ICON_BIG
-        SendMessage(hwnd, WM_SETICON, new IntPtr(0), IntPtr.Zero); // ICON_SMALL
-        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        Closed += (_, _) => { try { _cts.Cancel(); } catch { } };
     }
 
     private async Task InitAsync()
     {
         try
         {
-            var userDataDir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "WebView2");
-            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
-            await _view.EnsureCoreWebView2Async(env);
-            if (App.CurrentTheme == "dark")
-                _view.CoreWebView2.Profile.PreferredColorScheme = CoreWebView2PreferredColorScheme.Dark;
+            await InitializeBrowserAsync();
 
             var relayBaseUrl = RemoteDashboardConfig.DefaultRelayBaseUrl;
             var httpsBase = new RemoteDashboardConfig { RelayBaseUrl = relayBaseUrl }.HttpsBaseUrl();

@@ -234,15 +234,15 @@
                                 BorderBrush="{DynamicResource LineBrush}"
                                 BorderThickness="0,0,1,0">
                             <DockPanel Margin="10,16,10,16" LastChildFill="True">
-                                <!-- 웹 대시보드: 잠금 해제 전 숨김, 리스트 맨 아래 도킹 -->
+                                <!-- 웹 페어링: 잠금 해제 전 숨김, 리스트 맨 아래 도킹 -->
                                 <Button x:Name="CatLanDashboardBtn" Tag="lanDashboard" DockPanel.Dock="Bottom"
                                         Visibility="Collapsed"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconGlobe}" Width="15" Height="15"
+                                              Data="{StaticResource IconMonitorUp}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="웹 대시보드" VerticalAlignment="Center"/>
+                                        <TextBlock Text="웹 페어링" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                                 <StackPanel>
@@ -255,15 +255,6 @@
                                         <TextBlock Text="일반" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="CatNotifyBtn" Tag="notify"
-                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconBell}" Width="15" Height="15"
-                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="알림" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
                                 <Button x:Name="CatProjectBtn" Tag="project"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -271,6 +262,24 @@
                                               Data="{StaticResource IconFolder}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="프로젝트" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CatSessionBtn" Tag="session"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconSquareTerminal}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="세션" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CatNotifyBtn" Tag="notify"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconBell}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="알림" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="CatThemeBtn" Tag="theme"
@@ -336,6 +345,15 @@
                                         <TextBlock Text="업데이트 내역" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
+                                <Button x:Name="CatLicensesBtn" Tag="licenses"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconFileText}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="라이선스" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <!-- MCP 카테고리 보류 (2026-06): Visibility="Collapsed" — 재활성 시 제거 -->
                                 <Button x:Name="CatMcpBtn" Tag="mcp" Visibility="Collapsed"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
@@ -364,76 +382,8 @@
                                     <TextBlock Text="일반" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="프로젝트와 세션의 기본 동작을 설정합니다." FontSize="{DynamicResource Fs12}"
+                                <TextBlock Text="앱과 창의 기본 동작을 설정합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
-
-                                <!-- ── 시작 · 세션 로드 ── -->
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="프로그램 실행 시 프로젝트 자동 로드" FontSize="{DynamicResource Fs13}"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="켜면 시작할 때 마지막으로 보던 프로젝트를 자동으로 불러옵니다."
-                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
-                                        </StackPanel>
-                                        <CheckBox x:Name="AutoLoadLastProjectToggle" Grid.Column="1"
-                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="AutoLoadLastProjectToggle_Changed" Unchecked="AutoLoadLastProjectToggle_Changed"/>
-                                    </Grid>
-                                </Border>
-
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="프로젝트 선택 시 세션 모두 로드" FontSize="{DynamicResource Fs13}"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="끄면 첫 번째 세션만 실행하고, 다른 세션은 선택할 때 로드합니다. (숨김 처리된 세션은 켜져 있어도 로드하지 않습니다.)"
-                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
-                                        </StackPanel>
-                                        <CheckBox x:Name="PreloadAllSessionsToggle" Grid.Column="1"
-                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                                  Checked="PreloadAllSessionsToggle_Changed" Unchecked="PreloadAllSessionsToggle_Changed"/>
-                                    </Grid>
-                                </Border>
-
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="사용하지 않은 세션 자동 종료" FontSize="{DynamicResource Fs13}"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="표시 중·작업 중·입력 대기·잠금·예약 명령 세션은 제외하고, 대화 복원이 확인된 세션만 안전하게 종료합니다."
-                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
-                                        </StackPanel>
-                                        <ComboBox x:Name="IdleSessionShutdownCombo" Grid.Column="1" Width="116"
-                                                  Style="{StaticResource ThemedCombo}" VerticalAlignment="Center"
-                                                  SelectionChanged="IdleSessionShutdownCombo_Changed">
-                                            <ComboBoxItem Content="사용 안 함" Tag="0"/>
-                                            <ComboBoxItem Content="30분" Tag="30"/>
-                                            <ComboBoxItem Content="1시간" Tag="60"/>
-                                            <ComboBoxItem Content="2시간" Tag="120"/>
-                                            <ComboBoxItem Content="4시간" Tag="240"/>
-                                            <ComboBoxItem Content="8시간" Tag="480"/>
-                                        </ComboBox>
-                                    </Grid>
-                                </Border>
 
                                 <!-- ── 창 · 화면 표시 ── -->
                                 <Border Padding="0" CornerRadius="0"
@@ -507,11 +457,48 @@
                                     <TextBlock Text="프로젝트" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="좌측 프로젝트 목록을 몇 열로 표시할지 선택합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
-                                <TextBlock Text="2열로 두면 좌측 패널 최소 너비가 넓어지고, 카드를 가로로 끌어 옮길 수 있습니다."
-                                           FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                <TextBlock Text="프로젝트 로드와 목록 표시 방식을 설정합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="프로그램 실행 시 프로젝트 자동 로드" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="켜면 시작할 때 마지막으로 보던 프로젝트를 자동으로 불러옵니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="AutoLoadLastProjectToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="AutoLoadLastProjectToggle_Changed" Unchecked="AutoLoadLastProjectToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="프로젝트 선택 시 세션 모두 로드" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="끄면 첫 번째 세션만 실행하고, 다른 세션은 선택할 때 로드합니다. (숨김 처리된 세션은 켜져 있어도 로드하지 않습니다.)"
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="PreloadAllSessionsToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="PreloadAllSessionsToggle_Changed" Unchecked="PreloadAllSessionsToggle_Changed"/>
+                                    </Grid>
+                                </Border>
 
                                 <TextBlock Text="목록 열 수" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextBrush}" Margin="0,16,0,12"/>
@@ -547,6 +534,66 @@
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
+                            </StackPanel>
+
+                            <!-- 세션 패널 -->
+                            <StackPanel x:Name="SessionPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSquareTerminal}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="세션" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="새 세션을 만들 때의 기본 동작을 설정합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="세션 생성 시 세션명 바로 지정" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="켜면 세션을 추가할 때 이름 입력 팝업을 바로 표시합니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="PromptForNewSessionNameToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="PromptForNewSessionNameToggle_Changed" Unchecked="PromptForNewSessionNameToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="사용하지 않은 세션 자동 종료" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="표시 중·작업 중·입력 대기·잠금·예약 명령 세션은 제외하고, 대화 복원이 확인된 세션만 안전하게 종료합니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="IdleSessionShutdownCombo" Grid.Column="1" Width="116"
+                                                  Style="{StaticResource ThemedCombo}" VerticalAlignment="Center"
+                                                  SelectionChanged="IdleSessionShutdownCombo_Changed">
+                                            <ComboBoxItem Content="사용 안 함" Tag="0"/>
+                                            <ComboBoxItem Content="30분" Tag="30"/>
+                                            <ComboBoxItem Content="1시간" Tag="60"/>
+                                            <ComboBoxItem Content="2시간" Tag="120"/>
+                                            <ComboBoxItem Content="4시간" Tag="240"/>
+                                            <ComboBoxItem Content="8시간" Tag="480"/>
+                                        </ComboBox>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
 
                             <!-- 에이전트 패널 (설치된 CLI + 활성화 토글) -->
@@ -897,6 +944,102 @@
                                         </StackPanel>
                                     </Button>
                                 </Grid>
+                            </StackPanel>
+
+                            <!-- 오픈소스 및 외부 리소스 라이선스 -->
+                            <StackPanel x:Name="LicensesPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="라이선스" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="DevezCode에 포함된 외부 리소스의 출처와 이용 조건을 확인합니다."
+                                           FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+
+                                <Border Margin="0,16,0,0" Padding="16" CornerRadius="10"
+                                        Background="{DynamicResource PanelSoftBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Visual Studio 2017 및 2022 Image Libraries"
+                                                           FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextBrush}"/>
+                                                <TextBlock Text="제공: Microsoft Corporation"
+                                                           FontSize="{DynamicResource Fs11}"
+                                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Grid Width="16" Height="16" Margin="0,0,8,0">
+                                                    <Image Source="pack://application:,,,/Resources/Images/FileTypes/VisualStudio2017/FolderClosed.png"
+                                                           Opacity="{DynamicResource LightFileIconOpacity}"/>
+                                                    <Image Source="pack://application:,,,/Resources/Images/FileTypes/VisualStudio2017/Dark/FolderClosed.png"
+                                                           Opacity="{DynamicResource DarkFileIconOpacity}"/>
+                                                </Grid>
+                                                <Grid Width="16" Height="16" Margin="0,0,8,0">
+                                                    <Image Source="pack://application:,,,/Resources/Images/FileTypes/VisualStudio2022/CSFileNode.png"
+                                                           Opacity="{DynamicResource LightFileIconOpacity}"/>
+                                                    <Image Source="pack://application:,,,/Resources/Images/FileTypes/VisualStudio2022/Dark/CSFileNode.png"
+                                                           Opacity="{DynamicResource DarkFileIconOpacity}"/>
+                                                </Grid>
+                                                <Grid Width="16" Height="16" Margin="0,0,8,0">
+                                                    <Image Source="pack://application:,,,/Resources/Images/FileTypes/VisualStudio2022/PyFileNode.png"
+                                                           Opacity="{DynamicResource LightFileIconOpacity}"/>
+                                                    <Image Source="pack://application:,,,/Resources/Images/FileTypes/VisualStudio2022/Dark/PyFileNode.png"
+                                                           Opacity="{DynamicResource DarkFileIconOpacity}"/>
+                                                </Grid>
+                                                <Grid Width="16" Height="16">
+                                                    <Image Source="pack://application:,,,/Resources/Images/FileTypes/VisualStudio2022/TSFileNode.png"
+                                                           Opacity="{DynamicResource LightFileIconOpacity}"/>
+                                                    <Image Source="pack://application:,,,/Resources/Images/FileTypes/VisualStudio2022/Dark/TSFileNode.png"
+                                                           Opacity="{DynamicResource DarkFileIconOpacity}"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <TextBlock Text="파일 탐색기와 Git 변경 목록에서 2022 파일 형식 아이콘과 2017 채움형 폴더 아이콘을 사용합니다."
+                                                   FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextBrush}" Margin="0,14,0,0"/>
+                                        <TextBlock Text="라이선스: Microsoft Software License Terms (MIT License가 아님)"
+                                                   FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextBrush}" Margin="0,5,0,0"/>
+                                        <TextBlock Text="Visual Studio 및 Microsoft는 Microsoft Corporation의 상표입니다. DevezCode는 Microsoft가 보증하거나 후원하는 제품이 아닙니다."
+                                                   FontSize="{DynamicResource Fs10}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,9,0,0"/>
+
+                                        <Button Content="Microsoft 공식 페이지 열기"
+                                                Click="OpenVisualStudioImageLibrary_Click"
+                                                Style="{StaticResource SecondaryButton}"
+                                                Height="32" Padding="13,0" HorizontalAlignment="Left"
+                                                FontSize="{DynamicResource Fs11}" Margin="0,14,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <TextBlock Text="전체 라이선스 약관" FontSize="{DynamicResource Fs12}"
+                                           FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                           Margin="0,22,0,10"/>
+                                <Border Height="430" Padding="14" CornerRadius="10"
+                                        Background="{DynamicResource PanelSoftBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                    <RichTextBox x:Name="LicenseTermsBox"
+                                                 IsReadOnly="True" BorderThickness="0" Padding="0"
+                                                 Background="Transparent" Foreground="{DynamicResource TextBrush}"
+                                                 FontFamily="{StaticResource PretendardFont}"
+                                                 FontSize="{DynamicResource Fs11}"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled">
+                                        <FlowDocument PagePadding="0" Foreground="{DynamicResource TextBrush}"
+                                                      FontFamily="{StaticResource PretendardFont}"
+                                                      FontSize="{DynamicResource Fs11}"/>
+                                    </RichTextBox>
+                                </Border>
                             </StackPanel>
 
                             <!-- 사이드 패널 버튼 표시/숨김 패널 -->
@@ -1456,16 +1599,16 @@
                                 </Grid>
                             </StackPanel>
 
-                            <!-- 웹 대시보드 -->
+                            <!-- 웹 페어링 -->
                             <StackPanel x:Name="LanDashboardPanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconGlobe}"
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconMonitorUp}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
                                           Stroke="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="웹 대시보드" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                    <TextBlock Text="웹 페어링" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="OAuth 로그인 인증을 거쳐 인터넷 어디서나 이 PC의 프로젝트와 터미널에 접속합니다. 소유자 본인만 연결됩니다."
+                                <TextBlock Text="OAuth 로그인 인증을 거쳐 어디서나 이 PC의 프로젝트와 터미널에 접속합니다."
                                            FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
@@ -1497,6 +1640,37 @@
                                             Click="UnpairRemoteDashboard_Click" Height="34" Padding="16,0" Margin="8,0,0,0"
                                             Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
                                 </StackPanel>
+
+                                <StackPanel Margin="0,20,0,0">
+                                    <TextBlock Text="접속 주소" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}"/>
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Height="34" Padding="10,0" CornerRadius="7"
+                                                Background="{DynamicResource PanelBrush}"
+                                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                                            <TextBlock x:Name="RemoteDashboardUrlLabel" VerticalAlignment="Center"
+                                                       FontSize="{DynamicResource Fs11}" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                        </Border>
+                                        <Button Grid.Column="1" Content="복사" Click="CopyRemoteDashboardUrl_Click"
+                                                Width="58" Height="34" Margin="7,0,0,0"
+                                                Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
+                                    </Grid>
+                                    <Border x:Name="RemoteDashboardQrPanel" Margin="0,14,0,0" Padding="10"
+                                            HorizontalAlignment="Left" CornerRadius="10" Background="White">
+                                        <Image x:Name="RemoteDashboardQrImage" Width="176" Height="176"
+                                               Stretch="Uniform" SnapsToDevicePixels="True"
+                                               RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                                    </Border>
+                                    <TextBlock Text="휴대폰 카메라로 QR 코드를 스캔하면 로그인 포털이 열립니다."
+                                               FontSize="{DynamicResource Fs10}" Foreground="{DynamicResource TextMutedBrush}"
+                                               Margin="0,7,0,0"/>
+                                </StackPanel>
+
                                 <TextBlock Text="터미널 입력 = 명령 실행입니다. 릴레이는 OAuth 소유자만 통과시키며, deviceSecret 은 이 PC에만 저장됩니다."
                                            FontSize="{DynamicResource Fs10}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,9,0,0"/>
@@ -1898,7 +2072,7 @@
                         <Grid Margin="20,14,20,14">
                             <Button x:Name="UnlockWebDashboardBtn"
                                     Click="UnlockWebDashboard_Click" Width="34" Height="34"
-                                    HorizontalAlignment="Left" ToolTip="웹 대시보드 잠금 해제"
+                                    HorizontalAlignment="Left" ToolTip="웹 페어링 잠금 해제"
                                     Style="{StaticResource IconButton}">
                                 <Path Style="{StaticResource LucideButtonIcon}"
                                       Data="{StaticResource IconLock}" Width="16" Height="16"/>

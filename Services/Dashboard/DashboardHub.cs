@@ -17,6 +17,11 @@ public sealed class DashboardHub
     private readonly object _controllerLock = new();
     private Guid? _controllerId;
 
+    // 모바일 대시보드가 제어 중일 때만 PTY 격자를 모바일 viewport에 맞춘다.
+    // 원래 데스크톱 크기를 보관했다가 제어권 해제/연결 종료/방 전환 시 복원한다.
+    private readonly object _resizeLock = new();
+    private readonly Dictionary<string, RemoteResizeLease> _resizeLeases = new(StringComparer.Ordinal);
+
     private readonly object _activeLock = new();
     private int _activeTransports;
     private CancellationTokenSource? _watchCts;
@@ -61,6 +66,7 @@ public sealed class DashboardHub
     {
         _clients.TryRemove(clientId, out _);
         ReleaseControl(clientId);
+        RestoreRemoteResizes(clientId);
     }
 
     public void HandleClientMessage(IClientSink client, JsonElement root)
@@ -82,20 +88,12 @@ public sealed class DashboardHub
                         client.Queue(new { type = "error", message = "세션을 찾을 수 없습니다." });
                         return;
                     }
-                    lock (client.Sync)
-                    {
-                        client.SelectedRoomId = roomId;
-                        client.LastOutputSequence = 0;
-                    }
+                    SelectRoom(client, roomId!);
                     client.Queue(new { type = "starting", roomId });
                     _ = Task.Run(() => StartAndSubscribe(client, roomId!));
                     return;
                 }
-                lock (client.Sync)
-                {
-                    client.SelectedRoomId = roomId;
-                    client.LastOutputSequence = 0;
-                }
+                SelectRoom(client, roomId!);
                 Subscribe(client, roomId!, session);
                 break;
             }
@@ -115,9 +113,32 @@ public sealed class DashboardHub
                 TerminalSessionManager.Instance.Get(roomId!)?.TryWrite(data);
                 break;
             }
+            case "resize":
+            {
+                if (!HasControl(client.Id)) return;
+                var roomId = root.TryGetProperty("roomId", out var re) ? re.GetString() : null;
+                if (roomId != client.SelectedRoomId
+                    || !root.TryGetProperty("cols", out var ce) || !ce.TryGetInt32(out var cols)
+                    || !root.TryGetProperty("rows", out var ze) || !ze.TryGetInt32(out var rows)) return;
+                ResizeForRemote(client.Id, roomId!, cols, rows);
+                break;
+            }
             case "refresh":
                 client.Queue(BuildSessionsMessage());
                 break;
+        }
+    }
+
+    private void SelectRoom(IClientSink client, string roomId)
+    {
+        string? previous;
+        lock (client.Sync) previous = client.SelectedRoomId;
+        if (!string.Equals(previous, roomId, StringComparison.Ordinal) && previous != null)
+            RestoreRemoteResize(client.Id, previous);
+        lock (client.Sync)
+        {
+            client.SelectedRoomId = roomId;
+            client.LastOutputSequence = 0;
         }
     }
 
@@ -308,7 +329,14 @@ public sealed class DashboardHub
 
     private void ClaimControl(Guid clientId)
     {
-        lock (_controllerLock) _controllerId = clientId;
+        Guid? previous;
+        lock (_controllerLock)
+        {
+            previous = _controllerId;
+            _controllerId = clientId;
+        }
+        if (previous is { } previousId && previousId != clientId)
+            RestoreRemoteResizes(previousId);
         Broadcast(new { type = "control", controllerId = clientId });
     }
 
@@ -320,9 +348,99 @@ public sealed class DashboardHub
             released = _controllerId == clientId;
             if (released) _controllerId = null;
         }
-        if (released) Broadcast(new { type = "control", controllerId = (Guid?)null });
+        if (released)
+        {
+            RestoreRemoteResizes(clientId);
+            Broadcast(new { type = "control", controllerId = (Guid?)null });
+        }
+    }
+
+    private void ResizeForRemote(Guid clientId, string roomId, int cols, int rows)
+    {
+        cols = Math.Clamp(cols, 20, 300);
+        rows = Math.Clamp(rows, 8, 200);
+        var session = TerminalSessionManager.Instance.Get(roomId);
+        if (session is not { IsAlive: true }) return;
+
+        bool unchanged;
+        lock (_resizeLock)
+        {
+            if (_resizeLeases.TryGetValue(roomId, out var lease))
+            {
+                unchanged = lease.OwnerId == clientId && lease.TargetCols == cols && lease.TargetRows == rows
+                    && session.Cols == cols && session.Rows == rows;
+                _resizeLeases[roomId] = lease with { OwnerId = clientId, TargetCols = cols, TargetRows = rows };
+            }
+            else
+            {
+                unchanged = false;
+                _resizeLeases[roomId] = new RemoteResizeLease(
+                    clientId, session.Cols, session.Rows, cols, rows);
+            }
+        }
+        if (unchanged) return;
+        ApplyGridSize(roomId, cols, rows, lockedByRemote: true);
+    }
+
+    private void RestoreRemoteResizes(Guid ownerId)
+    {
+        List<(string RoomId, int Cols, int Rows)> restore;
+        lock (_resizeLock)
+        {
+            restore = _resizeLeases
+                .Where(pair => pair.Value.OwnerId == ownerId)
+                .Select(pair => (pair.Key, pair.Value.OriginalCols, pair.Value.OriginalRows))
+                .ToList();
+            foreach (var item in restore) _resizeLeases.Remove(item.RoomId);
+        }
+        foreach (var item in restore)
+            ApplyGridSize(item.RoomId, item.Cols, item.Rows, lockedByRemote: false);
+    }
+
+    private void RestoreRemoteResize(Guid ownerId, string roomId)
+    {
+        RemoteResizeLease lease;
+        lock (_resizeLock)
+        {
+            if (!_resizeLeases.TryGetValue(roomId, out lease) || lease.OwnerId != ownerId) return;
+            _resizeLeases.Remove(roomId);
+        }
+        ApplyGridSize(roomId, lease.OriginalCols, lease.OriginalRows, lockedByRemote: false);
+    }
+
+    private static void ApplyGridSize(string roomId, int cols, int rows, bool lockedByRemote)
+    {
+        // 데스크톱 xterm에도 같은 그리드를 먼저 요청해 화면과 ConPTY가 항상 같은 행·열을 쓰게 한다.
+        TerminalDisplayOutputHub.RequestGridSize(roomId, cols, rows, lockedByRemote);
+        TerminalSessionManager.Instance.Get(roomId)?.Resize(cols, rows);
+        TerminalDisplayOutputHub.PublishSize(roomId, cols, rows);
+    }
+
+    public bool AcceptLocalResize(string roomId, int cols, int rows)
+    {
+        lock (_resizeLock)
+            return !_resizeLeases.TryGetValue(roomId, out var lease)
+                || (lease.TargetCols == cols && lease.TargetRows == rows);
+    }
+
+    public bool TryGetRemoteGrid(string roomId, out int cols, out int rows)
+    {
+        lock (_resizeLock)
+        {
+            if (_resizeLeases.TryGetValue(roomId, out var lease))
+            {
+                cols = lease.TargetCols;
+                rows = lease.TargetRows;
+                return true;
+            }
+        }
+        cols = rows = 0;
+        return false;
     }
 
     private bool HasControl(Guid clientId) { lock (_controllerLock) return _controllerId == clientId; }
     private Guid? CurrentControllerId() { lock (_controllerLock) return _controllerId; }
+
+    private readonly record struct RemoteResizeLease(
+        Guid OwnerId, int OriginalCols, int OriginalRows, int TargetCols, int TargetRows);
 }

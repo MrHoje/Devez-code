@@ -28,6 +28,27 @@ public partial class GitScmView : UserControl
     {
         InitializeComponent();
         ScmBodyGrid.SizeChanged += (_, _) => UpdateStagedCap();
+
+        // 커밋 입력창 높이 = 실제 폰트 라인높이 × 3줄(테마 폰트크기 연동).
+        // 폰트(Pretendard) 메트릭이 확정된 Loaded 시점에 계산하고, 폰트 크기 변경 시 재계산.
+        Loaded += (_, _) =>
+        {
+            ApplyCommitBoxHeight();
+            // 팩 폰트 메트릭이 한 프레임 늦게 확정되는 콜드 스타트 대비 1회 재적용.
+            Dispatcher.BeginInvoke(new Action(ApplyCommitBoxHeight), System.Windows.Threading.DispatcherPriority.Loaded);
+            var dpd = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBox.FontSizeProperty, typeof(TextBox));
+            dpd?.AddValueChanged(MsgBox, (_, _) => ApplyCommitBoxHeight());
+        };
+    }
+
+    // 커밋 입력창을 정확히 3줄 텍스트 높이로 고정(초과분은 내부 스크롤).
+    private void ApplyCommitBoxHeight()
+    {
+        double fs = MsgBox.FontSize;
+        if (double.IsNaN(fs) || fs <= 0) return;
+        double line = MsgBox.FontFamily.LineSpacing * fs;   // 폰트 실제 라인 간격(em) × 폰트크기
+        if (double.IsNaN(line) || line <= 0) line = fs * 1.4;   // 메트릭 미확정 시 근사 폴백
+        MsgBox.Height = Math.Ceiling(line * 3);
     }
 
     // 스테이징·변경 둘 다 있을 때만 스테이징 높이를 전체의 절반으로 캡(초과분은 내부 스크롤).
@@ -80,7 +101,7 @@ public partial class GitScmView : UserControl
         if (_branch.Behind > 0) parts.Add($"↓{_branch.Behind}");
         if (_branch.Ahead > 0) parts.Add($"↑{_branch.Ahead}");
         BranchText.Text = _branch.Branch == null
-            ? "(git 저장소 아님)"
+            ? "(git 저장소 없음)"
             : _branch.Branch + (parts.Count > 0 ? "  " + string.Join(" ", parts) : "");
     }
 
@@ -127,32 +148,56 @@ public partial class GitScmView : UserControl
         AnimateSection(UnstagedTreeHost, !_unstagedCollapsed);
     }
 
-    // 프로젝트 카드 세션 접기/펼치기와 동일한 Height 애니메이션(160ms, CubicEase EaseOut).
+    // 섹션 접기/펼치기 — Height 애니메이션으로 "위에서 아래로 펼치고 / 위로 접기".
+    //  변경내용은 별(*) 행이라 ActualHeight 가 '남은 공간 전체'다. 그대로 쓰면 펼칠 때
+    //  콘텐츠 뒤로 빈 공간이 자라고, 접을 때 빈 공간부터 줄어 콘텐츠가 마지막에 툭 사라진다.
+    //  → 목표/시작 높이를 '실제 콘텐츠 높이'(콘텐츠가 더 크면 남은공간까지)로 잡아
+    //    항상 콘텐츠가 위에서부터 펼쳐지고 위로 접히도록 한다.
     private void AnimateSection(FrameworkElement host, bool expand)
     {
         host.BeginAnimation(FrameworkElement.HeightProperty, null);
-        var dur = TimeSpan.FromMilliseconds(160);
-        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
+        host.Opacity = 1;
         if (expand)
         {
             host.Visibility = Visibility.Visible;
-            host.Height = double.NaN;       // auto 로 실제 목표 높이(캡 반영) 측정
+            host.ClearValue(FrameworkElement.HeightProperty);   // 남은 공간(별 행) 확보
             host.UpdateLayout();
-            double target = host.ActualHeight;
+            double avail = host.ActualHeight;
+            double target = MeasureContentHeight(host, avail);
+            if (target <= 0) target = avail;
             host.Height = 0;
             var a = new System.Windows.Media.Animation.DoubleAnimation
-            { From = 0, To = target, Duration = dur, EasingFunction = ease };
+            {
+                From = 0, To = target, Duration = TimeSpan.FromMilliseconds(160),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+            };
             a.Completed += (_, _) => { host.BeginAnimation(FrameworkElement.HeightProperty, null); host.ClearValue(FrameworkElement.HeightProperty); };
             host.BeginAnimation(FrameworkElement.HeightProperty, a);
         }
         else
         {
-            double from = host.ActualHeight;
+            double avail = host.ActualHeight;
+            double from = MeasureContentHeight(host, avail);
+            if (from <= 0) from = avail;
+            host.Height = from;   // 콘텐츠 아래 빈 공간(별 행)을 즉시 제거 → 콘텐츠 높이에서 접기 시작
             var a = new System.Windows.Media.Animation.DoubleAnimation
-            { From = from, To = 0, Duration = dur, EasingFunction = ease };
+            {
+                From = from, To = 0, Duration = TimeSpan.FromMilliseconds(130),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn }
+            };
             a.Completed += (_, _) => { host.BeginAnimation(FrameworkElement.HeightProperty, null); host.Visibility = Visibility.Collapsed; host.ClearValue(FrameworkElement.HeightProperty); };
             host.BeginAnimation(FrameworkElement.HeightProperty, a);
         }
+    }
+
+    // host(트리 호스트)의 실제 콘텐츠 높이. 세로 제약을 avail 로 주면 가상화를 유지하면서
+    // min(콘텐츠높이, 남은공간) 을 얻는다(빈 공간 애니메이션 방지).
+    private static double MeasureContentHeight(FrameworkElement host, double avail)
+    {
+        double w = host.ActualWidth > 0 ? host.ActualWidth : double.PositiveInfinity;
+        double h = avail > 0 ? avail : double.PositiveInfinity;
+        host.Measure(new System.Windows.Size(w, h));
+        return host.DesiredSize.Height;
     }
 
     // 화살표(삼각형) 단일 클릭 → 폴더 접기/펼치기. 텍스트 영역으로의 전파는 막는다.

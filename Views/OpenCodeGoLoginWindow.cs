@@ -1,18 +1,14 @@
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows;
-using System.Windows.Interop;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
 
 /// <summary>opencode.ai 로그인 창. 사용자가 로그인하면 auth 쿠키와 workspaceId 를 자동 캡처해
 /// <see cref="OpenCodeGoCredentialStore"/> 에 저장한다. 캡처되면 <see cref="Captured"/>=true 로 닫힌다.</summary>
-public sealed class OpenCodeGoLoginWindow : Window
+public sealed class OpenCodeGoLoginWindow : UsageLoginWindowBase
 {
     private const string StartUrl = "https://opencode.ai/auth";
 
@@ -30,64 +26,24 @@ public sealed class OpenCodeGoLoginWindow : Window
         "(document.head||document.documentElement).appendChild(s);}catch(e){}}" +
         "add();if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',add);})();";
 
-    // 창 타이틀바 다크 모드(Windows 10 2004+ / 11). 웹은 다크인데 OS 기본 타이틀바만 흰색이던 문제.
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-
-    private readonly WebView2 _view = new();
     private readonly DispatcherTimer _probe;
     private bool _done;
 
-    /// <summary>로그인·캡처 성공 여부.</summary>
-    public bool Captured { get; private set; }
-
     public OpenCodeGoLoginWindow(Window? owner)
+        : base(owner, "opencode.ai 로그인 — 로그인하면 자동으로 연결됩니다")
     {
-        Owner = owner;
-        Title = "opencode.ai 로그인 — 로그인하면 자동으로 연결됩니다";
-        Width = 520; Height = 680;
-        WindowStartupLocation = owner != null ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen;
-
-        // 다크 테마면 창/뷰 배경을 어둡게 — 로딩 중 흰 깜빡임 방지(WebView2 다크는 InitAsync 에서 적용).
-        bool dark = App.CurrentTheme == "dark";
-        Background = new System.Windows.Media.SolidColorBrush(
-            dark ? System.Windows.Media.Color.FromRgb(0x1e, 0x1e, 0x1e) : System.Windows.Media.Colors.White);
-        _view.DefaultBackgroundColor = dark
-            ? System.Drawing.Color.FromArgb(0x1e, 0x1e, 0x1e) : System.Drawing.Color.White;
-        Content = _view;
-
         _probe = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
         _probe.Tick += async (_, _) => await TryCaptureAsync();
 
-        // 다크 테마면 OS 타이틀바도 다크로(웹 콘텐츠는 다크인데 흰 타이틀바만 남던 문제).
-        if (dark)
-            SourceInitialized += (_, _) =>
-            {
-                try
-                {
-                    var hwnd = new WindowInteropHelper(this).Handle;
-                    int on = 1;
-                    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
-                }
-                catch { }
-            };
-
         Loaded += async (_, _) => await InitAsync();
-        Closed += (_, _) => { _probe.Stop(); try { _view.Dispose(); } catch { } };
+        Closed += (_, _) => _probe.Stop();
     }
 
     private async Task InitAsync()
     {
         try
         {
-            var userDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "WebView2");
-            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
-            await _view.EnsureCoreWebView2Async(env);
-            // 앱 테마에 맞춰 웹 콘텐츠도 다크/라이트 적용(prefers-color-scheme).
-            _view.CoreWebView2.Profile.PreferredColorScheme = App.CurrentTheme == "dark"
-                ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
+            await InitializeBrowserAsync();
             // opencode.ai(OpenAuth) 로그인 UI 가 prefers-color-scheme 를 무시할 때를 대비해,
             // 디자인 변수(--color-*)를 다크값으로 강제하는 CSS 를 주입(헤더·배경 다크).
             // 문서 생성 시점(깜빡임 방지) + 네비게이션 완료 후(확실한 적용) 양쪽에서 주입.

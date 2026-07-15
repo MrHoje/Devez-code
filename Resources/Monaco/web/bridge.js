@@ -50,6 +50,8 @@
         try {
           editor = monaco.editor.createDiffEditor(document.getElementById('c'), {
             readOnly: true, automaticLayout: true, renderSideBySide: true,
+            mouseWheelZoom: true,             // Ctrl+휠로 diff 글꼴 크기 조절
+            stickyScroll: { enabled: false }, // 스크롤 시 메서드/태그 상단 고정 숨김
             minimap: { enabled: false },        // 미니맵 제거 — 좌우 스크롤바 대칭·간결
             scrollBeyondLastLine: false,
             renderOverviewRuler: false,         // 통합(우측끝) 룰러 끔 — 좌/우 각 패널 자체 스크롤바가 자기쪽 변경 표시

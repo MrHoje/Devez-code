@@ -1,82 +1,43 @@
 using System.Net.Http;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
 using DevezCode.Services;
 
 namespace DevezCode.Views;
 
 /// <summary>Grok Build(xAI) OAuth 로그인 창. Grok CLI / open-grok-build 와 동일한 PKCE 플로우.
 /// redirect(localhost)는 실제 서버 없이 WebView2 NavigationStarting 에서 가로채 처리한다.</summary>
-public sealed class GrokLoginWindow : Window
+public sealed class GrokLoginWindow : UsageLoginWindowBase
 {
     private const string ClientId = GrokCredentialStore.OAuthClientId;
     private const string DiscoveryUrl = "https://auth.x.ai/.well-known/openid-configuration";
     private const string Redirect = "http://127.0.0.1:56122/callback";
     private const string Scope = "openid profile email offline_access grok-cli:access api:access";
 
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-
-    private readonly WebView2 _view = new();
     private readonly string _verifier;
     private readonly string _state;
     private readonly string _nonce;
     private string? _tokenEndpoint;
     private bool _done;
 
-    public bool Captured { get; private set; }
-
     public GrokLoginWindow(Window? owner)
+        : base(owner, "Grok Build 로그인 — 로그인하면 자동으로 연결됩니다")
     {
-        Owner = owner;
-        Title = "Grok Build 로그인 — 로그인하면 자동으로 연결됩니다";
-        Width = 520; Height = 680;
-        WindowStartupLocation = owner != null ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen;
-
-        bool dark = App.CurrentTheme == "dark";
-        Background = new System.Windows.Media.SolidColorBrush(
-            dark ? System.Windows.Media.Color.FromRgb(0x1e, 0x1e, 0x1e) : System.Windows.Media.Colors.White);
-        _view.DefaultBackgroundColor = dark
-            ? System.Drawing.Color.FromArgb(0x1e, 0x1e, 0x1e) : System.Drawing.Color.White;
-        Content = _view;
-
         _verifier = RandomUrlSafe(32);
         _state = RandomUrlSafe(16);
         _nonce = RandomUrlSafe(16);
 
-        if (dark)
-            SourceInitialized += (_, _) =>
-            {
-                try
-                {
-                    var hwnd = new WindowInteropHelper(this).Handle;
-                    int on = 1;
-                    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
-                }
-                catch { }
-            };
-
         Loaded += async (_, _) => await InitAsync();
-        Closed += (_, _) => { try { _view.Dispose(); } catch { } };
     }
 
     private async Task InitAsync()
     {
         try
         {
-            var userDataDir = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevezCode", "WebView2");
-            var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
-            await _view.EnsureCoreWebView2Async(env);
-            if (App.CurrentTheme == "dark")
-                _view.CoreWebView2.Profile.PreferredColorScheme = CoreWebView2PreferredColorScheme.Dark;
+            await InitializeBrowserAsync();
 
             _view.CoreWebView2.NavigationStarting += OnNavigationStarting;
             _view.CoreWebView2.WebMessageReceived += OnWebMessageReceived;

@@ -83,10 +83,12 @@ public partial class FileExplorerView : UserControl
 
     private void Tree_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        var scrollViewer = (ScrollViewer)sender;
+        // ScrollChanged 는 TreeView 버블링 이벤트라 sender 가 TreeView(ScrollViewer 아님).
+        // 캐스트하면 InvalidCastException 크래시 → e 의 오프셋을 직접 사용.
+        double scrollableHeight = e.ExtentHeight - e.ViewportHeight;
         FileTreeFadeTop.Visibility = e.VerticalOffset > 0.5
             ? Visibility.Visible : Visibility.Collapsed;
-        FileTreeFadeBottom.Visibility = scrollViewer.VerticalOffset < scrollViewer.ScrollableHeight - 0.5
+        FileTreeFadeBottom.Visibility = e.VerticalOffset < scrollableHeight - 0.5
             ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -232,6 +234,9 @@ public partial class FileExplorerView : UserControl
 
         // 파일 검색 박스는 탐색기(Directory) 모드에서만 의미가 있으므로 그때만 표시.
         FileSearchRow.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
+        PathText.ToolTip = idx == 2
+            ? "M = 수정됨\nA = 추가됨\nD = 삭제됨\nR = 이름 변경됨\nU = 병합되지 않음"
+            : null;
 
         PathText.Text = idx switch
         {

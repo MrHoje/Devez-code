@@ -36,6 +36,9 @@
     <Thickness x:Key="WindowShadowOuterMargin">20</Thickness>
     <Thickness x:Key="WindowShadowInnerMargin">1</Thickness>
     <CornerRadius x:Key="WindowShadowCornerRadius">13</CornerRadius>
+    <!-- Visual Studio 파일 아이콘의 테마별 자산 전환. App.SetTheme에서 갱신. -->
+    <sys:Double x:Key="LightFileIconOpacity">1</sys:Double>
+    <sys:Double x:Key="DarkFileIconOpacity">0</sys:Double>
 
     <SolidColorBrush x:Key="BgBrush"          Color="{DynamicResource BgColor}"/>
     <SolidColorBrush x:Key="PanelBrush"        Color="{DynamicResource PanelColor}"/>

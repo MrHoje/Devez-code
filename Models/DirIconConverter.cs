@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace DevezCode.Models;
 
@@ -41,15 +42,21 @@ public sealed class DirIconConverter : IValueConverter
 
     public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        var key = value is FileNode node ? GetIconKey(node) : value is true ? "IconFolder" : "IconFileText";
+        var key = value switch
+        {
+            FileNode node    => GetIconKey(node.Name, node.IsDirectory),
+            ScmTreeNode node => GetIconKey(node.Name, node.IsFolder),
+            true             => "IconFolder",
+            _                => "IconFileText",
+        };
         return Application.Current?.TryFindResource(key) as Geometry;
     }
 
-    private static string GetIconKey(FileNode node)
+    private static string GetIconKey(string nodeName, bool isDirectory)
     {
-        if (node.IsDirectory) return "IconFolder";
+        if (isDirectory) return "IconFolder";
 
-        var name = node.Name.ToLowerInvariant();
+        var name = nodeName.ToLowerInvariant();
         var ext = Path.GetExtension(name);
 
         if (name is ".gitignore" or ".gitattributes" or ".gitmodules" or ".girignore") return "IconGitBranch";
@@ -70,6 +77,179 @@ public sealed class DirIconConverter : IValueConverter
         if (ext is ".key" or ".pem" or ".crt" or ".cer" or ".pfx") return "IconKey";
 
         return "IconFileText";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Visual Studio 2022 Image Library의 파일 형식 아이콘.
+/// 밝은 테마는 원본, 다크 테마는 Visual Studio ImageThemingUtilities로 변환한 PNG를 사용한다.
+/// </summary>
+public sealed class VisualStudioFileIconConverter : IValueConverter
+{
+    public static readonly VisualStudioFileIconConverter LightInstance = new(dark: false);
+    public static readonly VisualStudioFileIconConverter DarkInstance = new(dark: true);
+
+    private const string PackRoot =
+        "pack://application:,,,/Resources/Images/FileTypes/VisualStudio2022/";
+
+    private static readonly Dictionary<string, string> Icons = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".cs"] = "CSFileNode.png",
+        [".py"] = "PyFileNode.png",
+        [".ts"] = "TSFileNode.png",
+        [".tsx"] = "TSFileNode.png",
+        [".js"] = "JSScript.png",
+        [".jsx"] = "JSXScript.png",
+        [".c"] = "CFile.png",
+        [".h"] = "CFile.png",
+        [".cpp"] = "CPPFileNode.png",
+        [".cc"] = "CPPFileNode.png",
+        [".cxx"] = "CPPFileNode.png",
+        [".hpp"] = "CPPFileNode.png",
+        [".hxx"] = "CPPFileNode.png",
+        [".fs"] = "FSFileNode.png",
+        [".fsi"] = "FSFileNode.png",
+        [".fsx"] = "FSFileNode.png",
+        [".vb"] = "VBFileNode.png",
+        [".css"] = "CSSourceFile.png",
+        [".scss"] = "CSSourceFile.png",
+        [".sass"] = "CSSourceFile.png",
+        [".less"] = "CSSourceFile.png",
+        [".ps1"] = "PowershellFile.png",
+        [".psm1"] = "PowershellFile.png",
+        [".psd1"] = "PowershellFile.png",
+        [".xaml"] = "WPFFile.png",
+        [".razor"] = "CSRazorFile.png",
+        [".cshtml"] = "CSRazorFile.png",
+        [".png"] = "Image.png",
+        [".jpg"] = "Image.png",
+        [".jpeg"] = "Image.png",
+        [".gif"] = "Image.png",
+        [".webp"] = "Image.png",
+        [".bmp"] = "Image.png",
+        [".ico"] = "Image.png",
+        [".svg"] = "Image.png",
+        [".avif"] = "Image.png",
+        [".tif"] = "Image.png",
+        [".tiff"] = "Image.png",
+        [".db"] = "DatabaseFile.png",
+        [".sqlite"] = "DatabaseFile.png",
+        [".sqlite3"] = "DatabaseFile.png",
+        [".mdb"] = "DatabaseFile.png",
+        [".accdb"] = "DatabaseFile.png",
+        [".sql"] = "SQLDatabase.png",
+        [".csproj"] = "CSProjectNode.png",
+        [".fsproj"] = "FSProjectNode.png",
+        [".vbproj"] = "VBProjectNode.png",
+        [".pyproj"] = "PYProjectNode.png",
+        [".json"] = "JsonFile.png",
+        [".jsonc"] = "JsonFile.png",
+        [".html"] = "HTMLFile.png",
+        [".htm"] = "HTMLFile.png",
+        [".xml"] = "XmlFile.png",
+        [".yaml"] = "YamlFile.png",
+        [".yml"] = "YamlFile.png",
+        [".md"] = "MarkdownFile.png",
+        [".markdown"] = "MarkdownFile.png",
+        [".php"] = "PHPFile.png",
+        [".java"] = "JavaSource.png",
+        [".config"] = "ConfigurationFile.png",
+        [".conf"] = "ConfigurationFile.png",
+        [".ini"] = "ConfigurationFile.png",
+        [".toml"] = "ConfigurationFile.png",
+        [".props"] = "ConfigurationFile.png",
+        [".targets"] = "ConfigurationFile.png",
+        [".txt"] = "TextFile.png",
+        [".log"] = "TextFile.png",
+        [".rtf"] = "TextFile.png",
+    };
+
+    // 기존 파일명 전용 아이콘(package, git, .NET 구성)을 우선한다.
+    private static readonly HashSet<string> UseFallbackIcon = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb",
+        "global.json", "nuget.config",
+    };
+
+    private static readonly Dictionary<string, ImageSource> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly bool _dark;
+
+    private VisualStudioFileIconConverter(bool dark) => _dark = dark;
+
+    public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var (name, isDirectory) = value switch
+        {
+            FileNode node    => (node.Name, node.IsDirectory),
+            ScmTreeNode node => (node.Name, node.IsFolder),
+            string text      => (text, false),
+            _                => (string.Empty, true),
+        };
+        if (isDirectory || string.IsNullOrWhiteSpace(name) || UseFallbackIcon.Contains(name)) return null;
+
+        var ext = Path.GetExtension(name);
+        if (!Icons.TryGetValue(ext, out var fileName)) return null;
+        return LoadIcon(_dark, fileName);
+    }
+
+    internal static ImageSource LoadIcon(bool dark, string fileName)
+    {
+        var uri = PackRoot + (dark ? "Dark/" : string.Empty) + fileName;
+
+        lock (Cache)
+        {
+            if (Cache.TryGetValue(uri, out var cached)) return cached;
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(uri, UriKind.Absolute);
+            image.EndInit();
+            image.Freeze();
+            Cache[uri] = image;
+            return image;
+        }
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>트리 펼침 상태에 맞는 Visual Studio 폴더 아이콘.</summary>
+public sealed class VisualStudioFolderIconConverter : IValueConverter
+{
+    public static readonly VisualStudioFolderIconConverter LightInstance = new(false);
+    public static readonly VisualStudioFolderIconConverter DarkInstance = new(true);
+    private const string PackRoot =
+        "pack://application:,,,/Resources/Images/FileTypes/VisualStudio2017/";
+    private static readonly Dictionary<string, ImageSource> Cache = [];
+    private readonly bool _dark;
+
+    private VisualStudioFolderIconConverter(bool dark) => _dark = dark;
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => LoadIcon(_dark, value is true);
+
+    private static ImageSource LoadIcon(bool dark, bool opened)
+    {
+        var uri = PackRoot
+            + (dark ? "Dark/" : string.Empty)
+            + (opened ? "FolderOpened.png" : "FolderClosed.png");
+
+        lock (Cache)
+        {
+            if (Cache.TryGetValue(uri, out var cached)) return cached;
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(uri, UriKind.Absolute);
+            image.EndInit();
+            image.Freeze();
+            Cache[uri] = image;
+            return image;
+        }
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

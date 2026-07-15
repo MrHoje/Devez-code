@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:DevezCode.Models"
+             xmlns:v="clr-namespace:DevezCode.Views"
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
@@ -20,14 +21,13 @@
                                  처리해 더블토글(두 번 동작해 제자리) 방지. -->
                             <Border x:Name="Bd" CornerRadius="6" Background="Transparent" SnapsToDevicePixels="True">
                                 <ContentPresenter ContentSource="Header"
-                                                  HorizontalAlignment="Stretch" Margin="0,2,0,3"/>
+                                                  HorizontalAlignment="Stretch" Margin="0,3,0,3"/>
                             </Border>
-                            <ItemsPresenter x:Name="ItemsHost" Margin="16,0,0,0"/>
+                            <ItemsPresenter x:Name="ItemsHost" Margin="16,0,0,0"
+                                            Visibility="Collapsed" v:SlideExpand.IsEnabled="True"/>
                         </StackPanel>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsExpanded" Value="False">
-                                <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
-                            </Trigger>
+                            <!-- ItemsHost 가시성/높이는 v:SlideExpand 가 애니메이션과 함께 관리(트리거 제거) -->
                             <Trigger SourceName="Bd" Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}"/>
                             </Trigger>
@@ -55,42 +55,71 @@
                           RenderTransformOrigin="0.5,0.5"
                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
-                <!-- 폴더/파일 아이콘(파일 종류 구분 없이 일반 파일 아이콘) -->
-                <Path Grid.Column="1" Style="{StaticResource LucideIcon}"
-                      Data="{Binding IsFolder, Converter={x:Static models:DirIconConverter.Instance}}"
-                      Width="14" Height="14" Stroke="{DynamicResource TextMutedBrush}"
-                      VerticalAlignment="Center"/>
+                <!-- 파일 탐색기와 동일한 확장자별 Visual Studio 파일 아이콘. -->
+                <Grid Grid.Column="1" Width="16" Height="16" VerticalAlignment="Center">
+                    <Path x:Name="FallbackFileIcon" Style="{StaticResource LucideIcon}"
+                          Data="{Binding Converter={x:Static models:DirIconConverter.Instance}}"
+                          Width="14" Height="14" Visibility="Collapsed"
+                          Stroke="{DynamicResource TextMutedBrush}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Image Source="{Binding Converter={x:Static models:VisualStudioFileIconConverter.LightInstance}}"
+                           Width="16" Height="16" Stretch="None"
+                           Opacity="{DynamicResource LightFileIconOpacity}"/>
+                    <Image Source="{Binding Converter={x:Static models:VisualStudioFileIconConverter.DarkInstance}}"
+                           Width="16" Height="16" Stretch="None"
+                           Opacity="{DynamicResource DarkFileIconOpacity}"/>
+                    <Grid x:Name="VisualStudioFolderIcon" Visibility="Collapsed">
+                        <Image Source="{Binding IsExpanded, Converter={x:Static models:VisualStudioFolderIconConverter.LightInstance}}"
+                               Width="16" Height="16" Stretch="None"
+                               Opacity="{DynamicResource LightFileIconOpacity}"/>
+                        <Image Source="{Binding IsExpanded, Converter={x:Static models:VisualStudioFolderIconConverter.DarkInstance}}"
+                               Width="16" Height="16" Stretch="None"
+                               Opacity="{DynamicResource DarkFileIconOpacity}"/>
+                    </Grid>
+                </Grid>
                 <TextBlock Grid.Column="2" Text="{Binding Name}" Margin="7,0,0,0"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                           ToolTip="{Binding Change.Path}"
-                           FontSize="{DynamicResource Fs12}"
-                           Foreground="{DynamicResource TextBrush}"/>
+                           ToolTip="{Binding Change.Path}" v:RowToolTip.ShowWhenTrimmed="True"
+                           FontSize="{DynamicResource Fs12}">
+                    <TextBlock.Style>
+                        <!-- 삭제(D)된 파일은 VS 처럼 취소선 + 살짝 흐린 색 -->
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Status}" Value="D">
+                                    <Setter Property="TextDecorations" Value="Strikethrough"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
                 <!-- 파일 리프 액션: discard(↩)+stage(+) 또는 unstage(−). 폴더면 숨김.
                      기본 Opacity=0(공간은 유지) → 행 hover 시에만 1 로 노출(리플로우 없음). -->
                 <Button x:Name="DiscardBtn" Grid.Column="3" Tag="{Binding Change}"
-                        Click="Discard_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2"
+                        Click="Discard_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
                         Visibility="Collapsed" ToolTip="변경 취소">
                     <Path Data="{StaticResource IconRotateCcw}" Width="10" Height="10" Stretch="Uniform"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                 </Button>
                 <Button x:Name="StageBtn" Grid.Column="4" Tag="{Binding Change}"
-                        Click="Stage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2"
+                        Click="Stage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
                         Visibility="Collapsed" ToolTip="stage">
                     <Path Data="{StaticResource IconPlus}" Width="10" Height="10" Stretch="Uniform"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                 </Button>
                 <Button x:Name="UnstageBtn" Grid.Column="4" Tag="{Binding Change}"
-                        Click="Unstage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2"
+                        Click="Unstage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
                         Visibility="Collapsed" ToolTip="unstage">
                     <Rectangle Width="8" Height="1.5" RadiusX="1" RadiusY="1"
                                Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                 </Button>
                 <!-- 파일 상태 글자(폴더면 빈칸) — 우측 정렬 -->
-                <TextBlock Grid.Column="5" Text="{Binding Status}" Width="14" Margin="11,0,10,0"
+                <TextBlock Grid.Column="5" Text="{Binding Status}" Width="14" Margin="11,0,12,0"
                            VerticalAlignment="Center" TextAlignment="Center"
-                           FontWeight="Bold" FontSize="{DynamicResource Fs12}" Foreground="{Binding StatusColor}"/>
+                           FontWeight="Bold" FontSize="{DynamicResource Fs8}" Foreground="{Binding StatusColor}"/>
             </Grid>
             <HierarchicalDataTemplate.Triggers>
                 <!-- 파일이면 삼각형 숨김 -->
@@ -102,6 +131,17 @@
                     <Setter TargetName="Tri" Property="RenderTransform">
                         <Setter.Value><RotateTransform Angle="90"/></Setter.Value>
                     </Setter>
+                </DataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsFolder}" Value="False"/>
+                        <Condition Binding="{Binding Converter={x:Static models:VisualStudioFileIconConverter.LightInstance}}"
+                                   Value="{x:Null}"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="FallbackFileIcon" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+                <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                    <Setter TargetName="VisualStudioFolderIcon" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
                 <!-- 평소엔 버튼 숨김 → 이름이 M/U 바로 옆까지 표시. hover 시에만 상태별 버튼 노출
                      → 이름 칼럼이 줄며 자동으로 …(CharacterEllipsis) 처리. -->
@@ -308,46 +348,52 @@
                     </Grid.ColumnDefinitions>
                     <Path Grid.Column="0" Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
                           Style="{StaticResource LucideIcon}" Stroke="{DynamicResource TextMutedBrush}"
-                          VerticalAlignment="Center"/>
+                          VerticalAlignment="Center" Margin="0,2,0,0"/>
                     <TextBlock x:Name="BranchText" Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource TextBrush}" FontSize="{DynamicResource Fs12}"/>
                     <!-- fetch(점선 아래 화살표)를 맨 왼쪽으로. pull/push/fetch 동일 크기. -->
                     <Button x:Name="FetchBtn" Grid.Column="2" Click="Fetch_Click"
                             Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="fetch">
-                        <!-- Codicon git-fetch (MIT) — 점선(대시) 아래 화살표 -->
-                        <Path Data="M13.854 8.854L8.85401 13.854C8.75601 13.952 8.62801 14 8.50001 14C8.37201 14 8.24401 13.951 8.14601 13.854L3.14601 8.854C2.95101 8.659 2.95101 8.342 3.14601 8.147C3.34101 7.952 3.65801 7.952 3.85301 8.147L7.99901 12.293V10.427C7.99901 10.151 8.22301 9.927 8.49901 9.927C8.77501 9.927 8.99901 10.151 8.99901 10.427V12.293L13.145 8.147C13.34 7.952 13.657 7.952 13.852 8.147C14.047 8.342 14.047 8.659 13.852 8.854H13.854ZM8.50001 9C8.77601 9 9.00001 8.776 9.00001 8.5V6.5C9.00001 6.224 8.77601 6 8.50001 6C8.22401 6 8.00001 6.224 8.00001 6.5V8.5C8.00001 8.776 8.22401 9 8.50001 9ZM8.50001 5C8.77601 5 9.00001 4.776 9.00001 4.5V2.5C9.00001 2.224 8.77601 2 8.50001 2C8.22401 2 8.00001 2.224 8.00001 2.5V4.5C8.00001 4.776 8.22401 5 8.50001 5Z"
-                              Width="14" Height="14" Stretch="Uniform"
-                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        <!-- 좁은 fetch(점선 아래 화살표) — 세로 꽉·가로 좁게 직접 그림 -->
+                        <Path Data="M6 1 V13.5 M2.5 9.5 L6 13.5 L9.5 9.5"
+                              Style="{StaticResource LucideIcon}" StrokeThickness="1.5" SnapsToDevicePixels="False"
+                              StrokeDashArray="0.75 1.4" StrokeDashCap="Round"
+                              Width="14" Height="14"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
                     <Button x:Name="PullBtn" Grid.Column="3" Click="Pull_Click" Margin="2,0,0,0"
                             Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="pull">
-                        <!-- Codicon arrow-down (MIT) -->
-                        <Path Data="M13.854 8.146C13.659 7.951 13.342 7.951 13.147 8.146L9.00096 12.292V2.5C9.00096 2.224 8.77696 2 8.50096 2C8.22496 2 8.00096 2.224 8.00096 2.5V12.293L3.85496 8.147C3.65996 7.952 3.34296 7.952 3.14796 8.147C2.95296 8.342 2.95296 8.659 3.14796 8.854L8.14796 13.854C8.24596 13.952 8.37396 14 8.50196 14C8.62996 14 8.75796 13.951 8.85596 13.854L13.856 8.854C14.051 8.659 14.051 8.342 13.856 8.147L13.854 8.146Z"
-                              Width="14" Height="14" Stretch="Uniform"
-                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        <!-- 좁은 arrow-down(pull) -->
+                        <Path Data="M6 2 V14 M2.5 10 L6 14 L9.5 10"
+                              Style="{StaticResource LucideIcon}" StrokeThickness="1.5" SnapsToDevicePixels="False"
+                              Width="14" Height="14"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
                     <Button x:Name="PushBtn" Grid.Column="4" Click="Push_Click" Margin="2,0,0,0"
                             Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="push">
-                        <!-- Codicon arrow-up (MIT) -->
-                        <Path Data="M13.854 7.14576L8.85401 2.14576C8.65901 1.95076 8.34201 1.95076 8.14701 2.14576L3.14601 7.14576C2.95101 7.34076 2.95101 7.65776 3.14601 7.85276C3.34101 8.04776 3.65801 8.04776 3.85301 7.85276L7.99901 3.70676V13.4998C7.99901 13.7758 8.22301 13.9998 8.49901 13.9998C8.77501 13.9998 8.99901 13.7758 8.99901 13.4998V3.70676L13.145 7.85276C13.243 7.95076 13.371 7.99876 13.499 7.99876C13.627 7.99876 13.755 7.94976 13.853 7.85276C14.048 7.65776 14.048 7.34076 13.853 7.14576H13.854Z"
-                              Width="14" Height="14" Stretch="Uniform"
-                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        <!-- 좁은 arrow-up(push) -->
+                        <Path Data="M6 14 V2 M2.5 6 L6 2 L9.5 6"
+                              Style="{StaticResource LucideIcon}" StrokeThickness="1.5" SnapsToDevicePixels="False"
+                              Width="14" Height="14"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
                 </Grid>
 
-                <!-- 커밋 메시지 카드 -->
+                <!-- 커밋 메시지 카드 (라운드=아래 커밋 버튼과 동일한 5) -->
                 <Border Background="{DynamicResource BgBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                        CornerRadius="10" Padding="10,6">
+                        CornerRadius="5" Padding="10,6">
                     <Grid>
+                        <!-- 높이는 코드비하인드에서 실제 폰트 라인높이×3 으로 확정(테마 폰트크기 연동).
+                             MinLines/MaxLines 는 커스텀 폰트 로드 타이밍에 간헐 실패해 사용하지 않음. -->
                         <TextBox x:Name="MsgBox" BorderThickness="0" Background="Transparent"
                                  Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource TextBrush}"
                                  FontFamily="{StaticResource PretendardFont}" FontSize="{DynamicResource Fs12}"
-                                 MinLines="3" MaxLines="8" TextWrapping="Wrap" AcceptsReturn="True"
+                                 TextWrapping="Wrap" AcceptsReturn="True"
                                  VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
                                  TextChanged="MsgBox_TextChanged" PreviewKeyDown="MsgBox_PreviewKeyDown"/>
-                        <TextBlock x:Name="MsgPlaceholder" Text="메시지" IsHitTestVisible="False"
+                        <TextBlock x:Name="MsgPlaceholder" Text="커밋 메시지 입력" IsHitTestVisible="False"
                                    VerticalAlignment="Top" Margin="1,0,0,0"
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    FontFamily="{StaticResource PretendardFont}" FontSize="{DynamicResource Fs12}">

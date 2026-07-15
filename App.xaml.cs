@@ -498,6 +498,8 @@ public partial class App : Application
         res["PrimarySoftColor"]    = primarySoft;
         res["BubbleColor"]         = bubble;
         res["BubbleBorderColor"]   = bubbleBorder;
+        res["LightFileIconOpacity"] = theme == "dark" ? 0.0 : 1.0;
+        res["DarkFileIconOpacity"]  = theme == "dark" ? 1.0 : 0.0;
 
         res["BgBrush"]                = new SolidColorBrush(bg);
         res["PanelBrush"]             = new SolidColorBrush(panel);
