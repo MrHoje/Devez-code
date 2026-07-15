@@ -27,6 +27,17 @@ public partial class GitScmView : UserControl
     public GitScmView()
     {
         InitializeComponent();
+        ScmBodyGrid.SizeChanged += (_, _) => UpdateStagedCap();
+    }
+
+    // 스테이징·변경 둘 다 있을 때만 스테이징 높이를 전체의 절반으로 캡(초과분은 내부 스크롤).
+    // 스테이징만 있으면 캡 해제해 남는 공간을 채운다.
+    private void UpdateStagedCap()
+    {
+        bool both = _staged.Count > 0 && _unstaged.Count > 0;
+        StagedTreeHost.MaxHeight = both && ScmBodyGrid.ActualHeight > 0
+            ? ScmBodyGrid.ActualHeight * 0.5
+            : double.PositiveInfinity;
     }
 
     public void SetRepo(string? path) { if (_repo == path) return; _repo = path; }
@@ -53,15 +64,17 @@ public partial class GitScmView : UserControl
 
     private void UpdateButtons()
     {
-        CommitBtn.IsEnabled = !_busy && _staged.Count > 0 && !string.IsNullOrWhiteSpace(MsgBox.Text);
+        CommitBtn.IsEnabled = !_busy && (_staged.Count > 0 || _unstaged.Count > 0) && !string.IsNullOrWhiteSpace(MsgBox.Text);
         PushBtn.IsEnabled = PullBtn.IsEnabled = FetchBtn.IsEnabled = !_busy && _branch.Branch != null;
 
-        StagedHeader.Text = $"Staged Changes {_staged.Count}";
-        StagedHeader.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        StagedTreeHost.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        ChangesHeader.Text = $"Changes {_unstaged.Count}";
-        ChangesHeader.Visibility = _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        UnstagedTreeHost.Visibility = _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        StagedHeader.Text = $"스테이징된 변경 사항 ({_staged.Count})";
+        StagedHeaderRow.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        StagedTreeHost.Visibility = _staged.Count > 0 && !_stagedCollapsed ? Visibility.Visible : Visibility.Collapsed;
+        SectionSeparator.Visibility = _staged.Count > 0 && _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateStagedCap();
+        ChangesHeader.Text = $"변경 내용 ({_unstaged.Count})";
+        ChangesHeaderRow.Visibility = _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UnstagedTreeHost.Visibility = _unstaged.Count > 0 && !_unstagedCollapsed ? Visibility.Visible : Visibility.Collapsed;
 
         var parts = new System.Collections.Generic.List<string>(2);
         if (_branch.Behind > 0) parts.Add($"↓{_branch.Behind}");
@@ -84,8 +97,9 @@ public partial class GitScmView : UserControl
 
     private void ScmTree_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        double scrollableHeight = e.ExtentHeight - e.ViewportHeight;
         bool showTop = e.VerticalOffset > 0.5;
-        bool showBottom = e.VerticalOffset < e.ScrollableHeight - 0.5;
+        bool showBottom = e.VerticalOffset < scrollableHeight - 0.5;
         if (ReferenceEquals(sender, StagedTree))
         {
             StagedFadeTop.Visibility = showTop ? Visibility.Visible : Visibility.Collapsed;
@@ -98,9 +112,35 @@ public partial class GitScmView : UserControl
         }
     }
 
+    // 섹션 통째 접기/펼치기 — 셰브론 방향 갱신 후 UpdateButtons 가 트리 Visibility 반영.
+    private bool _stagedCollapsed, _unstagedCollapsed;
+    private void ToggleStaged(object s, MouseButtonEventArgs e)
+    {
+        _stagedCollapsed = !_stagedCollapsed;
+        StagedChevron.RenderTransform = new System.Windows.Media.RotateTransform(_stagedCollapsed ? 0 : 90);
+        UpdateButtons();
+    }
+    private void ToggleUnstaged(object s, MouseButtonEventArgs e)
+    {
+        _unstagedCollapsed = !_unstagedCollapsed;
+        ChangesChevron.RenderTransform = new System.Windows.Media.RotateTransform(_unstagedCollapsed ? 0 : 90);
+        UpdateButtons();
+    }
+
+    // 화살표(삼각형) 단일 클릭 → 폴더 접기/펼치기. 텍스트 영역으로의 전파는 막는다.
+    private void Tri_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ScmTreeNode node } || !node.IsFolder) return;
+        if (e.ClickCount == 1) node.IsExpanded = !node.IsExpanded;
+        e.Handled = true;
+    }
+
+    // 텍스트 영역: 더블클릭에서 동작(폴더 접기/펼치기 · 파일 열기).
     private void Node_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ScmTreeNode node }) return;
+        if (e.ClickCount != 2) return;
+        e.Handled = true;   // TreeViewItem 기본 더블클릭-확장과 상쇄(2번 토글=제자리) 방지
         if (node.IsFolder) { node.IsExpanded = !node.IsExpanded; return; }
         if (_repo != null && node.Change != null)
             DiffFileActivated?.Invoke(_repo, node.Change.Path, node.Change.IsStaged);
@@ -193,10 +233,16 @@ public partial class GitScmView : UserControl
     {
         if (_repo == null) return;
         var msg = MsgBox.Text.Trim();
-        if (msg.Length == 0 || _staged.Count == 0) return;
+        if (msg.Length == 0 || (_staged.Count == 0 && _unstaged.Count == 0)) return;
         if (!await GitService.HasIdentityAsync(_repo))
         { ConfirmDialog.Alert("커밋 불가", "git 사용자 정보가 없습니다.\ngit config user.name / user.email 설정 후 다시 시도하세요."); return; }
+        // staged 항목이 있으면 그대로 staged 커밋. 없으면 전체 변경을 자동 스테이징 후 커밋(확인 없이).
         _busy = true; UpdateButtons();
+        if (_staged.Count == 0)
+        {
+            var sa = await GitService.StageAllAsync(_repo);
+            if (!sa.Ok) { _busy = false; ConfirmDialog.Alert("스테이징 실패", string.IsNullOrWhiteSpace(sa.Error) ? sa.Output : sa.Error); UpdateButtons(); return; }
+        }
         var r = await GitService.CommitAsync(_repo, msg);
         _busy = false;
         if (!r.Ok) { ConfirmDialog.Alert("커밋 실패", string.IsNullOrWhiteSpace(r.Error) ? r.Output : r.Error); UpdateButtons(); return; }
