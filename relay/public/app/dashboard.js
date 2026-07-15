@@ -128,7 +128,7 @@
     if(state.term&&(state.term.cols!==s.cols||state.term.rows!==s.rows)){state.term.resize(Math.max(2,s.cols),Math.max(2,s.rows));sizeTerminal(s.cols,s.rows)}
   }
 
-  function sendInput(data){if(!data)return;if(!hasControl()){toast('먼저 제어권을 가져오세요.');return}if(state.agent==='codex'&&state.term){state.follow=true;state.mobilePan=0;try{state.term.scrollToBottom()}catch(e){}applyMobilePan()}send({type:'input',roomId:state.selected,data})}
+  function sendInput(data){if(!data)return;if(!hasControl()){toast('먼저 제어권을 가져오세요.');return}if(state.term){state.follow=true;state.mobilePan=0;try{state.term.scrollToBottom()}catch(e){}applyMobilePan()}send({type:'input',roomId:state.selected,data})}
   // 모바일에서는 xterm의 숨은 textarea를 사용하지 않는다. 독립된 네이티브 textarea가 한글을 먼저
   // 조합한 뒤 확정 문자열만 PTY로 보내므로 xterm/Android 키보드별 이벤트 순서 차이에 영향받지 않는다.
   const mobileInput=$('mobile-ime-input'),hangulInitial='ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ',hangulVowel='ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ',hangulFinal=' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
@@ -227,6 +227,7 @@
 
   $('control').onclick=()=>{if(!hasControl())send({type:'claimControl'});else focusTerminalInput()};
   $('refresh').onclick=()=>send({type:'refresh'});$('sidebar-toggle').onclick=openSidebar;$('scrim').onclick=closeSidebar;
+  $('terminal-scroll').addEventListener('pointerup',e=>{if(mobileQuery.matches&&e.pointerType==='touch'&&state.term&&!e.target.closest('#terminal'))focusTerminalInput()});
   $('font-size').addEventListener('change',e=>setWebFontSize(e.target.value));
   $('mobile-keys').addEventListener('click',e=>{const b=e.target.closest('button[data-code]');if(!b)return;const keys={esc:'\x1b',ctrlc:'\x03',up:'\x1b[A',down:'\x1b[B',left:'\x1b[D',right:'\x1b[C',enter:'\r'};flushMobileInput();sendInput(keys[b.dataset.code]||'');focusTerminalInput()});
   mobileInput.addEventListener('focus',settleVisualViewport);
