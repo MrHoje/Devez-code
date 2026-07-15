@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media.Animation;
 using DevezCode.Services;
 
@@ -138,4 +139,9 @@ public partial class AgentUpdateWindow : Window
     }
 
     private void ProceedButton_Click(object sender, RoutedEventArgs e) => ProceedRequested?.Invoke();
+
+    private void Header_DragMove(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left) DragMove();
+    }
 }

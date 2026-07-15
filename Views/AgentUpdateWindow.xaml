@@ -41,7 +41,9 @@
                 </Grid.RowDefinitions>
 
                 <!-- 헤더 -->
-                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                <StackPanel Grid.Row="0" Orientation="Horizontal"
+                            Background="Transparent"
+                            MouseLeftButtonDown="Header_DragMove">
                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBot}"
                           Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,9,0"
                           Stroke="{DynamicResource TextBrush}"/>
