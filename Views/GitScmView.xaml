@@ -32,33 +32,34 @@
             </Setter>
         </Style>
 
-        <!-- TreeViewItem: 파일 탐색기식(삼각형 + 행 + 들여쓴 자식) -->
+        <!-- TreeViewItem: 파일 탐색기식(삼각형 + 행 + 들여쓴 자식). 행은 StackPanel 로 쌓아
+             컨텐츠 크기 기준 레이아웃(중첩 들여쓰기). 트리는 유한 높이 영역에 놓여 내부 ScrollViewer 가
+             가상화한다(아래 본문 참고). -->
         <Style x:Key="ScmTreeItem" TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TreeViewItem">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition MinWidth="16" Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition/>
-                            </Grid.RowDefinitions>
-                            <ToggleButton x:Name="Expander" Grid.Row="0" Grid.Column="0"
-                                          Style="{StaticResource ScmTreeExpander}"
-                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
-                                          ClickMode="Press" VerticalAlignment="Center"/>
-                            <Border x:Name="Bd" Grid.Row="0" Grid.Column="1"
-                                    CornerRadius="6" Background="Transparent"
-                                    Padding="4,3" SnapsToDevicePixels="True">
-                                <ContentPresenter ContentSource="Header" HorizontalAlignment="Stretch"/>
+                        <StackPanel>
+                            <!-- 전체 행(삼각형+컨텐츠)을 한 Border 로 감싼다 — hover 시 col 경계 넘나들며
+                                 IsMouseOver 토글로 깜빡이던 문제 해결(VS Code식 전체행 하이라이트). -->
+                            <Border x:Name="Bd" CornerRadius="6" Background="Transparent" SnapsToDevicePixels="True">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="Expander" Grid.Column="0"
+                                                  Style="{StaticResource ScmTreeExpander}"
+                                                  IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                                                  ClickMode="Press" VerticalAlignment="Center"/>
+                                    <ContentPresenter Grid.Column="1" ContentSource="Header"
+                                                      HorizontalAlignment="Stretch" Margin="0,3"/>
+                                </Grid>
                             </Border>
-                            <ItemsPresenter x:Name="ItemsHost" Grid.Row="1" Grid.Column="1"/>
-                        </Grid>
+                            <ItemsPresenter x:Name="ItemsHost" Margin="16,0,0,0"/>
+                        </StackPanel>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsExpanded" Value="False">
                                 <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
@@ -132,29 +133,43 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="4">
-            <StackPanel>
-                <TextBlock x:Name="StagedHeader" Text="Staged Changes" Margin="6,6,0,2"
-                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                           Foreground="{DynamicResource TextMutedBrush}"/>
-                <TreeView x:Name="StagedTree" Background="Transparent" BorderThickness="0"
-                          ItemContainerStyle="{StaticResource ScmTreeItem}"
-                          ItemTemplate="{StaticResource ScmNode}"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+        <!-- 두 트리를 각각 유한 높이 영역에 두어 TreeView 내부 ScrollViewer(가상화)가 동작하게 한다.
+             바깥 ScrollViewer/StackPanel(무한높이)에 넣으면 UI 가상화가 꺼져 변경 파일 전부를 매 레이아웃
+             패스마다 measure → 대량 변경(예: untracked 폴더) 시 UI 스레드가 코어를 태워 시스템 전체
+             입력까지 느려진다. Staged 는 상한(MaxHeight)까지 자라고, Changes 가 남은 공간을 채운다. -->
+        <Grid Grid.Row="0" Margin="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="StagedHeader" Grid.Row="0" Text="Staged Changes" Margin="2,2,0,2"
+                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+            <TreeView x:Name="StagedTree" Grid.Row="1" MaxHeight="240"
+                      Background="Transparent" BorderThickness="0"
+                      VirtualizingStackPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      ItemContainerStyle="{StaticResource ScmTreeItem}"
+                      ItemTemplate="{StaticResource ScmNode}"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
 
-                <TextBlock x:Name="ChangesHeader" Text="Changes" Margin="6,10,0,2"
-                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                           Foreground="{DynamicResource TextMutedBrush}"/>
-                <TreeView x:Name="UnstagedTree" Background="Transparent" BorderThickness="0"
-                          ItemContainerStyle="{StaticResource ScmTreeItem}"
-                          ItemTemplate="{StaticResource ScmNode}"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+            <TextBlock x:Name="ChangesHeader" Grid.Row="2" Text="Changes" Margin="2,10,0,2"
+                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+            <TreeView x:Name="UnstagedTree" Grid.Row="3"
+                      Background="Transparent" BorderThickness="0"
+                      VirtualizingStackPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      ItemContainerStyle="{StaticResource ScmTreeItem}"
+                      ItemTemplate="{StaticResource ScmNode}"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
 
-                <TextBlock x:Name="EmptyText" Text="변경된 파일이 없습니다." Visibility="Collapsed"
-                           Margin="10" TextAlignment="Center"
-                           Foreground="{DynamicResource TextMutedBrush}"/>
-            </StackPanel>
-        </ScrollViewer>
+            <TextBlock x:Name="EmptyText" Grid.Row="3" Text="변경된 파일이 없습니다." Visibility="Collapsed"
+                       Margin="10" TextAlignment="Center" VerticalAlignment="Top"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+        </Grid>
 
         <Border Grid.Row="1" Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="8">
