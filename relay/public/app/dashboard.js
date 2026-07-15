@@ -2,7 +2,7 @@
   'use strict';
   const $=id=>document.getElementById(id);
   const savedWebFontSize=(()=>{try{const value=Number(localStorage.getItem('devez-dashboard-font-size'));return value>=9&&value<=32?value:0}catch(e){return 0}})();
-  const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,ime:null,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
+  const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
   const mobileQuery=matchMedia('(max-width:720px), (max-height:520px) and (pointer:coarse)');
   const svg={eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',eyeOff:'<svg viewBox="0 0 24 24"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 4.2A10.8 10.8 0 0 1 12 4c6.5 0 10 8 10 8a17 17 0 0 1-2 3M6.6 6.6C3.5 8.5 2 12 2 12s3.5 8 10 8a10 10 0 0 0 4.2-.9"/></svg>',chevronUp:'<svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',chevronDown:'<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',folder:'<svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>'};
   let toastTimer=0,fitFrame=0,viewportFrame=0;
@@ -40,7 +40,7 @@
       session.alive=true;session.cols=msg.cols;session.rows=msg.rows;ensureTerminal(session);const term=state.term;term.reset();term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows);term.write(fromB64(msg.data),()=>{if(state.term!==term)return;term.scrollToBottom();scheduleTerminalFit()});$('empty').classList.add('hidden');renderSessions();return;
     }
     if(msg.type==='output'){if(msg.roomId===state.selected&&state.term)state.term.write(fromB64(msg.data),scheduleTerminalFit);return}
-    if(msg.type==='size'){if(msg.roomId===state.selected&&state.term){state.term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows)}return}
+    if(msg.type==='size'){const session=sessionById(msg.roomId);if(session){session.cols=msg.cols;session.rows=msg.rows}if(msg.roomId===state.selected&&state.term){if(!mobileQuery.matches)state.term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows)}return}
     if(msg.type==='error'){state.starting=false;toast(msg.message||'요청을 처리하지 못했습니다.');syncSelectedMeta()}
   }
 
@@ -56,7 +56,7 @@
   }
   function setWebFontSize(value){
     const size=Math.max(9,Math.min(32,Number(value)||16));state.fontSize=size;state.fontSizePinned=true;try{localStorage.setItem('devez-dashboard-font-size',String(size))}catch(e){}
-    if(state.term){state.term.options.fontSize=size;sizeTerminal(state.term.cols,state.term.rows)}
+    if(state.term){state.term.options.fontSize=size;scheduleTerminalFit();state.term.focus()}
   }
   function themeFor(agent){const t=Object.assign({},state.theme||{});if(agent==='gajae')t.selectionBackground=t.background&&t.background.toLowerCase()==='#f2ede6'?'#C2D8B0':t.background&&t.background.toLowerCase()==='#f8fafc'?'#C5D8F8':'#264F78';return t}
   function sessionById(id){return state.sessions.find(s=>s.roomId===id)}
@@ -125,23 +125,17 @@
     const s=sessionById(state.selected);if(!s){if(state.selected){state.selected=null;disposeTerminal()}$('session-header').classList.add('hidden');showEmpty('세션을 선택하세요','프로젝트의 실행 전 세션도 여기서 바로 열 수 있습니다.','›_');return}
     $('session-header').classList.remove('hidden');$('session-title').textContent=s.name;$('session-project').textContent=s.projectName;$('agent-pill').textContent=s.agent;$('size-label').textContent=s.cols+' × '+s.rows;
     if(state.starting)showEmpty('세션을 시작하는 중입니다','DevezCode의 기존 대화를 그대로 불러오고 있습니다.','…');else if(!state.term&&!s.alive)showEmpty('실행되지 않은 세션입니다','탭하면 DevezCode 세션을 시작합니다.','▶');
-    if(state.term&&(state.term.cols!==s.cols||state.term.rows!==s.rows)){state.term.resize(Math.max(2,s.cols),Math.max(2,s.rows));sizeTerminal(s.cols,s.rows)}
+    if(state.term&&!mobileQuery.matches&&(state.term.cols!==s.cols||state.term.rows!==s.rows)){state.term.resize(Math.max(2,s.cols),Math.max(2,s.rows));sizeTerminal(s.cols,s.rows)}
   }
 
   function sendInput(data){if(!data)return;if(!hasControl()){toast('먼저 제어권을 가져오세요.');return}send({type:'input',roomId:state.selected,data})}
-  function installImeBridge(term){
-    const textarea=term.element&&term.element.querySelector('.xterm-helper-textarea');if(!textarea)return;
-    const ime={composing:false,last:'',skip:'',skipUntil:0};state.ime=ime;
-    textarea.addEventListener('compositionstart',e=>{ime.composing=true;ime.last=e.data||''},true);
-    textarea.addEventListener('compositionupdate',e=>{ime.composing=true;ime.last=e.data||ime.last},true);
-    textarea.addEventListener('beforeinput',e=>{if(e.isComposing||e.inputType==='insertCompositionText'){ime.composing=true;ime.last=e.data||ime.last}},true);
-    textarea.addEventListener('compositionend',e=>{const committed=normalizeIme(e.data||ime.last);ime.composing=false;ime.last='';if(!committed)return;ime.skip=committed;ime.skipUntil=performance.now()+250;sendInput(committed)},true);
-  }
   function ensureTerminal(session){
     if(state.term&&state.agent===session.agent)return;disposeTerminal();state.agent=session.agent;
     const Ctor=session.agent==='codex'&&window.Terminal6?window.Terminal6:window.Terminal,term=new Ctor({theme:themeFor(session.agent),fontFamily:state.fontFamily+", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",fontSize:state.fontSize,cursorBlink:true,allowProposedApi:true,scrollback:5000,windowsPty:{backend:'conpty',buildNumber:0}});
-    state.term=term;$('terminal').classList.add('ready');term.open($('terminal'));installImeBridge(term);
-    term.onData(data=>{const ime=state.ime;if(ime&&ime.composing)return;const normalized=normalizeIme(data);if(ime&&ime.skip&&performance.now()<ime.skipUntil&&normalized===ime.skip){ime.skip='';return}sendInput(data)});
+    state.term=term;$('terminal').classList.add('ready');term.open($('terminal'));
+    // xterm의 CompositionHelper가 textarea의 전체 조합 결과를 계산하도록 맡긴다.
+    // compositionend에서 직접 보내면 모바일 IME가 내는 중간 자모까지 각각 PTY로 전달된다.
+    term.onData(data=>sendInput(normalizeIme(data)));
     term.attachCustomKeyEventHandler(e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='c'&&term.hasSelection()){copyText(term.getSelection());term.clearSelection();return false}return true});
     term.element.addEventListener('pointerdown',()=>setTimeout(()=>term.focus(),0));setTimeout(()=>term.focus(),0);
   }
@@ -152,19 +146,24 @@
   function fitTerminalToViewport(){
     if(!state.term)return;
     const scroll=$('terminal-scroll'),stage=$('terminal-stage'),content=$('terminal-content'),terminal=$('terminal');
-    content.style.transform='none';
     const screen=terminal.querySelector('.xterm-screen');
     if(!screen)return;
     const style=getComputedStyle(terminal),paddingX=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight),paddingY=parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
-    const naturalW=Math.max(1,Math.ceil(screen.offsetWidth+paddingX)),naturalH=Math.max(1,Math.ceil(screen.offsetHeight+paddingY));
-    terminal.style.width=naturalW+'px';terminal.style.height=naturalH+'px';
-    if(!mobileQuery.matches){stage.removeAttribute('style');content.removeAttribute('style');return}
-    const viewportW=Math.max(1,scroll.clientWidth),viewportH=Math.max(1,scroll.clientHeight);
-    // 모바일은 DevezCode와 같은 행·열/종횡비를 유지하고 가로 폭만 화면에 맞춘다.
-    const scale=Math.max(.01,viewportW/naturalW),scaledH=naturalH*scale;
-    stage.style.width=viewportW+'px';stage.style.height=Math.max(viewportH,scaledH)+'px';
-    content.style.width=naturalW+'px';content.style.height=naturalH+'px';
-    content.style.transform='translate3d(0,0,0) scale('+scale+')';
+    if(!mobileQuery.matches){
+      const session=sessionById(state.selected);
+      if(session&&(state.term.cols!==session.cols||state.term.rows!==session.rows)){state.term.resize(Math.max(2,session.cols),Math.max(2,session.rows));scheduleTerminalFit();return}
+      const naturalW=Math.max(1,Math.ceil(screen.offsetWidth+paddingX)),naturalH=Math.max(1,Math.ceil(screen.offsetHeight+paddingY));
+      terminal.style.width=naturalW+'px';terminal.style.height=naturalH+'px';stage.removeAttribute('style');content.removeAttribute('style');return;
+    }
+
+    // 글자를 CSS로 축소하지 않고, 현재 폰트의 실제 셀 크기로 모바일 화면에 들어갈 행·열을 구한다.
+    const screenRect=screen.getBoundingClientRect(),cellW=screenRect.width/Math.max(1,state.term.cols),cellH=screenRect.height/Math.max(1,state.term.rows);
+    if(!(cellW>0&&cellH>0))return;
+    stage.style.width='100%';stage.style.height='100%';content.style.width='100%';content.style.height='100%';terminal.style.width='100%';terminal.style.height='100%';
+    const cols=Math.max(2,Math.floor((scroll.clientWidth-paddingX)/cellW)),rows=Math.max(2,Math.floor((scroll.clientHeight-paddingY)/cellH));
+    const buffer=state.term.buffer&&state.term.buffer.active,follow=!buffer||buffer.viewportY>=buffer.baseY;
+    if(state.term.cols!==cols||state.term.rows!==rows){state.term.resize(cols,rows);if(follow)state.term.scrollToBottom()}
+    $('size-label').textContent=cols+' × '+rows;
   }
   function syncVisualViewport(){
     const viewport=window.visualViewport,root=document.documentElement;
@@ -173,7 +172,7 @@
     root.style.setProperty('--viewport-left',Math.round(viewport?.offsetLeft||0)+'px');root.style.setProperty('--viewport-top',Math.round(viewport?.offsetTop||0)+'px');
     cancelAnimationFrame(viewportFrame);viewportFrame=requestAnimationFrame(scheduleTerminalFit);
   }
-  function disposeTerminal(){if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.ime=null;$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
+  function disposeTerminal(){if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
   function renderControl(){const active=hasControl(),b=$('control');b.classList.toggle('active',active);b.textContent=active?'제어 중':'제어권 가져오기'}
   function openSidebar(){$('sidebar').classList.add('open');$('scrim').classList.add('on')}function closeSidebar(){$('sidebar').classList.remove('open');$('scrim').classList.remove('on')}
 
