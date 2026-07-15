@@ -5,7 +5,7 @@
   const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,resizeRequest:null,mobileGrid:false,autoClaimPending:false,follow:true,userScrollUntil:0,outputChunks:[],outputTimer:0,cursorTimer:0,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
   const mobileQuery=matchMedia('(max-width:720px), (max-height:520px) and (pointer:coarse)');
   const svg={eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',eyeOff:'<svg viewBox="0 0 24 24"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 4.2A10.8 10.8 0 0 1 12 4c6.5 0 10 8 10 8a17 17 0 0 1-2 3M6.6 6.6C3.5 8.5 2 12 2 12s3.5 8 10 8a10 10 0 0 0 4.2-.9"/></svg>',chevronUp:'<svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',chevronDown:'<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',folder:'<svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>'};
-  let toastTimer=0,fitFrame=0,viewportFrame=0,lastViewportWidth=0,lastViewportHeight=0;
+  let toastTimer=0,fitFrame=0,viewportFrame=0,lastViewportWidth=0,lastViewportHeight=0,viewportSettleGen=0;
 
   // 경로 `/app/{deviceId}` 에서 deviceId 를 읽어 릴레이의 /client/{deviceId} 로 연결한다.
   const deviceId=decodeURIComponent(location.pathname.split('/')[2]||'');
@@ -138,7 +138,7 @@
   function updateMobileInputVisual(){mobileInput.classList.toggle('has-text',!!mobileInput.value)}
   function flushMobileInput(){clearTimeout(mobileInputTimer);mobileInputTimer=0;if(mobileInputComposing)return;const value=mobileInput.value;mobileInput.value='';mobileCommitPending=false;updateMobileInputVisual();if(value)sendInput(normalizeIme(composeCompatibilityJamo(value)))}
   function scheduleMobileInputFlush(){clearTimeout(mobileInputTimer);mobileInputTimer=setTimeout(flushMobileInput,700)}
-  function focusTerminalInput(){if(mobileQuery.matches){try{mobileInput.focus({preventScroll:true})}catch(e){mobileInput.focus()}}else if(state.term)state.term.focus()}
+  function focusTerminalInput(){if(mobileQuery.matches){settleVisualViewport();try{mobileInput.focus({preventScroll:true})}catch(e){mobileInput.focus()}}else if(state.term)state.term.focus()}
   function concatChunks(chunks){let length=0;for(const chunk of chunks)length+=chunk.length;const out=new Uint8Array(length);let offset=0;for(const chunk of chunks){out.set(chunk,offset);offset+=chunk.length}return out}
   function stripCursorVisibility(bytes){let count=0,last=0;for(let i=0;i<bytes.length;i++){if(i+5<bytes.length&&bytes[i]===27&&bytes[i+1]===91&&bytes[i+2]===63&&bytes[i+3]===50&&bytes[i+4]===53&&(bytes[i+5]===104||bytes[i+5]===108)){last=bytes[i+5]===104?1:2;i+=5;continue}count++}if(!last)return{bytes,last};const out=new Uint8Array(count);let offset=0;for(let i=0;i<bytes.length;i++){if(i+5<bytes.length&&bytes[i]===27&&bytes[i+1]===91&&bytes[i+2]===63&&bytes[i+3]===50&&bytes[i+4]===53&&(bytes[i+5]===104||bytes[i+5]===108)){i+=5;continue}out[offset++]=bytes[i]}return{bytes:out,last}}
   function scheduleCodexCursor(term){clearTimeout(state.cursorTimer);state.cursorTimer=setTimeout(()=>{state.cursorTimer=0;if(state.term===term)term.write('\x1b[?25h')},150)}
@@ -186,8 +186,11 @@
     }else if(!state.controllerId&&state.clientId&&!state.autoClaimPending){state.autoClaimPending=true;send({type:'claimControl'})}
     if(state.mobileGrid){
       stage.style.width=viewportW+'px';stage.style.height=viewportH+'px';
-      content.style.width=viewportW+'px';content.style.height=viewportH+'px';content.style.transform='none';
-      terminal.style.width=viewportW+'px';terminal.style.height=viewportH+'px';
+      // PTY rows는 키보드가 열려도 유지한다. 대신 실제 터미널 높이는 그대로 두고 전체를 위로 밀어
+      // 마지막 입력 줄이 줄어든 visual viewport의 하단에 항상 맞닿게 한다.
+      const bottomOffset=Math.min(0,viewportH-naturalH);
+      content.style.width=viewportW+'px';content.style.height=naturalH+'px';content.style.transform='translate3d(0,'+bottomOffset+'px,0)';
+      terminal.style.width=viewportW+'px';terminal.style.height=naturalH+'px';
       return;
     }
     // 앱이 아직 새 resize 프로토콜을 처리하지 못하거나 다른 기기가 제어 중이면 안전한 축소 표시를 유지한다.
@@ -204,6 +207,7 @@
     const sizeChanged=width!==lastViewportWidth||height!==lastViewportHeight;lastViewportWidth=width;lastViewportHeight=height;
     if(sizeChanged){cancelAnimationFrame(viewportFrame);viewportFrame=requestAnimationFrame(scheduleTerminalFit)}
   }
+  function settleVisualViewport(){const gen=++viewportSettleGen;for(const delay of [0,60,140,260,440,700])setTimeout(()=>{if(gen!==viewportSettleGen)return;syncVisualViewport();scheduleTerminalFit()},delay)}
   function disposeTerminal(){clearTimeout(state.outputTimer);clearTimeout(state.cursorTimer);clearTimeout(mobileInputTimer);state.outputTimer=state.cursorTimer=mobileInputTimer=0;state.outputChunks=[];mobileInput.value='';mobileInputComposing=mobileCommitPending=false;updateMobileInputVisual();if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.follow=true;state.resizeRequest=null;state.mobileGrid=false;$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
   function renderControl(){const active=hasControl(),b=$('control');b.classList.toggle('active',active);b.textContent=active?'제어 중':'제어권 가져오기'}
   function openSidebar(){$('sidebar').classList.add('open');$('scrim').classList.add('on')}function closeSidebar(){$('sidebar').classList.remove('open');$('scrim').classList.remove('on')}
@@ -212,14 +216,15 @@
   $('refresh').onclick=()=>send({type:'refresh'});$('sidebar-toggle').onclick=openSidebar;$('scrim').onclick=closeSidebar;
   $('font-size').addEventListener('change',e=>setWebFontSize(e.target.value));
   $('mobile-keys').addEventListener('click',e=>{const b=e.target.closest('button[data-code]');if(!b)return;const keys={esc:'\x1b',ctrlc:'\x03',up:'\x1b[A',down:'\x1b[B',left:'\x1b[D',right:'\x1b[C',enter:'\r'};flushMobileInput();sendInput(keys[b.dataset.code]||'');focusTerminalInput()});
-  mobileInput.addEventListener('compositionstart',()=>{mobileInputComposing=true;mobileCommitPending=false;clearTimeout(mobileInputTimer)});
+  mobileInput.addEventListener('focus',settleVisualViewport);
+  mobileInput.addEventListener('compositionstart',()=>{mobileInputComposing=true;mobileCommitPending=false;clearTimeout(mobileInputTimer);settleVisualViewport()});
   mobileInput.addEventListener('compositionupdate',updateMobileInputVisual);
   mobileInput.addEventListener('compositionend',()=>{mobileInputComposing=false;mobileCommitPending=true;updateMobileInputVisual();clearTimeout(mobileInputTimer);mobileInputTimer=setTimeout(flushMobileInput,0)});
   mobileInput.addEventListener('beforeinput',e=>{if(mobileInputComposing||e.isComposing)return;if(e.inputType==='deleteContentBackward'&&!mobileInput.value){e.preventDefault();sendInput('\x7f')}else if(e.inputType==='insertLineBreak'){e.preventDefault();flushMobileInput();sendInput('\r')}});
   mobileInput.addEventListener('input',e=>{updateMobileInputVisual();if(mobileInputComposing||e.isComposing)return;if(mobileCommitPending){flushMobileInput();return}const value=mobileInput.value;if(e.inputType==='insertFromPaste'||/[\s\r\n]$/.test(value)||!/[\u1100-\u11ff\u3131-\u318e\uac00-\ud7a3]/i.test(value))flushMobileInput();else scheduleMobileInputFlush()});
   mobileInput.addEventListener('keydown',e=>{if(mobileInputComposing||e.isComposing||e.keyCode===229)return;if(e.key==='Enter'){e.preventDefault();flushMobileInput();sendInput('\r')}else if(e.key==='Backspace'&&!mobileInput.value){e.preventDefault();sendInput('\x7f')}else if(e.key==='Escape'){e.preventDefault();sendInput('\x1b')}else if(e.ctrlKey&&e.key.toLowerCase()==='c'&&!mobileInput.value){e.preventDefault();sendInput('\x03')}});
   mobileInput.addEventListener('blur',()=>{if(!mobileInputComposing)flushMobileInput()});
-  addEventListener('resize',syncVisualViewport);mobileQuery.addEventListener?.('change',syncVisualViewport);
+  addEventListener('resize',syncVisualViewport);addEventListener('orientationchange',settleVisualViewport);mobileQuery.addEventListener?.('change',syncVisualViewport);
   if(window.visualViewport){visualViewport.addEventListener('resize',syncVisualViewport);visualViewport.addEventListener('scroll',syncVisualViewport)}
   if(window.ResizeObserver)new ResizeObserver(scheduleTerminalFit).observe($('terminal-scroll'));
   syncVisualViewport();connect();
