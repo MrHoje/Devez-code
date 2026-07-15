@@ -45,3 +45,4 @@ button{font:inherit}.shell{width:100%;height:100%;height:100dvh;display:grid;gri
 @media(max-width:370px){.lan-badge{display:none}.control-button{padding:0 9px}.top-actions{gap:6px}}
 @media(prefers-reduced-motion:reduce){.sidebar,.toast{transition-duration:.01ms!important}.control-button:active,#sidebar-toggle:active,.mobile-keys button:active{transform:none}}
 @media(prefers-reduced-transparency:reduce){.topbar,.session-header,.mobile-keys,.sidebar,.mobile-ime-input,.toast{background:var(--panel);-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media(display-mode:standalone){body::before{content:"";position:fixed;z-index:24;top:0;left:0;right:0;height:env(safe-area-inset-top);background:var(--panel);pointer-events:none}.topbar{background:var(--panel)}}
