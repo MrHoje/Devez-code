@@ -21,7 +21,7 @@
   function connect(){
     if(!deviceId){showEmpty('잘못된 접근입니다','올바른 PC 링크로 다시 접속해 주세요.','!');return}
     const protocol=location.protocol==='https:'?'wss:':'ws:',ws=new WebSocket(protocol+'//'+location.host+'/client/'+encodeURIComponent(deviceId));state.socket=ws;
-    ws.onopen=()=>{state.reconnect=0;state.offline=false;$('connection').classList.add('online');$('connection').querySelector('span').textContent='연결됨'};
+    ws.onopen=()=>{state.reconnect=0;state.offline=false;$('connection').classList.add('online');$('connection').querySelector('span').textContent='연결됨';send({type:'refresh'})};
     ws.onmessage=e=>{try{handle(JSON.parse(e.data))}catch(err){console.warn(err)}};
     ws.onclose=()=>{if(state.socket!==ws)return;$('connection').classList.remove('online');$('connection').querySelector('span').textContent='연결 끊김';setTimeout(connect,Math.min(5000,800+state.reconnect++*500))};
   }

@@ -89,6 +89,11 @@ export class DeviceHub {
       if (payload?.type === 'input') {
         console.log(`[audit] input by=${att.email} room=${payload.roomId} bytes=${(payload.data || '').length}`);
       }
+      // 브라우저 연결 직후 refresh는 join 유실 복구용 핸드셰이크이기도 하다.
+      // 구버전 PC 커넥터도 join을 먼저 받으면 즉시 전체 세션 스냅샷을 반환한다.
+      if (payload?.type === 'refresh') {
+        this.sendToPc({ clientId: att.clientId, kind: 'join' });
+      }
       const delivered = this.sendToPc({ clientId: att.clientId, kind: 'msg', payload });
       if (!delivered) ws.send(JSON.stringify({ type: 'offline' }));
       return;
