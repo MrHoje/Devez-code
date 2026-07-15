@@ -6,6 +6,7 @@ import { randomUserCode, randomToken, sha256Hex } from '../util.js';
 
 const PAIR_TTL_SECONDS = 600; // 페어링 진행 유효 시간 10분
 const SECRET_HANDOFF_TTL_SECONDS = 120; // 승인 후 앱이 secret을 수령할 유예 시간
+const COMPLETED_TTL_SECONDS = 60; // Workers KV expirationTtl 최소값. 승인 응답 대기 시간과 무관.
 
 async function readJson(request) {
   try {
@@ -35,7 +36,7 @@ export async function handlePairPoll(request, env) {
   if (!pair) return Response.json({ status: 'expired' });
   if (pair.status === 'approved') {
     // deviceSecret 평문은 1회만 지급하고 즉시 KV에서 제거(평문 미보관 원칙, 스펙 7절).
-    await putPair(env, userCode, { status: 'completed' }, 30);
+    await putPair(env, userCode, { status: 'completed' }, COMPLETED_TTL_SECONDS);
     return Response.json({ status: 'approved', deviceId: pair.deviceId, deviceSecret: pair.deviceSecret });
   }
   return Response.json({ status: pair.status });
