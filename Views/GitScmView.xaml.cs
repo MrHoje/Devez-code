@@ -330,9 +330,21 @@ public partial class GitScmView : UserControl
     private async void Push_Click(object s, RoutedEventArgs e)
     {
         if (_repo == null) return;
-        var msg = _branch.HasUpstream ? $"커밋 {_branch.Ahead}개를 원격에 푸시할까요?" : "이 브랜치를 origin 에 처음 푸시할까요?";
-        if (!ConfirmDialog.Show("푸시", msg, "푸시")) return;
-        await RunRemote(() => GitService.PushAsync(_repo!), "푸시");
+        // 원격에 로컬에 없는 커밋이 있으면(분기) 그냥 push 는 거부됨 → VS 처럼 rebase 후 push 여부를 묻는다.
+        if (_branch.Behind > 0)
+        {
+            if (!ConfirmDialog.Show("푸시",
+                    $"원격에 로컬에 없는 커밋이 {_branch.Behind}개 있습니다.\n원격 변경을 rebase 한 뒤 푸시할까요?",
+                    "rebase 후 푸시"))
+                return;
+            await RunRemote(async () =>
+            {
+                var pr = await GitService.PullRebaseAsync(_repo!);
+                return pr.Ok ? await GitService.PushAsync(_repo!) : pr;   // rebase 실패(충돌 등)면 그 결과를 그대로 알림
+            }, "푸시");
+            return;
+        }
+        await RunRemote(() => GitService.PushAsync(_repo!), "푸시");   // 분기 아님 → 확인 없이 바로 푸시
     }
     private async void Pull_Click(object s, RoutedEventArgs e) => await RunRemote(() => GitService.PullAsync(_repo!), "pull");
     private async void Fetch_Click(object s, RoutedEventArgs e) => await RunRemote(() => GitService.FetchAsync(_repo!), "fetch");

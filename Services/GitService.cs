@@ -129,6 +129,8 @@ public static class GitService
         => RunAsync(repoDir, "commit", "-m", message);
 
     public static Task<GitResult> PullAsync(string repoDir) => RunAsync(repoDir, "pull");
+    /// <summary>원격 변경을 rebase 로 통합(분기 상태에서 push 전에 사용).</summary>
+    public static Task<GitResult> PullRebaseAsync(string repoDir) => RunAsync(repoDir, "pull", "--rebase");
     public static Task<GitResult> FetchAsync(string repoDir) => RunAsync(repoDir, "fetch");
 
     public static async Task<GitResult> PushAsync(string repoDir)
