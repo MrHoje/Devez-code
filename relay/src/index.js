@@ -57,11 +57,16 @@ function tooManyRequests() {
 }
 
 async function serveStatic(request, env, url) {
+  // HTML 자동 정규화는 끄고 진입 문서를 직접 매핑한다. 그렇지 않으면 ASSETS가
+  // /app/index.html을 /app/로 307 리디렉션해 경로의 deviceId를 잃는다.
+  let entryPath = null;
+  if (url.pathname === '/') entryPath = '/index.html';
+  else if (url.pathname === '/pair' || url.pathname === '/pair/') entryPath = '/pair.html';
   // /app/{deviceId} 는 정적 파일이 아니라 대시보드 SPA 셸(index.html)을 반환한다.
   // deviceId는 브라우저 쪽 dashboard.js 가 location.pathname 에서 직접 읽는다.
   if (url.pathname.startsWith('/app/') && url.pathname !== '/app/dashboard.js' && url.pathname !== '/app/dashboard.css') {
-    const shellUrl = new URL('/app/index.html', url);
-    return env.ASSETS.fetch(new Request(shellUrl, request));
+    entryPath = '/app/index.html';
   }
+  if (entryPath) return env.ASSETS.fetch(new Request(new URL(entryPath, url), request));
   return env.ASSETS.fetch(request);
 }

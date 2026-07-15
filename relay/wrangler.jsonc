@@ -9,7 +9,9 @@
   // 정적 자산(포털/대시보드/xterm/폰트/아이콘) 서빙. Worker 코드에서 env.ASSETS.fetch(request)로 사용.
   "assets": {
     "directory": "./public",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "run_worker_first": true
   },
 
   // device 별 DeviceHub 인스턴스 바인딩.
