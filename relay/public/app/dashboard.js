@@ -2,7 +2,7 @@
   'use strict';
   const $=id=>document.getElementById(id);
   const savedWebFontSize=(()=>{try{const value=Number(localStorage.getItem('devez-dashboard-font-size'));return value>=9&&value<=32?value:0}catch(e){return 0}})();
-  const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',ime:null,theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,resizeRequest:null,mobileGrid:false,autoClaimPending:false,follow:true,userScrollUntil:0,outputChunks:[],outputTimer:0,cursorTimer:0,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
+  const state={socket:null,clientId:null,controllerId:null,sessions:[],projects:[],folders:[],selected:null,term:null,agent:'',theme:null,appTheme:'dark',fontFamily:'Cascadia Mono',fontSize:savedWebFontSize||16,baseFontSize:16,fontSizePinned:!!savedWebFontSize,reconnect:0,starting:false,offline:false,resizeRequest:null,mobileGrid:false,autoClaimPending:false,follow:true,userScrollUntil:0,outputChunks:[],outputTimer:0,cursorTimer:0,expandedProjects:new Set(),seenProjects:new Set(),expandedFolders:new Set(),seenFolders:new Set(),collapsedSessions:new Set(),seenSessions:new Set(),showHiddenByProject:new Map(),seenHiddenProjects:new Set()};
   const mobileQuery=matchMedia('(max-width:720px), (max-height:520px) and (pointer:coarse)');
   const svg={eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',eyeOff:'<svg viewBox="0 0 24 24"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 4.2A10.8 10.8 0 0 1 12 4c6.5 0 10 8 10 8a17 17 0 0 1-2 3M6.6 6.6C3.5 8.5 2 12 2 12s3.5 8 10 8a10 10 0 0 0 4.2-.9"/></svg>',chevronUp:'<svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',chevronDown:'<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',folder:'<svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>'};
   let toastTimer=0,fitFrame=0,viewportFrame=0,lastViewportWidth=0,lastViewportHeight=0;
@@ -56,7 +56,7 @@
   }
   function setWebFontSize(value){
     const size=Math.max(9,Math.min(32,Number(value)||16));state.fontSize=size;state.fontSizePinned=true;try{localStorage.setItem('devez-dashboard-font-size',String(size))}catch(e){}
-    if(state.term){state.mobileGrid=false;state.resizeRequest=null;state.term.options.fontSize=size;sizeTerminal(state.term.cols,state.term.rows);state.term.focus()}
+    if(state.term){state.mobileGrid=false;state.resizeRequest=null;state.term.options.fontSize=size;sizeTerminal(state.term.cols,state.term.rows);focusTerminalInput()}
   }
   function themeFor(agent){const t=Object.assign({},state.theme||{});if(agent==='gajae')t.selectionBackground=t.background&&t.background.toLowerCase()==='#f2ede6'?'#C2D8B0':t.background&&t.background.toLowerCase()==='#f8fafc'?'#C5D8F8':'#264F78';return t}
   function sessionById(id){return state.sessions.find(s=>s.roomId===id)}
@@ -129,25 +129,16 @@
   }
 
   function sendInput(data){if(!data)return;if(!hasControl()){toast('먼저 제어권을 가져오세요.');return}if(state.agent==='codex'&&state.term){state.follow=true;try{state.term.scrollToBottom()}catch(e){}}send({type:'input',roomId:state.selected,data})}
-  function installMobileImeGuard(host){
-    if(!mobileQuery.matches)return null;
-    // xterm 모바일 경로가 조합 중간 자모를 onData로 내보내기 전에 브라우저 textarea를 직접 소유한다.
-    // 기본 입력은 막지 않아 IME가 textarea 안에서 완성하도록 하고, 이벤트 전파만 끊어 확정값을 한 번만 보낸다.
-    const ime={active:false,awaiting:false,target:null,startValue:'',endData:'',timer:0};
-    const stop=e=>e.stopImmediatePropagation();
-    const begin=e=>{if(!ime.active&&!ime.awaiting){ime.target=e.target;ime.startValue=typeof e.target?.value==='string'?e.target.value:'';ime.endData=''}ime.active=true;clearTimeout(ime.timer);stop(e)};
-    const reset=()=>{ime.active=false;ime.awaiting=false;ime.target=null;ime.startValue='';ime.endData='';clearTimeout(ime.timer);ime.timer=0};
-    const commit=()=>{if(!ime.active&&!ime.awaiting)return;const target=ime.target,raw=typeof target?.value==='string'?target.value:'',value=raw.startsWith(ime.startValue)?raw.slice(ime.startValue.length):(raw||ime.endData);if(target&&typeof target.value==='string')target.value='';reset();const text=normalizeIme(value);if(text)sendInput(text)};
-    const onStart=e=>begin(e);
-    const onUpdate=e=>{if(!ime.active)begin(e);else stop(e);ime.endData=e.data||ime.endData};
-    const onEnd=e=>{stop(e);ime.active=false;ime.awaiting=true;ime.target=e.target||ime.target;ime.endData=e.data||ime.endData;clearTimeout(ime.timer);ime.timer=setTimeout(commit,0)};
-    const onBefore=e=>{if(ime.active||ime.awaiting||e.isComposing||e.inputType==='insertCompositionText'){if(!ime.active&&!ime.awaiting)begin(e);else stop(e)}};
-    const onInput=e=>{if(!(ime.active||ime.awaiting||e.isComposing||e.inputType==='insertCompositionText'))return;stop(e);if(!e.isComposing&&(ime.awaiting||e.inputType!=='insertCompositionText'))commit()};
-    const onKey=e=>{if(e.keyCode===229||ime.active||ime.awaiting)stop(e)};
-    host.addEventListener('compositionstart',onStart,true);host.addEventListener('compositionupdate',onUpdate,true);host.addEventListener('compositionend',onEnd,true);host.addEventListener('beforeinput',onBefore,true);host.addEventListener('input',onInput,true);host.addEventListener('keydown',onKey,true);
-    ime.dispose=()=>{reset();host.removeEventListener('compositionstart',onStart,true);host.removeEventListener('compositionupdate',onUpdate,true);host.removeEventListener('compositionend',onEnd,true);host.removeEventListener('beforeinput',onBefore,true);host.removeEventListener('input',onInput,true);host.removeEventListener('keydown',onKey,true)};
-    return ime;
-  }
+  // 모바일에서는 xterm의 숨은 textarea를 사용하지 않는다. 독립된 네이티브 textarea가 한글을 먼저
+  // 조합한 뒤 확정 문자열만 PTY로 보내므로 xterm/Android 키보드별 이벤트 순서 차이에 영향받지 않는다.
+  const mobileInput=$('mobile-ime-input'),hangulInitial='ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ',hangulVowel='ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ',hangulFinal=' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
+  const vowelPairs={'ㅗㅏ':'ㅘ','ㅗㅐ':'ㅙ','ㅗㅣ':'ㅚ','ㅜㅓ':'ㅝ','ㅜㅔ':'ㅞ','ㅜㅣ':'ㅟ','ㅡㅣ':'ㅢ'},finalPairs={'ㄱㅅ':'ㄳ','ㄴㅈ':'ㄵ','ㄴㅎ':'ㄶ','ㄹㄱ':'ㄺ','ㄹㅁ':'ㄻ','ㄹㅂ':'ㄼ','ㄹㅅ':'ㄽ','ㄹㅌ':'ㄾ','ㄹㅍ':'ㄿ','ㄹㅎ':'ㅀ','ㅂㅅ':'ㅄ'};
+  let mobileInputTimer=0,mobileInputComposing=false,mobileCommitPending=false;
+  function composeCompatibilityJamo(value){const chars=Array.from(value||''),out=[];for(let i=0;i<chars.length;){const initial=hangulInitial.indexOf(chars[i]);let vowel=hangulVowel.indexOf(chars[i+1]);if(initial<0||vowel<0){out.push(chars[i++]);continue}let vowelChar=chars[i+1];i+=2;const joinedVowel=vowelPairs[vowelChar+(chars[i]||'')];if(joinedVowel){vowelChar=joinedVowel;vowel=hangulVowel.indexOf(vowelChar);i++}let final=0;const firstFinal=hangulFinal.indexOf(chars[i]||''),next=chars[i+1];if(firstFinal>0&&(!next||hangulVowel.indexOf(next)<0)){const joinedFinal=finalPairs[(chars[i]||'')+(next||'')],after=chars[i+2];if(joinedFinal&&(!after||hangulVowel.indexOf(after)<0)){final=hangulFinal.indexOf(joinedFinal);i+=2}else{final=firstFinal;i++}}out.push(String.fromCharCode(0xAC00+(initial*21+vowel)*28+final))}return out.join('')}
+  function updateMobileInputVisual(){mobileInput.classList.toggle('has-text',!!mobileInput.value)}
+  function flushMobileInput(){clearTimeout(mobileInputTimer);mobileInputTimer=0;if(mobileInputComposing)return;const value=mobileInput.value;mobileInput.value='';mobileCommitPending=false;updateMobileInputVisual();if(value)sendInput(normalizeIme(composeCompatibilityJamo(value)))}
+  function scheduleMobileInputFlush(){clearTimeout(mobileInputTimer);mobileInputTimer=setTimeout(flushMobileInput,700)}
+  function focusTerminalInput(){if(mobileQuery.matches){try{mobileInput.focus({preventScroll:true})}catch(e){mobileInput.focus()}}else if(state.term)state.term.focus()}
   function concatChunks(chunks){let length=0;for(const chunk of chunks)length+=chunk.length;const out=new Uint8Array(length);let offset=0;for(const chunk of chunks){out.set(chunk,offset);offset+=chunk.length}return out}
   function stripCursorVisibility(bytes){let count=0,last=0;for(let i=0;i<bytes.length;i++){if(i+5<bytes.length&&bytes[i]===27&&bytes[i+1]===91&&bytes[i+2]===63&&bytes[i+3]===50&&bytes[i+4]===53&&(bytes[i+5]===104||bytes[i+5]===108)){last=bytes[i+5]===104?1:2;i+=5;continue}count++}if(!last)return{bytes,last};const out=new Uint8Array(count);let offset=0;for(let i=0;i<bytes.length;i++){if(i+5<bytes.length&&bytes[i]===27&&bytes[i+1]===91&&bytes[i+2]===63&&bytes[i+3]===50&&bytes[i+4]===53&&(bytes[i+5]===104||bytes[i+5]===108)){i+=5;continue}out[offset++]=bytes[i]}return{bytes:out,last}}
   function scheduleCodexCursor(term){clearTimeout(state.cursorTimer);state.cursorTimer=setTimeout(()=>{state.cursorTimer=0;if(state.term===term)term.write('\x1b[?25h')},150)}
@@ -156,15 +147,15 @@
   function ensureTerminal(session){
     if(state.term&&state.agent===session.agent)return;disposeTerminal();state.agent=session.agent;
     const Ctor=session.agent==='codex'&&window.Terminal6?window.Terminal6:window.Terminal,term=new Ctor({theme:themeFor(session.agent),fontFamily:state.fontFamily+", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",fontSize:state.fontSize,cursorBlink:true,allowProposedApi:true,scrollback:5000,windowsPty:{backend:'conpty',buildNumber:0}});
-    const host=$('terminal');state.ime=installMobileImeGuard(host);state.term=term;host.classList.add('ready');term.open(host);
-    // 모바일 IME guard가 브라우저 textarea의 최종값을 직접 보내므로 여기에는 일반 키 입력만 온다.
-    term.onData(data=>sendInput(normalizeIme(data)));
+    const host=$('terminal');state.term=term;host.classList.add('ready');term.open(host);
+    // 모바일 키 입력은 독립 textarea가 담당한다. xterm의 숨은 textarea에서 나온 자모는 전부 무시한다.
+    term.onData(data=>{if(!mobileQuery.matches)sendInput(normalizeIme(data))});
     term.attachCustomKeyEventHandler(e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='c'&&term.hasSelection()){copyText(term.getSelection());term.clearSelection();return false}return true});
     term.onScroll(()=>{if(Date.now()>state.userScrollUntil)return;const buffer=term.buffer.active;state.follow=buffer.viewportY>=buffer.baseY});
     host.addEventListener('wheel',e=>{state.userScrollUntil=Date.now()+500;if(e.deltaY<0)state.follow=false},{passive:true});
     host.addEventListener('touchstart',()=>{state.userScrollUntil=Date.now()+800},{passive:true});
     host.addEventListener('touchmove',()=>{state.userScrollUntil=Date.now()+800;state.follow=false},{passive:true});
-    term.element.addEventListener('pointerdown',()=>setTimeout(()=>term.focus(),0));setTimeout(()=>term.focus(),0);
+    term.element.addEventListener('pointerdown',()=>setTimeout(focusTerminalInput,0));if(!mobileQuery.matches)setTimeout(()=>term.focus(),0);
   }
   function sizeTerminal(cols,rows){
     const terminal=$('terminal'),pad=mobileQuery.matches?12:36;terminal.style.width=Math.max(240,Math.ceil(cols*state.fontSize*.66+pad))+'px';terminal.style.height=Math.max(120,Math.ceil(rows*state.fontSize*1.22+18))+'px';$('size-label').textContent=cols+' × '+rows;scheduleTerminalFit();
@@ -213,14 +204,21 @@
     const sizeChanged=width!==lastViewportWidth||height!==lastViewportHeight;lastViewportWidth=width;lastViewportHeight=height;
     if(sizeChanged){cancelAnimationFrame(viewportFrame);viewportFrame=requestAnimationFrame(scheduleTerminalFit)}
   }
-  function disposeTerminal(){if(state.ime){try{state.ime.dispose()}catch(e){}state.ime=null}clearTimeout(state.outputTimer);clearTimeout(state.cursorTimer);state.outputTimer=state.cursorTimer=0;state.outputChunks=[];if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.follow=true;state.resizeRequest=null;state.mobileGrid=false;$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
+  function disposeTerminal(){clearTimeout(state.outputTimer);clearTimeout(state.cursorTimer);clearTimeout(mobileInputTimer);state.outputTimer=state.cursorTimer=mobileInputTimer=0;state.outputChunks=[];mobileInput.value='';mobileInputComposing=mobileCommitPending=false;updateMobileInputVisual();if(state.term){try{state.term.dispose()}catch(e){}state.term=null}state.agent='';state.follow=true;state.resizeRequest=null;state.mobileGrid=false;$('terminal').textContent='';$('terminal').classList.remove('ready');$('terminal-content').removeAttribute('style');$('terminal-stage').removeAttribute('style')}
   function renderControl(){const active=hasControl(),b=$('control');b.classList.toggle('active',active);b.textContent=active?'제어 중':'제어권 가져오기'}
   function openSidebar(){$('sidebar').classList.add('open');$('scrim').classList.add('on')}function closeSidebar(){$('sidebar').classList.remove('open');$('scrim').classList.remove('on')}
 
-  $('control').onclick=()=>{if(!hasControl())send({type:'claimControl'});else state.term&&state.term.focus()};
+  $('control').onclick=()=>{if(!hasControl())send({type:'claimControl'});else focusTerminalInput()};
   $('refresh').onclick=()=>send({type:'refresh'});$('sidebar-toggle').onclick=openSidebar;$('scrim').onclick=closeSidebar;
   $('font-size').addEventListener('change',e=>setWebFontSize(e.target.value));
-  $('mobile-keys').addEventListener('click',e=>{const b=e.target.closest('button[data-code]');if(!b)return;const keys={esc:'\x1b',ctrlc:'\x03',up:'\x1b[A',down:'\x1b[B',left:'\x1b[D',right:'\x1b[C',enter:'\r'};sendInput(keys[b.dataset.code]||'');state.term&&state.term.focus()});
+  $('mobile-keys').addEventListener('click',e=>{const b=e.target.closest('button[data-code]');if(!b)return;const keys={esc:'\x1b',ctrlc:'\x03',up:'\x1b[A',down:'\x1b[B',left:'\x1b[D',right:'\x1b[C',enter:'\r'};flushMobileInput();sendInput(keys[b.dataset.code]||'');focusTerminalInput()});
+  mobileInput.addEventListener('compositionstart',()=>{mobileInputComposing=true;mobileCommitPending=false;clearTimeout(mobileInputTimer)});
+  mobileInput.addEventListener('compositionupdate',updateMobileInputVisual);
+  mobileInput.addEventListener('compositionend',()=>{mobileInputComposing=false;mobileCommitPending=true;updateMobileInputVisual();clearTimeout(mobileInputTimer);mobileInputTimer=setTimeout(flushMobileInput,0)});
+  mobileInput.addEventListener('beforeinput',e=>{if(mobileInputComposing||e.isComposing)return;if(e.inputType==='deleteContentBackward'&&!mobileInput.value){e.preventDefault();sendInput('\x7f')}else if(e.inputType==='insertLineBreak'){e.preventDefault();flushMobileInput();sendInput('\r')}});
+  mobileInput.addEventListener('input',e=>{updateMobileInputVisual();if(mobileInputComposing||e.isComposing)return;if(mobileCommitPending){flushMobileInput();return}const value=mobileInput.value;if(e.inputType==='insertFromPaste'||/[\s\r\n]$/.test(value)||!/[\u1100-\u11ff\u3131-\u318e\uac00-\ud7a3]/i.test(value))flushMobileInput();else scheduleMobileInputFlush()});
+  mobileInput.addEventListener('keydown',e=>{if(mobileInputComposing||e.isComposing||e.keyCode===229)return;if(e.key==='Enter'){e.preventDefault();flushMobileInput();sendInput('\r')}else if(e.key==='Backspace'&&!mobileInput.value){e.preventDefault();sendInput('\x7f')}else if(e.key==='Escape'){e.preventDefault();sendInput('\x1b')}else if(e.ctrlKey&&e.key.toLowerCase()==='c'&&!mobileInput.value){e.preventDefault();sendInput('\x03')}});
+  mobileInput.addEventListener('blur',()=>{if(!mobileInputComposing)flushMobileInput()});
   addEventListener('resize',syncVisualViewport);mobileQuery.addEventListener?.('change',syncVisualViewport);
   if(window.visualViewport){visualViewport.addEventListener('resize',syncVisualViewport);visualViewport.addEventListener('scroll',syncVisualViewport)}
   if(window.ResizeObserver)new ResizeObserver(scheduleTerminalFit).observe($('terminal-scroll'));
