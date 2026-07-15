@@ -58,8 +58,10 @@ public partial class GitScmView : UserControl
 
         StagedHeader.Text = $"Staged Changes {_staged.Count}";
         StagedHeader.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        StagedTreeHost.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ChangesHeader.Text = $"Changes {_unstaged.Count}";
         ChangesHeader.Visibility = _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UnstagedTreeHost.Visibility = _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         var parts = new System.Collections.Generic.List<string>(2);
         if (_branch.Behind > 0) parts.Add($"↓{_branch.Behind}");
@@ -79,6 +81,22 @@ public partial class GitScmView : UserControl
     }
 
     private void MsgBox_TextChanged(object s, TextChangedEventArgs e) => UpdateButtons();
+
+    private void ScmTree_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        bool showTop = e.VerticalOffset > 0.5;
+        bool showBottom = e.VerticalOffset < e.ScrollableHeight - 0.5;
+        if (ReferenceEquals(sender, StagedTree))
+        {
+            StagedFadeTop.Visibility = showTop ? Visibility.Visible : Visibility.Collapsed;
+            StagedFadeBottom.Visibility = showBottom ? Visibility.Visible : Visibility.Collapsed;
+        }
+        else if (ReferenceEquals(sender, UnstagedTree))
+        {
+            ChangesFadeTop.Visibility = showTop ? Visibility.Visible : Visibility.Collapsed;
+            ChangesFadeBottom.Visibility = showBottom ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
 
     private void Node_Click(object sender, MouseButtonEventArgs e)
     {

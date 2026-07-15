@@ -81,6 +81,14 @@ public partial class FileExplorerView : UserControl
     private void ViewTabScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
         => UpdateViewTabOverflow();
 
+    private void Tree_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        FileTreeFadeTop.Visibility = e.VerticalOffset > 0.5
+            ? Visibility.Visible : Visibility.Collapsed;
+        FileTreeFadeBottom.Visibility = e.VerticalOffset < e.ScrollableHeight - 0.5
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     /// <summary>탭이 넘치면 좌·우 버튼을 띄우고, 스크롤 가능 여부에 따라 활성/페이드 갱신.</summary>
     private void UpdateViewTabOverflow()
     {
@@ -210,7 +218,7 @@ public partial class FileExplorerView : UserControl
         if (idx < 0 || idx > 3) idx = 0; // 사용량 탭(4) 제거 — 저장된 값이 범위 밖이면 탐색기로
         _mode = (ViewMode)idx;
         SettingsService.SaveFileExpActiveTab(idx);
-        Tree.Visibility      = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
+        FileTreeHost.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         Browser.Visibility   = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
         ScmView.Visibility  = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
         QueueView.Visibility = idx == 3 ? Visibility.Visible : Visibility.Collapsed;

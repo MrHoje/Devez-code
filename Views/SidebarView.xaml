@@ -1083,10 +1083,11 @@
                 <Grid.RenderTransform>
                     <TranslateTransform x:Name="ActivePanelTransform" X="0"/>
                 </Grid.RenderTransform>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
+                <ScrollViewer x:Name="ActiveProjectScroll" VerticalScrollBarVisibility="Auto" Padding="8,0,8,0"
                               Style="{StaticResource OverlayVScroll}"
                               ScrollChanged="ProjectScrollChanged">
                     <ItemsControl x:Name="ProjectsHost" Tag="1"
+                                  Margin="0,8,0,8"
                                   ItemTemplateSelector="{StaticResource ProjectRootRowSelector}"
                                   ItemsPanel="{StaticResource ProjectsPanel}"/>
                 </ScrollViewer>
@@ -1098,10 +1099,11 @@
                 <Grid.RenderTransform>
                     <TranslateTransform x:Name="ArchivePanelTransform" X="9999"/>
                 </Grid.RenderTransform>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,8,8,8"
+                <ScrollViewer x:Name="ArchiveProjectScroll" VerticalScrollBarVisibility="Auto" Padding="8,0,8,0"
                               Style="{StaticResource OverlayVScroll}"
                               ScrollChanged="ProjectScrollChanged">
                     <ItemsControl x:Name="ArchivedHost" Tag="1"
+                                  Margin="0,8,0,8"
                                   ItemTemplateSelector="{StaticResource ProjectRootRowSelector}"
                                   ItemsPanel="{StaticResource ProjectsPanel}"/>
                 </ScrollViewer>
@@ -1112,6 +1114,7 @@
                            FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
             </Grid>
             <Rectangle x:Name="ProjectFadeTop" Height="24" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
+                       Visibility="Collapsed"
                        Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -1121,6 +1124,7 @@
                 </Rectangle.OpacityMask>
             </Rectangle>
             <Rectangle x:Name="ProjectFadeBottom" Height="24" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+                       Visibility="Collapsed"
                         Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">

@@ -147,24 +147,82 @@
             <TextBlock x:Name="StagedHeader" Grid.Row="0" Text="Staged Changes" Margin="2,2,0,2"
                        FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextMutedBrush}"/>
-            <TreeView x:Name="StagedTree" Grid.Row="1" MaxHeight="240"
-                      Background="Transparent" BorderThickness="0"
-                      VirtualizingStackPanel.IsVirtualizing="True"
-                      VirtualizingPanel.VirtualizationMode="Recycling"
-                      ItemContainerStyle="{StaticResource ScmTreeItem}"
-                      ItemTemplate="{StaticResource ScmNode}"
-                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+            <Grid x:Name="StagedTreeHost" Grid.Row="1" MaxHeight="240" ClipToBounds="True">
+                <TreeView x:Name="StagedTree"
+                          Background="Transparent" BorderThickness="0"
+                          VirtualizingStackPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          ItemContainerStyle="{StaticResource ScmTreeItem}"
+                          ItemTemplate="{StaticResource ScmNode}"
+                          ScrollViewer.ScrollChanged="ScmTree_ScrollChanged"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <TreeView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel Margin="0,8,0,8"/>
+                        </ItemsPanelTemplate>
+                    </TreeView.ItemsPanel>
+                </TreeView>
+                <Rectangle x:Name="StagedFadeTop" Height="24" VerticalAlignment="Top"
+                           IsHitTestVisible="False" Panel.ZIndex="1" Visibility="Collapsed"
+                           Fill="{DynamicResource PanelBrush}">
+                    <Rectangle.OpacityMask>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Offset="0" Color="Black"/>
+                            <GradientStop Offset="0.7" Color="Transparent"/>
+                        </LinearGradientBrush>
+                    </Rectangle.OpacityMask>
+                </Rectangle>
+                <Rectangle x:Name="StagedFadeBottom" Height="24" VerticalAlignment="Bottom"
+                           IsHitTestVisible="False" Panel.ZIndex="1" Visibility="Collapsed"
+                           Fill="{DynamicResource PanelBrush}">
+                    <Rectangle.OpacityMask>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Offset="0" Color="Transparent"/>
+                            <GradientStop Offset="0.7" Color="Black"/>
+                        </LinearGradientBrush>
+                    </Rectangle.OpacityMask>
+                </Rectangle>
+            </Grid>
 
             <TextBlock x:Name="ChangesHeader" Grid.Row="2" Text="Changes" Margin="2,10,0,2"
                        FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextMutedBrush}"/>
-            <TreeView x:Name="UnstagedTree" Grid.Row="3"
-                      Background="Transparent" BorderThickness="0"
-                      VirtualizingStackPanel.IsVirtualizing="True"
-                      VirtualizingPanel.VirtualizationMode="Recycling"
-                      ItemContainerStyle="{StaticResource ScmTreeItem}"
-                      ItemTemplate="{StaticResource ScmNode}"
-                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+            <Grid x:Name="UnstagedTreeHost" Grid.Row="3" ClipToBounds="True">
+                <TreeView x:Name="UnstagedTree"
+                          Background="Transparent" BorderThickness="0"
+                          VirtualizingStackPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          ItemContainerStyle="{StaticResource ScmTreeItem}"
+                          ItemTemplate="{StaticResource ScmNode}"
+                          ScrollViewer.ScrollChanged="ScmTree_ScrollChanged"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <TreeView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <VirtualizingStackPanel Margin="0,8,0,8"/>
+                        </ItemsPanelTemplate>
+                    </TreeView.ItemsPanel>
+                </TreeView>
+                <Rectangle x:Name="ChangesFadeTop" Height="24" VerticalAlignment="Top"
+                           IsHitTestVisible="False" Panel.ZIndex="1" Visibility="Collapsed"
+                           Fill="{DynamicResource PanelBrush}">
+                    <Rectangle.OpacityMask>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Offset="0" Color="Black"/>
+                            <GradientStop Offset="0.7" Color="Transparent"/>
+                        </LinearGradientBrush>
+                    </Rectangle.OpacityMask>
+                </Rectangle>
+                <Rectangle x:Name="ChangesFadeBottom" Height="24" VerticalAlignment="Bottom"
+                           IsHitTestVisible="False" Panel.ZIndex="1" Visibility="Collapsed"
+                           Fill="{DynamicResource PanelBrush}">
+                    <Rectangle.OpacityMask>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Offset="0" Color="Transparent"/>
+                            <GradientStop Offset="0.7" Color="Black"/>
+                        </LinearGradientBrush>
+                    </Rectangle.OpacityMask>
+                </Rectangle>
+            </Grid>
 
             <TextBlock x:Name="EmptyText" Grid.Row="3" Text="변경된 파일이 없습니다." Visibility="Collapsed"
                        Margin="10" TextAlignment="Center" VerticalAlignment="Top"

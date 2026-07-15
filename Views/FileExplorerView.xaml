@@ -205,13 +205,20 @@
         </Border>
 
         <!-- File tree -->
-        <TreeView x:Name="Tree" Grid.Row="3"
+        <Grid x:Name="FileTreeHost" Grid.Row="3" ClipToBounds="True">
+        <TreeView x:Name="Tree"
                   Background="Transparent" BorderThickness="0"
-                  Padding="6,8"
+                  Padding="6,0"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                  ScrollViewer.ScrollChanged="Tree_ScrollChanged"
                   VirtualizingStackPanel.IsVirtualizing="True"
                   VirtualizingStackPanel.VirtualizationMode="Recycling"
                   ContextMenuOpening="Tree_ContextMenuOpening">
+            <TreeView.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel Margin="0,8,0,8"/>
+                </ItemsPanelTemplate>
+            </TreeView.ItemsPanel>
             <TreeView.Resources>
                 <!-- TreeView 펼침 토글(삼각형). 기본 시스템 화살표 대신 테마색 -->
                 <Style x:Key="FileTreeExpander" TargetType="ToggleButton">
@@ -333,6 +340,27 @@
                 </HierarchicalDataTemplate>
             </TreeView.Resources>
         </TreeView>
+            <Rectangle x:Name="FileTreeFadeTop" Height="24" VerticalAlignment="Top"
+                       IsHitTestVisible="False" Panel.ZIndex="1" Visibility="Collapsed"
+                       Fill="{DynamicResource PanelBrush}">
+                <Rectangle.OpacityMask>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Offset="0" Color="Black"/>
+                        <GradientStop Offset="0.7" Color="Transparent"/>
+                    </LinearGradientBrush>
+                </Rectangle.OpacityMask>
+            </Rectangle>
+            <Rectangle x:Name="FileTreeFadeBottom" Height="24" VerticalAlignment="Bottom"
+                       IsHitTestVisible="False" Panel.ZIndex="1" Visibility="Collapsed"
+                       Fill="{DynamicResource PanelBrush}">
+                <Rectangle.OpacityMask>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Offset="0" Color="Transparent"/>
+                        <GradientStop Offset="0.7" Color="Black"/>
+                    </LinearGradientBrush>
+                </Rectangle.OpacityMask>
+            </Rectangle>
+        </Grid>
 
         <!-- 브라우저 뷰 (브라우저 모드일 때만 표시) -->
         <v:BrowserHostView x:Name="Browser" Grid.Row="3" Visibility="Collapsed"/>

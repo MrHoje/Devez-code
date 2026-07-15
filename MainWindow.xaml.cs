@@ -3639,12 +3639,13 @@ public partial class MainWindow : Window
     private void SessionHistoryScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         var sv = (ScrollViewer)sender;
-        bool top = sv.VerticalOffset > 0;
-        bool bottom = sv.VerticalOffset < sv.ScrollableHeight;
+        const double edgeTolerance = 1.0;
+        bool top = sv.VerticalOffset > edgeTolerance;
+        bool bottom = sv.VerticalOffset < sv.ScrollableHeight - edgeTolerance;
         SessionHistoryFadeTop.Visibility = top ? Visibility.Visible : Visibility.Collapsed;
         SessionHistoryFadeBottom.Visibility = bottom ? Visibility.Visible : Visibility.Collapsed;
-        // Padding 을 스크롤 상태 따라 바꾸면 content extent 가 변해 스크롤바가 토글되고
-        // ScrollChanged 가 재발생하는 피드백 루프(경계 높이에서 꿈틀)가 생긴다 → 상수 패딩 유지.
+        // 상하 spacer 가 콘텐츠와 함께 스크롤된다.
+        // 맨 위/아래에서만 8px 여백이 보이고 중간에서는 카드가 패널 경계에 붙으며 extent 는 변하지 않는다.
     }
 
     private void UpdateSessionHistoryEmpty()

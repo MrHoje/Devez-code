@@ -384,6 +384,7 @@ public partial class SidebarView : UserControl
 
         double w = ActualWidth > 0 ? ActualWidth : 262;
         ArchivePanel.Visibility = Visibility.Visible;
+        Dispatcher.BeginInvoke(new Action(() => UpdateProjectScrollVisuals(ArchiveProjectScroll)), DispatcherPriority.Loaded);
         SlideTo(ArchivePanelTransform, w, 0);
         SlideTo(ActivePanelTransform, 0, -w, () => ActivePanel.Visibility = Visibility.Collapsed);
 
@@ -401,6 +402,7 @@ public partial class SidebarView : UserControl
 
         double w = ActualWidth > 0 ? ActualWidth : 262;
         ActivePanel.Visibility = Visibility.Visible;
+        Dispatcher.BeginInvoke(new Action(() => UpdateProjectScrollVisuals(ActiveProjectScroll)), DispatcherPriority.Loaded);
         SlideTo(ActivePanelTransform, -w, 0);
         SlideTo(ArchivePanelTransform, 0, w, () => ArchivePanel.Visibility = Visibility.Collapsed);
 
@@ -587,11 +589,12 @@ public partial class SidebarView : UserControl
     }
 
     private void ProjectScrollChanged(object sender, ScrollChangedEventArgs e)
+        => UpdateProjectScrollVisuals((ScrollViewer)sender);
+
+    private void UpdateProjectScrollVisuals(ScrollViewer sv)
     {
-        var sv = (ScrollViewer)sender;
-        // 패딩을 스크롤 상태로 토글하면 콘텐츠 높이가 바뀌어 오버플로 여부가 뒤집히고,
-        // 그 결과 스크롤/페이드가 무한히 켜졌다 꺼져 맨 아래 카드 보더가 깜빡인다 → 패딩 고정.
-        // 0.5px 여유로 서브픽셀 오프셋에 의한 페이드 깜빡임도 방지.
+        // 상하 여백은 ItemsControl Margin 이라 콘텐츠와 함께 스크롤된다.
+        // 0.5px 여유로 서브픽셀 오프셋에 의한 페이드 깜빡임 방지.
         bool top = sv.VerticalOffset > 0.5;
         bool bottom = sv.VerticalOffset < sv.ScrollableHeight - 0.5;
         ProjectFadeTop.Visibility = top ? Visibility.Visible : Visibility.Collapsed;

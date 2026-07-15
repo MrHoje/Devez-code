@@ -313,8 +313,10 @@
                         </Border>
                         <ScrollViewer x:Name="SessionHistoryScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                       ScrollChanged="SessionHistoryScrollChanged"
-                                      Padding="8,8,8,8">
+                                      Padding="8,0,8,0">
                             <StackPanel>
+                                <!-- 상하 여백도 스크롤 콘텐츠로 포함: 경계에서만 보이고 중간에서는 완전히 사라진다. -->
+                                <Border Height="8" IsHitTestVisible="False"/>
                                 <!-- ── 응답 대기(선택지) 세션 카드 — 항상 완료기록 위. 내용은 내가 보낸 프롬프트(LastMessage). ── -->
                                 <ItemsControl x:Name="WaitingList" Visibility="Collapsed">
                                     <ItemsControl.ItemTemplate>
@@ -562,9 +564,11 @@
                                            Margin="2,4,2,2" TextWrapping="Wrap" LineHeight="18"
                                            FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}"/>
+                                <Border Height="8" IsHitTestVisible="False"/>
                             </StackPanel>
                         </ScrollViewer>
                         <Rectangle x:Name="SessionHistoryFadeTop" Grid.Row="2" Height="24" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
+                                   Visibility="Collapsed"
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -574,6 +578,7 @@
                             </Rectangle.OpacityMask>
                         </Rectangle>
                         <Rectangle x:Name="SessionHistoryFadeBottom" Grid.Row="2" Height="24" VerticalAlignment="Bottom" IsHitTestVisible="False" Panel.ZIndex="1"
+                                   Visibility="Collapsed"
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
