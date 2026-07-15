@@ -29,6 +29,9 @@ public partial class GitScmView : UserControl
         InitializeComponent();
         ScmBodyGrid.SizeChanged += (_, _) => UpdateStagedCap();
 
+        // Diff Git 사용 여부(전역)를 설정에서 초기화. 이후 설정 저장 시 GitUiState 가 갱신되면 반응.
+        GitUiState.Instance.DiffGitEnabled = SettingsService.LoadDiffGitEnabled();
+
         // 커밋 입력창 높이 = 실제 폰트 라인높이 × 3줄(테마 폰트크기 연동).
         // 폰트(Pretendard) 메트릭이 확정된 Loaded 시점에 계산하고, 폰트 크기 변경 시 재계산.
         Loaded += (_, _) =>
@@ -38,7 +41,21 @@ public partial class GitScmView : UserControl
             Dispatcher.BeginInvoke(new Action(ApplyCommitBoxHeight), System.Windows.Threading.DispatcherPriority.Loaded);
             var dpd = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBox.FontSizeProperty, typeof(TextBox));
             dpd?.AddValueChanged(MsgBox, (_, _) => ApplyCommitBoxHeight());
+
+            GitUiState.Instance.PropertyChanged += GitUiState_Changed;
+            ApplyGitMode();
         };
+        Unloaded += (_, _) => GitUiState.Instance.PropertyChanged -= GitUiState_Changed;
+    }
+
+    private void GitUiState_Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => ApplyGitMode();
+
+    // Diff Git 미사용(false) 시: 하단 커밋/푸시/풀 컨트롤 숨김 + 스테이징 섹션 숨김(UpdateButtons 에서 가림).
+    //  MADRU 상태글자·되돌리기/스테이지 버튼은 XAML 이 GitUiState 에 바인딩되어 자동 숨김.
+    private void ApplyGitMode()
+    {
+        GitControlBar.Visibility = GitUiState.Instance.DiffGitEnabled ? Visibility.Visible : Visibility.Collapsed;
+        UpdateButtons();
     }
 
     // 커밋 입력창을 정확히 3줄 텍스트 높이로 고정(초과분은 내부 스크롤).
@@ -91,10 +108,11 @@ public partial class GitScmView : UserControl
         PullBtn.IsEnabled  = onBranch && _branch.Behind > 0;                      // 받을 게 0개면 비활성
         PushBtn.IsEnabled  = onBranch && (_branch.Ahead > 0 || !_branch.HasUpstream);  // 올릴 게 0개면 비활성(최초 푸시는 허용). 커밋 메시지와 무관.
 
+        bool gitOn = GitUiState.Instance.DiffGitEnabled;   // Diff Git 미사용 시 스테이징 섹션 전체 숨김
         StagedHeader.Text = $"스테이징된 변경 사항 ({_staged.Count})";
-        StagedHeaderRow.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        StagedTreeHost.Visibility = _staged.Count > 0 && !_stagedCollapsed ? Visibility.Visible : Visibility.Collapsed;
-        SectionSeparator.Visibility = _staged.Count > 0 && _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        StagedHeaderRow.Visibility = gitOn && _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        StagedTreeHost.Visibility = gitOn && _staged.Count > 0 && !_stagedCollapsed ? Visibility.Visible : Visibility.Collapsed;
+        SectionSeparator.Visibility = gitOn && _staged.Count > 0 && _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateStagedCap();
         ChangesHeader.Text = $"변경 내용 ({_unstaged.Count})";
         ChangesHeaderRow.Visibility = _unstaged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;

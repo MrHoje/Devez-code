@@ -241,7 +241,7 @@ public partial class FileExplorerView : UserControl
         PathText.Text = idx switch
         {
             1 => "브라우저",
-            2 => "Git Changes",
+            2 => "Diff",
             _ => _rootPath ?? "파일 탐색기",
         };
 

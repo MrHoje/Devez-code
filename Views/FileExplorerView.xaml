@@ -64,7 +64,7 @@
                 </Button>
                 <!-- Git Changes — 파일 탐색기 바로 오른쪽(두 번째). -->
                 <Button x:Name="DiffViewBtn" Click="TabBtn_Click" Tag="2"
-                        Style="{StaticResource ViewTabButton}" ToolTip="Git Changes">
+                        Style="{StaticResource ViewTabButton}" ToolTip="Diff">
                     <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconGitCompare}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>

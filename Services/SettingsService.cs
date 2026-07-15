@@ -138,6 +138,8 @@ public static class SettingsService
         public bool ShowQueueViewBtn   { get; set; } = true;  // 작업 큐
         public bool ShowBrowserViewBtn { get; set; } = true;  // 브라우저
         public bool ShowDiffViewBtn    { get; set; } = true;  // DIFF
+        // Diff 패널에서 git 기능(스테이징/되돌리기/상태글자/커밋·푸시·풀 컨트롤) 사용 여부. 기본 false=순수 diff 뷰어.
+        public bool DiffGitEnabled     { get; set; } = false;
         // 하단 푸터 계정 사용량 표시 여부(provider 별). Claude 만 기본 표시.
         public bool ShowFooterClaude { get; set; } = true;
         public bool ShowFooterCodex  { get; set; } = false;
@@ -291,6 +293,8 @@ public static class SettingsService
     public static void SaveShowQueueViewBtn(bool v)   { Current.ShowQueueViewBtn   = v; Save(); }
     public static void SaveShowBrowserViewBtn(bool v) { Current.ShowBrowserViewBtn = v; Save(); }
     public static void SaveShowDiffViewBtn(bool v)    { Current.ShowDiffViewBtn    = v; Save(); }
+    public static bool LoadDiffGitEnabled() => Current.DiffGitEnabled;
+    public static void SaveDiffGitEnabled(bool v) { Current.DiffGitEnabled = v; Save(); }
 
     // ── 하단 푸터 계정 사용량(provider) 표시 여부 ────────────────
     public static bool LoadShowFooterClaude() => Current.ShowFooterClaude;

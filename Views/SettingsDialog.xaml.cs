@@ -38,6 +38,7 @@ public partial class SettingsDialog : UserControl
     private bool   _originalAutoLoadLastProject;
     private bool   _originalPromptForNewSessionName;
     private bool   _originalHideProjectInfoHeader;
+    private bool   _originalDiffGitEnabled;
     private bool   _originalAutoUpdateAgents;
     private bool   _originalUseFullScreen;
     private bool   _originalMinimizeOnClose;
@@ -52,6 +53,7 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedAutoLoadLastProject;
     private bool   _selectedPromptForNewSessionName;
     private bool   _selectedHideProjectInfoHeader;
+    private bool   _selectedDiffGitEnabled;
     private bool   _selectedAutoUpdateAgents;
     private bool   _selectedUseFullScreen;
     private bool   _selectedMinimizeOnClose;
@@ -86,7 +88,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.16.2", "2026-07-14", true, new[]
+        ("v1.16.3", "2026-07-16", true, new[]
+        {
+            "사이드패널에서 파일별 변경 내용(diff)을 더 보기 좋게 확인할 수 있도록 개선했습니다.",
+            "커밋·푸시·풀 등 기본 Git 연동 기능을 추가했습니다.",
+        }),
+        ("v1.16.2", "2026-07-14", false, new[]
         {
             "프로젝트 카드를 우클릭해 세션을 추가하면 추가된 세션이 바로 선택되도록 개선했습니다.",
             "설정 > 일반에 창 닫기 버튼을 최소화로 동작시키는 옵션을 추가했습니다.",
@@ -370,6 +377,9 @@ public partial class SettingsDialog : UserControl
         _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
         _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
         HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        _originalDiffGitEnabled = SettingsService.LoadDiffGitEnabled();
+        _selectedDiffGitEnabled = _originalDiffGitEnabled;
+        DiffGitEnabledToggle.IsChecked = _selectedDiffGitEnabled;
         _originalAutoUpdateAgents = SettingsService.LoadAutoUpdateAgents();
         _selectedAutoUpdateAgents = _originalAutoUpdateAgents;
         AutoUpdateAgentsToggle.IsChecked = _selectedAutoUpdateAgents;
@@ -778,6 +788,11 @@ public partial class SettingsDialog : UserControl
     private void HideProjectInfoHeaderToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedHideProjectInfoHeader = HideProjectInfoHeaderToggle.IsChecked == true;
+    }
+
+    private void DiffGitEnabledToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedDiffGitEnabled = DiffGitEnabledToggle.IsChecked == true;
     }
 
     private void AutoUpdateAgentsToggle_Changed(object sender, RoutedEventArgs e)
@@ -1543,6 +1558,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
         if (_selectedPromptForNewSessionName != _originalPromptForNewSessionName) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
+        if (_selectedDiffGitEnabled != _originalDiffGitEnabled) return true;
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
         if (_selectedMinimizeOnClose != _originalMinimizeOnClose) return true;
@@ -1589,6 +1605,11 @@ public partial class SettingsDialog : UserControl
         {
             SettingsService.SaveHideProjectInfoHeader(_selectedHideProjectInfoHeader);
             (Application.Current.MainWindow as MainWindow)?.ApplyProjectInfoHeaderVisibility();
+        }
+        if (_selectedDiffGitEnabled != _originalDiffGitEnabled)
+        {
+            SettingsService.SaveDiffGitEnabled(_selectedDiffGitEnabled);
+            DevezCode.Models.GitUiState.Instance.DiffGitEnabled = _selectedDiffGitEnabled;   // 열린 Diff 패널 즉시 반영
         }
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents)
             SettingsService.SaveAutoUpdateAgents(_selectedAutoUpdateAgents);
@@ -1693,6 +1714,7 @@ public partial class SettingsDialog : UserControl
         _originalAutoLoadLastProject = _selectedAutoLoadLastProject;
         _originalPromptForNewSessionName = _selectedPromptForNewSessionName;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
+        _originalDiffGitEnabled = _selectedDiffGitEnabled;
         _originalAutoUpdateAgents = _selectedAutoUpdateAgents;
         _originalUseFullScreen = _selectedUseFullScreen;
         _originalMinimizeOnClose = _selectedMinimizeOnClose;
@@ -1743,6 +1765,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
             HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
+        }
+        if (_selectedDiffGitEnabled != _originalDiffGitEnabled)
+        {
+            _selectedDiffGitEnabled = _originalDiffGitEnabled;
+            DiffGitEnabledToggle.IsChecked = _selectedDiffGitEnabled;
         }
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents)
         {

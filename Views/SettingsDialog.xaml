@@ -446,6 +446,26 @@
                                     </Grid>
                                 </Border>
 
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="Diff Git 사용" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="켜면 Diff 패널에서 스테이징·되돌리기·상태(M/A/D/R/U)와 하단 커밋·푸시·풀 컨트롤을 사용합니다. 끄면 변경 파일 diff만 봅니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="DiffGitEnabledToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="DiffGitEnabledToggle_Changed" Unchecked="DiffGitEnabledToggle_Changed"/>
+                                    </Grid>
+                                </Border>
+
                             </StackPanel>
 
                             <!-- 프로젝트 패널 — 목록 열 수(1/2) -->
