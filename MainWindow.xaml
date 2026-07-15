@@ -582,8 +582,8 @@
                                    Fill="{DynamicResource PanelBrush}">
                             <Rectangle.OpacityMask>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                    <GradientStop Offset="0" Color="Transparent"/>
-                                    <GradientStop Offset="0.7" Color="Black"/>
+                                    <GradientStop Offset="0.3" Color="Transparent"/>
+                                    <GradientStop Offset="1" Color="Black"/>
                                 </LinearGradientBrush>
                             </Rectangle.OpacityMask>
                         </Rectangle>

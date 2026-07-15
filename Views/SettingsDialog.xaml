@@ -233,7 +233,19 @@
                                 Background="{DynamicResource PanelSoftBrush}"
                                 BorderBrush="{DynamicResource LineBrush}"
                                 BorderThickness="0,0,1,0">
-                            <StackPanel Margin="10,16,10,16">
+                            <DockPanel Margin="10,16,10,16" LastChildFill="True">
+                                <!-- 웹 대시보드: 잠금 해제 전 숨김, 리스트 맨 아래 도킹 -->
+                                <Button x:Name="CatLanDashboardBtn" Tag="lanDashboard" DockPanel.Dock="Bottom"
+                                        Visibility="Collapsed"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconGlobe}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="웹 대시보드" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <StackPanel>
                                 <Button x:Name="CatGeneralBtn" Tag="general"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -315,15 +327,6 @@
                                         <TextBlock Text="단축키" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="CatLanDashboardBtn" Tag="lanDashboard"
-                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconGlobe}" Width="15" Height="15"
-                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="웹 대시보드" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
                                 <Button x:Name="CatChangelogBtn" Tag="changelog"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -343,7 +346,8 @@
                                         <TextBlock Text="MCP 서버" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                            </StackPanel>
+                                </StackPanel>
+                            </DockPanel>
                         </Border>
 
                         <!-- 우측 콘텐츠 -->
@@ -978,7 +982,7 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="DIFF" FontSize="{DynamicResource Fs13}"
+                                            <TextBlock Text="Git Changes" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
                                             <TextBlock Text="변경 내역(diff) 뷰 전환 버튼" FontSize="{DynamicResource Fs11}"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
@@ -1461,7 +1465,7 @@
                                     <TextBlock Text="웹 대시보드" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="같은 사설망의 모바일·브라우저에서 DevezCode의 프로젝트와 터미널을 보고 직접 입력합니다."
+                                <TextBlock Text="OAuth 로그인 인증을 거쳐 인터넷 어디서나 이 PC의 프로젝트와 터미널에 접속합니다. 소유자 본인만 연결됩니다."
                                            FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
@@ -1471,54 +1475,29 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="LAN 연결 허용" FontSize="{DynamicResource Fs13}"
+                                        <TextBlock Text="외부 접속 허용" FontSize="{DynamicResource Fs13}"
                                                    Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="같은 사설망에 연결된 기기에서 주소만으로 접속할 수 있습니다."
+                                        <TextBlock Text="페어링 후 켜면 이 PC가 릴레이에 상시 연결됩니다."
                                                    FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                     </StackPanel>
-                                    <CheckBox x:Name="LanDashboardToggle" Grid.Column="1"
+                                    <CheckBox x:Name="RemoteDashboardToggle" Grid.Column="1"
                                               Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="LanDashboardToggle_Changed" Unchecked="LanDashboardToggle_Changed"/>
+                                              Checked="RemoteDashboardToggle_Changed" Unchecked="RemoteDashboardToggle_Changed"/>
                                 </Grid>
 
-                                <Border Margin="0,20,0,0" Padding="14" CornerRadius="10"
-                                        Background="{DynamicResource PanelSoftBrush}"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                                    <StackPanel>
-                                        <TextBlock x:Name="LanDashboardStatusLabel" Text="연결 안 됨"
-                                                   FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                        <Grid Margin="0,10,0,0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Height="34" Padding="10,0" CornerRadius="7"
-                                                    Background="{DynamicResource PanelBrush}"
-                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                                                <TextBlock x:Name="LanDashboardUrlLabel" VerticalAlignment="Center"
-                                                           FontSize="{DynamicResource Fs11}" TextTrimming="CharacterEllipsis"
-                                                           Foreground="{DynamicResource TextBrush}"/>
-                                            </Border>
-                                            <Button Grid.Column="1" Content="복사" Click="CopyLanDashboardUrl_Click"
-                                                    Width="58" Height="34" Margin="7,0,0,0"
-                                                    Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
-                                            <Button Grid.Column="2" Content="열기" Click="OpenLanDashboard_Click"
-                                                    Width="58" Height="34" Margin="7,0,0,0"
-                                                    Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
-                                        </Grid>
-                                        <Border x:Name="LanDashboardQrPanel" Margin="0,16,0,0" Padding="12"
-                                                HorizontalAlignment="Left" CornerRadius="10" Background="White"
-                                                Visibility="Collapsed">
-                                            <Image x:Name="LanDashboardQrImage" Width="176" Height="176"
-                                                   Stretch="Uniform" SnapsToDevicePixels="True"
-                                                   RenderOptions.BitmapScalingMode="NearestNeighbor"/>
-                                        </Border>
-                                    </StackPanel>
-                                </Border>
-                                <TextBlock Text="포트 17865 · 웹 입력은 PC의 현재 사용자 권한으로 실행됩니다. 신뢰하는 사설망에서만 켜세요."
+                                <TextBlock x:Name="RemoteDashboardStatusLabel" Text="페어링 안 됨"
+                                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold" Margin="0,20,0,0"
+                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Button x:Name="PairRemoteButton" Content="이 PC 페어링"
+                                            Click="PairRemoteDashboard_Click" Height="34" Padding="16,0"
+                                            Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
+                                    <Button x:Name="UnpairRemoteButton" Content="페어링 해제"
+                                            Click="UnpairRemoteDashboard_Click" Height="34" Padding="16,0" Margin="8,0,0,0"
+                                            Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
+                                </StackPanel>
+                                <TextBlock Text="터미널 입력 = 명령 실행입니다. 릴레이는 OAuth 소유자만 통과시키며, deviceSecret 은 이 PC에만 저장됩니다."
                                            FontSize="{DynamicResource Fs10}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,9,0,0"/>
                             </StackPanel>
@@ -1916,21 +1895,29 @@
                             Background="{DynamicResource PanelSoftBrush}"
                             BorderBrush="{DynamicResource LineBrush}"
                             BorderThickness="0,1,0,0">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                    Margin="20,14,20,14">
-                            <Button Click="ForceCancelBtn_Click"
-                                    Width="100" Height="38" Margin="0,0,8,0"
-                                    Style="{StaticResource SecondaryButton}"
-                                    FontSize="{DynamicResource Fs13}">
-                                <TextBlock Text="취소"/>
+                        <Grid Margin="20,14,20,14">
+                            <Button x:Name="UnlockWebDashboardBtn"
+                                    Click="UnlockWebDashboard_Click" Width="34" Height="34"
+                                    HorizontalAlignment="Left" ToolTip="웹 대시보드 잠금 해제"
+                                    Style="{StaticResource IconButton}">
+                                <Path Style="{StaticResource LucideButtonIcon}"
+                                      Data="{StaticResource IconLock}" Width="16" Height="16"/>
                             </Button>
-                            <Button x:Name="SaveBtn" Click="SaveBtn_Click"
-                                    Width="100" Height="38"
-                                    Style="{StaticResource PrimaryButton}"
-                                    FontSize="{DynamicResource Fs13}">
-                                <TextBlock Text="저장" Foreground="White"/>
-                            </Button>
-                        </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Click="ForceCancelBtn_Click"
+                                        Width="100" Height="38" Margin="0,0,8,0"
+                                        Style="{StaticResource SecondaryButton}"
+                                        FontSize="{DynamicResource Fs13}">
+                                    <TextBlock Text="취소"/>
+                                </Button>
+                                <Button x:Name="SaveBtn" Click="SaveBtn_Click"
+                                        Width="100" Height="38"
+                                        Style="{StaticResource PrimaryButton}"
+                                        FontSize="{DynamicResource Fs13}">
+                                    <TextBlock Text="저장" Foreground="White"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
                     </Border>
     </Grid>
 </UserControl>

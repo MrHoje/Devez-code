@@ -35,7 +35,9 @@ public partial class MonacoDiffHostView : UserControl, IFileTabEditor, IDisposab
     private async void OnReady()
     {
         var (orig, mod) = await LoadTextsAsync();
-        _host.SetDiff(orig, mod, LanguageOf(_relPath));
+        // 추가된(원본 없는) 파일은 좌우 분할 대신 단일 뷰로.
+        bool added = string.IsNullOrEmpty(orig) && !string.IsNullOrEmpty(mod);
+        _host.SetDiff(orig, mod, LanguageOf(_relPath), sideBySide: !added);
     }
 
     private async Task<(string, string)> LoadTextsAsync()

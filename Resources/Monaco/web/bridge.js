@@ -1,5 +1,36 @@
 (function () {
   let editor = null, pending = null, ready = false;
+  // 각 패널(좌=원본/우=수정) 자체 스크롤바 오버뷰 룰러에 자기쪽 변경을 직접 표시(VS 스타일).
+  // Monaco 통합 룰러(renderOverviewRuler)는 우측끝에 몰아 그리므로 끄고, 서브에디터에 데코레이션을 건다.
+  let insColor = '#3FB950', remColor = '#F85149';   // 추가=초록 / 삭제=빨강 (setTheme 로 갱신)
+  let oDecoIds = [], mDecoIds = [];
+
+  function applyRulers() {
+    if (!editor) return;
+    try {
+      const oEd = editor.getOriginalEditor && editor.getOriginalEditor();
+      const mEd = editor.getModifiedEditor && editor.getModifiedEditor();
+      if (!oEd || !mEd) return;
+      let changes = null;
+      try { changes = editor.getLineChanges(); } catch (e) {}
+      if (!changes && editor.getDiffComputationResult) {
+        const res = editor.getDiffComputationResult();
+        changes = res && res.changes;
+      }
+      changes = changes || [];
+      const Lane = monaco.editor.OverviewRulerLane.Full;
+      const oD = [], mD = [];
+      for (const c of changes) {
+        const oEnd = c.originalEndLineNumber, mEnd = c.modifiedEndLineNumber;
+        if (oEnd > 0) oD.push({ range: new monaco.Range(c.originalStartLineNumber, 1, oEnd, 1),
+          options: { overviewRuler: { color: remColor, position: Lane } } });
+        if (mEnd > 0) mD.push({ range: new monaco.Range(c.modifiedStartLineNumber, 1, mEnd, 1),
+          options: { overviewRuler: { color: insColor, position: Lane } } });
+      }
+      oDecoIds = oEd.deltaDecorations(oDecoIds, oD);
+      mDecoIds = mEd.deltaDecorations(mDecoIds, mD);
+    } catch (err) { reportErr('applyRulers', err); }
+  }
   // WebView2 는 객체 기반 메시징: 객체를 그대로 postMessage 하면 호스트가 WebMessageAsJson 으로 받는다.
   // JSON.stringify 하면 "문자열"이 되어 호스트에서 이중 인코딩되고 파싱 실패로 조용히 버려진다.
   function post(o){ if(window.chrome&&window.chrome.webview) window.chrome.webview.postMessage(o); }
@@ -19,11 +50,21 @@
         try {
           editor = monaco.editor.createDiffEditor(document.getElementById('c'), {
             readOnly: true, automaticLayout: true, renderSideBySide: true,
-            minimap: { enabled: true }, scrollBeyondLastLine: false,
-            renderOverviewRuler: true,          // 좌/우 오버뷰 룰러(변경 위치 빨강/초록)
+            minimap: { enabled: false },        // 미니맵 제거 — 좌우 스크롤바 대칭·간결
+            scrollBeyondLastLine: false,
+            renderOverviewRuler: false,         // 통합(우측끝) 룰러 끔 — 좌/우 각 패널 자체 스크롤바가 자기쪽 변경 표시
+            renderIndicators: true,             // 거터 +/- 표시(사진처럼)
             renderMarginRevertIcon: false,      // 읽기전용 — revert 아이콘 숨김
-            scrollbar: { verticalScrollbarSize: 14, horizontalScrollbarSize: 14, useShadows: false }
+            renderLineHighlight: 'none',        // 현재 줄 박스 제거 — 변경 라인만 강조
+            diffWordWrap: 'off',
+            overviewRulerLanes: 2,
+            scrollbar: {
+              verticalScrollbarSize: 10, horizontalScrollbarSize: 10,
+              verticalSliderSize: 10, horizontalSliderSize: 10,
+              vertical: 'auto', horizontal: 'auto', useShadows: false
+            }
           });
+          editor.onDidUpdateDiff(applyRulers);   // diff 재계산 시 좌/우 룰러 갱신
           ready = true;
           post({ type: 'pageReady' });
           if (pending) { apply(pending); pending = null; }
@@ -37,6 +78,7 @@
     try {
       if (m.type === 'setDiff') {
         const lang = m.language || 'plaintext';
+        editor.updateOptions({ renderSideBySide: m.sideBySide !== false });  // 추가 파일 등은 단일 뷰
         editor.setModel({
           original: monaco.editor.createModel(m.originalText || '', lang),
           modified: monaco.editor.createModel(m.modifiedText || '', lang),
@@ -45,6 +87,10 @@
         monaco.editor.defineTheme('devez', { base: m.base || 'vs-dark', inherit: true,
           rules: m.rules || [], colors: m.colors || {} });
         monaco.editor.setTheme('devez');
+        const c = m.colors || {};
+        insColor = c['diffEditorOverviewRuler.insertedForeground'] || c['editorOverviewRuler.addedForeground'] || insColor;
+        remColor = c['diffEditorOverviewRuler.removedForeground'] || c['editorOverviewRuler.deletedForeground'] || remColor;
+        applyRulers();
       }
     } catch (err) { reportErr('apply:' + (m && m.type), err); }
   }

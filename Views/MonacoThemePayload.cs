@@ -37,24 +37,36 @@ public static class MonacoThemePayload
 
     public static (string @base, object[] rules, object colors) Current()
     {
+        var dark = IsDark();
+        // 추가=초록/삭제=빨강. 다크는 GitHub-dark(=codex 톤), 라이트는 GitHub-light.
+        string ins = dark ? "#3FB950" : "#2DA44E";
+        string rem = dark ? "#F85149" : "#CF222E";
+        // 라인 배경(은은), 문자 배경(진하게) — 사진처럼 변경 라인 가득 채움.
+        string lineA = dark ? "2E" : "24";   // 라인 배경 알파(≈18%/14%)
+        string textA = dark ? "4D" : "40";   // 문자 배경 알파(≈30%/25%)
+
         var colors = new System.Collections.Generic.Dictionary<string, string>
         {
             ["editor.background"] = Hex("BgBrush"),
             ["editor.foreground"] = Hex("TextBrush"),
             ["editorLineNumber.foreground"] = Hex("TextMutedBrush"),
             ["editorGutter.background"] = Hex("BgBrush"),
-            ["diffEditor.insertedTextBackground"] = "#3FB95033",
-            ["diffEditor.removedTextBackground"] = "#F8514933",
-            ["diffEditor.insertedLineBackground"] = "#3FB9501A",
-            ["diffEditor.removedLineBackground"] = "#F851491A",
+            ["diffEditor.insertedTextBackground"] = ins + textA,
+            ["diffEditor.removedTextBackground"] = rem + textA,
+            ["diffEditor.insertedLineBackground"] = ins + lineA,
+            ["diffEditor.removedLineBackground"] = rem + lineA,
+            ["diffEditor.diagonalFill"] = HexA("TextMutedBrush", "1A"),   // 빈 쪽 사선 채움(은은)
+            ["diffEditor.border"] = Hex("LineBrush"),                     // 좌우 분할선 = 앱 세퍼레이터색
+            ["sash.hoverBorder"] = Hex("PrimaryBrush"),                   // 드래그 핸들 hover
             ["scrollbarSlider.background"] = HexA("TextMutedBrush", "59"),
             ["scrollbarSlider.hoverBackground"] = HexA("TextMutedBrush", "80"),
             ["scrollbarSlider.activeBackground"] = HexA("TextMutedBrush", "A6"),
-            ["diffEditorOverviewRuler.insertedForeground"] = "#3FB950",
-            ["diffEditorOverviewRuler.removedForeground"] = "#F85149",
+            ["diffEditorOverviewRuler.insertedForeground"] = ins,
+            ["diffEditorOverviewRuler.removedForeground"] = rem,
             ["editorOverviewRuler.border"] = "#00000000",
-            ["minimap.background"] = Hex("BgBrush"),
+            ["editorOverviewRuler.addedForeground"] = ins,
+            ["editorOverviewRuler.deletedForeground"] = rem,
         };
-        return (IsDark() ? "vs-dark" : "vs", System.Array.Empty<object>(), colors);
+        return (dark ? "vs-dark" : "vs", System.Array.Empty<object>(), colors);
     }
 }

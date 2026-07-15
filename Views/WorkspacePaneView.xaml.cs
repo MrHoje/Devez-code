@@ -3457,6 +3457,14 @@ public partial class WorkspacePaneView : UserControl
     public void OpenDiffTab(ProjectItem proj, string repo, string relPath, bool staged)
     {
         if (!ReferenceEquals(_activeProject, proj)) SetActiveProject(proj);
+        // 이미지 파일은 diff(좌우 텍스트 비교)가 무의미 → 이미지 뷰어 탭으로 연다.
+        var abs = System.IO.Path.Combine(repo, relPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+        if (ImageFileEditorView.IsImage(relPath) && System.IO.File.Exists(abs))
+        {
+            var ftab = CreateFileTab(proj, abs);
+            if (ftab != null) ActivateFileTab(ftab);
+            return;
+        }
         var tab = CreateDiffTab(proj, repo, relPath, staged);
         if (tab != null) ActivateFileTab(tab);
     }
@@ -3486,7 +3494,9 @@ public partial class WorkspacePaneView : UserControl
     private static IFileTabEditor CreateFileTabEditor(string path)
     {
         var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
-        return ext is ".md" or ".markdown" ? new MarkdownFileEditorView() : new FileEditorView();
+        if (ext is ".md" or ".markdown") return new MarkdownFileEditorView();
+        if (ImageFileEditorView.IsImage(path)) return new ImageFileEditorView();
+        return new FileEditorView();
     }
 
     // ── airspace 우회 (오버레이가 뜰 때 터미널 WebView2 정지) ──────────

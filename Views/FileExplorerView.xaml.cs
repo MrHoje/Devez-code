@@ -83,9 +83,10 @@ public partial class FileExplorerView : UserControl
 
     private void Tree_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        var scrollViewer = (ScrollViewer)sender;
         FileTreeFadeTop.Visibility = e.VerticalOffset > 0.5
             ? Visibility.Visible : Visibility.Collapsed;
-        FileTreeFadeBottom.Visibility = e.VerticalOffset < e.ScrollableHeight - 0.5
+        FileTreeFadeBottom.Visibility = scrollViewer.VerticalOffset < scrollViewer.ScrollableHeight - 0.5
             ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -235,7 +236,7 @@ public partial class FileExplorerView : UserControl
         PathText.Text = idx switch
         {
             1 => "브라우저",
-            2 => "DIFF",
+            2 => "Git Changes",
             _ => _rootPath ?? "파일 탐색기",
         };
 
@@ -450,12 +451,23 @@ public partial class FileExplorerView : UserControl
 
     private void FileWatcher_Changed(object sender, FileSystemEventArgs e)
     {
+        // .git 내부 변경은 무시 — 우리 RefreshAsync 의 git status 가 .git/index stat 캐시를 갱신하면
+        // watcher 가 재발화해 refresh 무한 루프(리스트 지속 깜빡·스크롤바 churn)가 된다.
+        if (IsGitInternal(e.FullPath)) return;
         if (IsHidden(e.FullPath)) return;
         Dispatcher.BeginInvoke(new Action(() =>
         {
             _fileRefreshDebounceTimer.Stop();
             _fileRefreshDebounceTimer.Start();
         }), DispatcherPriority.Background);
+    }
+
+    /// <summary>경로가 .git 디렉터리 내부(또는 .git 자체)인지 — watcher refresh 루프 방지용.</summary>
+    private static bool IsGitInternal(string p)
+    {
+        var sep = Path.DirectorySeparatorChar;
+        return p.Contains(sep + ".git" + sep, StringComparison.OrdinalIgnoreCase)
+            || p.EndsWith(sep + ".git", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ReloadRootFromWatcher()

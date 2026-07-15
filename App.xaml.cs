@@ -145,8 +145,9 @@ public partial class App : Application
 
     private static async void StartLanDashboard()
     {
-        try { await LanDashboardService.Instance.StartAsync(); }
-        catch { /* 서비스가 diag.log에 원인을 기록. 앱 본체 시작은 계속한다. */ }
+        // LAN 대시보드는 제거됨. 원격(릴레이) 커넥터만 설정에 따라 시작한다.
+        try { await DevezCode.Services.Dashboard.RelayConnector.Instance.ApplyFromConfigAsync(); }
+        catch { /* 원격 릴레이 미설정/오프라인은 무시. 커넥터가 자동 재연결한다. */ }
     }
 
     /// <summary>메인 창 표시 순서. 설정에서 '실행 시 에이전트 자동 업데이트'가 켜져 있으면,
@@ -357,6 +358,8 @@ public partial class App : Application
     {
         try { System.Threading.Tasks.Task.Run(() => LanDashboardService.Instance.StopAsync()).Wait(3000); }
         catch { /* 종료 중 웹 클라이언트 정리는 best-effort */ }
+        try { System.Threading.Tasks.Task.Run(() => DevezCode.Services.Dashboard.RelayConnector.Instance.StopAsync()).Wait(3000); }
+        catch { /* 종료 중 릴레이 정리는 best-effort */ }
         // 에이전트는 종료 시 transcript(.jsonl)를 flush 하므로, 하드 kill 전에 에이전트별 제어키로 정상
         // 종료를 시도해 마지막 대화를 보존한다. 종료 경로는 CR/LF를 보내지 않아 작성 중 초안을 제출하지 않는다.
         // (예전엔 DisposeAll 로 즉시 kill → 대화가 디스크에 안 남아

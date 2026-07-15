@@ -71,7 +71,7 @@ public static class GitService
 
             if (x == '?' && y == '?')
             {
-                res.Unstaged.Add(new Models.GitChange { Status = "?", Path = rest, IsUntracked = true, IsStaged = false });
+                res.Unstaged.Add(new Models.GitChange { Status = "U", Path = rest, IsUntracked = true, IsStaged = false });
                 continue;
             }
             if (x != ' ' && x != '?')
@@ -88,12 +88,19 @@ public static class GitService
     /// <summary>git show &lt;rev&gt;:&lt;path&gt; — rev 예: "HEAD", ":"(인덱스). 실패/부재 시 빈 문자열.</summary>
     public static async Task<string> ShowFileAsync(string repoDir, string rev, string path)
     {
-        var r = await RunAsync(repoDir, "show", $"{rev}:{path}");
+        // rev=":" 는 인덱스 → ":path"(HEAD 는 "HEAD:path"). "{rev}:{path}" 로 조합하면 "::path" 가 돼
+        // git 이 fatal 로 빈 문자열을 반환하던 버그 수정.
+        var obj = rev.EndsWith(":") ? rev + path : $"{rev}:{path}";
+        var r = await RunAsync(repoDir, "show", obj);
         return r.Ok ? r.Output : "";
     }
 
     public static Task<GitResult> StageAsync(string repoDir, string path)
         => RunAsync(repoDir, "add", "--", path);
+
+    /// <summary>전체 변경 스테이징(git add -A) — staged 항목이 없을 때 커밋 폴백용.</summary>
+    public static Task<GitResult> StageAllAsync(string repoDir)
+        => RunAsync(repoDir, "add", "-A");
 
     public static async Task<GitResult> UnstageAsync(string repoDir, string path)
     {

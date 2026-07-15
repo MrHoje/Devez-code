@@ -23,7 +23,7 @@ public sealed class MonacoHost : ContentControl, IDisposable
     private WebView2? _webView;
     private bool _initStarted;
     private bool _pageReady;
-    private (string o, string m, string lang)? _pendingDiff;
+    private (string o, string m, string lang, bool sideBySide)? _pendingDiff;
     private DispatcherTimer? _readyTimeoutTimer;
     private const int ReadyTimeoutMs = 15000;
 
@@ -125,7 +125,7 @@ public sealed class MonacoHost : ContentControl, IDisposable
                     _readyTimeoutTimer?.Stop();
                     _readyTimeoutTimer = null;
                     ApplyTheme();
-                    if (_pendingDiff is { } d) { SetDiff(d.o, d.m, d.lang); _pendingDiff = null; }
+                    if (_pendingDiff is { } d) { SetDiff(d.o, d.m, d.lang, d.sideBySide); _pendingDiff = null; }
                     PageReady?.Invoke();
                     break;
             }
@@ -133,10 +133,11 @@ public sealed class MonacoHost : ContentControl, IDisposable
         catch { }
     }
 
-    public void SetDiff(string original, string modified, string language)
+    /// <summary>sideBySide=false 면 분할 없이 단일 뷰(신규/추가 파일 등 원본이 없는 경우).</summary>
+    public void SetDiff(string original, string modified, string language, bool sideBySide = true)
     {
-        if (!_pageReady) { _pendingDiff = (original, modified, language); return; }
-        PostJson(new { type = "setDiff", originalText = original, modifiedText = modified, language });
+        if (!_pageReady) { _pendingDiff = (original, modified, language, sideBySide); return; }
+        PostJson(new { type = "setDiff", originalText = original, modifiedText = modified, language, sideBySide });
     }
 
     public void ApplyTheme()

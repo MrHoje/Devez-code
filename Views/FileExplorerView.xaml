@@ -62,7 +62,13 @@
                     <Path x:Name="DirViewIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconFolderOpen}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
-                <!-- 작업 큐 (devez 채팅방 풍 버블 입력) — 탐색기 오른쪽에 배치. -->
+                <!-- Git Changes — 파일 탐색기 바로 오른쪽(두 번째). -->
+                <Button x:Name="DiffViewBtn" Click="TabBtn_Click" Tag="2"
+                        Style="{StaticResource ViewTabButton}" ToolTip="Git Changes">
+                    <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
+                          Data="{StaticResource IconGitCompare}" Width="15" Height="15" VerticalAlignment="Center"/>
+                </Button>
+                <!-- 작업 큐 (devez 채팅방 풍 버블 입력) -->
                 <Button x:Name="QueueViewBtn" Click="TabBtn_Click" Tag="3"
                         Style="{StaticResource ViewTabButton}" ToolTip="작업 큐">
                     <Path x:Name="QueueViewIcon" Style="{StaticResource LucideIcon}"
@@ -72,11 +78,6 @@
                         Style="{StaticResource ViewTabButton}" ToolTip="브라우저">
                     <Path x:Name="BrowserViewIcon" Style="{StaticResource LucideIcon}"
                           Data="{StaticResource IconGlobe}" Width="15" Height="15" VerticalAlignment="Center"/>
-                </Button>
-                <Button x:Name="DiffViewBtn" Click="TabBtn_Click" Tag="2"
-                        Style="{StaticResource ViewTabButton}" ToolTip="DIFF">
-                    <Path x:Name="DiffViewIcon" Style="{StaticResource LucideIcon}"
-                          Data="{StaticResource IconGitCompare}" Width="15" Height="15" VerticalAlignment="Center"/>
                 </Button>
                 <!-- 계정 사용량 탭은 최우측 전용 사이드바(타이틀바 차트 버튼)로 이동. -->
             </StackPanel>
@@ -355,8 +356,8 @@
                        Fill="{DynamicResource PanelBrush}">
                 <Rectangle.OpacityMask>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                        <GradientStop Offset="0" Color="Transparent"/>
-                        <GradientStop Offset="0.7" Color="Black"/>
+                        <GradientStop Offset="0.3" Color="Transparent"/>
+                        <GradientStop Offset="1" Color="Black"/>
                     </LinearGradientBrush>
                 </Rectangle.OpacityMask>
             </Rectangle>

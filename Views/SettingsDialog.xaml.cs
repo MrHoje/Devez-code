@@ -13,7 +13,9 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using System.Threading;
 using DevezCode.Services;
+using DevezCode.Services.Dashboard;
 using QRCoder;
 
 namespace DevezCode.Views;
@@ -36,7 +38,6 @@ public partial class SettingsDialog : UserControl
     private bool   _originalAutoUpdateAgents;
     private bool   _originalUseFullScreen;
     private bool   _originalMinimizeOnClose;
-    private bool   _originalLanDashboardEnabled;
     private HashSet<string> _originalEnabledAgents = new(StringComparer.OrdinalIgnoreCase);
     private int _originalRetentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
 
@@ -50,7 +51,7 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedAutoUpdateAgents;
     private bool   _selectedUseFullScreen;
     private bool   _selectedMinimizeOnClose;
-    private bool   _selectedLanDashboardEnabled;
+    private bool   _suppressRemoteToggle;
     private int    _selectedProjectColumns;
     // DeepSeek 연결 토글 — 다른 설정과 동일하게 [저장] 시점에만 디스크 반영(끄고 저장 시 키 삭제).
     private bool   _originalDeepSeekEnabled;
@@ -370,11 +371,10 @@ public partial class SettingsDialog : UserControl
         _originalMinimizeOnClose = SettingsService.LoadMinimizeOnClose();
         _selectedMinimizeOnClose = _originalMinimizeOnClose;
         MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
-        _originalLanDashboardEnabled = SettingsService.LoadLanDashboardEnabled();
-        _selectedLanDashboardEnabled = _originalLanDashboardEnabled;
-        LanDashboardUrlLabel.Text = LanDashboardService.GetAccessUrls().FirstOrDefault() ?? "주소를 확인할 수 없습니다.";
-        LanDashboardToggle.IsChecked = _selectedLanDashboardEnabled;
-        UpdateLanDashboardVisual();
+        _suppressRemoteToggle = true;
+        RemoteDashboardToggle.IsChecked = RemoteDashboardConfig.Current.Enabled;
+        _suppressRemoteToggle = false;
+        UpdateRemoteDashboardVisual();
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
         UpdateProjectColumnsVisual();
@@ -746,66 +746,104 @@ public partial class SettingsDialog : UserControl
         _selectedMinimizeOnClose = MinimizeOnCloseToggle.IsChecked == true;
     }
 
-    private void LanDashboardToggle_Changed(object sender, RoutedEventArgs e)
+    // ── 외부 접속 (릴레이) — 페어링/토글은 즉시 적용(RemoteDashboardConfig 로컬 저장) ──
+    private void RemoteDashboardToggle_Changed(object sender, RoutedEventArgs e)
     {
-        _selectedLanDashboardEnabled = LanDashboardToggle.IsChecked == true;
-        UpdateLanDashboardVisual();
-    }
-
-    private void CopyLanDashboardUrl_Click(object sender, RoutedEventArgs e)
-    {
-        try { Clipboard.SetText(LanDashboardUrlLabel.Text); }
-        catch { ConfirmDialog.Alert("주소 복사", "클립보드를 사용할 수 없습니다."); }
-    }
-
-    private void OpenLanDashboard_Click(object sender, RoutedEventArgs e)
-    {
-        try { Process.Start(new ProcessStartInfo(LanDashboardUrlLabel.Text) { UseShellExecute = true }); }
-        catch { ConfirmDialog.Alert("대시보드 열기", "대시보드를 열 수 없습니다. 기능을 켜고 저장했는지 확인해 주세요."); }
-    }
-
-    private async Task ApplyLanDashboardSettingAsync(bool enabled)
-    {
-        try { await LanDashboardService.Instance.ApplyEnabledAsync(enabled); }
-        catch (Exception ex)
+        if (_suppressRemoteToggle) return;
+        var enabled = RemoteDashboardToggle.IsChecked == true;
+        var cfg = RemoteDashboardConfig.Current;
+        if (enabled && !cfg.IsPaired)
         {
-            ConfirmDialog.Alert("웹 대시보드", "대시보드를 시작하지 못했습니다.\n" + ex.Message);
-        }
-        UpdateLanDashboardVisual();
-    }
-
-    private void UpdateLanDashboardVisual()
-    {
-        if (LanDashboardStatusLabel == null || LanDashboardQrPanel == null) return;
-        var connected = _selectedLanDashboardEnabled && LanDashboardService.Instance.IsRunning;
-        LanDashboardStatusLabel.Text = connected
-            ? "연결됨 · 모바일 카메라로 QR 코드를 스캔하세요."
-            : _selectedLanDashboardEnabled ? "저장하면 LAN 연결을 시작합니다." : "연결 안 됨";
-        LanDashboardStatusLabel.Foreground = (Brush)FindResource(connected ? "PrimaryBrush" : "TextMutedBrush");
-        LanDashboardQrPanel.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
-        if (!connected || string.IsNullOrWhiteSpace(LanDashboardUrlLabel.Text))
-        {
-            LanDashboardQrImage.Source = null;
+            _suppressRemoteToggle = true;
+            RemoteDashboardToggle.IsChecked = false;
+            _suppressRemoteToggle = false;
+            ConfirmDialog.Alert("외부 접속", "먼저 페어링을 완료하세요.");
             return;
         }
+        cfg.Enabled = enabled;
+        cfg.Save();
+        _ = ApplyRemoteDashboardAsync();
+    }
 
+    private async Task ApplyRemoteDashboardAsync()
+    {
+        try { await RelayConnector.Instance.ApplyFromConfigAsync(); }
+        catch (Exception ex) { ConfirmDialog.Alert("외부 접속", "릴레이 연결에 실패했습니다.\n" + ex.Message); }
+        UpdateRemoteDashboardVisual();
+    }
+
+    private async void PairRemoteDashboard_Click(object sender, RoutedEventArgs e)
+    {
+        PairRemoteButton.IsEnabled = false;
         try
         {
-            var png = PngByteQRCodeHelper.GetQRCode(
-                LanDashboardUrlLabel.Text, QRCodeGenerator.ECCLevel.Q, 8, drawQuietZones: true);
-            using var stream = new MemoryStream(png);
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.StreamSource = stream;
-            bitmap.EndInit();
-            bitmap.Freeze();
-            LanDashboardQrImage.Source = bitmap;
+            var win = new RelayPairWindow(Window.GetWindow(this));
+            win.ShowDialog();
+            if (win.Paired)
+            {
+                _suppressRemoteToggle = true;
+                RemoteDashboardToggle.IsChecked = true;
+                _suppressRemoteToggle = false;
+                await ApplyRemoteDashboardAsync();
+                ConfirmDialog.Alert("페어링", "페어링이 완료되어 외부 접속을 켰습니다.");
+            }
         }
-        catch
+        catch (Exception ex) { ConfirmDialog.Alert("페어링", "페어링에 실패했습니다.\n" + ex.Message); }
+        finally { PairRemoteButton.IsEnabled = true; UpdateRemoteDashboardVisual(); }
+    }
+
+    private async void UnpairRemoteDashboard_Click(object sender, RoutedEventArgs e)
+    {
+        var cfg = RemoteDashboardConfig.Current;
+        if (!cfg.IsPaired && !cfg.Enabled)
         {
-            LanDashboardQrPanel.Visibility = Visibility.Collapsed;
+            ConfirmDialog.Alert("페어링 해제", "페어링된 정보가 없습니다.");
+            return;
         }
+        if (!ConfirmDialog.Show("페어링 해제",
+            "이 PC의 릴레이 연결을 끊고 로컬 페어링 정보를 삭제합니다.\n" +
+            "웹 포털에 등록된 PC 항목은 포털에서 로그인 후 따로 삭제하세요.\n\n계속할까요?",
+            okLabel: "해제")) return;
+
+        cfg.Enabled = false;
+        cfg.DeviceId = "";
+        cfg.DeviceSecret = "";
+        cfg.Save();
+        try { await RelayConnector.Instance.StopAsync(); } catch { }
+        _suppressRemoteToggle = true;
+        RemoteDashboardToggle.IsChecked = false;
+        _suppressRemoteToggle = false;
+        UpdateRemoteDashboardVisual();
+    }
+
+    private void UpdateRemoteDashboardVisual()
+    {
+        if (RemoteDashboardStatusLabel == null) return;
+        var cfg = RemoteDashboardConfig.Current;
+        var connected = cfg.Enabled && RelayConnector.Instance.State == RelayConnectionState.Connected;
+        RemoteDashboardStatusLabel.Text = connected ? "연결됨 · 외부에서 접속 가능"
+            : cfg.IsPaired ? (cfg.Enabled ? "연결 중…" : "페어링됨 · 꺼짐")
+            : "페어링 안 됨";
+        RemoteDashboardStatusLabel.Foreground = (Brush)FindResource(connected ? "PrimaryBrush" : "TextMutedBrush");
+    }
+
+    private const string WebDashboardUnlockPassword = "devezwebdashboard";
+
+    private void UnlockWebDashboard_Click(object sender, RoutedEventArgs e)
+    {
+        if (CatLanDashboardBtn.Visibility == Visibility.Visible)
+        {
+            SetActiveCategory("lanDashboard");
+            return;
+        }
+        var pw = CommunityPasswordDialog.Ask(Window.GetWindow(this), "웹 대시보드 잠금 해제", "비밀번호를 입력하세요.", "확인");
+        if (pw == null) return;
+        if (pw == WebDashboardUnlockPassword)
+        {
+            CatLanDashboardBtn.Visibility = Visibility.Visible;
+            SetActiveCategory("lanDashboard");
+        }
+        else ConfirmDialog.Alert("웹 대시보드", "비밀번호가 올바르지 않습니다.");
     }
 
     // ── 프로젝트 목록 열 수 (1/2) — 적용은 [저장] 시점에만(라이브 미리보기 없음) ──
@@ -1383,7 +1421,6 @@ public partial class SettingsDialog : UserControl
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
         if (_selectedUseFullScreen != _originalUseFullScreen) return true;
         if (_selectedMinimizeOnClose != _originalMinimizeOnClose) return true;
-        if (_selectedLanDashboardEnabled != _originalLanDashboardEnabled) return true;
         if (_selectedProjectColumns != _originalProjectColumns) return true;
         if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled) return true;
         if (_selectedNotifyEnabled != _originalNotifyEnabled) return true;
@@ -1436,11 +1473,6 @@ public partial class SettingsDialog : UserControl
         }
         if (_selectedMinimizeOnClose != _originalMinimizeOnClose)
             SettingsService.SaveMinimizeOnClose(_selectedMinimizeOnClose);
-        if (_selectedLanDashboardEnabled != _originalLanDashboardEnabled)
-        {
-            SettingsService.SaveLanDashboardEnabled(_selectedLanDashboardEnabled);
-            _ = ApplyLanDashboardSettingAsync(_selectedLanDashboardEnabled);
-        }
         if (_selectedProjectColumns != _originalProjectColumns)
         {
             SettingsService.SaveProjectColumns(_selectedProjectColumns);
@@ -1537,7 +1569,6 @@ public partial class SettingsDialog : UserControl
         _originalAutoUpdateAgents = _selectedAutoUpdateAgents;
         _originalUseFullScreen = _selectedUseFullScreen;
         _originalMinimizeOnClose = _selectedMinimizeOnClose;
-        _originalLanDashboardEnabled = _selectedLanDashboardEnabled;
         _originalProjectColumns = _selectedProjectColumns;
         _originalHkMod = _selectedHkMod; _originalHkPrev = _selectedHkPrev; _originalHkNext = _selectedHkNext;
         _originalEnabledAgents = new HashSet<string>(
@@ -1595,11 +1626,6 @@ public partial class SettingsDialog : UserControl
         {
             _selectedMinimizeOnClose = _originalMinimizeOnClose;
             MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
-        }
-        if (_selectedLanDashboardEnabled != _originalLanDashboardEnabled)
-        {
-            _selectedLanDashboardEnabled = _originalLanDashboardEnabled;
-            LanDashboardToggle.IsChecked = _selectedLanDashboardEnabled;
         }
         if (_selectedProjectColumns != _originalProjectColumns)
         {

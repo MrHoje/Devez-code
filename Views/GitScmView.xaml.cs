@@ -118,13 +118,41 @@ public partial class GitScmView : UserControl
     {
         _stagedCollapsed = !_stagedCollapsed;
         StagedChevron.RenderTransform = new System.Windows.Media.RotateTransform(_stagedCollapsed ? 0 : 90);
-        UpdateButtons();
+        AnimateSection(StagedTreeHost, !_stagedCollapsed);
     }
     private void ToggleUnstaged(object s, MouseButtonEventArgs e)
     {
         _unstagedCollapsed = !_unstagedCollapsed;
         ChangesChevron.RenderTransform = new System.Windows.Media.RotateTransform(_unstagedCollapsed ? 0 : 90);
-        UpdateButtons();
+        AnimateSection(UnstagedTreeHost, !_unstagedCollapsed);
+    }
+
+    // 프로젝트 카드 세션 접기/펼치기와 동일한 Height 애니메이션(160ms, CubicEase EaseOut).
+    private void AnimateSection(FrameworkElement host, bool expand)
+    {
+        host.BeginAnimation(FrameworkElement.HeightProperty, null);
+        var dur = TimeSpan.FromMilliseconds(160);
+        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
+        if (expand)
+        {
+            host.Visibility = Visibility.Visible;
+            host.Height = double.NaN;       // auto 로 실제 목표 높이(캡 반영) 측정
+            host.UpdateLayout();
+            double target = host.ActualHeight;
+            host.Height = 0;
+            var a = new System.Windows.Media.Animation.DoubleAnimation
+            { From = 0, To = target, Duration = dur, EasingFunction = ease };
+            a.Completed += (_, _) => { host.BeginAnimation(FrameworkElement.HeightProperty, null); host.ClearValue(FrameworkElement.HeightProperty); };
+            host.BeginAnimation(FrameworkElement.HeightProperty, a);
+        }
+        else
+        {
+            double from = host.ActualHeight;
+            var a = new System.Windows.Media.Animation.DoubleAnimation
+            { From = from, To = 0, Duration = dur, EasingFunction = ease };
+            a.Completed += (_, _) => { host.BeginAnimation(FrameworkElement.HeightProperty, null); host.Visibility = Visibility.Collapsed; host.ClearValue(FrameworkElement.HeightProperty); };
+            host.BeginAnimation(FrameworkElement.HeightProperty, a);
+        }
     }
 
     // 화살표(삼각형) 단일 클릭 → 폴더 접기/펼치기. 텍스트 영역으로의 전파는 막는다.
