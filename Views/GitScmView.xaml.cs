@@ -86,7 +86,10 @@ public partial class GitScmView : UserControl
     private void UpdateButtons()
     {
         CommitBtn.IsEnabled = !_busy && (_staged.Count > 0 || _unstaged.Count > 0) && !string.IsNullOrWhiteSpace(MsgBox.Text);
-        PushBtn.IsEnabled = PullBtn.IsEnabled = FetchBtn.IsEnabled = !_busy && _branch.Branch != null;
+        bool onBranch = !_busy && _branch.Branch != null;
+        FetchBtn.IsEnabled = onBranch;                                            // 원격 확인 — 항상 가능
+        PullBtn.IsEnabled  = onBranch && _branch.Behind > 0;                      // 받을 게 0개면 비활성
+        PushBtn.IsEnabled  = onBranch && (_branch.Ahead > 0 || !_branch.HasUpstream);  // 올릴 게 0개면 비활성(최초 푸시는 허용). 커밋 메시지와 무관.
 
         StagedHeader.Text = $"스테이징된 변경 사항 ({_staged.Count})";
         StagedHeaderRow.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -337,11 +340,18 @@ public partial class GitScmView : UserControl
     private async Task RunRemote(Func<Task<GitService.GitResult>> op, string label)
     {
         if (_repo == null) return;
-        _busy = true; UpdateButtons();
+        _busy = true; SetSyncing(true); UpdateButtons();   // 스피너 ON + 화살표 3개 비활성화(!_busy)
         var r = await op();
-        _busy = false;
+        _busy = false; SetSyncing(false);
         if (!r.Ok) ConfirmDialog.Alert($"{label} 실패", string.IsNullOrWhiteSpace(r.Error) ? r.Output : r.Error);
         await RefreshAsync();
         GitStateChanged?.Invoke(_repo);
+    }
+
+    // 페치/풀/푸시 진행 중에만 브랜치 아이콘을 스피너로 교체(커밋/스테이징은 제외).
+    private void SetSyncing(bool on)
+    {
+        BranchSpinner.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        BranchIcon.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
     }
 }
