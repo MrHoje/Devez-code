@@ -40,7 +40,7 @@
       session.alive=true;session.cols=msg.cols;session.rows=msg.rows;ensureTerminal(session);const term=state.term;term.reset();term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows);term.write(fromB64(msg.data),()=>{if(state.term!==term)return;term.scrollToBottom();scheduleTerminalFit()});$('empty').classList.add('hidden');renderSessions();return;
     }
     if(msg.type==='output'){if(msg.roomId===state.selected&&state.term)state.term.write(fromB64(msg.data),scheduleTerminalFit);return}
-    if(msg.type==='size'){const session=sessionById(msg.roomId);if(session){session.cols=msg.cols;session.rows=msg.rows}if(msg.roomId===state.selected&&state.term){if(!mobileQuery.matches)state.term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows)}return}
+    if(msg.type==='size'){if(msg.roomId===state.selected&&state.term){state.term.resize(Math.max(2,msg.cols),Math.max(2,msg.rows));sizeTerminal(msg.cols,msg.rows)}return}
     if(msg.type==='error'){state.starting=false;toast(msg.message||'요청을 처리하지 못했습니다.');syncSelectedMeta()}
   }
 
@@ -56,7 +56,7 @@
   }
   function setWebFontSize(value){
     const size=Math.max(9,Math.min(32,Number(value)||16));state.fontSize=size;state.fontSizePinned=true;try{localStorage.setItem('devez-dashboard-font-size',String(size))}catch(e){}
-    if(state.term){state.term.options.fontSize=size;scheduleTerminalFit();state.term.focus()}
+    if(state.term){state.term.options.fontSize=size;sizeTerminal(state.term.cols,state.term.rows);state.term.focus()}
   }
   function themeFor(agent){const t=Object.assign({},state.theme||{});if(agent==='gajae')t.selectionBackground=t.background&&t.background.toLowerCase()==='#f2ede6'?'#C2D8B0':t.background&&t.background.toLowerCase()==='#f8fafc'?'#C5D8F8':'#264F78';return t}
   function sessionById(id){return state.sessions.find(s=>s.roomId===id)}
@@ -125,7 +125,7 @@
     const s=sessionById(state.selected);if(!s){if(state.selected){state.selected=null;disposeTerminal()}$('session-header').classList.add('hidden');showEmpty('세션을 선택하세요','프로젝트의 실행 전 세션도 여기서 바로 열 수 있습니다.','›_');return}
     $('session-header').classList.remove('hidden');$('session-title').textContent=s.name;$('session-project').textContent=s.projectName;$('agent-pill').textContent=s.agent;$('size-label').textContent=s.cols+' × '+s.rows;
     if(state.starting)showEmpty('세션을 시작하는 중입니다','DevezCode의 기존 대화를 그대로 불러오고 있습니다.','…');else if(!state.term&&!s.alive)showEmpty('실행되지 않은 세션입니다','탭하면 DevezCode 세션을 시작합니다.','▶');
-    if(state.term&&!mobileQuery.matches&&(state.term.cols!==s.cols||state.term.rows!==s.rows)){state.term.resize(Math.max(2,s.cols),Math.max(2,s.rows));sizeTerminal(s.cols,s.rows)}
+    if(state.term&&(state.term.cols!==s.cols||state.term.rows!==s.rows)){state.term.resize(Math.max(2,s.cols),Math.max(2,s.rows));sizeTerminal(s.cols,s.rows)}
   }
 
   function sendInput(data){if(!data)return;if(!hasControl()){toast('먼저 제어권을 가져오세요.');return}send({type:'input',roomId:state.selected,data})}
@@ -146,24 +146,19 @@
   function fitTerminalToViewport(){
     if(!state.term)return;
     const scroll=$('terminal-scroll'),stage=$('terminal-stage'),content=$('terminal-content'),terminal=$('terminal');
+    content.style.transform='none';
     const screen=terminal.querySelector('.xterm-screen');
     if(!screen)return;
     const style=getComputedStyle(terminal),paddingX=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight),paddingY=parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
-    if(!mobileQuery.matches){
-      const session=sessionById(state.selected);
-      if(session&&(state.term.cols!==session.cols||state.term.rows!==session.rows)){state.term.resize(Math.max(2,session.cols),Math.max(2,session.rows));scheduleTerminalFit();return}
-      const naturalW=Math.max(1,Math.ceil(screen.offsetWidth+paddingX)),naturalH=Math.max(1,Math.ceil(screen.offsetHeight+paddingY));
-      terminal.style.width=naturalW+'px';terminal.style.height=naturalH+'px';stage.removeAttribute('style');content.removeAttribute('style');return;
-    }
-
-    // 글자를 CSS로 축소하지 않고, 현재 폰트의 실제 셀 크기로 모바일 화면에 들어갈 행·열을 구한다.
-    const screenRect=screen.getBoundingClientRect(),cellW=screenRect.width/Math.max(1,state.term.cols),cellH=screenRect.height/Math.max(1,state.term.rows);
-    if(!(cellW>0&&cellH>0))return;
-    stage.style.width='100%';stage.style.height='100%';content.style.width='100%';content.style.height='100%';terminal.style.width='100%';terminal.style.height='100%';
-    const cols=Math.max(2,Math.floor((scroll.clientWidth-paddingX)/cellW)),rows=Math.max(2,Math.floor((scroll.clientHeight-paddingY)/cellH));
-    const buffer=state.term.buffer&&state.term.buffer.active,follow=!buffer||buffer.viewportY>=buffer.baseY;
-    if(state.term.cols!==cols||state.term.rows!==rows){state.term.resize(cols,rows);if(follow)state.term.scrollToBottom()}
-    $('size-label').textContent=cols+' × '+rows;
+    const naturalW=Math.max(1,Math.ceil(screen.offsetWidth+paddingX)),naturalH=Math.max(1,Math.ceil(screen.offsetHeight+paddingY));
+    terminal.style.width=naturalW+'px';terminal.style.height=naturalH+'px';
+    if(!mobileQuery.matches){stage.removeAttribute('style');content.removeAttribute('style');return}
+    const viewportW=Math.max(1,scroll.clientWidth),viewportH=Math.max(1,scroll.clientHeight);
+    // PC의 실제 PTY 행·열을 유지해 TUI 구분선과 커서 위치가 어긋나지 않게 한다.
+    const scale=Math.max(.01,viewportW/naturalW),scaledH=naturalH*scale;
+    stage.style.width=viewportW+'px';stage.style.height=Math.max(viewportH,scaledH)+'px';
+    content.style.width=naturalW+'px';content.style.height=naturalH+'px';
+    content.style.transform='translate3d(0,0,0) scale('+scale+')';
   }
   function syncVisualViewport(){
     const viewport=window.visualViewport,root=document.documentElement;
