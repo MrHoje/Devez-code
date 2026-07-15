@@ -15,6 +15,7 @@ public sealed class GrokHookService : IDisposable
     private static string LastmsgDir => Path.Combine(BaseDir, "lastmsg");
     private static string BusyDir => Path.Combine(BaseDir, "busy");
     private static string WaitingDir => Path.Combine(BaseDir, "waiting");
+    private static string CompletedDir => Path.Combine(BaseDir, "completed");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
 
     private static string SessionPath(string roomId) =>
@@ -43,6 +44,7 @@ public sealed class GrokHookService : IDisposable
             Directory.CreateDirectory(LastmsgDir);
             Directory.CreateDirectory(BusyDir);
             Directory.CreateDirectory(WaitingDir);
+            Directory.CreateDirectory(CompletedDir);
             Directory.CreateDirectory(SessionDir);
 
             foreach (var f in Directory.EnumerateFiles(BusyDir, "*.txt"))

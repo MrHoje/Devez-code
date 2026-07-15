@@ -110,11 +110,39 @@ function Mark-SessionEnded {
     }
 }
 
+function Test-CurrentRoomSession {
+    $sid = Get-SessionId
+    if (-not $sid) { return $false }
+    $sDir = Join-Path $base 'sessions'
+    $current = Read-SessionId (Join-Path $sDir ($roomSafe + '.txt'))
+    $root = Read-SessionId (Join-Path $sDir ($roomSafe + '.root.txt'))
+    return $current -and $root -and $current -eq $sid -and $root -eq $sid
+}
+
+function Get-CompletedPath {
+    return Join-Path (Join-Path $base 'completed') ($roomSafe + '.flag')
+}
+
+function Mark-Completed {
+    Write-State (Get-CompletedPath) 'done' 'Ascii'
+}
+
+function Clear-Completed {
+    $path = Get-CompletedPath
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+}
+
+function Test-Completed {
+    return Test-Path -LiteralPath (Get-CompletedPath)
+}
+
 switch -Regex ($eventKey) {
     '^(userpromptsubmit|beforesubmitprompt)$' {
+        Write-SessionId
+        if (-not (Test-CurrentRoomSession)) { break }
+        Clear-Completed
         Write-Busy 'running'
         Write-Waiting 'idle'
-        Write-SessionId
 
         $prompt = $j.prompt
         if (-not $prompt) { $prompt = $j.userPrompt }
@@ -142,6 +170,7 @@ switch -Regex ($eventKey) {
         }
     }
     '^(notification)$' {
+        if (-not (Test-CurrentRoomSession)) { break }
         $noticeType = $j.notificationType
         if (-not $noticeType) { $noticeType = $j.notification_type }
         if (-not $noticeType) { $noticeType = $j.type }
@@ -162,6 +191,7 @@ switch -Regex ($eventKey) {
         # Interrupt/return-to-prompt fallback: some Grok paths emit no Stop but do
         # announce the input prompt again.
         if ($messageKey -match '(type your message|enter send|shift-tab normal)') {
+            Mark-Completed
             Write-Busy 'idle'
             Write-Waiting 'idle'
             exit 0
@@ -171,27 +201,28 @@ switch -Regex ($eventKey) {
             $typeKey -eq 'permissionprompt' -or
             $messageKey -match '(permission|approval|approve|user input|needs your|requires your|feedback|clarif|question)'
         )
-        if ($permissionNotice) {
-            Write-Busy 'running'
+        if ($permissionNotice -and -not (Test-Completed)) {
             Write-Waiting 'waiting'
         }
     }
     '^(pretooluse)$' {
+        if (-not (Test-CurrentRoomSession) -or (Test-Completed)) { break }
         $toolName = $j.toolName
         if (-not $toolName) { $toolName = $j.tool_name }
         if (-not $toolName) { $toolName = $j.name }
         $toolKey = ([string]$toolName -replace '[^a-zA-Z0-9]', '').ToLowerInvariant()
-        Write-Busy 'running'
         # ask_user_question is auto-allowed and therefore arrives as PreToolUse,
         # not PermissionRequest/Notification. This is the real human-input boundary.
         if ($toolKey -eq 'askuserquestion') { Write-Waiting 'waiting' }
         else { Write-Waiting 'idle' }
     }
     '^(posttooluse|posttoolusefailure)$' {
-        Write-Busy 'running'
+        if (-not (Test-CurrentRoomSession) -or (Test-Completed)) { break }
         Write-Waiting 'idle'
     }
     '^(stop|stopfailure)$' {
+        if (-not (Test-CurrentRoomSession)) { break }
+        Mark-Completed
         Write-Busy 'idle'
         Write-Waiting 'idle'
         Write-SessionId
@@ -200,6 +231,8 @@ switch -Regex ($eventKey) {
         Write-SessionId $true
     }
     '^(sessionend)$' {
+        if (-not (Test-CurrentRoomSession)) { break }
+        Mark-Completed
         Write-Busy 'idle'
         Write-Waiting 'idle'
         Mark-SessionEnded

@@ -93,6 +93,86 @@ function Write-Waiting([string]$status) {
     Write-State (Join-Path $waitingDir ($roomSafe + '.txt')) $status
 }
 
+# Codex turn-scoped hooks carry turn_id. session_id alone is insufficient because
+# subagent hooks intentionally report the parent session_id. Keep the active root
+# turn separately so late/internal tool events cannot re-arm a completed room.
+function Get-TurnId {
+    $turnId = [string]$j.turn_id
+    if (-not $turnId -or $turnId -notmatch '^[A-Za-z0-9_-]{1,128}$') { return $null }
+    return $turnId
+}
+
+function Get-ActiveTurnPath {
+    $activeDir = Join-Path $base 'active'
+    New-Item -ItemType Directory -Force -Path $activeDir | Out-Null
+    return Join-Path $activeDir ($roomSafe + '.txt')
+}
+
+function Read-ActiveTurn {
+    try {
+        $path = Get-ActiveTurnPath
+        if (-not (Test-Path -LiteralPath $path)) { return $null }
+        $value = (Get-Content -LiteralPath $path -Raw -Encoding UTF8).Trim()
+        if ($value -match '^[A-Za-z0-9_-]{1,128}$') { return $value }
+    } catch { }
+    return $null
+}
+
+function Set-ActiveTurn([string]$turnId) {
+    if (-not $turnId) { return }
+    Write-State (Get-ActiveTurnPath) $turnId
+}
+
+function Test-ActiveTurn([string]$turnId) {
+    if (-not $turnId) { return $false }
+    $active = Read-ActiveTurn
+    return $active -and [string]::Equals($active, $turnId, [StringComparison]::Ordinal)
+}
+
+function Clear-ActiveTurn([string]$turnId) {
+    try {
+        $path = Get-ActiveTurnPath
+        if ((Test-ActiveTurn $turnId) -and (Test-Path -LiteralPath $path)) {
+            Remove-Item -LiteralPath $path -Force
+        }
+    } catch { }
+}
+
+# Codex launches matching hooks as separate processes. Serialize the active-turn marker and
+# busy/waiting transition per room so an old Stop cannot pass validation, pause, then delete a
+# newer UserPromptSubmit marker (TOCTOU). AbandonedMutexException means this process owns it.
+$turnMutex = $null
+$turnMutexHeld = $false
+function Enter-TurnLock {
+    try {
+        $script:turnMutex = New-Object System.Threading.Mutex($false, ('Local\DevezCode.CodexTurn.' + $roomSafe))
+        try {
+            $script:turnMutexHeld = $script:turnMutex.WaitOne(10000)
+        } catch [System.Threading.AbandonedMutexException] {
+            $script:turnMutexHeld = $true
+        }
+        return $script:turnMutexHeld
+    } catch {
+        $script:turnMutexHeld = $false
+        return $false
+    }
+}
+
+function Exit-TurnLock {
+    try {
+        if ($script:turnMutexHeld -and $script:turnMutex) { $script:turnMutex.ReleaseMutex() }
+    } catch { }
+    try { if ($script:turnMutex) { $script:turnMutex.Dispose() } } catch { }
+    $script:turnMutexHeld = $false
+    $script:turnMutex = $null
+}
+
+function Write-Busy([string]$status) {
+    $busyDir = Join-Path $base 'busy'
+    New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
+    Write-State (Join-Path $busyDir ($roomSafe + '.txt')) $status
+}
+
 switch ($event) {
     'UserPromptSubmit' {
         # Memory Writing Agent 같은 내부 thread 도 부모 프로세스의 DEVEZCODE_ROOM_ID 를 상속하고
@@ -100,11 +180,20 @@ switch ($event) {
         # 타이틀과 busy 상태를 덮지 않도록, 실제 영속 transcript 에 연결된 사용자 세션만 처리한다.
         if (-not (Test-CurrentRoomSession $j.session_id $j.transcript_path)) { break }
 
-        # 1) busy=running
-        $busyDir = Join-Path $base 'busy'
-        New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
-        Write-State (Join-Path $busyDir ($roomSafe + '.txt')) 'running'
-        Write-Waiting 'idle'
+        # turn_id 없는 turn-scoped payload는 fail-closed. 상태 추적을 생략하는 편이
+        # 내부/오래된 이벤트로 영구 스피너를 만드는 것보다 안전하다.
+        $turnId = Get-TurnId
+        if (-not $turnId) { break }
+        if (-not (Enter-TurnLock)) { break }
+        try {
+            Set-ActiveTurn $turnId
+
+            # 1) busy=running
+            Write-Busy 'running'
+            Write-Waiting 'idle'
+        } finally {
+            Exit-TurnLock
+        }
 
         # 2) 마지막 프롬프트 (1줄, 200자)
         $prompt = $j.prompt
@@ -120,11 +209,24 @@ switch ($event) {
         # 내부 thread 종료가 실제 사용자 turn 의 busy 상태를 조기 해제하지 않게 한다.
         if (-not (Test-CurrentRoomSession $j.session_id $j.transcript_path)) { break }
 
-        # 턴 종료 → idle
-        $busyDir = Join-Path $base 'busy'
-        New-Item -ItemType Directory -Force -Path $busyDir | Out-Null
-        Write-State (Join-Path $busyDir ($roomSafe + '.txt')) 'idle'
-        Write-Waiting 'idle'
+        # 오래된 turn/internal subagent Stop이 새 사용자 턴을 끄지 못하게 한다.
+        # active marker가 아예 없으면 구버전 훅으로 시작된 in-flight turn의 Stop으로 보고
+        # idle은 허용한다. 새 훅으로 시작한 turn은 항상 marker가 있어 mismatch가 차단된다.
+        $turnId = Get-TurnId
+        if (-not $turnId) { break }
+        if (-not (Enter-TurnLock)) { break }
+        try {
+            $activeTurn = Read-ActiveTurn
+            if ($activeTurn -and -not [string]::Equals($activeTurn, $turnId, [StringComparison]::Ordinal)) { break }
+
+            # marker 확인/삭제와 idle 기록은 한 임계구역이다. 다음 Prompt가 먼저 잡으면
+            # mismatch로 이 Stop이 폐기되고, Stop이 먼저 잡으면 다음 Prompt가 마지막 running을 쓴다.
+            if ($activeTurn) { Clear-ActiveTurn $turnId }
+            Write-Busy 'idle'
+            Write-Waiting 'idle'
+        } finally {
+            Exit-TurnLock
+        }
     }
     'SessionStart' {
         # codex session_id 기록 — 다음 실행 때 --resume <id> 로 이어가기.

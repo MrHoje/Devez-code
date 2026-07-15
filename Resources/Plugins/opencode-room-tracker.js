@@ -104,11 +104,30 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   // idle 은 모두 흡수되고, 진짜 턴 종료(이후 재개 없음)에서만 idle 이 한 번 기록된다.
   const IDLE_DEBOUNCE_MS = 2500;
   let idleTimer = null;
+  let turnCompleted = false;
+  let lastStartedUserMessageId = null;
   const cancelIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
-  const setRunning = () => { cancelIdle(); writeBusy("running"); };
+  // Only a verified root user message starts a new turn. Once the idle debounce
+  // commits completion, a late status=busy/retry from the same turn cannot re-arm it.
+  const beginTurn = (messageId) => {
+    if (messageId && turnCompleted && String(messageId) === lastStartedUserMessageId) return;
+    if (messageId) lastStartedUserMessageId = String(messageId);
+    turnCompleted = false;
+    cancelIdle();
+    writeBusy("running");
+  };
+  const continueTurn = () => {
+    if (turnCompleted) return;
+    cancelIdle();
+    writeBusy("running");
+  };
   const scheduleIdle = () => {
     cancelIdle();
-    idleTimer = setTimeout(() => { idleTimer = null; writeBusy("idle"); }, IDLE_DEBOUNCE_MS);
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      turnCompleted = true;
+      writeBusy("idle");
+    }, IDLE_DEBOUNCE_MS);
   };
 
   // waiting\<room>.txt = waiting|idle — 선택지(question.asked) 응답 대기 ❗. busy 와 동일 파일 패턴.
@@ -268,9 +287,12 @@ export const DevezCodeRoomTracker = async (_ctx) => {
           if (sessionID && await isChildSession(sessionID)) return;
         }
 
-        // 선택지와 툴 권한은 모두 실제 사용자 입력 경계다. lastStatus/busy는
-        // 건드리지 않아 답변 뒤 session.status busy가 정상적으로 작업을 재무장한다.
-        if (t === "question.asked" || t === "permission.asked") { setWaiting(); return; }
+        // 선택지와 툴 권한은 실제 사용자 입력 경계다. 완료 전 turn에서만 waiting을
+        // 무장하고, 완료 뒤 늦게 도착한 동일 이벤트는 무시한다.
+        if (t === "question.asked" || t === "permission.asked") {
+          if (!turnCompleted) setWaiting();
+          return;
+        }
         // 진단 모드에서만 실제 한 턴의 event 순서/sessionID/role/completed를 기록한다.
         const logPart = debugEnabled && t === "message.part.updated" && partEvLogged < PART_EV_LOG_MAX;
         if (debugEnabled && (t.startsWith("session.") || t === "message.updated" || logPart)) {
@@ -293,7 +315,7 @@ export const DevezCodeRoomTracker = async (_ctx) => {
             (event.status && event.status.type) || null;
           if (statusType === "busy" || statusType === "retry") {
             clearWaiting();
-            setRunning();
+            continueTurn();
           } else if (statusType === "idle") {
             scheduleIdle();
           }
@@ -322,7 +344,15 @@ export const DevezCodeRoomTracker = async (_ctx) => {
         if (event.type === "session.created" || event.type === "session.updated") {
           if (info && info.id) {
             // 같은 방에서 새 세션이 생성되면(/clear·/new) 이전 todos·lastmsg 를 초기화한다.
-            if (event.type === "session.created") { writeTodos([]); clearLastmsg(); clearWaiting(); }
+            if (event.type === "session.created") {
+              cancelIdle();
+              turnCompleted = true;
+              lastStartedUserMessageId = null;
+              writeBusy("idle");
+              writeTodos([]);
+              clearLastmsg();
+              clearWaiting();
+            }
             writeId(info.id);
           }
         }
@@ -349,7 +379,7 @@ export const DevezCodeRoomTracker = async (_ctx) => {
             writeLastmsg(part.text);
             // 스피너 시작 — chat.message 훅은 버전에 따라 안 불려서(lastmsg 도 이 event 경로로 저장됨)
             // 검증된 user-part 경로에서 running 을 쓴다. session.idle/error 가 idle 로 해제.
-            setRunning();
+            beginTurn(part.messageID);
           } else if (role === "assistant") {
             // assistant 텍스트 누적 → lastreply 에 합쳐 기록(스트리밍 중 계속 덮어써 최종본 보존).
             if (part.messageID !== asstMsgId) { asstMsgId = part.messageID; for (const k in asstParts) delete asstParts[k]; }
@@ -370,7 +400,7 @@ export const DevezCodeRoomTracker = async (_ctx) => {
           if (input.message.id) messageRole[input.message.id] = "user";
           const text = extractTextFromParts(input.message.parts);
           if (text) writeLastmsg(text);
-          setRunning(); // user 프롬프트 전송 → 처리 시작 → 스피너 켜기
+          beginTurn(input.message.id); // user 프롬프트 전송 → 처리 시작 → 스피너 켜기
         }
       } catch (e) { debug(`chat.message error: ${e.message}`); }
     },

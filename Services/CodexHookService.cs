@@ -16,6 +16,7 @@ public sealed class CodexHookService : IDisposable
     private static string LastmsgDir => Path.Combine(BaseDir, "lastmsg");
     private static string BusyDir => Path.Combine(BaseDir, "busy");
     private static string WaitingDir => Path.Combine(BaseDir, "waiting");
+    private static string ActiveDir => Path.Combine(BaseDir, "active");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
 
     private FileSystemWatcher? _lastmsgWatcher;
@@ -39,12 +40,17 @@ public sealed class CodexHookService : IDisposable
             Directory.CreateDirectory(LastmsgDir);
             Directory.CreateDirectory(BusyDir);
             Directory.CreateDirectory(WaitingDir);
+            Directory.CreateDirectory(ActiveDir);
             Directory.CreateDirectory(SessionDir);
 
             // 앱 재시작 시 stale busy=running 이 남아 스피너가 영원히 도는 것 방지 (SessionBusyService 와 동일)
             foreach (var f in Directory.EnumerateFiles(BusyDir, "*.txt"))
                 try { File.Delete(f); } catch { }
             foreach (var f in Directory.EnumerateFiles(WaitingDir, "*.txt"))
+                try { File.Delete(f); } catch { }
+            // active turn markers are process-lifetime state. A previous app/CLI crash must
+            // not authorize late tool hooks after restart.
+            foreach (var f in Directory.EnumerateFiles(ActiveDir, "*.txt"))
                 try { File.Delete(f); } catch { }
             // 세션 ID 는 보존 — 재오픈 시 이어가야 하므로 삭제 X
 

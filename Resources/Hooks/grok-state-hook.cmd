@@ -9,28 +9,49 @@ if "%DEVEZCODE_ROOM_ID%"=="" (
 
 set "base=%APPDATA%\DevezCode\grok"
 set "room=%DEVEZCODE_ROOM_ID%"
-if not exist "%base%\busy" mkdir "%base%\busy" >nul 2>&1
+set "sid=%GROK_SESSION_ID%"
+set "tracked="
+set "root="
+if not "%sid%"=="" if exist "%base%\sessions\%room%.txt" set /p "tracked="<"%base%\sessions\%room%.txt"
+if not "%sid%"=="" if exist "%base%\sessions\%room%.root.txt" set /p "root="<"%base%\sessions\%room%.root.txt"
+if "%sid%"=="" goto :drain
+if /i not "%tracked%"=="%sid%" goto :drain
+if /i not "%root%"=="%sid%" goto :drain
 if not exist "%base%\waiting" mkdir "%base%\waiting" >nul 2>&1
+if exist "%base%\completed\%room%.flag" (
+  "%SystemRoot%\System32\more.com" >nul 2>nul
+  exit /b 0
+)
 
 if /i "%~1"=="PreToolUse" goto :pre_tool
 
-rem Post events only need to drain stdin and restore the normal working state.
+rem Post events only need to drain stdin and clear human-input waiting state.
+rem busy is owned exclusively by UserPromptSubmit/Stop so a late tool event can
+rem never re-arm a completed spinner.
 "%SystemRoot%\System32\more.com" >nul 2>nul
-call :write "%base%\busy\%room%.txt" "running"
 call :write "%base%\waiting\%room%.txt" "idle"
+if exist "%base%\completed\%room%.flag" call :write "%base%\waiting\%room%.txt" "idle"
 exit /b 0
 
 :pre_tool
 set "payload=%base%\payload-%RANDOM%%RANDOM%.tmp"
 "%SystemRoot%\System32\more.com" >"%payload%" 2>nul
-call :write "%base%\busy\%room%.txt" "running"
+if exist "%base%\completed\%room%.flag" goto :cleanup
 "%SystemRoot%\System32\findstr.exe" /i /r /c:"\"toolName\"[ ]*:[ ]*\"ask_user_question\"" /c:"\"toolName\"[ ]*:[ ]*\"askUserQuestion\"" /c:"\"tool_name\"[ ]*:[ ]*\"ask_user_question\"" "%payload%" >nul 2>nul
 if errorlevel 1 (
   call :write "%base%\waiting\%room%.txt" "idle"
 ) else (
   call :write "%base%\waiting\%room%.txt" "waiting"
 )
+:cleanup
+if exist "%base%\completed\%room%.flag" call :write "%base%\waiting\%room%.txt" "idle"
 del /f /q "%payload%" >nul 2>&1
+exit /b 0
+
+:drain
+rem Every Grok hook receives GROK_SESSION_ID. Fail closed for nested/inherited sessions so
+rem their tool events cannot mutate the tracked root room's waiting state.
+"%SystemRoot%\System32\more.com" >nul 2>nul
 exit /b 0
 
 :write

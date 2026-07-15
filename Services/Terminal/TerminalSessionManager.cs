@@ -1829,7 +1829,8 @@ public sealed class TerminalSessionManager
             //   • 메인 턴: UserPromptSubmit=running(main 플래그 set) / Stop·SessionEnd=idle(main 플래그 clear).
             //   • 서브에이전트: SubagentStart=substart(run 파일 생성) / SubagentStop=substop(run 파일 삭제).
             //     busy 는 substop·Stop 시점에 (main 플래그 존재 OR run 파일 개수>0)로 재평가한다.
-            // ghost 방어: SubagentStop 누락(크래시/kill) 대비 1시간 초과 run 파일은 카운트 전 prune,
+            // ghost 방어: SubagentStop 누락(크래시/kill) 대비 1시간 초과 run 파일은 카운트 전 prune.
+            // 아주 짧은 서브에서 Stop 훅 프로세스가 Start보다 먼저 끝나는 역전은 agent_id.done fence로 차단.
             // SessionEnd 시 방 run 디렉터리 전량 제거, 앱 시작 시 subruns/main 플래그 wipe(C# SessionBusyService).
             const string busyScript = """
                 # DevezCode busy-state hook. Arg1 = running|idle|notify|unwait|pulse|substart|substop. Per-room sidebar spinner state.
@@ -1848,6 +1849,10 @@ public sealed class TerminalSessionManager
                   $runDir = Join-Path (Join-Path $env:APPDATA 'DevezCode\claude\subruns') $room
                   $sdir = Join-Path $dir '_state'
                   $mainFile = Join-Path $sdir ('main_' + $room + '.flag')
+                  # 같은 agent_id가 resume될 수 있으므로 done 존재만으로 Start를 막으면 안 된다.
+                  # 훅 프로세스 생성 시각을 세대로 사용: Stop보다 먼저 생성된 늦은 Start만 폐기한다.
+                  $hookStartTicks = [DateTime]::UtcNow.Ticks
+                  try { $hookStartTicks = (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks } catch { }
 
                   function Write-State($path, $value, $encoding = 'Ascii') {
                     try {
@@ -1886,7 +1891,8 @@ public sealed class TerminalSessionManager
                       $cut = (Get-Date).AddHours(-1)
                       foreach ($f in @(Get-ChildItem -LiteralPath $rd -Filter '*.run' -ErrorAction SilentlyContinue)) {
                         if ($f.LastWriteTime -lt $cut) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue }
-                        else { Write-State $f.FullName ((Get-Date).ToString('o')) }
+                        # .run content is the immutable Start generation. Refresh only mtime.
+                        else { [IO.File]::SetLastWriteTimeUtc($f.FullName, [DateTime]::UtcNow) }
                       }
                     } catch { }
                   }
@@ -1903,6 +1909,52 @@ public sealed class TerminalSessionManager
                       }
                       return $live
                     } catch { return 0 }
+                  }
+
+                  function Test-AgentCompleted($donePath, [long]$startTicks) {
+                    try {
+                      if (-not (Test-Path -LiteralPath $donePath)) { return $false }
+                      $doneTicks = [long]0
+                      $rawDone = (Get-Content -LiteralPath $donePath -Raw -ErrorAction SilentlyContinue).Trim()
+                      if (-not [long]::TryParse($rawDone, [ref]$doneTicks)) {
+                        Remove-Item -LiteralPath $donePath -Force -ErrorAction SilentlyContinue
+                        return $false
+                      }
+                      if ($doneTicks -ge $startTicks) { return $true }
+                      # Stop 뒤 새로 생성된 같은 agent_id의 resume Start: 이전 세대 fence 해제.
+                      Remove-Item -LiteralPath $donePath -Force -ErrorAction SilentlyContinue
+                    } catch { }
+                    return $false
+                  }
+
+                  # Start/Stop for the same agent_id are separate hook processes and can finish in
+                  # either order. Serialize their run/done transition; process start ticks then tell
+                  # an old delayed Stop from a legitimate Stop for the current resumed generation.
+                  $agentMutex = $null
+                  $agentMutexHeld = $false
+                  function Enter-AgentLock([string]$agentId) {
+                    try {
+                      $script:agentMutex = New-Object System.Threading.Mutex($false,
+                        ('Local\DevezCode.ClaudeSub.' + $room + '.' + $agentId))
+                      try {
+                        $script:agentMutexHeld = $script:agentMutex.WaitOne(10000)
+                      } catch [System.Threading.AbandonedMutexException] {
+                        $script:agentMutexHeld = $true
+                      }
+                      return $script:agentMutexHeld
+                    } catch {
+                      $script:agentMutexHeld = $false
+                      return $false
+                    }
+                  }
+
+                  function Exit-AgentLock {
+                    try {
+                      if ($script:agentMutexHeld -and $script:agentMutex) { $script:agentMutex.ReleaseMutex() }
+                    } catch { }
+                    try { if ($script:agentMutex) { $script:agentMutex.Dispose() } } catch { }
+                    $script:agentMutexHeld = $false
+                    $script:agentMutex = $null
                   }
 
                   # Hook runners may still be writing stdin when a status-only branch exits.
@@ -1941,17 +1993,52 @@ public sealed class TerminalSessionManager
                   # ── SubagentStart: run 파일 생성 → 즉시 busy=running (agent_id 로 개별 추적) ──
                   if ($status -eq 'substart') {
                     $aid = ''; try { $aid = ('' + $j.agent_id) -replace '[^\w\-]', '' } catch { }
-                    if ($aid) {
-                      New-Item -ItemType Directory -Force -Path $runDir | Out-Null
-                      Write-State (Join-Path $runDir ($aid + '.run')) ((Get-Date).ToString('o'))
-                      Write-State $busyFile 'running'
+                    if ($aid -and (Enter-AgentLock $aid)) {
+                      try {
+                        New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+                        $agentRun = Join-Path $runDir ($aid + '.run')
+                        $agentDone = Join-Path $runDir ($aid + '.done')
+                        # Stop 프로세스가 나중 세대면 이 지연 Start는 폐기. 더 오래된 done이면
+                        # same agent_id resume이므로 Test-AgentCompleted가 fence를 제거하고 허용한다.
+                        if (-not (Test-AgentCompleted $agentDone $hookStartTicks)) {
+                          Write-State $agentRun ([string]$hookStartTicks)
+                          Write-State $busyFile 'running'
+                        } elseif ((Test-Path -LiteralPath $mainFile) -or ((Get-LiveSubCount $runDir) -gt 0)) {
+                          Write-State $busyFile 'running'
+                        } else {
+                          Write-State $busyFile 'idle'
+                        }
+                      } finally {
+                        Exit-AgentLock
+                      }
                     }
                     exit 0
                   }
                   # ── SubagentStop: run 파일 삭제 → (메인 진행중 OR 남은 서브>0)로 busy 재평가 ──
                   if ($status -eq 'substop') {
                     $aid = ''; try { $aid = ('' + $j.agent_id) -replace '[^\w\-]', '' } catch { }
-                    if ($aid) { Remove-Item -LiteralPath (Join-Path $runDir ($aid + '.run')) -Force -ErrorAction SilentlyContinue }
+                    if ($aid -and (Enter-AgentLock $aid)) {
+                      try {
+                        New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+                        $agentRun = Join-Path $runDir ($aid + '.run')
+                        $runTicks = [long]0
+                        try {
+                          if (Test-Path -LiteralPath $agentRun) {
+                            $rawRun = (Get-Content -LiteralPath $agentRun -Raw -ErrorAction SilentlyContinue).Trim()
+                            [void][long]::TryParse($rawRun, [ref]$runTicks)
+                          }
+                        } catch { $runTicks = [long]0 }
+                        if ($runTicks -le $hookStartTicks) {
+                          # done을 먼저 남겨 아직 기동 중인 이전 Start도 완료 사실을 보게 한다.
+                          Write-State (Join-Path $runDir ($aid + '.done')) ([string]$hookStartTicks)
+                          Remove-Item -LiteralPath $agentRun -Force -ErrorAction SilentlyContinue
+                        }
+                        # runTicks > Stop process start means this is an old delayed Stop; the
+                        # same agent_id has already resumed, so preserve the newer generation.
+                      } finally {
+                        Exit-AgentLock
+                      }
+                    }
                     if ((Test-Path -LiteralPath $mainFile) -or ((Get-LiveSubCount $runDir) -gt 0)) {
                       Write-State $busyFile 'running'
                     } else {
@@ -2024,6 +2111,15 @@ public sealed class TerminalSessionManager
                 } catch { }
                 exit 0
                 """;
+            // A hot-patched hook may be temporarily read-only while an older DevezCode process is
+            // still alive, preventing that loaded binary from restoring its embedded old script.
+            // The first rebuilt/new process owns the current source and safely removes that guard.
+            if (File.Exists(BusyHookScriptPath))
+            {
+                var attributes = File.GetAttributes(BusyHookScriptPath);
+                if ((attributes & FileAttributes.ReadOnly) != 0)
+                    File.SetAttributes(BusyHookScriptPath, attributes & ~FileAttributes.ReadOnly);
+            }
             File.WriteAllText(BusyHookScriptPath, busyScript);
         }
         catch (Exception) { /* 추적 실패해도 claude 실행은 계속 — flags 에서 파일 존재 확인 */ }
@@ -2695,6 +2791,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(codexDir, "lastmsg", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(codexDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(codexDir, "waiting", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(codexDir, "active", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(CodexLaunchDir(), roomFile + ".cmd"));
 
         var grokDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "grok");
@@ -2705,6 +2802,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(grokDir, "lastmsg", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(grokDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(grokDir, "waiting", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(grokDir, "completed", roomFile + ".flag"));
         TryDeleteFile(Path.Combine(GrokLaunchDir(), roomFile + ".cmd"));
 
         var opencodeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode");
