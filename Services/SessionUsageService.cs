@@ -194,7 +194,7 @@ public static class SessionUsageService
     {
         var sb = new StringBuilder();
         sb.Append('↓').Append(Compact(t.InputTotal)).Append("  ↑").Append(Compact(t.Output));
-        if (EstimateCost(t) is { } c) sb.Append("  (").Append(FormatCost(c)).Append(" 추정)");
+        if (EstimateCost(t) is { } c) sb.Append("  (").Append(FormatCost(c)).Append(')');
         return sb.ToString();
     }
 
@@ -211,7 +211,11 @@ public static class SessionUsageService
         sb.Append($"캐시 읽기    {t.CacheRead:N0}\n");
         sb.Append($"입력 합계    {t.InputTotal:N0}\n");
         sb.Append($"출력         {t.Output:N0}");
-        if (EstimateCost(t) is { } c) sb.Append($"\n예상 비용    {FormatCost(c)}");
+        if (EstimateCost(t) is { } c)
+        {
+            sb.Append($"\n예상 비용    {FormatCost(c)}");
+            sb.Append("\n※ 실제 청구액이 아니라 토큰 사용량으로 계산한 추정치입니다.");
+        }
         return sb.ToString();
     }
 
