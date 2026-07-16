@@ -5,7 +5,7 @@ namespace DevezCode.Models;
 /// <summary>git status 한 줄 — 변경된 파일 하나.</summary>
 public sealed class GitChange : INotifyPropertyChanged
 {
-    /// <summary>표시용 상태 글자(M=수정/A=추가/D=삭제/R=이동/U=신규 미추적).</summary>
+    /// <summary>표시용 상태 글자(A/M/D/R/C/T/U). 신규 미추적 파일도 VS와 같이 A로 표시.</summary>
     public string Status { get; init; } = "";
     /// <summary>저장소 루트 기준 상대 경로.</summary>
     public string Path { get; init; } = "";
@@ -23,15 +23,16 @@ public sealed class GitChange : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-    /// <summary>상태 글자 색(추가 녹색·삭제 빨강·수정 노랑·신규 회색).</summary>
+    /// <summary>상태 글자 색.</summary>
     public string StatusColor => Status switch
     {
         "A" => "#3FB950",
         "D" => "#F85149",
         "M" => "#D29922",
         "R" => "#58A6FF",
-        "U" => "#3FB950",
-        "?" => "#8B949E",
+        "C" => "#3FB950",
+        "T" => "#D29922",
+        "U" => "#F85149",
         _   => "#8B949E",
     };
 }

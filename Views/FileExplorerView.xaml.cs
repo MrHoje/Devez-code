@@ -235,7 +235,7 @@ public partial class FileExplorerView : UserControl
         // 파일 검색 박스는 탐색기(Directory) 모드에서만 의미가 있으므로 그때만 표시.
         FileSearchRow.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         PathText.ToolTip = idx == 2
-            ? "M = 수정됨\nA = 추가됨\nD = 삭제됨\nR = 이름 변경됨\nU = 병합되지 않음"
+            ? "A = 추가됨\nM = 수정됨\nD = 삭제됨\nR = 이름 변경됨\nC = 복사됨\nT = 형식 변경됨\nU = 병합되지 않음"
             : null;
 
         PathText.Text = idx switch

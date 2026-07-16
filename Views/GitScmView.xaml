@@ -6,6 +6,18 @@
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
+        <!-- 섹션 전체 작업은 헤더에 마우스를 올렸을 때만 노출. 공간은 유지해 제목 흔들림 방지. -->
+        <Style x:Key="ScmHeaderActionButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                    <Setter Property="Opacity" Value="1"/>
+                    <Setter Property="IsHitTestVisible" Value="True"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- TreeViewItem: 파일 탐색기식(삼각형 + 행 + 들여쓴 자식). 행은 StackPanel 로 쌓아
              컨텐츠 크기 기준 레이아웃(중첩 들여쓰기). 트리는 유한 높이 영역에 놓여 내부 ScrollViewer 가
              가상화한다(아래 본문 참고). -->
@@ -105,14 +117,14 @@
                 </Button>
                 <Button x:Name="StageBtn" Grid.Column="4" Tag="{Binding Change}"
                         Click="Stage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
-                        Visibility="Collapsed" ToolTip="stage">
+                                    Visibility="Collapsed" ToolTip="스테이징">
                     <Path Data="{StaticResource IconPlus}" Width="10" Height="10" Stretch="Uniform"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                 </Button>
                 <Button x:Name="UnstageBtn" Grid.Column="4" Tag="{Binding Change}"
                         Click="Unstage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
-                        Visibility="Collapsed" ToolTip="unstage">
+                                    Visibility="Collapsed" ToolTip="스테이징 해제">
                     <Rectangle Width="8" Height="1.5" RadiusX="1" RadiusY="1"
                                Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                 </Button>
@@ -228,22 +240,33 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <!-- 섹션 헤더(클릭 시 트리 통째 접기/펼치기) -->
-            <Grid x:Name="StagedHeaderRow" Grid.Row="0" Background="Transparent"
-                  MouseLeftButtonUp="ToggleStaged" Margin="0,11,0,2">
-                <StackPanel Orientation="Horizontal">
-                    <StackPanel.RenderTransform><TranslateTransform Y="-2"/></StackPanel.RenderTransform>
-                    <Grid Width="16">
-                        <Path x:Name="StagedChevron" Width="8" Height="8" Stretch="Uniform"
-                              Data="M 0 0 L 4 4 L 0 8 Z" Fill="{DynamicResource TextMutedBrush}"
-                              RenderTransformOrigin="0.5,0.5"
-                              HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Path.RenderTransform><RotateTransform Angle="90"/></Path.RenderTransform>
-                        </Path>
-                    </Grid>
-                    <TextBlock x:Name="StagedHeader" Text="스테이징된 변경 사항" Margin="2,0,0,0"
-                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}"/>
-                </StackPanel>
+            <Grid x:Name="StagedHeaderRow" Grid.Row="0" Background="Transparent" Margin="0,11,0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="Transparent" MouseLeftButtonUp="ToggleStaged">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.RenderTransform><TranslateTransform Y="-2"/></StackPanel.RenderTransform>
+                        <Grid Width="16">
+                            <Path x:Name="StagedChevron" Width="8" Height="8" Stretch="Uniform"
+                                  Data="M 0 0 L 4 4 L 0 8 Z" Fill="{DynamicResource TextMutedBrush}"
+                                  RenderTransformOrigin="0.5,0.5"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Path.RenderTransform><RotateTransform Angle="90"/></Path.RenderTransform>
+                            </Path>
+                        </Grid>
+                        <TextBlock x:Name="StagedHeader" Text="스테이징된 변경 사항" Margin="2,0,0,0"
+                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Button x:Name="UnstageAllBtn" Grid.Column="1" Click="UnstageAll_Click"
+                        Style="{StaticResource ScmHeaderActionButton}" Width="20" Height="20" Padding="2"
+                        ToolTip="전체 스테이징 해제">
+                    <Rectangle Width="8" Height="1.5" RadiusX="1" RadiusY="1"
+                               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                </Button>
             </Grid>
             <!-- 스테이징·변경 둘 다 있을 때만 절반 캡(코드에서 MaxHeight 설정) → 초과 시 내부 스크롤 -->
             <Grid x:Name="StagedTreeHost" Grid.Row="1" Margin="0,0,0,0" ClipToBounds="True">
@@ -287,22 +310,34 @@
             <Border x:Name="SectionSeparator" Grid.Row="2" Height="1" Margin="0,7,0,0"
                     Background="{DynamicResource LineBrush}" Visibility="Collapsed"/>
 
-            <Grid x:Name="ChangesHeaderRow" Grid.Row="3" Background="Transparent"
-                  MouseLeftButtonUp="ToggleUnstaged" Margin="0,14,0,2">
-                <StackPanel Orientation="Horizontal">
-                    <StackPanel.RenderTransform><TranslateTransform Y="-2"/></StackPanel.RenderTransform>
-                    <Grid Width="16">
-                        <Path x:Name="ChangesChevron" Width="8" Height="8" Stretch="Uniform"
-                              Data="M 0 0 L 4 4 L 0 8 Z" Fill="{DynamicResource TextMutedBrush}"
-                              RenderTransformOrigin="0.5,0.5"
-                              HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Path.RenderTransform><RotateTransform Angle="90"/></Path.RenderTransform>
-                        </Path>
-                    </Grid>
-                    <TextBlock x:Name="ChangesHeader" Text="변경 내용" Margin="2,0,0,0"
-                               FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextBrush}"/>
-                </StackPanel>
+            <Grid x:Name="ChangesHeaderRow" Grid.Row="3" Background="Transparent" Margin="0,14,0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="Transparent" MouseLeftButtonUp="ToggleUnstaged">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.RenderTransform><TranslateTransform Y="-2"/></StackPanel.RenderTransform>
+                        <Grid Width="16">
+                            <Path x:Name="ChangesChevron" Width="8" Height="8" Stretch="Uniform"
+                                  Data="M 0 0 L 4 4 L 0 8 Z" Fill="{DynamicResource TextMutedBrush}"
+                                  RenderTransformOrigin="0.5,0.5"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Path.RenderTransform><RotateTransform Angle="90"/></Path.RenderTransform>
+                            </Path>
+                        </Grid>
+                        <TextBlock x:Name="ChangesHeader" Text="변경 내용" Margin="2,0,0,0"
+                                   FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Button x:Name="StageAllBtn" Grid.Column="1" Click="StageAll_Click"
+                        Style="{StaticResource ScmHeaderActionButton}" Width="20" Height="20" Padding="2"
+                        ToolTip="전체 스테이징">
+                    <Path Data="{StaticResource IconPlus}" Width="10" Height="10" Stretch="Uniform"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                </Button>
             </Grid>
             <Grid x:Name="UnstagedTreeHost" Grid.Row="4" Margin="0,0,0,0" ClipToBounds="True">
                 <TreeView x:Name="UnstagedTree"
@@ -349,11 +384,12 @@
         <Border x:Name="GitControlBar" Grid.Row="1" Visibility="Collapsed" Background="{DynamicResource PanelBrush}"
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="8">
             <StackPanel>
-                <!-- 동기화 헤더: 브랜치 + ↓N ↑N + pull/push/fetch 아이콘 -->
+                <!-- 동기화 헤더: 브랜치 + ↓N ↑N + fetch/pull/push/sync 아이콘 -->
                 <Grid Margin="2,0,0,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
@@ -362,7 +398,7 @@
                         <Path x:Name="BranchIcon" Data="{StaticResource IconGitBranch}" Width="14" Height="14" Stretch="Uniform"
                               Style="{StaticResource LucideIcon}" Stroke="{DynamicResource TextMutedBrush}"
                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        <!-- 페치/풀/푸시 진행 중엔 브랜치 아이콘 자리에 스피너 -->
+                        <!-- 원격 작업 진행 중엔 브랜치 아이콘 자리에 스피너 -->
                         <Ellipse x:Name="BranchSpinner" Width="14" Height="14" Visibility="Collapsed"
                                  HorizontalAlignment="Center" VerticalAlignment="Center"
                                  models:SpinnerActivator.Track="True"
@@ -377,9 +413,9 @@
                     <TextBlock x:Name="BranchText" Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource TextBrush}" FontSize="{DynamicResource Fs12}"/>
-                    <!-- fetch(점선 아래 화살표)를 맨 왼쪽으로. pull/push/fetch 동일 크기. -->
+                    <!-- fetch(점선 아래 화살표)를 맨 왼쪽으로. 원격 작업 버튼은 동일 크기. -->
                     <Button x:Name="FetchBtn" Grid.Column="2" Click="Fetch_Click"
-                            Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="fetch">
+                            Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="원격 정보 가져오기">
                         <!-- 좁은 fetch(점선 아래 화살표) — 세로 꽉·가로 좁게 직접 그림 -->
                         <Path Data="M6 1 V13.5 M2.5 9.5 L6 13.5 L9.5 9.5"
                               Style="{StaticResource LucideIcon}" StrokeThickness="1.5" SnapsToDevicePixels="False"
@@ -388,7 +424,7 @@
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
                     <Button x:Name="PullBtn" Grid.Column="3" Click="Pull_Click" Margin="2,0,0,0"
-                            Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="pull">
+                            Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="원격 변경 동기화">
                         <!-- 좁은 arrow-down(pull) -->
                         <Path Data="M6 2 V14 M2.5 10 L6 14 L9.5 10"
                               Style="{StaticResource LucideIcon}" StrokeThickness="1.5" SnapsToDevicePixels="False"
@@ -396,11 +432,18 @@
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
                     <Button x:Name="PushBtn" Grid.Column="4" Click="Push_Click" Margin="2,0,0,0"
-                            Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="push">
+                            Style="{StaticResource IconButton}" Width="24" Height="24" Padding="3" ToolTip="원격 저장소에 푸시">
                         <!-- 좁은 arrow-up(push) -->
                         <Path Data="M6 14 V2 M2.5 6 L6 2 L9.5 6"
                               Style="{StaticResource LucideIcon}" StrokeThickness="1.5" SnapsToDevicePixels="False"
                               Width="14" Height="14"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                    </Button>
+                    <Button x:Name="SyncBtn" Grid.Column="5" Click="Sync_Click" Margin="2,0,0,0"
+                            Style="{StaticResource IconButton}" Width="24" Height="24" Padding="4"
+                            ToolTip="동기화(가져오기 후 푸시)">
+                        <Path Data="{StaticResource IconRefresh}" Width="12" Height="12" Stretch="Uniform"
+                              Style="{StaticResource LucideIcon}"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                     </Button>
                 </Grid>

@@ -54,7 +54,7 @@ public static class GitService
         return r.Ok && r.Output.Trim() == "true";
     }
 
-    /// <summary>porcelain=v2 로 staged(X)·unstaged(Y) 를 분리 수집.</summary>
+    /// <summary>porcelain=v1 의 XY 상태를 staged(X)·unstaged(Y) 로 분리 수집.</summary>
     public static async Task<Models.GitStatus> StatusAsync(string repoDir)
     {
         var res = new Models.GitStatus();
@@ -71,9 +71,19 @@ public static class GitService
 
             if (x == '?' && y == '?')
             {
-                res.Unstaged.Add(new Models.GitChange { Status = "U", Path = rest, IsUntracked = true, IsStaged = false });
+                // VS와 동일하게 신규 파일은 A(추가)로 표시하되, 실제 미추적 여부는 IsUntracked로 별도 보존한다.
+                res.Unstaged.Add(new Models.GitChange { Status = "A", Path = rest, IsUntracked = true, IsStaged = false });
                 continue;
             }
+
+            // 병합 충돌은 XY 양쪽에 상태가 있어도 한 파일을 두 목록에 중복 표시하지 않는다.
+            // porcelain v1 이 정의한 unmerged 조합을 VS와 같이 U 하나로 표시한다.
+            if (IsUnmerged(x, y))
+            {
+                res.Unstaged.Add(new Models.GitChange { Status = "U", Path = rest, IsStaged = false });
+                continue;
+            }
+
             if (x != ' ' && x != '?')
                 res.Staged.Add(new Models.GitChange { Status = MapCode(x), Path = rest, IsStaged = true });
             if (y != ' ' && y != '?')
@@ -82,7 +92,14 @@ public static class GitService
         return res;
 
         static string MapCode(char c) => c switch
-        { 'A' => "A", 'D' => "D", 'M' => "M", 'R' => "R", 'C' => "R", _ => "M" };
+        {
+            'A' => "A", 'D' => "D", 'M' => "M", 'R' => "R",
+            'C' => "C", 'T' => "T", 'U' => "U", _ => "M"
+        };
+
+        static bool IsUnmerged(char x, char y)
+            => (x, y) is ('D', 'D') or ('A', 'U') or ('U', 'D') or ('U', 'A')
+                or ('D', 'U') or ('A', 'A') or ('U', 'U');
     }
 
     /// <summary>git show &lt;rev&gt;:&lt;path&gt; — rev 예: "HEAD", ":"(인덱스). 실패/부재 시 빈 문자열.</summary>
@@ -109,6 +126,14 @@ public static class GitService
         return await RunAsync(repoDir, "reset", "-q", "--", path); // 신규 파일 등 폴백
     }
 
+    /// <summary>전체 스테이징 해제. restore 미지원/초기 저장소는 reset 으로 폴백.</summary>
+    public static async Task<GitResult> UnstageAllAsync(string repoDir)
+    {
+        var r = await RunAsync(repoDir, "restore", "--staged", "--", ":/");
+        if (r.Ok) return r;
+        return await RunAsync(repoDir, "reset", "-q");
+    }
+
     /// <summary>변경 취소. 추적 파일은 checkout, untracked 는 파일 삭제.</summary>
     public static async Task<GitResult> DiscardAsync(string repoDir, string path, bool untracked)
     {
@@ -129,8 +154,6 @@ public static class GitService
         => RunAsync(repoDir, "commit", "-m", message);
 
     public static Task<GitResult> PullAsync(string repoDir) => RunAsync(repoDir, "pull");
-    /// <summary>원격 변경을 rebase 로 통합(분기 상태에서 push 전에 사용).</summary>
-    public static Task<GitResult> PullRebaseAsync(string repoDir) => RunAsync(repoDir, "pull", "--rebase");
     public static Task<GitResult> FetchAsync(string repoDir) => RunAsync(repoDir, "fetch");
 
     public static async Task<GitResult> PushAsync(string repoDir)
@@ -139,7 +162,7 @@ public static class GitService
         if (!br.Ok) return br;
         var branch = br.Output.Trim();
         if (string.IsNullOrEmpty(branch) || branch == "HEAD")
-            return new GitResult(false, "", "현재 브랜치를 확인할 수 없습니다(detached HEAD).");
+            return new GitResult(false, "", "현재 브랜치가 분리된 상태라 푸시할 수 없습니다.");
         var up = await RunAsync(repoDir, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}");
         return up.Ok ? await RunAsync(repoDir, "push")
                      : await RunAsync(repoDir, "push", "-u", "origin", branch);
