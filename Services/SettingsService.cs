@@ -6,6 +6,15 @@ using System.Text.Json;
 
 namespace DevezCode.Services;
 
+/// <summary>세션 토큰 사용량 비용($) 계산용 모델별 단가 규칙(외부 설정). settings.json 의 UsagePricing 배열에 담긴다.
+/// Match 는 모델ID 부분일치(소문자, 예 "opus"·"gpt-5"), 단가는 100만 토큰당 달러. 위에서부터 먼저 맞는 규칙 사용.</summary>
+public sealed class UsagePriceRule
+{
+    public string Match { get; set; } = "";
+    public double InPerM { get; set; }
+    public double OutPerM { get; set; }
+}
+
 /// <summary>
 /// 앱 설정 영속(터미널 폰트 크기 + Claude Code 방별 디렉터리/세션 추적).
 /// %AppData%\DevezCode\settings.json 에 저장. 터미널 스택(TerminalSessionManager,
@@ -16,6 +25,9 @@ public static class SettingsService
     private sealed class SettingsData
     {
         public int TerminalFontSizePt { get; set; } = 0;
+        // 토큰 사용량 비용 단가(모델별). 비어 있으면 SessionUsageService 내장 기본값 사용.
+        // 채우면 내장값보다 우선(덮어쓰기/신규 모델 추가). 갱신 절차: .knowledge/토큰사용량-단가-갱신.md
+        public List<UsagePriceRule> UsagePricing { get; set; } = new();
         // 앱 전체 글꼴 크기 단계(devez 이식). 0=작게(기본), 1=크게(+2px). App.SetFontScale 에 전달.
         public int FontScale { get; set; } = 0;
         // 좌·우 패널 접힘 상태 + 펼침 시 복원 폭. 로컬 전용.
@@ -223,6 +235,9 @@ public static class SettingsService
     // ── 앱 전체 글꼴 크기 단계 (devez 이식: 0=작게, 1=크게) ───────
     public static int LoadFontScale() => Current.FontScale;
     public static void SaveFontScale(int v) { Current.FontScale = v; Save(); }
+
+    // ── 토큰 사용량 비용 단가(외부 설정). 갱신 절차: .knowledge/토큰사용량-단가-갱신.md ──
+    public static List<UsagePriceRule> LoadUsagePricing() => Current.UsagePricing;
 
     // ── 좌·우 패널 접힘 상태 + 복원 폭 ───────────────────────────
     public static bool   LoadLeftPanelCollapsed()  => Current.LeftPanelCollapsed;

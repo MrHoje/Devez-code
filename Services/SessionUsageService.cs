@@ -44,11 +44,21 @@ public static class SessionUsageService
     private static bool _loaded;
 
     // ── 단가표 (per 1M tokens). Claude 는 claude-api 스킬 기준 정확값. Codex(GPT)는 근사치 — "예상" 표기. ──
+    // settings.json 의 UsagePricing(SettingsService.LoadUsagePricing) 이 있으면 그게 우선(덮어쓰기/신규 모델).
+    // 갱신 절차 문서: .knowledge/토큰사용량-단가-갱신.md
     private readonly record struct Price(double InPerM, double OutPerM);
     private static Price? PriceFor(string? model)
     {
         if (string.IsNullOrEmpty(model)) return null;
         var m = model.ToLowerInvariant();
+        try
+        {
+            foreach (var r in SettingsService.LoadUsagePricing())
+                if (!string.IsNullOrEmpty(r.Match) && m.Contains(r.Match.ToLowerInvariant()))
+                    return new Price(r.InPerM, r.OutPerM);
+        }
+        catch { /* 설정 로드 실패 시 내장 기본값으로 */ }
+        // 내장 기본값(설정에 없을 때)
         if (m.Contains("fable") || m.Contains("mythos")) return new Price(10, 50);
         if (m.Contains("opus")) return new Price(5, 25);
         if (m.Contains("sonnet")) return new Price(3, 15);
