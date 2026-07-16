@@ -85,7 +85,9 @@ public static class SessionUsageService
         catch { return null; }
     }
 
-    // ── claude: 증분 파싱 (offset 이후 붙은 줄만) ──
+    // ── claude: 변경 시에만 전체 스캔 + message.id 로 중복 제거 ──
+    // (claude 는 한 응답을 여러 JSONL 줄로 쪼개 기록 — 같은 message.id 가 2~3번 나온다. 줄마다 합산하면
+    //  2~3배 뻥튀기되므로 반드시 message.id 로 dedup. 파일 크기 불변이면 재파싱 스킵해 부하 억제.)
     private static UsageTotals? ReadClaude(string roomId, string? cwd)
     {
         var sid = SettingsService.LoadClaudeCodeRoomSession(roomId);
@@ -95,33 +97,12 @@ public static class SessionUsageService
         var entry = _cache.GetOrAdd(roomId, _ => new Entry { Totals = new UsageTotals(0, 0, 0, 0, 0, null, "Claude") });
         lock (entry)
         {
-            if (entry.Sid != sid) // 방의 세션ID가 바뀜(포크/재개) → 처음부터
-            {
-                entry.Sid = sid; entry.Offset = 0; entry.LastLen = 0;
-                entry.Totals = new UsageTotals(0, 0, 0, 0, 0, null, "Claude");
-            }
             long len = new FileInfo(path).Length;
-            if (len == entry.LastLen && entry.Offset > 0) // 변화 없음 → 캐시 그대로
+            if (entry.Sid == sid && len == entry.LastLen && entry.LastLen > 0) // 변화 없음 → 캐시 그대로
                 return entry.Totals.HasData ? entry.Totals : null;
 
-            long offset = entry.Offset;
-            var acc = entry.Totals;
-            if (offset > len) { offset = 0; acc = new UsageTotals(0, 0, 0, 0, 0, null, "Claude"); } // 로테이션/교체 → 풀스캔
-
-            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            {
-                fs.Seek(offset, SeekOrigin.Begin);
-                var buf = new byte[len - offset];
-                int read = fs.Read(buf, 0, buf.Length);
-                int lastNl = read > 0 ? Array.LastIndexOf(buf, (byte)'\n', read - 1) : -1;
-                if (lastNl >= 0)
-                {
-                    var text = Encoding.UTF8.GetString(buf, 0, lastNl + 1);
-                    acc = AccumulateClaude(acc, text);
-                    offset += lastNl + 1;
-                }
-            }
-            entry.Offset = offset;
+            var acc = ParseClaudeFull(path);
+            entry.Sid = sid;
             entry.LastLen = len;
             entry.Totals = acc;
             SaveThrottled();
@@ -129,20 +110,27 @@ public static class SessionUsageService
         }
     }
 
-    private static UsageTotals AccumulateClaude(UsageTotals acc, string chunk)
+    private static UsageTotals ParseClaudeFull(string path)
     {
-        long inNew = acc.InputNew, cw5 = acc.CacheWrite5m, cw1 = acc.CacheWrite1h, cr = acc.CacheRead, outp = acc.Output;
-        string? model = acc.Model;
-        foreach (var line in chunk.Split('\n'))
+        long inNew = 0, cw5 = 0, cw1 = 0, cr = 0, outp = 0;
+        string? model = null;
+        var seen = new HashSet<string>();
+        string text;
+        using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        using (var sr = new StreamReader(fs, Encoding.UTF8))
+            text = sr.ReadToEnd();
+        foreach (var line in text.Split('\n'))
         {
             if (line.Length == 0) continue;
             try
             {
                 using var d = JsonDocument.Parse(line);
-                var root = d.RootElement;
-                if (!root.TryGetProperty("message", out var msg) || msg.ValueKind != JsonValueKind.Object) continue;
-                if (msg.TryGetProperty("model", out var mo) && mo.ValueKind == JsonValueKind.String) model = mo.GetString();
+                if (!d.RootElement.TryGetProperty("message", out var msg) || msg.ValueKind != JsonValueKind.Object) continue;
                 if (!msg.TryGetProperty("usage", out var u) || u.ValueKind != JsonValueKind.Object) continue;
+                // 같은 응답이 여러 줄로 기록됨 → message.id 로 1회만 집계
+                if (msg.TryGetProperty("id", out var idv) && idv.ValueKind == JsonValueKind.String)
+                    if (!seen.Add(idv.GetString()!)) continue;
+                if (msg.TryGetProperty("model", out var mo) && mo.ValueKind == JsonValueKind.String) model = mo.GetString();
                 inNew += GetLong(u, "input_tokens");
                 cr += GetLong(u, "cache_read_input_tokens");
                 outp += GetLong(u, "output_tokens");
