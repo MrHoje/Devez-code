@@ -981,7 +981,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private void RespondCodexColorQuery(string roomId, bool background, bool bel)
     {
         if (!_wired.TryGetValue(roomId, out var session)) return;
-        var scheme = TerminalSessionManager.Instance.Config.Scheme;
+        // 확정 저장된 테마의 스킴으로 응답. 라이브 Config.Scheme(설정창 미리보기 포함)를 쓰면
+        // 미리보기 중 codex 가 재질의 시 preview 색으로 컴포저를 굳혀, 취소해도 안 돌아온다.
+        var scheme = DevezCode.App.SchemeForTheme(DevezCode.App.CommittedTheme);
         string hex = background ? scheme.Background : scheme.Foreground;
         System.Drawing.Color c;
         try { c = System.Drawing.ColorTranslator.FromHtml(string.IsNullOrWhiteSpace(hex) ? "#0C0C0C" : hex); }

@@ -145,6 +145,7 @@ public sealed class VisualStudioFileIconConverter : IValueConverter
         [".fsproj"] = "FSProjectNode.png",
         [".vbproj"] = "VBProjectNode.png",
         [".pyproj"] = "PYProjectNode.png",
+        [".sln"] = "SolutionFile.png",
         [".json"] = "JsonFile.png",
         [".jsonc"] = "JsonFile.png",
         [".html"] = "HTMLFile.png",

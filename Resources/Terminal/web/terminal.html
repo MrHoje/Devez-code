@@ -463,10 +463,11 @@
       // 위로 올렸다 바닥 근처까지 내리면 몇 줄 모자라 추종이 끊긴다(맨 아래로 안 붙고 PageDown 필요).
       // 바닥 근처면 추종을 재개해 일반 터미널처럼 동작. 위로 올려 읽는 중(임계값 밖)엔 개입 안 함.
       let stick = false;
-      if (t.agent === 'codex') {
-        // codex 는 인라인 TUI 라 매 프레임 clear+rewrite 로 baseY(스크롤백 길이)가 출렁여서,
-        // 매 write 마다 위치로 바닥을 판정하면 간헐적으로 오판돼 위로 올린 화면이 당겨진다.
-        // → 사용자 스크롤 의도(entry.follow: 휠 핸들러가 갱신)만 보고 추종 여부를 정한다(표준 터미널 동작).
+      if (t.agent === 'codex' || t.agent === 'gajae') {
+        // codex/gjc 는 인라인 TUI 라 매 프레임 clear+rewrite 로 baseY(스크롤백 길이)가 출렁이고,
+        // 첫 위쪽 휠의 기본 처리가 반영되기 전 다음 write 가 오면 DOM 위치 판정이 아직 바닥이라
+        // scrollToBottom 예약이 첫 스크롤을 되돌린다. 사용자 스크롤 의도(entry.follow: 휠/키
+        // 핸들러가 먼저 갱신)만 보고 추종 여부를 정한다(표준 터미널 동작).
         stick = t.follow;
         t.term.write(bytes);
       } else {
@@ -1291,20 +1292,21 @@
     }
 
     // ── 스크롤 ──
-    // codex: 키보드 스크롤도 follow(추종 의도)를 갱신 — 위로/맨위=중단, 아래/맨아래=재개.
-    const cdx = (entry && entry.agent === 'codex');
+    // 인라인 TUI(codex/gjc): 키보드 스크롤도 follow(추종 의도)를 갱신 —
+    // 위로/맨위=중단, 아래/맨아래=재개.
+    const tracksFollow = entry && (entry.agent === 'codex' || entry.agent === 'gajae');
     // 아래 방향 스크롤로 바닥에 닿으면 추종 재개(휠 핸들러와 동일 판정 — scrollLines/Pages 는 동기 반영).
-    const cdxResumeIfBottom = function () {
-      if (!cdx) return;
+    const resumeFollowIfBottom = function () {
+      if (!tracksFollow) return;
       const b = term.buffer.active;
       if (b.viewportY >= b.baseY) entry.follow = true;
     };
-    if (ctrl && shift && !alt && key === 'ArrowUp')   { e.preventDefault(); if (cdx) entry.follow = false; term.scrollLines(-1); return false; }
-    if (ctrl && shift && !alt && key === 'ArrowDown') { e.preventDefault(); term.scrollLines(1); cdxResumeIfBottom(); return false; }
-    if (shift && !alt && key === 'PageUp')   { e.preventDefault(); if (cdx) entry.follow = false; term.scrollPages(-1); return false; }
-    if (shift && !alt && key === 'PageDown') { e.preventDefault(); term.scrollPages(1); cdxResumeIfBottom(); return false; }
-    if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); if (cdx) entry.follow = false; term.scrollToTop();    return false; }
-    if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); if (cdx) entry.follow = true;  term.scrollToBottom(); return false; }
+    if (ctrl && shift && !alt && key === 'ArrowUp')   { e.preventDefault(); if (tracksFollow) entry.follow = false; term.scrollLines(-1); return false; }
+    if (ctrl && shift && !alt && key === 'ArrowDown') { e.preventDefault(); term.scrollLines(1); resumeFollowIfBottom(); return false; }
+    if (shift && !alt && key === 'PageUp')   { e.preventDefault(); if (tracksFollow) entry.follow = false; term.scrollPages(-1); return false; }
+    if (shift && !alt && key === 'PageDown') { e.preventDefault(); term.scrollPages(1); resumeFollowIfBottom(); return false; }
+    if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); if (tracksFollow) entry.follow = false; term.scrollToTop();    return false; }
+    if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); if (tracksFollow) entry.follow = true;  term.scrollToBottom(); return false; }
 
     // ── 세션(탭) 관리 — C# 으로 위임 ──
     if (ctrl && shift && !alt && (key === 't' || key === 'T' || key === 'd' || key === 'D')) {
@@ -1414,11 +1416,12 @@
     // (/model·/effort 후 남은 잔여 suppress 카운트가 사용자의 스크롤을 되돌리는 것 방지.)
     _scrollSuppress = 0;
 
-    // codex: 사용자 스크롤 의도(follow)를 갱신 — 위로 올리면 추종 중단, 바닥으로 내려오면 재개.
-    // writeOut 은 이 플래그만 보고 추종하므로 baseY 출렁임에 흔들리지 않는다.
+    // 인라인 TUI(codex/gjc): 사용자 스크롤 의도(follow)를 갱신 — 위로 올리면 xterm 의
+    // 기본 휠 처리가 반영되기 전 즉시 추종을 끊고, 바닥으로 내려오면 재개한다.
+    // writeOut 은 이 플래그만 보고 추종하므로 첫 휠과 baseY 출렁임에 흔들리지 않는다.
     {
       const _ct = activeRoomId ? terms[activeRoomId] : null;
-      if (_ct && _ct.agent === 'codex') {
+      if (_ct && (_ct.agent === 'codex' || _ct.agent === 'gajae')) {
         if (e.deltaY < 0) _ct.follow = false;
         else if (e.deltaY > 0) requestAnimationFrame(function () {
           const b = _ct.term.buffer.active;
@@ -1442,11 +1445,17 @@
         if (buf.viewportY >= buf.baseY) return;
         const cell = (vp.clientHeight / t.term.rows) || 16;
         const rest = vp.scrollHeight - vp.clientHeight - vp.scrollTop;
-        // 바닥 근처면 nudge(위 1줄→맨 아래)로 스냅 — 단순 scrollToBottom 은 gjc 인라인
-        // TUI 에서 ybase 에 1~3줄 못 닿아 입력창이 잘림. 위로 1줄 굴려 강제 리렌더 후 붙인다.
-        if (rest > 0 && rest <= cell * 6) {
+        // DOM은 이미 물리적 바닥(rest==0)인데 xterm 논리 viewportY가 ybase보다 1~3줄
+        // 모자라는 상태가 GJC 재페인트 뒤 생긴다. 기존 rest>0 가드가 바로 이 상태를 제외해
+        // 휠로는 끝에 못 가고 PageDown만 먹었다. rest==0도 포함해 nudge 후 논리 바닥에 붙인다.
+        if (rest >= 0 && rest <= cell * 6) {
           try { t.term.scrollLines(-1); } catch (e) {}
-          requestAnimationFrame(function () { try { t.term.scrollToBottom(); } catch (e) {} });
+          requestAnimationFrame(function () {
+            try {
+              t.term.scrollToBottom();
+              if (t.agent === 'codex' || t.agent === 'gajae') t.follow = true;
+            } catch (e) {}
+          });
         }
       });
     }

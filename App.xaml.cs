@@ -13,8 +13,27 @@ public partial class App : Application
     private static string ThemeFile => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "theme.txt");
 
-    /// <summary>현재 적용된 테마 ("minimal" | "soft" | "dark").</summary>
+    /// <summary>현재 적용된 테마 ("minimal" | "soft" | "dark"). 미리보기 중에는 preview 값으로 바뀐다.</summary>
     public static string CurrentTheme { get; private set; } = "dark";
+
+    /// <summary>디스크에 확정 저장된 테마(persist=true 로만 갱신). 미리보기(persist=false)는 반영 안 됨.
+    /// 프로세스 내부에 고정되는 색(codex OSC 감지, COLORFGBG 폴백)은 미리보기가 새면 취소해도
+    /// 안 돌아오므로, 라이브 <see cref="CurrentTheme"/> 대신 이 값을 참조한다.</summary>
+    public static string CommittedTheme { get; private set; } = "dark";
+
+    /// <summary>테마명 → DevezCode 터미널 스킴. 미확정(빌트인 없음)이면 Campbell 폴백.</summary>
+    public static Services.Terminal.WtColorScheme SchemeForTheme(string theme)
+    {
+        var name = theme switch
+        {
+            "dark" => "DevezCode Dark",
+            "soft" => "DevezCode Soft",
+            _      => "DevezCode Minimal",
+        };
+        return Services.Terminal.WtColorScheme.BuiltIns.TryGetValue(name, out var s)
+            ? s
+            : Services.Terminal.WtColorScheme.Campbell;
+    }
 
     /// <summary>Codex 아이콘 pack URI (파란색 고정, 테마 무관). Codex UI 공용 소스.</summary>
     public static string CodexIconUri =>
@@ -368,6 +387,7 @@ public partial class App : Application
         // 상한 = perGrace(2.5s) + postFlush cap(5s) + 정착(0.5s) + Dispose/스냅샷 여유.
         try { System.Threading.Tasks.Task.Run(() => TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500)).Wait(10000); }
         catch { /* best-effort */ }
+        try { DevezCode.Services.SessionUsageService.Save(); } catch { /* 토큰 집계 영속 best-effort */ }
         try { TerminalSessionManager.Instance.DisposeAll(); } catch { /* 종료 정리 best-effort */ }
         try { _singleInstanceMutex?.ReleaseMutex(); } catch { /* 소유 안 한 경우 무시 */ }
         _singleInstanceMutex?.Dispose();
@@ -649,17 +669,8 @@ public partial class App : Application
         Color terminalBg = bg, terminalFg = text;
         try
         {
-            var schemeName = theme switch
-            {
-                "dark" => "DevezCode Dark",
-                "soft" => "DevezCode Soft",
-                _      => "DevezCode Minimal",
-            };
-            WtColorScheme? newScheme = null;
-            if (Services.Terminal.WtColorScheme.BuiltIns.TryGetValue(schemeName, out var builtIn))
-                newScheme = builtIn;
-            if (newScheme != null)
-                Services.Terminal.TerminalSessionManager.Instance.WithScheme(newScheme);
+            var newScheme = SchemeForTheme(theme);
+            Services.Terminal.TerminalSessionManager.Instance.WithScheme(newScheme);
             var scheme = Services.Terminal.TerminalSessionManager.Instance.Config.Scheme;
             if (!string.IsNullOrWhiteSpace(scheme.Background))
                 terminalBg = (Color)ColorConverter.ConvertFromString(scheme.Background);
@@ -681,6 +692,7 @@ public partial class App : Application
                 File.WriteAllText(ThemeFile, theme);
             }
             catch { /* non-critical */ }
+            CommittedTheme = theme; // 확정 저장 시에만 갱신 — 프로세스 고정 색 참조용
         }
 
         CurrentTheme = theme;

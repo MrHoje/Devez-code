@@ -3567,6 +3567,24 @@ public partial class MainWindow : Window
         UpdateSessionHistoryEmpty();
     }
 
+    /// <summary>완료된 세션이 다시 작업을 시작하면 이전 완료 카드는 더 이상 현재 완료 상태가 아니다.
+    /// 같은 턴의 중간 idle 오판으로 생긴 카드도 busy 재진입 즉시 함께 제거한다.</summary>
+    private void RemoveSessionCompletionRecords(string sessionId)
+    {
+        bool changed = false;
+        for (int i = _sessionDoneRecords.Count - 1; i >= 0; i--)
+        {
+            if (!string.Equals(_sessionDoneRecords[i].SessionId, sessionId, StringComparison.Ordinal))
+                continue;
+            _sessionDoneRecords.RemoveAt(i);
+            changed = true;
+        }
+        if (!changed) return;
+        SettingsService.SaveSessionHistoryRecords(
+            new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
+        UpdateSessionHistoryEmpty();
+    }
+
 
     /// <summary>시작 시 모든 세션의 IsBusy 를 false 로 초기화. 프로그램 종료 시 진행 중이던 상태는 취소됨.</summary>
     private void ResetAllSessionBusy()
@@ -3754,6 +3772,7 @@ public partial class MainWindow : Window
         {
             // running 재무장 → 대기중이던(레이스성) 완료기록 취소.
             if (_finishDebounce.TryGetValue(s, out var pending)) { pending.Stop(); _finishDebounce.Remove(s); }
+            RemoveSessionCompletionRecords(s.Id);
             return;
         }
         if (!wasBusy) return; // busy→idle 전이 아님

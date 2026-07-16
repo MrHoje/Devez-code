@@ -81,7 +81,7 @@ public sealed class TerminalSession : IDisposable
         // 실패해도 밝기 판별이 앱 테마와 일치하도록 환경변수 폴백을 같이 깔아 둔다.
         // 테마 변경은 세션 재시작을 타므로 세션 생성 시점 값이면 충분하다.
         Environment.SetEnvironmentVariable("COLORFGBG",
-            DevezCode.App.CurrentTheme == "dark" ? "15;0" : "0;15");
+            DevezCode.App.CommittedTheme == "dark" ? "15;0" : "0;15");
 
         // 1) 파이프 2쌍: (셸이 읽는 stdin), (셸이 쓰는 stdout)
         if (!CreatePipe(out var inputRead, out var inputWriteRaw, IntPtr.Zero, 0))
@@ -117,6 +117,10 @@ public sealed class TerminalSession : IDisposable
 
             var siEx = new STARTUPINFOEX();
             siEx.StartupInfo.cb = Marshal.SizeOf<STARTUPINFOEX>();
+            // ConPTY가 연결되기 전 cmd/gjc 런처의 실제 콘솔 창이 잠깐 생성되는 Windows 레이스를 막는다.
+            // pseudoconsole 출력에는 영향 없이, CreateProcess 초기 창 표시만 숨긴다.
+            siEx.StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
+            siEx.StartupInfo.wShowWindow = SW_HIDE;
             siEx.lpAttributeList = attrList;
 
             string? cwd = string.IsNullOrWhiteSpace(startingDirectory) ? null
@@ -341,6 +345,8 @@ public sealed class TerminalSession : IDisposable
 
     private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+    private const int STARTF_USESHOWWINDOW = 0x00000001;
+    private const short SW_HIDE = 0;
     private const int PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
     private const int JobObjectExtendedLimitInformation = 9;
     private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;

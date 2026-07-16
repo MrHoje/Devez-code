@@ -11,8 +11,8 @@ namespace DevezCode.Services;
 /// 디렉터리: %AppData%\DevezCode\gajae\sessions\&lt;roomId&gt;\&lt;timestamp&gt;_&lt;id&gt;.jsonl
 /// roomId 는 GUID("N") 라 디렉터리명이 곧 roomId.
 /// <para>busy 판정: jsonl 의 마지막 message 엔트리 role 이 user/toolResult 면 처리중(assistant 응답 대기),
-/// assistant 면 완료(idle). gjc 는 user 프롬프트를 보낼 때 즉시 jsonl 에 한 줄 기록하므로
-/// "마지막이 user" = 응답 생성 중으로 본다.</para>
+/// assistant 면 완료 후보이며, 같은 EOF가 다음 busy poll까지 유지되면 idle로 확정한다.
+/// gjc 는 user 프롬프트를 보낼 때 즉시 jsonl 에 한 줄 기록하므로 "마지막이 user" = 응답 생성 중으로 본다.</para>
 /// 외부 hook/extension 플래그는 일부 버전에서 도움말에만 노출되고 실제 파서가 값을 사용자 메시지로
 /// 처리하므로 사용하지 않는다. JSONL은 구버전부터 유지된 GJC 자체 저장 형식이다.</summary>
 public sealed class GajaeLastMessageService : IDisposable
@@ -27,6 +27,10 @@ public sealed class GajaeLastMessageService : IDisposable
     private readonly Dictionary<string, string> _lastMsg = new();
     private readonly Dictionary<string, bool> _busy = new();
     private readonly Dictionary<string, bool> _waiting = new();
+    // GJC는 최종 assistant 레코드를 디스크에 먼저 기록한 뒤 TUI 출력 플러시를 마친다.
+    // 같은 transcript 시그니처가 다음 poll까지 안정적으로 유지될 때만 idle을 확정해,
+    // 최종 응답이 화면에 아직 출력 중인데 스피너가 먼저 사라지는 것을 막는다.
+    private readonly Dictionary<string, (string Signature, DateTime FirstSeenUtc)> _idleCandidates = new();
     private readonly Dictionary<string, TranscriptCursor> _transcripts = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>(roomId, message) — gjc 세션이 마지막으로 보낸 프롬프트(1줄 요약). 빈 문자열이면 세션명으로 표시.</summary>
@@ -43,6 +47,7 @@ public sealed class GajaeLastMessageService : IDisposable
     // 전부 idle 이면 IdleInterval(2.5s)로 늦춰 다세션 시 디렉터리 열거·파일 open 부하를 낮춘다.
     private static readonly TimeSpan BusyInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan IdleInterval = TimeSpan.FromSeconds(2.5);
+    private static readonly TimeSpan IdleSettleDelay = TimeSpan.FromMilliseconds(900);
     private sealed class TranscriptCursor
     {
         public long Offset;
@@ -136,7 +141,41 @@ public sealed class GajaeLastMessageService : IDisposable
         else { msg = null; busy = false; waiting = false; }
 
         // 첫 스캔: 이전 실행에서 종료된 진행 상태는 취소된 것으로 간주, busy=false
-        if (!_started) { busy = false; waiting = false; }
+        if (!_started)
+        {
+            busy = false;
+            waiting = false;
+            _idleCandidates.Remove(roomId);
+        }
+        else if (busy)
+        {
+            _idleCandidates.Remove(roomId);
+        }
+        else if (!freshNew && _busy.TryGetValue(roomId, out var wasBusy) && wasBusy)
+        {
+            // 최종 assistant JSONL append와 실제 TUI 출력 완료 사이에 짧은 시차가 있다.
+            // 한 번 더 같은 EOF를 관찰한 뒤 idle로 내리면 중간 toolResult/user append도
+            // 자연스럽게 후보를 취소하므로 고정 지연 타이머보다 상태 전이가 정확하다.
+            var now = DateTime.UtcNow;
+            if (!_idleCandidates.TryGetValue(roomId, out var candidate)
+                || !string.Equals(candidate.Signature, sig, StringComparison.Ordinal))
+            {
+                _idleCandidates[roomId] = (sig, now);
+                busy = true;
+            }
+            else if (now - candidate.FirstSeenUtc < IdleSettleDelay)
+            {
+                busy = true;
+            }
+            else
+            {
+                _idleCandidates.Remove(roomId);
+            }
+        }
+        else
+        {
+            _idleCandidates.Remove(roomId);
+        }
 
         msg ??= ""; // 안전망
         Publish(roomId, msg, busy, waiting);
