@@ -244,24 +244,7 @@ public static class SessionUsageService
 
     /// <summary>툴팁: 전체 분해 + 예상 비용.</summary>
     public static string FormatTooltip(in UsageTotals t)
-    {
-        var sb = new StringBuilder();
-        sb.Append(t.AgentLabel);
-        if (!string.IsNullOrEmpty(t.Model)) sb.Append("  ·  ").Append(t.Model);
-        sb.Append('\n');
-        sb.Append($"입력(신규)   {t.InputNew:N0}\n");
-        if (t.CacheWrite5m > 0) sb.Append($"캐시 생성 5m {t.CacheWrite5m:N0}\n");
-        if (t.CacheWrite1h > 0) sb.Append($"캐시 생성 1h {t.CacheWrite1h:N0}\n");
-        sb.Append($"캐시 읽기    {t.CacheRead:N0}\n");
-        sb.Append($"입력 합계    {t.InputTotal:N0}\n");
-        sb.Append($"출력         {t.Output:N0}");
-        if (EstimateCost(t) is { } c)
-        {
-            sb.Append($"\n예상 비용    {FormatCost(c)}");
-            sb.Append("\n※ 실제 청구액이 아니라 토큰 사용량으로 계산한 추정치입니다.");
-        }
-        return sb.ToString();
-    }
+        => "※ 실제 청구액이 아니라 토큰 사용량으로 계산한 추정치입니다.";
 
     private static string Compact(long n)
     {
