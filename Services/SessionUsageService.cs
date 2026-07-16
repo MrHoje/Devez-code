@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using DevezCode.Services.Terminal;
@@ -22,6 +23,9 @@ public static class SessionUsageService
         long InputNew, long CacheWrite5m, long CacheWrite1h, long CacheRead, long Output,
         string? Model, string AgentLabel)
     {
+        /// <summary>비용($) 추정치. 파싱 시 모델별 단가로 계산해 담는다(세션 중 모델 변경 대응 — 모델별 버킷 합산).
+        /// 단가 미상 모델뿐이면 null.</summary>
+        public double? Cost { get; init; }
         public long InputTotal => InputNew + CacheWrite5m + CacheWrite1h + CacheRead;
         public bool HasData => InputNew > 0 || CacheWrite5m > 0 || CacheWrite1h > 0 || CacheRead > 0 || Output > 0;
     }
@@ -53,17 +57,15 @@ public static class SessionUsageService
         return null;
     }
 
-    /// <summary>비용($) 추정. 캐시 write 5m=1.25×·1h=2×, read=0.1× (입력 단가 기준). 단가 미상 모델이면 null.</summary>
-    public static double? EstimateCost(in UsageTotals t)
+    /// <summary>파싱 시 계산해 둔 비용 추정치. (모델별 단가 합산은 ParseClaudeFull/ReadCodex 에서 수행)</summary>
+    public static double? EstimateCost(in UsageTotals t) => t.Cost;
+
+    /// <summary>단일 모델·토큰 묶음의 비용($). 캐시 write 5m=1.25×·1h=2×, read=0.1× (입력 단가 기준). 단가 미상이면 null.</summary>
+    private static double? CostOf(string? model, long inNew, long cw5, long cw1, long cr, long outp)
     {
-        if (PriceFor(t.Model) is not { } p) return null;
-        double inR = p.InPerM / 1_000_000.0;
-        double outR = p.OutPerM / 1_000_000.0;
-        return t.InputNew * inR
-             + t.CacheWrite5m * inR * 1.25
-             + t.CacheWrite1h * inR * 2.0
-             + t.CacheRead * inR * 0.1
-             + t.Output * outR;
+        if (PriceFor(model) is not { } p) return null;
+        double inR = p.InPerM / 1_000_000.0, outR = p.OutPerM / 1_000_000.0;
+        return inNew * inR + cw5 * inR * 1.25 + cw1 * inR * 2.0 + cr * inR * 0.1 + outp * outR;
     }
 
     /// <summary>지원 에이전트인지 (정확 집계 가능). 그 외는 표시하지 않는다.</summary>
@@ -112,8 +114,8 @@ public static class SessionUsageService
 
     private static UsageTotals ParseClaudeFull(string path)
     {
-        long inNew = 0, cw5 = 0, cw1 = 0, cr = 0, outp = 0;
-        string? model = null;
+        long inNew = 0, cw5 = 0, cw1 = 0, cr = 0, outp = 0;      // 표시용 전체 합계(모델 무관)
+        var byModel = new Dictionary<string, long[]>();          // 비용 정확도용 모델별 버킷 [in,cw5,cw1,cr,out]
         var seen = new HashSet<string>();
         string text;
         using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
@@ -130,23 +132,45 @@ public static class SessionUsageService
                 // 같은 응답이 여러 줄로 기록됨 → message.id 로 1회만 집계
                 if (msg.TryGetProperty("id", out var idv) && idv.ValueKind == JsonValueKind.String)
                     if (!seen.Add(idv.GetString()!)) continue;
-                if (msg.TryGetProperty("model", out var mo) && mo.ValueKind == JsonValueKind.String) model = mo.GetString();
-                inNew += GetLong(u, "input_tokens");
-                cr += GetLong(u, "cache_read_input_tokens");
-                outp += GetLong(u, "output_tokens");
+                var mdl = msg.TryGetProperty("model", out var mo) && mo.ValueKind == JsonValueKind.String ? mo.GetString()! : "?";
+                long li = GetLong(u, "input_tokens");
+                long lr = GetLong(u, "cache_read_input_tokens");
+                long lo = GetLong(u, "output_tokens");
+                long l5, l1;
                 if (u.TryGetProperty("cache_creation", out var cc) && cc.ValueKind == JsonValueKind.Object)
-                {
-                    cw5 += GetLong(cc, "ephemeral_5m_input_tokens");
-                    cw1 += GetLong(cc, "ephemeral_1h_input_tokens");
-                }
-                else
-                {
-                    cw5 += GetLong(u, "cache_creation_input_tokens"); // 구 포맷 폴백(티어 미구분 → 5m 취급)
-                }
+                { l5 = GetLong(cc, "ephemeral_5m_input_tokens"); l1 = GetLong(cc, "ephemeral_1h_input_tokens"); }
+                else { l5 = GetLong(u, "cache_creation_input_tokens"); l1 = 0; } // 구 포맷 폴백(티어 미구분 → 5m)
+                inNew += li; cr += lr; outp += lo; cw5 += l5; cw1 += l1;
+                if (!byModel.TryGetValue(mdl, out var b)) byModel[mdl] = b = new long[5];
+                b[0] += li; b[1] += l5; b[2] += l1; b[3] += lr; b[4] += lo;
             }
             catch { /* 부분 줄/비 JSON 무시 */ }
         }
-        return new UsageTotals(inNew, cw5, cw1, cr, outp, model, "Claude");
+
+        // 모델별 단가로 비용 합산 — 세션 중 모델을 바꿔 써도 정확. 단가 미상 모델은 비용에서 제외(0 기여).
+        double cost = 0; bool anyPriced = false;
+        foreach (var (mdl, b) in byModel)
+            if (CostOf(mdl, b[0], b[1], b[2], b[3], b[4]) is { } c) { cost += c; anyPriced = true; }
+
+        // 표시 모델 라벨: 실제 토큰을 쓴 모델이 하나면 그 이름, 여럿이면 "여러 모델(a, b)".
+        var used = byModel.Keys.Where(k => k != "?").ToList();
+        string? label = used.Count switch
+        {
+            0 => byModel.Count > 0 ? "?" : null,
+            1 => used[0],
+            _ => "여러 모델(" + string.Join(", ", used.Select(ShortModel)) + ")",
+        };
+        return new UsageTotals(inNew, cw5, cw1, cr, outp, label, "Claude") { Cost = anyPriced ? cost : null };
+    }
+
+    private static string ShortModel(string m)
+    {
+        var s = m.ToLowerInvariant();
+        if (s.Contains("opus")) return "Opus";
+        if (s.Contains("sonnet")) return "Sonnet";
+        if (s.Contains("haiku")) return "Haiku";
+        if (s.Contains("fable")) return "Fable";
+        return m;
     }
 
     // ── codex: 파일 끝 마지막 token_count 이벤트 한 줄만 (누적값 내장) ──
@@ -180,7 +204,9 @@ public static class SessionUsageService
             long input = GetLong(info, "input_tokens");
             long cached = GetLong(info, "cached_input_tokens");
             long output = GetLong(info, "output_tokens");
-            var t = new UsageTotals(Math.Max(0, input - cached), 0, 0, cached, output, model ?? "gpt-5-codex", "Codex");
+            long inNew = Math.Max(0, input - cached);
+            var t = new UsageTotals(inNew, 0, 0, cached, output, model ?? "gpt-5-codex", "Codex")
+            { Cost = CostOf(model ?? "gpt-5-codex", inNew, 0, 0, cached, output) };
             _cache[roomId] = new Entry { Sid = sid, LastLen = len, Totals = t, Offset = -1 };
             return t.HasData ? t : null;
         }
@@ -252,6 +278,7 @@ public static class SessionUsageService
         public long Output { get; set; }
         public string? Model { get; set; }
         public string? AgentLabel { get; set; }
+        public double? Cost { get; set; }
     }
 
     private static void EnsureLoaded()
@@ -273,7 +300,7 @@ public static class SessionUsageService
                         Offset = v.Offset,
                         LastLen = v.LastLen,
                         Totals = new UsageTotals(v.InputNew, v.CacheWrite5m, v.CacheWrite1h, v.CacheRead, v.Output,
-                            v.Model, v.AgentLabel ?? "Claude"),
+                            v.Model, v.AgentLabel ?? "Claude") { Cost = v.Cost },
                     };
             }
             catch { /* 손상 시 무시 — 재스캔 */ }
@@ -304,6 +331,7 @@ public static class SessionUsageService
                         Sid = e.Sid, Offset = e.Offset, LastLen = e.LastLen,
                         InputNew = t.InputNew, CacheWrite5m = t.CacheWrite5m, CacheWrite1h = t.CacheWrite1h,
                         CacheRead = t.CacheRead, Output = t.Output, Model = t.Model, AgentLabel = t.AgentLabel,
+                        Cost = t.Cost,
                     };
                 }
                 var path = FilePath;
