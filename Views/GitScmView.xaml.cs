@@ -351,31 +351,86 @@ public partial class GitScmView : UserControl
         // 원격에 로컬에 없는 커밋이 있으면(분기) 그냥 push 는 거부됨 → VS 처럼 rebase 후 push 여부를 묻는다.
         if (_branch.Behind > 0)
         {
-            if (!ConfirmDialog.Show("푸시",
-                    $"원격에 로컬에 없는 커밋이 {_branch.Behind}개 있습니다.\n원격 변경을 rebase 한 뒤 푸시할까요?",
-                    "rebase 후 푸시"))
-                return;
-            await RunRemote(async () =>
-            {
-                var pr = await GitService.PullRebaseAsync(_repo!);
-                return pr.Ok ? await GitService.PushAsync(_repo!) : pr;   // rebase 실패(충돌 등)면 그 결과를 그대로 알림
-            }, "푸시");
+            await ConfirmRebaseAndPushAsync();
             return;
         }
-        await RunRemote(() => GitService.PushAsync(_repo!), "푸시");   // 분기 아님 → 확인 없이 바로 푸시
+
+        // 마지막 fetch 이후 원격이 전진하면 _branch.Behind 는 아직 0이다. 첫 push 의 fetch-first 거절을
+        // 그대로 오류로 끝내지 말고 fetch 로 실제 개수를 갱신한 뒤 위와 같은 rebase+push 흐름으로 연결한다.
+        var push = await RunRemote(() => GitService.PushAsync(_repo!), "푸시", showFailure: false);
+        if (push.Ok) return;
+        if (!IsRemoteAheadPushFailure(push))
+        {
+            ShowRemoteFailure("푸시", push);
+            return;
+        }
+
+        var fetch = await RunRemote(() => GitService.FetchAsync(_repo!), "fetch");
+        if (!fetch.Ok) return;
+        if (_branch.Behind > 0)
+        {
+            await ConfirmRebaseAndPushAsync();
+            return;
+        }
+
+        // fetch 는 성공했지만 분기 상태를 확인하지 못한 예외 상황에서는 최초 push 오류를 보존한다.
+        ShowRemoteFailure("푸시", push);
     }
     private async void Pull_Click(object s, RoutedEventArgs e) => await RunRemote(() => GitService.PullAsync(_repo!), "pull");
     private async void Fetch_Click(object s, RoutedEventArgs e) => await RunRemote(() => GitService.FetchAsync(_repo!), "fetch");
 
-    private async Task RunRemote(Func<Task<GitService.GitResult>> op, string label)
+    private async Task ConfirmRebaseAndPushAsync()
     {
-        if (_repo == null) return;
+        if (_repo == null || _branch.Behind <= 0) return;
+        if (!ConfirmDialog.Show("푸시",
+                $"원격에 로컬에 없는 커밋이 {_branch.Behind}개 있습니다.\n원격 변경을 rebase 한 뒤 푸시할까요?",
+                "rebase 후 푸시"))
+            return;
+        await RunRemote(async () =>
+        {
+            var pr = await GitService.PullRebaseAsync(_repo!);
+            return pr.Ok ? await GitService.PushAsync(_repo!) : pr;   // rebase 실패(충돌 등)면 그 결과를 그대로 알림
+        }, "푸시");
+    }
+
+    private static bool IsRemoteAheadPushFailure(GitService.GitResult result)
+    {
+        var text = result.Output + "\n" + result.Error;
+        return text.Contains("fetch first", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("non-fast-forward", StringComparison.OrdinalIgnoreCase)
+            || (text.Contains("[rejected]", StringComparison.OrdinalIgnoreCase)
+                && text.Contains("remote contains work", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void ShowRemoteFailure(string label, GitService.GitResult result)
+    {
+        var text = result.Output + "\n" + result.Error;
+        if (text.Contains("cannot pull with rebase", StringComparison.OrdinalIgnoreCase)
+            && (text.Contains("unstaged changes", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("commit or stash", StringComparison.OrdinalIgnoreCase)))
+        {
+            ConfirmDialog.Alert(
+                "동기화할 수 없음",
+                "커밋되지 않은 변경 내용이 있어 원격 변경을 가져올 수 없습니다.\n\n변경 내용을 커밋하거나 스태시한 뒤 다시 시도하세요.");
+            return;
+        }
+
+        ConfirmDialog.Alert($"{label} 실패", string.IsNullOrWhiteSpace(result.Error) ? result.Output : result.Error);
+    }
+
+    private async Task<GitService.GitResult> RunRemote(
+        Func<Task<GitService.GitResult>> op,
+        string label,
+        bool showFailure = true)
+    {
+        if (_repo == null) return new GitService.GitResult(false, "", "git 저장소가 선택되지 않았습니다.");
         _busy = true; SetSyncing(true); UpdateButtons();   // 스피너 ON + 화살표 3개 비활성화(!_busy)
         var r = await op();
         _busy = false; SetSyncing(false);
-        if (!r.Ok) ConfirmDialog.Alert($"{label} 실패", string.IsNullOrWhiteSpace(r.Error) ? r.Output : r.Error);
+        if (!r.Ok && showFailure) ShowRemoteFailure(label, r);
         await RefreshAsync();
         GitStateChanged?.Invoke(_repo);
+        return r;
     }
 
     // 페치/풀/푸시 진행 중에만 브랜치 아이콘을 스피너로 교체(커밋/스테이징은 제외).
