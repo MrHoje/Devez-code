@@ -194,7 +194,7 @@ public static class SessionUsageService
     {
         var sb = new StringBuilder();
         sb.Append('↓').Append(Compact(t.InputTotal)).Append("  ↑").Append(Compact(t.Output));
-        if (EstimateCost(t) is { } c) sb.Append("  ").Append(FormatCost(c));
+        if (EstimateCost(t) is { } c) sb.Append("  (").Append(FormatCost(c)).Append(" 추정)");
         return sb.ToString();
     }
 

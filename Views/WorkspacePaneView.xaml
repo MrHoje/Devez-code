@@ -86,7 +86,7 @@
                             Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
                     <TextBlock x:Name="UsageText" VerticalAlignment="Center"
                                FontFamily="{StaticResource PretendardFont}"
-                               FontSize="{DynamicResource Fs12}"
+                               FontSize="{DynamicResource Fs10}"
                                Foreground="{DynamicResource TextMutedBrush}"/>
                 </StackPanel>
               </StackPanel>
