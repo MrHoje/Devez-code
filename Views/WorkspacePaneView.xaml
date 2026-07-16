@@ -79,6 +79,16 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
+
+                <!-- 세로선 + 이 세션 누적 토큰 사용량(입/출력/비용) — claude·codex 만, 그 외 숨김 -->
+                <StackPanel x:Name="UsageGroup" Orientation="Horizontal" Visibility="Collapsed">
+                    <Border Width="1" Height="12" Margin="12,0,12,0" VerticalAlignment="Center"
+                            Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                    <TextBlock x:Name="UsageText" VerticalAlignment="Center"
+                               FontFamily="{StaticResource PretendardFont}"
+                               FontSize="{DynamicResource Fs12}"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                </StackPanel>
               </StackPanel>
 
               <!-- 우측 dock: model/effort(지원 에이전트) + 터미널 폰트 크기(항상 노출) -->

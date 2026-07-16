@@ -154,6 +154,7 @@ public partial class WorkspacePaneView : UserControl
         _terminal.FontSizePxChanged += SyncFontSizeCombo;
         Loaded += (_, _) => SyncFontSizeCombo(_terminal.EffectiveFontSizePx);
         _agentModelStateTimer.Tick += (_, _) => RefreshExternalAgentModelStateIfChanged();
+        _agentModelStateTimer.Tick += (_, _) => RefreshUsageDock(); // 활성 세션 토큰 사용량 주기 갱신(busy 중에도)
         Loaded += (_, _) => _agentModelStateTimer.Start();
         Unloaded += (_, _) => _agentModelStateTimer.Stop();
         // 로딩 중 레이아웃이 바뀌면(예: 시작 시 전체폭으로 세션 복원 → 곧바로 분할 적용) 웹 스피너의
@@ -1435,6 +1436,43 @@ public partial class WorkspacePaneView : UserControl
         RefreshModelEffortDock();
     }
 
+    private string? _lastUsageKey;
+
+    /// <summary>활성 세션(claude·codex)의 누적 토큰 사용량을 헤더 브랜치 오른쪽에 표시.
+    /// 미지원 에이전트/데이터 없음이면 숨긴다. 파일 파싱은 백그라운드에서.</summary>
+    private void RefreshUsageDock()
+    {
+        if (UsageGroup == null) return;
+        var s = _activeSession;
+        var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
+        if (s == null || agentId == null || !PaneHasAnySessionTab() || !SessionUsageService.IsSupported(agentId))
+        {
+            UsageGroup.Visibility = Visibility.Collapsed;
+            _lastUsageKey = null;
+            return;
+        }
+        _ = RefreshUsageAsync(s.Id, agentId, ParentOf(s)?.Path);
+    }
+
+    private async System.Threading.Tasks.Task RefreshUsageAsync(string roomId, string agentId, string? cwd)
+    {
+        var t = await System.Threading.Tasks.Task.Run(() => SessionUsageService.Read(roomId, agentId, cwd));
+        if (_activeSession?.Id != roomId || UsageGroup == null) return; // 응답 사이 세션 전환됐으면 무시
+        if (t is not { HasData: true } u)
+        {
+            UsageGroup.Visibility = Visibility.Collapsed;
+            _lastUsageKey = null;
+            return;
+        }
+        var inline = SessionUsageService.FormatInline(u);
+        var key = roomId + "|" + inline;
+        UsageGroup.Visibility = Visibility.Visible;
+        if (key == _lastUsageKey) return; // 값 불변 → UI 재기록 생략
+        _lastUsageKey = key;
+        UsageText.Text = inline;
+        UsageText.ToolTip = SessionUsageService.FormatTooltip(u);
+    }
+
     private static string BuildAgentModelStateSignature(SessionItem session, string agentId)
     {
         var sessionId = agentId == "codex"
@@ -1471,6 +1509,7 @@ public partial class WorkspacePaneView : UserControl
     private void RefreshModelEffortDock()
     {
         RefreshHeaderSessionGate(); // 세션 탭이 하나도 없으면 브랜치·터미널 폰트 정보도 같이 숨김
+        RefreshUsageDock();         // 활성 세션 토큰 사용량(입/출력/비용) 즉시 반영
         if (ModelEffortDock == null) return;
         var s = _activeSession;
 
@@ -2300,7 +2339,11 @@ public partial class WorkspacePaneView : UserControl
             else TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
         }
         catch { /* ignore */ }
-        if (purge) SettingsService.RemoveClaudeCodeRoomDir(session.Id);
+        if (purge)
+        {
+            SettingsService.RemoveClaudeCodeRoomDir(session.Id);
+            SessionUsageService.Remove(session.Id); // 세션 삭제 시 토큰 집계 캐시·영속 항목도 정리(고아 방지)
+        }
     }
 
     /// <summary>활성 Claude 세션을 재시작 — MCP 매니저 저장 후 호출용. 비활성/비-Claude면 false.</summary>
