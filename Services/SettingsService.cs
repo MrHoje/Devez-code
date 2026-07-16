@@ -13,6 +13,11 @@ public sealed class UsagePriceRule
     public string Match { get; set; } = "";
     public double InPerM { get; set; }
     public double OutPerM { get; set; }
+    // 캐시 배수(입력 단가 대비). 생략(null)하면 표준 기본값: write 5m ×1.25, 1h ×2, read ×0.1.
+    // 공급자/모델별로 캐시 요율이 다르면 여기서 규칙별로 덮어쓴다(예: codex cached 가 0.1× 아닐 때).
+    public double? CacheWrite5m { get; set; }
+    public double? CacheWrite1h { get; set; }
+    public double? CacheRead { get; set; }
 }
 
 /// <summary>

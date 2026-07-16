@@ -46,7 +46,10 @@ public static class SessionUsageService
     // ── 단가표 (per 1M tokens). Claude 는 claude-api 스킬 기준 정확값. Codex(GPT)는 근사치 — "예상" 표기. ──
     // settings.json 의 UsagePricing(SettingsService.LoadUsagePricing) 이 있으면 그게 우선(덮어쓰기/신규 모델).
     // 갱신 절차 문서: .knowledge/토큰사용량-단가-갱신.md
-    private readonly record struct Price(double InPerM, double OutPerM);
+    // 표준 캐시 배수(입력 단가 대비). 규칙에서 생략 시 이 값 사용. Anthropic/OpenAI 공통 현행값.
+    private const double DefW5m = 1.25, DefW1h = 2.0, DefRead = 0.1;
+
+    private readonly record struct Price(double InPerM, double OutPerM, double W5mMult, double W1hMult, double ReadMult);
     private static Price? PriceFor(string? model)
     {
         if (string.IsNullOrEmpty(model)) return null;
@@ -55,27 +58,28 @@ public static class SessionUsageService
         {
             foreach (var r in SettingsService.LoadUsagePricing())
                 if (!string.IsNullOrEmpty(r.Match) && m.Contains(r.Match.ToLowerInvariant()))
-                    return new Price(r.InPerM, r.OutPerM);
+                    return new Price(r.InPerM, r.OutPerM,
+                        r.CacheWrite5m ?? DefW5m, r.CacheWrite1h ?? DefW1h, r.CacheRead ?? DefRead);
         }
         catch { /* 설정 로드 실패 시 내장 기본값으로 */ }
-        // 내장 기본값(설정에 없을 때)
-        if (m.Contains("fable") || m.Contains("mythos")) return new Price(10, 50);
-        if (m.Contains("opus")) return new Price(5, 25);
-        if (m.Contains("sonnet")) return new Price(3, 15);
-        if (m.Contains("haiku")) return new Price(1, 5);
-        if (m.Contains("gpt-5") || m.Contains("codex") || m.Contains("gpt5")) return new Price(1.25, 10); // GPT-5 계열 근사
+        // 내장 기본값(설정에 없을 때) — 캐시 배수는 표준값
+        if (m.Contains("fable") || m.Contains("mythos")) return new Price(10, 50, DefW5m, DefW1h, DefRead);
+        if (m.Contains("opus")) return new Price(5, 25, DefW5m, DefW1h, DefRead);
+        if (m.Contains("sonnet")) return new Price(3, 15, DefW5m, DefW1h, DefRead);
+        if (m.Contains("haiku")) return new Price(1, 5, DefW5m, DefW1h, DefRead);
+        if (m.Contains("gpt-5") || m.Contains("codex") || m.Contains("gpt5")) return new Price(1.25, 10, DefW5m, DefW1h, DefRead); // GPT-5 계열 근사
         return null;
     }
 
     /// <summary>파싱 시 계산해 둔 비용 추정치. (모델별 단가 합산은 ParseClaudeFull/ReadCodex 에서 수행)</summary>
     public static double? EstimateCost(in UsageTotals t) => t.Cost;
 
-    /// <summary>단일 모델·토큰 묶음의 비용($). 캐시 write 5m=1.25×·1h=2×, read=0.1× (입력 단가 기준). 단가 미상이면 null.</summary>
+    /// <summary>단일 모델·토큰 묶음의 비용($). 캐시 배수는 모델 규칙별(Price)에서 온다. 단가 미상이면 null.</summary>
     private static double? CostOf(string? model, long inNew, long cw5, long cw1, long cr, long outp)
     {
         if (PriceFor(model) is not { } p) return null;
         double inR = p.InPerM / 1_000_000.0, outR = p.OutPerM / 1_000_000.0;
-        return inNew * inR + cw5 * inR * 1.25 + cw1 * inR * 2.0 + cr * inR * 0.1 + outp * outR;
+        return inNew * inR + cw5 * inR * p.W5mMult + cw1 * inR * p.W1hMult + cr * inR * p.ReadMult + outp * outR;
     }
 
     /// <summary>지원 에이전트인지 (정확 집계 가능). 그 외는 표시하지 않는다.</summary>
