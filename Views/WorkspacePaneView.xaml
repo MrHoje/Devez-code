@@ -84,7 +84,7 @@
                 <StackPanel x:Name="UsageGroup" Orientation="Horizontal" Visibility="Collapsed">
                     <Border Width="1" Height="12" Margin="12,0,12,0" VerticalAlignment="Center"
                             Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
-                    <TextBlock x:Name="UsageText" VerticalAlignment="Center"
+                    <TextBlock x:Name="UsageText" VerticalAlignment="Center" Margin="0,1,0,0"
                                FontFamily="{StaticResource PretendardFont}"
                                FontSize="{DynamicResource Fs11}"
                                Foreground="{DynamicResource TextMutedBrush}"/>
