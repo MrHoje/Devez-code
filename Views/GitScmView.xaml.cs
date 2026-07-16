@@ -22,6 +22,13 @@ public partial class GitScmView : UserControl
 
     private string? _repo;
     private bool _busy;
+    private bool _refreshInProgress;
+    private bool _refreshQueued;
+    private FileSystemWatcher? _workTreeWatcher;
+    private FileSystemWatcher? _gitMetadataWatcher;
+    private string? _gitDirectory;
+    private DateTime _ignoreGitMetadataUntilUtc;
+    private readonly System.Windows.Threading.DispatcherTimer _repoRefreshTimer;
     private BranchState _branch = new();
     private readonly ObservableCollection<GitChange> _staged = new();
     private readonly ObservableCollection<GitChange> _unstaged = new();
@@ -29,6 +36,11 @@ public partial class GitScmView : UserControl
     public GitScmView()
     {
         InitializeComponent();
+        _repoRefreshTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(450)
+        };
+        _repoRefreshTimer.Tick += RepoRefreshTimer_Tick;
         ScmBodyGrid.SizeChanged += (_, _) => UpdateStagedCap();
 
         // Diff Git 사용 여부(전역)를 설정에서 초기화. 이후 설정 저장 시 GitUiState 가 갱신되면 반응.
@@ -46,8 +58,14 @@ public partial class GitScmView : UserControl
 
             GitUiState.Instance.PropertyChanged += GitUiState_Changed;
             ApplyGitMode();
+            SetupRepoWatchers(_repo);
         };
-        Unloaded += (_, _) => GitUiState.Instance.PropertyChanged -= GitUiState_Changed;
+        Unloaded += (_, _) =>
+        {
+            GitUiState.Instance.PropertyChanged -= GitUiState_Changed;
+            DisposeRepoWatchers();
+            _repoRefreshTimer.Stop();
+        };
     }
 
     private void GitUiState_Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => ApplyGitMode();
@@ -80,26 +98,238 @@ public partial class GitScmView : UserControl
             : double.PositiveInfinity;
     }
 
-    public void SetRepo(string? path) { if (_repo == path) return; _repo = path; }
+    public void SetRepo(string? path)
+    {
+        if (string.Equals(_repo, path, StringComparison.OrdinalIgnoreCase)) return;
+        _repo = path;
+        SetupRepoWatchers(path);
+    }
 
     public async Task RefreshAsync()
     {
-        if (string.IsNullOrEmpty(_repo) || !Directory.Exists(_repo) || !await GitService.IsRepoAsync(_repo))
+        if (_refreshInProgress)
         {
+            _refreshQueued = true;
+            return;
+        }
+
+        _refreshInProgress = true;
+        try
+        {
+            do
+            {
+                _refreshQueued = false;
+                await RefreshCoreAsync();
+            }
+            while (_refreshQueued);
+        }
+        finally
+        {
+            _refreshInProgress = false;
+        }
+    }
+
+    private async Task RefreshCoreAsync()
+    {
+        _repoRefreshTimer.Stop();
+        var repo = _repo;
+        if (string.IsNullOrEmpty(repo) || !Directory.Exists(repo) || !await GitService.IsRepoAsync(repo))
+        {
+            if (!string.Equals(_repo, repo, StringComparison.OrdinalIgnoreCase)) return;
             _staged.Clear(); _unstaged.Clear();
             StagedTree.ItemsSource = null;
             UnstagedTree.ItemsSource = null;
             EmptyText.Visibility = Visibility.Visible;
-            UpdateButtons(); return;
+            UpdateButtons();
+            return;
         }
-        var st = await GitService.StatusAsync(_repo);
-        _branch = await GitService.BranchStateAsync(_repo);
+
+        // git status가 index stat 캐시를 갱신하며 watcher를 재발화할 수 있다.
+        _ignoreGitMetadataUntilUtc = DateTime.UtcNow.AddSeconds(2);
+        var st = await GitService.StatusAsync(repo);
+        var branch = await GitService.BranchStateAsync(repo);
+        _ignoreGitMetadataUntilUtc = DateTime.UtcNow.AddSeconds(1);
+        if (!string.Equals(_repo, repo, StringComparison.OrdinalIgnoreCase)) return;
+
+        _branch = branch;
         _staged.Clear(); foreach (var c in st.Staged) _staged.Add(c);
         _unstaged.Clear(); foreach (var c in st.Unstaged) _unstaged.Add(c);
-        StagedTree.ItemsSource = BuildTree(st.Staged, _repo);
-        UnstagedTree.ItemsSource = BuildTree(st.Unstaged, _repo);
+        StagedTree.ItemsSource = BuildTree(st.Staged, repo, isStaged: true);
+        UnstagedTree.ItemsSource = BuildTree(st.Unstaged, repo, isStaged: false);
         EmptyText.Visibility = st.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         UpdateButtons();
+    }
+
+    private void SetupRepoWatchers(string? repo)
+    {
+        DisposeRepoWatchers();
+        if (string.IsNullOrEmpty(repo) || !Directory.Exists(repo)) return;
+
+        try
+        {
+            _gitDirectory = ResolveGitDirectory(repo);
+            _workTreeWatcher = CreateRepoWatcher(repo);
+            _workTreeWatcher.Changed += WorkTreeWatcher_Changed;
+            _workTreeWatcher.Created += WorkTreeWatcher_Changed;
+            _workTreeWatcher.Deleted += WorkTreeWatcher_Changed;
+            _workTreeWatcher.Renamed += WorkTreeWatcher_Changed;
+            _workTreeWatcher.Error += RepoWatcher_Error;
+            _workTreeWatcher.EnableRaisingEvents = true;
+
+            if (!string.IsNullOrEmpty(_gitDirectory) && Directory.Exists(_gitDirectory))
+            {
+                _gitMetadataWatcher = CreateRepoWatcher(_gitDirectory);
+                _gitMetadataWatcher.Changed += GitMetadataWatcher_Changed;
+                _gitMetadataWatcher.Created += GitMetadataWatcher_Changed;
+                _gitMetadataWatcher.Deleted += GitMetadataWatcher_Changed;
+                _gitMetadataWatcher.Renamed += GitMetadataWatcher_Changed;
+                _gitMetadataWatcher.Error += RepoWatcher_Error;
+                _gitMetadataWatcher.EnableRaisingEvents = true;
+            }
+        }
+        catch
+        {
+            DisposeRepoWatchers();
+        }
+    }
+
+    private static FileSystemWatcher CreateRepoWatcher(string path) => new(path)
+    {
+        IncludeSubdirectories = true,
+        NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName |
+                       NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+        InternalBufferSize = 64 * 1024,
+    };
+
+    private void DisposeRepoWatchers()
+    {
+        DisposeWatcher(ref _workTreeWatcher, WorkTreeWatcher_Changed, WorkTreeWatcher_Changed);
+        DisposeWatcher(ref _gitMetadataWatcher, GitMetadataWatcher_Changed, GitMetadataWatcher_Changed);
+        _gitDirectory = null;
+    }
+
+    private void DisposeWatcher(
+        ref FileSystemWatcher? watcher,
+        FileSystemEventHandler handler,
+        RenamedEventHandler renamedHandler)
+    {
+        if (watcher == null) return;
+        try
+        {
+            watcher.EnableRaisingEvents = false;
+            watcher.Changed -= handler;
+            watcher.Created -= handler;
+            watcher.Deleted -= handler;
+            watcher.Renamed -= renamedHandler;
+            watcher.Error -= RepoWatcher_Error;
+            watcher.Dispose();
+        }
+        catch { }
+        watcher = null;
+    }
+
+    private void WorkTreeWatcher_Changed(object sender, FileSystemEventArgs e)
+    {
+        // Git 내부는 별도 watcher가 필요한 파일만 선별한다.
+        if (IsGitMetadataPath(e.FullPath)) return;
+        ScheduleRepoRefresh();
+    }
+
+    private void GitMetadataWatcher_Changed(object sender, FileSystemEventArgs e)
+    {
+        if (DateTime.UtcNow < _ignoreGitMetadataUntilUtc || !IsRelevantGitMetadata(e.FullPath)) return;
+        ScheduleRepoRefresh();
+    }
+
+    private void RepoWatcher_Error(object sender, ErrorEventArgs e) => ScheduleRepoRefresh();
+
+    private void ScheduleRepoRefresh()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!IsLoaded) return;
+            _repoRefreshTimer.Stop();
+            _repoRefreshTimer.Start();
+        }), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private async void RepoRefreshTimer_Tick(object? sender, EventArgs e)
+    {
+        _repoRefreshTimer.Stop();
+        if (_busy || _refreshInProgress)
+        {
+            _repoRefreshTimer.Start();
+            return;
+        }
+
+        var repo = _repo;
+        await RefreshAsync();
+        if (!string.IsNullOrEmpty(repo) && string.Equals(_repo, repo, StringComparison.OrdinalIgnoreCase))
+            GitStateChanged?.Invoke(repo);
+    }
+
+    private bool IsGitMetadataPath(string path)
+    {
+        if (!string.IsNullOrEmpty(_gitDirectory) && IsWithin(path, _gitDirectory)) return true;
+        if (string.IsNullOrEmpty(_repo)) return false;
+        var dotGit = Path.Combine(_repo, ".git");
+        return string.Equals(path, dotGit, StringComparison.OrdinalIgnoreCase)
+            || IsWithin(path, dotGit);
+    }
+
+    private bool IsRelevantGitMetadata(string path)
+    {
+        if (string.IsNullOrEmpty(_gitDirectory)) return false;
+        string relative;
+        try { relative = Path.GetRelativePath(_gitDirectory, path).Replace('/', '\\'); }
+        catch { return true; }
+
+        if (relative.EndsWith(".lock", StringComparison.OrdinalIgnoreCase)
+            || relative.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)
+            || relative.StartsWith("objects\\", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return relative.Equals("index", StringComparison.OrdinalIgnoreCase)
+            || relative.Equals("HEAD", StringComparison.OrdinalIgnoreCase)
+            || relative.Equals("config", StringComparison.OrdinalIgnoreCase)
+            || relative.Equals("packed-refs", StringComparison.OrdinalIgnoreCase)
+            || relative.Equals("FETCH_HEAD", StringComparison.OrdinalIgnoreCase)
+            || relative.Equals("ORIG_HEAD", StringComparison.OrdinalIgnoreCase)
+            || relative.Equals("MERGE_HEAD", StringComparison.OrdinalIgnoreCase)
+            || relative.StartsWith("refs\\", StringComparison.OrdinalIgnoreCase)
+            || relative.StartsWith("logs\\", StringComparison.OrdinalIgnoreCase)
+            || relative.StartsWith("rebase-", StringComparison.OrdinalIgnoreCase)
+            || relative.StartsWith("sequencer\\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsWithin(string path, string directory)
+    {
+        var prefix = directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ResolveGitDirectory(string path)
+    {
+        for (var dir = new DirectoryInfo(path); dir != null; dir = dir.Parent)
+        {
+            var dotGit = Path.Combine(dir.FullName, ".git");
+            if (Directory.Exists(dotGit)) return Path.GetFullPath(dotGit);
+            if (!File.Exists(dotGit)) continue;
+
+            try
+            {
+                const string prefix = "gitdir:";
+                var line = File.ReadLines(dotGit).FirstOrDefault()?.Trim();
+                if (line == null || !line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+                var gitDir = line[prefix.Length..].Trim();
+                return Path.GetFullPath(Path.IsPathRooted(gitDir)
+                    ? gitDir
+                    : Path.Combine(dir.FullName, gitDir));
+            }
+            catch { return null; }
+        }
+        return null;
     }
 
     private void UpdateButtons()
@@ -110,9 +340,6 @@ public partial class GitScmView : UserControl
         PullBtn.IsEnabled  = onBranch && _branch.Behind > 0;                      // 받을 게 0개면 비활성
         PushBtn.IsEnabled  = onBranch && (_branch.Ahead > 0 || !_branch.HasUpstream);  // 올릴 게 0개면 비활성(최초 푸시는 허용). 커밋 메시지와 무관.
         SyncBtn.IsEnabled = onBranch;                                             // upstream 없음: 최초 push, 있음: pull → push
-        StageAllBtn.IsEnabled = !_busy && _unstaged.Count > 0;
-        UnstageAllBtn.IsEnabled = !_busy && _staged.Count > 0;
-
         bool gitOn = GitUiState.Instance.DiffGitEnabled;   // Diff Git 미사용 시 스테이징 섹션 전체 숨김
         StagedHeader.Text = $"스테이징된 변경 사항 ({_staged.Count})";
         StagedHeaderRow.Visibility = gitOn && _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -263,7 +490,7 @@ public partial class GitScmView : UserControl
 
     /// <summary>평면 변경 목록 → repo 루트(전체 경로) 아래 중첩 폴더 트리.
     /// 단일 폴더 체인은 VS식으로 한 행("A/B/C")으로 압축한다.</summary>
-    private static List<ScmTreeNode> BuildTree(IEnumerable<GitChange> changes, string? repoPath)
+    private static List<ScmTreeNode> BuildTree(IEnumerable<GitChange> changes, string? repoPath, bool isStaged)
     {
         var roots = new List<ScmTreeNode>();
         var folders = new Dictionary<string, ScmTreeNode>();   // 누적경로 → 폴더노드
@@ -287,7 +514,13 @@ public partial class GitScmView : UserControl
         }
         if (roots.Count == 0) return new List<ScmTreeNode>();
         Sort(roots);
-        var root = new ScmTreeNode { Name = repoPath ?? "", IsFolder = true };
+        var root = new ScmTreeNode
+        {
+            Name = repoPath ?? "",
+            IsFolder = true,
+            IsRepositoryRoot = true,
+            IsStagedRoot = isStaged
+        };
         foreach (var n in roots) root.Children.Add(Compress(n));
         return new List<ScmTreeNode> { root };
     }
@@ -328,10 +561,16 @@ public partial class GitScmView : UserControl
         => await Do(c => GitService.UnstageAsync(_repo!, c.Path), GitOperation.Unstage, s);
 
     private async void StageAll_Click(object s, RoutedEventArgs e)
-        => await DoAll(() => GitService.StageAllAsync(_repo!), GitOperation.Stage);
+    {
+        if (_busy) return;
+        await DoAll(() => GitService.StageAllAsync(_repo!), GitOperation.Stage);
+    }
 
     private async void UnstageAll_Click(object s, RoutedEventArgs e)
-        => await DoAll(() => GitService.UnstageAllAsync(_repo!), GitOperation.Unstage);
+    {
+        if (_busy) return;
+        await DoAll(() => GitService.UnstageAllAsync(_repo!), GitOperation.Unstage);
+    }
 
     private async void Discard_Click(object s, RoutedEventArgs e)
     {

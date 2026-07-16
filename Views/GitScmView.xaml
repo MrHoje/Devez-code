@@ -6,18 +6,6 @@
              Background="{DynamicResource PanelBrush}"
              FontFamily="{StaticResource PretendardFont}">
     <UserControl.Resources>
-        <!-- 섹션 전체 작업은 헤더에 마우스를 올렸을 때만 노출. 공간은 유지해 제목 흔들림 방지. -->
-        <Style x:Key="ScmHeaderActionButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
-            <Setter Property="Opacity" Value="0"/>
-            <Setter Property="IsHitTestVisible" Value="False"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
-                    <Setter Property="Opacity" Value="1"/>
-                    <Setter Property="IsHitTestVisible" Value="True"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
         <!-- TreeViewItem: 파일 탐색기식(삼각형 + 행 + 들여쓴 자식). 행은 StackPanel 로 쌓아
              컨텐츠 크기 기준 레이아웃(중첩 들여쓰기). 트리는 유한 높이 영역에 놓여 내부 ScrollViewer 가
              가상화한다(아래 본문 참고). -->
@@ -124,7 +112,23 @@
                 </Button>
                 <Button x:Name="UnstageBtn" Grid.Column="4" Tag="{Binding Change}"
                         Click="Unstage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
-                                    Visibility="Collapsed" ToolTip="스테이징 해제">
+                                     Visibility="Collapsed" ToolTip="스테이징 해제">
+                    <Rectangle Width="8" Height="1.5" RadiusX="1" RadiusY="1"
+                               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                </Button>
+                <!-- 저장소 루트 폴더 hover: 목록 전체 스테이징/해제. -->
+                <Button x:Name="RootStageAllBtn" Grid.Column="4"
+                        Click="StageAll_Click" Style="{StaticResource IconButton}"
+                        Width="20" Height="16" Padding="2" VerticalAlignment="Center"
+                        Visibility="Collapsed" ToolTip="전체 스테이징">
+                    <Path Data="{StaticResource IconPlus}" Width="10" Height="10" Stretch="Uniform"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                </Button>
+                <Button x:Name="RootUnstageAllBtn" Grid.Column="4"
+                        Click="UnstageAll_Click" Style="{StaticResource IconButton}"
+                        Width="20" Height="16" Padding="2" VerticalAlignment="Center"
+                        Visibility="Collapsed" ToolTip="전체 스테이징 해제">
                     <Rectangle Width="8" Height="1.5" RadiusX="1" RadiusY="1"
                                Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                 </Button>
@@ -187,6 +191,26 @@
                     <Setter TargetName="DiscardBtn" Property="Visibility" Value="Visible"/>
                     <Setter TargetName="StageBtn" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
+                <!-- 변경 내용의 저장소 루트 hover → 전체 스테이징 -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding DiffGitEnabled, Source={x:Static models:GitUiState.Instance}}" Value="True"/>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
+                        <Condition Binding="{Binding IsRepositoryRoot}" Value="True"/>
+                        <Condition Binding="{Binding IsStagedRoot}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="RootStageAllBtn" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+                <!-- 스테이징된 변경 사항의 저장소 루트 hover → 전체 스테이징 해제 -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding DiffGitEnabled, Source={x:Static models:GitUiState.Instance}}" Value="True"/>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
+                        <Condition Binding="{Binding IsRepositoryRoot}" Value="True"/>
+                        <Condition Binding="{Binding IsStagedRoot}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="RootUnstageAllBtn" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
             </HierarchicalDataTemplate.Triggers>
         </HierarchicalDataTemplate>
 
@@ -241,11 +265,7 @@
             </Grid.RowDefinitions>
             <!-- 섹션 헤더(클릭 시 트리 통째 접기/펼치기) -->
             <Grid x:Name="StagedHeaderRow" Grid.Row="0" Background="Transparent" Margin="0,11,0,2">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Background="Transparent" MouseLeftButtonUp="ToggleStaged">
+                <Border Background="Transparent" MouseLeftButtonUp="ToggleStaged">
                     <StackPanel Orientation="Horizontal">
                         <StackPanel.RenderTransform><TranslateTransform Y="-2"/></StackPanel.RenderTransform>
                         <Grid Width="16">
@@ -261,12 +281,6 @@
                                    Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
                 </Border>
-                <Button x:Name="UnstageAllBtn" Grid.Column="1" Click="UnstageAll_Click"
-                        Style="{StaticResource ScmHeaderActionButton}" Width="20" Height="20" Padding="2"
-                        ToolTip="전체 스테이징 해제">
-                    <Rectangle Width="8" Height="1.5" RadiusX="1" RadiusY="1"
-                               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                </Button>
             </Grid>
             <!-- 스테이징·변경 둘 다 있을 때만 절반 캡(코드에서 MaxHeight 설정) → 초과 시 내부 스크롤 -->
             <Grid x:Name="StagedTreeHost" Grid.Row="1" Margin="0,0,0,0" ClipToBounds="True">
@@ -311,11 +325,7 @@
                     Background="{DynamicResource LineBrush}" Visibility="Collapsed"/>
 
             <Grid x:Name="ChangesHeaderRow" Grid.Row="3" Background="Transparent" Margin="0,14,0,2">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Background="Transparent" MouseLeftButtonUp="ToggleUnstaged">
+                <Border Background="Transparent" MouseLeftButtonUp="ToggleUnstaged">
                     <StackPanel Orientation="Horizontal">
                         <StackPanel.RenderTransform><TranslateTransform Y="-2"/></StackPanel.RenderTransform>
                         <Grid Width="16">
@@ -331,13 +341,6 @@
                                    Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
                 </Border>
-                <Button x:Name="StageAllBtn" Grid.Column="1" Click="StageAll_Click"
-                        Style="{StaticResource ScmHeaderActionButton}" Width="20" Height="20" Padding="2"
-                        ToolTip="전체 스테이징">
-                    <Path Data="{StaticResource IconPlus}" Width="10" Height="10" Stretch="Uniform"
-                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
-                </Button>
             </Grid>
             <Grid x:Name="UnstagedTreeHost" Grid.Row="4" Margin="0,0,0,0" ClipToBounds="True">
                 <TreeView x:Name="UnstagedTree"

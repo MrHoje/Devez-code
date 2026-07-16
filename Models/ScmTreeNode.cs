@@ -8,6 +8,10 @@ public sealed class ScmTreeNode : INotifyPropertyChanged
 {
     public string Name { get; init; } = "";
     public bool IsFolder { get; init; }
+    /// <summary>변경 트리 최상단의 저장소 루트 폴더인지.</summary>
+    public bool IsRepositoryRoot { get; init; }
+    /// <summary>저장소 루트가 스테이징된 변경 목록 소속인지.</summary>
+    public bool IsStagedRoot { get; init; }
     public ObservableCollection<ScmTreeNode> Children { get; } = new();
     /// <summary>파일 리프면 해당 변경, 폴더면 null.</summary>
     public GitChange? Change { get; init; }
