@@ -85,6 +85,10 @@ public static class SessionUsageService
     /// <summary>지원 에이전트인지 (정확 집계 가능). 그 외는 표시하지 않는다.</summary>
     public static bool IsSupported(string agentId) => agentId is "claude" or "codex";
 
+    /// <summary>메모리/usage.json 에 남아 있는 이 방의 마지막 집계값(경로 미해석 시 폴백 표시용). 없으면 null.</summary>
+    private static UsageTotals? LastKnown(string roomId)
+        => _cache.TryGetValue(roomId, out var e) && e.Totals.HasData ? e.Totals : null;
+
     /// <summary>이 방의 최신 누적 사용량. 미지원/데이터 없음이면 null. 백그라운드 스레드에서 호출 권장(파일 IO).</summary>
     public static UsageTotals? Read(string roomId, string agentId, string? cwd)
     {
@@ -108,7 +112,7 @@ public static class SessionUsageService
     {
         var sid = SettingsService.LoadClaudeCodeRoomSession(roomId);
         var path = TerminalSessionManager.FindClaudeTranscriptPath(cwd, sid);
-        if (path == null) return null;
+        if (path == null) return LastKnown(roomId); // 재시작 직후 등 경로 미해석 → 마지막 저장값이라도 표시
 
         var entry = _cache.GetOrAdd(roomId, _ => new Entry { Totals = new UsageTotals(0, 0, 0, 0, 0, null, "Claude") });
         lock (entry)
@@ -192,7 +196,7 @@ public static class SessionUsageService
     {
         var sid = SettingsService.LoadCodexRoomSession(roomId);
         var path = TerminalSessionManager.FindCodexTranscriptPath(sid);
-        if (path == null) return null;
+        if (path == null) return LastKnown(roomId); // 재시작 직후 등 경로 미해석 → 마지막 저장값
 
         long len = new FileInfo(path).Length;
         var tail = ReadTail(path, 128 * 1024);
