@@ -41,32 +41,6 @@
             <local:ProjectColumnsPanel Columns="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
         </ItemsPanelTemplate>
 
-        <!-- 숨김 세션 그룹 배치. 기본은 아래이며 설정값이 켜지면 위로 이동한다. -->
-        <Style x:Key="HiddenSessionGroupPlacement" TargetType="Border">
-            <Setter Property="Grid.Row" Value="4"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding HiddenSessionsOnTop, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:SidebarView}}}" Value="True">
-                    <Setter Property="Grid.Row" Value="0"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <Style x:Key="HiddenSessionSeparatorPlacement" TargetType="Border">
-            <Setter Property="Grid.Row" Value="0"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding HiddenSessionsOnTop, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:SidebarView}}}" Value="True">
-                    <Setter Property="Grid.Row" Value="1"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <Style x:Key="HiddenSessionItemsPlacement" TargetType="ItemsControl">
-            <Setter Property="Grid.Row" Value="1"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding HiddenSessionsOnTop, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:SidebarView}}}" Value="True">
-                    <Setter Property="Grid.Row" Value="0"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
         <!-- 세션 상태 점: 살아있으면 테마 primary(다크=주황), 죽으면 회색 -->
         <Style x:Key="SessionDot" TargetType="Ellipse">
             <Setter Property="Width" Value="8"/>
@@ -716,9 +690,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <!-- 숨김 세션: 설정에 따라 일반 세션 목록 위(0행) 또는 아래(4행)에 배치.
-                                 그룹 내부 세퍼레이터도 위치에 맞춰 목록 뒤/앞으로 이동한다. -->
-                            <Border Style="{StaticResource HiddenSessionGroupPlacement}"
+                            <!-- 숨김 세션은 일반 세션 목록 아래에 항상 고정한다. -->
+                            <Border Grid.Row="4"
                                     Visibility="Collapsed"
                                     b:TreeExpander.IsExpanded="{Binding ShowHiddenGroup}">
                                 <Grid>
@@ -726,11 +699,11 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
-                                    <Border Style="{StaticResource HiddenSessionSeparatorPlacement}"
+                                    <Border Grid.Row="0"
                                             Height="1" Margin="2,6,2,6"
                                             Background="{DynamicResource LineBrush}">
                                     </Border>
-                                    <ItemsControl Style="{StaticResource HiddenSessionItemsPlacement}"
+                                    <ItemsControl Grid.Row="1"
                                                   ItemsSource="{Binding HiddenSessions}" Tag="True"
                                                   ItemTemplate="{StaticResource SessionTemplate}"/>
                                 </Grid>

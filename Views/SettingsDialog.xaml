@@ -596,17 +596,17 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock Text="숨긴 세션 목록 위치" FontSize="{DynamicResource Fs13}"
+                                            <TextBlock Text="새로 숨긴 세션 위치" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="프로젝트 카드에서 숨긴 세션 목록을 일반 세션 목록 위나 아래에 표시합니다."
+                                            <TextBlock Text="열려 있는 탭을 숨기면 숨긴 세션 목록의 위쪽이나 아래쪽에 추가합니다."
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                         </StackPanel>
-                                        <ComboBox x:Name="HiddenSessionsPlacementCombo" Grid.Column="1" Width="116"
+                                        <ComboBox x:Name="HiddenSessionInsertionCombo" Grid.Column="1" Width="116"
                                                   Style="{StaticResource ThemedCombo}" VerticalAlignment="Center"
-                                                  SelectionChanged="HiddenSessionsPlacementCombo_Changed">
-                                            <ComboBoxItem Content="위쪽" Tag="top"/>
-                                            <ComboBoxItem Content="아래쪽" Tag="bottom"/>
+                                                  SelectionChanged="HiddenSessionInsertionCombo_Changed">
+                                            <ComboBoxItem Content="맨 위" Tag="top"/>
+                                            <ComboBoxItem Content="맨 아래" Tag="bottom"/>
                                         </ComboBox>
                                     </Grid>
                                 </Border>

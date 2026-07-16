@@ -37,7 +37,7 @@ public partial class SettingsDialog : UserControl
     private int    _originalIdleSessionShutdownMinutes;
     private bool   _originalAutoLoadLastProject;
     private bool   _originalPromptForNewSessionName;
-    private bool   _originalHiddenSessionsOnTop;
+    private bool   _originalHiddenSessionInsertionOnTop;
     private bool   _originalHideProjectInfoHeader;
     private bool   _originalDiffGitEnabled;
     private bool   _originalAutoUpdateAgents;
@@ -53,7 +53,7 @@ public partial class SettingsDialog : UserControl
     private int    _selectedIdleSessionShutdownMinutes;
     private bool   _selectedAutoLoadLastProject;
     private bool   _selectedPromptForNewSessionName;
-    private bool   _selectedHiddenSessionsOnTop;
+    private bool   _selectedHiddenSessionInsertionOnTop;
     private bool   _selectedHideProjectInfoHeader;
     private bool   _selectedDiffGitEnabled;
     private bool   _selectedAutoUpdateAgents;
@@ -376,9 +376,9 @@ public partial class SettingsDialog : UserControl
         _originalPromptForNewSessionName = SettingsService.LoadPromptForNewSessionName();
         _selectedPromptForNewSessionName = _originalPromptForNewSessionName;
         PromptForNewSessionNameToggle.IsChecked = _selectedPromptForNewSessionName;
-        _originalHiddenSessionsOnTop = SettingsService.LoadHiddenSessionsOnTop();
-        _selectedHiddenSessionsOnTop = _originalHiddenSessionsOnTop;
-        SelectComboByTag(HiddenSessionsPlacementCombo, _selectedHiddenSessionsOnTop ? "top" : "bottom");
+        _originalHiddenSessionInsertionOnTop = SettingsService.LoadHiddenSessionInsertionOnTop();
+        _selectedHiddenSessionInsertionOnTop = _originalHiddenSessionInsertionOnTop;
+        SelectComboByTag(HiddenSessionInsertionCombo, _selectedHiddenSessionInsertionOnTop ? "top" : "bottom");
         _originalHideProjectInfoHeader = SettingsService.LoadHideProjectInfoHeader();
         _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
         HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
@@ -790,10 +790,10 @@ public partial class SettingsDialog : UserControl
         _selectedPromptForNewSessionName = PromptForNewSessionNameToggle.IsChecked == true;
     }
 
-    private void HiddenSessionsPlacementCombo_Changed(object sender, SelectionChangedEventArgs e)
+    private void HiddenSessionInsertionCombo_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (HiddenSessionsPlacementCombo.SelectedItem is ComboBoxItem item)
-            _selectedHiddenSessionsOnTop = string.Equals(item.Tag?.ToString(), "top", StringComparison.Ordinal);
+        if (HiddenSessionInsertionCombo.SelectedItem is ComboBoxItem item)
+            _selectedHiddenSessionInsertionOnTop = string.Equals(item.Tag?.ToString(), "top", StringComparison.Ordinal);
     }
 
     private void HideProjectInfoHeaderToggle_Changed(object sender, RoutedEventArgs e)
@@ -1568,7 +1568,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes) return true;
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
         if (_selectedPromptForNewSessionName != _originalPromptForNewSessionName) return true;
-        if (_selectedHiddenSessionsOnTop != _originalHiddenSessionsOnTop) return true;
+        if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
         if (_selectedDiffGitEnabled != _originalDiffGitEnabled) return true;
         if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
@@ -1613,11 +1613,8 @@ public partial class SettingsDialog : UserControl
         }
         SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
         SettingsService.SavePromptForNewSessionName(_selectedPromptForNewSessionName);
-        if (_selectedHiddenSessionsOnTop != _originalHiddenSessionsOnTop)
-        {
-            SettingsService.SaveHiddenSessionsOnTop(_selectedHiddenSessionsOnTop);
-            (Application.Current.MainWindow as MainWindow)?.ApplyHiddenSessionsPlacement();
-        }
+        if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)
+            SettingsService.SaveHiddenSessionInsertionOnTop(_selectedHiddenSessionInsertionOnTop);
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
         {
             SettingsService.SaveHideProjectInfoHeader(_selectedHideProjectInfoHeader);
@@ -1730,7 +1727,7 @@ public partial class SettingsDialog : UserControl
         _originalIdleSessionShutdownMinutes = _selectedIdleSessionShutdownMinutes;
         _originalAutoLoadLastProject = _selectedAutoLoadLastProject;
         _originalPromptForNewSessionName = _selectedPromptForNewSessionName;
-        _originalHiddenSessionsOnTop = _selectedHiddenSessionsOnTop;
+        _originalHiddenSessionInsertionOnTop = _selectedHiddenSessionInsertionOnTop;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
         _originalDiffGitEnabled = _selectedDiffGitEnabled;
         _originalAutoUpdateAgents = _selectedAutoUpdateAgents;
@@ -1779,10 +1776,10 @@ public partial class SettingsDialog : UserControl
             _selectedPromptForNewSessionName = _originalPromptForNewSessionName;
             PromptForNewSessionNameToggle.IsChecked = _selectedPromptForNewSessionName;
         }
-        if (_selectedHiddenSessionsOnTop != _originalHiddenSessionsOnTop)
+        if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)
         {
-            _selectedHiddenSessionsOnTop = _originalHiddenSessionsOnTop;
-            SelectComboByTag(HiddenSessionsPlacementCombo, _selectedHiddenSessionsOnTop ? "top" : "bottom");
+            _selectedHiddenSessionInsertionOnTop = _originalHiddenSessionInsertionOnTop;
+            SelectComboByTag(HiddenSessionInsertionCombo, _selectedHiddenSessionInsertionOnTop ? "top" : "bottom");
         }
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
         {

@@ -1065,6 +1065,26 @@ public sealed class ProjectItem : NotifyBase
         return new[] { session };
     }
 
+    /// <summary>새로 숨김 그룹에 들어온 세션 트리 블록을 기존 숨김 목록의 맨 위/아래로 옮긴다.
+    /// 일반 세션과 문서의 상대 순서는 바꾸지 않는다.</summary>
+    public void PlaceNewlyHiddenSession(SessionItem session, bool onTop)
+    {
+        if (!Sessions.Contains(session) || !session.IsSidebarGloballyHidden) return;
+
+        var blocks = BuildTopLevelTabBlocks();
+        var sourceBlock = blocks.FirstOrDefault(block => block.Contains(session));
+        if (sourceBlock == null) return;
+
+        var otherHiddenBlocks = blocks
+            .Where(block => !ReferenceEquals(block, sourceBlock)
+                && block.OfType<SessionItem>().Any(item => item.IsSidebarGloballyHidden))
+            .ToList();
+        if (otherHiddenBlocks.Count == 0) return;
+
+        var targetBlock = onTop ? otherHiddenBlocks[0] : otherHiddenBlocks[^1];
+        MoveTopLevelTabBlock(session, targetBlock[0], after: !onTop, treeChanged: false);
+    }
+
     private bool IsDescendantOf(SessionItem candidate, SessionItem ancestor)
     {
         var current = candidate;
