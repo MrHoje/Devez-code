@@ -619,9 +619,9 @@ public sealed class ProjectItem : NotifyBase
     /// <summary>구성원 전체가 숨겨진 최상위 세션 트리를 모은 뷰. 일부 자식이 보이면 트리 전체를
     /// 원래 위치에 유지하고 숨긴 자식만 부모 아래에서 후순위로 표시한다.</summary>
     public ObservableCollection<SessionItem> HiddenSessions { get; } = new();
-    /// <summary>숨김 세션이 하나라도 있는지 — 하단 그룹 세퍼레이터/표시 여부.</summary>
+    /// <summary>숨김 세션이 하나라도 있는지 — 숨김 그룹 세퍼레이터/표시 여부.</summary>
     public bool HasHiddenSessions => HiddenSessions.Count > 0;
-    /// <summary>ShowHiddenSessions 토글이 켜져 있고 숨김 세션이 실제로 있을 때만 하단 그룹을 보인다.</summary>
+    /// <summary>ShowHiddenSessions 토글이 켜져 있고 숨김 세션이 실제로 있을 때만 숨김 그룹을 보인다.</summary>
     public bool ShowHiddenGroup => ShowHiddenSessions && HasHiddenSessions;
 
     // ── 프로젝트 카드 헤더의 집계 세션 상태 (펼치지 않아도 한눈에) ──

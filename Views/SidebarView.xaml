@@ -41,6 +41,32 @@
             <local:ProjectColumnsPanel Columns="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
         </ItemsPanelTemplate>
 
+        <!-- 숨김 세션 그룹 배치. 기본은 아래이며 설정값이 켜지면 위로 이동한다. -->
+        <Style x:Key="HiddenSessionGroupPlacement" TargetType="Border">
+            <Setter Property="Grid.Row" Value="4"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HiddenSessionsOnTop, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:SidebarView}}}" Value="True">
+                    <Setter Property="Grid.Row" Value="0"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="HiddenSessionSeparatorPlacement" TargetType="Border">
+            <Setter Property="Grid.Row" Value="0"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HiddenSessionsOnTop, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:SidebarView}}}" Value="True">
+                    <Setter Property="Grid.Row" Value="1"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="HiddenSessionItemsPlacement" TargetType="ItemsControl">
+            <Setter Property="Grid.Row" Value="1"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HiddenSessionsOnTop, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type local:SidebarView}}}" Value="True">
+                    <Setter Property="Grid.Row" Value="0"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- 세션 상태 점: 살아있으면 테마 primary(다크=주황), 죽으면 회색 -->
         <Style x:Key="SessionDot" TargetType="Ellipse">
             <Setter Property="Width" Value="8"/>
@@ -680,37 +706,53 @@
                     <!-- 세션 리스트 + 바로가기 리스트: 펼침 시 표시. 가이드선/연결됨 텍스트 없음 -->
                     <Border Visibility="Collapsed"
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
-                        <StackPanel Margin="8,2,8,8">
+                        <Grid Margin="8,2,8,8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <!-- 숨김 세션: 설정에 따라 일반 세션 목록 위(0행) 또는 아래(4행)에 배치.
+                                 그룹 내부 세퍼레이터도 위치에 맞춰 목록 뒤/앞으로 이동한다. -->
+                            <Border Style="{StaticResource HiddenSessionGroupPlacement}"
+                                    Visibility="Collapsed"
+                                    b:TreeExpander.IsExpanded="{Binding ShowHiddenGroup}">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Style="{StaticResource HiddenSessionSeparatorPlacement}"
+                                            Height="1" Margin="2,6,2,6"
+                                            Background="{DynamicResource LineBrush}">
+                                    </Border>
+                                    <ItemsControl Style="{StaticResource HiddenSessionItemsPlacement}"
+                                                  ItemsSource="{Binding HiddenSessions}" Tag="True"
+                                                  ItemTemplate="{StaticResource SessionTemplate}"/>
+                                </Grid>
+                            </Border>
                             <!-- 상단 그룹: 비분할=전체 탭, 분할=좌측 패널 탭(세션+열린 문서).
                                  Tag="False" 고정 → 숨김(Hidden) 세션은 이 그룹에서 항상 접히고
-                                 아래 '숨김 세션' 그룹으로만 모인다. -->
-                            <ItemsControl ItemsSource="{Binding LeftItems}" Tag="False"
+                                 별도 '숨김 세션' 그룹으로만 모인다. -->
+                            <ItemsControl Grid.Row="1" ItemsSource="{Binding LeftItems}" Tag="False"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
                             <!-- 분할 시 우측 그룹: 세퍼레이터로만 구분(라벨 없음) -->
-                            <Border Height="1" Margin="2,6,2,6"
+                            <Border Grid.Row="2" Height="1" Margin="2,6,2,6"
                                     Background="{DynamicResource LineBrush}"
                                     Visibility="{Binding HasRightItems, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                            <ItemsControl ItemsSource="{Binding RightItems}" Tag="False"
+                            <ItemsControl Grid.Row="3" ItemsSource="{Binding RightItems}" Tag="False"
                                           ItemTemplateSelector="{StaticResource TabRowSelector}"/>
-                            <!-- 숨김 세션: 좌/우 구분 없이 전부 모아 맨 아래로. 좌우 그룹과 동일한 세퍼레이터로 구분.
-                                 '숨김 세션 표시' 토글(ShowHiddenSessions) + 실제 숨김 세션 존재 시에만 그룹째 표시.
-                                 카드 접고펴는 것과 동일한 TreeExpander 애니메이션(MaxHeight+Opacity)으로 토글. -->
-                            <Border Visibility="Collapsed"
-                                    b:TreeExpander.IsExpanded="{Binding ShowHiddenGroup}">
-                                <StackPanel>
-                                    <Border Height="1" Margin="2,6,2,6"
-                                            Background="{DynamicResource LineBrush}"/>
-                                    <ItemsControl ItemsSource="{Binding HiddenSessions}" Tag="True"
-                                                  ItemTemplate="{StaticResource SessionTemplate}"/>
-                                </StackPanel>
-                            </Border>
                             <!-- 바로가기: 세션과 세퍼레이터로 구분, 등록된 게 있을 때만 표시 -->
-                            <Border Height="1" Margin="2,6,2,6"
+                            <Border Grid.Row="5" Height="1" Margin="2,6,2,6"
                                     Background="{DynamicResource LineBrush}"
                                     Visibility="{Binding HasFiles, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                            <ItemsControl ItemsSource="{Binding Files}"
+                            <ItemsControl Grid.Row="6" ItemsSource="{Binding Files}"
                                           ItemTemplate="{StaticResource ShortcutTemplate}"/>
-                        </StackPanel>
+                        </Grid>
                     </Border>
                 </StackPanel>
             </Border>

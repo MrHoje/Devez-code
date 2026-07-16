@@ -94,6 +94,17 @@ public partial class SidebarView : UserControl
 
     private int _projectColumns = 1;
 
+    public static readonly DependencyProperty HiddenSessionsOnTopProperty = DependencyProperty.Register(
+        nameof(HiddenSessionsOnTop), typeof(bool), typeof(SidebarView), new PropertyMetadata(false));
+
+    public bool HiddenSessionsOnTop
+    {
+        get => (bool)GetValue(HiddenSessionsOnTopProperty);
+        set => SetValue(HiddenSessionsOnTopProperty, value);
+    }
+
+    public void ApplyHiddenSessionsPlacement(bool onTop) => HiddenSessionsOnTop = onTop;
+
     /// <summary>프로젝트/보관함 목록을 1열(세로) 또는 2열(좌/우 독립 컬럼)로 전환. MainWindow 가 설정값으로 호출.
     /// Tag → ProjectColumnsPanel.Columns 바인딩으로 레이아웃만 바뀌며, 카드의 Column 값은 그대로라 자동 재배치가 없다.</summary>
     public void ApplyProjectColumns(int cols)

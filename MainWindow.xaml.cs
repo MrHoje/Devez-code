@@ -167,6 +167,7 @@ public partial class MainWindow : Window
         }
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
+        ApplyHiddenSessionsPlacement();
         SetupPane(PaneA);
         SetupPane(PaneB);   // 분할 전엔 숨김(XAML Collapsed). 분할 시 노출.
         // SCM 패널 → 포커스 패널에 diff 탭 열기 / git 상태 변경 시 브랜치 버블 갱신.
@@ -2102,6 +2103,10 @@ public partial class MainWindow : Window
             SettingsService.SaveLeftPanel(_leftCollapsed, _sidebarWidth);
         }
     }
+
+    /// <summary>설정에 저장된 숨김 세션 그룹 위치를 사이드바 전체에 즉시 반영.</summary>
+    public void ApplyHiddenSessionsPlacement()
+        => Sidebar.ApplyHiddenSessionsPlacement(SettingsService.LoadHiddenSessionsOnTop());
 
     private const int VK_MENU = 0x12;
     private const uint KEYEVENTF_KEYUP = 0x0002;

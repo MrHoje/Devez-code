@@ -107,6 +107,8 @@ public static class SettingsService
         public bool AutoLoadLastProject { get; set; } = false;
         // 새 세션을 추가할 때 이름 입력 팝업을 바로 표시할지 여부. 기본 false = 자동 생성 이름 사용.
         public bool PromptForNewSessionName { get; set; } = false;
+        // 프로젝트 카드에서 숨긴 세션 그룹을 일반 세션 목록 위에 표시할지 여부. 기본 false = 아래.
+        public bool HiddenSessionsOnTop { get; set; } = false;
         // 세션 탭 위의 프로젝트 정보 헤더(MetaBar: 프로젝트명~effort) 숨김 여부. 기본 false = 표시.
         public bool HideProjectInfoHeader { get; set; } = false;
         // 프로그램 실행 시 켜진 에이전트 CLI 를 최신 버전으로 자동 업데이트할지 여부. 기본 true.
@@ -796,6 +798,9 @@ public static class SettingsService
 
     public static bool LoadPromptForNewSessionName() => Current.PromptForNewSessionName;
     public static void SavePromptForNewSessionName(bool v) { Current.PromptForNewSessionName = v; Save(); }
+
+    public static bool LoadHiddenSessionsOnTop() => Current.HiddenSessionsOnTop;
+    public static void SaveHiddenSessionsOnTop(bool v) { Current.HiddenSessionsOnTop = v; Save(); }
 
     public static bool LoadHideProjectInfoHeader() => Current.HideProjectInfoHeader;
     public static void SaveHideProjectInfoHeader(bool v) { Current.HideProjectInfoHeader = v; Save(); }
