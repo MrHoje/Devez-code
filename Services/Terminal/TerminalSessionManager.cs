@@ -1122,6 +1122,8 @@ public sealed class TerminalSessionManager
         try { Directory.CreateDirectory(sessionDir); } catch { }
 
         // 폴더 최신 세션 ID 가 저장값과 다르면 그쪽이 최신 대화 → 교체(새 대화·/clear 추종).
+        // gjc 는 새 세션 시 .jsonl 은 lazy 라도 세션 디렉터리(<ts>_<id>/)는 즉시 만들므로,
+        // transcript 지연 flush 상황에서도 orphan 디렉터리가 최신 세션의 증거가 된다.
         var sessionId = SettingsService.LoadGajaeRoomSession(roomId);
         var latest = FindLatestGajaeSessionId(sessionDir);
         if (latest != null && latest != sessionId)
@@ -1131,8 +1133,9 @@ public sealed class TerminalSessionManager
         }
 
         // --session-dir 경로는 따옴표로 감싸 공백 안전. -r <id> 는 GUID 만(파일명 검증) → 주입 차단.
-        // GJC 0.10.1/0.10.2는 --hook을 도움말에 노출하지만 실제 파서가 값을 사용자 메시지로 처리하므로
-        // 외부 훅 인자를 전달하지 않는다. 상태는 GJC 자체 세션 JSONL을 증분 폴링한다.
+        // GJC 의 --hook/--extension 플래그는 0.11.1 에서도 미파싱(경로가 초기 프롬프트가 됨)이고
+        // 파일시스템 확장 로딩 자체가 격리(quarantine)라 훅/확장 주입은 불가 — 상태는 GJC 가 직접 쓰는
+        // 런타임 사이드카(<workingDir>\.gjc\_session-<id>\runtime\runtime-state.json) + 세션 JSONL 폴링으로 추적한다.
         string sd = $"--session-dir \"{sessionDir}\"";
         // call: gjc 가 gjc.cmd(npm) 인 환경에서도 종료 후 제어가 배치(재진입 루프)로 돌아오게 한다(.exe 엔 무해).
         string cmd = sessionId != null

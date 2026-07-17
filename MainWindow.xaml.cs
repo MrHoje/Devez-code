@@ -329,7 +329,9 @@ public partial class MainWindow : Window
                 UpdateSessionBusyDisplay();
             });
 
-        // 가재코드 — JSONL 증분 폴링으로 busy 판정 → 스피너.
+        // 가재코드 — gjc 런타임 사이드카(1차) + JSONL 증분 폴링(폴백) 병합 busy 판정 → 스피너.
+        // 완료는 정착 디바운스 + 서비스 재확인을 거친다 — gjc 의 auto-retry/컴팩션으로 agent 루프가
+        // 한 프롬프트 안에서 잠깐 끊겼다 재시작해도 가짜 완료 카드/토스트가 생기지 않는다.
         _gajaeLastMsg.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -341,8 +343,18 @@ public partial class MainWindow : Window
                     s.IsBusy = busy;
                     if (!busy) s.IsWaitingChoice = false; // 턴 종료 → ❗ 보강 해제(완료까지 박힘 방지)
                 }
-                NotifyIfSessionFinished(s, was, busy);
+                NotifyIfSessionFinished(s, was, busy, () => _gajaeLastMsg.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
+            });
+
+        // 가재코드 — goal 모드 골 단위 완료 백필(사이드카 미가동 방 한정, transcript 파싱).
+        // 사이드카가 가동 중인 방은 골마다 agent_end → busy→idle 완료 카드가 이미 찍히므로 중복되지 않는다.
+        _gajaeLastMsg.GoalCompleted += (roomId, objective, completedAt) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s == null) return;
+                AddGoalCompletionRecord(s, objective, completedAt);
             });
 
         // 가재코드 — 'ask' 선택지 응답 대기(❗). gjc 는 스피너 라인이 출력 버퍼를 도배해 화면 폴링이 불가하므로
@@ -535,7 +547,9 @@ public partial class MainWindow : Window
             OpenCodePluginInstaller.EnsureInstalled();
             _opencodeLastMsg.Start();
             _opencodeBusy.Start();
-            // 가재코드 — 세션 .jsonl 증분 폴링으로 헤더/스피너/대기 처리.
+            // 가재코드 — gjc 런타임 사이드카(runtime-state.json) 1차 + 세션 .jsonl 폴링 폴백으로
+            // 헤더/스피너/대기 처리. gjc 0.11 은 transcript 를 지연 flush 하므로(수 시간 실측)
+            // 폴링만으로는 busy/완료가 그만큼 늦는다 — 사이드카가 이벤트 즉시 기록이라 이를 보정.
             _gajaeLastMsg.Start();
             _agentLastMsg.Start();
             // devez 마켓플레이스 자동설치 — 없으면 콘솔 없이 조용히 추가. 시작 부하를 피해 지연 실행,
@@ -3567,19 +3581,27 @@ public partial class MainWindow : Window
         UpdateSessionHistoryEmpty();
     }
 
-    /// <summary>완료된 세션이 다시 작업을 시작하면 이전 완료 카드는 더 이상 현재 완료 상태가 아니다.
-    /// 같은 턴의 중간 idle 오판으로 생긴 카드도 busy 재진입 즉시 함께 제거한다.</summary>
-    private void RemoveSessionCompletionRecords(string sessionId)
+    /// <summary>goal 모드 골 단위 완료 카드(transcript 백필). 일반 완료 카드와 같은 목록에 쌓이되
+    /// 내용은 사용자 프롬프트가 아니라 완료된 골의 목표문, 시각은 transcript 기록 시각을 쓴다.
+    /// 지연 flush 로 뒤늦게 파싱된 과거 완료라 토스트/작업표시줄 알림은 내지 않는다.</summary>
+    private void AddGoalCompletionRecord(SessionItem s, string objective, DateTime completedAt)
     {
-        bool changed = false;
-        for (int i = _sessionDoneRecords.Count - 1; i >= 0; i--)
+        var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
+        var projName = proj?.Name ?? "";
+        var sessName = string.IsNullOrWhiteSpace(s.Name) ? "세션" : s.Name;
+
+        _sessionDoneRecords.Insert(0, new SessionCompletionRecord
         {
-            if (!string.Equals(_sessionDoneRecords[i].SessionId, sessionId, StringComparison.Ordinal))
-                continue;
-            _sessionDoneRecords.RemoveAt(i);
-            changed = true;
-        }
-        if (!changed) return;
+            SessionId = s.Id,
+            SessionName = sessName,
+            ProjectName = projName,
+            AgentId = s.AgentId,
+            LastMessage = objective,
+            CompletedAt = completedAt,
+        });
+
+        while (_sessionDoneRecords.Count > MaxSessionDoneRecords)
+            _sessionDoneRecords.RemoveAt(_sessionDoneRecords.Count - 1);
         SettingsService.SaveSessionHistoryRecords(
             new List<SessionCompletionRecord>(_sessionDoneRecords), MaxSessionDoneRecords);
         UpdateSessionHistoryEmpty();
@@ -3770,14 +3792,16 @@ public partial class MainWindow : Window
         if (s == null) return;
         if (nowBusy)
         {
-            // running 재무장 → 대기중이던(레이스성) 완료기록 취소.
+            // running 재무장 → 대기중이던(레이스성) 완료기록 취소. 이미 확정 발행된 카드는 지우지 않는다 —
+            // 완료 카드는 프롬프트 완료마다 히스토리로 쌓이는 것이 spec 이고, 플랩 방지는 정착 디바운스가
+            // 발행 "전"에 담당한다. (예전엔 busy 재진입 시 그 세션 카드를 전부 삭제해 기록이 안 쌓였다.)
             if (_finishDebounce.TryGetValue(s, out var pending)) { pending.Stop(); _finishDebounce.Remove(s); }
-            RemoveSessionCompletionRecords(s.Id);
             return;
         }
         if (!wasBusy) return; // busy→idle 전이 아님
-        // claude 만 서브에이전트 훅 순서 경합(Stop↔SubagentStart)으로 가짜 idle 이 튄다 → 정착 창 적용.
-        // opencode/gjc/codex 는 busy 소스가 단일(플러그인/ jsonl 스냅샷)이라 플랩이 없다 → 즉시 확정.
+        // claude 는 서브에이전트 훅 순서 경합(Stop↔SubagentStart), gjc 는 auto-retry/컴팩션 루프 재시작으로
+        // 가짜 idle 이 튈 수 있다 → 정착 창 + isStillActive 재확인 적용.
+        // opencode/codex 는 busy 소스가 단일(플러그인/훅)이라 플랩이 없다 → 즉시 확정.
         if (isStillActive == null) { EmitSessionFinished(s); return; }
         if (_finishDebounce.TryGetValue(s, out var ex)) ex.Stop();
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FinishSettleMs) };

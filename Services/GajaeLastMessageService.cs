@@ -5,16 +5,30 @@ using System.Windows.Threading;
 
 namespace DevezCode.Services;
 
-/// <summary>가재코드(gjc)가 직접 쓰는 세션 .jsonl을 증분 폴링해 두 가지를 알린다:
+/// <summary>가재코드(gjc) 방 상태 하이브리드 추적 — 두 신호원을 병합해 세 가지를 알린다:
 /// 1) 마지막 보낸 user 프롬프트(헤더 타이틀) — MessageChanged
 /// 2) 요청 처리중 여부(좌측 스피너) — BusyChanged
-/// 디렉터리: %AppData%\DevezCode\gajae\sessions\&lt;roomId&gt;\&lt;timestamp&gt;_&lt;id&gt;.jsonl
-/// roomId 는 GUID("N") 라 디렉터리명이 곧 roomId.
-/// <para>busy 판정: jsonl 의 마지막 message 엔트리 role 이 user/toolResult 면 처리중(assistant 응답 대기),
-/// assistant 면 완료 후보이며, 같은 EOF가 다음 busy poll까지 유지되면 idle로 확정한다.
-/// gjc 는 user 프롬프트를 보낼 때 즉시 jsonl 에 한 줄 기록하므로 "마지막이 user" = 응답 생성 중으로 본다.</para>
-/// 외부 hook/extension 플래그는 일부 버전에서 도움말에만 노출되고 실제 파서가 값을 사용자 메시지로
-/// 처리하므로 사용하지 않는다. JSONL은 구버전부터 유지된 GJC 자체 저장 형식이다.</summary>
+/// 3) 'ask' 선택지 응답 대기(❗) — WaitingChoiceChanged
+///
+/// <para><b>1차 신호원 = gjc 런타임 사이드카</b>:
+/// <c>&lt;방 workingDir&gt;\.gjc\_session-&lt;sessionId&gt;\runtime\runtime-state.json</c>.
+/// gjc 0.11 이 agent_start/turn_start/agent_end 이벤트 시점마다 잠금+원자적으로 직접 쓰는 공식 상태 파일로
+/// state(running/completed/errored/needs_user_input…)·updated_at·session_file 을 담는다.
+/// gjc 0.11 은 세션 transcript(.jsonl)를 지연 flush 하므로(수 분~수 시간 실측) transcript 폴링만으로는
+/// busy/idle 이 그만큼 늦어 완료기록·스피너가 죽는다 — 사이드카는 이벤트 즉시 기록이라 이 문제가 없다.
+/// (0.10 의 --hook 은 미파싱, 0.11 의 파일시스템 확장 로딩은 격리(quarantine)되어 확장 주입 경로는 불가 —
+/// 사이드카가 유일하게 신뢰 가능한 네이티브 실시간 신호였다. 2026-07-17 실기 검증.)</para>
+///
+/// <para><b>폴백 = 세션 .jsonl 증분 폴링</b>: 사이드카가 없거나(구버전 gjc) stale 인 방의 기존 동작 유지.
+/// 디렉터리: %AppData%\DevezCode\gajae\sessions\&lt;roomId&gt;\&lt;timestamp&gt;_&lt;id&gt;.jsonl (roomId=GUID "N").
+/// busy 판정: 마지막 message 엔트리 role 이 user/toolResult(또는 assistant+toolCall)면 처리중,
+/// assistant text-only 면 완료 후보 → 같은 EOF 가 정착 지연 후에도 유지되면 idle 확정.
+/// 사이드카가 유효 상태(running/completed 등)를 가지는 방에서는 jsonl 이 busy 를 재점화하지 못한다 —
+/// 지연 flush 가 "이미 idle 확정된 턴"의 중간 줄을 뒤늦게 내려보내며 생기는 가짜 스피너/중복 카드 차단.</para>
+///
+/// <para><b>goal 모드 백필</b>: transcript 의 custom/goal-completed 엔트리를 파싱해 골 단위 완료를
+/// GoalCompleted 로 알린다(사이드카 미가동 방 한정 — 가동 방은 agent_end 완료 카드가 이미 골마다 찍힌다).
+/// 파일 최초 스캔(과거 내역)은 재발행하지 않는다.</para></summary>
 public sealed class GajaeLastMessageService : IDisposable
 {
     private static string Root => Path.Combine(
@@ -22,15 +36,18 @@ public sealed class GajaeLastMessageService : IDisposable
         "DevezCode", "gajae", "sessions");
 
     private readonly DispatcherTimer _poll;
-    // roomId → 마지막으로 처리한 상태 시그니처(최신 .jsonl 경로+mtime, 또는 빈 새 세션 마커). 같으면 스킵.
+    // roomId → 마지막으로 처리한 상태 시그니처(최신 .jsonl 경로+길이+mtime + 사이드카 서명). 같으면 스킵.
     private readonly Dictionary<string, string> _seen = new();
     private readonly Dictionary<string, string> _lastMsg = new();
     private readonly Dictionary<string, bool> _busy = new();
     private readonly Dictionary<string, bool> _waiting = new();
     // GJC는 최종 assistant 레코드를 디스크에 먼저 기록한 뒤 TUI 출력 플러시를 마친다.
     // 같은 transcript 시그니처가 다음 poll까지 안정적으로 유지될 때만 idle을 확정해,
-    // 최종 응답이 화면에 아직 출력 중인데 스피너가 먼저 사라지는 것을 막는다.
+    // 최종 응답이 화면에 아직 출력 중인데 스피너가 먼저 사라지는 것을 막는다(JSONL 폴백 판정 한정).
     private readonly Dictionary<string, (string Signature, DateTime FirstSeenUtc)> _idleCandidates = new();
+    // 이번 앱 실행 중 사이드카 가동이 증명된 방 — 사이드카가 일시적으로 안 읽혀도(잠금 등)
+    // goal 백필이 오발행되지 않게 하는 가드(가동 방은 agent_end 완료 카드가 골마다 이미 찍힌다).
+    private readonly HashSet<string> _sidecarProven = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TranscriptCursor> _transcripts = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>(roomId, message) — gjc 세션이 마지막으로 보낸 프롬프트(1줄 요약). 빈 문자열이면 세션명으로 표시.</summary>
@@ -39,15 +56,27 @@ public sealed class GajaeLastMessageService : IDisposable
     /// <summary>(roomId, busy) — busy=true 면 요청 처리중(스피너).</summary>
     public event Action<string, bool>? BusyChanged;
 
-    /// <summary>(roomId, waiting) — waiting=true 면 선택지('ask') 응답 대기 중(❗). jsonl 의 'ask' 툴콜로 판정.</summary>
+    /// <summary>(roomId, waiting) — waiting=true 면 선택지('ask') 응답 대기 중(❗).</summary>
     public event Action<string, bool>? WaitingChoiceChanged;
+
+    /// <summary>(roomId, objective, completedAt) — goal 모드에서 골 하나 완료(transcript 백필, 사이드카 미가동 방 한정).</summary>
+    public event Action<string, string, DateTime>? GoalCompleted;
+
     private bool _started;
+
+    /// <summary>방의 현재 병합 busy 상태(마지막 발행값). 완료 디바운스의 isStillActive 재확인용.</summary>
+    public bool IsRoomBusy(string roomId) => _busy.TryGetValue(roomId, out var b) && b;
 
     // 적응형 폴링 주기: 처리중인 방이 있으면 스피너 종료를 빨리 감지하도록 BusyInterval(1s),
     // 전부 idle 이면 IdleInterval(2.5s)로 늦춰 다세션 시 디렉터리 열거·파일 open 부하를 낮춘다.
     private static readonly TimeSpan BusyInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan IdleInterval = TimeSpan.FromSeconds(2.5);
     private static readonly TimeSpan IdleSettleDelay = TimeSpan.FromMilliseconds(900);
+    // 사이드카 running 신뢰 창 — gjc 는 매 턴 이벤트마다 updated_at 을 갱신하지만 단일 도구가 오래 돌면
+    // 이벤트가 없어 stale 해질 수 있다. 이 창을 넘긴 running 은 하드킬 잔재일 수 있으므로 jsonl 판정으로
+    // 폴백한다(정상 종료·시그널은 gjc postmortem 이 completed/errored 로 갱신하므로 잔재는 하드킬뿐).
+    private static readonly TimeSpan SidecarRunningStale = TimeSpan.FromMinutes(15);
+
     private sealed class TranscriptCursor
     {
         public long Offset;
@@ -55,6 +84,17 @@ public sealed class GajaeLastMessageService : IDisposable
         public string? LastUserMessage;
         public bool Busy;
         public bool Waiting;
+        // 최초 전체 스캔(과거 내역) 여부 — goal-completed 는 Primed 이후 append 분만 발행한다.
+        public bool Primed;
+        public List<(string Objective, DateTime CompletedAt)> NewGoals = new();
+    }
+
+    /// <summary>gjc 런타임 사이드카(runtime-state.json) 스냅샷.</summary>
+    private sealed record SidecarState(string State, long UpdatedAtMs, string? SessionFile, string? Event)
+    {
+        public string Signature => $"{State}:{UpdatedAtMs}:{Event}";
+        public TimeSpan Age => TimeSpan.FromMilliseconds(
+            Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - UpdatedAtMs));
     }
 
     public GajaeLastMessageService()
@@ -113,72 +153,202 @@ public sealed class GajaeLastMessageService : IDisposable
         bool freshNew = newestOrphan != null
             && (newest == null || newestOrphan.LastWriteTimeUtc > newest.LastWriteTimeUtc);
 
+        var sidecar = ReadFreshestSidecar(roomId, roomDir, newest, newestOrphan);
+
         // 상태 시그니처 — 빈 새 세션이면 orphan 디렉터리 기준, 아니면 최신 .jsonl(경로+실제길이+mtime) 기준.
-        // 시그니처가 그대로면 변화 없음 → 스킵(busy 는 순수 내용 기반이라 파일/세션이 바뀔 때만 변한다).
-        // mtime 만으로는 부족: gjc 가 핸들을 연 채 append 하면 디렉터리 엔트리의 mtime 이 stale(미갱신)일 수 있어
-        // user 줄 append(=busy 진입)가 mtime 에 안 잡히면 sig 가 안 바뀌어 skip → 그 턴 내내 스피너가 안 뜬다(간헐적).
-        // FileStream.Length(커널 실제 EOF)는 append 마다 항상 증가하므로 시그니처에 포함하면 stale 을 우회한다.
+        // mtime 만으로는 부족: gjc 가 핸들을 연 채 append 하면 디렉터리 엔트리의 mtime 이 stale 일 수 있어
+        // FileStream.Length(커널 실제 EOF)를 포함해 append 누락을 우회한다. 사이드카 서명도 포함해
+        // 사이드카 전이(프롬프트 시작/완료)가 반영을 트리거하게 한다.
         long contentLen = newest != null ? RealContentLength(newest.FullName) : 0;
         string? sig = freshNew ? "NEW:" + newestOrphan!.Name
                 : newest != null ? newest.FullName + "|" + contentLen + "|" + newest.LastWriteTimeUtc.Ticks
                 : null;
+        if (sidecar != null) sig = (sig ?? "NOJSONL") + "|SC:" + sidecar.Signature;
         if (sig == null) return;
-        // busy 로 마킹된 방은 sig 가 같아도 강제 재파싱한다.
-        // gjc 는 .jsonl 핸들을 연 채 append 하는데, Windows 는 핸들이 열린 동안 디렉터리 엔트리의
-        // LastWriteTime 을 즉시 안 갱신해(stale) 종료 줄(마지막 assistant text) append 가 mtime 에 안 잡힐 수 있다.
-        // 그러면 sig 가 안 바뀌어 종료(busy=false) emit 을 놓치고 스피너가 영구히 도는 증상이 난다.
-        // 파일 내용 읽기는 메타와 달리 항상 최신 바이트를 주므로, busy 인 동안 매 폴링 재파싱하면 종료를 확실히 감지한다.
+        // busy 로 마킹된 방은 sig 가 같아도 강제 재파싱한다(핸들 열린 채 append 시 mtime stale 로
+        // 종료 줄이 sig 에 안 잡혀 idle 전이를 놓치는 것 방지 — 내용 읽기는 항상 최신 바이트를 준다).
         bool roomBusy = _busy.TryGetValue(roomId, out var wasBusyNow) && wasBusyNow;
         bool roomWaiting = _waiting.TryGetValue(roomId, out var wasWaitingNow) && wasWaitingNow;
         if (!roomBusy && !roomWaiting && _seen.TryGetValue(roomId, out var prev) && prev == sig) return;
         _seen[roomId] = sig;
 
+        // ── 1) JSONL 폴백 판정 ─────────────────────────────────────
         string? msg;
+        bool jsonlBusy;
+        bool jsonlWaiting;
+        List<(string Objective, DateTime CompletedAt)>? goals = null;
+        if (freshNew) { msg = ""; jsonlBusy = false; jsonlWaiting = false; }   // 빈 새 세션 → 헤더 세션명 복귀, idle
+        else if (newest != null) (msg, jsonlBusy, jsonlWaiting, goals) = ParseState(newest.FullName);
+        else { msg = null; jsonlBusy = false; jsonlWaiting = false; }
+
+        // ── 2) 사이드카 상태와 병합 ─────────────────────────────────
         bool busy;
         bool waiting;
-        if (freshNew) { msg = ""; busy = false; waiting = false; }   // 빈 새 세션 → 헤더 세션명 복귀, idle
-        else if (newest != null) (msg, busy, waiting) = ParseState(newest.FullName);
-        else { msg = null; busy = false; waiting = false; }
-
-        // 첫 스캔: 이전 실행에서 종료된 진행 상태는 취소된 것으로 간주, busy=false
-        if (!_started)
+        bool sidecarOwns = sidecar != null && sidecar.State is "running" or "needs_user_input" or
+            "ready_for_input" or "completed" or "errored";
+        if (!sidecarOwns)
         {
+            // 사이드카 없음/판정 불가(booting·stale·unknown) — 기존 jsonl 단독 판정 + idle 정착.
+            busy = ApplyJsonlIdleGates(roomId, freshNew, sig, jsonlBusy);
+            waiting = _started && jsonlWaiting && busy;
+        }
+        else if (sidecar!.State == "needs_user_input")
+        {
+            busy = true;
+            waiting = true;
+            _idleCandidates.Remove(roomId);
+            _sidecarProven.Add(roomId);
+        }
+        else if (sidecar.State == "running" && sidecar.Age < SidecarRunningStale)
+        {
+            // 앱 재시작 직후에도 그대로 신뢰(작업 중 재시작 케이스). ❗는 jsonl 의 ask 파싱으로 보강.
+            busy = true;
+            waiting = _started && jsonlWaiting;
+            _idleCandidates.Remove(roomId);
+            _sidecarProven.Add(roomId);
+        }
+        else if (sidecar.State == "running")
+        {
+            // running 이 신뢰 창을 넘겨 stale — 하드킬 잔재 가능성. jsonl 판정으로 폴백해 고착을 봉인.
+            busy = ApplyJsonlIdleGates(roomId, freshNew, sig, jsonlBusy);
+            waiting = _started && jsonlWaiting && busy;
+        }
+        else
+        {
+            // 사이드카가 idle(완료/에러/입력대기 준비) 확정 — jsonl 은 busy 를 재점화하지 못한다.
+            // gjc 의 지연 flush 는 "이미 idle 확정된 턴"의 중간 줄(toolResult 등)을 몇 분~몇 시간 뒤
+            // 부분적으로 내려보낼 수 있어, jsonl 을 인정하면 가짜 스피너/중복 완료 카드가 생긴다.
+            // 진짜 새 턴이면 gjc 가 agent_start 즉시 사이드카에 running 을 쓰므로 jsonl 재점화가 필요 없다.
             busy = false;
             waiting = false;
             _idleCandidates.Remove(roomId);
         }
-        else if (busy)
+
+        msg ??= ""; // 안전망 (헤더 lastmsg 는 transcript 원본 — flush 지연 시 늦게 갱신될 수 있음)
+
+        Publish(roomId, msg, busy, waiting);
+
+        // ── 3) goal 백필 — 사이드카 미가동 방만(가동 방은 agent_end 완료 카드가 골마다 이미 찍힘) ──
+        if (!_sidecarProven.Contains(roomId) && sidecar == null && goals is { Count: > 0 })
+            foreach (var g in goals)
+                GoalCompleted?.Invoke(roomId, g.Objective, g.CompletedAt);
+    }
+
+    /// <summary>방의 후보 세션 ID(최신 .jsonl 파일명·orphan 새 세션 디렉터리명·저장값)들로
+    /// <c>&lt;workingDir&gt;\.gjc\_session-&lt;id&gt;\runtime\runtime-state.json</c> 을 읽어,
+    /// 이 방의 세션임이 확인되는 것 중 가장 최근 갱신본을 고른다. 없으면 null(폴백 모드).</summary>
+    private static SidecarState? ReadFreshestSidecar(
+        string roomId, string roomDir, FileInfo? newestJsonl, DirectoryInfo? newestOrphan)
+    {
+        string? workingDir;
+        try { workingDir = SettingsService.LoadClaudeCodeRoomDir(roomId); }
+        catch { return null; }
+        if (string.IsNullOrWhiteSpace(workingDir)) return null;
+
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void AddIdFromName(string? name)
+        {
+            if (string.IsNullOrEmpty(name)) return;
+            var us = name.LastIndexOf('_');
+            if (us < 0 || us + 1 >= name.Length) return;
+            var id = name.Substring(us + 1);
+            if (Guid.TryParse(id, out _)) candidates.Add(id);
+        }
+        AddIdFromName(newestJsonl != null ? Path.GetFileNameWithoutExtension(newestJsonl.Name) : null);
+        AddIdFromName(newestOrphan?.Name);
+        try { if (SettingsService.LoadGajaeRoomSession(roomId) is { Length: > 0 } saved && Guid.TryParse(saved, out _)) candidates.Add(saved); }
+        catch { }
+        if (candidates.Count == 0) return null;
+
+        SidecarState? best = null;
+        foreach (var id in candidates)
+        {
+            var state = TryReadSidecar(
+                Path.Combine(workingDir, ".gjc", "_session-" + id, "runtime", "runtime-state.json"),
+                id, roomDir);
+            if (state != null && (best == null || state.UpdatedAtMs > best.UpdatedAtMs))
+                best = state;
+        }
+        return best;
+    }
+
+    /// <summary>runtime-state.json 한 개를 읽고 이 방의 세션인지 검증한다.
+    /// session_file 이 기록돼 있으면 그 부모 디렉터리가 방의 session-dir 와 일치해야 한다 —
+    /// 같은 workingDir 를 공유하는 다른 방/서브에이전트(sessions\&lt;room&gt;\&lt;parent&gt;\… 한 단계 깊음)의
+    /// 사이드카가 이 방의 스피너·완료기록을 오염시키지 않게 하는 격리 가드.</summary>
+    private static SidecarState? TryReadSidecar(string path, string expectedSessionId, string roomDir)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var sr = new StreamReader(fs, Encoding.UTF8);
+            var text = sr.ReadToEnd();
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            using var doc = JsonDocument.Parse(text);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            if (!root.TryGetProperty("session_id", out var sid)
+                || !string.Equals(sid.GetString(), expectedSessionId, StringComparison.OrdinalIgnoreCase))
+                return null;
+            var state = root.TryGetProperty("state", out var st) ? st.GetString() : null;
+            if (string.IsNullOrEmpty(state)) return null;
+
+            string? sessionFile = root.TryGetProperty("session_file", out var sf) && sf.ValueKind == JsonValueKind.String
+                ? sf.GetString() : null;
+            if (sessionFile != null)
+            {
+                var parent = Path.GetDirectoryName(Path.GetFullPath(sessionFile));
+                if (parent == null || !string.Equals(
+                        parent.TrimEnd('\\', '/'),
+                        Path.GetFullPath(roomDir).TrimEnd('\\', '/'),
+                        StringComparison.OrdinalIgnoreCase))
+                    return null;
+            }
+
+            long updatedMs = 0;
+            if (root.TryGetProperty("updated_at", out var ua) && ua.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(ua.GetString(), out var dto))
+                updatedMs = dto.ToUnixTimeMilliseconds();
+            var evt = root.TryGetProperty("event", out var ev) && ev.ValueKind == JsonValueKind.String
+                ? ev.GetString() : null;
+            return new SidecarState(state!, updatedMs, sessionFile, evt);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>JSONL 판정 전용 게이트: 첫 스캔은 이전 실행 잔재로 보고 idle 강제,
+    /// busy→idle 전이는 같은 EOF 시그니처가 정착 지연 후에도 유지될 때만 확정.</summary>
+    private bool ApplyJsonlIdleGates(string roomId, bool freshNew, string sig, bool busy)
+    {
+        if (!_started)
         {
             _idleCandidates.Remove(roomId);
+            return false;
         }
-        else if (!freshNew && _busy.TryGetValue(roomId, out var wasBusy) && wasBusy)
+        if (busy)
         {
-            // 최종 assistant JSONL append와 실제 TUI 출력 완료 사이에 짧은 시차가 있다.
-            // 한 번 더 같은 EOF를 관찰한 뒤 idle로 내리면 중간 toolResult/user append도
+            _idleCandidates.Remove(roomId);
+            return true;
+        }
+        if (!freshNew && _busy.TryGetValue(roomId, out var wasBusy) && wasBusy)
+        {
+            // 최종 assistant JSONL append 와 실제 TUI 출력 완료 사이에 짧은 시차가 있다.
+            // 한 번 더 같은 EOF 를 관찰한 뒤 idle 로 내리면 중간 toolResult/user append 도
             // 자연스럽게 후보를 취소하므로 고정 지연 타이머보다 상태 전이가 정확하다.
             var now = DateTime.UtcNow;
             if (!_idleCandidates.TryGetValue(roomId, out var candidate)
                 || !string.Equals(candidate.Signature, sig, StringComparison.Ordinal))
             {
                 _idleCandidates[roomId] = (sig, now);
-                busy = true;
+                return true;
             }
-            else if (now - candidate.FirstSeenUtc < IdleSettleDelay)
-            {
-                busy = true;
-            }
-            else
-            {
-                _idleCandidates.Remove(roomId);
-            }
-        }
-        else
-        {
+            if (now - candidate.FirstSeenUtc < IdleSettleDelay) return true;
             _idleCandidates.Remove(roomId);
+            return false;
         }
-
-        msg ??= ""; // 안전망
-        Publish(roomId, msg, busy, waiting);
+        _idleCandidates.Remove(roomId);
+        return false;
     }
 
     private void Publish(string roomId, string msg, bool busy, bool waiting)
@@ -206,8 +376,10 @@ public sealed class GajaeLastMessageService : IDisposable
     ///  • role=user/toolResult → 처리중(응답·다음 단계 대기)
     ///  • role=assistant + content 에 toolCall 있음 → 처리중(툴 실행/연속)
     ///  • role=assistant + text 만(toolCall 없음) → 완료(idle)
-    /// gjc 한 턴: user → assistant(toolCall) → toolResult → … → assistant(text) 로 끝남.</summary>
-    private (string? lastUserMsg, bool busy, bool waitingChoice) ParseState(string path)
+    /// gjc 한 턴: user → assistant(toolCall) → toolResult → … → assistant(text) 로 끝남.
+    /// 부수로 custom/goal-completed 엔트리를 수집한다(최초 전체 스캔 분은 제외).</summary>
+    private (string? lastUserMsg, bool busy, bool waitingChoice, List<(string Objective, DateTime CompletedAt)>? goals)
+        ParseState(string path)
     {
         if (!_transcripts.TryGetValue(path, out var cursor))
         {
@@ -218,7 +390,7 @@ public sealed class GajaeLastMessageService : IDisposable
         try
         {
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            if (fs.Length < cursor.Offset) // truncate/교체
+            if (fs.Length < cursor.Offset) // truncate/교체 — 재프라임(과거 goal 재발행 방지)
             {
                 cursor = new TranscriptCursor();
                 _transcripts[path] = cursor;
@@ -253,7 +425,15 @@ public sealed class GajaeLastMessageService : IDisposable
         {
             // 일시 잠금/IO 실패 때 직전 정상 상태를 보존한다. 다음 poll에서 append를 다시 읽는다.
         }
-        return (cursor.LastUserMessage, cursor.Busy, cursor.Waiting);
+
+        cursor.Primed = true;
+        List<(string Objective, DateTime CompletedAt)>? goals = null;
+        if (cursor.NewGoals.Count > 0)
+        {
+            goals = new List<(string Objective, DateTime CompletedAt)>(cursor.NewGoals);
+            cursor.NewGoals.Clear();
+        }
+        return (cursor.LastUserMessage, cursor.Busy, cursor.Waiting, goals);
     }
 
     /// <returns>부분 tail이 완성 JSON으로 소비됐거나, LF로 끝난 완전한 줄이면 true.</returns>
@@ -266,7 +446,36 @@ public sealed class GajaeLastMessageService : IDisposable
             if (text[0] != '{') return completeLine;
             using var doc = JsonDocument.Parse(text);
             var root = doc.RootElement;
-            if (!root.TryGetProperty("type", out var t) || t.GetString() != "message") return true;
+            if (!root.TryGetProperty("type", out var t)) return true;
+            var entryType = t.GetString();
+
+            // goal 모드: 골 하나 완료 마커. 최초 전체 스캔(Primed 전)의 과거 내역은 수집하지 않는다.
+            if (entryType == "custom")
+            {
+                if (cursor.Primed
+                    && root.TryGetProperty("customType", out var ct)
+                    && ct.GetString() == "goal-completed"
+                    && root.TryGetProperty("data", out var data)
+                    && data.TryGetProperty("objective", out var objEl)
+                    && objEl.GetString() is { Length: > 0 } objective)
+                {
+                    var at = DateTime.Now;
+                    if (root.TryGetProperty("timestamp", out var ts))
+                    {
+                        if (ts.ValueKind == JsonValueKind.Number && ts.TryGetInt64(out var ms))
+                            at = DateTimeOffset.FromUnixTimeMilliseconds(ms).LocalDateTime;
+                        else if (ts.ValueKind == JsonValueKind.String
+                                 && DateTimeOffset.TryParse(ts.GetString(), out var dto))
+                            at = dto.LocalDateTime;
+                    }
+                    var summary = string.Join(" ", objective.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+                    if (summary.Length > 200) summary = summary[..200];
+                    cursor.NewGoals.Add((summary, at));
+                }
+                return true;
+            }
+
+            if (entryType != "message") return true;
             if (!root.TryGetProperty("message", out var m) || !m.TryGetProperty("role", out var r)) return true;
 
             var role = r.GetString();
