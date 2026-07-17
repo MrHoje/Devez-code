@@ -76,6 +76,7 @@ Start-Process "bin\DevezCode.exe"
 | Claude/Codex 사용량 0%·고정·계정불일치, 예정일 전 공급자 즉시 초기화, 인증 전환·fallback·stale 처리 | `.knowledge/claude-codex-사용량-즉시초기화-인증-신선도.md` |
 | 세션 헤더 토큰 사용량(입/출력/비용) 단가 변경·새 모델 추가·비용 계산 방식 | `.knowledge/토큰사용량-단가-갱신.md` |
 | gjc 스피너/완료기록 안 뜸·지연, transcript 지연 flush, runtime-state 사이드카, 완료기록 쌓임 스펙 | `.knowledge/gjc-사이드카-상태추적-완료기록.md` |
+| Grok 장시간 작업 중 스피너 중간에 꺼짐(멀티루프 턴·조기 idle) | `.knowledge/grok-장시간턴-스피너조기소등.md` |
 
 > 위에 없는 일회성 버그 교훈(특정 컨트롤 트리거 등)은 `.knowledge/wpf-*.md` 로 남아 있으니, 비슷한 증상을 만나면 폴더를 이름으로 grep 해서 찾는다.
 
