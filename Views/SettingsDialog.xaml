@@ -234,17 +234,6 @@
                                 BorderBrush="{DynamicResource LineBrush}"
                                 BorderThickness="0,0,1,0">
                             <DockPanel Margin="10,16,10,16" LastChildFill="True">
-                                <!-- 웹 페어링: 잠금 해제 전 숨김, 리스트 맨 아래 도킹 -->
-                                <Button x:Name="CatLanDashboardBtn" Tag="lanDashboard" DockPanel.Dock="Bottom"
-                                        Visibility="Collapsed"
-                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconMonitorUp}" Width="15" Height="15"
-                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="웹 페어링" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
                                 <StackPanel>
                                 <Button x:Name="CatGeneralBtn" Tag="general"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
@@ -1642,83 +1631,6 @@
                                 </Grid>
                             </StackPanel>
 
-                            <!-- 웹 페어링 -->
-                            <StackPanel x:Name="LanDashboardPanel" Margin="28,22,28,20" Visibility="Collapsed">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconMonitorUp}"
-                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
-                                          Stroke="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="웹 페어링" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                                </StackPanel>
-                                <TextBlock Text="OAuth 로그인 인증을 거쳐 어디서나 이 PC의 프로젝트와 터미널에 접속합니다."
-                                           FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
-
-                                <Grid Margin="0,16,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="외부 접속 허용" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="페어링 후 켜면 이 PC가 릴레이에 상시 연결됩니다."
-                                                   FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="RemoteDashboardToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="RemoteDashboardToggle_Changed" Unchecked="RemoteDashboardToggle_Changed"/>
-                                </Grid>
-
-                                <TextBlock x:Name="RemoteDashboardStatusLabel" Text="페어링 안 됨"
-                                           FontSize="{DynamicResource Fs11}" FontWeight="SemiBold" Margin="0,20,0,0"
-                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <Button x:Name="PairRemoteButton" Content="이 PC 페어링"
-                                            Click="PairRemoteDashboard_Click" Height="34" Padding="16,0"
-                                            Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
-                                    <Button x:Name="UnpairRemoteButton" Content="페어링 해제"
-                                            Click="UnpairRemoteDashboard_Click" Height="34" Padding="16,0" Margin="8,0,0,0"
-                                            Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
-                                </StackPanel>
-
-                                <StackPanel Margin="0,20,0,0">
-                                    <TextBlock Text="접속 주소" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                    <Grid Margin="0,8,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" Height="34" Padding="10,0" CornerRadius="7"
-                                                Background="{DynamicResource PanelBrush}"
-                                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-                                            <TextBlock x:Name="RemoteDashboardUrlLabel" VerticalAlignment="Center"
-                                                       FontSize="{DynamicResource Fs11}" TextTrimming="CharacterEllipsis"
-                                                       Foreground="{DynamicResource TextBrush}"/>
-                                        </Border>
-                                        <Button Grid.Column="1" Content="복사" Click="CopyRemoteDashboardUrl_Click"
-                                                Width="58" Height="34" Margin="7,0,0,0"
-                                                Style="{StaticResource SecondaryButton}" FontSize="{DynamicResource Fs11}"/>
-                                    </Grid>
-                                    <Border x:Name="RemoteDashboardQrPanel" Margin="0,14,0,0" Padding="10"
-                                            HorizontalAlignment="Left" CornerRadius="10" Background="White">
-                                        <Image x:Name="RemoteDashboardQrImage" Width="176" Height="176"
-                                               Stretch="Uniform" SnapsToDevicePixels="True"
-                                               RenderOptions.BitmapScalingMode="NearestNeighbor"/>
-                                    </Border>
-                                    <TextBlock Text="휴대폰 카메라로 QR 코드를 스캔하면 로그인 포털이 열립니다."
-                                               FontSize="{DynamicResource Fs10}" Foreground="{DynamicResource TextMutedBrush}"
-                                               Margin="0,7,0,0"/>
-                                </StackPanel>
-
-                                <TextBlock Text="터미널 입력 = 명령 실행입니다. 릴레이는 OAuth 소유자만 통과시키며, deviceSecret 은 이 PC에만 저장됩니다."
-                                           FontSize="{DynamicResource Fs10}" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,9,0,0"/>
-                            </StackPanel>
-
                             <!-- 테마 패널 -->
                             <StackPanel x:Name="ThemePanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -2113,13 +2025,6 @@
                             BorderBrush="{DynamicResource LineBrush}"
                             BorderThickness="0,1,0,0">
                         <Grid Margin="20,14,20,14">
-                            <Button x:Name="UnlockWebDashboardBtn"
-                                    Click="UnlockWebDashboard_Click" Width="34" Height="34"
-                                    HorizontalAlignment="Left" ToolTip="웹 페어링 잠금 해제"
-                                    Style="{StaticResource IconButton}">
-                                <Path Style="{StaticResource LucideButtonIcon}"
-                                      Data="{StaticResource IconLock}" Width="16" Height="16"/>
-                            </Button>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                 <Button Click="ForceCancelBtn_Click"
                                         Width="100" Height="38" Margin="0,0,8,0"

@@ -1,13 +1,22 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace DevezCode.Services;
 
-/// <summary>Grok 훅이 방별로 떨군 lastmsg/busy/sessions 파일을 감시.
-/// CodexHookService 와 동일 패턴 (roomId 키).</summary>
+/// <summary>Grok 훅이 방별로 떨군 lastmsg/busy/sessions 파일을 감시 + events.jsonl 폴링.
+/// 훅(UserPromptSubmit/Stop)이 빠른 경로, events 폴러가 장시간 턴 중 조기 idle/UI 해제 복구.
+/// CodexHookService 와 동일 roomId 키 패턴.
+/// <para>
+/// 실측(Grok events.jsonl): 한 user 턴 안에 loop_started 가 수십 회 반복되고
+/// turn_started~turn_ended 가 진짜 턴 경계다. Stop/Notification 이 중간에 idle 을 쓰거나
+/// ESC 가 UI 만 꺼도, 폴러가 열린 턴/미완료 도구를 보면 busy 를 다시 켠다.
+/// </para></summary>
 public sealed class GrokHookService : IDisposable
 {
     private static string BaseDir => Path.Combine(
@@ -26,11 +35,28 @@ public sealed class GrokHookService : IDisposable
         Path.Combine(SessionDir, Sanitize(roomId) + ".root.txt");
     private static string SessionTransitionPath(string roomId) =>
         Path.Combine(SessionDir, Sanitize(roomId) + ".ended.txt");
+    private static string BusyPath(string roomId) =>
+        Path.Combine(BusyDir, Sanitize(roomId) + ".txt");
+    private static string CompletedPath(string roomId) =>
+        Path.Combine(CompletedDir, Sanitize(roomId) + ".flag");
+
+    /// <summary>turn_ended 직후 훅 Stop 과 경합할 때 스피너가 깜빡이지 않게 짧은 정착.</summary>
+    private static readonly TimeSpan TurnEndSettle = TimeSpan.FromSeconds(2);
+
+    /// <summary>turn_* 이벤트가 없는 구형 로그용 — 최근 활동이 이 시간 안이면 running 유지.</summary>
+    private static readonly TimeSpan ActivityFresh = TimeSpan.FromSeconds(45);
+
+    /// <summary>열린 도구 없이 활동만 멈춘 채 이 시간 지나면 idle(하드킬/유실 훅 잔재 방지).</summary>
+    private static readonly TimeSpan StaleRunningCap = TimeSpan.FromMinutes(30);
 
     private FileSystemWatcher? _lastmsgWatcher;
     private FileSystemWatcher? _busyWatcher;
     private FileSystemWatcher? _waitingWatcher;
     private FileSystemWatcher? _sessionWatcher;
+    private Timer? _eventsTimer;
+    private int _eventsPolling;
+    private readonly ConcurrentDictionary<string, string> _eventsPathCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, bool> _lastPolledBusy = new(StringComparer.OrdinalIgnoreCase);
 
     public event Action<string, string>? MessageChanged;
     public event Action<string, bool>? BusyChanged;
@@ -50,6 +76,8 @@ public sealed class GrokHookService : IDisposable
             foreach (var f in Directory.EnumerateFiles(BusyDir, "*.txt"))
                 try { File.Delete(f); } catch { }
             foreach (var f in Directory.EnumerateFiles(WaitingDir, "*.txt"))
+                try { File.Delete(f); } catch { }
+            foreach (var f in Directory.EnumerateFiles(CompletedDir, "*.flag"))
                 try { File.Delete(f); } catch { }
 
             _lastmsgWatcher = new FileSystemWatcher(LastmsgDir, "*.txt")
@@ -89,8 +117,249 @@ public sealed class GrokHookService : IDisposable
             _sessionWatcher.Created += (_, e) => EmitSession(e.FullPath);
             _sessionWatcher.Renamed += (_, e) => EmitSession(e.FullPath);
             foreach (var f in Directory.EnumerateFiles(SessionDir, "*.txt")) EmitSession(f);
+
+            // 장시간 턴 조기 idle 복구 — 훅만으로는 Stop/Notification/ESC UI 해제를 못 되돌림.
+            _eventsTimer = new Timer(_ => PollEvents(), null,
+                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
         }
         catch { /* 감시 실패해도 앱은 계속 */ }
+    }
+
+    // ── events.jsonl 폴링 — 열린 턴/미완료 도구면 busy 재무장 ─────────
+
+    private void PollEvents()
+    {
+        if (Interlocked.Exchange(ref _eventsPolling, 1) == 1) return;
+        try
+        {
+            if (!Directory.Exists(SessionDir)) return;
+            foreach (var sessionFile in Directory.EnumerateFiles(SessionDir, "*.txt"))
+            {
+                try { PollRoomEvents(sessionFile); }
+                catch { /* 다음 방 */ }
+            }
+        }
+        catch { }
+        finally { Interlocked.Exchange(ref _eventsPolling, 0); }
+    }
+
+    private void PollRoomEvents(string sessionFile)
+    {
+        var room = Path.GetFileNameWithoutExtension(sessionFile);
+        if (string.IsNullOrEmpty(room)
+            || room.EndsWith(".prev", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".root", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".ended", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var sid = TryRead(sessionFile);
+        if (sid == null || !Guid.TryParse(sid, out var parsed)) return;
+        sid = parsed.ToString();
+        if (!IsRootTrackedSession(room, sid)) return;
+
+        var eventsPath = ResolveEventsPath(room, sid);
+        if (eventsPath == null || !File.Exists(eventsPath)) return;
+
+        var truth = AnalyzeEvents(eventsPath);
+        if (truth == null) return;
+
+        var busyPath = BusyPath(room);
+        var busyNow = TryRead(busyPath) ?? "";
+        bool fileRunning = busyNow.Equals("running", StringComparison.OrdinalIgnoreCase);
+        bool wantRunning = truth.IsActive;
+
+        if (wantRunning == fileRunning)
+        {
+            _lastPolledBusy[room] = wantRunning;
+            return;
+        }
+
+        // idle→running: completed 플래그도 지워 이후 툴 훅이 waiting 을 다시 쓸 수 있게 한다.
+        if (wantRunning)
+        {
+            try { File.Delete(CompletedPath(room)); } catch { }
+            WriteBusyFile(busyPath, "running");
+            DiagLog.Write($"busy[{room}] grok events 정정: idle→running ({truth.Reason})");
+        }
+        else
+        {
+            // running→idle 은 turn_ended 정착 후에만. 훅이 이미 idle 이면 파일 쓰기 생략.
+            WriteBusyFile(busyPath, "idle");
+            DiagLog.Write($"busy[{room}] grok events 정정: running→idle ({truth.Reason})");
+        }
+        _lastPolledBusy[room] = wantRunning;
+    }
+
+    private string? ResolveEventsPath(string room, string sessionId)
+    {
+        if (_eventsPathCache.TryGetValue(room, out var cached) && File.Exists(cached))
+        {
+            // 캐시 경로의 세션 폴더명이 현재 sid 와 다르면 무효(세션 전환).
+            var dirName = Path.GetFileName(Path.GetDirectoryName(cached));
+            if (string.Equals(dirName, sessionId, StringComparison.OrdinalIgnoreCase))
+                return cached;
+            _eventsPathCache.TryRemove(room, out _);
+        }
+
+        try
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "sessions");
+            if (!Directory.Exists(root)) return null;
+
+            foreach (var cwdDir in Directory.EnumerateDirectories(root))
+            {
+                var p = Path.Combine(cwdDir, sessionId, "events.jsonl");
+                if (!File.Exists(p)) continue;
+                _eventsPathCache[room] = p;
+                return p;
+            }
+
+            var hit = new DirectoryInfo(root).GetFiles("events.jsonl", SearchOption.AllDirectories)
+                .Where(f => string.Equals(f.Directory?.Name, sessionId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (hit != null)
+            {
+                _eventsPathCache[room] = hit.FullName;
+                return hit.FullName;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private sealed class EventsTruth
+    {
+        public bool IsActive;
+        public string Reason = "";
+    }
+
+    /// <summary>events.jsonl 꼬리에서 턴/도구 진행 여부 판정.
+    /// turn_started 가 turn_ended 보다 최신이면 진행 중(장시간 도구 중 이벤트 공백 포함).
+    /// tool_started 가 짝 tool_completed 보다 많으면 미완료 도구 있음.</summary>
+    private static EventsTruth? AnalyzeEvents(string path)
+    {
+        try
+        {
+            const int tailBytes = 96 * 1024;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (fs.Length == 0) return new EventsTruth { IsActive = false, Reason = "empty" };
+            if (fs.Length > tailBytes) fs.Seek(-tailBytes, SeekOrigin.End);
+            using var sr = new StreamReader(fs, Encoding.UTF8);
+            var text = sr.ReadToEnd();
+
+            DateTimeOffset? lastTurnStarted = null, lastTurnEnded = null, lastActivity = null;
+            // 현재 열린 턴 안의 도구 깊이만 센다(꼬리 절단으로 과거 start 가 잘려도
+            // 턴 시작 이후 구간만 보면 과대 openTools 가 안 생긴다).
+            int turnToolDepth = 0;
+            bool sawTurn = false;
+            bool inOpenTurn = false;
+            string? lastType = null;
+            string? lastPhase = null;
+
+            foreach (var raw in text.Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0 || line[0] != '{') continue;
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+                    if (!root.TryGetProperty("type", out var tEl) || tEl.ValueKind != JsonValueKind.String)
+                        continue;
+                    var type = tEl.GetString() ?? "";
+                    lastType = type;
+
+                    DateTimeOffset? ts = null;
+                    if (root.TryGetProperty("ts", out var tsEl) && tsEl.ValueKind == JsonValueKind.String
+                        && DateTimeOffset.TryParse(tsEl.GetString(), out var parsedTs))
+                        ts = parsedTs;
+                    if (ts != null) lastActivity = ts;
+
+                    switch (type)
+                    {
+                        case "turn_started":
+                            sawTurn = true;
+                            lastTurnStarted = ts ?? lastTurnStarted;
+                            inOpenTurn = true;
+                            turnToolDepth = 0;
+                            break;
+                        case "turn_ended":
+                            sawTurn = true;
+                            lastTurnEnded = ts ?? lastTurnEnded;
+                            inOpenTurn = false;
+                            turnToolDepth = 0;
+                            break;
+                        case "tool_started":
+                            if (inOpenTurn || !sawTurn) turnToolDepth++;
+                            break;
+                        case "tool_completed":
+                            if ((inOpenTurn || !sawTurn) && turnToolDepth > 0) turnToolDepth--;
+                            break;
+                        case "phase_changed":
+                            if (root.TryGetProperty("phase", out var pEl) && pEl.ValueKind == JsonValueKind.String)
+                                lastPhase = pEl.GetString();
+                            break;
+                    }
+                }
+                catch { /* 잘린 줄 */ }
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (turnToolDepth > 0)
+                return new EventsTruth { IsActive = true, Reason = $"openTools={turnToolDepth}" };
+
+            if (sawTurn && lastTurnStarted != null)
+            {
+                bool turnOpen = lastTurnEnded == null || lastTurnStarted > lastTurnEnded;
+                if (turnOpen)
+                {
+                    // 비정상 잔재(프로세스 킬 후 turn_ended 없음) — 활동이 너무 오래면 idle.
+                    var age = lastActivity != null ? now - lastActivity.Value : now - lastTurnStarted.Value;
+                    if (age > StaleRunningCap)
+                        return new EventsTruth { IsActive = false, Reason = $"staleTurn age={age.TotalMinutes:F0}m" };
+                    return new EventsTruth { IsActive = true, Reason = "turn_open" };
+                }
+
+                // turn_ended 가 최신 — 정착 시간 지나면 idle.
+                var endAge = lastTurnEnded != null ? now - lastTurnEnded.Value : TimeSpan.MaxValue;
+                if (endAge < TurnEndSettle)
+                    return new EventsTruth { IsActive = true, Reason = "turn_end_settle" };
+                return new EventsTruth { IsActive = false, Reason = "turn_ended" };
+            }
+
+            // 구형: turn_* 없음 → 최근 활동/페이즈로 추정.
+            if (lastActivity != null)
+            {
+                var age = now - lastActivity.Value;
+                if (age <= ActivityFresh)
+                {
+                    bool activePhase = lastPhase is "waiting_for_model" or "streaming_reasoning"
+                        or "streaming_text" or "tool_execution" or "permission_prompt"
+                        || lastType is "loop_started" or "first_token" or "tool_started"
+                            or "permission_requested" or "permission_resolved";
+                    if (activePhase || lastType != "turn_ended")
+                        return new EventsTruth { IsActive = true, Reason = $"fresh:{lastType}/{lastPhase}" };
+                }
+            }
+
+            return new EventsTruth { IsActive = false, Reason = $"idle last={lastType}" };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void WriteBusyFile(string path, string value)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            WriteAtomic(path, value);
+        }
+        catch { }
     }
 
     private void EmitLastmsg(string path)
@@ -101,10 +370,21 @@ public sealed class GrokHookService : IDisposable
         if (msg != null) MessageChanged?.Invoke(room, NormalizeLastMessage(msg));
     }
 
-    /// <summary>Grok 훅 payload가 추가하는 user_query 래퍼를 제거.
-    /// 기존 lastmsg 파일과 구버전 훅 출력도 헤더에 노출되지 않게 앱에서 한 번 더 방어한다.</summary>
+    /// <summary>Grok 훅 payload가 추가하는 system-reminder와 user_query 래퍼를 제거.
+    /// 기존 lastmsg 파일과 구버전 훅 출력도 헤더/완료 기록에 노출되지 않게 앱에서 한 번 더 방어한다.</summary>
     internal static string NormalizeLastMessage(string message)
     {
+        // 구버전 훅이 200자로 자른 값은 닫는 태그가 없을 수 있으므로, 미완성 블록도 끝까지 제거한다.
+        message = Regex.Replace(message,
+            @"<system-remi(?:n)?der\b[^>]*>.*?</system-remi(?:n)?der\s*>", " ",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        message = Regex.Replace(message,
+            @"<system-remi(?:n)?der\b[^>]*>.*$", " ",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        message = Regex.Replace(message,
+            @"</?system-remi(?:n)?der\b[^>]*>", " ",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
         var match = Regex.Match(message,
             @"^\s*<user_query>\s*(.*?)\s*</user_query>\s*(?:…|\.\.\.)?\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
@@ -122,7 +402,8 @@ public sealed class GrokHookService : IDisposable
             ReEmitBusyAfterSettleAsync(path, room);
             return;
         }
-        BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
+        bool running = status.Equals("running", StringComparison.OrdinalIgnoreCase);
+        BusyChanged?.Invoke(room, running);
     }
 
     private async void ReEmitBusyAfterSettleAsync(string path, string room)
@@ -171,7 +452,10 @@ public sealed class GrokHookService : IDisposable
             || room.EndsWith(".ended", StringComparison.OrdinalIgnoreCase)) return;
         var sid = TryRead(path);
         if (sid != null && Guid.TryParse(sid, out var parsed))
+        {
+            _eventsPathCache.TryRemove(room, out _); // 세션 전환 시 경로 재탐색
             GrokSessionChanged?.Invoke(room, parsed.ToString());
+        }
     }
 
     private static string? TryRead(string path)
@@ -275,6 +559,8 @@ public sealed class GrokHookService : IDisposable
 
     public void Dispose()
     {
+        _eventsTimer?.Dispose();
+        _eventsTimer = null;
         _lastmsgWatcher?.Dispose();
         _busyWatcher?.Dispose();
         _waitingWatcher?.Dispose();

@@ -8,7 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
-using DevezCode.Services.Dashboard;
+
 using DevezCode.Services.Terminal;
 
 namespace DevezCode.Views;
@@ -173,19 +173,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         App.ThemeChanged += _themeChangedHandler;
         // 배치 재진입 신호(claude/gjc /exit·Ctrl+C 후 루프 재실행 직전) → 로딩 커버. Dispose 에서 해제.
         TerminalSessionManager.RoomReentering += OnRoomReentering;
-        TerminalDisplayOutputHub.GridSizeRequested += OnGridSizeRequested;
-    }
-
-    private void OnGridSizeRequested(string roomId, int cols, int rows, bool lockedByRemote)
-    {
-        if (_disposed) return;
-        void Send()
-        {
-            if (_disposed || !_pageReady || !_wired.ContainsKey(roomId)) return;
-            PostJson(new { type = "dashboardResize", roomId, cols, rows, locked = lockedByRemote });
-        }
-        if (Dispatcher.CheckAccess()) Send();
-        else Dispatcher.BeginInvoke(Send);
     }
 
     /// <summary>해당 방의 claude 화면이 이미 떠서 안정화까지 끝났는지(로딩 불필요).</summary>
@@ -586,9 +573,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     var roomId = root.GetProperty("roomId").GetString()!;
                     var cols = root.GetProperty("cols").GetInt32();
                     var rows = root.GetProperty("rows").GetInt32();
-                    if (!DashboardHub.Instance.AcceptLocalResize(roomId, cols, rows)) break;
                     TerminalSessionManager.Instance.Get(roomId)?.Resize(cols, rows);
-                    TerminalDisplayOutputHub.PublishSize(roomId, cols, rows);
                     break;
                 }
                 case "diag": // 웹 레이어 진단 로그 → diag.log (codex 팝업 스윕 등)
@@ -750,8 +735,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 안 하면 OutputReceived 에 핸들러가 누적돼 출력이 2·3배로 중복 post 된다.
         DetachSessionHandlers(roomId);
         _wired[roomId] = session;
-        if (DashboardHub.Instance.TryGetRemoteGrid(roomId, out var remoteCols, out var remoteRows))
-            OnGridSizeRequested(roomId, remoteCols, remoteRows, lockedByRemote: true);
 
         // 셸 첫 출력(준비 완료 신호) 이후에 claude 커맨드 전송 — PSReadLine 초기화 완료 보장
         var initialCmd = TerminalSessionManager.Instance.GetInitialCommand(roomId);
@@ -881,7 +864,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             merged = RecolorGrokTerminalColors(roomId, merged);
         else
             _grokCsiTails.Remove(roomId);
-        TerminalDisplayOutputHub.Publish(roomId, merged);
         PostJson(new { type = "output", roomId, data = Convert.ToBase64String(merged) });
     }
 
@@ -1930,7 +1912,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         _disposed = true;
         try { App.ThemeChanged -= _themeChangedHandler; } catch { }
         try { TerminalSessionManager.RoomReentering -= OnRoomReentering; } catch { }
-        try { TerminalDisplayOutputHub.GridSizeRequested -= OnGridSizeRequested; } catch { }
         try
         {
             if (_webView?.CoreWebView2 != null)

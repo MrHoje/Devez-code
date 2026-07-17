@@ -158,6 +158,10 @@ switch -Regex ($eventKey) {
         }
         if ($prompt) {
             $prompt = [string]$prompt
+            # Grok가 사용자 질문 앞에 붙이는 내부 시스템 리마인더는 헤더/완료 기록에 남기지 않는다.
+            $prompt = $prompt -replace '(?is)<system-remi(?:n)?der\b[^>]*>.*?</system-remi(?:n)?der\s*>', ' '
+            $prompt = $prompt -replace '(?is)<system-remi(?:n)?der\b[^>]*>.*$', ' '
+            $prompt = $prompt -replace '(?is)</?system-remi(?:n)?der\b[^>]*>', ' '
             # Grok 0.2.93은 일부 훅 payload의 prompt를
             # <user_query> ... </user_query>… 로 감싼다. 헤더에는 실제 질문만 표시.
             if ($prompt -match '(?is)^\s*<user_query>\s*(.*?)\s*</user_query>\s*(?:…|\.\.\.)?\s*$') {
@@ -206,7 +210,11 @@ switch -Regex ($eventKey) {
         }
     }
     '^(pretooluse)$' {
-        if (-not (Test-CurrentRoomSession) -or (Test-Completed)) { break }
+        # 조기 Stop/Notification idle 후에도 도구가 이어지면 스피너를 다시 켠다.
+        # (completed 플래그만 막으면 장시간 멀티루프 턴에서 스피너가 중간에 영구 소등된다.)
+        if (-not (Test-CurrentRoomSession)) { break }
+        Clear-Completed
+        Write-Busy 'running'
         $toolName = $j.toolName
         if (-not $toolName) { $toolName = $j.tool_name }
         if (-not $toolName) { $toolName = $j.name }
@@ -217,7 +225,11 @@ switch -Regex ($eventKey) {
         else { Write-Waiting 'idle' }
     }
     '^(posttooluse|posttoolusefailure)$' {
-        if (-not (Test-CurrentRoomSession) -or (Test-Completed)) { break }
+        if (-not (Test-CurrentRoomSession)) { break }
+        # 장시간 도구 도중 조기 idle 이 와도 Post 시점에 복구. 진짜 종료 후 late Post 는
+        # 앱측 events.jsonl 폴러(turn_ended)가 다시 idle 로 수렴한다.
+        Clear-Completed
+        Write-Busy 'running'
         Write-Waiting 'idle'
     }
     '^(stop|stopfailure)$' {

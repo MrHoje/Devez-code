@@ -144,7 +144,12 @@ public partial class MainWindow : Window
         var saved = SettingsService.LoadSessionHistoryRecords();
         if (saved != null && saved.Count > 0)
         {
-            foreach (var r in saved) _sessionDoneRecords.Add(r);
+            foreach (var r in saved)
+            {
+                if (string.Equals(r.AgentId, "grok", StringComparison.OrdinalIgnoreCase))
+                    r.LastMessage = GrokHookService.NormalizeLastMessage(r.LastMessage);
+                _sessionDoneRecords.Add(r);
+            }
         }
         UpdateSessionHistoryEmpty();
         // 세션 완료 기록 "전체보기"/"한줄만 보기" 상태 복원 (재시작 유지).
@@ -3570,7 +3575,9 @@ public partial class MainWindow : Window
             SessionName = sessName,
             ProjectName = projName,
             AgentId = s.AgentId,
-            LastMessage = s.LastMessage?.Trim() ?? "",
+            LastMessage = string.Equals(s.AgentId, "grok", StringComparison.OrdinalIgnoreCase)
+                ? GrokHookService.NormalizeLastMessage(s.LastMessage ?? "")
+                : s.LastMessage?.Trim() ?? "",
             CompletedAt = DateTime.Now,
         });
 
@@ -3989,16 +3996,6 @@ public partial class MainWindow : Window
 
         // 새 프로젝트는 메인(좌측) 패널에 연다.
         OpenSessionIntoPane(LeftPane, session, isNewProjectLoad: true);
-    }
-
-    /// <summary>LAN 대시보드가 실행 전 세션을 선택했을 때 화면 선택을 바꾸지 않고 같은 터미널을 준비한다.</summary>
-    public bool StartSessionForLanDashboard(string roomId)
-    {
-        var session = _projects.SelectMany(project => project.Tabs.OfType<SessionItem>())
-            .FirstOrDefault(item => item.Id == roomId);
-        if (session == null) return false;
-        _focusedPane.PreloadSession(session);
-        return true;
     }
 
     /// <summary>사이드바 카드에서 세션 클릭 — '오른쪽' 그룹이면 우측 격리를 유지한 채 연다(활성화가 격리를

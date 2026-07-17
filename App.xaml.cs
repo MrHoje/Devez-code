@@ -155,18 +155,7 @@ public partial class App : Application
         // 안티그래비티(agy) — settings.json colorScheme 매핑.
         Services.Terminal.AntigravityCustomThemes.Apply(CurrentTheme);
 
-        // LAN 대시보드는 명시적으로 켠 경우에만 시작한다. 토큰 인증 + 사설 IP 제한을 거친 뒤
-        // 현재 ConPTY에 붙으며 별도 셸/에이전트 프로세스를 만들지 않는다.
-        if (SettingsService.LoadLanDashboardEnabled() || e.Args.Contains("--lan-dashboard")) StartLanDashboard();
-
         StartupSequence();
-    }
-
-    private static async void StartLanDashboard()
-    {
-        // LAN 대시보드는 제거됨. 원격(릴레이) 커넥터만 설정에 따라 시작한다.
-        try { await DevezCode.Services.Dashboard.RelayConnector.Instance.ApplyFromConfigAsync(); }
-        catch { /* 원격 릴레이 미설정/오프라인은 무시. 커넥터가 자동 재연결한다. */ }
     }
 
     /// <summary>메인 창 표시 순서. 설정에서 '실행 시 에이전트 자동 업데이트'가 켜져 있으면,
@@ -375,10 +364,6 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        try { System.Threading.Tasks.Task.Run(() => LanDashboardService.Instance.StopAsync()).Wait(3000); }
-        catch { /* 종료 중 웹 클라이언트 정리는 best-effort */ }
-        try { System.Threading.Tasks.Task.Run(() => DevezCode.Services.Dashboard.RelayConnector.Instance.StopAsync()).Wait(3000); }
-        catch { /* 종료 중 릴레이 정리는 best-effort */ }
         // 에이전트는 종료 시 transcript(.jsonl)를 flush 하므로, 하드 kill 전에 에이전트별 제어키로 정상
         // 종료를 시도해 마지막 대화를 보존한다. 종료 경로는 CR/LF를 보내지 않아 작성 중 초안을 제출하지 않는다.
         // (예전엔 DisposeAll 로 즉시 kill → 대화가 디스크에 안 남아

@@ -1,8 +1,0 @@
-# npm 의존성 — 재생성 가능, 커밋 금지
-node_modules/
-
-# wrangler/miniflare 로컬 상태·빌드 산출물
-.wrangler/
-dist/
-.dev.vars
-*.log

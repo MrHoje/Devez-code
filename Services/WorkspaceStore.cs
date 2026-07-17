@@ -8,11 +8,6 @@ namespace DevezCode.Services;
 /// <summary>프로젝트/세션 트리를 %AppData%\DevezCode\workspace.json 에 저장·복원.</summary>
 public static class WorkspaceStore
 {
-    public sealed record DashboardFolderSnapshot(string Id, string Name, int RootOrder, bool IsExpanded);
-    public sealed record DashboardSessionSnapshot(string Id, string Name, string Agent, bool Hidden, string? ParentId, bool ChildrenExpanded);
-    public sealed record DashboardProjectSnapshot(string Path, string Name, string? FolderId, int RootOrder, bool IsExpanded, bool ShowHiddenSessions, IReadOnlyList<DashboardSessionSnapshot> Sessions);
-    public sealed record DashboardWorkspaceSnapshot(IReadOnlyList<DashboardFolderSnapshot> Folders, IReadOnlyList<DashboardProjectSnapshot> Projects);
-
     private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public string? ParentId { get; set; } public bool ChildrenExpanded { get; set; } = true; }
     private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
@@ -114,40 +109,6 @@ public static class WorkspaceStore
     public static void SetArchivedSource(IEnumerable<ProjectItem> archived) => _archivedRef = archived;
 
     public static ObservableCollection<ProjectItem> Load() => Load(out _);
-
-    /// <summary>실행 상태를 바꾸지 않고 LAN 대시보드에 표시할 프로젝트/세션 트리를 읽는다.</summary>
-    public static DashboardWorkspaceSnapshot LoadDashboardSnapshot()
-    {
-        lock (_lock)
-        {
-            try
-            {
-                var text = AtomicFile.ReadValidated(WorkspacePath, IsParseable, out _);
-                var dto = text == null ? null : JsonSerializer.Deserialize<WorkspaceDto>(text);
-                if (dto == null) return new([], []);
-
-                var folders = (dto.Folders ?? [])
-                    .Where(f => string.IsNullOrWhiteSpace(f.ArchivedAt))
-                    .Select(f => new DashboardFolderSnapshot(
-                        f.Id, f.Name ?? "", f.RootOrder ?? int.MaxValue, f.IsExpanded))
-                    .ToArray();
-                var projects = (dto.Projects ?? [])
-                    .Where(p => string.IsNullOrWhiteSpace(p.ArchivedAt))
-                    .Select(p => new DashboardProjectSnapshot(
-                        p.Path,
-                        string.IsNullOrWhiteSpace(p.Name) ? Path.GetFileName(p.Path.TrimEnd(Path.DirectorySeparatorChar)) : p.Name!,
-                        p.FolderId,
-                        p.RootOrder ?? int.MaxValue,
-                        p.IsExpanded,
-                        p.ShowHiddenSessions,
-                        (p.Sessions ?? []).Select(s => new DashboardSessionSnapshot(
-                            s.Id, s.Name, s.Agent ?? "", s.Hidden, s.ParentId, s.ChildrenExpanded)).ToArray()))
-                    .ToArray();
-                return new(folders, projects);
-            }
-            catch { return new([], []); }
-        }
-    }
 
     /// <summary>활성 프로젝트를 반환하고, 보관(archived_at 있음) 프로젝트는 out 으로 분리해 돌려준다.</summary>
     public static ObservableCollection<ProjectItem> Load(out ObservableCollection<ProjectItem> archived)

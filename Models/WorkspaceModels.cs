@@ -206,7 +206,7 @@ public sealed class SessionCompletionRecord : NotifyBase
     /// <summary>테마 변경 시 아이콘 Source 바인딩을 재평가시키는 트리거(opencode 등 흑/백 변형용).
     /// 값은 그대로, PropertyChanged(AgentId)만 발생시켜 AgentImageConverter 를 다시 돌린다.</summary>
     public void RefreshAgentIcon() => OnPropertyChanged(nameof(AgentId));
-    public string LastMessage { get; init; } = "";
+    public string LastMessage { get; set; } = "";
     public DateTime CompletedAt { get; init; } = DateTime.Now;
     /// <summary>사용자가 이 기록을 확인했는지 여부. 카드 클릭 또는 해당 세션 직접 열기 시 true.</summary>
     private bool _isRead;

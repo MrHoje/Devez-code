@@ -15,8 +15,6 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Threading;
 using DevezCode.Services;
-using DevezCode.Services.Dashboard;
-using QRCoder;
 
 namespace DevezCode.Views;
 
@@ -25,8 +23,6 @@ namespace DevezCode.Views;
 /// [취소]·헤더 X·딤 배경은 미리보기를 원래값으로 되돌린다(미저장 변경이 있으면 저장 여부 확인).</summary>
 public partial class SettingsDialog : UserControl
 {
-    private const string RemoteDashboardPortalUrl = "https://" + RemoteDashboardConfig.DefaultRelayBaseUrl;
-
     /// <summary>닫기 요청 시 발생.</summary>
     public event EventHandler? CloseRequested;
 
@@ -59,7 +55,6 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedAutoUpdateAgents;
     private bool   _selectedUseFullScreen;
     private bool   _selectedMinimizeOnClose;
-    private bool   _suppressRemoteToggle;
     private int    _selectedProjectColumns;
     // DeepSeek 연결 토글 — 다른 설정과 동일하게 [저장] 시점에만 디스크 반영(끄고 저장 시 키 삭제).
     private bool   _originalDeepSeekEnabled;
@@ -394,15 +389,6 @@ public partial class SettingsDialog : UserControl
         _originalMinimizeOnClose = SettingsService.LoadMinimizeOnClose();
         _selectedMinimizeOnClose = _originalMinimizeOnClose;
         MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
-        _suppressRemoteToggle = true;
-        RemoteDashboardToggle.IsChecked = RemoteDashboardConfig.Current.Enabled;
-        _suppressRemoteToggle = false;
-        RemoteDashboardUrlLabel.Text = RemoteDashboardPortalUrl;
-        UpdateRemoteDashboardQr();
-        CatLanDashboardBtn.Visibility = SettingsService.LoadWebDashboardUnlockedToday()
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        UpdateRemoteDashboardVisual();
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
         UpdateProjectColumnsVisual();
@@ -470,8 +456,6 @@ public partial class SettingsDialog : UserControl
         CatLicensesBtn.Foreground  = key == "licenses"   ? primary : text;
         CatShortcutBtn.Background  = key == "shortcut"   ? active : Brushes.Transparent;
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
-        CatLanDashboardBtn.Background = key == "lanDashboard" ? active : Brushes.Transparent;
-        CatLanDashboardBtn.Foreground = key == "lanDashboard" ? primary : text;
         CatNotifyBtn.Background    = key == "notify"     ? active : Brushes.Transparent;
         CatNotifyBtn.Foreground    = key == "notify"     ? primary : text;
 
@@ -487,7 +471,6 @@ public partial class SettingsDialog : UserControl
         ChangelogPanel.Visibility  = key == "changelog"  ? Visibility.Visible : Visibility.Collapsed;
         LicensesPanel.Visibility   = key == "licenses"   ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
-        LanDashboardPanel.Visibility = key == "lanDashboard" ? Visibility.Visible : Visibility.Collapsed;
         NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
 
         if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
@@ -864,136 +847,6 @@ public partial class SettingsDialog : UserControl
     private void MinimizeOnCloseToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedMinimizeOnClose = MinimizeOnCloseToggle.IsChecked == true;
-    }
-
-    // ── 외부 접속 (릴레이) — 페어링/토글은 즉시 적용(RemoteDashboardConfig 로컬 저장) ──
-    private void RemoteDashboardToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_suppressRemoteToggle) return;
-        var enabled = RemoteDashboardToggle.IsChecked == true;
-        var cfg = RemoteDashboardConfig.Current;
-        if (enabled && !cfg.IsPaired)
-        {
-            _suppressRemoteToggle = true;
-            RemoteDashboardToggle.IsChecked = false;
-            _suppressRemoteToggle = false;
-            ConfirmDialog.Alert("외부 접속", "먼저 페어링을 완료하세요.");
-            return;
-        }
-        cfg.Enabled = enabled;
-        cfg.Save();
-        _ = ApplyRemoteDashboardAsync();
-    }
-
-    private async Task ApplyRemoteDashboardAsync()
-    {
-        try { await RelayConnector.Instance.ApplyFromConfigAsync(); }
-        catch (Exception ex) { ConfirmDialog.Alert("외부 접속", "릴레이 연결에 실패했습니다.\n" + ex.Message); }
-        UpdateRemoteDashboardVisual();
-    }
-
-    private async void PairRemoteDashboard_Click(object sender, RoutedEventArgs e)
-    {
-        PairRemoteButton.IsEnabled = false;
-        try
-        {
-            var win = new RelayPairWindow(Window.GetWindow(this));
-            win.ShowDialog();
-            if (win.Paired)
-            {
-                _suppressRemoteToggle = true;
-                RemoteDashboardToggle.IsChecked = true;
-                _suppressRemoteToggle = false;
-                await ApplyRemoteDashboardAsync();
-                ConfirmDialog.Alert("페어링", "페어링이 완료되어 외부 접속을 켰습니다.");
-            }
-        }
-        catch (Exception ex) { ConfirmDialog.Alert("페어링", "페어링에 실패했습니다.\n" + ex.Message); }
-        finally { PairRemoteButton.IsEnabled = true; UpdateRemoteDashboardVisual(); }
-    }
-
-    private async void UnpairRemoteDashboard_Click(object sender, RoutedEventArgs e)
-    {
-        var cfg = RemoteDashboardConfig.Current;
-        if (!cfg.IsPaired && !cfg.Enabled)
-        {
-            ConfirmDialog.Alert("페어링 해제", "페어링된 정보가 없습니다.");
-            return;
-        }
-        if (!ConfirmDialog.Show("페어링 해제",
-            "이 PC의 릴레이 연결을 끊고 로컬 페어링 정보를 삭제합니다.\n" +
-            "웹 포털에 등록된 PC 항목은 포털에서 로그인 후 따로 삭제하세요.\n\n계속할까요?",
-            okLabel: "해제")) return;
-
-        cfg.Enabled = false;
-        cfg.DeviceId = "";
-        cfg.DeviceSecret = "";
-        cfg.Save();
-        try { await RelayConnector.Instance.StopAsync(); } catch { }
-        _suppressRemoteToggle = true;
-        RemoteDashboardToggle.IsChecked = false;
-        _suppressRemoteToggle = false;
-        UpdateRemoteDashboardVisual();
-    }
-
-    private void CopyRemoteDashboardUrl_Click(object sender, RoutedEventArgs e)
-    {
-        try { Clipboard.SetText(RemoteDashboardPortalUrl); }
-        catch { ConfirmDialog.Alert("접속 주소", "클립보드를 사용할 수 없습니다."); }
-    }
-
-    private void UpdateRemoteDashboardQr()
-    {
-        try
-        {
-            var png = PngByteQRCodeHelper.GetQRCode(
-                RemoteDashboardPortalUrl, QRCodeGenerator.ECCLevel.Q, 8, drawQuietZones: true);
-            using var stream = new MemoryStream(png);
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.StreamSource = stream;
-            bitmap.EndInit();
-            bitmap.Freeze();
-            RemoteDashboardQrImage.Source = bitmap;
-        }
-        catch
-        {
-            RemoteDashboardQrImage.Source = null;
-            RemoteDashboardQrPanel.Visibility = Visibility.Collapsed;
-        }
-    }
-
-    private void UpdateRemoteDashboardVisual()
-    {
-        if (RemoteDashboardStatusLabel == null) return;
-        var cfg = RemoteDashboardConfig.Current;
-        var connected = cfg.Enabled && RelayConnector.Instance.State == RelayConnectionState.Connected;
-        RemoteDashboardStatusLabel.Text = connected ? "연결됨 · 외부에서 접속 가능"
-            : cfg.IsPaired ? (cfg.Enabled ? "연결 중…" : "페어링됨 · 꺼짐")
-            : "페어링 안 됨";
-        RemoteDashboardStatusLabel.Foreground = (Brush)FindResource(connected ? "PrimaryBrush" : "TextMutedBrush");
-        PairRemoteButton.Visibility = cfg.IsPaired ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private const string WebDashboardUnlockPassword = "devezwebdashboard";
-
-    private void UnlockWebDashboard_Click(object sender, RoutedEventArgs e)
-    {
-        if (CatLanDashboardBtn.Visibility == Visibility.Visible)
-        {
-            SetActiveCategory("lanDashboard");
-            return;
-        }
-        var pw = CommunityPasswordDialog.AskVisibleText(Window.GetWindow(this), "잠금 해제", "비밀번호를 입력하세요.", "확인");
-        if (pw == null) return;
-        if (pw == WebDashboardUnlockPassword)
-        {
-            SettingsService.SaveWebDashboardUnlockedToday();
-            CatLanDashboardBtn.Visibility = Visibility.Visible;
-            SetActiveCategory("lanDashboard");
-        }
-        else ConfirmDialog.Alert("웹 페어링", "비밀번호가 올바르지 않습니다.");
     }
 
     // ── 프로젝트 목록 열 수 (1/2) — 적용은 [저장] 시점에만(라이브 미리보기 없음) ──

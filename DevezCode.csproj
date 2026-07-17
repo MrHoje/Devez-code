@@ -28,23 +28,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
-    <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="9.0.4" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 같은 LAN에서 현재 ConPTY 세션을 제어하는 웹 대시보드 -->
-    <Content Include="Resources\Dashboard\web\**">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <!-- 웹 대시보드 세션 카드에서도 데스크톱과 동일한 에이전트 아이콘을 사용한다. -->
-    <Content Include="Resources\Images\ShellPresets\*.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <!-- xterm.js 번들을 실행 폴더로 복사 (WebView2 가상 호스트가 디스크에서 로드) -->
     <Content Include="Resources\Terminal\web\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
