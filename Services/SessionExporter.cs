@@ -26,6 +26,7 @@ public static class SessionExporter
             "opencode" => FromOpenCode(roomId),
             "gajae"    => FromGajae(roomId),
             "codex"    => FromCodex(roomId),
+            "kimi"     => FromKimi(roomId),
             _          => new List<(string role, string text)>(),
         };
         if (turns.Count == 0) return null;
@@ -48,7 +49,7 @@ public static class SessionExporter
     private static string AgentLabel(string a) => a switch
     {
         "claude" => "Claude", "opencode" => "OpenCode", "gajae" => "가재코드",
-        "codex" => "Codex", "grok" => "Grok", _ => a,
+        "codex" => "Codex", "grok" => "Grok", "kimi" => "Kimi", _ => a,
     };
 
     // ── grok: 최신 CLI는 transcript를 SQLite에 저장하므로 공식 export 명령을 사용 ──
@@ -126,6 +127,62 @@ public static class SessionExporter
             catch { }
         }
         return turns;
+    }
+
+    // ── kimi(kimi-code): <sessionDir>/agents/main/wire.jsonl. 레코드 type=context.append_message /
+    //    context.append_loop_event 등에 message={role, content:[{type:"text",text}]} 가 담긴다.
+    //    fold 로직(reduceWireRecords)을 복제하지 않고, role=user|assistant 메시지를 재귀 수집 후 연속 중복만 제거. ──
+    private static List<(string role, string text)> FromKimi(string roomId)
+    {
+        var turns = new List<(string, string)>();
+        var sid = SettingsService.LoadKimiRoomSession(roomId) ?? KimiHookService.LoadTrackedSessionId(roomId);
+        var path = TerminalSessionManager.FindKimiWirePath(sid);
+        if (path == null) return turns;
+
+        var collected = new List<(string, string)>();
+        foreach (var line in ReadLinesShared(path))
+        {
+            try
+            {
+                using var d = JsonDocument.Parse(line);
+                CollectKimiMessages(d.RootElement, collected);
+            }
+            catch { }
+        }
+        // 연속 중복 제거(fold 재생/재개로 같은 메시지가 반복될 수 있음).
+        foreach (var t in collected)
+            if (turns.Count == 0 || turns[^1] != t) turns.Add(t);
+        return turns;
+    }
+
+    private static void CollectKimiMessages(JsonElement el, List<(string role, string text)> acc)
+    {
+        switch (el.ValueKind)
+        {
+            case JsonValueKind.Object:
+                if (TryStr(el, "role", out var role) && (role == "user" || role == "assistant")
+                    && el.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
+                {
+                    var text = ExtractKimiContentText(content);
+                    if (!string.IsNullOrWhiteSpace(text)) acc.Add((role, text));
+                    return; // 메시지 내부는 더 파고들지 않음
+                }
+                foreach (var prop in el.EnumerateObject()) CollectKimiMessages(prop.Value, acc);
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in el.EnumerateArray()) CollectKimiMessages(item, acc);
+                break;
+        }
+    }
+
+    private static string ExtractKimiContentText(JsonElement content)
+    {
+        var sb = new StringBuilder();
+        foreach (var b in content.EnumerateArray())
+            if (b.ValueKind == JsonValueKind.Object && TryStr(b, "type", out var bt) && bt == "text"
+                && TryStr(b, "text", out var txt))
+                sb.Append(txt).Append('\n');
+        return sb.ToString().Trim();
     }
 
     private static bool IsInjectedCodexContext(string text) =>

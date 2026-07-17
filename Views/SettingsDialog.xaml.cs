@@ -65,8 +65,8 @@ public partial class SettingsDialog : UserControl
     private bool _selectedShowDirView, _selectedShowQueueView, _selectedShowBrowserView, _selectedShowDiffView;
 
     // 푸터 사용량 표시(provider별) + 사용량 표시 방식 — [저장] 시점에만 디스크 반영.
-    private bool _originalShowFooterClaude, _originalShowFooterCodex, _originalShowFooterGo, _originalShowFooterDeepSeek, _originalShowFooterGrok, _originalShowFooterAntigravity, _originalShowEstimate, _originalShowRemainingUsage;
-    private bool _selectedShowFooterClaude, _selectedShowFooterCodex, _selectedShowFooterGo, _selectedShowFooterDeepSeek, _selectedShowFooterGrok, _selectedShowFooterAntigravity, _selectedShowEstimate, _selectedShowRemainingUsage;
+    private bool _originalShowFooterClaude, _originalShowFooterCodex, _originalShowFooterGo, _originalShowFooterDeepSeek, _originalShowFooterGrok, _originalShowFooterAntigravity, _originalShowFooterKimi, _originalShowEstimate, _originalShowRemainingUsage;
+    private bool _selectedShowFooterClaude, _selectedShowFooterCodex, _selectedShowFooterGo, _selectedShowFooterDeepSeek, _selectedShowFooterGrok, _selectedShowFooterAntigravity, _selectedShowFooterKimi, _selectedShowEstimate, _selectedShowRemainingUsage;
 
     // 알림 상세(자동닫힘/모니터) — [저장] 시점에만 디스크 반영. 위치는 기존 _notifyPos/_originalNotifyPos 사용.
     private int    _originalNotifyAutoCloseSec, _selectedNotifyAutoCloseSec;
@@ -570,6 +570,7 @@ public partial class SettingsDialog : UserControl
         SetCleanerAgentVisible(CleanerAgentKind.Codex, CodexCatBtn, enabled.Contains("codex"));
         SetCleanerAgentVisible(CleanerAgentKind.Grok, GrokCatBtn, enabled.Contains("grok"));
         SetCleanerAgentVisible(CleanerAgentKind.Antigravity, AntigravityCatBtn, enabled.Contains("antigravity"));
+        SetCleanerAgentVisible(CleanerAgentKind.Kimi, KimiCatBtn, enabled.Contains("kimi"));
 
         CleanerEmptyText.Visibility = _cleanerVisible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         CleanerBody.Visibility = _cleanerVisible.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -597,6 +598,7 @@ public partial class SettingsDialog : UserControl
             "codex" => CleanerAgentKind.Codex,
             "grok" => CleanerAgentKind.Grok,
             "antigravity" => CleanerAgentKind.Antigravity,
+            "kimi" => CleanerAgentKind.Kimi,
             _ => CleanerAgentKind.Claude,
         });
         ApplyCleanerCount();
@@ -616,6 +618,7 @@ public partial class SettingsDialog : UserControl
         ApplyCleanerPill(CodexCatBtn, kind == CleanerAgentKind.Codex, active, primary, line, text);
         ApplyCleanerPill(GrokCatBtn, kind == CleanerAgentKind.Grok, active, primary, line, text);
         ApplyCleanerPill(AntigravityCatBtn, kind == CleanerAgentKind.Antigravity, active, primary, line, text);
+        ApplyCleanerPill(KimiCatBtn, kind == CleanerAgentKind.Kimi, active, primary, line, text);
 
         VacuumSection.Visibility = kind == CleanerAgentKind.OpenCode ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -712,6 +715,7 @@ public partial class SettingsDialog : UserControl
             CleanerAgentKind.Codex => "Codex",
             CleanerAgentKind.Grok => "Grok",
             CleanerAgentKind.Antigravity => "Antigravity",
+            CleanerAgentKind.Kimi => "Kimi",
             _ => "Claude",
         };
         var extra = _cleanerCurrent == CleanerAgentKind.OpenCode
@@ -1029,12 +1033,14 @@ public partial class SettingsDialog : UserControl
         _originalShowFooterDeepSeek = _selectedShowFooterDeepSeek = SettingsService.LoadShowFooterDeepSeek();
         _originalShowFooterGrok     = _selectedShowFooterGrok     = SettingsService.LoadShowFooterGrok();
         _originalShowFooterAntigravity = _selectedShowFooterAntigravity = SettingsService.LoadShowFooterAntigravity();
+        _originalShowFooterKimi     = _selectedShowFooterKimi     = SettingsService.LoadShowFooterKimi();
         ShowFooterClaudeToggle.IsChecked   = _originalShowFooterClaude;
         ShowFooterCodexToggle.IsChecked    = _originalShowFooterCodex;
         ShowFooterGoToggle.IsChecked       = _originalShowFooterGo;
         ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek;
         ShowFooterGrokToggle.IsChecked     = _originalShowFooterGrok;
         ShowFooterAntigravityToggle.IsChecked = _originalShowFooterAntigravity;
+        ShowFooterKimiToggle.IsChecked     = _originalShowFooterKimi;
         UpdateConnectionBadges();
 
         // 한도 도달 예상 표시 토글
@@ -1062,6 +1068,7 @@ public partial class SettingsDialog : UserControl
         _selectedShowFooterDeepSeek = ShowFooterDeepSeekToggle.IsChecked == true;
         _selectedShowFooterGrok     = ShowFooterGrokToggle.IsChecked == true;
         _selectedShowFooterAntigravity = ShowFooterAntigravityToggle.IsChecked == true;
+        _selectedShowFooterKimi     = ShowFooterKimiToggle.IsChecked == true;
     }
 
     private void EstimateToggle_Changed(object sender, RoutedEventArgs e)
@@ -1440,6 +1447,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) return true;
         if (_selectedShowFooterGrok != _originalShowFooterGrok) return true;
         if (_selectedShowFooterAntigravity != _originalShowFooterAntigravity) return true;
+        if (_selectedShowFooterKimi != _originalShowFooterKimi) return true;
         if (_selectedShowEstimate != _originalShowEstimate) return true;
         if (_selectedShowRemainingUsage != _originalShowRemainingUsage) return true;
         if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec) return true;
@@ -1537,7 +1545,8 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowFooterClaude != _originalShowFooterClaude || _selectedShowFooterCodex != _originalShowFooterCodex
             || _selectedShowFooterGo != _originalShowFooterGo || _selectedShowFooterDeepSeek != _originalShowFooterDeepSeek
             || _selectedShowFooterGrok != _originalShowFooterGrok
-            || _selectedShowFooterAntigravity != _originalShowFooterAntigravity)
+            || _selectedShowFooterAntigravity != _originalShowFooterAntigravity
+            || _selectedShowFooterKimi != _originalShowFooterKimi)
         {
             SettingsService.SaveShowFooterClaude(_selectedShowFooterClaude);
             SettingsService.SaveShowFooterCodex(_selectedShowFooterCodex);
@@ -1545,6 +1554,7 @@ public partial class SettingsDialog : UserControl
             SettingsService.SaveShowFooterDeepSeek(_selectedShowFooterDeepSeek);
             SettingsService.SaveShowFooterGrok(_selectedShowFooterGrok);
             SettingsService.SaveShowFooterAntigravity(_selectedShowFooterAntigravity);
+            SettingsService.SaveShowFooterKimi(_selectedShowFooterKimi);
             (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
         }
         _originalShowFooterClaude = _selectedShowFooterClaude;
@@ -1553,6 +1563,7 @@ public partial class SettingsDialog : UserControl
         _originalShowFooterDeepSeek = _selectedShowFooterDeepSeek;
         _originalShowFooterGrok = _selectedShowFooterGrok;
         _originalShowFooterAntigravity = _selectedShowFooterAntigravity;
+        _originalShowFooterKimi = _selectedShowFooterKimi;
 
         if (_selectedShowEstimate != _originalShowEstimate)
         {
@@ -1701,6 +1712,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) { _selectedShowFooterDeepSeek = _originalShowFooterDeepSeek; ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek; }
         if (_selectedShowFooterGrok != _originalShowFooterGrok) { _selectedShowFooterGrok = _originalShowFooterGrok; ShowFooterGrokToggle.IsChecked = _originalShowFooterGrok; }
         if (_selectedShowFooterAntigravity != _originalShowFooterAntigravity) { _selectedShowFooterAntigravity = _originalShowFooterAntigravity; ShowFooterAntigravityToggle.IsChecked = _originalShowFooterAntigravity; }
+        if (_selectedShowFooterKimi != _originalShowFooterKimi) { _selectedShowFooterKimi = _originalShowFooterKimi; ShowFooterKimiToggle.IsChecked = _originalShowFooterKimi; }
         if (_selectedShowEstimate != _originalShowEstimate) { _selectedShowEstimate = _originalShowEstimate; ShowEstimateToggle.IsChecked = _originalShowEstimate; }
         if (_selectedShowRemainingUsage != _originalShowRemainingUsage) { _selectedShowRemainingUsage = _originalShowRemainingUsage; ShowRemainingUsageToggle.IsChecked = _originalShowRemainingUsage; }
         // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)

@@ -75,6 +75,15 @@
     <Content Include="Resources\Hooks\antigravity-hook.cmd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- kimi(Kimi Code CLI) 훅 스크립트. KimiHookInstaller 가 %LOCALAPPDATA%\DevezCode\kimi\hook.ps1 로 재기록.
+         Kimi 훅 runner 는 spawn(shell:true)→cmd.exe 실행, stdin 으로 이벤트 JSON(hookEventName/sessionId/cwd) 전달. -->
+    <Content Include="Resources\Hooks\kimi-hook.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- kimi tool/permission 이벤트 전용 경량 훅(PowerShell 미기동). PreToolUse/PostToolUse=working, PermissionRequest/Result=waiting. -->
+    <Content Include="Resources\Hooks\kimi-state-hook.cmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- opencode 플러그인 (Resources\Plugins\opencode-room-tracker.js).
          OpenCodePluginInstaller 가 앱 시작과 OpenCode 세션 실행 직전에 전역 플러그인 경로로 멱등 복사. -->
     <Content Include="Resources\Plugins\opencode-room-tracker.js">
@@ -106,6 +115,9 @@
     <Resource Include="Resources\Images\ShellPresets\grok_icon_white_50.png" />
     <Resource Include="Resources\Images\ShellPresets\deepseek.png" />
     <Resource Include="Resources\Images\ShellPresets\anti.png" />
+    <!-- kimi(Kimi Code): dark=흰색 글리프, light=검정 글리프 (opencode/grok 와 동일 패턴) -->
+    <Resource Include="Resources\Images\ShellPresets\kimi_icon_white_50.png" />
+    <Resource Include="Resources\Images\ShellPresets\kimi_icon_black_50.png" />
     <!-- Visual Studio 2022 Image Library 파일 형식 아이콘.
          Microsoft Software License Terms 적용(MIT 아님) — 설정 > 라이선스에서 전문 제공. -->
     <Resource Include="Resources\Images\FileTypes\VisualStudio2022\*.png" />

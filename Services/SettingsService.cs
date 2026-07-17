@@ -76,6 +76,9 @@ public static class SettingsService
         // 안티그래비티(agy) 방별 conversation ID. agy 는 사전 발급이 없어 cwd→conversation
         // 매핑(last_conversations.json)·훅에서 추종한 ID 를 영속 → `agy --conversation <id>` 복원.
         public Dictionary<string, string> AntigravityRoomSessions { get; set; } = new();
+        // Kimi(kimi-code) 방별 세션 ID (session_&lt;uuid&gt;). SessionStart 훅이 기록한 ID 를 영속 →
+        // 재오픈 시 `kimi -S <id>`(전역 session_index.jsonl, cwd 무관) 로 같은 대화 복원.
+        public Dictionary<string, string> KimiRoomSessions { get; set; } = new();
         // 세션 포크: 새 방(roomId) → 포크 원본 세션 ID. 새 방 첫 실행에 --fork-session/--fork 로 1회 소비.
         public Dictionary<string, string> RoomForkSources { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
@@ -160,6 +163,7 @@ public static class SettingsService
         public bool ShowFooterDeepSeek { get; set; } = false;
         public bool ShowFooterGrok { get; set; } = false;
         public bool ShowFooterAntigravity { get; set; } = false;
+        public bool ShowFooterKimi { get; set; } = false;
         // 계정 사용량 사이드바/툴팁에 한도 도달 예상 시간 표시. 기본 켜짐.
         public bool ShowEstimate { get; set; } = false;
         // 계정 사용량을 사용한 양 대신 남은 양(100%-사용률)으로 표시. 기본 꺼짐.
@@ -325,6 +329,8 @@ public static class SettingsService
     public static void SaveShowFooterGrok(bool v) { Current.ShowFooterGrok = v; Save(); }
     public static bool LoadShowFooterAntigravity() => Current.ShowFooterAntigravity;
     public static void SaveShowFooterAntigravity(bool v) { Current.ShowFooterAntigravity = v; Save(); }
+    public static bool LoadShowFooterKimi() => Current.ShowFooterKimi;
+    public static void SaveShowFooterKimi(bool v) { Current.ShowFooterKimi = v; Save(); }
 
     // ── 계정 사용량 한도 도달 예상 표시 ──────────────────────────
     public static bool LoadShowEstimate() => Current.ShowEstimate;
@@ -398,13 +404,14 @@ public static class SettingsService
         changed |= Current.GajaeRoomSessions.Remove(roomId);
         changed |= Current.GrokRoomSessions.Remove(roomId);
         changed |= Current.AntigravityRoomSessions.Remove(roomId);
+        changed |= Current.KimiRoomSessions.Remove(roomId);
         changed |= Current.RoomForkSources.Remove(roomId);
         changed |= Current.AgentRoomsLaunched.RemoveAll(k => k.StartsWith(roomId + "|", StringComparison.Ordinal)) > 0;
         if (changed) Save();
       }
     }
     /// <summary>클리너 보호 목록용: DevezCode 가 현재 관리 중인 room/session ID 스냅샷.</summary>
-    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Codex, IReadOnlyCollection<string> Grok, IReadOnlyCollection<string> Antigravity, IReadOnlyCollection<string> Rooms)
+    public static (IReadOnlyCollection<string> Claude, IReadOnlyCollection<string> OpenCode, IReadOnlyCollection<string> Gajae, IReadOnlyCollection<string> Codex, IReadOnlyCollection<string> Grok, IReadOnlyCollection<string> Antigravity, IReadOnlyCollection<string> Kimi, IReadOnlyCollection<string> Rooms)
         LoadManagedSessionSnapshot()
     {
         lock (_lock)
@@ -416,6 +423,7 @@ public static class SettingsService
                 Current.CodexRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.GrokRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.AntigravityRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                Current.KimiRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.ClaudeCodeRoomDirs.Keys.Where(v => !string.IsNullOrWhiteSpace(v)).ToList()
             );
         }
@@ -893,6 +901,23 @@ public static class SettingsService
     public static void ClearCodexRoomSession(string roomId)
     {
         if (Current.CodexRoomSessions.Remove(roomId)) Save();
+    }
+
+    // ── kimi 세션 ID (session_&lt;uuid&gt; 형식, 훅 → settings 영속) ─────
+    public static string? LoadKimiRoomSession(string roomId)
+        => Current.KimiRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+
+    public static void SaveKimiRoomSession(string roomId, string sessionId)
+    {
+        // Kimi 세션 id 는 session_<uuid> 형식. 존재 검증은 훅/런처 경계에서.
+        if (!KimiHookService.LooksLikeKimiSessionId(sessionId)) return;
+        Current.KimiRoomSessions[roomId] = sessionId;
+        Save();
+    }
+
+    public static void ClearKimiRoomSession(string roomId)
+    {
+        if (Current.KimiRoomSessions.Remove(roomId)) Save();
     }
 
     // ── grok 세션 ID (훅 → settings 영속) ─────

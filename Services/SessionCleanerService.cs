@@ -6,9 +6,9 @@ using Microsoft.Data.Sqlite;
 
 namespace DevezCode.Services;
 
-public sealed record SessionCleanerCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok, int Antigravity)
+public sealed record SessionCleanerCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok, int Antigravity, int Kimi)
 {
-    public int Total => Claude + OpenCode + Gajae + Codex + Grok + Antigravity;
+    public int Total => Claude + OpenCode + Gajae + Codex + Grok + Antigravity + Kimi;
 }
 
 public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCleanerCounts Deleted, SessionCleanerCounts Failed)
@@ -16,12 +16,12 @@ public sealed record SessionCleanerResult(SessionCleanerCounts Before, SessionCl
     public int DeletedTotal => Deleted.Total;
     public int FailedTotal => Failed.Total;
 }
-public enum CleanerAgentKind { Claude, OpenCode, Gajae, Codex, Grok, Antigravity }
+public enum CleanerAgentKind { Claude, OpenCode, Gajae, Codex, Grok, Antigravity, Kimi }
 public sealed record CleanerScanInfo(int Count, long Bytes);
 
-public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok, int Antigravity, bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok, bool ShowAntigravity)
+public sealed record SessionCleanerAgentCounts(int Claude, int OpenCode, int Gajae, int Codex, int Grok, int Antigravity, int Kimi, bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok, bool ShowAntigravity, bool ShowKimi)
 {
-    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0) + (ShowCodex ? Codex : 0) + (ShowGrok ? Grok : 0) + (ShowAntigravity ? Antigravity : 0);
+    public int Total => (ShowClaude ? Claude : 0) + (ShowOpenCode ? OpenCode : 0) + (ShowGajae ? Gajae : 0) + (ShowCodex ? Codex : 0) + (ShowGrok ? Grok : 0) + (ShowAntigravity ? Antigravity : 0) + (ShowKimi ? Kimi : 0);
 }
 
 
@@ -44,12 +44,14 @@ public static class SessionCleanerService
             Codex: enabled.ShowCodex ? EnumerateUnmanagedCodex(managed).Count : 0,
             Grok: enabled.ShowGrok ? EnumerateUnmanagedGrok(managed).Count : 0,
             Antigravity: enabled.ShowAntigravity ? EnumerateUnmanagedAntigravity(managed).Count : 0,
+            Kimi: enabled.ShowKimi ? EnumerateUnmanagedKimi(managed).Count : 0,
             enabled.ShowClaude,
             enabled.ShowOpenCode,
             enabled.ShowGajae,
             enabled.ShowCodex,
             enabled.ShowGrok,
-            enabled.ShowAntigravity);
+            enabled.ShowAntigravity,
+            enabled.ShowKimi);
     }
 
     public static int GetCount(CleanerAgentKind kind) => GetScanInfo(kind).Count;
@@ -65,6 +67,7 @@ public static class SessionCleanerService
             CleanerAgentKind.Codex => FromFiles(EnumerateUnmanagedCodex(managed)),
             CleanerAgentKind.Grok => FromDirectories(EnumerateUnmanagedGrok(managed)),
             CleanerAgentKind.Antigravity => FromFiles(EnumerateUnmanagedAntigravity(managed)),
+            CleanerAgentKind.Kimi => FromDirectories(EnumerateUnmanagedKimi(managed)),
             _ => new CleanerScanInfo(0, 0),
         };
     }
@@ -107,11 +110,12 @@ public static class SessionCleanerService
         (int deleted, int failed) xd = enabled.ShowCodex ? DeleteUnmanaged(CleanerAgentKind.Codex) : (0, 0);
         (int deleted, int failed) rd = enabled.ShowGrok ? DeleteUnmanaged(CleanerAgentKind.Grok) : (0, 0);
         (int deleted, int failed) ad = enabled.ShowAntigravity ? DeleteUnmanaged(CleanerAgentKind.Antigravity) : (0, 0);
+        (int deleted, int failed) kd = enabled.ShowKimi ? DeleteUnmanaged(CleanerAgentKind.Kimi) : (0, 0);
 
         return new SessionCleanerResult(
-            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae, before.Codex, before.Grok, before.Antigravity),
-            new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted, xd.deleted, rd.deleted, ad.deleted),
-            new SessionCleanerCounts(cd.failed, od.failed, gd.failed, xd.failed, rd.failed, ad.failed));
+            new SessionCleanerCounts(before.Claude, before.OpenCode, before.Gajae, before.Codex, before.Grok, before.Antigravity, before.Kimi),
+            new SessionCleanerCounts(cd.deleted, od.deleted, gd.deleted, xd.deleted, rd.deleted, ad.deleted, kd.deleted),
+            new SessionCleanerCounts(cd.failed, od.failed, gd.failed, xd.failed, rd.failed, ad.failed, kd.failed));
     }
 
     public static (int deleted, int failed) DeleteUnmanaged(CleanerAgentKind kind)
@@ -125,16 +129,17 @@ public static class SessionCleanerService
             CleanerAgentKind.Codex => DeleteFiles(EnumerateUnmanagedCodex(managed)),
             CleanerAgentKind.Grok => DeleteGrok(EnumerateUnmanagedGrok(managed)),
             CleanerAgentKind.Antigravity => DeleteAntigravity(EnumerateUnmanagedAntigravity(managed)),
+            CleanerAgentKind.Kimi => DeleteDirectories(EnumerateUnmanagedKimi(managed)),
             _ => (0, 0),
         };
     }
 
 
-    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> CodexIds, HashSet<string> GrokIds, HashSet<string> AntigravityIds, HashSet<string> RoomIds)
+    private sealed record ManagedSnapshot(HashSet<string> ClaudeIds, HashSet<string> OpenCodeIds, HashSet<string> GajaeIds, HashSet<string> CodexIds, HashSet<string> GrokIds, HashSet<string> AntigravityIds, HashSet<string> KimiIds, HashSet<string> RoomIds)
     {
         public static ManagedSnapshot Load()
         {
-            var (claude, opencode, gajae, codex, grok, antigravity, rooms) = SettingsService.LoadManagedSessionSnapshot();
+            var (claude, opencode, gajae, codex, grok, antigravity, kimi, rooms) = SettingsService.LoadManagedSessionSnapshot();
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             var claudeIds = ToSet(claude);
             var openCodeIds = ToSet(opencode);
@@ -142,6 +147,7 @@ public static class SessionCleanerService
             var codexIds = ToSet(codex);
             var grokIds = ToSet(grok);
             var antigravityIds = ToSet(antigravity);
+            var kimiIds = ToSet(kimi);
 
             AddTrackedFileIds(claudeIds, Path.Combine(appData, "DevezCode", "claude", "sessions"), GuidRegex);
             AddTrackedFileIds(openCodeIds, Path.Combine(appData, "DevezCode", "opencode", "sessions"), new Regex(@"^ses_[A-Za-z0-9]+$", RegexOptions.Compiled));
@@ -149,6 +155,7 @@ public static class SessionCleanerService
             AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "codex", "sessions"), GuidRegex);
             AddTrackedFileIds(grokIds, Path.Combine(appData, "DevezCode", "grok", "sessions"), GuidRegex);
             AddTrackedFileIds(antigravityIds, Path.Combine(appData, "DevezCode", "antigravity", "sessions"), GuidRegex);
+            AddTrackedFileIds(kimiIds, Path.Combine(appData, "DevezCode", "kimi", "sessions"), KimiIdRegex);
 
             return new ManagedSnapshot(
                 claudeIds,
@@ -157,6 +164,7 @@ public static class SessionCleanerService
                 codexIds,
                 grokIds,
                 antigravityIds,
+                kimiIds,
                 ToSet(rooms));
         }
 
@@ -189,7 +197,7 @@ public static class SessionCleanerService
             catch { }
         }
     }
-    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok, bool ShowAntigravity)
+    private sealed record EnabledSnapshot(bool ShowClaude, bool ShowOpenCode, bool ShowGajae, bool ShowCodex, bool ShowGrok, bool ShowAntigravity, bool ShowKimi)
     {
         public static EnabledSnapshot Load()
         {
@@ -200,7 +208,8 @@ public static class SessionCleanerService
                 enabled.Contains("gajae"),
                 enabled.Contains("codex"),
                 enabled.Contains("grok"),
-                enabled.Contains("antigravity"));
+                enabled.Contains("antigravity"),
+                enabled.Contains("kimi"));
         }
     }
 
@@ -289,6 +298,52 @@ public static class SessionCleanerService
         }
         catch { }
         return list;
+    }
+
+    // kimi 세션: ~/.kimi-code/sessions/<wdKey>/<session_uuid>/ (디렉터리 단위). 디렉터리명이 세션 id.
+    private static readonly Regex KimiIdRegex =
+        new(@"^session_[0-9A-Za-z_-]+$", RegexOptions.Compiled);
+
+    private static string KimiSessionsRoot()
+    {
+        var configured = Environment.GetEnvironmentVariable("KIMI_CODE_HOME");
+        var home = string.IsNullOrWhiteSpace(configured)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".kimi-code")
+            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(configured));
+        return Path.Combine(home, "sessions");
+    }
+
+    private static List<string> EnumerateUnmanagedKimi(ManagedSnapshot managed)
+    {
+        var root = KimiSessionsRoot();
+        if (!Directory.Exists(root)) return new();
+        var list = new List<string>();
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(root, "session_*", SearchOption.AllDirectories))
+            {
+                var id = Path.GetFileName(dir);
+                if (!KimiIdRegex.IsMatch(id) || managed.KimiIds.Contains(id)) continue;
+                list.Add(dir);
+            }
+        }
+        catch { }
+        return list;
+    }
+
+    private static (int deleted, int failed) DeleteDirectories(IEnumerable<string> directories)
+    {
+        int deleted = 0, failed = 0;
+        foreach (var d in directories)
+        {
+            try
+            {
+                if (Directory.Exists(d)) Directory.Delete(d, true);
+                deleted++;
+            }
+            catch { failed++; }
+        }
+        return (deleted, failed);
     }
 
     private static List<string> EnumerateUnmanagedGrok(ManagedSnapshot managed)

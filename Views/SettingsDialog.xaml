@@ -844,6 +844,14 @@
                                                 <TextBlock Text="Antigravity" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
+                                        <Button x:Name="KimiCatBtn" Tag="kimi" Style="{StaticResource CleanerPill}" Click="CleanerAgent_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
+                                                       Source="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                <TextBlock Text="Kimi" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
 
                                     <!-- 카운트 카드 -->
@@ -1584,6 +1592,22 @@
                                                    Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <CheckBox x:Name="ShowFooterAntigravityToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
+                                </Grid>
+
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="Kimi" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="Kimi 정액제 플랜 사용량 (5시간/주간 %)" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowFooterKimiToggle" Grid.Column="1"
                                               Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
                                               Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
                                 </Grid>

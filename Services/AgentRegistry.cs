@@ -87,6 +87,22 @@ public static class AgentRegistry
         },
         new()
         {
+            // Kimi Code CLI(Moonshot AI, @moonshot-ai/kimi-code). 홈 = %USERPROFILE%\.kimi-code.
+            // 훅 기반 추적: config.toml [[hooks]](SessionStart/UserPromptSubmit/Stop/PermissionRequest 등).
+            // 훅 runner 는 spawn(shell:true, windowsHide:true) → Windows=cmd.exe, 콘솔창 안 뜸, env 상속.
+            // 세션 복원은 TryBuildKimiDirectLaunch 가 방별 -S <sessionId>(전역 session_index.jsonl, cwd 무관) 로 처리.
+            // (cwd 공유 시 -c 가 방끼리 섞이므로 ResumeFlag 단순 경로는 Tier1 폴백 전용.)
+            // alt-screen(?1049) 미사용 인라인 TUI → InlineTui=true 로 로딩 오버레이 첫 출력에 해제.
+            Id = "kimi", DisplayName = "Kimi", Provider = "Moonshot AI",
+            ExeNames = new[] { "kimi.cmd", "kimi.ps1", "kimi.exe", "kimi" },
+            Command = "kimi",
+            InstallCommand = "npm install -g @moonshot-ai/kimi-code",
+            UpdateCommand = "kimi upgrade",
+            ResumeFlag = "-c",
+            InlineTui = true,
+        },
+        new()
+        {
             Id = "opencode", DisplayName = "OpenCode", Provider = "OpenCode",
             ExeNames = new[] { "opencode.exe", "opencode.cmd", "opencode.bat", "opencode.ps1", "opencode" },
             Command = "opencode",

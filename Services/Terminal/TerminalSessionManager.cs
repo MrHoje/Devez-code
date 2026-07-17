@@ -189,6 +189,14 @@ public sealed class TerminalSessionManager
                 var direct = TryBuildAntigravityDirectLaunch(roomId, out inject);
                 if (direct != null) commandLine = direct;
             }
+            else if (ccDir != null && agent.Id == "kimi")
+            {
+                // kimi(kimi-code): 훅(config.toml [[hooks]]) + `kimi -S <sessionId>` 복원(전역 session_index, cwd 무관).
+                // 앱레벨 자동 재진입(codex/grok 패턴). --work-dir 이 없어 cwd 는 startDir(ConPTY)로 처리.
+                startDir = ccDir;
+                var direct = TryBuildKimiDirectLaunch(roomId, ccDir, out inject);
+                if (direct != null) commandLine = direct;
+            }
             else if (ccDir != null && agent.SupportsHooks)
             {
                 startDir = ccDir;
@@ -246,6 +254,7 @@ public sealed class TerminalSessionManager
     private void OnAppThemeChanged_Broadcast(string theme)
     {
         OpenCodeCustomThemes.Apply(theme);
+        KimiCustomThemes.Apply(theme);
     }
 
     /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.
@@ -337,6 +346,120 @@ public sealed class TerminalSessionManager
             injectFallback = body + "\r";
             return null;
         }
+    }
+
+    /// <summary>kimi 방 직접 실행. 훅(config.toml [[hooks]]) 설치 후 세션 id 를 해석해
+    /// <c>kimi -S &lt;id&gt;</c>(복원) 또는 <c>kimi</c>(신규) 로 실행. 배치 끝 exit + cmd /c →
+    /// ConPTY 종료 → IsAutoReenterRoom(kimi) 앱레벨 재진입.
+    /// 세션 id 는 3단 폴백: (1) 훅 추적값 (2) settings 저장값 (3) session_index.jsonl 의 workDir 매칭 최신값.
+    /// (--work-dir 플래그가 없어 cwd 는 startDir=workingDir 로 ConPTY 가 설정.)</summary>
+    private string? TryBuildKimiDirectLaunch(string roomId, string? workingDir, out string? injectFallback)
+    {
+        injectFallback = null;
+        KimiHookInstaller.EnsureInstalled();
+        KimiCustomThemes.Apply(DevezCode.App.CurrentTheme);
+
+        var kimiAgent = AgentRegistry.Find("kimi");
+        var kimiPath = kimiAgent == null ? null : AgentRegistry.ResolvePath(kimiAgent);
+        var kimiCommand = string.IsNullOrWhiteSpace(kimiPath)
+            ? "kimi"
+            : $"\"{kimiPath.Replace("\"", "\"\"")}\"";
+
+        var sessionId = ResolveKimiSessionId(roomId, workingDir);
+        if (sessionId != null) SettingsService.SaveKimiRoomSession(roomId, sessionId);
+        SettingsService.MarkAgentRoomLaunched(roomId, "kimi");
+
+        // call + exit: kimi 종료 후 제어가 배치로 돌아와 exit 로 cmd 를 확실히 닫는다 → onExited → 앱 재진입.
+        string body = string.IsNullOrEmpty(sessionId)
+            ? $"call {kimiCommand}\r\nexit"
+            : $"call {kimiCommand} -S {sessionId}\r\nexit";
+
+        try
+        {
+            var dir = KimiLaunchDir();
+            Directory.CreateDirectory(dir);
+            var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
+            // set 으로 DEVEZCODE_ROOM_ID 명시(ConPTY env 상속 백업 — 훅이 방을 식별).
+            var batch = "@echo off\r\nset \"DEVEZCODE_ROOM_ID=" + roomId + "\"\r\n" + body + "\r\n";
+            File.WriteAllText(batchPath, batch);
+            return $"cmd.exe /c \"{batchPath}\"";
+        }
+        catch
+        {
+            injectFallback = body + "\r";
+            return null;
+        }
+    }
+
+    /// <summary>kimi 세션 저장 루트 (~/.kimi-code/sessions).</summary>
+    private static string KimiSessionsRoot() => Path.Combine(KimiHookInstaller.KimiHome, "sessions");
+
+    /// <summary>sessionId 의 세션 디렉터리(sessions/&lt;wdKey&gt;/&lt;sessionId&gt;/state.json)가 존재하면 경로 반환.</summary>
+    private static string? FindKimiSessionDir(string? sessionId)
+    {
+        if (!KimiHookService.LooksLikeKimiSessionId(sessionId)) return null;
+        try
+        {
+            var root = KimiSessionsRoot();
+            if (!Directory.Exists(root)) return null;
+            foreach (var wd in Directory.EnumerateDirectories(root))
+            {
+                var cand = Path.Combine(wd, sessionId!);
+                if (File.Exists(Path.Combine(cand, "state.json"))) return cand;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>session_index.jsonl 에서 workDir 매칭 최신(append-only 마지막) 세션 id 를 찾는다(존재 검증 포함).</summary>
+    private static string? FindLatestKimiSessionIdForWorkDir(string? workDir)
+    {
+        if (string.IsNullOrWhiteSpace(workDir)) return null;
+        try
+        {
+            var indexPath = Path.Combine(KimiHookInstaller.KimiHome, "session_index.jsonl");
+            if (!File.Exists(indexPath)) return null;
+            var want = NormalizeKimiPath(workDir);
+            string? latest = null;
+            foreach (var line in File.ReadLines(indexPath))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    var node = System.Text.Json.Nodes.JsonNode.Parse(line);
+                    var wd = node?["workDir"]?.GetValue<string>();
+                    var sid = node?["sessionId"]?.GetValue<string>();
+                    if (sid == null || wd == null) continue;
+                    if (!NormalizeKimiPath(wd).Equals(want, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (KimiHookService.LooksLikeKimiSessionId(sid)) latest = sid; // 마지막 매칭이 최신
+                }
+                catch { }
+            }
+            return FindKimiSessionDir(latest) != null ? latest : null;
+        }
+        catch { return null; }
+    }
+
+    private static string NormalizeKimiPath(string p) => p.Replace('/', '\\').TrimEnd('\\');
+
+    /// <summary>kimi 세션의 메인 에이전트 wire.jsonl 경로(내보내기용). 없으면 null.</summary>
+    public static string? FindKimiWirePath(string? sessionId)
+    {
+        var dir = FindKimiSessionDir(sessionId);
+        if (dir == null) return null;
+        var p = Path.Combine(dir, "agents", "main", "wire.jsonl");
+        return File.Exists(p) ? p : null;
+    }
+
+    /// <summary>방의 kimi 세션 id 를 해석: 훅 추적값 → settings 저장값 → session_index workDir 매칭. 없으면 null(신규).</summary>
+    private static string? ResolveKimiSessionId(string roomId, string? workingDir)
+    {
+        var tracked = KimiHookService.LoadTrackedSessionId(roomId);
+        if (FindKimiSessionDir(tracked) != null) return tracked;
+        var saved = SettingsService.LoadKimiRoomSession(roomId);
+        if (FindKimiSessionDir(saved) != null) return saved;
+        return FindLatestKimiSessionIdForWorkDir(workingDir);
     }
 
     /// <summary>opencode 방에서 추적파일·settings 모두 비었을 때만 cwd 매칭 세션을 조회한다.
@@ -471,6 +594,10 @@ public sealed class TerminalSessionManager
     private static string GrokLaunchDir() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "grok", "launch");
+
+    private static string KimiLaunchDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "kimi", "launch");
 
     /// <summary>Grok 방 직접 실행. 훅 설치 후 저장된 session_id 가 있으면 <c>grok -r &lt;id&gt;</c>,
     /// 없으면 <c>grok</c> 신규. 포크 마커가 있으면 <c>-r src --fork-session</c>.
@@ -994,6 +1121,7 @@ public sealed class TerminalSessionManager
                 "grok" => FindGrokChatHistoryPathForWorkingDirectory(
                     SettingsService.LoadGrokRoomSession(roomId),
                     SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
+                "kimi" => ResolveKimiSessionId(roomId, SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
                 _ => false,
             };
         }
@@ -1068,6 +1196,89 @@ public sealed class TerminalSessionManager
             return newId;
         }
         catch { return null; }
+    }
+
+    /// <summary>kimi 세션 포크 — 네이티브 launch 포크가 없어(/fork 는 TUI 전용), 원본 세션 디렉터리
+    /// (state.json + agents/*/wire.jsonl + tasks/cron 등)를 새 session_&lt;uuid&gt; 로 통째 복사하고
+    /// .json/.jsonl 내부의 old id 참조를 new id 로 치환 + state.json 에 forkedFrom 기록 +
+    /// session_index.jsonl 에 새 항목 append. 새 방은 `kimi -S <newId>` 로 복원 → 원본과 독립.
+    /// 새 세션 id 반환(원본 없거나 실패면 null → 호출부가 포크 취소).</summary>
+    public static string? TryForkKimiSession(string sourceSessionId)
+    {
+        try
+        {
+            var srcDir = FindKimiSessionDir(sourceSessionId);
+            if (srcDir == null) return null;
+            var wdDir = Path.GetDirectoryName(srcDir)!;                 // sessions/<wdKey>
+            var newId = "session_" + Guid.NewGuid().ToString("D").ToLowerInvariant();
+            var dstDir = Path.Combine(wdDir, newId);
+            CopyKimiSessionDir(srcDir, dstDir, sourceSessionId, newId);
+
+            // state.json: forkedFrom 기록 (homedir 등 old id 경로는 CopyKimiSessionDir 텍스트 치환으로 이미 반영).
+            var statePath = Path.Combine(dstDir, "state.json");
+            string? workDir = null;
+            if (File.Exists(statePath))
+            {
+                try
+                {
+                    if (System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePath)) is System.Text.Json.Nodes.JsonObject node)
+                    {
+                        node["forkedFrom"] = sourceSessionId;
+                        workDir = node["workDir"]?.GetValue<string>();
+                        File.WriteAllText(statePath,
+                            node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                            new System.Text.UTF8Encoding(false));
+                    }
+                }
+                catch { }
+            }
+
+            // session_index.jsonl 에 새 항목 append (kimi -S 가 전역 조회하는 인덱스).
+            try
+            {
+                var indexPath = Path.Combine(KimiHookInstaller.KimiHome, "session_index.jsonl");
+                var entry = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["sessionId"] = newId,
+                    ["sessionDir"] = dstDir.Replace('\\', '/'),
+                    ["workDir"] = (workDir ?? "").Replace('\\', '/'),
+                };
+                File.AppendAllText(indexPath, entry.ToJsonString() + "\n");
+            }
+            catch { }
+
+            return newId;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>kimi 세션 디렉터리 재귀 복사. .json/.jsonl 은 old→new 세션 id 치환, 그 외(blob)는 그대로 복사.
+    /// 활성 세션도 포크 가능하도록 FileShare.ReadWrite 로 읽는다.</summary>
+    private static void CopyKimiSessionDir(string srcDir, string dstDir, string oldId, string newId)
+    {
+        Directory.CreateDirectory(dstDir);
+        foreach (var file in Directory.EnumerateFiles(srcDir, "*", SearchOption.AllDirectories))
+        {
+            var rel = Path.GetRelativePath(srcDir, file);
+            var dst = Path.Combine(dstDir, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+            var ext = Path.GetExtension(file).ToLowerInvariant();
+            if (ext == ".json" || ext == ".jsonl")
+            {
+                string content;
+                using (var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var sr = new StreamReader(fs))
+                    content = sr.ReadToEnd();
+                content = content.Replace(oldId, newId, StringComparison.Ordinal);
+                File.WriteAllText(dst, content, new System.Text.UTF8Encoding(false));
+            }
+            else
+            {
+                using var srcFs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var dstFs = new FileStream(dst, FileMode.Create, FileAccess.Write, FileShare.None);
+                srcFs.CopyTo(dstFs);
+            }
+        }
     }
 
     // antigravity(agy) 포크는 미지원 — db 복사 실측(2026-07-13) 결과 `--conversation <복사본>` 이
@@ -2562,6 +2773,15 @@ public sealed class TerminalSessionManager
                         && ag != SettingsService.LoadAntigravityRoomSession(roomId))
                         SettingsService.SaveAntigravityRoomSession(roomId, ag);
                     break;
+                case "kimi":
+                    // SessionStart 훅이 sessions\<room>.txt 에 기록한 최신 kimi session_id 를 종료 시점에 확정 저장.
+                    // 평시엔 KimiSessionChanged(워처)가 라이브 저장하지만, 종료 직전 write 를 놓치면 stale ID 로
+                    // resume 되는 버그가 나므로 스냅샷으로 보강. 세션 디렉터리 존재까지 검증.
+                    var km = KimiHookService.LoadTrackedSessionId(roomId);
+                    if (km != null && FindKimiSessionDir(km) != null
+                        && km != SettingsService.LoadKimiRoomSession(roomId))
+                        SettingsService.SaveKimiRoomSession(roomId, km);
+                    break;
             }
         }
         catch (Exception) { /* 스냅샷 실패 — 종료는 계속 */ }
@@ -2640,6 +2860,11 @@ public sealed class TerminalSessionManager
         {
             return ("\x04", 2, false); // 공식 종료키 Ctrl+D; 두 번 입력해야 하는 상태도 대응
         }
+        if (agent == "kimi")
+        {
+            // Ctrl+D 를 빈 입력에서 두 번 = kimi 종료(더블프레스 확인). busy(스트리밍)면 Esc 로 현재 턴을 먼저 인터럽트.
+            return ("\x04", 2, IsKimiBusyRunning(roomId));
+        }
         return agent switch
         {
             "opencode" => ("\x03", 2, false), // 첫 Ctrl+C=입력 지우기, 두 번째=종료
@@ -2662,6 +2887,21 @@ public sealed class TerminalSessionManager
         {
             var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "DevezCode", "codex", "busy", SafeRoomFileName(roomId) + ".txt");
+            if (!File.Exists(path)) return false;
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var sr = new StreamReader(fs);
+            return sr.ReadToEnd().Trim() == "running";
+        }
+        catch { return false; }
+    }
+
+    /// <summary>kimi 훅(busy\&lt;room&gt;.txt)이 'running' 인가 — 종료 시 Esc 선행 여부 판단용.</summary>
+    private static bool IsKimiBusyRunning(string roomId)
+    {
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "kimi", "busy", SafeRoomFileName(roomId) + ".txt");
             if (!File.Exists(path)) return false;
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var sr = new StreamReader(fs);
@@ -2815,6 +3055,13 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(grokDir, "completed", roomFile + ".flag"));
         TryDeleteFile(Path.Combine(GrokLaunchDir(), roomFile + ".cmd"));
 
+        var kimiDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "kimi");
+        TryDeleteFile(Path.Combine(kimiDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(kimiDir, "lastmsg", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(kimiDir, "busy", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(kimiDir, "waiting", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(KimiLaunchDir(), roomFile + ".cmd"));
+
         var opencodeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode");
         TryDeleteFile(Path.Combine(opencodeDir, "sessions", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(opencodeDir, "lastmsg", roomFile + ".txt"));
@@ -2916,6 +3163,10 @@ public sealed class TerminalSessionManager
             Collect(Path.Combine(appData, "DevezCode", "antigravity", "busy"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "antigravity", "waiting"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "antigravity", "completed"), ".flag");
+            Collect(Path.Combine(appData, "DevezCode", "kimi", "sessions"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "kimi", "busy"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "kimi", "waiting"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "kimi", "lastmsg"), ".txt");
             // statusline-cache-<room>-<sig>.txt 는 ClaudeTrackDir 루트에 바로 있고 접두사 매칭 필요.
             try
             {

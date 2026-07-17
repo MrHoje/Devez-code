@@ -94,7 +94,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             return string.Equals(a, "opencode", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(a, "codex", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(a, "grok", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(a, "antigravity", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(a, "antigravity", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(a, "kimi", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }
@@ -858,6 +859,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             merged = AnswerCodexColorQueries(roomId, merged);
             merged = RecolorCodexBackgrounds(merged);
         }
+        // kimi 도 codex 처럼 OSC 11(배경색) 질의로 라이트/다크를 판별한다(detectTerminalTheme → queryOsc11).
+        // 콜드스타트에 xterm 대신 즉시 앱 스킴 색으로 응답해 kimi 가 정확히 앱 테마(다크/라이트)를 따르게 한다.
+        // (AnswerCodexColorQueries 는 표준 OSC 10/11 질의 프록시로 범용 — codex 전용 배경 recolor 는 적용하지 않음.)
+        else if (AgentFor(roomId) == "kimi")
+            merged = AnswerCodexColorQueries(roomId, merged);
         // Grok: 중립 배경은 앱 스킴에 상대 매핑하고, 밝은 테마의 truecolor/ANSI 전경·의미색도
         // DevezCode soft/minimal 팔레트로 역할별 매핑한다. dark 전경색은 GrokNight 원본 유지.
         if (AgentFor(roomId) == "grok")

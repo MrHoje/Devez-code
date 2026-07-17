@@ -69,12 +69,14 @@ public partial class MainWindow : Window
     private bool _claudeUsageStale;
     // 추가 provider 사용량(푸터): codex(openai) + opencode-go.
     private readonly CodexUsageService _codex = new();
+    private readonly KimiUsageService _kimi = new();
     private readonly OpenCodeGoUsageService _openCodeGo = new();
     private readonly DeepSeekUsageService _deepSeek = new();
     private readonly GrokUsageService _grok = new();
     private readonly AntigravityUsageService _antigravityUsage = new();
     // 사용량 팝오버(우측 사이드바)용 최신 스냅샷 보관 — 데이터 있는 provider 만 카드로 노출.
     private Models.ProviderUsage? _lastCodex;
+    private Models.ProviderUsage? _lastKimi;
     private Models.ProviderUsage? _lastGo;
     private Models.ProviderUsage? _lastDeepSeek;
     private Models.ProviderUsage? _lastGrok;
@@ -89,6 +91,7 @@ public partial class MainWindow : Window
     private readonly CodexHookService _codexHook = new();
     // grok — ~/.grok/hooks + 방별 상태 파일로 lastmsg/busy/session_id 추적 (codex 패턴).
     private readonly GrokHookService _grokHook = new();
+    private readonly KimiHookService _kimiHook = new();
     // antigravity(agy) — hooks.json 훅(busy/waiting/conversation_id) + transcript_full.jsonl 폴링
     // (빠른 idle 확정 + lastmsg). ask_question/ask_permission 은 waiting(❗)으로 분리한다.
     private readonly AntigravityHookService _antigravityHook = new();
@@ -137,6 +140,7 @@ public partial class MainWindow : Window
         _wakeScheduler = new WakeSchedulerService(DispatchWakeAsync);
         _idleSessionShutdownTimer.Tick += async (_, _) => await CheckIdleSessionsAsync();
         CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
+        KimiFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.KimiIconUri)); // 테마별(시작 시점 테마 반영)
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
         SessionHistoryList.ItemsSource = _sessionDoneRecords;
         WaitingList.ItemsSource = _waitingSessions;
@@ -462,6 +466,47 @@ public partial class MainWindow : Window
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
 
+        // Kimi(kimi-code) — codex 와 동일 roomId 키 즉시 갱신 (훅 config.toml [[hooks]]).
+        _kimiHook.MessageChanged += (roomId, msg) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(roomId);
+                if (s == null) return;
+                s.LastMessage = msg;
+                foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
+            });
+        _kimiHook.BusyChanged += (roomId, busy) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                MarkSessionActivity(roomId);
+                var s = FindSession(roomId);
+                bool was = s?.IsBusy ?? false;
+                if (s != null)
+                {
+                    s.IsBusy = busy;
+                    if (!busy) s.IsWaitingChoice = false;
+                }
+                NotifyIfSessionFinished(s, was, busy);
+                UpdateSessionBusyDisplay();
+                if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
+            });
+        _kimiHook.WaitingChoiceChanged += (roomId, waiting) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                MarkSessionActivity(roomId);
+                var s = FindSession(roomId);
+                bool wasWaiting = s?.IsWaitingChoice ?? false;
+                if (s != null) s.IsWaitingChoice = waiting;
+                NotifyIfSessionWaiting(s, wasWaiting, waiting, notificationDelayMs: 1500);
+                UpdateSessionBusyDisplay();
+            });
+        _kimiHook.KimiSessionChanged += (roomId, sid) =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                SettingsService.SaveKimiRoomSession(roomId, sid);
+                foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
+            });
+
         // Antigravity(agy) — busy/선택지 대기 + conversation_id 라이브 저장 (grok 패턴).
         // lastmsg 는 transcript 폴링에서 추출.
         _antigravityHook.BusyChanged += (roomId, busy) =>
@@ -550,6 +595,8 @@ public partial class MainWindow : Window
             _grokHook.Start();
             AntigravityHookInstaller.EnsureInstalled();
             _antigravityHook.Start();
+            KimiHookInstaller.EnsureInstalled();
+            _kimiHook.Start();
             OpenCodePluginInstaller.EnsureInstalled();
             _opencodeLastMsg.Start();
             _opencodeBusy.Start();
@@ -623,6 +670,7 @@ public partial class MainWindow : Window
             _claudeFreshnessTimer.Stop();
             _usageApi.Dispose();
             _codex.Dispose();
+            _kimi.Dispose();
             _openCodeGo.Dispose();
             _deepSeek.Dispose();
             _grok.Dispose();
@@ -633,6 +681,7 @@ public partial class MainWindow : Window
             _codexHook.Dispose();
             _grokHook.Dispose();
             _antigravityHook.Dispose();
+            _kimiHook.Dispose();
             _opencodeLastMsg.Dispose();
             _opencodeBusy.Dispose();
             _gajaeLastMsg.Dispose();
@@ -871,11 +920,13 @@ public partial class MainWindow : Window
 
         // codex·opencode-go·deepseek·grok 사용량 폴링 → 푸터 패널(데이터 오면 자동 표시).
         _codex.Updated       += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
+        _kimi.Updated        += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _openCodeGo.Updated  += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _deepSeek.Updated    += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _grok.Updated        += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _antigravityUsage.Updated += u => Dispatcher.InvokeAsync(() => ApplyProviderUsage(u));
         _codex.Start();
+        _kimi.Start();
         _openCodeGo.Start();
         _deepSeek.Start();
         _grok.Start();
@@ -908,6 +959,7 @@ public partial class MainWindow : Window
         }
 
         AddProviderCard(cards, _lastCodex, "Codex", App.CodexIconUri);
+        AddProviderCard(cards, _lastKimi, "Kimi", App.KimiIconUri);
         AddProviderCard(cards, _lastGo, "OpenCode Go", App.OpenCodeIconUri);
         AddGrokCard(cards);
         AddAntigravityCard(cards);
@@ -1228,6 +1280,12 @@ public partial class MainWindow : Window
                     CxSevenBar, CxSevenPct, u, "Codex",
                     primaryGroup: CxFiveGroup, weeklyGroup: CxSevenGroup);
                 break;
+            case "kimi":
+                _lastKimi = u;
+                SetProviderPanel(KimiPanel, KiFiveLabel, KiFiveBar, KiFivePct,
+                    KiSevenBar, KiSevenPct, u, "Kimi",
+                    primaryGroup: KiFiveGroup, weeklyGroup: KiSevenGroup);
+                break;
             case "opencode-go":
                 _lastGo = u;
                 SetProviderPanel(GoPanel, GoFiveLabel, GoFiveBar, GoFivePct, GoSevenBar, GoSevenPct, u, "OpenCode Go", GoMonthBar, GoMonthPct);
@@ -1289,6 +1347,9 @@ public partial class MainWindow : Window
     /// <summary>Grok 토큰/설정 변경 직후 즉시 폴링.</summary>
     public void RefreshGrokUsage() => _grok.RefreshNow();
 
+    /// <summary>Kimi 사용량 설정(푸터 토글) 변경 직후 즉시 재렌더.</summary>
+    public void RefreshKimiUsage() => _kimi.RefreshNow();
+
     /// <summary>DevezCode 사용량 연결만 끊는다. 외부 CLI 자격증명은 삭제하지 않는다.</summary>
     public void DisconnectUsageProvider(string provider)
     {
@@ -1308,6 +1369,9 @@ public partial class MainWindow : Window
                 break;
             case "deepseek":
                 DeepSeekCredentialStore.SaveApiKey(null);
+                break;
+            case "kimi":
+                _kimi.Disconnect();
                 break;
             default:
                 return;
@@ -1340,6 +1404,10 @@ public partial class MainWindow : Window
                 _lastDeepSeek = null;
                 DeepSeekPanel.Visibility = Visibility.Collapsed;
                 break;
+            case "kimi":
+                _lastKimi = null;
+                KimiPanel.Visibility = Visibility.Collapsed;
+                break;
         }
 
         UpdateFooterDivider();
@@ -1353,6 +1421,7 @@ public partial class MainWindow : Window
         "grok" => GrokUsageService.IsConnected(),
         "deepseek" => DeepSeekCredentialStore.IsConnected(),
         "antigravity" => AntigravityUsageService.IsConnected(),
+        "kimi" => KimiUsageService.IsConnected(),
         _ => true,
     };
 
@@ -1462,7 +1531,12 @@ public partial class MainWindow : Window
         Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null,
         StackPanel? primaryGroup = null, StackPanel? weeklyGroup = null)
     {
-        bool show = u.Provider == "codex" ? SettingsService.LoadShowFooterCodex() : SettingsService.LoadShowFooterGo();
+        bool show = u.Provider switch
+        {
+            "codex" => SettingsService.LoadShowFooterCodex(),
+            "kimi" => SettingsService.LoadShowFooterKimi(),
+            _ => SettingsService.LoadShowFooterGo(),
+        };
         if (!u.HasData || !show) { panel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
         panel.Visibility = Visibility.Visible;
         if (primaryGroup != null) primaryGroup.Visibility = u.Primary != null ? Visibility.Visible : Visibility.Collapsed;
@@ -1521,14 +1595,17 @@ public partial class MainWindow : Window
     {
         bool claude = RateLimitPanel.Visibility == Visibility.Visible;
         bool codex = CodexPanel.Visibility == Visibility.Visible;
+        bool kimi = KimiPanel.Visibility == Visibility.Visible;
         bool go = GoPanel.Visibility == Visibility.Visible;
         bool grok = GrokPanel.Visibility == Visibility.Visible;
         bool antigravity = AntigravityPanel.Visibility == Visibility.Visible;
+        // 푸터 패널 순서(XAML): claude → codex → kimi → go → grok → antigravity → deepseek.
         if (CxLeadDivider != null) CxLeadDivider.Visibility = claude ? Visibility.Visible : Visibility.Collapsed;
-        if (GoLeadDivider != null) GoLeadDivider.Visibility = (claude || codex) ? Visibility.Visible : Visibility.Collapsed;
-        if (GrokLeadDivider != null) GrokLeadDivider.Visibility = (claude || codex || go) ? Visibility.Visible : Visibility.Collapsed;
-        if (AntigravityLeadDivider != null) AntigravityLeadDivider.Visibility = (claude || codex || go || grok) ? Visibility.Visible : Visibility.Collapsed;
-        if (DeepSeekLeadDivider != null) DeepSeekLeadDivider.Visibility = (claude || codex || go || grok || antigravity) ? Visibility.Visible : Visibility.Collapsed;
+        if (KiLeadDivider != null) KiLeadDivider.Visibility = (claude || codex) ? Visibility.Visible : Visibility.Collapsed;
+        if (GoLeadDivider != null) GoLeadDivider.Visibility = (claude || codex || kimi) ? Visibility.Visible : Visibility.Collapsed;
+        if (GrokLeadDivider != null) GrokLeadDivider.Visibility = (claude || codex || kimi || go) ? Visibility.Visible : Visibility.Collapsed;
+        if (AntigravityLeadDivider != null) AntigravityLeadDivider.Visibility = (claude || codex || kimi || go || grok) ? Visibility.Visible : Visibility.Collapsed;
+        if (DeepSeekLeadDivider != null) DeepSeekLeadDivider.Visibility = (claude || codex || kimi || go || grok || antigravity) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static string BuildRlTooltip(Models.RateLimitSnapshot snap)
@@ -1670,6 +1747,7 @@ public partial class MainWindow : Window
         if (_rlMerged != null) ApplyRateLimit(_rlMerged);
         else { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastCodex != null) ApplyProviderUsage(_lastCodex); else { CodexPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
+        if (_lastKimi != null)  ApplyProviderUsage(_lastKimi);  else { KimiPanel.Visibility  = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastGo != null)       ApplyProviderUsage(_lastGo);       else { GoPanel.Visibility       = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastGrok != null)     ApplyProviderUsage(_lastGrok);     else { GrokPanel.Visibility     = Visibility.Collapsed; UpdateFooterDivider(); }
         if (_lastAntigravity != null) ApplyProviderUsage(_lastAntigravity); else { AntigravityPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); }
@@ -4619,7 +4697,7 @@ public partial class MainWindow : Window
     private static bool HasBusyOrWaitingTrackingFile(string? agentId, string roomId)
     {
         var agent = (agentId ?? "claude").Trim().ToLowerInvariant();
-        if (agent is not ("codex" or "opencode" or "grok" or "antigravity")) return false;
+        if (agent is not ("codex" or "opencode" or "grok" or "antigravity" or "kimi")) return false;
         var safe = new string(roomId.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
         if (safe.Length == 0) return true;
         var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -4907,6 +4985,7 @@ public partial class MainWindow : Window
         CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         GoFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri)); // 테마별 흑백 아이콘
         GrokFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
+        KimiFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.KimiIconUri));   // 테마별 흑백 아이콘
         RefreshUsagePanelIfVisible();                                                                      // 사용량 카드 아이콘도 재빌드
         RefreshSessionHistoryIcons();                                                                      // 완료기록/대기 카드 opencode 아이콘도 재빌드
     }));

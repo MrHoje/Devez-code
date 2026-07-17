@@ -817,6 +817,35 @@
                                            FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
                             </StackPanel>
                         </StackPanel>
+                        <!-- Kimi (정액제 플랜 사용량 — 표시 전용, 로그인은 kimi login CLI) -->
+                        <StackPanel x:Name="KimiPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
+                                    Background="Transparent" Cursor="Arrow">
+                            <Border x:Name="KiLeadDivider" Width="1" Height="12" Margin="14,0,14,0" VerticalAlignment="Center"
+                                    Background="{DynamicResource TextMutedBrush}" Opacity="0.55"/>
+                            <Image x:Name="KimiFooterIcon" Width="15" Height="15" Margin="0,0,7,0" VerticalAlignment="Center"
+                                   Source="pack://application:,,,/Resources/Images/ShellPresets/kimi_icon_white_50.png"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <StackPanel x:Name="KiFiveGroup" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="KiFiveLabel" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                        Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                    <Border x:Name="KiFiveBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                                </Border>
+                                <TextBlock x:Name="KiFivePct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                            <StackPanel x:Name="KiSevenGroup" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                                <TextBlock x:Name="KiSevenLabel" Text="주간" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
+                                <Border Width="56" Height="6" Margin="6,0,0,0" CornerRadius="3"
+                                        Background="{DynamicResource LineBrush}" VerticalAlignment="Center">
+                                    <Border x:Name="KiSevenBar" Width="0" HorizontalAlignment="Left" CornerRadius="3"/>
+                                </Border>
+                                <TextBlock x:Name="KiSevenPct" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
                         <!-- opencode-go (클릭 시 재로그인) -->
                         <StackPanel x:Name="GoPanel" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed"
                                     Background="Transparent" Cursor="Arrow">
