@@ -91,7 +91,8 @@ public sealed class SessionBusyService : IDisposable
     }
 
     /// <summary>방별 busy 파일을 "진실"(메인 턴 진행중 OR 살아있는 서브에이전트&gt;0)로 재평가해
-    /// 어긋난 경우에만 정정 기록 + BusyChanged emit. 훅이 놓치거나 레이스로 틀리게 쓴 상태를 복구한다.</summary>
+    /// 어긋난 경우에만 정정 기록 + BusyChanged emit. 훅이 놓치거나 레이스로 틀리게 쓴 상태를 복구한다.
+    /// waiting 파일도 함께 재읽어, FSW 가 놓친 idle↔permission/input 전이를 수렴시킨다.</summary>
     private void Reconcile()
     {
         bool anyActive = false;
@@ -110,6 +111,7 @@ public sealed class SessionBusyService : IDisposable
             }
             catch { }
             try { if (Directory.Exists(SubrunsDir)) foreach (var d in Directory.EnumerateDirectories(SubrunsDir)) rooms.Add(Path.GetFileName(d)); } catch { }
+            try { foreach (var f in Directory.EnumerateFiles(WaitingDir, "*.txt")) rooms.Add(Path.GetFileNameWithoutExtension(f)); } catch { }
 
             foreach (var room in rooms)
             {
@@ -119,13 +121,30 @@ public sealed class SessionBusyService : IDisposable
                 var busyFile = Path.Combine(Dir, room + ".txt");
                 var cur = TryRead(busyFile);
                 // 파일 없고 idle 이 진실이면 그대로 둔다(앱 시작 시 stale 방지 정책과 일관 — 새 파일 안 만듦).
-                if (cur == null && !truth) continue;
-                bool curBusy = string.Equals(cur, "running", StringComparison.OrdinalIgnoreCase);
-                if (curBusy == truth) continue; // 이미 일치 → 훅과 안 싸운다.
-                // 계측: reconcile 이 훅 기록과 다른 판정을 내린 순간 — 스피너 오표시("작업 중인데 꺼짐"류) 조사용.
-                DiagLog.Write($"busy[{room}] reconcile 정정: {(curBusy ? "running" : "idle")}→{(truth ? "running" : "idle")}");
-                try { AtomicFile.WriteAllText(busyFile, truth ? "running" : "idle"); } catch { /* 훅 쓰기와 경합 가능, 무시 */ }
-                BusyChanged?.Invoke(room, truth);
+                if (cur == null && !truth) { /* busy 정정 없음 */ }
+                else
+                {
+                    bool curBusy = string.Equals(cur, "running", StringComparison.OrdinalIgnoreCase);
+                    if (curBusy != truth)
+                    {
+                        // 계측: reconcile 이 훅 기록과 다른 판정을 내린 순간 — 스피너 오표시("작업 중인데 꺼짐"류) 조사용.
+                        DiagLog.Write($"busy[{room}] reconcile 정정: {(curBusy ? "running" : "idle")}→{(truth ? "running" : "idle")}");
+                        try { AtomicFile.WriteAllText(busyFile, truth ? "running" : "idle"); } catch { /* 훅 쓰기와 경합 가능, 무시 */ }
+                        BusyChanged?.Invoke(room, truth);
+                    }
+                }
+
+                // waiting: FSW 누락 전이만 복구(bool 변화 시에만 UI 이벤트). 매 tick 재무장은 하지 않음
+                // (Enter 낙관 해제 후 OS 알림 재발사·Dispatcher 스팸 방지).
+                var waitStatus = TryRead(Path.Combine(WaitingDir, room + ".txt"));
+                if (!string.IsNullOrWhiteSpace(waitStatus))
+                {
+                    bool waitActive = waitStatus.Equals("waiting", StringComparison.OrdinalIgnoreCase)
+                        || waitStatus.Equals("permission", StringComparison.OrdinalIgnoreCase)
+                        || waitStatus.Equals("input", StringComparison.OrdinalIgnoreCase);
+                    if (waitActive) anyActive = true;
+                    EmitWaitingKind(room, waitStatus, forceRearm: false);
+                }
             }
         }
         catch { /* reconcile 실패해도 앱은 계속 */ }
@@ -175,7 +194,8 @@ public sealed class SessionBusyService : IDisposable
             _ = ReEmitWaitingAfterSettleAsync(path, room);
             return;
         }
-        EmitWaitingKind(room, status);
+        // FSW = 실제 훅 쓰기 이벤트. forceRearm 으로 연속 선택지(permission→permission)도 UI 재무장.
+        EmitWaitingKind(room, status, forceRearm: true);
     }
 
     private async System.Threading.Tasks.Task ReEmitWaitingAfterSettleAsync(string path, string room)
@@ -185,23 +205,35 @@ public sealed class SessionBusyService : IDisposable
             await System.Threading.Tasks.Task.Delay(60).ConfigureAwait(false);
             var status = TryRead(path);
             if (string.IsNullOrWhiteSpace(status)) return; // 그래도 비면(파일 삭제 등) 포기
-            EmitWaitingKind(room, status);
+            EmitWaitingKind(room, status, forceRearm: true);
         }
         catch { /* fire-and-forget — 재읽기 실패해도 앱 영향 없음 */ }
     }
 
-    private void EmitWaitingKind(string room, string status)
+    /// <param name="forceRearm">true=FSW 경로. waiting 이 이미 true 여도 이벤트를 올려
+    /// Enter 낙관 해제·연속 동일 상태 재기록(permission→permission) 뒤 UI ❗ 을 다시 켠다.
+    /// false=reconcile. bool 변화(놓친 idle↔wait 전이)만 반영해 알림/틱 스팸을 막는다.</param>
+    private void EmitWaitingKind(string room, string status, bool forceRearm)
     {
         // 선택지·권한을 구분하지 않고 통틀어 '입력 대기(❗)'로 emit(permission/input/waiting 모두 대기 취급).
         bool waiting = status.Equals("waiting", StringComparison.OrdinalIgnoreCase)
             || status.Equals("permission", StringComparison.OrdinalIgnoreCase)
             || status.Equals("input", StringComparison.OrdinalIgnoreCase);
+        var key = "wait:" + room;
+        var prev = _lastEmitted.GetValueOrDefault(key);
+        bool prevWaiting = prev != null && (
+            prev.Equals("waiting", StringComparison.OrdinalIgnoreCase)
+            || prev.Equals("permission", StringComparison.OrdinalIgnoreCase)
+            || prev.Equals("input", StringComparison.OrdinalIgnoreCase));
         // 계측: ❗(입력 대기) 무장/해제 시각 — "멈춘 줄 알았는데 실은 권한/질문 대기였다" 판별용.
-        if (!string.Equals(status, _lastEmitted.GetValueOrDefault("wait:" + room), StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(status, prev, StringComparison.OrdinalIgnoreCase))
         {
-            _lastEmitted["wait:" + room] = status;
+            _lastEmitted[key] = status;
             DiagLog.Write($"wait[{room}]={status}");
         }
+        // reconcile: bool 동일하면 스킵. FSW 재무장은 waiting=true 일 때 UI 재동기화 허용
+        // (NotifyIfSessionWaiting 은 UI wasWaiting 기준이라 이미 ❗ 이면 알림 재발사 안 함).
+        if (prevWaiting == waiting && !(forceRearm && waiting)) return;
         WaitingChoiceChanged?.Invoke(room, waiting);
     }
 

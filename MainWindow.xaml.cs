@@ -234,9 +234,10 @@ public partial class MainWindow : Window
                 if (s != null)
                 {
                     s.IsBusy = busy;
-                    // 턴 종료(busy=false)면 선택지 대기일 수 없다 → ❗ 도 반드시 해제.
-                    // waiting 파일의 단발 idle 쓰기가 truncate 경합으로 watcher 에서 누락돼도 여기서 보강(완료까지 ❗ 박힘 방지).
-                    if (!busy) s.IsWaitingChoice = false;
+                    // 턴 종료(busy=false) 보강 해제. 단 waiting 파일이 아직 permission/input 이면
+                    // 권한·선택지 대기 중(busy 파일이 잠깐 idle 이거나 hard-need 알림)이므로 ❗ 유지.
+                    // wait idle FSW 누락으로 ❗ 고착되는 경우는 SessionBusyService reconcile 이 수렴.
+                    if (!busy && !IsClaudeWaitingFileActive(id)) s.IsWaitingChoice = false;
                 }
                 NotifyIfSessionFinished(s, was, busy, () => _sessionBusy.IsRoomActive(id));
                 UpdateSessionBusyDisplay();
@@ -4590,6 +4591,27 @@ public partial class MainWindow : Window
             return false;
 
         return TerminalSessionManager.CanSafelyResumeRoom(session.Id);
+    }
+
+    /// <summary>claude waiting 파일이 선택지/권한 대기 값인지. busy=false 보강 해제 시 ❗ 유지 판단용.</summary>
+    private static bool IsClaudeWaitingFileActive(string roomId)
+    {
+        try
+        {
+            var safe = new string(roomId.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
+            if (safe.Length == 0) return false;
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "claude", "waiting", safe + ".txt");
+            if (!File.Exists(path)) return false;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            var v = reader.ReadToEnd().Trim();
+            return v.Equals("waiting", StringComparison.OrdinalIgnoreCase)
+                || v.Equals("permission", StringComparison.OrdinalIgnoreCase)
+                || v.Equals("input", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 
     /// <summary>FileSystemWatcher 이벤트가 UI 큐에 아직 도착하지 않은 짧은 경합도 막는 최종 디스크 확인.

@@ -1564,7 +1564,8 @@ public sealed class TerminalSessionManager
             // settings 는 방별로 세션마다 생성되므로 공통 파일 대신 스크립트가 최신본인지 확인한다.
             var busy = File.ReadAllText(BusyHookScriptPath);
             return busy.Contains("roomArg") && busy.Contains("last_assistant_message") &&
-                   busy.Contains("Touch-LiveSubruns") && busy.Contains("'permission'");
+                   busy.Contains("Touch-LiveSubruns") && busy.Contains("'permission'") &&
+                   busy.Contains("agent_needs_input"); // ❗ Notification type 분기 + 서브 unwait 무시 버전
         }
         catch { return false; }
     }
@@ -1961,22 +1962,36 @@ public sealed class TerminalSessionManager
                   try { $j = $raw | ConvertFrom-Json } catch { }
 
                   # 입력 대기 ❗ 진입 신호.
-                  #  • notify(PermissionRequest): 실제 권한창 → 서브 실행중이라도 항상 무장(서브가 툴 권한 대기).
-                  #  • notifyidle(Notification 폴백): 살아있는 서브>0 이면 무장 안 함 — 이건 서브 완료를 기다리는
-                  #    동안 뜨는 '60초 idle' 알림이라 유저 블로킹이 아니다(Task 가 메인 턴을 블로킹하므로 서브 실행중
-                  #    메인이 유저에게 물을 수 없다 → 이때 Notification 은 오탐). 서브 없으면 메인이 진짜 유저 대기 → 무장.
-                  # 둘 다 busy=running 일 때만 기록(완전 idle 알림 제외). 두 번째 연속 선택지도 매번 재무장.
+                  #  • notify(PermissionRequest / PreToolUse AskUserQuestion): 실제 권한·선택지 → 서브 실행중이라도 항상 무장.
+                  #  • notifyidle(Notification): notification_type 으로 분기.
+                  #      permission_prompt / agent_needs_input / elicitation_dialog = 진짜 유저 블로킹 → 서브 유무·busy 와 무관 무장.
+                  #      idle_prompt 등 소프트 알림 = 살아있는 서브>0 이면 스킵(서브 완료 대기 중 60초 idle 오탐 방지),
+                  #        busy=running 일 때만 무장(완전 idle 알림 제외).
+                  #      agent_completed / auth_success / elicitation_complete|response = 무장 안 함.
+                  # 두 번째 연속 선택지도 매번 재무장.
                   if ($status -eq 'notify' -or $status -eq 'notifyidle') {
-                    if ($status -eq 'notifyidle' -and (Get-LiveSubCount $runDir) -gt 0) { exit 0 }
-                    $b = ''; try { if (Test-Path -LiteralPath $busyFile) { $b = (Get-Content -LiteralPath $busyFile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
-                    if ($b -eq 'running') {
-                      $waitValue = if ($status -eq 'notify') { 'permission' } else { 'input' }
-                      Write-State $waitFile $waitValue
+                    $nType = ''
+                    try { $nType = ('' + $j.notification_type).Trim().ToLowerInvariant() } catch { }
+                    $hardNeed = $status -eq 'notify' -or $nType -in @('permission_prompt','agent_needs_input','elicitation_dialog')
+                    $ignoreNeed = $nType -in @('agent_completed','auth_success','elicitation_complete','elicitation_response')
+                    if ($ignoreNeed) { exit 0 }
+                    if (-not $hardNeed) {
+                      # 소프트 알림(idle_prompt 등): 서브 생존 중이면 메인 유저대기 오탐 → 스킵.
+                      if ((Get-LiveSubCount $runDir) -gt 0) { exit 0 }
+                      $b = ''; try { if (Test-Path -LiteralPath $busyFile) { $b = (Get-Content -LiteralPath $busyFile -Raw -ErrorAction SilentlyContinue).Trim() } } catch { }
+                      if ($b -ne 'running') { exit 0 }
                     }
+                    $waitValue = if ($hardNeed) { 'permission' } else { 'input' }
+                    Write-State $waitFile $waitValue
                     exit 0
                   }
                   # PostToolUse 등 = 답변 처리 재개 → 선택지 대기 해제.
+                  # 서브에이전트 훅에도 같은 room 설정이 붙으므로, 서브 툴 완료 unwait 가 메인 권한/선택지 ❗ 을
+                  # 지울 수 있다. 메인 턴이 살아 있으면(main 플래그) 서브 unwait 는 무시해 메인 대기를 보호.
+                  # 메인 턴이 이미 끝난 뒤 서브만 남는 구간에서는 서브 unwait 를 허용해, 서브 권한 승인 후 ❗ 고착을 막는다.
                   if ($status -eq 'unwait') {
+                    $aid = ''; try { $aid = ('' + $j.agent_id) -replace '[^\w\-]', '' } catch { }
+                    if ($aid -and (Test-Path -LiteralPath $mainFile)) { exit 0 }
                     Touch-LiveSubruns $runDir
                     Write-State $waitFile 'idle'
                     exit 0
