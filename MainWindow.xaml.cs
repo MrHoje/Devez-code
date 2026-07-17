@@ -1998,6 +1998,19 @@ public partial class MainWindow : Window
         finally { _panelCoverBusy = false; }
     }
 
+    /// <summary>타이틀 "DevezCode" 세 번 클릭 → GPU/소프트웨어 렌더 즉시 전환(설정 영속 + 토스트).</summary>
+    private void TitleLogo_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 3) return;
+        e.Handled = true;
+        bool useGpu = App.ToggleRenderMode();
+        App.ShowNotification(
+            useGpu ? "GPU 렌더" : "소프트웨어 렌더",
+            useGpu
+                ? "하드웨어 가속을 켰습니다. 로컬에서 더 매끄럽습니다."
+                : "소프트웨어 렌더로 전환했습니다. Chrome Remote 등에서 UI가 멈출 때 사용하세요.");
+    }
+
     private void LeftPanelBtn_Click(object sender, RoutedEventArgs e) => RunPanelToggleCovered(ToggleLeftPanel);
 
     private void ToggleLeftPanel()

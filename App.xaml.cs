@@ -115,9 +115,10 @@ public partial class App : Application
         }
 
         // 원격 접속(RDP/터미널 세션, Chrome Remote Desktop)에서는 GPU 합성 화면이 원격 프로토콜로
-        // 전달되지 않아 창이 검게/안 보인다. 이런 환경에서만 소프트웨어 렌더링으로 강제한다.
-        // ProcessRenderMode 는 첫 비주얼 생성 전에만 의미가 있으므로 반드시 여기서 설정한다.
-        if (IsRemoteSession() || IsCrdSessionActive())
+        // 전달되지 않아 창이 검게/안 보이거나 멈춰 보인다. 원격이거나 사용자가 GPU 를 끈 경우
+        // 소프트웨어 렌더링으로 강제한다. ProcessRenderMode 는 첫 비주얼 생성 전에 가장 확실하고,
+        // 이후에는 타이틀 로고 세 번 클릭(ApplyRenderMode)으로 창 단위 전환이 가능하다.
+        if (IsRemoteSession() || IsCrdSessionActive() || !SettingsService.LoadUseGpuAcceleration())
             RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
 
         base.OnStartup(e);
@@ -366,6 +367,63 @@ public partial class App : Application
     {
         try { return System.Diagnostics.Process.GetProcessesByName("remoting_desktop").Length > 0; }
         catch { return false; }
+    }
+
+    /// <summary>현재 프로세스/메인 창이 소프트웨어 렌더인지.</summary>
+    public static bool IsSoftwareRenderingActive()
+    {
+        if (RenderOptions.ProcessRenderMode == RenderMode.SoftwareOnly) return true;
+        try
+        {
+            var w = Current?.MainWindow;
+            if (w != null && PresentationSource.FromVisual(w) is HwndSource src
+                && src.CompositionTarget is HwndTarget ht)
+                return ht.RenderMode == RenderMode.SoftwareOnly;
+        }
+        catch { /* best effort */ }
+        return false;
+    }
+
+    /// <summary>GPU ↔ 소프트웨어 렌더 전환. 설정 영속 + 열린 창에 즉시 적용(재시작 없이 CRD 대응용).
+    /// ProcessRenderMode 는 시작 전 설정이 가장 확실하지만, 창별 HwndTarget.RenderMode 는 런타임 변경 가능.</summary>
+    public static void ApplyRenderMode(bool useGpu)
+    {
+        var mode = useGpu ? RenderMode.Default : RenderMode.SoftwareOnly;
+        try { RenderOptions.ProcessRenderMode = mode; } catch { /* 이미 비주얼이 있어도 best-effort */ }
+        try { SettingsService.SaveUseGpuAcceleration(useGpu); } catch { /* 영속 실패는 무시 */ }
+
+        void applyAll()
+        {
+            var app = Current;
+            if (app == null) return;
+            foreach (Window w in app.Windows)
+                ApplyWindowRenderMode(w, mode);
+        }
+
+        var cur = Current;
+        if (cur == null) return;
+        if (cur.Dispatcher.CheckAccess()) applyAll();
+        else cur.Dispatcher.Invoke(applyAll);
+    }
+
+    /// <summary>GPU/소프트웨어 토글. 전환 후 모드를 반환(true=GPU).</summary>
+    public static bool ToggleRenderMode()
+    {
+        bool useGpu = IsSoftwareRenderingActive(); // 소프트 → GPU, GPU → 소프트
+        ApplyRenderMode(useGpu);
+        return useGpu;
+    }
+
+    private static void ApplyWindowRenderMode(Window w, RenderMode mode)
+    {
+        try
+        {
+            if (PresentationSource.FromVisual(w) is HwndSource src
+                && src.CompositionTarget is HwndTarget ht)
+                ht.RenderMode = mode;
+            w.InvalidateVisual();
+        }
+        catch { /* 창별 best-effort */ }
     }
 
     protected override void OnExit(ExitEventArgs e)

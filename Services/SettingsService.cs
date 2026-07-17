@@ -182,6 +182,9 @@ public static class SettingsService
         public string NotifyMonitorDevice { get; set; } = "";
         // 알림 자동 닫힘 시간(초). 1~10, 0=영구(자동 닫힘 없음). 기본 6초.
         public int NotifyAutoCloseSeconds { get; set; } = 6;
+        // WPF GPU 하드웨어 가속. false 면 SoftwareOnly(원격/CRD 캡처 안정). 기본 true.
+        // 시작 시 적용 + 타이틀 로고 세 번 클릭으로 런타임 전환. 원격 세션이면 시작 시 강제 소프트.
+        public bool UseGpuAcceleration { get; set; } = true;
     }
 
     private static readonly object _lock = new();
@@ -237,6 +240,10 @@ public static class SettingsService
     // ── 앱 전체 글꼴 크기 단계 (devez 이식: 0=작게, 1=크게) ───────
     public static int LoadFontScale() => Current.FontScale;
     public static void SaveFontScale(int v) { Current.FontScale = v; Save(); }
+
+    // ── GPU 하드웨어 가속 (false = SoftwareOnly, 원격/CRD용) ─────
+    public static bool LoadUseGpuAcceleration() => Current.UseGpuAcceleration;
+    public static void SaveUseGpuAcceleration(bool v) { Current.UseGpuAcceleration = v; Save(); }
 
     // ── 토큰 사용량 비용 단가(외부 설정). 갱신 절차: .knowledge/토큰사용량-단가-갱신.md ──
     public static List<UsagePriceRule> LoadUsagePricing() => Current.UsagePricing;
