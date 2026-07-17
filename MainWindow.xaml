@@ -36,13 +36,12 @@
                 <StackPanel x:Name="TitleLogoBlock" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0"
                             HorizontalAlignment="Left"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <!-- 세 번 클릭: GPU ↔ 소프트웨어 렌더 전환(원격/CRD 시 UI 정지 대응, 재시작 불필요) -->
+                    <!-- 세 번 클릭: GPU ↔ 소프트웨어 렌더 전환(원격/CRD 시 UI 정지 대응, 재시작 불필요). 알림 없음. -->
                     <TextBlock x:Name="TitleLogoText" Text="DevezCode" FontSize="12" FontWeight="Bold"
                                FontFamily="{StaticResource BrunoAceSCFont}"
                                Foreground="{DynamicResource TextBrush}"
                                VerticalAlignment="Center" Margin="3,1,0,0"
                                Cursor="Arrow"
-                               ToolTip="세 번 클릭: GPU/소프트웨어 렌더 전환"
                                MouseLeftButtonDown="TitleLogo_MouseLeftButtonDown"/>
                     <!-- 왼쪽 패널 접기/펼치기 — 타이틀 바로 옆에 배치(원위치) -->
                     <Button x:Name="LeftPanelBtn" Click="LeftPanelBtn_Click" Margin="8,0,0,0"
