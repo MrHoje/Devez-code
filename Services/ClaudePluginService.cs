@@ -169,34 +169,6 @@ public static class ClaudePluginService
         return list;
     }
 
-    // ── devez 마켓플레이스 자동설치 ───────────────────────────────
-    public const string DevezMarketplaceUrl = "https://github.com/MrHoje/devez-marketplace.git";
-
-    /// <summary>시작 시 devez 마켓플레이스가 없으면 조용히(콘솔 없이) 자동 추가.
-    /// 한 번 확인되면 설정 플래그로 이후 실행에선 CLI 체크 자체를 건너뛴다(가벼움).
-    /// 백그라운드에서 호출할 것 — UI 를 막지 않는다.</summary>
-    public static async Task EnsureDevezMarketplaceAsync()
-    {
-        if (SettingsService.LoadDevezMarketplaceEnsured()) return;   // 이미 확인됨 → 비용 0
-        try
-        {
-            var list = await MarketplacesAsync();
-            static string Norm(string s) => (s ?? "").Trim().TrimEnd('/').ToLowerInvariant()
-                .Replace("https://", "").Replace("http://", "").Replace(".git", "");
-            var target = Norm(DevezMarketplaceUrl);              // github.com/mrhoje/devez-marketplace
-            bool present = list.Any(m => Norm(m.Url) == target
-                                      || Norm(m.Url).EndsWith("mrhoje/devez-marketplace")
-                                      || Norm(m.Repo).EndsWith("mrhoje/devez-marketplace"));
-            if (!present)
-            {
-                var r = await MarketplaceAddAsync(DevezMarketplaceUrl);
-                present = r.Ok;
-            }
-            if (present) SettingsService.SaveDevezMarketplaceEnsured(true);
-        }
-        catch { /* 오프라인/CLI 미설치 등 — 다음 실행에서 다시 시도 */ }
-    }
-
     public static async Task<List<ClaudeMarketplace>> MarketplacesAsync()
     {
         var list = new List<ClaudeMarketplace>();
