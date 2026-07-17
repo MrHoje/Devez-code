@@ -119,10 +119,11 @@
                           Width="16" Height="16" VerticalAlignment="Center"
                           Stroke="{DynamicResource TextBrush}"
                           Margin="0,-1,11,0"/>
-                    <TextBlock Text="Claude 플러그인 관리" VerticalAlignment="Center"
+                    <TextBlock x:Name="HeaderTitle" Text="플러그인 관리" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}"/>
-                    <TextBlock Text="플러그인 변경사항은 세션 재실행 또는 /reload-plugins 호출 후 적용됩니다."
+                    <TextBlock x:Name="HeaderHint"
+                               Text="Claude · Codex 각각 독립 관리. 변경 후 세션 재실행 또는 /reload-plugins."
                                VerticalAlignment="Center" Margin="14,1,0,0"
                                FontSize="{DynamicResource Fs11}"
                                Foreground="{DynamicResource TextMutedBrush}"/>
@@ -149,10 +150,58 @@
                 <ColumnDefinition x:Name="OutputCol" Width="403" MinWidth="340"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 좌: 탭 -->
+            <!-- 좌: 에이전트 전환 + 탭 (Claude / Codex 독립 동작) -->
             <Border Grid.Column="0" Background="{DynamicResource PanelSoftBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
                 <StackPanel Margin="12,16,12,16">
+                    <!-- 에이전트 선택: Claude ↔ Codex 완전 분리 (목록·출력·CLI 각각) -->
+                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="8" Padding="3" Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="ClaudeAgentBtn" Grid.Column="0" Tag="claude"
+                                    Click="AgentHost_Click" Cursor="Arrow"
+                                    FocusVisualStyle="{x:Null}" BorderThickness="0"
+                                    Padding="0,7" FontSize="{DynamicResource Fs12}"
+                                    FontWeight="SemiBold" HorizontalContentAlignment="Center"
+                                    Background="{DynamicResource PrimarySoftBrush}"
+                                    Foreground="{DynamicResource PrimaryBrush}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                                              TextElement.FontWeight="{TemplateBinding FontWeight}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <TextBlock Text="Claude"/>
+                            </Button>
+                            <Button x:Name="CodexAgentBtn" Grid.Column="1" Tag="codex"
+                                    Click="AgentHost_Click" Cursor="Arrow"
+                                    FocusVisualStyle="{x:Null}" BorderThickness="0"
+                                    Padding="0,7" FontSize="{DynamicResource Fs12}"
+                                    FontWeight="Normal" HorizontalContentAlignment="Center"
+                                    Background="Transparent"
+                                    Foreground="{DynamicResource TextMutedBrush}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                                              TextElement.FontWeight="{TemplateBinding FontWeight}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <TextBlock Text="Codex"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
                     <Button x:Name="PluginTabBtn" Tag="plugins" Style="{StaticResource CategoryItem}"
                             Click="Tab_Click">
                         <StackPanel Orientation="Horizontal">

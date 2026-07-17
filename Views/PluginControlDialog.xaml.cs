@@ -14,11 +14,17 @@ using DevezCode.Services;
 
 namespace DevezCode.Views;
 
-/// <summary>Claude Code 플러그인 관리 대시보드. 좌측 탭(플러그인 / 마켓플레이스) · 중앙 리스트 · 우측 출력 영역.
-/// 상세/업데이트/삭제 등 CLI 실행 결과는 우측 출력 영역에 표시. 모든 제어는 <see cref="ClaudePluginService"/> 경유.</summary>
+/// <summary>플러그인 관리 대시보드. Claude / Codex 를 좌측 상단에서 전환하며
+/// 목록·출력·CLI 는 에이전트별로 완전 분리 동작한다.
+/// 탭(플러그인 / 마켓플레이스) · 중앙 리스트 · 우측 출력 영역 구성.
+/// Claude 는 <see cref="ClaudePluginService"/>, Codex 는 <see cref="CodexPluginService"/> 경유.</summary>
 public partial class PluginControlDialog : UserControl
 {
     public event EventHandler? CloseRequested;
+
+    /// <summary>현재 호스트 에이전트. "claude" | "codex". 전환 시 목록·출력을 각각 독립 보관.</summary>
+    private string _agent = "claude";
+    private bool IsCodex => _agent == "codex";
 
     private readonly ObservableCollection<ClaudePlugin> _plugins = new();
     private readonly ObservableCollection<ClaudeMarketplace> _markets = new();
@@ -34,11 +40,9 @@ public partial class PluginControlDialog : UserControl
     // 번호가 현재 선택과 다르면 결과를 버려 카드/출력/Discover 상태를 섞지 않는다.
     private int _pluginDetailRequest;
     private int _marketDetailRequest;
-    // 출력은 탭별로 분리 저장 — 탭 전환 시 서로의 내용이 유지되지 않는다.
-    private string _outPlugins = "";
-    private string _outMarket = "";
-    private string _outSkills = "";
-    private string _outAgents = "";
+    // 출력은 에이전트×탭 별로 분리 — Claude 출력과 Codex 출력이 섞이지 않는다.
+    private string _outPluginsClaude = "", _outMarketClaude = "", _outSkillsClaude = "", _outAgentsClaude = "";
+    private string _outPluginsCodex = "", _outMarketCodex = "";
     private bool _busy;
     private bool _pendingRefresh;   // 로딩 중 들어온 탭 전환/새로고침 예약
     private bool _disposed;
@@ -70,12 +74,76 @@ public partial class PluginControlDialog : UserControl
         CollectionViewSource.GetDefaultView(_agents).Filter = o => o is ClaudeAgent a && Match(a.Name, a.Description);
         // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
         // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
-        Loaded += (_, _) => SetTabVisual("plugins");
+        Loaded += (_, _) => { SetAgentVisual("claude"); SetTabVisual("plugins"); };
         Unloaded += (_, _) => { _disposed = true; _searchDebounce.Stop(); _discSearchDebounce.Stop(); };
     }
 
     /// <summary>창 오픈 애니메이션 완료 후 호출 — 첫 목록 로드를 시작한다.</summary>
     public async void BeginInitialLoad() { await RefreshAsync(); }
+
+    // ── 에이전트 호스트 전환 (Claude ↔ Codex, 완전 분리) ──────────
+    private async void AgentHost_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button b || b.Tag is not string id || id == _agent) return;
+        await SetAgentAsync(id);
+    }
+
+    private async Task SetAgentAsync(string agent)
+    {
+        if (agent != "claude" && agent != "codex") return;
+        if (agent == _agent) return;
+
+        // 현재 에이전트 선택·Discover·편집 상태를 정리한 뒤 호스트만 교체.
+        CloseDiscover();
+        ExitEditor();
+        if (_selectedPlugin != null) { _selectedPlugin.IsSelected = false; _selectedPlugin = null; }
+        _pluginDetailRequest++;
+        _marketDetailRequest++;
+
+        _agent = agent;
+        SetAgentVisual(agent);
+
+        // 목록은 에이전트별로 섞이지 않게 비우고 다시 로드.
+        _plugins.Clear();
+        _markets.Clear();
+        _avail.Clear();
+        // Codex 에는 스킬/에이전트 탭이 없음(이미 Collapsed). Claude 로 돌아올 때도 plugins 유지.
+        if (IsCodex && (_tab is "skills" or "agents"))
+            SetTabVisual("plugins");
+        else
+            SetTabVisual(_tab);
+
+        RestoreOutputForTab();
+        UpdateHeaderTitle();
+        await RefreshAsync();
+    }
+
+    private void SetAgentVisual(string agent)
+    {
+        bool claude = agent == "claude";
+        StyleAgentHost(ClaudeAgentBtn, claude);
+        StyleAgentHost(CodexAgentBtn, !claude);
+        UpdateHeaderTitle();
+    }
+
+    private void StyleAgentHost(Button btn, bool active)
+    {
+        btn.Background = active ? (Brush)FindResource("PrimarySoftBrush") : Brushes.Transparent;
+        btn.Foreground = active ? (Brush)FindResource("PrimaryBrush") : (Brush)FindResource("TextMutedBrush");
+        btn.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+    }
+
+    private void UpdateHeaderTitle()
+    {
+        if (HeaderTitle == null) return;
+        HeaderTitle.Text = IsCodex ? "Codex 플러그인 관리" : "Claude 플러그인 관리";
+        if (HeaderHint != null)
+            HeaderHint.Text = IsCodex
+                ? "변경사항은 새 Codex 세션에서 적용됩니다. (/plugins 와 동일 소스)"
+                : "변경사항은 세션 재실행 또는 /reload-plugins 호출 후 적용됩니다.";
+        var w = Window.GetWindow(this);
+        if (w != null) w.Title = HeaderTitle.Text;
+    }
 
     private bool Match(params string?[] fields)
         => string.IsNullOrEmpty(_query)
@@ -211,29 +279,41 @@ public partial class PluginControlDialog : UserControl
             {
                 _pendingRefresh = false;
                 var tab = _tab;
+                // 에이전트 호스트가 바뀌었으면 이 스냅샷은 버린다(Claude/Codex 목록 혼입 방지).
+                var agent = _agent;
                 if (tab == "plugins")
                 {
-                    var list = await ClaudePluginService.ListAsync();
+                    var list = IsCodex
+                        ? await CodexPluginService.ListAsync()
+                        : await ClaudePluginService.ListAsync();
                     if (_disposed) return;
-                    if (_tab == tab) MergeInto(list);   // 로딩 중 탭이 바뀌었으면 적용하지 않고 루프 재실행
+                    if (_tab == tab && _agent == agent) MergeInto(list);
                 }
                 else if (tab == "marketplaces")
                 {
-                    var list = await ClaudePluginService.MarketplacesAsync();
+                    var list = IsCodex
+                        ? await CodexPluginService.MarketplacesAsync()
+                        : await ClaudePluginService.MarketplacesAsync();
                     if (_disposed) return;
-                    if (_tab == tab) { _markets.Clear(); foreach (var m in list) _markets.Add(m); }
+                    if (_tab == tab && _agent == agent)
+                    { _markets.Clear(); foreach (var m in list) _markets.Add(m); }
                 }
                 else if (tab == "skills")
                 {
+                    // 스킬/에이전트는 Claude 전용.
+                    if (IsCodex) continue;
                     var list = await ClaudeExtensionService.SkillsAsync();
                     if (_disposed) return;
-                    if (_tab == tab) { _skills.Clear(); foreach (var s in list) _skills.Add(s); }
+                    if (_tab == tab && _agent == agent)
+                    { _skills.Clear(); foreach (var s in list) _skills.Add(s); }
                 }
                 else
                 {
+                    if (IsCodex) continue;
                     var list = await ClaudeExtensionService.AgentsAsync();
                     if (_disposed) return;
-                    if (_tab == tab) { _agents.Clear(); foreach (var a in list) _agents.Add(a); }
+                    if (_tab == tab && _agent == agent)
+                    { _agents.Clear(); foreach (var a in list) _agents.Add(a); }
                 }
                 UpdateEmptyForTab();
             }
@@ -285,8 +365,9 @@ public partial class PluginControlDialog : UserControl
         cb.IsEnabled = false;
         try
         {
-            var result = target ? await ClaudePluginService.EnableAsync(p.Id)
-                                 : await ClaudePluginService.DisableAsync(p.Id);
+            var result = IsCodex
+                ? (target ? await CodexPluginService.EnableAsync(p.Id) : await CodexPluginService.DisableAsync(p.Id))
+                : (target ? await ClaudePluginService.EnableAsync(p.Id) : await ClaudePluginService.DisableAsync(p.Id));
             p.Enabled = target;
             ShowOutput($"{(target ? "enable" : "disable")} · {p.Name}",
                 string.IsNullOrWhiteSpace(result) ? "완료." : result);
@@ -303,7 +384,9 @@ public partial class PluginControlDialog : UserControl
         p.IsSelected = true;
         ShowOutput($"details · {p.Name}", "조회 중…");
         var request = ++_pluginDetailRequest;
-        var result = await ClaudePluginService.DetailsAsync(p.Id);
+        var result = IsCodex
+            ? await CodexPluginService.DetailsAsync(p.Id)
+            : await ClaudePluginService.DetailsAsync(p.Id);
         if (_disposed || request != _pluginDetailRequest || !ReferenceEquals(_selectedPlugin, p)) return;
         ShowOutput($"details · {p.Name}", string.IsNullOrWhiteSpace(result) ? "(출력 없음)" : result);
     }
@@ -311,8 +394,12 @@ public partial class PluginControlDialog : UserControl
     private async void Update_Click(object sender, RoutedEventArgs e)
     {
         if (PluginOf(sender) is not ClaudePlugin p) return;
-        ShowOutput($"update · {p.Name}", "업데이트 중… (재시작이 필요할 수 있습니다)");
-        var result = await ClaudePluginService.UpdateAsync(p.Id);
+        ShowOutput($"update · {p.Name}", IsCodex
+            ? "마켓플레이스 스냅샷 갱신 중…"
+            : "업데이트 중… (재시작이 필요할 수 있습니다)");
+        var result = IsCodex
+            ? await CodexPluginService.UpdateAsync(p.Id)
+            : await ClaudePluginService.UpdateAsync(p.Id);
         ShowOutput($"update · {p.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
         await RefreshAsync();
     }
@@ -323,7 +410,9 @@ public partial class PluginControlDialog : UserControl
         if (!ConfirmDialog.Show("플러그인 삭제", $"'{p.Name}' 플러그인을 삭제할까요?", "삭제", danger: true))
             return;
         ShowOutput($"uninstall · {p.Name}", "삭제 중…");
-        var result = await ClaudePluginService.UninstallAsync(p.Id);
+        var result = IsCodex
+            ? await CodexPluginService.UninstallAsync(p.Id)
+            : await ClaudePluginService.UninstallAsync(p.Id);
         ShowOutput($"uninstall · {p.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
         await RefreshAsync();
     }
@@ -335,7 +424,9 @@ public partial class PluginControlDialog : UserControl
             "설치할 플러그인 이름을 입력하세요. 특정 마켓플레이스는 name@marketplace 형식.", okLabel: "설치");
         if (string.IsNullOrWhiteSpace(input)) return;
         ShowOutput("install", $"'{input}' 설치 중… (잠시 걸릴 수 있습니다)");
-        var r = await ClaudePluginService.InstallAsync(input);
+        var r = IsCodex
+            ? ToClaudeCli(await CodexPluginService.InstallAsync(input))
+            : await ClaudePluginService.InstallAsync(input);
         if (_disposed) return;
         ShowOutput("install", string.IsNullOrWhiteSpace(r.Text) ? (r.Ok ? "완료." : "설치 실패") : r.Text, isError: !r.Ok);
         await RefreshAsync();   // 설치 후 목록 자동 갱신
@@ -343,6 +434,15 @@ public partial class PluginControlDialog : UserControl
 
     private async void PluginUpdateAll_Click(object sender, RoutedEventArgs e)
     {
+        // Codex 는 개별 update CLI 가 없어 마켓플레이스 전체 upgrade 한 번으로 처리.
+        if (IsCodex)
+        {
+            ShowOutput("marketplace upgrade", "등록된 Git 마켓플레이스 스냅샷 갱신 중…");
+            var result = await CodexPluginService.MarketplaceUpdateAsync();
+            ShowOutput("marketplace upgrade", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+            await RefreshAsync();
+            return;
+        }
         var targets = _plugins.ToList();
         if (targets.Count == 0) { ShowOutput("update --all", "설치된 플러그인이 없습니다."); return; }
         var sb = new System.Text.StringBuilder();
@@ -358,12 +458,16 @@ public partial class PluginControlDialog : UserControl
         await RefreshAsync();
     }
 
+    /// <summary>Codex CliResult → Claude CliResult 형태로 통일(설치/마켓 추가 공용).</summary>
+    private static ClaudePluginService.CliResult ToClaudeCli(CodexPluginService.CliResult r)
+        => new(r.Ok, r.Text);
+
     // ── Discover(설치 가능한 플러그인) ────────────────────────────
     // 카드 클릭 → 상세 팝업(좌: 이름·설명 + 설치, 우: 출력).
     private void DiscoverCard_Click(object sender, MouseButtonEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ClaudeAvailablePlugin a) return;
-        var win = new PluginDetailWindow(a) { Owner = Window.GetWindow(this) };
+        var win = new PluginDetailWindow(a, _agent) { Owner = Window.GetWindow(this) };
         win.ShowDialog();
         // 팝업에서 설치했으면 설치 가능한 목록에서 제거 + 플러그인 탭 목록을 뒤에서 미리 갱신.
         if (win.Installed)
@@ -380,8 +484,11 @@ public partial class PluginControlDialog : UserControl
     {
         try
         {
-            var list = await ClaudePluginService.ListAsync();
-            if (_disposed) return;
+            var agent = _agent;
+            var list = IsCodex
+                ? await CodexPluginService.ListAsync()
+                : await ClaudePluginService.ListAsync();
+            if (_disposed || _agent != agent) return;
             MergeInto(list);
             if (_tab == "plugins") UpdateEmptyForTab();
         }
@@ -395,7 +502,9 @@ public partial class PluginControlDialog : UserControl
             "URL · 로컬 경로 · GitHub 저장소(owner/repo) 중\n하나를 입력하세요.", okLabel: "추가");
         if (string.IsNullOrWhiteSpace(input)) return;
         ShowOutput("marketplace add", $"'{input}' 추가 중… (잠시 걸릴 수 있습니다)");
-        var r = await ClaudePluginService.MarketplaceAddAsync(input);
+        var r = IsCodex
+            ? ToClaudeCli(await CodexPluginService.MarketplaceAddAsync(input))
+            : await ClaudePluginService.MarketplaceAddAsync(input);
         if (_disposed) return;
         ShowOutput("marketplace add", string.IsNullOrWhiteSpace(r.Text) ? (r.Ok ? "완료." : "추가 실패") : r.Text, isError: !r.Ok);
         await RefreshAsync();   // 추가 후 목록 자동 갱신
@@ -403,9 +512,12 @@ public partial class PluginControlDialog : UserControl
 
     private async void MarketUpdateAll_Click(object sender, RoutedEventArgs e)
     {
-        ShowOutput("marketplace update", "업데이트 중…");
-        var result = await ClaudePluginService.MarketplaceUpdateAsync();
-        ShowOutput("marketplace update", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+        ShowOutput(IsCodex ? "marketplace upgrade" : "marketplace update", "업데이트 중…");
+        var result = IsCodex
+            ? await CodexPluginService.MarketplaceUpdateAsync()
+            : await ClaudePluginService.MarketplaceUpdateAsync();
+        ShowOutput(IsCodex ? "marketplace upgrade" : "marketplace update",
+            string.IsNullOrWhiteSpace(result) ? "완료." : result);
         await RefreshAsync();
     }
 
@@ -440,8 +552,12 @@ public partial class PluginControlDialog : UserControl
         _avail.Clear();
         try
         {
-            var list = await ClaudePluginService.AvailableAsync();
-            if (_disposed || request != _marketDetailRequest || !ReferenceEquals(_selectedMarket, m)) return;
+            var agent = _agent;
+            var list = IsCodex
+                ? await CodexPluginService.AvailableAsync()
+                : await ClaudePluginService.AvailableAsync();
+            if (_disposed || request != _marketDetailRequest || !ReferenceEquals(_selectedMarket, m) || _agent != agent)
+                return;
             // 설치된 것을 상단에 모은다(설치됨 → 설치 수 내림차순).
             foreach (var a in list.Where(a => string.Equals(a.Marketplace, m.Name, StringComparison.OrdinalIgnoreCase))
                                    .OrderByDescending(a => a.IsInstalled)
@@ -499,9 +615,12 @@ public partial class PluginControlDialog : UserControl
     private async void MarketItemUpdate_Click(object sender, RoutedEventArgs e)
     {
         if (MarketOf(sender) is not ClaudeMarketplace m) return;
-        ShowOutput($"marketplace update · {m.Name}", "업데이트 중…");
-        var result = await ClaudePluginService.MarketplaceUpdateAsync(m.Name);
-        ShowOutput($"marketplace update · {m.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
+        var verb = IsCodex ? "upgrade" : "update";
+        ShowOutput($"marketplace {verb} · {m.Name}", "업데이트 중…");
+        var result = IsCodex
+            ? await CodexPluginService.MarketplaceUpdateAsync(m.Name)
+            : await ClaudePluginService.MarketplaceUpdateAsync(m.Name);
+        ShowOutput($"marketplace {verb} · {m.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
     }
 
     private async void MarketItemRemove_Click(object sender, RoutedEventArgs e)
@@ -510,7 +629,9 @@ public partial class PluginControlDialog : UserControl
         if (!ConfirmDialog.Show("마켓플레이스 삭제", $"'{m.Name}' 마켓플레이스를 삭제할까요?", "삭제", danger: true))
             return;
         ShowOutput($"marketplace remove · {m.Name}", "삭제 중…");
-        var result = await ClaudePluginService.MarketplaceRemoveAsync(m.Name);
+        var result = IsCodex
+            ? await CodexPluginService.MarketplaceRemoveAsync(m.Name)
+            : await ClaudePluginService.MarketplaceRemoveAsync(m.Name);
         ShowOutput($"marketplace remove · {m.Name}", string.IsNullOrWhiteSpace(result) ? "완료." : result);
         await RefreshAsync();
     }
@@ -664,27 +785,40 @@ public partial class PluginControlDialog : UserControl
     private void ShowOutput(string title, string body, bool isError = false)
     {
         var text = string.IsNullOrEmpty(title) ? body : $"{title}\n\n{body}";
-        switch (_tab)
+        // 에이전트×탭 버퍼에 저장 — Claude/Codex 출력이 서로 덮어쓰지 않음.
+        if (IsCodex)
         {
-            case "plugins": _outPlugins = text; break;
-            case "marketplaces": _outMarket = text; break;
-            case "skills": _outSkills = text; break;
-            default: _outAgents = text; break;
+            if (_tab == "marketplaces") _outMarketCodex = text;
+            else _outPluginsCodex = text;
+        }
+        else
+        {
+            switch (_tab)
+            {
+                case "plugins": _outPluginsClaude = text; break;
+                case "marketplaces": _outMarketClaude = text; break;
+                case "skills": _outSkillsClaude = text; break;
+                default: _outAgentsClaude = text; break;
+            }
         }
         PluginOutputRenderer.Render(OutputText, text);
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // 탭에 저장된 출력만 표시(없으면 안내문구).
+    // 탭에 저장된 출력만 표시(없으면 안내문구). 현재 에이전트 버퍼만 사용.
     private void RestoreOutputForTab()
     {
-        var text = _tab switch
-        {
-            "plugins" => _outPlugins,
-            "marketplaces" => _outMarket,
-            "skills" => _outSkills,
-            _ => _outAgents,
-        };
+        string text;
+        if (IsCodex)
+            text = _tab == "marketplaces" ? _outMarketCodex : _outPluginsCodex;
+        else
+            text = _tab switch
+            {
+                "plugins" => _outPluginsClaude,
+                "marketplaces" => _outMarketClaude,
+                "skills" => _outSkillsClaude,
+                _ => _outAgentsClaude,
+            };
         PluginOutputRenderer.Render(OutputText, text);
         OutputPlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
     }

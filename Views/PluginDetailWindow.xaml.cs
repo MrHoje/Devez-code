@@ -14,14 +14,17 @@ namespace DevezCode.Views;
 public partial class PluginDetailWindow : Window
 {
     private readonly ClaudeAvailablePlugin _plugin;
+    /// <summary>"claude" | "codex" — 설치 CLI 호스트. 팝업 호출 시점의 플러그인 관리 에이전트.</summary>
+    private readonly string _agent;
 
     /// <summary>이 팝업에서 설치가 완료됐는지 — 닫힌 뒤 호출측이 목록에서 제거하는 데 사용.</summary>
     public bool Installed { get; private set; }
 
-    public PluginDetailWindow(ClaudeAvailablePlugin plugin)
+    public PluginDetailWindow(ClaudeAvailablePlugin plugin, string agent = "claude")
     {
         InitializeComponent();
         _plugin = plugin;
+        _agent = agent == "codex" ? "codex" : "claude";
 
         NameText.Text = plugin.Name;
         MarketText.Text = plugin.Marketplace;
@@ -65,9 +68,20 @@ public partial class PluginDetailWindow : Window
         ShowOutput($"install · {_plugin.Name}", "설치 중… (잠시 걸릴 수 있습니다)");
         try
         {
-            var r = await ClaudePluginService.InstallAsync(_plugin.Id);
-            ShowOutput($"install · {_plugin.Name}", string.IsNullOrWhiteSpace(r.Text) ? (r.Ok ? "완료." : "설치 실패") : r.Text, isError: !r.Ok);
-            if (r.Ok)
+            bool ok;
+            string text;
+            if (_agent == "codex")
+            {
+                var r = await CodexPluginService.InstallAsync(_plugin.Id);
+                ok = r.Ok; text = r.Text;
+            }
+            else
+            {
+                var r = await ClaudePluginService.InstallAsync(_plugin.Id);
+                ok = r.Ok; text = r.Text;
+            }
+            ShowOutput($"install · {_plugin.Name}", string.IsNullOrWhiteSpace(text) ? (ok ? "완료." : "설치 실패") : text, isError: !ok);
+            if (ok)
             {
                 // 설치 성공 시에만 '설치됨' 으로 전환.
                 Installed = true;
