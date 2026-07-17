@@ -58,15 +58,29 @@ public static class CodexPluginService
                 if (string.IsNullOrEmpty(market)) market = at > 0 ? id.Substring(at + 1) : "";
 
                 string path = "";
+                string marketSrc = "";
                 if (el.TryGetProperty("source", out var src) && src.ValueKind == JsonValueKind.Object)
                     path = Str(src, "path");
+                if (el.TryGetProperty("marketplaceSource", out var msrc) && msrc.ValueKind == JsonValueKind.Object)
+                    marketSrc = Str(msrc, "source");
+
+                // CLI 목록엔 설명 필드가 없음 → 로컬 plugin.json 에서 표시명·버전 보강.
+                var dir = ResolvePluginDir(path, marketSrc, name);
+                var meta = TryReadMeta(dir);
+                if (meta != null)
+                {
+                    if (!string.IsNullOrEmpty(meta.DisplayName)) name = meta.DisplayName;
+                    if (string.IsNullOrEmpty(path) && !string.IsNullOrEmpty(dir)) path = dir;
+                }
+                var ver = Str(el, "version");
+                if (string.IsNullOrEmpty(ver) && meta != null) ver = meta.Version;
 
                 var p = new ClaudePlugin
                 {
                     Id = id,
                     Name = name,
                     Marketplace = market,
-                    Version = Str(el, "version"),
+                    Version = ver,
                     Scope = "",
                     InstallPath = path,
                     Enabled = enabled,
@@ -79,12 +93,19 @@ public static class CodexPluginService
         return list;
     }
 
-    /// <summary>설치 가능한 플러그인 카탈로그. <c>plugin list --available --json</c> 의 available[].</summary>
+    /// <summary>설치 가능한 플러그인 카탈로그. <c>plugin list --available --json</c> 의 available[].
+    /// CLI 는 description 을 주지 않으므로 로컬 <c>.codex-plugin/plugin.json</c>(또는 claude 형식)을 읽어 채운다.</summary>
     public static async Task<List<ClaudeAvailablePlugin>> AvailableAsync()
     {
-        var list = new List<ClaudeAvailablePlugin>();
         var json = await RunCaptureAsync("plugin list --available --json", 60000);
-        if (string.IsNullOrWhiteSpace(json)) return list;
+        if (string.IsNullOrWhiteSpace(json)) return new List<ClaudeAvailablePlugin>();
+        // plugin.json 대량 디스크 읽기는 스레드풀에서 — UI 블로킹 방지.
+        return await Task.Run(() => ParseAvailable(json));
+    }
+
+    private static List<ClaudeAvailablePlugin> ParseAvailable(string json)
+    {
+        var list = new List<ClaudeAvailablePlugin>();
         try
         {
             using var doc = JsonDocument.Parse(json);
@@ -113,7 +134,7 @@ public static class CodexPluginService
                 bool isInstalled = el.TryGetProperty("installed", out var iEl) && iEl.ValueKind == JsonValueKind.True
                     || installedIds.Contains(pid);
 
-                string srcUrl = "", srcPath = "";
+                string srcUrl = "", srcPath = "", marketSrc = "";
                 if (el.TryGetProperty("source", out var src) && src.ValueKind == JsonValueKind.Object)
                 {
                     srcUrl = Str(src, "url");
@@ -121,14 +142,30 @@ public static class CodexPluginService
                     if (string.IsNullOrEmpty(srcUrl) && srcPath.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                         srcUrl = srcPath;
                 }
+                if (el.TryGetProperty("marketplaceSource", out var msrc) && msrc.ValueKind == JsonValueKind.Object)
+                    marketSrc = Str(msrc, "source");
 
                 var ver = Str(el, "version");
+                var desc = Str(el, "description");
+
+                // CLI 에 설명이 없으면 로컬 매니페스트에서 보강(공식 마켓은 거의 전부 로컬 캐시).
+                var dir = ResolvePluginDir(srcPath, marketSrc, name);
+                var meta = TryReadMeta(dir);
+                if (meta != null)
+                {
+                    if (!string.IsNullOrEmpty(meta.DisplayName)) name = meta.DisplayName;
+                    if (string.IsNullOrEmpty(desc))
+                        desc = !string.IsNullOrEmpty(meta.Description) ? meta.Description : meta.LongDescription;
+                    if (string.IsNullOrEmpty(ver)) ver = meta.Version;
+                    if (string.IsNullOrEmpty(srcUrl)) srcUrl = meta.Homepage;
+                }
+
                 list.Add(new ClaudeAvailablePlugin
                 {
                     Id = pid,
                     Name = name,
                     Marketplace = Str(el, "marketplaceName"),
-                    Description = Str(el, "description"),
+                    Description = desc,
                     InstallCount = 0,
                     IsInstalled = isInstalled,
                     Version = ver,
@@ -200,23 +237,197 @@ public static class CodexPluginService
     /// <summary>config.toml 의 <c>[plugins."id"] enabled</c> 를 false 로.</summary>
     public static Task<string> DisableAsync(string id) => Task.Run(() => SetEnabled(id, false));
 
-    /// <summary>CLI 상세 명령이 없어 list 결과로 요약 텍스트를 만든다.</summary>
+    /// <summary>CLI <c>plugin details</c> 가 없어 설치 목록 + 로컬 <c>plugin.json</c> 으로 상세를 구성한다.</summary>
     public static async Task<string> DetailsAsync(string id)
     {
         var list = await ListAsync();
         var p = list.FirstOrDefault(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase));
         if (p == null) return "플러그인을 찾을 수 없습니다. (설치 목록에 없음)";
+
+        var dir = ResolvePluginDir(p.InstallPath, null, p.Name);
+        // list 시점 표시명이 바뀌었을 수 있어 id 의 name@ 부분으로 한 번 더.
+        if (dir == null)
+        {
+            var at = p.Id.LastIndexOf('@');
+            var rawName = at > 0 ? p.Id.Substring(0, at) : p.Name;
+            dir = ResolvePluginDir(p.InstallPath, null, rawName);
+        }
+        var meta = await Task.Run(() => TryReadMeta(dir));
+
         var sb = new StringBuilder();
-        sb.AppendLine($"이름: {p.Name}");
+        sb.AppendLine($"이름: {(meta != null && !string.IsNullOrEmpty(meta.DisplayName) ? meta.DisplayName : p.Name)}");
         sb.AppendLine($"ID: {p.Id}");
         sb.AppendLine($"마켓플레이스: {p.Marketplace}");
-        sb.AppendLine($"버전: {(string.IsNullOrWhiteSpace(p.Version) ? "(없음)" : p.Version)}");
+        var ver = !string.IsNullOrWhiteSpace(p.Version) ? p.Version
+            : (meta != null && !string.IsNullOrEmpty(meta.Version) ? meta.Version : "");
+        sb.AppendLine($"버전: {(string.IsNullOrWhiteSpace(ver) ? "(없음)" : ver)}");
         sb.AppendLine($"상태: {(p.Enabled ? "enabled" : "disabled")}");
+        if (meta != null)
+        {
+            if (!string.IsNullOrEmpty(meta.Author)) sb.AppendLine($"작성자: {meta.Author}");
+            if (!string.IsNullOrEmpty(meta.Category)) sb.AppendLine($"카테고리: {meta.Category}");
+            if (!string.IsNullOrEmpty(meta.Homepage)) sb.AppendLine($"홈페이지: {meta.Homepage}");
+        }
         if (!string.IsNullOrWhiteSpace(p.InstallPath))
             sb.AppendLine($"경로: {p.InstallPath}");
-        sb.AppendLine();
-        sb.Append("※ Codex 는 `plugin details` CLI 가 없어 목록 정보로 표시합니다.");
+        else if (!string.IsNullOrEmpty(dir))
+            sb.AppendLine($"경로: {dir}");
+
+        if (meta != null)
+        {
+            if (!string.IsNullOrEmpty(meta.Description))
+            {
+                sb.AppendLine();
+                sb.AppendLine("요약");
+                sb.AppendLine(meta.Description);
+            }
+            if (!string.IsNullOrEmpty(meta.LongDescription)
+                && !string.Equals(meta.LongDescription, meta.Description, StringComparison.Ordinal))
+            {
+                sb.AppendLine();
+                sb.AppendLine("설명");
+                sb.AppendLine(meta.LongDescription);
+            }
+        }
+        else
+        {
+            sb.AppendLine();
+            sb.Append("※ 로컬 매니페스트(plugin.json)를 찾지 못해 기본 정보만 표시합니다.");
+        }
         return sb.ToString();
+    }
+
+    // ── 로컬 매니페스트 (.codex-plugin / .claude-plugin) ──────────
+    private sealed class PluginMeta
+    {
+        public string DisplayName = "";
+        public string Description = "";
+        public string LongDescription = "";
+        public string Author = "";
+        public string Homepage = "";
+        public string Version = "";
+        public string Category = "";
+    }
+
+    /// <summary>CLI path(절대/상대) + 마켓 루트로 플러그인 디렉터리를 해석한다.
+    /// git URL 마켓 소스는 로컬 캐시 경로가 아니므로 무시한다.</summary>
+    private static string? ResolvePluginDir(string? path, string? marketSource, string? pluginName = null)
+    {
+        static string Clean(string s)
+        {
+            s = (s ?? "").Trim();
+            if (s.StartsWith(@"\\?\", StringComparison.Ordinal)) s = s.Substring(4);
+            return s;
+        }
+        static bool IsLocalFs(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return false;
+            // http(s):// · git@ · ssh:// 는 파일 경로가 아님.
+            if (s.Contains("://", StringComparison.Ordinal) || s.StartsWith("git@", StringComparison.OrdinalIgnoreCase))
+                return false;
+            return true;
+        }
+
+        path = Clean(path ?? "");
+        marketSource = Clean(marketSource ?? "");
+        if (!IsLocalFs(marketSource)) marketSource = "";
+        // path 자체가 URL 이면 디렉터리로 쓰지 않음(homepage 등과 혼동 방지).
+        if (!IsLocalFs(path)) path = "";
+
+        if (!string.IsNullOrEmpty(path))
+        {
+            try
+            {
+                if (Path.IsPathRooted(path) && Directory.Exists(path)) return path;
+            }
+            catch { /* 잘못된 경로 문자 등 */ }
+
+            if (!string.IsNullOrEmpty(marketSource))
+            {
+                try
+                {
+                    var combined = Path.GetFullPath(Path.Combine(
+                        marketSource,
+                        path.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar)));
+                    if (Directory.Exists(combined)) return combined;
+                }
+                catch { }
+            }
+        }
+
+        // path 없거나 실패 시 marketRoot/plugins/<name> 폴백.
+        if (!string.IsNullOrEmpty(marketSource) && !string.IsNullOrEmpty(pluginName))
+        {
+            foreach (var sub in new[]
+            {
+                Path.Combine("plugins", pluginName),
+                pluginName,
+            })
+            {
+                try
+                {
+                    var c = Path.Combine(marketSource, sub);
+                    if (Directory.Exists(c)) return c;
+                }
+                catch { }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>플러그인 폴더에서 매니페스트를 읽어 설명·표시명을 얻는다.
+    /// 우선순위: .codex-plugin/plugin.json → .claude-plugin/plugin.json → plugin.json.</summary>
+    private static PluginMeta? TryReadMeta(string? pluginDir)
+    {
+        if (string.IsNullOrEmpty(pluginDir) || !Directory.Exists(pluginDir)) return null;
+        var candidates = new[]
+        {
+            Path.Combine(pluginDir, ".codex-plugin", "plugin.json"),
+            Path.Combine(pluginDir, ".claude-plugin", "plugin.json"),
+            Path.Combine(pluginDir, "plugin.json"),
+        };
+        foreach (var f in candidates)
+        {
+            if (!File.Exists(f)) continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(f));
+                var root = doc.RootElement;
+                var meta = new PluginMeta
+                {
+                    DisplayName = Str(root, "name"),
+                    Description = Str(root, "description"),
+                    Version = Str(root, "version"),
+                    Homepage = Str(root, "homepage"),
+                };
+                if (root.TryGetProperty("author", out var author))
+                {
+                    if (author.ValueKind == JsonValueKind.Object)
+                        meta.Author = Str(author, "name");
+                    else if (author.ValueKind == JsonValueKind.String)
+                        meta.Author = author.GetString() ?? "";
+                }
+                if (root.TryGetProperty("interface", out var iface) && iface.ValueKind == JsonValueKind.Object)
+                {
+                    var dn = Str(iface, "displayName");
+                    if (!string.IsNullOrEmpty(dn)) meta.DisplayName = dn;
+                    var sd = Str(iface, "shortDescription");
+                    if (!string.IsNullOrEmpty(sd)) meta.Description = sd;
+                    meta.LongDescription = Str(iface, "longDescription");
+                    if (string.IsNullOrEmpty(meta.Description) && !string.IsNullOrEmpty(meta.LongDescription))
+                        meta.Description = meta.LongDescription;
+                    var dev = Str(iface, "developerName");
+                    if (!string.IsNullOrEmpty(dev)) meta.Author = dev;
+                    meta.Category = Str(iface, "category");
+                    var web = Str(iface, "websiteURL");
+                    if (!string.IsNullOrEmpty(web)) meta.Homepage = web;
+                }
+                return meta;
+            }
+            catch { /* 다음 후보 */ }
+        }
+        return null;
     }
 
     /// <summary>개별 플러그인 update CLI 없음 → 해당 마켓플레이스 스냅샷을 upgrade.</summary>
