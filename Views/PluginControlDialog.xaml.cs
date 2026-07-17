@@ -25,6 +25,9 @@ public partial class PluginControlDialog : UserControl
     /// <summary>현재 호스트 에이전트. "claude" | "codex". 전환 시 목록·출력을 각각 독립 보관.</summary>
     private string _agent = "claude";
     private bool IsCodex => _agent == "codex";
+    /// <summary>설정에서 Claude·Codex 둘 다 사용 중이면 true — 좌측 호스트 전환 표시, 타이틀은 "플러그인 관리".
+    /// 하나만 켜져 있으면 false — 전환 UI 숨김, 타이틀에 해당 에이전트명.</summary>
+    private bool _hostSwitcherVisible;
 
     private readonly ObservableCollection<ClaudePlugin> _plugins = new();
     private readonly ObservableCollection<ClaudeMarketplace> _markets = new();
@@ -72,18 +75,52 @@ public partial class PluginControlDialog : UserControl
         CollectionViewSource.GetDefaultView(_avail).Filter = o => o is ClaudeAvailablePlugin a && DiscMatch(a);
         CollectionViewSource.GetDefaultView(_skills).Filter = o => o is ClaudeSkill s && Match(s.Name, s.Description) && (!s.IsPlugin || _showPluginSkills);
         CollectionViewSource.GetDefaultView(_agents).Filter = o => o is ClaudeAgent a && Match(a.Name, a.Description);
+        // 설정 > 에이전트 사용 여부로 호스트 전환 UI·초기 에이전트·타이틀 모드 결정.
+        ConfigureHostsFromSettings();
         // 탭 시각만 즉시 세팅. 실제 데이터 로드(서브프로세스 실행)는 창 오픈 애니메이션이 끝난 뒤
         // BeginInitialLoad() 로 시작한다 — 페이드 첫 프레임과 Process.Start 가 겹쳐 버벅이던 문제 해결.
-        Loaded += (_, _) => { SetAgentVisual("claude"); SetTabVisual("plugins"); };
+        Loaded += (_, _) => { SetAgentVisual(_agent); SetTabVisual("plugins"); UpdateHeaderTitle(); };
         Unloaded += (_, _) => { _disposed = true; _searchDebounce.Stop(); _discSearchDebounce.Stop(); };
     }
 
     /// <summary>창 오픈 애니메이션 완료 후 호출 — 첫 목록 로드를 시작한다.</summary>
     public async void BeginInitialLoad() { await RefreshAsync(); }
 
+    /// <summary>설정에서 켠 에이전트에 따라 Claude/Codex 호스트 전환 표시 여부를 정한다.
+    /// 둘 다 사용 → 전환 UI + 타이틀 "플러그인 관리".
+    /// 하나만 → 전환 UI 숨김 + 타이틀 "Claude/Codex 플러그인 관리" + 해당 호스트 고정.</summary>
+    private void ConfigureHostsFromSettings()
+    {
+        var enabled = SettingsService.LoadEnabledAgents()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        bool claudeOn = enabled.Contains("claude");
+        bool codexOn = enabled.Contains("codex");
+
+        if (claudeOn && codexOn)
+        {
+            _hostSwitcherVisible = true;
+            _agent = "claude";
+            AgentHostBar.Visibility = Visibility.Visible;
+        }
+        else if (codexOn)
+        {
+            _hostSwitcherVisible = false;
+            _agent = "codex";
+            AgentHostBar.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            // Claude 만 사용, 또는 둘 다 꺼짐(폴백) → Claude 단일.
+            _hostSwitcherVisible = false;
+            _agent = "claude";
+            AgentHostBar.Visibility = Visibility.Collapsed;
+        }
+    }
+
     // ── 에이전트 호스트 전환 (Claude ↔ Codex, 완전 분리) ──────────
     private async void AgentHost_Click(object sender, RoutedEventArgs e)
     {
+        if (!_hostSwitcherVisible) return;
         if (sender is not Button b || b.Tag is not string id || id == _agent) return;
         await SetAgentAsync(id);
     }
@@ -120,9 +157,12 @@ public partial class PluginControlDialog : UserControl
 
     private void SetAgentVisual(string agent)
     {
-        bool claude = agent == "claude";
-        StyleAgentHost(ClaudeAgentBtn, claude);
-        StyleAgentHost(CodexAgentBtn, !claude);
+        if (_hostSwitcherVisible)
+        {
+            bool claude = agent == "claude";
+            StyleAgentHost(ClaudeAgentBtn, claude);
+            StyleAgentHost(CodexAgentBtn, !claude);
+        }
         UpdateHeaderTitle();
     }
 
@@ -136,11 +176,21 @@ public partial class PluginControlDialog : UserControl
     private void UpdateHeaderTitle()
     {
         if (HeaderTitle == null) return;
-        HeaderTitle.Text = IsCodex ? "Codex 플러그인 관리" : "Claude 플러그인 관리";
-        if (HeaderHint != null)
-            HeaderHint.Text = IsCodex
-                ? "변경사항은 새 Codex 세션에서 적용됩니다. (/plugins 와 동일 소스)"
-                : "변경사항은 세션 재실행 또는 /reload-plugins 호출 후 적용됩니다.";
+        if (_hostSwitcherVisible)
+        {
+            // 둘 다 사용 중: 에이전트명 없이 공통 타이틀. 내부 Claude|Codex 로 전환.
+            HeaderTitle.Text = "플러그인 관리";
+            if (HeaderHint != null)
+                HeaderHint.Text = "Claude · Codex 각각 독립 관리. 변경 후 세션 재실행 또는 /reload-plugins.";
+        }
+        else
+        {
+            HeaderTitle.Text = IsCodex ? "Codex 플러그인 관리" : "Claude 플러그인 관리";
+            if (HeaderHint != null)
+                HeaderHint.Text = IsCodex
+                    ? "변경사항은 새 Codex 세션에서 적용됩니다. (/plugins 와 동일 소스)"
+                    : "변경사항은 세션 재실행 또는 /reload-plugins 호출 후 적용됩니다.";
+        }
         var w = Window.GetWindow(this);
         if (w != null) w.Title = HeaderTitle.Text;
     }

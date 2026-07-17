@@ -123,7 +123,7 @@
                                FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}"/>
                     <TextBlock x:Name="HeaderHint"
-                               Text="Claude · Codex 각각 독립 관리. 변경 후 세션 재실행 또는 /reload-plugins."
+                               Text="변경사항은 세션 재실행 또는 /reload-plugins 호출 후 적용됩니다."
                                VerticalAlignment="Center" Margin="14,1,0,0"
                                FontSize="{DynamicResource Fs11}"
                                Foreground="{DynamicResource TextMutedBrush}"/>
@@ -154,8 +154,10 @@
             <Border Grid.Column="0" Background="{DynamicResource PanelSoftBrush}"
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
                 <StackPanel Margin="12,16,12,16">
-                    <!-- 에이전트 선택: Claude ↔ Codex 완전 분리 (목록·출력·CLI 각각) -->
-                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="8" Padding="3" Margin="0,0,0,12">
+                    <!-- 에이전트 선택: 설정에서 Claude·Codex 둘 다 사용 중일 때만 표시.
+                         하나만 켜져 있으면 숨기고 해당 호스트 고정 + 타이틀에 이름 표시. -->
+                    <Border x:Name="AgentHostBar" Background="{DynamicResource PanelBrush}"
+                            CornerRadius="8" Padding="3" Margin="0,0,0,12">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
