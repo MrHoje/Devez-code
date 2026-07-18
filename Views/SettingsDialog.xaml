@@ -751,28 +751,6 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-
-                                <!-- OAuth 토큰 외부 연동 경고 -->
-                                <Border Margin="0,4,0,0" Padding="12,10" CornerRadius="10"
-                                        Background="{DynamicResource PanelSoftBrush}"
-                                        BorderBrush="{DynamicResource DangerBrush}" BorderThickness="1.5"
-                                        SnapsToDevicePixels="False" UseLayoutRounding="False"
-                                        RenderOptions.EdgeMode="Unspecified">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Path Grid.Column="0" Style="{StaticResource LucideIcon}" Data="{StaticResource IconTriangleAlert}"
-                                              Width="15" Height="15" Margin="0,1,10,0" VerticalAlignment="Top"
-                                              Stroke="{DynamicResource DangerBrush}"/>
-                                        <TextBlock Grid.Column="1" TextWrapping="Wrap" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextBrush}" LineHeight="17">
-                                            <Run Text="Claude Code의 OAuth 토큰을 외부 서드파티 툴이나 커스텀 에이전트에 연동하는 경우, 약관 위반으로 계정이 정지될 수 있습니다."/>
-                                            <Run Text="외부 연동은 반드시 정식 API Key 또는 다른 정액제 플랜을 사용하세요."/>
-                                        </TextBlock>
-                                    </Grid>
-                                </Border>
                             </StackPanel>
 
                             <!-- 세션 클리너 패널 (SessionCleanerWindow 이식 — 설정창 내부 탭) -->
