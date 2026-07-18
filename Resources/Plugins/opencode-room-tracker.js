@@ -6,6 +6,11 @@
 //
 // 진단이 필요할 때만 DEVEZCODE_OPENCODE_PLUGIN_DEBUG=1 로 실행하면
 // %APPDATA%\DevezCode\opencode\plugin-debug.log 에 이벤트 흐름을 기록한다.
+//
+// busy 규칙 (claude SubagentStart/Stop 과 동형):
+//   room busy = (루트 턴 진행중) OR (살아 있는 child session > 0)
+// oh-my-openagent task/explore 등은 parentID 있는 child 를 만들고, 그 동안 parent 가
+// session.idle 을 낼 수 있다. child 가 살아 있으면 idle 확정을 막고 스피너를 유지한다.
 export const DevezCodeRoomTracker = async (_ctx) => {
   const room = process.env.DEVEZCODE_ROOM_ID;
   const safe = String(room || "").replace(/[^\w\-]/g, "");
@@ -63,18 +68,76 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   };
 
   // task/explore 서브에이전트도 부모 프로세스의 DEVEZCODE_ROOM_ID를 상속하고 이 플러그인의
-  // 이벤트 스트림에 나타난다. parentID가 있는 세션은 방의 루트 대화가 아니므로 모든 방 상태에서 제외한다.
+  // 이벤트 스트림에 나타난다. parentID가 있는 세션은 방의 루트 대화가 아니므로
+  // lastmsg/세션 추적에는 쓰지 않고, busy 만 "살아 있는 child" 로 합산한다.
   let rootSessionId = null;
   const nestedSessionIds = new Set();
+  // childId → lastSeenMs. 훅 누락/크래시 잔재는 CHILD_STALE_MS 후 폐기.
+  const liveChildren = new Map();
+  const childSessionById = new Map();
+  const CHILD_STALE_MS = 30 * 60 * 1000;
+
+  const parentOf = (info) => {
+    if (!info) return null;
+    const p = info.parentID || info.parentId || info.parent_id;
+    return p ? String(p) : null;
+  };
+
+  const pruneStaleChildren = () => {
+    if (liveChildren.size === 0) return;
+    const now = Date.now();
+    for (const [id, seen] of liveChildren) {
+      if (now - seen > CHILD_STALE_MS) {
+        liveChildren.delete(id);
+        debug(`child stale pruned: ${id}`);
+      }
+    }
+  };
+
+  // child 생존 중에는 방 스피너를 켠 채로 유지 (claude busy = main OR subruns).
+  const markChildAlive = (childId, parentId) => {
+    if (!childId) return;
+    const cid = String(childId);
+    const pid = parentId ? String(parentId) : null;
+    nestedSessionIds.add(cid);
+    childSessionById.set(cid, true);
+    if (pid) {
+      if (!rootSessionId) {
+        rootSessionId = pid;
+        writeId(rootSessionId);
+      }
+      // 우리 루트의 자식만 합산. 다른 방/세션 child 는 무시.
+      if (rootSessionId && pid !== rootSessionId) {
+        debug(`child ignored (other parent): ${cid} parent=${pid} root=${rootSessionId}`);
+        return;
+      }
+    }
+    const wasEmpty = liveChildren.size === 0;
+    liveChildren.set(cid, Date.now());
+    // 서브에이전트 가동 = 원 프롬프트 미완료. 조기 idle 펜스를 풀어 스피너를 유지/재무장.
+    turnCompleted = false;
+    rootIdle = false;
+    cancelIdle();
+    writeBusy("running");
+    debug(`child alive: ${cid} (live=${liveChildren.size}${wasEmpty ? ", re-arm" : ""})`);
+  };
+
+  const markChildDone = (childId) => {
+    if (!childId) return;
+    const cid = String(childId);
+    if (!liveChildren.has(cid)) return;
+    liveChildren.delete(cid);
+    debug(`child done: ${cid} (live=${liveChildren.size})`);
+    // 부모가 이미 idle 이고 마지막 child 가 끝났을 때만 완료 후보.
+    if (liveChildren.size === 0 && rootIdle) scheduleIdle();
+  };
+
   const acceptRootSession = (info) => {
     if (!info || !info.id) return false;
-    const parentId = info.parentID || info.parentId;
+    const parentId = parentOf(info);
     if (parentId) {
       nestedSessionIds.add(String(info.id));
-      if (!rootSessionId) {
-        rootSessionId = String(parentId);
-        writeId(rootSessionId); // 잘못 추적된 자식 세션으로 재진입한 경우 부모 ID로 자동 치유.
-      }
+      markChildAlive(info.id, parentId);
       debug(`nested session ignored: ${info.id} (root=${rootSessionId})`);
       return false;
     }
@@ -82,11 +145,18 @@ export const DevezCodeRoomTracker = async (_ctx) => {
     rootSessionId = String(info.id);
     return true;
   };
-  const isRootSession = (sessionId) =>
-    !sessionId || !rootSessionId || String(sessionId) === rootSessionId;
+
+  // sessionID 가 없거나 root 미확정이면 보수적으로 root 후보로 통과시키되,
+  // root 가 확정된 뒤 다른 id 는 isChildSession / nested 로 걸러진다.
+  const isRootSession = (sessionId) => {
+    if (!sessionId) return true;
+    if (nestedSessionIds.has(String(sessionId)) || liveChildren.has(String(sessionId))) return false;
+    if (!rootSessionId) return true;
+    return String(sessionId) === rootSessionId;
+  };
 
   // busy\<room>.txt = running|idle — 요청 처리중 스피너. claude busy hook 과 동일 패턴.
-  // user 프롬프트 전송 → running, session.idle/error → idle.
+  // user 프롬프트 전송 → running, session.idle/error → idle (child 없으면).
   const writeBusy = (state) => {
     try {
       if (!safe) return;
@@ -102,29 +172,54 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   // 전이를 "응답 완료" 로 잡아 한 턴에 알림이 여러 번 뜬다. → idle 을 디바운스한다: session.idle 은
   // 타이머만 (재)설정하고, 그 사이 running(사용자/재개) 이 오면 취소한다. 잠깐 쉬었다 재개하는 중간
   // idle 은 모두 흡수되고, 진짜 턴 종료(이후 재개 없음)에서만 idle 이 한 번 기록된다.
+  // + child 가 살아 있으면 idle 확정을 보류한다 (서브에이전트 대기 중 조기 소등 방지).
   const IDLE_DEBOUNCE_MS = 2500;
   let idleTimer = null;
   let turnCompleted = false;
+  let rootIdle = true; // 루트 세션이 idle 신호를 낸 상태 (child 와 독립)
   let lastStartedUserMessageId = null;
   const cancelIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
-  // Only a verified root user message starts a new turn. Once the idle debounce
-  // commits completion, a late status=busy/retry from the same turn cannot re-arm it.
+
+  // 검증된 root user message 로만 새 턴을 연다. 같은 messageId 의 중복 part 는 무시.
   const beginTurn = (messageId) => {
     if (messageId && turnCompleted && String(messageId) === lastStartedUserMessageId) return;
     if (messageId) lastStartedUserMessageId = String(messageId);
     turnCompleted = false;
+    rootIdle = false;
     cancelIdle();
     writeBusy("running");
   };
+
+  // session.status busy/retry — 중간 idle 뒤 재개. 조기 turnCompleted 펜스를 풀고 재무장한다.
+  // (과거: turnCompleted 면 무시 → 서브 대기 중 한 번 idle 확정되면 스피너가 영구 소등)
   const continueTurn = () => {
-    if (turnCompleted) return;
+    turnCompleted = false;
+    rootIdle = false;
     cancelIdle();
     writeBusy("running");
   };
+
   const scheduleIdle = () => {
+    pruneStaleChildren();
+    rootIdle = true;
+    if (liveChildren.size > 0) {
+      // 부모는 쉬어도 child 가 돌면 방 busy 유지.
+      cancelIdle();
+      turnCompleted = false;
+      writeBusy("running");
+      debug(`idle deferred: liveChildren=${liveChildren.size}`);
+      return;
+    }
     cancelIdle();
     idleTimer = setTimeout(() => {
       idleTimer = null;
+      pruneStaleChildren();
+      // 디바운스 중 child 가 생기거나 루트가 재개되면 확정하지 않음.
+      if (liveChildren.size > 0 || !rootIdle) {
+        debug(`idle commit skipped: live=${liveChildren.size} rootIdle=${rootIdle}`);
+        if (liveChildren.size > 0) writeBusy("running");
+        return;
+      }
       turnCompleted = true;
       writeBusy("idle");
     }, IDLE_DEBOUNCE_MS);
@@ -195,25 +290,37 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   // child completion cannot turn off the parent's spinner or overwrite its prompt.
   // Older OpenCode versions may call the plugin factory without a client; in that
   // compatibility mode preserve the old behavior instead of dropping every event.
-  const childSessionById = new Map();
   let warnedChildLookup = false;
   const isChildSession = async (sessionID) => {
-    if (!sessionID || !client || !client.session || !client.session.list) return false;
-    if (childSessionById.has(sessionID)) return childSessionById.get(sessionID);
+    if (!sessionID) return false;
+    const sid = String(sessionID);
+    if (nestedSessionIds.has(sid) || liveChildren.has(sid)) return true;
+    if (rootSessionId && sid === rootSessionId) return false;
+    if (!client || !client.session || !client.session.list) {
+      // 클라이언트 없으면 root 확정 후 다른 id 는 child 로 간주 (idle 누수 방지).
+      return !!(rootSessionId && sid !== rootSessionId);
+    }
+    if (childSessionById.has(sid)) return childSessionById.get(sid);
     try {
       const result = await client.session.list();
       const sessions = Array.isArray(result && result.data) ? result.data :
         (Array.isArray(result) ? result : []);
-      const session = sessions.find((entry) => entry && entry.id === sessionID);
-      // session.created can race the SDK list update. Do not cache an unknown id
-      // as root forever; the next event will retry after the list settles.
-      if (!session) return false;
-      const isChild = !!(session && session.parentID);
+      const session = sessions.find((entry) => entry && entry.id === sid);
+      // list 레이스: root 확정 뒤 미지 id 는 fail-closed (child 로 취급) — 조기 idle 이
+      // 한 건의 이벤트 누락보다 치명적이다. 다음 이벤트에서 list 가 채워지면 재평가.
+      if (!session) {
+        if (rootSessionId && sid !== rootSessionId) return true;
+        return false;
+      }
+      const isChild = !!(session.parentID || session.parentId || session.parent_id);
       if (childSessionById.size >= 128) {
         const first = childSessionById.keys().next().value;
         if (first !== undefined) childSessionById.delete(first);
       }
-      childSessionById.set(sessionID, isChild);
+      childSessionById.set(sid, isChild);
+      // nested 표식만. live 합산은 created/status busy/message 활동에서만 한다
+      // (list 에 남은 종료 child 를 다시 live 로 올리면 스피너가 안 꺼짐).
+      if (isChild) nestedSessionIds.add(sid);
       return isChild;
     } catch (e) {
       // With a modern SDK, fail closed for status accuracy: an unknown child idle
@@ -223,6 +330,31 @@ export const DevezCodeRoomTracker = async (_ctx) => {
         debug(`child session lookup failed: ${e && e.message ? e.message : e}`);
       }
       return true;
+    }
+  };
+
+  // child 전용 이벤트: lastmsg/세션 파일은 건드리지 않고 생존 집합만 갱신.
+  const handleChildEvent = (t, sessionID, props) => {
+    if (!sessionID) return;
+    const sid = String(sessionID);
+    if (t === "session.status") {
+      const statusType = (props.status && props.status.type) || null;
+      if (statusType === "busy" || statusType === "retry") markChildAlive(sid, rootSessionId);
+      else if (statusType === "idle") markChildDone(sid);
+      return;
+    }
+    if (t === "session.idle" || t === "session.error") {
+      markChildDone(sid);
+      return;
+    }
+    if (t === "session.deleted") {
+      markChildDone(sid);
+      nestedSessionIds.add(sid); // 재사용 방지
+      return;
+    }
+    // 메시지/파트 활동 = child 가 아직 작업 중. created 를 놓친 경우에도 live 합산.
+    if (t === "message.updated" || t === "message.part.updated" || t === "chat.message") {
+      markChildAlive(sid, rootSessionId);
     }
   };
 
@@ -272,7 +404,6 @@ export const DevezCodeRoomTracker = async (_ctx) => {
         // message.updated and message.part.updated back-to-back; awaiting first
         // would let the part race ahead and lose its user/assistant identity.
         if (t === "message.updated") {
-          const info = props.info || {};
           if (info.id && info.role) messageRole[info.id] = info.role;
         }
 
@@ -281,10 +412,25 @@ export const DevezCodeRoomTracker = async (_ctx) => {
         // Prefer parentID carried by created/updated (works on old SDKs), then
         // use the client lookup for child events that arrive without creation.
         if (t === "session.created" || t === "session.updated") {
-          if (!acceptRootSession(info)) return;
+          if (!acceptRootSession(info)) return; // child: markChildAlive 후 종료
+        } else if (t === "session.deleted") {
+          const delId = info.id || sessionID;
+          if (delId && (nestedSessionIds.has(String(delId)) || liveChildren.has(String(delId)) ||
+              (rootSessionId && String(delId) !== rootSessionId && await isChildSession(delId)))) {
+            handleChildEvent(t, delId, props);
+            return;
+          }
+          // root 삭제 처리는 아래에서
         } else {
+          if (sessionID && (nestedSessionIds.has(String(sessionID)) || liveChildren.has(String(sessionID)))) {
+            handleChildEvent(t, sessionID, props);
+            return;
+          }
+          if (sessionID && await isChildSession(sessionID)) {
+            handleChildEvent(t, sessionID, props);
+            return;
+          }
           if (!isRootSession(sessionID)) return;
-          if (sessionID && await isChildSession(sessionID)) return;
         }
 
         // 선택지와 툴 권한은 실제 사용자 입력 경계다. 완료 전 turn에서만 waiting을
@@ -301,7 +447,8 @@ export const DevezCodeRoomTracker = async (_ctx) => {
           const role = info.role || messageRole[part.messageID] || "-";
           const done = info.time && info.time.completed ? "completed" : "-";
           debug(`EV ${t} sid=${sid} role=${role} time=${done}` +
-                 (part.type ? ` partType=${part.type}` : ""));
+                 (part.type ? ` partType=${part.type}` : "") +
+                 (liveChildren.size ? ` liveChildren=${liveChildren.size}` : ""));
         }
 
         // todowrite 업데이트 — 태스크 목록을 JSON 파일로 기록. DevezCode Task View 에서 사용.
@@ -321,6 +468,7 @@ export const DevezCodeRoomTracker = async (_ctx) => {
           }
         }
         // 세션 처리 종료 신호 → 스피너 끄기. session.idle = 응답 완료, session.error = 실패.
+        // (live child 가 있으면 scheduleIdle 이 확정을 보류한다)
         if (event.type === "session.idle" || event.type === "session.error") {
           scheduleIdle();
           clearWaiting(); // 턴 종료 = 더 이상 선택지 대기 아님
@@ -337,6 +485,13 @@ export const DevezCodeRoomTracker = async (_ctx) => {
                 writeAtomic(p, "");
                 debug(`tracked session cleared (deleted: ${delId})`);
               }
+              if (rootSessionId && String(delId) === rootSessionId) {
+                liveChildren.clear();
+                cancelIdle();
+                turnCompleted = true;
+                rootIdle = true;
+                writeBusy("idle");
+              }
             }
           } catch (e) { debug(`session.deleted handling failed: ${e.message}`); }
         }
@@ -347,7 +502,10 @@ export const DevezCodeRoomTracker = async (_ctx) => {
             if (event.type === "session.created") {
               cancelIdle();
               turnCompleted = true;
+              rootIdle = true;
               lastStartedUserMessageId = null;
+              liveChildren.clear();
+              nestedSessionIds.clear();
               writeBusy("idle");
               writeTodos([]);
               clearLastmsg();
@@ -392,9 +550,17 @@ export const DevezCodeRoomTracker = async (_ctx) => {
     },
     "chat.message": async (input) => {
       try {
-        if (!isRootSession(input && input.sessionID)) return;
-        if (input && input.sessionID && await isChildSession(input.sessionID)) return;
-        if (input && input.sessionID) writeId(input.sessionID);
+        const sid = input && input.sessionID;
+        if (sid && (nestedSessionIds.has(String(sid)) || liveChildren.has(String(sid)))) {
+          handleChildEvent("chat.message", sid, {});
+          return;
+        }
+        if (!isRootSession(sid)) return;
+        if (sid && await isChildSession(sid)) {
+          handleChildEvent("chat.message", sid, {});
+          return;
+        }
+        if (sid) writeId(sid);
         if (input && input.message && input.message.role === "user") {
           // chat.message 는 message.updated 와 동시 또는 직전에 옴 → role 캐시도 함께 갱신.
           if (input.message.id) messageRole[input.message.id] = "user";

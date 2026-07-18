@@ -311,6 +311,8 @@ public partial class MainWindow : Window
             });
 
         // opencode — 플러그인이 떨군 busy 파일 감시 → 스피너 (claude 와 동일).
+        // oh-my-openagent child 대기 중 parent idle 이 잠깐 튀면 플러그인이 다시 running 으로
+        // 되돌리므로, 완료 확정은 정착 창 + IsRoomBusy 재확인을 거친다 (claude/gjc 와 동일).
         _opencodeBusy.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -322,7 +324,7 @@ public partial class MainWindow : Window
                     s.IsBusy = busy;
                     if (!busy) s.IsWaitingChoice = false; // 턴 종료 → ❗ 보강 해제(완료까지 박힘 방지)
                 }
-                NotifyIfSessionFinished(s, was, busy);
+                NotifyIfSessionFinished(s, was, busy, () => _opencodeBusy.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(roomId);
             });
@@ -3886,9 +3888,9 @@ public partial class MainWindow : Window
             return;
         }
         if (!wasBusy) return; // busy→idle 전이 아님
-        // claude 는 서브에이전트 훅 순서 경합(Stop↔SubagentStart), gjc 는 auto-retry/컴팩션 루프 재시작으로
-        // 가짜 idle 이 튈 수 있다 → 정착 창 + isStillActive 재확인 적용.
-        // opencode/codex 는 busy 소스가 단일(플러그인/훅)이라 플랩이 없다 → 즉시 확정.
+        // claude 는 서브에이전트 훅 순서 경합(Stop↔SubagentStart), gjc 는 auto-retry/컴팩션 루프 재시작,
+        // opencode 는 parent idle + child 생존 재무장 레이스로 가짜 idle 이 튈 수 있다
+        // → 정착 창 + isStillActive 재확인 적용. codex 등 isStillActive 없는 소스만 즉시 확정.
         if (isStillActive == null) { EmitSessionFinished(s); return; }
         if (_finishDebounce.TryGetValue(s, out var ex)) ex.Stop();
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FinishSettleMs) };

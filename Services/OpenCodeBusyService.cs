@@ -119,6 +119,22 @@ public sealed class OpenCodeBusyService : IDisposable
         return null;
     }
 
+    /// <summary>완료 정착 창 만료 시 파일 재확인. 서브에이전트 대기 중 조기 idle 이 다시 running 으로
+    /// 바뀌었으면 완료 카드/토스트를 내지 않는다 (claude IsRoomActive 와 동일 역할).</summary>
+    public bool IsRoomBusy(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return false;
+        try
+        {
+            var safe = System.Text.RegularExpressions.Regex.Replace(roomId, @"[^\w\-]", "");
+            if (string.IsNullOrEmpty(safe)) return false;
+            var status = TryRead(Path.Combine(Dir, safe + ".txt"));
+            return !string.IsNullOrWhiteSpace(status)
+                && status.Equals("running", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     public void Dispose()
     {
         _watcher?.Dispose();
