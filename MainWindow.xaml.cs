@@ -392,6 +392,7 @@ public partial class MainWindow : Window
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
+        // turn_id fence 로 대부분 안정. 조기 idle 플랩 시 active 마커/툴 재무장 재확인.
         _codexHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -403,7 +404,7 @@ public partial class MainWindow : Window
                     s.IsBusy = busy;
                     if (!busy) s.IsWaitingChoice = false;
                 }
-                NotifyIfSessionFinished(s, was, busy);
+                NotifyIfSessionFinished(s, was, busy, () => _codexHook.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
@@ -478,6 +479,7 @@ public partial class MainWindow : Window
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
+        // Pre/PostToolUse working 재무장이 정착 창 안에 오면 가짜 완료 카드 억제.
         _kimiHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -489,7 +491,7 @@ public partial class MainWindow : Window
                     s.IsBusy = busy;
                     if (!busy) s.IsWaitingChoice = false;
                 }
-                NotifyIfSessionFinished(s, was, busy);
+                NotifyIfSessionFinished(s, was, busy, () => _kimiHook.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
@@ -512,6 +514,7 @@ public partial class MainWindow : Window
 
         // Antigravity(agy) — busy/선택지 대기 + conversation_id 라이브 저장 (grok 패턴).
         // lastmsg 는 transcript 폴링에서 추출.
+        // transcript 폴러 재무장/completed 재확인 — 가짜 idle 완료 카드 억제.
         _antigravityHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -523,7 +526,7 @@ public partial class MainWindow : Window
                     s.IsBusy = busy;
                     if (!busy) s.IsWaitingChoice = false;
                 }
-                NotifyIfSessionFinished(s, was, busy);
+                NotifyIfSessionFinished(s, was, busy, () => _antigravityHook.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
             });
         _antigravityHook.WaitingChoiceChanged += (roomId, waiting) =>
@@ -2129,6 +2132,16 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+        // [테스트] Ctrl+Shift+U — 가짜 업데이트를 띄워 사이드바 버튼 + 팝업 진행률을 실물로 확인.
+        if (e.Key == System.Windows.Input.Key.U
+            && (System.Windows.Input.Keyboard.Modifiers
+                & (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
+               == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
+        {
+            TriggerTestUpdate();
+            e.Handled = true;
+            return;
+        }
         base.OnPreviewKeyDown(e);
     }
 
@@ -2400,6 +2413,33 @@ public partial class MainWindow : Window
             _ = CheckUpdateAsync();
     }
 
+    // [테스트] Ctrl+Shift+U 로 켜지는 가짜 업데이트 모드. OpenUpdatePopup 에서 소비 후 해제.
+    private bool _testUpdateMode;
+
+    /// <summary>[테스트] 가짜 업데이트를 감지한 것처럼 사이드바 버튼을 띄운다.
+    /// 버튼(또는 긴급 팝업) → OpenUpdatePopup 에서 실제 다운로드 대신 진행률만 시뮬레이션.</summary>
+    private void TriggerTestUpdate()
+    {
+        if (_updateInProgress) return;
+        _testUpdateMode = true;
+        _pendingUpdate = new UpdateInfo(
+            Version: "9.9.9-test",
+            Url: "https://example.com/test",
+            Notes: "진행률 표시 테스트,여러 줄 노트 미리보기,실제 다운로드는 하지 않습니다");
+        Sidebar.ShowUpdateButton(_pendingUpdate.Version);
+        // 사이드바 하단 업데이트 버튼을 클릭하면 OpenUpdatePopup → 팝업 진행률까지 확인된다.
+    }
+
+    /// <summary>[테스트] 0→100% 진행률을 천천히 보고하는 가짜 다운로드(실제 파일 없음).</summary>
+    private static async Task FakeUpdateDownloadAsync(IProgress<double> progress)
+    {
+        for (int i = 0; i <= 25; i++)
+        {
+            progress.Report(i / 25.0);
+            await Task.Delay(120);
+        }
+    }
+
     private async Task CheckUpdateAsync()
     {
         if (_updateInProgress) return;
@@ -2408,6 +2448,7 @@ public partial class MainWindow : Window
         var info = await UpdateService.CheckAsync();
         if (info is null || _updateInProgress) return;
         _pendingUpdate = info;
+        _testUpdateMode = false; // 실제 업데이트가 확정되면 테스트 모드 해제(가짜 다운로드 방지)
 
         // devez 정합: 강제 팝업 대신 좌측 패널 하단에 업데이트 버튼을 띄운다(비강제).
         Sidebar.ShowUpdateButton(info.Version);
@@ -2433,15 +2474,23 @@ public partial class MainWindow : Window
         _updateInProgress = true;
         Sidebar.HideUpdateButton(); // 진행 중에는 사이드바 버튼 숨김
 
+        // [테스트] Ctrl+Shift+U 로 띄운 가짜 업데이트면 실제 다운로드 대신 진행률만 시뮬레이션한다.
+        bool test = _testUpdateMode;
+        _testUpdateMode = false;
+        Func<IProgress<double>, Task> download = test
+            ? FakeUpdateDownloadAsync
+            : progress => UpdateService.DownloadAndRelaunchAsync(info, progress);
+
         // 노트 확인 → "업데이트" 클릭 시 같은 팝업 안에서 진행률을 표시하며 다운로드한다.
         // 성공 시 앱이 종료·재실행되므로 ShowUpdate 는 반환되지 않는다(취소/실패만 내려온다).
         var outcome = ConfirmDialog.ShowUpdate(
             $"{prefix}새 버전 {info.Version}",
             $"새 버전이 있습니다. 지금 업데이트할까요?{noteLines}",
-            progress => UpdateService.DownloadAndRelaunchAsync(info, progress),
+            download,
             okLabel: "업데이트");
 
         _updateInProgress = false;
+        if (test) { _pendingUpdate = null; Sidebar.HideUpdateButton(); return; } // 테스트: 뒷정리만
         Sidebar.ShowUpdateButton(info.Version); // 취소·실패 → 버튼 복원
 
         if (outcome == UpdateOutcome.Failed)
@@ -3873,9 +3922,8 @@ public partial class MainWindow : Window
             return;
         }
         if (!wasBusy) return; // busy→idle 전이 아님
-        // claude 는 서브에이전트 훅 순서 경합(Stop↔SubagentStart), gjc 는 auto-retry/컴팩션 루프 재시작,
-        // opencode 는 parent idle + child 생존 재무장 레이스로 가짜 idle 이 튈 수 있다
-        // → 정착 창 + isStillActive 재확인 적용. codex 등 isStillActive 없는 소스만 즉시 확정.
+        // claude/gjc/opencode/grok/codex/kimi/antigravity: 가짜 idle 플랩 가능
+        // → isStillActive 있으면 정착 창 + 파일/진실 재확인. 없는 소스만 즉시 확정.
         if (isStillActive == null) { EmitSessionFinished(s); return; }
         if (_finishDebounce.TryGetValue(s, out var ex)) ex.Stop();
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FinishSettleMs) };

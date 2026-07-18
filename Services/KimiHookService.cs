@@ -122,6 +122,20 @@ public sealed class KimiHookService : IDisposable
         catch { /* best effort */ }
     }
 
+    /// <summary>완료 정착 재확인 — busy 파일이 running 이면 아직 진행 중.
+    /// (조기 Stop 플랩 직후 Pre/PostToolUse working 이 다시 running 을 쓰면 완료 발행을 보류.)</summary>
+    public bool IsRoomBusy(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return false;
+        try
+        {
+            var status = TryRead(Path.Combine(BusyDir, Sanitize(roomId) + ".txt"));
+            return !string.IsNullOrWhiteSpace(status)
+                && status.Equals("running", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     private void EmitWaiting(string path)
     {
         var room = Path.GetFileNameWithoutExtension(path);

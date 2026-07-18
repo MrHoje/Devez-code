@@ -49,6 +49,10 @@ public static class KimiHookInstaller
         ("StopFailure",      null),
         ("PreToolUse",       "working"),
         ("PostToolUse",      "working"),
+        // SubagentStart only — keep busy=running while a child agent begins.
+        // SubagentStop must NOT write idle (main Stop remains the sole idle authority),
+        // and must NOT re-arm after a real Stop (would cause stuck-ON).
+        ("SubagentStart",    "working"),
         ("PermissionRequest","waiting-on"),
         ("PermissionResult", "waiting-off"),
     };

@@ -189,6 +189,35 @@ public sealed class CodexHookService : IDisposable
         return null;
     }
 
+    /// <summary>완료 정착 재확인. busy=running 이거나 active turn 마커가 남아 있으면 아직 진행 중.
+    /// (조기 idle 플랩 시 active 가 살아 있으면 완료 카드/토스트를 보류. Stop 이 정상 종료하면
+    /// active 를 지우므로 기존 완료 타이밍은 유지된다.)</summary>
+    public bool IsRoomBusy(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return false;
+        try
+        {
+            var safe = Sanitize(roomId);
+            if (string.IsNullOrEmpty(safe)) return false;
+            var busy = TryRead(Path.Combine(BusyDir, safe + ".txt"));
+            if (!string.IsNullOrWhiteSpace(busy)
+                && busy.Equals("running", StringComparison.OrdinalIgnoreCase))
+                return true;
+            var active = TryRead(Path.Combine(ActiveDir, safe + ".txt"));
+            return !string.IsNullOrWhiteSpace(active);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>훅 roomSafe 규칙과 동일: 비-워드 문자 제거.</summary>
+    private static string Sanitize(string roomId)
+    {
+        var sb = new StringBuilder(roomId.Length);
+        foreach (var c in roomId)
+            if (char.IsLetterOrDigit(c) || c is '-' or '_') sb.Append(c);
+        return sb.ToString();
+    }
+
     public void Dispose()
     {
         _lastmsgWatcher?.Dispose();

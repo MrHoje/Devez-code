@@ -22,14 +22,22 @@ if errorlevel 1 goto :cleanup
 
 if not exist "%base%\waiting" mkdir "%base%\waiting" >nul 2>&1
 
+if not exist "%base%\busy" mkdir "%base%\busy" >nul 2>&1
+
 if /i "%~1"=="waiting" (
   call :write "%base%\waiting\%room%.txt" "waiting"
   call :validate_active
   goto :cleanup
 )
 if /i "%~1"=="working" (
+  rem Clear waiting. Re-arm busy ONLY while this payload still owns the active turn.
+  rem After Stop clears active, late tool hooks must not revive a finished room (stuck-ON).
+  rem During an open turn, busy=running keepalive recovers premature idle without changing
+  rem the Stop ownership rules (turn_id fence in hook.ps1 remains the sole idle authority).
   call :write "%base%\waiting\%room%.txt" "idle"
   call :validate_active
+  if errorlevel 1 goto :cleanup
+  call :write "%base%\busy\%room%.txt" "running"
 )
 :cleanup
 if exist "%payload%" del /f /q "%payload%" >nul 2>&1
@@ -37,11 +45,13 @@ exit /b 0
 
 :validate_active
 rem Close the read/write race with Stop or a newer prompt. If this payload's turn no longer
-rem owns the room, converge waiting back to idle. A concurrent Stop also writes idle last.
+rem owns the room, converge waiting back to idle. Do NOT write busy=idle here — a concurrent
+rem UserPromptSubmit may already own a newer active turn with busy=running.
 set "current="
 if exist "%base%\active\%room%.txt" set /p "current="<"%base%\active\%room%.txt"
-if not "%current%"=="%active%" call :write "%base%\waiting\%room%.txt" "idle"
-exit /b 0
+if "%current%"=="%active%" exit /b 0
+call :write "%base%\waiting\%room%.txt" "idle"
+exit /b 1
 
 :write
 rem Atomic temp+move: a killed hook never leaves a zero-byte state file.

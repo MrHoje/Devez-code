@@ -164,18 +164,23 @@ public sealed class AntigravityHookService : IDisposable
         var busyPath = Path.Combine(BusyDir, room + ".txt");
         var busyNow = TryRead(busyPath) ?? "";
         bool busyRunning = busyNow.StartsWith("running", StringComparison.OrdinalIgnoreCase);
+        var completedPath = Path.Combine(CompletedDir, room + ".flag");
+        bool completed = File.Exists(completedPath);
 
         if (lastType == "PLANNER_RESPONSE")
         {
             // 도구 직전의 빈 PLANNER_RESPONSE는 완료로 보지 않는다. 공식 PreToolUse는 권한 결정을
             // 강제하므로 관찰 훅으로 쓸 수 없고, 이 구분이 장시간 도구의 busy를 안전하게 유지한다.
+            // completed 가 있으면 Stop 이 이미 종료를 확정 — transcript 는 idle 만 보강.
+            // completed 없고 내용 있는 PLANNER 가 정착되면(Stop 유실 대비) 기존과 동일 idle.
             if (busyRunning && lastPlannerHasContent && age >= ResponseSettle)
                 WriteBusyFile(busyPath, "idle");
         }
-        else if (!busyRunning && age <= TranscriptFreshCap)
+        else if (!busyRunning && age <= TranscriptFreshCap && !completed)
         {
             // USER_INPUT/도구/시스템 레코드가 방금 기록됨 = 턴 진행 중 — 훅이 못 켠 스피너 보강
             // (순수 텍스트 응답은 Pre/PostToolUse 훅이 안 와서 이 경로가 유일한 busy-ON).
+            // completed 가 있으면 진짜 종료 뒤 late transcript append 로 재무장치 않음(stuck-ON 방지).
             WriteBusyFile(busyPath, "running");
         }
     }
@@ -354,6 +359,51 @@ public sealed class AntigravityHookService : IDisposable
     public static string? LoadTrackedSessionId(string roomId)
     {
         return LoadSessionId(SessionPath(roomId));
+    }
+
+    /// <summary>완료 정착 재확인. busy=running 이거나, completed 없이 transcript 가 아직 활성 턴을
+    /// 보이면 진행 중. transcript 폴러(2s)보다 settle(1.2s)이 짧아도 이 재확인이 가짜 완료를 막는다.
+    /// completed 플래그가 있으면 Stop 이 확정한 종료로 보고 false (기존 완료 타이밍 유지).</summary>
+    public bool IsRoomBusy(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return false;
+        try
+        {
+            var safe = Sanitize(roomId);
+            if (string.IsNullOrEmpty(safe)) return false;
+
+            var busy = TryRead(Path.Combine(BusyDir, safe + ".txt"));
+            if (!string.IsNullOrWhiteSpace(busy)
+                && busy.StartsWith("running", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (File.Exists(Path.Combine(CompletedDir, safe + ".flag")))
+                return false;
+
+            var conv = LoadSessionId(SessionPath(safe));
+            if (conv == null) return false;
+            var transcript = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".gemini", "antigravity-cli", "brain", conv, ".system_generated", "logs",
+                "transcript_full.jsonl");
+            if (!File.Exists(transcript)) return false;
+
+            var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(transcript);
+            if (age > TranscriptFreshCap) return false;
+
+            var (lastType, _, lastPlannerHasContent) = ReadTranscriptTail(transcript);
+            if (lastType == null) return false;
+            if (lastType == "PLANNER_RESPONSE")
+            {
+                // 내용 있는 PLANNER 가 settle 을 넘겼으면 종료 후보(파일 busy 와 동일 기준).
+                if (lastPlannerHasContent && age >= ResponseSettle) return false;
+                // 빈 PLANNER 또는 아직 settle 전 = 도구/스트리밍 가능 → 활성.
+                return true;
+            }
+            // USER_INPUT / 도구 등
+            return true;
+        }
+        catch { return false; }
     }
 
     public static string? LoadPreviousTrackedSessionId(string roomId)
