@@ -50,7 +50,7 @@
                                        Foreground="{DynamicResource TextBrush}"/>
                         </StackPanel>
 
-                        <Button Click="CancelBtn_Click"
+                        <Button x:Name="HeaderCloseBtn" Click="CancelBtn_Click"
                                 HorizontalAlignment="Right" VerticalAlignment="Center"
                                 Width="40" Height="32" Margin="0,0,8,0"
                                 Style="{StaticResource WinCloseBtn}">
@@ -68,6 +68,20 @@
                                TextWrapping="Wrap"
                                LineStackingStrategy="BlockLineHeight"
                                LineHeight="22"/>
+                    <!-- 업데이트 진행률 (ShowUpdate 에서 '업데이트' 클릭 후 표시) -->
+                    <StackPanel x:Name="ProgressArea" Visibility="Collapsed" Margin="0,18,0,0">
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Text="다운로드 중…" FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                            <TextBlock x:Name="ProgressPercent" HorizontalAlignment="Right"
+                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                        </Grid>
+                        <Border x:Name="ProgressTrack" Height="6" CornerRadius="3" Background="{DynamicResource LineBrush}">
+                            <Border x:Name="ProgressFill" HorizontalAlignment="Left" Width="0" Height="6"
+                                    CornerRadius="3" Background="{DynamicResource PrimaryBrush}"/>
+                        </Border>
+                    </StackPanel>
+
                     <StackPanel x:Name="ConfirmInputPanel" Visibility="Collapsed" Margin="0,14,0,0">
                         <TextBlock x:Name="ConfirmHintText"
                                    FontSize="{DynamicResource Fs12}"
@@ -128,7 +142,7 @@
                             </TextBlock.Style>
                         </TextBlock>
 
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <StackPanel x:Name="FooterButtons" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button x:Name="CancelBtn" Click="CancelBtn_Click"
                                     MinWidth="80" Height="38" Padding="16,0"
                                     Style="{StaticResource SecondaryButton}"

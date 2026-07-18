@@ -50,17 +50,7 @@
                               Data="{StaticResource IconPanelLeft}" Width="16" Height="16"
                               Stroke="{DynamicResource TextMutedBrush}"/>
                     </Button>
-                        <!-- 업데이트 진행률 (압축형, 타이틀바) -->
-                        <StackPanel x:Name="UsageUpdateProgress" Orientation="Horizontal" Visibility="Collapsed" VerticalAlignment="Center"
-                                    Margin="26,0,0,0" shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                            <TextBlock x:Name="UsageUpdateText" FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                            <Border x:Name="UsageUpdateTrack" Width="60" Height="4" Margin="4,0,0,0"
-                                    VerticalAlignment="Center" CornerRadius="2" Background="{DynamicResource LineBrush}">
-                                <Border x:Name="UsageUpdateBar" Width="0" HorizontalAlignment="Left" CornerRadius="2"
-                                        Background="{DynamicResource PrimaryBrush}"/>
-                            </Border>
-                        </StackPanel>
+                        <!-- 업데이트 진행률은 업데이트 팝업(ConfirmDialog.ShowUpdate) 안에서 표시한다. -->
                 </StackPanel>
 
                 <!-- 윈도우 컨트롤(오른쪽 고정) -->

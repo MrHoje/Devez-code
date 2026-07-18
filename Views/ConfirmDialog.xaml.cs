@@ -7,11 +7,19 @@ namespace DevezCode.Views;
 /// <summary>3버튼 확인 다이얼로그 결과.</summary>
 public enum ConfirmChoice { Primary, Secondary, Cancel }
 
+/// <summary>ShowUpdate 결과(성공 시 앱이 재실행되어 반환되지 않으므로 없음).</summary>
+public enum UpdateOutcome { Cancelled, Failed }
+
 public partial class ConfirmDialog : Window
 {
     private string? _confirmText;
     private ConfirmChoice _choice = ConfirmChoice.Cancel;
     private bool _linkClicked;
+
+    // 업데이트 진행률 모드용.
+    private Func<IProgress<double>, Task>? _download;
+    private bool _downloading;
+    private UpdateOutcome _updateOutcome = UpdateOutcome.Cancelled;
 
     private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false)
     {
@@ -85,6 +93,32 @@ public partial class ConfirmDialog : Window
         if (topMost) dialog.Topmost = true;
 
         return dialog.ShowDialog() == true;
+    }
+
+    /// <summary>업데이트 노트 팝업 → "업데이트" 클릭 시 창을 닫지 않고 같은 창 안에서 진행률을
+    /// 표시하며 <paramref name="download"/> 를 실행한다. 성공 시 앱이 종료·재실행되어 반환되지 않으며,
+    /// 사용자가 취소하면 <see cref="UpdateOutcome.Cancelled"/>, 다운로드가 실패하면
+    /// <see cref="UpdateOutcome.Failed"/> 를 반환한다.</summary>
+    public static UpdateOutcome ShowUpdate(
+        string title,
+        string message,
+        Func<IProgress<double>, Task> download,
+        string okLabel = "업데이트",
+        string iconKey = "IconDownload")
+    {
+        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger: false,
+                                       confirmText: null, wideLayout: false, autoWidth: true);
+        dialog._download = download;
+
+        if (Application.Current.MainWindow != null
+            && Application.Current.MainWindow.IsLoaded
+            && Application.Current.MainWindow != dialog)
+        {
+            dialog.Owner = Application.Current.MainWindow;
+        }
+
+        dialog.ShowDialog();
+        return dialog._updateOutcome;
     }
 
     /// <summary>3버튼 확인 다이얼로그. Primary(주 동작)·Secondary(중간 동작)·Cancel 중 하나를 반환한다.</summary>
@@ -197,12 +231,12 @@ public partial class ConfirmDialog : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (_downloading) { e.Handled = true; return; } // 진행 중 Enter/Esc 무시
         if (e.Key == Key.Enter)
         {
             if (_confirmText == null || ConfirmInputBox.Text == _confirmText)
             {
-                _choice = ConfirmChoice.Primary;
-                DialogResult = true;
+                TriggerPrimary();
                 e.Handled = true;
             }
         }
@@ -217,12 +251,12 @@ public partial class ConfirmDialog : Window
     /// 자식 컨트롤이 KeyDown 을 먼저 먹어도(예: TextBox) PreviewKeyDown 은 라우팅 최상위에서 먼저 도달.</summary>
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (_downloading) { e.Handled = true; return; } // 진행 중 Enter/Esc 무시
         if (e.Key == Key.Enter)
         {
             // 확인 텍스트 입력이 있고 아직 일치하지 않으면 Primary 로 넘기지 않음.
             if (_confirmText != null && ConfirmInputBox.Text != _confirmText) return;
-            _choice = ConfirmChoice.Primary;
-            DialogResult = true;
+            TriggerPrimary();
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)
@@ -237,8 +271,54 @@ public partial class ConfirmDialog : Window
         if (e.ChangedButton == MouseButton.Left) DragMove();
     }
 
-    private void OkBtn_Click(object sender, RoutedEventArgs e) { _choice = ConfirmChoice.Primary; DialogResult = true; }
+    private void OkBtn_Click(object sender, RoutedEventArgs e) => TriggerPrimary();
     private void MiddleBtn_Click(object sender, RoutedEventArgs e) { _choice = ConfirmChoice.Secondary; DialogResult = true; }
-    private void CancelBtn_Click(object sender, RoutedEventArgs e) { _choice = ConfirmChoice.Cancel; DialogResult = false; }
+
+    private void CancelBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_downloading) return; // 다운로드 진행 중에는 닫기 차단
+        _choice = ConfirmChoice.Cancel;
+        DialogResult = false;
+    }
+
+    /// <summary>Primary(확인/업데이트) 동작. 진행률 모드면 창을 닫지 않고 다운로드를 시작한다.</summary>
+    private async void TriggerPrimary()
+    {
+        if (_downloading) return;
+        _choice = ConfirmChoice.Primary;
+
+        if (_download == null) { DialogResult = true; return; }
+
+        // ── 업데이트 진행률 모드 ──
+        _downloading = true;
+        FooterButtons.Visibility = Visibility.Collapsed;
+        HeaderCloseBtn.Visibility = Visibility.Collapsed;
+        ConfirmInputPanel.Visibility = Visibility.Collapsed;
+        ProgressArea.Visibility = Visibility.Visible;
+
+        var progress = new Progress<double>(v =>
+        {
+            var pct = Math.Clamp(v, 0, 1);
+            ProgressPercent.Text = $"{pct:P0}";
+            ProgressFill.Width = ProgressTrack.ActualWidth * pct;
+        });
+
+        try
+        {
+            // 실제 업데이트는 이 호출 안에서 앱이 종료·재실행되므로 반환되지 않는다.
+            // (테스트 다운로드 등으로) 정상 복귀하면 진행률을 100%로 채우고 창을 닫는다.
+            await _download(progress);
+            ProgressPercent.Text = "100 %";
+            ProgressFill.Width = ProgressTrack.ActualWidth;
+            _downloading = false;
+            DialogResult = true;
+        }
+        catch
+        {
+            _downloading = false;
+            _updateOutcome = UpdateOutcome.Failed;
+            DialogResult = false; // 창을 닫고 호출측이 수동 설치 안내를 하도록 한다.
+        }
+    }
     private void LinkText_Click(object sender, MouseButtonEventArgs e) { _linkClicked = true; DialogResult = true; }
 }
