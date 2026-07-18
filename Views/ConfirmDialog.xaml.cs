@@ -109,6 +109,10 @@ public partial class ConfirmDialog : Window
         var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger: false,
                                        confirmText: null, wideLayout: false, autoWidth: true);
         dialog._download = download;
+        dialog.CancelBtn.Content = "나중에"; // devez 정합: 업데이트 팝업의 취소는 '나중에'
+        // devez 정합: 노트 길이와 무관하게 고정폭(560), 높이만 내용에 맞춤(진행률 표시 시 자동 확장).
+        dialog.SizeToContent = SizeToContent.Height;
+        dialog.Width = dialog.MinWidth = dialog.MaxWidth = 560;
 
         if (Application.Current.MainWindow != null
             && Application.Current.MainWindow.IsLoaded
