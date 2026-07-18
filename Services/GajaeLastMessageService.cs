@@ -64,8 +64,31 @@ public sealed class GajaeLastMessageService : IDisposable
 
     private bool _started;
 
-    /// <summary>방의 현재 병합 busy 상태(마지막 발행값). 완료 디바운스의 isStillActive 재확인용.</summary>
-    public bool IsRoomBusy(string roomId) => _busy.TryGetValue(roomId, out var b) && b;
+    // 마지막 idle 발행의 근거가 사이드카 agent_end(state=completed)인 방 — 프롬프트/골 완료 확정.
+    // 이 idle 은 플랩이 아니므로 settle 재확인 없이 즉시 완료 카드를 발행해도 된다
+    // (골 체이닝/새 프롬프트가 settle(1.2s) 안에 running 을 다시 써도 직전 완료 카드를 삼키지 않음).
+    private readonly HashSet<string> _idleFromCompleted = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>방의 마지막 busy→idle 발행이 사이드카 agent_end(completed) 확정 완료였는지.
+    /// true 면 MainWindow 가 정착 디바운스 없이 즉시 완료를 발행한다(골마다 카드 1장 스펙 보장).</summary>
+    public bool IsIdleAuthoritative(string roomId) => _idleFromCompleted.Contains(roomId);
+
+    /// <summary>완료 정착(1.2s) 재확인. idle 발행 직후 폴 주기가 IdleInterval(2.5s)로 늘어나
+    /// 사전(_busy)이 settle 창 안에 갱신되지 않으므로(재확인이 발행 시점 값 그대로 = no-op),
+    /// 그 방만 즉시 강제 재평가한 뒤 최신 병합값을 반환한다 — auto-retry/컴팩션 재시작이
+    /// settle 안에 running 을 다시 쓴 경우 가짜 완료 카드를 실제로 막는다.
+    /// (agent_end completed 확정 idle 은 IsIdleAuthoritative 경로로 이 재확인을 타지 않는다.)</summary>
+    public bool IsRoomBusy(string roomId)
+    {
+        if (string.IsNullOrEmpty(roomId)) return false;
+        try
+        {
+            var roomDir = Path.Combine(Root, roomId);
+            if (Directory.Exists(roomDir)) ScanRoom(roomDir); // 시그니처 불변이면 내부에서 즉시 반환(저비용)
+        }
+        catch { /* 재평가 실패 시 마지막 발행값 사용 */ }
+        return _busy.TryGetValue(roomId, out var b) && b;
+    }
 
     // 적응형 폴링 주기: 처리중인 방이 있으면 스피너 종료를 빨리 감지하도록 BusyInterval(1s),
     // 전부 idle 이면 IdleInterval(2.5s)로 늦춰 다세션 시 디렉터리 열거·파일 open 부하를 낮춘다.
@@ -225,6 +248,11 @@ public sealed class GajaeLastMessageService : IDisposable
         }
 
         msg ??= ""; // 안전망 (헤더 lastmsg 는 transcript 원본 — flush 지연 시 늦게 갱신될 수 있음)
+
+        // idle 근거 분류: agent_end(state=completed)만 확정 완료로 표시. errored 는 auto-retry 가
+        // 곧바로 재시작할 수 있어 확정으로 치지 않는다(진짜 최종 에러면 settle 재확인이 idle 로 통과).
+        if (!busy && sidecarOwns && sidecar!.State == "completed") _idleFromCompleted.Add(roomId);
+        else _idleFromCompleted.Remove(roomId);
 
         Publish(roomId, msg, busy, waiting);
 

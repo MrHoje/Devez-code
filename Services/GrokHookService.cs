@@ -373,6 +373,10 @@ public sealed class GrokHookService : IDisposable
                     cursor.LastTurnEnded = ts ?? DateTimeOffset.UtcNow;
                     cursor.InOpenTurn = false;
                     cursor.ToolDepth = 0;
+                    // 턴 마지막 phase 는 streaming_text 등 활성값으로 남는다. 종료 후 stray 이벤트
+                    // (yolo_toggled 등)가 stale phase 와 결합해 post_end 를 최대 3분 재점등시키고
+                    // 꺼질 때 중복 완료 카드를 만들 수 있으므로 phase 근거를 지운다(새 증거 필요).
+                    cursor.LastPhase = null;
                     break;
                 case "tool_started":
                     // 열린 턴 안, 또는 turn 마커를 아직 못 본 구형 로그.
@@ -411,7 +415,16 @@ public sealed class GrokHookService : IDisposable
         var now = DateTimeOffset.UtcNow;
 
         if (cursor.ToolDepth > 0)
+        {
+            // 하드킬로 tool_completed/turn_ended 가 영영 안 오면 이 분기가 busy 를 무한 재무장한다
+            // (앱을 재시작해도 파일 재파싱으로 같은 상태 재현 → 영구 스피너). 도구 실행 중 이벤트
+            // 공백은 실측 최대 ~10분이므로, 30분 무활동이면 잔재로 보고 idle (열린 턴과 동일 기준).
+            var toolAnchor = cursor.LastActivity ?? cursor.LastTurnStarted ?? now;
+            var toolAge = now - toolAnchor;
+            if (toolAge > StaleRunningCap)
+                return new EventsTruth { IsActive = false, Reason = $"staleTools depth={cursor.ToolDepth} age={toolAge.TotalMinutes:F0}m" };
             return new EventsTruth { IsActive = true, Reason = $"openTools={cursor.ToolDepth}" };
+        }
 
         if (cursor.InOpenTurn)
         {

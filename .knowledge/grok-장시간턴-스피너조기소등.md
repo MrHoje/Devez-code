@@ -34,6 +34,15 @@ Grok 세션이 **대부분 정상이지만**, 동작이 길어지면(멀티 툴/
 - Stop 훅이 `completed` 플래그를 남기지 않음(조기 Stop 뒤 툴/폴러 재무장 방해 제거).
 - `phase_changed` 단독 lastType 으로는 활성 판정하지 않음(phase 문자열만).
 
+### 추가 수정 (2026-07-18 재검수)
+- **ToolDepth>0 분기에도 StaleRunningCap(30분) 적용** — 하드킬로 tool_completed/turn_ended 가
+  영영 안 오면 이 분기가 busy 를 무한 재무장했다(앱 재시작해도 파일 재파싱으로 재현 = 영구 스피너).
+  도구 실행 중 이벤트 공백 실측 최대 ~10분(558s)이라 30분 캡은 3배 여유.
+- **turn_ended 가 `LastPhase` 를 초기화** — 턴 마지막 phase(streaming_text 등)가 남아 종료 후
+  stray 이벤트(yolo_toggled 등)와 결합하면 post_end 가 최대 3분 재점등 + 중복 완료 카드.
+- **훅 Notification permission ❗에 busy=running 게이트** — Stop 이 completed 를 안 남기게 된 뒤
+  Test-Completed 가드가 무력화돼 턴 종료 후 늦은 permission 알림이 ❗를 다음 턴까지 박았다.
+
 ## 진단
 - `%APPDATA%\DevezCode\grok\busy\<room>.txt` / `completed\<room>.flag`
 - 해당 sid 의 `~/.grok/sessions/**/<sid>/events.jsonl` 에서 `turn_started`/`turn_ended`/`tool_*`

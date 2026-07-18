@@ -254,6 +254,20 @@ export const DevezCodeRoomTracker = async (_ctx) => {
     }, IDLE_DEBOUNCE_MS);
   };
 
+  // 이벤트 유실 안전망: 마지막 child 의 session.idle/error 가 끝내 안 오면 그 방에는 더 이상
+  // 아무 이벤트도 오지 않아 pruneStaleChildren 이 실행될 기회가 없고 liveChildren>0 로 busy 가
+  // 영구 고착된다(claude reconcile/grok 폴러 같은 자가 치유 부재). 이벤트 없이도 주기적으로
+  // stale child(30분 무활동)를 정리하고, 비워졌으면 통상 경로(scheduleIdle)로 idle 을 확정한다.
+  // unref 로 이 타이머가 opencode 프로세스 종료를 붙잡지 않게 한다.
+  const childSweeper = setInterval(() => {
+    try {
+      if (liveChildren.size === 0) return;
+      pruneStaleChildren();
+      if (liveChildren.size === 0 && rootIdle && !turnCompleted) scheduleIdle();
+    } catch (e) { debug(`child sweep failed: ${e.message}`); }
+  }, 60 * 1000);
+  if (childSweeper && typeof childSweeper.unref === "function") childSweeper.unref();
+
   // waiting\<room>.txt = waiting|idle — 선택지(question.asked) 응답 대기 ❗. busy 와 동일 파일 패턴.
   let awaitingAnswer = false;
   const writeWaiting = (state) => {

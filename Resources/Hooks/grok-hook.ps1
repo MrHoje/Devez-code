@@ -136,6 +136,14 @@ function Test-Completed {
     return Test-Path -LiteralPath (Get-CompletedPath)
 }
 
+function Test-BusyRunning {
+    try {
+        $path = Join-Path (Join-Path $base 'busy') ($roomSafe + '.txt')
+        if (-not (Test-Path -LiteralPath $path)) { return $false }
+        return ((Get-Content -LiteralPath $path -Raw).Trim() -eq 'running')
+    } catch { return $false }
+}
+
 switch -Regex ($eventKey) {
     '^(userpromptsubmit|beforesubmitprompt)$' {
         Write-SessionId
@@ -206,7 +214,10 @@ switch -Regex ($eventKey) {
             $typeKey -eq 'permissionprompt' -or
             $messageKey -match '(permission|approval|approve|user input|needs your|requires your|feedback|clarif|question)'
         )
-        if ($permissionNotice -and -not (Test-Completed)) {
+        # Stop 이 completed 를 남기지 않게 된 뒤로는 Test-Completed 만으로 "턴 종료 후 늦은
+        # permission 알림"을 못 거른다(❗가 다음 턴까지 박힘). 턴 진행 중(busy=running)에만 무장 —
+        # 조기 Stop 플랩 중이면 events 폴러가 1s 내 running 을 복구하므로 실기 창은 무시 가능.
+        if ($permissionNotice -and -not (Test-Completed) -and (Test-BusyRunning)) {
             Write-Waiting 'waiting'
         }
     }

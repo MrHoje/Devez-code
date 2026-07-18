@@ -53,6 +53,13 @@
   claude 는 훅 파일 재확인, gjc 는 `IsRoomBusy`(사이드카 병합값) 재확인.
 - gjc goal 모드: 골 하나 = user 주입 프롬프트 1개 = agent_end 1회 → 골마다 카드 1장(의도된 동작).
   `turn_end`(내부 도구 사이클)는 완료 신호로 쓰지 않는다 — 매 턴 카드가 쌓이는 오동작 방지.
+- **idle 근거 이원화 (2026-07-18)**: 사이드카 `state=completed`(agent_end)가 만든 idle 은
+  `IsIdleAuthoritative`=true → MainWindow 가 **디바운스 없이 즉시** 카드 발행(골 체이닝이 1.2s 내
+  재시작해도 카드 안 삼킴). 그 외(jsonl 폴백·stale 폴백) idle 은 settle 1.2s + `IsRoomBusy` 재확인 —
+  이때 `IsRoomBusy` 는 그 방을 **강제 재평가(ScanRoom)** 한다. (기존엔 in-memory 사전만 봤는데,
+  idle 발행 직후 폴 주기가 IdleInterval 2.5s 로 늘어 settle 1.2s 안에 갱신이 없어 재확인이 no-op —
+  auto-retry 재무장을 못 잡는 타이밍 구멍이었다.) errored 는 auto-retry 직전일 수 있어 확정으로
+  치지 않는다(최종 에러면 재확인이 idle 로 통과해 카드는 나온다).
 - goal 백필: transcript 의 `custom/goal-completed`(objective·timestamp 포함)를 파싱해
   **사이드카 미가동 방에서만** 카드 추가(`GoalCompleted` 이벤트, 토스트 없음).
   파일 최초 스캔(과거 내역)은 재발행하지 않는다(`TranscriptCursor.Primed`).

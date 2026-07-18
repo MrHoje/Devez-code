@@ -342,8 +342,12 @@ public partial class MainWindow : Window
             });
 
         // 가재코드 — gjc 런타임 사이드카(1차) + JSONL 증분 폴링(폴백) 병합 busy 판정 → 스피너.
-        // 완료는 정착 디바운스 + 서비스 재확인을 거친다 — gjc 의 auto-retry/컴팩션으로 agent 루프가
-        // 한 프롬프트 안에서 잠깐 끊겼다 재시작해도 가짜 완료 카드/토스트가 생기지 않는다.
+        // 완료 발행은 idle 의 근거에 따라 두 갈래:
+        //  • 사이드카 agent_end(state=completed) 확정 idle → 디바운스 없이 즉시 발행.
+        //    골 체이닝/새 프롬프트가 settle(1.2s) 안에 running 을 다시 써도 직전 완료 카드를
+        //    삼키지 않는다(골마다 카드 1장 스펙). agent_end 는 프롬프트당 1회라 플랩이 아니다.
+        //  • 그 외(jsonl 폴백·stale 폴백) idle → 정착 디바운스 + IsRoomBusy(강제 재평가) 재확인.
+        //    auto-retry/컴팩션 재시작이 settle 안에 재무장하면 가짜 완료 카드를 억제.
         _gajaeLastMsg.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -355,7 +359,10 @@ public partial class MainWindow : Window
                     s.IsBusy = busy;
                     if (!busy) s.IsWaitingChoice = false; // 턴 종료 → ❗ 보강 해제(완료까지 박힘 방지)
                 }
-                NotifyIfSessionFinished(s, was, busy, () => _gajaeLastMsg.IsRoomBusy(roomId));
+                Func<bool>? still = !busy && _gajaeLastMsg.IsIdleAuthoritative(roomId)
+                    ? null // 확정 완료 — 즉시 발행 (정착 창의 재무장 취소 대상이 아님)
+                    : () => _gajaeLastMsg.IsRoomBusy(roomId);
+                NotifyIfSessionFinished(s, was, busy, still);
                 UpdateSessionBusyDisplay();
             });
 
