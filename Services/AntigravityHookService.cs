@@ -361,9 +361,11 @@ public sealed class AntigravityHookService : IDisposable
         return LoadSessionId(SessionPath(roomId));
     }
 
-    /// <summary>완료 정착 재확인. busy=running 이거나, completed 없이 transcript 가 아직 활성 턴을
-    /// 보이면 진행 중. transcript 폴러(2s)보다 settle(1.2s)이 짧아도 이 재확인이 가짜 완료를 막는다.
-    /// completed 플래그가 있으면 Stop 이 확정한 종료로 보고 false (기존 완료 타이밍 유지).</summary>
+    /// <summary>완료 정착 재확인 창(1.2s) 전용. busy=running 이면 활성.
+    /// busy=idle 이면 completed 가 없을 때만 transcript 를 짧게 peek 한다 — settle 이 폴러(2s)보다
+    /// 빨라 가짜 idle 이 완료로 굳기 직전을 막기 위함. peek 창을 TranscriptFreshCap(3분)으로 잡으면
+    /// stale tool/USER 잔여 때문에 정상 완료 카드가 수 분 지연되는 회귀가 나므로,
+    /// settle+폴러 여유인 수 초만 본다.</summary>
     public bool IsRoomBusy(string roomId)
     {
         if (string.IsNullOrWhiteSpace(roomId)) return false;
@@ -372,13 +374,28 @@ public sealed class AntigravityHookService : IDisposable
             var safe = Sanitize(roomId);
             if (string.IsNullOrEmpty(safe)) return false;
 
-            var busy = TryRead(Path.Combine(BusyDir, safe + ".txt"));
+            var busyPath = Path.Combine(BusyDir, safe + ".txt");
+            var busy = TryRead(busyPath);
             if (!string.IsNullOrWhiteSpace(busy)
                 && busy.StartsWith("running", StringComparison.OrdinalIgnoreCase))
                 return true;
 
+            // Stop 이 completed 를 남긴 정상 종료 — 완료 확정 허용(지연 없음).
             if (File.Exists(Path.Combine(CompletedDir, safe + ".flag")))
                 return false;
+
+            // busy 파일이 idle 로 정착한 지 이미 꽤 지났으면 파일 권위(스피너 기준과 동일).
+            // 방금 idle 된 직후(1~수 초)만 transcript 로 뒤집는다.
+            try
+            {
+                if (File.Exists(busyPath))
+                {
+                    var busyAge = DateTime.UtcNow - File.GetLastWriteTimeUtc(busyPath);
+                    // settle 1.2s + 폴러 2s + 여유 ≈ 5s. 그 이상 idle 이면 완료 허용.
+                    if (busyAge > TimeSpan.FromSeconds(5)) return false;
+                }
+            }
+            catch { }
 
             var conv = LoadSessionId(SessionPath(safe));
             if (conv == null) return false;
@@ -389,18 +406,18 @@ public sealed class AntigravityHookService : IDisposable
             if (!File.Exists(transcript)) return false;
 
             var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(transcript);
-            if (age > TranscriptFreshCap) return false;
+            // settle 재확인 전용 짧은 창 — 3분 cap 을 쓰면 완료 지연 회귀.
+            if (age > TimeSpan.FromSeconds(5)) return false;
 
             var (lastType, _, lastPlannerHasContent) = ReadTranscriptTail(transcript);
             if (lastType == null) return false;
             if (lastType == "PLANNER_RESPONSE")
             {
-                // 내용 있는 PLANNER 가 settle 을 넘겼으면 종료 후보(파일 busy 와 동일 기준).
+                // 내용 있는 PLANNER 가 이미 ResponseSettle 을 넘겼으면 종료 후보.
                 if (lastPlannerHasContent && age >= ResponseSettle) return false;
-                // 빈 PLANNER 또는 아직 settle 전 = 도구/스트리밍 가능 → 활성.
                 return true;
             }
-            // USER_INPUT / 도구 등
+            // 아주 최근 USER/도구 레코드만 활성(가짜 idle 직후 폴러 재무장 대기).
             return true;
         }
         catch { return false; }

@@ -189,9 +189,10 @@ public sealed class CodexHookService : IDisposable
         return null;
     }
 
-    /// <summary>완료 정착 재확인. busy=running 이거나 active turn 마커가 남아 있으면 아직 진행 중.
-    /// (조기 idle 플랩 시 active 가 살아 있으면 완료 카드/토스트를 보류. Stop 이 정상 종료하면
-    /// active 를 지우므로 기존 완료 타이밍은 유지된다.)</summary>
+    /// <summary>완료 정착 재확인. busy=running 이면 활성.
+    /// active 마커만 보고 완료를 막으면, Stop 이 busy 만 idle 로 쓰고 active 삭제에 실패한
+    /// 잔여·크래시 케이스에서 완료 카드가 영구 누락된다. active 는 busy 가 방금 idle 된
+    /// 직후(수 초) 플랩 흡수에만 보조로 쓴다.</summary>
     public bool IsRoomBusy(string roomId)
     {
         if (string.IsNullOrWhiteSpace(roomId)) return false;
@@ -199,10 +200,23 @@ public sealed class CodexHookService : IDisposable
         {
             var safe = Sanitize(roomId);
             if (string.IsNullOrEmpty(safe)) return false;
-            var busy = TryRead(Path.Combine(BusyDir, safe + ".txt"));
+            var busyPath = Path.Combine(BusyDir, safe + ".txt");
+            var busy = TryRead(busyPath);
             if (!string.IsNullOrWhiteSpace(busy)
                 && busy.Equals("running", StringComparison.OrdinalIgnoreCase))
                 return true;
+
+            // busy idle 이 이미 정착됐으면(>5s) active 잔여로 완료를 막지 않음.
+            try
+            {
+                if (File.Exists(busyPath))
+                {
+                    var busyAge = DateTime.UtcNow - File.GetLastWriteTimeUtc(busyPath);
+                    if (busyAge > TimeSpan.FromSeconds(5)) return false;
+                }
+            }
+            catch { }
+
             var active = TryRead(Path.Combine(ActiveDir, safe + ".txt"));
             return !string.IsNullOrWhiteSpace(active);
         }

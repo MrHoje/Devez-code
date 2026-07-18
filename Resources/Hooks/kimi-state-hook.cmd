@@ -16,6 +16,9 @@ rem Drain stdin so the hook runner's write completes cleanly.
 "%SystemRoot%\System32\more.com" >nul 2>nul
 
 if /i "%~1"=="working" (
+  rem Keepalive while tools/subagents run. Do not invent a "main turn" fence here —
+  rem Stop is the sole idle authority. Late SubagentStart after a real Stop can still
+  rem re-arm running briefly; next Stop/StopFailure clears it (same as PreToolUse).
   call :write "%base%\busy\%room%.txt" "running"
   goto :eof
 )
