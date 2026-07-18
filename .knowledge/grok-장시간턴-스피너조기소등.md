@@ -43,7 +43,22 @@ Grok 세션이 **대부분 정상이지만**, 동작이 길어지면(멀티 툴/
 - **훅 Notification permission ❗에 busy=running 게이트** — Stop 이 completed 를 안 남기게 된 뒤
   Test-Completed 가드가 무력화돼 턴 종료 후 늦은 permission 알림이 ❗를 다음 턴까지 박았다.
 
+### 추가 수정 (2026-07-19) — in-process /new·rewind 후 스피너 사망 (root fence 잠금)
+- **증상**: grok 에서 /new(또는 rewind fork)로 새 세션이 생기면 그 뒤로 스피너·lastmsg·완료기록 전부 죽음.
+- **원인(실측)**: grok 은 in-process 세션 전환 때 추적 중인 옛 sid 로 **SessionEnd 를 발화하지 않는다**
+  → `.ended.txt` 마커가 영영 없음 → root fence 가 옛 세션에 고정 → 새 sid 의 모든 훅이
+  `Test-CurrentRoomSession` 에서 차단 + 폴러는 옛 events.jsonl(turn_ended)만 봐서 idle 확정.
+  (프로세스 재시작 `-r <sid>` 재개는 sid 가 유지돼 문제없음. 자식 grok 차단용 fence 의 설계 가정
+  "전환 전엔 SessionEnd 가 온다"가 실제와 달랐던 것.)
+- **수정**: 훅이 방 root grok 의 **owner PID**(`sessions\<room>.owner.txt`)를 기록(SessionStart 갱신,
+  없으면 백필). 새 sid 의 UserPromptSubmit 이 **같은 grok 프로세스**(부모 체인에서 grok.exe PID 탐색)
+  에서 왔으면 정당한 전환으로 수락(prev 기록 후 root/cur 갱신). 자식 grok 은 PID 가 달라 기존처럼
+  차단(fail-closed). 이름이 grok(.exe) 아닌 배포에선 탐색 실패 → 수락 없이 기존 동작.
+- 진단법: 방 `sessions\<room>.txt` 의 sid 와 실제 작업 중인 `~/.grok/sessions/<cwd>/<sid>/` 최신
+  디렉터리가 다르면 이 케이스. 복구 = root/cur 를 라이브 sid 로, owner 를 grok PID 로 원자적 재기록.
+
 ## 진단
 - `%APPDATA%\DevezCode\grok\busy\<room>.txt` / `completed\<room>.flag`
 - 해당 sid 의 `~/.grok/sessions/**/<sid>/events.jsonl` 에서 `turn_started`/`turn_ended`/`tool_*`
 - `C:\devezLog\diag.log` 의 `busy[room] grok events 정정: idle→running (…)`
+- 추적 sid ≠ 실제 작업 세션 디렉터리 → root fence 잠금(위 2026-07-19 항목)

@@ -72,11 +72,46 @@ function Read-SessionId([string]$path) {
     return $null
 }
 
+# 방의 root grok 프로세스 PID — in-process 세션 전환(/new·rewind)의 정당성 판별 기준.
+function Get-OwnerPidPath {
+    return Join-Path (Join-Path $base 'sessions') ($roomSafe + '.owner.txt')
+}
+
+function Read-OwnerPid {
+    try {
+        $path = Get-OwnerPidPath
+        if (-not (Test-Path -LiteralPath $path)) { return $null }
+        $value = (Get-Content -LiteralPath $path -Raw).Trim()
+        $parsed = 0
+        if ([int]::TryParse($value, [ref]$parsed) -and $parsed -gt 0) { return $parsed }
+    } catch { }
+    return $null
+}
+
+# 이 훅 프로세스를 낳은 grok 프로세스 PID (powershell ← [cmd] ← grok.exe 부모 체인 탐색).
+# 이름이 grok(.exe) 가 아닌 배포(node 래퍼 등)에서는 null → 전환 수락 없이 기존 fence 동작 유지.
+function Get-GrokAncestorPid {
+    try {
+        $procId = $PID
+        for ($i = 0; $i -lt 6 -and $procId; $i++) {
+            $p = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $procId) -ErrorAction Stop
+            if (-not $p) { return $null }
+            if ([string]$p.Name -match '^grok(\.exe)?$') { return [int]$p.ProcessId }
+            $procId = $p.ParentProcessId
+        }
+    } catch { }
+    return $null
+}
+
 # Only the room's root Grok session may own sessions\<room>.txt.
 # A Grok process launched by a tool inherits DEVEZCODE_ROOM_ID, so blindly accepting every
 # SessionStart can replace the resumable parent with a child/internal session. A different ID is
-# accepted only after SessionEnd for the currently tracked root (normal /new or /clear transition).
-function Write-SessionId([bool]$allowEndedTransition = $false) {
+# accepted only after SessionEnd for the currently tracked root (normal /new or /clear transition)
+# — 단, grok 은 in-process /new·rewind 때 추적 sid 로 SessionEnd 를 내지 않는다(실측 2026-07-19:
+# ended 마커가 영영 안 생겨 새 세션의 모든 훅이 차단 = 스피너·완료기록 사망). 그래서 추적 root 를
+# 소유한 "같은 grok 프로세스"(owner PID)가 새 sid 로 보낸 UserPromptSubmit 은 정당한 전환으로
+# 수락한다. 툴이 띄운 자식 grok 은 PID 가 달라 기존처럼 차단된다(fail-closed).
+function Write-SessionId([bool]$allowEndedTransition = $false, [bool]$allowSameProcessSwitch = $false) {
     $sid = Get-SessionId
     if (-not $sid) { return }
     $sDir = Join-Path $base 'sessions'
@@ -88,7 +123,13 @@ function Write-SessionId([bool]$allowEndedTransition = $false) {
 
     if ($current -and $current -ne $sid) {
         $ended = if ($allowEndedTransition) { Read-SessionId $endedPath } else { $null }
-        if (-not $ended -or $ended -ne $current) { return }
+        if (-not $ended -or $ended -ne $current) {
+            if (-not $allowSameProcessSwitch) { return }
+            $owner = Read-OwnerPid
+            if (-not $owner) { return }
+            $me = Get-GrokAncestorPid
+            if (-not $me -or $me -ne $owner) { return }
+        }
         Write-State $prevPath $current 'Ascii'
     }
 
@@ -97,6 +138,13 @@ function Write-SessionId([bool]$allowEndedTransition = $false) {
     Write-State $rootPath $sid 'Ascii'
     Write-State $path $sid 'Ascii'
     if (Test-Path -LiteralPath $endedPath) { Remove-Item -LiteralPath $endedPath -Force }
+
+    # 소유 프로세스 기록 — SessionStart(프로세스 시작/재실행=새 PID)마다 갱신, 그 외엔 없을 때만
+    # 백필(프롬프트마다 CIM 조회를 피함). 실패 시 미기록 → 전환 수락만 안 될 뿐 기존 동작 유지.
+    if ($allowEndedTransition -or -not (Test-Path -LiteralPath (Get-OwnerPidPath))) {
+        $ownerNow = Get-GrokAncestorPid
+        if ($ownerNow) { Write-State (Get-OwnerPidPath) ([string]$ownerNow) 'Ascii' }
+    }
 }
 
 function Mark-SessionEnded {
@@ -146,7 +194,9 @@ function Test-BusyRunning {
 
 switch -Regex ($eventKey) {
     '^(userpromptsubmit|beforesubmitprompt)$' {
-        Write-SessionId
+        # 사용자가 이 방의 root grok 터미널에서 직접 보낸 프롬프트 — in-process /new·rewind 로
+        # 바뀐 새 sid 도 여기서(owner PID 일치 시) 수락된다. 이후 fence·폴러가 새 세션을 따라감.
+        Write-SessionId $false $true
         if (-not (Test-CurrentRoomSession)) { break }
         Clear-Completed
         Write-Busy 'running'

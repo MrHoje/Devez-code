@@ -153,7 +153,8 @@ public sealed class GrokHookService : IDisposable
         if (string.IsNullOrEmpty(room)
             || room.EndsWith(".prev", StringComparison.OrdinalIgnoreCase)
             || room.EndsWith(".root", StringComparison.OrdinalIgnoreCase)
-            || room.EndsWith(".ended", StringComparison.OrdinalIgnoreCase))
+            || room.EndsWith(".ended", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".owner", StringComparison.OrdinalIgnoreCase))
             return;
 
         var sid = TryRead(sessionFile);
@@ -579,10 +580,11 @@ public sealed class GrokHookService : IDisposable
     {
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
-        // 복구용 sidecar(.prev.txt/.ended.txt)는 현재 방의 세션 변경 이벤트가 아니다.
+        // 복구용 sidecar(.prev.txt/.ended.txt/.owner.txt)는 현재 방의 세션 변경 이벤트가 아니다.
         if (room.EndsWith(".prev", StringComparison.OrdinalIgnoreCase)
             || room.EndsWith(".root", StringComparison.OrdinalIgnoreCase)
-            || room.EndsWith(".ended", StringComparison.OrdinalIgnoreCase)) return;
+            || room.EndsWith(".ended", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".owner", StringComparison.OrdinalIgnoreCase)) return;
         var sid = TryRead(path);
         if (sid != null && Guid.TryParse(sid, out var parsed))
         {
@@ -657,13 +659,14 @@ public sealed class GrokHookService : IDisposable
         catch { }
     }
 
-    /// <summary>현재/이전/전환 추적값 제거. 실제 대화 파일은 건드리지 않는다.</summary>
+    /// <summary>현재/이전/전환/소유 추적값 제거. 실제 대화 파일은 건드리지 않는다.</summary>
     public static void ResetTrackedSessionIds(string roomId)
     {
         foreach (var path in new[]
         {
             SessionPath(roomId), PreviousSessionPath(roomId), RootSessionPath(roomId),
-            SessionTransitionPath(roomId)
+            SessionTransitionPath(roomId),
+            Path.Combine(SessionDir, Sanitize(roomId) + ".owner.txt"),
         })
         {
             try { File.Delete(path); } catch { }
