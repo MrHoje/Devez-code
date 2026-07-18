@@ -75,7 +75,10 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   // childId → lastSeenMs. 훅 누락/크래시 잔재는 CHILD_STALE_MS 후 폐기.
   const liveChildren = new Map();
   const childSessionById = new Map();
+  // child 도 parent 처럼 step 사이 session.idle 을 낸다 → 즉시 done 하면 조기 소등.
+  const childIdleTimers = new Map();
   const CHILD_STALE_MS = 30 * 60 * 1000;
+  const CHILD_IDLE_DEBOUNCE_MS = 2500;
 
   const parentOf = (info) => {
     if (!info) return null;
@@ -83,11 +86,17 @@ export const DevezCodeRoomTracker = async (_ctx) => {
     return p ? String(p) : null;
   };
 
+  const cancelChildIdle = (cid) => {
+    const t = childIdleTimers.get(cid);
+    if (t) { clearTimeout(t); childIdleTimers.delete(cid); }
+  };
+
   const pruneStaleChildren = () => {
     if (liveChildren.size === 0) return;
     const now = Date.now();
     for (const [id, seen] of liveChildren) {
       if (now - seen > CHILD_STALE_MS) {
+        cancelChildIdle(id);
         liveChildren.delete(id);
         debug(`child stale pruned: ${id}`);
       }
@@ -95,6 +104,8 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   };
 
   // child 생존 중에는 방 스피너를 켠 채로 유지 (claude busy = main OR subruns).
+  // 중요: rootIdle 은 건드리지 않는다. child 활동이 rootIdle 을 false 로 지워 버리면
+  // 마지막 child 종료 후 scheduleIdle 이 안 불려 스피너 stuck-ON 이 된다.
   const markChildAlive = (childId, parentId) => {
     if (!childId) return;
     const cid = String(childId);
@@ -111,12 +122,17 @@ export const DevezCodeRoomTracker = async (_ctx) => {
         debug(`child ignored (other parent): ${cid} parent=${pid} root=${rootSessionId}`);
         return;
       }
+    } else if (!nestedSessionIds.has(cid) && !liveChildren.has(cid)) {
+      // parentId 없고 기존 child 표식도 없으면 합산 금지(타 세션 오염 방지).
+      // isChildSession 이 nested 에 넣은 뒤 handleChildEvent 로 오는 경로는 통과.
+      debug(`child alive skipped (unknown): ${cid}`);
+      return;
     }
+    cancelChildIdle(cid);
     const wasEmpty = liveChildren.size === 0;
     liveChildren.set(cid, Date.now());
-    // 서브에이전트 가동 = 원 프롬프트 미완료. 조기 idle 펜스를 풀어 스피너를 유지/재무장.
+    // 서브에이전트 가동 = 원 프롬프트 미완료. completed 펜스만 풀고 busy 유지.
     turnCompleted = false;
-    rootIdle = false;
     cancelIdle();
     writeBusy("running");
     debug(`child alive: ${cid} (live=${liveChildren.size}${wasEmpty ? ", re-arm" : ""})`);
@@ -125,11 +141,24 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   const markChildDone = (childId) => {
     if (!childId) return;
     const cid = String(childId);
+    cancelChildIdle(cid);
     if (!liveChildren.has(cid)) return;
     liveChildren.delete(cid);
     debug(`child done: ${cid} (live=${liveChildren.size})`);
     // 부모가 이미 idle 이고 마지막 child 가 끝났을 때만 완료 후보.
     if (liveChildren.size === 0 && rootIdle) scheduleIdle();
+  };
+
+  // child session.idle/status idle — 중간 스텝 idle 을 흡수하고 재개 없으면 done.
+  const scheduleChildDone = (childId) => {
+    if (!childId) return;
+    const cid = String(childId);
+    if (!liveChildren.has(cid) && !nestedSessionIds.has(cid)) return;
+    cancelChildIdle(cid);
+    childIdleTimers.set(cid, setTimeout(() => {
+      childIdleTimers.delete(cid);
+      markChildDone(cid);
+    }, CHILD_IDLE_DEBOUNCE_MS));
   };
 
   const acceptRootSession = (info) => {
@@ -340,10 +369,15 @@ export const DevezCodeRoomTracker = async (_ctx) => {
     if (t === "session.status") {
       const statusType = (props.status && props.status.type) || null;
       if (statusType === "busy" || statusType === "retry") markChildAlive(sid, rootSessionId);
-      else if (statusType === "idle") markChildDone(sid);
+      else if (statusType === "idle") scheduleChildDone(sid);
       return;
     }
-    if (t === "session.idle" || t === "session.error") {
+    // session.idle = 중간 스텝일 수 있음 → 디바운스. error/deleted 는 즉시 종료.
+    if (t === "session.idle") {
+      scheduleChildDone(sid);
+      return;
+    }
+    if (t === "session.error") {
       markChildDone(sid);
       return;
     }
@@ -486,7 +520,9 @@ export const DevezCodeRoomTracker = async (_ctx) => {
                 debug(`tracked session cleared (deleted: ${delId})`);
               }
               if (rootSessionId && String(delId) === rootSessionId) {
+                for (const cid of [...childIdleTimers.keys()]) cancelChildIdle(cid);
                 liveChildren.clear();
+                nestedSessionIds.clear();
                 cancelIdle();
                 turnCompleted = true;
                 rootIdle = true;
@@ -501,11 +537,13 @@ export const DevezCodeRoomTracker = async (_ctx) => {
             // 같은 방에서 새 세션이 생성되면(/clear·/new) 이전 todos·lastmsg 를 초기화한다.
             if (event.type === "session.created") {
               cancelIdle();
+              for (const cid of [...childIdleTimers.keys()]) cancelChildIdle(cid);
               turnCompleted = true;
               rootIdle = true;
               lastStartedUserMessageId = null;
               liveChildren.clear();
               nestedSessionIds.clear();
+              childSessionById.clear();
               writeBusy("idle");
               writeTodos([]);
               clearLastmsg();

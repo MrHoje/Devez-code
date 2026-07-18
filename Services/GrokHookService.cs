@@ -284,15 +284,38 @@ public sealed class GrokHookService : IDisposable
 
             if (cursor.ParsedThrough < len)
             {
+                // 바이트 단위로 읽어 완전한 줄(\n 로 끝남)만 소비한다.
+                // StreamReader.ReadLine 은 EOF 의 개행 없는 미완 줄도 반환 → 다음 폴에
+                // 이어서 붙는 바이트와 합쳐지지 않아 이벤트를 영구 유실할 수 있다.
+                var toRead = (int)Math.Min(len - cursor.ParsedThrough, 4 * 1024 * 1024);
+                var buf = new byte[toRead];
                 fs.Seek(cursor.ParsedThrough, SeekOrigin.Begin);
-                using var sr = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true,
-                    bufferSize: 64 * 1024, leaveOpen: true);
-                string? line;
-                while ((line = sr.ReadLine()) != null)
-                    ApplyEventLine(cursor, line); // 줄 중간 seek 로 깨진 첫 줄은 JSON 파싱 실패로 무시
-
-                // append-only JSONL: 이 스냅샷 길이까지 소비. 폴링 중 추가분은 다음 주기.
-                cursor.ParsedThrough = len;
+                var got = fs.Read(buf, 0, toRead);
+                if (got > 0)
+                {
+                    // 바이트 기준 마지막 \n — UTF-8 멀티바이트 경계/ GetByteCount 불일치 방지.
+                    var lastNl = -1;
+                    for (var i = got - 1; i >= 0; i--)
+                    {
+                        if (buf[i] == (byte)'\n') { lastNl = i; break; }
+                    }
+                    if (lastNl < 0)
+                    {
+                        // 아직 한 줄도 완성되지 않음 — 커서 유지, 다음 폴에 재시도.
+                    }
+                    else
+                    {
+                        var consumedBytes = lastNl + 1;
+                        var complete = Encoding.UTF8.GetString(buf, 0, consumedBytes);
+                        foreach (var raw in complete.Split('\n'))
+                        {
+                            if (raw.Length == 0) continue;
+                            var line = raw.EndsWith('\r') ? raw[..^1] : raw;
+                            ApplyEventLine(cursor, line);
+                        }
+                        cursor.ParsedThrough += consumedBytes;
+                    }
+                }
             }
 
             return TruthFromCursor(cursor);
@@ -361,16 +384,22 @@ public sealed class GrokHookService : IDisposable
                     break;
                 case "loop_started":
                 case "first_token":
-                    // 멀티 루프/서브에이전트 대기 재개 신호. 조기 turn_ended 오판 뒤에 와도
-                    // 활동으로 잡아 스피너를 살린다(Truth 의 fresh 경로 + InOpenTurn 보강).
-                    if (cursor.SawTurn && !cursor.InOpenTurn
-                        && cursor.LastTurnStarted != null
+                    // 열린 턴 안에서만 루프 재개로 본다. 이미 turn_ended 된 뒤의 잔여 이벤트는
+                    // post_end/fresh 경로가 짧게 흡수하고, 여기서 InOpenTurn 을 다시 켜면 stuck-ON.
+                    if (cursor.InOpenTurn)
+                    {
+                        // no-op: LastActivity 만 갱신됨
+                    }
+                    else if (cursor.SawTurn && cursor.LastTurnStarted != null
                         && (cursor.LastTurnEnded == null || cursor.LastTurnStarted > cursor.LastTurnEnded))
+                    {
                         cursor.InOpenTurn = true;
+                    }
                     break;
                 case "phase_changed":
                     if (root.TryGetProperty("phase", out var pEl) && pEl.ValueKind == JsonValueKind.String)
                         cursor.LastPhase = pEl.GetString();
+                    // 열린 턴 중 tool_execution/streaming 은 활동 유지(LastActivity 이미 갱신).
                     break;
             }
         }
@@ -440,8 +469,8 @@ public sealed class GrokHookService : IDisposable
         phase is "waiting_for_model" or "streaming_reasoning" or "streaming_text"
             or "tool_execution" or "permission_prompt"
         || lastType is "loop_started" or "first_token" or "tool_started"
-            or "tool_completed" or "permission_requested" or "permission_resolved"
-            or "phase_changed";
+            or "tool_completed" or "permission_requested" or "permission_resolved";
+    // phase_changed 단독 lastType 은 phase 문자열로만 판정(유휴 phase 오인 방지).
 
     private static void WriteBusyFile(string path, string value)
     {

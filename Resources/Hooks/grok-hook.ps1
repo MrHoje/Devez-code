@@ -235,7 +235,10 @@ switch -Regex ($eventKey) {
     }
     '^(stop|stopfailure)$' {
         if (-not (Test-CurrentRoomSession)) { break }
-        Mark-Completed
+        # 조기 Stop 이 멀티 루프 턴 중간에 올 수 있다. completed 는 남기지 않는다 —
+        # (completed 가 있으면 예전 훅은 툴 재무장을 막았고, 폴러가 지울 때까지 스피너 공백).
+        # busy idle 은 쓰되, 앱 events 폴러가 turn_open/openTools 이면 1s 내 running 복구.
+        Clear-Completed
         Write-Busy 'idle'
         Write-Waiting 'idle'
         Write-SessionId

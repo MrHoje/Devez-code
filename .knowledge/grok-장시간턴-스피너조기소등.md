@@ -29,6 +29,11 @@ Grok 세션이 **대부분 정상이지만**, 동작이 길어지면(멀티 툴/
 - **훅**: 프롬프트 복귀 Notification 으로 busy idle/completed 쓰지 않음(Stop·turn_ended 권위).
 - **MainWindow**: Grok 완료 정착 1.2s + `IsRoomBusy` 재확인(opencode/claude 와 동일).
 
+### 추가 수정 (2026-07-18 종합 점검)
+- 증분 파서가 **개행 없는 미완 줄**을 소비하지 않게 바이트 `\n` 경계로 커서 이동(이벤트 유실 방지).
+- Stop 훅이 `completed` 플래그를 남기지 않음(조기 Stop 뒤 툴/폴러 재무장 방해 제거).
+- `phase_changed` 단독 lastType 으로는 활성 판정하지 않음(phase 문자열만).
+
 ## 진단
 - `%APPDATA%\DevezCode\grok\busy\<room>.txt` / `completed\<room>.flag`
 - 해당 sid 의 `~/.grok/sessions/**/<sid>/events.jsonl` 에서 `turn_started`/`turn_ended`/`tool_*`
