@@ -2139,13 +2139,19 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        // [테스트] Ctrl+Shift+U — 가짜 업데이트를 띄워 사이드바 버튼 + 팝업 진행률을 실물로 확인.
+        // [테스트] Ctrl+Shift+U 를 짧게 두 번 → 가짜 업데이트(사이드바 버튼 + 팝업 진행률) 확인.
         if (e.Key == System.Windows.Input.Key.U
             && (System.Windows.Input.Keyboard.Modifiers
                 & (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
                == (System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift))
         {
-            TriggerTestUpdate();
+            var now = DateTime.UtcNow;
+            if ((now - _lastTestUpdateKeyUtc).TotalMilliseconds <= 700)
+            {
+                _lastTestUpdateKeyUtc = DateTime.MinValue;
+                TriggerTestUpdate();
+            }
+            else _lastTestUpdateKeyUtc = now;
             e.Handled = true;
             return;
         }
@@ -2422,6 +2428,7 @@ public partial class MainWindow : Window
 
     // [테스트] Ctrl+Shift+U 로 켜지는 가짜 업데이트 모드. OpenUpdatePopup 에서 소비 후 해제.
     private bool _testUpdateMode;
+    private DateTime _lastTestUpdateKeyUtc = DateTime.MinValue; // 더블 Ctrl+Shift+U 감지
 
     /// <summary>[테스트] 가짜 업데이트를 감지한 것처럼 사이드바 버튼을 띄운다.
     /// 버튼(또는 긴급 팝업) → OpenUpdatePopup 에서 실제 다운로드 대신 진행률만 시뮬레이션.</summary>
