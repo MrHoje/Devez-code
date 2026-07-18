@@ -534,15 +534,17 @@ public partial class SettingsDialog : UserControl
         }
     }
 
-    private void OpenVisualStudioImageLibrary_Click(object sender, RoutedEventArgs e)
+    private void OpenVisualStudio2017ImageLibrary_Click(object sender, RoutedEventArgs e)
+        => OpenExternalUrl("https://www.microsoft.com/en-us/download/details.aspx?id=35825");
+
+    private void OpenVisualStudio2022ImageLibrary_Click(object sender, RoutedEventArgs e)
+        => OpenExternalUrl("https://learn.microsoft.com/en-us/visualstudio/ide/the-visual-studio-image-library");
+
+    private static void OpenExternalUrl(string url)
     {
         try
         {
-            Process.Start(new ProcessStartInfo(
-                "https://www.microsoft.com/en-us/download/details.aspx?id=35825")
-            {
-                UseShellExecute = true,
-            });
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
