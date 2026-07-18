@@ -85,7 +85,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.16.3", "2026-07-16", true, new[]
+        ("v1.17.0", "2026-07-18", true, new[]
+        {
+            "Kimi Code CLI 에이전트 연결 기능을 추가했습니다.",
+        }),
+        ("v1.16.3", "2026-07-16", false, new[]
         {
             "사이드패널에서 파일별 변경 내용(diff)을 더 보기 좋게 확인할 수 있도록 개선했습니다.",
             "커밋·푸시·풀 등 기본 Git 연동 기능을 추가했습니다.",
