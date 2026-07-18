@@ -20,7 +20,8 @@
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Padding" Value="14,8"/>
             <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
+            <!-- 가로·세로 간격: WrapPanel 줄바꿈 시 두 번째 줄과 겹치지 않도록 bottom 8 -->
+            <Setter Property="Margin" Value="0,0,8,8"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="SnapsToDevicePixels" Value="False"/>
             <Setter Property="UseLayoutRounding" Value="False"/>
@@ -772,8 +773,8 @@
                                            Margin="0,16,0,0"/>
 
                                 <StackPanel x:Name="CleanerBody" Margin="0,16,0,0">
-                                    <!-- 에이전트 선택 (가로 pill 버튼, 켜진 것만 노출) -->
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                    <!-- 에이전트 선택 (가로 pill, 너비 부족 시 WrapPanel이 다음 줄로 넘김) -->
+                                    <WrapPanel Margin="0,0,0,8">
                                         <Button x:Name="ClaudeCatBtn" Tag="claude" Style="{StaticResource CleanerPill}" Click="CleanerAgent_Click">
                                             <StackPanel Orientation="Horizontal">
                                                 <Image Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
@@ -830,7 +831,7 @@
                                                 <TextBlock Text="Kimi" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
-                                    </StackPanel>
+                                    </WrapPanel>
 
                                     <!-- 카운트 카드 -->
                                     <Border Padding="18" CornerRadius="12" Background="{DynamicResource PanelSoftBrush}"
