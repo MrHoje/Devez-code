@@ -17,6 +17,18 @@ Grok 세션이 **대부분 정상이지만**, 동작이 길어지면(멀티 툴/
   - 하드킬 잔재: 활동 30분 초과 열린 턴은 idle
 - 훅 스크립트는 앱 시작 시 `GrokHookInstaller.EnsureInstalled` 가 `%LOCALAPPDATA%\DevezCode\grok\` 에 덮어씀 → **재시작 필요**.
 
+## 수정 (2026-07-18) — 긴 턴 turn_started 유실 / 서브에이전트 대기
+### 추가 원인
+1. 한 턴 이벤트 스팬이 **90~250KB+**(phase_changed 폭주). 예전 **96KB 꼬리 스캔**은 턴 중반에 `turn_started` 를 놓침.
+2. 꼬리만 보면 tool depth=0 + 활동 공백(서브에이전트/`run_terminal_command` 대기) → 가짜 idle.
+3. Notification `"type your message|…"` 가 턴 중에도 idle+completed 를 써서 스피너를 끔.
+
+### 추가 수정
+- **GrokHookService**: events.jsonl **증분 커서**(방별 `InOpenTurn`/`ToolDepth` 유지). 폴링 1초.
+- **fresh 창** 45s → 3분. turn_ended 이후에도 활성 phase 가 이어지면 유지.
+- **훅**: 프롬프트 복귀 Notification 으로 busy idle/completed 쓰지 않음(Stop·turn_ended 권위).
+- **MainWindow**: Grok 완료 정착 1.2s + `IsRoomBusy` 재확인(opencode/claude 와 동일).
+
 ## 진단
 - `%APPDATA%\DevezCode\grok\busy\<room>.txt` / `completed\<room>.flag`
 - 해당 sid 의 `~/.grok/sessions/**/<sid>/events.jsonl` 에서 `turn_started`/`turn_ended`/`tool_*`

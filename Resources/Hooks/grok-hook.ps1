@@ -194,10 +194,11 @@ switch -Regex ($eventKey) {
 
         # Interrupt/return-to-prompt fallback: some Grok paths emit no Stop but do
         # announce the input prompt again.
+        # NOTE: 멀티 루프/서브에이전트 턴 중에도 동일 문구가 나올 수 있다. completed 만 기록하고
+        # busy idle 은 쓰지 않는다 — 앱의 events.jsonl 폴러(turn_open/openTools)가 권위.
+        # (과거: 여기서 idle 을 쓰면 장시간 턴 중 스피너가 꺼지고, completed 펜스로 툴 재무장이 막혔다.)
         if ($messageKey -match '(type your message|enter send|shift-tab normal)') {
-            Mark-Completed
-            Write-Busy 'idle'
-            Write-Waiting 'idle'
+            # 실제 턴 종료는 Stop 또는 events turn_ended 가 담당. 프롬프트 복귀 알림만으로는 소등하지 않음.
             exit 0
         }
 

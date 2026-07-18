@@ -44,9 +44,9 @@ public sealed class GrokHookService : IDisposable
     private static readonly TimeSpan TurnEndSettle = TimeSpan.FromSeconds(2);
 
     /// <summary>turn_* 이벤트가 없는 구형 로그용 — 최근 활동이 이 시간 안이면 running 유지.</summary>
-    private static readonly TimeSpan ActivityFresh = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan ActivityFresh = TimeSpan.FromMinutes(3);
 
-    /// <summary>열린 도구 없이 활동만 멈춘 채 이 시간 지나면 idle(하드킬/유실 훅 잔재 방지).</summary>
+    /// <summary>열린 턴/도구 없이 활동만 멈춘 채 이 시간 지나면 idle(하드킬/유실 훅 잔재 방지).</summary>
     private static readonly TimeSpan StaleRunningCap = TimeSpan.FromMinutes(30);
 
     private FileSystemWatcher? _lastmsgWatcher;
@@ -57,6 +57,9 @@ public sealed class GrokHookService : IDisposable
     private int _eventsPolling;
     private readonly ConcurrentDictionary<string, string> _eventsPathCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, bool> _lastPolledBusy = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>방별 events.jsonl 증분 커서. 긴 턴은 phase_changed 만으로 수백 KB 가 쌓여
+    /// 고정 꼬리 윈도우에서 turn_started 가 잘리면 조기 idle 이 난다 → 파일 전체 상태를 유지한다.</summary>
+    private readonly ConcurrentDictionary<string, EventsCursor> _eventsCursors = new(StringComparer.OrdinalIgnoreCase);
 
     public event Action<string, string>? MessageChanged;
     public event Action<string, bool>? BusyChanged;
@@ -119,8 +122,9 @@ public sealed class GrokHookService : IDisposable
             foreach (var f in Directory.EnumerateFiles(SessionDir, "*.txt")) EmitSession(f);
 
             // 장시간 턴 조기 idle 복구 — 훅만으로는 Stop/Notification/ESC UI 해제를 못 되돌림.
+            // 1초 주기: 조기 Stop 뒤 스피너 소등 창을 최소화 (이전 2초).
             _eventsTimer = new Timer(_ => PollEvents(), null,
-                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
+                TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1));
         }
         catch { /* 감시 실패해도 앱은 계속 */ }
     }
@@ -160,7 +164,7 @@ public sealed class GrokHookService : IDisposable
         var eventsPath = ResolveEventsPath(room, sid);
         if (eventsPath == null || !File.Exists(eventsPath)) return;
 
-        var truth = AnalyzeEvents(eventsPath);
+        var truth = AnalyzeEvents(room, sid, eventsPath);
         if (truth == null) return;
 
         var busyPath = BusyPath(room);
@@ -235,122 +239,209 @@ public sealed class GrokHookService : IDisposable
         public string Reason = "";
     }
 
-    /// <summary>events.jsonl 꼬리에서 턴/도구 진행 여부 판정.
-    /// turn_started 가 turn_ended 보다 최신이면 진행 중(장시간 도구 중 이벤트 공백 포함).
-    /// tool_started 가 짝 tool_completed 보다 많으면 미완료 도구 있음.</summary>
-    private static EventsTruth? AnalyzeEvents(string path)
+    /// <summary>events.jsonl 증분 파서 상태. phase_changed 폭주로 파일이 커져도
+    /// turn_started 를 잃지 않도록 방별로 누적한다.</summary>
+    private sealed class EventsCursor
+    {
+        public string Path = "";
+        public string SessionId = "";
+        /// <summary>완전히 소비한 바이트 오프셋(줄 경계). 이후 바이트만 이어서 파싱.</summary>
+        public long ParsedThrough;
+        public bool InOpenTurn;
+        public int ToolDepth;
+        public bool SawTurn;
+        public DateTimeOffset? LastTurnStarted;
+        public DateTimeOffset? LastTurnEnded;
+        public DateTimeOffset? LastActivity;
+        public string? LastType;
+        public string? LastPhase;
+    }
+
+    /// <summary>events.jsonl 증분 판정.
+    /// 한 user 턴은 turn_started~turn_ended 이고 그 안에 loop/tool 이 수십~수백 회 반복된다.
+    /// 예전 96KB 꼬리 스캔은 긴 턴에서 turn_started 를 놓쳐(실측 턴 스팬 90KB~250KB+)
+    /// 서브에이전트/장시간 도구 대기 중 idle 로 오판했다.</summary>
+    private EventsTruth? AnalyzeEvents(string room, string sessionId, string path)
     {
         try
         {
-            const int tailBytes = 96 * 1024;
+            var cursor = _eventsCursors.GetOrAdd(room, _ => new EventsCursor());
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            if (fs.Length == 0) return new EventsTruth { IsActive = false, Reason = "empty" };
-            if (fs.Length > tailBytes) fs.Seek(-tailBytes, SeekOrigin.End);
-            using var sr = new StreamReader(fs, Encoding.UTF8);
-            var text = sr.ReadToEnd();
-
-            DateTimeOffset? lastTurnStarted = null, lastTurnEnded = null, lastActivity = null;
-            // 현재 열린 턴 안의 도구 깊이만 센다(꼬리 절단으로 과거 start 가 잘려도
-            // 턴 시작 이후 구간만 보면 과대 openTools 가 안 생긴다).
-            int turnToolDepth = 0;
-            bool sawTurn = false;
-            bool inOpenTurn = false;
-            string? lastType = null;
-            string? lastPhase = null;
-
-            foreach (var raw in text.Split('\n'))
+            var len = fs.Length;
+            if (len == 0)
             {
-                var line = raw.Trim();
-                if (line.Length == 0 || line[0] != '{') continue;
-                try
-                {
-                    using var doc = JsonDocument.Parse(line);
-                    var root = doc.RootElement;
-                    if (!root.TryGetProperty("type", out var tEl) || tEl.ValueKind != JsonValueKind.String)
-                        continue;
-                    var type = tEl.GetString() ?? "";
-                    lastType = type;
-
-                    DateTimeOffset? ts = null;
-                    if (root.TryGetProperty("ts", out var tsEl) && tsEl.ValueKind == JsonValueKind.String
-                        && DateTimeOffset.TryParse(tsEl.GetString(), out var parsedTs))
-                        ts = parsedTs;
-                    if (ts != null) lastActivity = ts;
-
-                    switch (type)
-                    {
-                        case "turn_started":
-                            sawTurn = true;
-                            lastTurnStarted = ts ?? lastTurnStarted;
-                            inOpenTurn = true;
-                            turnToolDepth = 0;
-                            break;
-                        case "turn_ended":
-                            sawTurn = true;
-                            lastTurnEnded = ts ?? lastTurnEnded;
-                            inOpenTurn = false;
-                            turnToolDepth = 0;
-                            break;
-                        case "tool_started":
-                            if (inOpenTurn || !sawTurn) turnToolDepth++;
-                            break;
-                        case "tool_completed":
-                            if ((inOpenTurn || !sawTurn) && turnToolDepth > 0) turnToolDepth--;
-                            break;
-                        case "phase_changed":
-                            if (root.TryGetProperty("phase", out var pEl) && pEl.ValueKind == JsonValueKind.String)
-                                lastPhase = pEl.GetString();
-                            break;
-                    }
-                }
-                catch { /* 잘린 줄 */ }
+                ResetCursor(cursor, path, sessionId);
+                return new EventsTruth { IsActive = false, Reason = "empty" };
             }
 
-            var now = DateTimeOffset.UtcNow;
-            if (turnToolDepth > 0)
-                return new EventsTruth { IsActive = true, Reason = $"openTools={turnToolDepth}" };
-
-            if (sawTurn && lastTurnStarted != null)
+            // 세션 전환·파일 축소(로테이션)·경로 변경 시 처음부터 재구축.
+            if (!string.Equals(cursor.Path, path, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(cursor.SessionId, sessionId, StringComparison.OrdinalIgnoreCase)
+                || cursor.ParsedThrough > len)
             {
-                bool turnOpen = lastTurnEnded == null || lastTurnStarted > lastTurnEnded;
-                if (turnOpen)
-                {
-                    // 비정상 잔재(프로세스 킬 후 turn_ended 없음) — 활동이 너무 오래면 idle.
-                    var age = lastActivity != null ? now - lastActivity.Value : now - lastTurnStarted.Value;
-                    if (age > StaleRunningCap)
-                        return new EventsTruth { IsActive = false, Reason = $"staleTurn age={age.TotalMinutes:F0}m" };
-                    return new EventsTruth { IsActive = true, Reason = "turn_open" };
-                }
-
-                // turn_ended 가 최신 — 정착 시간 지나면 idle.
-                var endAge = lastTurnEnded != null ? now - lastTurnEnded.Value : TimeSpan.MaxValue;
-                if (endAge < TurnEndSettle)
-                    return new EventsTruth { IsActive = true, Reason = "turn_end_settle" };
-                return new EventsTruth { IsActive = false, Reason = "turn_ended" };
+                ResetCursor(cursor, path, sessionId);
             }
 
-            // 구형: turn_* 없음 → 최근 활동/페이즈로 추정.
-            if (lastActivity != null)
+            if (cursor.ParsedThrough < len)
             {
-                var age = now - lastActivity.Value;
-                if (age <= ActivityFresh)
-                {
-                    bool activePhase = lastPhase is "waiting_for_model" or "streaming_reasoning"
-                        or "streaming_text" or "tool_execution" or "permission_prompt"
-                        || lastType is "loop_started" or "first_token" or "tool_started"
-                            or "permission_requested" or "permission_resolved";
-                    if (activePhase || lastType != "turn_ended")
-                        return new EventsTruth { IsActive = true, Reason = $"fresh:{lastType}/{lastPhase}" };
-                }
+                fs.Seek(cursor.ParsedThrough, SeekOrigin.Begin);
+                using var sr = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true,
+                    bufferSize: 64 * 1024, leaveOpen: true);
+                string? line;
+                while ((line = sr.ReadLine()) != null)
+                    ApplyEventLine(cursor, line); // 줄 중간 seek 로 깨진 첫 줄은 JSON 파싱 실패로 무시
+
+                // append-only JSONL: 이 스냅샷 길이까지 소비. 폴링 중 추가분은 다음 주기.
+                cursor.ParsedThrough = len;
             }
 
-            return new EventsTruth { IsActive = false, Reason = $"idle last={lastType}" };
+            return TruthFromCursor(cursor);
         }
         catch
         {
             return null;
         }
     }
+
+    private static void ResetCursor(EventsCursor cursor, string path, string sessionId)
+    {
+        cursor.Path = path;
+        cursor.SessionId = sessionId;
+        cursor.ParsedThrough = 0;
+        cursor.InOpenTurn = false;
+        cursor.ToolDepth = 0;
+        cursor.SawTurn = false;
+        cursor.LastTurnStarted = null;
+        cursor.LastTurnEnded = null;
+        cursor.LastActivity = null;
+        cursor.LastType = null;
+        cursor.LastPhase = null;
+    }
+
+    private static void ApplyEventLine(EventsCursor cursor, string raw)
+    {
+        var line = raw.Trim();
+        if (line.Length == 0 || line[0] != '{') return;
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var tEl) || tEl.ValueKind != JsonValueKind.String)
+                return;
+            var type = tEl.GetString() ?? "";
+            cursor.LastType = type;
+
+            DateTimeOffset? ts = null;
+            if (root.TryGetProperty("ts", out var tsEl) && tsEl.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(tsEl.GetString(), out var parsedTs))
+                ts = parsedTs;
+            if (ts != null) cursor.LastActivity = ts;
+
+            switch (type)
+            {
+                case "turn_started":
+                    cursor.SawTurn = true;
+                    cursor.LastTurnStarted = ts ?? cursor.LastTurnStarted ?? DateTimeOffset.UtcNow;
+                    cursor.InOpenTurn = true;
+                    cursor.ToolDepth = 0;
+                    break;
+                case "turn_ended":
+                    cursor.SawTurn = true;
+                    cursor.LastTurnEnded = ts ?? DateTimeOffset.UtcNow;
+                    cursor.InOpenTurn = false;
+                    cursor.ToolDepth = 0;
+                    break;
+                case "tool_started":
+                    // 열린 턴 안, 또는 turn 마커를 아직 못 본 구형 로그.
+                    if (cursor.InOpenTurn || !cursor.SawTurn) cursor.ToolDepth++;
+                    break;
+                case "tool_completed":
+                    if ((cursor.InOpenTurn || !cursor.SawTurn) && cursor.ToolDepth > 0)
+                        cursor.ToolDepth--;
+                    break;
+                case "loop_started":
+                case "first_token":
+                    // 멀티 루프/서브에이전트 대기 재개 신호. 조기 turn_ended 오판 뒤에 와도
+                    // 활동으로 잡아 스피너를 살린다(Truth 의 fresh 경로 + InOpenTurn 보강).
+                    if (cursor.SawTurn && !cursor.InOpenTurn
+                        && cursor.LastTurnStarted != null
+                        && (cursor.LastTurnEnded == null || cursor.LastTurnStarted > cursor.LastTurnEnded))
+                        cursor.InOpenTurn = true;
+                    break;
+                case "phase_changed":
+                    if (root.TryGetProperty("phase", out var pEl) && pEl.ValueKind == JsonValueKind.String)
+                        cursor.LastPhase = pEl.GetString();
+                    break;
+            }
+        }
+        catch { /* 잘린 줄 */ }
+    }
+
+    private static EventsTruth TruthFromCursor(EventsCursor cursor)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        if (cursor.ToolDepth > 0)
+            return new EventsTruth { IsActive = true, Reason = $"openTools={cursor.ToolDepth}" };
+
+        if (cursor.InOpenTurn)
+        {
+            var anchor = cursor.LastActivity ?? cursor.LastTurnStarted ?? now;
+            var age = now - anchor;
+            if (age > StaleRunningCap)
+                return new EventsTruth { IsActive = false, Reason = $"staleTurn age={age.TotalMinutes:F0}m" };
+            return new EventsTruth { IsActive = true, Reason = "turn_open" };
+        }
+
+        if (cursor.SawTurn && cursor.LastTurnStarted != null)
+        {
+            bool turnOpen = cursor.LastTurnEnded == null
+                || cursor.LastTurnStarted > cursor.LastTurnEnded;
+            if (turnOpen)
+            {
+                var anchor = cursor.LastActivity ?? cursor.LastTurnStarted.Value;
+                var age = now - anchor;
+                if (age > StaleRunningCap)
+                    return new EventsTruth { IsActive = false, Reason = $"staleTurn age={age.TotalMinutes:F0}m" };
+                return new EventsTruth { IsActive = true, Reason = "turn_open" };
+            }
+
+            var endAge = cursor.LastTurnEnded != null ? now - cursor.LastTurnEnded.Value : TimeSpan.MaxValue;
+            if (endAge < TurnEndSettle)
+                return new EventsTruth { IsActive = true, Reason = "turn_end_settle" };
+
+            // turn_ended 직후에도 곧이어 loop/streaming 이 오면(멀티턴 경계 흔들림) 유지.
+            if (cursor.LastActivity != null && cursor.LastActivity > cursor.LastTurnEnded
+                && now - cursor.LastActivity.Value <= ActivityFresh)
+            {
+                bool activePhase = IsActivePhase(cursor.LastPhase, cursor.LastType);
+                if (activePhase)
+                    return new EventsTruth { IsActive = true, Reason = $"post_end:{cursor.LastType}/{cursor.LastPhase}" };
+            }
+
+            return new EventsTruth { IsActive = false, Reason = "turn_ended" };
+        }
+
+        // 구형: turn_* 없음 → 최근 활동/페이즈로 추정.
+        if (cursor.LastActivity != null)
+        {
+            var age = now - cursor.LastActivity.Value;
+            if (age <= ActivityFresh)
+            {
+                if (IsActivePhase(cursor.LastPhase, cursor.LastType) || cursor.LastType != "turn_ended")
+                    return new EventsTruth { IsActive = true, Reason = $"fresh:{cursor.LastType}/{cursor.LastPhase}" };
+            }
+        }
+
+        return new EventsTruth { IsActive = false, Reason = $"idle last={cursor.LastType}" };
+    }
+
+    private static bool IsActivePhase(string? phase, string? lastType) =>
+        phase is "waiting_for_model" or "streaming_reasoning" or "streaming_text"
+            or "tool_execution" or "permission_prompt"
+        || lastType is "loop_started" or "first_token" or "tool_started"
+            or "tool_completed" or "permission_requested" or "permission_resolved"
+            or "phase_changed";
 
     private static void WriteBusyFile(string path, string value)
     {
@@ -454,8 +545,22 @@ public sealed class GrokHookService : IDisposable
         if (sid != null && Guid.TryParse(sid, out var parsed))
         {
             _eventsPathCache.TryRemove(room, out _); // 세션 전환 시 경로 재탐색
+            _eventsCursors.TryRemove(room, out _);  // 커서 세션 상태 초기화
             GrokSessionChanged?.Invoke(room, parsed.ToString());
         }
+    }
+
+    /// <summary>완료 정착 창에서 busy 파일 재확인 (조기 Stop 뒤 events 폴러가 running 으로 되돌린 경우).</summary>
+    public bool IsRoomBusy(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return false;
+        try
+        {
+            var status = TryRead(BusyPath(roomId));
+            return !string.IsNullOrWhiteSpace(status)
+                && status.Equals("running", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 
     private static string? TryRead(string path)

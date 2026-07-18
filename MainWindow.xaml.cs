@@ -435,6 +435,7 @@ public partial class MainWindow : Window
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
+        // 조기 Stop/Notification idle 과 events 폴러 재무장이 경합하므로 정착 창 + 파일 재확인.
         _grokHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
@@ -443,7 +444,7 @@ public partial class MainWindow : Window
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 if (!busy && s != null) s.IsWaitingChoice = false;
-                NotifyIfSessionFinished(s, was, busy);
+                NotifyIfSessionFinished(s, was, busy, () => _grokHook.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
@@ -2428,39 +2429,23 @@ public partial class MainWindow : Window
                           .Where(l => l.Length > 2));
 
         var prefix = info.IsUrgent ? "[긴급] " : "";
-        if (!ConfirmDialog.Show(
-                $"{prefix}새 버전 {info.Version}",
-                $"새 버전이 있습니다. 지금 업데이트할까요?{noteLines}",
-                okLabel: "업데이트",
-                iconKey: "IconDownload",
-                autoWidth: true))
-            return;
 
-        _ = ApplyUpdateAsync(info);
-    }
-
-    private async Task ApplyUpdateAsync(UpdateInfo info)
-    {
         _updateInProgress = true;
-        Sidebar.HideUpdateButton(); // 설치 진행 중에는 버튼 숨김
-        // 진행률은 타이틀바에 표시
-        UsageUpdateProgress.Visibility = Visibility.Visible;
-        var progress = new Progress<double>(v =>
+        Sidebar.HideUpdateButton(); // 진행 중에는 사이드바 버튼 숨김
+
+        // 노트 확인 → "업데이트" 클릭 시 같은 팝업 안에서 진행률을 표시하며 다운로드한다.
+        // 성공 시 앱이 종료·재실행되므로 ShowUpdate 는 반환되지 않는다(취소/실패만 내려온다).
+        var outcome = ConfirmDialog.ShowUpdate(
+            $"{prefix}새 버전 {info.Version}",
+            $"새 버전이 있습니다. 지금 업데이트할까요?{noteLines}",
+            progress => UpdateService.DownloadAndRelaunchAsync(info, progress),
+            okLabel: "업데이트");
+
+        _updateInProgress = false;
+        Sidebar.ShowUpdateButton(info.Version); // 취소·실패 → 버튼 복원
+
+        if (outcome == UpdateOutcome.Failed)
         {
-            UsageUpdateProgress.Visibility = Visibility.Visible;
-            UsageUpdateText.Text = $"업데이트 다운로드 중… {v:P0}";
-            UsageUpdateBar.Width = UsageUpdateTrack.ActualWidth * Math.Clamp(v, 0, 1);
-        });
-        try
-        {
-            await UpdateService.DownloadAndRelaunchAsync(info, progress);
-            // 성공 시 앱이 종료/재실행되므로 이 아래로는 도달하지 않는다.
-        }
-        catch
-        {
-            _updateInProgress = false;
-            UsageUpdateProgress.Visibility = Visibility.Collapsed; // 진행률 제거
-            if (_pendingUpdate != null) Sidebar.ShowUpdateButton(_pendingUpdate.Version); // 실패 → 버튼 복원
             // 자동 업데이트 실패 → 브라우저로 직접 다운로드 유도.
             if (ConfirmDialog.Show(
                     "업데이트 오류",
