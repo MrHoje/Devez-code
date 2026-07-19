@@ -685,7 +685,7 @@
                                                             <TextBlock Text="{Binding ResetHeaderText}" VerticalAlignment="Center"
                                                                        FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                                                                        Foreground="{DynamicResource TextMutedBrush}"/>
-                                                            <Button Content="초기화 사용" Margin="20,0,0,0" VerticalAlignment="Center"
+                                                            <Button Content="초기화" Margin="8,0,0,0" VerticalAlignment="Center"
                                                                     Style="{StaticResource LinkButton}"
                                                                     FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
                                                                     Visibility="{Binding ResetUseButtonVisibility}"

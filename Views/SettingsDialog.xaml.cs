@@ -440,8 +440,6 @@ public partial class SettingsDialog : UserControl
         CatGeneralBtn.Foreground   = key == "general"    ? primary : text;
         CatProjectBtn.Background   = key == "project"    ? active : Brushes.Transparent;
         CatProjectBtn.Foreground   = key == "project"    ? primary : text;
-        CatSessionBtn.Background   = key == "session"    ? active : Brushes.Transparent;
-        CatSessionBtn.Foreground   = key == "session"    ? primary : text;
         CatThemeBtn.Background     = key == "theme"      ? active : Brushes.Transparent;
         CatThemeBtn.Foreground     = key == "theme"      ? primary : text;
         CatAgentBtn.Background     = key == "agent"      ? active : Brushes.Transparent;
@@ -465,7 +463,6 @@ public partial class SettingsDialog : UserControl
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
-        SessionPanel.Visibility    = key == "session"    ? Visibility.Visible : Visibility.Collapsed;
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility      = key == "agent"      ? Visibility.Visible : Visibility.Collapsed;
         CleanerPanel.Visibility    = key == "cleaner"    ? Visibility.Visible : Visibility.Collapsed;

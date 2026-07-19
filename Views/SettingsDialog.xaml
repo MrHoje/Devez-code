@@ -251,16 +251,7 @@
                                         <Path Style="{StaticResource LucideButtonIcon}"
                                               Data="{StaticResource IconFolder}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="프로젝트" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="CatSessionBtn" Tag="session"
-                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Style="{StaticResource LucideButtonIcon}"
-                                              Data="{StaticResource IconSquareTerminal}" Width="15" Height="15"
-                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="세션" VerticalAlignment="Center"/>
+                                        <TextBlock Text="프로젝트/세션" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="CatNotifyBtn" Tag="notify"
@@ -458,17 +449,23 @@
 
                             </StackPanel>
 
-                            <!-- 프로젝트 패널 — 목록 열 수(1/2) -->
+                            <!-- 프로젝트/세션 패널 (프로젝트·세션 설정 통합) -->
                             <StackPanel x:Name="ProjectPanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolder}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
                                           Stroke="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="프로젝트" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                    <TextBlock Text="프로젝트/세션" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="프로젝트 로드와 목록 표시 방식을 설정합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+                                <TextBlock Text="프로젝트 로드·목록 표시 방식과 새 세션의 기본 동작을 설정합니다." FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
+
+                                <!-- ── 프로젝트 그룹 ── -->
+                                <TextBlock Text="프로젝트" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,18,0,0"/>
+                                <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                                        Margin="0,7,0,0"/>
 
                                 <Border Padding="0" CornerRadius="0"
                                         BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
@@ -544,19 +541,12 @@
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
-                            </StackPanel>
 
-                            <!-- 세션 패널 -->
-                            <StackPanel x:Name="SessionPanel" Margin="28,22,28,20" Visibility="Collapsed">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSquareTerminal}"
-                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
-                                          Stroke="{DynamicResource TextBrush}"/>
-                                    <TextBlock Text="세션" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                                </StackPanel>
-                                <TextBlock Text="새 세션을 만들 때의 기본 동작을 설정합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+                                <!-- ── 세션 그룹 ── -->
+                                <TextBlock Text="세션" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,28,0,0"/>
+                                <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                                        Margin="0,7,0,0"/>
 
                                 <Border Padding="0" CornerRadius="0"
                                         BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
@@ -682,8 +672,8 @@
                                 <ItemsControl x:Name="AgentList">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Margin="0,0,0,18" Padding="0,0,0,18" CornerRadius="0"
-                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                                            <Border Margin="0,21,0,0" Padding="0" CornerRadius="0"
+                                                    BorderThickness="0"
                                                     Background="Transparent">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
@@ -1102,10 +1092,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
-
                                 <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0">
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -1123,10 +1111,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
-
                                 <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0">
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -1144,10 +1130,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Separator Margin="0,18,0,18" Background="{DynamicResource LineBrush}"/>
-
                                 <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0">
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
