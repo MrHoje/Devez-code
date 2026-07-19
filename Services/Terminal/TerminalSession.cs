@@ -76,6 +76,20 @@ public sealed class TerminalSession : IDisposable
         // 터미널 종류에 따른 잠재적 동작 차이를 줄인다.
         Environment.SetEnvironmentVariable("WT_SESSION", Guid.NewGuid().ToString());
         Environment.SetEnvironmentVariable("WT_PROFILE_ID", "{2ece5bfe-50ed-5f3a-ab87-5cd4baafed2b}");
+
+        // 색 출력 강제 — 세션마다 재확정한다. App.OnStartup 에서 프로세스 env 로 한 번 깔지만,
+        // 그 값이 시작 후 어느 시점에 흐트러지면(User 범위의 빈 FORCE_COLOR="" 상속, NO_COLOR 충돌,
+        // 자동업데이트 흐름 등) 이후 실행되는 모든 세션이 monochrome(검정 배경·하이라이트 없는 흰 글자)로
+        // 뜨고 앱 재시작 전까지 지속됐다. 세션 생성 시점에 다시 확정해 프로세스 env 상태와 무관하게 항상 색을 켠다.
+        // 진단: 재확정 직전 값을 남겨 재발 시 무엇이 흐트러뜨렸는지 못박는다.
+        var preForce = Environment.GetEnvironmentVariable("FORCE_COLOR");
+        var preNo = Environment.GetEnvironmentVariable("NO_COLOR");
+        if (preForce != "3" || preNo != null)
+            DevezCode.Services.DiagLog.Write(
+                $"terminal env pre-assert: FORCE_COLOR=[{preForce ?? "<unset>"}] NO_COLOR=[{preNo ?? "<unset>"}] cmd={commandLine}");
+        Environment.SetEnvironmentVariable("FORCE_COLOR", "3");
+        Environment.SetEnvironmentVariable("COLORTERM", "truecolor");
+        Environment.SetEnvironmentVariable("NO_COLOR", null); // FORCE_COLOR 와 충돌 시 monochrome 유발 → 자식에서 제거
         // codex 등 TUI 의 라이트/다크 감지 폴백(rxvt 관례 "fg;bg", 0=검정 15=흰색).
         // 1차 감지는 OSC 11 질의(TerminalHostView 가 즉시 프록시 응답)지만, 그 경로가
         // 실패해도 밝기 판별이 앱 테마와 일치하도록 환경변수 폴백을 같이 깔아 둔다.
