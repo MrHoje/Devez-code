@@ -504,13 +504,14 @@ public partial class GitScmView : UserControl
                 acc = acc.Length == 0 ? segs[i] : acc + "/" + segs[i];
                 if (!folders.TryGetValue(acc, out var folder))
                 {
-                    folder = new ScmTreeNode { Name = segs[i], IsFolder = true };
+                    // FolderPath=누적경로(repo 상대) → 폴더 단위 git add/restore/checkout 대상.
+                    folder = new ScmTreeNode { Name = segs[i], IsFolder = true, FolderPath = acc, IsStaged = isStaged };
                     folders[acc] = folder;
                     siblings.Add(folder);
                 }
                 siblings = folder.Children;   // ObservableCollection<T> 는 IList<T> 구현
             }
-            siblings.Add(new ScmTreeNode { Name = segs[^1], IsFolder = false, Change = ch });
+            siblings.Add(new ScmTreeNode { Name = segs[^1], IsFolder = false, Change = ch, IsStaged = isStaged });
         }
         if (roots.Count == 0) return new List<ScmTreeNode>();
         Sort(roots);
@@ -519,7 +520,8 @@ public partial class GitScmView : UserControl
             Name = repoPath ?? "",
             IsFolder = true,
             IsRepositoryRoot = true,
-            IsStagedRoot = isStaged
+            FolderPath = "",   // 빈 경로 = 저장소 전체(stage/unstage all)
+            IsStaged = isStaged
         };
         foreach (var n in roots) root.Children.Add(Compress(n));
         return new List<ScmTreeNode> { root };
@@ -533,11 +535,12 @@ public partial class GitScmView : UserControl
         if (kids.Count == 1 && kids[0].IsFolder)
         {
             var c = kids[0];
-            var merged = new ScmTreeNode { Name = n.Name + "\\" + c.Name, IsFolder = true };
+            // 병합 노드의 FolderPath 는 가장 깊은(자식) 경로 — "부모/자식" 전체를 pathspec 로 처리.
+            var merged = new ScmTreeNode { Name = n.Name + "\\" + c.Name, IsFolder = true, FolderPath = c.FolderPath, IsStaged = n.IsStaged };
             foreach (var g in c.Children) merged.Children.Add(g);
             return merged;
         }
-        var res = new ScmTreeNode { Name = n.Name, IsFolder = true };
+        var res = new ScmTreeNode { Name = n.Name, IsFolder = true, FolderPath = n.FolderPath, IsStaged = n.IsStaged };
         foreach (var k in kids) res.Children.Add(k);
         return res;
     }
@@ -555,44 +558,56 @@ public partial class GitScmView : UserControl
         }
     }
 
+    // 스테이지/해제 — 파일(Change), 폴더(FolderPath), 루트(FolderPath="") 공통.
     private async void Stage_Click(object s, RoutedEventArgs e)
-        => await Do(c => GitService.StageAsync(_repo!, c.Path), GitOperation.Stage, s);
+        => await RunStage(s, stage: true);
     private async void Unstage_Click(object s, RoutedEventArgs e)
-        => await Do(c => GitService.UnstageAsync(_repo!, c.Path), GitOperation.Unstage, s);
+        => await RunStage(s, stage: false);
 
-    private async void StageAll_Click(object s, RoutedEventArgs e)
+    private async Task RunStage(object sender, bool stage)
     {
-        if (_busy) return;
-        await DoAll(() => GitService.StageAllAsync(_repo!), GitOperation.Stage);
-    }
-
-    private async void UnstageAll_Click(object s, RoutedEventArgs e)
-    {
-        if (_busy) return;
-        await DoAll(() => GitService.UnstageAllAsync(_repo!), GitOperation.Unstage);
+        if (_repo == null || _busy || (sender as FrameworkElement)?.Tag is not ScmTreeNode node) return;
+        // 파일이면 파일 경로, 폴더면 폴더 경로. 루트(폴더 경로="")는 전체 stage/unstage all.
+        var path = node.Change?.Path ?? node.FolderPath ?? "";
+        bool whole = node.Change == null && string.IsNullOrEmpty(path);
+        Func<Task<GitService.GitResult>> op = (stage, whole) switch
+        {
+            (true, true)   => () => GitService.StageAllAsync(_repo!),
+            (true, false)  => () => GitService.StageAsync(_repo!, path),
+            (false, true)  => () => GitService.UnstageAllAsync(_repo!),
+            (false, false) => () => GitService.UnstageAsync(_repo!, path),
+        };
+        await DoAll(op, stage ? GitOperation.Stage : GitOperation.Unstage);
     }
 
     private async void Discard_Click(object s, RoutedEventArgs e)
     {
-        if (_repo == null || (s as FrameworkElement)?.Tag is not GitChange c) return;
-        if (!ConfirmDialog.Show("변경 취소", $"'{c.Path}' 의 변경을 취소할까요? 되돌릴 수 없습니다.", "취소", danger: true)) return;
-        await Do(_ => GitService.DiscardAsync(_repo!, c.Path, c.IsUntracked), GitOperation.Discard, s, alreadyResolved: c);
+        if (_repo == null || _busy || (s as FrameworkElement)?.Tag is not ScmTreeNode node) return;
+
+        // 파일 리프 — 단일 파일 취소.
+        if (node.Change is { } c)
+        {
+            if (!ConfirmDialog.Show("변경 취소", $"'{c.Path}' 의 변경을 취소할까요? 되돌릴 수 없습니다.", "취소", danger: true)) return;
+            await DoAll(() => GitService.DiscardAsync(_repo!, c.Path, c.IsUntracked), GitOperation.Discard);
+            return;
+        }
+
+        // 폴더/루트 — 하위 작업트리 변경 전체 취소.
+        var leaves = new List<GitChange>();
+        CollectChanges(node, leaves);
+        if (leaves.Count == 0) return;
+        var msg = node.IsRepositoryRoot
+            ? $"모든 변경 내용({leaves.Count}개)을 취소할까요? 되돌릴 수 없습니다."
+            : $"'{node.FolderPath}' 폴더의 변경 {leaves.Count}개를 취소할까요? 되돌릴 수 없습니다.";
+        if (!ConfirmDialog.Show("변경 취소", msg, "취소", danger: true)) return;
+        await DoAll(() => GitService.DiscardFolderAsync(_repo!, node.FolderPath ?? "", leaves), GitOperation.Discard);
     }
 
-    private async Task Do(
-        Func<GitChange, Task<GitService.GitResult>> op,
-        GitOperation operation,
-        object sender,
-        GitChange? alreadyResolved = null)
+    /// <summary>노드 하위(자기 자신 포함)의 파일 리프 변경을 모두 수집.</summary>
+    private static void CollectChanges(ScmTreeNode node, List<GitChange> acc)
     {
-        var c = alreadyResolved ?? (sender as FrameworkElement)?.Tag as GitChange;
-        if (_repo == null || c == null) return;
-        _busy = true; UpdateButtons();
-        var r = await op(c);
-        _busy = false;
-        if (!r.Ok) ShowGitFailure(operation, r);
-        await RefreshAsync();
-        GitStateChanged?.Invoke(_repo);
+        if (node.Change != null) acc.Add(node.Change);
+        foreach (var child in node.Children) CollectChanges(child, acc);
     }
 
     private async Task DoAll(Func<Task<GitService.GitResult>> op, GitOperation operation)

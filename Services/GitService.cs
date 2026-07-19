@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace DevezCode.Services;
@@ -148,6 +149,33 @@ public static class GitService
             catch (Exception ex) { return new GitResult(false, "", ex.Message); }
         }
         return await RunAsync(repoDir, "checkout", "--", path);
+    }
+
+    /// <summary>폴더(경로 접두사) 단위 변경 취소. folderPath="" 는 저장소 전체.
+    /// 하위 추적 파일은 folder pathspec 로 한 번에 checkout, untracked 신규 파일은 개별 삭제한다.
+    /// changes 는 해당 폴더 아래 작업트리 변경 리프 목록(추적/untracked 판별용).</summary>
+    public static async Task<GitResult> DiscardFolderAsync(
+        string repoDir, string folderPath, IReadOnlyList<Models.GitChange> changes)
+    {
+        // 추적된 수정/삭제 파일이 하나라도 있으면 폴더 경로로 index 기준 복원.
+        if (changes.Any(c => !c.IsUntracked))
+        {
+            var spec = string.IsNullOrEmpty(folderPath) ? "." : folderPath;
+            var co = await RunAsync(repoDir, "checkout", "--", spec);
+            if (!co.Ok) return co;
+        }
+
+        // untracked(신규) 파일은 checkout 대상이 아니므로 개별 삭제.
+        foreach (var c in changes.Where(c => c.IsUntracked))
+        {
+            try
+            {
+                var full = Path.Combine(repoDir, c.Path.Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(full)) File.Delete(full);
+            }
+            catch (Exception ex) { return new GitResult(false, "", ex.Message); }
+        }
+        return new GitResult(true, "", "");
     }
 
     public static Task<GitResult> CommitAsync(string repoDir, string message)

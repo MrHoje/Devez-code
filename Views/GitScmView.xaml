@@ -94,41 +94,26 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-                <!-- 파일 리프 액션: discard(↩)+stage(+) 또는 unstage(−). 폴더면 숨김.
-                     기본 Opacity=0(공간은 유지) → 행 hover 시에만 1 로 노출(리플로우 없음). -->
-                <Button x:Name="DiscardBtn" Grid.Column="3" Tag="{Binding Change}"
+                <!-- 행 액션: discard(↩)+stage(+) 또는 unstage(−). 파일/폴더/루트 공통(Tag=노드).
+                     폴더면 하위 전체, 루트면 저장소 전체를 대상으로 동작.
+                     평소 숨김 → 행 hover 시에만 노출(리플로우 없음). -->
+                <Button x:Name="DiscardBtn" Grid.Column="3" Tag="{Binding}"
                         Click="Discard_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
                         Visibility="Collapsed" ToolTip="변경 취소">
                     <Path Data="{StaticResource IconRotateCcw}" Width="10" Height="10" Stretch="Uniform"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                 </Button>
-                <Button x:Name="StageBtn" Grid.Column="4" Tag="{Binding Change}"
-                        Click="Stage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
+                <Button x:Name="StageBtn" Grid.Column="4" Tag="{Binding}"
+                        Click="Stage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" Margin="0,0,9,0" VerticalAlignment="Center"
                                     Visibility="Collapsed" ToolTip="스테이징">
                     <Path Data="{StaticResource IconPlus}" Width="10" Height="10" Stretch="Uniform"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                 </Button>
-                <Button x:Name="UnstageBtn" Grid.Column="4" Tag="{Binding Change}"
-                        Click="Unstage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" VerticalAlignment="Center"
+                <Button x:Name="UnstageBtn" Grid.Column="4" Tag="{Binding}"
+                        Click="Unstage_Click" Style="{StaticResource IconButton}" Width="20" Height="16" Padding="2" Margin="0,0,9,0" VerticalAlignment="Center"
                                      Visibility="Collapsed" ToolTip="스테이징 해제">
-                    <Rectangle Width="8" Height="1.5" RadiusX="1" RadiusY="1"
-                               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                </Button>
-                <!-- 저장소 루트 폴더 hover: 목록 전체 스테이징/해제. -->
-                <Button x:Name="RootStageAllBtn" Grid.Column="4"
-                        Click="StageAll_Click" Style="{StaticResource IconButton}"
-                        Width="20" Height="16" Padding="2" VerticalAlignment="Center"
-                        Visibility="Collapsed" ToolTip="전체 스테이징">
-                    <Path Data="{StaticResource IconPlus}" Width="10" Height="10" Stretch="Uniform"
-                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
-                </Button>
-                <Button x:Name="RootUnstageAllBtn" Grid.Column="4"
-                        Click="UnstageAll_Click" Style="{StaticResource IconButton}"
-                        Width="20" Height="16" Padding="2" VerticalAlignment="Center"
-                        Visibility="Collapsed" ToolTip="전체 스테이징 해제">
                     <Rectangle Width="8" Height="1.5" RadiusX="1" RadiusY="1"
                                Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                 </Button>
@@ -140,6 +125,10 @@
                         <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding DiffGitEnabled, Source={x:Static models:GitUiState.Instance}}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                                <!-- 행 hover 시 상태글자 숨김(칼럼 Auto → 폭 0) → 우측 액션 버튼이 오른쪽 끝에 붙음. -->
+                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType={x:Type Border}}}" Value="True">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
                             </Style.Triggers>
@@ -170,46 +159,27 @@
                     <Setter TargetName="VisualStudioFolderIcon" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
                 <!-- 평소엔 버튼 숨김 → 이름이 M/U 바로 옆까지 표시. hover 시에만 상태별 버튼 노출
-                     → 이름 칼럼이 줄며 자동으로 …(CharacterEllipsis) 처리. -->
-                <!-- staged 파일 & hover → unstage -->
+                     → 이름 칼럼이 줄며 자동으로 …(CharacterEllipsis) 처리.
+                     hover 판정은 행 Border(AncestorType=Border=템플릿의 Bd)로 한정 — TreeViewItem 로 잡으면
+                     자식 행 hover 시 조상 폴더 버튼까지 동시에 점등된다. -->
+                <!-- staged 행(파일/폴더/루트) & hover → unstage -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding DiffGitEnabled, Source={x:Static models:GitUiState.Instance}}" Value="True"/>
-                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
-                        <Condition Binding="{Binding Change.IsStaged}" Value="True"/>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType={x:Type Border}}}" Value="True"/>
+                        <Condition Binding="{Binding IsStaged}" Value="True"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="UnstageBtn" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
-                <!-- unstaged 파일 & hover → discard + stage (Diff Git 사용 시에만) -->
+                <!-- 작업트리 행(파일/폴더/루트) & hover → discard + stage (Diff Git 사용 시에만) -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding DiffGitEnabled, Source={x:Static models:GitUiState.Instance}}" Value="True"/>
-                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
-                        <Condition Binding="{Binding IsFolder}" Value="False"/>
-                        <Condition Binding="{Binding Change.IsStaged}" Value="False"/>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType={x:Type Border}}}" Value="True"/>
+                        <Condition Binding="{Binding IsStaged}" Value="False"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="DiscardBtn" Property="Visibility" Value="Visible"/>
                     <Setter TargetName="StageBtn" Property="Visibility" Value="Visible"/>
-                </MultiDataTrigger>
-                <!-- 변경 내용의 저장소 루트 hover → 전체 스테이징 -->
-                <MultiDataTrigger>
-                    <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding DiffGitEnabled, Source={x:Static models:GitUiState.Instance}}" Value="True"/>
-                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
-                        <Condition Binding="{Binding IsRepositoryRoot}" Value="True"/>
-                        <Condition Binding="{Binding IsStagedRoot}" Value="False"/>
-                    </MultiDataTrigger.Conditions>
-                    <Setter TargetName="RootStageAllBtn" Property="Visibility" Value="Visible"/>
-                </MultiDataTrigger>
-                <!-- 스테이징된 변경 사항의 저장소 루트 hover → 전체 스테이징 해제 -->
-                <MultiDataTrigger>
-                    <MultiDataTrigger.Conditions>
-                        <Condition Binding="{Binding DiffGitEnabled, Source={x:Static models:GitUiState.Instance}}" Value="True"/>
-                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
-                        <Condition Binding="{Binding IsRepositoryRoot}" Value="True"/>
-                        <Condition Binding="{Binding IsStagedRoot}" Value="True"/>
-                    </MultiDataTrigger.Conditions>
-                    <Setter TargetName="RootUnstageAllBtn" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
             </HierarchicalDataTemplate.Triggers>
         </HierarchicalDataTemplate>
