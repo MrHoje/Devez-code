@@ -7,6 +7,9 @@ using DevezCode.Models;
 
 namespace DevezCode.Services;
 
+/// <summary>초기화권 소비 결과. Reset/AlreadyRedeemed = 실제 소비, 그 외는 미소비.</summary>
+public enum ConsumeOutcome { Reset, NothingToReset, NoCredit, AlreadyRedeemed, Unknown }
+
 /// <summary>codex/openai 사용량을 폴링한다. Codex CLI 또는 DevezCode/opencode 의 OAuth 토큰으로
 /// <c>GET chatgpt.com/backend-api/wham/usage</c> 를 호출한다.
 /// primary/secondary 슬롯은 고정 의미가 아니므로 limit_window_seconds 로 5h/주간을 구분한다.
@@ -15,6 +18,7 @@ public sealed class CodexUsageService : IDisposable
 {
     private const string UsageUrl = "https://chatgpt.com/backend-api/wham/usage";
     private const string CreditsUrl = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
+    private const string ConsumeUrl = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume";
     private const int PollMs = 3 * 60 * 1000;
     private static readonly string[] AuthKeys = { "openai", "codex", "chatgpt", "opencode" };
 
@@ -394,16 +398,151 @@ public sealed class CodexUsageService : IDisposable
             {
                 if (item.ValueKind != JsonValueKind.Object) continue;
                 var title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "초기화권" : "초기화권";
+                var id = item.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String ? idEl.GetString() : null;
                 DateTimeOffset? granted = TryParseTimestamp(item, "granted_at");
                 DateTimeOffset? expires = TryParseTimestamp(item, "expires_at");
-                list.Add(new ResetCredit { Title = title, GrantedAt = granted, ExpiresAt = expires });
+                list.Add(new ResetCredit { Id = id, Title = title, GrantedAt = granted, ExpiresAt = expires });
             }
+            if (list.Count > 0 && list.All(c => c.Id == null))
+                DiagLog.Write("CodexUsage: reset-credits 응답에 id 없음 — 소비 시 auto-select 폴백");
             return list;
         }
         catch
         {
             return Array.Empty<ResetCredit>();
         }
+    }
+
+    /// <summary>만료가 가장 빠른 초기화권을 고른다. ExpiresAt 오름차순, null(만료정보 없음)은 맨 뒤.
+    /// 목록이 비면 null.</summary>
+    public static ResetCredit? PickEarliestExpiring(IEnumerable<ResetCredit> credits)
+        => credits
+            .OrderBy(c => c.ExpiresAt ?? DateTimeOffset.MaxValue)
+            .FirstOrDefault();
+
+    /// <summary>초기화권 1개를 소비한다. 폴링과 직렬화되며 자동 재시도하지 않는다.
+    /// 성공(Reset/AlreadyRedeemed) 시 dropGuard 를 리셋하고 쿨다운을 기록한 뒤 즉시 재폴링한다.</summary>
+    public async Task<ConsumeOutcome> ConsumeResetCreditAsync(string? creditId, string redeemRequestId)
+    {
+        await _pollGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await EnsureFreshAsync().ConfigureAwait(false);
+            var (token, accountId, expired, _) = ReadAuth();
+            if (token == null || expired)
+            {
+                DiagLog.Write("CodexUsage consume 중단: 토큰 없음/만료");
+                return ConsumeOutcome.Unknown;
+            }
+
+            var payload = new Dictionary<string, string> { ["redeem_request_id"] = redeemRequestId };
+            if (!string.IsNullOrEmpty(creditId)) payload["credit_id"] = creditId!;
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, ConsumeUrl);
+            req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+            req.Headers.TryAddWithoutValidation("User-Agent", "OpenCode-Quota-Toast/1.0");
+            req.Headers.TryAddWithoutValidation("OpenAI-Beta", "codex-1");
+            if (accountId != null) req.Headers.TryAddWithoutValidation("ChatGPT-Account-Id", accountId);
+            req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            using var res = await _http.SendAsync(req).ConfigureAwait(false);
+            var bodyText = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (!res.IsSuccessStatusCode)
+            {
+                DiagLog.Write($"CodexUsage consume HTTP {(int)res.StatusCode}");
+                return ConsumeOutcome.Unknown;
+            }
+
+            var outcome = ParseConsumeOutcome(bodyText);
+            DiagLog.Write($"CodexUsage consume outcome={outcome}");
+
+            if (outcome is ConsumeOutcome.Reset or ConsumeOutcome.AlreadyRedeemed)
+            {
+                // 정당한 조기 초기화 — 다음 폴링의 급락이 dropGuard 에 보류되지 않도록 기준값을 비운다.
+                // _guardSeeded 는 true 로 유지해야 한다. false 로 두면 다음 폴링이 소비 이전 高사용률
+                // 스냅샷으로 가드를 재시드해 새 低값(초기화)을 급락으로 보류한다(우회 목적과 정반대).
+                _dropGuard.Reset();
+                WriteResetCooldown(Fingerprint(accountId ?? token));
+            }
+            return outcome;
+        }
+        catch (Exception ex)
+        {
+            DiagLog.Write("CodexUsage consume 예외: " + ex.GetType().Name);
+            return ConsumeOutcome.Unknown;
+        }
+        finally
+        {
+            _pollGate.Release();
+            // 성공 여부와 무관하게 최신 상태를 다시 읽어온다(성공 시 초기화 반영, 실패 시 원복 확인).
+            RefreshNow();
+        }
+    }
+
+    private static ConsumeOutcome ParseConsumeOutcome(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetString() : null;
+            return code switch
+            {
+                "reset" => ConsumeOutcome.Reset,
+                "nothing_to_reset" => ConsumeOutcome.NothingToReset,
+                "no_credit" => ConsumeOutcome.NoCredit,
+                "already_redeemed" => ConsumeOutcome.AlreadyRedeemed,
+                _ => ConsumeOutcome.Unknown,
+            };
+        }
+        catch { return ConsumeOutcome.Unknown; }
+    }
+
+    // ── 초기화권 소비 후 1시간 쿨다운(중복 사용 방지 UX 가드, 재시작을 넘어 유지) ──
+    public static readonly TimeSpan ResetCooldownDuration = TimeSpan.FromHours(1);
+
+    private static string ResetCooldownPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "codex-reset-last-used.json");
+
+    private void WriteResetCooldown(string accountFingerprint)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ResetCooldownPath)!);
+            var json = JsonSerializer.Serialize(new
+            {
+                used_at = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+                fingerprint = accountFingerprint,
+            });
+            var tmp = ResetCooldownPath + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, ResetCooldownPath, overwrite: true);
+        }
+        catch (Exception ex) { DiagLog.Write("CodexUsage 쿨다운 기록 실패: " + ex.GetType().Name); }
+    }
+
+    /// <summary>현재 codex 계정이 초기화권 쿨다운 중이면 남은 시간, 아니면 null.
+    /// 지문이 현재 계정과 다르면(다른 계정) 무시한다.</summary>
+    public static TimeSpan? ResetCooldownRemaining()
+    {
+        try
+        {
+            if (!File.Exists(ResetCooldownPath)) return null;
+            var (token, accountId, _, _) = ReadAuth();
+            if (token == null) return null;
+            var current = Fingerprint(accountId ?? token);
+
+            using var doc = JsonDocument.Parse(File.ReadAllText(ResetCooldownPath));
+            var root = doc.RootElement;
+            var fp = root.TryGetProperty("fingerprint", out var f) ? f.GetString() : null;
+            if (!string.Equals(fp, current, StringComparison.Ordinal)) return null;
+            if (!root.TryGetProperty("used_at", out var u) || u.ValueKind != JsonValueKind.Number) return null;
+
+            var usedAt = DateTimeOffset.FromUnixTimeMilliseconds(u.GetInt64());
+            var remaining = ResetCooldownDuration - (DateTimeOffset.Now - usedAt);
+            return remaining > TimeSpan.Zero ? remaining : null;
+        }
+        catch { return null; }
     }
 
     private static DateTimeOffset? TryParseTimestamp(JsonElement obj, string key)

@@ -681,9 +681,19 @@
                                                     </ItemsControl>
                                                     <!-- ── 초기화권 (codex 전용) ── -->
                                                     <StackPanel Visibility="{Binding ResetCreditsVisibility}" Margin="0,8,0,0">
-                                                        <TextBlock Text="{Binding ResetHeaderText}" 
-                                                                   FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,6"/>
+                                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                            <TextBlock Text="{Binding ResetHeaderText}" VerticalAlignment="Center"
+                                                                       FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                                                            <Button Content="초기화 사용" Margin="20,0,0,0" VerticalAlignment="Center"
+                                                                    Style="{StaticResource LinkButton}"
+                                                                    FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
+                                                                    Visibility="{Binding ResetUseButtonVisibility}"
+                                                                    IsEnabled="{Binding CanConsumeResetCredit}"
+                                                                    ToolTip="{Binding ResetCreditTooltip}"
+                                                                    ToolTipService.ShowOnDisabled="True"
+                                                                    Click="ResetCreditUse_Click"/>
+                                                        </StackPanel>
                                                         <ItemsControl ItemsSource="{Binding ResetCredits}">
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate DataType="{x:Type models:ResetCreditRowVM}">

@@ -61,4 +61,12 @@ public sealed class UsageCardVM
         => ResetCredits.Count > 0 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
     /// <summary>"초기화 3회 가능" 형태 헤더.</summary>
     public string ResetHeaderText => ResetCredits.Count > 0 ? $"초기화 {ResetCredits.Count}회 가능" : "";
+
+    /// <summary>초기화권 [사용] 버튼 활성 여부(크레딧 있음 &amp; 쿨다운 아님). MainWindow가 주입.</summary>
+    public bool CanConsumeResetCredit { get; init; }
+    /// <summary>[사용] 버튼 호버 툴팁(쿨다운 안내). 쿨다운 아니면 null(툴팁 미표시).</summary>
+    public string? ResetCreditTooltip { get; init; }
+    /// <summary>[사용] 버튼 노출 — 초기화권이 있을 때만.</summary>
+    public System.Windows.Visibility ResetUseButtonVisibility
+        => ResetCredits.Count > 0 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
 }

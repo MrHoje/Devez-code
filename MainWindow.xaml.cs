@@ -81,6 +81,8 @@ public partial class MainWindow : Window
     private Models.ProviderUsage? _lastDeepSeek;
     private Models.ProviderUsage? _lastGrok;
     private Models.ProviderUsage? _lastAntigravity;
+    // 초기화권 소비 in-flight 락 — 확인~POST 완료까지 재클릭/재진입 차단.
+    private bool _resetConsumeInFlight;
     private readonly SessionBusyService _sessionBusy = new();
     // 세션 간 지시 릴레이(/devez-relay:send-to) 수신부 — commands\<uuid>.json 감시 → 대상 세션 터미널에 주입.
     private readonly SessionCommandInboxService _sessionCommandInbox = new();
@@ -1088,10 +1090,26 @@ public partial class MainWindow : Window
         AddRow(rows, "주간", u.Weekly?.UsedPercent, u.Weekly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
         AddRow(rows, "월간", u.Monthly?.UsedPercent, u.Monthly?.ResetsAt, isShortWindow: false, showEstimate: showEst);
 
-        // codex 초기화권 정보
+        // codex 초기화권 정보 + [사용] 버튼 상태(쿨다운 반영)
         var credits = u.ResetCredits.Count > 0
             ? u.ResetCredits.Select(ToResetCreditRow).ToArray()
             : Array.Empty<Models.ResetCreditRowVM>();
+
+        bool canConsume = false;
+        string? resetTip = null;
+        if (credits.Length > 0)
+        {
+            var cooldown = CodexUsageService.ResetCooldownRemaining();
+            canConsume = cooldown == null;
+            if (cooldown is { } rem)
+            {
+                var elapsed = CodexUsageService.ResetCooldownDuration - rem;
+                resetTip =
+                    $"약 {Math.Max(1, (int)elapsed.TotalMinutes)}분 전 초기화권을 사용했습니다.\n"
+                    + $"중복 사용을 막기 위해 사용 후 1시간 동안 잠깁니다. (약 {Math.Max(1, (int)Math.Ceiling(rem.TotalMinutes))}분 후 다시 사용 가능)\n"
+                    + "지금 더 필요하면 ChatGPT 웹사이트나 데스크톱 앱에서 사용할 수 있습니다.";
+            }
+        }
 
         cards.Add(new Models.UsageCardVM
         {
@@ -1102,6 +1120,8 @@ public partial class MainWindow : Window
             IsStale = u.CapturedAt < DateTimeOffset.Now - ProviderUsageFreshness,
             Rows = rows,
             ResetCredits = credits,
+            CanConsumeResetCredit = canConsume,
+            ResetCreditTooltip = resetTip,
         });
     }
 
@@ -1139,6 +1159,51 @@ public partial class MainWindow : Window
         // 달력 날짜가 아니라 실제 남은 시간을 24시간 단위로 계산한다.
         var daysLeft = (int)span.TotalDays;
         return ($"{daysLeft}일 남음", daysLeft <= 3);
+    }
+
+    /// <summary>초기화권 [사용] 클릭 — 만료 최빠름 크레딧을 확인 후 명시 소비하고 결과를 고지한다.
+    /// in-flight 락으로 재진입을 막고, 완료 후 카드를 재빌드해 쿨다운/개수를 반영한다.</summary>
+    private async void ResetCreditUse_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (_resetConsumeInFlight) return;
+        var credits = _lastCodex?.ResetCredits;
+        if (credits == null || credits.Count == 0) return;
+
+        var pick = CodexUsageService.PickEarliestExpiring(credits);
+        var expiryText = pick?.ExpiresAt is { } ex
+            ? ex.ToLocalTime().ToString("M월 d일 HH:mm")
+            : "만료정보 없음";
+
+        if (!Views.ConfirmDialog.Show(
+                "초기화권 사용",
+                $"만료가 가장 빠른 초기화권(~ {expiryText})을 사용합니다.\n사용량 한도가 즉시 초기화되며 되돌릴 수 없습니다.",
+                okLabel: "사용", danger: true))
+            return;
+
+        _resetConsumeInFlight = true;
+        if (sender is System.Windows.Controls.Button b) b.IsEnabled = false;
+        try
+        {
+            var reqId = System.Guid.NewGuid().ToString();
+            var outcome = await _codex.ConsumeResetCreditAsync(pick?.Id, reqId);
+
+            var (title, msg) = outcome switch
+            {
+                ConsumeOutcome.Reset or ConsumeOutcome.AlreadyRedeemed
+                    => ("초기화 완료", "초기화권을 사용했습니다. 사용량 한도가 초기화되었습니다."),
+                ConsumeOutcome.NothingToReset
+                    => ("사용 안 됨", "초기화할 사용량이 없어 초기화권이 소모되지 않았습니다."),
+                ConsumeOutcome.NoCredit
+                    => ("사용 안 됨", "사용 가능한 초기화권이 없습니다."),
+                _ => ("확인 필요", "결과를 확인하지 못했습니다. 사용량을 새로고침해 확인하세요."),
+            };
+            Views.ConfirmDialog.Alert(title, msg);
+        }
+        finally
+        {
+            _resetConsumeInFlight = false;
+            if (_usageOpen) SetSidebarUsageCards(BuildUsageCards()); // 쿨다운/개수 반영해 버튼 상태 갱신
+        }
     }
 
     /// <summary>사용률 값이 있을 때만 행을 추가. 단기 윈도우는 "남은 시간", 그 외는 "초기화 일시"로 안내.</summary>

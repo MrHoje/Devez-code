@@ -10,6 +10,8 @@ public sealed class UsageWindow
 /// <summary>codex 초기화권(뱅크드 리셋) 1개 정보.</summary>
 public sealed class ResetCredit
 {
+    /// <summary>opaque 초기화권 id. 소비 시 credit_id 로 전송. GET 응답에 없으면 null.</summary>
+    public string? Id { get; init; }
     /// <summary>"Full reset (Weekly + 5 hr)"</summary>
     public required string Title { get; init; }
     /// <summary>지급 시각.</summary>

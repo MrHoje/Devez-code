@@ -187,6 +187,22 @@ catch { /* 직전 값 유지 */ }
 
 마지막 형태처럼 오류를 전부 숨기면 0% 또는 이전 계정 값이 최신처럼 무기한 남는다. HTTP 상태, 파싱 실패, 인증 후보, 성공한 사용률은 토큰 없이 `DiagLog`에 기록한다.
 
+## 초기화권 소비(consume)
+
+- `POST /wham/rate-limit-reset-credits/consume`, body `{credit_id, redeem_request_id}`(snake_case),
+  헤더는 credits GET과 동일(`Authorization`/`User-Agent`/`OpenAI-Beta: codex-1`/`ChatGPT-Account-Id`).
+- 명시 `credit_id`(만료 최빠름) + `redeem_request_id`(UUID) 재사용 + 버튼 in-flight 락 +
+  1시간 쿨다운으로 중복 소비를 차단한다. **자동 재시도 금지.**
+- 성공(`reset`/`already_redeemed`) 시 `_dropGuard.Reset()` + `_guardSeeded=false` 후 `RefreshNow()`
+  — 정당한 조기 초기화 급락을 보류 없이 즉시 반영.
+- 쿨다운은 `%AppData%\DevezCode\codex-reset-last-used.json`(계정 지문 + `used_at`)로 재시작을
+  넘어 유지, 다른 계정이면 무시. 실제 소비(`reset`/`already_redeemed`) 때만 기록.
+- 응답 `code`: `reset`/`nothing_to_reset`/`no_credit`/`already_redeemed`. 모르는 값은
+  성공 처리하지 않음(`ConsumeOutcome.Unknown`).
+- UI: 계정 사용량 패널 "초기화 N회 가능" 헤더 오른쪽 `[사용]` 버튼(쿨다운 중 비활성 +
+  `ToolTipService.ShowOnDisabled` 호버 안내). 확인·결과는 `ConfirmDialog.Show`/`Alert`.
+- 설계/계획: `docs/superpowers/specs|plans/2026-07-19-codex-reset-credit-consume-*.md`.
+
 ## 관련 코드
 
 - `Services/UsageApiService.cs`: Claude 인증 선택, 폴링, fallback(+가드 시드), 진단
