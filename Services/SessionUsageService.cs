@@ -214,7 +214,7 @@ public static class SessionUsageService
                 }
             }
         }
-        if (last == null) return null;
+        if (last == null) return LastKnown(roomId); // tail 128KB 안에 token_count 없음(마지막 응답 큼) → 직전 집계값 유지(순간 미표시 방지)
         try
         {
             using var d = JsonDocument.Parse(last);
