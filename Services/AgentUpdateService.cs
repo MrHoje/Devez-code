@@ -295,13 +295,25 @@ public static class AgentUpdateService
     /// 버전 조회는 짧고 설치가 아니므로 파이프 캡처 + 타임아웃 시 종료해도 안전하다. 실패 시 빈 문자열.</summary>
     private static async Task<string> GetVersionAsync(AgentDef agent)
     {
+        // 버전 조회는 무색으로 강제한다. 앱 프로세스 env 의 FORCE_COLOR=3 을 그대로 상속하면 일부
+        // CLI(gjc/bun 등)가 색코드+"NO_COLOR ignored due to FORCE_COLOR" 경고를 첫 줄에 뱉어, 그 경고가
+        // '버전' 문자열로 잡혀 before≠after → 가짜 '업데이트됨' 판정을 냈다(결과창에도 그 경고가 노출됨).
+        // FORCE_COLOR=0 + NO_COLOR=1 로 색을 끄고(충돌 경고 자체가 사라짐), COLORTERM 도 비운다.
         // & 호출 연산자로 PATH 상의 shim(.cmd/.ps1/.exe)을 그대로 해석.
-        var output = await RunShellCaptureAsync($"& {agent.Command} --version", TimeSpan.FromSeconds(30));
+        var output = await RunShellCaptureAsync(
+            $"$env:FORCE_COLOR='0'; $env:NO_COLOR='1'; $env:COLORTERM=$null; & {agent.Command} --version",
+            TimeSpan.FromSeconds(30));
         var firstLine = output
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault() ?? "";
+            .Select(StripAnsi)                              // 무색 무시 CLI 대비 잔여 ANSI 제거(방어)
+            .FirstOrDefault(l => !string.IsNullOrWhiteSpace(l)) ?? "";
         return firstLine.Trim();
     }
+
+    /// <summary>SGR/CSI 색·제어 이스케이프를 제거해 버전 문자열을 순수 텍스트로 만든다.</summary>
+    private static string StripAnsi(string s) =>
+        string.IsNullOrEmpty(s) ? s
+        : System.Text.RegularExpressions.Regex.Replace(s, @"\x1b\[[0-9;?]*[ -/]*[@-~]", "");
 
     /// <summary>버전 문자열 둘이 (표기 흔들림을 무시하고) 실질적으로 같은지. <c>grok --version</c> 이 채널 태그
     /// <c> [stable]</c> 를 간헐적으로 붙였다 뗐다 해서, 첫 줄 전체 Ordinal 비교는 버전이 동일해도 before≠after 가 되어
