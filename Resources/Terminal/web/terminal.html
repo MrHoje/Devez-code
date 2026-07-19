@@ -1344,16 +1344,17 @@
       const t = activeRoomId ? terms[activeRoomId] : null;
       const vp = t && t.term.element && t.term.element.querySelector('.xterm-viewport');
       if (vp) requestAnimationFrame(function () {
-        // 이미 논리적 바닥(ydisp==ybase)이면 개입 안 함 — WT 처럼 그대로 정지.
-        // gjc 는 바닥에서도 픽셀 잔여(rest>0)가 남아 매 휠마다 nudge 가 재발동 → 위아래 꿈틀거림.
+        // 스냅 판정은 반드시 xterm 논리 줄 간격(baseY-viewportY)으로 한다. DOM 뷰포트
+        // scrollTop(rest)으로 판정하면 안 된다 — codex 는 재페인트가 잦아 DOM scrollTop 이
+        // 논리 ydisp 와 크게 어긋난다(위로 200줄 올려도 DOM 은 물리 바닥 rest==0). 그 상태에서
+        // rest 로 판정하면 200줄 위에서도 nudge 가 발동해 바닥으로 강제 착지된다
+        // ("아래로는 한 번에 바닥"의 진짜 원인. 실측: vpY=460, baseY=672, rest=0).
         const buf = t.term.buffer.active;
-        if (buf.viewportY >= buf.baseY) return;
-        const cell = (vp.clientHeight / t.term.rows) || 16;
-        const rest = vp.scrollHeight - vp.clientHeight - vp.scrollTop;
-        // DOM은 이미 물리적 바닥(rest==0)인데 xterm 논리 viewportY가 ybase보다 1~3줄
-        // 모자라는 상태가 GJC 재페인트 뒤 생긴다. 기존 rest>0 가드가 바로 이 상태를 제외해
-        // 휠로는 끝에 못 가고 PageDown만 먹었다. rest==0도 포함해 nudge 후 논리 바닥에 붙인다.
-        if (rest >= 0 && rest <= cell * 6) {
+        const gap = buf.baseY - buf.viewportY;      // 논리적으로 바닥에서 몇 줄 위인가
+        // 바닥 1~3줄 이내(입력창 잘림 보정 구간)에서만 스냅 — idle 상태에서 위로 올렸다
+        // 내려올 때 xterm 줄 스냅이 1~3줄 모자라 입력창이 잘리는 것만 보정. 그 이상 벌어져
+        // 있으면 사용자가 위를 읽는 중이므로 절대 끌어내리지 않는다. gap<=0(이미 논리 바닥)도 개입 안 함.
+        if (gap > 0 && gap <= 3) {
           try { t.term.scrollLines(-1); } catch (e) {}
           requestAnimationFrame(function () {
             try {
