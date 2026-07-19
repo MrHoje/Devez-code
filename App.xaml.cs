@@ -274,6 +274,12 @@ public partial class App : Application
 
         // (C 의 데일리 게이트 비우기는 시작·설정 두 경로가 공유하는 AgentUpdateService.UpdateEnabledAgentsAsync
         //  안에서 일원화 처리한다 — 여기서는 결과 모달 표시만 담당.)
+        // 실제 교체가 있었으면(업데이트가 config/바이너리를 건드려 시작 시 적용한 테마를 날렸을 수 있음)
+        // 파일 기반 에이전트 테마를 다시 확정 기록한다. no-op(UpToDate) 실행은 클로버가 없으므로 생략.
+        // (타임아웃으로 InProgress 였던 항목은 WatchDetachedCompletionAsync 가 완주 시점에 동일 처리한다.)
+        if (results.Any(r => r.Status == AgentUpdateStatus.Updated))
+            ReapplyAgentFileThemes();
+
         var show = results
             .Where(r => r.Status is AgentUpdateStatus.Updated or AgentUpdateStatus.Failed)
             .ToList();
@@ -755,6 +761,25 @@ public partial class App : Application
         // 안티그래비티(agy) — settings.json colorScheme 갱신 (세션 재시작 시 반영).
         Services.Terminal.AntigravityCustomThemes.Apply(theme);
         ThemeChanged?.Invoke(theme);
+    }
+
+    /// <summary>에이전트 자동업데이트는 각 CLI 의 config/설정 파일을 재작성·정규화하거나 바이너리를 교체하면서,
+    /// 시작 시(<see cref="OnStartup"/>) 적용해 둔 테마를 날려버릴 수 있다(특히 grok <c>~/.grok/config.toml [ui] theme</c>).
+    /// 시작 시 테마 적용은 업데이트보다 <b>먼저</b> 실행되고 그 뒤 재적용이 없었기 때문에, 실제 업데이트가 발생한 실행에서는
+    /// 앱을 재실행하기 전까지 테마가 기본값으로 남았다. 업데이트가 완전히 끝난 직후(및 백그라운드 완주 시점)에 이 메서드로
+    /// 파일 기반 에이전트 테마를 현재 테마로 다시 확정 기록해 재실행 없이도 유지되게 한다.
+    /// best-effort — 실패해도 무해. (codex 는 파일이 아니라 런타임 OSC 색상질의 프록시라 여기 대상이 아니다.)</summary>
+    public static void ReapplyAgentFileThemes()
+    {
+        try
+        {
+            var theme = CurrentTheme;
+            Services.Terminal.GajaeCustomThemes.Apply(theme);
+            Services.Terminal.GrokCustomThemes.Apply(theme);
+            Services.Terminal.AntigravityCustomThemes.Apply(theme);
+            Services.Terminal.KimiCustomThemes.Apply(theme);
+        }
+        catch { /* best-effort */ }
     }
 
 }

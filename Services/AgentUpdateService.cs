@@ -207,10 +207,14 @@ public static class AgentUpdateService
             // 퇴행: before 는 정상인데 after 가 비면(--version 실패) 지연 설치가 에이전트를 깨뜨린 것.
             bool regressed = !string.IsNullOrEmpty(before) && string.IsNullOrEmpty(after);
             if (changed)
+            {
+                // 백그라운드 설치가 config/바이너리를 교체하며 시작 시 테마를 날렸을 수 있으므로 재확정.
+                DevezCode.App.ReapplyAgentFileThemes();
                 DevezCode.App.ShowAgentUpdateResults(new[]
                 {
                     new AgentUpdateResult(agent.Id, agent.DisplayName, before, after, AgentUpdateStatus.Updated, exitCode),
                 });
+            }
             else if (regressed || exitCode != 0)
             {
                 // C: 우리 업데이트가 깨뜨린 퇴행(before 정상 → after 실행불가)일 때만 게이트를 비워 다음 실행에서 재시도
