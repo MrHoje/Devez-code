@@ -135,6 +135,8 @@ public static class SettingsService
         public bool AutoUpdateAgents { get; set; } = true;
         // 시작 시 자동 업데이트를 마지막으로 실행한 날짜("yyyy-MM-dd"). 하루 1회만 동작하도록 게이트.
         public string LastAgentAutoUpdateDate { get; set; } = "";
+        // devez-marketplace/hoje-code 조용한 자동업데이트의 하루 1회 게이트(yyyy-MM-dd). 위 에이전트 게이트와 별개.
+        public string LastDevezPluginUpdateDate { get; set; } = "";
         // 최대화 시 작업표시줄까지 덮는 전체화면 동작 여부. 기본 false = 작업영역에만 맞춤.
         public bool UseFullScreen { get; set; } = false;
         // X(닫기) 버튼으로 종료하지 않고 창을 최소화할지 여부. 기본 false = 닫기 시 종료.
@@ -839,6 +841,9 @@ public static class SettingsService
 
     public static string LoadLastAgentAutoUpdateDate() => Current.LastAgentAutoUpdateDate;
     public static void SaveLastAgentAutoUpdateDate(string v) { Current.LastAgentAutoUpdateDate = v; Save(); }
+
+    public static string LoadLastDevezPluginUpdateDate() => Current.LastDevezPluginUpdateDate;
+    public static void SaveLastDevezPluginUpdateDate(string v) { Current.LastDevezPluginUpdateDate = v; Save(); }
 
     public static bool LoadUseFullScreen() => Current.UseFullScreen;
     public static void SaveUseFullScreen(bool v) { Current.UseFullScreen = v; Save(); }

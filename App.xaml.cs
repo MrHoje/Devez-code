@@ -169,6 +169,10 @@ public partial class App : Application
     /// 메인 창이 뜨기 전에 진행 모달을 먼저 띄워 업데이트 결과를 보여준 뒤 메인 창을 연다.</summary>
     private async void StartupSequence()
     {
+        // devez-marketplace 갱신 + hoje-code 플러그인을 하루 1회, 창·모달·알림 없이 백그라운드로 조용히 최신화.
+        // 아래 에이전트 자동업데이트 토글/게이트와 무관하게 항상 시도한다(사용자에게 진행을 노출하지 않음).
+        TryUpdateDevezPluginsSilently();
+
         // '지금 재시작하고 업데이트'로 재실행된 경우 자동업데이트 토글/데일리 게이트를 모두 우회하고 강제 실행.
         bool forced = _forceAgentUpdateNow;
 
@@ -212,6 +216,20 @@ public partial class App : Application
         // 메인 창이 뜬 뒤 업데이트 최종 결과를 팝업으로 알린다.
         // '건너뛰고 시작'으로 모달을 닫았어도 Task 는 계속 돌므로, 끝나는 시점에 알림이 온다.
         _ = NotifyAgentUpdateResultsAsync(win.UpdateTask);
+    }
+
+    /// <summary>devez-marketplace/hoje-code 조용한 자동업데이트를 하루 1회만 fire-and-forget 으로 기동한다.
+    /// 진행 UI·완료 알림 없이 백그라운드로만 돈다. 실패는 헬퍼 내부에서 삼킨다.</summary>
+    private static void TryUpdateDevezPluginsSilently()
+    {
+        try
+        {
+            var today = DateTime.Now.ToString("yyyy-MM-dd");
+            if (SettingsService.LoadLastDevezPluginUpdateDate() == today) return; // 오늘 이미 시도했으면 스킵
+            SettingsService.SaveLastDevezPluginUpdateDate(today);                 // 게이트 선점(중복 기동 방지)
+            _ = Services.ClaudePluginService.UpdateDevezSilentlyAsync();          // await 하지 않음 → 시작 지연 0
+        }
+        catch { /* 설정 접근 실패 등: 조용히 무시 */ }
     }
 
     /// <summary>실행 중인 세션을 안전 종료 경로로 닫고 앱을 재시작하면서 에이전트 업데이트를 강제 실행한다
