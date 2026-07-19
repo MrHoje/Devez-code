@@ -85,7 +85,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.17.0", "2026-07-18", true, new[]
+        ("v1.17.1", "2026-07-20", true, new[]
+        {
+            "Codex CLI에서 아래로 스크롤할 때 항상 맨 아래로 이동하던 문제를 수정했습니다.",
+        }),
+        ("v1.17.0", "2026-07-18", false, new[]
         {
             "Kimi Code CLI 에이전트 연결 기능을 추가했습니다.",
         }),
