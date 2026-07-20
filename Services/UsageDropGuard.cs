@@ -15,6 +15,22 @@ internal sealed class UsageDropGuard
 
     private IReadOnlyDictionary<string, WindowSample>? _accepted;
     private IReadOnlyDictionary<string, WindowSample>? _pending;
+    // 초기화권 소비 등으로 정당한 급락이 예고된 마감 시각(UTC ticks, 0=없음).
+    // 폴링 스레드와 버스트 스레드가 함께 읽으므로 Interlocked 로 다룬다.
+    private long _expectDropUntilTicks;
+
+    /// <summary>초기화권 소비처럼 클라이언트가 직접 초기화를 일으켜 급락이 확실히 예정된 경우,
+    /// 마감 시각까지 관측되는 첫 급락을 연속 확인 없이 즉시 채택하게 한다. 서버 반영이
+    /// 수 분 지연될 수 있어(옛 값이 먼저 도착) 단순 기준값 비우기로는 즉시 반영이 안 된다.</summary>
+    public void ExpectDrop(DateTimeOffset until)
+        => Interlocked.Exchange(ref _expectDropUntilTicks, until.UtcTicks);
+
+    /// <summary>예고된 급락을 아직 기다리는 중인지 — 소비 직후 버스트 재폴링의 종료 조건.</summary>
+    public bool IsExpectingDrop(DateTimeOffset now)
+        => Interlocked.Read(ref _expectDropUntilTicks) >= now.UtcTicks;
+
+    private void ClearExpectDrop()
+        => Interlocked.Exchange(ref _expectDropUntilTicks, 0);
 
     /// <summary>재시작 직후 기준값이 없어 첫 응답(가짜 급락 포함)을 무조건 채택하는 구멍을
     /// 막기 위해, 직전 실행이 저장한 스냅샷을 기준값으로 놓는다. 이미 실제 응답을 채택한
@@ -33,6 +49,7 @@ internal sealed class UsageDropGuard
     {
         _accepted = null;
         _pending = null;
+        ClearExpectDrop();
     }
 
     public bool ShouldPublish(
@@ -61,8 +78,22 @@ internal sealed class UsageDropGuard
         var suspicious = FindSuspiciousDrops(_accepted, candidate, now);
         if (suspicious.Count == 0)
         {
+            // 급락 없이 윈도우 교체(reset 변경)만 보여도 예고된 초기화가 반영된 것이므로
+            // 기대를 해제해 버스트 재폴링이 조기 종료되게 한다(사용률이 원래 낮았던 경우).
+            if (IsExpectingDrop(now) && AnyWindowReplaced(_accepted, candidate))
+                ClearExpectDrop();
             Accept(candidate);
             reason = null;
+            return true;
+        }
+
+        if (IsExpectingDrop(now))
+        {
+            // 클라이언트가 직접 일으킨 초기화(초기화권 소비)가 예고된 시간창 안의 급락은
+            // 서버 플립이 아니라 예정된 결과이므로 연속 확인 없이 즉시 채택한다.
+            ClearExpectDrop();
+            Accept(candidate);
+            reason = $"accepted expected drop (reset-credit consume): {FormatDrops(suspicious)}";
             return true;
         }
 
@@ -139,6 +170,19 @@ internal sealed class UsageDropGuard
                 return false;
         }
         return true;
+    }
+
+    /// <summary>기준값과 이름이 같은 윈도우 중 reset 주장이 달라진 것이 있는지 —
+    /// 예고된 초기화가 급락 없이(원래 저사용) 반영된 경우를 감지한다.</summary>
+    private static bool AnyWindowReplaced(
+        IReadOnlyDictionary<string, WindowSample> accepted,
+        IReadOnlyDictionary<string, WindowSample> candidate)
+    {
+        foreach (var (name, current) in candidate)
+            if (accepted.TryGetValue(name, out var previous)
+                && !SameWindowClaim(previous.ResetsAt, current.ResetsAt))
+                return true;
+        return false;
     }
 
     private static bool SameWindowClaim(DateTimeOffset? a, DateTimeOffset? b)

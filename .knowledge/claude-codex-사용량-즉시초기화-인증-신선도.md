@@ -193,8 +193,18 @@ catch { /* 직전 값 유지 */ }
   헤더는 credits GET과 동일(`Authorization`/`User-Agent`/`OpenAI-Beta: codex-1`/`ChatGPT-Account-Id`).
 - 명시 `credit_id`(만료 최빠름) + `redeem_request_id`(UUID) 재사용 + 버튼 in-flight 락 +
   1시간 쿨다운으로 중복 소비를 차단한다. **자동 재시도 금지.**
-- 성공(`reset`/`already_redeemed`) 시 `_dropGuard.Reset()` + `_guardSeeded=false` 후 `RefreshNow()`
-  — 정당한 조기 초기화 급락을 보류 없이 즉시 반영.
+- **서버 전파 지연 주의**: consume 성공 직후에도 `wham/usage`가 수십 초~수 분간 소비 이전의
+  옛 사용량을 반환한다(실측: 즉시 재폴링이 옛 99%를 받고, 새 0%는 2분 20초 뒤 도착).
+  따라서 `_dropGuard.Reset()`(기준값 비우기)만으로는 즉시 반영이 안 된다 — 빈 가드가 옛 값을
+  새 기준값으로 채택해 재무장하고, 실제 급락은 다음 정규 3분 폴링까지 보류된다.
+- 성공(`reset`/`already_redeemed`) 시 처리:
+  - `_dropGuard.ExpectDrop(now + 5분)` — 기대 시간창 동안 첫 급락을 연속 확인 없이 즉시 채택.
+    급락 없이 윈도우 교체(reset 변경)만 관측돼도(원래 저사용) 기대를 해제한다.
+    `Reset()`(계정 전환)도 기대를 함께 해제하고, 시간창 만료 후엔 플립 방어가 복원된다.
+  - `RefreshNow()` + 버스트 재폴링(3/5/10/15/30/60/60/60초 간격, 기대 해제 시 조기 종료)
+    — 서버 전파 완료를 정규 폴링보다 빨리 포착.
+  - `_guardSeeded`는 **true 로 유지**. false 로 두면 다음 폴링이 소비 이전 高사용률 스냅샷으로
+    가드를 재시드해 새 低값을 보류한다.
 - 쿨다운은 `%AppData%\DevezCode\codex-reset-last-used.json`(계정 지문 + `used_at`)로 재시작을
   넘어 유지, 다른 계정이면 무시. 실제 소비(`reset`/`already_redeemed`) 때만 기록.
 - 응답 `code`: `reset`/`nothing_to_reset`/`no_credit`/`already_redeemed`. 모르는 값은
@@ -209,7 +219,7 @@ catch { /* 직전 값 유지 */ }
 - `Services/CodexUsageService.cs`: Codex CLI 인증, 후보별 401 처리, 공급자 초기화 반영,
   `codex-usage.json` 스냅샷 기록·시드
 - `Services/UsageDropGuard.cs`: 이전 윈도우 유효 중의 단발성 큰 급락을 연속 응답으로 확인,
-  `Seed`(재시작 기준값)·`Reset`(계정 전환)
+  `Seed`(재시작 기준값)·`Reset`(계정 전환)·`ExpectDrop`(초기화권 소비 후 첫 급락 즉시 채택)
 - `Services/ClaudeCredentialStore.cs`
 - `Services/CodexCredentialStore.cs`
 - `Services/StatusLineService.cs`
@@ -224,6 +234,9 @@ catch { /* 직전 값 유지 */ }
 - 정상 API 응답의 사용률을 그대로 표시하는가
 - 이전 윈도우 유효 중의 단발성 급락은(reset 동일/변경 무관) 보류되고 원복 응답은 즉시 채택되는가
 - 실제 급락(조기 초기화·초기화권)은 두 번째 새 응답에서 채택되는가
+- (Codex) 초기화권 소비 후 기대 시간창의 첫 급락이 확인 없이 즉시 채택되는가
+- (Codex) 소비 후 버스트 재폴링이 돌고, 급락 채택·윈도우 교체 관측 시 조기 종료되는가
+- (Codex) 기대 시간창 만료 후의 급락은 다시 보류되는가(플립 방어 복원)
 - 이전 윈도우의 reset이 경과한 뒤의 낮은 값(정상 롤오버)은 첫 응답에서 즉시 채택되는가
 - 재시작 직후 스냅샷 시드로 첫 가짜 급락이 보류되는가(계정 키 일치·48h 이내일 때)
 - (Codex) 계정 전환 시 가드가 리셋되어 새 계정 첫 값이 즉시 게시되는가

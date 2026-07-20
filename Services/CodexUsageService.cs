@@ -458,10 +458,13 @@ public sealed class CodexUsageService : IDisposable
 
             if (outcome is ConsumeOutcome.Reset or ConsumeOutcome.AlreadyRedeemed)
             {
-                // 정당한 조기 초기화 — 다음 폴링의 급락이 dropGuard 에 보류되지 않도록 기준값을 비운다.
-                // _guardSeeded 는 true 로 유지해야 한다. false 로 두면 다음 폴링이 소비 이전 高사용률
-                // 스냅샷으로 가드를 재시드해 새 低값(초기화)을 급락으로 보류한다(우회 목적과 정반대).
-                _dropGuard.Reset();
+                // 정당한 조기 초기화 — 단, 서버 반영이 수 분 지연될 수 있어 기준값을 비우는
+                // 방식(Reset)으로는 안 된다: 즉시 재폴링이 아직 전파 안 된 옛 高사용률을 받아
+                // 빈 가드의 새 기준값이 되고, 실제 급락은 다음 정규 폴링까지 보류된다(실측
+                // 약 2분 20초 지연). 대신 기대 시간창 동안 첫 급락을 확인 없이 즉시 채택한다.
+                // _guardSeeded 는 true 로 유지해야 한다. false 로 두면 다음 폴링이 소비 이전
+                // 高사용률 스냅샷으로 가드를 재시드한다.
+                _dropGuard.ExpectDrop(DateTimeOffset.Now + ExpectDropWindow);
                 WriteResetCooldown(Fingerprint(accountId ?? token));
             }
             return outcome;
@@ -476,7 +479,29 @@ public sealed class CodexUsageService : IDisposable
             _pollGate.Release();
             // 성공 여부와 무관하게 최신 상태를 다시 읽어온다(성공 시 초기화 반영, 실패 시 원복 확인).
             RefreshNow();
+            // 소비 성공 시에만(기대 시간창이 열려 있을 때만) 서버 전파 지연을 짧은 간격으로 추적.
+            StartPostConsumeBurstPoll();
         }
+    }
+
+    // 초기화권 소비 후 서버가 옛 사용량을 반환하는 전파 지연을 허용하는 기대 시간창.
+    private static readonly TimeSpan ExpectDropWindow = TimeSpan.FromMinutes(5);
+
+    /// <summary>소비 직후 정규 3분 폴링을 기다리지 않도록 짧은 간격으로 재조회한다.
+    /// 가드가 초기화(급락 또는 윈도우 교체)를 채택하면 기대가 해제되어 조기 종료되고,
+    /// 소비가 실패했으면 기대가 없어 즉시 종료된다.</summary>
+    private void StartPostConsumeBurstPoll()
+    {
+        _ = Task.Run(async () =>
+        {
+            foreach (var seconds in new[] { 3, 5, 10, 15, 30, 60, 60, 60 })
+            {
+                if (!_dropGuard.IsExpectingDrop(DateTimeOffset.Now)) return;
+                await Task.Delay(TimeSpan.FromSeconds(seconds)).ConfigureAwait(false);
+                if (!_dropGuard.IsExpectingDrop(DateTimeOffset.Now)) return;
+                await PollAsync(waitForTurn: true, resetRejected: false).ConfigureAwait(false);
+            }
+        });
     }
 
     private static ConsumeOutcome ParseConsumeOutcome(string body)
