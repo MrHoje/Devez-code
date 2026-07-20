@@ -15,17 +15,25 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TreeViewItem">
-                        <StackPanel>
+                        <!-- 루트는 반드시 Grid(행 Auto/*) — ItemsPresenter 를 Grid 행에 둬야 계층 UI 가상화가
+                             유지된다. 세로 StackPanel 로 감싸면 자식(중첩 VirtualizingStackPanel)이 무한 높이로
+                             측정돼 가상화가 꺼지고, 트리가 전부 펼쳐진 상태에서 변경이 많으면 모든 컨테이너가
+                             한꺼번에 실체화 → 스크롤 중 리소스 고갈로 앱이 죽는다. (파일 탐색기 템플릿과 동일 구조) -->
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
                             <!-- 행 전체를 한 Border 로 감싸 hover 안정화(경계 넘나들며 깜빡이던 문제 해결).
                                  펼침 삼각형은 헤더(데이터 템플릿) 안 표시전용 Path — 토글은 Node_Click 한 곳에서만
                                  처리해 더블토글(두 번 동작해 제자리) 방지. -->
-                            <Border x:Name="Bd" CornerRadius="6" Background="Transparent" SnapsToDevicePixels="True">
+                            <Border x:Name="Bd" Grid.Row="0" CornerRadius="6" Background="Transparent" SnapsToDevicePixels="True">
                                 <ContentPresenter ContentSource="Header"
                                                   HorizontalAlignment="Stretch" Margin="0,3,0,3"/>
                             </Border>
-                            <ItemsPresenter x:Name="ItemsHost" Margin="16,0,0,0"
+                            <ItemsPresenter x:Name="ItemsHost" Grid.Row="1" Margin="16,0,0,0"
                                             Visibility="Collapsed" v:SlideExpand.IsEnabled="True"/>
-                        </StackPanel>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <!-- ItemsHost 가시성/높이는 v:SlideExpand 가 애니메이션과 함께 관리(트리거 제거) -->
                             <Trigger SourceName="Bd" Property="IsMouseOver" Value="True">
