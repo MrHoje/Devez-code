@@ -96,6 +96,13 @@ public partial class App : Application
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, args) =>
             WriteCrashLog("UnobservedTaskException", args.Exception);
 
+        // 상속된 DEVEZCODE_ROOM_ID 제거 — 방 안의 claude 세션이 앱을 재실행(빌드 후 Start-Process,
+        // 외부 claude 에서 bin\DevezCode.exe 실행 등)하면, 그 claude 프로세스가 자기 방 ID 를 env 로
+        // 물고 있어 새 DevezCode 가 그대로 상속한다. 그러면 방별 --settings roomArg 를 못 받는 훅 경로
+        // (내부 서브에이전트 등)가 env 폴백으로 떨어져 남의 방 세션을 그 상속 방에 기록 → "중복세션·ID
+        // 추적 불가". 시작 즉시 지워 오염 사슬을 끊는다(정식 방 launch 는 매번 재세팅하므로 무해).
+        Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", null);
+
         // 자동 업데이트 재실행 플래그(단일 인스턴스 분기보다 먼저 읽어 둔다).
         UpdateFailedRelaunch = e.Args.Contains("--update-failed");
 
