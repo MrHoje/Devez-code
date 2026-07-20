@@ -1,7 +1,9 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using DevezCode.Services;
 using DevezCode.Services.Terminal;
@@ -67,6 +69,28 @@ public partial class App : Application
     private static string CrashLogFile => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "crash.log");
 
+    /// <summary>컨텍스트 메뉴 항목은 좌클릭으로만 실행한다. 메뉴를 연 우클릭이
+    /// 항목까지 전달돼 Click 으로 해석되는 것을 막는다.</summary>
+    private static void BlockContextMenuItemRightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not MenuItem item || !IsInContextMenu(item)) return;
+        e.Handled = true;
+    }
+
+    private static bool IsInContextMenu(MenuItem item)
+    {
+        for (ItemsControl? parent = ItemsControl.ItemsControlFromItemContainer(item);
+             parent != null;
+             parent = parent is MenuItem parentItem
+                 ? ItemsControl.ItemsControlFromItemContainer(parentItem)
+                 : null)
+        {
+            if (parent is ContextMenu) return true;
+        }
+
+        return false;
+    }
+
     /// <summary>처리되지 않은 예외를 crash.log 에 append 한다(best-effort). UI/백그라운드 공통.</summary>
     private static void WriteCrashLog(string source, Exception? ex)
     {
@@ -84,6 +108,12 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // ContextMenu 는 우클릭으로 열되, 열린 MenuItem 은 좌클릭으로만 선택한다.
+        EventManager.RegisterClassHandler(typeof(MenuItem), UIElement.PreviewMouseRightButtonDownEvent,
+            new MouseButtonEventHandler(BlockContextMenuItemRightClick), true);
+        EventManager.RegisterClassHandler(typeof(MenuItem), UIElement.PreviewMouseRightButtonUpEvent,
+            new MouseButtonEventHandler(BlockContextMenuItemRightClick), true);
+
         // 전역 예외 핸들러 — 스타트업 포함 어느 지점 크래시든 crash.log 에 기록.
         // (핸들러 부착 전 크래시는 못 잡으므로 OnStartup 최상단에서 건다.)
         DispatcherUnhandledException += (_, args) =>

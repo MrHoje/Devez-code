@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using DevezCode.Services;
 
 namespace DevezCode.Views;
 
@@ -35,6 +36,8 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         MdHost.EditorReady += OnEditorReady;
         MdHost.InitFailed += OnInitFailed;
         MdHost.Interacted += () => Interacted?.Invoke(this, EventArgs.Empty);
+        MdHost.SetViewportWidth(SettingsService.LoadMarkdownViewportWidth());
+        SettingsService.MarkdownViewportWidthChanged += OnMarkdownViewportWidthChanged;
         App.ThemeChanged += OnThemeChanged;
         Loaded += OnLoaded;
         // 프로젝트 전환/탭 재선택 시 포커스 복귀 → 외부 변경 점검
@@ -110,6 +113,12 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
     }
 
     private void OnThemeChanged(string theme) => MdHost.ApplyTheme(theme);
+
+    private void OnMarkdownViewportWidthChanged(int width)
+    {
+        if (Dispatcher.CheckAccess()) MdHost.SetViewportWidth(width);
+        else Dispatcher.BeginInvoke(() => MdHost.SetViewportWidth(width));
+    }
 
     private void OnMarkdownChanged(string markdown, bool dirty)
     {
@@ -330,6 +339,7 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         if (Window.GetWindow(this) is { } win)
             win.Activated -= OnWindowActivated;
         App.ThemeChanged -= OnThemeChanged;
+        SettingsService.MarkdownViewportWidthChanged -= OnMarkdownViewportWidthChanged;
         MdHost.InitFailed -= OnInitFailed;
         MdHost.Dispose();
     }

@@ -55,7 +55,19 @@
                            FontFamily="{StaticResource PretendardFont}"
                            FontSize="{DynamicResource Fs12}"
                            Foreground="{DynamicResource TextBrush}"
-                           TextTrimming="CharacterEllipsis"/>
+                           TextTrimming="CharacterEllipsis"
+                           Cursor="Arrow"
+                           MouseLeftButtonUp="ProjectPathText_MouseLeftButtonUp">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="TextDecorations" Value="Underline"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
 
                 <!-- 얇은 세로선 + 브렌치(클릭 새로고침) — 비-git 저장소면 그룹 전체 숨김 -->
                 <StackPanel x:Name="BranchGroup" Orientation="Horizontal" Visibility="Collapsed">

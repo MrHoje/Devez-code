@@ -5,6 +5,13 @@ using System.Text.Json;
 
 namespace DevezCode.Services;
 
+/// <summary>터미널 URL 링크를 열 위치. 인앱 탭은 현재 프로젝트의 새 브라우저 탭으로 연다.</summary>
+public enum TerminalUrlOpenTarget
+{
+    InAppBrowserTab,
+    DefaultBrowser,
+}
+
 /// <summary>세션 토큰 사용량 비용($) 계산용 모델별 단가 규칙(외부 설정). settings.json 의 UsagePricing 배열에 담긴다.
 /// Match 는 모델ID 부분일치(소문자, 예 "opus"·"gpt-5"), 단가는 100만 토큰당 달러. 위에서부터 먼저 맞는 규칙 사용.</summary>
 public sealed class UsagePriceRule
@@ -29,6 +36,8 @@ public static class SettingsService
     private sealed class SettingsData
     {
         public int TerminalFontSizePt { get; set; } = 0;
+        // 마크다운 뷰어 본문 너비(px). 0=화면에 맞추기.
+        public int MarkdownViewportWidth { get; set; } = 0;
         // 토큰 사용량 비용 단가(모델별). 비어 있으면 SessionUsageService 내장 기본값 사용.
         // 채우면 내장값보다 우선(덮어쓰기/신규 모델 추가). 갱신 절차: .knowledge/토큰사용량-단가-갱신.md
         public List<UsagePriceRule> UsagePricing { get; set; } = new();
@@ -126,6 +135,12 @@ public static class SettingsService
         public bool AutoLoadLastProject { get; set; } = false;
         // 새 세션을 추가할 때 이름 입력 팝업을 바로 표시할지 여부. 기본 false = 자동 생성 이름 사용.
         public bool PromptForNewSessionName { get; set; } = false;
+        // 새 브라우저 탭을 만들 때 이름 입력 팝업을 바로 표시할지 여부. 기본 false = 자동 생성 이름 사용.
+        public bool PromptForNewBrowserTabName { get; set; } = false;
+        // 브라우저 기록이 없는 새 탭의 첫 주소. 잘못된 구버전 값은 LoadBrowserHomeUrl에서 Google로 보정한다.
+        public string BrowserHomeUrl { get; set; } = "https://www.google.com";
+        // 터미널 URL 링크 열기 방식. 기본은 현재 프로젝트의 인앱 브라우저 새 탭.
+        public TerminalUrlOpenTarget TerminalUrlOpenTargetMode { get; set; } = TerminalUrlOpenTarget.InAppBrowserTab;
         // 새로 숨긴 세션을 숨김 목록 맨 위에 넣을지 여부. JSON 필드명은 기존 설정 호환을 위해 유지한다.
         // 기본 false = 맨 아래.
         public bool HiddenSessionsOnTop { get; set; } = false;
@@ -238,6 +253,18 @@ public static class SettingsService
     // ── 터미널 폰트 크기 ──────────────────────────────────────────
     public static int LoadTerminalFontSizePt() => Current.TerminalFontSizePt;
     public static void SaveTerminalFontSizePt(int pt) { Current.TerminalFontSizePt = pt; Save(); }
+
+    // ── 마크다운 뷰어 본문 너비 ────────────────────────────────────
+    public static event Action<int>? MarkdownViewportWidthChanged;
+    public static int LoadMarkdownViewportWidth() => System.Math.Max(0, Current.MarkdownViewportWidth);
+    public static void SaveMarkdownViewportWidth(int width)
+    {
+        width = System.Math.Max(0, width);
+        if (Current.MarkdownViewportWidth == width) return;
+        Current.MarkdownViewportWidth = width;
+        Save();
+        MarkdownViewportWidthChanged?.Invoke(width);
+    }
 
     // ── 앱 전체 글꼴 크기 단계 (devez 이식: 0=작게, 1=크게) ───────
     public static int LoadFontScale() => Current.FontScale;
@@ -829,6 +856,38 @@ public static class SettingsService
 
     public static bool LoadPromptForNewSessionName() => Current.PromptForNewSessionName;
     public static void SavePromptForNewSessionName(bool v) { Current.PromptForNewSessionName = v; Save(); }
+
+    public static bool LoadPromptForNewBrowserTabName() => Current.PromptForNewBrowserTabName;
+    public static void SavePromptForNewBrowserTabName(bool v) { Current.PromptForNewBrowserTabName = v; Save(); }
+
+    public static string LoadBrowserHomeUrl()
+        => NormalizeBrowserHomeUrl(Current.BrowserHomeUrl);
+
+    public static void SaveBrowserHomeUrl(string? url)
+    {
+        Current.BrowserHomeUrl = NormalizeBrowserHomeUrl(url);
+        Save();
+    }
+
+    public static TerminalUrlOpenTarget LoadTerminalUrlOpenTarget()
+        => Enum.IsDefined(Current.TerminalUrlOpenTargetMode)
+            ? Current.TerminalUrlOpenTargetMode : TerminalUrlOpenTarget.InAppBrowserTab;
+
+    public static void SaveTerminalUrlOpenTarget(TerminalUrlOpenTarget target)
+    {
+        Current.TerminalUrlOpenTargetMode = Enum.IsDefined(target)
+            ? target : TerminalUrlOpenTarget.InAppBrowserTab;
+        Save();
+    }
+
+    private static string NormalizeBrowserHomeUrl(string? value)
+    {
+        var url = value?.Trim() ?? "";
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            return uri.AbsoluteUri;
+        return "https://www.google.com";
+    }
 
     public static bool LoadHiddenSessionInsertionOnTop() => Current.HiddenSessionsOnTop;
     public static void SaveHiddenSessionInsertionOnTop(bool v) { Current.HiddenSessionsOnTop = v; Save(); }

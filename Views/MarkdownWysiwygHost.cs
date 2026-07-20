@@ -29,6 +29,7 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
     private bool _pageReady;
     private (string md, bool markClean)? _pendingMarkdown;
     private string? _pendingTheme;
+    private int? _pendingViewportWidth;
     private DispatcherTimer? _readyTimeoutTimer;
     private const int ReadyTimeoutMs = 15000;
 
@@ -127,6 +128,7 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
                     _readyTimeoutTimer?.Stop();
                     _readyTimeoutTimer = null;
                     if (_pendingTheme != null) { ApplyTheme(_pendingTheme); _pendingTheme = null; }
+                    if (_pendingViewportWidth is int width) { SetViewportWidth(width); _pendingViewportWidth = null; }
                     if (_pendingMarkdown is { } pm) { SetMarkdown(pm.md, pm.markClean); _pendingMarkdown = null; }
                     EditorReady?.Invoke();
                     break;
@@ -157,6 +159,13 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
     {
         if (_pageReady) PostJson(new { type = "setMarkdown", markdown = md ?? "", markClean });
         else _pendingMarkdown = (md ?? "", markClean);
+    }
+
+    public void SetViewportWidth(int width)
+    {
+        width = System.Math.Max(0, width);
+        if (_pageReady) PostJson(new { type = "setViewportWidth", width });
+        else _pendingViewportWidth = width;
     }
 
     public void MarkClean()

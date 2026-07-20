@@ -32,8 +32,12 @@ public partial class SettingsDialog : UserControl
     private bool   _originalPreloadAllSessions;
     private int    _originalIdleSessionShutdownMinutes;
     private int    _originalDefaultFontSizePt;
+    private int    _originalMarkdownViewportWidth;
     private bool   _originalAutoLoadLastProject;
     private bool   _originalPromptForNewSessionName;
+    private bool   _originalPromptForNewBrowserTabName;
+    private string _originalBrowserHomeUrl = "";
+    private TerminalUrlOpenTarget _originalTerminalUrlOpenTarget;
     private bool   _originalHiddenSessionInsertionOnTop;
     private bool   _originalHideProjectInfoHeader;
     private bool   _originalDiffGitEnabled;
@@ -49,8 +53,13 @@ public partial class SettingsDialog : UserControl
     private bool   _selectedPreloadAllSessions;
     private int    _selectedIdleSessionShutdownMinutes;
     private int    _selectedDefaultFontSizePt;
+    private int    _selectedMarkdownViewportWidth;
+    private bool   _syncingMarkdownViewportWidth;
     private bool   _selectedAutoLoadLastProject;
     private bool   _selectedPromptForNewSessionName;
+    private bool   _selectedPromptForNewBrowserTabName;
+    private string _selectedBrowserHomeUrl = "";
+    private TerminalUrlOpenTarget _selectedTerminalUrlOpenTarget;
     private bool   _selectedHiddenSessionInsertionOnTop;
     private bool   _selectedHideProjectInfoHeader;
     private bool   _selectedDiffGitEnabled;
@@ -379,12 +388,24 @@ public partial class SettingsDialog : UserControl
         _originalDefaultFontSizePt = savedFontPt > 0 ? savedFontPt : 12; // 미설정(0) → 기본 12pt
         _selectedDefaultFontSizePt = _originalDefaultFontSizePt;
         SelectComboByTag(DefaultFontSizeCombo, _selectedDefaultFontSizePt.ToString());
+        _originalMarkdownViewportWidth = SettingsService.LoadMarkdownViewportWidth();
+        _selectedMarkdownViewportWidth = _originalMarkdownViewportWidth;
+        SetMarkdownViewportWidthEditor(_selectedMarkdownViewportWidth);
         _originalAutoLoadLastProject = SettingsService.LoadAutoLoadLastProject();
         _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
         AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
         _originalPromptForNewSessionName = SettingsService.LoadPromptForNewSessionName();
         _selectedPromptForNewSessionName = _originalPromptForNewSessionName;
         PromptForNewSessionNameToggle.IsChecked = _selectedPromptForNewSessionName;
+        _originalPromptForNewBrowserTabName = SettingsService.LoadPromptForNewBrowserTabName();
+        _selectedPromptForNewBrowserTabName = _originalPromptForNewBrowserTabName;
+        PromptForNewBrowserTabNameToggle.IsChecked = _selectedPromptForNewBrowserTabName;
+        _originalBrowserHomeUrl = SettingsService.LoadBrowserHomeUrl();
+        _selectedBrowserHomeUrl = _originalBrowserHomeUrl;
+        BrowserHomeUrlBox.Text = _selectedBrowserHomeUrl;
+        _originalTerminalUrlOpenTarget = SettingsService.LoadTerminalUrlOpenTarget();
+        _selectedTerminalUrlOpenTarget = _originalTerminalUrlOpenTarget;
+        SelectComboByTag(TerminalUrlOpenTargetCombo, _selectedTerminalUrlOpenTarget.ToString());
         _originalHiddenSessionInsertionOnTop = SettingsService.LoadHiddenSessionInsertionOnTop();
         _selectedHiddenSessionInsertionOnTop = _originalHiddenSessionInsertionOnTop;
         SelectComboByTag(HiddenSessionInsertionCombo, _selectedHiddenSessionInsertionOnTop ? "top" : "bottom");
@@ -405,7 +426,7 @@ public partial class SettingsDialog : UserControl
         MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
         _originalProjectColumns = SettingsService.LoadProjectColumns();
         _selectedProjectColumns = _originalProjectColumns;
-        UpdateProjectColumnsVisual();
+        SelectComboByTag(ProjectColumnsCombo, _selectedProjectColumns.ToString());
         (_originalHkMod, _originalHkPrev, _originalHkNext) = SettingsService.LoadTabHotkey();
         _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
         UpdateShortcutVisual();
@@ -450,6 +471,10 @@ public partial class SettingsDialog : UserControl
         CatGeneralBtn.Foreground   = key == "general"    ? primary : text;
         CatProjectBtn.Background   = key == "project"    ? active : Brushes.Transparent;
         CatProjectBtn.Foreground   = key == "project"    ? primary : text;
+        CatSessionBtn.Background   = key == "session"    ? active : Brushes.Transparent;
+        CatSessionBtn.Foreground   = key == "session"    ? primary : text;
+        CatBrowserBtn.Background   = key == "browser"    ? active : Brushes.Transparent;
+        CatBrowserBtn.Foreground   = key == "browser"    ? primary : text;
         CatThemeBtn.Background     = key == "theme"      ? active : Brushes.Transparent;
         CatThemeBtn.Foreground     = key == "theme"      ? primary : text;
         CatAgentBtn.Background     = key == "agent"      ? active : Brushes.Transparent;
@@ -473,6 +498,8 @@ public partial class SettingsDialog : UserControl
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
+        SessionPanel.Visibility    = key == "session"    ? Visibility.Visible : Visibility.Collapsed;
+        BrowserPanel.Visibility    = key == "browser"    ? Visibility.Visible : Visibility.Collapsed;
         ThemePanel.Visibility      = key == "theme"      ? Visibility.Visible : Visibility.Collapsed;
         AgentPanel.Visibility      = key == "agent"      ? Visibility.Visible : Visibility.Collapsed;
         CleanerPanel.Visibility    = key == "cleaner"    ? Visibility.Visible : Visibility.Collapsed;
@@ -787,6 +814,57 @@ public partial class SettingsDialog : UserControl
             _selectedDefaultFontSizePt = pt;
     }
 
+    private void SetMarkdownViewportWidthEditor(int width)
+    {
+        _syncingMarkdownViewportWidth = true;
+        try
+        {
+            bool custom = width > 0;
+            SelectComboByTag(MarkdownViewportWidthCombo, custom ? "custom" : "fit");
+            MarkdownViewportWidthInputBox.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
+            MarkdownViewportWidthUnit.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
+            MarkdownViewportWidthBox.Text = custom ? width.ToString() : "";
+        }
+        finally { _syncingMarkdownViewportWidth = false; }
+    }
+
+    private void MarkdownViewportWidthCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingMarkdownViewportWidth) return;
+        bool custom = (MarkdownViewportWidthCombo.SelectedItem as ComboBoxItem)?.Tag as string == "custom";
+        MarkdownViewportWidthInputBox.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
+        MarkdownViewportWidthUnit.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
+        if (!custom)
+        {
+            _selectedMarkdownViewportWidth = 0;
+            MarkdownViewportWidthBox.Text = "";
+        }
+        else if (_selectedMarkdownViewportWidth > 0)
+        {
+            MarkdownViewportWidthBox.Text = _selectedMarkdownViewportWidth.ToString();
+        }
+        else
+        {
+            _selectedMarkdownViewportWidth = 800;
+            MarkdownViewportWidthBox.Text = "800";
+        }
+    }
+
+    private void MarkdownViewportWidthBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_syncingMarkdownViewportWidth) return;
+        if (string.IsNullOrWhiteSpace(MarkdownViewportWidthBox.Text))
+        {
+            _selectedMarkdownViewportWidth = 0;
+            return;
+        }
+        if (int.TryParse(MarkdownViewportWidthBox.Text, out var width))
+            _selectedMarkdownViewportWidth = System.Math.Max(0, width);
+    }
+
+    private void MarkdownViewportWidthBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        => e.Handled = e.Text.Any(ch => !char.IsDigit(ch));
+
     private void AutoLoadLastProjectToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedAutoLoadLastProject = AutoLoadLastProjectToggle.IsChecked == true;
@@ -795,6 +873,21 @@ public partial class SettingsDialog : UserControl
     private void PromptForNewSessionNameToggle_Changed(object sender, RoutedEventArgs e)
     {
         _selectedPromptForNewSessionName = PromptForNewSessionNameToggle.IsChecked == true;
+    }
+
+    private void PromptForNewBrowserTabNameToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        _selectedPromptForNewBrowserTabName = PromptForNewBrowserTabNameToggle.IsChecked == true;
+    }
+
+    private void BrowserHomeUrlBox_TextChanged(object sender, TextChangedEventArgs e)
+        => _selectedBrowserHomeUrl = BrowserHomeUrlBox.Text;
+
+    private void TerminalUrlOpenTargetCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (TerminalUrlOpenTargetCombo.SelectedItem is ComboBoxItem item &&
+            Enum.TryParse<TerminalUrlOpenTarget>(item.Tag?.ToString(), out var target))
+            _selectedTerminalUrlOpenTarget = target;
     }
 
     private void HiddenSessionInsertionCombo_Changed(object sender, SelectionChangedEventArgs e)
@@ -874,29 +967,11 @@ public partial class SettingsDialog : UserControl
     }
 
     // ── 프로젝트 목록 열 수 (1/2) — 적용은 [저장] 시점에만(라이브 미리보기 없음) ──
-    private void ProjectColumnsCard_Click(object sender, MouseButtonEventArgs e)
+    private void ProjectColumnsCombo_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (sender is Border b && b.Tag is string tag && int.TryParse(tag, out var cols))
-        {
+        if (ProjectColumnsCombo.SelectedItem is ComboBoxItem item
+            && int.TryParse(item.Tag?.ToString(), out var cols))
             _selectedProjectColumns = cols == 2 ? 2 : 1;
-            UpdateProjectColumnsVisual();
-        }
-    }
-
-    private void UpdateProjectColumnsVisual()
-    {
-        var primary = (Brush)FindResource("PrimaryBrush");
-        var line    = (Brush)FindResource("LineBrush");
-        foreach (var (card, dot, cols) in new (Border, Ellipse, int)[]
-        {
-            (ColCard_1, ColRadioDot_1, 1),
-            (ColCard_2, ColRadioDot_2, 2),
-        })
-        {
-            var selected = _selectedProjectColumns == cols;
-            card.BorderBrush = selected ? primary : line;
-            dot.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
-        }
     }
 
     // ── 업데이트 내역 렌더링/페이지네이션 (devez 정합) ──
@@ -983,7 +1058,6 @@ public partial class SettingsDialog : UserControl
             SetActiveCategory(_activeCategoryKey);
             UpdateThemeSelectionVisual();
             UpdateFontSelectionVisual();
-            UpdateProjectColumnsVisual();
             UpdateNotifyPositionVisual();
             UpdateShortcutVisual();
             if (_cleanerBuilt && _cleanerVisible.Count > 0)
@@ -1447,8 +1521,12 @@ public partial class SettingsDialog : UserControl
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
         if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes) return true;
         if (_selectedDefaultFontSizePt != _originalDefaultFontSizePt) return true;
+        if (_selectedMarkdownViewportWidth != _originalMarkdownViewportWidth) return true;
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
         if (_selectedPromptForNewSessionName != _originalPromptForNewSessionName) return true;
+        if (_selectedPromptForNewBrowserTabName != _originalPromptForNewBrowserTabName) return true;
+        if (_selectedBrowserHomeUrl != _originalBrowserHomeUrl) return true;
+        if (_selectedTerminalUrlOpenTarget != _originalTerminalUrlOpenTarget) return true;
         if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop) return true;
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
         if (_selectedDiffGitEnabled != _originalDiffGitEnabled) return true;
@@ -1495,8 +1573,13 @@ public partial class SettingsDialog : UserControl
         }
         if (_selectedDefaultFontSizePt != _originalDefaultFontSizePt)
             SettingsService.SaveTerminalFontSizePt(_selectedDefaultFontSizePt);
+        if (_selectedMarkdownViewportWidth != _originalMarkdownViewportWidth)
+            SettingsService.SaveMarkdownViewportWidth(_selectedMarkdownViewportWidth);
         SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
         SettingsService.SavePromptForNewSessionName(_selectedPromptForNewSessionName);
+        SettingsService.SavePromptForNewBrowserTabName(_selectedPromptForNewBrowserTabName);
+        SettingsService.SaveBrowserHomeUrl(_selectedBrowserHomeUrl);
+        SettingsService.SaveTerminalUrlOpenTarget(_selectedTerminalUrlOpenTarget);
         if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)
             SettingsService.SaveHiddenSessionInsertionOnTop(_selectedHiddenSessionInsertionOnTop);
         if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
@@ -1613,8 +1696,15 @@ public partial class SettingsDialog : UserControl
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
         _originalIdleSessionShutdownMinutes = _selectedIdleSessionShutdownMinutes;
         _originalDefaultFontSizePt = _selectedDefaultFontSizePt;
+        _originalMarkdownViewportWidth = _selectedMarkdownViewportWidth;
+        SetMarkdownViewportWidthEditor(_selectedMarkdownViewportWidth);
         _originalAutoLoadLastProject = _selectedAutoLoadLastProject;
         _originalPromptForNewSessionName = _selectedPromptForNewSessionName;
+        _originalPromptForNewBrowserTabName = _selectedPromptForNewBrowserTabName;
+        _originalBrowserHomeUrl = SettingsService.LoadBrowserHomeUrl();
+        _selectedBrowserHomeUrl = _originalBrowserHomeUrl;
+        BrowserHomeUrlBox.Text = _selectedBrowserHomeUrl;
+        _originalTerminalUrlOpenTarget = _selectedTerminalUrlOpenTarget;
         _originalHiddenSessionInsertionOnTop = _selectedHiddenSessionInsertionOnTop;
         _originalHideProjectInfoHeader = _selectedHideProjectInfoHeader;
         _originalDiffGitEnabled = _selectedDiffGitEnabled;
@@ -1659,6 +1749,8 @@ public partial class SettingsDialog : UserControl
             _selectedDefaultFontSizePt = _originalDefaultFontSizePt;
             SelectComboByTag(DefaultFontSizeCombo, _originalDefaultFontSizePt.ToString());
         }
+        _selectedMarkdownViewportWidth = _originalMarkdownViewportWidth;
+        SetMarkdownViewportWidthEditor(_selectedMarkdownViewportWidth);
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject)
         {
             _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
@@ -1668,6 +1760,21 @@ public partial class SettingsDialog : UserControl
         {
             _selectedPromptForNewSessionName = _originalPromptForNewSessionName;
             PromptForNewSessionNameToggle.IsChecked = _selectedPromptForNewSessionName;
+        }
+        if (_selectedPromptForNewBrowserTabName != _originalPromptForNewBrowserTabName)
+        {
+            _selectedPromptForNewBrowserTabName = _originalPromptForNewBrowserTabName;
+            PromptForNewBrowserTabNameToggle.IsChecked = _selectedPromptForNewBrowserTabName;
+        }
+        if (_selectedBrowserHomeUrl != _originalBrowserHomeUrl)
+        {
+            _selectedBrowserHomeUrl = _originalBrowserHomeUrl;
+            BrowserHomeUrlBox.Text = _originalBrowserHomeUrl;
+        }
+        if (_selectedTerminalUrlOpenTarget != _originalTerminalUrlOpenTarget)
+        {
+            _selectedTerminalUrlOpenTarget = _originalTerminalUrlOpenTarget;
+            SelectComboByTag(TerminalUrlOpenTargetCombo, _originalTerminalUrlOpenTarget.ToString());
         }
         if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)
         {
@@ -1702,7 +1809,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedProjectColumns != _originalProjectColumns)
         {
             _selectedProjectColumns = _originalProjectColumns; // 라이브 미적용이라 선택값만 복원
-            UpdateProjectColumnsVisual();
+            SelectComboByTag(ProjectColumnsCombo, _originalProjectColumns.ToString());
         }
         if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled)
         {

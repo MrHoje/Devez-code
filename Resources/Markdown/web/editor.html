@@ -9,10 +9,17 @@
   /* 배경 투명 — 첫 로드/리페인트 시 흰 화면 깜빡임 방지(뒤 WPF 패널색이 비침) */
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
   #editor { position: absolute; inset: 0; }
-  /* 가독 폭 제한 — 스크롤 요소(.toastui-editor-contents) 자체 폭은 건드리지 않고
-     좌우 패딩으로만 본문을 가운데 모은다. (max-width로 줄이면 스크롤바가 보더에서 떨어진다.) */
-  .toastui-editor-contents { padding-left: max(24px, (100% - 760px) / 2);
-    padding-right: max(24px, (100% - 760px) / 2); }
+  /* 뷰포트 너비 — 스크롤 요소 폭은 유지하고 본문만 중앙 정렬한다.
+     화면보다 큰 값은 좌우 여백 0px로 계산돼 화면 너비까지만 사용한다. */
+  body.md-full-width .toastui-editor-md-preview .toastui-editor-contents,
+  body.md-full-width .toastui-editor-ww-container .toastui-editor-contents {
+    padding-left: 0 !important; padding-right: 0 !important;
+  }
+  body:not(.md-full-width) .toastui-editor-md-preview .toastui-editor-contents,
+  body:not(.md-full-width) .toastui-editor-ww-container .toastui-editor-contents {
+    padding-left: max(0px, calc(50% - var(--md-viewport-half-width))) !important;
+    padding-right: max(0px, calc(50% - var(--md-viewport-half-width))) !important;
+  }
   /* 앱 테마색 주입 — setTheme 전에는 투명(흰색 대신 WPF 패널색) */
   .toastui-editor-defaultUI { border: none; }
   .toastui-editor-main .toastui-editor-md-container,
@@ -236,7 +243,7 @@
 <script src="ko-kr.js"></script>
 <script src="tui-csh-all.min.js"></script>
 </head>
-<body spellcheck="false">
+<body class="md-full-width" spellcheck="false">
 <div id="editor" spellcheck="false"></div>
 <div id="cover"></div>
 <div id="md-toast"></div>

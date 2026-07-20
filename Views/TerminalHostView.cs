@@ -45,8 +45,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action? UserInteracted;
     /// <summary>사용자가 특정 방의 터미널을 실제로 조작함. 유휴 종료 타이머 갱신용.</summary>
     public event Action<string>? SessionActivity;
-    /// <summary>터미널 출력에서 파일 경로를 Ctrl+클릭 → 에디터 탭으로 열기 요청.</summary>
-    public event Action<string>? FileOpenRequested;
+    /// <summary>터미널 출력의 파일 또는 폴더 경로 열기 요청. 파일은 에디터 탭, 폴더는 Explorer로 연다.
+    /// line/column은 파일 위치 표기(path:line[:column])가 있을 때만 전달된다.</summary>
+    public event Action<string, int?, int?>? FileOpenRequested;
+    /// <summary>터미널 URL을 현재 프로젝트의 인앱 브라우저 탭으로 열기 요청.</summary>
+    public event Action<string>? BrowserUrlOpenRequested;
     /// <summary>synced reveal 준비 완료(폭 안정·fit·재동기 끝, 커튼은 아직 유지) — 셸이 양쪽 준비를 모아 동시에 걷는다.</summary>
     public event Action? RevealPrepared;
     /// <summary>web 로딩 커버가 DOM 에 반영·페인트됨 — 셸이 이 ACK 후에 터미널 HWND 를 unpark 해 콜드 세션
@@ -62,6 +65,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private string? _activeRoomId;
     private double _fontSizePt = -1; // -1 = config에서 아직 읽지 않음
     private readonly Action<string> _themeChangedHandler;
+    // xterm 링크 provider와 WebView 팝업 경로가 같은 클릭을 함께 전달해도 한 번만 연다.
+    private string? _lastTerminalUrl;
+    private long _lastTerminalUrlTick;
 
     private const double PtToPx = 96.0 / 72.0;
 
@@ -192,16 +198,16 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private static string AgentFor(string roomId) => DevezCode.Services.SettingsService.LoadAgentForRoom(roomId);
 
     /// <summary>해당 방의 터미널을 표시 (필요 시 WebView2 초기화·세션 생성).</summary>
-    public async void ShowTerminal(string roomId)
+    public async void ShowTerminal(string roomId, bool reemit = false)
     {
-        DevezCode.Services.DiagLog.Write($"ShowTerminal room={roomId} pageReady={_pageReady} readyNotified={_readyNotified.Contains(roomId)}");
+        DevezCode.Services.DiagLog.Write($"ShowTerminal room={roomId} pageReady={_pageReady} readyNotified={_readyNotified.Contains(roomId)} reemit={reemit}");
         _activeRoomId = roomId;
         if (!_initStarted)
         {
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId), fontSize = RoomFontSizeOverridePx(roomId) }); PinBottomIfInline(roomId); }
+        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId), fontSize = RoomFontSizeOverridePx(roomId), reemit }); PinBottomIfInline(roomId); }
         else _pendingShowRoomId = roomId; // pageReady 때 처리
 
         // 이미 안정화까지 끝난 방이면 즉시 준비 완료 통지 → 로딩 스킵
@@ -473,6 +479,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 VirtualHost, webRoot, CoreWebView2HostResourceAccessKind.Allow);
 
             core.WebMessageReceived += OnWebMessageReceived;
+            // xterm 기본 링크 처리(window.open)가 살아 있어도 WebView 팝업을 만들거나 OS 기본 브라우저로
+            // 빠지지 않게 동일 URL 게이트로 회수한다.
+            core.NewWindowRequested += OnNewWindowRequested;
             // terminal.html 이 바뀔 때마다 새로 로드되도록 캐시 무력화(WebView2 가상호스트 응답 캐시 회피)
             long ver = 0;
             try { ver = File.GetLastWriteTimeUtc(Path.Combine(webRoot, "terminal.html")).Ticks; } catch { }
@@ -504,8 +513,20 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "openFile":
                 {
                     var path = root.GetProperty("path").GetString() ?? "";
+                    int? line = root.TryGetProperty("line", out var lineElement) &&
+                                lineElement.TryGetInt32(out var parsedLine) && parsedLine > 0
+                        ? parsedLine : null;
+                    int? column = root.TryGetProperty("column", out var columnElement) &&
+                                  columnElement.TryGetInt32(out var parsedColumn) && parsedColumn > 0
+                        ? parsedColumn : null;
                     if (!string.IsNullOrEmpty(path))
-                        FileOpenRequested?.Invoke(path);
+                        FileOpenRequested?.Invoke(path, line, column);
+                    break;
+                }
+                case "openExternalUrl":
+                {
+                    var url = root.GetProperty("url").GetString() ?? "";
+                    OpenTerminalUrl(url, "webMessage");
                     break;
                 }
                 case "interact":
@@ -574,7 +595,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     var roomId = root.GetProperty("roomId").GetString()!;
                     var cols = root.GetProperty("cols").GetInt32();
                     var rows = root.GetProperty("rows").GetInt32();
-                    TerminalSessionManager.Instance.Get(roomId)?.Resize(cols, rows);
+                    var sess = TerminalSessionManager.Instance.Get(roomId);
+                    DevezCode.Services.DiagLog.Write($"[dbg] resize recv room={roomId} req={cols}x{rows} conpty={sess?.Cols}x{sess?.Rows}");
+                    sess?.Resize(cols, rows);
                     break;
                 }
                 case "diag": // 웹 레이어 진단 로그 → diag.log (codex 팝업 스윕 등)
@@ -650,6 +673,50 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             }
         }
         catch (Exception) { /* 비정상 메시지 무시 */ }
+    }
+
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        OpenTerminalUrl(e.Uri, "newWindow");
+    }
+
+    /// <summary>터미널 URL의 모든 진입점을 설정값 하나로 통합한다.
+    /// xterm linkHandler·직접 provider·기본 window.open이 같은 클릭에서 겹쳐도 1회만 실행한다.</summary>
+    private void OpenTerminalUrl(string? url, string source)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return;
+
+        var absoluteUrl = uri.AbsoluteUri;
+        var now = Environment.TickCount64;
+        if (string.Equals(_lastTerminalUrl, absoluteUrl, StringComparison.Ordinal) &&
+            now - _lastTerminalUrlTick < 5_000)
+        {
+            DevezCode.Services.DiagLog.Write($"Terminal URL skipped duplicate source={source} url={absoluteUrl}");
+            return;
+        }
+
+        _lastTerminalUrl = absoluteUrl;
+        _lastTerminalUrlTick = now;
+        var target = DevezCode.Services.SettingsService.LoadTerminalUrlOpenTarget();
+        DevezCode.Services.DiagLog.Write($"Terminal URL open source={source} target={target} url={absoluteUrl}");
+
+        if (target == DevezCode.Services.TerminalUrlOpenTarget.InAppBrowserTab)
+        {
+            BrowserUrlOpenRequested?.Invoke(absoluteUrl);
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(absoluteUrl)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch { /* OS 기본 브라우저 실행 실패는 터미널을 중단시키지 않는다 */ }
     }
 
     private void OnPageReady()

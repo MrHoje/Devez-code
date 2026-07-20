@@ -138,8 +138,9 @@ public partial class WorkspacePaneView : UserControl
         _terminal.SessionActivity += id => SessionActivity?.Invoke(id);
         // 세션 헤더 타이틀(마지막 메시지) 폰트를 터미널 폰트 크기와 동기화.
         _terminal.FontSizePxChanged += ApplyHeaderFontSize;
-        // 터미널 → 파일 경로 Ctrl+클릭 → 에디터 탭으로 열기
+        // 터미널 → 경로 Ctrl+클릭 → 파일은 에디터 탭, 폴더는 Explorer.
         _terminal.FileOpenRequested += OnTerminalFileOpenRequested;
+        _terminal.BrowserUrlOpenRequested += OnTerminalBrowserUrlOpenRequested;
         // synced reveal 준비 완료 → 셸로 전달(셸이 좌우를 모아 동시에 fade)
         _terminal.RevealPrepared += () => RevealPrepared?.Invoke(this);
         // 콜드 세션: web 로딩 커버가 켜진 것(ACK)을 확인한 뒤에만 터미널 HWND 를 unpark 한다.
@@ -576,7 +577,7 @@ public partial class WorkspacePaneView : UserControl
     {
         _activeProject = proj;
         ApplyTabsSource(proj.Tabs);
-        if (ProjectPathText != null) { ProjectPathText.Text = proj.Path; ProjectPathText.ToolTip = proj.Path; }
+        if (ProjectPathText != null) { ProjectPathText.Text = proj.Path; ProjectPathText.ToolTip = "디렉토리 열기"; }
         if (ProjectNameText != null) { ProjectNameText.Text = proj.Name; ProjectNameText.ToolTip = proj.Name; }
         UpdateProjectBranchBubble(proj);
         // 프리로드를 활성화 이후로 미룬다(Background). 지금 즉시 하면 곧 활성화될 세션까지 프리로드가
@@ -590,6 +591,22 @@ public partial class WorkspacePaneView : UserControl
                     PreloadProjectSessions(proj, except: _activeSession);
             }), System.Windows.Threading.DispatcherPriority.Background);
         RefreshSplitIndicator();
+    }
+
+    /// <summary>프로젝트 경로를 클릭하면 존재하는 프로젝트 폴더를 Windows 탐색기에서 연다.</summary>
+    private void ProjectPathText_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        var path = _activeProject?.Path;
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch { /* 탐색기 실행 실패는 UI 상태에 영향 없음 */ }
     }
 
     private void SplitDockBtn_Click(object sender, RoutedEventArgs e) => SplitToggleRequested?.Invoke(this);
@@ -630,12 +647,12 @@ public partial class WorkspacePaneView : UserControl
     private bool PaneHasAnySessionTab()
         => _activeProject != null && _activeProject.Tabs.Any(t => t is SessionItem s && !s.IsEffectivelyHidden && FilterTab(t));
 
-    /// <summary>탭 이동/숨김/복원 등 "이 패널에 보이는 탭 집합"이 바뀌는 지점에서 호출 —
-    /// 세션 탭이 하나도 없어지면 브랜치·터미널 폰트 정보를 같이 숨긴다.</summary>
+    /// <summary>탭 이동/숨김/복원 또는 활성 탭 전환 시 헤더 dock 상태를 갱신한다.
+    /// 터미널 폰트는 활성 세션에서만 조절할 수 있고, 브랜치 정보는 보이는 세션 탭 기준으로 유지한다.</summary>
     private void RefreshHeaderSessionGate()
     {
         if (FontSizeCombo != null)
-            FontSizeCombo.Visibility = PaneHasAnySessionTab() ? Visibility.Visible : Visibility.Collapsed;
+            FontSizeCombo.Visibility = _activeTab is SessionItem ? Visibility.Visible : Visibility.Collapsed;
         UpdateProjectBranchBubble(_activeProject);
     }
 
@@ -1176,7 +1193,13 @@ public partial class WorkspacePaneView : UserControl
         }
         else _unparkFallback?.Stop(); // 직전 게이트 취소(빠른 재전환)
         // 콜드 세션은 loading ON 을 먼저 큐에 넣은 뒤 show 해야 커서/부팅 프레임이 커버 아래서 시작된다.
-        _terminal.ShowTerminal(session.Id);
+        // 터미널 호스트가 주차(브라우저/파일/빈 탭)돼 있다 복귀하는 경우엔 폭이 안 바뀌어 settle 바운스가
+        // 스킵되지만, 주차 중 도착한 codex 출력이 스로틀돼 하단 입력영역이 어긋난 채 고착될 수 있다 →
+        // reemit 로 재방출 1회를 강제해 자가치유(세션↔세션 전환은 주차가 없어 발동 안 함).
+        // [실험] reemit 바운스가 codex 컴포저를 손상시킴이 로그로 확인됨 → 비활성화하고 baseline 확인.
+        bool reemitOnShow = false;
+        DiagLog.Write($"ActivateSession reemit-decide room={session.Id} termParked={_termParked} sessionReady={sessionReady} => reemit={reemitOnShow} (bounce disabled)");
+        _terminal.ShowTerminal(session.Id, reemit: reemitOnShow);
         _terminal.FocusTerminal();
         UpdateEmptyState();
         // 로딩 표시는 UpdateEmptyState '뒤' — 세션 헤더바 등 표시로 콘텐츠 그리드 크기가 확정된 다음
@@ -1315,10 +1338,12 @@ public partial class WorkspacePaneView : UserControl
         ActiveChanged?.Invoke(this);
     }
 
-    private void ActivateBrowserTab(BrowserTabItem tab)
+    private void ActivateBrowserTab(BrowserTabItem tab,
+        [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
         var parent = ParentOfTab(tab);
         if (parent == null) return;
+        DiagLog.Write($"ActivateBrowserTab '{tab.Name}' id={tab.Id} caller={caller} termParkedBefore={_termParked}");
         ClearIsolationIfMismatch(tab);
 
         if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false;
@@ -1513,7 +1538,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void RefreshModelEffortDock()
     {
-        RefreshHeaderSessionGate(); // 세션 탭이 하나도 없으면 브랜치·터미널 폰트 정보도 같이 숨김
+        RefreshHeaderSessionGate(); // 활성 세션이 아니면 터미널 폰트는 숨기고, 브랜치는 보이는 세션 탭 기준 갱신
         RefreshUsageDock();         // 활성 세션 토큰 사용량(입/출력/비용) 즉시 반영
         if (ModelEffortDock == null) return;
         var s = _activeSession;
@@ -1993,9 +2018,20 @@ public partial class WorkspacePaneView : UserControl
         if (_activeProject != null) AddBrowserTab(_activeProject);
     }
 
-    public BrowserTabItem AddBrowserTab(ProjectItem proj)
+    public BrowserTabItem? AddBrowserTab(ProjectItem proj, string? initialName = null, bool promptForName = true,
+        [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
-        var tab = new BrowserTabItem { Name = NextBrowserName(proj) };
+        var name = initialName ?? NextBrowserName(proj);
+        if (promptForName && SettingsService.LoadPromptForNewBrowserTabName())
+        {
+            var enteredName = PromptDialog.Show("새 브라우저 탭 이름", "새 이름을 입력하세요.",
+                                                defaultValue: name, maxLength: 60);
+            if (enteredName == null) return null;
+            name = enteredName;
+        }
+
+        var tab = new BrowserTabItem { Name = name };
+        DiagLog.Write($"AddBrowserTab id={tab.Id} caller={caller} project={proj.Name}");
         proj.Tabs.Add(tab);
         proj.IsExpanded = true;
 
@@ -3218,10 +3254,26 @@ public partial class WorkspacePaneView : UserControl
         // 0×0 대신 '전체폭 유지 + 화면 밖(Margin)'으로 주차. 이렇게 하면 unpark 이 리사이즈(0→full grow)가
         // 아니라 '위치 이동'만이라, 터미널 WebView2 가 grow 중 노출하던 raw HWND(검정 우측 strip/분할우측 전체)가
         // 사라진다. 컨테이너 Grid 는 ClipToBounds + 창 경계가 화면 밖 HWND 를 잘라 md/빈화면이 그대로 보인다.
+        //
+        // 높이는 '현재 픽셀값으로 동결'한다. 브라우저/파일 탭 활성 시 SessionHeaderBar(Grid.Row2, 35px)가
+        // collapse 되며 Row3(터미널 셀)이 커지는데, 파킹된 터미널이 Stretch 면 그 높이를 따라가 여전히
+        // activeRoomId 인 백그라운드 방을 더 큰 행수(예: 42→44)로 refit 한다(window.resize→fit→ConPTY resize).
+        // 그 방의 TUI(codex/claude)가 화면 밖에서 큰 크기로 재그린 뒤 show 때 다시 42 로 되돌려지며 하단
+        // 입력영역/상태줄이 어긋난 채 남는다. 진입 시점 ActualHeight 는 아직 활성 레이아웃(헤더 포함) 값이므로
+        // 그걸 고정하면 헤더 collapse 후에도 터미널이 안 커져 백그라운드 refit 자체가 사라진다.
+        double h = TerminalHostContainer.ActualHeight;
         TerminalHostContainer.Width = double.NaN;
-        TerminalHostContainer.Height = double.NaN;
         TerminalHostContainer.HorizontalAlignment = HorizontalAlignment.Stretch;
-        TerminalHostContainer.VerticalAlignment = VerticalAlignment.Stretch;
+        if (h > 1)
+        {
+            TerminalHostContainer.Height = h;
+            TerminalHostContainer.VerticalAlignment = VerticalAlignment.Top;
+        }
+        else
+        {
+            TerminalHostContainer.Height = double.NaN;
+            TerminalHostContainer.VerticalAlignment = VerticalAlignment.Stretch;
+        }
         TerminalHostContainer.Margin = new Thickness(-100000, 0, 100000, 0);
         TerminalHostContainer.Visibility = Visibility.Visible;
     }
@@ -3786,7 +3838,7 @@ public partial class WorkspacePaneView : UserControl
 
     public void DisposeTerminal() => _terminal.Dispose();
 
-    private void OnTerminalFileOpenRequested(string rawPath)
+    private void OnTerminalFileOpenRequested(string rawPath, int? line, int? column)
     {
         if (string.IsNullOrEmpty(rawPath)) return;
 
@@ -3803,7 +3855,36 @@ public partial class WorkspacePaneView : UserControl
             fullPath = System.IO.Path.Combine(proj.Path, rawPath);
         }
 
-        if (!System.IO.File.Exists(fullPath)) return;
-        OpenFileAsTab(fullPath);
+        if (System.IO.File.Exists(fullPath))
+        {
+            var tab = OpenFileAsTab(fullPath);
+            if (line is > 0 && tab?.Editor is FileEditorView editor)
+                editor.GoToLocation(line.Value, column);
+            return;
+        }
+
+        if (!System.IO.Directory.Exists(fullPath)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(fullPath)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch { /* Explorer로 열 수 없는 폴더는 무시 */ }
+    }
+
+    private void OnTerminalBrowserUrlOpenRequested(string url)
+    {
+        if (_activeProject == null)
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+            catch { /* 기본 브라우저 실행 실패 무시 */ }
+            return;
+        }
+
+        // 터미널 URL은 탭 이름도 주소 자체로 유지한다. 탭 UI의 CharacterEllipsis가 가용 폭까지만 표시한다.
+        var tab = AddBrowserTab(_activeProject, initialName: url, promptForName: false);
+        tab?.Browser.NavigateToUrl(url);
     }
 }

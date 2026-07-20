@@ -102,6 +102,13 @@
     document.body.style.background = m.bg || '#ffffff';
   }
 
+  function setViewportWidth(width) {
+    width = Math.max(0, Math.round(Number(width) || 0));
+    var root = document.documentElement.style;
+    root.setProperty('--md-viewport-half-width', (width / 2) + 'px');
+    document.body.classList.toggle('md-full-width', width === 0);
+  }
+
   var toastEl = document.getElementById('md-toast');
   var toastTimer = null;
   function showToast(text) {
@@ -247,6 +254,9 @@
         break;
       case 'setTheme':
         setTheme(m);
+        break;
+      case 'setViewportWidth':
+        setViewportWidth(m.width);
         break;
       case 'setEditable':
         document.body.classList.toggle('md-locked', !m.on);

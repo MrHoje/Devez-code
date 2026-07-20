@@ -16,7 +16,7 @@ public partial class BrowserHostView : UserControl
 {
     private WebView2? _view;
     private bool _initStarted;
-    private const string HomeUrl = "https://www.google.com";
+    private string? _pendingOpenUrl;
 
     private readonly Action<string> _themeChangedHandler;
 
@@ -77,7 +77,7 @@ public partial class BrowserHostView : UserControl
         if (CurrentHistoryUrl is { } cur)
             NavigateInternal(cur, NavCause.Restore);
         else
-            NavigateInternal(HomeUrl, NavCause.User);
+            NavigateInternal(SettingsService.LoadBrowserHomeUrl(), NavCause.User);
     }
 
     /// <summary>현재 _index 가 가리키는 URL. 스택이 비었으면 null.</summary>
@@ -105,6 +105,22 @@ public partial class BrowserHostView : UserControl
         _pendingCause = cause;
         try { core.Navigate(url); }
         catch { _pendingCause = NavCause.User; }
+    }
+
+    /// <summary>터미널 링크 등 외부 요청 URL을 현재 브라우저 탭에서 연다. 초기화 전이면 첫 탐색으로 보류한다.</summary>
+    public void NavigateToUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return;
+
+        var normalized = uri.AbsoluteUri;
+        if (_view?.CoreWebView2 == null)
+        {
+            _pendingOpenUrl = normalized;
+            return;
+        }
+        NavigateInternal(normalized, NavCause.User);
     }
 
     /// <summary>자발적 탐색 1건을 스택에 기록(브라우저 표준: 현재 위치 앞쪽은 버림).</summary>
@@ -181,7 +197,12 @@ public partial class BrowserHostView : UserControl
             core.NewWindowRequested += (_, e) => { e.Handled = true; NavigateInternal(e.Uri, NavCause.User); };
 
             LoadHistoryForCurrentProject();
-            NavigateToCurrentOrHome();
+            if (_pendingOpenUrl is { } pending)
+            {
+                _pendingOpenUrl = null;
+                NavigateInternal(pending, NavCause.User);
+            }
+            else NavigateToCurrentOrHome();
             SyncToolbar();
         }
         catch (Exception ex)

@@ -140,6 +140,19 @@ public partial class FileEditorView : UserControl, IFileTabEditor
         }
     }
 
+    /// <summary>터미널 오류/검색 결과의 path:line[:column] 위치로 이동. 입력은 1-기준이다.</summary>
+    public void GoToLocation(int lineNumber, int? columnNumber = null)
+    {
+        if (Editor.Document.LineCount == 0) return;
+
+        lineNumber = Math.Clamp(lineNumber, 1, Editor.Document.LineCount);
+        var line = Editor.Document.GetLineByNumber(lineNumber);
+        int columnOffset = Math.Clamp((columnNumber ?? 1) - 1, 0, line.Length);
+        Editor.CaretOffset = line.Offset + columnOffset;
+        Editor.ScrollToLine(lineNumber);
+        Editor.Focus();
+    }
+
     private void Editor_TextChanged(object? sender, EventArgs e)
     {
         if (_loading) return;

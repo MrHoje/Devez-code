@@ -208,6 +208,63 @@
                               // TUI 가 그 폭으로 그렸다 다시 리플로우돼 깨진다. 억제했다가 reveal 이 안정된 최종 폭에서 한 번만 fit.
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
+  function dlog(msg) { try { post({ type: 'diag', msg: '[dbg] ' + msg }); } catch (e) {} }
+  function dumpBuf(roomId, tag) {
+    try {
+      const t = terms[roomId]; if (!t) return;
+      const b = t.term.buffer.active;
+      const rows = t.term.rows;
+      let tail = '';
+      for (let i = Math.max(0, rows - 4); i < rows; i++) {
+        const ln = b.getLine(b.viewportY + i);
+        tail += '|r' + i + '="' + (ln ? ln.translateToString(true).slice(0, 40) : 'null') + '"';
+      }
+      dlog('buf(' + tag + ') room=' + roomId + ' cur=' + b.cursorX + ',' + b.cursorY
+        + ' baseY=' + b.baseY + ' viewportY=' + b.viewportY + ' len=' + b.length + ' rows=' + rows + ' ' + tail);
+    } catch (e) { dlog('buf(' + tag + ') err ' + e); }
+  }
+
+  // OSC 8 링크 provider와 일반 URL provider가 같은 URL을 잡으면 클릭 1회가 두 번 열릴 수 있다.
+  // Ctrl+클릭 뒤 늦게 따라오는 xterm fallback까지 같은 URL은 5초간 한 번만 연다.
+  let _lastExternalUrl = '';
+  let _lastExternalUrlAt = 0;
+  function requestOpenExternalUrl(url) {
+    const now = Date.now();
+    if (url === _lastExternalUrl && now - _lastExternalUrlAt < 5_000) {
+      dlog('terminalUrl duplicate skipped ' + url);
+      return;
+    }
+    _lastExternalUrl = url;
+    _lastExternalUrlAt = now;
+    dlog('terminalUrl request ' + url);
+    post({ type: 'openExternalUrl', url: url });
+  }
+
+  // xterm의 OSC 8 fallback은 confirm 뒤 window.open을 직접 호출한다. linkHandler가 어떤 이유로
+  // 적용되지 않아도 이 페이지 밖으로 새지 않게 여기서 가로채 같은 C# URL 게이트로 보낸다.
+  const nativeWindowOpen = window.open.bind(window);
+  window.open = function(url, target, features) {
+    const value = typeof url === 'string' ? url : String(url || '');
+    if (/^https?:\/\//i.test(value)) {
+      dlog('terminalUrl window.open intercepted ' + value);
+      requestOpenExternalUrl(value);
+      return null;
+    }
+    return nativeWindowOpen(url, target, features);
+  };
+
+  // 위 fallback의 xterm 고정 경고창만 생략한다. URL 클릭 자체가 사용자 동작이고,
+  // 실제 열기 대상은 Settings의 인앱 탭/기본 브라우저 정책과 http(s) 검증을 그대로 거친다.
+  const nativeConfirm = window.confirm.bind(window);
+  window.confirm = function(message) {
+    const text = String(message || '');
+    if (text.startsWith('Do you want to navigate to ') &&
+        text.includes('WARNING: This link could potentially be dangerous')) {
+      dlog('terminalUrl xterm confirm bypassed');
+      return true;
+    }
+    return nativeConfirm(message);
+  };
 
   function b64ToBytes(b64) {
     const bin = atob(b64);
@@ -353,6 +410,11 @@
   function writeOut(t, bytes) {
     // 비활성(display:none) 탭은 스크롤 위치 계산이 무의미하고, scrollHeight 읽기가 강제 레이아웃을
     // 유발해 5세션 동시 출력 시 큰 비용이 된다. write 만 하고 끝낸다(탭 전환 show 시 scrollToBottom 처리).
+    if (t._dbgUntil && Date.now() < t._dbgUntil && (t._dbgCount || 0) < 14) {
+      t._dbgCount = (t._dbgCount || 0) + 1;
+      var snip = String(bytes).slice(0, 70).replace(/\x1b/g, '\\e').replace(/[\x00-\x1f]/g, function (c) { return '\\x' + c.charCodeAt(0).toString(16); });
+      dlog('out room=' + t.roomId + ' len=' + (bytes && bytes.length) + ' "' + snip + '"');
+    }
     if (!activeRoomId || terms[activeRoomId] !== t) { t.term.write(bytes); return; }
     if (Date.now() < _pinBottomUntil) {
       t.term.write(bytes);
@@ -1395,7 +1457,7 @@
     const SearchNS    = use6 ? window.SearchAddon6 : window.SearchAddon;
     const WebglNS     = use6 ? window.WebglAddon6 : window.WebglAddon;
 
-    const term = new TerminalCtor({
+    const termOptions = {
       theme: themeFor(agent),
       // 한글 폴백: 기본 모노스페이스 폰트에는 한글 글리프가 없어 IME 조합 표시가 깨진다
       fontFamily: cfg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",
@@ -1405,14 +1467,25 @@
       scrollback: 5000,
       // ConPTY 백엔드 명시 → Windows 줄바꿈/와이드(CJK) 문자 휴리스틱 적용
       windowsPty: { backend: 'conpty', buildNumber: cfg.windowsBuild || 0 },
-    });
+    };
+    // Claude/Codex가 OSC 8 링크를 출력하면 xterm 기본 동작은 WebView 내부 confirm + window.open이다.
+    // 기본 브라우저 실행은 호스트에 위임해 xterm 보안 확인창과 앱 내부 탐색을 막는다.
+    termOptions.linkHandler = {
+      activate: function (event, url) {
+        event?.preventDefault?.();
+        event?.stopImmediatePropagation?.();
+        dlog('terminalUrl linkHandler ' + url);
+        requestOpenExternalUrl(url);
+      }
+    };
+    const term = new TerminalCtor(termOptions);
     const fit = new FitNS.FitAddon();
     term.loadAddon(fit);
     const search = new SearchNS.SearchAddon();
     term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true };
+    const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId };
     terms[roomId] = entry;
 
     // WebGL 렌더러(GPU) — 글자 그리기를 CPU(DOM) 대신 GPU 로 올려 활성 탭 렌더 비용을 낮춘다(WT 정합).
@@ -1428,31 +1501,99 @@
       } catch (e) { /* WebGL 미지원 환경 → DOM 렌더러 유지 */ }
     }
 
-    // ── 파일경로 링크: 터미널 출력에서 파일 경로를 Ctrl+클릭 → 에디터 탭으로 열기 ──
+    // ── URL/경로 링크: URL은 기본 브라우저, 파일은 Ctrl+클릭 시 에디터 탭, 폴더는 Explorer ──
     try {
       term.registerLinkProvider({
         provideLinks: function (line, callback) {
-          var text = term.buffer.active.getLine(line)?.translateToString();
+          // link provider의 line은 1-기준, 공개 buffer API의 getLine은 0-기준.
+          var bufferLine = term.buffer.active.getLine(line - 1);
+          var text = bufferLine?.translateToString();
           if (!text) { callback(undefined); return; }
 
-          var re = /[\w\-.]*(?:[\/\\][\w\-.]+)+\.(md|markdown|cs|ts|tsx|js|jsx|py|go|rs|java|kt|kts|swift|rb|php|c|cpp|cc|h|hpp|m|mm|dart|lua|r|pl|sh|bash|zsh|ps1|psm1|bat|cmd|sql|json|xml|yaml|yml|toml|ini|conf|cfg|config|properties|csv|log|txt|html|htm|css|scss|less|vue|svelte|xaml|razor|cshtml|vb|fs|gradle|groovy|scala|sln|csproj|props|targets|gitignore|editorconfig|env|dockerfile|makefile)/gi;
+          var urlRe = /https?:\/\/[^\s<>"'`]+/gi;
+          var sourceLocationRe = /((?:[A-Za-z]:[\\/]|\.{1,2}[\\/])[^:\s<>"'`]+|[\w\-.]*(?:[\/\\][\w\-.]+)+\.[\w-]+):(\d+)(?::(\d+))?/g;
+          var quotedPathRe = /"((?:[A-Za-z]:[\\/]|\.{1,2}[\\/])[^\"]+)"/g;
+          var absolutePathRe = /[A-Za-z]:[\\/][^\s<>"'`]+/g;
+          var relativePathRe = /(?:^|[\s(])((?:\.{1,2}[\\/])[^\s<>"'`]+)/g;
+          var filePathRe = /[\w\-.]*(?:[\/\\][\w\-.]+)+\.(md|markdown|cs|ts|tsx|js|jsx|py|go|rs|java|kt|kts|swift|rb|php|c|cpp|cc|h|hpp|m|mm|dart|lua|r|pl|sh|bash|zsh|ps1|psm1|bat|cmd|sql|json|xml|yaml|yml|toml|ini|conf|cfg|config|properties|csv|log|txt|html|htm|css|scss|less|vue|svelte|xaml|razor|cshtml|vb|fs|gradle|groovy|scala|sln|csproj|props|targets|gitignore|editorconfig|env|dockerfile|makefile)/gi;
           var links = [];
           var match;
-          while ((match = re.exec(text)) !== null) {
-            let path = match[0];
-            if (/^[\s.]+$/.test(path)) continue;
-            let startCol = match.index;
-            let endCol = match.index + path.length - 1;
+          function overlapsExisting(startCol, endCol) {
+            return links.some(function (link) {
+              return startCol < link.range.end.x && endCol >= link.range.start.x - 1;
+            });
+          }
+          function hasOscLink(startCol, length) {
+            if (!bufferLine) return false;
+            for (var col = startCol; col < startCol + length && col < bufferLine.length; col++) {
+              var cell = bufferLine.getCell(col);
+              if (cell?.hasExtendedAttrs?.() && cell.extended?.urlId) return true;
+            }
+            return false;
+          }
+          function addPathLink(path, startCol, sourceLine, sourceColumn, displayText) {
+            if (!path) return;
+            var label = displayText || path;
+            var endCol = startCol + label.length - 1;
+            if (overlapsExisting(startCol, endCol)) return;
             links.push({
-              range: [startCol, endCol],
-              text: path,
-              activate: function (e, uri) {
+              range: {
+                start: { x: startCol + 1, y: line },
+                end: { x: endCol + 1, y: line }
+              },
+              text: label,
+              activate: function (e) {
                 if (!e.ctrlKey && !e.metaKey) return;
-                post({ type: 'openFile', path: path });
+                post({ type: 'openFile', path: path, line: sourceLine, column: sourceColumn });
               }
             });
           }
-          callback(links.length > 0 ? { links: links } : undefined);
+          while ((match = urlRe.exec(text)) !== null) {
+            let url = match[0].replace(/[),.;:!?]+$/, '');
+            if (!url) continue;
+            let startCol = match.index;
+            let endCol = match.index + url.length - 1;
+            // OSC 8이면 xterm 내장 provider(linkHandler)가 담당. 아래 일반 provider를 더하면 중복 열린다.
+            if (hasOscLink(startCol, url.length)) continue;
+            if (overlapsExisting(startCol, endCol)) continue;
+            links.push({
+              range: {
+                start: { x: startCol + 1, y: line },
+                end: { x: endCol + 1, y: line }
+              },
+              text: url,
+              activate: function (event) {
+                event?.preventDefault?.();
+                event?.stopImmediatePropagation?.();
+                dlog('terminalUrl provider ' + url);
+                requestOpenExternalUrl(url);
+              }
+            });
+          }
+          while ((match = sourceLocationRe.exec(text)) !== null) {
+            addPathLink(match[1], match.index, Number(match[2]), match[3] ? Number(match[3]) : undefined, match[0]);
+          }
+          while ((match = quotedPathRe.exec(text)) !== null) {
+            let path = match[1].replace(/[),.;:!?]+$/, '');
+            addPathLink(path, match.index + 1);
+          }
+          while ((match = absolutePathRe.exec(text)) !== null) {
+            let path = match[0].replace(/[),.;:!?]+$/, '');
+            addPathLink(path, match.index);
+          }
+          while ((match = relativePathRe.exec(text)) !== null) {
+            let path = match[1].replace(/[),.;:!?]+$/, '');
+            let startCol = match.index + match[0].length - match[1].length;
+            addPathLink(path, startCol);
+          }
+          while ((match = filePathRe.exec(text)) !== null) {
+            let path = match[0];
+            if (/^[\s.]+$/.test(path)) continue;
+            addPathLink(path, match.index);
+          }
+          // xterm LinkProvider 콜백은 ILink[] 배열을 직접 받는다. 객체로 감싸면 내부의 map 호출이
+          // 실패해 일반 URL provider가 비활성화되고 OSC 8 기본 링크 처리만 남는다.
+          callback(links.length > 0 ? links : undefined);
         }
       });
     } catch (e) { /* linkProvider 미지원 xterm 버전 */ }
@@ -1589,7 +1730,7 @@
     return entry;
   }
 
-  function show(roomId, agent, fontSizeOverride) {
+  function show(roomId, agent, fontSizeOverride, reemit) {
     let entry = terms[roomId];
     const isNew = !entry;
     if (isNew) entry = createTerm(roomId, agent, fontSizeOverride);
@@ -1603,7 +1744,11 @@
 
     const preCols = entry.term.cols, preRows = entry.term.rows; // settle 바운스 판단용(이 show 에서 크기가 바뀌었나)
     const plainShow = !_fitSuppressed; // 전환(커버) 중 show 는 reveal 이 fit·재동기·커버로 처리 — 바운스 제외
+    dlog('show ' + agent + ' room=' + roomId + ' isNew=' + isNew + ' reemit=' + !!reemit + ' plainShow=' + plainShow
+      + ' pre=' + preCols + 'x' + preRows + ' client=' + entry.el.clientWidth + 'x' + entry.el.clientHeight);
     if (!_fitSuppressed) entry.fit.fit(); // 전환(커버) 중이면 중간 폭 fit 억제 → reveal 이 최종 폭에서 fit
+    if (!_fitSuppressed) dlog('show afterFit room=' + roomId + ' now=' + entry.term.cols + 'x' + entry.term.rows
+      + ' client=' + entry.el.clientWidth + 'x' + entry.el.clientHeight);
     if (typeof entry.el._prepareImeCaret === 'function') entry.el._prepareImeCaret();
     entry.term.focus();
     if (isNew && typeof entry.el._resetImeOnInitialFocus === 'function')
@@ -1644,12 +1789,26 @@
     // 크기 변화가 있었던 plain show 에 한해, 초기 재방출이 가라앉은 뒤 ConPTY 만 rows-1→rows 로
     // 바운스해 깨끗한 전체 재방출을 1회 유도한다. xterm 그리드는 안 건드려(버퍼 클리핑 없음),
     // cols 바운스와 달리 줄바꿈 reflow 왕복도 없다. 크기가 안 바뀐 일반 탭 전환에선 발동하지 않는다.
+    // reemit: 브라우저/파일 탭에서 codex 등 세션으로 복귀(터미널 호스트가 off-screen 주차됐다 복귀)한 경우.
+    // 폭은 안 바뀌지만 주차 중 도착한 출력·렌더가 스로틀돼 하단 입력영역이 tear 된 채 고착될 수 있다
+    // (§6.6: 실제 리사이즈 없이는 재방출 계기가 없어 회복 불가). → 크기 무변화라도 재방출 1회 강제.
     if (!isNew && plainShow) {
       setTimeout(function () {
         const t = terms[roomId];
-        if (!t || t.term.cols === preCols && t.term.rows === preRows) return; // 이 show 에서 크기 무변화 — 불필요
+        if (!t) return;
+        const sizeChanged = !(t.term.cols === preCols && t.term.rows === preRows);
+        if (!sizeChanged && !reemit) return; // 크기 무변화 & 재방출 요청 없음(세션↔세션 전환) — 불필요
         scheduleSettleBounce(roomId, 0); // 가드(활성/dead/억제)는 헬퍼가 재확인
       }, 450);
+    }
+    if (!isNew && plainShow) {
+      entry._dbgUntil = Date.now() + 5000; entry._dbgCount = 0; // writeOut 프레임 캡처 창
+      dumpBuf(roomId, 'show');
+      setTimeout(function () { dumpBuf(roomId, '+300'); }, 300);
+      setTimeout(function () { dumpBuf(roomId, '+900'); }, 900);
+      setTimeout(function () { dumpBuf(roomId, '+1500'); }, 1500);
+      setTimeout(function () { dumpBuf(roomId, '+2500'); }, 2500);
+      setTimeout(function () { dumpBuf(roomId, '+4000'); }, 4000);
     }
   }
 
@@ -1692,6 +1851,7 @@
       const t = terms[roomId];
       if (!t || roomId !== activeRoomId || t.dead || _fitSuppressed) return;
       if (t.term.cols <= 2 || t.term.rows <= 2) return;
+      dlog('settleBounce room=' + roomId + ' ' + t.term.cols + 'x' + t.term.rows + ' client=' + t.el.clientWidth + 'x' + t.el.clientHeight);
       post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows - 1 });
       post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows });
     }, delay == null ? 450 : delay); // 0 도 유효한 지연(호출부가 이미 대기한 경우)
@@ -1704,7 +1864,10 @@
       if (!t || roomId !== activeRoomId) return;
       if (_fitSuppressed) return;                                // 전환 중 — reveal 이 최종 폭에서 fit
       if (t.el.clientWidth < 2 || t.el.clientHeight < 2) return; // 아직 0폭이면 다음 타이밍에
+      const bc = t.term.cols, br = t.term.rows;
       fitKeepBottom(t, roomId); // 재진입 fit 리플로우로 바닥 추종이 끊기지 않게 보존
+      dlog('refitSoon(' + (sync ? 'sync' : 'async') + ') room=' + roomId + ' ' + bc + 'x' + br + '->' + t.term.cols + 'x' + t.term.rows
+        + ' client=' + t.el.clientWidth + 'x' + t.el.clientHeight);
       // 마지막 패스: 그리드가 안 변해 onResize 가 안 떠도 ConPTY 를 현재 그리드 크기로 재동기.
       // 숨겨진 다른 패널의 낡은 방 등이 ConPTY 만 딴 크기로 바꿔놓은 경우(그리드↔ConPTY 어긋남 =
       // TUI 가 좁은 폭으로 그림) 탭을 열 때마다 여기서 자가치유된다. 같은 크기면 C# 이 no-op.
@@ -1781,7 +1944,9 @@
     // 0/극소폭 가드: 패널 접힘(0폭)에서 fit 하면 FitAddon 이 2x1 을 제안 → ConPTY 가 2컬럼으로
     // 리사이즈돼 TUI 화면이 붕괴된다(다시 펴져도 어긋난 채 남음). 측정 가능할 때만 fit.
     if (t.el.clientWidth < 2 || t.el.clientHeight < 2) return;
+    var bc = t.term.cols, br = t.term.rows;
     fitKeepBottom(t, activeRoomId); // 창 가장자리 드래그·Aero snap 등 비커버 리사이즈에서 바닥 추종 보존
+    dlog('window.resize fit room=' + activeRoomId + ' ' + bc + 'x' + br + '->' + t.term.cols + 'x' + t.term.rows + ' client=' + t.el.clientWidth + 'x' + t.el.clientHeight);
   });
 
   window.chrome.webview.addEventListener('message', function (e) {
@@ -2096,7 +2261,7 @@
         break;
       }
       case 'show':
-        show(msg.roomId, msg.agent, msg.fontSize);
+        show(msg.roomId, msg.agent, msg.fontSize, !!msg.reemit);
         break;
       case 'preload':
         preload(msg.roomId, msg.agent, msg.fontSize);
