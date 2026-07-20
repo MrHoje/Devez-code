@@ -96,7 +96,16 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.17.1", "2026-07-20", true, new[]
+        ("v1.17.2", "2026-07-20", true, new[]
+        {
+            "종료 버튼 오입력을 막기 위해 종료 확인 다이얼로그를 추가했습니다.",
+            "기본 글꼴 크기를 설정하는 기능을 추가했습니다.",
+            "터미널에 출력된 디렉터리 경로를 눌러 바로 열 수 있도록 개선했습니다.",
+            "터미널에 출력된 URL을 눌러 바로 열 수 있도록 개선했습니다.",
+            "웹 브라우저 탭의 기본 URL을 변경하는 기능을 추가했습니다.",
+            "URL을 기본 브라우저 또는 인앱 브라우저 탭 중 어디서 열지 선택하는 옵션을 추가했습니다.",
+        }),
+        ("v1.17.1", "2026-07-20", false, new[]
         {
             "Codex CLI에서 아래로 스크롤할 때 항상 맨 아래로 이동하던 문제를 수정했습니다.",
         }),

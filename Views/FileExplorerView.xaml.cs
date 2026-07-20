@@ -520,8 +520,9 @@ public partial class FileExplorerView : UserControl
     {
         if (!node.IsDirectory)
         {
-            // 텍스트 계열은 인앱 편집기로, 그 외(이미지·바이너리 등)는 OS 기본 앱으로.
-            if (FileEditorView.IsEditable(node.FullPath))
+            // 텍스트 계열·이미지는 인앱 탭으로(이미지는 뷰어 탭, git diff 와 동일 동작),
+            // 그 외(바이너리 등)는 OS 기본 앱으로.
+            if (FileEditorView.IsEditable(node.FullPath) || ImageFileEditorView.IsImage(node.FullPath))
                 FileOpenRequested?.Invoke(this, node.FullPath);
             else
                 OpenWithShell(node);
@@ -840,7 +841,7 @@ public partial class FileExplorerView : UserControl
     {
         if (NodeOf(sender) is not { } node) return;
         if (node.IsDirectory) return; // 폴더는 실행 불가
-        if (FileEditorView.IsEditable(node.FullPath))
+        if (FileEditorView.IsEditable(node.FullPath) || ImageFileEditorView.IsImage(node.FullPath))
             FileOpenRequested?.Invoke(this, node.FullPath);
         else
             OpenWithShell(node);
