@@ -3,6 +3,7 @@ obj/
 .vs/
 *.user
 .claude/
+node_modules/
 
 # Inno Setup 인스톨러 산출물(바이너리 — 배포는 R2)
 installer/Output/
