@@ -77,6 +77,16 @@ public sealed class TerminalSession : IDisposable
         Environment.SetEnvironmentVariable("WT_SESSION", Guid.NewGuid().ToString());
         Environment.SetEnvironmentVariable("WT_PROFILE_ID", "{2ece5bfe-50ed-5f3a-ab87-5cd4baafed2b}");
 
+        // DevezCode 자체가 claude 세션 안에서 실행되면(예: claude 터미널에서 앱을 띄움) 프로세스 env 에
+        // CLAUDECODE=1 / CLAUDE_CODE_* 가 상속돼 있다. 이 상태로 claude 자식을 띄우면 claude 가 자신을
+        // "중첩(child) 세션"으로 판정해 ★새 대화 transcript(.jsonl)를 영속화하지 않는다★ (기존 파일 resume-append 는 됨).
+        // 결과: 그 뒤 만든 세션은 재실행 시 resume 불가 + 토큰 사용량 표시 불가. 상속된 nesting 마커를
+        // 자식 환경에서 제거해 항상 독립(top-level) claude 로 실행되게 한다. (PEB 로 실측 확인한 실제 원인)
+        foreach (var leaked in new[] {
+            "CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_ENTRYPOINT",
+            "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_SSE_PORT" })
+            Environment.SetEnvironmentVariable(leaked, null);
+
         // 색 출력 강제 — 세션마다 재확정한다. App.OnStartup 에서 프로세스 env 로 한 번 깔지만,
         // 그 값이 시작 후 어느 시점에 흐트러지면(User 범위의 빈 FORCE_COLOR="" 상속, NO_COLOR 충돌,
         // 자동업데이트 흐름 등) 이후 실행되는 모든 세션이 monochrome(검정 배경·하이라이트 없는 흰 글자)로
