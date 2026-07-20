@@ -96,7 +96,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.17.2", "2026-07-20", true, new[]
+        ("v1.17.3", "2026-07-21", true, new[]
+        {
+            "세션 헤더 영역에 다이얼로그를 통해 파일을 첨부할 수 있는 첨부파일 버튼을 추가했습니다.",
+            "파일을 드래그 앤 드롭하여 첨부할 수 있는 기능을 추가했습니다.",
+            "여러 버전을 건너뛰어 업데이트할 때 누락된 버전의 업데이트 노트도 함께 확인할 수 있도록 개선했습니다.",
+        }),
+        ("v1.17.2", "2026-07-20", false, new[]
         {
             "종료 버튼 오입력을 막기 위해 종료 확인 다이얼로그를 추가했습니다.",
             "기본 글꼴 크기를 설정하는 기능을 추가했습니다.",

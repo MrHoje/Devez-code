@@ -110,8 +110,9 @@ public partial class ConfirmDialog : Window
                                        confirmText: null, wideLayout: false, autoWidth: true);
         dialog._download = download;
         dialog.CancelBtn.Content = "나중에"; // devez 정합: 업데이트 팝업의 취소는 '나중에'
-        // devez 정합: 노트 길이와 무관하게 고정폭(560), 높이만 내용에 맞춤(진행률 표시 시 자동 확장).
+        // devez 정합: 고정폭(560), 노트 약 10줄까지 높이 자동 확장. 초과분은 본문 ScrollViewer가 스크롤한다.
         dialog.SizeToContent = SizeToContent.Height;
+        dialog.MaxHeight = 430;
         dialog.Width = dialog.MinWidth = dialog.MaxWidth = 560;
 
         if (Application.Current.MainWindow != null

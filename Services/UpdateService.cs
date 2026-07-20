@@ -6,9 +6,12 @@ using System.Windows;
 
 namespace DevezCode.Services;
 
+public record UpdateReleaseNote(string Version, string Notes);
+
 public record UpdateInfo(
     string Version, string Url, string Notes = "", bool IsUrgent = false,
-    string PatchUrl = "", string PatchFrom = "", string Sha256 = "");
+    string PatchUrl = "", string PatchFrom = "", string Sha256 = "",
+    IReadOnlyList<UpdateReleaseNote>? Releases = null);
 
 public static class UpdateService
 {
@@ -45,12 +48,60 @@ public static class UpdateService
         var version = root.TryGetProperty("version", out var ve) ? ve.GetString() ?? "" : "";
         var url = root.TryGetProperty("url", out var ue) ? ue.GetString() ?? "" : "";
         if (string.IsNullOrEmpty(version) || string.IsNullOrEmpty(url)) return null;
-        var notes = root.TryGetProperty("notes", out var n) ? n.GetString() ?? "" : "";
+        var notes = root.TryGetProperty("notes", out var n) ? ReadNotes(n) : "";
         var urgent = root.TryGetProperty("urgent", out var u) && u.ValueKind == JsonValueKind.True;
         var patchUrl = root.TryGetProperty("patchUrl", out var pu) ? pu.GetString() ?? "" : "";
         var patchFrom = root.TryGetProperty("patchFrom", out var pf) ? pf.GetString() ?? "" : "";
         var sha256 = root.TryGetProperty("sha256", out var s) ? s.GetString() ?? "" : "";
-        return new UpdateInfo(version, url, notes, urgent, patchUrl, patchFrom, sha256);
+        var releases = new List<UpdateReleaseNote>();
+        if (root.TryGetProperty("releases", out var re) && re.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in re.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var releaseVersion = item.TryGetProperty("version", out var rv) ? rv.GetString() ?? "" : "";
+                var releaseNotes = item.TryGetProperty("notes", out var rn) ? ReadNotes(rn) : "";
+                if (!string.IsNullOrWhiteSpace(releaseVersion) && !string.IsNullOrWhiteSpace(releaseNotes))
+                    releases.Add(new UpdateReleaseNote(releaseVersion, releaseNotes));
+            }
+        }
+        return new UpdateInfo(version, url, notes, urgent, patchUrl, patchFrom, sha256, releases);
+    }
+
+    private static string ReadNotes(JsonElement element)
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString() ?? "",
+            JsonValueKind.Array => string.Join("\n", element.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString())
+                .Where(note => !string.IsNullOrWhiteSpace(note))),
+            _ => "",
+        };
+
+    /// <summary>현재 버전 이후부터 최신 버전까지의 노트만 최신순으로 반환.
+    /// releases 가 없는 기존 version.json 은 최상위 notes 로 폴백한다.</summary>
+    public static IReadOnlyList<UpdateReleaseNote> GetReleaseNotesSince(string currentVersion, UpdateInfo info)
+    {
+        var fallback = string.IsNullOrWhiteSpace(info.Notes)
+            ? Array.Empty<UpdateReleaseNote>()
+            : new[] { new UpdateReleaseNote(info.Version, info.Notes) };
+
+        if (info.Releases is not { Count: > 0 }
+            || !Version.TryParse(currentVersion, out var current)
+            || !Version.TryParse(info.Version, out var latest))
+            return fallback;
+
+        var applicable = info.Releases
+            .Select(release => (Release: release,
+                Parsed: Version.TryParse(release.Version, out var parsed) ? parsed : null))
+            .Where(item => item.Parsed is not null && item.Parsed > current && item.Parsed <= latest)
+            .GroupBy(item => item.Parsed!)
+            .Select(group => group.First())
+            .OrderByDescending(item => item.Parsed)
+            .Select(item => item.Release)
+            .ToArray();
+        return applicable.Length > 0 ? applicable : fallback;
     }
 
     public static async Task<UpdateInfo?> CheckAsync()

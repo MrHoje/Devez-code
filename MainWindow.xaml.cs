@@ -2501,10 +2501,15 @@ public partial class MainWindow : Window
     {
         if (_updateInProgress) return;
         _testUpdateMode = true;
+        var testReleases = new[]
+        {
+            new UpdateReleaseNote("9.9.9", string.Join("\n", Enumerable.Range(1, 3).Select(i => $"업데이트 노트 테스트 {i:00}"))),
+        };
         _pendingUpdate = new UpdateInfo(
-            Version: "9.9.9-test",
+            Version: "9.9.9",
             Url: "https://example.com/test",
-            Notes: "진행률 표시 테스트,여러 줄 노트 미리보기,실제 다운로드는 하지 않습니다");
+            Notes: string.Join("\n", Enumerable.Range(1, 3).Select(i => $"업데이트 노트 테스트 {i:00}")),
+            Releases: testReleases);
         Sidebar.ShowUpdateButton(_pendingUpdate.Version);
         // 사이드바 하단 업데이트 버튼을 클릭하면 OpenUpdatePopup → 팝업 진행률까지 확인된다.
     }
@@ -2541,12 +2546,19 @@ public partial class MainWindow : Window
         var info = _pendingUpdate;
         if (info is null || _updateInProgress) return;
 
-        var noteLines = string.IsNullOrWhiteSpace(info.Notes)
-            ? ""
-            : "\n\n" + string.Join("\n",
-                info.Notes.Split(['\n', ','], StringSplitOptions.RemoveEmptyEntries)
-                          .Select(l => "· " + l.Trim().TrimStart('•', ' ', '\t').Trim())
-                          .Where(l => l.Length > 2));
+        var releases = UpdateService.GetReleaseNotesSince(UpdateService.CurrentVersion, info);
+        var showVersionHeadings = info.Releases is { Count: > 0 };
+        var formattedReleases = releases.Select(release =>
+        {
+            var lines = string.Join("\n",
+                release.Notes.Split(['\n', ','], StringSplitOptions.RemoveEmptyEntries)
+                    .Select(l => "· " + l.Trim().TrimStart('•', ' ', '\t').Trim())
+                    .Where(l => l.Length > 2));
+            if (string.IsNullOrWhiteSpace(lines)) return "";
+            return showVersionHeadings ? $"v{release.Version}\n{lines}" : lines;
+        }).Where(text => text.Length > 0);
+        var formattedNotes = string.Join("\n\n", formattedReleases);
+        var noteLines = formattedNotes.Length == 0 ? "" : "\n\n" + formattedNotes;
 
         var prefix = info.IsUrgent ? "[긴급] " : "";
 
