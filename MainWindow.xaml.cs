@@ -770,6 +770,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        // '닫기 시 종료' 모드에서 X/Alt+F4 로 닫을 때 실수 종료 방지 확인. 명시적 종료(ForceQuit: 우클릭 완전 종료·업데이트 재시작)·2차 진입은 건너뜀.
+        if (!_shuttingDown && !ForceQuit
+            && !Views.ConfirmDialog.Show("종료 확인",
+                "DevezCode를 종료하시겠습니까?\n실행 중인 세션이 모두 함께 종료됩니다.",
+                okLabel: "종료", iconKey: "IconLogOut", danger: true))
+        {
+            e.Cancel = true;
+            return;
+        }
+
         SaveWindowPlacement();
         _wakeScheduler.Stop();
         _idleSessionShutdownTimer.Stop();
