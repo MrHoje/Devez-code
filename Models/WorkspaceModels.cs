@@ -598,6 +598,35 @@ public sealed class ProjectItem : NotifyBase
     public ObservableCollection<SessionItem> Sessions { get; } = new();
     private string _sidebarSearchQuery = "";
     private bool _showAllSidebarSessions = true;
+    private string _sessionSearchQuery = "";
+    private bool _isSessionSearchOpen;
+
+    /// <summary>프로젝트 카드 내부 세션 검색어. 런타임 UI 상태이며 저장하지 않는다.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string SessionSearchQuery
+    {
+        get => _sessionSearchQuery;
+        set
+        {
+            var query = value ?? "";
+            if (!Set(ref _sessionSearchQuery, query)) return;
+            OnPropertyChanged(nameof(HasSessionSearchQuery));
+            foreach (var session in Sessions)
+                ApplySidebarSearch(session);
+            RefreshSidebarGroups();
+        }
+    }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasSessionSearchQuery => _sessionSearchQuery.Length > 0;
+
+    /// <summary>프로젝트 카드 내부 세션 검색창의 열림 상태. 런타임 UI 상태이며 저장하지 않는다.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsSessionSearchOpen
+    {
+        get => _isSessionSearchOpen;
+        set => Set(ref _isSessionSearchOpen, value);
+    }
 
     /// <summary>
     /// 프로젝트/폴더 이름이 검색어와 일치하면 전체 세션을, 세션 이름만 일치하면 해당 세션만 표시한다.
@@ -613,8 +642,11 @@ public sealed class ProjectItem : NotifyBase
     }
 
     private void ApplySidebarSearch(SessionItem session)
-        => session.IsSearchVisible = _showAllSidebarSessions ||
-            session.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase);
+        => session.IsSearchVisible =
+            (_showAllSidebarSessions ||
+             session.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase)) &&
+            (_sessionSearchQuery.Length == 0 ||
+             session.Name.Contains(_sessionSearchQuery, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>구성원 전체가 숨겨진 최상위 세션 트리를 모은 뷰. 일부 자식이 보이면 트리 전체를
     /// 원래 위치에 유지하고 숨긴 자식만 부모 아래에서 후순위로 표시한다.</summary>
@@ -730,7 +762,7 @@ public sealed class ProjectItem : NotifyBase
         {
             ApplySidebarSearch(session);
             // 검색 필터 중이면 이름 변경이 IsSearchVisible(라벨 캐리어 선정 조건)을 바꿀 수 있다.
-            if (!_showAllSidebarSessions) RefreshSidebarGroups();
+            if (!_showAllSidebarSessions || _sessionSearchQuery.Length > 0) RefreshSidebarGroups();
         }
         if (e.PropertyName is nameof(SessionItem.Hidden)
             or nameof(SessionItem.ParentSessionId)

@@ -173,14 +173,6 @@ public static class SettingsService
         public bool ShowDiffViewBtn    { get; set; } = true;  // DIFF
         // Diff 패널에서 git 기능(스테이징/되돌리기/상태글자/커밋·푸시·풀 컨트롤) 사용 여부. 기본 false=순수 diff 뷰어.
         public bool DiffGitEnabled     { get; set; } = false;
-        // 하단 푸터 계정 사용량 표시 여부(provider 별). Claude 만 기본 표시.
-        public bool ShowFooterClaude { get; set; } = true;
-        public bool ShowFooterCodex  { get; set; } = false;
-        public bool ShowFooterGo     { get; set; } = false;
-        public bool ShowFooterDeepSeek { get; set; } = false;
-        public bool ShowFooterGrok { get; set; } = false;
-        public bool ShowFooterAntigravity { get; set; } = false;
-        public bool ShowFooterKimi { get; set; } = false;
         // 계정 사용량 사이드바/툴팁에 한도 도달 예상 시간 표시. 기본 켜짐.
         public bool ShowEstimate { get; set; } = false;
         // 계정 사용량을 사용한 양 대신 남은 양(100%-사용률)으로 표시. 기본 꺼짐.
@@ -351,22 +343,6 @@ public static class SettingsService
     public static void SaveShowDiffViewBtn(bool v)    { Current.ShowDiffViewBtn    = v; Save(); }
     public static bool LoadDiffGitEnabled() => Current.DiffGitEnabled;
     public static void SaveDiffGitEnabled(bool v) { Current.DiffGitEnabled = v; Save(); }
-
-    // ── 하단 푸터 계정 사용량(provider) 표시 여부 ────────────────
-    public static bool LoadShowFooterClaude() => Current.ShowFooterClaude;
-    public static bool LoadShowFooterCodex()  => Current.ShowFooterCodex;
-    public static bool LoadShowFooterGo()     => Current.ShowFooterGo;
-    public static void SaveShowFooterClaude(bool v) { Current.ShowFooterClaude = v; Save(); }
-    public static void SaveShowFooterCodex(bool v)  { Current.ShowFooterCodex  = v; Save(); }
-    public static void SaveShowFooterGo(bool v)     { Current.ShowFooterGo     = v; Save(); }
-    public static bool LoadShowFooterDeepSeek() => Current.ShowFooterDeepSeek;
-    public static void SaveShowFooterDeepSeek(bool v) { Current.ShowFooterDeepSeek = v; Save(); }
-    public static bool LoadShowFooterGrok() => Current.ShowFooterGrok;
-    public static void SaveShowFooterGrok(bool v) { Current.ShowFooterGrok = v; Save(); }
-    public static bool LoadShowFooterAntigravity() => Current.ShowFooterAntigravity;
-    public static void SaveShowFooterAntigravity(bool v) { Current.ShowFooterAntigravity = v; Save(); }
-    public static bool LoadShowFooterKimi() => Current.ShowFooterKimi;
-    public static void SaveShowFooterKimi(bool v) { Current.ShowFooterKimi = v; Save(); }
 
     // ── 계정 사용량 한도 도달 예상 표시 ──────────────────────────
     public static bool LoadShowEstimate() => Current.ShowEstimate;

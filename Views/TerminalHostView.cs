@@ -465,14 +465,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
-            // 외부 OS 드래그(탐색기/이미지 등)는 자식 HWND 가 OLE Drop 을 거부 →
-            // HwndSource(부모) 로 fall-through → WebView2 의 WPF Drop 이벤트로 변환되어 들어온다.
-            // - AllowExternalDrop: OS OLE Drop 비활성화 (fall-through 트리거)
-            // - AllowDrop: WPF Drop 이벤트 활성화
-            webView.AllowExternalDrop = false;
-            webView.AllowDrop = true;
-            webView.Drop += OnWebViewDrop;
-            webView.DragOver += OnWebViewDragOver;
+            // WebView2 는 별도 HWND라 WPF 부모의 Drop 이벤트로 전달되지 않는다.
+            // 웹 drop 이벤트가 File 객체를 AdditionalObjects 로 보내면 호스트가 원본 절대경로를 꺼낸다.
+            webView.AllowExternalDrop = true;
 
             var webRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "Terminal", "web");
             core.SetVirtualHostNameToFolderMapping(
@@ -529,6 +524,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     OpenTerminalUrl(url, "webMessage");
                     break;
                 }
+                case "fileDrop":
+                    InsertFilePaths(e.AdditionalObjects.OfType<CoreWebView2File>().Select(file => file.Path));
+                    break;
                 case "interact":
                     UserInteracted?.Invoke();
                     if (_activeRoomId != null) SessionActivity?.Invoke(_activeRoomId);
@@ -1598,7 +1596,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private static extern IntPtr GlobalFree(IntPtr hMem);
 
     /// <summary>붙여넣기용 클립보드 읽기. 클립보드를 1회만 열고(OLE GetDataObject) 그 스냅샷에서
-    /// 이미지→텍스트 순으로 읽는다. 기존엔 ContainsText+GetText / ContainsImage+GetImage 로 매번
+    /// 파일→이미지→텍스트 순으로 읽는다. 기존엔 ContainsText+GetText / ContainsImage+GetImage 로 매번
     /// 2회씩 열어 클립보드 매니저·백신·RDP 리디렉션이 물린 PC 에서 두 번째 열기가 실패 → 빈값 →
     /// Ctrl+V 먹통이 잦았다. 열기 횟수를 절반으로 줄이고 재시도를 넉넉히(STA 스레드라 대기 무해).
     /// 이미지면 (파일경로, null), 텍스트면 (null, 텍스트), 없으면 (null, null).</summary>
@@ -1610,6 +1608,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             {
                 var data = System.Windows.Clipboard.GetDataObject();
                 if (data == null) return (null, null);
+
+                // 탐색기/바탕화면에서 '파일 자체'를 복사한 경우. 이미지 파일도 Bitmap보다 이 형식을
+                // 우선해 원본 파일 경로로 붙여넣는다. 제출은 하지 않고 다음 입력을 위한 공백만 붙인다.
+                if (data.GetDataPresent(System.Windows.DataFormats.FileDrop) &&
+                    data.GetData(System.Windows.DataFormats.FileDrop) is string[] files)
+                {
+                    var fileText = FormatFilePathsForInput(files);
+                    if (fileText.Length > 0) return (null, fileText);
+                }
 
                 // 이미지 우선(claude 이미지 첨부) — 저장 성공 시 파일 경로 반환.
                 // WPF DataFormats.Bitmap(CF_BITMAP/HBITMAP)은 캡처 도구의 delayed-rendering
@@ -1916,66 +1923,27 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     private bool _disposed;
 
-    // ── 외부 드래그 앤 드롭 (탐색기/이미지 등 → 활성 세션 터미널로 @경로 입력) ──────────
-    /// <summary>드롭 허용 확장자 (이미지 + 텍스트/소스/문서). 바이너리(.exe/.zip 등)는 토큰으로 의미가 없어 제외.</summary>
-    private static readonly HashSet<string> DropExts = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // 이미지
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif", ".tif", ".tiff",
-        // 텍스트/소스/문서
-        ".txt", ".md", ".markdown", ".rst", ".adoc",
-        ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".conf", ".config", ".env", ".editorconfig", ".props", ".targets",
-        ".xml", ".html", ".htm", ".css", ".scss", ".sass", ".less", ".vue", ".svelte", ".razor", ".cshtml",
-        ".cs", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".java", ".kt", ".kts", ".swift", ".go", ".rs",
-        ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".py", ".rb", ".php", ".lua", ".dart", ".fs", ".fsi",
-        ".vb", ".sql", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".psm1", ".bat", ".cmd",
-        ".gitignore", ".gitattributes", ".gitmodules", ".dockerignore",
-    };
-
-    private void OnWebViewDragOver(object sender, DragEventArgs e)
-    {
-        // 활성 room 이 살아있고, 허용 확장자 파일이 있을 때만 Copy 커서.
-        var room = _activeRoomId;
-        if (string.IsNullOrEmpty(room)) { e.Effects = DragDropEffects.None; e.Handled = true; return; }
-        var sess = TerminalSessionManager.Instance.Get(room);
-        if (sess is not { IsAlive: true }) { e.Effects = DragDropEffects.None; e.Handled = true; return; }
-        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) { e.Effects = DragDropEffects.None; e.Handled = true; return; }
-        var files = (string[]?)e.Data.GetData(DataFormats.FileDrop);
-        if (files == null || files.Length == 0 || !files.Any(IsDroppableFile))
-        { e.Effects = DragDropEffects.None; e.Handled = true; return; }
-        e.Effects = DragDropEffects.Copy;
-        e.Handled = true;
-    }
-
-    private void OnWebViewDrop(object sender, DragEventArgs e)
+    // ── 외부 드래그 앤 드롭 (탐색기/바탕화면 → 활성 세션 터미널로 @경로 입력) ──────────
+    public void InsertFilePaths(IEnumerable<string> paths)
     {
         var room = _activeRoomId;
         if (string.IsNullOrEmpty(room)) return;
         var sess = TerminalSessionManager.Instance.Get(room);
         if (sess is not { IsAlive: true }) return;
-        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-        var files = (string[]?)e.Data.GetData(DataFormats.FileDrop);
-        if (files == null || files.Length == 0) return;
 
-        var accepted = files.Where(IsDroppableFile).Select(p => "@" + p).ToArray();
-        if (accepted.Length == 0) return;
+        var text = FormatFilePathsForInput(paths);
+        if (text.Length == 0) return;
 
-        // @경로 는 claude/codex/opencode 가 직접 읽어 첨부. 엔터는 자동으로 안 누름 — 사용자가 확인 후 직접 Enter.
-        sess.Write(string.Join("\r", accepted) + "\r");
-        e.Handled = true;
+        // 일반 터미널의 파일 드롭처럼 공백으로 구분하고 제출(Enter)은 하지 않는다.
+        sess.Write(text);
+        FocusTerminal();
     }
 
-    private static bool IsDroppableFile(string path)
+    private static string FormatFilePathsForInput(IEnumerable<string> paths)
     {
-        try
-        {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return false;
-            var name = Path.GetFileName(path);
-            if (DropExts.Contains(name)) return true; // .gitignore, Dockerfile 등 확장자 없는 파일
-            var ext = Path.GetExtension(path);
-            return !string.IsNullOrEmpty(ext) && DropExts.Contains(ext);
-        }
-        catch { return false; }
+        var accepted = paths.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase)
+                            .Select(path => "@" + path).ToArray();
+        return accepted.Length == 0 ? string.Empty : string.Join(" ", accepted) + " ";
     }
 
     /// <summary>앱 종료 시 호출 — WebView2 + 이벤트 구독 해제 (Edge 렌더러 프로세스 잔류 방지).</summary>

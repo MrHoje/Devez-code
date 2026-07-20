@@ -409,8 +409,8 @@
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- ── 창 · 화면 표시 ── -->
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -429,8 +429,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -449,8 +449,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -506,8 +506,8 @@
                                 <TextBlock Text="프로젝트 표시와 로드 방식을 설정합니다."
                                            Style="{StaticResource SettingsContentSubtitle}"/>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -526,8 +526,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -583,8 +583,8 @@
                                 <TextBlock Text="새 세션의 기본 동작을 설정합니다."
                                            Style="{StaticResource SettingsContentSubtitle}"/>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -603,8 +603,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -626,8 +626,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -653,8 +653,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -733,7 +733,7 @@
                                 <TextBlock Text="인앱 브라우저의 기본 주소와 터미널 URL 링크 동작을 설정합니다."
                                            Style="{StaticResource SettingsContentSubtitle}"/>
 
-                                <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <StackPanel>
                                         <TextBlock Text="기본 주소" FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
                                         <TextBlock Text="새 인앱 브라우저 탭에 방문 기록이 없을 때 열 주소입니다. http 또는 https 주소만 사용할 수 있습니다."
@@ -746,7 +746,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="176"/></Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
@@ -833,8 +833,8 @@
                                 <ItemsControl x:Name="AgentList">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Margin="0,21,0,0" Padding="0" CornerRadius="0"
-                                                    BorderThickness="0"
+                                            <Border Margin="0,21,0,0" Padding="0,0,0,16" CornerRadius="0"
+                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                                                     Background="Transparent">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
@@ -1234,8 +1234,8 @@
                                 <TextBlock Text="우측 패널 상단의 뷰 전환 버튼 표시 여부를 선택합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -1253,8 +1253,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -1272,8 +1272,8 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Padding="0" CornerRadius="0"
-                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                <Border Padding="0,0,0,16" CornerRadius="0"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -1312,7 +1312,7 @@
 
                             </StackPanel>
 
-                            <!-- 계정 사용량 패널 — 계정 연결(로그인) + 푸터 표시 토글 -->
+                            <!-- 계정 사용량 패널 — 계정 연결(로그인) + 표시 방식 -->
                             <StackPanel x:Name="UsagePanel" Margin="28,22,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartBar}"
@@ -1325,9 +1325,44 @@
                                            FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
+                                <Grid Margin="0,16,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="한도 도달 예상 표시" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="사이드바와 툴팁에 예상 소진 시각 표시" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowEstimateToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="EstimateToggle_Changed" Unchecked="EstimateToggle_Changed"/>
+                                </Grid>
+
+                                <Separator Margin="0,0,0,14" Background="{DynamicResource LineBrush}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="사용량 남은 수치로 표시" FontSize="{DynamicResource Fs13}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="사용한 양 대신 100%에서 남은 사용량 표시" FontSize="{DynamicResource Fs11}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ShowRemainingUsageToggle" Grid.Column="1"
+                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                              Checked="RemainingUsageToggle_Changed" Unchecked="RemainingUsageToggle_Changed"/>
+                                </Grid>
+
+                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
+
                                 <!-- 그룹 1: 계정 연결(로그인/재연결) -->
                                 <TextBlock Text="계정 연결" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,16,0,12"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,25,0,12"/>
 
                                 <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
@@ -1356,6 +1391,7 @@
                                     </Button>
                                 </Grid>
 
+                                <Separator Margin="0,0,0,18" Background="{DynamicResource LineBrush}"/>
                                 <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -1396,6 +1432,7 @@
                                     </StackPanel>
                                 </Grid>
 
+                                <Separator Margin="0,0,0,18" Background="{DynamicResource LineBrush}"/>
                                 <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -1435,6 +1472,7 @@
                                     </StackPanel>
                                 </Grid>
 
+                                <Separator Margin="0,0,0,18" Background="{DynamicResource LineBrush}"/>
                                 <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -1476,6 +1514,7 @@
                                 </Grid>
 
                                 <!-- Antigravity (Google OAuth 로그인 — agy 키링 토큰도 자동 인식) -->
+                                <Separator Margin="0,0,0,18" Background="{DynamicResource LineBrush}"/>
                                 <Grid Margin="0,0,0,18">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -1516,6 +1555,7 @@
                                 </Grid>
 
                                 <!-- DeepSeek (API 키) -->
+                                <Separator Margin="0,0,0,18" Background="{DynamicResource LineBrush}"/>
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
@@ -1591,159 +1631,6 @@
                                                        Visibility="Collapsed"/>
                                         </StackPanel>
                                     </Border>
-                                </Grid>
-
-                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
-
-                                <!-- 그룹 2: 한도 도달 예상 표시 -->
-                                <Grid Margin="0,20,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="한도 도달 예상 표시" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="사이드바와 툴팁에 예상 소진 시각 표시" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                            </StackPanel>
-                                    <CheckBox x:Name="ShowEstimateToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="EstimateToggle_Changed" Unchecked="EstimateToggle_Changed"/>
-                                </Grid>
-
-                                <Grid Margin="0,16,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="사용량 남은 수치로 표시" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="사용한 양 대신 100%에서 남은 사용량 표시" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ShowRemainingUsageToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="RemainingUsageToggle_Changed" Unchecked="RemainingUsageToggle_Changed"/>
-                                </Grid>
-
-                                <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
-
-                                <!-- 그룹 3: 하단 푸터 표시 -->
-                                <TextBlock Text="하단 푸터 표시" FontSize="{DynamicResource Fs11}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,20,0,12"/>
-
-                                <Grid Margin="0,0,0,14">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="Claude" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="Claude 계정 사용량" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ShowFooterClaudeToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                </Grid>
-
-                                <Grid Margin="0,0,0,14">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="Codex" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="ChatGPT(Codex) 계정 사용량" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ShowFooterCodexToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                </Grid>
-
-                                <Grid Margin="0,0,0,14">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="OpenCode Go" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="OpenCode Go 계정 사용량" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ShowFooterGoToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                </Grid>
-
-                                <Grid Margin="0,0,0,14">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="DeepSeek" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="DeepSeek API 잔액" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ShowFooterDeepSeekToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                </Grid>
-
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="Grok Build" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="Grok Build 주간 한도" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ShowFooterGrokToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                </Grid>
-
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="Antigravity" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="Antigravity 모델 한도 (5시간/주간 자동 판별)" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ShowFooterAntigravityToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
-                                </Grid>
-
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="Kimi" FontSize="{DynamicResource Fs13}"
-                                                   Foreground="{DynamicResource TextBrush}"/>
-                                        <TextBlock Text="Kimi 정액제 플랜 사용량 (5시간/주간 %)" FontSize="{DynamicResource Fs11}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ShowFooterKimiToggle" Grid.Column="1"
-                                              Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
-                                              Checked="FooterUsageToggle_Changed" Unchecked="FooterUsageToggle_Changed"/>
                                 </Grid>
 
                             </StackPanel>

@@ -75,9 +75,9 @@ public partial class SettingsDialog : UserControl
     private bool _originalShowDirView, _originalShowQueueView, _originalShowBrowserView, _originalShowDiffView;
     private bool _selectedShowDirView, _selectedShowQueueView, _selectedShowBrowserView, _selectedShowDiffView;
 
-    // 푸터 사용량 표시(provider별) + 사용량 표시 방식 — [저장] 시점에만 디스크 반영.
-    private bool _originalShowFooterClaude, _originalShowFooterCodex, _originalShowFooterGo, _originalShowFooterDeepSeek, _originalShowFooterGrok, _originalShowFooterAntigravity, _originalShowFooterKimi, _originalShowEstimate, _originalShowRemainingUsage;
-    private bool _selectedShowFooterClaude, _selectedShowFooterCodex, _selectedShowFooterGo, _selectedShowFooterDeepSeek, _selectedShowFooterGrok, _selectedShowFooterAntigravity, _selectedShowFooterKimi, _selectedShowEstimate, _selectedShowRemainingUsage;
+    // 계정 사용량 표시 방식 — [저장] 시점에만 디스크 반영.
+    private bool _originalShowEstimate, _originalShowRemainingUsage;
+    private bool _selectedShowEstimate, _selectedShowRemainingUsage;
 
     // 알림 상세(자동닫힘/모니터) — [저장] 시점에만 디스크 반영. 위치는 기존 _notifyPos/_originalNotifyPos 사용.
     private int    _originalNotifyAutoCloseSec, _selectedNotifyAutoCloseSec;
@@ -323,7 +323,7 @@ public partial class SettingsDialog : UserControl
         }),
         ("v1.5.2", "2026-06-25", false, new[]
         {
-            "하단 푸터의 계정 사용량 표시가 동작하지 않던 문제를 수정했습니다. (설정 > 계정 사용량 > 하단 푸터 표시)",
+            "하단 푸터의 계정 사용량 표시가 동작하지 않던 문제를 수정했습니다.",
         }),
         ("v1.5.1", "2026-06-25", false, new[]
         {
@@ -1130,20 +1130,6 @@ public partial class SettingsDialog : UserControl
     private void LoadFooterUsageSettings()
     {
         _loadingFooterUsage = true;
-        _originalShowFooterClaude   = _selectedShowFooterClaude   = SettingsService.LoadShowFooterClaude();
-        _originalShowFooterCodex    = _selectedShowFooterCodex    = SettingsService.LoadShowFooterCodex();
-        _originalShowFooterGo       = _selectedShowFooterGo       = SettingsService.LoadShowFooterGo();
-        _originalShowFooterDeepSeek = _selectedShowFooterDeepSeek = SettingsService.LoadShowFooterDeepSeek();
-        _originalShowFooterGrok     = _selectedShowFooterGrok     = SettingsService.LoadShowFooterGrok();
-        _originalShowFooterAntigravity = _selectedShowFooterAntigravity = SettingsService.LoadShowFooterAntigravity();
-        _originalShowFooterKimi     = _selectedShowFooterKimi     = SettingsService.LoadShowFooterKimi();
-        ShowFooterClaudeToggle.IsChecked   = _originalShowFooterClaude;
-        ShowFooterCodexToggle.IsChecked    = _originalShowFooterCodex;
-        ShowFooterGoToggle.IsChecked       = _originalShowFooterGo;
-        ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek;
-        ShowFooterGrokToggle.IsChecked     = _originalShowFooterGrok;
-        ShowFooterAntigravityToggle.IsChecked = _originalShowFooterAntigravity;
-        ShowFooterKimiToggle.IsChecked     = _originalShowFooterKimi;
         UpdateConnectionBadges();
 
         // 한도 도달 예상 표시 토글
@@ -1160,18 +1146,6 @@ public partial class SettingsDialog : UserControl
         DeepSeekEnabledToggle.IsChecked = hasKey;
         DeepSeekKeyArea.Visibility = Visibility.Collapsed;
         DeepSeekKeyStatus.Visibility = Visibility.Collapsed;
-    }
-
-    private void FooterUsageToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_loadingFooterUsage) return;
-        _selectedShowFooterClaude   = ShowFooterClaudeToggle.IsChecked == true;
-        _selectedShowFooterCodex    = ShowFooterCodexToggle.IsChecked == true;
-        _selectedShowFooterGo       = ShowFooterGoToggle.IsChecked == true;
-        _selectedShowFooterDeepSeek = ShowFooterDeepSeekToggle.IsChecked == true;
-        _selectedShowFooterGrok     = ShowFooterGrokToggle.IsChecked == true;
-        _selectedShowFooterAntigravity = ShowFooterAntigravityToggle.IsChecked == true;
-        _selectedShowFooterKimi     = ShowFooterKimiToggle.IsChecked == true;
     }
 
     private void EstimateToggle_Changed(object sender, RoutedEventArgs e)
@@ -1549,13 +1523,6 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowQueueView != _originalShowQueueView) return true;
         if (_selectedShowBrowserView != _originalShowBrowserView) return true;
         if (_selectedShowDiffView != _originalShowDiffView) return true;
-        if (_selectedShowFooterClaude != _originalShowFooterClaude) return true;
-        if (_selectedShowFooterCodex != _originalShowFooterCodex) return true;
-        if (_selectedShowFooterGo != _originalShowFooterGo) return true;
-        if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) return true;
-        if (_selectedShowFooterGrok != _originalShowFooterGrok) return true;
-        if (_selectedShowFooterAntigravity != _originalShowFooterAntigravity) return true;
-        if (_selectedShowFooterKimi != _originalShowFooterKimi) return true;
         if (_selectedShowEstimate != _originalShowEstimate) return true;
         if (_selectedShowRemainingUsage != _originalShowRemainingUsage) return true;
         if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec) return true;
@@ -1656,29 +1623,6 @@ public partial class SettingsDialog : UserControl
         _originalShowQueueView = _selectedShowQueueView;
         _originalShowBrowserView = _selectedShowBrowserView;
         _originalShowDiffView = _selectedShowDiffView;
-
-        if (_selectedShowFooterClaude != _originalShowFooterClaude || _selectedShowFooterCodex != _originalShowFooterCodex
-            || _selectedShowFooterGo != _originalShowFooterGo || _selectedShowFooterDeepSeek != _originalShowFooterDeepSeek
-            || _selectedShowFooterGrok != _originalShowFooterGrok
-            || _selectedShowFooterAntigravity != _originalShowFooterAntigravity
-            || _selectedShowFooterKimi != _originalShowFooterKimi)
-        {
-            SettingsService.SaveShowFooterClaude(_selectedShowFooterClaude);
-            SettingsService.SaveShowFooterCodex(_selectedShowFooterCodex);
-            SettingsService.SaveShowFooterGo(_selectedShowFooterGo);
-            SettingsService.SaveShowFooterDeepSeek(_selectedShowFooterDeepSeek);
-            SettingsService.SaveShowFooterGrok(_selectedShowFooterGrok);
-            SettingsService.SaveShowFooterAntigravity(_selectedShowFooterAntigravity);
-            SettingsService.SaveShowFooterKimi(_selectedShowFooterKimi);
-            (Application.Current.MainWindow as MainWindow)?.ApplyFooterUsageVisibility();
-        }
-        _originalShowFooterClaude = _selectedShowFooterClaude;
-        _originalShowFooterCodex = _selectedShowFooterCodex;
-        _originalShowFooterGo = _selectedShowFooterGo;
-        _originalShowFooterDeepSeek = _selectedShowFooterDeepSeek;
-        _originalShowFooterGrok = _selectedShowFooterGrok;
-        _originalShowFooterAntigravity = _selectedShowFooterAntigravity;
-        _originalShowFooterKimi = _selectedShowFooterKimi;
 
         if (_selectedShowEstimate != _originalShowEstimate)
         {
@@ -1851,13 +1795,6 @@ public partial class SettingsDialog : UserControl
         if (_selectedShowQueueView != _originalShowQueueView) { _selectedShowQueueView = _originalShowQueueView; ShowQueueViewToggle.IsChecked = _originalShowQueueView; }
         if (_selectedShowBrowserView != _originalShowBrowserView) { _selectedShowBrowserView = _originalShowBrowserView; ShowBrowserViewToggle.IsChecked = _originalShowBrowserView; }
         if (_selectedShowDiffView != _originalShowDiffView) { _selectedShowDiffView = _originalShowDiffView; ShowDiffViewToggle.IsChecked = _originalShowDiffView; }
-        if (_selectedShowFooterClaude != _originalShowFooterClaude) { _selectedShowFooterClaude = _originalShowFooterClaude; ShowFooterClaudeToggle.IsChecked = _originalShowFooterClaude; }
-        if (_selectedShowFooterCodex != _originalShowFooterCodex) { _selectedShowFooterCodex = _originalShowFooterCodex; ShowFooterCodexToggle.IsChecked = _originalShowFooterCodex; }
-        if (_selectedShowFooterGo != _originalShowFooterGo) { _selectedShowFooterGo = _originalShowFooterGo; ShowFooterGoToggle.IsChecked = _originalShowFooterGo; }
-        if (_selectedShowFooterDeepSeek != _originalShowFooterDeepSeek) { _selectedShowFooterDeepSeek = _originalShowFooterDeepSeek; ShowFooterDeepSeekToggle.IsChecked = _originalShowFooterDeepSeek; }
-        if (_selectedShowFooterGrok != _originalShowFooterGrok) { _selectedShowFooterGrok = _originalShowFooterGrok; ShowFooterGrokToggle.IsChecked = _originalShowFooterGrok; }
-        if (_selectedShowFooterAntigravity != _originalShowFooterAntigravity) { _selectedShowFooterAntigravity = _originalShowFooterAntigravity; ShowFooterAntigravityToggle.IsChecked = _originalShowFooterAntigravity; }
-        if (_selectedShowFooterKimi != _originalShowFooterKimi) { _selectedShowFooterKimi = _originalShowFooterKimi; ShowFooterKimiToggle.IsChecked = _originalShowFooterKimi; }
         if (_selectedShowEstimate != _originalShowEstimate) { _selectedShowEstimate = _originalShowEstimate; ShowEstimateToggle.IsChecked = _originalShowEstimate; }
         if (_selectedShowRemainingUsage != _originalShowRemainingUsage) { _selectedShowRemainingUsage = _originalShowRemainingUsage; ShowRemainingUsageToggle.IsChecked = _originalShowRemainingUsage; }
         // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)

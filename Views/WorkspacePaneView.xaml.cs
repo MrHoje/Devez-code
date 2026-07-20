@@ -651,6 +651,8 @@ public partial class WorkspacePaneView : UserControl
     /// 터미널 폰트는 활성 세션에서만 조절할 수 있고, 브랜치 정보는 보이는 세션 탭 기준으로 유지한다.</summary>
     private void RefreshHeaderSessionGate()
     {
+        if (AttachFileBtn != null)
+            AttachFileBtn.Visibility = _activeTab is SessionItem ? Visibility.Visible : Visibility.Collapsed;
         if (FontSizeCombo != null)
             FontSizeCombo.Visibility = _activeTab is SessionItem ? Visibility.Visible : Visibility.Collapsed;
         UpdateProjectBranchBubble(_activeProject);
@@ -1228,80 +1230,19 @@ public partial class WorkspacePaneView : UserControl
         return true;
     }
 
-    /// <summary>활성 세션 터미널에 텍스트만 삽입(엔터 없음). 외부 드래그로 경로 입력 시 사용 — 사용자가 확인 후 직접 Enter.</summary>
-    private bool WriteToActiveSessionNoEnter(string text)
-    {
-        var id = _activeSession?.Id;
-        if (string.IsNullOrEmpty(id)) return false;
-        var session = TerminalSessionManager.Instance.Get(id);
-        if (session is not { IsAlive: true }) return false;
-        session.Write(text);
-        _terminal.ShowTerminal(id);
-        _terminal.FocusTerminal();
-        return true;
-    }
-
-    // ── 외부 드래그 앤 드롭 (탐색기/이미지 등 → 활성 세션 터미널로 경로 입력) ──────────
-    // 터미널 호스트(TerminalHostView)의 WebView2 외부 드롭은 비활성화되어 있어
-    // WPF DragDrop 시스템이 TerminalHostContainer 의 Drop 이벤트로 라우팅된다.
-
-    /// <summary>드롭 허용 확장자. 이미지(에이전트가 직접 읽을 수 있는 포맷) + 일반 텍스트(소스/문서/설정).
-    /// 바이너리(.exe, .zip 등)는 토큰으로 의미가 없어 제외.</summary>
-    private static readonly HashSet<string> DropExts = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // 이미지
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif", ".tif", ".tiff",
-        // 텍스트/소스/문서
-        ".txt", ".md", ".markdown", ".rst", ".adoc",
-        ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".conf", ".config", ".env", ".editorconfig", ".props", ".targets",
-        ".xml", ".html", ".htm", ".css", ".scss", ".sass", ".less", ".vue", ".svelte", ".razor", ".cshtml",
-        ".cs", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".java", ".kt", ".kts", ".swift", ".go", ".rs",
-        ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".py", ".rb", ".php", ".lua", ".dart", ".fs", ".fsi",
-        ".vb", ".sql", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".psm1", ".bat", ".cmd",
-        ".gitignore", ".gitattributes", ".gitmodules", ".dockerignore",
-    };
-
-    private void TerminalHostContainer_DragOver(object sender, DragEventArgs e)
-    {
-        // 활성 세션이 살아있고, 파일 드롭 중이며, 그 중 허용 확장자가 하나라도 있을 때만 Copy 커서.
-        if (_activeSession == null) { e.Effects = DragDropEffects.None; e.Handled = true; return; }
-        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) { e.Effects = DragDropEffects.None; e.Handled = true; return; }
-        var files = (string[]?)e.Data.GetData(DataFormats.FileDrop);
-        if (files == null || files.Length == 0 || !files.Any(IsDroppableFile))
-        { e.Effects = DragDropEffects.None; e.Handled = true; return; }
-        e.Effects = DragDropEffects.Copy;
-        e.Handled = true;
-    }
-
-    private void TerminalHostContainer_Drop(object sender, DragEventArgs e)
+    private void AttachFileBtn_Click(object sender, RoutedEventArgs e)
     {
         if (_activeSession == null) return;
-        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-        var files = (string[]?)e.Data.GetData(DataFormats.FileDrop);
-        if (files == null || files.Length == 0) return;
-
-        // 허용 확장자만, 각 줄에 "@경로" 형식으로. 클로드/codex 등은 @경로 를 직접 읽어 첨부.
-        var accepted = files.Where(IsDroppableFile)
-                            .Select(p => "@" + p)
-                            .ToArray();
-        if (accepted.Length == 0) return;
-
-        var text = string.Join("\r", accepted) + "\r";
-        WriteToActiveSessionNoEnter(text);
-        e.Handled = true;
-    }
-
-    private static bool IsDroppableFile(string path)
-    {
-        try
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return false;
-            var name = Path.GetFileName(path);
-            if (DropExts.Contains(name)) return true; // .gitignore, Dockerfile 등 확장자 없는 파일
-            var ext = Path.GetExtension(path);
-            return !string.IsNullOrEmpty(ext) && DropExts.Contains(ext);
-        }
-        catch { return false; }
+            Title = "첨부할 파일 선택",
+            Multiselect = true,
+            CheckFileExists = true,
+        };
+        var owner = Window.GetWindow(this);
+        var selected = owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
+        if (selected == true)
+            _terminal.InsertFilePaths(dialog.FileNames);
     }
 
     private void ActivateFileTab(FileTabItem tab)

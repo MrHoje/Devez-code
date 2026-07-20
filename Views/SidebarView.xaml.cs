@@ -770,6 +770,81 @@ public partial class SidebarView : UserControl
         e.Handled = true;
     }
 
+    private const double ProjectSessionSearchRowHeight = 37;
+    private ProjectItem? _openProjectSessionSearch;
+
+    private void ProjectSessionSearchToggle_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is not Button { DataContext: ProjectItem project } button) return;
+
+        var card = FindVisualAncestorByName<Border>(button, "ProjectCardRoot");
+        bool open = !project.IsSessionSearchOpen;
+        if (open && _openProjectSessionSearch != null &&
+            !ReferenceEquals(_openProjectSessionSearch, project))
+            SetProjectSessionSearchOpen(_openProjectSessionSearch, false);
+
+        SetProjectSessionSearchOpen(project, open, card);
+    }
+
+    private void SetProjectSessionSearchOpen(ProjectItem project, bool open, Border? card = null)
+    {
+        card ??= FindVisualChildren<Border>(this)
+            .FirstOrDefault(item => item.Name == "ProjectCardRoot" &&
+                                    ReferenceEquals(item.DataContext, project));
+        var row = FindVisualChildren<Border>(card)
+            .FirstOrDefault(item => item.Name == "ProjectSessionSearchRow");
+        var searchBox = FindVisualChildren<TextBox>(card)
+            .FirstOrDefault(item => item.Name == "ProjectSessionSearchBox");
+        double from = row?.ActualHeight ?? (project.IsSessionSearchOpen ? ProjectSessionSearchRowHeight : 0);
+
+        project.IsSessionSearchOpen = open;
+        if (open)
+            _openProjectSessionSearch = project;
+        else
+        {
+            project.SessionSearchQuery = "";
+            if (ReferenceEquals(_openProjectSessionSearch, project))
+                _openProjectSessionSearch = null;
+        }
+
+        if (open && !project.IsExpanded)
+        {
+            project.IsExpanded = true;
+            ProjectExpandChanged?.Invoke();
+        }
+
+        if (row != null)
+        {
+            row.BeginAnimation(FrameworkElement.HeightProperty, new DoubleAnimation
+            {
+                From = from,
+                To = open ? ProjectSessionSearchRowHeight : 0,
+                Duration = TimeSpan.FromMilliseconds(220),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+            });
+        }
+
+        if (open && searchBox != null)
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!project.IsSessionSearchOpen) return;
+                searchBox.Focus();
+                searchBox.SelectAll();
+            }), DispatcherPriority.Input);
+    }
+
+    private void ProjectSessionSearchClear_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is not Button { DataContext: ProjectItem project } button) return;
+        project.SessionSearchQuery = "";
+
+        var card = FindVisualAncestorByName<Border>(button, "ProjectCardRoot");
+        FindVisualChildren<TextBox>(card)
+            .FirstOrDefault(item => item.Name == "ProjectSessionSearchBox")?.Focus();
+    }
+
     /// <summary>세로형 ... 버튼 — 행에 정의된 우클릭 메뉴를 버튼 위치에 띄운다.</summary>
     private void ProjectMenu_Click(object sender, RoutedEventArgs e)
     {
@@ -2056,6 +2131,15 @@ public partial class SidebarView : UserControl
     {
         for (; current != null; current = VisualTreeHelper.GetParent(current))
             if (current is T match) return match;
+        return null;
+    }
+
+    private static T? FindVisualAncestorByName<T>(DependencyObject? current, string name)
+        where T : FrameworkElement
+    {
+        for (; current != null; current = VisualTreeHelper.GetParent(current))
+            if (current is T { Name: var elementName } match && elementName == name)
+                return match;
         return null;
     }
 

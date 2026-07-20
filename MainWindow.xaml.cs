@@ -1399,8 +1399,7 @@ public partial class MainWindow : Window
     /// <summary>DeepSeek 잔액을 하단 푸터에 반영. percent 막대 대신 잔액 텍스트로 표시.</summary>
     private void ApplyDeepSeekFooter(Models.ProviderUsage u)
     {
-        bool show = SettingsService.LoadShowFooterDeepSeek();
-        if (!u.HasData || !show || u.Balances.Count == 0)
+        if (!u.HasData || u.Balances.Count == 0)
         { DeepSeekPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
 
         DeepSeekPanel.Visibility = Visibility.Visible;
@@ -1435,7 +1434,7 @@ public partial class MainWindow : Window
     /// <summary>Grok 토큰/설정 변경 직후 즉시 폴링.</summary>
     public void RefreshGrokUsage() => _grok.RefreshNow();
 
-    /// <summary>Kimi 사용량 설정(푸터 토글) 변경 직후 즉시 재렌더.</summary>
+    /// <summary>Kimi 사용량 연결 상태 변경 직후 즉시 재렌더.</summary>
     public void RefreshKimiUsage() => _kimi.RefreshNow();
 
     /// <summary>DevezCode 사용량 연결만 끊는다. 외부 CLI 자격증명은 삭제하지 않는다.</summary>
@@ -1516,8 +1515,7 @@ public partial class MainWindow : Window
     /// <summary>Grok Build 주간 한도를 하단 푸터에 반영 (CLI /usage 와 동일 format=credits).</summary>
     private void ApplyGrokFooter(Models.ProviderUsage u)
     {
-        bool show = SettingsService.LoadShowFooterGrok();
-        if (!show || (!u.HasData && string.IsNullOrEmpty(u.Error)))
+        if (!u.HasData && string.IsNullOrEmpty(u.Error))
         { GrokPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
 
         GrokPanel.Visibility = Visibility.Visible;
@@ -1550,8 +1548,7 @@ public partial class MainWindow : Window
     /// 서비스가 리셋 시각으로 판별해 Primary(5시간)/Weekly(주간) 중 한쪽만 채운다 — grok 패턴.</summary>
     private void ApplyAntigravityFooter(Models.ProviderUsage u)
     {
-        bool show = SettingsService.LoadShowFooterAntigravity();
-        if (!show || (!u.HasData && string.IsNullOrEmpty(u.Error)))
+        if (!u.HasData && string.IsNullOrEmpty(u.Error))
         { AntigravityPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
 
         AntigravityPanel.Visibility = Visibility.Visible;
@@ -1588,15 +1585,15 @@ public partial class MainWindow : Window
     /// <summary>agy 토큰/설정 변경 직후 즉시 폴링.</summary>
     public void RefreshAntigravityUsage() => _antigravityUsage.RefreshNow();
 
-    /* ── 하단 푸터 계정 사용량 (우측 사이드바와 별개; 설정의 '하단 푸터 표시' 토글로 provider별 on/off) ── */
+    /* ── 하단 푸터 계정 사용량 (우측 사이드바와 별개; 연결된 사용량은 항상 표시) ── */
 
     private const double RlTrackWidth = 56;
 
 
-    /// <summary>Claude rate limit 을 하단 푸터에 반영. 데이터 없거나 설정 off 면 숨김.</summary>
+    /// <summary>Claude rate limit 을 하단 푸터에 반영. 데이터가 없으면 숨김.</summary>
     private void ApplyRateLimit(Models.RateLimitSnapshot snap)
     {
-        if (!snap.HasData || !SettingsService.LoadShowFooterClaude())
+        if (!snap.HasData)
         { RateLimitPanel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
         RateLimitPanel.Visibility = Visibility.Visible;
         UpdateFooterDivider();
@@ -1613,19 +1610,13 @@ public partial class MainWindow : Window
             + (_claudeUsageStale ? $"\n갱신 지연 · 마지막 성공 {snap.CapturedAt:HH:mm}" : "");
     }
 
-    /// <summary>codex/go 사용량을 해당 푸터 패널에 반영. 데이터 없거나 설정 off 면 숨김.</summary>
+    /// <summary>codex/go 사용량을 해당 푸터 패널에 반영. 데이터가 없으면 숨김.</summary>
     private void SetProviderPanel(System.Windows.Controls.StackPanel panel,
         TextBlock fLabel, Border fBar, TextBlock fPct, Border wBar, TextBlock wPct,
         Models.ProviderUsage u, string name, Border? mBar = null, TextBlock? mPct = null,
         StackPanel? primaryGroup = null, StackPanel? weeklyGroup = null)
     {
-        bool show = u.Provider switch
-        {
-            "codex" => SettingsService.LoadShowFooterCodex(),
-            "kimi" => SettingsService.LoadShowFooterKimi(),
-            _ => SettingsService.LoadShowFooterGo(),
-        };
-        if (!u.HasData || !show) { panel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
+        if (!u.HasData) { panel.Visibility = Visibility.Collapsed; UpdateFooterDivider(); return; }
         panel.Visibility = Visibility.Visible;
         if (primaryGroup != null) primaryGroup.Visibility = u.Primary != null ? Visibility.Visible : Visibility.Collapsed;
         if (weeklyGroup != null)
@@ -1828,8 +1819,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>설정의 '하단 푸터 표시' 토글 변경 시 — 마지막 스냅샷으로 각 푸터 패널 가시성을 다시 평가.
-    /// (우측 사이드바는 토글과 무관하게 연결된 provider 를 항상 표시하므로 별도 갱신만.)</summary>
+    /// <summary>마지막 스냅샷으로 각 푸터 사용량 패널 가시성을 다시 평가.</summary>
     public void ApplyFooterUsageVisibility()
     {
         if (_rlMerged != null) ApplyRateLimit(_rlMerged);

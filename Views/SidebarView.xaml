@@ -690,6 +690,97 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
+                            <!-- 프로젝트 경로와 첫 세션 사이에서 높이 0↔37로 펼쳐지는 카드 내부 검색창. -->
+                            <Border x:Name="ProjectSessionSearchRow" Grid.Row="0"
+                                    ClipToBounds="True">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Height" Value="0"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSessionSearchOpen}" Value="True">
+                                                <Setter Property="Height" Value="37"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Border Height="31" Margin="0,2,0,4"
+                                        Background="{DynamicResource PanelSoftBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}"
+                                        BorderThickness="1" CornerRadius="8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                                              Data="{StaticResource IconSearch}"
+                                              Stroke="{DynamicResource TextMutedBrush}"
+                                              Width="12" Height="12" Margin="9,0,0,0"
+                                              VerticalAlignment="Center"/>
+                                        <Grid Grid.Column="1">
+                                            <TextBox x:Name="ProjectSessionSearchBox"
+                                                     Text="{Binding SessionSearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                                     Margin="6,0,0,0" Padding="0"
+                                                     VerticalContentAlignment="Center"
+                                                     Background="Transparent" BorderThickness="0"
+                                                     FocusVisualStyle="{x:Null}"
+                                                     Foreground="{DynamicResource TextBrush}"
+                                                     CaretBrush="{DynamicResource TextBrush}"
+                                                     FontSize="{DynamicResource Fs12}"
+                                                     FontFamily="{StaticResource PretendardFont}">
+                                                <TextBox.Resources>
+                                                    <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>
+                                                </TextBox.Resources>
+                                            </TextBox>
+                                            <TextBlock Text="세션 검색"
+                                                       IsHitTestVisible="False"
+                                                       Margin="6,0,0,0" Padding="0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       FontSize="{DynamicResource Fs12}"
+                                                       FontFamily="{StaticResource PretendardFont}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Text, ElementName=ProjectSessionSearchBox}" Value="">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                        <Button Grid.Column="2" Width="18" Height="18" Margin="0,0,7,0"
+                                                VerticalAlignment="Center"
+                                                Click="ProjectSessionSearchClear_Click" Cursor="Arrow"
+                                                Background="Transparent" BorderThickness="0"
+                                                IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                                ToolTip="지우기"
+                                                Visibility="{Binding HasSessionSearchQuery, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="Bd" Width="18" Height="18" CornerRadius="4"
+                                                            Background="{TemplateBinding Background}">
+                                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                                              Data="{StaticResource IconX}"
+                                                              Width="10" Height="10"
+                                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                              Stretch="Uniform"
+                                                              Stroke="{DynamicResource TextMutedBrush}"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </Border>
                             <!-- 숨김 세션은 일반 세션 목록 아래에 항상 고정한다. -->
                             <Border Grid.Row="4"
                                     Visibility="Collapsed"
@@ -1183,7 +1274,7 @@
         <!-- 업데이트 알림 버튼 -->
         <Button x:Name="UpdateButton" Grid.Row="3"
                 Margin="12,0,12,10" Height="34" Visibility="Collapsed"
-                Click="UpdateButton_Click" Cursor="Hand"
+                Click="UpdateButton_Click" Cursor="Arrow"
                 ToolTip="새 버전을 설치합니다">
             <Button.Template>
                 <ControlTemplate TargetType="Button">

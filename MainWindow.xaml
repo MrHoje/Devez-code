@@ -753,7 +753,7 @@
                     <!-- 우측 패널 접힘과 무관하게 항상 보이는 설정 버튼용 고정폭 컬럼 -->
                     <ColumnDefinition x:Name="FooterActionsCol" Width="Auto" MinWidth="48"/>
                 </Grid.ColumnDefinitions>
-                    <!-- 좌측: 계정 사용량 (설정 > '하단 푸터 표시' 토글로 provider별 on/off). 우측 사이드바와 별개. -->
+                    <!-- 좌측: 계정 사용량 (연결된 provider는 항상 표시). 우측 사이드바와 별개. -->
                     <StackPanel Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
                         <!-- 계정 사용량: provider(Claude/Codex/Go)별 [구분선][아이콘][이름][5h바][주바]. -->
                         <!-- Claude (클릭 시 OAuth 로그인) -->

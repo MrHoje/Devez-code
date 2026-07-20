@@ -755,7 +755,7 @@
     let lastClaudeCaret = null;      // claude: 마지막으로 스캔 성공한 블록커서 좌표(스캔 실패 프레임 폴백)
     let lastClaudeScanAt = 0;        // claude: 전체 셀 스캔 스로틀 기준 시각
     let frozenImeCaret = null;       // [pin] 이번 조합 동안 동결된 좌표 — 리페인트가 와도 안 바뀜
-    let pendingResponseReset = false; // 응답 완료 신호가 조합 중에 도착 — end 후 리셋 예약 플래그
+    let pendingResponseReset = false; // 응답 완료 신호가 조합 중에 도착 — 누락된 end 감시 안전망 플래그
     let responseResetTimer = 0;
 
     function clearResponseResetTimer() {
@@ -799,12 +799,13 @@
 
     el._resetImeAfterResponse = function () {
       if (roomId !== activeRoomId || !document.hasFocus() || document.activeElement !== ta) return;
-      if (isImeComposing) {
-        pendingResponseReset = true;
-        armStaleCompositionReset();
-        return;
-      }
-      resetImeNow();
+      // 정상 idle 에서 blur→focus 하면 Windows IME 컨텍스트가 새로 붙는 동안 다음 입력의
+      // compositionstart 가 누락될 수 있다. 그러면 B형의 커서 숨김/pin 이 모두 시작되지 않아
+      // 응답을 계속 지켜본 뒤 다음 한글 입력에서 블록커서가 보이고 위치까지 튄다.
+      // compositionend 누락으로 실제 조합 상태가 남은 경우에만 안전망을 건다.
+      if (!isImeComposing) return;
+      pendingResponseReset = true;
+      armStaleCompositionReset();
     };
 
     // 새 xterm 이 처음 포커스를 받을 때 WPF 입력 컨트롤의 Windows IME 컨텍스트가 WebView2 에
@@ -1117,8 +1118,10 @@
         setTimeout(function () { post({ type: 'input', roomId: pending.roomId, data: pending.data }); }, 0);
       }
       if (pendingResponseReset) {
+        // 정상 compositionend 가 도착했다면 stale 상태가 아니다. 여기서 다시 blur→focus 하지
+        // 않고 안전망만 취소한다. end 자체가 누락된 경우에만 3초 타이머가 resetImeNow 를 실행한다.
+        pendingResponseReset = false;
         clearResponseResetTimer();
-        responseResetTimer = setTimeout(resetImeNow, 0);
       }
     });
     // ── chain/ghost 무효화 (조합 외 키 입력) ──
@@ -1443,6 +1446,21 @@
     post({ type: 'requestPaste', roomId: activeRoomId });
   }, { capture: true });
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // 바탕화면/탐색기 파일 드롭. WebView2 는 별도 HWND라 WPF Drop 이벤트가 닿지 않으므로
+  // DOM File을 AdditionalObjects 로 보내 호스트에서 원본 절대경로를 얻는다.
+  document.addEventListener('dragover', function (e) {
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.items || []).some(function (item) { return item.kind === 'file'; })) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, { capture: true });
+  document.addEventListener('drop', function (e) {
+    const files = e.dataTransfer ? Array.from(e.dataTransfer.files || []) : [];
+    if (!files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.chrome.webview.postMessageWithAdditionalObjects({ type: 'fileDrop' }, files);
+  }, { capture: true });
 
   function createTerm(roomId, agent, fontSizeOverride) {
     const el = document.createElement('div');

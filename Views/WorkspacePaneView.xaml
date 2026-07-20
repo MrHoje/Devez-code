@@ -106,8 +106,15 @@
               <!-- 우측 dock: model/effort(지원 에이전트) + 터미널 폰트 크기(항상 노출) -->
               <StackPanel Grid.Column="1" Orientation="Horizontal"
                           VerticalAlignment="Center" HorizontalAlignment="Right">
+                  <Button x:Name="AttachFileBtn" Style="{StaticResource TabNavButton}"
+                          Visibility="Collapsed"
+                          Click="AttachFileBtn_Click" ToolTip="파일 첨부">
+                      <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPaperclip}"
+                            Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.8"
+                            Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                  </Button>
                   <StackPanel x:Name="ModelEffortDock" Orientation="Horizontal"
-                              VerticalAlignment="Center" Visibility="Collapsed">
+                              Margin="8,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
                       <ComboBox x:Name="ModelCombo" Style="{StaticResource DockComboBox}" MinWidth="104" Margin="0,4,0,4"
                                 SelectedValuePath="Value"
                                 SelectionChanged="ModelCombo_SelectionChanged"
@@ -120,7 +127,7 @@
                                 ToolTip="이 세션의 추론 강도(effort)"/>
                   </StackPanel>
                   <StackPanel x:Name="CodexModelEffortDock" Orientation="Horizontal"
-                              VerticalAlignment="Center" Visibility="Collapsed">
+                              Margin="8,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
                       <Border Style="{StaticResource DockValueBorder}" MinWidth="104" MaxWidth="180" Margin="0,4,0,4"
                               ToolTip="이 Codex 세션의 모델(읽기 전용)">
                           <TextBlock x:Name="CodexModelText" Style="{StaticResource DockValueText}"/>
@@ -475,10 +482,7 @@
         <!-- 콘텐츠: 활성 탭에 따라 터미널(공유) 또는 파일 에디터(탭당 1개) 표시.
              ClipToBounds: 분할 애니메이션 중 좌상단 고정된 스냅샷이 패널 밖으로 넘치지 않게 잘라낸다. -->
         <Grid Grid.Row="3" ClipToBounds="True">
-            <ContentControl x:Name="TerminalHostContainer"
-                            AllowDrop="True"
-                            DragOver="TerminalHostContainer_DragOver"
-                            Drop="TerminalHostContainer_Drop"/>
+            <ContentControl x:Name="TerminalHostContainer"/>
             <ContentControl x:Name="FileEditorHostContainer" Visibility="Collapsed"/>
             <ContentControl x:Name="BrowserHostContainer" Visibility="Collapsed"/>
             <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"
