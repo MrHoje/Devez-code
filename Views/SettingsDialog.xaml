@@ -479,9 +479,12 @@
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="Diff Git 사용" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="켜면 Diff 패널에서 스테이징·되돌리기·상태(M/A/D/R/U)와 하단 커밋·푸시·풀 컨트롤을 사용합니다. 끄면 변경 파일 diff만 봅니다."
-                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                            <TextBlock FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0">
+                                                <Run Text="켜면 Diff 패널에서 스테이징·되돌리기·상태(M/A/D/R/U)와 하단 커밋·푸시·풀 컨트롤을 사용합니다."/>
+                                                <LineBreak/>
+                                                <Run Text="끄면 변경 파일 diff만 봅니다."/>
+                                            </TextBlock>
                                         </StackPanel>
                                         <CheckBox x:Name="DiffGitEnabledToggle" Grid.Column="1"
                                                   Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
@@ -730,19 +733,19 @@
                                 <TextBlock Text="인앱 브라우저의 기본 주소와 터미널 URL 링크 동작을 설정합니다."
                                            Style="{StaticResource SettingsContentSubtitle}"/>
 
-                                <TextBlock Text="기본 주소" Style="{StaticResource SettingsSectionTitle}"/>
-                                <Border Style="{StaticResource SettingsSectionDivider}"/>
-                                <TextBlock Text="새 인앱 브라우저 탭에 방문 기록이 없을 때 열 주소입니다. http 또는 https 주소만 사용할 수 있습니다."
-                                           FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,12,0,8"/>
-                                <Border Style="{StaticResource FormFieldBox}">
-                                <TextBox x:Name="BrowserHomeUrlBox" Style="{StaticResource InputStyle}"
-                                         TextChanged="BrowserHomeUrlBox_TextChanged"/>
+                                <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="기본 주소" FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock Text="새 인앱 브라우저 탭에 방문 기록이 없을 때 열 주소입니다. http 또는 https 주소만 사용할 수 있습니다."
+                                                   FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        <Border Style="{StaticResource FormFieldBox}" Margin="0,8,0,0">
+                                            <TextBox x:Name="BrowserHomeUrlBox" Style="{StaticResource InputStyle}"
+                                                     TextChanged="BrowserHomeUrlBox_TextChanged"/>
+                                        </Border>
+                                    </StackPanel>
                                 </Border>
 
-                                <TextBlock Text="터미널 URL 링크" Style="{StaticResource SettingsSectionTitle}"
-                                           Margin="0,22,0,0"/>
-                                <Border Style="{StaticResource SettingsSectionDivider}"/>
                                 <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="176"/></Grid.ColumnDefinitions>
