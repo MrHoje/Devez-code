@@ -421,7 +421,8 @@ public sealed class CodexUsageService : IDisposable
             .FirstOrDefault();
 
     /// <summary>초기화권 1개를 소비한다. 폴링과 직렬화되며 자동 재시도하지 않는다.
-    /// 성공(Reset/AlreadyRedeemed) 시 dropGuard 를 리셋하고 쿨다운을 기록한 뒤 즉시 재폴링한다.</summary>
+    /// 성공(Reset/AlreadyRedeemed) 시 dropGuard 에 급락을 예고(ExpectDrop)하고 쿨다운을
+    /// 기록한 뒤, 즉시 재폴링 + 버스트 재폴링으로 서버 전파 지연을 추적한다.</summary>
     public async Task<ConsumeOutcome> ConsumeResetCreditAsync(string? creditId, string redeemRequestId)
     {
         await _pollGate.WaitAsync().ConfigureAwait(false);

@@ -172,7 +172,14 @@ internal sealed class UsageDropGuard
         return true;
     }
 
-    /// <summary>기준값과 이름이 같은 윈도우 중 reset 주장이 달라진 것이 있는지 —
+    // 윈도우 교체로 인정할 최소 reset 전진 폭. 초기화가 반영되면 reset 은 새 윈도우
+    // 길이만큼(주간이면 ~2일) 미래로 이동하므로 넉넉히 크다. reset_after_seconds 폴백의
+    // 폴링별 수 초 지터나 일시적 reset 누락(null)을 교체로 오판해 기대를 조기 해제하면
+    // 이후 진짜 급락이 다시 보류되므로, 확실한 전진만 인정한다(놓쳐도 버스트가 시간창
+    // 끝까지 돌 뿐 동작은 정상).
+    private static readonly TimeSpan WindowReplaceMinAdvance = TimeSpan.FromMinutes(10);
+
+    /// <summary>기준값과 이름이 같은 윈도우 중 reset 이 확실히 미래로 이동한 것이 있는지 —
     /// 예고된 초기화가 급락 없이(원래 저사용) 반영된 경우를 감지한다.</summary>
     private static bool AnyWindowReplaced(
         IReadOnlyDictionary<string, WindowSample> accepted,
@@ -180,7 +187,9 @@ internal sealed class UsageDropGuard
     {
         foreach (var (name, current) in candidate)
             if (accepted.TryGetValue(name, out var previous)
-                && !SameWindowClaim(previous.ResetsAt, current.ResetsAt))
+                && previous.ResetsAt is { } previousReset
+                && current.ResetsAt is { } currentReset
+                && currentReset - previousReset >= WindowReplaceMinAdvance)
                 return true;
         return false;
     }
