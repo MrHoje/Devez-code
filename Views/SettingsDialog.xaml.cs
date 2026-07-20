@@ -31,6 +31,7 @@ public partial class SettingsDialog : UserControl
     private int    _originalFontScale;
     private bool   _originalPreloadAllSessions;
     private int    _originalIdleSessionShutdownMinutes;
+    private int    _originalDefaultFontSizePt;
     private bool   _originalAutoLoadLastProject;
     private bool   _originalPromptForNewSessionName;
     private bool   _originalHiddenSessionInsertionOnTop;
@@ -47,6 +48,7 @@ public partial class SettingsDialog : UserControl
     private int    _selectedFontScale;
     private bool   _selectedPreloadAllSessions;
     private int    _selectedIdleSessionShutdownMinutes;
+    private int    _selectedDefaultFontSizePt;
     private bool   _selectedAutoLoadLastProject;
     private bool   _selectedPromptForNewSessionName;
     private bool   _selectedHiddenSessionInsertionOnTop;
@@ -373,6 +375,10 @@ public partial class SettingsDialog : UserControl
         _originalIdleSessionShutdownMinutes = SettingsService.LoadIdleSessionShutdownMinutes();
         _selectedIdleSessionShutdownMinutes = _originalIdleSessionShutdownMinutes;
         SelectComboByTag(IdleSessionShutdownCombo, _selectedIdleSessionShutdownMinutes.ToString());
+        var savedFontPt = SettingsService.LoadTerminalFontSizePt();
+        _originalDefaultFontSizePt = savedFontPt > 0 ? savedFontPt : 12; // 미설정(0) → 기본 12pt
+        _selectedDefaultFontSizePt = _originalDefaultFontSizePt;
+        SelectComboByTag(DefaultFontSizeCombo, _selectedDefaultFontSizePt.ToString());
         _originalAutoLoadLastProject = SettingsService.LoadAutoLoadLastProject();
         _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
         AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
@@ -772,6 +778,13 @@ public partial class SettingsDialog : UserControl
         if (IdleSessionShutdownCombo.SelectedItem is ComboBoxItem item
             && int.TryParse(item.Tag?.ToString(), out var minutes))
             _selectedIdleSessionShutdownMinutes = minutes;
+    }
+
+    private void DefaultFontSizeCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (DefaultFontSizeCombo.SelectedItem is ComboBoxItem item
+            && int.TryParse(item.Tag?.ToString(), out var pt))
+            _selectedDefaultFontSizePt = pt;
     }
 
     private void AutoLoadLastProjectToggle_Changed(object sender, RoutedEventArgs e)
@@ -1433,6 +1446,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedFontScale != _originalFontScale) return true;
         if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
         if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes) return true;
+        if (_selectedDefaultFontSizePt != _originalDefaultFontSizePt) return true;
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
         if (_selectedPromptForNewSessionName != _originalPromptForNewSessionName) return true;
         if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop) return true;
@@ -1479,6 +1493,8 @@ public partial class SettingsDialog : UserControl
             SettingsService.SaveIdleSessionShutdownMinutes(_selectedIdleSessionShutdownMinutes);
             (Application.Current.MainWindow as MainWindow)?.ApplyIdleSessionShutdownSettings();
         }
+        if (_selectedDefaultFontSizePt != _originalDefaultFontSizePt)
+            SettingsService.SaveTerminalFontSizePt(_selectedDefaultFontSizePt);
         SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
         SettingsService.SavePromptForNewSessionName(_selectedPromptForNewSessionName);
         if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)
@@ -1596,6 +1612,7 @@ public partial class SettingsDialog : UserControl
         _originalFontScale   = _selectedFontScale;
         _originalPreloadAllSessions = _selectedPreloadAllSessions;
         _originalIdleSessionShutdownMinutes = _selectedIdleSessionShutdownMinutes;
+        _originalDefaultFontSizePt = _selectedDefaultFontSizePt;
         _originalAutoLoadLastProject = _selectedAutoLoadLastProject;
         _originalPromptForNewSessionName = _selectedPromptForNewSessionName;
         _originalHiddenSessionInsertionOnTop = _selectedHiddenSessionInsertionOnTop;
@@ -1636,6 +1653,11 @@ public partial class SettingsDialog : UserControl
         {
             _selectedIdleSessionShutdownMinutes = _originalIdleSessionShutdownMinutes;
             SelectComboByTag(IdleSessionShutdownCombo, _originalIdleSessionShutdownMinutes.ToString());
+        }
+        if (_selectedDefaultFontSizePt != _originalDefaultFontSizePt)
+        {
+            _selectedDefaultFontSizePt = _originalDefaultFontSizePt;
+            SelectComboByTag(DefaultFontSizeCombo, _originalDefaultFontSizePt.ToString());
         }
         if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject)
         {

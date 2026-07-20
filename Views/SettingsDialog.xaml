@@ -617,6 +617,37 @@
                                         </ComboBox>
                                     </Grid>
                                 </Border>
+
+                                <Border Padding="0" CornerRadius="0"
+                                        BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="세션 기본 글자 크기" FontSize="{DynamicResource Fs13}"
+                                                       Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="새 세션 터미널의 기본 글자 크기입니다. 개별 세션은 Ctrl+휠 또는 하단 콤보로 따로 조절할 수 있습니다."
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="DefaultFontSizeCombo" Grid.Column="1" Width="116"
+                                                  Style="{StaticResource ThemedCombo}" VerticalAlignment="Center"
+                                                  SelectionChanged="DefaultFontSizeCombo_Changed">
+                                            <ComboBoxItem Content="10pt" Tag="10"/>
+                                            <ComboBoxItem Content="11pt" Tag="11"/>
+                                            <ComboBoxItem Content="12pt" Tag="12"/>
+                                            <ComboBoxItem Content="13pt" Tag="13"/>
+                                            <ComboBoxItem Content="14pt" Tag="14"/>
+                                            <ComboBoxItem Content="16pt" Tag="16"/>
+                                            <ComboBoxItem Content="18pt" Tag="18"/>
+                                            <ComboBoxItem Content="20pt" Tag="20"/>
+                                            <ComboBoxItem Content="24pt" Tag="24"/>
+                                            <ComboBoxItem Content="28pt" Tag="28"/>
+                                        </ComboBox>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
 
                             <!-- 에이전트 패널 (설치된 CLI + 활성화 토글) -->
