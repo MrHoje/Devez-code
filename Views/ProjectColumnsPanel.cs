@@ -24,9 +24,11 @@ public sealed class ProjectColumnsPanel : Panel
 
     private bool TwoCol => Columns >= 2;
 
-    private static bool IsFolder(UIElement child) =>
-        (child as FrameworkElement)?.DataContext is ProjectFolderItem;
+    // 전체폭(좌우 두 컬럼 차지) 여부: 2열 설정된 폴더만 전체폭 구분 행. 1열 폴더는 좌측 반폭 카드.
+    private static bool IsFullWidthFolder(UIElement child) =>
+        (child as FrameworkElement)?.DataContext is ProjectFolderItem { EffectiveColumns: >= 2 };
 
+    // 반폭 카드가 놓일 컬럼(0=좌, 1=우). 우열 프로젝트만 1, 1열 폴더 포함 나머지는 좌열.
     private static int ColumnOf(UIElement child) =>
         (child as FrameworkElement)?.DataContext is ProjectItem { Column: 1 } ? 1 : 0;
 
@@ -49,7 +51,7 @@ public sealed class ProjectColumnsPanel : Panel
         double rightHeight = 0;
         foreach (UIElement child in InternalChildren)
         {
-            if (IsFolder(child))
+            if (IsFullWidthFolder(child))
             {
                 child.Measure(new Size(availableWidth, double.PositiveInfinity));
                 double next = Math.Max(leftHeight, rightHeight) + child.DesiredSize.Height;
@@ -82,7 +84,7 @@ public sealed class ProjectColumnsPanel : Panel
         double rightY = 0;
         foreach (UIElement child in InternalChildren)
         {
-            if (IsFolder(child))
+            if (IsFullWidthFolder(child))
             {
                 double y = Math.Max(leftY, rightY);
                 child.Arrange(new Rect(0, y, finalSize.Width, child.DesiredSize.Height));

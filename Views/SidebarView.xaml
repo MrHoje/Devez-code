@@ -957,7 +957,7 @@
                                         <Border x:Name="Bd" Width="18" Height="18" CornerRadius="4"
                                                 Background="{TemplateBinding Background}">
                                             <Path Style="{StaticResource LucideButtonIcon}"
-                                                  Data="{StaticResource IconColumns}"
+                                                  Data="{StaticResource IconMoveDiagonal}"
                                                   Width="11" Height="11"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
                                                   Stretch="Uniform"

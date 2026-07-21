@@ -665,7 +665,18 @@ public partial class SidebarView : UserControl
         bool toTwo = !folder.TwoColumn;
         RedistributeFolderColumns(folder, toTwo);
         folder.TwoColumn = toTwo; // EffectiveColumns 재계산 → 내부 패널 재배치
+        InvalidateRootColumns(folder.IsArchived); // 외곽 패널은 폴더 폭(전체/반) 변경을 관찰 못 하므로 수동 무효화
         WorkspaceStore.Save(Projects, ArchivedProjects);
+    }
+
+    // 루트 목록 패널 재측정 — 폴더의 EffectiveColumns 변화(전체폭↔반폭 카드)를 반영시킨다.
+    private void InvalidateRootColumns(bool archived)
+    {
+        foreach (var panel in FindVisualChildren<ProjectColumnsPanel>(archived ? ArchivedHost : ProjectsHost))
+        {
+            panel.InvalidateMeasure();
+            panel.InvalidateArrange();
+        }
     }
 
     private void RedistributeFolderColumns(ProjectFolderItem folder, bool toTwo)
