@@ -556,7 +556,6 @@
                         </MenuItem>
                     </ContextMenu>
                 </Border.ContextMenu>
-                <Grid>
                 <StackPanel>
                     <!-- 프로젝트 헤더 행 -->
                     <Border x:Name="ProjectHeaderRow" Background="Transparent" Cursor="Arrow"
@@ -820,14 +819,6 @@
                         </Grid>
                     </Border>
                 </StackPanel>
-                <!-- 단축키(수식키+↑/↓) 탐색 하이라이트: 살짝 연한 테마색 점선 링 -->
-                <Rectangle IsHitTestVisible="False" Margin="1,1,1,-4"
-                           RadiusX="8" RadiusY="8" StrokeThickness="1.6"
-                           Stroke="{DynamicResource PrimaryBrush}" Opacity="0.6"
-                           StrokeDashArray="2 2.5" StrokeDashCap="Round"
-                           SnapsToDevicePixels="False" UseLayoutRounding="False"
-                           Visibility="{Binding IsNavHighlight, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
-                </Grid>
             </Border>
             <DataTemplate.Triggers>
                 <!-- 접힘 + 내부 세션 요청 처리중 → 프로젝트명 왼쪽 스피너 노출. -->
@@ -918,7 +909,6 @@
                                 </MenuItem>
                             </ContextMenu>
                         </Border.ContextMenu>
-                        <Grid>
                         <Grid Margin="11,8,8,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -1006,14 +996,6 @@
                                     </ControlTemplate>
                                 </Button.Template>
                             </Button>
-                        </Grid>
-                        <!-- 단축키(수식키+↑/↓) 탐색 하이라이트: 살짝 연한 테마색 점선 링 -->
-                        <Rectangle IsHitTestVisible="False" Margin="1"
-                                   RadiusX="7" RadiusY="7" StrokeThickness="1.6"
-                                   Stroke="{DynamicResource PrimaryBrush}" Opacity="0.6"
-                                   StrokeDashArray="2 2.5" StrokeDashCap="Round"
-                                   SnapsToDevicePixels="False" UseLayoutRounding="False"
-                                   Visibility="{Binding IsNavHighlight, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                         </Grid>
                     </Border>
                     <Border Visibility="Collapsed"

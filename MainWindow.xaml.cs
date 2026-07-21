@@ -205,10 +205,6 @@ public partial class MainWindow : Window
 
         Sidebar.AddProjectRequested    += AddProject;
         Sidebar.ProjectSelected        += SelectProject;
-        // 탐색 하이라이트가 떠 있는 동안만 전역 훅이 Enter/Esc 를 가로챈다.
-        Sidebar.NavActiveChanged += GlobalTabHotkey.SetNavActive;
-        // 앱이 비활성되면 하이라이트를 걷어 Enter 차단이 다른 앱으로 새지 않게 한다.
-        Deactivated += (_, _) => Sidebar.ClearNavHighlight();
         Sidebar.AddSessionRequested    += AddSession;
         Sidebar.ProjectDeleteRequested += DeleteProject;
         Sidebar.ProjectRenameRequested += RenameProject;
@@ -674,11 +670,6 @@ public partial class MainWindow : Window
                 }
                 BringToForegroundFromHotkey();
             });
-            // 수식키+↑/↓ → 프로젝트 탐색 하이라이트(앱 활성 시에만), Enter=선택/폴더진입, Esc=상위/종료.
-            GlobalTabHotkey.ConfigureProjectNav(
-                down => { if (IsActive) Sidebar.NavMove(down); },
-                () => Sidebar.NavCommit(),
-                () => Sidebar.NavCancel());
         };
 
         // 창 위치/크기는 닫히기 직전(Closing)에 저장한다 — RestoreBounds 가 유효한 시점.

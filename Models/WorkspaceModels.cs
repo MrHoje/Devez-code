@@ -366,12 +366,6 @@ public sealed class ProjectFolderItem : NotifyBase
 
     private void RecomputeColumns() => EffectiveColumns = ColumnToggleAvailable && TwoColumn ? 2 : 1;
 
-    // 단축키(수식키+↑/↓) 탐색 하이라이트. 점선 보더 표시용, 영속 안 함.
-    [System.Text.Json.Serialization.JsonIgnore]
-    private bool _isNavHighlight;
-    [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsNavHighlight { get => _isNavHighlight; set => Set(ref _isNavHighlight, value); }
-
     private string? _archivedAt;
     public string? ArchivedAt
     {
@@ -488,12 +482,6 @@ public sealed class ProjectItem : NotifyBase
 
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
-
-    // 단축키(수식키+↑/↓) 프로젝트 탐색 하이라이트. 점선 보더 표시용, 영속 안 함.
-    [System.Text.Json.Serialization.JsonIgnore]
-    private bool _isNavHighlight;
-    [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsNavHighlight { get => _isNavHighlight; set => Set(ref _isNavHighlight, value); }
 
     /// <summary>2분할 시 이 프로젝트가 떠 있는 패널(좌/우). 비분할이거나 어느 패널에도 없으면 None.
     /// 사이드바 카드 헤더의 패널 배지(좌/우 칸 하이라이트) 가시성·방향 분기에 사용. 영속 대상 아님.</summary>
