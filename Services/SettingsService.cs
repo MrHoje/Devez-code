@@ -36,6 +36,9 @@ public static class SettingsService
     private sealed class SettingsData
     {
         public int TerminalFontSizePt { get; set; } = 0;
+        // 방별 폰트 고정 마이그레이션 완료 여부. 이 수정 이전 세션은 방별 크기 기록이 없어
+        // 최초 1회 현재 전역 기본값으로 고정한다(이후 기본값 변경이 기존 세션에 영향 없게).
+        public bool TerminalRoomFontMigrated { get; set; } = false;
         // 마크다운 뷰어 본문 너비(px). 0=화면에 맞추기.
         public int MarkdownViewportWidth { get; set; } = 0;
         // 토큰 사용량 비용 단가(모델별). 비어 있으면 SessionUsageService 내장 기본값 사용.
@@ -636,6 +639,23 @@ public static class SettingsService
 
     public static int? LoadTerminalRoomFontSizePt(string roomId)
         => Current.TerminalRoomFontSizePt.TryGetValue(roomId, out var v) && int.TryParse(v, out var pt) ? pt : null;
+
+    /// <summary>이 수정 이전에 만든 세션들을 현재 전역 기본 크기로 최초 1회 고정한다.
+    /// 방별 override 가 이미 있는 방은 건드리지 않는다(사용자가 지정한 값 존중).
+    /// 이후 설정에서 기본값을 바꿔도 기존 세션은 이 크기를 유지하고 새 세션만 새 기본값으로 열린다.</summary>
+    public static void MigrateExistingRoomFontSizesOnce(IEnumerable<string> roomIds)
+    {
+        lock (_lock)
+        {
+            if (Current.TerminalRoomFontMigrated) return;
+            int defPt = Current.TerminalFontSizePt > 0 ? Current.TerminalFontSizePt : 12; // 미설정 = config 기본 12pt
+            foreach (var id in roomIds)
+                if (!string.IsNullOrEmpty(id) && !Current.TerminalRoomFontSizePt.ContainsKey(id))
+                    Current.TerminalRoomFontSizePt[id] = defPt.ToString();
+            Current.TerminalRoomFontMigrated = true;
+            Save();
+        }
+    }
     public static void SaveTerminalRoomFontSizePt(string roomId, int? pt)
     { SetOrRemove(Current.TerminalRoomFontSizePt, roomId, pt?.ToString()); Save(); }
 

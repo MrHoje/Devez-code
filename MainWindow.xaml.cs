@@ -175,6 +175,13 @@ public partial class MainWindow : Window
                     .SelectMany(p => p.Tabs)
                     .OfType<SessionItem>()
                     .Select(s => s.Id));
+            // 방별 폰트 고정 이전에 만든 세션들을 현재 전역 기본값으로 1회 고정한다(override 없는 것만).
+            // 손상 로드 시엔 세션 트리가 비어 보일 수 있어 건너뛴다(다음 정상 로드에서 수행).
+            SettingsService.MigrateExistingRoomFontSizesOnce(
+                _projects.Concat(_archivedProjects)
+                    .SelectMany(p => p.Tabs)
+                    .OfType<SessionItem>()
+                    .Select(s => s.Id));
         }
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;
