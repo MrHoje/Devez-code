@@ -1,5 +1,5 @@
 #define AppName     "DevezCode"
-#define AppVersion  "1.17.4"
+#define AppVersion  "1.17.5"
 #define AppExeName  "DevezCode.exe"
 #define AppPublisher "Devez"
 
@@ -10,6 +10,7 @@ AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
 DefaultDirName={localappdata}\{#AppName}
+LicenseFile=LICENSE.txt
 DisableProgramGroupPage=yes
 OutputDir=Output
 OutputBaseFilename=DevezCode_Setup_{#AppVersion}
@@ -35,6 +36,9 @@ Name: "desktopicon"; Description: "바탕 화면에 바로가기 만들기"; Gro
 [Files]
 ; single-file publish 결과물(약 15MB, framework-dependent — WebView2/xterm/zstd 내장) 하나만 설치한다.
 Source: "..\bin\win-x64\publish\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\Resources\Licenses\VisualStudio2017ImageLibraryEULA.rtf"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\Resources\Licenses\VisualStudio2022ImageLibraryEULA.rtf"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "DevezCode-LICENSE.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"

@@ -1,5 +1,9 @@
 # DevezCode
 
+DevezCode source code is licensed under the [MIT License](LICENSE). Visual
+Studio Image Library and third-party brand assets are excluded; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 Claude Code CLI를 GUI로 감싸는 WPF 데스크톱 앱. Windows Terminal(ConPTY) 기반 임베디드 터미널에서 `claude`를 직접 실행한다.
 
 ## 화면 구성 (3-pane)
@@ -16,6 +20,7 @@ Claude Code CLI를 GUI로 감싸는 WPF 데스크톱 앱. Windows Terminal(ConPT
 - 터미널: **ConPTY**(`CreatePseudoConsole`) + **xterm.js**(WebView2 임베드) — `devez`의 터미널 스택 이식
 - Windows Terminal `settings.json`의 폰트/컬러 스킴 자동 적용 (`WtSettingsLoader`)
 - 프로젝트/세션 영속: `%AppData%\DevezCode\workspace.json`
+- 로그인 자격증명: 사용자 로컬 프로필에만 저장되며 저장소에 포함하지 않음
 
 ## 빌드 / 실행
 

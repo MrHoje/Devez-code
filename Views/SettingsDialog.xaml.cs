@@ -91,12 +91,16 @@ public partial class SettingsDialog : UserControl
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
-    private bool _licenseTermsLoaded;
 
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.17.4", "2026-07-21", true, new[]
+        ("v1.17.5", "2026-07-22", true, new[]
+        {
+            "Ctrl+Shift 세션 관리 단축키를 개선하고, 터미널 우상단에 단축키 힌트 오버레이를 추가했습니다.",
+            "오픈소스 전환 준비에 맞춰 라이선스 고지를 점검·정비했습니다.",
+        }),
+        ("v1.17.4", "2026-07-21", false, new[]
         {
             "세션 탭 관리 단축키를 추가했습니다. (설정 > 단축키)",
             "기본 폰트 크기가 새 세션에 적용되지 않던 문제를 수정했습니다.",
@@ -537,60 +541,7 @@ public partial class SettingsDialog : UserControl
         if (key == "usage") LoadFooterUsageSettings();
         if (key == "notify") LoadNotifySettings();
         if (key == "changelog") { _changelogPage = 0; RenderChangelogPage(); }
-        if (key == "licenses") LoadLicenseTerms();
         if (key == "cleaner") EnterCleaner();
-    }
-
-    private void LoadLicenseTerms()
-    {
-        if (_licenseTermsLoaded) return;
-        _licenseTermsLoaded = true;
-        try
-        {
-            var licenses = new[]
-            {
-                ("Visual Studio 2017 Image Library", "VisualStudio2017ImageLibraryEULA.rtf"),
-                ("Visual Studio 2022 Image Library", "VisualStudio2022ImageLibraryEULA.rtf"),
-            };
-            var document = LicenseTermsBox.Document;
-            document.Blocks.Clear();
-            foreach (var (title, fileName) in licenses)
-            {
-                var uri = new Uri(
-                    $"pack://application:,,,/Resources/Licenses/{fileName}",
-                    UriKind.Absolute);
-                var resource = Application.GetResourceStream(uri)
-                    ?? throw new InvalidOperationException($"라이선스 리소스를 찾을 수 없습니다: {fileName}");
-                using (resource.Stream)
-                {
-                    var scratch = new System.Windows.Documents.FlowDocument();
-                    var range = new System.Windows.Documents.TextRange(
-                        scratch.ContentStart,
-                        scratch.ContentEnd);
-                    range.Load(resource.Stream, DataFormats.Rtf);
-                    document.Blocks.Add(new System.Windows.Documents.Paragraph(
-                        new System.Windows.Documents.Run(title))
-                    {
-                        FontWeight = FontWeights.SemiBold,
-                        Margin = new Thickness(0, document.Blocks.Count == 0 ? 0 : 24, 0, 10),
-                    });
-                    document.Blocks.Add(new System.Windows.Documents.Paragraph(
-                        new System.Windows.Documents.Run(range.Text.Trim()))
-                    {
-                        Margin = new Thickness(0),
-                    });
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            LicenseTermsBox.Document.Blocks.Clear();
-            LicenseTermsBox.Document.Blocks.Add(new System.Windows.Documents.Paragraph(
-                new System.Windows.Documents.Run($"라이선스 약관을 불러오지 못했습니다.\n{ex.Message}"))
-            {
-                Margin = new Thickness(0),
-            });
-        }
     }
 
     private void OpenVisualStudio2017ImageLibrary_Click(object sender, RoutedEventArgs e)
@@ -1202,11 +1153,11 @@ public partial class SettingsDialog : UserControl
 
     private void AntigravityLogin_Click(object sender, RoutedEventArgs e)
     {
-        var win = new AntigravityLoginWindow(Window.GetWindow(this));
-        win.ShowDialog();
+        ConfirmDialog.Alert("Antigravity 연결",
+            "Antigravity(agy) CLI에서 먼저 로그인해 주세요.\n" +
+            "DevezCode는 agy가 Windows 자격 증명 관리자에 저장한 토큰만 읽으며, 제3자 OAuth 자격증명은 포함하지 않습니다.");
         UpdateConnectionBadges();
-        if (win.Captured)
-            (Application.Current.MainWindow as MainWindow)?.RefreshAntigravityUsage();
+        (Application.Current.MainWindow as MainWindow)?.RefreshAntigravityUsage();
     }
 
     private void UsageDisconnect_Click(object sender, RoutedEventArgs e)

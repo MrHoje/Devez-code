@@ -201,13 +201,4 @@ public static class AntigravityCredentialStore
         public IntPtr UserName;
     }
 
-    // ── OAuth 상수 (agy 1.1.1 바이너리 실측 — 설정창 로그인용) ──
-    // 주의: client_id·secret·redirect·scope 조합은 실제 Google 로그인으로만 최종 확정된다.
-    // 로그인 실패해도 위 키링 폴백으로 기존 동작은 유지된다(회귀 없음).
-    public const string OAuthClientId = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
-    public const string OAuthClientSecret = "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";
-    public const string OAuthAuthorizeUrl = "https://accounts.google.com/o/oauth2/v2/auth";
-    public const string OAuthTokenUrl = "https://oauth2.googleapis.com/token";
-    // cloud-platform 스코프면 loadCodeAssist/fetchAvailableModels 호출권이 포함된다(code-assist 표준).
-    public const string OAuthScope = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid";
 }

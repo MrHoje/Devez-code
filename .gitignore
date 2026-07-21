@@ -4,6 +4,26 @@ obj/
 *.user
 .claude/
 node_modules/
+.env
+.env.*
+!.env.example
+.local/
+appsettings.Development.json
+appsettings.*.local.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.kdbx
+*.sqlite
+*.sqlite3
+*.db
+
+# Local credentials and generated security reports
+*-auth.json
+*credentials*.json
+secrets.*
+secret-scan-report.*
 
 # Inno Setup 인스톨러 산출물(바이너리 — 배포는 R2)
 installer/Output/

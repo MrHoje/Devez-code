@@ -1,0 +1,9 @@
+DevezCode 라이선스 고지
+
+DevezCode 자체 소스 코드는 MIT License로 제공됩니다.
+
+Visual Studio Image Library 자산은 MIT License 대상이 아니며, 설치 후
+{app}\licenses\ 에 있는 Microsoft 라이선스 원문이 적용됩니다.
+
+Claude, Codex, ChatGPT, OpenCode, Gajae Code, Grok, Antigravity, DeepSeek,
+Kimi 로고는 MIT License 대상이 아니며 각 권리자의 조건이 적용됩니다.
