@@ -663,7 +663,7 @@
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="세션 기본 글자 크기" FontSize="{DynamicResource Fs13}"
                                                        Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="새 세션 터미널의 기본 글자 크기입니다. 개별 세션은 하단 폰트 콤보로 따로 지정할 수 있습니다."
+                                            <TextBlock Text="새로 만드는 세션에 적용됩니다. 이미 열려 있는 세션은 크기가 바뀌지 않으며, Ctrl+휠 또는 하단 폰트 콤보로 세션별로 따로 조절합니다."
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                         </StackPanel>

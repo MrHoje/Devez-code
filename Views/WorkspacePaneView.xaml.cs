@@ -1485,7 +1485,13 @@ public partial class WorkspacePaneView : UserControl
         var s = _activeSession;
 
         // 폰트 크기는 에이전트 종류와 무관하게 항상 동기화(방별 값, 없으면 전역 기본값).
-        if (s != null) SyncFontSizeCombo(_terminal.RoomEffectiveFontSizePx(s.Id));
+        // 방마다 크기가 다를 수 있으므로 콤보·헤더 타이틀 모두 활성 방 크기에 맞춘다.
+        if (s != null)
+        {
+            var roomPx = _terminal.RoomEffectiveFontSizePx(s.Id);
+            SyncFontSizeCombo(roomPx);
+            ApplyHeaderFontSize(roomPx);
+        }
 
         var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
         bool supportsSelection = s != null && agentId is "claude" or "grok";

@@ -63,7 +63,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private string? _pendingShowRoomId;
     private readonly List<string> _pendingPreload = new(); // pageReady 전에 들어온 백그라운드 로드 요청
     private string? _activeRoomId;
-    private double _fontSizePt = -1; // -1 = config에서 아직 읽지 않음
     private readonly Action<string> _themeChangedHandler;
     // xterm 링크 provider와 WebView 팝업 경로가 같은 클릭을 함께 전달해도 한 번만 연다.
     private string? _lastTerminalUrl;
@@ -71,12 +70,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     private const double PtToPx = 96.0 / 72.0;
 
-    /// <summary>현재 유효 터미널 폰트 크기(px). 미설정이면 WT config 기본값.</summary>
+    /// <summary>새 방에 적용할 전역 기본 폰트 크기(px). 설정 콤보로만 바뀐다.
+    /// 이미 만들어진 방은 각자 방별 크기로 고정되므로 이 값 변경에 영향받지 않는다.</summary>
     public double EffectiveFontSizePx
     {
         get
         {
-            if (_fontSizePt > 0) return Math.Round(_fontSizePt * PtToPx, 1);
             var saved = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();
             if (saved > 0) return Math.Round(saved * PtToPx, 1);
             return TerminalSessionManager.Instance.Config.FontSizePx;
@@ -554,11 +553,16 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     OnPageReady();
                     break;
                 case "created":
-                    WireSession(
-                        root.GetProperty("roomId").GetString()!,
-                        root.GetProperty("cols").GetInt32(),
-                        root.GetProperty("rows").GetInt32());
+                {
+                    var createdRoom = root.GetProperty("roomId").GetString()!;
+                    // 방 생성 시점의 유효 크기를 그 방에 고정한다. 이후 설정에서 전역 기본값을 바꿔도
+                    // (재시작해도) 이 방은 만들어질 때 크기를 유지한다. override 가 이미 있으면 존중.
+                    if (DevezCode.Services.SettingsService.LoadTerminalRoomFontSizePt(createdRoom) is null)
+                        DevezCode.Services.SettingsService.SaveTerminalRoomFontSizePt(
+                            createdRoom, (int)Math.Round(EffectiveFontSizePx / PtToPx));
+                    WireSession(createdRoom, root.GetProperty("cols").GetInt32(), root.GetProperty("rows").GetInt32());
                     break;
+                }
                 case "input":
                 {
                     var data = root.GetProperty("data").GetString() ?? "";
@@ -722,14 +726,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         DevezCode.Services.DiagLog.Write($"InitWebView: pageReady (IsVisible={IsVisible})");
         _pageReady = true;
         var cfg = TerminalSessionManager.Instance.Config;
-        // 저장된 기본 폰트 pt 는 _fontSizePt 에 캐시하지 않는다.
-        // 캐시하면 이후 설정에서 기본값을 바꿔도 살아있는 인스턴스가 못 읽어(새 세션에 즉시 미반영).
-        // _fontSizePt 는 Ctrl+휠로 사용자가 세션 중 조절한 값에만 쓴다.
-        var savedPt = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();
-        double basePt = _fontSizePt > 0 ? _fontSizePt : savedPt;
-        double fontSizePx = basePt > 0
-            ? Math.Round(basePt * PtToPx, 1)
-            : cfg.FontSizePx;
+        // init 은 전역 기본값을 JS cfg.fontSize 로 넘길 뿐, 각 방은 show/preload 때 방별 크기(override)로
+        // 명시 생성된다. 방별 override 가 없으면 이 기본값으로 생성되고 created 시점에 그 크기로 고정된다.
+        double fontSizePx = EffectiveFontSizePx;
         PostJson(new
         {
             type = "init",
@@ -1414,22 +1413,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         return true;
     }
 
-    /// <summary>현재 활성 방의 xterm.js 폰트 크기만 즉시 변경. Devez 설정에 영구 저장.</summary>
+    /// <summary>Ctrl+휠: 지금 보고 있는 방의 폰트 크기만 delta 만큼 조절(방별 저장).
+    /// 전역 기본값(새 방)이나 다른 방에는 영향 없다.</summary>
     public void AdjustFontSize(int deltaPt)
     {
-        if (_fontSizePt < 0)
-        {
-            var saved = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();
-            _fontSizePt = saved > 0
-                ? saved
-                : Math.Round(TerminalSessionManager.Instance.Config.FontSizePx / PtToPx);
-        }
-        _fontSizePt = Math.Max(6, Math.Min(72, _fontSizePt + deltaPt));
-        double px = Math.Round(_fontSizePt * PtToPx, 1);
-
-        PostJson(new { type = "adjustFontSize", size = px });
-        DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
-        FontSizePxChanged?.Invoke(px);
+        if (_activeRoomId == null) return;
+        int cur = (int)Math.Round(RoomEffectiveFontSizePx(_activeRoomId) / PtToPx);
+        SetRoomFontSizePt(_activeRoomId, cur + deltaPt);
     }
 
     /// <summary>지정한 방(roomId)의 폰트 크기만 pt 단위로 절대 지정(콤보박스 선택 등).
@@ -1450,15 +1440,12 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         return saved.HasValue ? Math.Round(saved.Value * PtToPx, 1) : EffectiveFontSizePx;
     }
 
-    /// <summary>폰트 크기를 WT 설정 기본값으로 초기화 (Ctrl+0). 영구 저장.</summary>
+    /// <summary>Ctrl+0: 지금 보고 있는 방을 전역 기본 크기로 되돌린다(방별 저장).</summary>
     public void ResetFontSize()
     {
-        _fontSizePt = Math.Round(TerminalSessionManager.Instance.Config.FontSizePx / PtToPx);
-        _fontSizePt = Math.Max(6, Math.Min(72, _fontSizePt));
-        double px = Math.Round(_fontSizePt * PtToPx, 1);
-        PostJson(new { type = "adjustFontSize", size = px });
-        DevezCode.Services.SettingsService.SaveTerminalFontSizePt((int)_fontSizePt);
-        FontSizePxChanged?.Invoke(px);
+        if (_activeRoomId == null) return;
+        int def = (int)Math.Round(EffectiveFontSizePx / PtToPx);
+        SetRoomFontSizePt(_activeRoomId, def);
     }
 
     /// <summary>클립보드에 텍스트 기록 (잠금 충돌 대비 재시도).
