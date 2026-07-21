@@ -546,7 +546,7 @@
                             </MenuItem.Icon>
                         </MenuItem>
                         <Separator/>
-                        <MenuItem Header="세션 관리자" Tag="{Binding}" Click="SessionManager_Click">
+                        <MenuItem Header="세션 관리" Tag="{Binding}" Click="SessionManager_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconListChecks}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>

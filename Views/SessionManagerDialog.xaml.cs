@@ -36,7 +36,7 @@ public partial class SessionManagerDialog : Window
         _onClose = onClose;
         _onDelete = onDelete;
 
-        Title = $"세션 관리자 — {project.Name}";
+        Title = $"세션 관리 — {project.Name}";
         ProjectNameText.Text = project.Name;
         SessionList.ItemsSource = _rows;
 

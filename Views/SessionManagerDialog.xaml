@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="clr-namespace:DevezCode.Models"
-        Title="세션 관리자" Height="520" Width="460"
+        Title="세션 관리" Height="520" Width="460"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -147,7 +147,7 @@
                         MouseLeftButtonDown="Header_DragMove">
                     <Grid>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
-                            <TextBlock Text="세션 관리자" VerticalAlignment="Center"
+                            <TextBlock Text="세션 관리" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
                             <TextBlock x:Name="ProjectNameText" VerticalAlignment="Center" Margin="8,1,0,0"
