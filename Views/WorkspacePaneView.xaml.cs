@@ -805,8 +805,10 @@ public partial class WorkspacePaneView : UserControl
     {
         switch (name)
         {
-            case "newSession": if (_activeProject != null) AddSession(_activeProject); break;
+            case "newSession": if (_activeProject != null) AddSession(_activeProject, keyboardMode: true); break;
             case "closeSession": if (_activeSession != null) StopTrackingSession(_activeSession); break;
+            case "hideSession": if (_activeSession != null) HideSession(_activeSession); break;
+            case "deleteSession": if (_activeSession != null) DeleteSession(_activeSession); break;
             case "nextSession": CycleSession(+1); break;
             case "prevSession": CycleSession(-1); break;
             case "gotoSession": GotoSession(index); break;
@@ -901,7 +903,9 @@ public partial class WorkspacePaneView : UserControl
         return max == 0 ? "웹 브라우저" : $"웹 브라우저 {max + 1}";
     }
 
-    public SessionItem? AddSession(ProjectItem proj)
+    /// <param name="keyboardMode">단축키로 새 세션을 열었는지. true 면 에이전트 피커가 키보드 네비게이션
+    /// (첫 항목 하이라이트 + ↑/↓ 이동 + Enter 확정) 모드로 뜬다. 마우스 경로는 false(현 동작 유지).</param>
+    public SessionItem? AddSession(ProjectItem proj, bool keyboardMode = false)
     {
         var available = AgentRegistry.GetEnabledAndInstalled();
         if (available.Count == 0)
@@ -914,7 +918,7 @@ public partial class WorkspacePaneView : UserControl
         if (available.Count == 1) agentId = available[0].Id;
         else
         {
-            var picked = AgentPickerDialog.Pick(Window.GetWindow(this), available, proj.Path);
+            var picked = AgentPickerDialog.Pick(Window.GetWindow(this), available, proj.Path, keyboardMode);
             if (picked == null) return null;
             agentId = picked;
         }

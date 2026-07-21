@@ -67,38 +67,44 @@
                                              VerticalContentAlignment="Stretch">
                                     <RadioButton.Template>
                                         <ControlTemplate TargetType="RadioButton">
-                                            <Border x:Name="Card"
-                                                    CornerRadius="8" BorderThickness="1"
-                                                    BorderBrush="{DynamicResource LineBrush}"
-                                                    Background="{DynamicResource PanelBrush}"
-                                                    Padding="10,7" Margin="0,0,0,6"
-                                                    SnapsToDevicePixels="True">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
+                                            <Grid Margin="0,0,0,6" SnapsToDevicePixels="True">
+                                                <Border x:Name="Card"
+                                                        CornerRadius="8" BorderThickness="1"
+                                                        BorderBrush="{DynamicResource LineBrush}"
+                                                        Background="{DynamicResource PanelBrush}"
+                                                        Padding="10,7">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
 
-                                                    <Image Grid.Column="0" Width="26" Height="26" Margin="0,0,11,0"
-                                                           Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
-                                                           RenderOptions.BitmapScalingMode="HighQuality" Stretch="Uniform"
-                                                           VerticalAlignment="Center"/>
+                                                        <Image Grid.Column="0" Width="26" Height="26" Margin="0,0,11,0"
+                                                               Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                               RenderOptions.BitmapScalingMode="HighQuality" Stretch="Uniform"
+                                                               VerticalAlignment="Center"/>
 
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding DisplayName}"
-                                                                   FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource TextBrush}"/>
-                                                        <TextBlock Text="{Binding Provider}"
-                                                                   FontSize="{DynamicResource Fs11}"
-                                                                   Foreground="{DynamicResource TextMutedBrush}"
-                                                                   Margin="0,1,0,0"/>
-                                                    </StackPanel>
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource TextBrush}"/>
+                                                            <TextBlock Text="{Binding Provider}"
+                                                                       FontSize="{DynamicResource Fs11}"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                                       Margin="0,1,0,0"/>
+                                                        </StackPanel>
 
-                                                    <!-- 라디오 체크 불필요 — 클릭 즉시 생성 -->
-                                                    <Grid Grid.Column="2" Width="18" Height="18" VerticalAlignment="Center"/>
-                                                </Grid>
-                                            </Border>
+                                                        <!-- 라디오 체크 불필요 — 클릭 즉시 생성 -->
+                                                        <Grid Grid.Column="2" Width="18" Height="18" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </Border>
+                                                <!-- 단축키(키보드) 진입 시 하이라이트 — 테마 강조색을 흐리게 한 점선 보더 -->
+                                                <Rectangle x:Name="HiCue" RadiusX="8" RadiusY="8"
+                                                           Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                                                           StrokeDashArray="3 2.5" Opacity="0.55"
+                                                           IsHitTestVisible="False" Visibility="Collapsed"/>
+                                            </Grid>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="Card" Property="Background" Value="{DynamicResource PanelSoftBrush}"/>

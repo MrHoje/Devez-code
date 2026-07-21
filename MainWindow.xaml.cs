@@ -4468,6 +4468,12 @@ public partial class MainWindow : Window
         var session = _focusedPane.AddSession(proj);
         if (session != null) OpenSession(session);
     }
+
+    /// <summary>세션 관리 단축키 설정 변경을 열린 모든 패널의 터미널(JS)에 즉시 반영.</summary>
+    public void PushSessionHotkeysToTerminals()
+    {
+        foreach (var pane in _panes) pane.Terminal.PushHotkeys();
+    }
     private void RenameSession(SessionItem session) { PaneFor(session).RenameSession(session); SyncRecordsForSessionRename(session); }
     private void DeleteSession(SessionItem session)
     {

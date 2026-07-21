@@ -208,6 +208,10 @@
                               // TUI 가 그 폭으로 그렸다 다시 리플로우돼 깨진다. 억제했다가 reveal 이 안정된 최종 폭에서 한 번만 fit.
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
+
+  // 세션 관리 단축키 테이블(C# 이 init/hotkeys 메시지로 주입). 각 항목 {action,enabled,ctrl,shift,alt,code}.
+  // keydown 이 이 표를 순회해 조합이 맞으면 해당 action 을 C# 으로 위임한다(레이아웃 비의존: e.code 매칭).
+  let sessionHotkeys = [];
   function dlog(msg) { try { post({ type: 'diag', msg: '[dbg] ' + msg }); } catch (e) {} }
   function dumpBuf(roomId, tag) {
     try {
@@ -1301,19 +1305,21 @@
     if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); if (tracksFollow) entry.follow = false; term.scrollToTop();    return false; }
     if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); if (tracksFollow) entry.follow = true;  term.scrollToBottom(); return false; }
 
-    // ── 세션(탭) 관리 — C# 으로 위임 ──
-    if (ctrl && shift && !alt && (key === 't' || key === 'T' || key === 'd' || key === 'D')) {
-      e.preventDefault(); post({ type:'action', name:'newSession' }); return false;
-    }
-    if (ctrl && shift && !alt && (key === 'w' || key === 'W')) {
-      e.preventDefault(); post({ type:'action', name:'closeSession' }); return false;
+    // ── 세션(탭) 관리 — 사용자 설정 단축키를 C# 으로 위임 ──
+    // (기본 새 세션 Ctrl+T, 닫기 Ctrl+W, 숨기기 Ctrl+H, 삭제 Ctrl+Delete — 설정에서 토글·조합 변경)
+    for (let i = 0; i < sessionHotkeys.length; i++) {
+      const hk = sessionHotkeys[i];
+      if (hk && hk.enabled && hk.code && hk.code === e.code && !e.metaKey
+          && !!hk.ctrl === ctrl && !!hk.shift === shift && !!hk.alt === alt) {
+        e.preventDefault(); post({ type:'action', name: hk.action }); return false;
+      }
     }
     if (ctrl && !alt && key === 'Tab') {
       e.preventDefault(); post({ type:'action', name: shift ? 'prevSession' : 'nextSession' }); return false;
     }
-    // Ctrl+Alt+1..9: N번째 세션 직접 이동 (9 = 마지막) — WT switchToTab 정합.
+    // Ctrl+1..9 (Alt 유무 무관, 상시): N번째 세션 직접 이동 (9 = 마지막) — WT switchToTab 정합.
     // 레이아웃 비의존을 위해 물리 키(e.code=Digit1..9) 기준. (AltGr 입력은 위에서 이미 통과)
-    if (ctrl && alt && !shift && /^Digit[1-9]$/.test(e.code)) {
+    if (ctrl && !shift && /^Digit[1-9]$/.test(e.code)) {
       const n = +e.code.slice(5);
       e.preventDefault();
       post({ type:'action', name:'gotoSession', index: n === 9 ? -1 : (n - 1) });
@@ -2007,6 +2013,11 @@
         document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
         document.documentElement.style.setProperty('--term-fg', msg.theme.foreground || '#CCCCCC');
         if (msg.accent) document.documentElement.style.setProperty('--term-accent', msg.accent);
+        if (Array.isArray(msg.hotkeys)) sessionHotkeys = msg.hotkeys;
+        break;
+      case 'hotkeys':
+        // 설정에서 세션 단축키 변경 시 라이브 갱신
+        sessionHotkeys = Array.isArray(msg.hotkeys) ? msg.hotkeys : [];
         break;
       case 'theme':
         // 라이브 테마 전환 — 열린 모든 xterm 의 색을 갱신하고 CSS 변수·body 배경도 맞춘다

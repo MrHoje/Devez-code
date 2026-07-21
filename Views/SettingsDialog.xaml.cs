@@ -88,6 +88,12 @@ public partial class SettingsDialog : UserControl
     private int _originalHkMod, _originalHkPrev, _originalHkNext;
     private int _selectedHkMod, _selectedHkPrev, _selectedHkNext;
     private string? _capturingField; // 캡처 중인 필드 키("mod"/"prev"/"next"), null=비캡처
+
+    // 세션 관리 단축키(새 세션/닫기/숨기기/삭제). 판정은 터미널(JS). 디스크 저장은 [저장] 버튼에서만.
+    private HotkeyBinding _hkNewSession = new(), _hkCloseSession = new(), _hkHideSession = new(), _hkDeleteSession = new();
+    private HotkeyBinding _origHkNewSession = new(), _origHkCloseSession = new(), _origHkHideSession = new(), _origHkDeleteSession = new();
+    private string? _capturingSessionHk; // 캡처 중인 세션 단축키 action, null=비캡처
+
     private readonly ObservableCollection<AgentItem> _agentItems = new();
     // 현재 활성 좌측 카테고리. 테마 변경 시 활성 버튼의 brush instance가 stale 되므로 재계산에 사용.
     private string _activeCategoryKey = "theme";
@@ -96,7 +102,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.17.3", "2026-07-21", true, new[]
+        ("v1.17.4", "2026-07-21", true, new[]
+        {
+            "세션 탭 관리 단축키를 추가했습니다. (설정 > 단축키)",
+            "기본 폰트 크기가 새 세션에 적용되지 않던 문제를 수정했습니다.",
+            "프로젝트를 2열로 사용하는 경우 폴더 너비를 1열·2열로 설정하는 기능을 추가했습니다.",
+        }),
+        ("v1.17.3", "2026-07-21", false, new[]
         {
             "세션 헤더 영역에 다이얼로그를 통해 파일을 첨부할 수 있는 첨부파일 버튼을 추가했습니다.",
             "파일을 드래그 앤 드롭하여 첨부할 수 있는 기능을 추가했습니다.",
@@ -445,6 +457,7 @@ public partial class SettingsDialog : UserControl
         (_originalHkMod, _originalHkPrev, _originalHkNext) = SettingsService.LoadTabHotkey();
         _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
         UpdateShortcutVisual();
+        LoadSessionHotkeys();
         BuildAgentList();
         UpdateThemeSelectionVisual();
         UpdateFontSelectionVisual();
@@ -457,6 +470,7 @@ public partial class SettingsDialog : UserControl
         App.ThemeChanged     += _themeChangedHandler;
         App.FontScaleChanged  += _fontScaleChangedHandler;
         _subscribed = true;
+        PreviewKeyDown += OnSessionHotkeyCaptureKeyDown; // 세션 단축키 캡처(캡처 중일 때만 처리)
         Unloaded += (_, _) => { Unsubscribe(); GlobalTabHotkey.CancelCapture(); };
     }
 
@@ -526,7 +540,7 @@ public partial class SettingsDialog : UserControl
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
         NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
 
-        if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
+        if (key != "shortcut") { CancelShortcutCapture(); CancelSessionHotkeyCapture(); } // 패널 떠나면 캡처 중단
         if (key == "sidepanel") LoadSidePanelSettings();
         if (key == "usage") LoadFooterUsageSettings();
         if (key == "notify") LoadNotifySettings();
@@ -1430,6 +1444,180 @@ public partial class SettingsDialog : UserControl
             : (Brush)FindResource("LineBrush");
     }
 
+    // ── 세션 관리 단축키 (새 세션/닫기/숨기기/삭제 — 터미널 JS 판정) ─────
+    private static HotkeyBinding CloneHk(HotkeyBinding h)
+        => new(h.Ctrl, h.Shift, h.Alt, h.Code) { Enabled = h.Enabled };
+
+    private static bool HkEquals(HotkeyBinding a, HotkeyBinding b)
+        => a.Enabled == b.Enabled && a.Ctrl == b.Ctrl && a.Shift == b.Shift && a.Alt == b.Alt && a.Code == b.Code;
+
+    private bool SessionHotkeysDirty()
+        => !HkEquals(_hkNewSession, _origHkNewSession) || !HkEquals(_hkCloseSession, _origHkCloseSession)
+        || !HkEquals(_hkHideSession, _origHkHideSession) || !HkEquals(_hkDeleteSession, _origHkDeleteSession);
+
+    private void LoadSessionHotkeys()
+    {
+        _origHkNewSession = CloneHk(SettingsService.LoadNewSessionHotkey());
+        _origHkCloseSession = CloneHk(SettingsService.LoadCloseSessionHotkey());
+        _origHkHideSession = CloneHk(SettingsService.LoadHideSessionHotkey());
+        _origHkDeleteSession = CloneHk(SettingsService.LoadDeleteSessionHotkey());
+        _hkNewSession = CloneHk(_origHkNewSession); _hkCloseSession = CloneHk(_origHkCloseSession);
+        _hkHideSession = CloneHk(_origHkHideSession); _hkDeleteSession = CloneHk(_origHkDeleteSession);
+        UpdateSessionHotkeyVisuals();
+    }
+
+    private HotkeyBinding? HkFor(string action) => action switch
+    {
+        "newSession" => _hkNewSession,
+        "closeSession" => _hkCloseSession,
+        "hideSession" => _hkHideSession,
+        "deleteSession" => _hkDeleteSession,
+        _ => null,
+    };
+
+    /// <summary>조합 칸 클릭 → 다음 키 조합 1회를 캡처. 같은 칸 재클릭 = 취소.</summary>
+    private void SessionHotkeyField_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border b || b.Tag is not string action) return;
+        if (_capturingSessionHk == action) { CancelSessionHotkeyCapture(); return; }
+        CancelShortcutCapture(); // 탭 이동(전역 훅) 캡처와 상호배타
+        _capturingSessionHk = action;
+        UpdateSessionHotkeyVisuals();
+    }
+
+    private void CancelSessionHotkeyCapture()
+    {
+        if (_capturingSessionHk == null) return;
+        _capturingSessionHk = null;
+        UpdateSessionHotkeyVisuals();
+    }
+
+    private void SessionHotkeyToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (NewSessionHkToggle != null) _hkNewSession.Enabled = NewSessionHkToggle.IsChecked == true;
+        if (CloseSessionHkToggle != null) _hkCloseSession.Enabled = CloseSessionHkToggle.IsChecked == true;
+        if (HideSessionHkToggle != null) _hkHideSession.Enabled = HideSessionHkToggle.IsChecked == true;
+        if (DeleteSessionHkToggle != null) _hkDeleteSession.Enabled = DeleteSessionHkToggle.IsChecked == true;
+        UpdateSessionHotkeyVisuals();
+    }
+
+    /// <summary>캡처 중일 때만 동작 — Ctrl/Shift/Alt + 키 조합을 잡아 현재 대상에 반영.</summary>
+    private void OnSessionHotkeyCaptureKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_capturingSessionHk == null) return;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key; // Alt 조합이면 실제 키는 SystemKey
+        if (key == Key.Escape) { CancelSessionHotkeyCapture(); e.Handled = true; return; }
+        // 수식키만 눌린 상태면 조합 완성 대기
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
+                or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin or Key.System)
+        { e.Handled = true; return; }
+        var code = WpfKeyToCode(key);
+        if (code == null) { e.Handled = true; return; } // 매핑 없는 키는 무시(캡처 유지)
+        var mods = Keyboard.Modifiers;
+        var hk = HkFor(_capturingSessionHk);
+        if (hk != null)
+        {
+            hk.Ctrl = mods.HasFlag(ModifierKeys.Control);
+            hk.Shift = mods.HasFlag(ModifierKeys.Shift);
+            hk.Alt = mods.HasFlag(ModifierKeys.Alt);
+            hk.Code = code;
+        }
+        _capturingSessionHk = null;
+        UpdateSessionHotkeyVisuals();
+        e.Handled = true;
+    }
+
+    private void UpdateSessionHotkeyVisuals()
+    {
+        SetHkField(NewSessionKeyField, NewSessionKeyText, NewSessionHkToggle, _hkNewSession, "newSession");
+        SetHkField(CloseSessionKeyField, CloseSessionKeyText, CloseSessionHkToggle, _hkCloseSession, "closeSession");
+        SetHkField(HideSessionKeyField, HideSessionKeyText, HideSessionHkToggle, _hkHideSession, "hideSession");
+        SetHkField(DeleteSessionKeyField, DeleteSessionKeyText, DeleteSessionHkToggle, _hkDeleteSession, "deleteSession");
+    }
+
+    private void SetHkField(Border field, TextBlock text, CheckBox toggle, HotkeyBinding hk, string action)
+    {
+        bool capturing = _capturingSessionHk == action;
+        text.Text = capturing ? "키 입력…" : HotkeyLabel(hk);
+        field.BorderBrush = capturing ? (Brush)FindResource("PrimaryBrush") : (Brush)FindResource("LineBrush");
+        if ((toggle.IsChecked == true) != hk.Enabled) toggle.IsChecked = hk.Enabled;
+        field.Opacity = hk.Enabled ? 1.0 : 0.45; // 비활성 시 조합 칸 흐리게
+    }
+
+    /// <summary>WPF Key → JS KeyboardEvent.code 문자열(레이아웃 비의존 매칭용). 미지원 키는 null.</summary>
+    private static string? WpfKeyToCode(Key k)
+    {
+        if (k >= Key.A && k <= Key.Z) return "Key" + k.ToString();
+        if (k >= Key.D0 && k <= Key.D9) return "Digit" + (k - Key.D0);
+        if (k >= Key.NumPad0 && k <= Key.NumPad9) return "Numpad" + (k - Key.NumPad0);
+        if (k >= Key.F1 && k <= Key.F12) return k.ToString();
+        return k switch
+        {
+            Key.Delete => "Delete",
+            Key.Back => "Backspace",
+            Key.Insert => "Insert",
+            Key.Home => "Home",
+            Key.End => "End",
+            Key.PageUp => "PageUp",
+            Key.PageDown => "PageDown",
+            Key.Up => "ArrowUp",
+            Key.Down => "ArrowDown",
+            Key.Left => "ArrowLeft",
+            Key.Right => "ArrowRight",
+            Key.Space => "Space",
+            Key.Tab => "Tab",
+            Key.Return => "Enter",
+            Key.OemMinus => "Minus",
+            Key.OemPlus => "Equal",
+            Key.OemOpenBrackets => "BracketLeft",
+            Key.OemCloseBrackets => "BracketRight",
+            Key.OemSemicolon => "Semicolon",
+            Key.OemQuotes => "Quote",
+            Key.OemComma => "Comma",
+            Key.OemPeriod => "Period",
+            Key.OemQuestion => "Slash",
+            Key.OemBackslash or Key.OemPipe => "Backslash",
+            Key.OemTilde => "Backquote",
+            _ => null,
+        };
+    }
+
+    private static string CodeToLabel(string code)
+    {
+        if (code.StartsWith("Key")) return code.Substring(3);
+        if (code.StartsWith("Digit")) return code.Substring(5);
+        if (code.StartsWith("Numpad")) return "Num" + code.Substring(6);
+        return code switch
+        {
+            "ArrowUp" => "↑",
+            "ArrowDown" => "↓",
+            "ArrowLeft" => "←",
+            "ArrowRight" => "→",
+            "Minus" => "-",
+            "Equal" => "=",
+            "BracketLeft" => "[",
+            "BracketRight" => "]",
+            "Semicolon" => ";",
+            "Quote" => "'",
+            "Comma" => ",",
+            "Period" => ".",
+            "Slash" => "/",
+            "Backslash" => "\\",
+            "Backquote" => "`",
+            _ => code,
+        };
+    }
+
+    private static string HotkeyLabel(HotkeyBinding h)
+    {
+        if (string.IsNullOrEmpty(h.Code)) return "없음";
+        var s = "";
+        if (h.Ctrl) s += "Ctrl+";
+        if (h.Shift) s += "Shift+";
+        if (h.Alt) s += "Alt+";
+        return s + CodeToLabel(h.Code);
+    }
+
     // ── 미리보기(저장 없이 화면에만 반영) ──────────────────────────
     private void ThemeCard_Click(object sender, MouseButtonEventArgs e)
     {
@@ -1535,6 +1723,7 @@ public partial class SettingsDialog : UserControl
         if (_selectedNotifyMonitor != _originalNotifyMonitor) return true;
         if (_notifyPos != _originalNotifyPos) return true;
         if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext) return true;
+        if (SessionHotkeysDirty()) return true;
         var current = new HashSet<string>(
             _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
         if (!current.SetEquals(_originalEnabledAgents)) return true;
@@ -1648,6 +1837,14 @@ public partial class SettingsDialog : UserControl
         {
             SettingsService.SaveTabHotkey(_selectedHkMod, _selectedHkPrev, _selectedHkNext);
             GlobalTabHotkey.Configure(_selectedHkMod, _selectedHkPrev, _selectedHkNext); // 런타임 즉시 적용
+        }
+
+        if (SessionHotkeysDirty())
+        {
+            SettingsService.SaveSessionHotkeys(_hkNewSession, _hkCloseSession, _hkHideSession, _hkDeleteSession);
+            (Application.Current.MainWindow as MainWindow)?.PushSessionHotkeysToTerminals(); // 열린 터미널 즉시 반영
+            _origHkNewSession = CloneHk(_hkNewSession); _origHkCloseSession = CloneHk(_hkCloseSession);
+            _origHkHideSession = CloneHk(_hkHideSession); _origHkDeleteSession = CloneHk(_hkDeleteSession);
         }
 
         _originalTheme       = _selectedTheme;
@@ -1807,6 +2004,11 @@ public partial class SettingsDialog : UserControl
         CancelShortcutCapture();
         _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
         UpdateShortcutVisual();
+        // 세션 단축키 되돌리기
+        _capturingSessionHk = null;
+        _hkNewSession = CloneHk(_origHkNewSession); _hkCloseSession = CloneHk(_origHkCloseSession);
+        _hkHideSession = CloneHk(_origHkHideSession); _hkDeleteSession = CloneHk(_origHkDeleteSession);
+        UpdateSessionHotkeyVisuals();
         // 에이전트 활성화 상태 되돌리기
         foreach (var item in _agentItems)
         {
