@@ -639,19 +639,37 @@
     //  · CSS 로 .xterm-cursor 숨기기 — WebGL 렌더러(canvas)에는 안 먹힘.
     //  → 테마 커서색 교체만이 렌더러(DOM/WebGL) 불문 동작 + 완전 원복 가능.
     let savedCursorColors = null; // 숨김 전의 { cursor, cursorAccent } (undefined = 테마에 미지정이었음)
+    // 렌더러 태그 — "조합 중 커서 안 숨음" 간헐 재발이 WebGL/DOM 어느 렌더러에서 났는지 로그에 남긴다.
+    function rendererTag() {
+      const t = terms[roomId];
+      return ' r=' + (t && t.webgl ? 'gl' : 'dom');
+    }
     function hideHwCursor() {
-      if (savedCursorColors) return; // 이미 숨김 상태 — 중복 저장하면 위장색을 원본으로 오인
       const th = term.options.theme || {};
+      const bg = th.background || '#0C0C0C';     // 폴백은 기본 다크 배경(테마에 background 항상 있음)
+      if (savedCursorColors) {
+        // 이미 숨김 상태 — 중복 저장하면 위장색을 원본으로 오인하므로 저장은 건너뛴다.
+        // 불변식: savedCursorColors 가 있으면 테마는 반드시 위장 상태(cursor==background)다.
+        // 간헐 재발(조합 중 블록커서 깜빡임) 추적: 불변식이 깨져 있으면 증거를 남기고 재위장.
+        if (th.cursor !== bg) {
+          imeDiag('cursor-hide ANOMALY saved=' + JSON.stringify(savedCursorColors) +
+                  ' cursor=' + th.cursor + ' bg=' + bg + rendererTag());
+          term.options.theme = Object.assign({}, th, { cursor: bg, cursorAccent: th.foreground || '#CCCCCC' });
+        }
+        return;
+      }
       savedCursorColors = { cursor: th.cursor, cursorAccent: th.cursorAccent };
       term.options.theme = Object.assign({}, th, {
-        cursor: th.background || '#0C0C0C',      // 폴백은 기본 다크 배경(테마에 background 항상 있음)
+        cursor: bg,
         cursorAccent: th.foreground || '#CCCCCC'
       });
+      imeDiag('cursor-hide' + rendererTag());
     }
     // force=true(blur 등)면 조합/고스트 상태 무시하고 무조건 복원.
     // force 없이 호출하면 "조합 끝났고 고스트도 없음"일 때만 복원 — 고스트가 echo 대기
     // 중인데 복원하면 stale 위치에서 커서가 또 깜빡이므로 clearGhost() 시점까지 유지한다.
-    function maybeRestoreHwCursor(force) {
+    // reason 은 진단 로그용(어느 경로가 복원했는지 — 간헐 커서 재발 추적).
+    function maybeRestoreHwCursor(force, reason) {
       if (!savedCursorColors) return;
       if (!force && (isImeComposing || ghost)) return; // 아직 조합/echo 대기 중 — 숨김 유지
       const th = Object.assign({}, term.options.theme || {});
@@ -663,12 +681,18 @@
       else th.cursorAccent = savedCursorColors.cursorAccent;
       savedCursorColors = null;
       term.options.theme = th;
+      imeDiag('cursor-restore ' + (reason || (force ? 'force' : '?')) + rendererTag());
     }
     // 라이브 테마 전환(message 'theme')이 term.options.theme 을 통째로 교체하면 저장해둔
     // 이전 테마의 커서색이 낡는다 — 그대로 복원하면 새 테마에 옛 테마 커서색이 박힌다.
     // 새 테마 객체는 커서를 이미 정상 표시하므로 복원할 것도 없음 → 저장분만 폐기.
     // (호출처: 'theme' 핸들러가 setOption 직후 방마다 호출)
-    el._onThemeSwapped = function () { savedCursorColors = null; };
+    el._onThemeSwapped = function () {
+      // 숨김 도중 테마가 통째로 교체되면(새 테마 = 정상 커서) 조합이 아직 진행 중일 수 있다 —
+      // 그 조합의 남은 구간은 커서가 보인다(다음 compositionstart 가 재위장). 추적 로그만 남긴다.
+      if (savedCursorColors) imeDiag('themeswap-discard-hidden composing=' + isImeComposing);
+      savedCursorColors = null;
+    };
 
     // 고스트 제거 + (조합도 끝났다면) 커서 복원. 모든 고스트 소멸 경로가 이 함수 하나를
     // 통과하므로 커서 복원 시점을 여기 한 곳에서만 판단하면 된다.
@@ -676,7 +700,7 @@
       ghost = null;
       if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = 0; }
       if (ghostEl) ghostEl.style.display = 'none'; // div 는 재사용(제거 안 함) — 연타 중 재생성 비용 절약
-      maybeRestoreHwCursor();
+      maybeRestoreHwCursor(false, 'clearGhost');
     }
 
     // 고스트를 현재 ghost 상태대로 그린다. 좌표계는 .xterm-screen 기준(조합뷰와 동일 원점).
@@ -777,6 +801,7 @@
 
       const view = el.querySelector('.composition-view');
       const hadComposition = isImeComposing || !!(view && view.classList.contains('active'));
+      imeDiag('resetImeNow hadComposition=' + hadComposition); // blur→focus 리셋 발화 시점 추적(다음 조합 start 누락 상관관계)
       isImeComposing = false;
       if (pendingComposeNewline && pendingComposeNewline.roomId === roomId) pendingComposeNewline = null;
 
@@ -1079,7 +1104,7 @@
     //                     ※ 전부 같은 keydown 처리 안 — 이때 echo 는 아직 미도착(chain 이 필요한 이유)
     //  · 스페이스 확정:   keydown(32, isComposing=true) → compositionend → keyup(32, isComposing=false)
     //  · Enter 확정:      keydown(229) → compositionend → keydown(13, isComposing=false) (2번째 keydown)
-    ta.addEventListener('compositionstart', function () {
+    function beginComposition() {
       isImeComposing = true;
       frozenImeCaret = null;              // 새 조합 — 앵커를 새로 잡는다(직전 동결분 폐기)
       if (pinsLogicalCaret) hideHwCursor(); // B형: 조합 동안 블록커서 깜빡임 제거(A형과 동일 UX)
@@ -1089,8 +1114,17 @@
       // 블록커서가 실좌표에 나타난 뒤 교정하기 위함. B형은 이미 동결돼 있어 no-op.
       // (조합이 60ms 안에 끝나면 apply 의 isImeComposing 가드가 무해하게 흡수)
       setTimeout(apply, 60);
-    });
-    ta.addEventListener('compositionupdate', function () {
+    }
+    ta.addEventListener('compositionstart', beginComposition);
+    ta.addEventListener('compositionupdate', function (e) {
+      // compositionstart 누락 자가치유: WebView2 는 IME 컨텍스트 재부착 직후(blur→focus 뒤 등)
+      // start 이벤트를 간헐적으로 떨어뜨린다. 그러면 B형 커서숨김/pin/chain 이 통째로 시작되지
+      // 않아 "조합 중 블록커서가 글자 왼쪽에서 깜빡"이는 재발 증상이 된다. update 가 왔는데
+      // 조합 상태가 아니면 start 로 간주해 동일하게 처리하고, 발생 증거를 diag 에 남긴다.
+      if (!isImeComposing) {
+        imeDiag('update-without-start data="' + ((e && e.data) || '') + '"');
+        beginComposition();
+      }
       if (pendingResponseReset) armStaleCompositionReset();
       // setTimeout 0: xterm 이 같은 이벤트에서 조합뷰 textContent/inline 좌표를 갱신한 "다음에"
       // 우리 좌표를 다시 얹기 위한 태스크 양보. (claude cached 교정 경로이기도 함)
@@ -1135,7 +1169,7 @@
       // 둔다(여기 잔류하면 IME 후보창 기준점이 낡은 위치에 고정된다).
       el.classList.remove('ime-fixed');
       rememberLogicalCaret(); // 조합 끝 — 논리 커서 추적 재개(이 시점 좌표는 echo 전일 수 있으나 폴백용일 뿐)
-      maybeRestoreHwCursor(); // 고스트가 echo 대기 중이면 커서 숨김 유지(clearGhost 가 복원), 아니면 즉시 복원
+      maybeRestoreHwCursor(false, 'compEnd'); // 고스트가 echo 대기 중이면 커서 숨김 유지(clearGhost 가 복원), 아니면 즉시 복원
       // 조합 중 Ctrl+Enter 가 눌렸으면 — 확정 글자가 PTY로 전송된 뒤(setTimeout 0)
       // 줄바꿈을 보낸다. 순서를 보장해 마지막 글자가 새 줄로 내려가지 않게 한다.
       if (pendingComposeNewline) {
@@ -1193,7 +1227,7 @@
       frozenImeCaret = null;
       chainCaret = null;
       clearGhost();
-      maybeRestoreHwCursor(true); // force — 조합/고스트 상태와 무관하게 원래 테마로
+      maybeRestoreHwCursor(true, 'blur'); // force — 조합/고스트 상태와 무관하게 원래 테마로
       pendingResponseReset = false;
       clearResponseResetTimer();
       el.classList.remove('ime-fixed');
