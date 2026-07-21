@@ -915,6 +915,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <Grid Grid.Column="0" Width="15" Height="15"
                                   Margin="0,0,8,0" VerticalAlignment="Center">
@@ -943,7 +944,34 @@
                             <TextBlock Grid.Column="2" Text="{Binding ProjectCountText}" Margin="8,0,4,0" VerticalAlignment="Center"
                                        FontSize="{DynamicResource Fs11}"
                                        Foreground="{DynamicResource TextMutedBrush}"/>
+                            <!-- 폴더 내부 목록 1열/2열 전환. 전역 "프로젝트 목록 열 수"가 2일 때만 노출. -->
                             <Button Grid.Column="3" Tag="{Binding}"
+                                    Click="FolderColumnToggle_Click" Cursor="Arrow"
+                                    Background="Transparent" BorderThickness="0"
+                                    IsTabStop="False" FocusVisualStyle="{x:Null}"
+                                    VerticalAlignment="Center" Margin="0,0,2,0"
+                                    ToolTip="폴더 목록 1열 / 2열 전환"
+                                    Visibility="{Binding ColumnToggleAvailable, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bd" Width="18" Height="18" CornerRadius="4"
+                                                Background="{TemplateBinding Background}">
+                                            <Path Style="{StaticResource LucideButtonIcon}"
+                                                  Data="{StaticResource IconColumns}"
+                                                  Width="11" Height="11"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  Stretch="Uniform"
+                                                  Stroke="{DynamicResource TextMutedBrush}"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource LineBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                            <Button Grid.Column="4" Tag="{Binding}"
                                     Click="FolderChevron_Click" Cursor="Arrow"
                                     Background="Transparent" BorderThickness="0"
                                     IsTabStop="False" FocusVisualStyle="{x:Null}"
@@ -973,7 +1001,7 @@
                     <Border Visibility="Collapsed"
                             b:TreeExpander.IsExpanded="{Binding IsExpanded}">
                         <ItemsControl ItemsSource="{Binding Projects}"
-                                      Tag="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                      Tag="{Binding EffectiveColumns}"
                                       ItemTemplate="{StaticResource ProjectTemplate}"
                                       ItemsPanel="{StaticResource ProjectsPanel}"
                                       Margin="8,5,8,5">

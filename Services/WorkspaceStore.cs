@@ -11,7 +11,7 @@ public static class WorkspaceStore
     private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public string? ParentId { get; set; } public bool ChildrenExpanded { get; set; } = true; }
     private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
-    private sealed class ProjectFolderDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Icon { get; set; } public int? RootOrder { get; set; } public bool IsExpanded { get; set; } = true; public string? ArchivedAt { get; set; } }
+    private sealed class ProjectFolderDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Icon { get; set; } public int? RootOrder { get; set; } public bool IsExpanded { get; set; } = true; public string? ArchivedAt { get; set; } public bool TwoColumn { get; set; } = true; }
     private sealed class ProjectDto
     {
         public string Path { get; set; } = "";
@@ -148,6 +148,7 @@ public static class WorkspaceStore
                     RootOrder = folder.RootOrder ?? int.MaxValue,
                     IsExpanded = folder.IsExpanded,
                     ArchivedAt = folder.ArchivedAt,
+                    TwoColumn = folder.TwoColumn,
                 });
 
             var folderIds = new HashSet<string>(ProjectFolders.Select(folder => folder.Id), StringComparer.Ordinal);
@@ -271,6 +272,7 @@ public static class WorkspaceStore
                     RootOrder = folder.RootOrder,
                     IsExpanded = folder.IsExpanded,
                     ArchivedAt = folder.ArchivedAt,
+                    TwoColumn = folder.TwoColumn,
                 }).ToList(),
             };
             AtomicFile.WriteAllText(WorkspacePath,

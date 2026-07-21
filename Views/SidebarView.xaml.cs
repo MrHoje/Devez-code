@@ -101,6 +101,8 @@ public partial class SidebarView : UserControl
         _projectColumns = cols == 2 ? 2 : 1;
         ProjectsHost.Tag = _projectColumns;
         ArchivedHost.Tag = _projectColumns;
+        foreach (var folder in WorkspaceStore.ProjectFolders)
+            folder.ColumnToggleAvailable = _projectColumns == 2;
     }
 
     private readonly ObservableCollection<object> _activeRootItems = new();
@@ -235,6 +237,7 @@ public partial class SidebarView : UserControl
             var desired = allProjects.Where(project =>
                 !hasQuery || folderMatches || Matches(project)).ToList();
             SyncCollection(folder.Projects, desired);
+            folder.ColumnToggleAvailable = _projectColumns == 2;
             folder.UpdateSummary(allProjects, desired.Count, hasQuery);
             folder.IsSearchVisible = !hasQuery || folderMatches || desired.Count > 0;
             if (hasQuery && folder.IsSearchVisible) folder.IsExpanded = true;
@@ -651,6 +654,48 @@ public partial class SidebarView : UserControl
         if (ItemOf<ProjectFolderItem>(sender) is not { } folder) return;
         ToggleProjectFolder(folder);
         e.Handled = true;
+    }
+
+    // 폴더 내부 목록 1열↔2열 전환. 2열로 펼 때는 갯수 절반을 우측으로(홀수면 좌가 더 많게),
+    // 1열로 접을 때는 우측 항목을 좌측 아래로 모은다. 전역 열 수가 2일 때만 동작.
+    private void FolderColumnToggle_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (ItemOf<ProjectFolderItem>(sender) is not { } folder || !folder.ColumnToggleAvailable) return;
+        bool toTwo = !folder.TwoColumn;
+        RedistributeFolderColumns(folder, toTwo);
+        folder.TwoColumn = toTwo; // EffectiveColumns 재계산 → 내부 패널 재배치
+        WorkspaceStore.Save(Projects, ArchivedProjects);
+    }
+
+    private void RedistributeFolderColumns(ProjectFolderItem folder, bool toTwo)
+    {
+        var coll = folder.IsArchived ? ArchivedProjects : Projects;
+        var members = coll.Where(project => project.FolderId == folder.Id).ToList();
+        if (members.Count == 0) return;
+
+        if (toTwo)
+        {
+            // 갯수 기준 앞 절반(ceil)=좌, 나머지=우. 컬렉션 순서 유지(앞=좌 위→아래, 뒤=우).
+            int left = (members.Count + 1) / 2;
+            for (int i = 0; i < members.Count; i++)
+                members[i].Column = i < left ? 0 : 1;
+        }
+        else
+        {
+            // 좌 컬럼 항목 먼저, 그 아래로 우 컬럼 항목을 모아 단일 열로 재배치.
+            var ordered = members.Where(project => project.Column != 1)
+                                 .Concat(members.Where(project => project.Column == 1))
+                                 .ToList();
+            foreach (var project in ordered) project.Column = 0;
+
+            var desired = coll.ToList();
+            int idx = 0;
+            for (int i = 0; i < desired.Count; i++)
+                if (desired[i].FolderId == folder.Id)
+                    desired[i] = ordered[idx++];
+            SyncCollection(coll, desired);
+        }
     }
 
     private void FolderRename_Click(object sender, RoutedEventArgs e)

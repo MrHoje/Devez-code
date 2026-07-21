@@ -348,6 +348,24 @@ public sealed class ProjectFolderItem : NotifyBase
 
     private bool _isExpanded = true;
     public bool IsExpanded { get => _isExpanded; set => Set(ref _isExpanded, value); }
+
+    // 폴더 내부 프로젝트 목록의 열 수 선호(true=좌/우 2열, false=1열). workspace.json 영속.
+    // 실제 적용은 전역 "프로젝트 목록 열 수"가 2일 때만(ColumnToggleAvailable). 전역 1열이면 항상 1열.
+    private bool _twoColumn = true;
+    public bool TwoColumn { get => _twoColumn; set { if (Set(ref _twoColumn, value)) RecomputeColumns(); } }
+
+    // 전역 열 수가 2인지 — 열 토글 버튼 가시성 + 2열 적용 게이트. 런타임 전용(영속 안 함).
+    private bool _columnToggleAvailable;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ColumnToggleAvailable { get => _columnToggleAvailable; set { if (Set(ref _columnToggleAvailable, value)) RecomputeColumns(); } }
+
+    // 내부 패널이 실제로 쓰는 열 수(1/2) — 폴더 body ItemsControl.Tag 바인딩 대상. 런타임 전용.
+    private int _effectiveColumns = 1;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int EffectiveColumns { get => _effectiveColumns; private set => Set(ref _effectiveColumns, value); }
+
+    private void RecomputeColumns() => EffectiveColumns = ColumnToggleAvailable && TwoColumn ? 2 : 1;
+
     private string? _archivedAt;
     public string? ArchivedAt
     {
