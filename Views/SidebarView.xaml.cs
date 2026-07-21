@@ -41,6 +41,8 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectSelected;
     public event Action<ProjectItem>? AddSessionRequested;
     public event Action<ProjectItem>? ProjectDeleteRequested;
+    /// <summary>프로젝트 메뉴 "세션 관리자" — 세션 일괄 관리 팝업 요청(MainWindow 위임).</summary>
+    public event Action<ProjectItem>? SessionManagerRequested;
     /// <summary>프로젝트 메뉴 "이름 변경" 요청(MainWindow 위임).</summary>
     public event Action<ProjectItem>? ProjectRenameRequested;
     /// <summary>프로젝트 메뉴 "보관함 이동" — 활성에서 보관함으로(MainWindow 위임).</summary>
@@ -1112,26 +1114,6 @@ public partial class SidebarView : UserControl
         HeaderTitle.Visibility = Visibility.Visible;
     }
 
-    private void SessionRow_MouseEnter(object sender, MouseEventArgs e)
-    {
-        if (FindProjectCardRoot(sender as DependencyObject) is { } projectCard)
-            projectCard.Tag = true;
-    }
-
-    private void SessionRow_MouseLeave(object sender, MouseEventArgs e)
-    {
-        if (FindProjectCardRoot(sender as DependencyObject) is { } projectCard)
-            projectCard.ClearValue(FrameworkElement.TagProperty);
-    }
-
-    private static Border? FindProjectCardRoot(DependencyObject? current)
-    {
-        for (; current != null; current = VisualTreeHelper.GetParent(current))
-            if (current is Border { Name: "ProjectCardRoot" } projectCard)
-                return projectCard;
-        return null;
-    }
-
     private void OpenDoc_Click(object sender, MouseButtonEventArgs e)
     {
         if (_didDrag) { _didDrag = false; return; }
@@ -1178,6 +1160,11 @@ public partial class SidebarView : UserControl
     private void ProjectDelete_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectItem>(sender) is { } p) ProjectDeleteRequested?.Invoke(p);
+    }
+
+    private void SessionManager_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<ProjectItem>(sender) is { } p) SessionManagerRequested?.Invoke(p);
     }
 
     private void ProjectRename_Click(object sender, RoutedEventArgs e)

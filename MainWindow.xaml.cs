@@ -236,6 +236,7 @@ public partial class MainWindow : Window
         Sidebar.SessionsStopTrackingRequested += StopTrackingSessions;
         Sidebar.SessionsHideRequested += HideSessionsFromSidebar;
         Sidebar.SessionsLockRequested += SetSessionsLocked;
+        Sidebar.SessionManagerRequested += OpenSessionManager;
         Sidebar.UpdateClicked += OpenUpdatePopup; // 좌측 하단 업데이트 버튼 → 노트 팝업 → 설치
 
         // 세션 요청 처리중 스피너: claude 훅(busy-hook.ps1)이 떨군 상태 파일을 감시 (clude-blinker 방식).
@@ -4469,11 +4470,6 @@ public partial class MainWindow : Window
         if (session != null) OpenSession(session);
     }
 
-    /// <summary>세션 관리 단축키 설정 변경을 열린 모든 패널의 터미널(JS)에 즉시 반영.</summary>
-    public void PushSessionHotkeysToTerminals()
-    {
-        foreach (var pane in _panes) pane.Terminal.PushHotkeys();
-    }
     private void RenameSession(SessionItem session) { PaneFor(session).RenameSession(session); SyncRecordsForSessionRename(session); }
     private void DeleteSession(SessionItem session)
     {
@@ -4607,6 +4603,21 @@ public partial class MainWindow : Window
         foreach (var session in sessions.Distinct().Where(session => !session.Hidden).ToList())
             HideSessionFromSidebar(session);
         Sidebar.ClearSessionMultiSelection();
+    }
+
+    /// <summary>프로젝트 카드 "세션 관리자" — 세션 일괄 관리 팝업. 위험 동작은 기존 검증
+    /// 메서드(확인창·하위세션·잠금 검사 포함)에 그대로 위임한다.</summary>
+    private void OpenSessionManager(ProjectItem project)
+    {
+        var dialog = new SessionManagerDialog(
+            project,
+            onHide: HideSessionsFromSidebar,
+            onClose: StopTrackingSessions,
+            onDelete: DeleteSessions)
+        {
+            Owner = this
+        };
+        dialog.ShowDialog();
     }
 
     /// <summary>어느 패널에서든 숨김 graceful 종료가 끝나면 모든 패널로 중계 — 각 패널이 종료 중 생긴

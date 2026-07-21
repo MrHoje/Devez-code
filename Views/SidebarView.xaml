@@ -144,8 +144,6 @@
                 </Grid>
                 <Border x:Name="SessionRow" Grid.Row="1" Grid.Column="1" Style="{StaticResource SessionDropTargetCard}"
                         MouseLeftButtonUp="Session_Click"
-                        MouseEnter="SessionRow_MouseEnter"
-                        MouseLeave="SessionRow_MouseLeave"
                         PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
                         PreviewMouseRightButtonDown="SessionRow_PreviewMouseRightButtonDown">
                 <Border.ContextMenu>
@@ -548,6 +546,12 @@
                             </MenuItem.Icon>
                         </MenuItem>
                         <Separator/>
+                        <MenuItem Header="세션 관리자" Tag="{Binding}" Click="SessionManager_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconListChecks}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <MenuItem Header="프로젝트 제거" Tag="{Binding}" Click="ProjectDelete_Click" Foreground="{DynamicResource DangerBrush}">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTrash2}"
@@ -834,7 +838,6 @@
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding IsSelected}" Value="False"/>
                         <Condition Binding="{Binding IsMouseOver, ElementName=ProjectCardRoot}" Value="True"/>
-                        <Condition Binding="{Binding Tag, ElementName=ProjectCardRoot}" Value="{x:Null}"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="ProjectCardRoot" Property="BorderBrush" Value="{DynamicResource ProjectCardHoverBorderBrush}"/>
                 </MultiDataTrigger>

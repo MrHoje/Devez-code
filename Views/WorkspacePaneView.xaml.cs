@@ -809,6 +809,7 @@ public partial class WorkspacePaneView : UserControl
             case "closeSession": if (_activeSession != null) StopTrackingSession(_activeSession); break;
             case "hideSession": if (_activeSession != null) HideSession(_activeSession); break;
             case "deleteSession": if (_activeSession != null) DeleteSession(_activeSession); break;
+            case "renameSession": if (_activeSession != null) RenameSession(_activeSession); break;
             case "nextSession": CycleSession(+1); break;
             case "prevSession": CycleSession(-1); break;
             case "gotoSession": GotoSession(index); break;

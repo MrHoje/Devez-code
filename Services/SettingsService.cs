@@ -12,21 +12,6 @@ public enum TerminalUrlOpenTarget
     DefaultBrowser,
 }
 
-/// <summary>세션 관리 단축키 1개의 조합·사용 여부. 판정은 터미널(JS)에서 수행하므로 code 는 JS KeyboardEvent.code
-/// 문자열(예 "KeyT","Delete","Digit1")로 저장해 키보드 레이아웃과 무관하게 매칭한다.</summary>
-public sealed class HotkeyBinding
-{
-    public bool Enabled { get; set; } = true;
-    public bool Ctrl { get; set; }
-    public bool Shift { get; set; }
-    public bool Alt { get; set; }
-    public string Code { get; set; } = "";
-
-    public HotkeyBinding() { }
-    public HotkeyBinding(bool ctrl, bool shift, bool alt, string code)
-    { Ctrl = ctrl; Shift = shift; Alt = alt; Code = code; }
-}
-
 /// <summary>세션 토큰 사용량 비용($) 계산용 모델별 단가 규칙(외부 설정). settings.json 의 UsagePricing 배열에 담긴다.
 /// Match 는 모델ID 부분일치(소문자, 예 "opus"·"gpt-5"), 단가는 100만 토큰당 달러. 위에서부터 먼저 맞는 규칙 사용.</summary>
 public sealed class UsagePriceRule
@@ -212,12 +197,6 @@ public static class SettingsService
         // WPF GPU 하드웨어 가속. false 면 SoftwareOnly(원격/CRD 캡처 안정). 기본 true.
         // 시작 시 적용 + 타이틀 로고 세 번 클릭으로 런타임 전환. 원격 세션이면 시작 시 강제 소프트.
         public bool UseGpuAcceleration { get; set; } = true;
-        // 세션 관리 단축키(터미널에서 판정). null 이면 Load 시 기본값으로 채운다.
-        // 기본: 새 세션 Ctrl+T, 닫기 Ctrl+W, 숨기기 Ctrl+H, 삭제 Ctrl+Delete.
-        public HotkeyBinding? NewSessionHotkey { get; set; }
-        public HotkeyBinding? CloseSessionHotkey { get; set; }
-        public HotkeyBinding? HideSessionHotkey { get; set; }
-        public HotkeyBinding? DeleteSessionHotkey { get; set; }
     }
 
     private static readonly object _lock = new();
@@ -385,26 +364,6 @@ public static class SettingsService
         Current.TabHotkeyModifierVk = mod;
         Current.TabHotkeyPrevVk = prev;
         Current.TabHotkeyNextVk = next;
-        Save();
-    }
-
-    // ── 세션 관리 단축키 (새 세션/닫기/숨기기/삭제 — 터미널 JS 판정) ──
-    // 저장값이 없으면 기본 조합으로 채워 반환한다.
-    public static HotkeyBinding LoadNewSessionHotkey()
-        => Current.NewSessionHotkey ??= new HotkeyBinding(ctrl: true, shift: false, alt: false, code: "KeyT");
-    public static HotkeyBinding LoadCloseSessionHotkey()
-        => Current.CloseSessionHotkey ??= new HotkeyBinding(ctrl: true, shift: false, alt: false, code: "KeyW");
-    public static HotkeyBinding LoadHideSessionHotkey()
-        => Current.HideSessionHotkey ??= new HotkeyBinding(ctrl: true, shift: false, alt: false, code: "KeyH");
-    public static HotkeyBinding LoadDeleteSessionHotkey()
-        => Current.DeleteSessionHotkey ??= new HotkeyBinding(ctrl: true, shift: false, alt: false, code: "Delete");
-
-    public static void SaveSessionHotkeys(HotkeyBinding newSession, HotkeyBinding close, HotkeyBinding hide, HotkeyBinding delete)
-    {
-        Current.NewSessionHotkey = newSession;
-        Current.CloseSessionHotkey = close;
-        Current.HideSessionHotkey = hide;
-        Current.DeleteSessionHotkey = delete;
         Save();
     }
 

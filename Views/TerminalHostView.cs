@@ -740,7 +740,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             // WebGL(GPU) 렌더러 사용 여부 — 원격/CRD 세션은 App.OnStartup 이 SoftwareOnly 로 강제하므로
             // 그 경우 끈다(SwiftShader 소프트 GL 은 DOM 보다 느림). 로컬에선 GPU 렌더로 활성 탭 비용 절감.
             enableWebgl = System.Windows.Media.RenderOptions.ProcessRenderMode != System.Windows.Interop.RenderMode.SoftwareOnly,
-            hotkeys = BuildHotkeyPayload(), // 세션 관리 단축키(새 세션/닫기/숨기기/삭제) — JS 가 keydown 매칭
         });
         var pending = _pendingShowRoomId ?? _activeRoomId;
         _pendingShowRoomId = null;
@@ -1823,29 +1822,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _webView?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message, CamelCase));
         }
         catch (Exception) { /* WebView2 해제 중 등 */ }
-    }
-
-    /// <summary>세션 관리 단축키 설정을 JS 매칭용 페이로드로 직렬화. 저장값 없으면 기본 조합.</summary>
-    private static object[] BuildHotkeyPayload()
-    {
-        var n = DevezCode.Services.SettingsService.LoadNewSessionHotkey();
-        var c = DevezCode.Services.SettingsService.LoadCloseSessionHotkey();
-        var h = DevezCode.Services.SettingsService.LoadHideSessionHotkey();
-        var d = DevezCode.Services.SettingsService.LoadDeleteSessionHotkey();
-        return new object[]
-        {
-            new { action = "newSession",    enabled = n.Enabled, ctrl = n.Ctrl, shift = n.Shift, alt = n.Alt, code = n.Code },
-            new { action = "closeSession",  enabled = c.Enabled, ctrl = c.Ctrl, shift = c.Shift, alt = c.Alt, code = c.Code },
-            new { action = "hideSession",   enabled = h.Enabled, ctrl = h.Ctrl, shift = h.Shift, alt = h.Alt, code = h.Code },
-            new { action = "deleteSession", enabled = d.Enabled, ctrl = d.Ctrl, shift = d.Shift, alt = d.Alt, code = d.Code },
-        };
-    }
-
-    /// <summary>세션 관리 단축키 설정을 이 터미널의 모든 방(JS)에 즉시 반영. 설정 저장 시 호출.</summary>
-    public void PushHotkeys()
-    {
-        if (!_pageReady) return;
-        PostJson(new { type = "hotkeys", hotkeys = BuildHotkeyPayload() });
     }
 
     /// <summary>현재 활성 스킴을 모든 xterm 인스턴스에 즉시 반영. 테마 변경 시 호출.</summary>

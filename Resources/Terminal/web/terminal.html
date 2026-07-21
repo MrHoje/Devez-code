@@ -147,6 +147,33 @@
     transition: opacity 0.15s ease, transform 0.15s ease; pointer-events: none;
   }
   #copy-toast.on { opacity: 1; transform: translateY(0); }
+
+  /* 세션 단축키 힌트 오버레이 — Ctrl+Shift 누르면 터미널 우상단(우/상 각 15px)에 표시.
+     애니메이션은 opacity fade 만 쓴다: transform(translateY) 을 쓰면 서브픽셀 이동으로 텍스트가
+     흐려지므로 위치는 고정하고 opacity 만 전환 → 선명 유지. visibility 로 숨김 시 완전히 비활성.
+     색은 --term-bg/--term-fg 기반 + 회색 반투명이라 라이트/다크 모두 대응. */
+  #shortcut-hint {
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.14s ease, visibility 0s linear 0.14s;
+    position: absolute; right: 15px; top: 15px; z-index: 70;
+    padding: 12px 14px; border-radius: 12px;
+    background: var(--term-bg, #1b1b1b); color: var(--term-fg, #CCCCCC);
+    border: 1px solid rgba(128,128,128,0.32);
+    box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+    font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
+    pointer-events: none;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  #shortcut-hint.on { opacity: 1; visibility: visible; transition: opacity 0.14s ease; }
+  #shortcut-hint .sh-title { font-size: 12px; font-weight: 600; color: var(--term-fg, #CCCCCC); margin: 0 2px 9px; }
+  #shortcut-hint .sh-row { display: flex; align-items: center; margin-top: 6px; }
+  #shortcut-hint .sh-row:first-of-type { margin-top: 0; }
+  #shortcut-hint .sh-key {
+    display: inline-block; min-width: 104px; text-align: center; box-sizing: border-box;
+    padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--term-fg, #CCCCCC);
+    background: rgba(128,128,128,0.18); border: 1px solid rgba(128,128,128,0.34); margin-right: 10px;
+  }
+  #shortcut-hint .sh-label { font-size: 13px; color: var(--term-fg, #CCCCCC); }
 </style>
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
@@ -173,6 +200,14 @@
 <div id="loading-overlay"><div class="box"><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16.5"/></svg><div class="label">세션 여는 중…</div></div></div>
 <div id="xfer-cover"></div>
 <div id="copy-toast"></div>
+<div id="shortcut-hint">
+  <div class="sh-title">세션 단축키</div>
+  <div class="sh-row"><span class="sh-key">Ctrl+Shift+T</span><span class="sh-label">새 세션</span></div>
+  <div class="sh-row"><span class="sh-key">Ctrl+Shift+N</span><span class="sh-label">이름 바꾸기</span></div>
+  <div class="sh-row"><span class="sh-key">Ctrl+Shift+H</span><span class="sh-label">세션 숨기기</span></div>
+  <div class="sh-row"><span class="sh-key">Ctrl+Shift+W</span><span class="sh-label">세션 닫기</span></div>
+  <div class="sh-row"><span class="sh-key">Ctrl+Shift+Del</span><span class="sh-label">세션 삭제</span></div>
+</div>
 <div id="search-bar">
   <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
   <span id="search-count"></span>
@@ -209,9 +244,24 @@
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
-  // 세션 관리 단축키 테이블(C# 이 init/hotkeys 메시지로 주입). 각 항목 {action,enabled,ctrl,shift,alt,code}.
-  // keydown 이 이 표를 순회해 조합이 맞으면 해당 action 을 C# 으로 위임한다(레이아웃 비의존: e.code 매칭).
-  let sessionHotkeys = [];
+  // ── Ctrl+Shift 홀드 → 세션 단축키 힌트 오버레이 (터미널 우상단, 0.2초) ──
+  // Ctrl+Shift 만(Alt 없이) 다른 키 없이 0.2초 누르면 표시. 떼거나 다른 키를 누르면 즉시 숨김.
+  let _hintShown = false;
+  function _hintShow() { const el = document.getElementById('shortcut-hint'); if (el) el.classList.add('on'); _hintShown = true; }
+  function _hintCancel() {
+    if (_hintShown) { _hintShown = false; const el = document.getElementById('shortcut-hint'); if (el) el.classList.remove('on'); }
+  }
+  document.addEventListener('keydown', function (e) {
+    const isMod = e.key === 'Control' || e.key === 'Shift' || e.key === 'Alt';
+    if (!isMod) { _hintCancel(); return; }                       // 일반 키 → 숨김
+    if (!(e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey)) { _hintCancel(); return; } // Ctrl+Shift 정확히
+    if (_hintShown) return;
+    _hintShow();                                                 // Ctrl+Shift 충족 즉시 표시(딜레이 없음)
+  }, true);
+  document.addEventListener('keyup', function (e) {
+    if (e.key === 'Control' || e.key === 'Shift' || e.key === 'Alt') _hintCancel();
+  }, true);
+  window.addEventListener('blur', _hintCancel);
   function dlog(msg) { try { post({ type: 'diag', msg: '[dbg] ' + msg }); } catch (e) {} }
   function dumpBuf(roomId, tag) {
     try {
@@ -1339,14 +1389,13 @@
     if (ctrl && shift && !alt && key === 'Home') { e.preventDefault(); if (tracksFollow) entry.follow = false; term.scrollToTop();    return false; }
     if (ctrl && shift && !alt && key === 'End')  { e.preventDefault(); if (tracksFollow) entry.follow = true;  term.scrollToBottom(); return false; }
 
-    // ── 세션(탭) 관리 — 사용자 설정 단축키를 C# 으로 위임 ──
-    // (기본 새 세션 Ctrl+T, 닫기 Ctrl+W, 숨기기 Ctrl+H, 삭제 Ctrl+Delete — 설정에서 토글·조합 변경)
-    for (let i = 0; i < sessionHotkeys.length; i++) {
-      const hk = sessionHotkeys[i];
-      if (hk && hk.enabled && hk.code && hk.code === e.code && !e.metaKey
-          && !!hk.ctrl === ctrl && !!hk.shift === shift && !!hk.alt === alt) {
-        e.preventDefault(); post({ type:'action', name: hk.action }); return false;
-      }
+    // ── 세션(탭) 관리 — C# 으로 위임 (Ctrl+Shift 조합) ──
+    if (ctrl && shift && !alt) {
+      if (key === 't' || key === 'T' || key === 'd' || key === 'D') { e.preventDefault(); post({ type:'action', name:'newSession' }); return false; }
+      if (key === 'w' || key === 'W') { e.preventDefault(); post({ type:'action', name:'closeSession' }); return false; }
+      if (key === 'h' || key === 'H') { e.preventDefault(); post({ type:'action', name:'hideSession' }); return false; }
+      if (key === 'n' || key === 'N') { e.preventDefault(); post({ type:'action', name:'renameSession' }); return false; }
+      if (key === 'Delete' || e.code === 'Delete') { e.preventDefault(); post({ type:'action', name:'deleteSession' }); return false; }
     }
     if (ctrl && !alt && key === 'Tab') {
       e.preventDefault(); post({ type:'action', name: shift ? 'prevSession' : 'nextSession' }); return false;
@@ -2047,11 +2096,6 @@
         document.documentElement.style.setProperty('--term-bg', msg.theme.background || '#0C0C0C');
         document.documentElement.style.setProperty('--term-fg', msg.theme.foreground || '#CCCCCC');
         if (msg.accent) document.documentElement.style.setProperty('--term-accent', msg.accent);
-        if (Array.isArray(msg.hotkeys)) sessionHotkeys = msg.hotkeys;
-        break;
-      case 'hotkeys':
-        // 설정에서 세션 단축키 변경 시 라이브 갱신
-        sessionHotkeys = Array.isArray(msg.hotkeys) ? msg.hotkeys : [];
         break;
       case 'theme':
         // 라이브 테마 전환 — 열린 모든 xterm 의 색을 갱신하고 CSS 변수·body 배경도 맞춘다
