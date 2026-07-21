@@ -1956,6 +1956,10 @@
   watchDevicePixelRatio();
 
   window.addEventListener('resize', function () {
+    // 배율 change(matchMedia) 이벤트를 놓쳐도(모니터 전환 + 최대화/창모드 빠른 연속 토글 시 레이스/누락)
+    // resize 에서 소수 배율이면 WebGL 을 폴백한다 — 안 그러면 소수 배율 모니터에 WebGL 이 방치돼
+    // 커서가 글자 왼쪽으로 밀리고 우측 정렬이 어긋난다. 커버 억제와 무관하게 항상 먼저 검사.
+    for (const id in terms) disposeWebglIfFractional(terms[id]);
     if (_fitSuppressed) return; // 전환(커버) 중 — 중간 폭 fit 억제(reveal 이 최종 폭에서 fit)
     const t = activeRoomId ? terms[activeRoomId] : null;
     if (!t) return;
