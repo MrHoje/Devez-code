@@ -1647,7 +1647,7 @@
                                 <TextBlock Text="세션 탭을 이전/다음으로 이동하는 전역 단축키입니다. 수식키를 누른 채 ← / → 방향키를 누릅니다."
                                            FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
-                                <TextBlock Text="수식키 + ↑ / ↓ 는 프로젝트 목록을 위/아래로 훑습니다(점선 하이라이트). Enter=선택·폴더 진입, Esc=상위로/종료. (앱이 활성일 때만)"
+                                <TextBlock Text="수식키 + 방향키로 프로젝트 목록을 훑습니다(점선 하이라이트, 2열이면 ← / → 도). 폴더는 지나가며 자동으로 펼쳐집니다. Enter=선택, Esc=종료. (앱이 활성일 때만)"
                                            FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
                                 <TextBlock Text="다른 앱이 포그라운드여도 동작합니다. 키 칸을 클릭한 뒤 원하는 키를 누르세요. (Esc 취소)"

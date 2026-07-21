@@ -32,10 +32,15 @@ public static class GlobalTabHotkey
     private const int WM_SYSKEYUP    = 0x0105;
     private const int WM_QUIT        = 0x0012;
 
+    private const int VK_LEFT  = 0x25;
     private const int VK_UP    = 0x26;
+    private const int VK_RIGHT = 0x27;
     private const int VK_DOWN  = 0x28;
     private const int VK_ENTER = 0x0D;
     private const int VK_ESC   = 0x1B;
+
+    // 프로젝트 탐색 방향 — SidebarView.NavDir 와 값 일치(0=Up,1=Down,2=Left,3=Right).
+    private const int NAV_UP = 0, NAV_DOWN = 1, NAV_LEFT = 2, NAV_RIGHT = 3;
 
     // 사용자 설정 가능 — 기본 한자(0x19) + 좌(0x25)/우(0x27) 방향키. SettingsService 에서 로드.
     private static volatile int _modVk  = 0x19;
@@ -50,15 +55,15 @@ public static class GlobalTabHotkey
     private static Action<bool>? _onPrevNext; // 인자 true = 다음, false = 이전
     private static Action<int>? _captureCallback; // 키 리바인드 캡처 모드: 다음 키다운 1회를 가로채 콜백
 
-    // 프로젝트 탐색(수식키+↑/↓) — 콜백은 UI 스레드에서 호출. _navActive 는 하이라이트가 떠 있는 동안만 true
+    // 프로젝트 탐색(수식키+방향키) — 콜백은 UI 스레드에서 호출. _navActive 는 하이라이트가 떠 있는 동안만 true
     // (앱 활성 시에만 UI 가 켠다) → 그때만 Enter/Esc 를 가로채 터미널로 전파되지 않게 한다.
-    private static Action<bool>? _onProjectNav; // 인자 true = 아래, false = 위
+    private static Action<int>? _onProjectNav;  // 인자 = 방향(NAV_UP/DOWN/LEFT/RIGHT)
     private static Action? _onNavCommit;        // Enter
     private static Action? _onNavCancel;        // Esc
     private static volatile bool _navActive;
 
     /// <summary>프로젝트 탐색 콜백 등록. 하이라이트 활성 여부는 SetNavActive 로 알린다.</summary>
-    public static void ConfigureProjectNav(Action<bool> onNav, Action onCommit, Action onCancel)
+    public static void ConfigureProjectNav(Action<int> onNav, Action onCommit, Action onCancel)
     {
         _onProjectNav = onNav; _onNavCommit = onCommit; _onNavCancel = onCancel;
     }
@@ -154,21 +159,30 @@ public static class GlobalTabHotkey
                 if (isDown) _modDown = true;
                 else if (isUp) _modDown = false;
             }
-            else if (isDown && _modDown && (vk == _prevVk || vk == _nextVk))
+            else if (isDown && _modDown)
             {
-                bool next = vk == _nextVk;
-                var cb = _onPrevNext;
-                if (cb != null)
-                    Application.Current?.Dispatcher.BeginInvoke(() => cb(next));
-                return (IntPtr)1; // 모든 앱에서 전파 차단(우리 앱이 포그라운드가 아니어도)
-            }
-            else if (isDown && _modDown && (vk == VK_UP || vk == VK_DOWN))
-            {
-                bool down = vk == VK_DOWN;
-                var cb = _onProjectNav;
-                if (cb != null)
-                    Application.Current?.Dispatcher.BeginInvoke(() => cb(down));
-                return (IntPtr)1;
+                // 탐색 활성 중: 4방향 화살표 모두 프로젝트 탐색으로(좌/우 포함). 탭 이동은 잠시 대체된다.
+                if (_navActive && (vk == VK_UP || vk == VK_DOWN || vk == VK_LEFT || vk == VK_RIGHT))
+                {
+                    int dir = vk == VK_UP ? NAV_UP : vk == VK_DOWN ? NAV_DOWN : vk == VK_LEFT ? NAV_LEFT : NAV_RIGHT;
+                    var cb = _onProjectNav;
+                    if (cb != null) Application.Current?.Dispatcher.BeginInvoke(() => cb(dir));
+                    return (IntPtr)1;
+                }
+                // 탐색 비활성: ↑/↓ 는 탐색 시작, ←/→(=prev/next)는 기존 탭 이동.
+                if (vk == VK_UP || vk == VK_DOWN)
+                {
+                    var cb = _onProjectNav;
+                    if (cb != null) Application.Current?.Dispatcher.BeginInvoke(() => cb(vk == VK_DOWN ? NAV_DOWN : NAV_UP));
+                    return (IntPtr)1;
+                }
+                if (vk == _prevVk || vk == _nextVk)
+                {
+                    bool next = vk == _nextVk;
+                    var cb = _onPrevNext;
+                    if (cb != null) Application.Current?.Dispatcher.BeginInvoke(() => cb(next));
+                    return (IntPtr)1; // 모든 앱에서 전파 차단(우리 앱이 포그라운드가 아니어도)
+                }
             }
         }
         return CallNextHookEx(_hook, nCode, wParam, lParam);
