@@ -674,10 +674,9 @@ public partial class MainWindow : Window
                 }
                 BringToForegroundFromHotkey();
             });
-            // 수식키+방향키 → 프로젝트 탐색 하이라이트(앱 활성 시에만). 좌표상 최근접 카드로 이동,
-            // 폴더는 지나가며 자동 확장. Enter=선택, Esc=종료.
+            // 수식키+↑/↓ → 프로젝트 탐색 하이라이트(앱 활성 시에만), Enter=선택/폴더진입, Esc=상위/종료.
             GlobalTabHotkey.ConfigureProjectNav(
-                dir => { if (IsActive) Sidebar.NavMove((SidebarView.NavDir)dir); },
+                down => { if (IsActive) Sidebar.NavMove(down); },
                 () => Sidebar.NavCommit(),
                 () => Sidebar.NavCancel());
         };

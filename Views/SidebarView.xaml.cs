@@ -1113,15 +1113,15 @@ public partial class SidebarView : UserControl
         HeaderTitle.Visibility = Visibility.Visible;
     }
 
-    // ── 단축키(수식키+방향키) 프로젝트 탐색 ─────────────────────────────
-    // 프로젝트 카드에 살짝 연한 테마색 점선 링을 씌워 좌표상 가장 가까운 카드로 이동한다.
-    // 폴더는 하이라이트 대상이 아니라, 지나가는 방향에 접힌 폴더가 있으면 자동으로 펼쳐 통과한다.
-    // ↑/↓/←/→ 모두 방향상 최근접 카드로 이동(2열이면 좌우도 동작). Enter=선택, Esc=종료.
-    // 하이라이트가 떠 있는 동안 Enter/Esc 는 전역 훅이 가로채 터미널로 전파되지 않는다.
-    public enum NavDir { Up, Down, Left, Right }
-
+    // ── 단축키(수식키+↑/↓) 프로젝트 탐색 ─────────────────────────────
+    // 루트(폴더+최상위 프로젝트) 위/아래로 점선 하이라이트 이동. 폴더 위에서 Enter → 폴더 진입,
+    // 프로젝트 위에서 Enter → 선택, Esc → 폴더에서 나가기/선택 종료. 하이라이트가 있는 동안 Enter/Esc는
+    // 전역 훅이 가로채 터미널로 전파되지 않는다(활성 상태를 NavActiveChanged 로 알림).
     private bool _navActive;
-    private ProjectItem? _navProj;
+    private int _navLevel;               // 0=루트, 1=폴더 내부
+    private ProjectFolderItem? _navFolder;
+    private int _navRootIndex;
+    private int _navChildIndex;
 
     /// <summary>탐색 하이라이트 활성 여부가 바뀔 때(true=Enter/Esc 가로채기 필요).</summary>
     public event Action<bool>? NavActiveChanged;
@@ -1134,113 +1134,36 @@ public partial class SidebarView : UserControl
         NavActiveChanged?.Invoke(value);
     }
 
-    private static Point Center(Rect r) => new(r.X + r.Width / 2, r.Y + r.Height / 2);
+    private static int Clamp(int v, int lo, int hi) => v < lo ? lo : v > hi ? hi : v;
 
-    /// <summary>활성 패널에서 현재 실제로 보이는 프로젝트 카드들의 위치(접힌 폴더의 자식은 IsVisible=false 라 제외).</summary>
-    private List<(ProjectItem proj, Rect rect)> NavCardRects()
+    /// <summary>선택된 프로젝트가 속한 루트 항목(폴더 또는 최상위 프로젝트) 인덱스. 없으면 -1.</summary>
+    private int FindSelectedRootIndex(List<object> roots)
     {
-        var list = new List<(ProjectItem, Rect)>();
-        foreach (var b in FindVisualChildren<Border>(ActivePanel))
-        {
-            if (b.Name != "ProjectCardRoot" || !b.IsVisible || b.DataContext is not ProjectItem p) continue;
-            try
-            {
-                var tl = b.TransformToAncestor(this).Transform(new Point(0, 0));
-                list.Add((p, new Rect(tl, new Size(b.ActualWidth, b.ActualHeight))));
-            }
-            catch (InvalidOperationException) { }
-        }
-        return list;
+        var selected = Projects.FirstOrDefault(p => p.IsSelected);
+        if (selected == null) return -1;
+        if (selected.FolderId == null) return roots.IndexOf(selected);
+        var folder = _activeProjectFolders.FirstOrDefault(f => f.Id == selected.FolderId);
+        return folder == null ? -1 : roots.IndexOf(folder);
     }
 
-    /// <summary>펼치면 통과할 자식이 있는(비어있지 않은) 접힌 폴더 헤더들의 위치.</summary>
-    private List<(ProjectFolderItem folder, Rect rect)> NavCollapsedFolderRects()
+    private void ApplyNavHighlight(object item)
     {
-        var list = new List<(ProjectFolderItem, Rect)>();
-        foreach (var b in FindVisualChildren<Border>(ActivePanel))
-        {
-            if (b.Name != "FolderRoot" || !b.IsVisible
-                || b.DataContext is not ProjectFolderItem f || f.IsExpanded || f.Projects.Count == 0)
-                continue;
-            try
-            {
-                var tl = b.TransformToAncestor(this).Transform(new Point(0, 0));
-                list.Add((f, new Rect(tl, new Size(b.ActualWidth, b.ActualHeight))));
-            }
-            catch (InvalidOperationException) { }
-        }
-        return list;
+        foreach (var p in Projects.Concat(ArchivedProjects)) p.IsNavHighlight = false;
+        foreach (var f in WorkspaceStore.ProjectFolders) f.IsNavHighlight = false;
+        if (item is ProjectItem proj) proj.IsNavHighlight = true;
+        else if (item is ProjectFolderItem folder) folder.IsNavHighlight = true;
+        ScrollNavTargetIntoView(item);
     }
 
-    /// <summary>from 에서 dir 방향의 최근접 카드(교차축 편차에 가중치). 없으면 null.</summary>
-    private static ProjectItem? BestInDirection(Rect from, List<(ProjectItem proj, Rect rect)> cards, NavDir dir)
+    private void ScrollNavTargetIntoView(object item)
     {
-        var c = Center(from);
-        ProjectItem? best = null;
-        double bestCost = double.MaxValue;
-        foreach (var (p, r) in cards)
-        {
-            var pc = Center(r);
-            double dx = pc.X - c.X, dy = pc.Y - c.Y;
-            bool inDir = dir switch
-            {
-                NavDir.Down => dy > 1,
-                NavDir.Up => dy < -1,
-                NavDir.Right => dx > 1,
-                NavDir.Left => dx < -1,
-                _ => false,
-            };
-            if (!inDir) continue;
-            bool vertical = dir is NavDir.Up or NavDir.Down;
-            double primary = vertical ? Math.Abs(dy) : Math.Abs(dx);
-            double cross = vertical ? Math.Abs(dx) : Math.Abs(dy);
-            double cost = primary + cross * 3; // 같은 열/행 우선
-            if (cost < bestCost) { bestCost = cost; best = p; }
-        }
-        return best;
-    }
-
-    private Rect? RectOf(List<(ProjectItem proj, Rect rect)> cards, ProjectItem? proj)
-    {
-        if (proj == null) return null;
-        foreach (var (p, r) in cards) if (ReferenceEquals(p, proj)) return r;
-        return null;
-    }
-
-    /// <summary>from 과 to(없으면 그 방향 끝) 사이에 걸친 접힌 폴더가 있으면 그 폴더를 펼치고 true.
-    /// "폴더를 지나가면 펼쳐진다"를 구현 — 세로 이동에서만 의미가 있다.</summary>
-    private bool ExpandFolderBetween(Rect from, Rect? to, NavDir dir)
-    {
-        if (dir is not (NavDir.Up or NavDir.Down)) return false;
-        double fromY = Center(from).Y;
-        double? toY = to is Rect t ? Center(t).Y : null;
-        ProjectFolderItem? pick = null;
-        double bestDist = double.MaxValue;
-        foreach (var (f, r) in NavCollapsedFolderRects())
-        {
-            double fy = Center(r).Y;
-            bool inDir = dir == NavDir.Down ? fy > fromY + 1 : fy < fromY - 1;
-            if (!inDir) continue;
-            if (toY is double ty && (dir == NavDir.Down ? fy > ty : fy < ty)) continue; // 대상 카드보다 더 먼 폴더는 제외
-            double dist = Math.Abs(fy - fromY);
-            if (dist < bestDist) { bestDist = dist; pick = f; }
-        }
-        if (pick == null) return false;
-        pick.IsExpanded = true;
-        ProjectExpandChanged?.Invoke();
-        return true;
-    }
-
-    private void ApplyNavHighlight(ProjectItem proj)
-    {
-        foreach (var p in Projects.Concat(ArchivedProjects)) p.IsNavHighlight = ReferenceEquals(p, proj);
-        _navProj = proj;
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            foreach (var b in FindVisualChildren<Border>(ActivePanel))
-                if (b.Name == "ProjectCardRoot" && ReferenceEquals(b.DataContext, proj))
+            foreach (var border in FindVisualChildren<Border>(ActivePanel))
+                if (border.Name is "ProjectCardRoot" or "FolderRoot" &&
+                    ReferenceEquals(border.DataContext, item))
                 {
-                    b.BringIntoView();
+                    border.BringIntoView();
                     return;
                 }
         }), DispatcherPriority.Loaded);
@@ -1250,72 +1173,103 @@ public partial class SidebarView : UserControl
     public void ClearNavHighlight()
     {
         foreach (var p in Projects.Concat(ArchivedProjects)) p.IsNavHighlight = false;
-        _navProj = null;
+        foreach (var f in WorkspaceStore.ProjectFolders) f.IsNavHighlight = false;
+        _navLevel = 0;
+        _navFolder = null;
         SetNavActiveState(false);
     }
 
-    /// <summary>수식키+방향키 — 하이라이트를 해당 방향 최근접 카드로 이동(없으면 선택 프로젝트 기준으로 시작).</summary>
-    public bool NavMove(NavDir dir)
+    /// <summary>수식키+↑/↓ — 하이라이트를 위/아래로 이동(없으면 선택 프로젝트 기준으로 시작). 처리 시 true.</summary>
+    public bool NavMove(bool down)
     {
         if (_archiveOpen) return false;
-        var cards = NavCardRects();
-        if (cards.Count == 0) return false;
+        var roots = _activeRootItems.ToList();
 
-        // 시작(↑/↓ 로만 진입) — 현재 선택 프로젝트 기준 한 칸.
-        if (!_navActive || _navProj == null)
+        if (!_navActive)
         {
-            var selected = Projects.FirstOrDefault(p => p.IsSelected);
-            var anchor = RectOf(cards, selected);
-            ProjectItem? target = anchor is Rect a
-                ? BestInDirection(a, cards, dir) ?? selected
-                : FirstInReadingOrder(cards, dir);
-            if (target == null)
-            {
-                // 시작 지점 근처에 보이는 카드가 없으면 그 방향의 접힌 폴더를 펼쳐 통과.
-                if (anchor is Rect a2 && ExpandFolderBetween(a2, null, dir))
-                { RetryMoveAfterLayout(dir); SetNavActiveState(true); return true; }
-                target = cards[0].proj;
-            }
+            if (roots.Count == 0) return false;
+            int anchor = FindSelectedRootIndex(roots);
+            int start = anchor < 0
+                ? (down ? 0 : roots.Count - 1)
+                : Clamp(anchor + (down ? 1 : -1), 0, roots.Count - 1);
+            _navLevel = 0;
+            _navFolder = null;
+            _navRootIndex = start;
             SetNavActiveState(true);
-            ApplyNavHighlight(target);
+            ApplyNavHighlight(roots[start]);
             return true;
         }
 
-        var cur = RectOf(cards, _navProj);
-        if (cur == null) { ApplyNavHighlight(FirstInReadingOrder(cards, dir) ?? cards[0].proj); return true; }
+        if (_navLevel == 0)
+        {
+            if (roots.Count == 0) { ClearNavHighlight(); return false; }
+            _navRootIndex = Clamp(_navRootIndex + (down ? 1 : -1), 0, roots.Count - 1);
+            ApplyNavHighlight(roots[_navRootIndex]);
+            return true;
+        }
 
-        var next = BestInDirection(cur.Value, cards, dir);
-        // 세로 이동 중 현재 카드와 대상 사이에 접힌 폴더가 있으면 먼저 펼쳐 그 안으로 통과.
-        if (ExpandFolderBetween(cur.Value, RectOf(cards, next), dir))
-        { RetryMoveAfterLayout(dir); return true; }
-        if (next == null) return true; // 끝 — 멈춤
-        ApplyNavHighlight(next);
+        var kids = _navFolder?.Projects.ToList() ?? new List<ProjectItem>();
+        if (kids.Count == 0) return true;
+        _navChildIndex = Clamp(_navChildIndex + (down ? 1 : -1), 0, kids.Count - 1);
+        ApplyNavHighlight(kids[_navChildIndex]);
         return true;
     }
 
-    // 폴더를 펼친 뒤 레이아웃이 갱신되면 같은 방향으로 한 번 더 이동을 시도.
-    private void RetryMoveAfterLayout(NavDir dir) =>
-        Dispatcher.BeginInvoke(new Action(() => { if (_navActive) NavMove(dir); }), DispatcherPriority.Loaded);
-
-    private ProjectItem? FirstInReadingOrder(List<(ProjectItem proj, Rect rect)> cards, NavDir dir)
-    {
-        if (cards.Count == 0) return null;
-        var ordered = cards.OrderBy(c => c.rect.Y).ThenBy(c => c.rect.X).ToList();
-        return dir == NavDir.Up ? ordered[^1].proj : ordered[0].proj; // ↑ 시작이면 맨 아래, ↓ 시작이면 맨 위
-    }
-
-    /// <summary>Enter — 하이라이트된 프로젝트를 선택.</summary>
+    /// <summary>Enter — 폴더면 진입, 프로젝트면 선택.</summary>
     public void NavCommit()
     {
-        if (!_navActive || _navProj == null) { ClearNavHighlight(); return; }
-        var proj = _navProj;
+        if (!_navActive) return;
+
+        if (_navLevel == 0)
+        {
+            var roots = _activeRootItems.ToList();
+            if (_navRootIndex < 0 || _navRootIndex >= roots.Count) { ClearNavHighlight(); return; }
+            var item = roots[_navRootIndex];
+
+            if (item is ProjectFolderItem folder)
+            {
+                if (!folder.IsExpanded) { folder.IsExpanded = true; ProjectExpandChanged?.Invoke(); }
+                var kids = folder.Projects.ToList();
+                if (kids.Count == 0) return; // 빈 폴더 — 폴더 하이라이트 유지
+                _navLevel = 1;
+                _navFolder = folder;
+                _navChildIndex = 0;
+                ApplyNavHighlight(kids[0]);
+                return;
+            }
+            if (item is ProjectItem proj)
+            {
+                ClearNavHighlight();
+                ClearSessionMultiSelection();
+                ProjectSelected?.Invoke(proj);
+            }
+            return;
+        }
+
+        var childKids = _navFolder?.Projects.ToList() ?? new List<ProjectItem>();
+        if (_navChildIndex < 0 || _navChildIndex >= childKids.Count) { ClearNavHighlight(); return; }
+        var child = childKids[_navChildIndex];
         ClearNavHighlight();
         ClearSessionMultiSelection();
-        ProjectSelected?.Invoke(proj);
+        ProjectSelected?.Invoke(child);
     }
 
-    /// <summary>Esc — 탐색 종료.</summary>
-    public void NavCancel() => ClearNavHighlight();
+    /// <summary>Esc — 폴더 내부면 폴더로 복귀, 루트면 탐색 종료.</summary>
+    public void NavCancel()
+    {
+        if (!_navActive) return;
+        if (_navLevel == 1 && _navFolder != null)
+        {
+            var roots = _activeRootItems.ToList();
+            int fi = roots.IndexOf(_navFolder);
+            _navLevel = 0;
+            _navFolder = null;
+            if (fi >= 0) { _navRootIndex = fi; ApplyNavHighlight(roots[fi]); }
+            else ClearNavHighlight();
+            return;
+        }
+        ClearNavHighlight();
+    }
 
     private void SessionRow_MouseEnter(object sender, MouseEventArgs e)
     {
