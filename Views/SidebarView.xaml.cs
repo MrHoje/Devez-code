@@ -923,6 +923,7 @@ public partial class SidebarView : UserControl
 
     private void Sidebar_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (_navActive) ClearNavHighlight(); // 마우스 조작 시작 시 탐색 하이라이트 해제(Enter 차단 잔존 방지)
         if (!IsWithinSessionRow(e.OriginalSource as DependencyObject))
             ClearSessionMultiSelection();
     }
@@ -1110,6 +1111,164 @@ public partial class SidebarView : UserControl
         _sessionSelectionProject = null;
         SelectionCountText.Visibility = Visibility.Collapsed;
         HeaderTitle.Visibility = Visibility.Visible;
+    }
+
+    // ── 단축키(수식키+↑/↓) 프로젝트 탐색 ─────────────────────────────
+    // 루트(폴더+최상위 프로젝트) 위/아래로 점선 하이라이트 이동. 폴더 위에서 Enter → 폴더 진입,
+    // 프로젝트 위에서 Enter → 선택, Esc → 폴더에서 나가기/선택 종료. 하이라이트가 있는 동안 Enter/Esc는
+    // 전역 훅이 가로채 터미널로 전파되지 않는다(활성 상태를 NavActiveChanged 로 알림).
+    private bool _navActive;
+    private int _navLevel;               // 0=루트, 1=폴더 내부
+    private ProjectFolderItem? _navFolder;
+    private int _navRootIndex;
+    private int _navChildIndex;
+
+    /// <summary>탐색 하이라이트 활성 여부가 바뀔 때(true=Enter/Esc 가로채기 필요).</summary>
+    public event Action<bool>? NavActiveChanged;
+    public bool IsNavActive => _navActive;
+
+    private void SetNavActiveState(bool value)
+    {
+        if (_navActive == value) return;
+        _navActive = value;
+        NavActiveChanged?.Invoke(value);
+    }
+
+    private static int Clamp(int v, int lo, int hi) => v < lo ? lo : v > hi ? hi : v;
+
+    /// <summary>선택된 프로젝트가 속한 루트 항목(폴더 또는 최상위 프로젝트) 인덱스. 없으면 -1.</summary>
+    private int FindSelectedRootIndex(List<object> roots)
+    {
+        var selected = Projects.FirstOrDefault(p => p.IsSelected);
+        if (selected == null) return -1;
+        if (selected.FolderId == null) return roots.IndexOf(selected);
+        var folder = _activeProjectFolders.FirstOrDefault(f => f.Id == selected.FolderId);
+        return folder == null ? -1 : roots.IndexOf(folder);
+    }
+
+    private void ApplyNavHighlight(object item)
+    {
+        foreach (var p in Projects.Concat(ArchivedProjects)) p.IsNavHighlight = false;
+        foreach (var f in WorkspaceStore.ProjectFolders) f.IsNavHighlight = false;
+        if (item is ProjectItem proj) proj.IsNavHighlight = true;
+        else if (item is ProjectFolderItem folder) folder.IsNavHighlight = true;
+        ScrollNavTargetIntoView(item);
+    }
+
+    private void ScrollNavTargetIntoView(object item)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            foreach (var border in FindVisualChildren<Border>(ActivePanel))
+                if (border.Name is "ProjectCardRoot" or "FolderRoot" &&
+                    ReferenceEquals(border.DataContext, item))
+                {
+                    border.BringIntoView();
+                    return;
+                }
+        }), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>탐색 종료 — 모든 하이라이트 해제.</summary>
+    public void ClearNavHighlight()
+    {
+        foreach (var p in Projects.Concat(ArchivedProjects)) p.IsNavHighlight = false;
+        foreach (var f in WorkspaceStore.ProjectFolders) f.IsNavHighlight = false;
+        _navLevel = 0;
+        _navFolder = null;
+        SetNavActiveState(false);
+    }
+
+    /// <summary>수식키+↑/↓ — 하이라이트를 위/아래로 이동(없으면 선택 프로젝트 기준으로 시작). 처리 시 true.</summary>
+    public bool NavMove(bool down)
+    {
+        if (_archiveOpen) return false;
+        var roots = _activeRootItems.ToList();
+
+        if (!_navActive)
+        {
+            if (roots.Count == 0) return false;
+            int anchor = FindSelectedRootIndex(roots);
+            int start = anchor < 0
+                ? (down ? 0 : roots.Count - 1)
+                : Clamp(anchor + (down ? 1 : -1), 0, roots.Count - 1);
+            _navLevel = 0;
+            _navFolder = null;
+            _navRootIndex = start;
+            SetNavActiveState(true);
+            ApplyNavHighlight(roots[start]);
+            return true;
+        }
+
+        if (_navLevel == 0)
+        {
+            if (roots.Count == 0) { ClearNavHighlight(); return false; }
+            _navRootIndex = Clamp(_navRootIndex + (down ? 1 : -1), 0, roots.Count - 1);
+            ApplyNavHighlight(roots[_navRootIndex]);
+            return true;
+        }
+
+        var kids = _navFolder?.Projects.ToList() ?? new List<ProjectItem>();
+        if (kids.Count == 0) return true;
+        _navChildIndex = Clamp(_navChildIndex + (down ? 1 : -1), 0, kids.Count - 1);
+        ApplyNavHighlight(kids[_navChildIndex]);
+        return true;
+    }
+
+    /// <summary>Enter — 폴더면 진입, 프로젝트면 선택.</summary>
+    public void NavCommit()
+    {
+        if (!_navActive) return;
+
+        if (_navLevel == 0)
+        {
+            var roots = _activeRootItems.ToList();
+            if (_navRootIndex < 0 || _navRootIndex >= roots.Count) { ClearNavHighlight(); return; }
+            var item = roots[_navRootIndex];
+
+            if (item is ProjectFolderItem folder)
+            {
+                if (!folder.IsExpanded) { folder.IsExpanded = true; ProjectExpandChanged?.Invoke(); }
+                var kids = folder.Projects.ToList();
+                if (kids.Count == 0) return; // 빈 폴더 — 폴더 하이라이트 유지
+                _navLevel = 1;
+                _navFolder = folder;
+                _navChildIndex = 0;
+                ApplyNavHighlight(kids[0]);
+                return;
+            }
+            if (item is ProjectItem proj)
+            {
+                ClearNavHighlight();
+                ClearSessionMultiSelection();
+                ProjectSelected?.Invoke(proj);
+            }
+            return;
+        }
+
+        var childKids = _navFolder?.Projects.ToList() ?? new List<ProjectItem>();
+        if (_navChildIndex < 0 || _navChildIndex >= childKids.Count) { ClearNavHighlight(); return; }
+        var child = childKids[_navChildIndex];
+        ClearNavHighlight();
+        ClearSessionMultiSelection();
+        ProjectSelected?.Invoke(child);
+    }
+
+    /// <summary>Esc — 폴더 내부면 폴더로 복귀, 루트면 탐색 종료.</summary>
+    public void NavCancel()
+    {
+        if (!_navActive) return;
+        if (_navLevel == 1 && _navFolder != null)
+        {
+            var roots = _activeRootItems.ToList();
+            int fi = roots.IndexOf(_navFolder);
+            _navLevel = 0;
+            _navFolder = null;
+            if (fi >= 0) { _navRootIndex = fi; ApplyNavHighlight(roots[fi]); }
+            else ClearNavHighlight();
+            return;
+        }
+        ClearNavHighlight();
     }
 
     private void SessionRow_MouseEnter(object sender, MouseEventArgs e)
