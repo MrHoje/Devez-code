@@ -674,6 +674,7 @@ public partial class SidebarView : UserControl
     {
         foreach (var panel in FindVisualChildren<ProjectColumnsPanel>(archived ? ArchivedHost : ProjectsHost))
         {
+            panel.AnimateNextLayout();
             panel.InvalidateMeasure();
             panel.InvalidateArrange();
         }

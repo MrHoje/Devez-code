@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using DevezCode.Models;
 
 namespace DevezCode.Views;
@@ -31,6 +33,13 @@ public sealed class ProjectColumnsPanel : Panel
     // 반폭 카드가 놓일 컬럼(0=좌, 1=우). 우열 프로젝트만 1, 1열 폴더 포함 나머지는 좌열.
     private static int ColumnOf(UIElement child) =>
         (child as FrameworkElement)?.DataContext is ProjectItem { Column: 1 } ? 1 : 0;
+
+    // FLIP 애니메이션: 직전 배치 위치 기억 → 다음 배치 때 이전→현재 위치로 슬라이드.
+    private Dictionary<UIElement, Rect> _prevRects = new();
+    private bool _animateArrange;
+
+    /// <summary>다음 Arrange 를 이전 위치에서 슬라이드하는 애니메이션으로 수행하도록 예약.</summary>
+    public void AnimateNextLayout() => _animateArrange = true;
 
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -68,14 +77,19 @@ public sealed class ProjectColumnsPanel : Panel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
+        bool animate = _animateArrange;
+        _animateArrange = false;
+        var newRects = new Dictionary<UIElement, Rect>();
+
         if (!TwoCol)
         {
             double y = 0;
             foreach (UIElement child in InternalChildren)
             {
-                child.Arrange(new Rect(0, y, finalSize.Width, child.DesiredSize.Height));
+                PlaceChild(child, new Rect(0, y, finalSize.Width, child.DesiredSize.Height), animate, newRects);
                 y += child.DesiredSize.Height;
             }
+            _prevRects = newRects;
             return finalSize;
         }
 
@@ -84,25 +98,48 @@ public sealed class ProjectColumnsPanel : Panel
         double rightY = 0;
         foreach (UIElement child in InternalChildren)
         {
+            Rect rect;
             if (IsFullWidthFolder(child))
             {
                 double y = Math.Max(leftY, rightY);
-                child.Arrange(new Rect(0, y, finalSize.Width, child.DesiredSize.Height));
+                rect = new Rect(0, y, finalSize.Width, child.DesiredSize.Height);
                 leftY = rightY = y + child.DesiredSize.Height;
-                continue;
             }
-
-            if (ColumnOf(child) == 0)
+            else if (ColumnOf(child) == 0)
             {
-                child.Arrange(new Rect(0, leftY, columnWidth, child.DesiredSize.Height));
+                rect = new Rect(0, leftY, columnWidth, child.DesiredSize.Height);
                 leftY += child.DesiredSize.Height;
             }
             else
             {
-                child.Arrange(new Rect(columnWidth + Gap, rightY, columnWidth, child.DesiredSize.Height));
+                rect = new Rect(columnWidth + Gap, rightY, columnWidth, child.DesiredSize.Height);
                 rightY += child.DesiredSize.Height;
             }
+            PlaceChild(child, rect, animate, newRects);
         }
+        _prevRects = newRects;
         return finalSize;
+    }
+
+    // 자식을 최종 위치에 배치하고, 애니메이션 예약 시 이전 위치에서 슬라이드(FLIP)한다.
+    private void PlaceChild(UIElement child, Rect rect, bool animate, Dictionary<UIElement, Rect> store)
+    {
+        child.Arrange(rect);
+        store[child] = rect;
+        if (!animate || !_prevRects.TryGetValue(child, out var old)) return;
+
+        double dx = old.X - rect.X;
+        double dy = old.Y - rect.Y;
+        if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5) return;
+
+        if (child.RenderTransform is not TranslateTransform tt)
+        {
+            tt = new TranslateTransform();
+            child.RenderTransform = tt;
+        }
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var dur = TimeSpan.FromMilliseconds(200);
+        tt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(dx, 0, dur) { EasingFunction = ease });
+        tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(dy, 0, dur) { EasingFunction = ease });
     }
 }
