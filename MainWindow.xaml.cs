@@ -181,7 +181,8 @@ public partial class MainWindow : Window
                 _projects.Concat(_archivedProjects)
                     .SelectMany(p => p.Tabs)
                     .OfType<SessionItem>()
-                    .Select(s => s.Id));
+                    .Select(s => s.Id),
+                TerminalSessionManager.Instance.DefaultFontSizePt);
         }
         Sidebar.Projects = _projects;
         Sidebar.ArchivedProjects = _archivedProjects;

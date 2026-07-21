@@ -82,6 +82,18 @@ public sealed class TerminalSessionManager
         }
     }
 
+    /// <summary>새 세션에 적용할 유효 기본 폰트 크기(pt). 설정값이 있으면 그 값, 없으면 WT 프로필 기본값.
+    /// 설정 다이얼로그 표시·기존 세션 마이그레이션·EffectiveFontSizePx 가 모두 이 값을 기준으로 삼아 일관성을 맞춘다.</summary>
+    public int DefaultFontSizePt
+    {
+        get
+        {
+            var saved = SettingsService.LoadTerminalFontSizePt();
+            if (saved > 0) return saved;
+            return (int)Math.Round(Config.FontSizePx / (96.0 / 72.0));
+        }
+    }
+
     /// <summary>현재 활성 스킴을 교체한다. <see cref="Config"/> 는 다른 필드는 그대로 두고 Scheme 만 바뀐 새 인스턴스를 반환.
     /// 기존 세션들의 xterm 테마는 호출자가 ThemeChanged → 브로드캐스트 처리.</summary>
     public WtTerminalConfig WithScheme(WtColorScheme scheme)

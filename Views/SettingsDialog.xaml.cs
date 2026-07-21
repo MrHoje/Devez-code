@@ -399,8 +399,8 @@ public partial class SettingsDialog : UserControl
         _originalIdleSessionShutdownMinutes = SettingsService.LoadIdleSessionShutdownMinutes();
         _selectedIdleSessionShutdownMinutes = _originalIdleSessionShutdownMinutes;
         SelectComboByTag(IdleSessionShutdownCombo, _selectedIdleSessionShutdownMinutes.ToString());
-        var savedFontPt = SettingsService.LoadTerminalFontSizePt();
-        _originalDefaultFontSizePt = savedFontPt > 0 ? savedFontPt : 12; // 미설정(0) → 기본 12pt
+        // 설정값이 있으면 그 값, 없으면 WT 프로필 기본값(보통 12pt) — 실제 새 세션에 적용되는 값과 일치시킨다.
+        _originalDefaultFontSizePt = Services.Terminal.TerminalSessionManager.Instance.DefaultFontSizePt;
         _selectedDefaultFontSizePt = _originalDefaultFontSizePt;
         SelectComboByTag(DefaultFontSizeCombo, _selectedDefaultFontSizePt.ToString());
         _originalMarkdownViewportWidth = SettingsService.LoadMarkdownViewportWidth();

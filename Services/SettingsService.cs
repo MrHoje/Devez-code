@@ -643,12 +643,12 @@ public static class SettingsService
     /// <summary>이 수정 이전에 만든 세션들을 현재 전역 기본 크기로 최초 1회 고정한다.
     /// 방별 override 가 이미 있는 방은 건드리지 않는다(사용자가 지정한 값 존중).
     /// 이후 설정에서 기본값을 바꿔도 기존 세션은 이 크기를 유지하고 새 세션만 새 기본값으로 열린다.</summary>
-    public static void MigrateExistingRoomFontSizesOnce(IEnumerable<string> roomIds)
+    public static void MigrateExistingRoomFontSizesOnce(IEnumerable<string> roomIds, int defaultPt)
     {
         lock (_lock)
         {
             if (Current.TerminalRoomFontMigrated) return;
-            int defPt = Current.TerminalFontSizePt > 0 ? Current.TerminalFontSizePt : 12; // 미설정 = config 기본 12pt
+            int defPt = defaultPt > 0 ? defaultPt : 12; // 방어적 폴백
             foreach (var id in roomIds)
                 if (!string.IsNullOrEmpty(id) && !Current.TerminalRoomFontSizePt.ContainsKey(id))
                     Current.TerminalRoomFontSizePt[id] = defPt.ToString();
