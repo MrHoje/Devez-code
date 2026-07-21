@@ -941,9 +941,6 @@
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                        FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
-                            <TextBlock Grid.Column="2" Text="{Binding ProjectCountText}" Margin="8,0,6,0" VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs11}"
-                                       Foreground="{DynamicResource TextMutedBrush}"/>
                             <!-- 폴더 내부 목록 1열/2열 전환. 전역 "프로젝트 목록 열 수"가 2일 때만 노출. -->
                             <Button Grid.Column="3" Tag="{Binding}"
                                     Click="FolderColumnToggle_Click" Cursor="Arrow"
