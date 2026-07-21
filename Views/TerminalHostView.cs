@@ -207,7 +207,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId), fontSize = RoomFontSizeOverridePx(roomId), reemit }); PinBottomIfInline(roomId); }
+        if (_pageReady) { PostJson(new { type = "show", roomId, agent = AgentFor(roomId), fontSize = RoomEffectiveFontSizePx(roomId), reemit }); PinBottomIfInline(roomId); }
         else _pendingShowRoomId = roomId; // pageReady 때 처리
 
         // 이미 안정화까지 끝난 방이면 즉시 준비 완료 통지 → 로딩 스킵
@@ -224,7 +224,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _initStarted = true;
             await InitWebViewAsync();
         }
-        if (_pageReady) PostJson(new { type = "preload", roomId, agent = AgentFor(roomId), fontSize = RoomFontSizeOverridePx(roomId) });
+        if (_pageReady) PostJson(new { type = "preload", roomId, agent = AgentFor(roomId), fontSize = RoomEffectiveFontSizePx(roomId) });
         else if (!_pendingPreload.Contains(roomId)) _pendingPreload.Add(roomId);
     }
 
@@ -722,10 +722,13 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         DevezCode.Services.DiagLog.Write($"InitWebView: pageReady (IsVisible={IsVisible})");
         _pageReady = true;
         var cfg = TerminalSessionManager.Instance.Config;
+        // 저장된 기본 폰트 pt 는 _fontSizePt 에 캐시하지 않는다.
+        // 캐시하면 이후 설정에서 기본값을 바꿔도 살아있는 인스턴스가 못 읽어(새 세션에 즉시 미반영).
+        // _fontSizePt 는 Ctrl+휠로 사용자가 세션 중 조절한 값에만 쓴다.
         var savedPt = DevezCode.Services.SettingsService.LoadTerminalFontSizePt();
-        if (savedPt > 0) _fontSizePt = savedPt;
-        double fontSizePx = _fontSizePt > 0
-            ? Math.Round(_fontSizePt * PtToPx, 1)
+        double basePt = _fontSizePt > 0 ? _fontSizePt : savedPt;
+        double fontSizePx = basePt > 0
+            ? Math.Round(basePt * PtToPx, 1)
             : cfg.FontSizePx;
         PostJson(new
         {
@@ -749,11 +752,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _pendingLoading = null;
             PostJson(new { type = "loading", on = true, expectW = pl.w, expectH = pl.h, label = pl.label });
         }
-        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomFontSizeOverridePx(pending) }); PinBottomIfInline(pending); }
+        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomEffectiveFontSizePx(pending) }); PinBottomIfInline(pending); }
 
         // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
         foreach (var r in _pendingPreload)
-            if (r != pending) PostJson(new { type = "preload", roomId = r, agent = AgentFor(r), fontSize = RoomFontSizeOverridePx(r) });
+            if (r != pending) PostJson(new { type = "preload", roomId = r, agent = AgentFor(r), fontSize = RoomEffectiveFontSizePx(r) });
         _pendingPreload.Clear();
 
         // 보류된 포커스 적용 — 그 사이 다른 방(채팅 등)으로 전환했으면 훔치지 않음
@@ -1445,13 +1448,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         var saved = DevezCode.Services.SettingsService.LoadTerminalRoomFontSizePt(roomId);
         return saved.HasValue ? Math.Round(saved.Value * PtToPx, 1) : EffectiveFontSizePx;
-    }
-
-    /// <summary>show/preload 시 xterm 생성에 넘길 방별 폰트 override(px). 지정 없으면 null → JS 가 전역 cfg.fontSize 사용.</summary>
-    private static double? RoomFontSizeOverridePx(string roomId)
-    {
-        var saved = DevezCode.Services.SettingsService.LoadTerminalRoomFontSizePt(roomId);
-        return saved.HasValue ? Math.Round(saved.Value * PtToPx, 1) : null;
     }
 
     /// <summary>폰트 크기를 WT 설정 기본값으로 초기화 (Ctrl+0). 영구 저장.</summary>
