@@ -1002,17 +1002,40 @@
       }
       if (isClaude) {
         const caret = scanClaudeBlockCursor();
+        // [진단] "한글이 화면 중앙에 뜸" 재현 시 어느 반전셀을 물었는지 확정용. 스캔은 첫 매치만
+        // 반환하므로, 화면의 모든 반전 빈/스페이스셀 후보를 함께 남겨 중앙 셀이 하단 입력캐럿을
+        // 이겼는지(=오탐) 판별한다. claude 분기는 원래 무로그라 이 증상이 관측 불가였다.
+        try {
+          const cands = [];
+          const buf = term.buffer.active;
+          for (let r = Math.max(0, term.rows - 2); r >= 0; r--) {
+            const ln = buf.getLine(buf.viewportY + r);
+            if (!ln) continue;
+            for (let c = 0; c < term.cols; c++) {
+              const cl = ln.getCell(c);
+              if (!cl || !cl.isInverse()) continue;
+              const g = cl.getChars();
+              if (g === '' || g === ' ') cands.push(r + ',' + c);
+            }
+          }
+          imeDiag('anchor=claude ' + (caret ? caret.row + ',' + caret.col : 'null') +
+            ' rows=' + term.rows + ' vpY=' + buf.viewportY +
+            ' cands[' + cands.length + ']=' + cands.slice(0, 12).join(' '));
+        } catch (e) {}
         if (caret) {
           lastClaudeCaret = caret;
           return caret;
         }
         // blink/repaint 한 프레임에서 반전 셀이 사라져도 좌상단 기본값으로 떨어지지 않게 마지막 정상
         // 좌표를 임시 사용한다. cached 표시는 후속 compositionupdate/60ms 재스캔이 교정할 수 있게 한다.
-        if (lastClaudeCaret) return {
-          row: Math.max(0, Math.min(lastClaudeCaret.row, term.rows - 1)),
-          col: Math.max(0, Math.min(lastClaudeCaret.col, term.cols - 1)),
-          cached: true
-        };
+        if (lastClaudeCaret) {
+          imeDiag('anchor=claude-cached ' + lastClaudeCaret.row + ',' + lastClaudeCaret.col);
+          return {
+            row: Math.max(0, Math.min(lastClaudeCaret.row, term.rows - 1)),
+            col: Math.max(0, Math.min(lastClaudeCaret.col, term.cols - 1)),
+            cached: true
+          };
+        }
       }
       return null;
     }
