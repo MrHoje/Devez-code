@@ -884,6 +884,7 @@
     let frozenImeCaret = null;       // [pin] 이번 조합 동안 동결된 좌표 — 리페인트가 와도 안 바뀜
     let pendingResponseReset = false; // 응답 완료 신호가 조합 중에 도착 — 누락된 end 감시 안전망 플래그
     let responseResetTimer = 0;
+    let pointerRecoverGen = 0;       // 창 비활성 클릭 복구 재시도 세대 — 연속 클릭 시 이전 재시도 폐기
 
     function clearResponseResetTimer() {
       if (!responseResetTimer) return;
@@ -891,16 +892,34 @@
       responseResetTimer = 0;
     }
 
-    function resetImeNow() {
+    // 실제 textarea blur와 강제 IME 리셋이 공유하는 상태 정리. 고착 시 activeElement가 이미
+    // textarea 밖이면 ta.blur()가 blur 이벤트를 다시 내지 않으므로, resetImeNow도 직접 호출한다.
+    // 두 경로가 연달아 호출돼도 멱등이어야 한다(실제 blur가 동기 발화한 뒤 강제 정리가 이어짐).
+    function clearImeAfterBlur(reason) {
+      isImeComposing = false;
+      frozenImeCaret = null;
+      chainCaret = null;
+      clearGhost();
+      maybeRestoreHwCursor(true, reason || 'blur');
+      pendingResponseReset = false;
+      clearResponseResetTimer();
+      el.classList.remove('ime-fixed');
+      el.classList.remove('ime-hide-cursor');
+    }
+
+    function resetImeNow(reason, allowDetachedFocus, syncCaret) {
       clearResponseResetTimer();
       pendingResponseReset = false;
       // 완료 신호는 비활성/백그라운드 방에도 온다. 실제로 이 textarea 를 쓰는 중일 때만
       // 사용자가 수동으로 포커스를 뺐다 넣는 것과 같은 초기화를 수행한다.
-      if (roomId !== activeRoomId || !document.hasFocus() || document.activeElement !== ta) return;
+      // 단, 사용자가 좌상단 고착 조합을 직접 재클릭한 경우에는 activeElement 자체가 이미
+      // 어긋나 있을 수 있으므로 allowDetachedFocus=true 로 DOM 조합 상태까지 강제 정리한다.
+      if (roomId !== activeRoomId || !document.hasFocus() ||
+          (!allowDetachedFocus && document.activeElement !== ta)) return false;
 
       const view = el.querySelector('.composition-view');
       const hadComposition = isImeComposing || !!(view && view.classList.contains('active'));
-      imeDiag('resetImeNow hadComposition=' + hadComposition); // blur→focus 리셋 발화 시점 추적(다음 조합 start 누락 상관관계)
+      imeDiag('resetImeNow reason=' + (reason || '?') + ' hadComposition=' + hadComposition);
       isImeComposing = false;
       if (pendingComposeNewline && pendingComposeNewline.roomId === roomId) pendingComposeNewline = null;
 
@@ -913,16 +932,28 @@
       if (view) { view.classList.remove('active'); view.textContent = ''; }
 
       ta.blur(); // xterm _handleTextAreaBlur 가 textarea/IME 내부 상태를 함께 정리한다.
+      clearImeAfterBlur(reason || 'reset'); // textarea가 이미 비활성이어도 우리 상태 정리는 반드시 수행
       requestAnimationFrame(function () {
-        if (roomId === activeRoomId && document.hasFocus()) term.focus();
+        if (roomId !== activeRoomId || !document.hasFocus()) return;
+        term.focus();
+        // 기존 응답완료/최초포커스 리셋은 동작을 바꾸지 않는다. 사용자가 좌상단 고착을
+        // 재클릭한 경로만 현재 커서 행과 IME 앵커를 즉시 동기화한다.
+        if (syncCaret) {
+          try {
+            const row = term.buffer.active.cursorY;
+            term.refresh(row, row);
+          } catch (e) {}
+          if (typeof el._prepareImeCaret === 'function') el._prepareImeCaret();
+        }
       });
+      return true;
     }
 
     function armStaleCompositionReset() {
       clearResponseResetTimer();
       // 사용자가 응답 완료 직후 이미 다음 문장을 조합 중이면 정상 compositionend 를 우선 기다린다.
       // WebView2 가 end 를 누락한 경우에만 3초 무입력 후 강제 초기화한다.
-      responseResetTimer = setTimeout(resetImeNow, 3000);
+      responseResetTimer = setTimeout(function () { resetImeNow('response-timeout', false); }, 3000);
     }
 
     el._resetImeAfterResponse = function () {
@@ -946,7 +977,7 @@
         if (roomId !== activeRoomId) return;
         term.focus();
         if (document.hasFocus() && document.activeElement === ta) {
-          resetImeNow();
+          resetImeNow('initial-focus', false);
           return;
         }
         if (--retries > 0) setTimeout(tryReset, 32);
@@ -1004,6 +1035,64 @@
       setTimeout(function () {
         if (roomId === activeRoomId && !isImeComposing) rememberClaudeCaret(true);
       }, 80);
+    };
+
+    // 세션 표면 재클릭으로 좌상단 IME 고착 복구. 정상 조합을 매 클릭마다 blur 하면 현재 음절이
+    // 취소되고 WebView2 가 다음 compositionstart 를 떨어뜨릴 수 있으므로, 보이는 조합뷰가
+    // 화면 밖이거나 TUI 입력 구조상 불가능한 (0,0)에 있는 경우에만 실제 blur→focus 한다.
+    // 프로젝트 영역 클릭→세션 복귀가 우연히 만들던 복구 경계를 터미널 안에서 조건부 재현한다.
+    el._recoverStaleImeOnPointerDown = function () {
+      if (roomId !== activeRoomId) return false;
+      const view = el.querySelector('.composition-view');
+      const screen = el.querySelector('.xterm-screen');
+      if (!view || !screen || !view.classList.contains('active')) return false;
+      if (!view.textContent && !ta.value) return false; // 아직 글자가 없는 정상 compositionstart 순간
+
+      const vr = view.getBoundingClientRect();
+      const sr = screen.getBoundingClientRect();
+      const tolerance = 2;
+      const outside = vr.left < sr.left - tolerance || vr.top < sr.top - tolerance ||
+                      vr.left >= sr.right || vr.top >= sr.bottom;
+      const atOrigin = Math.abs(vr.left - sr.left) <= tolerance &&
+                       Math.abs(vr.top - sr.top) <= tolerance;
+
+      // 예상 캐럿은 진단에도 남겨 실제 고착 좌표와 비교할 수 있게 한다. B형의 라이브 커서는
+      // 리페인트 중 출력 좌상단(0,0)에 잠깐 파킹될 수 있으므로 이것만 정상 판정 근거로 쓰지 않는다.
+      let expected = frozenImeCaret;
+      if (!expected && pinsLogicalCaret) {
+        const buf = term.buffer.active;
+        if (buf.cursorY >= 0 && buf.cursorY < term.rows - 1)
+          expected = { row: buf.cursorY, col: buf.cursorX };
+        else
+          expected = lastLogicalCaret;
+      }
+      if (!expected && isClaude) expected = scanClaudeBlockCursor() || lastClaudeCaret;
+
+      // active 조합뷰와 우리 상태가 불일치하면 xterm/WebView2 조합 이벤트가 누락된 상태다.
+      // codex/opencode/claude TUI의 입력란은 구조상 화면 좌상단 셀이 아니므로, 이 대상들의
+      // 보이는 (0,0) 조합은 라이브 논리 커서가 그곳에 파킹됐더라도 고착으로 판정한다.
+      // 일반 셸/gajae/grok은 실제 첫 셀 입력 가능성을 보존하고 상태 불일치일 때만 복구한다.
+      const stale = outside || (atOrigin && (needsCaretFix || !isImeComposing));
+      if (!stale) return false;
+
+      imeDiag('pointer-recover view=' + Math.round(vr.left - sr.left) + ',' +
+              Math.round(vr.top - sr.top) + ' composing=' + isImeComposing +
+              ' expected=' + (expected ? expected.row + ',' + expected.col : 'none'));
+      const recoverGen = ++pointerRecoverGen;
+      let retries = 8;
+      const recover = function () {
+        if (roomId !== activeRoomId || recoverGen !== pointerRecoverGen) return;
+        // 비활성 창을 클릭한 첫 mousedown은 WebView2가 이벤트를 먼저 보내고 document 포커스를
+        // 한 프레임 뒤에 갱신할 수 있다. case 'focus'와 같은 짧은 재시도로 한 번의 클릭에 복구한다.
+        if (!document.hasFocus()) {
+          if (--retries > 0) setTimeout(recover, 32);
+          return;
+        }
+        resetImeNow('pointer-stale', true, true);
+      };
+      if (document.hasFocus()) recover();
+      else requestAnimationFrame(recover);
+      return true;
     };
 
     // ── 에이전트별 이벤트 구독 ──
@@ -1392,15 +1481,7 @@
     // 경우엔 element blur 가 안 올 수 있는데, 그땐 다음 compositionstart 가 상태를 새로 잡고
     // resetImeNow(응답 완료 후 리셋 장치)가 stale 조합을 정리한다.
     ta.addEventListener('blur', function () {
-      isImeComposing = false;
-      frozenImeCaret = null;
-      chainCaret = null;
-      clearGhost();
-      maybeRestoreHwCursor(true, 'blur'); // force — 조합/고스트 상태와 무관하게 원래 테마로
-      pendingResponseReset = false;
-      clearResponseResetTimer();
-      el.classList.remove('ime-fixed');
-      el.classList.remove('ime-hide-cursor'); // 강제 복원과 짝 — saved 가 이미 비어도 잔류 클래스 정리
+      clearImeAfterBlur('blur'); // force 복원 포함 — 조합/고스트 상태와 무관하게 원래 테마로
     });
   }
 
@@ -1442,6 +1523,14 @@
     }
     if (e.isComposing || e.keyCode === 229) return true; // IME 조합 중엔 개입 금지
     if (e.getModifierState && e.getModifierState('AltGraph')) return true; // AltGr = 문자 입력, 가로채지 않음
+    // WebView2+xterm 경로에서는 Ctrl+Backspace가 gjc의 편집기 단축키로 전달되지 않는다.
+    // gjc가 지원하는 Ctrl+W(0x17) 단어 삭제로 변환해 Windows Terminal/Claude/Codex와 맞춘다.
+    if (entry.agent === 'gajae' && e.ctrlKey && !e.shiftKey && !e.altKey &&
+        (e.key === 'Backspace' || e.code === 'Backspace')) {
+      e.preventDefault();
+      post({ type: 'input', roomId: roomId, data: '\x17' });
+      return false;
+    }
 
     const term = entry.term;
     const ctrl = e.ctrlKey, shift = e.shiftKey, alt = e.altKey;
@@ -1671,9 +1760,15 @@
   // (우버튼 SGR 마우스 리포트는 onData 에서 걸러 TUI 의 자체 붙여넣기 중복을 막는다)
   document.addEventListener('mousedown', function (e) {
     post({ type: 'interact' });
-    if (e.button !== 2) return;
     const t = activeRoomId ? terms[activeRoomId] : null;
     if (!t || t.dead) return;
+    // 좌클릭은 원래 xterm 마우스 처리(선택/TUI 클릭)를 그대로 통과시킨다. 복구 함수도
+    // 좌상단 고착이 확정된 경우에만 조합 상태를 비우므로 정상 클릭에는 아무 영향이 없다.
+    if (e.button === 0 && e.target && e.target.closest &&
+        e.target.closest('.term-container') === t.el &&
+        t.el && typeof t.el._recoverStaleImeOnPointerDown === 'function')
+      t.el._recoverStaleImeOnPointerDown();
+    if (e.button !== 2) return;
     if (t.term.hasSelection()) { doCopy(t.term); return; }
     post({ type: 'requestPaste', roomId: activeRoomId });
   }, { capture: true });
