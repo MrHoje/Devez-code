@@ -254,9 +254,23 @@ public partial class MainWindow : Window
                     // wait idle FSW 누락으로 ❗ 고착되는 경우는 SessionBusyService reconcile 이 수렴.
                     if (!busy && !IsClaudeWaitingFileActive(id)) s.IsWaitingChoice = false;
                 }
-                NotifyIfSessionFinished(s, was, busy, () => _sessionBusy.IsRoomActive(id));
+                NotifyIfSessionFinished(s, was, busy, () => _sessionBusy.IsRoomActive(id),
+                    () => SessionBusyService.ConsumeTurnEndMarker(id));
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.FlushPendingModelEffort(id);
+            });
+
+        // 턴종료 마커 보조 경로: main 플래그가 유실된 방은 서브 드레인으로 busy 가 이미 idle 이라
+        // 진짜 Stop 때 busy 전이가 없어 카드가 영영 안 나온다 → 마커 FSW 로 직접 발행을 보장.
+        // 일반 방(busy=running 중 Stop)은 여기서 스킵되고 busy→idle 디바운스 경로가 마커를 소비한다.
+        _sessionBusy.TurnEndMarker += id =>
+            Dispatcher.InvokeAsync(() =>
+            {
+                var s = FindSession(id);
+                if (s == null || s.IsBusy) return;           // busy 전이 경로가 처리(마커는 그쪽에서 소비)
+                if (_sessionBusy.IsRoomActive(id)) return;   // 아직 활성 → 드레인 완료 idle 에서 소비
+                if (!SessionBusyService.ConsumeTurnEndMarker(id)) return; // 이미 소비됨(중복 FSW/디바운스)
+                EmitSessionFinished(s);                      // 마커=Stop 훅 실발화 → 정착 디바운스 불필요
             });
 
         _sessionBusy.WaitingChoiceChanged += (id, waiting) =>
@@ -4010,7 +4024,8 @@ public partial class MainWindow : Window
 
     /// <param name="isStillActive">만료 시점에 방이 실제로 활성인지 파일시스템 진실로 재확인하는 함수(claude 전용).
     /// null 이면 IsBusy 플래그만 사용. BusyChanged(true) 이벤트가 누락돼도 원본을 직접 봐서 오판을 막는다.</param>
-    private void NotifyIfSessionFinished(SessionItem? s, bool wasBusy, bool nowBusy, Func<bool>? isStillActive = null)
+    private void NotifyIfSessionFinished(SessionItem? s, bool wasBusy, bool nowBusy, Func<bool>? isStillActive = null,
+        Func<bool>? isRealFinish = null)
     {
         if (s == null) return;
         if (nowBusy)
@@ -4024,7 +4039,11 @@ public partial class MainWindow : Window
         if (!wasBusy) return; // busy→idle 전이 아님
         // claude/gjc/opencode/grok/codex/kimi/antigravity: 가짜 idle 플랩 가능
         // → isStillActive 있으면 정착 창 + 파일/진실 재확인. 없는 소스만 즉시 확정.
-        if (isStillActive == null) { EmitSessionFinished(s); return; }
+        if (isStillActive == null)
+        {
+            if (isRealFinish == null || isRealFinish()) EmitSessionFinished(s);
+            return;
+        }
         if (_finishDebounce.TryGetValue(s, out var ex)) ex.Stop();
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FinishSettleMs) };
         timer.Tick += (_, __) =>
@@ -4033,6 +4052,14 @@ public partial class MainWindow : Window
             _finishDebounce.Remove(s);
             // 재무장 OR 파일시스템상 아직 활성(서브 run 파일/메인 플래그 존재) → 실제 완료 아님.
             if (s.IsBusy || (isStillActive?.Invoke() ?? false)) return;
+            // isRealFinish(claude=턴종료 마커 소비): Stop/SessionEnd 가 실제 발화한 idle 만 완료로 확정.
+            // main 플래그 유실 방에서 서브 드레인 공백이 idle 로 새어 카드가 Task 마다 찍히던 회귀 차단
+            // (실측: 한 프롬프트에 12장). 마커 없음 = 메인 턴 아직 안 끝남 → 무발행.
+            if (isRealFinish != null && !isRealFinish())
+            {
+                DevezCode.Services.DiagLog.Write($"busy[{s.Id}] 완료카드 스킵: 턴종료 마커 없음(서브 드레인 flap)");
+                return;
+            }
             EmitSessionFinished(s);
         };
         _finishDebounce[s] = timer;

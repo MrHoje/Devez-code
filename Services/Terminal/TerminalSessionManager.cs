@@ -1788,7 +1788,8 @@ public sealed class TerminalSessionManager
             var busy = File.ReadAllText(BusyHookScriptPath);
             return busy.Contains("roomArg") && busy.Contains("last_assistant_message") &&
                    busy.Contains("Touch-LiveSubruns") && busy.Contains("'permission'") &&
-                   busy.Contains("agent_needs_input"); // ❗ Notification type 분기 + 서브 unwait 무시 버전
+                   busy.Contains("agent_needs_input") && // ❗ Notification type 분기 + 서브 unwait 무시 버전
+                   busy.Contains(@"claude\done"); // 턴종료 마커(완료카드 게이트) 버전
         }
         catch { return false; }
     }
@@ -2052,6 +2053,8 @@ public sealed class TerminalSessionManager
             // ghost 방어: SubagentStop 누락(크래시/kill) 대비 1시간 초과 run 파일은 카운트 전 prune.
             // 아주 짧은 서브에서 Stop 훅 프로세스가 Start보다 먼저 끝나는 역전은 agent_id.done fence로 차단.
             // SessionEnd 시 방 run 디렉터리 전량 제거, 앱 시작 시 subruns/main 플래그 wipe(C# SessionBusyService).
+            // 완료카드 게이트: Stop/SessionEnd 만 done\<room>.txt 턴종료 마커를 남긴다. main 플래그가 유실된 방에서
+            // substop 드레인이 만드는 순간 idle(서브 간 공백 flap)은 마커가 없어 카드/알림이 발행되지 않는다.
             const string busyScript = """
                 # DevezCode busy-state hook. Arg1 = running|idle|notify|unwait|pulse|substart|substop. Per-room sidebar spinner state.
                 # 스피너 = (메인 턴 진행중) OR (살아있는 서브에이전트 >=1). 둘 다 room 키 → resume 로 session_id 바뀌어도 안 깨짐.
@@ -2069,6 +2072,9 @@ public sealed class TerminalSessionManager
                   $runDir = Join-Path (Join-Path $env:APPDATA 'DevezCode\claude\subruns') $room
                   $sdir = Join-Path $dir '_state'
                   $mainFile = Join-Path $sdir ('main_' + $room + '.flag')
+                  # 턴 종료 마커: Stop/SessionEnd(진짜 메인 턴 종료)에서만 생성 → C#(MainWindow) 가 완료카드 발행 근거로 소비.
+                  # main 플래그 유실 시 substop 드레인이 만드는 순간 idle(flap)로는 카드가 안 찍히게 하는 게이트.
+                  $doneFile = Join-Path (Join-Path $env:APPDATA 'DevezCode\claude\done') ($room + '.txt')
                   # 같은 agent_id가 resume될 수 있으므로 done 존재만으로 Start를 막으면 안 된다.
                   # 훅 프로세스 생성 시각을 세대로 사용: Stop보다 먼저 생성된 늦은 Start만 폐기한다.
                   $hookStartTicks = [DateTime]::UtcNow.Ticks
@@ -2289,6 +2295,9 @@ public sealed class TerminalSessionManager
                   if ($status -eq 'running') {
                     New-Item -ItemType Directory -Force -Path $sdir | Out-Null
                     Set-Content -LiteralPath $mainFile -Value 'running' -Encoding Ascii -Force  # 메인 턴 진행중 마킹
+                    # 새 턴 시작 → 미소비 턴종료 마커 무효화. 소비 안 된 옛 마커가 이번 턴 중간 flap idle 에
+                    # 오발행되는 것을 막는다(디바운스 취소와 같은 의미 — Stop 직후 1.2s 내 재프롬프트 시 카드 없음도 기존과 동일).
+                    Remove-Item -LiteralPath $doneFile -Force -ErrorAction SilentlyContinue
                     Write-State $busyFile 'running'
                     Write-State $waitFile 'idle'
                     $prompt = ''
@@ -2315,6 +2324,10 @@ public sealed class TerminalSessionManager
                   # status = idle (Stop/SessionEnd) — 메인 턴 종료. 선택지 대기 해제 + main 플래그 clear.
                   Write-State $waitFile 'idle'
                   Remove-Item -LiteralPath $mainFile -Force -ErrorAction SilentlyContinue
+                  # 진짜 턴 종료 증표(완료카드 게이트). busy 'idle' 쓰기보다 먼저 남겨 C# 디바운스가 항상 마커를 본다.
+                  # Stop 시 살아있는 서브가 남아 busy 가 running 을 유지해도 마커는 남는다 → 드레인 완료 idle 에서 소비돼 카드 1장.
+                  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $doneFile) | Out-Null
+                  Write-State $doneFile ([string][DateTime]::UtcNow.Ticks)
                   # 응답 완료 시에도 현재 세션을 추적에 확정 기록 — running 훅을 놓쳤거나(경합) 첫 프롬프트가
                   # 비었어도(이미지·슬래시) 완결된 대화가 재실행 때 새 세션으로 유실되는 것을 막는 최종 앵커.
                   if ($sid) {

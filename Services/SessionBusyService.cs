@@ -15,6 +15,8 @@ public sealed class SessionBusyService : IDisposable
     private static string SubrunsDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude", "subruns");
     private static string StateDir => Path.Combine(Dir, "_state");
+    private static string DoneDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "claude", "done");
 
     // 서브에이전트 run 파일이 이보다 오래되면 SubagentStop 을 못 받은 유령으로 보고 prune(스피너 stuck-ON 방지).
     private static readonly TimeSpan SubMaxAge = TimeSpan.FromHours(1);
@@ -25,6 +27,7 @@ public sealed class SessionBusyService : IDisposable
 
     private FileSystemWatcher? _watcher;
     private FileSystemWatcher? _waitingWatcher;
+    private FileSystemWatcher? _doneWatcher;
     private System.Threading.Timer? _reconcileTimer;
     // 방별 마지막으로 로그에 남긴 busy 값 — watcher 중복 이벤트(쓰기당 여러 Changed)로 같은 값이
     // 반복 기록되는 것을 걸러 diag.log 를 전이 시점만 남긴다. 여러 watcher 스레드에서 접근.
@@ -35,6 +38,11 @@ public sealed class SessionBusyService : IDisposable
 
     /// <summary>(roomId, waiting) — waiting=true 면 선택지/권한 응답 대기 중(❗). 선택지·권한을 구분하지 않고 통합.</summary>
     public event Action<string, bool>? WaitingChoiceChanged;
+
+    /// <summary>(roomId) — 훅 Stop/SessionEnd 가 턴종료 마커(done\&lt;room&gt;.txt)를 썼다.
+    /// main 플래그 유실 방(서브 드레인으로 busy 가 이미 idle)의 진짜 완료도 카드 1장을 보장하는 보조 신호.
+    /// 일반 경로(busy running→idle 전이)는 이 이벤트 없이 마커를 디바운스에서 소비한다.</summary>
+    public event Action<string>? TurnEndMarker;
 
     public void Start()
     {
@@ -78,6 +86,21 @@ public sealed class SessionBusyService : IDisposable
             _waitingWatcher.Changed += (_, e) => EmitWaiting(e.FullPath);
             _waitingWatcher.Created += (_, e) => EmitWaiting(e.FullPath);
             _waitingWatcher.Renamed += (_, e) => EmitWaiting(e.FullPath);
+
+            // 턴종료 마커: 시작 시 stale 마커 wipe(busy 파일과 같은 정책 — 이전 실행 잔재가 세션 재오픈 시
+            // 가짜 완료카드를 만들지 않게). 이후 watcher 로 생성/이동(Write-State 의 tmp→Move)을 감시.
+            Directory.CreateDirectory(DoneDir);
+            foreach (var f in Directory.EnumerateFiles(DoneDir))
+                try { File.Delete(f); } catch { /* 훅 쓰기와 경합 가능, 무시 */ }
+            _doneWatcher?.Dispose();
+            _doneWatcher = new FileSystemWatcher(DoneDir, "*.txt")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+            _doneWatcher.Changed += (_, e) => EmitTurnEnd(e.FullPath);
+            _doneWatcher.Created += (_, e) => EmitTurnEnd(e.FullPath);
+            _doneWatcher.Renamed += (_, e) => EmitTurnEnd(e.FullPath);
 
             // 주기 reconcile: 훅의 단발 busy 쓰기가 레이스/누락으로 진실과 어긋나도 지속 수렴시킨다.
             // (재현 안 되는 간헐 조기소멸의 실질 방어 — 원인 무관하게 run 파일이 살아있으면 스피너 재무장,
@@ -178,6 +201,29 @@ public sealed class SessionBusyService : IDisposable
         }
         catch { }
         return anyLive;
+    }
+
+    private void EmitTurnEnd(string path)
+    {
+        var room = Path.GetFileNameWithoutExtension(path);
+        if (string.IsNullOrEmpty(room)) return;
+        TurnEndMarker?.Invoke(room); // 중복 FSW 이벤트는 구독자(마커 소비 여부)가 멱등 처리
+    }
+
+    /// <summary>훅이 Stop/SessionEnd 에 남긴 턴종료 마커를 소비(삭제)한다. 있었으면 true.
+    /// 완료카드/알림은 이 마커가 있을 때만 발행 — substop 드레인 flap idle 은 마커가 없어 발행이 차단된다.
+    /// 호출부(디바운스 타이머·TurnEndMarker 핸들러)는 모두 UI 스레드로 직렬화돼 이중 소비 경합이 없다.</summary>
+    public static bool ConsumeTurnEndMarker(string roomId)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(roomId)) return false;
+            var f = Path.Combine(DoneDir, roomId + ".txt");
+            if (!File.Exists(f)) return false;
+            File.Delete(f);
+            return true;
+        }
+        catch { return false; } // 삭제 실패(잠금 등)면 미발행 쪽으로 — 중복 카드보다 누락이 덜 해롭다
     }
 
     private void EmitWaiting(string path)
@@ -285,5 +331,7 @@ public sealed class SessionBusyService : IDisposable
         _watcher = null;
         _waitingWatcher?.Dispose();
         _waitingWatcher = null;
+        _doneWatcher?.Dispose();
+        _doneWatcher = null;
     }
 }
