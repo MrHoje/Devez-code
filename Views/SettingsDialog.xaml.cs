@@ -95,7 +95,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.17.8", "2026-07-22", true, new[]
+        ("v1.17.9", "2026-07-23", true, new[]
+        {
+            "Codex 세션에서 커서가 좌측 상단(0,0)에 고정되고 한글 입력 박스가 잘못 표시되던 문제를 개선했습니다.",
+        }),
+        ("v1.17.8", "2026-07-22", false, new[]
         {
             "Claude Code에서 하위 에이전트(Task) 완료 신호가 세션 완료기록에 매번 중복 누적되던 문제를 수정했습니다.",
             "Claude Code 슬래시 명령(/compact 등) 실행 후 세션 완료기록이 남지 않던 문제를 수정했습니다.",
