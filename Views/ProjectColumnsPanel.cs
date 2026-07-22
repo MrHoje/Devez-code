@@ -30,9 +30,14 @@ public sealed class ProjectColumnsPanel : Panel
     private static bool IsFullWidthFolder(UIElement child) =>
         (child as FrameworkElement)?.DataContext is ProjectFolderItem { EffectiveColumns: >= 2 };
 
-    // 반폭 카드가 놓일 컬럼(0=좌, 1=우). 우열 프로젝트만 1, 1열 폴더 포함 나머지는 좌열.
+    // 반폭 카드가 놓일 컬럼(0=좌, 1=우). 우열 프로젝트/1열 폴더는 1, 나머지는 좌열.
     private static int ColumnOf(UIElement child) =>
-        (child as FrameworkElement)?.DataContext is ProjectItem { Column: 1 } ? 1 : 0;
+        (child as FrameworkElement)?.DataContext switch
+        {
+            ProjectItem { Column: 1 } => 1,
+            ProjectFolderItem { EffectiveColumns: 1, Column: 1 } => 1,
+            _ => 0,
+        };
 
     // FLIP 애니메이션: 직전 배치 위치 기억 → 다음 배치 때 이전→현재 위치로 슬라이드.
     private Dictionary<UIElement, Rect> _prevRects = new();

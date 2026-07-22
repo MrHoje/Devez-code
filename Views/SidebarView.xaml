@@ -798,9 +798,34 @@
                                             Height="1" Margin="2,6,2,6"
                                             Background="{DynamicResource LineBrush}">
                                     </Border>
-                                    <ItemsControl Grid.Row="1"
-                                                  ItemsSource="{Binding HiddenSessions}" Tag="True"
-                                                  ItemTemplate="{StaticResource SessionTemplate}"/>
+                                    <!-- 숨김 세션 10개 초과 시 그룹만 독립 스크롤(정확히 10행 높이 = 코드비하인드 계산) + 상하 페이드(완료기록 영역과 동일 방식). -->
+                                    <Grid Grid.Row="1">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      Loaded="HiddenScroll_Loaded"
+                                                      ScrollChanged="HiddenScroll_ScrollChanged">
+                                            <ItemsControl ItemsSource="{Binding HiddenSessions}" Tag="True"
+                                                          ItemTemplate="{StaticResource SessionTemplate}"/>
+                                        </ScrollViewer>
+                                        <Rectangle Height="24" VerticalAlignment="Top" IsHitTestVisible="False"
+                                                   Panel.ZIndex="1" Visibility="Collapsed" Fill="{DynamicResource PanelBrush}">
+                                            <Rectangle.OpacityMask>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                    <GradientStop Offset="0" Color="Black"/>
+                                                    <GradientStop Offset="0.7" Color="Transparent"/>
+                                                </LinearGradientBrush>
+                                            </Rectangle.OpacityMask>
+                                        </Rectangle>
+                                        <Rectangle Height="24" VerticalAlignment="Bottom" IsHitTestVisible="False"
+                                                   Panel.ZIndex="1" Visibility="Collapsed" Fill="{DynamicResource PanelBrush}">
+                                            <Rectangle.OpacityMask>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                    <GradientStop Offset="0.3" Color="Transparent"/>
+                                                    <GradientStop Offset="1" Color="Black"/>
+                                                </LinearGradientBrush>
+                                            </Rectangle.OpacityMask>
+                                        </Rectangle>
+                                    </Grid>
                                 </Grid>
                             </Border>
                             <!-- 상단 그룹: 비분할=전체 탭, 분할=좌측 패널 탭(세션+열린 문서).

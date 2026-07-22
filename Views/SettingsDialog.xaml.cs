@@ -95,7 +95,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.17.5", "2026-07-22", true, new[]
+        ("v1.17.6", "2026-07-22", true, new[]
+        {
+            "2열 보기에서 1열(반폭) 폴더를 드래그로 우측 열에 정렬할 수 있도록 수정했습니다.",
+            "프로젝트 카드 안 숨긴 세션이 10개를 넘으면 카드 내부에서 스크롤되도록 개선했습니다.",
+        }),
+        ("v1.17.5", "2026-07-22", false, new[]
         {
             "Ctrl+Shift 세션 관리 단축키를 개선하고, 터미널 우상단에 단축키 힌트 오버레이를 추가했습니다.",
             "오픈소스 전환 준비에 맞춰 라이선스 고지를 점검·정비했습니다.",

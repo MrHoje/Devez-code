@@ -366,6 +366,11 @@ public sealed class ProjectFolderItem : NotifyBase
 
     private void RecomputeColumns() => EffectiveColumns = ColumnToggleAvailable && TwoColumn ? 2 : 1;
 
+    // 2열 보기에서 1열(반폭) 폴더가 놓인 컬럼(0=좌, 1=우). 드래그로 변경, workspace.json 영속.
+    // 2열(전체폭) 폴더에선 무시. ProjectItem.Column 과 동일 역할.
+    private int _column;
+    public int Column { get => _column; set => Set(ref _column, value == 1 ? 1 : 0); }
+
     private string? _archivedAt;
     public string? ArchivedAt
     {

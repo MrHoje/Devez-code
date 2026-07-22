@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using DevezCode.Models;
 using DevezCode.Services;
@@ -827,6 +828,59 @@ public partial class SidebarView : UserControl
             HiddenSessionVisibilityChanged?.Invoke();
     }
         e.Handled = true;
+    }
+
+    // ── 숨김 세션 그룹: 10개 초과 시 정확히 10행 높이로 제한 + 상하 페이드(완료기록 영역과 동일 방식) ──
+    private void HiddenScroll_Loaded(object sender, RoutedEventArgs e)
+    {
+        var sv = (ScrollViewer)sender;
+        UpdateHiddenScrollHeight(sv);
+        UpdateHiddenScrollFade(sv);
+    }
+
+    private void HiddenScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        var sv = (ScrollViewer)sender;
+        if (e.ExtentHeightChange != 0 || e.ViewportHeightChange != 0)
+            UpdateHiddenScrollHeight(sv);
+        UpdateHiddenScrollFade(sv);
+    }
+
+    /// <summary>10개 이하는 제한 없음, 초과면 앞 10개 행의 실제 높이 합으로 MaxHeight 고정.</summary>
+    private static void UpdateHiddenScrollHeight(ScrollViewer sv)
+    {
+        if (sv.Content is not ItemsControl ic) return;
+        if (ic.Items.Count <= 10)
+        {
+            if (!double.IsPositiveInfinity(sv.MaxHeight)) sv.MaxHeight = double.PositiveInfinity;
+            return;
+        }
+        double h = 0; int counted = 0;
+        for (int i = 0; i < ic.Items.Count && counted < 10; i++)
+        {
+            if (ic.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement fe && fe.ActualHeight > 0)
+            {
+                h += fe.ActualHeight;
+                counted++;
+            }
+        }
+        if (counted == 10 && h > 0 && System.Math.Abs(sv.MaxHeight - h) > 0.5) sv.MaxHeight = h;
+    }
+
+    private static void UpdateHiddenScrollFade(ScrollViewer sv)
+    {
+        if (sv.Parent is not Grid g) return;
+        const double tol = 1.0;
+        bool scrollable = sv.ScrollableHeight > tol;
+        bool top = scrollable && sv.VerticalOffset > tol;
+        bool bottom = scrollable && sv.VerticalOffset < sv.ScrollableHeight - tol;
+        foreach (var r in g.Children.OfType<Rectangle>())
+        {
+            if (r.VerticalAlignment == VerticalAlignment.Top)
+                r.Visibility = top ? Visibility.Visible : Visibility.Collapsed;
+            else if (r.VerticalAlignment == VerticalAlignment.Bottom)
+                r.Visibility = bottom ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private const double ProjectSessionSearchRowHeight = 37;
@@ -1785,6 +1839,20 @@ public partial class SidebarView : UserControl
     private void TryStartFolderDrag(ProjectFolderItem folder)
         => TryStartRootDrag(folder, folder.IsArchived);
 
+    // 루트 카드의 컬럼(0/1) 읽기·쓰기 — 프로젝트와 1열(반폭) 폴더 공통.
+    private static int ColumnOfItem(object item) => item switch
+    {
+        ProjectItem project => project.Column,
+        ProjectFolderItem folder => folder.Column,
+        _ => 0,
+    };
+
+    private static void SetColumnItem(object item, int column)
+    {
+        if (item is ProjectItem project) project.Column = column;
+        else if (item is ProjectFolderItem folder) folder.Column = column;
+    }
+
     private void TryStartRootDrag(object item, bool archived)
     {
         var host = archived ? ArchivedHost : ProjectsHost;
@@ -1809,10 +1877,14 @@ public partial class SidebarView : UserControl
         var visibleItems = rows.Select(row => row.Item).ToList();
         var panel = FindVisualChildren<ProjectColumnsPanel>(host).FirstOrDefault();
         var visibleRoots = archived ? _archivedRootItems : _activeRootItems;
-        int originalColumn = item is ProjectItem sourceProject ? sourceProject.Column : 0;
+        // 열 배정 가능: 2열 설정 + (프로젝트 또는 반폭 1열 폴더). 전체폭 2열 폴더는 배정 없음.
+        bool colAssignable = _projectColumns >= 2 &&
+            (item is ProjectItem || item is ProjectFolderItem { EffectiveColumns: 1 });
+        int originalColumn = ColumnOfItem(item);
         List<object>? lastFolderPreviewOrder = null;
         double? folderHitTestX = null;
-        if (_projectColumns >= 2 && item is ProjectFolderItem)
+        // 좌¼ 편향 히트테스트는 전체폭(2열) 폴더 전용. 반폭 폴더는 프로젝트처럼 포인터 위치로 판정.
+        if (_projectColumns >= 2 && item is ProjectFolderItem { EffectiveColumns: >= 2 })
         {
             try
             {
@@ -1830,18 +1902,17 @@ public partial class SidebarView : UserControl
             if (item is ProjectFolderItem && _rootDrag != null)
                 lastFolderPreviewOrder = targetItem == null ? null : preview;
 
-            ProjectItem? project = item as ProjectItem;
-            int targetColumn = project == null || targetItem == null || double.IsPositiveInfinity(gridMidX)
+            int targetColumn = !colAssignable || targetItem == null || double.IsPositiveInfinity(gridMidX)
                 ? originalColumn
                 : Mouse.GetPosition(this).X >= gridMidX ? 1 : 0;
             bool orderChanged = !visibleRoots.SequenceEqual(preview);
-            bool columnChanged = project != null && project.Column != targetColumn;
+            bool columnChanged = colAssignable && ColumnOfItem(item) != targetColumn;
             if (!orderChanged && !columnChanged) return;
 
             void ApplyPreviewLayout()
             {
                 SyncCollection(visibleRoots, preview);
-                if (project != null) project.Column = targetColumn;
+                if (colAssignable) SetColumnItem(item, targetColumn);
                 panel?.InvalidateMeasure();
                 panel?.InvalidateArrange();
             }
@@ -1865,13 +1936,12 @@ public partial class SidebarView : UserControl
             {
                 bool columnChanged = false;
                 bool columnChangedFromOriginal = false;
-                if (sourceItem is ProjectItem project && _projectColumns >= 2 &&
-                    !double.IsPositiveInfinity(gridMidX))
+                if (colAssignable && !double.IsPositiveInfinity(gridMidX))
                 {
                     int targetColumn = Mouse.GetPosition(this).X >= gridMidX ? 1 : 0;
-                    columnChanged = project.Column != targetColumn;
-                    project.Column = targetColumn;
-                    columnChangedFromOriginal = project.Column != originalColumn;
+                    columnChanged = ColumnOfItem(sourceItem) != targetColumn;
+                    SetColumnItem(sourceItem, targetColumn);
+                    columnChangedFromOriginal = ColumnOfItem(sourceItem) != originalColumn;
                 }
 
                 bool orderChanged;
@@ -1897,15 +1967,15 @@ public partial class SidebarView : UserControl
                 return Task.CompletedTask;
             },
             exactFollow: true,
-            commitUnchanged: item is ProjectItem && _projectColumns >= 2,
+            commitUnchanged: colAssignable,
             reorderPreviewChanged: PreviewRootMove,
             hitTestSlots: true,
             suppressDisplacement: _projectColumns >= 2,
             preserveRowOrder: true,
             hitTestXOverride: folderHitTestX,
-            useLiveLayoutPlaceholder: _projectColumns >= 2 && item is ProjectFolderItem,
+            useLiveLayoutPlaceholder: _projectColumns >= 2 && item is ProjectFolderItem { EffectiveColumns: >= 2 },
             useFixedLayoutPlaceholder: _projectColumns < 2,
-            useLogicalHitTestBounds: _projectColumns >= 2 && item is ProjectItem,
+            useLogicalHitTestBounds: colAssignable,
             ghostSource: folderGhostSource,
             ghostBackgroundTarget: folderGhostSource,
             ghostBackground: folderGhostBackground,
