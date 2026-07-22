@@ -59,6 +59,24 @@
      미숨김 고착 증상의 용의자. xterm 은 네이티브 캐럿을 쓸 일이 전혀 없으므로 항상 투명. */
   .xterm-helper-textarea { caret-color: transparent !important; }
 
+  /* [커서숨김 — DOM 렌더러 경로] 2026-07-22 확진: xterm6 DOM 렌더러는 테마 스타일시트가
+     화면에 반영되지 않는 고착이 생긴다(ThemeService 색은 위장(#배경색)인데 페인트는 생성
+     시점의 원본 커서색 #FFFFFF — state 스냅샷 실측). 테마 색 교체는 그 스타일시트를 경유
+     하므로 고착에 무력 → 커서 DOM 요소를 우리 정적 CSS 로 직접 무력화한다(재생성이 없어
+     고착 불가능). 글자(color)는 남기고 블록/바/밑줄 장식과 블링크 애니메이션만 제거 —
+     opacity:0 으로 통째 숨기면 커서 밑 글자까지 사라진다(중간 편집 시 글자 증발 회귀).
+     선택자는 렌더러 자체 규칙(.xterm-dom-renderer-owner-N …, !important 포함)보다 구체도가
+     높아야 함. 블링크 키프레임의 background-color 는 !important 선언이 이긴다(cascade 규칙).
+     WebGL 렌더러는 canvas 라 CSS 무효 — 테마 위장(hideHwCursor)이 계속 담당(서비스 색 직독이라 고착 무관). */
+  .term-container.ime-hide-cursor .xterm .xterm-cursor.xterm-cursor-block {
+    background-color: transparent !important;
+    color: inherit !important;
+    animation: none !important;
+  }
+  .term-container.ime-hide-cursor .xterm .xterm-cursor.xterm-cursor-outline { outline: none !important; }
+  .term-container.ime-hide-cursor .xterm .xterm-cursor.xterm-cursor-bar { box-shadow: none !important; animation: none !important; }
+  .term-container.ime-hide-cursor .xterm .xterm-cursor.xterm-cursor-underline { border-bottom: none !important; animation: none !important; }
+
   /* IME 확정 직후 PTY echo 도착 전까지 확정 글자를 미리 그리는 고스트(연타 깜빡임 제거).
      배경 투명 — echo 가 같은 글리프를 그리는 순간 이음새 없이 겹쳐졌다가 제거된다. */
   .ime-echo-ghost {
@@ -703,6 +721,9 @@
     function hideHwCursor() {
       // 조합 재개 — 지연 복원이 대기 중이면 취소(콜백 가드로도 무산되지만 상태를 명료하게).
       if (cursorRestoreTimer) { clearTimeout(cursorRestoreTimer); cursorRestoreTimer = 0; }
+      // DOM 렌더러 실숨김 — 테마 위장은 스타일시트 고착에 무력하므로 CSS 클래스가 1차 수단
+      // (css grep: `ime-hide-cursor`). 멱등이라 이미 숨김 상태여도 무해.
+      el.classList.add('ime-hide-cursor');
       const th = term.options.theme || {};
       const bg = th.background || '#0C0C0C';     // 폴백은 기본 다크 배경(테마에 background 항상 있음)
       if (savedCursorColors) {
@@ -745,6 +766,7 @@
       else th.cursorAccent = savedCursorColors.cursorAccent;
       savedCursorColors = null;
       term.options.theme = th;
+      el.classList.remove('ime-hide-cursor');
       imeDiag('cursor-restore ' + reason + rendererTag());
     }
     function maybeRestoreHwCursor(force, reason) {
@@ -768,6 +790,7 @@
       // 그 조합의 남은 구간은 커서가 보인다(다음 compositionstart 가 재위장). 추적 로그만 남긴다.
       if (savedCursorColors) imeDiag('themeswap-discard-hidden composing=' + isImeComposing);
       savedCursorColors = null;
+      el.classList.remove('ime-hide-cursor');
     };
 
     // 고스트 제거 + (조합도 끝났다면) 커서 복원. 모든 고스트 소멸 경로가 이 함수 하나를
@@ -1057,9 +1080,11 @@
     // 바꾸는지 관측 — 위장은 색 기반이라 영향이 없어야 정상이지만, 고착 시점과의 상관관계를
     // 남긴다(예: 특정 UI 상태 진입 후부터 증상 시작). 항상 false 반환 = 기본 처리 계속.
     if (pinsLogicalCaret) {
+      let lastDecscusr = null; // codex 는 렌더 프레임마다 DECSCUSR 0 을 연사(~20Hz) — 값 변화만 기록(로그 로테이션 방지)
       try {
         term.parser.registerCsiHandler({ intermediates: ' ', final: 'q' }, function (params) {
-          imeDiag('DECSCUSR ' + (params && params[0]));
+          const v = params && params[0];
+          if (v !== lastDecscusr) { lastDecscusr = v; imeDiag('DECSCUSR ' + v); }
           return false;
         });
         term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, function (params) {
@@ -1219,8 +1244,17 @@
         const cEl = el.querySelector('.xterm-cursor');
         const tcs = getComputedStyle(ta);
         const vEl = el.querySelector('.composition-view');
+        // DOM 렌더러 테마 스타일시트의 실제 커서 규칙 색 — svc 와 다르면 스타일시트 고착 확진.
+        const sheetCur = [];
+        try {
+          el.querySelectorAll('style').forEach(function (s) {
+            const m = (s.textContent || '').match(/\.xterm-cursor\.xterm-cursor-block \{ background-color: ([^;]+);/);
+            if (m) sheetCur.push(m[1]);
+          });
+        } catch (e) {}
         imeDiag('state ' + tag +
-          ' svc=' + svc + ' themeCur=' + th.cursor + ' bg=' + th.background +
+          ' svc=' + svc + ' sheet=' + (sheetCur.join('|') || 'none') +
+          ' themeCur=' + th.cursor + ' bg=' + th.background +
           ' blink=' + term.options.cursorBlink + ' saved=' + (savedCursorColors ? 1 : 0) +
           ' cursorEl=' + (cEl ? getComputedStyle(cEl).backgroundColor : 'none') +
           ' ta=[op:' + tcs.opacity + ' ' + tcs.left + ',' + tcs.top + ' ' + tcs.width + 'x' + tcs.height +
@@ -1366,6 +1400,7 @@
       pendingResponseReset = false;
       clearResponseResetTimer();
       el.classList.remove('ime-fixed');
+      el.classList.remove('ime-hide-cursor'); // 강제 복원과 짝 — saved 가 이미 비어도 잔류 클래스 정리
     });
   }
 
