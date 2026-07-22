@@ -4190,7 +4190,10 @@ public partial class MainWindow : Window
                 s.LastMessage = "";
                 return true;
             }
-            return false; // 다른 슬래시 명령은 헤더 변경 X
+            // /compact 등 다른 슬래시 명령도 입력 그대로 표시(완료기록에 남김)
+            if (s.LastMessage == m) return false;
+            s.LastMessage = m;
+            return true;
         }
         if (s.LastMessage == m) return false;
         s.LastMessage = m;
