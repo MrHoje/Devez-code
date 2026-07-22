@@ -8,7 +8,7 @@ DevezCode 안에 **채팅 메신저 형태의 새 뷰**를 만든다. 사용자�
 AI 응답·도구 실행 내역이 말풍선/카드로 렌더된다. 뒤에서는 CLI 에이전트(claude, codex)를
 **헤드리스 스트리밍 모드**로 상주 실행하며, 터미널(TUI) 화면은 노출하지 않는다.
 
-- 대상 에이전트(빌드1): **claude, codex** 둘.
+- 대상 에이전트(빌드1): **claude 전용**. codex는 백로그(§12) — 어댑터 구조만 확장 가능하게 둔다.
 - 통합 위치: 기존 DevezCode 내부의 **새 뷰**(기존 세션·테마·워크스페이스 인프라 재사용).
 - 표시 수준: **A+** — 답변 텍스트 + 도구 호출을 접이식 카드로(파일 수정은 `+n −m`, 클릭 시 diff/내용).
 - 인증: **claude/codex 구독 로그인 그대로 사용**(API 종량과금 금지). 프로세스는 CLI 자체 인증을 승계.
@@ -36,8 +36,8 @@ ChatRoomView (WebView2 HTML 채팅 UI)
 AgentChatSession (방당 1개, 상주 프로세스 래퍼)
     │  stdin: stream-json user 메시지 / stdout: JSONL 이벤트
     ├── IAgentStreamAdapter
-    │     ├── ClaudeStreamAdapter   (검증됨)
-    │     └── CodexStreamAdapter    (구현 시 codex 스파이크로 확정)
+    │     ├── ClaudeStreamAdapter   (빌드1, 검증됨)
+    │     └── CodexStreamAdapter    (백로그 — 인터페이스만 확장 가능하게)
     ▼
 공통 ChatEvent 모델  →  UI 렌더러(말풍선/카드 매핑)
 ```
@@ -65,7 +65,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
   `system/hook_*`.
 - session_id는 모든 이벤트에 포함 → `init`에서 캡처해 방에 저장.
 
-### codex (구현 시 스파이크로 확정)
+### codex (백로그 — 착수 시 스파이크로 확정)
 - 후보: `codex exec "<msg>" --json --sandbox workspace-write [-i <img>]`, 이어가기 `codex exec resume <id> --json`.
 - 상주 스트리밍은 `codex proto`가 후보이나 **미검증**. 코덱스 어댑터 착수 시 30분 스파이크로
   (a) 멀티턴 이어가기 (b) --json 이벤트 스키마 (c) 자동승인 sandbox 동작을 확정한 뒤 구현.
@@ -109,7 +109,8 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
 
 ## 9. UI 구성
 
-- 방 목록(기존 세션 매니저와 유사) + 방 생성(`ClaudeCodeRoomDialog` 재사용/확장: 이름·디렉토리·에이전트 선택).
+- 방 목록/생성: **기존 세션 매니저에 통합** — 별도 탭이 아니라 세션 목록에 "채팅방" 타입으로 공존.
+  방 생성은 `ClaudeCodeRoomDialog` 재사용/확장(이름·디렉토리 + 채팅방 여부).
 - 채팅 화면: 상단 헤더(방 이름·에이전트·usage), 중앙 대화 스크롤, 하단 입력창(멀티라인·전송·이미지 첨부·Stop).
 - 스타일: `AppStyles.xaml` 전역 스타일 준수. 텍스트/클릭 컨트롤은 `.knowledge/텍스트렌더링규칙.md`,
   `.knowledge/컨트롤추가규칙.md` 준수.
@@ -136,7 +137,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose \
 - 기존 대화형 세션 id import(실시간 인계 아님, resume만).
 - 슬래시 커맨드 UI(모델 선택 드롭다운 등 개별 기능은 필요 시 별도).
 - `@파일` 자동완성, MCP 도구 상세 표시, 대화 내보내기, 병렬 다중 방 최적화.
-- codex `proto` 상주 스트리밍(빌드1은 exec+resume로 시작 가능).
+- **codex 지원 전체**(CodexStreamAdapter, exec+resume 또는 proto — 착수 시 스파이크).
 
 ## 13. 미검증 / 리스크
 
