@@ -53,6 +53,12 @@
     top: var(--ime-top) !important;
   }
 
+  /* 네이티브 캐럿 원천 차단: 조합 중 xterm 은 textarea 를 화면 밖(-9999em)이 아니라
+     실좌표·실크기로 옮긴다(IME 후보창 앵커링). 그 상태에서 opacity:0 이 어떤 이유로든
+     무력화되면 브라우저 캐럿이 조합 위치(= "입력 글자 왼쪽")에서 깜빡인다 — codex 커서
+     미숨김 고착 증상의 용의자. xterm 은 네이티브 캐럿을 쓸 일이 전혀 없으므로 항상 투명. */
+  .xterm-helper-textarea { caret-color: transparent !important; }
+
   /* IME 확정 직후 PTY echo 도착 전까지 확정 글자를 미리 그리는 고스트(연타 깜빡임 제거).
      배경 투명 — echo 가 같은 글리프를 그리는 순간 이음새 없이 겹쳐졌다가 제거된다. */
   .ime-echo-ghost {
@@ -1047,6 +1053,26 @@
       } catch (e) {}
     }
 
+    // [고착 수사] codex/opencode 가 커서 스타일(DECSCUSR)·블링크(DECSET/RST 12)를 런타임에
+    // 바꾸는지 관측 — 위장은 색 기반이라 영향이 없어야 정상이지만, 고착 시점과의 상관관계를
+    // 남긴다(예: 특정 UI 상태 진입 후부터 증상 시작). 항상 false 반환 = 기본 처리 계속.
+    if (pinsLogicalCaret) {
+      try {
+        term.parser.registerCsiHandler({ intermediates: ' ', final: 'q' }, function (params) {
+          imeDiag('DECSCUSR ' + (params && params[0]));
+          return false;
+        });
+        term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, function (params) {
+          for (let i = 0; i < params.length; i++) if (params[i] === 12) imeDiag('DECSET ?12h blink-on');
+          return false;
+        });
+        term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, function (params) {
+          for (let i = 0; i < params.length; i++) if (params[i] === 12) imeDiag('DECRST ?12l blink-off');
+          return false;
+        });
+      } catch (e) {}
+    }
+
     // 이번 조합의 앵커 좌표를 결정한다. 우선순위:
     //  B형: ① chain 예약분(직전 확정의 전진 좌표, 250ms 내 1회) → ② 라이브 논리 커서
     //       → ③ 마지막 유효 좌표(커서가 순간 범위 밖일 때)
@@ -1174,6 +1200,37 @@
     //                     ※ 전부 같은 keydown 처리 안 — 이때 echo 는 아직 미도착(chain 이 필요한 이유)
     //  · 스페이스 확정:   keydown(32, isComposing=true) → compositionend → keyup(32, isComposing=false)
     //  · Enter 확정:      keydown(229) → compositionend → keydown(13, isComposing=false) (2번째 keydown)
+    // [고착 수사] "한번 발생하면 세션 재실행까지 지속"되는 커서 깜빡임의 층 판별용 스냅샷.
+    // 우리 상태 머신 로그(hide/restore)가 깨끗한데도 증상이 보이므로, 고착은 옵션 레벨 아래
+    // (테마 서비스 / 렌더러 / textarea 네이티브 캐럿) 어딘가다 — 조합 중 실제 페인트 상태를 찍는다.
+    //  · svc: xterm ThemeService 가 실제로 든 커서색(위장이 서비스까지 갔는지)
+    //  · cursorEl: 커서 DOM 요소의 계산된 배경색(위장이 페인트까지 갔는지 — DOM 렌더러)
+    //  · ta: textarea 계산 스타일(opacity/좌표/크기/caret-color — 네이티브 캐럿 노출 여부)
+    //  · view: 조합뷰 active/좌표
+    let lastImeStateDumpAt = 0;
+    function dumpImeState(tag) {
+      try {
+        let svc = '?';
+        try {
+          const c = term._core && term._core._themeService && term._core._themeService.colors;
+          if (c && c.cursor && c.cursor.css) svc = c.cursor.css;
+        } catch (e) { svc = 'err'; }
+        const th = term.options.theme || {};
+        const cEl = el.querySelector('.xterm-cursor');
+        const tcs = getComputedStyle(ta);
+        const vEl = el.querySelector('.composition-view');
+        imeDiag('state ' + tag +
+          ' svc=' + svc + ' themeCur=' + th.cursor + ' bg=' + th.background +
+          ' blink=' + term.options.cursorBlink + ' saved=' + (savedCursorColors ? 1 : 0) +
+          ' cursorEl=' + (cEl ? getComputedStyle(cEl).backgroundColor : 'none') +
+          ' ta=[op:' + tcs.opacity + ' ' + tcs.left + ',' + tcs.top + ' ' + tcs.width + 'x' + tcs.height +
+          ' caret:' + (tcs.caretColor || '?') + ']' +
+          ' view=' + (vEl ? ((vEl.classList.contains('active') ? 'on' : 'off') + ' ' +
+                             getComputedStyle(vEl).left + ',' + getComputedStyle(vEl).top) : 'none') +
+          rendererTag());
+      } catch (e) { try { imeDiag('state err ' + (e && e.message)); } catch (e2) {} }
+    }
+
     function beginComposition() {
       isImeComposing = true;
       frozenImeCaret = null;              // 새 조합 — 앵커를 새로 잡는다(직전 동결분 폐기)
@@ -1184,6 +1241,14 @@
       // 블록커서가 실좌표에 나타난 뒤 교정하기 위함. B형은 이미 동결돼 있어 no-op.
       // (조합이 60ms 안에 끝나면 apply 의 isImeComposing 가드가 무해하게 흡수)
       setTimeout(apply, 60);
+      // 고착 수사 스냅샷 — 조합/pin 이 자리잡은 뒤(120ms) 실제 페인트 상태. 500ms 스로틀(저볼륨).
+      if (pinsLogicalCaret) {
+        const now = Date.now();
+        if (now - lastImeStateDumpAt > 500) {
+          lastImeStateDumpAt = now;
+          setTimeout(function () { if (isImeComposing) dumpImeState('compose'); }, 120);
+        }
+      }
     }
     ta.addEventListener('compositionstart', beginComposition);
     ta.addEventListener('compositionupdate', function (e) {
