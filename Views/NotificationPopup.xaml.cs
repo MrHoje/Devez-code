@@ -17,7 +17,7 @@ public partial class NotificationPopup : Window
 {
     private static readonly List<NotificationPopup> _active = new();
     // 모서리 여백(DIP) — 기존 12에서 절반으로. 알림 간 간격은 유지.
-    private const double Margin = 6, Gap = 8;
+    private const double EdgeMargin = 6, Gap = 8;
 
     private readonly Action? _onClick;
     private DispatcherTimer? _autoClose;
@@ -65,7 +65,7 @@ public partial class NotificationPopup : Window
         }
     }
 
-    private void OnClosed(object sender, EventArgs e)
+    private void OnClosed(object? sender, EventArgs e)
     {
         if (_active.Remove(this)) LayoutAll();
     }
@@ -79,7 +79,7 @@ public partial class NotificationPopup : Window
         bool bottom = pos is "br" or "bl";
         var (waPx, sx, sy) = MonitorHelper.GetNotificationTarget();
 
-        double marginX = Margin * sx, marginY = Margin * sy, gapPx = Gap * sy;
+        double marginX = EdgeMargin * sx, marginY = EdgeMargin * sy, gapPx = Gap * sy;
         double offset = 0;
         for (int i = _active.Count - 1; i >= 0; i--)
         {

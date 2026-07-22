@@ -40,7 +40,10 @@ public static class Authenticode
         try
         {
             // CreateFromSignedFile 은 leaf 인증서만 반환(파일 변조 여부는 검증 안 함) → 진위는 IsTrust 가 담당.
+            // .NET 9 에서 obsolete(SYSLIB0057) 지만 서명된 PE 에서 leaf 인증서를 얻는 직접 대체 API 가 없어 국소 억제.
+#pragma warning disable SYSLIB0057
             using var cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
+#pragma warning restore SYSLIB0057
             return cert.Thumbprint;
         }
         catch { return null; }

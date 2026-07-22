@@ -37,8 +37,7 @@ public sealed class TomlParser
             else
             {
                 // 최상위 key=value (테이블 헤더 없이)
-                var kv = ParseKeyValue(root);
-                if (kv != null) { }
+                ParseKeyValue(root);
             }
         }
         return root;

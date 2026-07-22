@@ -10,7 +10,9 @@ namespace DevezCode.Views;
 public partial class MonacoDiffHostView : UserControl, IFileTabEditor, IDisposable
 {
     public event EventHandler? CloseRequested;
-    public event EventHandler? DirtyChanged;   // diff 는 dirty 없음(미사용)
+#pragma warning disable CS0067 // diff 는 dirty 없음 — IFileTabEditor 요구 이벤트라 선언만 하고 발화하지 않음
+    public event EventHandler? DirtyChanged;
+#pragma warning restore CS0067
     public event EventHandler? Interacted;
 
     private readonly string _repo;

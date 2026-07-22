@@ -25,7 +25,6 @@ public partial class McpManagerDialog : UserControl
     private readonly List<McpServer> _original = new();  // 현재 백엔드의 디스크 스냅샷
     private readonly Dictionary<string, Button> _tabButtons = new();
     private bool _isLoading;
-    private bool _suppressTabDirtyCheck;
     private IMcpBackend? _currentBackend;
     private IDisposable? _configWatcher;
     // 자기 자신이 Save 한 직후의 파일 tick. watcher 콜백에서 이 tick 보다 같거나
@@ -95,7 +94,7 @@ public partial class McpManagerDialog : UserControl
         var backend = McpBackendRegistry.Get(id);
         if (backend == null || backend == _currentBackend) return;
 
-        if (!_suppressTabDirtyCheck && HasUnsavedChanges())
+        if (HasUnsavedChanges())
         {
             var save = ConfirmDialog.Show("저장되지 않은 변경사항",
                 $"'{_currentBackend?.DisplayName}' 탭에 저장되지 않은 변경이 있습니다.\n저장하고 '{backend.DisplayName}' 탭으로 이동할까요?",

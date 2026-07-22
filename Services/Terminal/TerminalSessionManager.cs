@@ -2786,14 +2786,14 @@ public sealed class TerminalSessionManager
                 case "grok":
                     var gk = GrokHookService.LoadTrackedSessionId(roomId);
                     var gkDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
-                    if (GrokHookService.IsRootTrackedSession(roomId, gk)
+                    if (gk != null && GrokHookService.IsRootTrackedSession(roomId, gk)
                         && FindGrokChatHistoryPathForWorkingDirectory(gk, gkDir) != null
                         && gk != SettingsService.LoadGrokRoomSession(roomId))
                         SettingsService.SaveGrokRoomSession(roomId, gk);
                     break;
                 case "antigravity":
                     var ag = AntigravityHookService.LoadTrackedSessionId(roomId);
-                    if (AntigravityHookService.IsRootTrackedSession(roomId, ag)
+                    if (ag != null && AntigravityHookService.IsRootTrackedSession(roomId, ag)
                         && AntigravityConversationExists(ag)
                         && ag != SettingsService.LoadAntigravityRoomSession(roomId))
                         SettingsService.SaveAntigravityRoomSession(roomId, ag);

@@ -211,7 +211,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
         // 이미 안정화까지 끝난 방이면 즉시 준비 완료 통지 → 로딩 스킵
         if (_readyNotified.Contains(roomId))
-            Dispatcher.BeginInvoke(() => TerminalReady?.Invoke(roomId));
+            _ = Dispatcher.BeginInvoke(() => TerminalReady?.Invoke(roomId));
     }
 
     /// <summary>화면에 표시하지 않고 방의 xterm 인스턴스+ConPTY 세션만 미리 생성(백그라운드 로드).

@@ -224,7 +224,6 @@ public sealed class CodexMcpBackend : IMcpBackend
     {
         var result = new List<string>(lines.Count);
         bool skip = false;
-        int skipDepth = 0;
         var sectionRx = new Regex(@"^\s*\[(mcp_servers(?:\.[^\]]*)?)\]");
         foreach (var raw in lines)
         {
@@ -232,7 +231,6 @@ public sealed class CodexMcpBackend : IMcpBackend
             if (sectionRx.IsMatch(line))
             {
                 skip = true;
-                skipDepth = 0;
                 continue;
             }
             if (skip)

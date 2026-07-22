@@ -258,10 +258,9 @@ public sealed class ClaudeMcpBackend : IMcpBackend
                 // 프로젝트 객체 통째로 복사 ( 다른 필드 보존 ) 후 disabledMcpServers 만 갱신
                 w.WritePropertyName(proj.Name);
                 w.WriteStartObject();
-                bool hasDisabled = false;
                 foreach (var p in proj.Value.EnumerateObject())
                 {
-                    if (p.NameEquals("disabledMcpServers")) { hasDisabled = true; continue; }
+                    if (p.NameEquals("disabledMcpServers")) continue; // 아래에서 새로 써넣으므로 기존 것 건너뜀
                     p.WriteTo(w);
                 }
                 w.WritePropertyName("disabledMcpServers");

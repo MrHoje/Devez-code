@@ -13,7 +13,9 @@ namespace DevezCode.Views;
 public sealed class ImageFileEditorView : UserControl, IFileTabEditor
 {
     public event EventHandler? CloseRequested;
-    public event EventHandler? DirtyChanged;   // 이미지는 dirty 없음(미사용)
+#pragma warning disable CS0067 // 이미지는 dirty 없음 — IFileTabEditor 요구 이벤트라 선언만 하고 발화하지 않음
+    public event EventHandler? DirtyChanged;
+#pragma warning restore CS0067
     public event EventHandler? Interacted;
 
     private static readonly HashSet<string> Exts = new(StringComparer.OrdinalIgnoreCase)
