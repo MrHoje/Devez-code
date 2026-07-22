@@ -141,6 +141,18 @@ public static class UpdateService
     public static bool HashMatches(string filePath, string expectedSha256)
         => string.Equals(Sha256Hex(filePath), expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>R2 엣지의 고정 객체 키 캐시를 피하기 위한 요청별 URL. version.json 뿐 아니라
+    /// exe·patch도 배포 직후 이전 바이트를 받으면 최신 sha256 검증에서 실패하므로 같은 원칙을 적용한다.</summary>
+    private static string WithCacheBuster(string url)
+    {
+        var uri = new UriBuilder(url);
+        var query = uri.Query.TrimStart('?');
+        uri.Query = string.IsNullOrEmpty(query)
+            ? $"cb={Guid.NewGuid():N}"
+            : $"{query}&cb={Guid.NewGuid():N}";
+        return uri.Uri.AbsoluteUri;
+    }
+
     /// <summary>url을 dest로 스트리밍 다운로드. 진행률을 [from, to] 구간으로 매핑해 보고.</summary>
     private static async Task DownloadFileAsync(
         string url, string dest, IProgress<double> progress, double from, double to)
@@ -215,7 +227,7 @@ public static class UpdateService
             var patchPath = Path.Combine(Path.GetTempPath(), "DevezCode_update.patch");
             try
             {
-                await DownloadFileAsync(info.PatchUrl, patchPath, progress, 0.0, 0.85);
+                await DownloadFileAsync(WithCacheBuster(info.PatchUrl), patchPath, progress, 0.0, 0.85);
                 progress.Report(0.9);
                 if (await TryRestoreFromPatchAsync(currentExe, patchPath, tempExe)
                     && HashMatches(tempExe, info.Sha256))
@@ -239,7 +251,7 @@ public static class UpdateService
             // 적용을 중단한다 → 호출부가 수동 재설치를 안내. 배포 시 version.json 에 sha256 을 반드시 포함할 것.
             if (string.IsNullOrEmpty(info.Sha256))
                 throw new InvalidOperationException("업데이트 무결성 정보(sha256)가 없어 적용을 중단합니다.");
-            await DownloadFileAsync(info.Url, tempExe, progress, 0.0, 1.0);
+            await DownloadFileAsync(WithCacheBuster(info.Url), tempExe, progress, 0.0, 1.0);
             // 통짜 결과물은 델타 복원 결과와 동일 exe → 같은 sha256. 불일치면 전송 변조/오류이므로 중단.
             if (!HashMatches(tempExe, info.Sha256))
             {
