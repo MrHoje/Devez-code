@@ -2066,7 +2066,10 @@ public partial class SidebarView : UserControl
         var visibleItems = rows.Select(row => row.Item).ToList();
         ProjectColumnsPanel? gridPanel = null;
 
-        if (_projectColumns >= 2)
+        // 내부 목록 열 수는 전역이 아니라 폴더별 EffectiveColumns 를 따른다(폴더 1열 토글 시 전역 2열이어도 세로 재정렬).
+        var folder = WorkspaceStore.ProjectFolders.FirstOrDefault(item => item.Id == folderId);
+        int folderColumns = folder?.EffectiveColumns ?? _projectColumns;
+        if (folderColumns >= 2)
         {
             double midX = ComputeColumnsMidX(src.Element);
             gridPanel = FindVisualAncestor<ProjectColumnsPanel>(src.Element);

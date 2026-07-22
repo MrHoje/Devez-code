@@ -95,7 +95,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.17.6", "2026-07-22", true, new[]
+        ("v1.17.7", "2026-07-22", true, new[]
+        {
+            "폴더 안에서 프로젝트를 드래그로 정렬할 때 발생하던 오동작을 수정했습니다.",
+            "업데이트 배포 직후 이전 버전이 캐시되어 정상적으로 업데이트되지 않던 문제를 수정했습니다.",
+        }),
+        ("v1.17.6", "2026-07-22", false, new[]
         {
             "2열 보기에서 1열(반폭) 폴더를 드래그로 우측 열에 정렬할 수 있도록 수정했습니다.",
             "프로젝트 카드 안 숨긴 세션이 10개를 넘으면 카드 내부에서 스크롤되도록 개선했습니다.",

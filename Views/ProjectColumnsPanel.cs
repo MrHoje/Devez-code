@@ -7,8 +7,9 @@ using DevezCode.Models;
 namespace DevezCode.Views;
 
 /// <summary>
-/// 프로젝트 루트 배치 패널. 프로젝트는 1/2열의 지정 컬럼에 쌓고,
-/// 폴더는 두 컬럼을 모두 차지하는 전체폭 구분 행으로 배치한다.
+/// 프로젝트 루트 배치 패널. 프로젝트는 1/2열의 지정 컬럼에 쌓는다.
+/// 폴더는 2열(EffectiveColumns>=2)이면 전체폭 구분 행, 1열이면 좌/우 반폭 카드로 배치한다.
+/// 열 토글 시 AnimateNextLayout 예약으로 이전→현재 위치 슬라이드(FLIP) 애니메이션.
 /// </summary>
 public sealed class ProjectColumnsPanel : Panel
 {
