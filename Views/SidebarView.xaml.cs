@@ -794,6 +794,9 @@ public partial class SidebarView : UserControl
         if (folder == null) return;
 
         project.FolderId = null;
+        // 폴더 바로 아래로 꺼내려면 루트 컬럼도 폴더와 같은 열로 맞춘다(안 맞추면 옛 Column=좌측 맨위로 떨어짐).
+        // 전체폭(2열) 폴더는 좌우 Y가 같아지므로 좌열(0)에 놓으면 바로 아래가 된다.
+        project.Column = folder.EffectiveColumns >= 2 ? 0 : folder.Column;
         var roots = GetAllRootItems(folder.IsArchived);
         roots.Remove(project);
         int folderIndex = roots.IndexOf(folder);

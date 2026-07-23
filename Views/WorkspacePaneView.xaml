@@ -383,6 +383,12 @@
                                           Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem Header="파일 열기" Click="OpenFileMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
                         </ContextMenu>
                     </Button.ContextMenu>
                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"

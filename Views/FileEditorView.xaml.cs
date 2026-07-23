@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -83,7 +84,7 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             return true;
 
         var ext = Path.GetExtension(path).ToLowerInvariant();
-        return ext is ".txt" or ".md" or ".markdown" or ".json" or ".xml" or ".sql"
+        if (ext is ".txt" or ".md" or ".markdown" or ".json" or ".xml" or ".sql"
             or ".yml" or ".yaml" or ".toml" or ".ini" or ".conf" or ".config" or ".cfg"
             or ".properties" or ".csv" or ".log" or ".html" or ".htm" or ".css" or ".scss"
             or ".less" or ".js" or ".jsx" or ".ts" or ".tsx" or ".vue" or ".svelte"
@@ -92,7 +93,48 @@ public partial class FileEditorView : UserControl, IFileTabEditor
             or ".c" or ".cpp" or ".cc" or ".h" or ".hpp" or ".m" or ".mm" or ".swift"
             or ".dart" or ".lua" or ".r" or ".pl" or ".sh" or ".bash" or ".zsh"
             or ".ps1" or ".psm1" or ".bat" or ".cmd" or ".gradle" or ".groovy" or ".scala"
-            or ".sln" or ".csproj" or ".props" or ".targets" or ".gitignore";
+            or ".sln" or ".csproj" or ".props" or ".targets" or ".gitignore")
+            return true;
+
+        return IsProbablyText(path);
+    }
+
+    /// <summary>알려지지 않은 확장자도 UTF 계열 텍스트면 연다. NUL 또는 제어 문자가 섞인 바이너리는 제외한다.</summary>
+    private static bool IsProbablyText(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            if (stream.Length == 0) return true;
+
+            var bytes = new byte[(int)Math.Min(8192, stream.Length)];
+            int count = stream.Read(bytes, 0, bytes.Length);
+            if (count == 0) return true;
+
+            // UTF-16/32 BOM은 본문에 NUL이 자연스럽게 포함되므로 먼저 판별한다.
+            if (count >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF)))
+                return true;
+            if (count >= 4 && ((bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0 && bytes[3] == 0)
+                || (bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0xFE && bytes[3] == 0xFF)))
+                return true;
+
+            int controls = 0;
+            for (int i = 0; i < count; i++)
+            {
+                byte b = bytes[i];
+                if (b == 0) return false;
+                if (b < 0x20 && b is not (9 or 10 or 13 or 12)) controls++;
+            }
+            if (controls > count / 20) return false;
+
+            // UTF-8이 아닌 고바이트 데이터는 임의 바이너리로 간주한다.
+            _ = new UTF8Encoding(false, throwOnInvalidBytes: true).GetCharCount(bytes, 0, count);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public string? FilePath => _path;

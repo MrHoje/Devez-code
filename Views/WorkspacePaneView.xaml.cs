@@ -1970,6 +1970,21 @@ public partial class WorkspacePaneView : UserControl
         if (_activeProject != null) AddBrowserTab(_activeProject);
     }
 
+    private void OpenFileMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeProject == null) return;
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "텍스트, 이미지, PDF 열기",
+            Filter = "지원 파일|*.pdf;*.txt;*.md;*.markdown;*.json;*.xml;*.yml;*.yaml;*.toml;*.csv;*.log;*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp;*.ico;*.tif;*.tiff|PDF 파일|*.pdf|텍스트 파일|*.txt;*.md;*.markdown;*.json;*.xml;*.yml;*.yaml;*.toml;*.csv;*.log|이미지 파일|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp;*.ico;*.tif;*.tiff",
+            FilterIndex = 1,
+        };
+        if (Directory.Exists(_activeProject.Path))
+            dialog.InitialDirectory = _activeProject.Path;
+        if (dialog.ShowDialog() == true)
+            OpenFileAsTab(dialog.FileName);
+    }
+
     public BrowserTabItem? AddBrowserTab(ProjectItem proj, string? initialName = null, bool promptForName = true,
         [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
@@ -3442,6 +3457,12 @@ public partial class WorkspacePaneView : UserControl
     public FileTabItem? OpenFileAsTab(string path)
     {
         if (_activeProject == null) return null;
+        if (!FileEditorView.IsEditable(path) && !ImageFileEditorView.IsImage(path) && !PdfFileEditorView.IsPdf(path))
+        {
+            ConfirmDialog.Alert("파일 열기", "텍스트, 이미지, PDF 파일만 앱에서 열 수 있습니다.",
+                iconKey: "IconTriangleAlert");
+            return null;
+        }
         var tab = CreateFileTab(_activeProject, path);
         if (tab == null) return null;
         // 이 패널이 격리(분할 파트너=화이트리스트) 중이면, 활성화가 ClearIsolationIfMismatch 로 격리를
@@ -3563,6 +3584,7 @@ public partial class WorkspacePaneView : UserControl
         var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
         if (ext is ".md" or ".markdown") return new MarkdownFileEditorView();
         if (ImageFileEditorView.IsImage(path)) return new ImageFileEditorView();
+        if (PdfFileEditorView.IsPdf(path)) return new PdfFileEditorView();
         return new FileEditorView();
     }
 
