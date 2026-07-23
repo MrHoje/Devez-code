@@ -398,7 +398,7 @@
         <Setter Property="CornerRadius" Value="5"/>
         <Setter Property="Padding" Value="9,0"/>
     </Style>
-    <Style x:Key="DockValueText" TargetType="TextBlock">
+    <Style x:Key="DockValueText" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
         <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
         <Setter Property="FontSize" Value="{DynamicResource Fs12}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
@@ -1716,7 +1716,7 @@
     <!-- 3개의 라디오를 좌/중/우로 붙여 한 줄 그룹처럼 보이게 한다. 코너는 양 끝만 라운드. -->
     <Style x:Key="McpRadioLeft" TargetType="RadioButton" BasedOn="{StaticResource {x:Type RadioButton}}">
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Cursor" Value="Arrow"/>
         <Setter Property="FontSize" Value="{DynamicResource Fs12}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
         <Setter Property="Padding" Value="10,6"/>
