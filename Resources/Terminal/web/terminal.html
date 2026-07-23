@@ -315,10 +315,7 @@
     _lastExternalUrl = url;
     _lastExternalUrlAt = now;
     dlog('terminalUrl request ' + url);
-    // 링크 activate는 xterm의 mouseup 처리 도중 호출된다. 여기서 WebView 메시지를 동기 전송하면
-    // C#이 기본 브라우저를 띄우며 창 포커스를 빼앗고, xterm이 현재 mouseup 처리를 끝내기 전에
-    // WebView가 비활성화될 수 있다. 그러면 xterm 내부에 좌버튼 down 상태가 남아 이후 포인터 이동이
-    // 계속 드래그 선택으로 처리된다. 현재 이벤트 스택이 모두 끝난 다음 브라우저 열기를 요청한다.
+    // xterm의 mouseup 처리와 선택 상태 해제가 모두 끝난 다음 브라우저 열기를 요청한다.
     setTimeout(function () {
       post({ type: 'openExternalUrl', url: url });
     }, 0);
@@ -1845,7 +1842,8 @@
     termOptions.linkHandler = {
       activate: function (event, url) {
         event?.preventDefault?.();
-        event?.stopImmediatePropagation?.();
+        // stopImmediatePropagation 금지: xterm 5/6의 같은 mouseup 이벤트에 등록된 선택 서비스가
+        // 좌버튼 상태를 해제해야 한다. 이를 막으면 브라우저가 열린 뒤 포인터 이동이 계속 선택 드래그가 된다.
         dlog('terminalUrl linkHandler ' + url);
         requestOpenExternalUrl(url);
       }
@@ -1936,7 +1934,7 @@
               text: url,
               activate: function (event) {
                 event?.preventDefault?.();
-                event?.stopImmediatePropagation?.();
+                // xterm의 나머지 mouseup 리스너는 통과시켜 내부 선택/버튼 상태를 반드시 해제한다.
                 dlog('terminalUrl provider ' + url);
                 requestOpenExternalUrl(url);
               }
