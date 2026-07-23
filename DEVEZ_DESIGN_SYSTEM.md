@@ -1,7 +1,7 @@
 # Devez 공통 디자인 시스템
 
 > 대상: `devez-code`, `devez`, `eGhisDevWPF`
-> 문서 버전: 1.6
+> 문서 버전: 1.7
 > 기준일: 2026-07-23
 > 주 대상 기술: WPF/XAML
 > 목적: 새 프로젝트에서 같은 색, 밀도, 컨트롤, 라운드, 아이콘, 보더, 상태 표현을 바로 재현한다.
@@ -344,13 +344,6 @@ TwoWay 또는 OneWayToSource 바인딩은 읽기 전용 속성에서 작동하�
 - 패널은 서로 붙이지 않고 `1px border + 4px channel`로 구분한다.
 - 좁은 창에서 보조 패널은 중앙을 압축하기보다 overlay/drawer로 전환한다.
 - 제목, toolbar, 필터, 본문, footer 순서를 유지한다.
-
-overlay drawer 규격(좁은 창에서 보조 패널 재부모화):
-
-- scrim은 `#80000000`으로 body 영역만 덮고, scrim 클릭으로 닫는다. header/footer는 덮지 않는다.
-- drawer는 오른쪽 정렬, `PanelBrush`, 왼쪽만 `LineBrush 1`, `DropShadowEffect BlurRadius=18, Depth=0, Opacity=0.4`.
-- ZIndex는 `90`으로 설정 오버레이(`200`)보다 아래에 둔다.
-- 같은 패널 인스턴스를 도킹 열 ↔ drawer 사이에서 재부모화해 상태를 유지한다. 복제 인스턴스를 만들지 않는다.
 
 ### 5.3 프레임 선택
 
@@ -972,7 +965,16 @@ Primary 예제:
 | 아이콘 | `IconSearch` `12~13`, `TextMutedBrush`, 왼쪽 margin `9~10` |
 | 입력 | 투명 borderless `TextBox`, `Fs13` |
 | placeholder | 별도 `TextBlock`, `TextMutedBrush`, `Fs13`, `IsHitTestVisible=False`, `Text=""`일 때만 표시 |
-| 열림 방식 | 헤더 돋보기 버튼이 검색 행 Height를 `0 ↔ 37/43`으로 슬라이드 |
+| 열림 방식 | 헤더 돋보기 버튼이 검색 행 Height를 `0 ↔ 행 높이`로 슬라이드 |
+
+버튼 토글 활성화 animation 규칙:
+
+- 검색 행 `Height`를 `0 ↔ 행 높이`(pill + 상하 margin 실측값, 예: 카드 내 `37`, 사이드바 전역 `47`)로 애니메이션해 아래 목록을 밀어낸다. `Visibility` 토글로 뚝 끊지 않는다.
+- 시간 `220ms`, `CubicEase EaseInOut`. (기본 모션의 `EaseOut`과 달리 열림·닫힘이 대칭인 밀어내기라 `EaseInOut`을 쓴다.)
+- 컨테이너에 `ClipToBounds=True`를 줘 접히는 동안 내용이 부분적으로 넘쳐 보이지 않게 한다.
+- 다시 열 때는 현재 `ActualHeight`에서 시작(`From` 지정)해 진행 중 애니메이션과 충돌하지 않게 한다.
+- 열림 완료를 기다리지 않고 `Dispatcher(Input priority)`로 즉시 입력에 `Focus()` + `SelectAll()`을 실행해 연속 재검색을 지원한다.
+- 스코프가 있는 인라인 검색(카드 내 세션 검색 등)은 닫을 때 검색어를 초기화해 목록이 숨은 필터 상태로 남지 않게 한다.
 
 #### Compact 입력
 
@@ -1397,28 +1399,7 @@ Splitter:
 - percentage가 갱신돼도 row width가 흔들리지 않도록 숫자 영역에 고정 폭을 둔다.
 - indeterminate progress는 화면에 보일 때만 animation clock을 실행한다.
 
-사용량/토큰 미터 위젯(footer 요약 + 사이드바 카드에서 같은 렌더):
-
-- footer compact bar는 `56×6`(§5.6), 사이드바/팝오버 카드 bar는 `102×6`, 둘 다 radius `3`, track `LineBrush`.
-- 라벨 열은 고정 `34`, `Fs11` muted; percent는 `Fs12` SemiBold.
-- 채움 색은 예측 기반: 기간 내 여유면 `SuccessBrush`, 소진 예상이면 `DangerBrush`.
-
-### 8.16 상태 dot과 카운트 배지
-
-세션·연결 상태는 dot으로, 개수는 pill 배지로 표시한다. 화면마다 크기를 바꾸지 않는다.
-
-| 패턴 | geometry | 색 |
-|---|---|---|
-| 세션 상태 dot | Ellipse `8×8` | alive `PrimaryBrush`, dead `#6B7280` |
-| 연결/서비스 상태 dot | Ellipse `6~7` | 연결 `SuccessBrush`, 실패 `DangerBrush` |
-| 상태 라벨 pill | padding `6,2`, radius `4` | `PanelSoftBrush` 배경 + 상태색 텍스트 |
-| 카운트 pill | `MinWidth=18`, 높이 `18`, padding `5,0`, radius `9` | `PrimaryBrush` 배경, White `Fs11` SemiBold |
-| 보조 배지 | `Fs10` SemiBold | `PrimarySoftBrush` 배경 + `PrimaryBrush` 텍스트 |
-
-- busy 상태는 dot을 숨기고 같은 자리에서 `12×12` inline spinner로 스왑한다. dot과 spinner를 동시에 보여주지 않는다.
-- 목록 행 dot과 관리 다이얼로그 dot은 반드시 같은 `8×8` 규격을 공유한다.
-
-### 8.17 내부 패널 헤더 바
+### 8.16 내부 패널 헤더 바
 
 셸 header(§5.5~5.6)와 별개로, 사이드바·보조 패널 내부의 섹션 헤더 바 규격이다.
 
@@ -2026,6 +2007,7 @@ if (window != null)
 | chevron 회전 | 180ms |
 | panel/tab indicator | 180~220ms |
 | tree expand/collapse | 220ms |
+| 검색 행 슬라이드 | 220ms, `CubicEase EaseInOut` |
 | toast fade-out | 400ms |
 | spinner | 0.7~0.9s / 회전 |
 
