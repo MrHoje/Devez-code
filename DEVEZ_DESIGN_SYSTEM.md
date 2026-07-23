@@ -1,7 +1,7 @@
 # Devez 공통 디자인 시스템
 
 > 대상: `devez-code`, `devez`, `eGhisDevWPF`
-> 문서 버전: 1.4
+> 문서 버전: 1.5
 > 기준일: 2026-07-23
 > 주 대상 기술: WPF/XAML
 > 목적: 새 프로젝트에서 같은 색, 밀도, 컨트롤, 라운드, 아이콘, 보더, 상태 표현을 바로 재현한다.
@@ -1823,6 +1823,43 @@ open
 - settings window의 X가 content의 revert/confirm 경로를 우회해 바로 `Window.Close()`하지 않게 한다.
 - owner가 WebView2를 포함하면 settings를 띄우기 전에 section 5.7의 snapshot + `Collapsed` 흐름을 적용하고 닫힐 때 복원한다.
 
+### 10.7 업데이트 버튼·노트 팝업·진행률
+
+`devez-code` 구현을 표준으로 한다. 흐름은 `버튼 노출 → 노트 팝업 → 같은 팝업 안 진행률 → 재실행`이며 단계마다 팝업을 바꾸지 않는다.
+
+#### 업데이트 버튼
+
+- 위치는 좌측 사이드바 최하단 고정 행. 업데이트가 확인되기 전에는 `Collapsed`.
+- geometry: 높이 `34`, 전체 폭, 좌우 margin `12`, 아래 margin `10`, radius `8`.
+- 배경 `PrimaryBrush`, hover `PrimaryHoverBrush`, pressed `PrimaryPressedBrush`.
+- 내용: `IconDownload` `13×13` White, 아이콘-텍스트 gap `7`, `업데이트 v{버전}` `Fs12` SemiBold White.
+- 팝업에서 `나중에`를 누르거나 다운로드가 실패하면 버튼을 다시 노출한다.
+
+#### 노트 팝업
+
+- 표준 다이얼로그 셸(§10)을 재사용한다: content radius `14`, header `48`, footer 액션 `38`, close `40×32`.
+- 고정폭 `560`, `SizeToContent=Height`, `MaxHeight=430`. 노트 약 10줄까지 높이가 자동 확장되고 초과분은 본문 `ScrollViewer`가 스크롤한다.
+- 릴리스 노트는 현재 버전 이후 누적분을 모두 보여준다.
+- 액션은 왼쪽 `나중에`(Secondary), 오른쪽 `업데이트`(Primary). header 아이콘은 `IconDownload`.
+
+#### 진행률
+
+- `업데이트` 클릭 시 창을 닫지 않고 같은 창 안에서 전환한다: footer 버튼·header 닫기·입력 영역을 숨기고 진행률 영역만 표시한다.
+- 다운로드 중에는 ESC·X·취소 등 모든 닫기 경로를 차단한다(downloading guard).
+- geometry: 본문 아래 `Margin=0,18,0,0`, 좌측 label `다운로드 중…` `Fs12` muted, 우측 percent `Fs12`, label-track gap `6`, track 높이 `6` radius `3` `LineBrush`, fill `PrimaryBrush`.
+- percent는 `0~1` clamp 후 `P0`로 표시하고, fill 폭은 track 실측 폭 × 비율로 갱신한다.
+- 성공하면 앱이 종료·재실행되므로 호출은 반환되지 않는다. 취소/실패만 결과로 반환하고, 실패 시 팝업을 닫은 뒤 수동 설치 안내를 표시한다.
+- 재시작 종료 오버레이에는 `업데이트 후 자동으로 다시 실행됩니다.` 안내를 함께 표시한다.
+
+#### devez 변형
+
+- 별도 `Window` 대신 메인 창 안 오버레이로 띄운다: ZIndex `99`, dim `#88000000`, 폭 `560` 동일, radius `16`, padding `28,24`, 그림자 blur `48`.
+- 헤더는 `업데이트 {버전}` `Fs15` Bold + 우상단 `28×28` IconButton 닫기(다운로드 중 숨김). 노트는 `•` 불릿 `Fs13`, LineHeight `22`.
+- 액션은 half-width 2버튼(높이 `36`, gap `8`): `나중에`(PanelSoft + Line border 1, radius 8) / `지금 업데이트`(Primary). 진행률 track은 높이 `8` radius `4`.
+- 긴급 업데이트는 타이틀바 아래 `DangerBrush` 상단 배너로 별도 고정 노출한다: ZIndex `101`, padding `20,12`, `IconDownload` `18×18` White, X 닫기 후 1분 뒤 재표시.
+
+공통 계약(두 구현 모두 유지): 노트 팝업의 primary 클릭 → 같은 surface 안 진행률 전환, 다운로드 중 모든 닫기 경로 차단·버튼 숨김, cancel 라벨은 `나중에`, 진행 label은 `다운로드 중…` + 우측 %, fill 색은 `PrimaryBrush`.
+
 ## 11. 로딩, 빈 상태, 알림
 
 ### 11.1 Spinner
@@ -2165,6 +2202,7 @@ Resources/
 - [ ] popup이 닫힌 뒤 anchor/owner focus 복귀
 - [ ] settings theme live preview 후 저장은 유지, 취소는 원복
 - [ ] settings X/ESC가 미저장 확인 경로를 우회하지 않음
+- [ ] 업데이트 노트 팝업이 같은 팝업 안에서 진행률로 전환되고 다운로드 중 닫기 차단
 - [ ] desktop notification이 입력 focus를 빼앗지 않음
 - [ ] mixed-DPI 모니터에서 notification edge 6 / stack gap 8 유지
 - [ ] 좁은 창에서 중앙 영역 최소 폭 보존
@@ -2197,6 +2235,9 @@ Resources/
 - `Views/NotificationPopup.xaml`
 - `Views/NotificationPopup.xaml.cs`
 - `Views/ConfirmDialog.xaml`
+- `Views/ConfirmDialog.xaml.cs`의 `ShowUpdate`: 업데이트 노트 팝업·진행률
+- `Views/SidebarView.xaml`의 `UpdateButton`: 사이드바 업데이트 버튼
+- `Services/UpdateService.cs`
 - `Models/SpinnerSync.cs`
 - `.knowledge/텍스트렌더링규칙.md`
 - `.knowledge/컨트롤추가규칙.md`
