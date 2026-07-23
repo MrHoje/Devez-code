@@ -1436,6 +1436,13 @@
         chainCaret = null; // 줄바꿈이 커서를 다음 줄로 옮기므로 예상 좌표 무효
         setTimeout(function () { post({ type: 'input', roomId: pending.roomId, data: pending.data }); }, 0);
       }
+      // 조합 중 Ctrl+Backspace 가 눌렸으면 — 확정 글자가 PTY로 전송된 뒤(setTimeout 0)
+      // 단어삭제(\x17)를 보낸다. 순서 보장으로 마지막 확정 글자까지 함께 지워진다.
+      if (pendingComposeWordDelete) {
+        const pendingWD = pendingComposeWordDelete;
+        pendingComposeWordDelete = null;
+        setTimeout(function () { post({ type: 'input', roomId: pendingWD.roomId, data: '\x17' }); }, 0);
+      }
       if (pendingResponseReset) {
         // 정상 compositionend 가 도착했다면 stale 상태가 아니다. 여기서 다시 blur→focus 하지
         // 않고 안전망만 취소한다. end 자체가 누락된 경우에만 3초 타이머가 resetImeNow 를 실행한다.
@@ -1490,6 +1497,10 @@
   // 한글 IME 조합 확정 Enter 는 keydown 이 2번 온다(229=조합중, 직후 13=확정된 Enter).
   // 229 처리 시각을 적어두고, 직후 따라오는 비조합 Enter keydown 을 흡수해 줄바꿈 중복을 막는다.
   let composeEnterAt = 0;
+  // Ctrl+Backspace 가 조합 중에 눌리면 마지막 음절 확정 후(compositionend) 보낼 단어삭제(\x17).
+  // 순정 gjc Ctrl+W 처럼 조합 중 글자도 먼저 PTY 로 확정된 뒤 단어가 지워지게 순서를 보장한다.
+  let pendingComposeWordDelete = null;
+  let composeWordDeleteAt = 0; // 확정 후 따라오는 비조합 Backspace keydown 흡수(중복 \x17 방지)
 
   // ── 키보드 단축키 (Windows Terminal 정합) ─────────────────────────────
   // attachCustomKeyEventHandler 규약: false 반환 = xterm 이 처리하지 않음(PTY 전송 차단),
@@ -1521,16 +1532,26 @@
       post({ type: 'input', roomId: roomId, data: ctrlEnterNewlineData(entry) });
       return false;
     }
-    if (e.isComposing || e.keyCode === 229) return true; // IME 조합 중엔 개입 금지
-    if (e.getModifierState && e.getModifierState('AltGraph')) return true; // AltGr = 문자 입력, 가로채지 않음
     // WebView2+xterm 경로에서는 Ctrl+Backspace가 gjc의 편집기 단축키로 전달되지 않는다.
     // gjc가 지원하는 Ctrl+W(0x17) 단어 삭제로 변환해 Windows Terminal/Claude/Codex와 맞춘다.
+    // 조합 중이면 isComposing 가드보다 먼저 처리해, 마지막 음절 확정(compositionend) 후 \x17 을
+    // 보낸다(Ctrl+Enter 와 같은 특례). 먼저 보내면 조합 글자가 PTY 도달 전이라 잔존한다.
     if (entry.agent === 'gajae' && e.ctrlKey && !e.shiftKey && !e.altKey &&
         (e.key === 'Backspace' || e.code === 'Backspace')) {
+      if (entry.dead) return true;
       e.preventDefault();
+      if (e.isComposing || e.keyCode === 229) {
+        pendingComposeWordDelete = { roomId: roomId };
+        composeWordDeleteAt = Date.now();
+        return false;
+      }
+      // 비조합 Backspace — 직전 조합 확정의 트레일링 keydown 이면 흡수(\x17 한 번만 나가게).
+      if (Date.now() - composeWordDeleteAt < 200) { composeWordDeleteAt = 0; return false; }
       post({ type: 'input', roomId: roomId, data: '\x17' });
       return false;
     }
+    if (e.isComposing || e.keyCode === 229) return true; // IME 조합 중엔 개입 금지
+    if (e.getModifierState && e.getModifierState('AltGraph')) return true; // AltGr = 문자 입력, 가로채지 않음
 
     const term = entry.term;
     const ctrl = e.ctrlKey, shift = e.shiftKey, alt = e.altKey;
