@@ -1104,18 +1104,25 @@ public sealed class ProjectItem : NotifyBase
         return true;
     }
 
-    /// <summary>클릭한 세션만 숨김 해제하고, 부모/자식 트리 블록을 현재 탭 목록 끝으로 옮긴다.
-    /// 부모/자식 숨김 상태와 관계는 유지한다.</summary>
+    /// <summary>클릭한 세션만 숨김 해제한다. 부모/자식 숨김 상태와 관계는 유지한다.
+    /// 트리 전체가 숨김이었을 때(하단 숨김 그룹에서 복원)만 트리 블록을 탭 목록 끝으로 옮긴다 —
+    /// 일부가 이미 보이는 트리까지 끝으로 옮기면 보이던 부모 블록이 카드 상단에서 빠지면서
+    /// 그 아래 문서 탭이 카드 맨 위로 튀어오른다(제자리 해제가 맞다).</summary>
     public IReadOnlyList<SessionItem> UnhideSessionPath(SessionItem session)
     {
         if (!Sessions.Contains(session) || !session.Hidden) return Array.Empty<SessionItem>();
+        // Hidden setter 가 RefreshSessionTree 로 IsSidebarGloballyHidden 을 즉시 재계산하므로 해제 전에 판정.
+        bool wholeTreeWasHidden = session.IsSidebarGloballyHidden;
         session.Hidden = false;
 
-        var blocks = BuildTopLevelTabBlocks();
-        var sourceBlock = blocks.FirstOrDefault(block => block.Contains(session));
-        var lastOtherBlock = blocks.LastOrDefault(block => !ReferenceEquals(block, sourceBlock));
-        if (lastOtherBlock != null)
-            MoveTopLevelTabBlock(session, lastOtherBlock[0], after: true, treeChanged: false);
+        if (wholeTreeWasHidden)
+        {
+            var blocks = BuildTopLevelTabBlocks();
+            var sourceBlock = blocks.FirstOrDefault(block => block.Contains(session));
+            var lastOtherBlock = blocks.LastOrDefault(block => !ReferenceEquals(block, sourceBlock));
+            if (lastOtherBlock != null)
+                MoveTopLevelTabBlock(session, lastOtherBlock[0], after: true, treeChanged: false);
+        }
 
         return new[] { session };
     }

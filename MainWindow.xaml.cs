@@ -4265,7 +4265,8 @@ public partial class MainWindow : Window
         if (reopeningHidden && _splitActive)
         {
             // 숨기기 전 우측 패널 소속이었어도 복원 세션은 항상 좌측으로 이동한다.
-            // 탭 순서는 UnhideSessionPath 에서 끝으로 옮겼으므로 좌측의 마지막 탭으로 표시된다.
+            // 트리 전체 숨김에서 복원한 경우만 UnhideSessionPath 가 탭 순서를 끝으로 옮긴다
+            // (부모가 보이는 트리의 숨김 자식은 제자리 해제 — 부모 아래 원래 위치에 표시).
             if (ReferenceEquals(RightPane.ActiveProject, parent)) RightPane.HideTabInPane(s);
             if (ReferenceEquals(LeftPane.ActiveProject, parent)) LeftPane.UnhideTabInPane(s);
             OpenSessionIntoPane(LeftPane, s, isNewProjectLoad: false);
