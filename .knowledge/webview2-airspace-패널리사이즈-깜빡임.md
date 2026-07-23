@@ -14,8 +14,9 @@
 ## airspace 핵심 (제일 중요)
 - WebView2 의 렌더는 별도 HWND 에서 합성된다 → **항상 모든 WPF 콘텐츠 위**에 그려진다.
   WPF `Image`/`Border` 를 ZIndex 로 아무리 올려도 라이브 WebView 를 가리지 못한다.
-- 따라서 "터미널 위에 무언가를 띄우는" 유일한 WPF 방법은 **별도 최상위 Window**(예: `ProjectTargetPickerWindow`,
-  `WS_EX_NOACTIVATE`)뿐이다. WPF 오버레이(`ShutdownOverlay` 등)는 WebView 를 먼저 숨겨야만 보인다.
+- 따라서 "터미널 위에 무언가를 띄우는" 유일한 WPF 방법은 **별도 최상위 Window**(topmost + `SWP_NOACTIVATE`,
+  예: `NotificationPopup`)뿐이다. WPF 오버레이(`ShutdownOverlay` 등)는 WebView 를 먼저 숨겨야만 보인다.
+  (과거 예시였던 `ProjectTargetPickerWindow` 는 제거됨 — 분할패널 문서 "제거된 구 UI" 참조.)
 - **단, WebView 자신의 DOM 안 요소는 예외** — 같은 swap chain 이라 라이브 콘텐츠(reflow repaint 포함) 위에
   그려진다. 이게 시도 3(웹 레이어 커버)의 핵심이다.
 

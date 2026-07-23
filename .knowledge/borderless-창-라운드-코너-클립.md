@@ -35,5 +35,6 @@ private void ApplyRoundedClip()
   테두리 안쪽에 딱 맞아 테두리 선이 깨끗하게 남는다.
 - `SizeChanged` 를 반드시 걸어야 리사이즈 가능한 창(`ResizeMode=CanResize`)에서도 유지된다.
 - `ClipToBounds="True"` 만으로는 절대 안 된다. `using System.Windows.Media;` 필요.
-- 새 borderless 오버레이 창을 만들 때는 SettingsWindow / McpControlWindow / PluginControlWindow 의
-  이 패턴을 그대로 복사할 것.
+- 새 borderless 오버레이 창을 만들 때는 SettingsWindow / McpControlWindow / PluginDetailWindow 의
+  이 패턴을 그대로 복사할 것. (PluginControlWindow 는 이 패턴이 아니라 WindowChrome +
+  `DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE)` 방식이므로 참고 대상이 아니다.)

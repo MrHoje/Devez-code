@@ -14,5 +14,5 @@
 ## 해결
 읽기전용 속성에 `Run.Text`를 바인딩할 땐 반드시 `Mode=OneWay` 명시:
 ```xml
-<Run Text="{Binding CliUpdateCount, Mode=OneWay}"/>
+<Run Text="{Binding DisplayCount, Mode=OneWay}"/>  <!-- 읽기전용(get-only) 속성 예시 -->
 ```

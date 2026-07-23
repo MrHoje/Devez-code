@@ -39,7 +39,7 @@ TabBar 하단 `BorderThickness="0,0,0,1"`(LineBrush) 위에 `Panel.ZIndex="100"`
 
 ---
 
-## 코드: `UpdateSelectedTabSeam()` — `WorkspacePaneView.xaml.cs:1877-1923`
+## 코드: `UpdateSelectedTabSeam()` — `WorkspacePaneView.xaml.cs` (메서드명으로 grep — 라인은 수시로 이동)
 
 ### 위치 계산
 
@@ -144,7 +144,7 @@ Seam이 border 위에 덮여 feet 영역까지 border가 안 보이게 함.
 
 | 상황 | 호출 |
 |------|------|
-| 탭 전환 (`SwitchToTab`) | `UpdateTabActiveState()` → `UpdateSelectedTabSeam()` |
+| 탭 전환 (`ActivateSession` / `ActivateFileTab`) | → `UpdateSelectedTabSeam()` |
 | 탭 닫아서 마지막 탭 사라짐 | `SelectedTabSeam.Visibility = Collapsed` 직접 |
 | TabScroller 스크롤 | `ScrollChanged` → `UpdateSelectedTabSeam()` |
 | 테마 변경 | `OnThemeChanged_UpdateSeam` → `UpdateSelectedTabSeam()` |
