@@ -61,6 +61,7 @@ Start-Process "bin\DevezCode.exe"
 
 | 이런 작업을 할 때 | 읽을 파일 |
 | ---------- | ----- |
+| 새 UI/UX, 테마, 색상, 폰트, 간격, 라운드, 보더, 버튼, 입력, 카드, 팝업, 탭, 아이콘, DataGrid 등 디자인 작업 | `DEVEZ_DESIGN_SYSTEM.md` |
 | 텍스트 표시/입력 컨트롤 추가 (한글 글자 깨짐 방지) | `.knowledge/텍스트렌더링규칙.md` |
 | 버튼·카드 등 클릭 가능 컨트롤 추가 (커서=Arrow, Hand 금지) | `.knowledge/컨트롤추가규칙.md` |
 | 새 AI CLI 에이전트 추가, 에이전트별 분기 수정(세션 추적/복원·재진입·종료·포크·테마·상태표시·사용량·MCP·클리너) | `.knowledge/에이전트추가규칙.md` |
@@ -94,5 +95,5 @@ Start-Process "bin\DevezCode.exe"
 
 ## 참고
 
-* 디자인(테마/색상/폰트/아이콘/팝업)은 `C:\source\devez`의 디자인 시스템을 따른다. 새 UI도 `AppStyles.xaml`의 전역 스타일을 사용하고 인라인 스타일을 남발하지 말 것.
+* 디자인 작업은 먼저 `DEVEZ_DESIGN_SYSTEM.md`를 읽고 공통 토큰·컨트롤·SVG·렌더링 규칙을 따른다. 새 UI도 `AppStyles.xaml`의 전역 스타일을 사용하고 인라인 스타일을 남발하지 말 것.
 * 작업별로 참조할 `.knowledge/` 문서는 위 **지식베이스 인덱스**를 본다.
