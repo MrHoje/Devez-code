@@ -210,6 +210,7 @@ public partial class MainWindow : Window
         Sidebar.ProjectRenameRequested += RenameProject;
         Sidebar.ProjectArchiveRequested += ArchiveProject;
         Sidebar.ProjectUnarchiveRequested += UnarchiveProject;
+        Sidebar.GitRemoteOpenRequested += OpenGitRemote;
         Sidebar.AddProjectFileRequested += AddProjectFile;
         Sidebar.ProjectFileSelected    += OpenProjectFile;
         Sidebar.ProjectFileRemoveRequested += RemoveProjectFile;
@@ -4203,6 +4204,35 @@ public partial class MainWindow : Window
     // ── 사이드바 액션 → 포커스 패널로 위임 ────────────────────────────
 
     private void SelectProject(ProjectItem proj) => SelectProjectFromSidebar(proj);
+
+    private void OpenGitRemote(ProjectItem project, string url)
+    {
+        if (SettingsService.LoadTerminalUrlOpenTarget() == TerminalUrlOpenTarget.DefaultBrowser)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+                {
+                    UseShellExecute = true,
+                });
+            }
+            catch
+            {
+                ConfirmDialog.Alert("Git 저장소 웹에서 열기", "원격 저장소를 열 수 없습니다.",
+                    iconKey: "IconTriangleAlert");
+            }
+            return;
+        }
+
+        SelectProjectFromSidebar(project);
+        var pane = _panes.FirstOrDefault(p => ReferenceEquals(p.ActiveProject, project)) ?? _focusedPane;
+        _focusedPane = pane;
+        var tabName = string.IsNullOrWhiteSpace(project.Name) ? "Git 저장소" : $"Git · {project.Name}";
+        var tab = pane.AddBrowserTab(project, initialName: tabName, promptForName: false);
+        tab?.Browser.NavigateToUrl(url);
+        SyncShellToFocusedPane();
+        UpdatePaneFocusVisual();
+    }
 
     private void SelectProjectFromSidebar(ProjectItem proj)
     {

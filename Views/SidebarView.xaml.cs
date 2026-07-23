@@ -50,6 +50,8 @@ public partial class SidebarView : UserControl
     public event Action<ProjectItem>? ProjectArchiveRequested;
     /// <summary>보관함 카드 "꺼내기" — 보관함에서 활성으로(MainWindow 위임).</summary>
     public event Action<ProjectItem>? ProjectUnarchiveRequested;
+    /// <summary>프로젝트 메뉴의 Git 원격 저장소 URL 열기 요청.</summary>
+    public event Action<ProjectItem, string>? GitRemoteOpenRequested;
     /// <summary>프로젝트 메뉴 "파일 추가" — 파일 다이얼로그로 등록할 파일을 고른다(MainWindow 위임).</summary>
     public event Action<ProjectItem>? AddProjectFileRequested;
     /// <summary>등록된 파일 클릭 — 편집 탭으로 연다(MainWindow 위임).</summary>
@@ -1196,6 +1198,22 @@ public partial class SidebarView : UserControl
             BrowserTabCloseRequested?.Invoke(browser);
     }
 
+    private void BrowserTabOpenExternal_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<BrowserTabItem>(sender) is not { } browser) return;
+        if (browser.Browser.TryOpenInDefaultBrowser(browser.PersistenceKey)) return;
+        ConfirmDialog.Alert("기본 브라우저로 열기", "열 수 있는 웹 주소가 없습니다.",
+            iconKey: "IconTriangleAlert");
+    }
+
+    private void BrowserTabCopyUrl_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<BrowserTabItem>(sender) is not { } browser) return;
+        if (browser.Browser.TryCopyCurrentUrl(browser.PersistenceKey)) return;
+        ConfirmDialog.Alert("현재 URL 복사", "URL을 클립보드에 복사하지 못했습니다.",
+            iconKey: "IconTriangleAlert");
+    }
+
     private void BrowserTabRename_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<BrowserTabItem>(sender) is { } browser)
@@ -1247,6 +1265,15 @@ public partial class SidebarView : UserControl
         catch { ConfirmDialog.Alert("디렉토리 열기", "탐색기를 열 수 없습니다."); }
     }
 
+    private void OpenGitRemote_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string url } item) return;
+        var menu = ItemsControl.ItemsControlFromItemContainer(item) as ContextMenu;
+        var project = menu?.DataContext as ProjectItem
+                      ?? (menu?.PlacementTarget as FrameworkElement)?.DataContext as ProjectItem;
+        if (project != null) GitRemoteOpenRequested?.Invoke(project, url);
+    }
+
     private void ProjectFileOpen_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectFile>(sender) is { } f) ProjectFileSelected?.Invoke(f);
@@ -1273,19 +1300,32 @@ public partial class SidebarView : UserControl
 
     /// <summary>프로젝트 메뉴가 열릴 때 "바로가기" 서브메뉴를 등록 목록 + 맨 아래 "바로가기 추가" 로 선(先)채운다.
     /// 서브메뉴가 펼쳐지기 전(메뉴 오픈 시점)에 항목을 넣어, 열리는 도중 Clear 로 인한 팝업 미표시 버그를 피한다.</summary>
-    private void ProjectMenu_Opened(object sender, RoutedEventArgs e)
+    private async void ProjectMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu cm) return;
+
+        var p = cm.DataContext as ProjectItem
+                ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as ProjectItem;
+        if (p is null) return;
+
+        var gitRemoteItem = cm.Items.OfType<MenuItem>()
+            .FirstOrDefault(item => Equals(item.CommandParameter, "GitRemote"));
+        if (gitRemoteItem != null)
+        {
+            gitRemoteItem.IsEnabled = false;
+            gitRemoteItem.Tag = null;
+            var webUrl = await GitService.GetOriginWebUrlAsync(p.Path);
+            var currentProject = cm.DataContext as ProjectItem
+                                 ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as ProjectItem;
+            if (!ReferenceEquals(currentProject, p)) return;
+            gitRemoteItem.Tag = webUrl;
+            gitRemoteItem.IsEnabled = webUrl != null;
+        }
 
         var parent = cm.Items.OfType<MenuItem>().FirstOrDefault(m => (m.Header as string) == "바로가기");
         if (parent is null) return;
         // 서브메뉴 헤더 자식의 Tag={Binding} 은 Opened 시점에 아직 평가 안 됐을 수 있어 null 가능 →
         // ContextMenu.DataContext(타겟에서 상속)로 프로젝트를 얻는다. 폴백으로 PlacementTarget·Tag.
-        var p = parent.Tag as ProjectItem
-                ?? cm.DataContext as ProjectItem
-                ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as ProjectItem;
-        if (p is null) return;
-
         parent.Items.Clear();
         foreach (var f in p.Files)
         {

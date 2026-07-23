@@ -467,6 +467,18 @@
                     Cursor="Arrow">
                 <Border.ContextMenu>
                     <ContextMenu>
+                        <MenuItem Header="기본 브라우저로 열기" Tag="{Binding}" Click="BrowserTabOpenExternal_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconExternalLink}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="현재 URL 복사" Tag="{Binding}" Click="BrowserTabCopyUrl_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconCopy}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <MenuItem Header="이름 변경" Tag="{Binding}" Click="BrowserTabRename_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPencil}"
@@ -532,6 +544,15 @@
                         <MenuItem Header="디렉토리 열기" Tag="{Binding}" Click="OpenProjectDirectory_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolderOpen}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="Git 저장소 웹에서 열기"
+                                  CommandParameter="GitRemote"
+                                  IsEnabled="False"
+                                  Click="OpenGitRemote_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconExternalLink}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>

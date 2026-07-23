@@ -123,6 +123,61 @@ public partial class BrowserHostView : UserControl
         NavigateInternal(normalized, NavCause.User);
     }
 
+    /// <summary>현재 페이지를 Windows 기본 브라우저로 연다.
+    /// 아직 WebView2가 시작되지 않은 탭은 저장된 마지막 방문 URL을 사용한다.</summary>
+    public bool TryOpenInDefaultBrowser(string? stateKey = null)
+    {
+        var url = ResolveCurrentWebUrl(stateKey);
+        if (url == null) return false;
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true,
+            });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>현재 또는 저장된 마지막 방문 URL을 클립보드에 복사한다.</summary>
+    public bool TryCopyCurrentUrl(string? stateKey = null)
+    {
+        var url = ResolveCurrentWebUrl(stateKey);
+        if (url == null) return false;
+        try
+        {
+            Clipboard.SetText(url);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private string? ResolveCurrentWebUrl(string? stateKey)
+    {
+        string? url = _view?.CoreWebView2?.Source;
+        if (!IsWebUrl(url)) url = _pendingOpenUrl;
+        if (!IsWebUrl(url)) url = CurrentHistoryUrl;
+        if (!IsWebUrl(url))
+        {
+            var saved = SettingsService.LoadBrowserHistory(stateKey ?? _projectPath);
+            if (saved is { } history && history.Urls.Count > 0)
+                url = history.Urls[Math.Clamp(history.Index, 0, history.Urls.Count - 1)];
+        }
+        return IsWebUrl(url) ? url : null;
+    }
+
+    private static bool IsWebUrl(string? value)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+           && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
     /// <summary>자발적 탐색 1건을 스택에 기록(브라우저 표준: 현재 위치 앞쪽은 버림).</summary>
     private void RecordVisit(string url)
     {

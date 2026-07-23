@@ -55,6 +55,69 @@ public static class GitService
         return r.Ok && r.Output.Trim() == "true";
     }
 
+    /// <summary>origin 원격 주소를 기본 브라우저에서 열 수 있는 HTTP(S) 주소로 변환한다.
+    /// HTTPS 자격정보는 제거하고, 일반적인 SSH/scp 형식은 https://host/path 로 바꾼다.</summary>
+    public static async Task<string?> GetOriginWebUrlAsync(string repoDir)
+    {
+        if (string.IsNullOrWhiteSpace(repoDir) || !Directory.Exists(repoDir)) return null;
+        var result = await RunAsync(repoDir, "remote", "get-url", "origin");
+        if (!result.Ok) return null;
+        var remote = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .FirstOrDefault();
+        return ToWebUrl(remote);
+    }
+
+    private static string? ToWebUrl(string? remote)
+    {
+        if (string.IsNullOrWhiteSpace(remote)) return null;
+        remote = remote.Trim();
+
+        // git@github.com:owner/repo.git 같은 scp 형식.
+        if (!remote.Contains("://", StringComparison.Ordinal))
+        {
+            int at = remote.IndexOf('@');
+            int colon = at >= 0 ? remote.IndexOf(':', at + 1) : -1;
+            if (at > 0 && colon > at + 1)
+                return BuildHttpsUrl(remote[(at + 1)..colon], remote[(colon + 1)..]);
+            return null; // 로컬 경로 등은 웹에서 열 수 없음.
+        }
+
+        if (!Uri.TryCreate(remote, UriKind.Absolute, out var uri)) return null;
+        if (uri.Scheme is "http" or "https")
+        {
+            var builder = new UriBuilder(uri)
+            {
+                UserName = "",
+                Password = "",
+                Query = "",
+                Fragment = "",
+                Path = TrimGitSuffix(uri.AbsolutePath),
+            };
+            return builder.Uri.AbsoluteUri.TrimEnd('/');
+        }
+
+        if (uri.Scheme is "ssh" or "git")
+            return BuildHttpsUrl(uri.Host, uri.AbsolutePath);
+
+        return null;
+    }
+
+    private static string? BuildHttpsUrl(string host, string path)
+    {
+        host = host.Trim();
+        path = TrimGitSuffix(path).Trim('/');
+        if (host.Length == 0 || path.Length == 0) return null;
+        return new UriBuilder(Uri.UriSchemeHttps, host) { Path = path }
+            .Uri.AbsoluteUri.TrimEnd('/');
+    }
+
+    private static string TrimGitSuffix(string path)
+    {
+        path = path.Trim().Replace('\\', '/').TrimEnd('/');
+        return path.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? path[..^4] : path;
+    }
+
     /// <summary>porcelain=v1 의 XY 상태를 staged(X)·unstaged(Y) 로 분리 수집.</summary>
     public static async Task<Models.GitStatus> StatusAsync(string repoDir)
     {

@@ -730,7 +730,7 @@
                                     <TextBlock Text="브라우저" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="인앱 브라우저의 기본 주소와 터미널 URL 링크 동작을 설정합니다."
+                                <TextBlock Text="인앱 브라우저의 기본 주소와 URL 링크 동작을 설정합니다."
                                            Style="{StaticResource SettingsContentSubtitle}"/>
 
                                 <Border Padding="0,0,0,16" CornerRadius="0" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Background="Transparent" Margin="0,16,0,0">
@@ -751,7 +751,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="176"/></Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                             <TextBlock Text="URL 바로 열기" FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock Text="터미널에서 URL을 클릭했을 때 열 위치입니다. 인앱 탭은 현재 프로젝트에 새 탭으로 만듭니다."
+                                            <TextBlock Text="터미널 URL이나 Git 저장소 링크를 열 위치입니다. 인앱 탭은 대상 프로젝트에 새 탭으로 만듭니다."
                                                        FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
                                         </StackPanel>

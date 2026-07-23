@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace DevezCode.Services;
 
-/// <summary>터미널 URL 링크를 열 위치. 인앱 탭은 현재 프로젝트의 새 브라우저 탭으로 연다.</summary>
+/// <summary>앱에서 URL을 열 위치. 인앱 탭은 대상 프로젝트의 새 브라우저 탭으로 연다.</summary>
 public enum TerminalUrlOpenTarget
 {
     InAppBrowserTab,
@@ -142,7 +142,7 @@ public static class SettingsService
         public bool PromptForNewBrowserTabName { get; set; } = false;
         // 브라우저 기록이 없는 새 탭의 첫 주소. 잘못된 구버전 값은 LoadBrowserHomeUrl에서 Google로 보정한다.
         public string BrowserHomeUrl { get; set; } = "https://www.google.com";
-        // 터미널 URL 링크 열기 방식. 기본은 현재 프로젝트의 인앱 브라우저 새 탭.
+        // URL 링크 열기 방식. 기본은 대상 프로젝트의 인앱 브라우저 새 탭.
         public TerminalUrlOpenTarget TerminalUrlOpenTargetMode { get; set; } = TerminalUrlOpenTarget.InAppBrowserTab;
         // 새로 숨긴 세션을 숨김 목록 맨 위에 넣을지 여부. JSON 필드명은 기존 설정 호환을 위해 유지한다.
         // 기본 false = 맨 아래.

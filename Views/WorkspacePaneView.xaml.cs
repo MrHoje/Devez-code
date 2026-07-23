@@ -2520,6 +2520,14 @@ public partial class WorkspacePaneView : UserControl
         }
         else if (tab is BrowserTabItem browser)
         {
+            var openExternalItem = new MenuItem { Header = "기본 브라우저로 열기", Icon = BuildMenuIcon("IconExternalLink") };
+            openExternalItem.Click += (_, _) => OpenBrowserInDefaultBrowser(browser);
+            cm.Items.Add(openExternalItem);
+
+            var copyUrlItem = new MenuItem { Header = "현재 URL 복사", Icon = BuildMenuIcon("IconCopy") };
+            copyUrlItem.Click += (_, _) => CopyBrowserUrl(browser);
+            cm.Items.Add(copyUrlItem);
+
             var renameItem = new MenuItem { Header = "이름 변경", Icon = BuildMenuIcon("IconPencil") };
             renameItem.Click += (_, _) => RenameBrowserTab(browser);
             cm.Items.Add(renameItem);
@@ -2603,6 +2611,20 @@ public partial class WorkspacePaneView : UserControl
 
         cm.PlacementTarget = sender as UIElement;
         cm.IsOpen = true;
+    }
+
+    private static void OpenBrowserInDefaultBrowser(BrowserTabItem browser)
+    {
+        if (browser.Browser.TryOpenInDefaultBrowser(browser.PersistenceKey)) return;
+        ConfirmDialog.Alert("기본 브라우저로 열기", "열 수 있는 웹 주소가 없습니다.",
+            iconKey: "IconTriangleAlert");
+    }
+
+    private static void CopyBrowserUrl(BrowserTabItem browser)
+    {
+        if (browser.Browser.TryCopyCurrentUrl(browser.PersistenceKey)) return;
+        ConfirmDialog.Alert("현재 URL 복사", "URL을 클립보드에 복사하지 못했습니다.",
+            iconKey: "IconTriangleAlert");
     }
 
     /// <summary>탭 우클릭 메뉴의 "분할 보기/이동" 항목. 비분할이면 "분할 보기"(새 분할 생성),
