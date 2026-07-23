@@ -315,7 +315,13 @@
     _lastExternalUrl = url;
     _lastExternalUrlAt = now;
     dlog('terminalUrl request ' + url);
-    post({ type: 'openExternalUrl', url: url });
+    // 링크 activate는 xterm의 mouseup 처리 도중 호출된다. 여기서 WebView 메시지를 동기 전송하면
+    // C#이 기본 브라우저를 띄우며 창 포커스를 빼앗고, xterm이 현재 mouseup 처리를 끝내기 전에
+    // WebView가 비활성화될 수 있다. 그러면 xterm 내부에 좌버튼 down 상태가 남아 이후 포인터 이동이
+    // 계속 드래그 선택으로 처리된다. 현재 이벤트 스택이 모두 끝난 다음 브라우저 열기를 요청한다.
+    setTimeout(function () {
+      post({ type: 'openExternalUrl', url: url });
+    }, 0);
   }
 
   // xterm의 OSC 8 fallback은 confirm 뒤 window.open을 직접 호출한다. linkHandler가 어떤 이유로
