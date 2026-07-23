@@ -405,7 +405,13 @@
                             <MenuItem Header="파일 열기" Click="OpenFileMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
-                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                                          Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"
+                                          RenderTransformOrigin="0.5,0.5">
+                                        <!-- 메뉴 아이콘 슬롯에서 다른 항목과 맞추기 위해 오른쪽으로 1px 보정한다. -->
+                                        <Path.RenderTransform>
+                                            <TranslateTransform X="1"/>
+                                        </Path.RenderTransform>
+                                    </Path>
                                 </MenuItem.Icon>
                             </MenuItem>
                         </ContextMenu>
