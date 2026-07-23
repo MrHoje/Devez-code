@@ -58,6 +58,9 @@ public sealed class PdfFileEditorView : UserControl, IFileTabEditor
             var core = _webView.CoreWebView2;
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
+            // WebView2 내장 PDF 뷰어의 전체 화면은 일부 런타임에서 Escape로 해제되지 않는다.
+            // 빠져나올 수 없는 상태를 막기 위해 해당 툴바 버튼을 노출하지 않는다.
+            core.Settings.HiddenPdfToolbarItems = CoreWebView2PdfToolbarItems.FullScreen;
             core.Profile.PreferredColorScheme = PreferredColorScheme;
             core.Navigate(new Uri(_path).AbsoluteUri);
             _webView.Focus();
