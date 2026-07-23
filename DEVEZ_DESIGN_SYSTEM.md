@@ -2252,7 +2252,7 @@ Resources/
 | 프로젝트 | 브랜치 | commit |
 |---|---|---|
 | devez-code | `main` | `6e838bcdfc7a` |
-| devez | `master` | `395f4fa4ca70` |
+| devez | `master` | `c2405608658c` |
 | eGhisDevWPF | `main` | `647326f8b9d4` |
 
 스타일 파일이나 테마 서비스가 크게 바뀌면 이 문서의 palette, control geometry, icon 규칙, snapshot을 함께 갱신한다.
