@@ -1,7 +1,7 @@
 # Devez 공통 디자인 시스템
 
 > 대상: `devez-code`, `devez`, `eGhisDevWPF`
-> 문서 버전: 1.3
+> 문서 버전: 1.4
 > 기준일: 2026-07-23
 > 주 대상 기술: WPF/XAML
 > 목적: 새 프로젝트에서 같은 색, 밀도, 컨트롤, 라운드, 아이콘, 보더, 상태 표현을 바로 재현한다.
@@ -127,7 +127,7 @@
 | App background | `#F8FAFC` |
 | Surface | `#FFFFFF` |
 | Surface soft | `#F1F5F9` |
-| Surface hover | `#EEF2F7` |
+| Surface hover | `#F1F5F9` (= surface soft) |
 | Border soft | `#E2E8F0` |
 | Border strong | `#CBD5E1` |
 | Text primary | `#0F172A` |
@@ -148,7 +148,7 @@
 | App background | `#F2EDE6` |
 | Surface | `#FAF7F2` |
 | Surface soft | `#ECE7DE` |
-| Surface hover | `#E5DFD4` |
+| Surface hover | `#ECE7DE` (= surface soft) |
 | Border soft | `#D8D2C6` |
 | Border strong | `#C2B8A8` |
 | Text primary | `#2A2620` |
@@ -170,7 +170,7 @@
 | Surface | `#272727` |
 | Surface soft | `#2F2F2F` |
 | Surface alt | `#2B2B2B` |
-| Surface hover | `#343434` |
+| Surface hover | `#424242` |
 | Border soft | `#404040` |
 | Border strong | `#5A5A5A` |
 | Text primary | `#E8E8E8` |
@@ -183,6 +183,11 @@
 | Success | `#22C55E` |
 | Danger | `#EF4444` |
 | Today | `#F97316` |
+
+hover 토큰 규칙:
+
+- `HoverBrush`는 minimal·soft에서 surface soft와 같은 색을 공유하고, dark에서만 한 단계 더 밝은 `#424242`를 쓴다.
+- 조밀한 목록 행 hover는 별도 `SessionHoverBrush` 토큰이다: minimal `#EFF3F7`, soft `#EAE5DC`, dark는 surface soft(배경과 동일해 사실상 변화 없음).
 
 ### 3.3 보조 상태색
 
@@ -823,6 +828,8 @@ Secondary button의 보더는 콘텐츠 크기를 줄이지 않도록 별도 ove
 | Compact page | 29~32 | 화면별 | `14~16,0` | 4 | eGhis 밀도형 |
 | Small utility | 28~34 | 화면별 | `9~14,0` | 6~8 | transparent/surface |
 
+높이 `38`과 최소 너비 `80`은 `PrimaryButton`/`SecondaryButton` 스타일 세터가 아니라 **사용처 규격**이다. 다이얼로그·폼의 액션 버튼은 반드시 `Height="38" MinWidth="80"`을 지정하고, toolbar·인라인 등 compact 사용처는 `28~36`을 쓴다. 스타일만 적용하고 높이를 빠뜨리면 콘텐츠 크기로 수축한다.
+
 상태:
 
 | 상태 | Primary | Secondary |
@@ -1144,7 +1151,7 @@ MenuItem:
 - 라운드 `6`
 - hover 배경 Surface soft
 - disabled opacity `0.4`
-- 아이콘 슬롯 `20`, 실제 아이콘 `14`
+- 기본 템플릿 아이콘 호스트는 `16×16`이다. 실사용 컨텍스트 메뉴 아이콘은 `LucideIcon`을 `13×13`으로 지정하고, 닫기·X류만 `11×11`, 텍스트 편집 메뉴(`EditMenuItem`)는 `14×14`를 쓴다.
 - 텍스트와 shortcut 사이 여유 `20`
 
 WPF 안전 규칙:
@@ -1286,6 +1293,12 @@ Selected tab:
 - overflow 때만 좌/우 `22×22` navigation button과 edge fade를 표시한다.
 - selected tab은 선택·재정렬·scroll·theme 변경 후 항상 viewport 안으로 보정한다.
 - drag 중 feet와 seam을 별도로 숨기거나 이동하고, 종료 시 복원한다.
+
+devez 채팅방 탭 변형(같은 패턴의 밀도 차이):
+
+- tab bar 높이 `45`, 위치 표시 옵션이 켜지면 `54`.
+- 첫 탭 앞 받침 여유 `11`은 동일. 선택 탭의 하단 받침(feet) 곡선은 약 `10px`.
+- 선택 탭은 `ZIndex=10`으로 인접 탭 위에 올린다. hover 시각화는 탭 버튼이 아니라 부모 border가 담당한다.
 
 `ListBoxItem`, `TabItem`, `TreeViewItem`의 시스템 selected 배경은 `Background="Transparent"`만으로 제거되지 않는다. 커스텀 selection ring만 쓸 때는 기본 `ControlTemplate`의 selected trigger를 제거한 미니멀 template을 사용한다.
 
@@ -1613,6 +1626,8 @@ Transparent top-level Window, Width=340, SizeToContent=Height
 | fade in | `200ms` |
 | fade out | `180ms`, `CubicEase/EaseIn` |
 
+`stack gap 8`은 표준값(`devez-code` 구현)이다. `devez` 기존 구현은 offset `7` 기반(시각 간격 약 `5`)이라 새 코드에서 복사하지 않는다. 알림에서 파생된 고정 팝업(예: devez 타이머 카드, 폭 `280`)도 surface radius `12` / close `22×22` / X glyph `9×9` 규격을 그대로 재사용한다.
+
 표시와 stack:
 
 - `WindowStyle=None`, `AllowsTransparency=True`, `ResizeMode=NoResize`, `ShowInTaskbar=False`, `ShowActivated=False`, `Topmost=True`.
@@ -1661,7 +1676,7 @@ stack animation 변형:
 | open motion | opacity `0→1`, `220ms`, `CubicEase/EaseOut` |
 | close key | `Escape` |
 
-세 프로젝트 값이 `1010×775`, `970×830`, `900×710`으로 모두 달라 전체 우선순위에 따라 `devez-code`의 `970×830`을 표준으로 채택한다. 작은 화면에서는 고정 크기를 억지로 유지하지 말고 working area 안에서 최대 `calc(100%-32)`로 줄인 뒤 content scroll을 사용한다.
+세 프로젝트 값이 `1010×775`, `970×830`, `900×710`으로 모두 달라 전체 우선순위에 따라 `devez-code`의 `970×830`을 표준으로 채택한다. category rail 폭도 `devez` 기존 구현은 `170`이지만 표준은 `devez-code`의 `205`다. 작은 화면에서는 고정 크기를 억지로 유지하지 말고 working area 안에서 최대 `calc(100%-32)`로 줄인 뒤 content scroll을 사용한다.
 
 설정창은 shadow layer와 content layer를 분리한다.
 
@@ -2236,8 +2251,8 @@ Resources/
 
 | 프로젝트 | 브랜치 | commit |
 |---|---|---|
-| devez-code | `main` | `03f572431663` |
-| devez | `master` | `c2405608658c` |
+| devez-code | `main` | `6e838bcdfc7a` |
+| devez | `master` | `395f4fa4ca70` |
 | eGhisDevWPF | `main` | `647326f8b9d4` |
 
 스타일 파일이나 테마 서비스가 크게 바뀌면 이 문서의 palette, control geometry, icon 규칙, snapshot을 함께 갱신한다.
