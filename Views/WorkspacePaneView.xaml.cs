@@ -76,6 +76,8 @@ public partial class WorkspacePaneView : UserControl
     public event Action<WorkspacePaneView, TabItemBase>? SplitViewRequested;
     /// <summary>세션 탭 우클릭 "내보내기" → 셸이 대화를 .md 로 저장(프로젝트 카드 메뉴와 동일 동작).</summary>
     public event Action<SessionItem>? ExportSessionRequested;
+    /// <summary>세션 탭 우클릭 "외부 터미널로 열기" → 셸이 같은 세션 ID를 외부로 인계.</summary>
+    public event Action<SessionItem>? ExternalSessionRequested;
     /// <summary>세션 탭 우클릭 "잠금/잠금 해제" → MainWindow 가 토글.</summary>
     public event Action<SessionItem>? ToggleSessionLockRequested;
     /// <summary>세션 숨김/닫기/삭제는 부모-자식 서브트리 단위 처리를 위해 MainWindow에 위임.</summary>
@@ -145,6 +147,13 @@ public partial class WorkspacePaneView : UserControl
         _terminal.RevealPrepared += () => RevealPrepared?.Invoke(this);
         // 콜드 세션: web 로딩 커버가 켜진 것(ACK)을 확인한 뒤에만 터미널 HWND 를 unpark 한다.
         _terminal.LoadingShown += OnLoadingShown;
+        // 앱 재시작 복원 경로에서는 먼저 WPF 스냅샷을 보여 주고, 읽기 전용 xterm 생성 ACK 뒤
+        // 라이브 외부 출력으로 교체한다.
+        _terminal.ExternalPreviewReady += id =>
+        {
+            if (_activeSession is { IsExternal: true } session && session.Id == id)
+                RevealExternalSessionPreview();
+        };
         // 로딩 오버레이(파킹 중 터미널 영역 덮개) 배경을 '터미널 배경색'과 맞춘다 — 앱 배경(BgBrush)으로 두면
         // unpark 후 웹 커버/터미널(터미널 배경색)과 색이 달라 앱배경→터미널배경 점프가 검정 깜빡으로 보인다.
         ApplyTerminalBgToCovers();
@@ -652,9 +661,9 @@ public partial class WorkspacePaneView : UserControl
     private void RefreshHeaderSessionGate()
     {
         if (AttachFileBtn != null)
-            AttachFileBtn.Visibility = _activeTab is SessionItem ? Visibility.Visible : Visibility.Collapsed;
+            AttachFileBtn.Visibility = _activeTab is SessionItem { IsExternal: false } ? Visibility.Visible : Visibility.Collapsed;
         if (FontSizeCombo != null)
-            FontSizeCombo.Visibility = _activeTab is SessionItem ? Visibility.Visible : Visibility.Collapsed;
+            FontSizeCombo.Visibility = _activeTab is SessionItem { IsExternal: false } ? Visibility.Visible : Visibility.Collapsed;
         UpdateProjectBranchBubble(_activeProject);
     }
 
@@ -780,7 +789,7 @@ public partial class WorkspacePaneView : UserControl
     {
         foreach (var s in proj.Tabs.OfType<SessionItem>())
         {
-            if (ReferenceEquals(s, except) || s.IsEffectivelyHidden) continue;
+            if (ReferenceEquals(s, except) || s.IsEffectivelyHidden || s.IsExternal) continue;
             if (_themeReloadRoomIds.Contains(s.Id)) continue; // 테마 종료 중 비활성 방을 백그라운드에서 되살리지 않음
             if (IsSessionActiveElsewhere?.Invoke(s) == true) continue; // 다른 패널이 표시 중 — 그 패널이 최종 폭으로 생성
             SettingsService.SaveClaudeCodeRoomDir(s.Id, proj.Path);
@@ -1043,6 +1052,7 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>세션을 선택하거나 포커스를 옮기지 않고 터미널만 백그라운드에서 시작한다.</summary>
     public void PreloadSession(SessionItem session)
     {
+        if (session.IsExternal) return;
         var parent = ParentOf(session);
         if (parent == null) return;
         SettingsService.SaveClaudeCodeRoomDir(session.Id, parent.Path);
@@ -1094,9 +1104,15 @@ public partial class WorkspacePaneView : UserControl
     private readonly HashSet<string> _pendingReactivateAfterHideStop = new();
     private const string HideStopLabel = "세션을 안전하게 종료하는 중…";
     private const int HideStopDelayMs = 3000; // 실수 숨김 복구 유예
+    private string? _externalPreviewRoomId;
 
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
+        if (session.IsExternal)
+        {
+            ActivateExternalSession(session, unHide);
+            return;
+        }
         SessionActivity?.Invoke(session.Id);
         if (ReferenceEquals(_activeSession, session)) return;
         // 처음 표시되는 프리로드 세션 또는 마지막 표시 이후 패널 폭이 달라진 ready 세션은 show 전에
@@ -1221,11 +1237,53 @@ public partial class WorkspacePaneView : UserControl
         if (coverReflow) RevealAfterTransition(kick: true); // 최종 폭에서 세션 재동기 후 커버 걷기(리플로우 감춤)
     }
 
+    private void ActivateExternalSession(SessionItem session, bool unHide)
+    {
+        if (ReferenceEquals(_activeSession, session))
+        {
+            UpdateEmptyState();
+            EnsureSelectedTabVisible(session);
+            RefreshModelEffortDock();
+            ActiveChanged?.Invoke(this);
+            return;
+        }
+
+        ClearIsolationIfMismatch(session);
+        if (_activeSession != null) _activeSession.IsActive = false;
+        var parent = ParentOf(session);
+        if (parent == null) return;
+
+        if (unHide && session.IsEffectivelyHidden)
+        {
+            foreach (var visible in parent.UnhideSessionPath(session)) CancelPendingHideStop(visible.Id);
+            WorkspaceStore.Save(Projects);
+        }
+        if (!parent.IsExpanded) parent.IsExpanded = true;
+        if (_activeTab is FileTabItem prevFile) prevFile.IsActive = false;
+        if (_activeTab is BrowserTabItem prevBrowser) prevBrowser.IsActive = false;
+        _activeTab = session;
+        _activeSession = session;
+        session.IsActive = true;
+        RecordActiveTab(parent, "S:" + session.Id);
+        HideSessionLoading();
+        UpdateEmptyState();
+        EnsureSelectedTabVisible(session);
+        RefreshModelEffortDock();
+        ActiveChanged?.Invoke(this);
+    }
+
+    public async Task<byte[]?> CaptureSessionSnapshotPngAsync(SessionItem session)
+    {
+        if (!ReferenceEquals(_activeSession, session) || session.IsExternal) return null;
+        var png = await _terminal.CapturePngAsync();
+        return ReferenceEquals(_activeSession, session) ? png : null;
+    }
+
     /// <summary>작업 큐 → 활성 세션 터미널에 텍스트 입력 + Enter. 비활성/죽은 세션이면 false.</summary>
     public bool SendTextToActiveSession(string text)
     {
-        var id = _activeSession?.Id;
-        if (string.IsNullOrEmpty(id)) return false;
+        if (_activeSession is null or { IsExternal: true }) return false;
+        var id = _activeSession.Id;
         var session = TerminalSessionManager.Instance.Get(id);
         if (session is not { IsAlive: true }) return false;
         session.Write(text);
@@ -1237,6 +1295,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void AttachFileBtn_Click(object sender, RoutedEventArgs e)
     {
+        if (_activeSession is { IsExternal: true }) return;
         if (_activeSession == null) return;
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
@@ -1395,7 +1454,7 @@ public partial class WorkspacePaneView : UserControl
     private void FontSizeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressFontSize) return;
-        if (_activeSession == null) return;
+        if (_activeSession is null or { IsExternal: true }) return;
         if (FontSizeCombo.SelectedValue is not string val || !int.TryParse(val, out var pt)) return;
         _terminal.SetRoomFontSizePt(_activeSession.Id, pt); // 지금 보고 있는 방에만 적용, 다른 방/새 방엔 영향 없음
     }
@@ -1499,9 +1558,9 @@ public partial class WorkspacePaneView : UserControl
         }
 
         var agentId = s == null ? null : (string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId);
-        bool supportsSelection = s != null && agentId is "claude" or "grok";
+        bool supportsSelection = s is { IsExternal: false } && agentId is ("claude" or "grok");
         ModelEffortDock.Visibility = supportsSelection ? Visibility.Visible : Visibility.Collapsed;
-        bool isCodex = s != null && agentId == "codex";
+        bool isCodex = s is { IsExternal: false } && agentId == "codex";
         CodexModelEffortDock.Visibility = isCodex ? Visibility.Visible : Visibility.Collapsed;
         if (isCodex)
         {
@@ -2114,6 +2173,59 @@ public partial class WorkspacePaneView : UserControl
         try { _terminal.CloseTerminal(roomId); } catch { /* ignore */ }
     }
 
+    /// <summary>
+    /// 외부 인계된 세션의 내부 배선을 끊되 현재 xterm 버퍼는 보존한다.
+    /// 버퍼가 없는 재시작 복원 경로에서만 저장된 스냅샷을 사용한다.
+    /// </summary>
+    public async Task SetSessionExternalAsync(SessionItem session)
+    {
+        bool retained = false;
+        if (ReferenceEquals(_activeSession, session))
+        {
+            retained = _terminal.BeginExternalPreview(session.Id);
+            if (retained)
+            {
+                ShowExternalSessionPreview(session);
+            }
+            else
+            {
+                LoadExternalSessionPreview(session);
+                await WaitForFramesAsync(2);
+            }
+        }
+        if (!retained)
+            CloseTerminalRoom(session.Id);
+        if (ReferenceEquals(_activeSession, session))
+            UpdateEmptyState();
+    }
+
+    /// <summary>외부 lock 해제 후, 이 패널이 해당 세션을 보고 있었다면 보존 버퍼에 같은 방을 내부 resume 한다.</summary>
+    public void OnExternalSessionEnded(SessionItem session)
+    {
+        bool active = ReferenceEquals(_activeSession, session);
+        _terminal.EndExternalPreview(session.Id, reconnect: active);
+        if (!active) return;
+        HideExternalSessionPreview();
+        session.IsActive = false;
+        _activeSession = null;
+        _activeTab = null;
+        if (!session.IsEffectivelyHidden)
+            ActivateSession(session, unHide: false);
+        else
+            ClearActiveSession();
+    }
+
+    /// <summary>메인 타이머가 호출한다. 이 패널에 외부 xterm이 있으면 독립 offset으로 새 출력을 반영한다.</summary>
+    public void PumpExternalSessionOutput(SessionItem session)
+    {
+        if (ReferenceEquals(_activeSession, session) && !_terminal.HasExternalPreview(session.Id))
+            _terminal.ShowExternalPreview(session.Id);
+        _terminal.PumpExternalPreview(session.Id);
+    }
+
+    public bool IsExternalSessionOutputCaughtUp(SessionItem session)
+        => _terminal.IsExternalPreviewCaughtUp(session.Id);
+
     /// <summary>숨김 graceful 종료가 완료됨(이 패널에서 종료가 실행됨) — 셸이 모든 패널로 중계한다.</summary>
     public event Action<SessionItem>? HideStopFinished;
 
@@ -2145,6 +2257,7 @@ public partial class WorkspacePaneView : UserControl
     private void ScheduleGracefulStopAfterHide(SessionItem session)
     {
         CancelPendingHideStop(session.Id);
+        if (session.IsExternal) return;
         if (TerminalSessionManager.Instance.Get(session.Id) is not { IsAlive: true })
             return;
 
@@ -2366,6 +2479,7 @@ public partial class WorkspacePaneView : UserControl
     {
         var allClaudeSessions = Projects
             .SelectMany(p => p.Tabs).OfType<SessionItem>()
+            .Where(s => !s.IsExternal)
             .Where(s =>
             {
                 var aid = string.IsNullOrEmpty(s.AgentId) ? AgentRegistry.DefaultAgentId : s.AgentId;
@@ -2552,7 +2666,7 @@ public partial class WorkspacePaneView : UserControl
         }
         else if (tab is SessionItem s)
         {
-            // 이름변경·포크·내보내기 — 프로젝트 카드 세션 우클릭과 동일 기능.
+            // 이름변경·포크·내보내기·잠금·외부 터미널 — 프로젝트 카드 세션 우클릭과 동일 기능.
             var renameItem = new MenuItem { Header = "이름 변경", Icon = BuildMenuIcon("IconPencil") };
             renameItem.Click += (_, _) => RenameSession(s);
             cm.Items.Add(renameItem);
@@ -2573,6 +2687,19 @@ public partial class WorkspacePaneView : UserControl
             };
             lockItem.Click += (_, _) => ToggleSessionLockRequested?.Invoke(s);
             cm.Items.Add(lockItem);
+
+            var externalItem = new MenuItem
+            {
+                Header = s.IsExternal ? "외부 터미널에서 실행 중" : "외부 터미널로 열기",
+                Icon = BuildMenuIcon("IconExternalLink"),
+                IsEnabled = !s.IsExternal && !s.IsBusy,
+                ToolTip = s.IsExternal
+                    ? "외부 터미널에서 실행 중입니다."
+                    : s.IsBusy ? "응답이 완료된 후 외부 터미널로 열 수 있습니다." : null,
+            };
+            ToolTipService.SetShowOnDisabled(externalItem, true);
+            externalItem.Click += (_, _) => ExternalSessionRequested?.Invoke(s);
+            cm.Items.Add(externalItem);
 
             cm.Items.Add(new Separator());
             cm.Items.Add(BuildSplitMoveItem(s));
@@ -2596,7 +2723,7 @@ public partial class WorkspacePaneView : UserControl
             };
             cm.Items.Add(hideOthers);
 
-            if (!s.IsLocked)
+            if (!s.IsLocked && !s.IsExternal)
             {
                 var closeItem = new MenuItem { Header = "닫기", Icon = BuildMenuIcon("IconX") };
                 closeItem.Click += (_, _) => StopTrackingSession(s);
@@ -3334,42 +3461,109 @@ public partial class WorkspacePaneView : UserControl
         BrowserHostContainer.Visibility = Visibility.Visible;
     }
 
+    private void LoadExternalSessionPreview(SessionItem session)
+    {
+        if (!string.Equals(_externalPreviewRoomId, session.Id, StringComparison.Ordinal))
+        {
+            _externalPreviewRoomId = session.Id;
+            var png = ExternalSessionService.LoadSnapshot(session.Id);
+            TerminalSnapshot.Source = png == null ? null : TerminalHostView.BitmapFromPng(png);
+        }
+        TerminalSnapshot.Width = double.NaN;
+        TerminalSnapshot.Height = double.NaN;
+        TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
+        TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
+        TerminalSnapshot.Visibility = TerminalSnapshot.Source == null
+            ? Visibility.Collapsed : Visibility.Visible;
+        ExternalSessionOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void ShowExternalSessionPreview(SessionItem session)
+    {
+        _gateUnpark = false;
+        _unparkFallback?.Stop();
+        if (_terminal.ShowExternalPreview(session.Id))
+        {
+            RevealExternalSessionPreview();
+            return;
+        }
+
+        LoadExternalSessionPreview(session);
+        ParkTerminalHost();
+        ParkFileEditorHost();
+        ParkBrowserHost();
+        HideSessionLoading();
+        TerminalCurtain.Visibility = Visibility.Collapsed;
+    }
+
+    private void RevealExternalSessionPreview()
+    {
+        HideExternalSessionPreview();
+        UnparkTerminalHost();
+        TerminalHostContainer.Visibility = Visibility.Visible;
+        ParkFileEditorHost();
+        ParkBrowserHost();
+        HideSessionLoading();
+        TerminalCurtain.Visibility = Visibility.Collapsed;
+    }
+
+    private void HideExternalSessionPreview()
+    {
+        ExternalSessionOverlay.Visibility = Visibility.Collapsed;
+        if (_externalPreviewRoomId == null) return;
+        _externalPreviewRoomId = null;
+        TerminalSnapshot.Visibility = Visibility.Collapsed;
+        TerminalSnapshot.Source = null;
+        TerminalSnapshot.Width = double.NaN;
+        TerminalSnapshot.Height = double.NaN;
+        TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
+        TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
+    }
+
     private void UpdateEmptyState()
     {
         bool hasActive = _activeTab != null;
 
-        if (_activeTab is SessionItem)
+        if (_activeTab is SessionItem { IsExternal: true } externalSession)
         {
-            // 콜드 게이트 중이면 unpark 과 파일 에디터 파킹 둘 다 ACK(RevealTerminalAfterGate)까지 미룬다 —
-            // 파일(md)에서 세션 전환 시 md 를 먼저 파킹하면 airspace 갭에 검정이 새므로, md 를 띄워둔 채 대기.
-            if (!_gateUnpark) { UnparkTerminalHost(); ParkFileEditorHost(); ParkBrowserHost(); }
-            // suspend(스냅샷+Collapsed) 중 훅발 갱신이 HWND 를 되살리면 airspace 로 스냅샷을 뚫고
-            // 라이브 터미널이 보인다(설정창 열어둔 채 codex 응답 완료 등) — 복원은 ResumeTerminal 만.
-            if (!_overlaySuspended) TerminalHostContainer.Visibility = Visibility.Visible;
-        }
-        else if (_activeTab is FileTabItem)
-        {
-            ParkTerminalHost();
-            ParkBrowserHost();
-            // 전환 커버 중이면 파일 에디터(md=WebView2 는 airspace 로 WPF 커튼에 안 가려짐)를 0×0 주차로
-            // 감추고 TerminalCurtain(단색)으로 대신 가린다 → reveal 동기화 시 함께 나타나게(파일 조기표시 방지).
-            // Collapsed 로 감추면 md HWND 생성/재표시가 reveal 순간으로 밀려 컴포지터 첫 프레임(검정)이
-            // 번쩍인다 — 주차는 HWND 를 안 보이게 살려 두므로 reveal 이 '리사이즈'가 되어 검정 프레임이 없다.
-            if (_coverActive) ParkFileEditorHost();
-            else if (!_overlaySuspended) UnparkFileEditorHost(); // suspend 중 Visible 복원 금지(위 세션 분기와 동일)
-        }
-        else if (_activeTab is BrowserTabItem)
-        {
-            ParkTerminalHost();
-            ParkFileEditorHost();
-            if (_coverActive) ParkBrowserHost();
-            else if (!_overlaySuspended) UnparkBrowserHost();
+            ShowExternalSessionPreview(externalSession);
         }
         else
         {
-            ParkTerminalHost();
-            ParkFileEditorHost();
-            ParkBrowserHost();
+            HideExternalSessionPreview();
+            if (_activeTab is SessionItem)
+            {
+                // 콜드 게이트 중이면 unpark 과 파일 에디터 파킹 둘 다 ACK(RevealTerminalAfterGate)까지 미룬다 —
+                // 파일(md)에서 세션 전환 시 md 를 먼저 파킹하면 airspace 갭에 검정이 새므로, md 를 띄워둔 채 대기.
+                if (!_gateUnpark) { UnparkTerminalHost(); ParkFileEditorHost(); ParkBrowserHost(); }
+                // suspend(스냅샷+Collapsed) 중 훅발 갱신이 HWND 를 되살리면 airspace 로 스냅샷을 뚫고
+                // 라이브 터미널이 보인다(설정창 열어둔 채 codex 응답 완료 등) — 복원은 ResumeTerminal 만.
+                if (!_overlaySuspended) TerminalHostContainer.Visibility = Visibility.Visible;
+            }
+            else if (_activeTab is FileTabItem)
+            {
+                ParkTerminalHost();
+                ParkBrowserHost();
+                // 전환 커버 중이면 파일 에디터(md=WebView2 는 airspace 로 WPF 커튼에 안 가려짐)를 0×0 주차로
+                // 감추고 TerminalCurtain(단색)으로 대신 가린다 → reveal 동기화 시 함께 나타나게(파일 조기표시 방지).
+                // Collapsed 로 감추면 md HWND 생성/재표시가 reveal 순간으로 밀려 컴포지터 첫 프레임(검정)이
+                // 번쩍인다 — 주차는 HWND 를 안 보이게 살려 두므로 reveal 이 '리사이즈'가 되어 검정 프레임이 없다.
+                if (_coverActive) ParkFileEditorHost();
+                else if (!_overlaySuspended) UnparkFileEditorHost(); // suspend 중 Visible 복원 금지(위 세션 분기와 동일)
+            }
+            else if (_activeTab is BrowserTabItem)
+            {
+                ParkTerminalHost();
+                ParkFileEditorHost();
+                if (_coverActive) ParkBrowserHost();
+                else if (!_overlaySuspended) UnparkBrowserHost();
+            }
+            else
+            {
+                ParkTerminalHost();
+                ParkFileEditorHost();
+                ParkBrowserHost();
+            }
         }
 
         // 파일 패널 커버: 커버 중 & 파일 탭일 때만 단색 커튼 노출(세션은 웹 레이어 #xfer-cover 가 담당).
@@ -3644,6 +3838,8 @@ public partial class WorkspacePaneView : UserControl
             return;
         }
 
+        if (_activeSession is { IsExternal: true } externalSession
+            && !_terminal.HasExternalPreview(externalSession.Id)) return;
         if (_activeSession == null) return;
         if (blankCurtain)
         {
@@ -3666,6 +3862,11 @@ public partial class WorkspacePaneView : UserControl
     public void ResumeTerminal()
     {
         _overlaySuspended = false;
+        if (_activeSession is { IsExternal: true } externalSession)
+        {
+            ShowExternalSessionPreview(externalSession);
+            return;
+        }
         if (_activeSession != null)
             TerminalHostContainer.Visibility = Visibility.Visible;
         if (_activeTab is FileTabItem)
@@ -3691,6 +3892,8 @@ public partial class WorkspacePaneView : UserControl
             await browser.Browser.SuspendContentAsync();
             return;
         }
+        if (_activeSession is { IsExternal: true } externalSession
+            && !_terminal.HasExternalPreview(externalSession.Id)) return;
         if (_activeSession == null) return;
         double cw = TerminalHostContainer.ActualWidth, ch = TerminalHostContainer.ActualHeight;
 
@@ -3759,6 +3962,8 @@ public partial class WorkspacePaneView : UserControl
             await browser.Browser.SuspendContentAsync();
             return;
         }
+        if (_activeSession is { IsExternal: true } externalSession
+            && !_terminal.HasExternalPreview(externalSession.Id)) return;
         if (_activeSession == null) return;
         var png = await _terminal.CapturePngAsync();
         if (png != null)
@@ -3804,6 +4009,11 @@ public partial class WorkspacePaneView : UserControl
         {
             UnparkBrowserHost();
             browser.Browser.ResumeContent();
+            return;
+        }
+        if (_activeSession is { IsExternal: true } externalSession)
+        {
+            ShowExternalSessionPreview(externalSession);
             return;
         }
         // webCover: HWND 를 숨긴 적이 없으므로 되살릴 것도, WPF 스냅샷도 없다. 최종 폭을 확정(UpdateLayout)해

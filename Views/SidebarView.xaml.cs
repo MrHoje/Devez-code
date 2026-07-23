@@ -84,6 +84,8 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionHideRequested;
     /// <summary>세션 메뉴 "포크" 요청(MainWindow 위임) — 원본 대화를 복사한 새 세션 생성.</summary>
     public event Action<SessionItem>? SessionForkRequested;
+    /// <summary>세션 메뉴 "외부 터미널로 열기" 요청(MainWindow 위임).</summary>
+    public event Action<SessionItem>? SessionExternalRequested;
     /// <summary>세션 메뉴 "내보내기" 요청(MainWindow 위임) — 대화를 .md 로 저장.</summary>
     public event Action<SessionItem>? SessionExportRequested;
     /// <summary>세션 메뉴 "잠금/잠금 해제" 요청(MainWindow 위임).</summary>
@@ -1358,6 +1360,7 @@ public partial class SidebarView : UserControl
         int count = targets.Count;
         var separators = cm.Items.OfType<Separator>().ToList();
         bool anyLocked = targets.Any(session => session.IsLocked);
+        bool anyExternal = targets.Any(session => session.IsExternal);
         bool anyUnlocked = targets.Any(session => !session.IsLocked);
         bool anyVisible = targets.Any(session => !session.Hidden);
 
@@ -1365,10 +1368,19 @@ public partial class SidebarView : UserControl
         {
             string action = item.CommandParameter as string ?? "";
             bool destructive = action is "Close" or "Delete";
-            item.IsEnabled = !destructive || !anyLocked;
-            item.ToolTip = item.IsEnabled || !destructive
-                ? null
-                : "잠긴 세션이 포함되어 있어 실행할 수 없습니다.";
+            item.IsEnabled = action == "External"
+                ? !target.IsExternal && !target.IsBusy
+                : !destructive || (!anyLocked && !anyExternal);
+            item.ToolTip = action == "External"
+                ? target.IsExternal
+                    ? "외부 터미널에서 실행 중입니다."
+                    : target.IsBusy
+                        ? "응답이 완료된 후 외부 터미널로 열 수 있습니다."
+                        : null
+                : item.IsEnabled || !destructive ? null
+                    : anyExternal
+                        ? "외부 터미널에서 실행 중인 세션이 포함되어 있습니다."
+                        : "잠긴 세션이 포함되어 있어 실행할 수 없습니다.";
             if (action == "Single")
             {
                 item.Visibility = batch ? Visibility.Collapsed : Visibility.Visible;
@@ -1379,6 +1391,7 @@ public partial class SidebarView : UserControl
 
             item.Visibility = action switch
             {
+                "External" => batch ? Visibility.Collapsed : Visibility.Visible,
                 "Lock" => (batch ? anyUnlocked : !target.IsLocked)
                     ? Visibility.Visible : Visibility.Collapsed,
                 "Unlock" => (batch ? anyLocked : target.IsLocked)
@@ -1391,6 +1404,7 @@ public partial class SidebarView : UserControl
 
             item.Header = action switch
             {
+                "External" => target.IsExternal ? "외부 터미널에서 실행 중" : "외부 터미널로 열기",
                 "Lock" => showCount ? $"세션 {count}개 잠금" : "세션 잠금",
                 "Unlock" => showCount ? $"세션 {count}개 잠금 해제" : "잠금 해제",
                 "Hide" => showCount ? $"세션 {count}개 숨기기" : "세션 숨기기",
@@ -1428,6 +1442,12 @@ public partial class SidebarView : UserControl
     private void SessionRename_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<SessionItem>(sender) is { } s) SessionRenameRequested?.Invoke(s);
+    }
+
+    private void SessionExternal_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<SessionItem>(sender) is { IsExternal: false, IsBusy: false } s)
+            SessionExternalRequested?.Invoke(s);
     }
 
     private void SessionFork_Click(object sender, RoutedEventArgs e)

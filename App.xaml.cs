@@ -108,6 +108,24 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Windows Terminal 안에서 실행되는 독립 외부 세션 프록시는 UI·단일 인스턴스·환경 정리를
+        // 모두 건너뛴다. 메인 앱이 종료돼도 이 프로세스와 그 ConPTY는 계속 살아 있어야 한다.
+        if (ExternalSessionProxy.IsRequested(e.Args))
+        {
+            int exitCode;
+            try
+            {
+                exitCode = ExternalSessionProxy.RunFromEnvironment();
+            }
+            catch (Exception ex)
+            {
+                WriteCrashLog("ExternalSessionProxy", ex);
+                exitCode = 1;
+            }
+            Shutdown(exitCode);
+            return;
+        }
+
         // ContextMenu 는 우클릭으로 열되, 열린 MenuItem 은 좌클릭으로만 선택한다.
         EventManager.RegisterClassHandler(typeof(MenuItem), UIElement.PreviewMouseRightButtonDownEvent,
             new MouseButtonEventHandler(BlockContextMenuItemRightClick), true);

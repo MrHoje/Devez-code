@@ -189,6 +189,13 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="외부 터미널로 열기" Tag="{Binding}" CommandParameter="External"
+                                  Click="SessionExternal_Click" ToolTipService.ShowOnDisabled="True">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconExternalLink}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <Separator/>
                         <MenuItem Header="세션 숨기기" Tag="{Binding}" CommandParameter="Hide" Click="SessionHide_Click"
                                   Visibility="{Binding Hidden, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
@@ -286,6 +293,11 @@
                               Stroke="{DynamicResource WarningBrush}" StrokeThickness="2.2"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               Fill="Transparent"/>
+                        <Path x:Name="ExternalIcon" Visibility="Collapsed"
+                              Data="{StaticResource IconExternalLink}"
+                              Width="12" Height="12" Stretch="Uniform"
+                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
+                              Fill="Transparent"/>
                     </Grid>
                     <TextBlock Grid.Column="3" Text="{Binding Name}" Margin="10,0,0,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
@@ -364,6 +376,14 @@
                     <Setter TargetName="HiddenIcon" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="WaitingIcon" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
+                <!-- 외부 Windows Terminal이 같은 세션 ID를 소유하는 동안 최우선 표시. -->
+                <DataTrigger Binding="{Binding IsExternal}" Value="True">
+                    <Setter TargetName="StatusDot" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="BusySpinner" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="HiddenIcon" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="WaitingIcon" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="ExternalIcon" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
 

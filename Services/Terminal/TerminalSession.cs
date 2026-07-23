@@ -51,6 +51,8 @@ public sealed class TerminalSession : IDisposable
 
     /// <summary>셸(직속) 프로세스 ID — graceful 종료 대기에 사용.</summary>
     public int ProcessId { get; private set; }
+    /// <summary>직속 셸 프로세스 종료 코드. 아직 실행 중이거나 조회할 수 없으면 null.</summary>
+    public int? ExitCode { get; private set; }
 
     private IntPtr _hPC;                       // pseudoconsole 핸들
     private SafeFileHandle? _inputWrite;       // 우리가 쓰면 셸 stdin으로
@@ -58,14 +60,28 @@ public sealed class TerminalSession : IDisposable
     private IntPtr _hProcess;
     private IntPtr _hThread;
     private IntPtr _hJob;                      // 셸+자손 프로세스 트리를 묶는 Job (KILL_ON_JOB_CLOSE)
+    private readonly object _pseudoConsoleLock = new();
+    private readonly ManualResetEventSlim _outputCompleted = new(false);
     private FileStream? _inputStream;
     private bool _disposed;
     private readonly object _writeLock = new();
     private volatile bool _gracefulExitStarted;
     private bool _gracefulExitSignalsSent;
 
-    public TerminalSession(string commandLine, string? startingDirectory, int cols, int rows)
+    public TerminalSession(
+        string commandLine,
+        string? startingDirectory,
+        int cols,
+        int rows,
+        Action<byte[]>? outputReceived = null,
+        Action? exited = null,
+        string? colorFgBg = null)
     {
+        // 프록시처럼 생성 직후 첫 바이트도 놓치면 안 되는 호출자는 생성 전에 콜백을 넘긴다.
+        // 기존 이벤트 구독 방식도 그대로 지원한다.
+        if (outputReceived != null) OutputReceived += outputReceived;
+        if (exited != null) Exited += exited;
+
         // WT settings.json 의 commandline 에는 %SystemRoot% 같은 환경변수가 올 수 있다.
         // CreateProcessW 는 환경변수를 확장하지 않으므로 여기서 직접 확장한다.
         commandLine = Environment.ExpandEnvironmentVariables(commandLine);
@@ -105,7 +121,7 @@ public sealed class TerminalSession : IDisposable
         // 실패해도 밝기 판별이 앱 테마와 일치하도록 환경변수 폴백을 같이 깔아 둔다.
         // 테마 변경은 세션 재시작을 타므로 세션 생성 시점 값이면 충분하다.
         Environment.SetEnvironmentVariable("COLORFGBG",
-            DevezCode.App.CommittedTheme == "dark" ? "15;0" : "0;15");
+            colorFgBg ?? (DevezCode.App.CommittedTheme == "dark" ? "15;0" : "0;15"));
 
         // 1) 파이프 2쌍: (셸이 읽는 stdin), (셸이 쓰는 stdout)
         if (!CreatePipe(out var inputRead, out var inputWriteRaw, IntPtr.Zero, 0))
@@ -218,7 +234,11 @@ public sealed class TerminalSession : IDisposable
                 }
             }
             catch (Exception) { /* 파이프 닫힘 — 정상 종료 경로 */ }
-            finally { stream.Dispose(); }
+            finally
+            {
+                stream.Dispose();
+                _outputCompleted.Set();
+            }
         })
         { IsBackground = true, Name = "ConPTY-Read" };
         thread.Start();
@@ -232,6 +252,7 @@ public sealed class TerminalSession : IDisposable
             {
                 using var p = Process.GetProcessById(pid);
                 p.WaitForExit();
+                try { ExitCode = p.ExitCode; } catch { }
             }
             catch (Exception) { /* 이미 종료됨 */ }
             IsAlive = false;
@@ -309,11 +330,20 @@ public sealed class TerminalSession : IDisposable
     /// <summary>텍스트를 셸 stdin에 기록하고 실제 파이프 쓰기 성공 여부를 반환한다.</summary>
     public bool TryWrite(string text) => TryWriteCore(text, allowDuringGracefulExit: false);
 
+    /// <summary>VT 입력 바이트를 인코딩 변환 없이 셸 stdin에 전달한다. 외부 콘솔 프록시용.</summary>
+    public bool TryWrite(byte[] bytes) => TryWriteCore(bytes, allowDuringGracefulExit: false);
+
     private bool TryWriteCore(string text, bool allowDuringGracefulExit)
     {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        return TryWriteCore(bytes, allowDuringGracefulExit);
+    }
+
+    private bool TryWriteCore(byte[] bytes, bool allowDuringGracefulExit)
+    {
+        if (bytes.Length == 0) return true;
         if (_disposed || !IsAlive || _inputStream == null
             || (!allowDuringGracefulExit && _gracefulExitStarted)) return false;
-        var bytes = Encoding.UTF8.GetBytes(text);
         lock (_writeLock)
         {
             if (_disposed || !IsAlive || _inputStream == null
@@ -330,14 +360,39 @@ public sealed class TerminalSession : IDisposable
 
     public void Resize(int cols, int rows)
     {
-        if (_disposed || _hPC == IntPtr.Zero) return;
-        // 동일 크기는 no-op — 탭 활성화마다 오는 재동기 resize(refitSoon)가 실제 어긋남이 있을 때만
-        // ConPTY 를 건드리게 한다. (강제 리페인트가 필요한 곳은 -1→원복 킥을 쓰므로 영향 없음.)
-        if (Math.Max(cols, 2) == Cols && Math.Max(rows, 2) == Rows) return;
-        Cols = Math.Max(cols, 2);
-        Rows = Math.Max(rows, 2);
-        var size = new COORD { X = (short)Cols, Y = (short)Rows };
-        ResizePseudoConsole(_hPC, size);
+        lock (_pseudoConsoleLock)
+        {
+            if (_disposed || _hPC == IntPtr.Zero) return;
+            // 동일 크기는 no-op — 탭 활성화마다 오는 재동기 resize(refitSoon)가 실제 어긋남이 있을 때만
+            // ConPTY 를 건드리게 한다. (강제 리페인트가 필요한 곳은 -1→원복 킥을 쓰므로 영향 없음.)
+            if (Math.Max(cols, 2) == Cols && Math.Max(rows, 2) == Rows) return;
+            Cols = Math.Max(cols, 2);
+            Rows = Math.Max(rows, 2);
+            var size = new COORD { X = (short)Cols, Y = (short)Rows };
+            ResizePseudoConsole(_hPC, size);
+        }
+    }
+
+    /// <summary>
+    /// 직속 프로세스가 종료된 뒤 ConPTY를 닫아 남은 출력이 파이프 EOF까지 모두 배출되도록 기다린다.
+    /// 외부 프록시가 종료 직전 마지막 VT 바이트를 확실히 기록할 때 사용한다.
+    /// </summary>
+    public bool CompleteOutputAfterExit(int timeoutMs)
+    {
+        if (IsAlive) return false;
+        ClosePseudoConsoleOnce();
+        try { return _outputCompleted.Wait(Math.Max(0, timeoutMs)); }
+        catch { return false; }
+    }
+
+    private void ClosePseudoConsoleOnce()
+    {
+        lock (_pseudoConsoleLock)
+        {
+            if (_hPC == IntPtr.Zero) return;
+            ClosePseudoConsole(_hPC);
+            _hPC = IntPtr.Zero;
+        }
     }
 
     public void Dispose()
@@ -347,7 +402,7 @@ public sealed class TerminalSession : IDisposable
         IsAlive = false;
 
         // ConPTY를 먼저 닫으면 conhost가 정리되고 셸도 따라 종료된다
-        if (_hPC != IntPtr.Zero) { ClosePseudoConsole(_hPC); _hPC = IntPtr.Zero; }
+        ClosePseudoConsoleOnce();
 
         // Job 핸들을 닫으면 KILL_ON_JOB_CLOSE 로 셸+자손(claude/node 등) 트리 전체가 종료된다
         if (_hJob != IntPtr.Zero) { CloseHandle(_hJob); _hJob = IntPtr.Zero; }

@@ -518,6 +518,28 @@
             <ContentControl x:Name="BrowserHostContainer" Visibility="Collapsed"/>
             <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
+            <Grid x:Name="ExternalSessionOverlay" Visibility="Collapsed"
+                  Panel.ZIndex="10" Background="#24000000" IsHitTestVisible="True">
+                <Border Padding="12,9" CornerRadius="9" Margin="0,14,0,0"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                        HorizontalAlignment="Center" VerticalAlignment="Top">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconExternalLink}"
+                              Width="17" Height="17" Margin="0,0,10,0" Stretch="Uniform"
+                              Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.7"
+                              VerticalAlignment="Center"/>
+                        <StackPanel>
+                            <TextBlock Text="외부 터미널에서 실행 중"
+                                       FontSize="{DynamicResource Fs13}"
+                                       FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                            <TextBlock Text="외부 터미널 탭을 닫으면 이 세션으로 돌아옵니다."
+                                       Margin="0,2,0,0" FontSize="{DynamicResource Fs11}"
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
             <Border x:Name="TerminalCurtain" Background="{DynamicResource BgBrush}"
                     Visibility="Collapsed"/>
             <Grid x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Stretch"

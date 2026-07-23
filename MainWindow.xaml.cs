@@ -112,9 +112,15 @@ public partial class MainWindow : Window
     {
         Interval = TimeSpan.FromSeconds(30),
     };
+    private readonly System.Windows.Threading.DispatcherTimer _externalSessionTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(150),
+    };
     private readonly Dictionary<string, DateTime> _sessionLastActivityUtc = new(StringComparer.Ordinal);
     private int _idleSessionShutdownMinutes;
     private bool _idleSessionShutdownChecking;
+    private bool _externalSessionChecking;
+    private readonly HashSet<string> _externalSessionLaunches = new(StringComparer.Ordinal);
 
     static MainWindow()
     {
@@ -141,6 +147,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _wakeScheduler = new WakeSchedulerService(DispatchWakeAsync);
         _idleSessionShutdownTimer.Tick += async (_, _) => await CheckIdleSessionsAsync();
+        _externalSessionTimer.Tick += (_, _) => CheckExternalSessions();
         CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         KimiFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.KimiIconUri)); // 테마별(시작 시점 테마 반영)
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
@@ -163,6 +170,7 @@ public partial class MainWindow : Window
 
         _projects = WorkspaceStore.Load(out var archived);
         _archivedProjects = archived;
+        ReconcileExternalSessions();
         UpdateSessionBusyDisplay();
         // 워크스페이스에 더 이상 없는(활성+보관 통틀어) roomId 의 claude 추적/캐시 파일 정리(3일 유예, GC).
         // 실제 대화 기록(.jsonl)은 안 건드림 — 앱 자체 북키핑 파일만.
@@ -231,6 +239,7 @@ public partial class MainWindow : Window
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
         Sidebar.SessionHideRequested += HideSessionFromSidebar;
         Sidebar.SessionForkRequested += ForkSession;
+        Sidebar.SessionExternalRequested += OpenSessionInExternalTerminal;
         Sidebar.SessionExportRequested += ExportSession;
         Sidebar.SessionLockRequested += ToggleSessionLock;
         Sidebar.SessionsDeleteRequested += DeleteSessions;
@@ -650,6 +659,7 @@ public partial class MainWindow : Window
             ResetAllSessionBusy(); // 시작 시 모든 세션 IsBusy=false: 종료 전 진행 상태는 취소됨.
             RestoreSplitState(); // 직전 실행 시 분할 상태였으면 패널 B 복원
             _wakeScheduler.Start();
+            _externalSessionTimer.Start();
             ApplyIdleSessionShutdownSettings();
             RefreshCardGroups(); // 시작 시에도 분할 설정 프로젝트 카드는 좌/우 파티션으로(영속 refs 기반)
             CheckHookSetup();
@@ -694,6 +704,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _idleSessionShutdownTimer.Stop();
+            _externalSessionTimer.Stop();
             // 정상 종료: 분할 상태 + 마지막 활성 프로젝트/세션 기억 + 클린 종료 플래그 set
             if (_splitActive) PersistSplitState();
             SettingsService.SaveLastActive(_focusedPane.ActiveProject?.Path, _focusedPane.ActiveSession?.Id);
@@ -797,7 +808,7 @@ public partial class MainWindow : Window
         // '닫기 시 종료' 모드에서 X/Alt+F4 로 닫을 때 실수 종료 방지 확인. 명시적 종료(ForceQuit: 우클릭 완전 종료·업데이트 재시작)·2차 진입은 건너뜀.
         if (!_shuttingDown && !ForceQuit
             && !Views.ConfirmDialog.Show("종료 확인",
-                "DevezCode를 종료하시겠습니까?\n실행 중인 세션이 모두 함께 종료됩니다.",
+                "DevezCode를 종료하시겠습니까?\n앱 내부 세션은 종료되며, 외부 터미널 세션은 유지됩니다.",
                 okLabel: "종료", iconKey: "IconLogOut", danger: true))
         {
             e.Cancel = true;
@@ -807,6 +818,7 @@ public partial class MainWindow : Window
         SaveWindowPlacement();
         _wakeScheduler.Stop();
         _idleSessionShutdownTimer.Stop();
+        _externalSessionTimer.Stop();
 
         if (_shuttingDown)
         {
@@ -2734,6 +2746,7 @@ public partial class MainWindow : Window
         pane.SplitToggleRequested += OnPaneSplitToggle;
         pane.SplitViewRequested += OnPaneSplitViewRequested;
         pane.ExportSessionRequested += ExportSession;
+        pane.ExternalSessionRequested += OpenSessionInExternalTerminal;
         pane.ToggleSessionLockRequested += ToggleSessionLock;
         pane.HideSessionRequested += HideSessionFromSidebar;
         pane.HideStopFinished += OnPaneHideStopFinished;
@@ -3687,6 +3700,237 @@ public partial class MainWindow : Window
     private SessionItem? FindSession(string id)
         => _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
 
+    /// <summary>앱 재시작 시 외부 lock/ticket과 저장 상태를 맞추고 내부 중복 실행을 막는다.</summary>
+    private void ReconcileExternalSessions()
+    {
+        bool changed = false;
+        foreach (var session in _projects.Concat(_archivedProjects)
+                     .SelectMany(project => project.Tabs).OfType<SessionItem>())
+        {
+            var state = ExternalSessionService.GetState(session.Id);
+            if (state == ExternalSessionState.Stopped)
+            {
+                if (session.IsExternal)
+                {
+                    session.IsExternal = false;
+                    TerminalSessionManager.Instance.ClearDisposedRoom(session.Id);
+                    changed = true;
+                }
+                ExternalSessionService.CleanupStoppedSession(session.Id);
+                continue;
+            }
+
+            if (!session.IsExternal)
+            {
+                session.IsExternal = true;
+                changed = true;
+            }
+            session.IsAlive = false;
+            session.IsBusy = false;
+            session.IsWaitingChoice = false;
+            TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
+        }
+
+        if (changed)
+            WorkspaceStore.Save(_projects, _archivedProjects);
+    }
+
+    /// <summary>외부 터미널 종료를 lock 해제로 감지해 해당 방을 다시 내부에서 열 수 있게 한다.</summary>
+    private void CheckExternalSessions()
+    {
+        if (_externalSessionChecking) return;
+        _externalSessionChecking = true;
+        try
+        {
+            bool changed = false;
+            foreach (var session in _projects.Concat(_archivedProjects)
+                         .SelectMany(project => project.Tabs).OfType<SessionItem>()
+                         .Where(session => session.IsExternal).ToList())
+            {
+                // lock 상태보다 먼저 읽고, stopped로 바뀐 경우 한 번 더 읽는다. 프록시는 로그를
+                // 완전히 flush한 뒤 lock을 놓으므로 이 순서면 종료 경계의 마지막 바이트도 보존된다.
+                foreach (var pane in _panes)
+                    pane.PumpExternalSessionOutput(session);
+
+                if (ExternalSessionService.GetState(session.Id) != ExternalSessionState.Stopped)
+                {
+                    if (TerminalSessionManager.Instance.Get(session.Id) != null)
+                        TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
+                    continue;
+                }
+
+                foreach (var pane in _panes)
+                    pane.PumpExternalSessionOutput(session);
+                // 종료 순간 UI가 잠시 뒤처졌다면 다음 tick에도 계속 읽고, 모든 실제 미러가
+                // 파일 끝까지 도달한 뒤에만 로그를 정리한다.
+                if (_panes.Any(pane => !pane.IsExternalSessionOutputCaughtUp(session)))
+                    continue;
+                session.IsExternal = false;
+                session.IsAlive = false;
+                session.IsBusy = false;
+                session.IsWaitingChoice = false;
+                TerminalSessionManager.Instance.ClearDisposedRoom(session.Id);
+                foreach (var pane in _panes)
+                    pane.OnExternalSessionEnded(session);
+                ExternalSessionService.CleanupStoppedSession(session.Id);
+                changed = true;
+            }
+
+            if (!changed) return;
+            WorkspaceStore.Save(_projects, _archivedProjects);
+            UpdateSessionBusyDisplay();
+            RefreshCardGroups();
+        }
+        finally
+        {
+            _externalSessionChecking = false;
+        }
+    }
+
+    private async void OpenSessionInExternalTerminal(SessionItem session)
+    {
+        if (session.IsExternal || !_externalSessionLaunches.Add(session.Id)) return;
+        try
+        {
+            await OpenSessionInExternalTerminalCore(session);
+        }
+        finally
+        {
+            _externalSessionLaunches.Remove(session.Id);
+        }
+    }
+
+    private async Task OpenSessionInExternalTerminalCore(SessionItem session)
+    {
+        if (session.IsExternal) return;
+        if (session.IsBusy)
+        {
+            ConfirmDialog.Alert("외부 터미널로 열기",
+                "응답이 완료된 후 외부 터미널로 열 수 있습니다.",
+                iconKey: "IconInfo");
+            return;
+        }
+        var project = _projects.Concat(_archivedProjects)
+            .FirstOrDefault(item => item.Tabs.Contains(session));
+        if (project == null) return;
+        if (!Directory.Exists(project.Path))
+        {
+            ConfirmDialog.Alert("외부 터미널로 열기",
+                "프로젝트 폴더를 찾을 수 없습니다.", iconKey: "IconTriangleAlert");
+            return;
+        }
+        if (!ExternalSessionService.IsWindowsTerminalAvailable())
+        {
+            ConfirmDialog.Alert("외부 터미널로 열기",
+                "Windows Terminal(wt.exe)을 찾을 수 없습니다.", iconKey: "IconTriangleAlert");
+            return;
+        }
+
+        var agentId = string.IsNullOrWhiteSpace(session.AgentId)
+            ? SettingsService.LoadAgentForRoom(session.Id)
+            : session.AgentId;
+        var agent = AgentRegistry.Find(agentId) ?? AgentRegistry.GetDefault();
+        var launchError = ExternalSessionService.GetLaunchError(session.Id, agent.Id);
+        if (launchError != null)
+        {
+            ConfirmDialog.Alert("외부 터미널로 열기",
+                launchError, iconKey: "IconTriangleAlert");
+            return;
+        }
+
+        var liveTerminal = TerminalSessionManager.Instance.Get(session.Id);
+        int preferredCols = liveTerminal?.Cols ?? 120;
+        int preferredRows = liveTerminal?.Rows ?? 30;
+        byte[]? snapshot = null;
+        var snapshotPane = _panes.FirstOrDefault(pane => ReferenceEquals(pane.ActiveSession, session));
+        if (snapshotPane != null)
+            snapshot = await snapshotPane.CaptureSessionSnapshotPngAsync(session);
+        if (session.IsBusy)
+        {
+            ConfirmDialog.Alert("외부 터미널로 열기",
+                "응답이 완료된 후 외부 터미널로 열 수 있습니다.",
+                iconKey: "IconInfo");
+            return;
+        }
+
+        string token;
+        try
+        {
+            token = ExternalSessionService.PrepareLaunch(session.Id);
+            ExternalSessionService.SaveSnapshot(session.Id, snapshot);
+        }
+        catch (Exception ex)
+        {
+            ConfirmDialog.Alert("외부 터미널로 열기",
+                $"외부 세션을 준비하지 못했습니다.\n{ex.Message}", iconKey: "IconTriangleAlert");
+            return;
+        }
+
+        session.IsExternal = true;
+        session.IsAlive = false;
+        session.IsBusy = false;
+        session.IsWaitingChoice = false;
+        WorkspaceStore.Save(_projects, _archivedProjects);
+
+        try
+        {
+            await Task.WhenAll(_panes.Select(pane => pane.SetSessionExternalAsync(session)));
+            UpdateSessionBusyDisplay();
+            await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { session.Id });
+            TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
+
+            var result = await ExternalSessionService.LaunchAsync(
+                session.Id,
+                session.Name,
+                agent.Id,
+                project.Path,
+                token,
+                preferredCols,
+                preferredRows,
+                App.CommittedTheme);
+            if (result.Success)
+            {
+                DiagLog.Write($"ExternalSession started room={session.Id} agent={agent.Id}");
+                foreach (var pane in _panes)
+                    pane.PumpExternalSessionOutput(session);
+                return;
+            }
+
+            if (ExternalSessionService.CancelLaunch(session.Id))
+            {
+                DiagLog.Write($"ExternalSession started after timeout room={session.Id} agent={agent.Id}");
+                return;
+            }
+            session.IsExternal = false;
+            TerminalSessionManager.Instance.ClearDisposedRoom(session.Id);
+            WorkspaceStore.Save(_projects, _archivedProjects);
+            foreach (var pane in _panes)
+                pane.OnExternalSessionEnded(session);
+            ConfirmDialog.Alert("외부 터미널로 열기", result.Error ?? "외부 세션을 시작하지 못했습니다.",
+                iconKey: "IconTriangleAlert");
+        }
+        catch (Exception ex)
+        {
+            if (ExternalSessionService.CancelLaunch(session.Id))
+            {
+                DiagLog.Write($"ExternalSession started after launch error room={session.Id} agent={agent.Id}");
+                return;
+            }
+            session.IsExternal = false;
+            TerminalSessionManager.Instance.ClearDisposedRoom(session.Id);
+            WorkspaceStore.Save(_projects, _archivedProjects);
+            foreach (var pane in _panes)
+                pane.OnExternalSessionEnded(session);
+            ConfirmDialog.Alert("외부 터미널로 열기",
+                $"외부 세션을 시작하지 못했습니다.\n{ex.Message}", iconKey: "IconTriangleAlert");
+        }
+        finally
+        {
+            UpdateSessionBusyDisplay();
+            RefreshCardGroups();
+        }
+    }
+
     /// <summary>/send-new: 부모(A) 세션의 자식 세션을 만들어 열고, 부팅 완료되면 브리핑을 주입한다(InjectWhenReady).
     /// 자식은 부모와 같은 프로젝트·같은 에이전트의 fresh 세션(코드베이스·CLAUDE.md 자동 확보)이며,
     /// 완료되면 부모 A에게 완료 알림이 돌아온다(콜백). 인박스 이벤트에서 UI 스레드로 마샬링돼 호출된다.</summary>
@@ -4536,6 +4780,13 @@ public partial class MainWindow : Window
     {
         var project = ProjectFor(session);
         if (project == null) return;
+        if (session.IsExternal)
+        {
+            ConfirmDialog.Alert("세션 삭제 불가",
+                "외부 터미널에서 실행 중인 세션입니다.\n외부 탭을 닫은 후 다시 시도하세요.",
+                iconKey: "IconExternalLink");
+            return;
+        }
         if (!EnsureSessionSubtreeUnlocked(new[] { session }, "세션 삭제")) return;
         var children = project.GetSessionSubtree(session).Skip(1).ToList();
         string childNotice = children.Count > 0
@@ -4553,6 +4804,13 @@ public partial class MainWindow : Window
     {
         var targets = sessions.Distinct().Where(session => ProjectFor(session) != null).ToList();
         if (targets.Count == 0) return;
+        if (targets.Any(session => session.IsExternal))
+        {
+            ConfirmDialog.Alert("세션 삭제 불가",
+                "외부 터미널에서 실행 중인 세션이 포함되어 있습니다.",
+                iconKey: "IconExternalLink");
+            return;
+        }
         if (!EnsureSessionSubtreeUnlocked(targets, "세션 삭제")) return;
 
         var selected = targets.ToHashSet();
@@ -4591,6 +4849,13 @@ public partial class MainWindow : Window
     {
         var project = ProjectFor(session);
         if (project == null) return;
+        if (session.IsExternal)
+        {
+            ConfirmDialog.Alert("세션 닫기 불가",
+                "외부 터미널에서 실행 중인 세션입니다.\n외부 탭을 닫은 후 다시 시도하세요.",
+                iconKey: "IconExternalLink");
+            return;
+        }
         if (!EnsureSessionSubtreeUnlocked(new[] { session }, "세션 추적 중단")) return;
         var children = project.GetSessionSubtree(session).Skip(1).ToList();
         string childNotice = children.Count > 0
@@ -4608,6 +4873,13 @@ public partial class MainWindow : Window
     {
         var targets = sessions.Distinct().Where(session => ProjectFor(session) != null).ToList();
         if (targets.Count == 0) return;
+        if (targets.Any(session => session.IsExternal))
+        {
+            ConfirmDialog.Alert("세션 닫기 불가",
+                "외부 터미널에서 실행 중인 세션이 포함되어 있습니다.",
+                iconKey: "IconExternalLink");
+            return;
+        }
         if (!EnsureSessionSubtreeUnlocked(targets, "세션 추적 중단")) return;
 
         var selected = targets.ToHashSet();
@@ -4863,7 +5135,7 @@ public partial class MainWindow : Window
     private bool CanStopIdleSession(SessionItem session, DateTime nowUtc)
     {
         if (_shuttingDown || _themeReloadRunning || _idleSessionShutdownMinutes <= 0
-            || !session.IsAlive || session.IsEffectivelyHidden || session.IsLocked
+            || session.IsExternal || !session.IsAlive || session.IsEffectivelyHidden || session.IsLocked
             || session.IsBusy || session.IsWaitingChoice || IsSessionDisplayed(session)
             || _sessionCommandInbox.HasPendingInjection(session.Id))
             return false;
@@ -5040,7 +5312,8 @@ public partial class MainWindow : Window
 
     private async Task ReloadAllSessionsForThemeOnceAsync()
     {
-        var allSessions = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().ToList();
+        var allSessions = _projects.SelectMany(p => p.Tabs).OfType<SessionItem>()
+            .Where(session => !session.IsExternal).ToList();
         if (allSessions.Count == 0) return;
 
         // 숨겨진 PaneB도 이전 분할 화면의 터미널 배선을 보존할 수 있다. 두 패널 모두 먼저 detach 해야
@@ -5088,6 +5361,15 @@ public partial class MainWindow : Window
     private void DeleteProject(ProjectItem proj)
     {
         bool fromArchive = _archivedProjects.Contains(proj);
+
+        var external = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.IsExternal);
+        if (external != null)
+        {
+            ConfirmDialog.Alert("프로젝트 제거 불가",
+                $"'{external.Name}' 세션이 외부 터미널에서 실행 중입니다.\n외부 탭을 닫은 후 다시 시도하세요.",
+                iconKey: "IconExternalLink");
+            return;
+        }
 
         var locked = proj.Tabs.OfType<SessionItem>().FirstOrDefault(s => s.IsLocked);
         if (locked != null)

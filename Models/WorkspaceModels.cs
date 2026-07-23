@@ -93,6 +93,9 @@ public sealed class SessionItem : TabItemBase
     /// 동일 위치에 "잠금 해제"를 표시한다. 프로젝트 삭제 시 잠긴 세션이 있으면 차단.</summary>
     private bool _isLocked;
     public bool IsLocked { get => _isLocked; set => Set(ref _isLocked, value); }
+    /// <summary>같은 세션 ID가 외부 터미널에서 실행 중인지. 재시작 후에도 내부 중복 실행을 막기 위해 저장한다.</summary>
+    private bool _isExternal;
+    public bool IsExternal { get => _isExternal; set => Set(ref _isExternal, value); }
     /// <summary>사이드바 Ctrl+클릭 다중 선택 UI 상태. 런타임 전용이며 저장하지 않는다.</summary>
     private bool _isMultiSelectMode;
     [System.Text.Json.Serialization.JsonIgnore]

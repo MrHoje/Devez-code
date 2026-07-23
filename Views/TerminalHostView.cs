@@ -55,6 +55,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>web 로딩 커버가 DOM 에 반영·페인트됨 — 셸이 이 ACK 후에 터미널 HWND 를 unpark 해 콜드 세션
     /// unpark repaint 가 커버 위에서 일어나게 한다(PostJson↔WPF 프레임 비동기로 생기는 커버 레이스 제거).</summary>
     public event Action? LoadingShown;
+    /// <summary>외부 세션용 xterm이 생성되어 저장된 VT 로그를 표시할 준비가 됨.</summary>
+    public event Action<string>? ExternalPreviewReady;
 
     private WebView2? _webView;
     private bool _initStarted;
@@ -84,6 +86,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>roomId → 현재 JS와 배선된 세션 (재시작 시 교체 감지용).</summary>
     private readonly Dictionary<string, TerminalSession> _wired = new();
+    /// <summary>외부 터미널 인계 후 ConPTY 배선만 끊고 xterm 화면 버퍼는 보존한 방.</summary>
+    private readonly HashSet<string> _externalPreviewRooms = new();
+    /// <summary>호스트별 독립 로그 offset. 패널 이동·앱 재시작 시 0부터 재생해 화면을 복원한다.</summary>
+    private readonly Dictionary<string, long> _externalOutputOffsets = new();
+    private readonly Dictionary<string, (int Cols, int Rows)> _externalPreviewSizes = new();
 
     /// <summary>opencode 자동 재시작 폭주 방지: roomId → (10초 창 내 재시작 횟수, 창 시작 tick).</summary>
     private readonly Dictionary<string, (int Count, long WindowStartTick)> _autoRestart = new();
@@ -555,6 +562,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "created":
                 {
                     var createdRoom = root.GetProperty("roomId").GetString()!;
+                    // 외부 미러는 프록시가 유일한 ConPTY 소유자다. 잘못된/지연 created 메시지로
+                    // 내부 세션을 중복 생성하지 않는다.
+                    if (_externalPreviewRooms.Contains(createdRoom)) break;
                     // 방 생성 시점의 유효 크기를 그 방에 고정한다. 이후 설정에서 전역 기본값을 바꿔도
                     // (재시작해도) 이 방은 만들어질 때 크기를 유지한다. override 가 이미 있으면 존중.
                     if (DevezCode.Services.SettingsService.LoadTerminalRoomFontSizePt(createdRoom) is null)
@@ -563,9 +573,18 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     WireSession(createdRoom, root.GetProperty("cols").GetInt32(), root.GetProperty("rows").GetInt32());
                     break;
                 }
+                case "externalPreviewReady":
+                {
+                    var roomId = root.GetProperty("roomId").GetString()!;
+                    if (_externalPreviewRooms.Contains(roomId))
+                        ExternalPreviewReady?.Invoke(roomId);
+                    break;
+                }
                 case "input":
                 {
                     var data = root.GetProperty("data").GetString() ?? "";
+                    var inputRoom = root.GetProperty("roomId").GetString()!;
+                    if (_externalPreviewRooms.Contains(inputRoom)) break;
                     if (Environment.GetEnvironmentVariable("DEVEZCODE_TERM_LOG") == "1")
                     {
                         try
@@ -580,7 +599,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     // 커서를 입력 캐럿에서 치운다 → 조합 글자가 화면 끝으로 날아간다.
                     // focus-in/out 을 claude 로 전달하지 않아 항상 포커스 상태로 유지한다.
                     if (data is "\x1b[O" or "\x1b[I") break;
-                    var inputRoom = root.GetProperty("roomId").GetString()!;
                     SessionActivity?.Invoke(inputRoom);
                     // 단독 ESC = 응답 취소(인터럽트) 의도. agent 가 idle 신호를 안 줘도 스피너가
                     // 무한정 도는 것을 막기 위해 즉시 busy 해제를 요청한다(입력은 그대로 전달해 실제 취소도 수행).
@@ -595,6 +613,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "resize":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;
+                    if (_externalPreviewRooms.Contains(roomId)) break;
                     var cols = root.GetProperty("cols").GetInt32();
                     var rows = root.GetProperty("rows").GetInt32();
                     var sess = TerminalSessionManager.Instance.Get(roomId);
@@ -608,6 +627,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "restart":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;
+                    if (_externalPreviewRooms.Contains(roomId)) break;
                     WireSession(roomId, 120, 30); // restarted 후 JS가 실제 크기로 resize 보냄
                     PostJson(new { type = "restarted", roomId });
                     break;
@@ -621,6 +641,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "requestPaste":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;
+                    if (_externalPreviewRooms.Contains(roomId)) break;
                     // 클립보드 읽기도 후킹 앱 환경에서 블록될 수 있으므로 STA 스레드에서 수행하고,
                     // 결과 post 만 UI 스레드로 되돌린다(붙여넣기는 사용자 조작이라 약간의 비동기 무해).
                     RunClipboardSta(() =>
@@ -751,11 +772,24 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             _pendingLoading = null;
             PostJson(new { type = "loading", on = true, expectW = pl.w, expectH = pl.h, label = pl.label });
         }
-        if (pending != null) { PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomEffectiveFontSizePx(pending) }); PinBottomIfInline(pending); }
+        if (pending != null)
+        {
+            if (_externalPreviewRooms.Contains(pending))
+            {
+                PostExternalPreview(pending, create: true);
+                PumpExternalPreview(pending);
+            }
+            else
+            {
+                PostJson(new { type = "show", roomId = pending, agent = AgentFor(pending), fontSize = RoomEffectiveFontSizePx(pending) });
+                PinBottomIfInline(pending);
+            }
+        }
 
         // 보류된 백그라운드 로드 처리 (show 로 이미 만들어진 방은 JS preload 가 스킵)
         foreach (var r in _pendingPreload)
-            if (r != pending) PostJson(new { type = "preload", roomId = r, agent = AgentFor(r), fontSize = RoomEffectiveFontSizePx(r) });
+            if (r != pending && !_externalPreviewRooms.Contains(r))
+                PostJson(new { type = "preload", roomId = r, agent = AgentFor(r), fontSize = RoomEffectiveFontSizePx(r) });
         _pendingPreload.Clear();
 
         // 보류된 포커스 적용 — 그 사이 다른 방(채팅 등)으로 전환했으면 훔치지 않음
@@ -1876,6 +1910,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public void CloseTerminal(string roomId)
     {
         DevezCode.Services.DiagLog.Write($"CloseTerminal room={roomId} (ready state dropped)");
+        _externalPreviewRooms.Remove(roomId);
+        _externalOutputOffsets.Remove(roomId);
+        _externalPreviewSizes.Remove(roomId);
         DetachSessionHandlers(roomId); // OutputReceived/Exited 핸들러 detach (누적 중복 post 방지)
         _wired.Remove(roomId);
         _ready.Remove(roomId);
@@ -1892,6 +1929,139 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (_activeRoomId == roomId) _activeRoomId = null;
         if (_pendingShowRoomId == roomId) _pendingShowRoomId = null;
         PostJson(new { type = "dispose", roomId }); // JS xterm 인스턴스·DOM 해제
+    }
+
+    /// <summary>
+    /// 같은 세션을 외부 CLI에 넘기기 전에 ConPTY 이벤트 배선만 끊고 현재 xterm 화면은 보존한다.
+    /// 보존된 방은 웹 오버레이와 호스트 양쪽에서 입력을 차단한다.
+    /// </summary>
+    public bool BeginExternalPreview(string roomId)
+    {
+        if (!_pageReady || _webView?.CoreWebView2 == null || !_wired.ContainsKey(roomId))
+            return false;
+
+        DetachSessionHandlers(roomId);
+        _wired.Remove(roomId);
+        FlushOutput(roomId);
+        if (_settleTimers.Remove(roomId, out var settle)) settle.Stop();
+        if (_fullscreenFallbackTimers.Remove(roomId, out var fallback)) fallback.Stop();
+        _externalPreviewRooms.Add(roomId);
+        _externalOutputOffsets[roomId] = 0;
+        _externalPreviewSizes.Remove(roomId);
+        _pendingPreload.Remove(roomId);
+        _activeRoomId = roomId;
+        PostExternalPreview(roomId, create: false);
+        return true;
+    }
+
+    /// <summary>
+    /// 보존 중인 외부 세션을 표시한다. 앱 재시작 등 xterm이 없는 경우 새 읽기 전용 xterm을 만들고
+    /// offset 0부터 VT 로그를 재생한다.
+    /// </summary>
+    public bool ShowExternalPreview(string roomId)
+    {
+        if (!_externalPreviewRooms.Contains(roomId))
+        {
+            _externalPreviewRooms.Add(roomId);
+            _externalOutputOffsets[roomId] = 0;
+            _externalPreviewSizes.Remove(roomId);
+        }
+        _pendingPreload.Remove(roomId);
+        _activeRoomId = roomId;
+        _pendingShowRoomId = roomId;
+        if (!_initStarted)
+        {
+            _initStarted = true;
+            _ = InitWebViewAsync();
+        }
+        if (!_pageReady || _webView?.CoreWebView2 == null) return false;
+
+        _pendingShowRoomId = null;
+        PostExternalPreview(roomId, create: true);
+        PumpExternalPreview(roomId);
+        return true;
+    }
+
+    public bool HasExternalPreview(string roomId) => _externalPreviewRooms.Contains(roomId);
+
+    /// <summary>프록시가 기록한 크기와 원본 VT 바이트를 이 호스트의 xterm으로 보낸다.</summary>
+    public void PumpExternalPreview(string roomId)
+    {
+        if (!_pageReady || !_externalPreviewRooms.Contains(roomId)) return;
+
+        if (DevezCode.Services.ExternalSessionService.TryReadSize(roomId, out var cols, out var rows)
+            && (!_externalPreviewSizes.TryGetValue(roomId, out var old)
+                || old.Cols != cols || old.Rows != rows))
+        {
+            _externalPreviewSizes[roomId] = (cols, rows);
+            PostJson(new { type = "externalPreviewSize", roomId, cols, rows });
+        }
+
+        long offset = _externalOutputOffsets.TryGetValue(roomId, out var saved) ? saved : 0;
+        // 재시작 전체 로그도 빠르게 따라잡되 한 UI tick에 과도한 base64/JSON을 만들지 않는다.
+        for (int i = 0; i < 2; i++)
+        {
+            var bytes = DevezCode.Services.ExternalSessionService.ReadOutput(roomId, ref offset);
+            if (bytes is not { Length: > 0 }) break;
+            PostJson(new
+            {
+                type = "output",
+                roomId,
+                data = Convert.ToBase64String(bytes),
+            });
+        }
+        _externalOutputOffsets[roomId] = offset;
+    }
+
+    public bool IsExternalPreviewCaughtUp(string roomId)
+    {
+        if (!_externalPreviewRooms.Contains(roomId)) return true;
+        long offset = _externalOutputOffsets.TryGetValue(roomId, out var saved) ? saved : 0;
+        long length = DevezCode.Services.ExternalSessionService.GetOutputLength(roomId);
+        // 활성 미러가 페이지 초기화를 기다리는 동안 종료돼도 로그를 먼저 재생한다.
+        // 외부 미러가 없는 비활성 패널은 위에서 true이므로 종료 정리를 막지 않는다.
+        if (!_pageReady) return length == 0;
+        return offset >= length;
+    }
+
+    private void PostExternalPreview(string roomId, bool create)
+    {
+        PostJson(new
+        {
+            type = "externalPreview",
+            roomId,
+            on = true,
+            create,
+            agent = AgentFor(roomId),
+            fontSize = RoomEffectiveFontSizePx(roomId),
+        });
+    }
+
+    /// <summary>
+    /// 외부 실행 종료 후 보존 화면을 해제한다. 활성 탭이면 기존 xterm에 새 ConPTY를 재배선하고,
+    /// 비활성 탭이면 버퍼를 폐기해 다음 선택 때 일반 생성 경로를 타게 한다.
+    /// </summary>
+    public bool EndExternalPreview(string roomId, bool reconnect)
+    {
+        if (!_externalPreviewRooms.Remove(roomId)) return false;
+        _externalOutputOffsets.Remove(roomId);
+        _externalPreviewSizes.Remove(roomId);
+        if (_pendingShowRoomId == roomId) _pendingShowRoomId = null;
+        if (!reconnect)
+        {
+            CloseTerminal(roomId);
+            return true;
+        }
+
+        ResetReadyForRestart(roomId);
+        PostJson(new
+        {
+            type = "externalPreview",
+            roomId,
+            on = false,
+            reconnect = true,
+        });
+        return true;
     }
 
     /// <summary>이 방에 배선돼 있던 OutputReceived/Exited 핸들러를 세션에서 detach.
@@ -1911,6 +2081,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     {
         var room = _activeRoomId;
         if (string.IsNullOrEmpty(room)) return;
+        if (_externalPreviewRooms.Contains(room)) return;
         var sess = TerminalSessionManager.Instance.Get(room);
         if (sess is not { IsAlive: true }) return;
 
@@ -1951,6 +2122,9 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         }
         _sessionHandlers.Clear();
         _wired.Clear();
+        _externalPreviewRooms.Clear();
+        _externalOutputOffsets.Clear();
+        _externalPreviewSizes.Clear();
         _ready.Clear();
         _readyScan.Clear();
         _readyNotified.Clear();

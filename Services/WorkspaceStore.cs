@@ -8,7 +8,7 @@ namespace DevezCode.Services;
 /// <summary>프로젝트/세션 트리를 %AppData%\DevezCode\workspace.json 에 저장·복원.</summary>
 public static class WorkspaceStore
 {
-    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public string? ParentId { get; set; } public bool ChildrenExpanded { get; set; } = true; }
+    private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public bool External { get; set; } public string? ParentId { get; set; } public bool ChildrenExpanded { get; set; } = true; }
     private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
     private sealed class ProjectFolderDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Icon { get; set; } public int? RootOrder { get; set; } public bool IsExpanded { get; set; } = true; public string? ArchivedAt { get; set; } public bool TwoColumn { get; set; } = true; public int Column { get; set; } }
@@ -164,7 +164,7 @@ public static class WorkspaceStore
                 proj.RootOrder = p.RootOrder ?? int.MaxValue;
                 proj.ShowHiddenSessions = p.ShowHiddenSessions;
                 foreach (var s in p.Sessions)
-                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden, IsLocked = s.Locked, ParentSessionId = s.ParentId, AreSessionChildrenExpanded = s.ChildrenExpanded });
+                    proj.Tabs.Add(new SessionItem { Id = s.Id, Name = s.Name, AgentId = s.Agent ?? "", Hidden = s.Hidden, IsLocked = s.Locked, IsExternal = s.External, ParentSessionId = s.ParentId, AreSessionChildrenExpanded = s.ChildrenExpanded });
                 proj.NormalizeSessionTree();
                 foreach (var b in p.Browsers ?? new())
                     proj.Tabs.Add(new BrowserTabItem { Id = b.Id, Name = string.IsNullOrWhiteSpace(b.Name) ? "웹 브라우저" : b.Name });
@@ -220,7 +220,7 @@ public static class WorkspaceStore
         {
             Id = s.Id, Name = s.Name,
             Agent = string.IsNullOrEmpty(s.AgentId) ? null : s.AgentId,
-            Hidden = s.Hidden, Locked = s.IsLocked, ParentId = s.ParentSessionId,
+            Hidden = s.Hidden, Locked = s.IsLocked, External = s.IsExternal, ParentId = s.ParentSessionId,
             ChildrenExpanded = s.AreSessionChildrenExpanded,
         }).ToList(),
         Browsers = p.Tabs.OfType<BrowserTabItem>().Select(b => new BrowserDto
