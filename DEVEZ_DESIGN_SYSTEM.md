@@ -1,7 +1,7 @@
 # Devez 공통 디자인 시스템
 
 > 대상: `devez-code`, `devez`, `eGhisDevWPF`
-> 문서 버전: 1.5
+> 문서 버전: 1.6
 > 기준일: 2026-07-23
 > 주 대상 기술: WPF/XAML
 > 목적: 새 프로젝트에서 같은 색, 밀도, 컨트롤, 라운드, 아이콘, 보더, 상태 표현을 바로 재현한다.
@@ -344,6 +344,13 @@ TwoWay 또는 OneWayToSource 바인딩은 읽기 전용 속성에서 작동하�
 - 패널은 서로 붙이지 않고 `1px border + 4px channel`로 구분한다.
 - 좁은 창에서 보조 패널은 중앙을 압축하기보다 overlay/drawer로 전환한다.
 - 제목, toolbar, 필터, 본문, footer 순서를 유지한다.
+
+overlay drawer 규격(좁은 창에서 보조 패널 재부모화):
+
+- scrim은 `#80000000`으로 body 영역만 덮고, scrim 클릭으로 닫는다. header/footer는 덮지 않는다.
+- drawer는 오른쪽 정렬, `PanelBrush`, 왼쪽만 `LineBrush 1`, `DropShadowEffect BlurRadius=18, Depth=0, Opacity=0.4`.
+- ZIndex는 `90`으로 설정 오버레이(`200`)보다 아래에 둔다.
+- 같은 패널 인스턴스를 도킹 열 ↔ drawer 사이에서 재부모화해 상태를 유지한다. 복제 인스턴스를 만들지 않는다.
 
 ### 5.3 프레임 선택
 
@@ -954,6 +961,19 @@ Primary 예제:
 </Border>
 ```
 
+#### 검색 입력
+
+돋보기 아이콘 + placeholder 골격을 화면마다 새로 만들지 않는다.
+
+| 속성 | 값 |
+|---|---|
+| 컨테이너 | `PanelSoftBrush` 배경, `LineBrush 1`, 라운드 `8` |
+| 높이 | `35~37` (패널 밀도에 맞춤) |
+| 아이콘 | `IconSearch` `12~13`, `TextMutedBrush`, 왼쪽 margin `9~10` |
+| 입력 | 투명 borderless `TextBox`, `Fs13` |
+| placeholder | 별도 `TextBlock`, `TextMutedBrush`, `Fs13`, `IsHitTestVisible=False`, `Text=""`일 때만 표시 |
+| 열림 방식 | 헤더 돋보기 버튼이 검색 행 Height를 `0 ↔ 37/43`으로 슬라이드 |
+
 #### Compact 입력
 
 데이터 화면, filter bar, 표 상단에서만 쓴다.
@@ -1325,13 +1345,19 @@ Scrollbar:
 
 Splitter:
 
-- 실제 hit 영역 `4`
-- 기본 transparent
-- 세로 hover handle `2×28`
-- 가로 hover handle `28×2`
+- splitter 열/행 폭 `4`, 기본 transparent
+- 전역 스타일에 `Margin="-1,0,-1,0"`(가로 변형은 `0,-1,0,-1`)을 줘 실질 hit 영역을 `6`으로 넓히고 인접 패널의 `1px` 경계 보더 위까지 덮는다. `Panel.ZIndex=1`로 패널 위에 올린다.
+- 세로 hover handle `2×28`, 가로 hover handle `28×2`
 - handle 라운드 `1`
-- hover/drag 색 Accent
+- hover/drag 색 Accent, opacity `0→1` 즉시 전환(fade animation 없음)
 - 가로/세로 커서는 `SizeWE` / `SizeNS`
+
+경계 세퍼레이터 배치(1px 선의 소유권):
+
+- splitter 자체는 선을 그리지 않는다. 채널 양옆 `1px` 경계선은 **사이드 패널이 자기 쪽 보더로 그린다.**
+- 좌측 사이드바는 오른쪽 보더 `BorderThickness="0,0,1,0"`, 우측 보조 패널은 왼쪽 보더 `"1,0,0,0"`. 중앙 작업영역은 좌우 보더를 그리지 않는다.
+- 즉 구조는 `[사이드 패널+자기 보더 1] [투명 splitter 4] [중앙]`이며, 선을 splitter 열이나 중앙 콘텐츠에 중복으로 넣지 않는다.
+- 패널이 접혀 폭 `0`이 되면 보더도 함께 사라지므로 별도 처리 없이 채널이 닫힌다.
 
 ### 8.15 추가 form primitive
 
@@ -1370,6 +1396,36 @@ Splitter:
 - drag 중 값 label이 필요하면 thumb 주변 popup보다 고정된 오른쪽 meta 열을 우선한다.
 - percentage가 갱신돼도 row width가 흔들리지 않도록 숫자 영역에 고정 폭을 둔다.
 - indeterminate progress는 화면에 보일 때만 animation clock을 실행한다.
+
+사용량/토큰 미터 위젯(footer 요약 + 사이드바 카드에서 같은 렌더):
+
+- footer compact bar는 `56×6`(§5.6), 사이드바/팝오버 카드 bar는 `102×6`, 둘 다 radius `3`, track `LineBrush`.
+- 라벨 열은 고정 `34`, `Fs11` muted; percent는 `Fs12` SemiBold.
+- 채움 색은 예측 기반: 기간 내 여유면 `SuccessBrush`, 소진 예상이면 `DangerBrush`.
+
+### 8.16 상태 dot과 카운트 배지
+
+세션·연결 상태는 dot으로, 개수는 pill 배지로 표시한다. 화면마다 크기를 바꾸지 않는다.
+
+| 패턴 | geometry | 색 |
+|---|---|---|
+| 세션 상태 dot | Ellipse `8×8` | alive `PrimaryBrush`, dead `#6B7280` |
+| 연결/서비스 상태 dot | Ellipse `6~7` | 연결 `SuccessBrush`, 실패 `DangerBrush` |
+| 상태 라벨 pill | padding `6,2`, radius `4` | `PanelSoftBrush` 배경 + 상태색 텍스트 |
+| 카운트 pill | `MinWidth=18`, 높이 `18`, padding `5,0`, radius `9` | `PrimaryBrush` 배경, White `Fs11` SemiBold |
+| 보조 배지 | `Fs10` SemiBold | `PrimarySoftBrush` 배경 + `PrimaryBrush` 텍스트 |
+
+- busy 상태는 dot을 숨기고 같은 자리에서 `12×12` inline spinner로 스왑한다. dot과 spinner를 동시에 보여주지 않는다.
+- 목록 행 dot과 관리 다이얼로그 dot은 반드시 같은 `8×8` 규격을 공유한다.
+
+### 8.17 내부 패널 헤더 바
+
+셸 header(§5.5~5.6)와 별개로, 사이드바·보조 패널 내부의 섹션 헤더 바 규격이다.
+
+- 높이 `35~37`, 배경 `PanelBrush`, 하단 `LineBrush 1`.
+- 라벨은 `Fs12~13` SemiBold, `TextBrush`.
+- 오른쪽 액션은 `IconButton` `24×24`, 아이콘 `13`.
+- 헤더 바 안에 입력·콤보를 상시 배치하지 않는다. 검색은 §8.3 검색 입력의 슬라이드 행으로 연다.
 
 ## 9. SVG와 아이콘
 
@@ -1914,6 +1970,8 @@ Spinner clock은 화면에 실제로 보이는 spinner가 있을 때만 활성�
 - desktop notification은 fade-in `200ms`, fade-out `180ms`
 - 배경 Surface, border 1, radius 8~10
 - raw CLI stderr를 그대로 노출하지 않고 사용자 행동 중심 문장으로 바꾼다.
+
+현재 구현 범위: `devez-code`에는 네이티브 WPF in-app toast 오버레이가 없다. WPF 알림 경로는 desktop notification popup(§10.5)뿐이고, markdown 편집기의 toast는 WebView 내부(JS) 구현이다. 위 in-app toast 규격은 새로 만들 때의 기준값이며, 기존 화면에서 찾으려 하지 않는다.
 
 ## 12. 상태와 상호작용
 
