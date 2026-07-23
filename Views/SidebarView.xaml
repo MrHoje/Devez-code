@@ -237,7 +237,26 @@
                               Stroke="{DynamicResource TextMutedBrush}"/>
                         <Image Width="14" Height="14" VerticalAlignment="Center"
                                Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
-                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                               RenderOptions.BitmapScalingMode="HighQuality">
+                            <Image.Style>
+                                <Style TargetType="Image">
+                                    <Setter Property="RenderTransform">
+                                        <Setter.Value>
+                                            <TranslateTransform Y="0"/>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AgentId}" Value="gajae">
+                                            <Setter Property="RenderTransform">
+                                                <Setter.Value>
+                                                    <TranslateTransform Y="-2"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
+                        </Image>
                     </StackPanel>
                     <!-- 상태 점(평소) ↔ 회전 스피너(요청 처리중). 탭 X 로 숨긴 세션은 추적중지 아이콘. -->
                     <Grid Grid.Column="2" Width="12" Height="12" VerticalAlignment="Center">

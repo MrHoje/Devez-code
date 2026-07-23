@@ -234,7 +234,26 @@
                                             <Image x:Name="TabAgentIcon" Width="14" Height="14"
                                                    VerticalAlignment="Center"
                                                    Source="{Binding AgentId, Converter={x:Static models:AgentImageConverter.Instance}}"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                   RenderOptions.BitmapScalingMode="HighQuality">
+                                                <Image.Style>
+                                                    <Style TargetType="Image">
+                                                        <Setter Property="RenderTransform">
+                                                            <Setter.Value>
+                                                                <TranslateTransform Y="0"/>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding AgentId}" Value="gajae">
+                                                                <Setter Property="RenderTransform">
+                                                                    <Setter.Value>
+                                                                        <TranslateTransform Y="-2"/>
+                                                                    </Setter.Value>
+                                                                </Setter>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Image.Style>
+                                            </Image>
                                              <Path x:Name="TabFileIcon" Width="14" Height="14"
                                                    Stretch="Uniform" Visibility="Collapsed"
                                                    Data="{StaticResource IconFileText}"
