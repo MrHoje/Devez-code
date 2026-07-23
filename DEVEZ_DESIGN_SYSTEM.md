@@ -1,7 +1,7 @@
 # Devez 공통 디자인 시스템
 
 > 대상: `devez-code`, `devez`, `eGhisDevWPF`
-> 문서 버전: 1.2
+> 문서 버전: 1.3
 > 기준일: 2026-07-23
 > 주 대상 기술: WPF/XAML
 > 목적: 새 프로젝트에서 같은 색, 밀도, 컨트롤, 라운드, 아이콘, 보더, 상태 표현을 바로 재현한다.
@@ -1042,7 +1042,7 @@ Primary 예제:
 |---|---|---:|---:|---|
 | 일반 panel | Surface | 1 | 4~10 | 14~20 |
 | interactive card | Surface | 1 | 8~10 | 12~16 |
-| selected card | Accent soft | 1.5 Accent | 8~10 | 동일 |
+| selected card | 역할별: 8.8 참조 | 역할별: 8.8 참조 | 8~10 | 동일 |
 | soft section | Surface soft | 0~1 | 8~10 | 12~16 |
 | data panel | Surface | 1 | 4 | 화면 밀도형 |
 
@@ -1067,6 +1067,64 @@ interactive card:
 - selected는 필요할 때 accent bar, bold, icon 색 중 하나를 추가한다.
 - rail selected는 Accent fill + White icon을 사용한다.
 - 접기/펼치기 후 포커스가 terminal/editor로 돌아가야 하는 흐름은 명시적으로 복구한다.
+
+#### 좌·우 패널 선택 강조는 다르게 한다
+
+`devez-code`의 좌측 프로젝트 패널과 우측 파일 탐색 패널은 같은 `selected` 표현을 복사하지 않는다. 패널 역할에 따라 다음 규칙을 고정한다.
+
+| 영역/역할 | Normal | Hover | Selected | 금지 |
+|---|---|---|---|---|
+| 좌측 주 내비게이션의 독립 카드 | `PanelBrush` + `LineBrush` `1.5` | 배경은 유지하고 `ProjectCardHoverBorderBrush` 보더 | 배경은 유지하고 `PrimaryBrush` 보더 `1.5` | selected를 배경색만으로 표현 |
+| 우측 보조 패널의 트리·목록 행 | transparent | `HoverBrush` 배경 | `PrimarySoftBrush` 배경만 | selected Accent 보더, 카드 외곽선 추가 |
+
+핵심:
+
+- 좌측은 프로젝트처럼 화면의 주 컨텍스트를 바꾸는 **독립 카드**다. 선택 시 카드 실루엣 전체의 보더만 Accent로 바꾸고 배경을 채우지 않는다.
+- 우측은 현재 컨텍스트 안의 파일·항목을 고르는 **조밀한 행 목록**이다. 선택 시 행 배경만 `PrimarySoftBrush`로 채우고 보더는 만들지 않는다.
+- 우측 행의 배경 하이라이트는 텍스트/아이콘 content 영역에만 적용한다. expander와 자식 들여쓰기 영역 전체를 큰 카드처럼 감싸지 않는다.
+- hover보다 selected가 강해야 하지만 표현 채널은 유지한다. 좌측은 `border → stronger border`, 우측은 `background → stronger background`다.
+- 폴더가 접힌 상태에서 내부에 선택 프로젝트가 있으면 좌측 폴더 카드 보더도 `PrimaryBrush`로 표시해 선택 위치를 잃지 않게 한다.
+- drag/drop target, validation, keyboard focus ring은 selected와 별도 상태다. 이 상태 때문에 좌·우 선택 규칙을 섞지 않는다.
+
+좌측 카드 예제:
+
+```xml
+<Style x:Key="PrimaryContextCard" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Style.Triggers>
+        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+        </DataTrigger>
+    </Style.Triggers>
+</Style>
+```
+
+우측 행 예제:
+
+```xml
+<ControlTemplate TargetType="TreeViewItem">
+    <Border x:Name="RowBackground"
+            Background="Transparent"
+            BorderThickness="0"
+            CornerRadius="6"
+            Padding="4,0">
+        <ContentPresenter ContentSource="Header" />
+    </Border>
+    <ControlTemplate.Triggers>
+        <Trigger SourceName="RowBackground" Property="IsMouseOver" Value="True">
+            <Setter TargetName="RowBackground" Property="Background"
+                    Value="{DynamicResource HoverBrush}" />
+        </Trigger>
+        <Trigger Property="IsSelected" Value="True">
+            <Setter TargetName="RowBackground" Property="Background"
+                    Value="{DynamicResource PrimarySoftBrush}" />
+        </Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>
+```
 
 ### 8.9 ContextMenu와 MenuItem
 
@@ -2083,6 +2141,7 @@ Resources/
 
 - [ ] keyboard focus 이동과 복귀 확인
 - [ ] hover와 selected가 구분되는지 확인
+- [ ] 좌측 주 내비게이션 카드는 selected 보더만, 우측 보조 목록 행은 selected 배경만 강조
 - [ ] loading 중 기존 결과 유지
 - [ ] busy action 중복 실행 차단
 - [ ] destructive action 확인 단계 제공
@@ -2114,6 +2173,8 @@ Resources/
 - `App.xaml.cs`의 `SetTheme`
 - `MainWindow.xaml`
 - `MainWindow.xaml.cs`의 window chrome, maximize/fullscreen, footer 상태 처리
+- `Views/SidebarView.xaml`의 `ProjectCard`: 좌측 selected 보더-only 규칙
+- `Views/FileExplorerView.xaml`의 `TreeViewItem`: 우측 selected 배경-only 규칙
 - `Views/SettingsWindow.xaml`
 - `Views/SettingsWindow.xaml.cs`
 - `Views/SettingsDialog.xaml`
