@@ -2153,10 +2153,10 @@ public partial class MainWindow : Window
     {
         _shellPanelOpen = open;
         await FreezeWorkspaceTerminalsAsync();
+        ShellPanelRow.MinHeight = 0; // 애니메이션 중 MinHeight 클램프 방지 (열기 시작점 0 / 닫기 하강 모두)
         if (open)
         {
             SettingsService.SaveAgentForRoom(ShellRoomId, "shell"); // LaunchSession 의 shell 분기로 라우팅
-            ShellPanelRow.MinHeight = 0; // 애니 시작점(0) 이 MinHeight 에 클램프되지 않게
             ShellTerminalPanel.Visibility = Visibility.Visible;
             ShellPanelSplitter.Visibility = Visibility.Visible;
             ShellTerminal.ShowTerminal(ShellRoomId); // 살아있으면 재사용, 없으면 새 pwsh (지연 생성+유지)
@@ -2166,7 +2166,6 @@ public partial class MainWindow : Window
         if (open) ShellPanelRow.MinHeight = 120; // 스플리터 드래그 하한
         else
         {
-            ShellPanelRow.MinHeight = 0;
             ShellTerminalPanel.Visibility = Visibility.Collapsed; // HwndHost 는 Collapsed 로만 숨김
             ShellPanelSplitter.Visibility = Visibility.Collapsed;
         }
