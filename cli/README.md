@@ -14,7 +14,7 @@ Codex의 인증, 하네스 프롬프트, 도구, 스킬, `AGENTS.md`, 샌드박�
 - 명령/파일 변경 승인
 - 실행 중 입력 steer 및 `Esc`/`Ctrl+C` 중단
 - 일반 터미널 스크롤백을 보존하는 증분 렌더링
-- 시작 카드와 항상 보이는 composer/status bar
+- 화면 하단에 고정되는 composer/status bar
 - `/` 명령 자동완성 및 키보드 모델 선택기
 - Markdown 제목·목록·인용·코드 블록 표현
 - 실행 시간, 파일 diff 통계, 진행 상태 표시

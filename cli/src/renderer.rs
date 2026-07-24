@@ -2,7 +2,7 @@ use std::io::{Stdout, Write, stdout};
 
 use anyhow::Result;
 use crossterm::{
-    cursor::{Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, Show},
+    cursor::{Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, Show, position as cursor_position},
     event::{DisableBracketedPaste, EnableBracketedPaste},
     execute, queue,
     style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor},
@@ -107,6 +107,7 @@ pub struct Renderer {
     previous_lines: Vec<PaintLine>,
     cursor_line: usize,
     last_width: u16,
+    last_height: u16,
 }
 
 impl Renderer {
@@ -116,12 +117,15 @@ impl Renderer {
             previous_lines: Vec::new(),
             cursor_line: 0,
             last_width: 0,
+            last_height: 0,
         }
     }
 
     pub fn clear_screen(&mut self) -> Result<()> {
         self.previous_lines.clear();
         self.cursor_line = 0;
+        self.last_width = 0;
+        self.last_height = 0;
         execute!(self.out, Clear(ClearType::All), MoveTo(0, 0), Show)?;
         Ok(())
     }
@@ -142,29 +146,36 @@ impl Renderer {
             )
         };
 
-        let max_live = height.saturating_sub(1).max(3) as usize;
-        if frame.lines.len() > max_live {
-            let dropped = frame.lines.len() - max_live;
-            frame.lines.drain(0..dropped);
-            frame.cursor_line = frame.cursor_line.saturating_sub(dropped);
-        }
-
-        let needs_full_repaint =
-            self.previous_lines.is_empty() || self.last_width != width || !committed.is_empty();
+        let max_live = height.max(3) as usize;
+        let natural_rows = frame.lines.len().min(max_live);
+        let needs_full_repaint = self.previous_lines.is_empty()
+            || self.last_width != width
+            || self.last_height != height
+            || !committed.is_empty();
         if needs_full_repaint {
             self.erase_live()?;
             for block in committed {
                 let lines = block_lines(block, width.max(20));
                 self.print_permanent(&lines)?;
             }
+            self.out.flush()?;
+            let available_rows = cursor_position()
+                .map(|(_, row)| height.saturating_sub(row).max(1) as usize)
+                .unwrap_or(natural_rows);
+            fit_frame(&mut frame, available_rows.max(natural_rows).min(max_live));
             self.print_frame_full(&frame)?;
         } else {
+            fit_frame(
+                &mut frame,
+                self.previous_lines.len().max(natural_rows).min(max_live),
+            );
             self.patch_frame(&frame)?;
         }
 
         self.previous_lines = frame.lines.clone();
         self.cursor_line = frame.cursor_line;
         self.last_width = width;
+        self.last_height = height;
         self.out.flush()?;
         Ok(())
     }
@@ -181,12 +192,13 @@ impl Renderer {
             return Ok(());
         }
 
+        let available_up = cursor_position()
+            .map(|(_, row)| row as usize)
+            .unwrap_or(self.cursor_line);
+        let move_up = self.cursor_line.min(available_up);
         queue!(self.out, MoveToColumn(0))?;
-        if self.cursor_line > 0 {
-            queue!(
-                self.out,
-                MoveUp(self.cursor_line.min(u16::MAX as usize) as u16)
-            )?;
+        if move_up > 0 {
+            queue!(self.out, MoveUp(move_up.min(u16::MAX as usize) as u16))?;
         }
         queue!(self.out, Clear(ClearType::FromCursorDown))?;
         self.previous_lines.clear();
@@ -303,6 +315,7 @@ struct Frame {
     cursor_line: usize,
     cursor_col: usize,
     show_cursor: bool,
+    dock_index: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -385,6 +398,7 @@ fn normal_frame(
         "Message",
         "Ask Codex to build, fix, or explain…",
     );
+    let dock_index = lines.len();
     let cursor_line = lines.len() + input_cursor_line;
     lines.extend(input_lines);
     lines.push(PaintLine {
@@ -400,6 +414,7 @@ fn normal_frame(
         cursor_line,
         cursor_col: input_cursor_col,
         show_cursor: true,
+        dock_index,
     }
 }
 
@@ -523,6 +538,7 @@ fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: 
     if !live.is_empty() {
         lines.push(PaintLine::blank());
     }
+    let dock_index = lines.len();
 
     let title_width = UnicodeWidthStr::width(overlay.title.as_str());
     lines.push(PaintLine {
@@ -597,7 +613,29 @@ fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: 
         cursor_col,
         lines,
         show_cursor,
+        dock_index,
     }
+}
+
+fn fit_frame(frame: &mut Frame, target_rows: usize) {
+    let target_rows = target_rows.max(1);
+    if frame.lines.len() > target_rows {
+        let dropped = frame.lines.len() - target_rows;
+        frame.lines.drain(0..dropped);
+        frame.cursor_line = frame.cursor_line.saturating_sub(dropped);
+        frame.dock_index = frame.dock_index.saturating_sub(dropped);
+    } else if frame.lines.len() < target_rows {
+        let padding = target_rows - frame.lines.len();
+        let dock_index = frame.dock_index.min(frame.lines.len());
+        frame.lines.splice(
+            dock_index..dock_index,
+            (0..padding).map(|_| PaintLine::blank()),
+        );
+        if frame.cursor_line >= dock_index {
+            frame.cursor_line += padding;
+        }
+    }
+    frame.cursor_line = frame.cursor_line.min(frame.lines.len().saturating_sub(1));
 }
 
 fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
@@ -936,4 +974,57 @@ fn set_tone(out: &mut Stdout, tone: Tone) -> Result<()> {
     };
     queue!(out, SetForegroundColor(color))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn docking_adds_space_before_the_composer() {
+        let mut frame = Frame {
+            lines: vec![
+                PaintLine::plain("response"),
+                PaintLine::plain("input"),
+                PaintLine::plain("footer"),
+            ],
+            cursor_line: 1,
+            cursor_col: 0,
+            show_cursor: true,
+            dock_index: 1,
+        };
+
+        fit_frame(&mut frame, 6);
+
+        assert_eq!(frame.lines.len(), 6);
+        assert_eq!(frame.cursor_line, 4);
+        assert_eq!(frame.lines[0].text, "response");
+        assert_eq!(frame.lines[4].text, "input");
+        assert_eq!(frame.lines[5].text, "footer");
+    }
+
+    #[test]
+    fn docking_trims_oldest_rows_before_the_composer() {
+        let mut frame = Frame {
+            lines: (0..5)
+                .map(|index| PaintLine::plain(index.to_string()))
+                .collect(),
+            cursor_line: 3,
+            cursor_col: 0,
+            show_cursor: true,
+            dock_index: 3,
+        };
+
+        fit_frame(&mut frame, 3);
+
+        assert_eq!(
+            frame
+                .lines
+                .iter()
+                .map(|line| line.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["2", "3", "4"]
+        );
+        assert_eq!(frame.cursor_line, 1);
+    }
 }
