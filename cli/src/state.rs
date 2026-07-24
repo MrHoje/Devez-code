@@ -9,8 +9,8 @@ use serde_json::{Map, Value, json};
 use crate::{
     editor::Editor,
     renderer::{
-        Block, BlockKind, OverlayLine, OverlayView, StatusLineView, SuggestionView, View,
-        WelcomeView,
+        Block, BlockKind, OverlayLine, OverlayStyle, OverlayView, StatusLineView, SuggestionView,
+        View, WelcomeView,
     },
 };
 
@@ -398,6 +398,7 @@ impl SessionPicker {
             ),
             lines,
             hint: "↑↓ navigate  Enter resume  Ctrl+A all projects  Esc cancel".to_owned(),
+            style: OverlayStyle::Panel,
             input: Some(&self.query),
             input_label: "Search",
             input_placeholder: "Search by name, prompt, ID, or folder…",
@@ -433,7 +434,6 @@ pub struct AppState {
     models: Vec<ModelInfo>,
     selected_model: usize,
     selected_effort: String,
-    effort_is_auto: bool,
     committed: Vec<Block>,
     active_order: Vec<String>,
     active: HashMap<String, ActiveItem>,
@@ -482,7 +482,6 @@ impl AppState {
             models,
             selected_model,
             selected_effort,
-            effort_is_auto: false,
             committed: Vec::new(),
             active_order: Vec::new(),
             active: HashMap::new(),
@@ -532,7 +531,6 @@ impl AppState {
         self.active.clear();
         self.active_order.clear();
         self.show_welcome = true;
-        self.effort_is_auto = false;
         if let Some(index) = self
             .models
             .iter()
@@ -631,7 +629,7 @@ impl AppState {
             editor: &self.editor,
             welcome: self.show_welcome.then(|| WelcomeView {
                 model: self.selected_model_display_name().to_owned(),
-                effort: self.effort_label(),
+                effort: self.selected_effort.clone(),
                 cwd: self.cwd.clone(),
                 account: self.account.clone(),
             }),
@@ -1113,7 +1111,7 @@ impl AppState {
                 self.committed.push(Block::new(
                     BlockKind::System,
                     "Commands",
-                    "/model [MODEL] [EFFORT]  모델과 effort 선택\n/effort [LEVEL|auto]  추론 수준\n/resume [SESSION]  이전 세션 선택\n/continue  /resume 별칭\n/new  새 대화\n/status  현재 설정\n/clear  화면 정리\n/quit  종료\n\nEsc 또는 Ctrl+C  실행 중단\nAlt+Enter  줄바꿈",
+                    "/model [MODEL] [EFFORT]  모델과 effort 선택\n/effort [LEVEL]  추론 수준\n/resume [SESSION]  이전 세션 선택\n/continue  /resume 별칭\n/new  새 대화\n/status  현재 설정\n/clear  화면 정리\n/quit  종료\n\nEsc 또는 Ctrl+C  실행 중단\nAlt+Enter  줄바꿈",
                 ));
                 Action::None
             }
@@ -1149,31 +1147,25 @@ impl AppState {
                 Action::None
             }
             "/effort" if parts.len() == 1 => {
-                let effort_index = if self.effort_is_auto {
-                    0
-                } else {
-                    self.selected_model()
-                        .and_then(|model| {
-                            model
-                                .efforts
-                                .iter()
-                                .position(|effort| effort.id == self.selected_effort)
-                        })
-                        .map(|index| index + 1)
-                        .unwrap_or(0)
-                };
+                let effort_index = self
+                    .selected_model()
+                    .and_then(|model| {
+                        model
+                            .efforts
+                            .iter()
+                            .position(|effort| effort.id == self.selected_effort)
+                    })
+                    .unwrap_or(0);
                 self.pending = Some(PendingInteraction::EffortPicker { effort_index });
                 Action::None
             }
             "/effort" if parts.len() == 2 => {
                 let effort = parts[1];
-                if effort.eq_ignore_ascii_case("auto") {
-                    self.apply_effort(None);
-                } else if self
+                if self
                     .selected_model()
                     .is_some_and(|model| model.supports_effort(effort))
                 {
-                    self.apply_effort(Some(effort));
+                    self.apply_effort(effort);
                 } else {
                     self.committed.push(Block::new(
                         BlockKind::Error,
@@ -1210,9 +1202,7 @@ impl AppState {
                     "Status",
                     format!(
                         "thread: {}\nmodel: {model}\neffort: {}\ncwd: {}",
-                        self.thread_id,
-                        self.effort_label(),
-                        self.cwd
+                        self.thread_id, self.selected_effort, self.cwd
                     ),
                 ));
                 Action::None
@@ -1297,7 +1287,7 @@ impl AppState {
             PendingInteraction::EffortPicker { mut effort_index } => {
                 let count = self
                     .selected_model()
-                    .map(|model| model.efforts.len() + 1)
+                    .map(|model| model.efforts.len())
                     .unwrap_or(1);
                 match key.code {
                     KeyCode::Esc => return Action::None,
@@ -1314,12 +1304,13 @@ impl AppState {
                         effort_index = (effort_index + 1).min(count - 1);
                     }
                     KeyCode::Enter => {
-                        let effort = effort_index.checked_sub(1).and_then(|index| {
-                            self.selected_model()
-                                .and_then(|model| model.efforts.get(index))
-                                .map(|effort| effort.id.clone())
-                        });
-                        self.apply_effort(effort.as_deref());
+                        let effort = self
+                            .selected_model()
+                            .and_then(|model| model.efforts.get(effort_index))
+                            .map(|effort| effort.id.clone());
+                        if let Some(effort) = effort {
+                            self.apply_effort(&effort);
+                        }
                         return Action::None;
                     }
                     _ => {}
@@ -1469,7 +1460,7 @@ impl AppState {
                         muted: true,
                     });
                     lines.push(OverlayLine {
-                        text: format!("Effort  {}", effort_slider(model, *effort_index, false)),
+                        text: format!("Effort   {}", effort_slider(model, *effort_index)),
                         selected: false,
                         muted: false,
                     });
@@ -1477,7 +1468,8 @@ impl AppState {
                 Some(OverlayView {
                     title: "Select model".to_owned(),
                     lines,
-                    hint: "↑/↓ select · ←/→ effort · Enter confirm · Esc cancel".to_owned(),
+                    hint: "↑↓ model   ←→ effort   Enter select   Esc cancel".to_owned(),
+                    style: OverlayStyle::Picker,
                     input: None,
                     input_label: "",
                     input_placeholder: "",
@@ -1486,13 +1478,26 @@ impl AppState {
             PendingInteraction::EffortPicker { effort_index } => {
                 let model = self.selected_model()?;
                 Some(OverlayView {
-                    title: format!("Set effort · {}", model.display_name),
-                    lines: vec![OverlayLine {
-                        text: effort_slider(model, *effort_index, true),
-                        selected: false,
-                        muted: false,
-                    }],
-                    hint: "←/→ adjust · Enter confirm · Esc cancel".to_owned(),
+                    title: "Set effort".to_owned(),
+                    lines: vec![
+                        OverlayLine {
+                            text: model.display_name.clone(),
+                            selected: false,
+                            muted: true,
+                        },
+                        OverlayLine {
+                            text: String::new(),
+                            selected: false,
+                            muted: true,
+                        },
+                        OverlayLine {
+                            text: effort_slider(model, *effort_index),
+                            selected: false,
+                            muted: false,
+                        },
+                    ],
+                    hint: "←→ adjust   Enter select   Esc cancel".to_owned(),
+                    style: OverlayStyle::Picker,
                     input: None,
                     input_label: "",
                     input_placeholder: "",
@@ -1534,6 +1539,7 @@ impl AppState {
                     title: title.clone(),
                     lines,
                     hint: "y / a / n".to_owned(),
+                    style: OverlayStyle::Panel,
                     input: None,
                     input_label: "",
                     input_placeholder: "",
@@ -1581,6 +1587,7 @@ impl AppState {
                     } else {
                         "↑↓ 선택  Enter 확인  Esc 취소".to_owned()
                     },
+                    style: OverlayStyle::Panel,
                     input: text_mode.then_some(editor),
                     input_label: "Answer",
                     input_placeholder: "Type your answer…",
@@ -1656,7 +1663,6 @@ impl AppState {
         let model_name = model.display_name.clone();
         self.selected_model = index;
         self.selected_effort = selected_effort.clone();
-        self.effort_is_auto = false;
         self.committed.push(Block::new(
             BlockKind::Success,
             "Model 변경",
@@ -1664,30 +1670,16 @@ impl AppState {
         ));
     }
 
-    fn apply_effort(&mut self, effort: Option<&str>) {
+    fn apply_effort(&mut self, effort: &str) {
         let Some(model) = self.selected_model() else {
             return;
         };
-        let selected = effort
-            .filter(|effort| model.supports_effort(effort))
-            .unwrap_or(&model.default_effort)
-            .to_owned();
-        let label = match effort {
-            Some(_) => selected.clone(),
-            None => format!("auto · {selected}"),
-        };
-        self.selected_effort = selected;
-        self.effort_is_auto = effort.is_none();
-        self.committed
-            .push(Block::new(BlockKind::Success, "Effort changed", label));
-    }
-
-    fn effort_label(&self) -> String {
-        if self.effort_is_auto {
-            format!("auto · {}", self.selected_effort)
-        } else {
-            self.selected_effort.clone()
+        if !model.supports_effort(effort) {
+            return;
         }
+        self.selected_effort = effort.to_owned();
+        self.committed
+            .push(Block::new(BlockKind::Success, "Effort changed", effort));
     }
 
     fn effort_index_for_model(&self, model_index: usize) -> usize {
@@ -2068,24 +2060,20 @@ fn format_duration(duration_ms: u64) -> String {
     }
 }
 
-fn effort_slider(model: &ModelInfo, selected: usize, include_auto: bool) -> String {
-    let mut levels = Vec::with_capacity(model.efforts.len() + usize::from(include_auto));
-    if include_auto {
-        levels.push("auto".to_owned());
-    }
-    levels.extend(model.efforts.iter().map(|effort| effort.id.clone()));
-    levels
-        .into_iter()
+fn effort_slider(model: &ModelInfo, selected: usize) -> String {
+    model
+        .efforts
+        .iter()
         .enumerate()
-        .map(|(index, level)| {
+        .map(|(index, effort)| {
             if index == selected {
-                format!("[{level}]")
+                format!("● {}", effort.id)
             } else {
-                level
+                effort.id.clone()
             }
         })
         .collect::<Vec<_>>()
-        .join(" ─ ")
+        .join("  ·  ")
 }
 
 fn relative_time(timestamp: u64) -> String {
@@ -2215,7 +2203,7 @@ mod tests {
     }
 
     #[test]
-    fn effort_auto_remains_selected_until_an_explicit_level_is_chosen() {
+    fn effort_requires_an_explicit_supported_level() {
         let model = ModelInfo {
             id: "model".to_owned(),
             model: "model".to_owned(),
@@ -2241,11 +2229,9 @@ mod tests {
         );
 
         state.run_slash_command("/effort auto");
-        assert!(state.effort_is_auto);
-        assert_eq!(state.effort_label(), "auto · high");
+        assert_eq!(state.selected_effort(), "high");
 
         state.run_slash_command("/effort max");
-        assert!(!state.effort_is_auto);
         assert_eq!(state.selected_effort(), "max");
     }
 }

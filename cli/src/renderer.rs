@@ -45,9 +45,16 @@ pub struct OverlayView<'a> {
     pub title: String,
     pub lines: Vec<OverlayLine>,
     pub hint: String,
+    pub style: OverlayStyle,
     pub input: Option<&'a Editor>,
     pub input_label: &'static str,
     pub input_placeholder: &'static str,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum OverlayStyle {
+    Panel,
+    Picker,
 }
 
 pub struct OverlayLine {
@@ -578,52 +585,101 @@ fn overlay_frame(
     }
     let dock_index = lines.len();
 
-    let title_width = UnicodeWidthStr::width(overlay.title.as_str());
-    lines.push(PaintLine {
-        prefix: String::new(),
-        prefix_tone: Tone::Accent,
-        text: format!(
-            "╭─ {} {}",
-            overlay.title,
-            "─".repeat(
-                (width as usize)
-                    .saturating_sub(title_width)
-                    .saturating_sub(5)
-            )
-        ),
-        tone: Tone::Accent,
-        bold: true,
-        tail: Vec::new(),
-    });
-    for row in overlay.lines {
-        for (part_index, part) in row.text.lines().enumerate() {
-            let prefix = if part_index == 0 {
-                if row.selected { "│ ❯ " } else { "│   " }
-            } else {
-                "│     "
-            };
-            lines.extend(wrapped_line(
-                prefix,
-                if row.selected {
-                    Tone::Accent
-                } else {
-                    Tone::Muted
-                },
-                part,
-                if row.muted { Tone::Muted } else { Tone::Plain },
-                row.selected && part_index == 0,
-                width,
-            ));
+    match overlay.style {
+        OverlayStyle::Picker => {
+            lines.push(PaintLine {
+                prefix: "  ".to_owned(),
+                prefix_tone: Tone::Accent,
+                text: overlay.title,
+                tone: Tone::Accent,
+                bold: true,
+                tail: Vec::new(),
+            });
+            lines.push(PaintLine::blank());
+            for row in overlay.lines {
+                if row.text.is_empty() {
+                    lines.push(PaintLine::blank());
+                    continue;
+                }
+                for (part_index, part) in row.text.lines().enumerate() {
+                    let prefix = if part_index == 0 {
+                        if row.selected { "  ❯ " } else { "    " }
+                    } else {
+                        "    "
+                    };
+                    lines.extend(wrapped_line(
+                        prefix,
+                        if row.selected {
+                            Tone::Accent
+                        } else {
+                            Tone::Muted
+                        },
+                        part,
+                        if row.muted { Tone::Muted } else { Tone::Plain },
+                        row.selected && part_index == 0,
+                        width,
+                    ));
+                }
+            }
+            lines.push(PaintLine::blank());
+            lines.push(PaintLine {
+                prefix: "  ".to_owned(),
+                prefix_tone: Tone::Muted,
+                text: overlay.hint,
+                tone: Tone::Muted,
+                bold: false,
+                tail: Vec::new(),
+            });
+        }
+        OverlayStyle::Panel => {
+            let title_width = UnicodeWidthStr::width(overlay.title.as_str());
+            lines.push(PaintLine {
+                prefix: String::new(),
+                prefix_tone: Tone::Accent,
+                text: format!(
+                    "╭─ {} {}",
+                    overlay.title,
+                    "─".repeat(
+                        (width as usize)
+                            .saturating_sub(title_width)
+                            .saturating_sub(5)
+                    )
+                ),
+                tone: Tone::Accent,
+                bold: true,
+                tail: Vec::new(),
+            });
+            for row in overlay.lines {
+                for (part_index, part) in row.text.lines().enumerate() {
+                    let prefix = if part_index == 0 {
+                        if row.selected { "│ ❯ " } else { "│   " }
+                    } else {
+                        "│     "
+                    };
+                    lines.extend(wrapped_line(
+                        prefix,
+                        if row.selected {
+                            Tone::Accent
+                        } else {
+                            Tone::Muted
+                        },
+                        part,
+                        if row.muted { Tone::Muted } else { Tone::Plain },
+                        row.selected && part_index == 0,
+                        width,
+                    ));
+                }
+            }
+            lines.push(PaintLine {
+                prefix: "╰─ ".to_owned(),
+                prefix_tone: Tone::Muted,
+                text: overlay.hint,
+                tone: Tone::Muted,
+                bold: false,
+                tail: Vec::new(),
+            });
         }
     }
-    lines.push(PaintLine {
-        prefix: "╰─ ".to_owned(),
-        prefix_tone: Tone::Muted,
-        text: overlay.hint,
-        tone: Tone::Muted,
-        bold: false,
-        tail: Vec::new(),
-    });
     let mut cursor_line = lines.len() - 1;
     let mut cursor_col = 0;
     let show_cursor = if let Some(editor) = overlay.input {
@@ -772,8 +828,12 @@ fn trim_spans(spans: &mut Vec<PaintSpan>, max_width: usize) {
 }
 
 fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
+    if matches!(block.kind, BlockKind::User) {
+        return user_prompt_lines(block, width);
+    }
+
     let (marker, tone) = match block.kind {
-        BlockKind::User => ("❯ ", Tone::User),
+        BlockKind::User => unreachable!("user blocks are rendered separately"),
         BlockKind::Assistant => ("● ", Tone::Accent),
         BlockKind::Reasoning => ("✻ ", Tone::Muted),
         BlockKind::Tool => ("● ", Tone::User),
@@ -783,7 +843,7 @@ fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
         BlockKind::System => ("◆ ", Tone::Muted),
     };
 
-    let conversational = matches!(block.kind, BlockKind::User | BlockKind::Assistant);
+    let conversational = matches!(block.kind, BlockKind::Assistant);
     let mut first_content = conversational;
     let mut lines = if conversational {
         Vec::new()
@@ -894,6 +954,38 @@ fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
             bold: false,
             tail: Vec::new(),
         });
+    }
+    lines.push(PaintLine::blank());
+    lines
+}
+
+fn user_prompt_lines(block: &Block, width: u16) -> Vec<PaintLine> {
+    let mut lines = Vec::new();
+    if block.body.is_empty() {
+        lines.extend(wrapped_line(
+            "❯ ",
+            Tone::Accent,
+            "",
+            Tone::Plain,
+            true,
+            width,
+        ));
+        return lines;
+    }
+
+    for (index, raw_line) in block.body.lines().enumerate() {
+        lines.extend(wrapped_line(
+            if index == 0 { "❯ " } else { "  " },
+            if index == 0 {
+                Tone::Accent
+            } else {
+                Tone::Muted
+            },
+            raw_line,
+            Tone::Plain,
+            true,
+            width,
+        ));
     }
     lines.push(PaintLine::blank());
     lines
@@ -1019,8 +1111,8 @@ fn input_lines(
         prefix: String::new(),
         prefix_tone: Tone::Muted,
         text: format!(
-            "╭─{top_label}{}╮",
-            "─".repeat(panel_width.saturating_sub(3 + top_label.len()))
+            "──{top_label}{}",
+            "─".repeat(panel_width.saturating_sub(2 + top_label.len()))
         ),
         tone: Tone::Muted,
         bold: false,
@@ -1057,7 +1149,7 @@ fn input_lines(
     rows.push(PaintLine {
         prefix: String::new(),
         prefix_tone: Tone::Muted,
-        text: format!("╰{}╯", "─".repeat(panel_width.saturating_sub(2))),
+        text: "─".repeat(panel_width),
         tone: Tone::Muted,
         bold: false,
         tail: Vec::new(),
@@ -1279,6 +1371,11 @@ mod tests {
         let prompt_rows = &rows[1..rows.len() - 1];
 
         assert!(prompt_rows.len() > 1);
+        assert!(!rows[0].text.contains(['╭', '╮', '╰', '╯']));
+        assert!(
+            rows.last()
+                .is_some_and(|row| row.text.chars().all(|ch| ch == '─'))
+        );
         assert!(prompt_rows.iter().all(|row| !row.prefix.contains('│')));
         assert!(prompt_rows.iter().all(|row| !row.text.ends_with(' ')));
         assert!(prompt_rows.iter().all(|row| !row.text.contains('│')));
@@ -1294,6 +1391,8 @@ mod tests {
 
         assert_eq!(user_lines[0].prefix, "❯ ");
         assert_eq!(user_lines[0].text, "hello");
+        assert!(user_lines[0].prefix_tone == Tone::Accent);
+        assert!(user_lines[0].bold);
         assert_eq!(assistant_lines[0].prefix, "● ");
         assert_eq!(assistant_lines[0].text, "hi");
         assert!(user_lines.iter().all(|line| line.text != "You"));
@@ -1321,5 +1420,44 @@ mod tests {
 
         assert!(width <= 32);
         assert!(line.text.starts_with(" GPT-5.6 Codex"));
+    }
+
+    #[test]
+    fn picker_overlay_uses_restrained_borderless_chrome() {
+        let frame = overlay_frame(
+            &[],
+            OverlayView {
+                title: "Select model".to_owned(),
+                lines: vec![
+                    OverlayLine {
+                        text: "GPT-5.6-Sol".to_owned(),
+                        selected: true,
+                        muted: false,
+                    },
+                    OverlayLine {
+                        text: "GPT-5.3-Codex-Spark".to_owned(),
+                        selected: false,
+                        muted: false,
+                    },
+                ],
+                hint: "↑↓ model   Enter select".to_owned(),
+                style: OverlayStyle::Picker,
+                input: None,
+                input_label: "",
+                input_placeholder: "",
+            },
+            StatusArea {
+                fallback: String::new(),
+                line: None,
+            },
+            80,
+        );
+
+        assert_eq!(frame.lines[0].text, "Select model");
+        assert_eq!(frame.lines[2].prefix, "  ❯ ");
+        assert!(frame.lines.iter().all(|line| {
+            !line.text.contains(['╭', '╮', '╰', '╯', '│'])
+                && !line.prefix.contains(['╭', '╮', '╰', '╯', '│'])
+        }));
     }
 }

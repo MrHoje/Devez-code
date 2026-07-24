@@ -74,7 +74,10 @@ async fn run(cli: &Cli, server: &mut AppServer) -> Result<()> {
     let account = ensure_account(server).await?;
 
     let models_response = server
-        .request("model/list", json!({ "includeHidden": true, "limit": 100 }))
+        .request(
+            "model/list",
+            json!({ "includeHidden": false, "limit": 100 }),
+        )
         .await?;
     let models = parse_models(&models_response);
     if models.is_empty() {

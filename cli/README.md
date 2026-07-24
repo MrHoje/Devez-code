@@ -9,14 +9,15 @@ Codex의 인증, 하네스 프롬프트, 도구, 스킬, `AGENTS.md`, 샌드박�
 - 새 스레드 시작, 세션 검색 피커, ID/이름 기반 resume
 - `--resume [SESSION]`, `--continue` 및 실행 중 `/resume`
 - 모델 카탈로그 기반 `/model` 선택과 좌우 effort 조절
-- `/effort` 슬라이더에서 Auto 및 서버 지원 effort만 노출 (`max` 포함)
+- `/effort` 슬라이더에서 서버 지원 effort만 노출 (`max`·`ultra` 포함)
 - 응답, reasoning summary, 명령, 파일 변경, MCP 호출 스트리밍
 - 명령/파일 변경 승인
 - 실행 중 입력 steer 및 `Esc`/`Ctrl+C` 중단
 - 일반 터미널 스크롤백을 보존하는 증분 렌더링
 - 좌우 테두리와 복사용 공백이 없는 Claude Code형 하단 composer
 - 모델명, effort, context 사용량을 표시하는 Claude statusline형 하단 상태줄
-- 설명 없이 모델명만 표시하는 `/model` 피커와 `/effort` 슬라이더
+- Codex CLI 정렬을 유지하고 hidden 모델을 제외한 `/model` 피커
+- 설명·Auto 없이 모델명과 지원 수준만 표시하는 `/effort` 슬라이더
 - `You`/`Codex` 헤더 없이 마커와 본문으로 이어지는 대화 출력
 - `/` 명령 자동완성 및 키보드 모델 선택기
 - `Ctrl+Backspace`/`Ctrl+W` 단어 삭제, `Ctrl+K`/`Ctrl+U` 줄 삭제,
