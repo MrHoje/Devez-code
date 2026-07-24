@@ -4922,7 +4922,7 @@ public partial class MainWindow : Window
             : "";
         if (!ConfirmDialog.Show("세션 추적 중단",
                 $"'{session.Name}' 세션을 목록에서 제거할까요?{childNotice}\n이 세션의 대화 기록은 디스크에 그대로 보존됩니다.",
-                okLabel: "중단"))
+                okLabel: "닫기"))
             return;
         foreach (var child in children) child.ParentSessionId = null;
         RemoveSessionSubtree(project, new[] { session }, purge: false);
@@ -4952,7 +4952,7 @@ public partial class MainWindow : Window
             : "";
         if (!ConfirmDialog.Show("세션 일괄 추적 중단",
                 $"선택한 세션 {targets.Count}개를 목록에서 제거할까요?{childNotice}\n대화 기록은 디스크에 그대로 보존됩니다.",
-                okLabel: "모두 중단"))
+                okLabel: "모두 닫기"))
             return;
 
         foreach (var child in detached) child.ParentSessionId = null;
