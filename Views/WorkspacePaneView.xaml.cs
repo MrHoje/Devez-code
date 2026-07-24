@@ -776,7 +776,7 @@ public partial class WorkspacePaneView : UserControl
         // 거기 근접할 때까지 기다리게 하면 중간 전체폭 plateau 를 확실히 건너뛴다.
         UpdateLayout();
         double target = TerminalHostContainer?.ActualWidth ?? 0;
-        RememberActiveSessionWidth(target);
+        RememberActiveSessionSize(target);
         _terminal.RevealAfterTransition(_activeSession?.Id, kick, target, bounce);
         EndCover(); // 파일 커튼도 함께 걷는다(단일 패널 파일 전환)
     }
@@ -1303,15 +1303,17 @@ public partial class WorkspacePaneView : UserControl
         ActivateBrowserTab(tab);
     }
 
-    // 이 패널에서 세션별로 마지막 표시한 터미널 폭. 처음 표시되는 프리로드 세션뿐 아니라, 다른 탭을
-    // 보는 동안 사이드패널이 열고 닫혀 폭이 달라진 세션도 다음 show 전에 커버해야 한다. 단순 HashSet 으로
-    // "한 번 봤음"만 기억하면 그 복귀가 일반 show 로 빠져 Codex 입력영역의 리사이즈 중간 프레임이 노출된다.
-    private readonly Dictionary<string, double> _shownSessionWidths = new();
+    // 이 패널에서 세션별로 마지막 표시한 터미널 크기(폭·높이). 처음 표시되는 프리로드 세션뿐 아니라, 다른 탭을
+    // 보는 동안 사이드패널(폭)이나 하단 터미널 패널(높이)이 열고 닫혀 크기가 달라진 세션도 다음 show 전에
+    // 커버해야 한다. 단순 HashSet 으로 "한 번 봤음"만 기억하면 그 복귀가 일반 show 로 빠져
+    // Codex 입력영역의 리사이즈 중간 프레임이 노출된다(하단 잘림 고착).
+    private readonly Dictionary<string, (double W, double H)> _shownSessionSizes = new();
 
-    private void RememberActiveSessionWidth(double width)
+    private void RememberActiveSessionSize(double width)
     {
+        double height = TerminalHostContainer?.ActualHeight ?? 0;
         if (_activeSession != null && width > 1)
-            _shownSessionWidths[_activeSession.Id] = width;
+            _shownSessionSizes[_activeSession.Id] = (width, height);
     }
 
     // 테마 적용으로 종료 중인 방 id 들. 완료 전 사용자가 다른 탭을 눌러도 죽어가는 프로세스에 붙지 않고
@@ -1349,13 +1351,15 @@ public partial class WorkspacePaneView : UserControl
         // 커버를 먼저 올리면 show 의 fit 이 억제되고, RevealAfterTransition 이 최종 폭에서 fit한 뒤
         // Codex 출력이 quiet 해질 때까지 기다려 완성 프레임만 보여준다.
         double currentTerminalWidth = TerminalHostContainer?.ActualWidth ?? 0;
-        bool hadPreviousWidth = _shownSessionWidths.TryGetValue(session.Id, out var previousWidth);
-        bool widthChanged = !hadPreviousWidth
-            || (currentTerminalWidth > 1 && Math.Abs(currentTerminalWidth - previousWidth) > 2);
-        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && widthChanged;
+        double currentTerminalHeight = TerminalHostContainer?.ActualHeight ?? 0;
+        bool hadPreviousSize = _shownSessionSizes.TryGetValue(session.Id, out var previousSize);
+        bool sizeChanged = !hadPreviousSize
+            || (currentTerminalWidth > 1 && Math.Abs(currentTerminalWidth - previousSize.W) > 2)
+            || (currentTerminalHeight > 1 && Math.Abs(currentTerminalHeight - previousSize.H) > 2); // 하단 터미널 패널 = 높이 변화
+        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && sizeChanged;
         if (coverReflow)
         {
-            DiagLog.Write($"ActivateSession reflow cover room={session.Id} width={(hadPreviousWidth ? previousWidth.ToString("F1") : "first")}->{currentTerminalWidth:F1}");
+            DiagLog.Write($"ActivateSession reflow cover room={session.Id} size={(hadPreviousSize ? $"{previousSize.W:F1}x{previousSize.H:F1}" : "first")}->{currentTerminalWidth:F1}x{currentTerminalHeight:F1}");
             CoverForTransition();
         }
         ClearIsolationIfMismatch(session);
@@ -1395,7 +1399,7 @@ public partial class WorkspacePaneView : UserControl
             EnsureSelectedTabVisible(session);
             RefreshModelEffortDock();
             ActiveChanged?.Invoke(this);
-            // _shownSessionWidths 는 여기서 추가하지 않는다 — 아직 실제로 터미널을 보여준 게 아니라
+            // _shownSessionSizes 는 여기서 추가하지 않는다 — 아직 실제로 터미널을 보여준 게 아니라
             // 스피너만 띄운 상태다. 잘못 마킹하면 나중에 진짜로 연결될 때 리플로우 감춤 커버가
             // "이미 이 폭으로 본 적 있음"으로 오판돼 스킵되고, 기본폭→패널폭 리플로우가 그대로
             // 노출돼 터미널이 화면 모서리에만 작게 뜨는 것처럼 보인다.
@@ -1461,7 +1465,7 @@ public partial class WorkspacePaneView : UserControl
         EnsureSelectedTabVisible(session);
         RefreshModelEffortDock();
         ActiveChanged?.Invoke(this);
-        RememberActiveSessionWidth(TerminalHostContainer?.ActualWidth ?? 0);
+        RememberActiveSessionSize(TerminalHostContainer?.ActualWidth ?? 0);
         if (coverReflow) RevealAfterTransition(kick: true); // 최종 폭에서 세션 재동기 후 커버 걷기(리플로우 감춤)
     }
 
@@ -4295,7 +4299,7 @@ public partial class WorkspacePaneView : UserControl
             {
                 UpdateLayout();
                 double target = TerminalHostContainer?.ActualWidth ?? 0;
-                RememberActiveSessionWidth(target);
+                RememberActiveSessionSize(target);
                 _terminal.RevealAfterTransition(_activeSession.Id, kick: true, expectWidth: target);
             }
             return;
