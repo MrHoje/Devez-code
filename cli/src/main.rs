@@ -13,10 +13,11 @@ use anyhow::{Context, Result, bail};
 use app_server::{AppServer, ServerEvent};
 use clap::Parser;
 use crossterm::event::{Event, EventStream};
+use editor::Editor;
 use futures_util::StreamExt;
-use renderer::{BlockKind, Renderer, TerminalSession};
+use renderer::{BlockKind, Renderer, TerminalSession, View};
 use serde_json::{Value, json};
-use state::{Action, AppState, ModelInfo};
+use state::{Action, AppState, ModelInfo, SessionInfo, SessionPicker, SessionPickerResult};
 use tokio::time::MissedTickBehavior;
 
 #[derive(Parser)]
@@ -26,9 +27,20 @@ use tokio::time::MissedTickBehavior;
     about = "Stable terminal UI for the official Codex app-server"
 )]
 struct Cli {
-    /// Resume an existing Codex thread.
-    #[arg(long, value_name = "THREAD_ID")]
+    /// Resume by ID/name, or open the session picker when no value is given.
+    #[arg(
+        short = 'r',
+        long,
+        value_name = "SESSION",
+        num_args = 0..=1,
+        default_missing_value = "",
+        conflicts_with = "continue_session"
+    )]
     resume: Option<String>,
+
+    /// Continue the most recent session in the current directory.
+    #[arg(short = 'c', long = "continue", conflicts_with = "resume")]
+    continue_session: bool,
 
     /// Select a model from the app-server model catalog.
     #[arg(long)]
@@ -71,7 +83,12 @@ async fn run(cli: &Cli, server: &mut AppServer) -> Result<()> {
 
     let requested_model_name = choose_model(&models, cli.model.as_deref())?.model.clone();
     let cwd = resolve_cwd(cli.cwd.as_deref())?;
-    let model_override = if cli.resume.is_some() {
+    let resume_id = resolve_startup_session(cli, server, &cwd).await?;
+    let Some(resume_id) = resume_id else {
+        return Ok(());
+    };
+    let is_resuming = !resume_id.is_empty();
+    let model_override = if is_resuming {
         cli.model.as_deref()
     } else {
         Some(
@@ -82,7 +99,7 @@ async fn run(cli: &Cli, server: &mut AppServer) -> Result<()> {
     };
     let thread_response = start_or_resume_thread(
         server,
-        cli.resume.as_deref(),
+        is_resuming.then_some(resume_id.as_str()),
         model_override,
         cli.cwd.as_ref().map(|_| cwd.as_path()),
         &cwd,
@@ -123,7 +140,7 @@ async fn run(cli: &Cli, server: &mut AppServer) -> Result<()> {
         &actual_model,
         actual_effort.as_deref(),
     );
-    if cli.resume.is_some() {
+    if is_resuming {
         state.load_history(thread);
     }
 
@@ -133,6 +150,70 @@ async fn run(cli: &Cli, server: &mut AppServer) -> Result<()> {
     let _ = renderer.finish();
     drop(terminal);
     ui_result
+}
+
+async fn resolve_startup_session(
+    cli: &Cli,
+    server: &AppServer,
+    cwd: &Path,
+) -> Result<Option<String>> {
+    if cli.continue_session {
+        let sessions = list_sessions(server, Some(cwd), None, 1).await?;
+        let session = sessions
+            .first()
+            .context("이 작업 폴더에서 계속할 세션을 찾지 못했습니다.")?;
+        return Ok(Some(session.id.clone()));
+    }
+
+    match cli.resume.as_deref() {
+        None => Ok(Some(String::new())),
+        Some("") => {
+            let sessions = list_sessions(server, None, None, 100).await?;
+            choose_startup_session(sessions, cwd).await
+        }
+        Some(target) => Ok(Some(
+            resolve_session_target(server, target, Some(cwd)).await?,
+        )),
+    }
+}
+
+async fn choose_startup_session(sessions: Vec<SessionInfo>, cwd: &Path) -> Result<Option<String>> {
+    let terminal = TerminalSession::enter()?;
+    let mut renderer = Renderer::new();
+    let mut picker = SessionPicker::new(sessions, cwd.to_string_lossy().into_owned(), None);
+    let editor = Editor::default();
+    let mut events = EventStream::new();
+
+    let result = loop {
+        renderer.render(
+            &[],
+            View {
+                live_blocks: Vec::new(),
+                overlay: Some(picker.overlay_view()),
+                editor: &editor,
+                welcome: None,
+                suggestions: Vec::new(),
+                activity: None,
+                footer: "Resume a Codex session".to_owned(),
+            },
+        )?;
+        match events.next().await {
+            Some(Ok(Event::Key(key))) => match picker.handle_key(key) {
+                SessionPickerResult::None => {}
+                SessionPickerResult::Cancel => break Ok(None),
+                SessionPickerResult::Select(thread_id) => break Ok(Some(thread_id)),
+            },
+            Some(Ok(Event::Paste(text))) => picker.handle_paste(&text),
+            Some(Ok(Event::Resize(_, _))) => {}
+            Some(Ok(_)) => {}
+            Some(Err(error)) => break Err(error.into()),
+            None => break Ok(None),
+        }
+    };
+
+    let _ = renderer.finish();
+    drop(terminal);
+    result
 }
 
 async fn event_loop(
@@ -313,6 +394,22 @@ async fn execute_action(
                 Err(error) => state.set_request_failed(error.to_string()),
             }
         }
+        Action::OpenResume => match list_sessions(server, None, None, 100).await {
+            Ok(sessions) => state.open_session_picker(sessions),
+            Err(error) => state.push_notice(BlockKind::Error, "세션 목록 실패", error.to_string()),
+        },
+        Action::ResumeThread(target) => {
+            let current_cwd = state.cwd.clone();
+            let result = async {
+                let thread_id =
+                    resolve_session_target(server, &target, Some(Path::new(&current_cwd))).await?;
+                resume_into_state(server, state, renderer, &thread_id).await
+            }
+            .await;
+            if let Err(error) = result {
+                state.push_notice(BlockKind::Error, "세션 재개 실패", error.to_string());
+            }
+        }
         Action::RpcResponse { id, result } => {
             if let Err(error) = server.respond(id, result) {
                 state.push_notice(BlockKind::Error, "응답 전송 실패", error.to_string());
@@ -391,6 +488,119 @@ async fn start_or_resume_thread(
                 }),
             )
             .await
+    }
+}
+
+async fn list_sessions(
+    server: &AppServer,
+    cwd: Option<&Path>,
+    search: Option<&str>,
+    limit: u64,
+) -> Result<Vec<SessionInfo>> {
+    let mut params = json!({
+        "limit": limit,
+        "sortKey": "updated_at",
+        "sortDirection": "desc"
+    });
+    if let Some(cwd) = cwd {
+        params["cwd"] = json!(cwd.to_string_lossy());
+    }
+    if let Some(search) = search {
+        params["searchTerm"] = json!(search);
+    }
+    let response = server.request("thread/list", params).await?;
+    Ok(response
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(SessionInfo::from_value)
+        .collect())
+}
+
+async fn resolve_session_target(
+    server: &AppServer,
+    target: &str,
+    cwd: Option<&Path>,
+) -> Result<String> {
+    if looks_like_thread_id(target) {
+        return Ok(target.to_owned());
+    }
+
+    let sessions = list_sessions(server, None, Some(target), 100).await?;
+    let exact = sessions.iter().find(|session| {
+        session
+            .name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(target))
+            && cwd.is_none_or(|cwd| path_matches(&session.cwd, cwd))
+    });
+    let fallback = sessions.iter().find(|session| {
+        session
+            .name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(target))
+    });
+    exact
+        .or(fallback)
+        .or_else(|| (sessions.len() == 1).then(|| &sessions[0]))
+        .map(|session| session.id.clone())
+        .with_context(|| format!("`{target}` 세션을 찾을 수 없습니다."))
+}
+
+async fn resume_into_state(
+    server: &AppServer,
+    state: &mut AppState,
+    renderer: &mut Renderer,
+    thread_id: &str,
+) -> Result<()> {
+    let response = server
+        .request("thread/resume", json!({ "threadId": thread_id }))
+        .await?;
+    let thread = response
+        .get("thread")
+        .context("thread/resume 응답에 thread가 없습니다.")?
+        .clone();
+    let id = thread
+        .get("id")
+        .and_then(Value::as_str)
+        .context("재개한 thread에 id가 없습니다.")?
+        .to_owned();
+    let cwd = response
+        .get("cwd")
+        .and_then(Value::as_str)
+        .context("thread/resume 응답에 cwd가 없습니다.")?
+        .to_owned();
+    let model = response
+        .get("model")
+        .and_then(Value::as_str)
+        .context("thread/resume 응답에 model이 없습니다.")?
+        .to_owned();
+    let effort = response
+        .get("reasoningEffort")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+
+    renderer.clear_screen()?;
+    state.prepare_resume();
+    state.set_thread(id, cwd, &model, effort.as_deref());
+    state.load_history(&thread);
+    Ok(())
+}
+
+fn looks_like_thread_id(value: &str) -> bool {
+    value.len() >= 32 && value.chars().filter(|ch| *ch == '-').count() >= 4
+}
+
+fn path_matches(value: &str, path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        value.eq_ignore_ascii_case(&path)
+    }
+    #[cfg(not(windows))]
+    {
+        value == path
     }
 }
 

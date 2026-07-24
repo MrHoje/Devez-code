@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    time::Instant,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -19,7 +19,7 @@ struct SlashCommand {
     takes_argument: bool,
 }
 
-const SLASH_COMMANDS: [SlashCommand; 7] = [
+const SLASH_COMMANDS: [SlashCommand; 9] = [
     SlashCommand {
         name: "/model",
         description: "Switch model and reasoning",
@@ -33,6 +33,16 @@ const SLASH_COMMANDS: [SlashCommand; 7] = [
     SlashCommand {
         name: "/new",
         description: "Start a new thread",
+        takes_argument: false,
+    },
+    SlashCommand {
+        name: "/resume",
+        description: "Resume a saved session",
+        takes_argument: true,
+    },
+    SlashCommand {
+        name: "/continue",
+        description: "Alias for /resume",
         takes_argument: false,
     },
     SlashCommand {
@@ -71,6 +81,7 @@ pub struct ModelInfo {
 #[derive(Clone)]
 pub struct EffortInfo {
     pub id: String,
+    pub description: String,
 }
 
 impl ModelInfo {
@@ -82,6 +93,11 @@ impl ModelInfo {
             .filter_map(|entry| {
                 Some(EffortInfo {
                     id: entry.get("reasoningEffort")?.as_str()?.to_owned(),
+                    description: entry
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
                 })
             })
             .collect::<Vec<_>>();
@@ -114,6 +130,8 @@ pub enum Action {
     Steer(String),
     Interrupt,
     NewThread,
+    OpenResume,
+    ResumeThread(String),
     Quit,
     ClearScreen,
     Tick,
@@ -130,6 +148,10 @@ enum PendingInteraction {
         model_index: usize,
         effort_index: usize,
     },
+    EffortPicker {
+        effort_index: usize,
+    },
+    SessionPicker(SessionPicker),
     Approval {
         id: Value,
         title: String,
@@ -162,6 +184,233 @@ struct QuestionOption {
     description: String,
 }
 
+#[derive(Clone)]
+pub struct SessionInfo {
+    pub id: String,
+    pub name: Option<String>,
+    pub preview: String,
+    pub cwd: String,
+    pub updated_at: u64,
+}
+
+impl SessionInfo {
+    pub fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            id: value.get("id")?.as_str()?.to_owned(),
+            name: value
+                .get("name")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+            preview: value
+                .get("preview")
+                .and_then(Value::as_str)
+                .unwrap_or("Untitled session")
+                .lines()
+                .next()
+                .unwrap_or("Untitled session")
+                .to_owned(),
+            cwd: value
+                .get("cwd")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            updated_at: value
+                .get("updatedAt")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
+        })
+    }
+
+    fn title(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.preview)
+    }
+}
+
+pub enum SessionPickerResult {
+    None,
+    Cancel,
+    Select(String),
+}
+
+pub struct SessionPicker {
+    sessions: Vec<SessionInfo>,
+    cwd: String,
+    current_thread_id: Option<String>,
+    selected: usize,
+    all_projects: bool,
+    query: Editor,
+}
+
+impl SessionPicker {
+    pub fn new(sessions: Vec<SessionInfo>, cwd: String, current_thread_id: Option<String>) -> Self {
+        Self {
+            sessions,
+            cwd,
+            current_thread_id,
+            selected: 0,
+            all_projects: false,
+            query: Editor::default(),
+        }
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> SessionPickerResult {
+        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+            return SessionPickerResult::None;
+        }
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Esc => SessionPickerResult::Cancel,
+            KeyCode::Char('c') if ctrl => SessionPickerResult::Cancel,
+            KeyCode::Char('a') if ctrl => {
+                self.all_projects = !self.all_projects;
+                self.selected = 0;
+                SessionPickerResult::None
+            }
+            KeyCode::Char('u') if ctrl => {
+                self.query.clear();
+                self.selected = 0;
+                SessionPickerResult::None
+            }
+            KeyCode::Up => {
+                self.selected = self.selected.saturating_sub(1);
+                SessionPickerResult::None
+            }
+            KeyCode::Down => {
+                self.selected = (self.selected + 1).min(self.filtered_len().saturating_sub(1));
+                SessionPickerResult::None
+            }
+            KeyCode::PageUp => {
+                self.selected = self.selected.saturating_sub(8);
+                SessionPickerResult::None
+            }
+            KeyCode::PageDown => {
+                self.selected = (self.selected + 8).min(self.filtered_len().saturating_sub(1));
+                SessionPickerResult::None
+            }
+            KeyCode::Enter => self
+                .filtered()
+                .get(self.selected)
+                .map(|session| SessionPickerResult::Select(session.id.clone()))
+                .unwrap_or(SessionPickerResult::None),
+            KeyCode::Backspace => {
+                self.query.backspace();
+                self.selected = 0;
+                SessionPickerResult::None
+            }
+            KeyCode::Delete => {
+                self.query.delete();
+                self.selected = 0;
+                SessionPickerResult::None
+            }
+            KeyCode::Left => {
+                self.query.move_left();
+                SessionPickerResult::None
+            }
+            KeyCode::Right => {
+                self.query.move_right();
+                SessionPickerResult::None
+            }
+            KeyCode::Home => {
+                self.query.move_home();
+                SessionPickerResult::None
+            }
+            KeyCode::End => {
+                self.query.move_end();
+                SessionPickerResult::None
+            }
+            KeyCode::Char(ch) if !ctrl => {
+                self.query.insert(ch);
+                self.selected = 0;
+                SessionPickerResult::None
+            }
+            _ => SessionPickerResult::None,
+        }
+    }
+
+    pub fn handle_paste(&mut self, text: &str) {
+        self.query.insert_str(text);
+        self.selected = 0;
+    }
+
+    pub fn overlay_view(&self) -> OverlayView<'_> {
+        let filtered = self.filtered();
+        let start = self.selected.saturating_sub(4);
+        let end = (start + 9).min(filtered.len());
+        let mut lines = filtered[start..end]
+            .iter()
+            .enumerate()
+            .map(|(offset, session)| {
+                let index = start + offset;
+                let current = self
+                    .current_thread_id
+                    .as_deref()
+                    .is_some_and(|id| id == session.id);
+                let path = if self.all_projects {
+                    format!("\n      {}", session.cwd)
+                } else {
+                    String::new()
+                };
+                OverlayLine {
+                    text: format!(
+                        "{}  ·  {}{}{}",
+                        session.title(),
+                        relative_time(session.updated_at),
+                        if current { "  ·  current" } else { "" },
+                        path
+                    ),
+                    selected: index == self.selected,
+                    muted: false,
+                }
+            })
+            .collect::<Vec<_>>();
+        if lines.is_empty() {
+            lines.push(OverlayLine {
+                text: if self.query.is_empty() {
+                    "No sessions found in this folder.".to_owned()
+                } else {
+                    "No sessions match your search.".to_owned()
+                },
+                selected: false,
+                muted: true,
+            });
+        }
+        OverlayView {
+            title: format!(
+                "Resume session · {} · {}",
+                filtered.len(),
+                if self.all_projects {
+                    "all projects"
+                } else {
+                    "this folder"
+                }
+            ),
+            lines,
+            hint: "↑↓ navigate  Enter resume  Ctrl+A all projects  Esc cancel".to_owned(),
+            input: Some(&self.query),
+            input_label: "Search",
+            input_placeholder: "Search by name, prompt, ID, or folder…",
+        }
+    }
+
+    fn filtered(&self) -> Vec<&SessionInfo> {
+        let query = self.query.text().to_lowercase();
+        self.sessions
+            .iter()
+            .filter(|session| {
+                (self.all_projects || path_eq(&session.cwd, &self.cwd))
+                    && (query.is_empty()
+                        || session.title().to_lowercase().contains(&query)
+                        || session.id.to_lowercase().contains(&query)
+                        || session.cwd.to_lowercase().contains(&query))
+            })
+            .collect()
+    }
+
+    fn filtered_len(&self) -> usize {
+        self.filtered().len()
+    }
+}
+
 pub struct AppState {
     pub editor: Editor,
     pub thread_id: String,
@@ -172,6 +421,7 @@ pub struct AppState {
     models: Vec<ModelInfo>,
     selected_model: usize,
     selected_effort: String,
+    effort_is_auto: bool,
     committed: Vec<Block>,
     active_order: Vec<String>,
     active: HashMap<String, ActiveItem>,
@@ -220,6 +470,7 @@ impl AppState {
             models,
             selected_model,
             selected_effort,
+            effort_is_auto: false,
             committed: Vec::new(),
             active_order: Vec::new(),
             active: HashMap::new(),
@@ -263,6 +514,7 @@ impl AppState {
         self.active.clear();
         self.active_order.clear();
         self.show_welcome = true;
+        self.effort_is_auto = false;
         if let Some(index) = self
             .models
             .iter()
@@ -270,13 +522,16 @@ impl AppState {
         {
             self.selected_model = index;
         }
-        if let Some(effort) = effort
-            && self
-                .selected_model()
-                .is_none_or(|model| model.supports_effort(effort))
-        {
-            self.selected_effort = effort.to_owned();
-        }
+        self.selected_effort = self
+            .selected_model()
+            .map(|model| {
+                effort
+                    .filter(|effort| model.supports_effort(effort))
+                    .unwrap_or(&model.default_effort)
+                    .to_owned()
+            })
+            .or_else(|| effort.map(ToOwned::to_owned))
+            .unwrap_or_else(|| self.selected_effort.clone());
     }
 
     pub fn load_history(&mut self, thread: &Value) {
@@ -310,6 +565,28 @@ impl AppState {
             .push(Block::new(BlockKind::Error, "요청 실패", message));
     }
 
+    pub fn open_session_picker(&mut self, sessions: Vec<SessionInfo>) {
+        self.pending = Some(PendingInteraction::SessionPicker(SessionPicker::new(
+            sessions,
+            self.cwd.clone(),
+            Some(self.thread_id.clone()),
+        )));
+    }
+
+    pub fn prepare_resume(&mut self) {
+        self.committed.clear();
+        self.active.clear();
+        self.active_order.clear();
+        self.pending = None;
+        self.total_tokens = 0;
+        self.context_window = None;
+        self.transient_status = None;
+        self.show_welcome = false;
+        self.busy = false;
+        self.turn_id = None;
+        self.turn_started_at = None;
+    }
+
     pub fn push_notice(
         &mut self,
         kind: BlockKind,
@@ -336,7 +613,7 @@ impl AppState {
             editor: &self.editor,
             welcome: self.show_welcome.then(|| WelcomeView {
                 model: self.selected_model_name().to_owned(),
-                effort: self.selected_effort.clone(),
+                effort: self.effort_label(),
                 cwd: self.cwd.clone(),
                 account: self.account.clone(),
             }),
@@ -363,6 +640,7 @@ impl AppState {
                 editor,
                 ..
             }) => editor.insert_str(text),
+            Some(PendingInteraction::SessionPicker(picker)) => picker.handle_paste(text),
             Some(_) => {}
             None => {
                 self.editor.insert_str(text);
@@ -769,7 +1047,7 @@ impl AppState {
                 self.committed.push(Block::new(
                     BlockKind::System,
                     "Commands",
-                    "/model [MODEL] [EFFORT]  모델 선택\n/effort EFFORT  추론 수준\n/new  새 대화\n/status  현재 설정\n/clear  화면 정리\n/quit  종료\n\nEsc 또는 Ctrl+C  실행 중단\nAlt+Enter  줄바꿈",
+                    "/model [MODEL] [EFFORT]  모델과 effort 선택\n/effort [LEVEL|auto]  추론 수준\n/resume [SESSION]  이전 세션 선택\n/continue  /resume 별칭\n/new  새 대화\n/status  현재 설정\n/clear  화면 정리\n/quit  종료\n\nEsc 또는 Ctrl+C  실행 중단\nAlt+Enter  줄바꿈",
                 ));
                 Action::None
             }
@@ -805,30 +1083,31 @@ impl AppState {
                 Action::None
             }
             "/effort" if parts.len() == 1 => {
-                let effort_index = self
-                    .selected_model()
-                    .and_then(|model| {
-                        model
-                            .efforts
-                            .iter()
-                            .position(|effort| effort.id == self.selected_effort)
-                    })
-                    .unwrap_or(0);
-                self.pending = Some(PendingInteraction::ModelPicker {
-                    model_index: self.selected_model,
-                    effort_index,
-                });
+                let effort_index = if self.effort_is_auto {
+                    0
+                } else {
+                    self.selected_model()
+                        .and_then(|model| {
+                            model
+                                .efforts
+                                .iter()
+                                .position(|effort| effort.id == self.selected_effort)
+                        })
+                        .map(|index| index + 1)
+                        .unwrap_or(0)
+                };
+                self.pending = Some(PendingInteraction::EffortPicker { effort_index });
                 Action::None
             }
             "/effort" if parts.len() == 2 => {
                 let effort = parts[1];
-                if self
+                if effort.eq_ignore_ascii_case("auto") {
+                    self.apply_effort(None);
+                } else if self
                     .selected_model()
                     .is_some_and(|model| model.supports_effort(effort))
                 {
-                    self.selected_effort = effort.to_owned();
-                    self.committed
-                        .push(Block::new(BlockKind::Success, "Reasoning 변경", effort));
+                    self.apply_effort(Some(effort));
                 } else {
                     self.committed.push(Block::new(
                         BlockKind::Error,
@@ -838,6 +1117,17 @@ impl AppState {
                 }
                 Action::None
             }
+            "/resume" | "/continue" if self.busy => {
+                self.committed.push(Block::new(
+                    BlockKind::Warning,
+                    "진행 중",
+                    "현재 응답을 중단한 뒤 세션을 전환하세요.",
+                ));
+                Action::None
+            }
+            "/resume" if parts.len() == 1 => Action::OpenResume,
+            "/resume" => Action::ResumeThread(parts[1..].join(" ")),
+            "/continue" => Action::OpenResume,
             "/new" if self.busy => {
                 self.committed.push(Block::new(
                     BlockKind::Warning,
@@ -854,7 +1144,9 @@ impl AppState {
                     "Status",
                     format!(
                         "thread: {}\nmodel: {model}\neffort: {}\ncwd: {}",
-                        self.thread_id, self.selected_effort, self.cwd
+                        self.thread_id,
+                        self.effort_label(),
+                        self.cwd
                     ),
                 ));
                 Action::None
@@ -883,11 +1175,11 @@ impl AppState {
                     KeyCode::Esc => return Action::None,
                     KeyCode::Up => {
                         model_index = model_index.saturating_sub(1);
-                        effort_index = 0;
+                        effort_index = self.effort_index_for_model(model_index);
                     }
                     KeyCode::Down => {
                         model_index = (model_index + 1).min(self.models.len().saturating_sub(1));
-                        effort_index = 0;
+                        effort_index = self.effort_index_for_model(model_index);
                     }
                     KeyCode::Left => {
                         effort_index = effort_index.saturating_sub(1);
@@ -899,7 +1191,7 @@ impl AppState {
                             .map(|model| model.efforts.len())
                             .unwrap_or(1)
                             .max(1);
-                        effort_index = (effort_index + 1) % count;
+                        effort_index = (effort_index + 1).min(count - 1);
                     }
                     KeyCode::Enter => {
                         let effort = self
@@ -918,6 +1210,41 @@ impl AppState {
                 });
                 Action::None
             }
+            PendingInteraction::EffortPicker { mut effort_index } => {
+                let count = self
+                    .selected_model()
+                    .map(|model| model.efforts.len() + 1)
+                    .unwrap_or(1);
+                match key.code {
+                    KeyCode::Esc => return Action::None,
+                    KeyCode::Left | KeyCode::Up => {
+                        effort_index = effort_index.saturating_sub(1);
+                    }
+                    KeyCode::Right | KeyCode::Down | KeyCode::Tab => {
+                        effort_index = (effort_index + 1).min(count - 1);
+                    }
+                    KeyCode::Enter => {
+                        let effort = effort_index.checked_sub(1).and_then(|index| {
+                            self.selected_model()
+                                .and_then(|model| model.efforts.get(index))
+                                .map(|effort| effort.id.clone())
+                        });
+                        self.apply_effort(effort.as_deref());
+                        return Action::None;
+                    }
+                    _ => {}
+                }
+                self.pending = Some(PendingInteraction::EffortPicker { effort_index });
+                Action::None
+            }
+            PendingInteraction::SessionPicker(mut picker) => match picker.handle_key(key) {
+                SessionPickerResult::None => {
+                    self.pending = Some(PendingInteraction::SessionPicker(picker));
+                    Action::None
+                }
+                SessionPickerResult::Cancel => Action::None,
+                SessionPickerResult::Select(thread_id) => Action::ResumeThread(thread_id),
+            },
             PendingInteraction::Approval {
                 id,
                 title,
@@ -1026,37 +1353,74 @@ impl AppState {
             } => {
                 let start = model_index.saturating_sub(4);
                 let end = (start + 9).min(self.models.len());
-                let lines = self.models[start..end]
+                let mut lines = self.models[start..end]
                     .iter()
                     .enumerate()
                     .map(|(offset, model)| {
                         let index = start + offset;
-                        let effort = if index == *model_index {
-                            model
-                                .efforts
-                                .get(*effort_index)
-                                .map(|effort| effort.id.as_str())
-                                .unwrap_or(model.default_effort.as_str())
-                        } else {
-                            model.default_effort.as_str()
-                        };
                         OverlayLine {
-                            text: format!(
-                                "{}  [{}]\n      {}",
-                                model.display_name, effort, model.description
-                            ),
+                            text: format!("{}\n      {}", model.display_name, model.description),
                             selected: index == *model_index,
                             muted: false,
                         }
                     })
-                    .collect();
+                    .collect::<Vec<_>>();
+                if let Some(model) = self.models.get(*model_index) {
+                    lines.push(OverlayLine {
+                        text: String::new(),
+                        selected: false,
+                        muted: true,
+                    });
+                    lines.push(OverlayLine {
+                        text: format!("Effort  {}", effort_slider(model, *effort_index, false,)),
+                        selected: false,
+                        muted: false,
+                    });
+                    if let Some(effort) = model.efforts.get(*effort_index) {
+                        lines.push(OverlayLine {
+                            text: format!("        {}", effort.description),
+                            selected: false,
+                            muted: true,
+                        });
+                    }
+                }
                 Some(OverlayView {
                     title: "Model".to_owned(),
                     lines,
-                    hint: "↑↓ 모델  ←→ reasoning  Enter 적용  Esc 취소".to_owned(),
+                    hint: "↑↓ model  ←→ effort  Enter apply  Esc cancel".to_owned(),
                     input: None,
+                    input_label: "",
+                    input_placeholder: "",
                 })
             }
+            PendingInteraction::EffortPicker { effort_index } => {
+                let model = self.selected_model()?;
+                let description = effort_index
+                    .checked_sub(1)
+                    .and_then(|index| model.efforts.get(index))
+                    .map(|effort| effort.description.as_str())
+                    .unwrap_or("Use the model's recommended default.");
+                Some(OverlayView {
+                    title: format!("Effort · {}", model.display_name),
+                    lines: vec![
+                        OverlayLine {
+                            text: effort_slider(model, *effort_index, true),
+                            selected: false,
+                            muted: false,
+                        },
+                        OverlayLine {
+                            text: description.to_owned(),
+                            selected: false,
+                            muted: true,
+                        },
+                    ],
+                    hint: "←→ adjust  Enter apply  Esc cancel".to_owned(),
+                    input: None,
+                    input_label: "",
+                    input_placeholder: "",
+                })
+            }
+            PendingInteraction::SessionPicker(picker) => Some(picker.overlay_view()),
             PendingInteraction::Approval {
                 title,
                 detail,
@@ -1093,6 +1457,8 @@ impl AppState {
                     lines,
                     hint: "y / a / n".to_owned(),
                     input: None,
+                    input_label: "",
+                    input_placeholder: "",
                 })
             }
             PendingInteraction::UserInput {
@@ -1138,6 +1504,8 @@ impl AppState {
                         "↑↓ 선택  Enter 확인  Esc 취소".to_owned()
                     },
                     input: text_mode.then_some(editor),
+                    input_label: "Answer",
+                    input_placeholder: "Type your answer…",
                 })
             }
         }
@@ -1199,7 +1567,7 @@ impl AppState {
             "{} · {} ({}){}{}{}",
             compact_path(&self.cwd, 36),
             model,
-            self.selected_effort,
+            self.effort_label(),
             usage,
             activity,
             transient
@@ -1217,11 +1585,55 @@ impl AppState {
         let model_name = model.display_name.clone();
         self.selected_model = index;
         self.selected_effort = selected_effort.clone();
+        self.effort_is_auto = false;
         self.committed.push(Block::new(
             BlockKind::Success,
             "Model 변경",
             format!("{model_name} · {selected_effort}"),
         ));
+    }
+
+    fn apply_effort(&mut self, effort: Option<&str>) {
+        let Some(model) = self.selected_model() else {
+            return;
+        };
+        let selected = effort
+            .filter(|effort| model.supports_effort(effort))
+            .unwrap_or(&model.default_effort)
+            .to_owned();
+        let label = match effort {
+            Some(_) => selected.clone(),
+            None => format!("auto · {selected}"),
+        };
+        self.selected_effort = selected;
+        self.effort_is_auto = effort.is_none();
+        self.committed
+            .push(Block::new(BlockKind::Success, "Effort changed", label));
+    }
+
+    fn effort_label(&self) -> String {
+        if self.effort_is_auto {
+            format!("auto · {}", self.selected_effort)
+        } else {
+            self.selected_effort.clone()
+        }
+    }
+
+    fn effort_index_for_model(&self, model_index: usize) -> usize {
+        let Some(model) = self.models.get(model_index) else {
+            return 0;
+        };
+        model
+            .efforts
+            .iter()
+            .position(|effort| effort.id == self.selected_effort)
+            .or_else(|| {
+                model
+                    .efforts
+                    .iter()
+                    .position(|effort| effort.id == model.default_effort)
+            })
+            .unwrap_or(0)
     }
 
     fn start_item(&mut self, item: &Value) {
@@ -1585,6 +1997,55 @@ fn format_duration(duration_ms: u64) -> String {
     }
 }
 
+fn effort_slider(model: &ModelInfo, selected: usize, include_auto: bool) -> String {
+    let mut levels = Vec::with_capacity(model.efforts.len() + usize::from(include_auto));
+    if include_auto {
+        levels.push("auto".to_owned());
+    }
+    levels.extend(model.efforts.iter().map(|effort| effort.id.clone()));
+    levels
+        .into_iter()
+        .enumerate()
+        .map(|(index, level)| {
+            if index == selected {
+                format!("[{level}]")
+            } else {
+                level
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ─ ")
+}
+
+fn relative_time(timestamp: u64) -> String {
+    if timestamp == 0 {
+        return "unknown".to_owned();
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(timestamp);
+    let elapsed = now.saturating_sub(timestamp);
+    match elapsed {
+        0..=59 => "now".to_owned(),
+        60..=3_599 => format!("{}m ago", elapsed / 60),
+        3_600..=86_399 => format!("{}h ago", elapsed / 3_600),
+        86_400..=604_799 => format!("{}d ago", elapsed / 86_400),
+        _ => format!("{}w ago", elapsed / 604_800),
+    }
+}
+
+fn path_eq(left: &str, right: &str) -> bool {
+    #[cfg(windows)]
+    {
+        left.eq_ignore_ascii_case(right)
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
 fn append_capped(target: &mut String, delta: &str) {
     const MAX_ACTIVE_BYTES: usize = 128 * 1024;
     target.push_str(delta);
@@ -1656,4 +2117,72 @@ fn compact_path(path: &str, max_chars: usize) -> String {
             .skip(count - max_chars.saturating_sub(1))
             .collect::<String>()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_picker_scopes_to_cwd_and_can_expand_to_all_projects() {
+        let sessions = vec![
+            SessionInfo {
+                id: "current".to_owned(),
+                name: Some("Current project".to_owned()),
+                preview: String::new(),
+                cwd: r"C:\work\current".to_owned(),
+                updated_at: 2,
+            },
+            SessionInfo {
+                id: "other".to_owned(),
+                name: Some("Other project".to_owned()),
+                preview: String::new(),
+                cwd: r"C:\work\other".to_owned(),
+                updated_at: 1,
+            },
+        ];
+        let mut picker = SessionPicker::new(sessions, r"C:\work\current".to_owned(), None);
+
+        assert_eq!(picker.filtered_len(), 1);
+        picker.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        assert_eq!(picker.filtered_len(), 2);
+    }
+
+    #[test]
+    fn effort_auto_remains_selected_until_an_explicit_level_is_chosen() {
+        let model = ModelInfo {
+            id: "model".to_owned(),
+            model: "model".to_owned(),
+            display_name: "Model".to_owned(),
+            description: String::new(),
+            efforts: vec![
+                EffortInfo {
+                    id: "high".to_owned(),
+                    description: String::new(),
+                },
+                EffortInfo {
+                    id: "max".to_owned(),
+                    description: String::new(),
+                },
+            ],
+            default_effort: "high".to_owned(),
+            is_default: true,
+        };
+        let mut state = AppState::new(
+            "thread".to_owned(),
+            "cwd".to_owned(),
+            "account".to_owned(),
+            vec![model],
+            "model",
+            Some("high"),
+        );
+
+        state.run_slash_command("/effort auto");
+        assert!(state.effort_is_auto);
+        assert_eq!(state.effort_label(), "auto · high");
+
+        state.run_slash_command("/effort max");
+        assert!(!state.effort_is_auto);
+        assert_eq!(state.selected_effort(), "max");
+    }
 }

@@ -6,9 +6,10 @@ Codex의 인증, 하네스 프롬프트, 도구, 스킬, `AGENTS.md`, 샌드박�
 
 ## 현재 범위
 
-- 새 스레드 시작 및 `--resume <THREAD_ID>`
-- 모델 카탈로그 기반 `/model` 선택
-- 서버가 지원하는 reasoning effort만 노출 (`max` 포함)
+- 새 스레드 시작, 세션 검색 피커, ID/이름 기반 resume
+- `--resume [SESSION]`, `--continue` 및 실행 중 `/resume`
+- 모델 카탈로그 기반 `/model` 선택과 좌우 effort 조절
+- `/effort` 슬라이더에서 Auto 및 서버 지원 effort만 노출 (`max` 포함)
 - 응답, reasoning summary, 명령, 파일 변경, MCP 호출 스트리밍
 - 명령/파일 변경 승인
 - 실행 중 입력 steer 및 `Esc`/`Ctrl+C` 중단
@@ -31,11 +32,13 @@ cargo run --release
 주요 옵션:
 
 ```text
-devez [--resume THREAD_ID] [--model MODEL] [--effort EFFORT]
+devez [--resume [SESSION] | --continue] [--model MODEL] [--effort EFFORT]
       [--cwd PATH] [--codex PATH]
 ```
 
-입력창 명령은 `/help`에서 확인할 수 있습니다.
+`--resume`만 입력하면 검색 가능한 세션 피커를 열고, `--continue`는 현재 폴더의
+가장 최근 세션을 바로 이어갑니다. 실행 중에는 `/resume [SESSION]` 또는 별칭
+`/continue`로 세션을 전환할 수 있습니다. 입력창의 전체 명령은 `/help`에서 확인합니다.
 
 ## 경계
 

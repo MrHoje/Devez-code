@@ -46,6 +46,8 @@ pub struct OverlayView<'a> {
     pub lines: Vec<OverlayLine>,
     pub hint: String,
     pub input: Option<&'a Editor>,
+    pub input_label: &'static str,
+    pub input_placeholder: &'static str,
 }
 
 pub struct OverlayLine {
@@ -377,7 +379,12 @@ fn normal_frame(
         lines.push(PaintLine::blank());
     }
 
-    let (input_lines, input_cursor_line, input_cursor_col) = input_lines(editor, width);
+    let (input_lines, input_cursor_line, input_cursor_col) = input_lines(
+        editor,
+        width,
+        "Message",
+        "Ask Codex to build, fix, or explain…",
+    );
     let cursor_line = lines.len() + input_cursor_line;
     lines.extend(input_lines);
     lines.push(PaintLine {
@@ -564,7 +571,12 @@ fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: 
     let mut cursor_line = lines.len() - 1;
     let mut cursor_col = 0;
     let show_cursor = if let Some(editor) = overlay.input {
-        let (input, input_cursor_line, input_cursor_col) = input_lines(editor, width);
+        let (input, input_cursor_line, input_cursor_col) = input_lines(
+            editor,
+            width,
+            overlay.input_label,
+            overlay.input_placeholder,
+        );
         cursor_line = lines.len() + input_cursor_line;
         cursor_col = input_cursor_col;
         lines.extend(input);
@@ -740,7 +752,12 @@ fn wrapped_line(
         .collect()
 }
 
-fn input_lines(editor: &Editor, width: u16) -> (Vec<PaintLine>, usize, usize) {
+fn input_lines(
+    editor: &Editor,
+    width: u16,
+    label: &str,
+    placeholder: &str,
+) -> (Vec<PaintLine>, usize, usize) {
     let panel_width = (width as usize).saturating_sub(1).max(16);
     let first_prefix = "│ ❯ ";
     let continuation_prefix = "│   ";
@@ -792,7 +809,7 @@ fn input_lines(editor: &Editor, width: u16) -> (Vec<PaintLine>, usize, usize) {
     }
 
     let mut rows = Vec::with_capacity(raw_rows.len() + 2);
-    let top_label = " Message ";
+    let top_label = format!(" {label} ");
     rows.push(PaintLine {
         prefix: String::new(),
         prefix_tone: Tone::Muted,
@@ -806,7 +823,7 @@ fn input_lines(editor: &Editor, width: u16) -> (Vec<PaintLine>, usize, usize) {
     for (index, raw) in raw_rows.into_iter().enumerate() {
         let is_placeholder = editor.is_empty() && index == 0;
         let content = if is_placeholder {
-            "Ask Codex to build, fix, or explain…".to_owned()
+            placeholder.to_owned()
         } else {
             raw
         };
