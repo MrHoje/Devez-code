@@ -190,7 +190,8 @@
                 </Grid>
 
                     <!-- 하단 터미널 패널(에이전트 미연결 pwsh). 푸터 ShellTerminalBtn 토글, 닫힘 = Row 0 + Collapsed(HwndHost 규칙). -->
-                    <GridSplitter x:Name="ShellPanelSplitter" Grid.Row="1" Grid.ColumnSpan="3" Height="4"
+                    <!-- Height=6: 스타일의 상하 -1 마진이 Auto 행을 2px 깎으므로 6 이어야 사이드 스플리터와 같은 4px 채널이 된다 -->
+                    <GridSplitter x:Name="ShellPanelSplitter" Grid.Row="1" Grid.ColumnSpan="3" Height="6"
                                   Style="{StaticResource GridSplitterHorizontal}"
                                   HorizontalAlignment="Stretch" Visibility="Collapsed"
                                   ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
@@ -198,7 +199,12 @@
                     <Border x:Name="ShellTerminalPanel" Grid.Row="2" Grid.ColumnSpan="3" Visibility="Collapsed"
                             Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,1,1,0">
-                        <views:TerminalHostView x:Name="ShellTerminal"/>
+                        <Grid>
+                            <views:TerminalHostView x:Name="ShellTerminal"/>
+                            <!-- 종료 스냅샷: 오버레이(WPF)가 라이브 WebView2 HWND 를 못 가리므로(airspace)
+                                 종료 시 캡처 이미지를 깔고 HWND 를 패널들과 같은 프레임에 숨긴다. -->
+                            <Image x:Name="ShellTerminalSnapshot" Visibility="Collapsed" Stretch="Fill"/>
+                        </Grid>
                     </Border>
                 </Grid>
 

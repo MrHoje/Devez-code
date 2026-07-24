@@ -153,6 +153,9 @@ public partial class MainWindow : Window
             if (!string.Equals(id, ShellRoomId, StringComparison.Ordinal)) return;
             Dispatcher.BeginInvoke(async () =>
             {
+                // 앱 종료 흐름(OnWindowClosing 의 DisposeRoom)이 유발한 Exited 는 무시 —
+                // 여기서 패널을 닫으면 종료 스냅샷 도중 레이아웃이 출렁인다.
+                if (_shuttingDown) return;
                 ShellTerminal.CloseTerminal(ShellRoomId);
                 TerminalSessionManager.Instance.DisposeRoom(ShellRoomId, purgeTracking: false);
                 TerminalSessionManager.Instance.ClearDisposedRoom(ShellRoomId); // tombstone 해제 → 재생성 허용
@@ -867,10 +870,26 @@ public partial class MainWindow : Window
             // WebView 가 응답불가면 스냅샷 준비가 무한정 멈출 수 있다. 재진입을 취소하도록 바꾼 뒤로는
             // 이 대기가 걸리면 X 로도 못 닫으므로, 상한을 두고 초과 시 그냥 숨김/종료로 넘어간다(best effort).
             // 순서(브라우저 suspend → 패널 스냅샷 → 프레임 present 대기)는 깜빡임 방지에 필요하므로 유지.
+            // 하단 터미널 패널도 같은 2단계를 탄다 — 안 하면 라이브 HWND 가 종료 오버레이를 뚫고 보인다(airspace).
+            async Task PrepareShellPanelSnapshotAsync()
+            {
+                if (ShellTerminalPanel.Visibility != Visibility.Visible) return;
+                try
+                {
+                    var snap = await ShellTerminal.CaptureSnapshotAsync();
+                    if (snap != null)
+                    {
+                        ShellTerminalSnapshot.Source = snap;
+                        ShellTerminalSnapshot.Visibility = Visibility.Visible;
+                    }
+                }
+                catch { /* 캡처 실패 시 그냥 숨김만 — best effort */ }
+            }
             async Task PrepareAsync()
             {
                 await FileExplorer.SuspendBrowserAsync();
-                await Task.WhenAll(_panes.Select(p => p.PrepareShutdownSnapshotAsync()));
+                await Task.WhenAll(_panes.Select(p => p.PrepareShutdownSnapshotAsync())
+                                         .Append(PrepareShellPanelSnapshotAsync()));
                 await Views.WorkspacePaneView.WaitForFramesAsync(2); // 스냅샷 present 보장
             }
             var prep = PrepareAsync();
@@ -885,6 +904,8 @@ public partial class MainWindow : Window
                 _ = prep.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
             }
             foreach (var p in _panes) p.CommitShutdownHide();
+            if (ShellTerminalPanel.Visibility == Visibility.Visible)
+                ShellTerminal.Visibility = Visibility.Collapsed; // 패널 HWND 도 같은 프레임에 숨김
             DevezCode.Services.DiagLog.Write("Shutdown: HWNDs hidden");
         }
         catch { /* best effort */ }
