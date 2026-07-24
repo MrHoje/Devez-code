@@ -6322,7 +6322,6 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(POINT p);
-    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
 
     /// <summary>창이 사용자에게 실제로 보이는지 판정. 최소화면 false. 화면상 중앙/네 사분점 중 하나라도
     /// 우리 창(루트)이 최상단이면 true(=보임). 다른 창이 완전히 덮으면 false(=가려짐).</summary>
