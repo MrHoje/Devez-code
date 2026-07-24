@@ -624,6 +624,8 @@ fn overlay_frame(
                         part,
                         if row.muted {
                             Tone::Muted
+                        } else if part.contains('●') && part.contains('○') {
+                            Tone::Accent
                         } else {
                             model_tone(part).unwrap_or(Tone::Plain)
                         },

@@ -622,11 +622,7 @@ fn choose_model<'a>(models: &'a [ModelInfo], requested: Option<&str>) -> Result<
     if let Some(requested) = requested {
         return models
             .iter()
-            .find(|model| {
-                model.id == requested
-                    || model.model == requested
-                    || model.display_name.eq_ignore_ascii_case(requested)
-            })
+            .find(|model| model.matches_query(requested))
             .with_context(|| format!("모델 카탈로그에 `{requested}`가 없습니다."));
     }
     models

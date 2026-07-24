@@ -113,6 +113,28 @@ impl ModelInfo {
     pub fn supports_effort(&self, effort: &str) -> bool {
         self.efforts.iter().any(|candidate| candidate.id == effort)
     }
+
+    pub fn matches_query(&self, query: &str) -> bool {
+        if self.id.eq_ignore_ascii_case(query)
+            || self.model.eq_ignore_ascii_case(query)
+            || self.display_name.eq_ignore_ascii_case(query)
+        {
+            return true;
+        }
+
+        let query = query.trim().to_ascii_lowercase();
+        let identity = format!("{} {}", self.model, self.display_name).to_ascii_lowercase();
+        match query.as_str() {
+            "sol" => identity.contains("5.6") && identity.contains("sol"),
+            "terra" => identity.contains("5.6") && identity.contains("terra"),
+            "luna" => identity.contains("5.6") && identity.contains("luna"),
+            "5.5" => identity.contains("5.5"),
+            "5.4" => identity.contains("5.4") && !identity.contains("mini"),
+            "mini" | "5.4-mini" => identity.contains("5.4") && identity.contains("mini"),
+            "spark" | "5.3" => identity.contains("5.3") && identity.contains("spark"),
+            _ => false,
+        }
+    }
 }
 
 pub enum Action {
@@ -1133,11 +1155,17 @@ impl AppState {
             }
             "/model" => {
                 let query = parts[1];
-                let Some(index) = self.models.iter().position(|candidate| {
-                    candidate.id == query
-                        || candidate.model == query
-                        || candidate.display_name.eq_ignore_ascii_case(query)
-                }) else {
+                let index = query
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|number| number.checked_sub(1))
+                    .filter(|index| *index < self.models.len())
+                    .or_else(|| {
+                        self.models
+                            .iter()
+                            .position(|candidate| candidate.matches_query(query))
+                    });
+                let Some(index) = index else {
                     self.committed
                         .push(Block::new(BlockKind::Error, "모델을 찾을 수 없음", query));
                     return Action::None;
@@ -1254,6 +1282,19 @@ impl AppState {
                     KeyCode::Char('n') if ctrl => {
                         model_index = (model_index + 1).min(self.models.len().saturating_sub(1));
                         effort_index = self.effort_index_for_model(model_index);
+                    }
+                    KeyCode::Char(ch) if !ctrl && !alt && ('1'..='9').contains(&ch) => {
+                        let index = ch.to_digit(10).unwrap_or_default() as usize - 1;
+                        if index < self.models.len() {
+                            let effort_index = self.effort_index_for_model(index);
+                            let effort = self
+                                .models
+                                .get(index)
+                                .and_then(|model| model.efforts.get(effort_index))
+                                .map(|effort| effort.id.clone());
+                            self.apply_model(index, effort.as_deref());
+                            return Action::None;
+                        }
                     }
                     KeyCode::Left => {
                         effort_index = effort_index.saturating_sub(1);
@@ -1447,7 +1488,7 @@ impl AppState {
                     .map(|(offset, model)| {
                         let index = start + offset;
                         OverlayLine {
-                            text: model.display_name.clone(),
+                            text: format!("{}. {}", index + 1, model.display_name),
                             selected: index == *model_index,
                             muted: false,
                         }
@@ -1460,15 +1501,26 @@ impl AppState {
                         muted: true,
                     });
                     lines.push(OverlayLine {
-                        text: format!("Effort   {}", effort_slider(model, *effort_index)),
+                        text: "Effort".to_owned(),
                         selected: false,
                         muted: false,
                     });
+                    lines.extend(
+                        effort_slider_rows(model, *effort_index)
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, text)| OverlayLine {
+                                text,
+                                selected: false,
+                                muted: index != 1,
+                            }),
+                    );
                 }
                 Some(OverlayView {
                     title: "Select model".to_owned(),
                     lines,
-                    hint: "↑↓ model   ←→ effort   Enter select   Esc cancel".to_owned(),
+                    hint: "1-9 select   ↑↓ model   ←→ effort   Enter select   Esc cancel"
+                        .to_owned(),
                     style: OverlayStyle::Picker,
                     input: None,
                     input_label: "",
@@ -1477,26 +1529,32 @@ impl AppState {
             }
             PendingInteraction::EffortPicker { effort_index } => {
                 let model = self.selected_model()?;
+                let mut lines = vec![
+                    OverlayLine {
+                        text: model.display_name.clone(),
+                        selected: false,
+                        muted: true,
+                    },
+                    OverlayLine {
+                        text: String::new(),
+                        selected: false,
+                        muted: true,
+                    },
+                ];
+                lines.extend(
+                    effort_slider_rows(model, *effort_index)
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, text)| OverlayLine {
+                            text,
+                            selected: false,
+                            muted: index != 1,
+                        }),
+                );
                 Some(OverlayView {
                     title: "Set effort".to_owned(),
-                    lines: vec![
-                        OverlayLine {
-                            text: model.display_name.clone(),
-                            selected: false,
-                            muted: true,
-                        },
-                        OverlayLine {
-                            text: String::new(),
-                            selected: false,
-                            muted: true,
-                        },
-                        OverlayLine {
-                            text: effort_slider(model, *effort_index),
-                            selected: false,
-                            muted: false,
-                        },
-                    ],
-                    hint: "←→ adjust   Enter select   Esc cancel".to_owned(),
+                    lines,
+                    hint: "←→ adjust   Enter apply   Esc cancel".to_owned(),
                     style: OverlayStyle::Picker,
                     input: None,
                     input_label: "",
@@ -2060,20 +2118,41 @@ fn format_duration(duration_ms: u64) -> String {
     }
 }
 
-fn effort_slider(model: &ModelInfo, selected: usize) -> String {
-    model
+fn effort_slider_rows(model: &ModelInfo, selected: usize) -> [String; 3] {
+    const SLOT_WIDTH: usize = 8;
+    let count = model.efforts.len().max(1);
+    let width = count * SLOT_WIDTH;
+    let endpoints = format!(
+        "Faster{}Smarter",
+        " ".repeat(width.saturating_sub("Faster".len() + "Smarter".len()))
+    );
+    let track = model
         .efforts
         .iter()
         .enumerate()
-        .map(|(index, effort)| {
+        .map(|(index, _)| {
             if index == selected {
-                format!("● {}", effort.id)
+                "───●────"
             } else {
-                effort.id.clone()
+                "───○────"
             }
         })
-        .collect::<Vec<_>>()
-        .join("  ·  ")
+        .collect::<String>();
+    let labels = model
+        .efforts
+        .iter()
+        .map(|effort| center_cell(&effort.id, SLOT_WIDTH))
+        .collect::<String>()
+        .trim_end()
+        .to_owned();
+    [endpoints, track, labels]
+}
+
+fn center_cell(text: &str, width: usize) -> String {
+    let text_width = text.chars().count().min(width);
+    let left = width.saturating_sub(text_width) / 2;
+    let right = width.saturating_sub(text_width + left);
+    format!("{}{}{}", " ".repeat(left), text, " ".repeat(right))
 }
 
 fn relative_time(timestamp: u64) -> String {
@@ -2177,6 +2256,20 @@ fn format_token_count(tokens: u64) -> String {
 mod tests {
     use super::*;
 
+    fn test_model(slug: &str, display_name: &str, is_default: bool) -> ModelInfo {
+        ModelInfo {
+            id: slug.to_owned(),
+            model: slug.to_owned(),
+            display_name: display_name.to_owned(),
+            efforts: ["low", "medium", "high", "xhigh", "max", "ultra"]
+                .into_iter()
+                .map(|id| EffortInfo { id: id.to_owned() })
+                .collect(),
+            default_effort: "high".to_owned(),
+            is_default,
+        }
+    }
+
     #[test]
     fn session_picker_scopes_to_cwd_and_can_expand_to_all_projects() {
         let sessions = vec![
@@ -2233,5 +2326,54 @@ mod tests {
 
         state.run_slash_command("/effort max");
         assert_eq!(state.selected_effort(), "max");
+    }
+
+    #[test]
+    fn model_aliases_and_number_keys_select_catalog_entries() {
+        let models = vec![
+            test_model("gpt-5.6-sol", "GPT-5.6-Sol", true),
+            test_model("gpt-5.6-terra", "GPT-5.6-Terra", false),
+            test_model("gpt-5.6-luna", "GPT-5.6-Luna", false),
+            test_model("gpt-5.5", "GPT-5.5", false),
+        ];
+        assert!(models[0].matches_query("sol"));
+        assert!(models[1].matches_query("terra"));
+        assert!(models[2].matches_query("luna"));
+        assert!(models[3].matches_query("5.5"));
+
+        let mut state = AppState::new(
+            "thread".to_owned(),
+            "cwd".to_owned(),
+            "account".to_owned(),
+            models,
+            "gpt-5.6-sol",
+            Some("high"),
+        );
+        state.run_slash_command("/model terra");
+        assert_eq!(state.selected_model_display_name(), "GPT-5.6-Terra");
+
+        state.run_slash_command("/model");
+        let overlay = state.overlay_view().expect("model picker");
+        assert!(overlay.lines[0].text.starts_with("1. "));
+        assert!(overlay.lines[1].text.starts_with("2. "));
+        state.handle_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
+        assert_eq!(state.selected_model_display_name(), "GPT-5.6-Sol");
+    }
+
+    #[test]
+    fn effort_slider_has_direction_track_and_aligned_labels() {
+        let model = test_model("gpt-5.6-sol", "GPT-5.6-Sol", true);
+        let [endpoints, track, labels] = effort_slider_rows(&model, 2);
+
+        assert!(endpoints.starts_with("Faster"));
+        assert!(endpoints.ends_with("Smarter"));
+        assert_eq!(
+            track.chars().filter(|ch| matches!(ch, '○' | '●')).count(),
+            6
+        );
+        assert_eq!(track.chars().filter(|ch| *ch == '●').count(), 1);
+        assert!(labels.contains("low"));
+        assert!(labels.contains("ultra"));
+        assert_eq!(endpoints.chars().count(), track.chars().count());
     }
 }

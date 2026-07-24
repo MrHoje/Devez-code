@@ -17,6 +17,8 @@ Codex의 인증, 하네스 프롬프트, 도구, 스킬, `AGENTS.md`, 샌드박�
 - 좌우 테두리와 복사용 공백이 없는 Claude Code형 하단 composer
 - 모델명, effort, context 사용량을 표시하는 Claude statusline형 하단 상태줄
 - Codex CLI 정렬을 유지하고 hidden 모델을 제외한 `/model` 피커
+- `/model sol`, `/model terra`, `/model luna`, `/model spark` 등 짧은 모델 별칭
+- 모델 번호 표시 및 피커에서 `1`~`9` 숫자키 즉시 선택
 - 설명·Auto 없이 모델명과 지원 수준만 표시하는 `/effort` 슬라이더
 - `You`/`Codex` 헤더 없이 마커와 본문으로 이어지는 대화 출력
 - 보낸 프롬프트는 전체 행에 은은한 Claude형 배경색 적용
