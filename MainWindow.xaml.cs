@@ -850,6 +850,9 @@ public partial class MainWindow : Window
             if (!_readyToClose) e.Cancel = true;
             return;
         }
+        // 하단 터미널 패널(pwsh)은 graceful 종료 대상이 아니다 — flush 할 훅/transcript 가 없고
+        // Ctrl+C 로 죽지도 않아 perGrace 타임아웃만 소진한다. 종료 확정 즉시 하드 정리.
+        try { TerminalSessionManager.Instance.DisposeRoom(ShellRoomId, purgeTracking: false); } catch { }
         if (!TerminalSessionManager.Instance.HasSessionsToClose()) return; // 닫을 세션 없음(ConPTY 미생성)
 
         e.Cancel = true;
@@ -2153,25 +2156,33 @@ public partial class MainWindow : Window
     {
         _shellPanelOpen = open;
         await FreezeWorkspaceTerminalsAsync();
-        ShellPanelRow.MinHeight = 0; // 애니메이션 중 MinHeight 클램프 방지 (열기 시작점 0 / 닫기 하강 모두)
-        if (open)
+        try
         {
-            SettingsService.SaveAgentForRoom(ShellRoomId, "shell"); // LaunchSession 의 shell 분기로 라우팅
-            ShellTerminalPanel.Visibility = Visibility.Visible;
-            ShellPanelSplitter.Visibility = Visibility.Visible;
-            ShellTerminal.ShowTerminal(ShellRoomId); // 살아있으면 재사용, 없으면 새 pwsh (지연 생성+유지)
+            ShellPanelRow.MinHeight = 0; // 애니메이션 중 MinHeight 클램프 방지 (열기 시작점 0 / 닫기 하강 모두)
+            if (open)
+            {
+                SettingsService.SaveAgentForRoom(ShellRoomId, "shell"); // LaunchSession 의 shell 분기로 라우팅
+                ShellTerminalPanel.Visibility = Visibility.Visible;
+                ShellPanelSplitter.Visibility = Visibility.Visible;
+                ShellTerminal.ShowTerminal(ShellRoomId); // 살아있으면 재사용, 없으면 새 pwsh (지연 생성+유지)
+            }
+            // 저장 높이가 현재 창보다 크면 클램프 (Row0 MinHeight=220 + 스플리터 4px 확보)
+            double maxH = Math.Max(120, CenterSplit.ActualHeight - 220 - 4);
+            double target = open ? Math.Min(SettingsService.LoadShellTerminalHeight(), maxH) : 0;
+            await AnimateShellPanelRowAsync(target, TimeSpan.FromMilliseconds(180));
+            if (open) ShellPanelRow.MinHeight = 120; // 스플리터 드래그 하한
+            else
+            {
+                ShellTerminalPanel.Visibility = Visibility.Collapsed; // HwndHost 는 Collapsed 로만 숨김
+                ShellPanelSplitter.Visibility = Visibility.Collapsed;
+            }
         }
-        double target = open ? SettingsService.LoadShellTerminalHeight() : 0;
-        await AnimateShellPanelRowAsync(target, TimeSpan.FromMilliseconds(180));
-        if (open) ShellPanelRow.MinHeight = 120; // 스플리터 드래그 하한
-        else
+        finally
         {
-            ShellTerminalPanel.Visibility = Visibility.Collapsed; // HwndHost 는 Collapsed 로만 숨김
-            ShellPanelSplitter.Visibility = Visibility.Collapsed;
+            UpdateLayout(); // webCover resume 전 최종 폭 확정 (expectWidth 정확성)
+            UnfreezeWorkspaceTerminals();
+            UpdateShellToggleVisual();
         }
-        UpdateLayout(); // webCover resume 전 최종 폭 확정 (expectWidth 정확성)
-        UnfreezeWorkspaceTerminals();
-        UpdateShellToggleVisual();
     }
 
     private Task AnimateShellPanelRowAsync(double to, TimeSpan duration)
