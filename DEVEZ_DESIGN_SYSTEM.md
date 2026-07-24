@@ -1,8 +1,8 @@
 # Devez 공통 디자인 시스템
 
 > 대상: `devez-code`, `devez`, `eGhisDevWPF`
-> 문서 버전: 1.7
-> 기준일: 2026-07-23
+> 문서 버전: 1.8
+> 기준일: 2026-07-24
 > 주 대상 기술: WPF/XAML
 > 목적: 새 프로젝트에서 같은 색, 밀도, 컨트롤, 라운드, 아이콘, 보더, 상태 표현을 바로 재현한다.
 
@@ -1532,10 +1532,221 @@ Transparent Window
 - 제목 왼쪽, close 오른쪽 배치를 유지한다.
 - footer 액션 순서는 왼쪽부터 `Cancel`, 선택적 middle, `Primary`다.
 - primary 액션은 항상 오른쪽 끝이다.
-- danger 확인이어도 footer 구조는 바꾸지 않고 primary 색만 danger로 바꾼다.
+- danger 확인이어도 footer 구조는 바꾸지 않는다. 목표 규칙은 primary 색만 Danger로 바꾸는 것이며, 현재 `devez-code` 구현 차이는 10.1에 명시한다.
 - 짧은 메시지를 위해 고정 높이를 과도하게 잡지 않는다. 너비는 약 `460~510` 범위다.
 
-### 10.1 Borderless 창의 실제 라운드 clip
+### 10.1 제품 MessageBox: `ConfirmDialog`
+
+WPF 기본 `System.Windows.MessageBox`는 OS가 그리는 별도 UI라 Devez 테마, 폰트, 라운드, 버튼 규격을 보장할 수 없다. 제품 화면에서 말하는 “메시지박스”는 공용 borderless modal window인 `ConfirmDialog`를 뜻한다.
+
+#### 사용 경계
+
+| 상황 | 사용 |
+|---|---|
+| 단순 안내·오류, 확인 버튼 하나 | `ConfirmDialog.Alert(...)` |
+| 확인/취소가 필요한 결정 | `ConfirmDialog.Show(...)` |
+| 저장/저장 안 함/취소 같은 3방향 결정 | `ConfirmDialog.ShowThreeWay(...)` |
+| 안내 + footer 왼쪽 보조 링크 | `ConfirmDialog.AlertWithLink(...)` |
+| 업데이트 노트 + 같은 창 안 다운로드 진행률 | `ConfirmDialog.ShowUpdate(...)` |
+| 앱 초기화 전 치명적 오류, 테마 resource나 custom window 생성이 불가능한 최후 경로 | native `MessageBox.Show(...)` 허용 |
+
+규칙:
+
+- 앱이 정상 로드된 뒤에는 native `MessageBox.Show`를 사용하지 않는다.
+- native MessageBox를 XAML style로 꾸미려 하지 않는다. 테마가 필요하면 `ConfirmDialog`로 옮긴다.
+- 예외 처리기에서 `ConfirmDialog` 생성 자체가 다시 실패할 위험이 있거나 `Application.Current`가 준비되지 않은 경우만 native MessageBox를 fallback으로 허용한다.
+- 현재 `devez-code/Views/WakeSchedulerWindow.xaml.cs`의 native MessageBox 2건은 정상 로드 후 사용되는 **알려진 이탈**이다. 새 코드가 따라 하지 않는다.
+- owner가 살아 있으면 반드시 지정하고 `ShowDialog()`로 modal 수명을 보장한다.
+
+#### 기본 외형
+
+`devez-code/Views/ConfirmDialog.xaml`을 정본으로 한다.
+
+| 항목 | 값 |
+|---|---|
+| 기본 window | `490×360` |
+| window | `WindowStyle=None`, `AllowsTransparency=True`, `ResizeMode=NoResize` |
+| taskbar | `ShowInTaskbar=False` |
+| 시작 위치 | `CenterOwner`, 로드 후 `WindowCenter.CenterOverOwner` 재보정 |
+| 바깥 shadow 여백 | `20` |
+| shadow | depth `0`, blur `40`, theme `ShadowColor/ShadowOpacity` |
+| content | `BgBrush`, radius `14`, `LineBrush` border `1` |
+| header | 높이 `48`, 아래 border `1` |
+| 제목 | 왼쪽 `20`, `Fs14`, SemiBold, `TextBrush` |
+| 닫기 버튼 | `40×32`, 오른쪽 `8`, `WinCloseBtn`, X `Fs11` |
+| body | 좌우 `28`, 상하 `16`, 세로 scroll 허용 |
+| 메시지 | `Fs13`, `TextBrush`, wrap, line height `22` |
+| footer | `PanelSoftBrush`, 위 border `1`, margin `20,14,20,14` |
+| 액션 | 높이 `38`, 최소 폭 `80`, 좌우 padding `16`, 간격 `8` |
+| input | 높이 `40`, radius `8`, border `1.5`, 좌우 padding `12` |
+
+기본 skeleton:
+
+```xml
+<Window Width="490"
+        Height="360"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        FontFamily="{StaticResource PretendardFont}">
+    <Grid Margin="20">
+        <Border Background="{DynamicResource BgBrush}"
+                CornerRadius="14">
+            <Border.Effect>
+                <DropShadowEffect ShadowDepth="0"
+                                  BlurRadius="40"
+                                  Color="{DynamicResource ShadowColor}"
+                                  Opacity="{DynamicResource ShadowOpacity}" />
+            </Border.Effect>
+        </Border>
+
+        <Border Background="{DynamicResource BgBrush}"
+                BorderBrush="{DynamicResource LineBrush}"
+                BorderThickness="1"
+                CornerRadius="14"
+                ClipToBounds="True">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="48" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <!-- Header / Scrollable message body / Footer actions -->
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
+```
+
+정확한 header, body, footer template은 일부를 다시 만들지 말고 정본 `Views/ConfirmDialog.xaml`을 복사한 뒤 namespace와 resource 경로만 바꾼다.
+
+#### 메시지 길이와 window 크기
+
+일반 `Show`/`Alert`/`ShowThreeWay`:
+
+| 본문 줄 수 (`\n` 기준) | 높이 |
+|---:|---:|
+| 1~2 | `260` |
+| 3~4 | `325` |
+| 5 이상 | `360` |
+
+- 기본 폭은 `490`이다.
+- 가장 긴 줄의 `FormattedText.Width`가 본문 영역을 넘으면 창 폭을 늘린다.
+- 계산식은 `longest line + body horizontal 56 + shadow horizontal 40 + safety 8`이다.
+- 일반창 최대 확장 폭은 `640`이다. 폭을 무한히 늘리지 않는다.
+- `FormattedText`에는 현재 `PretendardFont`, `Fs13`, `VisualTreeHelper.GetDpi(...).PixelsPerDip`를 쓴다.
+- 메시지는 `TextWrapping=Wrap`, `LineHeight=22`를 유지한다.
+- body는 `ScrollViewer`로 감싸 극단적으로 긴 메시지가 footer를 화면 밖으로 밀지 않게 한다.
+
+업데이트 전용 `ShowUpdate`:
+
+- 폭은 `560` 고정이다.
+- 높이는 내용에 맞추되 `MaxHeight=430`이다.
+- 긴 업데이트 노트는 body만 scroll한다.
+- 취소 문구는 `나중에`다.
+- primary를 누르면 창을 닫지 않고 같은 body에서 진행률로 전환한다.
+
+#### 액션 구성
+
+| API | footer 구성 | 반환 |
+|---|---|---|
+| `Alert` | Primary 하나 | 없음 |
+| `Show` | Cancel, Primary | `bool` |
+| `ShowThreeWay` | Cancel, Secondary, Primary | `ConfirmChoice` |
+| `ShowThreeWay(hideCancel: true)` | Secondary, Primary | `ConfirmChoice` |
+| `AlertWithLink` | 왼쪽 링크, 오른쪽 Primary | 링크 클릭 여부 `bool` |
+| `ShowUpdate` | `나중에`, `업데이트`; 진행 중 모두 숨김 | `UpdateOutcome` |
+
+- Primary는 항상 오른쪽 끝이다.
+- Secondary와 Cancel은 `SecondaryButton`, Primary는 `PrimaryButton`을 사용한다.
+- Alert는 Cancel을 숨기되 footer 자체를 제거하지 않는다.
+- 3버튼은 Cancel, Secondary, Primary 순서를 바꾸지 않는다.
+- 버튼 문구가 길면 최소 폭 `80`에서 자연 확장하고 `TextTrimming=None`을 유지한다.
+- destructive action의 **목표 스타일**은 `danger=true`일 때 Primary만 `DangerBrush`, 텍스트 White다. header/body/footer 구조는 그대로 둔다.
+
+#### 확인문자 입력형 destructive dialog
+
+중대한 삭제처럼 실수 비용이 큰 동작은 `confirmText`를 사용한다.
+
+- body 아래 `14` 간격으로 hint와 input을 표시한다.
+- hint: `계속하려면 '{confirmText}'을(를) 입력하세요.`
+- input은 열릴 때 focus한다.
+- Primary는 처음 disabled다.
+- 공백 보정이나 대소문자 무시 없이 입력값이 `confirmText`와 정확히 같을 때만 enabled다.
+- 일치 전 Enter는 primary를 실행하지 않는다.
+- 일반 삭제에 매번 confirmText를 요구하지 않는다. 복구 불가, 대량 삭제, 잠금 해제 같은 고위험 동작에만 쓴다.
+
+#### 키보드, 닫기, focus
+
+- 일반창은 로드 후 Primary에 focus한다.
+- Enter는 Primary다.
+- ESC, header X, Cancel은 모두 취소 결과다.
+- 3버튼 중 Secondary는 명시적 클릭으로 선택한다. Enter가 모호하게 Secondary를 실행하면 안 된다.
+- `PreviewKeyDown`에서도 Enter/ESC를 처리해 자식 `TextBox`가 키를 먼저 소비해도 계약을 유지한다.
+- `confirmText`가 일치하지 않으면 Enter를 무시한다.
+- 업데이트 다운로드 중에는 Enter, ESC, X, footer action을 모두 차단한다.
+- 닫힌 뒤 입력 focus는 owner로 자연 복귀해야 한다.
+- Topmost 플로팅 UI 위에서 호출할 때만 `topMost=true`를 쓴다. 일반 메시지박스에 상시 Topmost를 주지 않는다.
+
+#### 업데이트 진행 상태
+
+- 업데이트를 시작하면 footer button group과 header X를 숨긴다.
+- 확인문자 영역이 있으면 숨긴다.
+- body에서 `ProgressArea`를 표시한다.
+- label은 왼쪽 `다운로드 중…`, percentage는 오른쪽이다.
+- track/fill은 높이 `6`, radius `3`이다.
+- track은 `LineBrush`, fill은 `PrimaryBrush`다.
+- progress는 `0~1`로 clamp하고 percentage와 fill width를 함께 갱신한다.
+- 다운로드 실패는 창을 닫고 `UpdateOutcome.Failed`를 반환해 호출자가 수동 설치 안내를 이어간다.
+
+#### `devez-code` 현재 구현과 목표 규칙 구분
+
+현재 `ConfirmDialog` public API에는 `iconKey`, `danger`, `wideLayout` 매개변수가 있지만 v1.8 기준 XAML/code에서 실제 시각 요소에 연결되지 않는다.
+
+- `autoWidth`: 실제 연결된 옵션이다. `SizeToContent=WidthAndHeight`, `MinWidth=360`, `MaxWidth=660`을 적용한다.
+- `iconKey`: body에 아이콘 column이나 `Path`가 없다. 동일 외형 재현 시 아이콘을 임의로 추가하지 않는다.
+- `danger`: 현재 Primary는 계속 `PrimaryButton`이다. 문서의 Danger primary는 디자인 목표이며 현재 구현 gap이다.
+- `wideLayout`: 현재 layout 분기를 만들지 않는다.
+- 새 프로젝트에서 이 매개변수를 구현하려면 `ConfirmDialog.xaml`, API 동작, 이 문서를 한 번에 갱신한다.
+- “매개변수가 있으니 이미 표시된다”고 문서·테스트에서 주장하지 않는다.
+
+#### 호출 예제
+
+```csharp
+ConfirmDialog.Alert(
+    "저장 실패",
+    "파일을 저장하지 못했습니다.\n권한과 경로를 확인해 주세요.");
+
+if (!ConfirmDialog.Show(
+        "프로젝트 제거",
+        "이 프로젝트를 목록에서 제거할까요?",
+        okLabel: "제거",
+        danger: true))
+{
+    return;
+}
+
+var choice = ConfirmDialog.ShowThreeWay(
+    "저장되지 않은 변경사항",
+    "닫기 전에 변경사항을 저장할까요?",
+    primaryLabel: "저장",
+    secondaryLabel: "저장 안 함");
+```
+
+#### 문구 규칙
+
+- 제목은 `삭제`, `오류`처럼 너무 넓게 쓰지 말고 `프로젝트 제거`, `파일 저장 실패`처럼 대상을 포함한다.
+- 본문 첫 문장은 발생한 일, 다음 문장은 사용자가 할 수 있는 해결 행동이다.
+- raw exception, CLI stderr, stack trace를 그대로 보여주지 않는다.
+- destructive 본문에는 대상 이름과 복구 가능 여부를 쓴다.
+- Primary label은 `확인`보다 `삭제`, `제거`, `저장`, `업데이트`처럼 실제 동사를 우선한다.
+- Cancel label은 기본 `취소`, 업데이트 미루기는 `나중에`다.
+- 성공처럼 사용자가 반드시 확인할 필요 없는 결과는 modal 대신 in-app toast를 쓴다.
+
+### 10.2 Borderless 창의 실제 라운드 clip
 
 `WindowStyle=None + AllowsTransparency=True`에서 `Border CornerRadius=14`와 `ClipToBounds=True`만으로는 자식을 둥글게 자르지 못한다. `ClipToBounds`는 사각 bounding rect만 자르므로 자식 배경의 직각 모서리가 밖으로 보일 수 있다.
 
@@ -1558,7 +1769,7 @@ private void ApplyRoundedClip()
 - clip radius는 `CornerRadius - BorderThickness`다.
 - 리사이즈 가능한 borderless 창은 `SizeChanged` 갱신이 필수다.
 
-### 10.2 입력 검증
+### 10.3 입력 검증
 
 입력 다이얼로그에서 검증이 실패해도 alert dialog를 하나 더 띄우지 않는다.
 
@@ -1575,7 +1786,7 @@ private void ApplyRoundedClip()
 - Window `RenderTransform`은 `TranslateTransform`
 - 색은 `DangerBrush`
 
-### 10.3 Popup 종류와 선택
+### 10.4 Popup 종류와 선택
 
 `Popup`이라는 이름으로 서로 다른 수명과 focus 규칙을 섞지 않는다.
 
@@ -1596,7 +1807,7 @@ private void ApplyRoundedClip()
 - 다른 앱을 보고 있어도 알려야 할 때만 desktop notification window를 쓴다.
 - 이미 현재 화면 안에서 수행한 동작의 결과는 in-app toast로 충분하다.
 
-### 10.4 Anchored popup
+### 10.5 Anchored popup
 
 ComboBox, icon picker의 작은 panel, filter menu에 적용한다.
 
@@ -1627,7 +1838,7 @@ ComboBox, icon picker의 작은 panel, filter menu에 적용한다.
 - popup root를 `AllowsTransparency=True`로 쓸 때 shadow가 잘리지 않도록 외부 margin을 확보한다.
 - 중요한 확인, 삭제, 2단계 저장을 popup 안에 넣지 않는다.
 
-### 10.5 Desktop notification popup
+### 10.6 Desktop notification popup
 
 `devez`와 `devez-code`의 공통 알림 geometry를 기준으로 한다.
 
@@ -1693,7 +1904,7 @@ stack animation 변형:
 - 기존 popup 재정렬은 top position `220ms`, `CubicEase/EaseOut`.
 - 종료는 두 변형 모두 `180ms` fade를 유지한다.
 
-### 10.6 공통 설정창
+### 10.7 공통 설정창
 
 세 프로젝트에 공통으로 존재하는 `일반`, `알림`, `테마`, `저장/취소` 흐름을 하나의 settings shell로 고정한다. 제품별 category 내용만 추가한다.
 
@@ -1740,7 +1951,7 @@ stack animation 변형:
 </Grid>
 ```
 
-`SettingsView`에는 section 10.1의 `RectangleGeometry(13)` clip을 `Loaded + SizeChanged`에 적용한다.
+`SettingsView`에는 section 10.2의 `RectangleGeometry(13)` clip을 `Loaded + SizeChanged`에 적용한다.
 
 #### Settings layout
 
@@ -1860,7 +2071,7 @@ open
 - settings window의 X가 content의 revert/confirm 경로를 우회해 바로 `Window.Close()`하지 않게 한다.
 - owner가 WebView2를 포함하면 settings를 띄우기 전에 section 5.7의 snapshot + `Collapsed` 흐름을 적용하고 닫힐 때 복원한다.
 
-### 10.7 업데이트 버튼·노트 팝업·진행률
+### 10.8 업데이트 버튼·노트 팝업·진행률
 
 `devez-code` 구현을 표준으로 한다. 흐름은 `버튼 노출 → 노트 팝업 → 같은 팝업 안 진행률 → 재실행`이며 단계마다 팝업을 바꾸지 않는다.
 
@@ -1952,7 +2163,7 @@ Spinner clock은 화면에 실제로 보이는 spinner가 있을 때만 활성�
 - 배경 Surface, border 1, radius 8~10
 - raw CLI stderr를 그대로 노출하지 않고 사용자 행동 중심 문장으로 바꾼다.
 
-현재 구현 범위: `devez-code`에는 네이티브 WPF in-app toast 오버레이가 없다. WPF 알림 경로는 desktop notification popup(§10.5)뿐이고, markdown 편집기의 toast는 WebView 내부(JS) 구현이다. 위 in-app toast 규격은 새로 만들 때의 기준값이며, 기존 화면에서 찾으려 하지 않는다.
+현재 구현 범위: `devez-code`에는 네이티브 WPF in-app toast 오버레이가 없다. WPF 알림 경로는 desktop notification popup(§10.6)뿐이고, markdown 편집기의 toast는 WebView 내부(JS) 구현이다. 위 in-app toast 규격은 새로 만들 때의 기준값이며, 기존 화면에서 찾으려 하지 않는다.
 
 ## 12. 상태와 상호작용
 
@@ -2208,6 +2419,9 @@ Resources/
 - 기존 결과를 지운 뒤 spinner만 보여주는 refresh
 - 숨겨진 spinner animation을 계속 실행
 - 다이얼로그마다 header/footer/action 순서를 변경
+- 앱이 정상 로드된 제품 화면에서 native `MessageBox.Show` 사용
+- 메시지박스마다 별도 Window/XAML을 복제해 크기·키보드·Owner 규칙이 갈라짐
+- `ConfirmDialog`의 미사용 `iconKey`, `danger`, `wideLayout`이 이미 렌더링된다고 가정
 - `DataGrid` row마다 높이가 달라지는 자동 레이아웃
 - raw exception/CLI 메시지를 그대로 제품 UI에 표시
 - 테마 전환 시 Color만 바꾸고 brush 소비자를 갱신하지 않음
@@ -2223,6 +2437,9 @@ Resources/
 - [ ] 아이콘 24 좌표계, 16 렌더, stroke 1.25 확인
 - [ ] 원형 버튼이 실제 원형인지 확인
 - [ ] dialog shadow radius 13 / content radius 14 구분
+- [ ] ConfirmDialog 기본 폭 490, 본문 줄 수별 높이 260/325/360, 장문 최대 폭 640 확인
+- [ ] ConfirmDialog body `Fs13` / line height 22 / 좌우 28 / scroll 확인
+- [ ] ConfirmDialog footer action 높이 38 / 최소 폭 80 / 간격 8 확인
 - [ ] settings header 48 / category 205 / footer action 100×38 확인
 - [ ] theme card 150×150 / radius 10 / border 2 확인
 - [ ] desktop notification width 340 / radius 12 / close 22×22 확인
@@ -2237,6 +2454,10 @@ Resources/
 - [ ] loading 중 기존 결과 유지
 - [ ] busy action 중복 실행 차단
 - [ ] destructive action 확인 단계 제공
+- [ ] Alert/Show/ShowThreeWay/AlertWithLink/ShowUpdate가 용도별 버튼 수와 반환 계약을 지킴
+- [ ] ConfirmDialog Enter=Primary, ESC/X/Cancel=취소, 닫힌 뒤 owner focus 복귀
+- [ ] confirmText 불일치 시 Primary와 Enter 차단
+- [ ] 정상 로드 후 native MessageBox 신규 사용 없음
 - [ ] right-click selection 선행
 - [ ] popup이 화면 밖으로 나가지 않는지 확인
 - [ ] popup이 닫힌 뒤 anchor/owner focus 복귀
@@ -2274,8 +2495,9 @@ Resources/
 - `Views/SettingsDialog.xaml.cs`
 - `Views/NotificationPopup.xaml`
 - `Views/NotificationPopup.xaml.cs`
-- `Views/ConfirmDialog.xaml`
-- `Views/ConfirmDialog.xaml.cs`의 `ShowUpdate`: 업데이트 노트 팝업·진행률
+- `Views/ConfirmDialog.xaml`: 제품 MessageBox 정본 geometry와 template
+- `Views/ConfirmDialog.xaml.cs`: `Alert`, `Show`, `ShowThreeWay`, `AlertWithLink`, `ShowUpdate`, 크기·Owner·키보드 계약
+- `Views/WakeSchedulerWindow.xaml.cs`: 정상 로드 후 native MessageBox를 쓰는 알려진 이탈
 - `Views/SidebarView.xaml`의 `UpdateButton`: 사이드바 업데이트 버튼
 - `Services/UpdateService.cs`
 - `Models/SpinnerSync.cs`
