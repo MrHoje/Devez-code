@@ -3711,7 +3711,9 @@ public partial class WorkspacePaneView : UserControl
     {
         bool busy = _activeSession?.IsBusy == true;
         ReturnInAppBtn.IsEnabled = !_returnRequested && !busy;
-        ReturnInAppBtn.ToolTip = busy ? "응답이 완료된 후 가져올 수 있습니다." : null;
+        ReturnInAppBtn.ToolTip = null;
+        ReturnBtnLabel.Text = busy ? "응답이 진행중입니다." : "인앱으로 가져오기";
+        ReturnBtnIcon.Visibility = busy ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>외부 인계 시작 — 외부 터미널이 완전히 열릴 때까지 오버레이에 스피너를 표시한다.</summary>

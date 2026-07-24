@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -32,6 +33,26 @@ internal static class ExternalSessionProxy
     public const string ModeArgument = "--external-session-proxy";
     private const string SpecEnvironment = "DEVEZCODE_EXTERNAL_SPEC";
     private const string TokenEnvironment = "DEVEZCODE_EXTERNAL_TOKEN";
+
+    // 콘솔 CTRL 핸들러(탭 닫힘 즉시 감지용). GC 방지 위해 델리게이트 참조 유지.
+    private static Process? _proxyChild;
+    private static ConsoleCtrlDelegate? _consoleCtrlHandler;
+    private delegate bool ConsoleCtrlDelegate(uint ctrlType);
+
+    private static bool HandleConsoleCtrl(uint ctrlType)
+    {
+        // 2=CLOSE, 5=LOGOFF, 6=SHUTDOWN — 콘솔이 사라지므로 자식(에이전트)을 즉시 정리해 lock 을 빨리 놓는다.
+        if (ctrlType is 2 or 5 or 6)
+        {
+            try { _proxyChild?.Kill(entireProcessTree: true); } catch { }
+            return true;
+        }
+        // 0=Ctrl+C, 1=Break — 에이전트가 직접 처리하도록 두되, 프록시가 기본 동작(종료)으로 죽지 않게 삼킨다.
+        return true;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate? handler, bool add);
     private const int DefaultCols = 120;
     private const int DefaultRows = 30;
     private const int MinCols = 20;
@@ -99,156 +120,67 @@ internal static class ExternalSessionProxy
         }
 
         using var sessionLockScope = sessionLock;
-        using var consoleModes = ConsoleModeScope.TryCreate();
-        using var completed = new ManualResetEventSlim(false);
-        using var outputLog = new FileStream(
-            spec.OutputPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.ReadWrite | FileShare.Delete,
-            bufferSize: 4096,
-            FileOptions.SequentialScan);
-        using var standardInput = Console.OpenStandardInput();
-        using var standardOutput = Console.OpenStandardOutput();
 
-        Exception? relayFailure = null;
-        int processExited = 0;
-        // AttachConsole 직후 WT 콘솔 크기가 아직 준비 안 돼 0을 줄 수 있다. 여기서 0으로 시작하면
-        // 기본폭(120)으로 에이전트가 뜬 뒤 첫 poll 에서 실제 폭으로 resize → 1회 reflow 가 dim wrap
-        // 잔상을 남긴다. 잠깐(≤500ms) 유효 크기를 기다려 처음부터 올바른 폭으로 시작해 reflow 를 없앤다.
-        var (consoleCols, consoleRows) = ReadConsoleSize();
-        for (int wait = 0; consoleCols <= 0 && wait < 25; wait++)
-        {
-            Thread.Sleep(20);
-            (consoleCols, consoleRows) = ReadConsoleSize();
-        }
-        int cols = SelectDimension(spec.PreferredCols, consoleCols, DefaultCols, MinCols, MaxCols);
-        int rows = SelectDimension(spec.PreferredRows, consoleRows, DefaultRows, MinRows, MaxRows);
-        WriteSizeAtomic(spec.SizePath, cols, rows);
-
-        void RelayOutput(byte[] bytes)
-        {
-            try
-            {
-                // 미러 파일을 먼저 갱신해 WT 탭이 닫히는 순간의 마지막 출력도 앱이 읽을 수 있게 한다.
-                outputLog.Write(bytes, 0, bytes.Length);
-                outputLog.Flush();
-                standardOutput.Write(bytes, 0, bytes.Length);
-                standardOutput.Flush();
-            }
-            catch (Exception ex)
-            {
-                relayFailure = ex;
-                completed.Set();
-            }
-        }
-
-        void OnExited() => Interlocked.Exchange(ref processExited, 1);
-
-        TerminalSession? session = null;
+        // claude 를 ConPTY 로 감싸지 않고, 이 프록시가 물려받은 WT 콘솔을 자식에게 그대로 상속시켜
+        // 직접 렌더링하게 한다(= claude 를 WT 에서 바로 실행한 것과 동일 → ConPTY 재직렬화 잔상 없음).
+        // 미러(.output.bin)·크기 파일은 더 이상 아무도 읽지 않으므로 만들지 않는다.
+        // 프록시의 남은 역할: lock 소유(독립성·복귀 감지) + "인앱으로 가져오기"(.return) 감시.
         try
         {
-            var commandLine =
-                "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File " +
-                QuoteWindowsArgument(spec.RunnerScriptPath);
-            var colorFgBg = string.Equals(spec.Theme, "dark", StringComparison.OrdinalIgnoreCase)
-                ? "15;0"
-                : "0;15";
-
-            // 프록시의 WT 표준 핸들이 자식 PowerShell로 직접 새면 실제 텍스트가 ConPTY를
-            // 우회해 외부 화면에만 나오고 미러 로그에서는 사라진다. 생성 순간에만 부모 표준
-            // 핸들을 분리해 모든 자식 출력이 반드시 ConPTY 파이프를 통과하게 한다.
-            using (StandardHandleScope.Detach())
+            var runner = new ProcessStartInfo
             {
-                session = new TerminalSession(
-                    commandLine,
-                    spec.WorkingDirectory,
-                    cols,
-                    rows,
-                    RelayOutput,
-                    OnExited,
-                    colorFgBg);
-            }
-
-            var inputThread = new Thread(() => RelayInput(session, standardInput, completed))
-            {
-                IsBackground = true,
-                Name = "ExternalProxy-Input",
+                FileName = "powershell.exe",
+                UseShellExecute = false, // 표준 핸들(=WT 콘솔) 상속 → claude 가 WT 에 직접 그린다
+                WorkingDirectory = spec.WorkingDirectory,
             };
-            inputThread.Start();
+            runner.ArgumentList.Add("-NoLogo");
+            runner.ArgumentList.Add("-NoProfile");
+            runner.ArgumentList.Add("-ExecutionPolicy");
+            runner.ArgumentList.Add("Bypass");
+            runner.ArgumentList.Add("-File");
+            runner.ArgumentList.Add(spec.RunnerScriptPath);
 
-            // resize 디바운스: 창 스냅 relayout·외부 앱 종료 등으로 콘솔 폭이 여러 프레임에 걸쳐
-            // 흔들릴 때, 매 흔들림마다 ConPTY를 resize 하면 TUI(claude 등)가 매번 reflow 하며
-            // 이전 wrap 꼬리를 dim 잔상으로 남긴다. 새 크기가 StableTicks 만큼 연속으로 유지될 때만
-            // 한 번 적용해 reflow(=잔상) 횟수를 최소화한다.
-            const int ResizeStableTicks = 2; // 100ms poll × 2 ≈ 200ms 안정 후 적용
-            int pendingCols = cols, pendingRows = rows, stableTicks = 0;
+            using var child = Process.Start(runner);
+            if (child == null) return Fail("외부 세션 에이전트를 시작하지 못했습니다.");
 
-            while (!completed.Wait(100))
+            // 탭(콘솔) 닫힘을 CTRL_CLOSE 로 즉시 감지해 자식을 정리한다. 이게 없으면 claude 가
+            // 콘솔 종료를 스스로 알아채고 빠져나올 때까지(2~3s) 기다려 lock 해제가 늦어진다.
+            _proxyChild = child;
+            _consoleCtrlHandler = HandleConsoleCtrl;
+            SetConsoleCtrlHandler(_consoleCtrlHandler, true);
+
+            // 탭(콘솔) 셸 = 이 프록시를 -Wait 로 띄운 래퍼 PowerShell. 탭이 닫히면 래퍼가 먼저 죽는데,
+            // WT 가 트리 kill 을 안 하면 프록시는 고아로 남아 claude 가 콘솔 종료를 스스로 알아챌 때까지
+            // (2~3s) 기다린다. 래퍼 PID 를 감시해 죽는 즉시 자식을 정리하면 lock 이 바로 풀린다.
+            Process? wrapper = null;
+            if (int.TryParse(Environment.GetEnvironmentVariable("DEVEZCODE_WRAPPER_PID"), out var wpid))
             {
-                // 프로세스 종료 통지는 ConPTY read thread보다 먼저 올 수 있다. ConPTY를 닫은 뒤
-                // 파이프 EOF까지 실제로 배출해 종료 프레임/프롬프트 바이트를 보존한다.
-                if (Volatile.Read(ref processExited) != 0)
-                {
-                    session.CompleteOutputAfterExit(2_000);
-                    break;
-                }
-
-                // DevezCode "인앱으로 가져오기" 요청 — 탭 닫기와 동일하게 세션을 정리하고 종료해
-                // lock 을 놓는다. 래퍼 PowerShell 이 -Wait 를 벗어나 종료되며 WT 탭도 자동으로 닫힌다.
-                if (!string.IsNullOrEmpty(spec.ReturnPath) && File.Exists(spec.ReturnPath))
-                {
-                    completed.Set();
-                    break;
-                }
-
-                var (newConsoleCols, newConsoleRows) = ReadConsoleSize();
-                int nextCols = SelectDimension(
-                    spec.PreferredCols, newConsoleCols, cols, MinCols, MaxCols);
-                int nextRows = SelectDimension(
-                    spec.PreferredRows, newConsoleRows, rows, MinRows, MaxRows);
-                if (nextCols == cols && nextRows == rows)
-                {
-                    stableTicks = 0;
-                    continue;
-                }
-                if (nextCols != pendingCols || nextRows != pendingRows)
-                {
-                    // 목표 크기가 계속 바뀌는 중(흔들림) — 안정 카운트 리셋 후 대기.
-                    pendingCols = nextCols;
-                    pendingRows = nextRows;
-                    stableTicks = 0;
-                    continue;
-                }
-                if (++stableTicks < ResizeStableTicks) continue; // 아직 안정되지 않음
-
-                cols = nextCols;
-                rows = nextRows;
-                stableTicks = 0;
-                session.Resize(cols, rows);
-                WriteSizeAtomic(spec.SizePath, cols, rows);
+                try { wrapper = Process.GetProcessById(wpid); } catch { wrapper = null; }
             }
 
-            if (relayFailure != null && session.IsAlive)
-                session.Dispose();
+            // 자식 종료(탭 닫힘 포함)는 WaitForExit 로, "인앱으로 가져오기"는 .return 파일로 감지해 정리.
+            bool returnRequested = false;
+            while (!child.WaitForExit(200))
+            {
+                bool wrapperGone = false;
+                try { wrapperGone = wrapper is { HasExited: true }; } catch { wrapperGone = true; }
 
-            return session.ExitCode ?? (relayFailure == null ? 0 : 1);
+                if (wrapperGone
+                    || (!string.IsNullOrEmpty(spec.ReturnPath) && File.Exists(spec.ReturnPath)))
+                {
+                    returnRequested = !wrapperGone; // 래퍼 사망(탭 닫힘)은 회수 아님 → 실제 종료코드 유지
+                    try { child.Kill(entireProcessTree: true); } catch { }
+                    child.WaitForExit(3000);
+                    break;
+                }
+            }
+            // "인앱으로 가져오기"는 정상 회수이므로 exit 0 을 반환한다 → WT 의 graceful closeOnExit 가
+            // 탭을 닫는다(비정상 종료코드면 "[프로세스 종료됨]" 상태로 탭이 남아 에이전트만 죽은 듯 보인다).
+            return returnRequested ? 0 : (child.HasExited ? child.ExitCode : 0);
         }
         catch (Exception ex)
         {
-            try
-            {
-                var message = Encoding.UTF8.GetBytes(
-                    $"\r\n\u001b[91m외부 세션 프록시 오류:\r\n{ex.Message}\u001b[0m\r\n");
-                RelayOutput(message);
-            }
-            catch { }
-            return 1;
-        }
-        finally
-        {
-            session?.Dispose();
-            try { outputLog.Flush(); } catch { }
+            return Fail($"외부 세션 실행 오류: {ex.Message}");
         }
     }
 

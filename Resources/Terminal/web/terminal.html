@@ -2233,9 +2233,11 @@
       if (entry.agent === 'codex' && data.indexOf('\x1b[<') === -1
           && data !== '\x1b[I' && data !== '\x1b[O') {
         entry.follow = true;
-        // 사용자 키 입력 시각 — 직후 리페인트는 편집(화살표 이동 등)이라 커서 위치가 의미 있다.
+        // 상하좌우 화살표에서만 커서 표시 창을 연다 — 화살표 이동은 캐럿 위치가 의미 있어 보여야 하지만
+        // Enter/Backspace/타이핑은 codex 가 캐럿을 알아서 정상 표시하므로 제외한다.
+        // 일반(ESC[A-D)·애플리케이션 커서 모드(ESC O A-D)·수정키 조합(ESC[1;5C 등) 모두 커버.
         // applyCodexCursorPolicy 가 이 창 안에선 커서를 강제로 숨기지 않고 codex 의사를 따른다.
-        entry._lastInputAt = Date.now();
+        if (/^\x1b(\[[0-9;]*|O)[ABCD]$/.test(data)) entry._lastInputAt = Date.now();
         try { term.scrollToBottom(); } catch (e) {}
       }
       post({ type: 'input', roomId: roomId, data: data });

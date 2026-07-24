@@ -50,8 +50,7 @@ public static class ExternalSessionService
         var agent = AgentRegistry.Find(agentId) ?? AgentRegistry.GetDefault();
         if (AgentRegistry.ResolvePath(agent) == null)
             return $"{agent.DisplayName} 실행 파일을 찾을 수 없습니다.";
-        if (ResolveWindowsTerminalPath() == null)
-            return "Windows Terminal(wt.exe)을 찾을 수 없습니다.";
+        // WT 없어도 일반 콘솔(powershell)로 폴백하므로 WT 유무는 시작 조건이 아니다.
 
         var sessionId = LoadSessionId(roomId, agent.Id);
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -244,9 +243,8 @@ public static class ExternalSessionService
         var executable = AgentRegistry.ResolvePath(agent);
         if (string.IsNullOrWhiteSpace(executable))
             return (false, $"{agent.DisplayName} 실행 파일을 찾을 수 없습니다.");
+        // Windows Terminal 있으면 탭으로, 없으면 일반 콘솔(powershell) 창으로 폴백한다.
         var windowsTerminal = ResolveWindowsTerminalPath();
-        if (windowsTerminal == null)
-            return (false, "Windows Terminal(wt.exe)을 찾을 수 없습니다.");
 
         var sessionId = LoadSessionId(roomId, agent.Id);
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -308,28 +306,51 @@ public static class ExternalSessionService
                     workingDir, proxyExecutable, specPath),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
-            var start = new ProcessStartInfo
+            ProcessStartInfo start;
+            if (windowsTerminal != null)
             {
-                FileName = windowsTerminal,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            start.ArgumentList.Add("-w");
-            start.ArgumentList.Add("0");
-            start.ArgumentList.Add("new-tab");
-            // CLI(claude/codex 등)가 OSC title escape로 탭 제목을 덮어쓰지 못하게 고정한다.
-            start.ArgumentList.Add("--suppressApplicationTitle");
-            start.ArgumentList.Add("--title");
-            start.ArgumentList.Add(string.IsNullOrWhiteSpace(sessionName) ? agent.DisplayName : sessionName);
-            start.ArgumentList.Add("--startingDirectory");
-            start.ArgumentList.Add(workingDir);
-            start.ArgumentList.Add("powershell.exe");
-            start.ArgumentList.Add("-NoLogo");
-            start.ArgumentList.Add("-NoProfile");
-            start.ArgumentList.Add("-ExecutionPolicy");
-            start.ArgumentList.Add("Bypass");
-            start.ArgumentList.Add("-File");
-            start.ArgumentList.Add(ScriptPath(roomId));
+                start = new ProcessStartInfo
+                {
+                    FileName = windowsTerminal,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                start.ArgumentList.Add("-w");
+                start.ArgumentList.Add("0");
+                start.ArgumentList.Add("new-tab");
+                // CLI(claude/codex 등)가 OSC title escape로 탭 제목을 덮어쓰지 못하게 고정한다.
+                start.ArgumentList.Add("--suppressApplicationTitle");
+                start.ArgumentList.Add("--title");
+                start.ArgumentList.Add(string.IsNullOrWhiteSpace(sessionName) ? agent.DisplayName : sessionName);
+                start.ArgumentList.Add("--startingDirectory");
+                start.ArgumentList.Add(workingDir);
+                start.ArgumentList.Add("powershell.exe");
+                start.ArgumentList.Add("-NoLogo");
+                start.ArgumentList.Add("-NoProfile");
+                start.ArgumentList.Add("-ExecutionPolicy");
+                start.ArgumentList.Add("Bypass");
+                start.ArgumentList.Add("-File");
+                start.ArgumentList.Add(ScriptPath(roomId));
+            }
+            else
+            {
+                // 폴백: WT 미설치 → 일반 콘솔(powershell) 창을 새로 띄운다. GUI 프로세스가 콘솔 앱을
+                // CreateNoWindow=false 로 실행하면 OS가 새 conhost 창을 할당한다. 래퍼가 프록시를
+                // -NoNewWindow 로 그 콘솔 안에서 실행하므로 WT 경로와 동일하게 동작한다.
+                start = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    UseShellExecute = false,
+                    CreateNoWindow = false,
+                    WorkingDirectory = workingDir,
+                };
+                start.ArgumentList.Add("-NoLogo");
+                start.ArgumentList.Add("-NoProfile");
+                start.ArgumentList.Add("-ExecutionPolicy");
+                start.ArgumentList.Add("Bypass");
+                start.ArgumentList.Add("-File");
+                start.ArgumentList.Add(ScriptPath(roomId));
+            }
 
             Process.Start(start);
 
@@ -340,7 +361,7 @@ public static class ExternalSessionService
                     return (true, null);
                 await Task.Delay(100);
             }
-            return (false, "Windows Terminal에서 외부 세션이 시작되지 않았습니다.");
+            return (false, "외부 세션이 시작되지 않았습니다.");
         }
         catch (Exception ex)
         {
@@ -463,6 +484,8 @@ public static class ExternalSessionService
             "$env:FORCE_COLOR = '3'\r\n" +
             "$env:COLORTERM = 'truecolor'\r\n" +
             "Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue\r\n" +
+            // 이 래퍼(탭 셸)의 PID 를 프록시에 넘긴다 → 탭이 닫혀 래퍼가 죽으면 프록시가 즉시 감지해 정리.
+            "$env:DEVEZCODE_WRAPPER_PID = $PID\r\n" +
             $"Set-Location -LiteralPath {Q(workingDir)}\r\n" +
             $"$proxy = Start-Process -FilePath {Q(proxyExecutable)} " +
             $"-ArgumentList {Q(ExternalSessionProxy.ModeArgument)} -NoNewWindow -Wait -PassThru\r\n" +

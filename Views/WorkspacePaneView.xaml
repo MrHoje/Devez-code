@@ -590,10 +590,10 @@
                                     ToolTipService.ShowOnDisabled="True"
                                     Click="ReturnInApp_Click">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconCornerDownLeft}"
+                                    <Path x:Name="ReturnBtnIcon" Style="{StaticResource LucideIcon}" Data="{StaticResource IconCornerDownLeft}"
                                           Width="14" Height="14" Margin="0,0,8,0" Stretch="Uniform"
                                           Stroke="White" StrokeThickness="1.9" VerticalAlignment="Center"/>
-                                    <TextBlock Text="인앱으로 가져오기" FontSize="{DynamicResource Fs12}"
+                                    <TextBlock x:Name="ReturnBtnLabel" Text="인앱으로 가져오기" FontSize="{DynamicResource Fs12}"
                                                VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>

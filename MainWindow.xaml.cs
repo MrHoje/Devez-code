@@ -3861,12 +3861,7 @@ public partial class MainWindow : Window
                 "프로젝트 폴더를 찾을 수 없습니다.", iconKey: "IconTriangleAlert");
             return;
         }
-        if (!ExternalSessionService.IsWindowsTerminalAvailable())
-        {
-            ConfirmDialog.Alert("외부 터미널로 열기",
-                "Windows Terminal(wt.exe)을 찾을 수 없습니다.", iconKey: "IconTriangleAlert");
-            return;
-        }
+        // WT 없어도 일반 콘솔(powershell)로 폴백하므로 별도 차단하지 않는다.
 
         var agentId = string.IsNullOrWhiteSpace(session.AgentId)
             ? SettingsService.LoadAgentForRoom(session.Id)
