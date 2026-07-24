@@ -191,6 +191,7 @@
 
                     <!-- 하단 터미널 패널(에이전트 미연결 pwsh). 푸터 ShellTerminalBtn 토글, 닫힘 = Row 0 + Collapsed(HwndHost 규칙). -->
                     <GridSplitter x:Name="ShellPanelSplitter" Grid.Row="1" Grid.ColumnSpan="3" Height="4"
+                                  Style="{StaticResource GridSplitterHorizontal}"
                                   HorizontalAlignment="Stretch" Visibility="Collapsed"
                                   ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                   DragCompleted="ShellPanelSplitter_DragCompleted"/>
