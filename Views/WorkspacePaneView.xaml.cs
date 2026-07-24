@@ -1330,6 +1330,8 @@ public partial class WorkspacePaneView : UserControl
     private const int HideStopDelayMs = 3000; // 실수 숨김 복구 유예
     private string? _externalPreviewRoomId;
     private bool _externalReady = true; // 외부 오버레이 상태: true=실행 중(버튼), false=여는 중(스피너)
+    private bool _returnRequested;      // "인앱으로 가져오기" 눌러 복귀 진행 중(버튼 재활성 방지)
+    private SessionItem? _externalBusyWatch; // busy 변화 구독 중인 외부 세션
 
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
@@ -3677,15 +3679,15 @@ public partial class WorkspacePaneView : UserControl
 
     private void LoadExternalSessionPreview(SessionItem session)
     {
-        // 정지 스냅샷을 블러 전용 이미지에 싣는다(공유 TerminalSnapshot 은 분할/종료 스냅샷 용도라 안 건드린다).
-        if (!string.Equals(_externalPreviewRoomId, session.Id, StringComparison.Ordinal))
+        // 스냅샷 없이 불투명 오버레이로 즉시 가린다(라이브 터미널 비침 방지). 터미널 HWND 는 park.
+        _externalPreviewRoomId = session.Id;
+        // 외부 에이전트 busy 변화(훅 상태파일→SessionBusyService→IsBusy)에 맞춰 복귀 버튼 활성/비활성.
+        if (!ReferenceEquals(_externalBusyWatch, session))
         {
-            _externalPreviewRoomId = session.Id;
-            var png = ExternalSessionService.LoadSnapshot(session.Id);
-            ExternalSnapshotBlur.Source = png == null ? null : TerminalHostView.BitmapFromPng(png);
+            if (_externalBusyWatch != null) _externalBusyWatch.PropertyChanged -= ExternalSession_PropertyChanged;
+            _externalBusyWatch = session;
+            session.PropertyChanged += ExternalSession_PropertyChanged;
         }
-        ExternalSnapshotBlur.Visibility = ExternalSnapshotBlur.Source == null
-            ? Visibility.Collapsed : Visibility.Visible;
         ExternalSessionOverlay.Visibility = Visibility.Visible;
         ApplyExternalOverlayState();
     }
@@ -3694,7 +3696,22 @@ public partial class WorkspacePaneView : UserControl
     private void ApplyExternalOverlayState()
     {
         ExternalLaunchingPanel.Visibility = _externalReady ? Visibility.Collapsed : Visibility.Visible;
-        ExternalReadyPanel.Visibility = _externalReady ? Visibility.Visible : Visibility.Collapsed;
+        ExternalReadyBorder.Visibility = _externalReady ? Visibility.Visible : Visibility.Collapsed;
+        UpdateReturnButtonEnabled();
+    }
+
+    private void ExternalSession_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is null or nameof(SessionItem.IsBusy) or nameof(SessionItem.IsExternal))
+            UpdateReturnButtonEnabled();
+    }
+
+    // 응답 대기 중(IsBusy)이거나 이미 복귀 요청했으면 "인앱으로 가져오기" 비활성.
+    private void UpdateReturnButtonEnabled()
+    {
+        bool busy = _activeSession?.IsBusy == true;
+        ReturnInAppBtn.IsEnabled = !_returnRequested && !busy;
+        ReturnInAppBtn.ToolTip = busy ? "응답이 완료된 후 가져올 수 있습니다." : null;
     }
 
     /// <summary>외부 인계 시작 — 외부 터미널이 완전히 열릴 때까지 오버레이에 스피너를 표시한다.</summary>
@@ -3742,19 +3759,24 @@ public partial class WorkspacePaneView : UserControl
     {
         ExternalSessionOverlay.Visibility = Visibility.Collapsed;
         // 다음에 다시 외부로 열 때 버튼이 활성/기본 문구로 보이게 복원.
+        _returnRequested = false;
         ReturnInAppBtn.IsEnabled = true;
-        if (_externalPreviewRoomId == null) return;
+        ReturnInAppBtn.ToolTip = null;
+        if (_externalBusyWatch != null)
+        {
+            _externalBusyWatch.PropertyChanged -= ExternalSession_PropertyChanged;
+            _externalBusyWatch = null;
+        }
         _externalPreviewRoomId = null;
-        ExternalSnapshotBlur.Visibility = Visibility.Collapsed;
-        ExternalSnapshotBlur.Source = null;
     }
 
     /// <summary>오버레이 "인앱으로 가져오기" — 외부 터미널 종료를 요청한다. 실제 복귀는
     /// 외부 lock 해제를 감지한 셸(CheckExternalSessions)이 OnExternalSessionEnded 로 처리한다.</summary>
     private void ReturnInApp_Click(object sender, RoutedEventArgs e)
     {
-        if (_activeSession is not { IsExternal: true } session) return;
-        ReturnInAppBtn.IsEnabled = false; // 중복 클릭 방지 — 복귀 완료 시 오버레이가 사라지며 리셋
+        if (_activeSession is not { IsExternal: true, IsBusy: false } session) return;
+        _returnRequested = true; // 중복 클릭 방지 — 복귀 완료 시 오버레이가 사라지며 리셋
+        UpdateReturnButtonEnabled();
         ReturnExternalSessionRequested?.Invoke(session);
     }
 

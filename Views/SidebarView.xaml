@@ -297,7 +297,11 @@
                               Data="{StaticResource IconExternalLink}"
                               Width="12" Height="12" Stretch="Uniform"
                               Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.5"
-                              Fill="Transparent"/>
+                              Fill="Transparent">
+                            <Path.RenderTransform>
+                                <TranslateTransform Y="-1"/>
+                            </Path.RenderTransform>
+                        </Path>
                     </Grid>
                     <TextBlock Grid.Column="3" Text="{Binding Name}" Margin="10,0,0,0"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
@@ -596,14 +600,14 @@
                         <MenuItem Header="보관함 이동" Tag="{Binding}" Click="ArchiveProject_Click"
                                   Visibility="{Binding CanArchive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                             <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchive}"
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveRestore}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="꺼내기" Tag="{Binding}" Click="UnarchiveProject_Click"
                                   Visibility="{Binding CanUnarchive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                             <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveRestore}"
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveMoveDown}"
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
@@ -978,14 +982,14 @@
                                 <MenuItem Header="보관함 이동" Tag="{Binding}" Click="FolderArchive_Click"
                                           Visibility="{Binding IsActive, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                                     <MenuItem.Icon>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchive}"
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveRestore}"
                                               Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                                     </MenuItem.Icon>
                                 </MenuItem>
                                 <MenuItem Header="꺼내기" Tag="{Binding}" Click="FolderUnarchive_Click"
                                           Visibility="{Binding IsArchived, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                                     <MenuItem.Icon>
-                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveRestore}"
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArchiveMoveDown}"
                                               Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                                     </MenuItem.Icon>
                                 </MenuItem>

@@ -3883,10 +3883,6 @@ public partial class MainWindow : Window
         var liveTerminal = TerminalSessionManager.Instance.Get(session.Id);
         int preferredCols = liveTerminal?.Cols ?? 120;
         int preferredRows = liveTerminal?.Rows ?? 30;
-        byte[]? snapshot = null;
-        var snapshotPane = _panes.FirstOrDefault(pane => ReferenceEquals(pane.ActiveSession, session));
-        if (snapshotPane != null)
-            snapshot = await snapshotPane.CaptureSessionSnapshotPngAsync(session);
         if (session.IsBusy)
         {
             ConfirmDialog.Alert("외부 터미널로 열기",
@@ -3899,7 +3895,6 @@ public partial class MainWindow : Window
         try
         {
             token = ExternalSessionService.PrepareLaunch(session.Id);
-            ExternalSessionService.SaveSnapshot(session.Id, snapshot);
         }
         catch (Exception ex)
         {

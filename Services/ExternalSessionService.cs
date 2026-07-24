@@ -389,7 +389,7 @@ public static class ExternalSessionService
 
     private static string[]? BuildResumeArgs(string roomId, string agentId, string sessionId) => agentId switch
     {
-        "claude" => new[] { "--resume", sessionId, "--dangerously-skip-permissions" },
+        "claude" => BuildClaudeResumeArgs(roomId, sessionId),
         "codex" => new[] { "resume", sessionId },
         "kimi" => new[] { "-S", sessionId },
         "grok" => new[] { "-r", sessionId },
@@ -405,6 +405,20 @@ public static class ExternalSessionService
         "antigravity" => new[] { "--conversation", sessionId, "--dangerously-skip-permissions" },
         _ => null,
     };
+
+    // 외부 claude 도 방별 --settings(busy/lastmsg/waiting 훅)를 넘겨, 실행 중에도 DevezCode 가
+    // 세션 busy 상태를 추적한다(없으면 오버레이 "인앱으로 가져오기"가 응답 중에도 활성화되는 문제).
+    private static string[] BuildClaudeResumeArgs(string roomId, string sessionId)
+    {
+        var args = new List<string> { "--resume", sessionId, "--dangerously-skip-permissions" };
+        var roomSettings = Terminal.TerminalSessionManager.GetClaudeRoomSettingsPath(roomId);
+        if (roomSettings != null)
+        {
+            args.Add("--settings");
+            args.Add(roomSettings);
+        }
+        return args.ToArray();
+    }
 
     private static string BuildRunnerScript(
         string roomId,

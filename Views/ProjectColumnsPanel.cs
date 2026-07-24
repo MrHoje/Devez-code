@@ -127,7 +127,8 @@ public sealed class ProjectColumnsPanel : Panel
         return finalSize;
     }
 
-    // 자식을 최종 위치에 배치하고, 애니메이션 예약 시 이전 위치에서 슬라이드(FLIP)한다.
+    // 자식을 최종 위치에 배치하고, 애니메이션 예약 시 이전 위치·크기에서 슬라이드(FLIP)한다.
+    // 위치(dx,dy)뿐 아니라 폭 변화(scaleX)도 애니메이션 — 내용 없는 폴더의 반폭↔전체폭 전환도 부드럽게.
     private void PlaceChild(UIElement child, Rect rect, bool animate, Dictionary<UIElement, Rect> store)
     {
         child.Arrange(rect);
@@ -136,16 +137,31 @@ public sealed class ProjectColumnsPanel : Panel
 
         double dx = old.X - rect.X;
         double dy = old.Y - rect.Y;
-        if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5) return;
+        double sx = rect.Width > 0.5 && old.Width > 0.5 ? old.Width / rect.Width : 1;
+        bool moved = Math.Abs(dx) >= 0.5 || Math.Abs(dy) >= 0.5;
+        bool scaled = Math.Abs(sx - 1) >= 0.01;
+        if (!moved && !scaled) return;
 
-        if (child.RenderTransform is not TranslateTransform tt)
-        {
-            tt = new TranslateTransform();
-            child.RenderTransform = tt;
-        }
+        var (tt, st) = EnsureFlipTransforms(child);
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         var dur = TimeSpan.FromMilliseconds(200);
-        tt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(dx, 0, dur) { EasingFunction = ease });
-        tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(dy, 0, dur) { EasingFunction = ease });
+        tt.BeginAnimation(TranslateTransform.XProperty, moved ? new DoubleAnimation(dx, 0, dur) { EasingFunction = ease } : null);
+        tt.BeginAnimation(TranslateTransform.YProperty, moved ? new DoubleAnimation(dy, 0, dur) { EasingFunction = ease } : null);
+        st.BeginAnimation(ScaleTransform.ScaleXProperty, scaled ? new DoubleAnimation(sx, 1, dur) { EasingFunction = ease } : null);
+    }
+
+    // 좌상단(0,0) 기준 Scale + Translate 그룹 확보. ReorderDrag 는 그룹 안 TranslateTransform 을 재사용하므로 호환.
+    private static (TranslateTransform, ScaleTransform) EnsureFlipTransforms(UIElement child)
+    {
+        if (child.RenderTransform is TransformGroup g)
+        {
+            var t = g.Children.OfType<TranslateTransform>().FirstOrDefault();
+            var s = g.Children.OfType<ScaleTransform>().FirstOrDefault();
+            if (t != null && s != null) return (t, s);
+        }
+        var scale = new ScaleTransform();
+        var translate = new TranslateTransform();
+        child.RenderTransform = new TransformGroup { Children = { scale, translate } };
+        return (translate, scale);
     }
 }

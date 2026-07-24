@@ -540,38 +540,31 @@
             <ContentControl x:Name="BrowserHostContainer" Visibility="Collapsed"/>
             <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
-            <!-- 외부 실행 중 배경: 열 때 캡처한 스냅샷을 블러 처리해 "여기선 비활성" 신호. 라이브 미러 아님. -->
-            <Image x:Name="ExternalSnapshotBlur" Stretch="Fill" Visibility="Collapsed"
-                   RenderOptions.BitmapScalingMode="LowQuality">
-                <Image.Effect>
-                    <BlurEffect Radius="22" KernelType="Gaussian"/>
-                </Image.Effect>
-            </Image>
+            <!-- 외부 실행 중: 스냅샷 없이 불투명 배경으로 즉시 가린다(라이브 터미널 비침·깜빡임 방지). -->
             <Grid x:Name="ExternalSessionOverlay" Visibility="Collapsed"
-                  Panel.ZIndex="10" Background="#24000000" IsHitTestVisible="True">
-                <Border Padding="24,20" CornerRadius="12"
+                  Panel.ZIndex="10" Background="{DynamicResource BgBrush}" IsHitTestVisible="True">
+                <!-- 여는 중: 보더 없이 스피너 + 아래 텍스트(세션 열 때 로딩과 동일 스타일). -->
+                <StackPanel x:Name="ExternalLaunchingPanel" HorizontalAlignment="Center"
+                            VerticalAlignment="Center" Visibility="Collapsed">
+                    <Ellipse Width="36" Height="36" StrokeThickness="3" Fill="Transparent"
+                             Stroke="{DynamicResource PrimaryBrush}" StrokeDashArray="28 10"
+                             HorizontalAlignment="Center"
+                             models:SpinnerActivator.Track="True"
+                             RenderTransformOrigin="0.5,0.5">
+                        <Ellipse.RenderTransform>
+                            <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                    <TextBlock Text="외부 터미널을 여는 중…" Margin="0,14,0,0"
+                               FontSize="{DynamicResource Fs13}" TextAlignment="Center"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                </StackPanel>
+
+                <!-- 실행 중: 카드(보더) — 안내 + 인앱 복귀 버튼. -->
+                <Border x:Name="ExternalReadyBorder" Padding="24,20" CornerRadius="12"
                         Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
                         HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Grid>
-                        <!-- 여는 중: 외부 터미널이 완전히 열려 lock 을 잡을 때까지 스피너 표시. -->
-                        <StackPanel x:Name="ExternalLaunchingPanel" HorizontalAlignment="Center"
-                                    VerticalAlignment="Center" Visibility="Collapsed">
-                            <Ellipse Width="32" Height="32" StrokeThickness="3" Fill="Transparent"
-                                     Stroke="{DynamicResource PrimaryBrush}" StrokeDashArray="28 10"
-                                     HorizontalAlignment="Center"
-                                     models:SpinnerActivator.Track="True"
-                                     RenderTransformOrigin="0.5,0.5">
-                                <Ellipse.RenderTransform>
-                                    <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                                </Ellipse.RenderTransform>
-                            </Ellipse>
-                            <TextBlock Text="외부 터미널을 여는 중…" Margin="0,14,0,0"
-                                       FontSize="{DynamicResource Fs13}" TextAlignment="Center"
-                                       Foreground="{DynamicResource TextMutedBrush}"/>
-                        </StackPanel>
-
-                        <!-- 실행 중: 열림 완료 후 안내 + 인앱 복귀 버튼. -->
                         <StackPanel x:Name="ExternalReadyPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconExternalLink}"
@@ -584,16 +577,17 @@
                                                FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                     <TextBlock Margin="0,4,0,0" FontSize="{DynamicResource Fs12}"
                                                Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap"
-                                               MaxWidth="460">
+                                               MaxWidth="520">
                                         <Run Text="외부 터미널 탭을 닫거나 아래 버튼으로 이 세션을 다시 가져옵니다."/>
                                         <LineBreak/>
-                                        <Run Text="응답을 기다리는 중이라면 가져올 때 진행 중인 작업이 멈출 수 있어요."/>
+                                        <Run Text="응답이 진행 중일 때는 완료된 후에 가져올 수 있습니다."/>
                                 </TextBlock>
                                 </StackPanel>
                             </StackPanel>
                             <!-- 외부 터미널을 종료시키고 이 세션을 인앱으로 복귀시킨다. -->
                             <Button x:Name="ReturnInAppBtn" Style="{StaticResource PrimaryButton}"
                                     Height="32" Margin="0,18,0,0" HorizontalAlignment="Center"
+                                    ToolTipService.ShowOnDisabled="True"
                                     Click="ReturnInApp_Click">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconCornerDownLeft}"
@@ -604,7 +598,6 @@
                                 </StackPanel>
                             </Button>
                         </StackPanel>
-                    </Grid>
                 </Border>
             </Grid>
             <Border x:Name="TerminalCurtain" Background="{DynamicResource BgBrush}"
@@ -653,22 +646,23 @@
               Drop="FileDropOverlay_Drop">
             <Border Background="{DynamicResource PanelBrush}" Opacity="0.97"/>
 
-            <TextBlock Text="파일을 놓을 위치를 선택하세요"
-                       Margin="0,40,0,0"
-                       HorizontalAlignment="Center" VerticalAlignment="Top"
-                       FontSize="{DynamicResource Fs15}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextBrush}"
-                       IsHitTestVisible="False"/>
+            <StackPanel MaxWidth="620" Margin="20"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <TextBlock Text="파일을 놓을 위치를 선택하세요"
+                           Margin="0,0,0,16"
+                           HorizontalAlignment="Center"
+                           FontSize="{DynamicResource Fs15}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}"
+                           IsHitTestVisible="False"/>
 
-            <Grid MaxWidth="620" Height="250" Margin="20,76,20,36"
-                  HorizontalAlignment="Stretch" VerticalAlignment="Center">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="12"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+                <Grid Height="250">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                <Border x:Name="OpenFileDropZone" Grid.Column="0"
+                    <Border x:Name="OpenFileDropZone" Grid.Column="0"
                         Tag="Open" AllowDrop="True" Cursor="Arrow"
                         Padding="12" CornerRadius="14"
                         BorderThickness="1.5"
@@ -697,9 +691,9 @@
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    TextAlignment="Center" TextWrapping="Wrap"/>
                     </StackPanel>
-                </Border>
+                    </Border>
 
-                <Border x:Name="AddFileDropZone" Grid.Column="2"
+                    <Border x:Name="AddFileDropZone" Grid.Column="2"
                         Tag="Add" AllowDrop="True" Cursor="Arrow"
                         Padding="12" CornerRadius="14"
                         BorderThickness="1.5"
@@ -733,8 +727,9 @@
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    TextAlignment="Center" TextWrapping="Wrap"/>
                     </StackPanel>
-                </Border>
-            </Grid>
+                    </Border>
+                </Grid>
+            </StackPanel>
         </Grid>
       </Grid>
       </Border>

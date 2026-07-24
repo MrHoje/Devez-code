@@ -511,6 +511,9 @@
   //    숨김은 즉시 적용, 표시는 CODEX_CURSOR_SHOW_DELAY ms 동안 조용할 때만 적용.
   //    리페인트 폭풍(응답 생성) 동안은 커서가 조용히 숨고, 출력이 멎으면(입력 대기) 정상 표시.
   const CODEX_CURSOR_SHOW_DELAY = 150;
+  // 사용자 키 입력 후 이 창(ms) 안의 리페인트는 편집(화살표 이동 등)으로 보고 커서를 강제로 숨기지
+  // 않는다. 키 리피트 간격을 덮을 만큼 넉넉히(생성 폭풍은 입력 없이 오므로 이 창 밖 → 기존 정책 유지).
+  const CODEX_CURSOR_INTERACTIVE_MS = 400;
 
   // bytes 에서 ESC[?25h(1b 5b 3f 32 35 68) / ESC[?25l(…6c) 를 모두 제거하고
   // 마지막 op(0=없음, 1=show, 2=hide)를 함께 반환.
@@ -557,6 +560,12 @@
       return r.bytes;
     }
     if (entry._curShowTimer) { clearTimeout(entry._curShowTimer); entry._curShowTimer = 0; }
+    // 사용자 입력 직후(편집·화살표 이동)면 리페인트가 자율 생성 폭풍이 아니라 커서 위치가 의미 있는
+    // 편집이다 — 강제 숨김 없이 codex 의 마지막 의사(show/hide)를 즉시 반영해 커서가 보이게 한다.
+    if (Date.now() - (entry._lastInputAt || 0) < CODEX_CURSOR_INTERACTIVE_MS) {
+      entry.term.write(r.lastOp === 1 ? '\x1b[?25h' : '\x1b[?25l');
+      return r.bytes;
+    }
     entry.term.write('\x1b[?25l'); // 리페인트 중 커서 노출 금지 (끝 위치가 어디든)
     if (r.lastOp === 1) scheduleCursorShow(entry); // 표시를 원하면 조용해진 뒤에
     return r.bytes;
@@ -2224,6 +2233,9 @@
       if (entry.agent === 'codex' && data.indexOf('\x1b[<') === -1
           && data !== '\x1b[I' && data !== '\x1b[O') {
         entry.follow = true;
+        // 사용자 키 입력 시각 — 직후 리페인트는 편집(화살표 이동 등)이라 커서 위치가 의미 있다.
+        // applyCodexCursorPolicy 가 이 창 안에선 커서를 강제로 숨기지 않고 codex 의사를 따른다.
+        entry._lastInputAt = Date.now();
         try { term.scrollToBottom(); } catch (e) {}
       }
       post({ type: 'input', roomId: roomId, data: data });

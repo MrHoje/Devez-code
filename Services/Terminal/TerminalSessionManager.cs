@@ -2372,6 +2372,14 @@ public sealed class TerminalSessionManager
         catch (Exception) { /* 추적 실패해도 claude 실행은 계속 — flags 에서 파일 존재 확인 */ }
     }
 
+    /// <summary>외부 세션이 claude 를 이어갈 때도 방별 busy/lastmsg/waiting 훅이 계속 기록하도록
+    /// 넘길 방별 --settings 파일 경로. 아직 생성 전이면 null(내부 실행이 한 번이라도 있었으면 존재).</summary>
+    public static string? GetClaudeRoomSettingsPath(string roomId)
+    {
+        var path = RoomSettingsPath(roomId);
+        return File.Exists(path) ? path : null;
+    }
+
     /// <summary>방별 claude --settings 파일을 생성하고 경로를 반환한다.
     /// 각 hook/statusLine command 에 roomId 를 인자로 박아, claude 가 부모 환경변수
     /// (DEVEZCODE_ROOM_ID)를 자식 hook 프로세스에 넘기지 못하는 환경에서도 어느 방인지 확실히 알게 한다.

@@ -143,6 +143,10 @@
     <PathGeometry x:Key="IconArchiveRestore"
         Figures="M2 2 M22 22 M3 3H21A1 1 0 0 1 22 4V7A1 1 0 0 1 21 8H3A1 1 0 0 1 2 7V4A1 1 0 0 1 3 3Z M4 8v11a2 2 0 0 0 2 2h2 M20 8v11a2 2 0 0 1-2 2h-2 M9 15l3-3 3 3 M12 12v9"/>
 
+    <!-- Lucide archive-restore arrow vertically mirrored: archive 안으로 이동 -->
+    <PathGeometry x:Key="IconArchiveMoveDown"
+        Figures="M2 2 M22 22 M3 3H21A1 1 0 0 1 22 4V7A1 1 0 0 1 21 8H3A1 1 0 0 1 2 7V4A1 1 0 0 1 3 3Z M4 8v11a2 2 0 0 0 2 2h2 M20 8v11a2 2 0 0 1-2 2h-2 M9 18l3 3 3-3 M12 21v-9"/>
+
     <PathGeometry x:Key="IconCalendar"
         Figures="M2 2 M22 22 M8 2v4 M16 2v4 M5 4 h14 a2 2 0 0 1 2 2 v14 a2 2 0 0 1 -2 2 h-14 a2 2 0 0 1 -2 -2 v-14 a2 2 0 0 1 2 -2 z M3 10 h18"/>
 
