@@ -123,6 +123,15 @@ public static class AgentRegistry
             UpdateCommand = "bun install -g gajae-code@latest",
             InlineTui = true,
         },
+        new()
+        {
+            // 하단 터미널 패널 전용 pseudo-agent — 에이전트 미연결 일반 셸(pwsh 우선, powershell 폴백).
+            // HiddenFromUI 로 피커/설정 비노출. 실제 커맨드는 TerminalSessionManager 의 shell 분기가 조립.
+            Id = "shell", DisplayName = "터미널", Provider = "Shell",
+            ExeNames = new[] { "pwsh.exe", "powershell.exe" },
+            Command = "pwsh",
+            InlineTui = true, // alt-screen 없음 — 로딩 오버레이를 첫 출력 기준으로 해제
+        },
     };
 
     public static AgentDef? Find(string? id)
@@ -212,6 +221,7 @@ public static class AgentRegistry
     /// 백엔드 코드(훅·런치 등)는 그대로 유지 — 나중에 다시 노출할 때 여기만 비우면 됨.</summary>
     public static readonly HashSet<string> HiddenFromUI = new(StringComparer.OrdinalIgnoreCase)
     {
+        "shell", // 하단 터미널 패널 전용 — 세션 피커/설정에 노출하지 않음
     };
 
     /// <summary>UI 노출 대상에서 제외한 에이전트만 반환.</summary>

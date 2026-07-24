@@ -163,6 +163,11 @@
 
                 <!-- Center: 워크스페이스 패널 A | (분할 시) 스플리터 + 패널 B -->
                 <Grid Grid.Column="2" x:Name="CenterSplit">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" MinHeight="220"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="ShellPanelRow" Height="0"/>
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition x:Name="PaneACol" Width="*"/>
                         <ColumnDefinition x:Name="PaneSplitterCol" Width="0"/>
@@ -180,6 +185,17 @@
                       IsHitTestVisible="False" Opacity="0" Panel.ZIndex="-1">
                     <views:TerminalHostView x:Name="WakeTerminal" Width="1" Height="1"/>
                 </Grid>
+
+                    <!-- 하단 터미널 패널(에이전트 미연결 pwsh). 푸터 ShellTerminalBtn 토글, 닫힘 = Row 0 + Collapsed(HwndHost 규칙). -->
+                    <GridSplitter x:Name="ShellPanelSplitter" Grid.Row="1" Grid.ColumnSpan="3" Height="4"
+                                  HorizontalAlignment="Stretch" Visibility="Collapsed"
+                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  DragCompleted="ShellPanelSplitter_DragCompleted"/>
+                    <Border x:Name="ShellTerminalPanel" Grid.Row="2" Grid.ColumnSpan="3" Visibility="Collapsed"
+                            Background="{DynamicResource BgBrush}"
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                        <views:TerminalHostView x:Name="ShellTerminal"/>
+                    </Border>
                 </Grid>
 
                 <GridSplitter x:Name="FileExpSplitter" Grid.Column="3" HorizontalAlignment="Stretch"
@@ -948,6 +964,12 @@
                                 Click="McpControlBtn_Click" ToolTip="MCP 컨트롤러" Margin="0,0,2,0"
                                 Visibility="Collapsed">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconZap}"
+                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
+                        </Button>
+                        <Button x:Name="ShellTerminalBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
+                                Click="ShellTerminalBtn_Click" ToolTip="터미널" Margin="0,0,2,0">
+                            <Path x:Name="ShellTerminalBtnIcon" Style="{StaticResource LucideIcon}"
+                                  Data="{StaticResource IconTerminal}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
                         <Button x:Name="WakeControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"

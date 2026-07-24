@@ -53,6 +53,8 @@ public static class SettingsService
         public double FileExpWidth { get; set; } = 300;
         // 최우측 계정 사용량 사이드바 펼침 상태. 기본 접힘.
         public bool   UsagePanelOpen { get; set; } = false;
+        /// <summary>하단 터미널 패널 높이(px). 스플리터 드래그로 변경·저장.</summary>
+        public double ShellTerminalHeight { get; set; } = 260;
         // 계정 사용량 오른쪽의 세션 완료 기록 사이드바 펼침 상태. 기본 접힘.
         public bool   SessionHistoryPanelOpen { get; set; } = false;
         // 세션 완료 기록 "한줄만 보기"/"전체보기" 토글 상태. 기본 한줄만 보기(=false).
@@ -310,6 +312,10 @@ public static class SettingsService
     // ── 최우측 계정 사용량 사이드바 펼침 상태 ────────────────────
     public static bool LoadUsagePanelOpen() => Current.UsagePanelOpen;
     public static void SaveUsagePanelOpen(bool open) { Current.UsagePanelOpen = open; Save(); }
+
+    // ── 하단 터미널 패널 높이 ─────────────────────────────────────
+    public static double LoadShellTerminalHeight() => Math.Max(120, Current.ShellTerminalHeight);
+    public static void SaveShellTerminalHeight(double h) { Current.ShellTerminalHeight = h; Save(); }
 
     // ── 세션 완료 기록 사이드바 펼침 상태 ───────────────────────
     public static bool LoadSessionHistoryPanelOpen() => Current.SessionHistoryPanelOpen;

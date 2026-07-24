@@ -157,7 +157,14 @@ public sealed class TerminalSessionManager
             if (agent.Id is "claude" or "codex" or "grok")
                 AgentModelCatalogRefreshRequested?.Invoke(agent.Id);
 
-            if (ccDir != null && agent.Id == "codex")
+            if (agent.Id == "shell")
+            {
+                // 하단 터미널 패널: 에이전트 미연결 빈 셸. 훅/resume/세션 추적 없음.
+                // cmd 래핑 없이 pwsh 를 직접 스폰(순수 .exe 라 셸 경유 불필요). cwd = 사용자 홈.
+                startDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                commandLine = $"\"{ResolveShellExe()}\" -NoLogo";
+            }
+            else if (ccDir != null && agent.Id == "codex")
             {
                 // codex: 클로드와 동일한 "직접 실행" 패턴 (--session-id/--resume, 훅으로 lastmsg/busy/session_id 추적).
                 // SupportsHooks=true 인 Claude 의 TryBuildDirectLaunch 와 별도 경로 — 커맨드/훅 스키마가 다름.
@@ -267,6 +274,33 @@ public sealed class TerminalSessionManager
     {
         OpenCodeCustomThemes.Apply(theme);
         KimiCustomThemes.Apply(theme);
+    }
+
+    /// <summary>하단 터미널 패널용 셸 실행 파일. 이름 우선순위(pwsh → powershell)로 PATH 전체를 훑는다
+    /// (AgentRegistry.ResolvePath 는 디렉터리 우선이라 System32 의 powershell 이 pwsh 를 이길 수 있음).</summary>
+    private static string ResolveShellExe()
+    {
+        foreach (var name in new[] { "pwsh.exe", "powershell.exe" })
+        {
+            foreach (var target in new[] { EnvironmentVariableTarget.Process,
+                                           EnvironmentVariableTarget.User, EnvironmentVariableTarget.Machine })
+            {
+                string path;
+                try { path = Environment.GetEnvironmentVariable("PATH", target) ?? ""; }
+                catch { continue; }
+                foreach (var dir in path.Split(Path.PathSeparator,
+                             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    try
+                    {
+                        var full = Path.Combine(dir, name);
+                        if (File.Exists(full)) return full;
+                    }
+                    catch { /* 잘못된 경로 무시 */ }
+                }
+            }
+        }
+        return "powershell.exe"; // 비현실적 폴백 — CreateProcess 가 PATH 해석
     }
 
     /// <summary>비-Claude 에이전트용 단순 cmd /k 커맨드라인. 세션 추적/훅 없음.

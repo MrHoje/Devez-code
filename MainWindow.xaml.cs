@@ -146,6 +146,25 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _wakeScheduler = new WakeSchedulerService(DispatchWakeAsync);
+
+        // 하단 터미널 패널: 셸이 exit 로 끝나면 패널을 닫고 방을 정리 — 다음 토글에 새 pwsh.
+        ShellTerminal.SessionExited += id =>
+        {
+            if (!string.Equals(id, ShellRoomId, StringComparison.Ordinal)) return;
+            Dispatcher.BeginInvoke(async () =>
+            {
+                ShellTerminal.CloseTerminal(ShellRoomId);
+                TerminalSessionManager.Instance.DisposeRoom(ShellRoomId, purgeTracking: false);
+                TerminalSessionManager.Instance.ClearDisposedRoom(ShellRoomId); // tombstone 해제 → 재생성 허용
+                if (_shellPanelOpen && !_shellPanelBusy)
+                {
+                    _shellPanelBusy = true;
+                    try { await ToggleShellPanelAsync(false); }
+                    catch (Exception ex) { DiagLog.Write($"shell panel close-on-exit failed: {ex.Message}"); }
+                    finally { _shellPanelBusy = false; }
+                }
+            });
+        };
         _idleSessionShutdownTimer.Tick += async (_, _) => await CheckIdleSessionsAsync();
         _externalSessionTimer.Tick += (_, _) => CheckExternalSessions();
         CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
@@ -739,6 +758,8 @@ public partial class MainWindow : Window
             FileExplorer.DisposeBrowser();
             _wakeScheduler.Dispose();
             WakeTerminal.Dispose();
+            ShellTerminal.Dispose();
+            TerminalSessionManager.Instance.DisposeRoom(ShellRoomId, purgeTracking: false);
             foreach (var roomId in _wakeRoomIds)
                 TerminalSessionManager.Instance.DisposeRoom(roomId, purgeTracking: false);
         };
@@ -829,6 +850,9 @@ public partial class MainWindow : Window
             if (!_readyToClose) e.Cancel = true;
             return;
         }
+        // 하단 터미널 패널(pwsh)은 graceful 종료 대상이 아니다 — flush 할 훅/transcript 가 없고
+        // Ctrl+C 로 죽지도 않아 perGrace 타임아웃만 소진한다. 종료 확정 즉시 하드 정리.
+        try { TerminalSessionManager.Instance.DisposeRoom(ShellRoomId, purgeTracking: false); } catch { }
         if (!TerminalSessionManager.Instance.HasSessionsToClose()) return; // 닫을 세션 없음(ConPTY 미생성)
 
         e.Cancel = true;
@@ -2110,6 +2134,89 @@ public partial class MainWindow : Window
             UnfreezeWorkspaceTerminals();
         }
         finally { _panelCoverBusy = false; }
+    }
+
+    // ── 하단 터미널 패널 (에이전트 미연결 pwsh) ─────────────────────────
+    private const string ShellRoomId = "devezcode-shell-terminal";
+    private bool _shellPanelOpen;
+    private bool _shellPanelBusy; // 토글 연타/exit 경합 무시
+
+    private async void ShellTerminalBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_shellPanelBusy) return;
+        _shellPanelBusy = true;
+        try { await ToggleShellPanelAsync(!_shellPanelOpen); }
+        catch (Exception ex) { DiagLog.Write($"shell panel toggle failed: {ex.Message}"); }
+        finally { _shellPanelBusy = false; }
+    }
+
+    /// <summary>하단 터미널 패널 슬라이드 토글. 워크스페이스 터미널은 webCover 로 정지(리사이즈 경로 —
+    /// .knowledge/webview2-airspace 문서), 패널 자신은 지연 생성(첫 열기에 ShowTerminal).</summary>
+    private async Task ToggleShellPanelAsync(bool open)
+    {
+        _shellPanelOpen = open;
+        await FreezeWorkspaceTerminalsAsync();
+        try
+        {
+            ShellPanelRow.MinHeight = 0; // 애니메이션 중 MinHeight 클램프 방지 (열기 시작점 0 / 닫기 하강 모두)
+            if (open)
+            {
+                SettingsService.SaveAgentForRoom(ShellRoomId, "shell"); // LaunchSession 의 shell 분기로 라우팅
+                ShellTerminalPanel.Visibility = Visibility.Visible;
+                ShellPanelSplitter.Visibility = Visibility.Visible;
+                ShellTerminal.ShowTerminal(ShellRoomId); // 살아있으면 재사용, 없으면 새 pwsh (지연 생성+유지)
+            }
+            // 저장 높이가 현재 창보다 크면 클램프 (Row0 MinHeight=220 + 스플리터 4px 확보)
+            double maxH = Math.Max(120, CenterSplit.ActualHeight - 220 - 4);
+            double target = open ? Math.Min(SettingsService.LoadShellTerminalHeight(), maxH) : 0;
+            await AnimateShellPanelRowAsync(target, TimeSpan.FromMilliseconds(180));
+            if (open) ShellPanelRow.MinHeight = 120; // 스플리터 드래그 하한
+            else
+            {
+                ShellTerminalPanel.Visibility = Visibility.Collapsed; // HwndHost 는 Collapsed 로만 숨김
+                ShellPanelSplitter.Visibility = Visibility.Collapsed;
+            }
+        }
+        finally
+        {
+            UpdateLayout(); // webCover resume 전 최종 폭 확정 (expectWidth 정확성)
+            UnfreezeWorkspaceTerminals();
+            UpdateShellToggleVisual();
+        }
+    }
+
+    private Task AnimateShellPanelRowAsync(double to, TimeSpan duration)
+    {
+        var tcs = new TaskCompletionSource();
+        var anim = new Behaviors.GridLengthAnimation
+        {
+            From = new GridLength(ShellPanelRow.ActualHeight),
+            To = new GridLength(to),
+            Duration = new Duration(duration),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        };
+        anim.Completed += (_, _) =>
+        {
+            // 애니메이션 값 지배 해제 후 로컬 값으로 확정 (이후 스플리터 드래그가 동작하도록)
+            ShellPanelRow.BeginAnimation(RowDefinition.HeightProperty, null);
+            ShellPanelRow.Height = new GridLength(to);
+            tcs.TrySetResult();
+        };
+        ShellPanelRow.BeginAnimation(RowDefinition.HeightProperty, anim);
+        return tcs.Task;
+    }
+
+    /// <summary>토글 버튼 아이콘 색 — 열림 = PrimaryBrush, 닫힘 = TextMutedBrush (테마 추종).</summary>
+    private void UpdateShellToggleVisual()
+        => ShellTerminalBtnIcon.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,
+            _shellPanelOpen ? "PrimaryBrush" : "TextMutedBrush");
+
+    /// <summary>스플리터 드래그 끝 → 새 높이 저장 (재실행 시 복원).</summary>
+    private void ShellPanelSplitter_DragCompleted(object sender,
+        System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (e.Canceled || !_shellPanelOpen) return;
+        SettingsService.SaveShellTerminalHeight(ShellPanelRow.ActualHeight);
     }
 
     /// <summary>타이틀 "DevezCode" 세 번 클릭 → GPU/소프트웨어 렌더 즉시 전환(설정 영속, UI 알림 없음).</summary>
