@@ -173,13 +173,16 @@
                         <ColumnDefinition x:Name="PaneSplitterCol" Width="0"/>
                         <ColumnDefinition x:Name="PaneBCol" Width="0"/>
                     </Grid.ColumnDefinitions>
-                    <views:WorkspacePaneView x:Name="PaneA" Grid.Column="0"/>
+                    <!-- 하단 터미널 패널 열림 시 코드에서 BorderThickness 하단 1px 토글 (더블라인 채널) -->
+                    <views:WorkspacePaneView x:Name="PaneA" Grid.Column="0"
+                                             BorderBrush="{DynamicResource LineBrush}"/>
                     <GridSplitter x:Name="PaneSplitter" Grid.Column="1" Width="4"
                                   HorizontalAlignment="Stretch" Visibility="Collapsed"
                                   ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                                   DragDelta="PaneSplitter_DragDelta"
                                   DragCompleted="PaneSplitter_DragCompleted"/>
-                    <views:WorkspacePaneView x:Name="PaneB" Grid.Column="2" Visibility="Collapsed"/>
+                    <views:WorkspacePaneView x:Name="PaneB" Grid.Column="2" Visibility="Collapsed"
+                                             BorderBrush="{DynamicResource LineBrush}"/>
                 <!-- 화면에 보이지 않는 깨우기 전용 터미널 호스트. 세션을 활성화하거나 포커스하지 않는다. -->
                 <Grid x:Name="WakeTerminalHost" Width="1" Height="1" Margin="-100,-100,0,0"
                       IsHitTestVisible="False" Opacity="0" Panel.ZIndex="-1">
@@ -193,7 +196,7 @@
                                   DragCompleted="ShellPanelSplitter_DragCompleted"/>
                     <Border x:Name="ShellTerminalPanel" Grid.Row="2" Grid.ColumnSpan="3" Visibility="Collapsed"
                             Background="{DynamicResource BgBrush}"
-                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,1,1,0">
                         <views:TerminalHostView x:Name="ShellTerminal"/>
                     </Border>
                 </Grid>

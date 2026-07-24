@@ -2150,32 +2150,38 @@ public partial class MainWindow : Window
         finally { _shellPanelBusy = false; }
     }
 
-    /// <summary>하단 터미널 패널 슬라이드 토글. 워크스페이스 터미널은 webCover 로 정지(리사이즈 경로 —
-    /// .knowledge/webview2-airspace 문서), 패널 자신은 지연 생성(첫 열기에 ShowTerminal).</summary>
+    /// <summary>하단 터미널 패널 즉시 토글(사이드 패널과 동일 방식 — 애니메이션 없음).
+    /// 워크스페이스 터미널은 webCover 로 정지(리사이즈 경로 — .knowledge/webview2-airspace 문서),
+    /// 패널 자신은 지연 생성(첫 열기에 ShowTerminal). 열림 시 세션영역 하단 보더를 함께 토글해
+    /// 하단 보더 + 4px 채널 + 패널 상단 보더의 더블라인 채널(devez 관례)을 만든다.</summary>
     private async Task ToggleShellPanelAsync(bool open)
     {
         _shellPanelOpen = open;
         await FreezeWorkspaceTerminalsAsync();
         try
         {
-            ShellPanelRow.MinHeight = 0; // 애니메이션 중 MinHeight 클램프 방지 (열기 시작점 0 / 닫기 하강 모두)
             if (open)
             {
                 SettingsService.SaveAgentForRoom(ShellRoomId, "shell"); // LaunchSession 의 shell 분기로 라우팅
                 ShellTerminalPanel.Visibility = Visibility.Visible;
                 ShellPanelSplitter.Visibility = Visibility.Visible;
                 ShellTerminal.ShowTerminal(ShellRoomId); // 살아있으면 재사용, 없으면 새 pwsh (지연 생성+유지)
+                // 저장 높이가 현재 창보다 크면 클램프 (Row0 MinHeight=220 + 스플리터 4px 확보)
+                double maxH = Math.Max(120, CenterSplit.ActualHeight - 220 - 4);
+                ShellPanelRow.Height = new GridLength(Math.Min(SettingsService.LoadShellTerminalHeight(), maxH));
+                ShellPanelRow.MinHeight = 120; // 스플리터 드래그 하한
             }
-            // 저장 높이가 현재 창보다 크면 클램프 (Row0 MinHeight=220 + 스플리터 4px 확보)
-            double maxH = Math.Max(120, CenterSplit.ActualHeight - 220 - 4);
-            double target = open ? Math.Min(SettingsService.LoadShellTerminalHeight(), maxH) : 0;
-            await AnimateShellPanelRowAsync(target, TimeSpan.FromMilliseconds(180));
-            if (open) ShellPanelRow.MinHeight = 120; // 스플리터 드래그 하한
             else
             {
+                ShellPanelRow.MinHeight = 0; // MinHeight 가 남으면 Height=0 이 클램프되어 안 닫힌다
+                ShellPanelRow.Height = new GridLength(0);
                 ShellTerminalPanel.Visibility = Visibility.Collapsed; // HwndHost 는 Collapsed 로만 숨김
                 ShellPanelSplitter.Visibility = Visibility.Collapsed;
             }
+            // 세션영역(패널 위 콘텐츠) 하단 1px 보더 — 패널이 열렸을 때만 (airspace 상 오버레이 불가, 레이아웃 보더로 처리)
+            var paneBottom = new Thickness(0, 0, 0, open ? 1 : 0);
+            PaneA.BorderThickness = paneBottom;
+            PaneB.BorderThickness = paneBottom;
         }
         finally
         {
@@ -2183,27 +2189,6 @@ public partial class MainWindow : Window
             UnfreezeWorkspaceTerminals();
             UpdateShellToggleVisual();
         }
-    }
-
-    private Task AnimateShellPanelRowAsync(double to, TimeSpan duration)
-    {
-        var tcs = new TaskCompletionSource();
-        var anim = new Behaviors.GridLengthAnimation
-        {
-            From = new GridLength(ShellPanelRow.ActualHeight),
-            To = new GridLength(to),
-            Duration = new Duration(duration),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-        };
-        anim.Completed += (_, _) =>
-        {
-            // 애니메이션 값 지배 해제 후 로컬 값으로 확정 (이후 스플리터 드래그가 동작하도록)
-            ShellPanelRow.BeginAnimation(RowDefinition.HeightProperty, null);
-            ShellPanelRow.Height = new GridLength(to);
-            tcs.TrySetResult();
-        };
-        ShellPanelRow.BeginAnimation(RowDefinition.HeightProperty, anim);
-        return tcs.Task;
     }
 
     /// <summary>토글 버튼 아이콘 색 — 열림 = PrimaryBrush, 닫힘 = TextMutedBrush (테마 추종).</summary>
