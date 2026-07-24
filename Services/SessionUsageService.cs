@@ -17,8 +17,8 @@ namespace DevezCode.Services;
 /// 마지막 token_count 한 줄만 tail 로 읽는다. 상태는 %AppData%\DevezCode\usage.json 에 영속(재시작 시 이어읽기).</summary>
 public static class SessionUsageService
 {
-    /// <summary>방(세션) 하나의 누적 토큰. Codex 는 CacheWrite* 가 0, CacheRead 에 cached_input_tokens 를 담는다.
-    /// 그래서 InputTotal·Cost 공식이 claude/codex 공통으로 성립한다.</summary>
+    /// <summary>방(세션) 하나의 누적 토큰. Codex 는 CacheRead=cached_input_tokens, CacheWrite5m=cache_write_input_tokens
+    /// (GPT-5.6+ write 과금 ×1.25 = DefW5m 과 동일), CacheWrite1h=0. InputTotal·Cost 공식이 claude/codex 공통 성립.</summary>
     public readonly record struct UsageTotals(
         long InputNew, long CacheWrite5m, long CacheWrite1h, long CacheRead, long Output,
         string? Model, string AgentLabel)
@@ -62,12 +62,18 @@ public static class SessionUsageService
                         r.CacheWrite5m ?? DefW5m, r.CacheWrite1h ?? DefW1h, r.CacheRead ?? DefRead);
         }
         catch { /* 설정 로드 실패 시 내장 기본값으로 */ }
-        // 내장 기본값(설정에 없을 때) — 캐시 배수는 표준값
+        // 내장 기본값(설정에 없을 때) — 캐시 배수는 표준값. 구체적 모델을 먼저 검사(contains 매칭).
         if (m.Contains("fable") || m.Contains("mythos")) return new Price(10, 50, DefW5m, DefW1h, DefRead);
         if (m.Contains("opus")) return new Price(5, 25, DefW5m, DefW1h, DefRead);
-        if (m.Contains("sonnet")) return new Price(3, 15, DefW5m, DefW1h, DefRead);
+        if (m.Contains("sonnet")) return new Price(3, 15, DefW5m, DefW1h, DefRead); // Sonnet 5 정가(인트로 $2/$10 은 2026-08 까지 — 정가 기준 표시)
         if (m.Contains("haiku")) return new Price(1, 5, DefW5m, DefW1h, DefRead);
-        if (m.Contains("gpt-5") || m.Contains("codex") || m.Contains("gpt5")) return new Price(1.25, 10, DefW5m, DefW1h, DefRead); // GPT-5 계열 근사
+        // GPT-5.6 티어별(2026-07 공시가). cached read ×0.1, cache write ×1.25(5.6부터 write 과금).
+        if (m.Contains("gpt-5.6-terra")) return new Price(2.5, 15, DefW5m, DefW1h, DefRead);
+        if (m.Contains("gpt-5.6-luna")) return new Price(1, 6, DefW5m, DefW1h, DefRead);
+        if (m.Contains("gpt-5.6")) return new Price(5, 30, DefW5m, DefW1h, DefRead); // sol + 티어 미표기 폴백
+        if (m.Contains("gpt-5.5")) return new Price(5, 30, DefW5m, DefW1h, DefRead);
+        if (m.Contains("gpt-5.3-codex")) return new Price(1.75, 14, DefW5m, DefW1h, DefRead);
+        if (m.Contains("gpt-5") || m.Contains("codex") || m.Contains("gpt5")) return new Price(1.25, 10, DefW5m, DefW1h, DefRead); // 구 GPT-5/gpt-5-codex
         return null;
     }
 
@@ -188,6 +194,9 @@ public static class SessionUsageService
         if (s.Contains("sonnet")) return "Sonnet";
         if (s.Contains("haiku")) return "Haiku";
         if (s.Contains("fable")) return "Fable";
+        if (s.Contains("gpt-5.6-sol")) return "5.6 Sol";
+        if (s.Contains("gpt-5.6-terra")) return "5.6 Terra";
+        if (s.Contains("gpt-5.6-luna")) return "5.6 Luna";
         return m;
     }
 
@@ -221,10 +230,11 @@ public static class SessionUsageService
             var info = d.RootElement.GetProperty("payload").GetProperty("info").GetProperty("total_token_usage");
             long input = GetLong(info, "input_tokens");
             long cached = GetLong(info, "cached_input_tokens");
+            long cw = GetLong(info, "cache_write_input_tokens"); // GPT-5.6부터 write 과금(×1.25) — CacheWrite5m 버킷으로 계산
             long output = GetLong(info, "output_tokens");
-            long inNew = Math.Max(0, input - cached);
-            var t = new UsageTotals(inNew, 0, 0, cached, output, model ?? "gpt-5-codex", "Codex")
-            { Cost = CostOf(model ?? "gpt-5-codex", inNew, 0, 0, cached, output) };
+            long inNew = Math.Max(0, input - cached - cw); // input_tokens 는 cached/write 포함 총계
+            var t = new UsageTotals(inNew, cw, 0, cached, output, model ?? "gpt-5-codex", "Codex")
+            { Cost = CostOf(model ?? "gpt-5-codex", inNew, cw, 0, cached, output) };
             _cache[roomId] = new Entry { Sid = sid, LastLen = len, Totals = t, Offset = -1 };
             return t.HasData ? t : null;
         }
