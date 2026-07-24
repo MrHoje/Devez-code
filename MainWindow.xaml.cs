@@ -4449,6 +4449,7 @@ public partial class MainWindow : Window
         if (IsActive) return;
         var hwnd = _mainHwnd != IntPtr.Zero ? _mainHwnd : new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
+        if (IsWindowVisibleToUser(hwnd)) return; // 카카오톡식: 창이 보이면 깜빡이지 않고, 최소화/가려졌을 때만 알린다.
 
         var info = new FLASHWINFO
         {
@@ -6318,6 +6319,34 @@ public partial class MainWindow : Window
     }
 
     [DllImport("user32.dll")] private static extern bool FlashWindowEx(ref FLASHWINFO pwfi);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(POINT p);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
+
+    /// <summary>창이 사용자에게 실제로 보이는지 판정. 최소화면 false. 화면상 중앙/네 사분점 중 하나라도
+    /// 우리 창(루트)이 최상단이면 true(=보임). 다른 창이 완전히 덮으면 false(=가려짐).</summary>
+    private static bool IsWindowVisibleToUser(IntPtr hwnd)
+    {
+        if (IsIconic(hwnd)) return false;
+        if (!GetWindowRect(hwnd, out var r)) return true; // 판정 불가 시 보수적으로 보임 처리(깜빡임 억제)
+        int w = r.Right - r.Left, h = r.Bottom - r.Top;
+        if (w <= 0 || h <= 0) return false;
+        var samples = new[]
+        {
+            new POINT { X = r.Left + w / 2, Y = r.Top + h / 2 }, // 중앙
+            new POINT { X = r.Left + w / 4, Y = r.Top + h / 4 },
+            new POINT { X = r.Left + w * 3 / 4, Y = r.Top + h / 4 },
+            new POINT { X = r.Left + w / 4, Y = r.Top + h * 3 / 4 },
+            new POINT { X = r.Left + w * 3 / 4, Y = r.Top + h * 3 / 4 },
+        };
+        foreach (var p in samples)
+        {
+            var top = GetAncestor(WindowFromPoint(p), 2 /*GA_ROOT*/);
+            if (top == hwnd) return true;
+        }
+        return false;
+    }
 
     /// <summary>창이 좁아질 때 우측 패널(탐색기/DIFF)이 화면 밖으로 잘리지 않게 폭을 가용 범위로 클램프.
     /// 최대화 상태에서 패널을 넓힌 뒤 창모드로 복원하면 고정 px 폭이 남아 오른쪽이 잘리던 문제를 막는다.</summary>
