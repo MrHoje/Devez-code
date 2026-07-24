@@ -80,11 +80,11 @@ public sealed class SessionItem : TabItemBase
         get => _isBusy;
         set
         {
-            bool wasActive = _isBusy || _isWaitingChoice;
             if (!Set(ref _isBusy, value)) return;
             if (value) StartBusyElapsed();
             else ResetBusyElapsed();
-            TriggerCompletionPulseIfNeeded(wasActive);
+            // 완료 펄스는 setter 원시 전이(서브에이전트 드레인 flap 포함)가 아니라
+            // EmitSessionFinished 확정 지점에서만 켠다 → 완료기록과 동일 게이트.
         }
     }
 
@@ -144,13 +144,8 @@ public sealed class SessionItem : TabItemBase
     public bool IsWaitingChoice
     {
         get => _isWaitingChoice;
-        set
-        {
-            bool wasActive = _isBusy || _isWaitingChoice;
-            if (!Set(ref _isWaitingChoice, value)) return;
-            if (value) TriggerAttentionPulse();
-            else TriggerCompletionPulseIfNeeded(wasActive);
-        }
+        // 대기 펄스도 EmitSessionWaiting 확정 지점에서만 켠다(setter 즉발 금지).
+        set => Set(ref _isWaitingChoice, value);
     }
 
     private bool _isCompletionPulsing;
@@ -163,16 +158,12 @@ public sealed class SessionItem : TabItemBase
         private set => Set(ref _isCompletionPulsing, value);
     }
 
-    private void TriggerCompletionPulseIfNeeded(bool wasActive)
+    /// <summary>탭·세션 행에 완료/대기 알림 펄스를 켠다. 이미 보고 있는 세션(IsActive)에는 표시하지 않는다.
+    /// busy/waiting setter 원시 전이가 아니라 완료·대기 확정 지점(EmitSessionFinished/EmitSessionWaiting)에서만
+    /// 호출해야 한다 — 서브에이전트 드레인 flap 같은 가짜 idle 에 깜빡이지 않도록.</summary>
+    public void TriggerAttentionPulse()
     {
-        // 이미 화면에서 보고 있는 세션은 완료 사실을 확인한 상태이므로 펄스를 만들지 않는다.
-        if (!wasActive || _isBusy || _isWaitingChoice || IsActive) return;
-        TriggerAttentionPulse();
-    }
-
-    private void TriggerAttentionPulse()
-    {
-        // 입력 대기 진입도 바로 알려야 하지만, 이미 보고 있는 세션에는 표시하지 않는다.
+        // 이미 보고 있는 세션에는 표시하지 않는다.
         if (IsActive) return;
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher == null) return;

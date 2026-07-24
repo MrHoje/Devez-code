@@ -4376,6 +4376,7 @@ public partial class MainWindow : Window
         // 현재 이 방의 터미널에 실제 포커스가 있는 패널만 JS 에서 blur→focus 초기화한다.
         foreach (var pane in _panes) pane.Terminal.ResetImeAfterResponse(s.Id);
         AddSessionCompletionRecord(s);
+        s.TriggerAttentionPulse(); // 탭·세션 행 완료 펄스(완료기록과 동일 게이트 — 서브 드레인 flap 제외)
         var proj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Tabs.Contains(s));
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
@@ -4427,6 +4428,7 @@ public partial class MainWindow : Window
 
     private void EmitSessionWaiting(SessionItem s)
     {
+        s.TriggerAttentionPulse(); // 입력 대기 진입 펄스(확정 지점에서만 — setter 즉발 금지)
         RequestTaskbarAttention();
         if (!SettingsService.LoadNotifySessionDoneEnabled()) return;
 
@@ -5467,11 +5469,9 @@ public partial class MainWindow : Window
         WorkspaceStore.Save(_projects, _archivedProjects);
 
         // 보관 항목 제거는 중앙 패널과 무관(이미 패널에 없음).
+        // 삭제 후에는 다른 프로젝트를 자동 선택하지 않고 빈 상태로 둔다.
         if (!fromArchive)
-        {
-            var next = _projects.FirstOrDefault();
-            foreach (var pane in _panes) pane.OnProjectRemoved(proj, next);
-        }
+            foreach (var pane in _panes) pane.OnProjectRemoved(proj, null);
         UpdateStatus();
     }
 
