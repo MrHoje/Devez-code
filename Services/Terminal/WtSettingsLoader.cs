@@ -241,6 +241,10 @@ public static class WtSettingsLoader
 
         // ── 셸 커맨드라인
         string commandLine = Pick("commandline") ?? ResolveShellFallback(hasProfile ? profile : default, hasProfile);
+        // WT default profile 이 pwsh/wsl 등을 가리키지만 그 바이너리가 실제로 없으면(미설치/제거)
+        // CreateProcessW 가 "셸 실행 실패"로 throw 돼 세션 생성 자체가 죽는다. 실행 가능 여부를 확인해
+        // 불가하면 항상 존재하는 powershell.exe 로 폴백한다.
+        commandLine = EnsureRunnableShell(commandLine);
 
         // ── 시작 디렉터리
         string? startingDirectory = Pick("startingDirectory");
@@ -261,6 +265,66 @@ public static class WtSettingsLoader
             FontSizePx = Math.Round(pt * PtToPx, 1),
             Scheme = scheme,
         };
+    }
+
+    /// <summary>커맨드라인 선두 실행 파일이 실제로 실행 가능한지 확인하고, 아니면 안전한 셸로 폴백한다.
+    /// 검증이 예외로 실패하면 원본을 그대로 둔다(오탐으로 정상 셸을 죽이지 않음).</summary>
+    private static string EnsureRunnableShell(string commandLine)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine)) return "powershell.exe";
+        try
+        {
+            var exe = ExtractLeadingExecutable(commandLine);
+            if (exe == null || ExecutableResolvable(exe)) return commandLine;
+            DevezCode.Services.DiagLog.Write(
+                $"WT 셸 커맨드라인 실행 불가 → powershell.exe 폴백: [{commandLine}]");
+            return "powershell.exe"; // System32 상주 — 항상 실행 가능
+        }
+        catch (Exception) { return commandLine; }
+    }
+
+    /// <summary>커맨드라인에서 선두 실행 파일 토큰만 뽑는다(인용/공백 처리). 환경변수는 확장.</summary>
+    private static string? ExtractLeadingExecutable(string commandLine)
+    {
+        var s = commandLine.TrimStart();
+        if (s.Length == 0) return null;
+
+        string token;
+        if (s[0] == '"')
+        {
+            int end = s.IndexOf('"', 1);
+            token = end > 0 ? s.Substring(1, end - 1) : s.Substring(1);
+        }
+        else
+        {
+            int sp = s.IndexOfAny(new[] { ' ', '\t' });
+            token = sp > 0 ? s.Substring(0, sp) : s;
+        }
+
+        token = Environment.ExpandEnvironmentVariables(token);
+        return token.Length == 0 ? null : token;
+    }
+
+    /// <summary>실행 파일이 절대/상대 경로면 File.Exists, bare 이름이면 PATH·WindowsApps 스캔으로 확인.</summary>
+    private static bool ExecutableResolvable(string exe)
+    {
+        // 경로 구분자·드라이브 포함 → 경로로 취급
+        if (exe.IndexOf('\\') >= 0 || exe.IndexOf('/') >= 0 || (exe.Length >= 2 && exe[1] == ':'))
+            return File.Exists(exe);
+
+        var withExt = Path.HasExtension(exe) ? exe : exe + ".exe";
+        var paths = (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var dir in paths)
+        {
+            var candidate = Path.Combine(dir.Trim('"'), withExt);
+            if (File.Exists(candidate)) return true;
+        }
+
+        var windowsApps = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Microsoft", "WindowsApps", withExt);
+        return File.Exists(windowsApps);
     }
 
     private static string ResolveShellFallback(JsonElement profile, bool hasProfile)
