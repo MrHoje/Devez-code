@@ -649,6 +649,8 @@ public sealed class ProjectItem : NotifyBase
             var query = value ?? "";
             if (!Set(ref _sessionSearchQuery, query)) return;
             OnPropertyChanged(nameof(HasSessionSearchQuery));
+            OnPropertyChanged(nameof(ShowHiddenSessionsInCurrentView));
+            OnPropertyChanged(nameof(ShowHiddenGroup));
             foreach (var session in Sessions)
                 ApplySidebarSearch(session);
             RefreshSidebarGroups();
@@ -672,8 +674,15 @@ public sealed class ProjectItem : NotifyBase
     /// </summary>
     public void ApplySidebarSearch(string query, bool showAllSessions)
     {
-        _sidebarSearchQuery = query ?? "";
+        var normalizedQuery = query ?? "";
+        bool queryChanged = !StringComparer.Ordinal.Equals(_sidebarSearchQuery, normalizedQuery);
+        _sidebarSearchQuery = normalizedQuery;
         _showAllSidebarSessions = showAllSessions;
+        if (queryChanged)
+        {
+            OnPropertyChanged(nameof(ShowHiddenSessionsInCurrentView));
+            OnPropertyChanged(nameof(ShowHiddenGroup));
+        }
         foreach (var session in Sessions)
             ApplySidebarSearch(session);
         RefreshSidebarGroups(); // IsSearchVisible 이 라벨 캐리어 선정에 쓰이므로 재계산
@@ -691,8 +700,12 @@ public sealed class ProjectItem : NotifyBase
     public ObservableCollection<SessionItem> HiddenSessions { get; } = new();
     /// <summary>숨김 세션이 하나라도 있는지 — 숨김 그룹 세퍼레이터/표시 여부.</summary>
     public bool HasHiddenSessions => HiddenSessions.Count > 0;
-    /// <summary>ShowHiddenSessions 토글이 켜져 있고 숨김 세션이 실제로 있을 때만 숨김 그룹을 보인다.</summary>
-    public bool ShowHiddenGroup => ShowHiddenSessions && HasHiddenSessions;
+    /// <summary>평소 숨김 표시 토글이 켜졌거나 검색 중이면 숨김 세션도 현재 결과에 포함한다.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ShowHiddenSessionsInCurrentView =>
+        ShowHiddenSessions || _sidebarSearchQuery.Length > 0 || _sessionSearchQuery.Length > 0;
+    /// <summary>현재 보기에서 숨김 세션을 표시하고 실제 숨김 세션이 있을 때만 숨김 그룹을 보인다.</summary>
+    public bool ShowHiddenGroup => ShowHiddenSessionsInCurrentView && HasHiddenSessions;
 
     // ── 프로젝트 카드 헤더의 집계 세션 상태 (펼치지 않아도 한눈에) ──
     /// <summary>이 프로젝트의 총 세션 수.</summary>
@@ -713,6 +726,7 @@ public sealed class ProjectItem : NotifyBase
         set
         {
             if (!Set(ref _showHiddenSessions, value)) return;
+            OnPropertyChanged(nameof(ShowHiddenSessionsInCurrentView));
             OnPropertyChanged(nameof(ShowHiddenGroup));
             RefreshSidebarGroups(); // 접힘 여부가 라벨 캐리어 선정에 쓰이므로 재계산
         }
@@ -1257,7 +1271,7 @@ public sealed class ProjectItem : NotifyBase
 
         // 카드 그룹에서 실제로 접히는 행(검색 불일치·숨김 세션+표시 토글 꺼짐)은 라벨을 붙여도
         // 안 보이므로 캐리어에서 제외하고 다음 표시 형제에게 넘긴다. 접힌 행은 run 을 끊지 않는다.
-        bool RowVisible(SessionItem s) => s.IsSearchVisible && (!s.Hidden || ShowHiddenSessions);
+        bool RowVisible(SessionItem s) => s.IsSearchVisible && (!s.Hidden || ShowHiddenSessionsInCurrentView);
 
         void Mark(List<TabItemBase> group, List<TabItemBase> other)
         {

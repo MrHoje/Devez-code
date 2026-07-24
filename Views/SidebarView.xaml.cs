@@ -247,7 +247,6 @@ public partial class SidebarView : UserControl
             folder.ColumnToggleAvailable = _projectColumns == 2;
             folder.UpdateSummary(allProjects, desired.Count, hasQuery);
             folder.IsSearchVisible = !hasQuery || folderMatches || desired.Count > 0;
-            if (hasQuery && folder.IsSearchVisible) folder.IsExpanded = true;
         }
 
         var activeFolders = folders.Where(folder => folder.IsActive).ToList();
@@ -583,12 +582,6 @@ public partial class SidebarView : UserControl
     private void ApplySidebarSearch()
     {
         _sidebarSearchQuery = SidebarSearchBox.Text?.Trim() ?? "";
-        if (_sidebarSearchQuery.Length > 0)
-            foreach (var project in CurrentProjects)
-                if (!project.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase) &&
-                    project.Sessions.Any(session =>
-                        session.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase)))
-                    project.IsExpanded = true;
         RefreshProjectGroups();
     }
 

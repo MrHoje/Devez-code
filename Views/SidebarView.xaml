@@ -353,7 +353,7 @@
                         <Condition Binding="{Binding Tag, RelativeSource={RelativeSource FindAncestor, AncestorType=ItemsControl}}" Value="False"/>
                         <Condition Binding="{Binding HasSessionParent}" Value="True"/>
                         <Condition Binding="{Binding Hidden}" Value="True"/>
-                        <Condition Binding="{Binding DataContext.ShowHiddenSessions, RelativeSource={RelativeSource FindAncestor, AncestorType=ItemsControl}}" Value="False"/>
+                        <Condition Binding="{Binding DataContext.ShowHiddenSessionsInCurrentView, RelativeSource={RelativeSource FindAncestor, AncestorType=ItemsControl}}" Value="False"/>
                     </MultiDataTrigger.Conditions>
                     <Setter TargetName="SessionRowLayout" Property="Visibility" Value="Collapsed"/>
                 </MultiDataTrigger>
