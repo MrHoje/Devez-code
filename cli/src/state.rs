@@ -8,7 +8,10 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     editor::Editor,
-    renderer::{Block, BlockKind, OverlayLine, OverlayView, SuggestionView, View, WelcomeView},
+    renderer::{
+        Block, BlockKind, OverlayLine, OverlayView, StatusLineView, SuggestionView, View,
+        WelcomeView,
+    },
 };
 
 const SPINNER: [&str; 8] = ["✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳"];
@@ -72,7 +75,6 @@ pub struct ModelInfo {
     pub id: String,
     pub model: String,
     pub display_name: String,
-    pub description: String,
     pub efforts: Vec<EffortInfo>,
     pub default_effort: String,
     pub is_default: bool,
@@ -81,7 +83,6 @@ pub struct ModelInfo {
 #[derive(Clone)]
 pub struct EffortInfo {
     pub id: String,
-    pub description: String,
 }
 
 impl ModelInfo {
@@ -93,11 +94,6 @@ impl ModelInfo {
             .filter_map(|entry| {
                 Some(EffortInfo {
                     id: entry.get("reasoningEffort")?.as_str()?.to_owned(),
-                    description: entry
-                        .get("description")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
                 })
             })
             .collect::<Vec<_>>();
@@ -105,11 +101,6 @@ impl ModelInfo {
             id: value.get("id")?.as_str()?.to_owned(),
             model: value.get("model")?.as_str()?.to_owned(),
             display_name: value.get("displayName")?.as_str()?.to_owned(),
-            description: value
-                .get("description")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
             default_effort: value.get("defaultReasoningEffort")?.as_str()?.to_owned(),
             efforts,
             is_default: value
@@ -275,7 +266,15 @@ impl SessionPicker {
                 self.selected = self.selected.saturating_sub(1);
                 SessionPickerResult::None
             }
+            KeyCode::Char('p') if ctrl => {
+                self.selected = self.selected.saturating_sub(1);
+                SessionPickerResult::None
+            }
             KeyCode::Down => {
+                self.selected = (self.selected + 1).min(self.filtered_len().saturating_sub(1));
+                SessionPickerResult::None
+            }
+            KeyCode::Char('n') if ctrl => {
                 self.selected = (self.selected + 1).min(self.filtered_len().saturating_sub(1));
                 SessionPickerResult::None
             }
@@ -292,6 +291,11 @@ impl SessionPicker {
                 .get(self.selected)
                 .map(|session| SessionPickerResult::Select(session.id.clone()))
                 .unwrap_or(SessionPickerResult::None),
+            KeyCode::Backspace if ctrl => {
+                self.query.delete_word_left();
+                self.selected = 0;
+                SessionPickerResult::None
+            }
             KeyCode::Backspace => {
                 self.query.backspace();
                 self.selected = 0;
@@ -308,6 +312,14 @@ impl SessionPicker {
             }
             KeyCode::Right => {
                 self.query.move_right();
+                SessionPickerResult::None
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
+                self.query.move_word_left();
+                SessionPickerResult::None
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
+                self.query.move_word_right();
                 SessionPickerResult::None
             }
             KeyCode::Home => {
@@ -495,6 +507,12 @@ impl AppState {
             .unwrap_or("default")
     }
 
+    pub fn selected_model_display_name(&self) -> &str {
+        self.selected_model()
+            .map(|model| model.display_name.as_str())
+            .unwrap_or_else(|| self.selected_model_name())
+    }
+
     pub fn selected_effort(&self) -> &str {
         &self.selected_effort
     }
@@ -612,7 +630,7 @@ impl AppState {
             overlay: self.overlay_view(),
             editor: &self.editor,
             welcome: self.show_welcome.then(|| WelcomeView {
-                model: self.selected_model_name().to_owned(),
+                model: self.selected_model_display_name().to_owned(),
                 effort: self.effort_label(),
                 cwd: self.cwd.clone(),
                 account: self.account.clone(),
@@ -623,7 +641,8 @@ impl AppState {
                 Vec::new()
             },
             activity: self.activity(),
-            footer: self.footer(),
+            footer: String::new(),
+            status_line: Some(self.status_line()),
         }
     }
 
@@ -662,6 +681,20 @@ impl AppState {
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
 
         let slash_matches = self.matching_slash_commands();
+        if !slash_matches.is_empty() && ctrl {
+            match key.code {
+                KeyCode::Char('p') => {
+                    self.command_selection = self.command_selection.saturating_sub(1);
+                    return Action::None;
+                }
+                KeyCode::Char('n') => {
+                    self.command_selection =
+                        (self.command_selection + 1).min(slash_matches.len() - 1);
+                    return Action::None;
+                }
+                _ => {}
+            }
+        }
         if !slash_matches.is_empty() && !ctrl && !alt {
             match key.code {
                 KeyCode::Up => {
@@ -707,6 +740,10 @@ impl AppState {
                 }
             }
             KeyCode::Char('d') if ctrl && self.editor.is_empty() && !self.busy => Action::Quit,
+            KeyCode::Char('d') if ctrl => {
+                self.editor.delete();
+                Action::None
+            }
             KeyCode::Char('l') if ctrl => Action::ClearScreen,
             KeyCode::Char('a') if ctrl => {
                 self.editor.move_home();
@@ -720,12 +757,41 @@ impl AppState {
                 self.editor.delete_word_left();
                 Action::None
             }
+            KeyCode::Char('k') if ctrl => {
+                self.editor.delete_to_line_end();
+                Action::None
+            }
+            KeyCode::Char('u') if ctrl => {
+                self.editor.delete_to_line_start();
+                Action::None
+            }
+            KeyCode::Char('y') if ctrl => {
+                self.editor.yank();
+                Action::None
+            }
+            KeyCode::Char('j') if ctrl => {
+                self.editor.newline();
+                Action::None
+            }
+            KeyCode::Char('b') if alt => {
+                self.editor.move_word_left();
+                Action::None
+            }
+            KeyCode::Char('f') if alt => {
+                self.editor.move_word_right();
+                Action::None
+            }
             KeyCode::Enter if alt || shift => {
                 self.editor.newline();
                 Action::None
             }
             KeyCode::Enter => self.submit_editor(),
             KeyCode::Esc if self.busy => Action::Interrupt,
+            KeyCode::Backspace if ctrl => {
+                self.editor.delete_word_left();
+                self.command_selection = 0;
+                Action::None
+            }
             KeyCode::Backspace => {
                 self.editor.backspace();
                 self.command_selection = 0;
@@ -1138,7 +1204,7 @@ impl AppState {
             }
             "/new" => Action::NewThread,
             "/status" => {
-                let model = self.selected_model_name();
+                let model = self.selected_model_display_name();
                 self.committed.push(Block::new(
                     BlockKind::System,
                     "Status",
@@ -1165,6 +1231,8 @@ impl AppState {
     }
 
     fn handle_pending_key(&mut self, key: KeyEvent) -> Action {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
         let pending = self.pending.take().expect("pending checked");
         match pending {
             PendingInteraction::ModelPicker {
@@ -1177,7 +1245,23 @@ impl AppState {
                         model_index = model_index.saturating_sub(1);
                         effort_index = self.effort_index_for_model(model_index);
                     }
+                    KeyCode::Char('k') if !ctrl && !alt => {
+                        model_index = model_index.saturating_sub(1);
+                        effort_index = self.effort_index_for_model(model_index);
+                    }
+                    KeyCode::Char('p') if ctrl => {
+                        model_index = model_index.saturating_sub(1);
+                        effort_index = self.effort_index_for_model(model_index);
+                    }
                     KeyCode::Down => {
+                        model_index = (model_index + 1).min(self.models.len().saturating_sub(1));
+                        effort_index = self.effort_index_for_model(model_index);
+                    }
+                    KeyCode::Char('j') if !ctrl && !alt => {
+                        model_index = (model_index + 1).min(self.models.len().saturating_sub(1));
+                        effort_index = self.effort_index_for_model(model_index);
+                    }
+                    KeyCode::Char('n') if ctrl => {
                         model_index = (model_index + 1).min(self.models.len().saturating_sub(1));
                         effort_index = self.effort_index_for_model(model_index);
                     }
@@ -1220,7 +1304,13 @@ impl AppState {
                     KeyCode::Left | KeyCode::Up => {
                         effort_index = effort_index.saturating_sub(1);
                     }
+                    KeyCode::Char('p') if ctrl => {
+                        effort_index = effort_index.saturating_sub(1);
+                    }
                     KeyCode::Right | KeyCode::Down | KeyCode::Tab => {
+                        effort_index = (effort_index + 1).min(count - 1);
+                    }
+                    KeyCode::Char('n') if ctrl => {
                         effort_index = (effort_index + 1).min(count - 1);
                     }
                     KeyCode::Enter => {
@@ -1298,10 +1388,17 @@ impl AppState {
                             answers.insert(question.id.clone(), answer);
                             return next_question_or_reply(id, questions, current, answers, self);
                         }
+                        KeyCode::Backspace if ctrl => editor.delete_word_left(),
                         KeyCode::Backspace => editor.backspace(),
                         KeyCode::Delete => editor.delete(),
+                        KeyCode::Left if ctrl || alt => editor.move_word_left(),
+                        KeyCode::Right if ctrl || alt => editor.move_word_right(),
                         KeyCode::Left => editor.move_left(),
                         KeyCode::Right => editor.move_right(),
+                        KeyCode::Char('w') if ctrl => editor.delete_word_left(),
+                        KeyCode::Char('k') if ctrl => editor.delete_to_line_end(),
+                        KeyCode::Char('u') if ctrl => editor.delete_to_line_start(),
+                        KeyCode::Char('y') if ctrl => editor.yank(),
                         KeyCode::Home => editor.move_home(),
                         KeyCode::End => editor.move_end(),
                         KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1359,7 +1456,7 @@ impl AppState {
                     .map(|(offset, model)| {
                         let index = start + offset;
                         OverlayLine {
-                            text: format!("{}\n      {}", model.display_name, model.description),
+                            text: model.display_name.clone(),
                             selected: index == *model_index,
                             muted: false,
                         }
@@ -1372,22 +1469,15 @@ impl AppState {
                         muted: true,
                     });
                     lines.push(OverlayLine {
-                        text: format!("Effort  {}", effort_slider(model, *effort_index, false,)),
+                        text: format!("Effort  {}", effort_slider(model, *effort_index, false)),
                         selected: false,
                         muted: false,
                     });
-                    if let Some(effort) = model.efforts.get(*effort_index) {
-                        lines.push(OverlayLine {
-                            text: format!("        {}", effort.description),
-                            selected: false,
-                            muted: true,
-                        });
-                    }
                 }
                 Some(OverlayView {
-                    title: "Model".to_owned(),
+                    title: "Select model".to_owned(),
                     lines,
-                    hint: "↑↓ model  ←→ effort  Enter apply  Esc cancel".to_owned(),
+                    hint: "↑/↓ select · ←/→ effort · Enter confirm · Esc cancel".to_owned(),
                     input: None,
                     input_label: "",
                     input_placeholder: "",
@@ -1395,26 +1485,14 @@ impl AppState {
             }
             PendingInteraction::EffortPicker { effort_index } => {
                 let model = self.selected_model()?;
-                let description = effort_index
-                    .checked_sub(1)
-                    .and_then(|index| model.efforts.get(index))
-                    .map(|effort| effort.description.as_str())
-                    .unwrap_or("Use the model's recommended default.");
                 Some(OverlayView {
-                    title: format!("Effort · {}", model.display_name),
-                    lines: vec![
-                        OverlayLine {
-                            text: effort_slider(model, *effort_index, true),
-                            selected: false,
-                            muted: false,
-                        },
-                        OverlayLine {
-                            text: description.to_owned(),
-                            selected: false,
-                            muted: true,
-                        },
-                    ],
-                    hint: "←→ adjust  Enter apply  Esc cancel".to_owned(),
+                    title: format!("Set effort · {}", model.display_name),
+                    lines: vec![OverlayLine {
+                        text: effort_slider(model, *effort_index, true),
+                        selected: false,
+                        muted: false,
+                    }],
+                    hint: "←/→ adjust · Enter confirm · Esc cancel".to_owned(),
                     input: None,
                     input_label: "",
                     input_placeholder: "",
@@ -1548,30 +1626,23 @@ impl AppState {
         ))
     }
 
-    fn footer(&self) -> String {
-        let model = self.selected_model_name();
-        let usage = match self.context_window {
-            Some(window) if window > 0 => {
-                format!(" · {}%", self.total_tokens.saturating_mul(100) / window)
-            }
-            _ if self.total_tokens > 0 => format!(" · {} tok", self.total_tokens),
-            _ => String::new(),
-        };
-        let activity = if self.busy { " · Esc 중단" } else { "" };
-        let transient = self
-            .transient_status
-            .as_ref()
-            .map(|message| format!(" · {message}"))
-            .unwrap_or_default();
-        format!(
-            "{} · {} ({}){}{}{}",
-            compact_path(&self.cwd, 36),
-            model,
-            self.effort_label(),
-            usage,
-            activity,
-            transient
-        )
+    fn status_line(&self) -> StatusLineView {
+        let context = self.context_window.and_then(|window| {
+            (window > 0).then(|| {
+                format!(
+                    "ctx: {}/{} ({}%)",
+                    format_token_count(self.total_tokens),
+                    format_token_count(window),
+                    self.total_tokens.saturating_mul(100) / window
+                )
+            })
+        });
+        StatusLineView {
+            model: self.selected_model_display_name().to_owned(),
+            effort: self.selected_effort.clone(),
+            context,
+            notice: self.transient_status.clone(),
+        }
     }
 
     fn apply_model(&mut self, index: usize, effort: Option<&str>) {
@@ -2106,17 +2177,12 @@ fn compact_command(command: &str, max_chars: usize) -> String {
     )
 }
 
-fn compact_path(path: &str, max_chars: usize) -> String {
-    let count = path.chars().count();
-    if count <= max_chars {
-        return path.to_owned();
+fn format_token_count(tokens: u64) -> String {
+    if tokens >= 1_000 {
+        format!("{}k", tokens.saturating_add(500) / 1_000)
+    } else {
+        tokens.to_string()
     }
-    format!(
-        "…{}",
-        path.chars()
-            .skip(count - max_chars.saturating_sub(1))
-            .collect::<String>()
-    )
 }
 
 #[cfg(test)]
@@ -2154,15 +2220,12 @@ mod tests {
             id: "model".to_owned(),
             model: "model".to_owned(),
             display_name: "Model".to_owned(),
-            description: String::new(),
             efforts: vec![
                 EffortInfo {
                     id: "high".to_owned(),
-                    description: String::new(),
                 },
                 EffortInfo {
                     id: "max".to_owned(),
-                    description: String::new(),
                 },
             ],
             default_effort: "high".to_owned(),

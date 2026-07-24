@@ -195,6 +195,7 @@ async fn choose_startup_session(sessions: Vec<SessionInfo>, cwd: &Path) -> Resul
                 suggestions: Vec::new(),
                 activity: None,
                 footer: "Resume a Codex session".to_owned(),
+                status_line: None,
             },
         )?;
         match events.next().await {

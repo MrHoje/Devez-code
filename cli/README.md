@@ -14,8 +14,13 @@ Codex의 인증, 하네스 프롬프트, 도구, 스킬, `AGENTS.md`, 샌드박�
 - 명령/파일 변경 승인
 - 실행 중 입력 steer 및 `Esc`/`Ctrl+C` 중단
 - 일반 터미널 스크롤백을 보존하는 증분 렌더링
-- 화면 하단에 고정되는 composer/status bar
+- 좌우 테두리와 복사용 공백이 없는 Claude Code형 하단 composer
+- 모델명, effort, context 사용량을 표시하는 Claude statusline형 하단 상태줄
+- 설명 없이 모델명만 표시하는 `/model` 피커와 `/effort` 슬라이더
+- `You`/`Codex` 헤더 없이 마커와 본문으로 이어지는 대화 출력
 - `/` 명령 자동완성 및 키보드 모델 선택기
+- `Ctrl+Backspace`/`Ctrl+W` 단어 삭제, `Ctrl+K`/`Ctrl+U` 줄 삭제,
+  `Ctrl+Y` 복원, `Alt+B`/`Alt+F` 단어 이동, `Ctrl+J` 줄바꿈
 - Markdown 제목·목록·인용·코드 블록 표현
 - 실행 시간, 파일 diff 통계, 진행 상태 표시
 - 활성 영역 전체 삭제 없이 변경된 터미널 행만 갱신

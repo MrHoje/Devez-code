@@ -69,6 +69,13 @@ pub struct SuggestionView {
     pub selected: bool,
 }
 
+pub struct StatusLineView {
+    pub model: String,
+    pub effort: String,
+    pub context: Option<String>,
+    pub notice: Option<String>,
+}
+
 pub struct View<'a> {
     pub live_blocks: Vec<Block>,
     pub overlay: Option<OverlayView<'a>>,
@@ -77,6 +84,7 @@ pub struct View<'a> {
     pub suggestions: Vec<SuggestionView>,
     pub activity: Option<String>,
     pub footer: String,
+    pub status_line: Option<StatusLineView>,
 }
 
 pub struct TerminalSession;
@@ -132,8 +140,12 @@ impl Renderer {
 
     pub fn render(&mut self, committed: &[Block], view: View<'_>) -> Result<()> {
         let (width, height) = terminal_size().unwrap_or((100, 30));
+        let status = StatusArea {
+            fallback: view.footer,
+            line: view.status_line,
+        };
         let mut frame = if let Some(overlay) = view.overlay {
-            overlay_frame(&view.live_blocks, overlay, &view.footer, width.max(20))
+            overlay_frame(&view.live_blocks, overlay, status, width.max(20))
         } else {
             normal_frame(
                 &view.live_blocks,
@@ -141,7 +153,7 @@ impl Renderer {
                 view.welcome,
                 &view.suggestions,
                 view.activity.as_deref(),
-                &view.footer,
+                status,
                 width.max(20),
             )
         };
@@ -318,6 +330,11 @@ struct Frame {
     dock_index: usize,
 }
 
+struct StatusArea {
+    fallback: String,
+    line: Option<StatusLineView>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tone {
     Plain,
@@ -328,12 +345,28 @@ enum Tone {
     Warning,
     Error,
     Code,
+    EffortLow,
+    EffortMedium,
+    EffortHigh,
+    EffortXHigh,
+    EffortMax,
+    Context,
+    StatusText,
+    StatusSeparator,
 }
 
 #[derive(Clone, PartialEq, Eq)]
 struct PaintLine {
     prefix: String,
     prefix_tone: Tone,
+    text: String,
+    tone: Tone,
+    bold: bool,
+    tail: Vec<PaintSpan>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct PaintSpan {
     text: String,
     tone: Tone,
     bold: bool,
@@ -347,6 +380,7 @@ impl PaintLine {
             text: text.into(),
             tone: Tone::Plain,
             bold: false,
+            tail: Vec::new(),
         }
     }
 
@@ -361,7 +395,7 @@ fn normal_frame(
     welcome: Option<WelcomeView>,
     suggestions: &[SuggestionView],
     activity: Option<&str>,
-    footer: &str,
+    status: StatusArea,
     width: u16,
 ) -> Frame {
     let mut lines = Vec::new();
@@ -401,13 +435,7 @@ fn normal_frame(
     let dock_index = lines.len();
     let cursor_line = lines.len() + input_cursor_line;
     lines.extend(input_lines);
-    lines.push(PaintLine {
-        prefix: "  ".to_owned(),
-        prefix_tone: Tone::Muted,
-        text: footer.to_owned(),
-        tone: Tone::Muted,
-        bold: false,
-    });
+    lines.push(status_line_row(status.line, &status.fallback, width));
 
     Frame {
         lines,
@@ -428,6 +456,7 @@ fn welcome_lines(welcome: WelcomeView, width: u16) -> Vec<PaintLine> {
         text: format!("╭{}╮", "─".repeat(inner_width)),
         tone: Tone::Accent,
         bold: false,
+        tail: Vec::new(),
     });
     lines.push(panel_line(
         "  ✦  DEVEZ CODE",
@@ -476,6 +505,7 @@ fn welcome_lines(welcome: WelcomeView, width: u16) -> Vec<PaintLine> {
         text: format!("╰{}╯", "─".repeat(inner_width)),
         tone: Tone::Muted,
         bold: false,
+        tail: Vec::new(),
     });
     lines
 }
@@ -489,6 +519,7 @@ fn suggestion_lines(suggestions: &[SuggestionView], width: u16) -> Vec<PaintLine
         text: format!("╭─ Commands {}", "─".repeat(inner_width.saturating_sub(11))),
         tone: Tone::Muted,
         bold: false,
+        tail: Vec::new(),
     }];
     for suggestion in suggestions.iter().take(6) {
         let marker = if suggestion.selected { "❯" } else { " " };
@@ -513,6 +544,7 @@ fn suggestion_lines(suggestions: &[SuggestionView], width: u16) -> Vec<PaintLine
         text: format!("╰{}╯", "─".repeat(inner_width)),
         tone: Tone::Muted,
         bold: false,
+        tail: Vec::new(),
     });
     lines
 }
@@ -527,10 +559,16 @@ fn panel_line(text: &str, width: usize, tone: Tone, bold: bool) -> PaintLine {
         text: format!("│{content}{}│", " ".repeat(padding)),
         tone,
         bold,
+        tail: Vec::new(),
     }
 }
 
-fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: u16) -> Frame {
+fn overlay_frame(
+    live: &[Block],
+    overlay: OverlayView<'_>,
+    status: StatusArea,
+    width: u16,
+) -> Frame {
     let mut lines = Vec::new();
     for block in live {
         lines.extend(block_lines(block, width));
@@ -555,6 +593,7 @@ fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: 
         ),
         tone: Tone::Accent,
         bold: true,
+        tail: Vec::new(),
     });
     for row in overlay.lines {
         for (part_index, part) in row.text.lines().enumerate() {
@@ -583,6 +622,7 @@ fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: 
         text: overlay.hint,
         tone: Tone::Muted,
         bold: false,
+        tail: Vec::new(),
     });
     let mut cursor_line = lines.len() - 1;
     let mut cursor_col = 0;
@@ -600,13 +640,7 @@ fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: 
     } else {
         false
     };
-    lines.push(PaintLine {
-        prefix: "  ".to_owned(),
-        prefix_tone: Tone::Muted,
-        text: footer.to_owned(),
-        tone: Tone::Muted,
-        bold: false,
-    });
+    lines.push(status_line_row(status.line, &status.fallback, width));
 
     Frame {
         cursor_line,
@@ -638,6 +672,105 @@ fn fit_frame(frame: &mut Frame, target_rows: usize) {
     frame.cursor_line = frame.cursor_line.min(frame.lines.len().saturating_sub(1));
 }
 
+fn status_line_row(status: Option<StatusLineView>, fallback: &str, width: u16) -> PaintLine {
+    let Some(status) = status else {
+        return PaintLine {
+            prefix: " ".to_owned(),
+            prefix_tone: Tone::Muted,
+            text: compact_right(fallback, width.saturating_sub(1) as usize),
+            tone: Tone::Muted,
+            bold: false,
+            tail: Vec::new(),
+        };
+    };
+
+    let effort_tone = match status.effort.as_str() {
+        "low" => Tone::EffortLow,
+        "medium" => Tone::EffortMedium,
+        "high" => Tone::EffortHigh,
+        "xhigh" => Tone::EffortXHigh,
+        "max" => Tone::EffortMax,
+        _ => Tone::StatusText,
+    };
+    let mut spans = vec![
+        PaintSpan {
+            text: format!(" {}", compact_right(&status.model, 28)),
+            tone: Tone::StatusText,
+            bold: false,
+        },
+        PaintSpan {
+            text: " | ".to_owned(),
+            tone: Tone::StatusSeparator,
+            bold: false,
+        },
+        PaintSpan {
+            text: format!("eff: {}", status.effort),
+            tone: effort_tone,
+            bold: false,
+        },
+    ];
+    if let Some(context) = status.context.filter(|context| !context.is_empty()) {
+        spans.push(PaintSpan {
+            text: " | ".to_owned(),
+            tone: Tone::StatusSeparator,
+            bold: false,
+        });
+        spans.push(PaintSpan {
+            text: context,
+            tone: Tone::Context,
+            bold: false,
+        });
+    }
+    if let Some(notice) = status.notice.filter(|notice| !notice.is_empty()) {
+        spans.push(PaintSpan {
+            text: " | ".to_owned(),
+            tone: Tone::StatusSeparator,
+            bold: false,
+        });
+        spans.push(PaintSpan {
+            text: notice,
+            tone: Tone::Muted,
+            bold: false,
+        });
+    }
+    trim_spans(&mut spans, width.max(1) as usize);
+
+    let first = spans.first().cloned().unwrap_or(PaintSpan {
+        text: String::new(),
+        tone: Tone::Muted,
+        bold: false,
+    });
+    PaintLine {
+        prefix: String::new(),
+        prefix_tone: Tone::Muted,
+        text: first.text,
+        tone: first.tone,
+        bold: first.bold,
+        tail: spans.into_iter().skip(1).collect(),
+    }
+}
+
+fn trim_spans(spans: &mut Vec<PaintSpan>, max_width: usize) {
+    let mut overflow = spans
+        .iter()
+        .map(|span| UnicodeWidthStr::width(span.text.as_str()))
+        .sum::<usize>()
+        .saturating_sub(max_width);
+    while overflow > 0 {
+        let Some(last) = spans.last_mut() else {
+            break;
+        };
+        let Some(ch) = last.text.pop() else {
+            spans.pop();
+            continue;
+        };
+        overflow = overflow.saturating_sub(UnicodeWidthChar::width(ch).unwrap_or(0));
+        if last.text.is_empty() {
+            spans.pop();
+        }
+    }
+}
+
 fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
     let (marker, tone) = match block.kind {
         BlockKind::User => ("❯ ", Tone::User),
@@ -650,8 +783,17 @@ fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
         BlockKind::System => ("◆ ", Tone::Muted),
     };
 
-    let mut lines = wrapped_line(marker, tone, &block.title, Tone::Plain, true, width);
+    let conversational = matches!(block.kind, BlockKind::User | BlockKind::Assistant);
+    let mut first_content = conversational;
+    let mut lines = if conversational {
+        Vec::new()
+    } else {
+        wrapped_line(marker, tone, &block.title, Tone::Plain, true, width)
+    };
     if block.body.is_empty() {
+        if conversational {
+            lines.extend(wrapped_line(marker, tone, "", Tone::Plain, false, width));
+        }
         return lines;
     }
 
@@ -659,45 +801,47 @@ fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
     for raw_line in block.body.lines() {
         let trimmed = raw_line.trim_start();
         if let Some(language) = trimmed.strip_prefix("```") {
-            if code {
-                lines.push(PaintLine {
-                    prefix: "  ".to_owned(),
-                    prefix_tone: Tone::Muted,
-                    text: "└────────────────".to_owned(),
-                    tone: Tone::Muted,
-                    bold: false,
-                });
+            let text = if code {
+                "└────────────────".to_owned()
             } else {
                 let label = if language.trim().is_empty() {
                     "code"
                 } else {
                     language.trim()
                 };
-                lines.push(PaintLine {
-                    prefix: "  ".to_owned(),
-                    prefix_tone: Tone::Muted,
-                    text: format!("┌─ {label}"),
-                    tone: Tone::Muted,
-                    bold: false,
-                });
-            }
+                format!("┌─ {label}")
+            };
+            let (prefix, prefix_tone) =
+                body_prefix(&mut first_content, marker, tone, "  ", Tone::Muted);
+            lines.push(PaintLine {
+                prefix,
+                prefix_tone,
+                text,
+                tone: Tone::Muted,
+                bold: false,
+                tail: Vec::new(),
+            });
             code = !code;
             continue;
         }
 
         if code {
+            let (prefix, prefix_tone) =
+                body_prefix(&mut first_content, marker, tone, "  │ ", Tone::Muted);
             lines.extend(wrapped_line(
-                "  │ ",
-                Tone::Muted,
+                &prefix,
+                prefix_tone,
                 raw_line,
                 Tone::Code,
                 false,
                 width,
             ));
         } else if trimmed.starts_with('#') {
+            let (prefix, prefix_tone) =
+                body_prefix(&mut first_content, marker, tone, "  ", Tone::Muted);
             lines.extend(wrapped_line(
-                "  ",
-                Tone::Muted,
+                &prefix,
+                prefix_tone,
                 trimmed.trim_start_matches('#').trim_start(),
                 Tone::Plain,
                 true,
@@ -707,27 +851,33 @@ fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
             .strip_prefix("- ")
             .or_else(|| trimmed.strip_prefix("* "))
         {
+            let (prefix, prefix_tone) =
+                body_prefix(&mut first_content, marker, tone, "  • ", Tone::Accent);
             lines.extend(wrapped_line(
-                "  • ",
-                Tone::Accent,
+                &prefix,
+                prefix_tone,
                 item,
                 Tone::Plain,
                 false,
                 width,
             ));
         } else if let Some(quote) = trimmed.strip_prefix("> ") {
+            let (prefix, prefix_tone) =
+                body_prefix(&mut first_content, marker, tone, "  │ ", Tone::Muted);
             lines.extend(wrapped_line(
-                "  │ ",
-                Tone::Muted,
+                &prefix,
+                prefix_tone,
                 quote,
                 Tone::Muted,
                 false,
                 width,
             ));
         } else {
+            let (prefix, prefix_tone) =
+                body_prefix(&mut first_content, marker, tone, "  ", Tone::Muted);
             lines.extend(wrapped_line(
-                "  ",
-                Tone::Muted,
+                &prefix,
+                prefix_tone,
                 raw_line,
                 Tone::Plain,
                 false,
@@ -742,10 +892,26 @@ fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
             text: "└────────────────".to_owned(),
             tone: Tone::Muted,
             bold: false,
+            tail: Vec::new(),
         });
     }
     lines.push(PaintLine::blank());
     lines
+}
+
+fn body_prefix(
+    first_content: &mut bool,
+    marker: &str,
+    marker_tone: Tone,
+    default: &str,
+    default_tone: Tone,
+) -> (String, Tone) {
+    if *first_content {
+        *first_content = false;
+        (marker.to_owned(), marker_tone)
+    } else {
+        (default.to_owned(), default_tone)
+    }
 }
 
 fn wrapped_line(
@@ -770,6 +936,7 @@ fn wrapped_line(
             text: String::new(),
             tone,
             bold,
+            tail: Vec::new(),
         }];
     }
 
@@ -786,6 +953,7 @@ fn wrapped_line(
             text: part.into_owned(),
             tone,
             bold,
+            tail: Vec::new(),
         })
         .collect()
 }
@@ -797,11 +965,10 @@ fn input_lines(
     placeholder: &str,
 ) -> (Vec<PaintLine>, usize, usize) {
     let panel_width = (width as usize).saturating_sub(1).max(16);
-    let first_prefix = "│ ❯ ";
-    let continuation_prefix = "│   ";
+    let first_prefix = "  ❯ ";
+    let continuation_prefix = "    ";
     let content_width = panel_width
         .saturating_sub(UnicodeWidthStr::width(first_prefix))
-        .saturating_sub(1)
         .max(4);
     let mut raw_rows = vec![String::new()];
     let mut row = 0;
@@ -857,6 +1024,7 @@ fn input_lines(
         ),
         tone: Tone::Muted,
         bold: false,
+        tail: Vec::new(),
     });
     for (index, raw) in raw_rows.into_iter().enumerate() {
         let is_placeholder = editor.is_empty() && index == 0;
@@ -865,7 +1033,6 @@ fn input_lines(
         } else {
             raw
         };
-        let padding = content_width.saturating_sub(UnicodeWidthStr::width(content.as_str()));
         rows.push(PaintLine {
             prefix: if index == 0 {
                 first_prefix.to_owned()
@@ -877,13 +1044,14 @@ fn input_lines(
             } else {
                 Tone::Muted
             },
-            text: format!("{content}{}│", " ".repeat(padding)),
+            text: content,
             tone: if is_placeholder {
                 Tone::Muted
             } else {
                 Tone::Plain
             },
             bold: false,
+            tail: Vec::new(),
         });
     }
     rows.push(PaintLine {
@@ -892,6 +1060,7 @@ fn input_lines(
         text: format!("╰{}╯", "─".repeat(panel_width.saturating_sub(2))),
         tone: Tone::Muted,
         bold: false,
+        tail: Vec::new(),
     });
 
     (rows, cursor_row + 1, cursor_column)
@@ -917,6 +1086,27 @@ fn compact_text(text: &str, max_width: usize) -> String {
     format!("…{output}")
 }
 
+fn compact_right(text: &str, max_width: usize) -> String {
+    if UnicodeWidthStr::width(text) <= max_width {
+        return text.to_owned();
+    }
+    if max_width <= 1 {
+        return "…".to_owned();
+    }
+    let mut output = String::new();
+    let mut width = 0;
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width >= max_width {
+            break;
+        }
+        output.push(ch);
+        width += ch_width;
+    }
+    output.push('…');
+    output
+}
+
 fn print_line(out: &mut Stdout, line: &PaintLine) -> Result<()> {
     set_tone(out, line.prefix_tone)?;
     queue!(out, Print(&line.prefix))?;
@@ -930,6 +1120,18 @@ fn print_line(out: &mut Stdout, line: &PaintLine) -> Result<()> {
         SetAttribute(Attribute::Reset),
         ResetColor
     )?;
+    for span in &line.tail {
+        set_tone(out, span.tone)?;
+        if span.bold {
+            queue!(out, SetAttribute(Attribute::Bold))?;
+        }
+        queue!(
+            out,
+            Print(&span.text),
+            SetAttribute(Attribute::Reset),
+            ResetColor
+        )?;
+    }
     Ok(())
 }
 
@@ -970,6 +1172,46 @@ fn set_tone(out: &mut Stdout, tone: Tone) -> Result<()> {
             r: 183,
             g: 203,
             b: 224,
+        },
+        Tone::EffortLow => Color::Rgb {
+            r: 220,
+            g: 172,
+            b: 18,
+        },
+        Tone::EffortMedium => Color::Rgb {
+            r: 63,
+            g: 157,
+            b: 99,
+        },
+        Tone::EffortHigh => Color::Rgb {
+            r: 177,
+            g: 185,
+            b: 249,
+        },
+        Tone::EffortXHigh => Color::Rgb {
+            r: 175,
+            g: 135,
+            b: 255,
+        },
+        Tone::EffortMax => Color::Rgb {
+            r: 248,
+            g: 113,
+            b: 113,
+        },
+        Tone::Context => Color::Rgb {
+            r: 52,
+            g: 211,
+            b: 153,
+        },
+        Tone::StatusText => Color::Rgb {
+            r: 229,
+            g: 231,
+            b: 235,
+        },
+        Tone::StatusSeparator => Color::Rgb {
+            r: 147,
+            g: 164,
+            b: 184,
         },
     };
     queue!(out, SetForegroundColor(color))?;
@@ -1026,5 +1268,58 @@ mod tests {
             vec!["2", "3", "4"]
         );
         assert_eq!(frame.cursor_line, 1);
+    }
+
+    #[test]
+    fn composer_rows_do_not_emit_side_borders_or_copy_padding() {
+        let mut editor = Editor::default();
+        editor.set_text("wrapped prompt text");
+
+        let (rows, _, _) = input_lines(&editor, 18, "Message", "placeholder");
+        let prompt_rows = &rows[1..rows.len() - 1];
+
+        assert!(prompt_rows.len() > 1);
+        assert!(prompt_rows.iter().all(|row| !row.prefix.contains('│')));
+        assert!(prompt_rows.iter().all(|row| !row.text.ends_with(' ')));
+        assert!(prompt_rows.iter().all(|row| !row.text.contains('│')));
+    }
+
+    #[test]
+    fn conversation_blocks_hide_speaker_labels() {
+        let user = Block::new(BlockKind::User, "You", "hello");
+        let assistant = Block::new(BlockKind::Assistant, "Codex", "hi");
+
+        let user_lines = block_lines(&user, 80);
+        let assistant_lines = block_lines(&assistant, 80);
+
+        assert_eq!(user_lines[0].prefix, "❯ ");
+        assert_eq!(user_lines[0].text, "hello");
+        assert_eq!(assistant_lines[0].prefix, "● ");
+        assert_eq!(assistant_lines[0].text, "hi");
+        assert!(user_lines.iter().all(|line| line.text != "You"));
+        assert!(assistant_lines.iter().all(|line| line.text != "Codex"));
+    }
+
+    #[test]
+    fn status_line_is_trimmed_to_terminal_width() {
+        let line = status_line_row(
+            Some(StatusLineView {
+                model: "GPT-5.6 Codex".to_owned(),
+                effort: "xhigh".to_owned(),
+                context: Some("ctx: 45k/256k (18%)".to_owned()),
+                notice: Some("connected".to_owned()),
+            }),
+            "",
+            32,
+        );
+        let width = UnicodeWidthStr::width(line.text.as_str())
+            + line
+                .tail
+                .iter()
+                .map(|span| UnicodeWidthStr::width(span.text.as_str()))
+                .sum::<usize>();
+
+        assert!(width <= 32);
+        assert!(line.text.starts_with(" GPT-5.6 Codex"));
     }
 }

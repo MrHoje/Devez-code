@@ -5,6 +5,7 @@ pub struct Editor {
     history: Vec<String>,
     history_index: Option<usize>,
     draft: String,
+    kill_buffer: String,
 }
 
 impl Editor {
@@ -115,7 +116,49 @@ impl Editor {
         self.leave_history();
         let end = self.cursor;
         self.move_word_left();
+        self.kill_buffer = self.buffer[self.cursor..end].iter().collect();
         self.buffer.drain(self.cursor..end);
+    }
+
+    pub fn delete_to_line_end(&mut self) {
+        self.leave_history();
+        let mut end = self.cursor;
+        while end < self.buffer.len() && self.buffer[end] != '\n' {
+            end += 1;
+        }
+        if end == self.cursor && end < self.buffer.len() {
+            end += 1;
+        }
+        if end == self.cursor {
+            return;
+        }
+        self.kill_buffer = self.buffer[self.cursor..end].iter().collect();
+        self.buffer.drain(self.cursor..end);
+    }
+
+    pub fn delete_to_line_start(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        self.leave_history();
+        let mut start = self.cursor;
+        while start > 0 && self.buffer[start - 1] != '\n' {
+            start -= 1;
+        }
+        if start == self.cursor && start > 0 {
+            start -= 1;
+        }
+        self.kill_buffer = self.buffer[start..self.cursor].iter().collect();
+        self.buffer.drain(start..self.cursor);
+        self.cursor = start;
+    }
+
+    pub fn yank(&mut self) {
+        if self.kill_buffer.is_empty() {
+            return;
+        }
+        let killed = self.kill_buffer.clone();
+        self.insert_str(&killed);
     }
 
     pub fn take_for_submit(&mut self) -> Option<String> {
@@ -175,5 +218,42 @@ impl Editor {
         if self.history_index.take().is_some() {
             self.draft.clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Editor;
+
+    #[test]
+    fn delete_word_left_can_be_yanked_back() {
+        let mut editor = Editor::default();
+        editor.set_text("alpha beta");
+
+        editor.delete_word_left();
+        assert_eq!(editor.text(), "alpha ");
+
+        editor.yank();
+        assert_eq!(editor.text(), "alpha beta");
+    }
+
+    #[test]
+    fn line_kill_commands_preserve_multiline_boundaries() {
+        let mut editor = Editor::default();
+        editor.set_text("alpha\nbeta");
+        editor.move_home();
+
+        editor.delete_to_line_start();
+        assert_eq!(editor.text(), "alphabeta");
+        editor.yank();
+        assert_eq!(editor.text(), "alpha\nbeta");
+
+        editor.set_text("alpha\nbeta");
+        editor.move_home();
+        editor.delete_to_line_end();
+        assert_eq!(editor.text(), "alpha\n");
+
+        editor.yank();
+        assert_eq!(editor.text(), "alpha\nbeta");
     }
 }
