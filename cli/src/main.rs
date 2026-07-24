@@ -6,6 +6,7 @@ mod state;
 use std::{
     env,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
@@ -16,6 +17,7 @@ use futures_util::StreamExt;
 use renderer::{BlockKind, Renderer, TerminalSession};
 use serde_json::{Value, json};
 use state::{Action, AppState, ModelInfo};
+use tokio::time::MissedTickBehavior;
 
 #[derive(Parser)]
 #[command(
@@ -57,7 +59,7 @@ async fn main() -> Result<()> {
 
 async fn run(cli: &Cli, server: &mut AppServer) -> Result<()> {
     server.initialize().await?;
-    ensure_account(server).await?;
+    let account = ensure_account(server).await?;
 
     let models_response = server
         .request("model/list", json!({ "includeHidden": true, "limit": 100 }))
@@ -116,6 +118,7 @@ async fn run(cli: &Cli, server: &mut AppServer) -> Result<()> {
     let mut state = AppState::new(
         thread_id,
         actual_cwd,
+        account,
         models,
         &actual_model,
         actual_effort.as_deref(),
@@ -138,6 +141,8 @@ async fn event_loop(
     renderer: &mut Renderer,
 ) -> Result<()> {
     let mut terminal_events = EventStream::new();
+    let mut activity_tick = tokio::time::interval(Duration::from_millis(120));
+    activity_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     draw(state, renderer)?;
 
     loop {
@@ -183,10 +188,17 @@ async fn event_loop(
                     }
                 }
             }
+            _ = activity_tick.tick() => {
+                state.tick();
+                Action::Tick
+            }
         };
 
+        let redraw = !matches!(&action, Action::Tick) || state.busy;
         let should_quit = execute_action(server, state, renderer, action).await?;
-        draw(state, renderer)?;
+        if redraw {
+            draw(state, renderer)?;
+        }
         if should_quit || connection_closed {
             break;
         }
@@ -202,6 +214,7 @@ async fn execute_action(
 ) -> Result<bool> {
     match action {
         Action::None => {}
+        Action::Tick => {}
         Action::Submit(text) => {
             let params = json!({
                 "threadId": state.thread_id,
@@ -322,7 +335,7 @@ fn draw(state: &mut AppState, renderer: &mut Renderer) -> Result<()> {
     renderer.render(&committed, view)
 }
 
-async fn ensure_account(server: &AppServer) -> Result<()> {
+async fn ensure_account(server: &AppServer) -> Result<String> {
     let response = server
         .request("account/read", json!({ "refreshToken": false }))
         .await?;
@@ -333,7 +346,21 @@ async fn ensure_account(server: &AppServer) -> Result<()> {
     if requires_auth && response.get("account").is_none_or(Value::is_null) {
         bail!("OpenAI 로그인이 필요합니다. 공식 `codex login`을 먼저 실행하세요.");
     }
-    Ok(())
+    let account = response.get("account").unwrap_or(&Value::Null);
+    let label = match account.get("type").and_then(Value::as_str) {
+        Some("chatgpt") => {
+            let plan = account
+                .get("planType")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            format!("ChatGPT · {plan}")
+        }
+        Some("apiKey") => "OpenAI API key".to_owned(),
+        Some("amazonBedrock") => "Amazon Bedrock".to_owned(),
+        Some(other) => other.to_owned(),
+        None => "Local provider".to_owned(),
+    };
+    Ok(label)
 }
 
 async fn start_or_resume_thread(

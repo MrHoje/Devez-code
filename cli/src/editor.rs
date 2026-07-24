@@ -102,6 +102,22 @@ impl Editor {
         self.draft.clear();
     }
 
+    pub fn set_text(&mut self, text: impl Into<String>) {
+        self.history_index = None;
+        self.draft.clear();
+        self.replace(text.into());
+    }
+
+    pub fn delete_word_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        self.leave_history();
+        let end = self.cursor;
+        self.move_word_left();
+        self.buffer.drain(self.cursor..end);
+    }
+
     pub fn take_for_submit(&mut self) -> Option<String> {
         let text = self.text();
         if text.trim().is_empty() {

@@ -54,10 +54,26 @@ pub struct OverlayLine {
     pub muted: bool,
 }
 
+pub struct WelcomeView {
+    pub model: String,
+    pub effort: String,
+    pub cwd: String,
+    pub account: String,
+}
+
+pub struct SuggestionView {
+    pub command: String,
+    pub description: String,
+    pub selected: bool,
+}
+
 pub struct View<'a> {
     pub live_blocks: Vec<Block>,
     pub overlay: Option<OverlayView<'a>>,
     pub editor: &'a Editor,
+    pub welcome: Option<WelcomeView>,
+    pub suggestions: Vec<SuggestionView>,
+    pub activity: Option<String>,
     pub footer: String,
 }
 
@@ -121,7 +137,15 @@ impl Renderer {
         let mut frame = if let Some(overlay) = view.overlay {
             overlay_frame(&view.live_blocks, overlay, &view.footer, width.max(20))
         } else {
-            normal_frame(&view.live_blocks, view.editor, &view.footer, width.max(20))
+            normal_frame(
+                &view.live_blocks,
+                view.editor,
+                view.welcome,
+                &view.suggestions,
+                view.activity.as_deref(),
+                &view.footer,
+                width.max(20),
+            )
         };
 
         let max_live = height.saturating_sub(1).max(3) as usize;
@@ -239,12 +263,40 @@ impl PaintLine {
     }
 }
 
-fn normal_frame(live: &[Block], editor: &Editor, footer: &str, width: u16) -> Frame {
+fn normal_frame(
+    live: &[Block],
+    editor: &Editor,
+    welcome: Option<WelcomeView>,
+    suggestions: &[SuggestionView],
+    activity: Option<&str>,
+    footer: &str,
+    width: u16,
+) -> Frame {
     let mut lines = Vec::new();
+    if let Some(welcome) = welcome {
+        lines.extend(welcome_lines(welcome, width));
+        lines.push(PaintLine::blank());
+    }
+
     for block in live {
         lines.extend(block_lines(block, width));
     }
-    if !live.is_empty() {
+    if let Some(activity) = activity {
+        lines.extend(wrapped_line(
+            "",
+            Tone::Accent,
+            activity,
+            Tone::Accent,
+            false,
+            width,
+        ));
+        lines.push(PaintLine::blank());
+    } else if !live.is_empty() {
+        lines.push(PaintLine::blank());
+    }
+
+    if !suggestions.is_empty() {
+        lines.extend(suggestion_lines(suggestions, width));
         lines.push(PaintLine::blank());
     }
 
@@ -267,6 +319,118 @@ fn normal_frame(live: &[Block], editor: &Editor, footer: &str, width: u16) -> Fr
     }
 }
 
+fn welcome_lines(welcome: WelcomeView, width: u16) -> Vec<PaintLine> {
+    let panel_width = (width as usize).clamp(34, 76);
+    let inner_width = panel_width.saturating_sub(2);
+    let mut lines = Vec::new();
+    lines.push(PaintLine {
+        prefix: String::new(),
+        prefix_tone: Tone::Accent,
+        text: format!("╭{}╮", "─".repeat(inner_width)),
+        tone: Tone::Accent,
+        bold: false,
+    });
+    lines.push(panel_line(
+        "  ✦  DEVEZ CODE",
+        panel_width,
+        Tone::Accent,
+        true,
+    ));
+    lines.push(panel_line(
+        "     Codex, with a calmer terminal",
+        panel_width,
+        Tone::Muted,
+        false,
+    ));
+    lines.push(panel_line("", panel_width, Tone::Plain, false));
+    lines.push(panel_line(
+        &format!("  Model    {} · {}", welcome.model, welcome.effort),
+        panel_width,
+        Tone::Plain,
+        false,
+    ));
+    lines.push(panel_line(
+        &format!("  Account  {}", welcome.account),
+        panel_width,
+        Tone::Plain,
+        false,
+    ));
+    lines.push(panel_line(
+        &format!(
+            "  Folder   {}",
+            compact_text(&welcome.cwd, inner_width.saturating_sub(11))
+        ),
+        panel_width,
+        Tone::Plain,
+        false,
+    ));
+    lines.push(panel_line("", panel_width, Tone::Plain, false));
+    lines.push(panel_line(
+        "  /help commands  ·  /model switch model",
+        panel_width,
+        Tone::Muted,
+        false,
+    ));
+    lines.push(PaintLine {
+        prefix: String::new(),
+        prefix_tone: Tone::Muted,
+        text: format!("╰{}╯", "─".repeat(inner_width)),
+        tone: Tone::Muted,
+        bold: false,
+    });
+    lines
+}
+
+fn suggestion_lines(suggestions: &[SuggestionView], width: u16) -> Vec<PaintLine> {
+    let panel_width = (width as usize).clamp(34, 76);
+    let inner_width = panel_width.saturating_sub(2);
+    let mut lines = vec![PaintLine {
+        prefix: String::new(),
+        prefix_tone: Tone::Muted,
+        text: format!("╭─ Commands {}", "─".repeat(inner_width.saturating_sub(11))),
+        tone: Tone::Muted,
+        bold: false,
+    }];
+    for suggestion in suggestions.iter().take(6) {
+        let marker = if suggestion.selected { "❯" } else { " " };
+        let content = format!(
+            " {marker} {:<10} {}",
+            suggestion.command, suggestion.description
+        );
+        lines.push(panel_line(
+            &content,
+            panel_width,
+            if suggestion.selected {
+                Tone::Accent
+            } else {
+                Tone::Muted
+            },
+            suggestion.selected,
+        ));
+    }
+    lines.push(PaintLine {
+        prefix: String::new(),
+        prefix_tone: Tone::Muted,
+        text: format!("╰{}╯", "─".repeat(inner_width)),
+        tone: Tone::Muted,
+        bold: false,
+    });
+    lines
+}
+
+fn panel_line(text: &str, width: usize, tone: Tone, bold: bool) -> PaintLine {
+    let inner_width = width.saturating_sub(2);
+    let content = compact_text(text, inner_width);
+    let padding = inner_width.saturating_sub(UnicodeWidthStr::width(content.as_str()));
+    PaintLine {
+        prefix: String::new(),
+        prefix_tone: Tone::Muted,
+        text: format!("│{content}{}│", " ".repeat(padding)),
+        tone,
+        bold,
+    }
+}
+
 fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: u16) -> Frame {
     let mut lines = Vec::new();
     for block in live {
@@ -276,30 +440,45 @@ fn overlay_frame(live: &[Block], overlay: OverlayView<'_>, footer: &str, width: 
         lines.push(PaintLine::blank());
     }
 
+    let title_width = UnicodeWidthStr::width(overlay.title.as_str());
     lines.push(PaintLine {
-        prefix: "◆ ".to_owned(),
+        prefix: String::new(),
         prefix_tone: Tone::Accent,
-        text: overlay.title,
-        tone: Tone::Plain,
+        text: format!(
+            "╭─ {} {}",
+            overlay.title,
+            "─".repeat(
+                (width as usize)
+                    .saturating_sub(title_width)
+                    .saturating_sub(5)
+            )
+        ),
+        tone: Tone::Accent,
         bold: true,
     });
     for row in overlay.lines {
-        let prefix = if row.selected { "  ❯ " } else { "    " };
-        lines.extend(wrapped_line(
-            prefix,
-            if row.selected {
-                Tone::Accent
+        for (part_index, part) in row.text.lines().enumerate() {
+            let prefix = if part_index == 0 {
+                if row.selected { "│ ❯ " } else { "│   " }
             } else {
-                Tone::Muted
-            },
-            &row.text,
-            if row.muted { Tone::Muted } else { Tone::Plain },
-            row.selected,
-            width,
-        ));
+                "│     "
+            };
+            lines.extend(wrapped_line(
+                prefix,
+                if row.selected {
+                    Tone::Accent
+                } else {
+                    Tone::Muted
+                },
+                part,
+                if row.muted { Tone::Muted } else { Tone::Plain },
+                row.selected && part_index == 0,
+                width,
+            ));
+        }
     }
     lines.push(PaintLine {
-        prefix: "    ".to_owned(),
+        prefix: "╰─ ".to_owned(),
         prefix_tone: Tone::Muted,
         text: overlay.hint,
         tone: Tone::Muted,
@@ -351,26 +530,92 @@ fn block_lines(block: &Block, width: u16) -> Vec<PaintLine> {
 
     let mut code = false;
     for raw_line in block.body.lines() {
-        if raw_line.trim_start().starts_with("```") {
+        let trimmed = raw_line.trim_start();
+        if let Some(language) = trimmed.strip_prefix("```") {
+            if code {
+                lines.push(PaintLine {
+                    prefix: "  ".to_owned(),
+                    prefix_tone: Tone::Muted,
+                    text: "└────────────────".to_owned(),
+                    tone: Tone::Muted,
+                    bold: false,
+                });
+            } else {
+                let label = if language.trim().is_empty() {
+                    "code"
+                } else {
+                    language.trim()
+                };
+                lines.push(PaintLine {
+                    prefix: "  ".to_owned(),
+                    prefix_tone: Tone::Muted,
+                    text: format!("┌─ {label}"),
+                    tone: Tone::Muted,
+                    bold: false,
+                });
+            }
             code = !code;
             continue;
         }
-        let trimmed = raw_line.trim_start();
-        let (body_tone, bold) = if code {
-            (Tone::Code, false)
+
+        if code {
+            lines.extend(wrapped_line(
+                "  │ ",
+                Tone::Muted,
+                raw_line,
+                Tone::Code,
+                false,
+                width,
+            ));
         } else if trimmed.starts_with('#') {
-            (Tone::Plain, true)
+            lines.extend(wrapped_line(
+                "  ",
+                Tone::Muted,
+                trimmed.trim_start_matches('#').trim_start(),
+                Tone::Plain,
+                true,
+                width,
+            ));
+        } else if let Some(item) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        {
+            lines.extend(wrapped_line(
+                "  • ",
+                Tone::Accent,
+                item,
+                Tone::Plain,
+                false,
+                width,
+            ));
+        } else if let Some(quote) = trimmed.strip_prefix("> ") {
+            lines.extend(wrapped_line(
+                "  │ ",
+                Tone::Muted,
+                quote,
+                Tone::Muted,
+                false,
+                width,
+            ));
         } else {
-            (Tone::Plain, false)
-        };
-        lines.extend(wrapped_line(
-            "  ",
-            Tone::Muted,
-            raw_line,
-            body_tone,
-            bold,
-            width,
-        ));
+            lines.extend(wrapped_line(
+                "  ",
+                Tone::Muted,
+                raw_line,
+                Tone::Plain,
+                false,
+                width,
+            ));
+        }
+    }
+    if code {
+        lines.push(PaintLine {
+            prefix: "  ".to_owned(),
+            prefix_tone: Tone::Muted,
+            text: "└────────────────".to_owned(),
+            tone: Tone::Muted,
+            bold: false,
+        });
     }
     lines.push(PaintLine::blank());
     lines
@@ -419,16 +664,14 @@ fn wrapped_line(
 }
 
 fn input_lines(editor: &Editor, width: u16) -> (Vec<PaintLine>, usize, usize) {
-    let width = width.max(8) as usize;
-    let first_prefix = "❯ ";
-    let continuation_prefix = "  ";
-    let mut rows = vec![PaintLine {
-        prefix: first_prefix.to_owned(),
-        prefix_tone: Tone::Accent,
-        text: String::new(),
-        tone: Tone::Plain,
-        bold: false,
-    }];
+    let panel_width = (width as usize).saturating_sub(1).max(16);
+    let first_prefix = "│ ❯ ";
+    let continuation_prefix = "│   ";
+    let content_width = panel_width
+        .saturating_sub(UnicodeWidthStr::width(first_prefix))
+        .saturating_sub(1)
+        .max(4);
+    let mut raw_rows = vec![String::new()];
     let mut row = 0;
     let mut column = UnicodeWidthStr::width(first_prefix);
     let mut cursor_row = 0;
@@ -441,27 +684,20 @@ fn input_lines(editor: &Editor, width: u16) -> (Vec<PaintLine>, usize, usize) {
         }
 
         if ch == '\n' {
-            rows.push(PaintLine {
-                prefix: continuation_prefix.to_owned(),
-                prefix_tone: Tone::Muted,
-                text: String::new(),
-                tone: Tone::Plain,
-                bold: false,
-            });
+            raw_rows.push(String::new());
             row += 1;
             column = UnicodeWidthStr::width(continuation_prefix);
             continue;
         }
 
         let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if column + ch_width >= width && !rows[row].text.is_empty() {
-            rows.push(PaintLine {
-                prefix: continuation_prefix.to_owned(),
-                prefix_tone: Tone::Muted,
-                text: String::new(),
-                tone: Tone::Plain,
-                bold: false,
-            });
+        let content_column = column.saturating_sub(UnicodeWidthStr::width(if row == 0 {
+            first_prefix
+        } else {
+            continuation_prefix
+        }));
+        if content_column + ch_width > content_width && !raw_rows[row].is_empty() {
+            raw_rows.push(String::new());
             row += 1;
             column = UnicodeWidthStr::width(continuation_prefix);
             if index == editor.cursor() {
@@ -469,7 +705,7 @@ fn input_lines(editor: &Editor, width: u16) -> (Vec<PaintLine>, usize, usize) {
                 cursor_column = column;
             }
         }
-        rows[row].text.push(ch);
+        raw_rows[row].push(ch);
         column += ch_width;
     }
 
@@ -477,7 +713,76 @@ fn input_lines(editor: &Editor, width: u16) -> (Vec<PaintLine>, usize, usize) {
         cursor_row = row;
         cursor_column = column;
     }
-    (rows, cursor_row, cursor_column)
+
+    let mut rows = Vec::with_capacity(raw_rows.len() + 2);
+    let top_label = " Message ";
+    rows.push(PaintLine {
+        prefix: String::new(),
+        prefix_tone: Tone::Muted,
+        text: format!(
+            "╭─{top_label}{}╮",
+            "─".repeat(panel_width.saturating_sub(3 + top_label.len()))
+        ),
+        tone: Tone::Muted,
+        bold: false,
+    });
+    for (index, raw) in raw_rows.into_iter().enumerate() {
+        let is_placeholder = editor.is_empty() && index == 0;
+        let content = if is_placeholder {
+            "Ask Codex to build, fix, or explain…".to_owned()
+        } else {
+            raw
+        };
+        let padding = content_width.saturating_sub(UnicodeWidthStr::width(content.as_str()));
+        rows.push(PaintLine {
+            prefix: if index == 0 {
+                first_prefix.to_owned()
+            } else {
+                continuation_prefix.to_owned()
+            },
+            prefix_tone: if index == 0 {
+                Tone::Accent
+            } else {
+                Tone::Muted
+            },
+            text: format!("{content}{}│", " ".repeat(padding)),
+            tone: if is_placeholder {
+                Tone::Muted
+            } else {
+                Tone::Plain
+            },
+            bold: false,
+        });
+    }
+    rows.push(PaintLine {
+        prefix: String::new(),
+        prefix_tone: Tone::Muted,
+        text: format!("╰{}╯", "─".repeat(panel_width.saturating_sub(2))),
+        tone: Tone::Muted,
+        bold: false,
+    });
+
+    (rows, cursor_row + 1, cursor_column)
+}
+
+fn compact_text(text: &str, max_width: usize) -> String {
+    if UnicodeWidthStr::width(text) <= max_width {
+        return text.to_owned();
+    }
+    if max_width <= 1 {
+        return "…".to_owned();
+    }
+    let mut output = String::new();
+    let mut width = 0;
+    for ch in text.chars().rev() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width >= max_width {
+            break;
+        }
+        output.insert(0, ch);
+        width += ch_width;
+    }
+    format!("…{output}")
 }
 
 fn print_line(out: &mut Stdout, line: &PaintLine) -> Result<()> {

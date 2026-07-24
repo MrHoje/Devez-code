@@ -1,12 +1,61 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    time::Instant,
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use serde_json::{Map, Value, json};
 
 use crate::{
     editor::Editor,
-    renderer::{Block, BlockKind, OverlayLine, OverlayView, View},
+    renderer::{Block, BlockKind, OverlayLine, OverlayView, SuggestionView, View, WelcomeView},
 };
+
+const SPINNER: [&str; 8] = ["✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳"];
+
+struct SlashCommand {
+    name: &'static str,
+    description: &'static str,
+    takes_argument: bool,
+}
+
+const SLASH_COMMANDS: [SlashCommand; 7] = [
+    SlashCommand {
+        name: "/model",
+        description: "Switch model and reasoning",
+        takes_argument: true,
+    },
+    SlashCommand {
+        name: "/effort",
+        description: "Set reasoning effort",
+        takes_argument: true,
+    },
+    SlashCommand {
+        name: "/new",
+        description: "Start a new thread",
+        takes_argument: false,
+    },
+    SlashCommand {
+        name: "/status",
+        description: "Show session details",
+        takes_argument: false,
+    },
+    SlashCommand {
+        name: "/clear",
+        description: "Clear the terminal",
+        takes_argument: false,
+    },
+    SlashCommand {
+        name: "/help",
+        description: "Show commands and shortcuts",
+        takes_argument: false,
+    },
+    SlashCommand {
+        name: "/quit",
+        description: "Exit Devez CLI",
+        takes_argument: false,
+    },
+];
 
 #[derive(Clone)]
 pub struct ModelInfo {
@@ -67,6 +116,7 @@ pub enum Action {
     NewThread,
     Quit,
     ClearScreen,
+    Tick,
     RpcResponse { id: Value, result: Value },
     RpcError { id: Value, message: String },
 }
@@ -118,6 +168,7 @@ pub struct AppState {
     pub turn_id: Option<String>,
     pub busy: bool,
     pub cwd: String,
+    account: String,
     models: Vec<ModelInfo>,
     selected_model: usize,
     selected_effort: String,
@@ -128,12 +179,17 @@ pub struct AppState {
     total_tokens: u64,
     context_window: Option<u64>,
     transient_status: Option<String>,
+    show_welcome: bool,
+    command_selection: usize,
+    spinner_frame: usize,
+    turn_started_at: Option<Instant>,
 }
 
 impl AppState {
     pub fn new(
         thread_id: String,
         cwd: String,
+        account: String,
         models: Vec<ModelInfo>,
         model: &str,
         effort: Option<&str>,
@@ -160,20 +216,21 @@ impl AppState {
             turn_id: None,
             busy: false,
             cwd,
+            account,
             models,
             selected_model,
             selected_effort,
-            committed: vec![Block::new(
-                BlockKind::System,
-                "Devez CLI",
-                "공식 Codex app-server에 연결되었습니다. /help로 명령을 확인하세요.",
-            )],
+            committed: Vec::new(),
             active_order: Vec::new(),
             active: HashMap::new(),
             pending: None,
             total_tokens: 0,
             context_window: None,
             transient_status: None,
+            show_welcome: true,
+            command_selection: 0,
+            spinner_frame: 0,
+            turn_started_at: None,
         }
     }
 
@@ -202,8 +259,10 @@ impl AppState {
         self.cwd = cwd;
         self.turn_id = None;
         self.busy = false;
+        self.turn_started_at = None;
         self.active.clear();
         self.active_order.clear();
+        self.show_welcome = true;
         if let Some(index) = self
             .models
             .iter()
@@ -234,16 +293,19 @@ impl AppState {
                 }
             }
         }
+        self.show_welcome = false;
     }
 
     pub fn set_turn_started(&mut self, turn_id: String) {
         self.turn_id = Some(turn_id);
         self.busy = true;
+        self.turn_started_at = Some(Instant::now());
     }
 
     pub fn set_request_failed(&mut self, message: impl Into<String>) {
         self.busy = false;
         self.turn_id = None;
+        self.turn_started_at = None;
         self.committed
             .push(Block::new(BlockKind::Error, "요청 실패", message));
     }
@@ -272,7 +334,25 @@ impl AppState {
             live_blocks,
             overlay: self.overlay_view(),
             editor: &self.editor,
+            welcome: self.show_welcome.then(|| WelcomeView {
+                model: self.selected_model_name().to_owned(),
+                effort: self.selected_effort.clone(),
+                cwd: self.cwd.clone(),
+                account: self.account.clone(),
+            }),
+            suggestions: if self.pending.is_none() {
+                self.slash_suggestion_views()
+            } else {
+                Vec::new()
+            },
+            activity: self.activity(),
             footer: self.footer(),
+        }
+    }
+
+    pub fn tick(&mut self) {
+        if self.busy {
+            self.spinner_frame = (self.spinner_frame + 1) % SPINNER.len();
         }
     }
 
@@ -284,7 +364,10 @@ impl AppState {
                 ..
             }) => editor.insert_str(text),
             Some(_) => {}
-            None => self.editor.insert_str(text),
+            None => {
+                self.editor.insert_str(text);
+                self.command_selection = 0;
+            }
         }
     }
 
@@ -299,6 +382,41 @@ impl AppState {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+
+        let slash_matches = self.matching_slash_commands();
+        if !slash_matches.is_empty() && !ctrl && !alt {
+            match key.code {
+                KeyCode::Up => {
+                    self.command_selection = self.command_selection.saturating_sub(1);
+                    return Action::None;
+                }
+                KeyCode::Down => {
+                    self.command_selection =
+                        (self.command_selection + 1).min(slash_matches.len() - 1);
+                    return Action::None;
+                }
+                KeyCode::Tab => {
+                    let selected =
+                        slash_matches[self.command_selection.min(slash_matches.len() - 1)];
+                    self.editor.set_text(if selected.takes_argument {
+                        format!("{} ", selected.name)
+                    } else {
+                        selected.name.to_owned()
+                    });
+                    self.command_selection = 0;
+                    return Action::None;
+                }
+                KeyCode::Enter => {
+                    let selected =
+                        slash_matches[self.command_selection.min(slash_matches.len() - 1)];
+                    self.editor.set_text(selected.name);
+                    self.command_selection = 0;
+                    return self.submit_editor();
+                }
+                _ => {}
+            }
+        }
+
         match key.code {
             KeyCode::Char('c') if ctrl => {
                 if self.busy {
@@ -321,7 +439,7 @@ impl AppState {
                 Action::None
             }
             KeyCode::Char('w') if ctrl => {
-                self.editor.move_word_left();
+                self.editor.delete_word_left();
                 Action::None
             }
             KeyCode::Enter if alt || shift => {
@@ -332,10 +450,12 @@ impl AppState {
             KeyCode::Esc if self.busy => Action::Interrupt,
             KeyCode::Backspace => {
                 self.editor.backspace();
+                self.command_selection = 0;
                 Action::None
             }
             KeyCode::Delete => {
                 self.editor.delete();
+                self.command_selection = 0;
                 Action::None
             }
             KeyCode::Left if alt || ctrl => {
@@ -372,6 +492,7 @@ impl AppState {
             }
             KeyCode::Char(ch) if !ctrl => {
                 self.editor.insert(ch);
+                self.command_selection = 0;
                 Action::None
             }
             _ => Action::None,
@@ -498,6 +619,7 @@ impl AppState {
             "turn/completed" => {
                 self.busy = false;
                 self.turn_id = None;
+                self.turn_started_at = None;
                 if let Some(error) = params
                     .get("turn")
                     .and_then(|turn| turn.get("error"))
@@ -629,6 +751,7 @@ impl AppState {
         if text.starts_with('/') && !text.contains('\n') {
             return self.run_slash_command(&text);
         }
+        self.show_welcome = false;
         self.committed
             .push(Block::new(BlockKind::User, "You", text.clone()));
         if self.busy {
@@ -679,6 +802,22 @@ impl AppState {
                 };
                 let effort = parts.get(2).copied();
                 self.apply_model(index, effort);
+                Action::None
+            }
+            "/effort" if parts.len() == 1 => {
+                let effort_index = self
+                    .selected_model()
+                    .and_then(|model| {
+                        model
+                            .efforts
+                            .iter()
+                            .position(|effort| effort.id == self.selected_effort)
+                    })
+                    .unwrap_or(0);
+                self.pending = Some(PendingInteraction::ModelPicker {
+                    model_index: self.selected_model,
+                    effort_index,
+                });
                 Action::None
             }
             "/effort" if parts.len() == 2 => {
@@ -1004,6 +1143,43 @@ impl AppState {
         }
     }
 
+    fn matching_slash_commands(&self) -> Vec<&'static SlashCommand> {
+        let text = self.editor.text();
+        if !text.starts_with('/') || text.chars().any(char::is_whitespace) {
+            return Vec::new();
+        }
+        SLASH_COMMANDS
+            .iter()
+            .filter(|command| command.name.starts_with(&text))
+            .collect()
+    }
+
+    fn slash_suggestion_views(&self) -> Vec<SuggestionView> {
+        self.matching_slash_commands()
+            .into_iter()
+            .enumerate()
+            .map(|(index, command)| SuggestionView {
+                command: command.name.to_owned(),
+                description: command.description.to_owned(),
+                selected: index == self.command_selection,
+            })
+            .collect()
+    }
+
+    fn activity(&self) -> Option<String> {
+        if !self.busy {
+            return None;
+        }
+        let elapsed = self
+            .turn_started_at
+            .map(|started| started.elapsed().as_secs())
+            .unwrap_or(0);
+        Some(format!(
+            "{} Working… {}s · Esc to interrupt",
+            SPINNER[self.spinner_frame], elapsed
+        ))
+    }
+
     fn footer(&self) -> String {
         let model = self.selected_model_name();
         let usage = match self.context_window {
@@ -1283,6 +1459,12 @@ fn completed_item_block(item: &Value) -> Option<Block> {
             let suffix = exit
                 .map(|code| format!(" · exit {code}"))
                 .unwrap_or_default();
+            let duration = item
+                .get("durationMs")
+                .and_then(Value::as_u64)
+                .map(format_duration)
+                .map(|duration| format!(" · {duration}"))
+                .unwrap_or_default();
             Some(Block::new(
                 if status == "completed" {
                     BlockKind::Tool
@@ -1290,7 +1472,7 @@ fn completed_item_block(item: &Value) -> Option<Block> {
                     BlockKind::Warning
                 },
                 format!(
-                    "Bash · {}{suffix}",
+                    "Bash · {}{suffix}{duration}",
                     compact_command(
                         item.get("command")
                             .and_then(Value::as_str)
@@ -1368,10 +1550,39 @@ fn file_changes_body(changes: &[Value]) -> String {
                 .and_then(|kind| kind.get("type"))
                 .and_then(Value::as_str)
                 .unwrap_or("update");
-            format!("{kind:>6}  {path}")
+            let diff = change
+                .get("diff")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let additions = diff
+                .lines()
+                .filter(|line| line.starts_with('+') && !line.starts_with("+++"))
+                .count();
+            let deletions = diff
+                .lines()
+                .filter(|line| line.starts_with('-') && !line.starts_with("---"))
+                .count();
+            let stats = match (additions, deletions) {
+                (0, 0) => String::new(),
+                _ => format!("  +{additions} -{deletions}"),
+            };
+            let marker = match kind {
+                "add" => "+",
+                "delete" => "-",
+                _ => "±",
+            };
+            format!("{marker}  {path}{stats}")
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn format_duration(duration_ms: u64) -> String {
+    if duration_ms < 1_000 {
+        format!("{duration_ms}ms")
+    } else {
+        format!("{:.1}s", duration_ms as f64 / 1_000.0)
+    }
 }
 
 fn append_capped(target: &mut String, delta: &str) {
