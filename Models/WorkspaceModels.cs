@@ -599,21 +599,33 @@ public sealed class ProjectItem : NotifyBase
     /// 순간 0 이 되어 HasHiddenSessions/ShowHiddenGroup 이 false 로 튀고, 숨김 그룹 TreeExpander 가
     /// 접힘→펼침 애니를 매번 재생해 그룹 전체가 사라졌다 자라나는 깜빡임이 생긴다(탭 X 숨기기·숨김 해제 시).</summary>
     private static void SyncObservable<T>(ObservableCollection<T> target, IReadOnlyList<T> desired)
+        where T : class
     {
-        for (int i = target.Count - 1; i >= 0; i--)
+        if (target.Count == desired.Count)
         {
-            bool keep = false;
-            for (int j = 0; j < desired.Count; j++)
-                if (ReferenceEquals(target[i], desired[j])) { keep = true; break; }
-            if (!keep) target.RemoveAt(i);
+            bool identical = true;
+            for (int i = 0; i < target.Count; i++)
+            {
+                if (ReferenceEquals(target[i], desired[i])) continue;
+                identical = false;
+                break;
+            }
+            if (identical) return;
         }
+
+        var desiredSet = new HashSet<T>(desired, ReferenceEqualityComparer.Instance);
+        for (int i = target.Count - 1; i >= 0; i--)
+            if (!desiredSet.Contains(target[i])) target.RemoveAt(i);
+
         for (int i = 0; i < desired.Count; i++)
         {
+            if (i < target.Count && ReferenceEquals(target[i], desired[i])) continue;
+
             int cur = -1;
-            for (int j = 0; j < target.Count; j++)
+            for (int j = i + 1; j < target.Count; j++)
                 if (ReferenceEquals(target[j], desired[i])) { cur = j; break; }
             if (cur < 0) target.Insert(i, desired[i]);
-            else if (cur != i) target.Move(cur, i);
+            else target.Move(cur, i);
         }
     }
     /// <summary>우측 패널에서 활성이던 탭 참조. LastActiveTabRef 는 좌측 활성 탭용. workspace.json 에 영속.</summary>
@@ -1236,6 +1248,9 @@ public sealed class ProjectItem : NotifyBase
     private void ApplyDetachedParentLabels(List<TabItemBase> left, List<TabItemBase> right)
     {
         var unvisited = Sessions.ToHashSet();
+        var sessionsById = Sessions
+            .GroupBy(session => session.Id)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         Mark(left, right);
         Mark(right, left);
         foreach (var session in unvisited) session.DetachedParentSession = null;
@@ -1254,7 +1269,10 @@ public sealed class ProjectItem : NotifyBase
                 if (item is not SessionItem session) { prevLabelParent = null; continue; }
                 unvisited.Remove(session);
                 if (!RowVisible(session)) { session.DetachedParentSession = null; continue; }
-                var parent = SessionParentOf(session);
+                var parent = !string.IsNullOrEmpty(session.ParentSessionId) &&
+                             sessionsById.TryGetValue(session.ParentSessionId, out var foundParent)
+                    ? foundParent
+                    : null;
                 bool detached = parent != null && !here.Contains(parent) && there.Contains(parent);
                 session.DetachedParentSession =
                     detached && !ReferenceEquals(parent, prevLabelParent) ? parent : null;
@@ -1268,6 +1286,16 @@ public sealed class ProjectItem : NotifyBase
         var sourceSessions = source.OfType<SessionItem>()
             .Where(s => !s.IsSidebarGloballyHidden).ToList();
         var sessionSet = sourceSessions.ToHashSet();
+        var sessionsById = sourceSessions
+            .GroupBy(session => session.Id)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var childrenByParentId = sourceSessions
+            .Where(session => !string.IsNullOrEmpty(session.ParentSessionId))
+            .GroupBy(session => session.ParentSessionId!, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(session => session.Hidden ? 1 : 0).ToList(),
+                StringComparer.Ordinal);
         var result = new List<TabItemBase>();
         var emitted = new HashSet<SessionItem>();
 
@@ -1275,16 +1303,17 @@ public sealed class ProjectItem : NotifyBase
         {
             if (!emitted.Add(session)) return;
             result.Add(session);
-            var children = sourceSessions.Where(s => s.ParentSessionId == session.Id)
-                .OrderBy(s => s.Hidden ? 1 : 0);
-            foreach (var child in children) Emit(child);
+            if (childrenByParentId.TryGetValue(session.Id, out var children))
+                foreach (var child in children) Emit(child);
         }
 
         foreach (var item in source)
         {
             if (item is not SessionItem session) { result.Add(item); continue; }
             if (!sessionSet.Contains(session)) continue;
-            if (SessionParentOf(session) is { } parent && sessionSet.Contains(parent)) continue;
+            if (!string.IsNullOrEmpty(session.ParentSessionId) &&
+                sessionsById.TryGetValue(session.ParentSessionId, out var parent) &&
+                sessionSet.Contains(parent)) continue;
             Emit(session);
         }
         foreach (var session in sourceSessions) Emit(session);
