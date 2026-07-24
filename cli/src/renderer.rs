@@ -102,8 +102,8 @@ impl Drop for TerminalSession {
 
 pub struct Renderer {
     out: Stdout,
-    live_rows: u16,
-    cursor_from_bottom: u16,
+    previous_lines: Vec<PaintLine>,
+    cursor_line: usize,
     last_width: u16,
 }
 
@@ -111,29 +111,21 @@ impl Renderer {
     pub fn new() -> Self {
         Self {
             out: stdout(),
-            live_rows: 0,
-            cursor_from_bottom: 0,
+            previous_lines: Vec::new(),
+            cursor_line: 0,
             last_width: 0,
         }
     }
 
     pub fn clear_screen(&mut self) -> Result<()> {
-        self.live_rows = 0;
-        self.cursor_from_bottom = 0;
+        self.previous_lines.clear();
+        self.cursor_line = 0;
         execute!(self.out, Clear(ClearType::All), MoveTo(0, 0), Show)?;
         Ok(())
     }
 
     pub fn render(&mut self, committed: &[Block], view: View<'_>) -> Result<()> {
-        self.erase_live()?;
         let (width, height) = terminal_size().unwrap_or((100, 30));
-        self.last_width = width;
-
-        for block in committed {
-            let lines = block_lines(block, width.max(20));
-            self.print_permanent(&lines)?;
-        }
-
         let mut frame = if let Some(overlay) = view.overlay {
             overlay_frame(&view.live_blocks, overlay, &view.footer, width.max(20))
         } else {
@@ -155,9 +147,22 @@ impl Renderer {
             frame.cursor_line = frame.cursor_line.saturating_sub(dropped);
         }
 
-        self.print_frame(&frame)?;
-        self.live_rows = frame.lines.len() as u16;
-        self.cursor_from_bottom = (frame.lines.len() - 1 - frame.cursor_line) as u16;
+        let needs_full_repaint =
+            self.previous_lines.is_empty() || self.last_width != width || !committed.is_empty();
+        if needs_full_repaint {
+            self.erase_live()?;
+            for block in committed {
+                let lines = block_lines(block, width.max(20));
+                self.print_permanent(&lines)?;
+            }
+            self.print_frame_full(&frame)?;
+        } else {
+            self.patch_frame(&frame)?;
+        }
+
+        self.previous_lines = frame.lines.clone();
+        self.cursor_line = frame.cursor_line;
+        self.last_width = width;
         self.out.flush()?;
         Ok(())
     }
@@ -170,20 +175,20 @@ impl Renderer {
     }
 
     fn erase_live(&mut self) -> Result<()> {
-        if self.live_rows == 0 {
+        if self.previous_lines.is_empty() {
             return Ok(());
         }
 
-        if self.cursor_from_bottom > 0 {
-            queue!(self.out, MoveDown(self.cursor_from_bottom))?;
-        }
         queue!(self.out, MoveToColumn(0))?;
-        if self.live_rows > 1 {
-            queue!(self.out, MoveUp(self.live_rows - 1))?;
+        if self.cursor_line > 0 {
+            queue!(
+                self.out,
+                MoveUp(self.cursor_line.min(u16::MAX as usize) as u16)
+            )?;
         }
         queue!(self.out, Clear(ClearType::FromCursorDown))?;
-        self.live_rows = 0;
-        self.cursor_from_bottom = 0;
+        self.previous_lines.clear();
+        self.cursor_line = 0;
         Ok(())
     }
 
@@ -196,7 +201,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn print_frame(&mut self, frame: &Frame) -> Result<()> {
+    fn print_frame_full(&mut self, frame: &Frame) -> Result<()> {
         queue!(self.out, Hide)?;
         for (index, line) in frame.lines.iter().enumerate() {
             print_line(&mut self.out, line)?;
@@ -218,6 +223,77 @@ impl Renderer {
         }
         Ok(())
     }
+
+    fn patch_frame(&mut self, frame: &Frame) -> Result<()> {
+        let old_len = self.previous_lines.len();
+        let new_len = frame.lines.len();
+        if old_len == 0 || new_len == 0 {
+            self.erase_live()?;
+            return self.print_frame_full(frame);
+        }
+
+        queue!(self.out, Hide)?;
+        let mut current_row = self.cursor_line.min(old_len - 1);
+
+        if new_len > old_len {
+            move_to_row(&mut self.out, &mut current_row, old_len - 1)?;
+            for _ in old_len..new_len {
+                queue!(self.out, Print("\r\n"))?;
+                current_row += 1;
+            }
+        }
+
+        for row in 0..new_len {
+            let changed = self.previous_lines.get(row) != frame.lines.get(row);
+            if changed {
+                move_to_row(&mut self.out, &mut current_row, row)?;
+                queue!(self.out, Clear(ClearType::CurrentLine))?;
+                print_line(&mut self.out, &frame.lines[row])?;
+            }
+        }
+
+        if old_len > new_len {
+            for row in new_len..old_len {
+                move_to_row(&mut self.out, &mut current_row, row)?;
+                queue!(self.out, Clear(ClearType::CurrentLine))?;
+            }
+        }
+
+        move_to_row(
+            &mut self.out,
+            &mut current_row,
+            frame.cursor_line.min(new_len - 1),
+        )?;
+        queue!(
+            self.out,
+            MoveToColumn(frame.cursor_col.min(u16::MAX as usize) as u16)
+        )?;
+        if frame.show_cursor {
+            queue!(self.out, Show)?;
+        }
+        Ok(())
+    }
+}
+
+fn move_to_row(out: &mut Stdout, current_row: &mut usize, target_row: usize) -> Result<()> {
+    match target_row.cmp(current_row) {
+        std::cmp::Ordering::Greater => {
+            queue!(
+                out,
+                MoveDown((target_row - *current_row).min(u16::MAX as usize) as u16)
+            )?;
+        }
+        std::cmp::Ordering::Less => {
+            queue!(
+                out,
+                MoveUp((*current_row - target_row).min(u16::MAX as usize) as u16)
+            )?;
+        }
+        std::cmp::Ordering::Equal => {}
+    }
+    queue!(out, MoveToColumn(0))?;
+    *current_row = target_row;
+    Ok(())
 }
 
 struct Frame {
@@ -227,7 +303,7 @@ struct Frame {
     show_cursor: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Tone {
     Plain,
     Muted,
@@ -239,6 +315,7 @@ enum Tone {
     Code,
 }
 
+#[derive(Clone, PartialEq, Eq)]
 struct PaintLine {
     prefix: String,
     prefix_tone: Tone,
