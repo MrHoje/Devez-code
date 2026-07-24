@@ -2209,6 +2209,7 @@ public partial class MainWindow : Window
             UpdateLayout(); // webCover resume 전 최종 폭 확정 (expectWidth 정확성)
             UnfreezeWorkspaceTerminals();
             UpdateShellToggleVisual();
+            if (open) ShellTerminal.FocusTerminal(); // 열리면 바로 입력 가능 (pageReady 전이면 내부 보류 후 적용)
         }
     }
 
