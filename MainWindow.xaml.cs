@@ -2998,6 +2998,7 @@ public partial class MainWindow : Window
         SettingsService.SaveLastActive(proj?.Path, _focusedPane.ActiveSession?.Id);
     }
 
+    private const double SplitPaneMinWidth = 30;
     private bool _splitActive;
 
     // 분할 펼침/접힘 애니메이션 진행도(0=합쳐짐, 1=완전 분할). GridLength 는 직접 애니메이션이 안 되므로
@@ -3502,6 +3503,11 @@ public partial class MainWindow : Window
         if (_splitActive) return;
         _splitActive = true;
 
+        // 안정된 분할 상태에서는 양쪽 모두 30px 아래로 줄지 않는다.
+        // PaneB 는 펼침 애니메이션의 0px 시작을 보존하기 위해 완료 시 MinWidth 를 적용한다.
+        PaneACol.MinWidth = SplitPaneMinWidth;
+        PaneBCol.MinWidth = animate ? 0 : SplitPaneMinWidth;
+
         // 분할 진입은 항상 정규 배치(PaneA=좌/PaneB=우)에서 시작. (DisableSplit 가 이미 정규화하지만 방어적으로 보장)
         _panesSwapped = false;
         Grid.SetColumn(PaneA, 0);
@@ -3552,6 +3558,7 @@ public partial class MainWindow : Window
         AnimatePaneSplit(0, targetStar, () =>
         {
             PaneBCol.Width = new GridLength(targetStar, GridUnitType.Star);
+            if (_splitActive) PaneBCol.MinWidth = SplitPaneMinWidth;
             PaneB.SetEmptyTextWrapping(true); // 완전히 펼쳐진 후에만 줄바꿈
             PaneA.ResumeTerminalOnly(webCover: true);
             PaneB.ResumeTerminalOnly(webCover: true);
@@ -3648,6 +3655,10 @@ public partial class MainWindow : Window
     {
         if (!_splitActive) return;
         _splitActive = false;
+
+        // PaneB 가 접힘 애니메이션과 비분할 최종 상태에서 0px까지 내려갈 수 있게 제한을 먼저 해제한다.
+        PaneACol.MinWidth = 0;
+        PaneBCol.MinWidth = 0;
 
         // 분할을 '사용자가 직접' 닫으면(animate=true) 너비 비율을 초기화 → 다음에 다시 열 때 1:1 로 시작.
         // 프로젝트 전환(animate=false)으로 잠시 닫힐 땐 보존한다 — 초기화하면 분할 프로젝트로 돌아올 때
@@ -5062,6 +5073,10 @@ public partial class MainWindow : Window
         if (subtree.Count == 0) return;
         var owners = subtree.ToDictionary(s => s, PaneFor);
         int removedIndex = subtree.Select(project.Tabs.IndexOf).Where(i => i >= 0).DefaultIfEmpty(0).Min();
+
+        // 응답 대기(❗) 중인 세션을 닫기/삭제하면 완료기록으로 내리고, 대기 플래그를 꺼 대기 카드도 즉시 제거한다.
+        foreach (var item in subtree)
+            if (item.IsWaitingChoice) { AddSessionCompletionRecord(item); item.IsWaitingChoice = false; }
 
         foreach (var pane in _panes)
             foreach (var item in subtree)

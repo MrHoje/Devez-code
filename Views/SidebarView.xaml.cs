@@ -15,6 +15,19 @@ namespace DevezCode.Views;
 /// <summary>좌측 사이드바 — 프로젝트(디렉터리) → 세션 트리. 동작은 이벤트로 MainWindow에 위임.</summary>
 public partial class SidebarView : UserControl
 {
+    public static readonly DependencyProperty SearchHighlightQueryProperty =
+        DependencyProperty.Register(
+            nameof(SearchHighlightQuery),
+            typeof(string),
+            typeof(SidebarView),
+            new PropertyMetadata(""));
+
+    public string SearchHighlightQuery
+    {
+        get => (string)GetValue(SearchHighlightQueryProperty);
+        private set => SetValue(SearchHighlightQueryProperty, value);
+    }
+
     public SidebarView()
     {
         InitializeComponent();
@@ -506,8 +519,11 @@ public partial class SidebarView : UserControl
     private const double SearchRowHeight = 47; // 8(margin-top) + 35(pill) + 4(margin-bottom)
 
     private void SearchToggleBtn_Click(object sender, RoutedEventArgs e)
+        => SetSidebarSearchOpen(!_searchOpen);
+
+    private void SetSidebarSearchOpen(bool open)
     {
-        _searchOpen = !_searchOpen;
+        _searchOpen = open;
         var anim = new DoubleAnimation
         {
             To = _searchOpen ? SearchRowHeight : 0,
@@ -582,6 +598,7 @@ public partial class SidebarView : UserControl
     private void ApplySidebarSearch()
     {
         _sidebarSearchQuery = SidebarSearchBox.Text?.Trim() ?? "";
+        SearchHighlightQuery = _sidebarSearchQuery;
         RefreshProjectGroups();
     }
 
@@ -589,6 +606,28 @@ public partial class SidebarView : UserControl
     {
         SidebarSearchBox.Clear();
         SidebarSearchBox.Focus();
+    }
+
+    /// <summary>검색창 Esc: 검색어가 있으면 먼저 지우고, 비어 있으면 검색 행을 접는다.</summary>
+    private void SidebarSearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+
+        if (!string.IsNullOrEmpty(SidebarSearchBox.Text))
+        {
+            SidebarSearchBox.Clear();
+        }
+        else
+        {
+            SetSidebarSearchOpen(false);
+            if (Window.GetWindow(this) is { } window)
+            {
+                FocusManager.SetFocusedElement(window, window);
+                Keyboard.Focus(window);
+            }
+        }
+
+        e.Handled = true;
     }
 
     private void ProjectScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -1242,6 +1281,32 @@ public partial class SidebarView : UserControl
         if (ItemOf<ProjectItem>(sender) is { } p) ProjectRenameRequested?.Invoke(p);
     }
 
+    private void ProjectMarker_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem item || ItemOf<ProjectItem>(item) is not { } project) return;
+
+        var marker = item.CommandParameter as string;
+        project.MarkerColor = string.Equals(marker, ProjectMarkerPalette.None, StringComparison.Ordinal)
+            ? null
+            : marker;
+
+        if (ItemsControl.ItemsControlFromItemContainer(item) is MenuItem parent)
+            UpdateProjectMarkerChecks(parent, project);
+
+        WorkspaceStore.Save(Projects, ArchivedProjects);
+    }
+
+    private static void UpdateProjectMarkerChecks(MenuItem markerMenu, ProjectItem project)
+    {
+        foreach (var option in markerMenu.Items.OfType<MenuItem>())
+        {
+            var marker = option.CommandParameter as string;
+            option.IsChecked = string.Equals(marker, ProjectMarkerPalette.None, StringComparison.Ordinal)
+                ? !project.HasMarker
+                : string.Equals(marker, project.MarkerColor, StringComparison.Ordinal);
+        }
+    }
+
     private void AddProjectFile_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<ProjectItem>(sender) is { } p) AddProjectFileRequested?.Invoke(p);
@@ -1302,6 +1367,11 @@ public partial class SidebarView : UserControl
         var p = cm.DataContext as ProjectItem
                 ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as ProjectItem;
         if (p is null) return;
+
+        var markerMenu = cm.Items.OfType<MenuItem>()
+            .FirstOrDefault(item => Equals(item.CommandParameter, "ProjectMarker"));
+        if (markerMenu != null)
+            UpdateProjectMarkerChecks(markerMenu, p);
 
         var gitRemoteItem = cm.Items.OfType<MenuItem>()
             .FirstOrDefault(item => Equals(item.CommandParameter, "GitRemote"));

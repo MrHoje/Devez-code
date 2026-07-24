@@ -4,6 +4,8 @@ using System.Collections.Specialized;
 using System.Linq;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Windows;
+using System.Windows.Threading;
 using DevezCode.Views;
 
 namespace DevezCode.Models;
@@ -73,13 +75,118 @@ public sealed class SessionItem : TabItemBase
 
     /// <summary>claude 가 요청 처리 중인지(응답 대기). true=좌측 트리에 스피너 표시.</summary>
     private bool _isBusy;
-    public bool IsBusy { get => _isBusy; set => Set(ref _isBusy, value); }
+    public bool IsBusy
+    {
+        get => _isBusy;
+        set
+        {
+            bool wasActive = _isBusy || _isWaitingChoice;
+            if (!Set(ref _isBusy, value)) return;
+            if (value) StartBusyElapsed();
+            else ResetBusyElapsed();
+            TriggerCompletionPulseIfNeeded(wasActive);
+        }
+    }
+
+    private DateTimeOffset? _busyStartedAt;
+    private DispatcherTimer? _busyElapsedTimer;
+    private string _busyElapsedToolTip = "";
+
+    /// <summary>세션 작업 시작 후 경과시간. 사이드바·워크스페이스 탭 스피너 Tooltip 용.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string BusyElapsedToolTip
+    {
+        get => _busyElapsedToolTip;
+        private set => Set(ref _busyElapsedToolTip, value);
+    }
+
+    private void StartBusyElapsed()
+    {
+        _busyStartedAt = DateTimeOffset.UtcNow;
+        BusyElapsedToolTip = FormatBusyElapsed(0);
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) return;
+
+        _busyElapsedTimer ??= new DispatcherTimer(
+            TimeSpan.FromSeconds(1),
+            DispatcherPriority.Background,
+            (_, _) => UpdateBusyElapsed(),
+            dispatcher);
+        _busyElapsedTimer.Start();
+    }
+
+    private void UpdateBusyElapsed()
+    {
+        if (!_isBusy || _busyStartedAt == null) return;
+        var seconds = Math.Max(0, (long)(DateTimeOffset.UtcNow - _busyStartedAt.Value).TotalSeconds);
+        BusyElapsedToolTip = FormatBusyElapsed(seconds);
+    }
+
+    private void ResetBusyElapsed()
+    {
+        _busyElapsedTimer?.Stop();
+        _busyStartedAt = null;
+        BusyElapsedToolTip = "";
+    }
+
+    private static string FormatBusyElapsed(long totalSeconds)
+    {
+        if (totalSeconds < 60) return $"작업 중 · {totalSeconds}초";
+        if (totalSeconds < 3600) return $"작업 중 · {totalSeconds / 60}분 {totalSeconds % 60}초";
+        return $"작업 중 · {totalSeconds / 3600}시간 {(totalSeconds % 3600) / 60}분";
+    }
 
     /// <summary>선택지/권한 응답 대기 중인지. true=스피너 대신 ❗(느낌표)를 표시(busy 중이라도 우선).
     /// 선택지·권한을 구분하지 않고 통틀어 '입력 대기'로 다룬다.
     /// claude=Notification/PermissionRequest 훅, opencode=question.asked, gjc=jsonl 'ask'.</summary>
     private bool _isWaitingChoice;
-    public bool IsWaitingChoice { get => _isWaitingChoice; set => Set(ref _isWaitingChoice, value); }
+    public bool IsWaitingChoice
+    {
+        get => _isWaitingChoice;
+        set
+        {
+            bool wasActive = _isBusy || _isWaitingChoice;
+            if (!Set(ref _isWaitingChoice, value)) return;
+            if (value) TriggerAttentionPulse();
+            else TriggerCompletionPulseIfNeeded(wasActive);
+        }
+    }
+
+    private bool _isCompletionPulsing;
+
+    /// <summary>입력 대기 또는 busy 완료를 사용자가 확인할 때까지 탭·세션 행 펄스를 표시한다.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsCompletionPulsing
+    {
+        get => _isCompletionPulsing;
+        private set => Set(ref _isCompletionPulsing, value);
+    }
+
+    private void TriggerCompletionPulseIfNeeded(bool wasActive)
+    {
+        // 이미 화면에서 보고 있는 세션은 완료 사실을 확인한 상태이므로 펄스를 만들지 않는다.
+        if (!wasActive || _isBusy || _isWaitingChoice || IsActive) return;
+        TriggerAttentionPulse();
+    }
+
+    private void TriggerAttentionPulse()
+    {
+        // 입력 대기 진입도 바로 알려야 하지만, 이미 보고 있는 세션에는 표시하지 않는다.
+        if (IsActive) return;
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) return;
+
+        // 연속 알림도 Storyboard EnterActions 를 다시 실행하도록 false→true 전환을 새 UI tick에 만든다.
+        IsCompletionPulsing = false;
+        dispatcher.BeginInvoke(new Action(() =>
+        {
+            IsCompletionPulsing = true;
+        }), DispatcherPriority.DataBind);
+    }
+
+    /// <summary>탭을 열거나 다시 클릭했을 때 지속 중인 완료 펄스를 해제한다.</summary>
+    public void AcknowledgeCompletionPulse() => IsCompletionPulsing = false;
 
     /// <summary>마지막으로 보낸 프롬프트(요약 1줄). busy 훅이 떨군 lastmsg 파일에서 갱신. 상단 헤더에 표시.</summary>
     private string _lastMessage = "";
@@ -433,6 +540,32 @@ public sealed class ProjectFolderItem : NotifyBase
     public bool IsSearchVisible { get => _isSearchVisible; set => Set(ref _isSearchVisible, value); }
 }
 
+/// <summary>프로젝트 카드에 저장 가능한 마커 색상 키.</summary>
+public static class ProjectMarkerPalette
+{
+    public const string None = "none";
+    public const string Red = "red";
+    public const string Orange = "orange";
+    public const string Yellow = "yellow";
+    public const string Green = "green";
+    public const string Teal = "teal";
+    public const string Blue = "blue";
+    public const string Purple = "purple";
+    public const string Pink = "pink";
+
+    private static readonly HashSet<string> Values = new(StringComparer.Ordinal)
+    {
+        Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink,
+    };
+
+    public static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var normalized = value.Trim().ToLowerInvariant();
+        return Values.Contains(normalized) ? normalized : null;
+    }
+}
+
 /// <summary>좌측 트리의 프로젝트(= 디렉터리). 하위에 탭(세션/파일) 목록을 가진다.</summary>
 public sealed class ProjectItem : NotifyBase
 {
@@ -484,6 +617,22 @@ public sealed class ProjectItem : NotifyBase
 
     private string _name = "";
     public string Name { get => _name; set => Set(ref _name, value); }
+
+    private string? _markerColor;
+    /// <summary>프로젝트 카드 왼쪽에 표시할 마커 색상 키. null이면 마커 없음.</summary>
+    public string? MarkerColor
+    {
+        get => _markerColor;
+        set
+        {
+            if (!Set(ref _markerColor, ProjectMarkerPalette.Normalize(value))) return;
+            OnPropertyChanged(nameof(HasMarker));
+            OnPropertyChanged(nameof(MarkerMenuHeader));
+        }
+    }
+
+    public bool HasMarker => _markerColor != null;
+    public string MarkerMenuHeader => HasMarker ? "마커 수정" : "마커 추가";
 
     private bool _isExpanded = true;
     public bool IsExpanded { get => _isExpanded; set => Set(ref _isExpanded, value); }

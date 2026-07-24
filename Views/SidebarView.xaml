@@ -54,6 +54,19 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="ProjectMarkerMenuItem"
+               TargetType="MenuItem"
+               BasedOn="{StaticResource {x:Type MenuItem}}">
+            <Setter Property="Cursor" Value="Arrow"/>
+            <Style.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Thickness x:Key="ProjectCardOuterMargin">0,3,0,8</Thickness>
 
         <!-- ── 프로젝트 카드: doit ShellShortcut 카드 디자인. 보더 항상 표시(LineBrush), 호버는 보더만(그림자 X → '떠오름' 인상이 텍스트 우상단 이동처럼 보임), 활성은 primary 보더 + 글로우 ── -->
@@ -220,6 +233,7 @@
                         </MenuItem>
                     </ContextMenu>
                 </Border.ContextMenu>
+                <Grid>
                 <!-- 1.5px 보더의 가로 위치는 보정하고, 세로 여백은 기존 대비 약 20% 큰 행 높이로 확장. -->
                 <Grid Margin="8.5,6,8.5,6">
                     <Grid.ColumnDefinitions>
@@ -269,6 +283,7 @@
                     <Grid Grid.Column="2" Width="12" Height="12" VerticalAlignment="Center">
                         <Ellipse x:Name="StatusDot" Style="{StaticResource SessionDot}"/>
                         <Ellipse x:Name="BusySpinner" Width="12" Height="12" Visibility="Collapsed"
+                                 ToolTip="{Binding BusyElapsedToolTip}"
                                  models:SpinnerActivator.Track="True"
                                  Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
                                  StrokeDashArray="15 100" StrokeDashCap="Round"
@@ -303,7 +318,9 @@
                             </Path.RenderTransform>
                         </Path>
                     </Grid>
-                    <TextBlock Grid.Column="3" Text="{Binding Name}" Margin="10,0,0,0"
+                    <TextBlock Grid.Column="3" Margin="10,0,0,0"
+                               b:SearchHighlight.Text="{Binding Name}"
+                               b:SearchHighlight.Query="{Binding SearchHighlightQuery, RelativeSource={RelativeSource AncestorType={x:Type local:SidebarView}}}"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                FontSize="{DynamicResource Fs12}"
                                Foreground="{DynamicResource TextBrush}"
@@ -325,6 +342,13 @@
                               Width="11" Height="11" Stretch="Uniform"/>
                     </Button>
                 </Grid>
+                <Border x:Name="SessionCompletionPulse"
+                        Background="{DynamicResource PrimaryBrush}"
+                        CornerRadius="7"
+                        Opacity="0"
+                        IsHitTestVisible="False"
+                        Panel.ZIndex="1"/>
+                </Grid>
                 </Border>
             </Grid>
             </Border>
@@ -336,6 +360,24 @@
                 <!-- 활성(보고 있는) 세션: 배경색 변경으로 구분 -->
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
                     <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsCompletionPulsing}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard x:Name="SessionCompletionPulseStoryboard">
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="SessionCompletionPulse"
+                                                 Storyboard.TargetProperty="Opacity"
+                                                 From="0" To="0.10"
+                                                 Duration="0:0:0.8"
+                                                 AutoReverse="True"
+                                                 RepeatBehavior="Forever"
+                                                 FillBehavior="Stop"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <RemoveStoryboard BeginStoryboardName="SessionCompletionPulseStoryboard"/>
+                    </DataTrigger.ExitActions>
                 </DataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
                 <DataTrigger Binding="{Binding IsEffectivelyHidden}" Value="True">
@@ -589,6 +631,86 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="{Binding MarkerMenuHeader}"
+                                  Tag="{Binding}"
+                                  CommandParameter="ProjectMarker"
+                                  Style="{StaticResource SubMenuHeaderItem}">
+                            <MenuItem.Icon>
+                                <Ellipse Width="13" Height="13"
+                                         Fill="Transparent"
+                                         Stroke="{DynamicResource TextMutedBrush}"
+                                         StrokeThickness="1.5"
+                                         StrokeDashArray="2 1"/>
+                            </MenuItem.Icon>
+                            <MenuItem Header="없음" Tag="{Binding}" CommandParameter="none"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10"
+                                             Fill="Transparent"
+                                             Stroke="{DynamicResource TextMutedBrush}"
+                                             StrokeThickness="1.5"
+                                             StrokeDashArray="2 1"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator/>
+                            <MenuItem Header="빨강" Tag="{Binding}" CommandParameter="red"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerRedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="주황" Tag="{Binding}" CommandParameter="orange"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerOrangeBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="노랑" Tag="{Binding}" CommandParameter="yellow"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerYellowBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="초록" Tag="{Binding}" CommandParameter="green"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerGreenBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="청록" Tag="{Binding}" CommandParameter="teal"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerTealBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="파랑" Tag="{Binding}" CommandParameter="blue"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerBlueBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="보라" Tag="{Binding}" CommandParameter="purple"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerPurpleBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="분홍" Tag="{Binding}" CommandParameter="pink"
+                                      IsCheckable="True" Click="ProjectMarker_Click"
+                                      Style="{StaticResource ProjectMarkerMenuItem}">
+                                <MenuItem.Icon>
+                                    <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerPinkBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                        </MenuItem>
                         <MenuItem Header="폴더에서 꺼내기" Tag="{Binding}" Click="RemoveProjectFromFolder_Click"
                                   Visibility="{Binding HasProjectFolder, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
                             <MenuItem.Icon>
@@ -643,18 +765,30 @@
                             <!-- 프로젝트 명 (1행, 좌측). 우상단 버튼과 같은 줄에 떠 잘리지 않음.
                                  접힘 상태에서 내부 세션이 요청 처리중이면 이름 왼쪽에 회전 스피너 노출. -->
                             <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
-                                <Ellipse x:Name="ProjectBusySpinner" Width="12" Height="12"
-                                         Margin="0,0,7,0" VerticalAlignment="Center"
-                                         Visibility="Collapsed"
-                                         models:SpinnerActivator.Track="True"
-                                         Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
-                                         StrokeDashArray="15 100" StrokeDashCap="Round"
-                                         RenderTransformOrigin="0.5,0.5">
-                                    <Ellipse.RenderTransform>
-                                        <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
-                                    </Ellipse.RenderTransform>
-                                </Ellipse>
-                                <TextBlock Text="{Binding Name}"
+                                <Grid x:Name="ProjectHeaderIndicator"
+                                      Width="12" Height="12"
+                                      Margin="0,0,7,0"
+                                      VerticalAlignment="Center"
+                                      Visibility="Collapsed">
+                                    <Ellipse x:Name="ProjectMarker"
+                                             Width="10" Height="10"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center"
+                                             Visibility="Collapsed"/>
+                                    <Ellipse x:Name="ProjectBusySpinner"
+                                             Width="12" Height="12"
+                                             Visibility="Collapsed"
+                                             models:SpinnerActivator.Track="True"
+                                             Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                             StrokeDashArray="15 100" StrokeDashCap="Round"
+                                             RenderTransformOrigin="0.5,0.5">
+                                        <Ellipse.RenderTransform>
+                                            <RotateTransform Angle="{Binding Angle, Source={x:Static models:SpinnerSync.Instance}}"/>
+                                        </Ellipse.RenderTransform>
+                                    </Ellipse>
+                                </Grid>
+                                <TextBlock b:SearchHighlight.Text="{Binding Name}"
+                                           b:SearchHighlight.Query="{Binding SearchHighlightQuery, RelativeSource={RelativeSource AncestorType={x:Type local:SidebarView}}}"
                                            TextTrimming="CharacterEllipsis"
                                            VerticalAlignment="Center"
                                            FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
@@ -916,12 +1050,42 @@
                 </StackPanel>
             </Border>
             <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding HasMarker}" Value="True">
+                    <Setter TargetName="ProjectHeaderIndicator" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="ProjectMarker" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding MarkerColor}" Value="red">
+                    <Setter TargetName="ProjectMarker" Property="Fill" Value="{DynamicResource ProjectMarkerRedBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding MarkerColor}" Value="orange">
+                    <Setter TargetName="ProjectMarker" Property="Fill" Value="{DynamicResource ProjectMarkerOrangeBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding MarkerColor}" Value="yellow">
+                    <Setter TargetName="ProjectMarker" Property="Fill" Value="{DynamicResource ProjectMarkerYellowBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding MarkerColor}" Value="green">
+                    <Setter TargetName="ProjectMarker" Property="Fill" Value="{DynamicResource ProjectMarkerGreenBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding MarkerColor}" Value="teal">
+                    <Setter TargetName="ProjectMarker" Property="Fill" Value="{DynamicResource ProjectMarkerTealBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding MarkerColor}" Value="blue">
+                    <Setter TargetName="ProjectMarker" Property="Fill" Value="{DynamicResource ProjectMarkerBlueBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding MarkerColor}" Value="purple">
+                    <Setter TargetName="ProjectMarker" Property="Fill" Value="{DynamicResource ProjectMarkerPurpleBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding MarkerColor}" Value="pink">
+                    <Setter TargetName="ProjectMarker" Property="Fill" Value="{DynamicResource ProjectMarkerPinkBrush}"/>
+                </DataTrigger>
                 <!-- 접힘 + 내부 세션 요청 처리중 → 프로젝트명 왼쪽 스피너 노출. -->
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding IsExpanded}" Value="False"/>
                         <Condition Binding="{Binding HasBusySession}" Value="True"/>
                     </MultiDataTrigger.Conditions>
+                    <Setter TargetName="ProjectHeaderIndicator" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="ProjectMarker" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="ProjectBusySpinner" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
                 <!-- 프로젝트 카드 호버: 활성/보관함 모두 같은 보더색 변경 -->
@@ -1031,7 +1195,9 @@
                                     </Ellipse.RenderTransform>
                                 </Ellipse>
                             </Grid>
-                            <TextBlock Grid.Column="1" Text="{Binding Name}"
+                            <TextBlock Grid.Column="1"
+                                       b:SearchHighlight.Text="{Binding Name}"
+                                       b:SearchHighlight.Query="{Binding SearchHighlightQuery, RelativeSource={RelativeSource AncestorType={x:Type local:SidebarView}}}"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                        FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextBrush}"/>
@@ -1250,6 +1416,7 @@
                                  CaretBrush="{DynamicResource TextBrush}"
                                  FontSize="{DynamicResource Fs13}"
                                  FontFamily="{StaticResource PretendardFont}"
+                                 PreviewKeyDown="SidebarSearchBox_PreviewKeyDown"
                                  TextChanged="SidebarSearchBox_TextChanged">
                             <TextBox.Resources>
                                 <Style TargetType="Border"><Setter Property="CornerRadius" Value="0"/></Style>

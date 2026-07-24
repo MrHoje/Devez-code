@@ -234,6 +234,7 @@ public partial class FileExplorerView : UserControl
 
         // 파일 검색 박스는 탐색기(Directory) 모드에서만 의미가 있으므로 그때만 표시.
         FileSearchRow.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ToggleDirectoryExpandAllBtn.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
         PathText.ToolTip = idx == 2
             ? "A = 추가됨\nM = 수정됨\nD = 삭제됨\nR = 이름 변경됨\nC = 복사됨\nT = 형식 변경됨\nU = 병합되지 않음"
             : null;
@@ -304,6 +305,7 @@ public partial class FileExplorerView : UserControl
             DisposeFileWatcher();
             if (_mode == ViewMode.Directory) PathText.Text = "파일 탐색기";
             Tree.ItemsSource = null;
+            UpdateDirectoryExpandAllVisual();
             ScmView.SetRepo(null);
             // 큐도 null 로 전환 → 전역 큐 (해당 프로젝트 큐가 닫히면 사라지지 않게 빈도 모드)
             QueueView.ProjectPath = null;
@@ -339,6 +341,83 @@ public partial class FileExplorerView : UserControl
         catch { /* 접근 거부 등 */ }
         _rootNodes = roots;
         ApplyFileSearchFilter();
+        UpdateDirectoryExpandAllVisual();
+    }
+
+    // ── 디렉터리 모두 펼치기 / 접기 (프로젝트 영역 정합) ─────────
+    private void ToggleDirectoryExpandAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (_rootNodes == null) return;
+
+        bool expand = !AreAllDirectoriesExpanded();
+        if (expand)
+            ExpandAllDirectories(_rootNodes);
+        else
+            CollapseAllDirectories(_rootNodes);
+
+        UpdateDirectoryExpandAllVisual();
+    }
+
+    private static void ExpandAllDirectories(IEnumerable<FileNode> roots)
+    {
+        var pending = new Stack<FileNode>(roots.Where(node => node.IsDirectory));
+        while (pending.Count > 0)
+        {
+            var node = pending.Pop();
+            node.IsExpanded = true; // 지연 로딩 후 새로 생긴 하위 폴더까지 계속 순회
+            foreach (var child in node.Children)
+                if (child.IsDirectory)
+                    pending.Push(child);
+        }
+    }
+
+    private static void CollapseAllDirectories(IEnumerable<FileNode> roots)
+    {
+        var pending = new Stack<FileNode>(roots.Where(node => node.IsDirectory));
+        while (pending.Count > 0)
+        {
+            var node = pending.Pop();
+            foreach (var child in node.Children)
+                if (child.IsDirectory)
+                    pending.Push(child);
+            node.IsExpanded = false;
+        }
+    }
+
+    private bool AreAllDirectoriesExpanded()
+    {
+        if (_rootNodes == null) return false;
+
+        bool hasDirectory = false;
+        var pending = new Stack<FileNode>(_rootNodes.Where(node => node.IsDirectory));
+        while (pending.Count > 0)
+        {
+            hasDirectory = true;
+            var node = pending.Pop();
+            if (!node.IsExpanded) return false;
+            foreach (var child in node.Children)
+                if (child.IsDirectory)
+                    pending.Push(child);
+        }
+        return hasDirectory;
+    }
+
+    private void UpdateDirectoryExpandAllVisual()
+    {
+        if (ToggleDirectoryExpandAllBtn == null
+            || ToggleDirectoryExpandAllIcon?.RenderTransform is not System.Windows.Media.RotateTransform transform)
+            return;
+
+        bool allExpanded = AreAllDirectoriesExpanded();
+        ToggleDirectoryExpandAllBtn.IsEnabled = _rootNodes?.Any(node => node.IsDirectory) == true;
+        ToggleDirectoryExpandAllBtn.ToolTip = allExpanded ? "모두 접기" : "모두 펼치기";
+        transform.Angle = allExpanded ? -90 : 90;
+    }
+
+    private void TreeItem_ExpansionChanged(object sender, RoutedEventArgs e)
+    {
+        if (!ReferenceEquals(sender, e.OriginalSource)) return;
+        Dispatcher.BeginInvoke(new Action(UpdateDirectoryExpandAllVisual), DispatcherPriority.DataBind);
     }
 
     private void FileSearchBox_TextChanged(object sender, TextChangedEventArgs e)

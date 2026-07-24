@@ -1335,6 +1335,7 @@ public partial class WorkspacePaneView : UserControl
 
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
+        session.AcknowledgeCompletionPulse();
         if (session.IsExternal)
         {
             ActivateExternalSession(session, unHide);

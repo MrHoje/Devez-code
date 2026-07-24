@@ -566,6 +566,7 @@ public partial class App : Application
         Color bg, panel, panelSoft, line, text, textMuted, primary, primaryHover, primaryPressed, primarySoft, bubble, bubbleBorder, danger;
         Color checkedBubble, checkedBorder, checkedText;
         Color star, sidebarSubText, today;
+        Color markerRed, markerOrange, markerYellow, markerGreen, markerTeal, markerBlue, markerPurple, markerPink;
 
         if (theme == "dark")
         {
@@ -588,6 +589,14 @@ public partial class App : Application
             star           = Color.FromRgb(0xfb, 0xbf, 0x24);
             sidebarSubText = Color.FromRgb(0xcc, 0xcc, 0xcc);
             today          = Color.FromRgb(0xf9, 0x73, 0x16);
+            markerRed      = Color.FromRgb(0xf8, 0x71, 0x71);
+            markerOrange   = Color.FromRgb(0xfb, 0x92, 0x3c);
+            markerYellow   = Color.FromRgb(0xfa, 0xcc, 0x15);
+            markerGreen    = Color.FromRgb(0x4a, 0xde, 0x80);
+            markerTeal     = Color.FromRgb(0x2d, 0xd4, 0xbf);
+            markerBlue     = Color.FromRgb(0x60, 0xa5, 0xfa);
+            markerPurple   = Color.FromRgb(0xa7, 0x8b, 0xfa);
+            markerPink     = Color.FromRgb(0xf4, 0x72, 0xb6);
         }
         else if (theme == "soft")
         {
@@ -610,6 +619,14 @@ public partial class App : Application
             star          = Color.FromRgb(0xc9, 0x7c, 0x1a);
             sidebarSubText = textMuted;
             today         = Color.FromRgb(0xea, 0x76, 0x2c);
+            markerRed      = Color.FromRgb(0xd9, 0x5f, 0x5f);
+            markerOrange   = Color.FromRgb(0xd9, 0x77, 0x2a);
+            markerYellow   = Color.FromRgb(0xb0, 0x8a, 0x2e);
+            markerGreen    = Color.FromRgb(0x5c, 0x8c, 0x4a);
+            markerTeal     = Color.FromRgb(0x4f, 0x8c, 0x82);
+            markerBlue     = Color.FromRgb(0x4e, 0x70, 0xa3);
+            markerPurple   = Color.FromRgb(0x80, 0x64, 0xa2);
+            markerPink     = Color.FromRgb(0xb3, 0x5d, 0x79);
         }
         else // minimal
         {
@@ -632,6 +649,14 @@ public partial class App : Application
             star          = Color.FromRgb(0xf5, 0x9e, 0x0b);
             sidebarSubText = textMuted;
             today         = Color.FromRgb(0xf9, 0x73, 0x16);
+            markerRed      = Color.FromRgb(0xef, 0x44, 0x44);
+            markerOrange   = Color.FromRgb(0xf9, 0x73, 0x16);
+            markerYellow   = Color.FromRgb(0xca, 0x8a, 0x04);
+            markerGreen    = Color.FromRgb(0x16, 0xa3, 0x4a);
+            markerTeal     = Color.FromRgb(0x0d, 0x94, 0x88);
+            markerBlue     = Color.FromRgb(0x25, 0x63, 0xeb);
+            markerPurple   = Color.FromRgb(0x7c, 0x3a, 0xed);
+            markerPink     = Color.FromRgb(0xdb, 0x27, 0x77);
         }
 
         res["BgColor"]             = bg;
@@ -659,6 +684,14 @@ public partial class App : Application
         res["TextBrush"]              = new SolidColorBrush(text);
         res["TextMutedBrush"]         = new SolidColorBrush(textMuted);
         res["PrimaryBrush"]           = new SolidColorBrush(primary);
+        res["ProjectMarkerRedBrush"]    = new SolidColorBrush(markerRed);
+        res["ProjectMarkerOrangeBrush"] = new SolidColorBrush(markerOrange);
+        res["ProjectMarkerYellowBrush"] = new SolidColorBrush(markerYellow);
+        res["ProjectMarkerGreenBrush"]  = new SolidColorBrush(markerGreen);
+        res["ProjectMarkerTealBrush"]   = new SolidColorBrush(markerTeal);
+        res["ProjectMarkerBlueBrush"]   = new SolidColorBrush(markerBlue);
+        res["ProjectMarkerPurpleBrush"] = new SolidColorBrush(markerPurple);
+        res["ProjectMarkerPinkBrush"]   = new SolidColorBrush(markerPink);
         res["TabFocusRingBrush"]      = new SolidColorBrush(Color.FromArgb(0x8C, primary.R, primary.G, primary.B));
         res["PrimaryOverlay50Brush"]  = new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
         res["ProjectCardHoverBrush"] = theme == "dark"

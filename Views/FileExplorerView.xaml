@@ -110,11 +110,32 @@
                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
                 Background="{DynamicResource PanelBrush}">
             <Grid Margin="11,0,8,0">
-                <TextBlock x:Name="PathText" Text="파일 탐색기"
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="PathText" Grid.Column="0" Text="파일 탐색기"
                            VerticalAlignment="Center"
                            FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource TextBrush}"/>
+                <Button x:Name="ToggleDirectoryExpandAllBtn" Grid.Column="1"
+                        Width="24" Height="24"
+                        Style="{StaticResource IconButton}"
+                        Click="ToggleDirectoryExpandAll_Click"
+                        ToolTip="모두 펼치기">
+                    <Grid Width="12" Height="12">
+                        <Path x:Name="ToggleDirectoryExpandAllIcon"
+                              Style="{StaticResource LucideButtonIcon}"
+                              Data="{StaticResource IconChevronRight}"
+                              Width="11" Height="11"
+                              RenderTransformOrigin="0.5,0.5">
+                            <Path.RenderTransform>
+                                <RotateTransform Angle="90"/>
+                            </Path.RenderTransform>
+                        </Path>
+                    </Grid>
+                </Button>
             </Grid>
         </Border>
 
@@ -247,6 +268,8 @@
                     <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                     <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                     <Setter Property="FontSize" Value="{DynamicResource Fs12}"/>
+                    <EventSetter Event="Expanded" Handler="TreeItem_ExpansionChanged"/>
+                    <EventSetter Event="Collapsed" Handler="TreeItem_ExpansionChanged"/>
                     <EventSetter Event="MouseDoubleClick" Handler="TreeItem_DoubleClick"/>
                     <EventSetter Event="MouseRightButtonDown" Handler="TreeItem_RightClick"/>
                     <Setter Property="Template">

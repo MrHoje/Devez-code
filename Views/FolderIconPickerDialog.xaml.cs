@@ -12,11 +12,10 @@ public partial class FolderIconPickerDialog : Window
 {
     private string _selectedIconKey;
 
-    private FolderIconPickerDialog(string currentIconKey, string folderName)
+    private FolderIconPickerDialog(string currentIconKey)
     {
         InitializeComponent();
         _selectedIconKey = FolderIconCatalog.Normalize(currentIconKey);
-        FolderNameText.Text = folderName;
         BuildIconGrid();
 
         PreviewKeyDown += (_, e) =>
@@ -26,9 +25,9 @@ public partial class FolderIconPickerDialog : Window
         };
     }
 
-    public static string? Pick(Window owner, string currentIconKey, string folderName)
+    public static string? Pick(Window owner, string currentIconKey, string _)
     {
-        var dialog = new FolderIconPickerDialog(currentIconKey, folderName) { Owner = owner };
+        var dialog = new FolderIconPickerDialog(currentIconKey) { Owner = owner };
         return dialog.ShowDialog() == true ? dialog._selectedIconKey : null;
     }
 

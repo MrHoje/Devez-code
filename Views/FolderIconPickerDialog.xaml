@@ -41,7 +41,7 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Margin="16,12,16,0">
-                    <Grid Margin="0,0,0,8">
+                    <Grid Margin="0,0,0,10">
                         <TextBlock Text="폴더 아이콘 바꾸기"
                                    FontSize="{DynamicResource Fs14}"
                                    FontWeight="SemiBold"
@@ -56,11 +56,6 @@
                             <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
                         </Button>
                     </Grid>
-                    <TextBlock x:Name="FolderNameText"
-                               FontSize="{DynamicResource Fs11}"
-                               Foreground="{DynamicResource TextMutedBrush}"
-                               TextTrimming="CharacterEllipsis"
-                               Margin="0,0,0,10"/>
                 </StackPanel>
 
                 <UniformGrid x:Name="IconGrid"
