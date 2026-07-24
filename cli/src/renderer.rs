@@ -5,7 +5,9 @@ use crossterm::{
     cursor::{Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, Show, position as cursor_position},
     event::{DisableBracketedPaste, EnableBracketedPaste},
     execute, queue,
-    style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor},
+    style::{
+        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+    },
     terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode, size as terminal_size},
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -360,6 +362,11 @@ enum Tone {
     Context,
     StatusText,
     StatusSeparator,
+    UserPrompt,
+    ModelSol,
+    ModelTerra,
+    ModelLuna,
+    Model55,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -615,7 +622,11 @@ fn overlay_frame(
                             Tone::Muted
                         },
                         part,
-                        if row.muted { Tone::Muted } else { Tone::Plain },
+                        if row.muted {
+                            Tone::Muted
+                        } else {
+                            model_tone(part).unwrap_or(Tone::Plain)
+                        },
                         row.selected && part_index == 0,
                         width,
                     ));
@@ -751,7 +762,7 @@ fn status_line_row(status: Option<StatusLineView>, fallback: &str, width: u16) -
     let mut spans = vec![
         PaintSpan {
             text: format!(" {}", compact_right(&status.model, 28)),
-            tone: Tone::StatusText,
+            tone: model_tone(&status.model).unwrap_or(Tone::StatusText),
             bold: false,
         },
         PaintSpan {
@@ -966,7 +977,7 @@ fn user_prompt_lines(block: &Block, width: u16) -> Vec<PaintLine> {
             "❯ ",
             Tone::Accent,
             "",
-            Tone::Plain,
+            Tone::UserPrompt,
             true,
             width,
         ));
@@ -982,7 +993,7 @@ fn user_prompt_lines(block: &Block, width: u16) -> Vec<PaintLine> {
                 Tone::Muted
             },
             raw_line,
-            Tone::Plain,
+            Tone::UserPrompt,
             true,
             width,
         ));
@@ -1200,6 +1211,17 @@ fn compact_right(text: &str, max_width: usize) -> String {
 }
 
 fn print_line(out: &mut Stdout, line: &PaintLine) -> Result<()> {
+    let user_prompt = line.tone == Tone::UserPrompt;
+    if user_prompt {
+        queue!(
+            out,
+            SetBackgroundColor(Color::Rgb {
+                r: 45,
+                g: 43,
+                b: 39,
+            })
+        )?;
+    }
     set_tone(out, line.prefix_tone)?;
     queue!(out, Print(&line.prefix))?;
     set_tone(out, line.tone)?;
@@ -1224,7 +1246,34 @@ fn print_line(out: &mut Stdout, line: &PaintLine) -> Result<()> {
             ResetColor
         )?;
     }
+    if user_prompt {
+        queue!(
+            out,
+            SetBackgroundColor(Color::Rgb {
+                r: 45,
+                g: 43,
+                b: 39,
+            }),
+            Clear(ClearType::UntilNewLine),
+            ResetColor
+        )?;
+    }
     Ok(())
+}
+
+fn model_tone(model: &str) -> Option<Tone> {
+    let model = model.to_ascii_lowercase();
+    if model.contains("5.6") && model.contains("sol") {
+        Some(Tone::ModelSol)
+    } else if model.contains("5.6") && model.contains("terra") {
+        Some(Tone::ModelTerra)
+    } else if model.contains("5.6") && model.contains("luna") {
+        Some(Tone::ModelLuna)
+    } else if model.contains("5.5") {
+        Some(Tone::Model55)
+    } else {
+        None
+    }
 }
 
 fn set_tone(out: &mut Stdout, tone: Tone) -> Result<()> {
@@ -1304,6 +1353,31 @@ fn set_tone(out: &mut Stdout, tone: Tone) -> Result<()> {
             r: 147,
             g: 164,
             b: 184,
+        },
+        Tone::UserPrompt => Color::Rgb {
+            r: 240,
+            g: 238,
+            b: 233,
+        },
+        Tone::ModelSol => Color::Rgb {
+            r: 245,
+            g: 158,
+            b: 11,
+        },
+        Tone::ModelTerra => Color::Rgb {
+            r: 52,
+            g: 211,
+            b: 153,
+        },
+        Tone::ModelLuna => Color::Rgb {
+            r: 167,
+            g: 139,
+            b: 250,
+        },
+        Tone::Model55 => Color::Rgb {
+            r: 96,
+            g: 165,
+            b: 250,
         },
     };
     queue!(out, SetForegroundColor(color))?;
@@ -1392,6 +1466,7 @@ mod tests {
         assert_eq!(user_lines[0].prefix, "❯ ");
         assert_eq!(user_lines[0].text, "hello");
         assert!(user_lines[0].prefix_tone == Tone::Accent);
+        assert!(user_lines[0].tone == Tone::UserPrompt);
         assert!(user_lines[0].bold);
         assert_eq!(assistant_lines[0].prefix, "● ");
         assert_eq!(assistant_lines[0].text, "hi");
@@ -1455,9 +1530,28 @@ mod tests {
 
         assert_eq!(frame.lines[0].text, "Select model");
         assert_eq!(frame.lines[2].prefix, "  ❯ ");
+        assert!(frame.lines[2].tone == Tone::ModelSol);
         assert!(frame.lines.iter().all(|line| {
             !line.text.contains(['╭', '╮', '╰', '╯', '│'])
                 && !line.prefix.contains(['╭', '╮', '╰', '╯', '│'])
         }));
+    }
+
+    #[test]
+    fn model_families_have_distinct_consistent_tones() {
+        let tones = [
+            model_tone("GPT-5.6-Sol"),
+            model_tone("GPT-5.6-Terra"),
+            model_tone("GPT-5.6-Luna"),
+            model_tone("GPT-5.5"),
+        ];
+
+        assert!(tones.iter().all(Option::is_some));
+        for left in 0..tones.len() {
+            for right in left + 1..tones.len() {
+                assert!(tones[left] != tones[right]);
+            }
+        }
+        assert!(model_tone("GPT-5.4").is_none());
     }
 }
