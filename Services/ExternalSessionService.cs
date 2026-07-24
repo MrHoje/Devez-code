@@ -31,6 +31,7 @@ public static class ExternalSessionService
 
     private static string LockPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".lock");
     private static string TicketPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".ticket");
+    private static string ReturnPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".return");
     private static string ScriptPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".ps1");
     private static string RunnerPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".runner.ps1");
     private static string SpecPath(string roomId) => Path.Combine(RootDir, SafeName(roomId) + ".proxy.json");
@@ -279,6 +280,7 @@ public static class ExternalSessionService
                 WorkingDirectory = Path.GetFullPath(workingDir),
                 LockPath = Path.GetFullPath(LockPath(roomId)),
                 TicketPath = Path.GetFullPath(TicketPath(roomId)),
+                ReturnPath = Path.GetFullPath(ReturnPath(roomId)),
                 RunnerScriptPath = Path.GetFullPath(runnerPath),
                 OutputPath = Path.GetFullPath(outputPath),
                 SizePath = Path.GetFullPath(sizePath),
@@ -315,6 +317,8 @@ public static class ExternalSessionService
             start.ArgumentList.Add("-w");
             start.ArgumentList.Add("0");
             start.ArgumentList.Add("new-tab");
+            // CLI(claude/codex 등)가 OSC title escape로 탭 제목을 덮어쓰지 못하게 고정한다.
+            start.ArgumentList.Add("--suppressApplicationTitle");
             start.ArgumentList.Add("--title");
             start.ArgumentList.Add(string.IsNullOrWhiteSpace(sessionName) ? agent.DisplayName : sessionName);
             start.ArgumentList.Add("--startingDirectory");
@@ -356,6 +360,7 @@ public static class ExternalSessionService
             return PathsEqual(specPath, SpecPath(spec.RoomId))
                    && PathsEqual(spec.LockPath, LockPath(spec.RoomId))
                    && PathsEqual(spec.TicketPath, TicketPath(spec.RoomId))
+                   && PathsEqual(spec.ReturnPath, ReturnPath(spec.RoomId))
                    && PathsEqual(spec.RunnerScriptPath, RunnerPath(spec.RoomId))
                    && PathsEqual(spec.OutputPath, OutputPath(spec.RoomId))
                    && PathsEqual(spec.SizePath, SizePath(spec.RoomId))
@@ -469,9 +474,22 @@ public static class ExternalSessionService
         catch { return null; }
     }
 
+    /// <summary>실행 중인 외부 프록시에 종료(인앱 복귀)를 요청한다. 프록시가 신호 파일을 감지하면
+    /// 세션을 정리하고 종료해 lock 을 놓는다 → CheckExternalSessions 가 내부 resume 으로 복귀시킨다.</summary>
+    public static void RequestReturn(string roomId)
+    {
+        try
+        {
+            Directory.CreateDirectory(RootDir);
+            File.WriteAllText(ReturnPath(roomId), "1", Encoding.ASCII);
+        }
+        catch { /* 실패해도 사용자가 외부 탭을 직접 닫으면 복귀 가능 */ }
+    }
+
     private static void CleanupStoppedFiles(string roomId)
     {
         TryDelete(TicketPath(roomId));
+        TryDelete(ReturnPath(roomId));
         TryDelete(LockPath(roomId));
         TryDelete(ScriptPath(roomId));
         TryDelete(RunnerPath(roomId));

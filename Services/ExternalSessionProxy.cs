@@ -13,6 +13,7 @@ internal sealed class ExternalSessionProxySpec
     public string WorkingDirectory { get; set; } = "";
     public string LockPath { get; set; } = "";
     public string TicketPath { get; set; } = "";
+    public string ReturnPath { get; set; } = "";
     public string RunnerScriptPath { get; set; } = "";
     public string OutputPath { get; set; } = "";
     public string SizePath { get; set; } = "";
@@ -112,7 +113,15 @@ internal static class ExternalSessionProxy
 
         Exception? relayFailure = null;
         int processExited = 0;
+        // AttachConsole 직후 WT 콘솔 크기가 아직 준비 안 돼 0을 줄 수 있다. 여기서 0으로 시작하면
+        // 기본폭(120)으로 에이전트가 뜬 뒤 첫 poll 에서 실제 폭으로 resize → 1회 reflow 가 dim wrap
+        // 잔상을 남긴다. 잠깐(≤500ms) 유효 크기를 기다려 처음부터 올바른 폭으로 시작해 reflow 를 없앤다.
         var (consoleCols, consoleRows) = ReadConsoleSize();
+        for (int wait = 0; consoleCols <= 0 && wait < 25; wait++)
+        {
+            Thread.Sleep(20);
+            (consoleCols, consoleRows) = ReadConsoleSize();
+        }
         int cols = SelectDimension(spec.PreferredCols, consoleCols, DefaultCols, MinCols, MaxCols);
         int rows = SelectDimension(spec.PreferredRows, consoleRows, DefaultRows, MinRows, MaxRows);
         WriteSizeAtomic(spec.SizePath, cols, rows);
@@ -168,6 +177,13 @@ internal static class ExternalSessionProxy
             };
             inputThread.Start();
 
+            // resize 디바운스: 창 스냅 relayout·외부 앱 종료 등으로 콘솔 폭이 여러 프레임에 걸쳐
+            // 흔들릴 때, 매 흔들림마다 ConPTY를 resize 하면 TUI(claude 등)가 매번 reflow 하며
+            // 이전 wrap 꼬리를 dim 잔상으로 남긴다. 새 크기가 StableTicks 만큼 연속으로 유지될 때만
+            // 한 번 적용해 reflow(=잔상) 횟수를 최소화한다.
+            const int ResizeStableTicks = 2; // 100ms poll × 2 ≈ 200ms 안정 후 적용
+            int pendingCols = cols, pendingRows = rows, stableTicks = 0;
+
             while (!completed.Wait(100))
             {
                 // 프로세스 종료 통지는 ConPTY read thread보다 먼저 올 수 있다. ConPTY를 닫은 뒤
@@ -178,15 +194,37 @@ internal static class ExternalSessionProxy
                     break;
                 }
 
+                // DevezCode "인앱으로 가져오기" 요청 — 탭 닫기와 동일하게 세션을 정리하고 종료해
+                // lock 을 놓는다. 래퍼 PowerShell 이 -Wait 를 벗어나 종료되며 WT 탭도 자동으로 닫힌다.
+                if (!string.IsNullOrEmpty(spec.ReturnPath) && File.Exists(spec.ReturnPath))
+                {
+                    completed.Set();
+                    break;
+                }
+
                 var (newConsoleCols, newConsoleRows) = ReadConsoleSize();
                 int nextCols = SelectDimension(
                     spec.PreferredCols, newConsoleCols, cols, MinCols, MaxCols);
                 int nextRows = SelectDimension(
                     spec.PreferredRows, newConsoleRows, rows, MinRows, MaxRows);
-                if (nextCols == cols && nextRows == rows) continue;
+                if (nextCols == cols && nextRows == rows)
+                {
+                    stableTicks = 0;
+                    continue;
+                }
+                if (nextCols != pendingCols || nextRows != pendingRows)
+                {
+                    // 목표 크기가 계속 바뀌는 중(흔들림) — 안정 카운트 리셋 후 대기.
+                    pendingCols = nextCols;
+                    pendingRows = nextRows;
+                    stableTicks = 0;
+                    continue;
+                }
+                if (++stableTicks < ResizeStableTicks) continue; // 아직 안정되지 않음
 
                 cols = nextCols;
                 rows = nextRows;
+                stableTicks = 0;
                 session.Resize(cols, rows);
                 WriteSizeAtomic(spec.SizePath, cols, rows);
             }
@@ -294,9 +332,10 @@ internal static class ExternalSessionProxy
 
     private static int SelectDimension(int preferred, int console, int fallback, int min, int max)
     {
-        int safePreferred = preferred > 0 ? Math.Clamp(preferred, min, max) : fallback;
-        if (console <= 0) return safePreferred;
-        return Math.Clamp(Math.Min(safePreferred, console), min, max);
+        // 외부 WT 창을 유일한 렌더 기준으로 삼는다. 내부 미러는 정지 스냅샷(블러)이라 논리 폭을
+        // 맞출 필요가 없으므로, 예전처럼 min(preferred, console) 로 깎아 WT 정렬을 망가뜨리지 않는다.
+        if (console > 0) return Math.Clamp(console, min, max);
+        return Math.Clamp(preferred > 0 ? preferred : fallback, min, max);
     }
 
     private static (int Cols, int Rows) ReadConsoleSize()

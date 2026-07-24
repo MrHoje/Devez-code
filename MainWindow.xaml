@@ -31,7 +31,10 @@
             <!-- 타이틀 바 컬럼은 메인 영역과 SharedSizeGroup 으로 묶여 스플리터 조절 시에도
                 중앙패널 시작 x 에 콤보박스/브렌치 블 bubble이 고정. 앱 이름·윈도우 컨트롤은
                  별도 컨테이너(고정 위치) — 사이드바 폭에 따라 끌려가지 않음. -->
-            <Grid Grid.Row="0" Background="{DynamicResource BgBrush}">
+            <Grid Grid.Row="0" Background="{DynamicResource BgBrush}"
+                  AllowDrop="True"
+                  PreviewDragOver="TitleBarFileOpen_PreviewDragOver"
+                  PreviewDrop="TitleBarFileOpen_PreviewDrop">
                 <!-- 앱 이름(왼쪽 고정) -->
                 <StackPanel x:Name="TitleLogoBlock" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0"
                             HorizontalAlignment="Left"

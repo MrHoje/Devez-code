@@ -1912,6 +1912,19 @@
 
   // 바탕화면/탐색기 파일 드롭. WebView2 는 별도 HWND라 WPF Drop 이벤트가 닿지 않으므로
   // DOM File을 AdditionalObjects 로 보내 호스트에서 원본 절대경로를 얻는다.
+  let lastFileDragEnterPost = 0;
+  document.addEventListener('dragenter', function (e) {
+    const t = activeRoomId ? terms[activeRoomId] : null;
+    if (t && t.external) { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; return; }
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.items || []).some(function (item) { return item.kind === 'file'; })) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    const now = Date.now();
+    if (now - lastFileDragEnterPost >= 250) {
+      lastFileDragEnterPost = now;
+      post({ type: 'fileDragEnter' });
+    }
+  }, { capture: true });
   document.addEventListener('dragover', function (e) {
     const t = activeRoomId ? terms[activeRoomId] : null;
     if (t && t.external) { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; return; }

@@ -2120,6 +2120,47 @@ public partial class MainWindow : Window
         App.ToggleRenderMode();
     }
 
+    /// <summary>
+    /// 앱 최상단 타이틀바에 외부 Explorer 파일을 드롭하면 현재 포커스 패널의 파일 탭으로 연다.
+    /// 타이틀바 밖의 드롭은 처리하지 않아 터미널의 기존 경로 입력 동작을 그대로 둔다.
+    /// </summary>
+    private void TitleBarFileOpen_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        bool canDrop = _focusedPane.ActiveProject != null && GetTitleBarDroppedFiles(e).Length > 0;
+        e.Effects = canDrop ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void TitleBarFileOpen_PreviewDrop(object sender, DragEventArgs e)
+    {
+        var files = GetTitleBarDroppedFiles(e);
+        e.Handled = true;
+        _focusedPane.DismissFileDropOverlay();
+        if (_focusedPane.ActiveProject == null || files.Length == 0) return;
+
+        foreach (var path in files)
+            _focusedPane.OpenFileAsTab(path);
+    }
+
+    private static string[] GetTitleBarDroppedFiles(DragEventArgs e)
+    {
+        try
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop) ||
+                e.Data.GetData(DataFormats.FileDrop) is not string[] paths)
+                return [];
+
+            return paths
+                .Where(File.Exists)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     private void LeftPanelBtn_Click(object sender, RoutedEventArgs e) => RunPanelToggleCovered(ToggleLeftPanel);
 
     private void ToggleLeftPanel()
@@ -2747,6 +2788,7 @@ public partial class MainWindow : Window
         pane.SplitViewRequested += OnPaneSplitViewRequested;
         pane.ExportSessionRequested += ExportSession;
         pane.ExternalSessionRequested += OpenSessionInExternalTerminal;
+        pane.ReturnExternalSessionRequested += ReturnSessionFromExternal;
         pane.ToggleSessionLockRequested += ToggleSessionLock;
         pane.HideSessionRequested += HideSessionFromSidebar;
         pane.HideStopFinished += OnPaneHideStopFinished;
@@ -3875,6 +3917,7 @@ public partial class MainWindow : Window
         try
         {
             await Task.WhenAll(_panes.Select(pane => pane.SetSessionExternalAsync(session)));
+            foreach (var pane in _panes) pane.SetExternalLaunching(session); // 열리는 동안 스피너
             UpdateSessionBusyDisplay();
             await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { session.Id });
             TerminalSessionManager.Instance.DisposeRoom(session.Id, purgeTracking: false);
@@ -3892,13 +3935,15 @@ public partial class MainWindow : Window
             {
                 DiagLog.Write($"ExternalSession started room={session.Id} agent={agent.Id}");
                 foreach (var pane in _panes)
-                    pane.PumpExternalSessionOutput(session);
+                    pane.MarkExternalSessionReady(session); // 스피너 → 실행 중(버튼)
                 return;
             }
 
             if (ExternalSessionService.CancelLaunch(session.Id))
             {
                 DiagLog.Write($"ExternalSession started after timeout room={session.Id} agent={agent.Id}");
+                foreach (var pane in _panes)
+                    pane.MarkExternalSessionReady(session);
                 return;
             }
             session.IsExternal = false;
@@ -3914,6 +3959,8 @@ public partial class MainWindow : Window
             if (ExternalSessionService.CancelLaunch(session.Id))
             {
                 DiagLog.Write($"ExternalSession started after launch error room={session.Id} agent={agent.Id}");
+                foreach (var pane in _panes)
+                    pane.MarkExternalSessionReady(session);
                 return;
             }
             session.IsExternal = false;
@@ -3929,6 +3976,16 @@ public partial class MainWindow : Window
             UpdateSessionBusyDisplay();
             RefreshCardGroups();
         }
+    }
+
+    /// <summary>오버레이 "인앱으로 가져오기" — 외부 프록시에 종료를 요청한다. 프록시가 lock 을 놓으면
+    /// CheckExternalSessions 가 감지해 내부 resume(OnExternalSessionEnded)로 복귀시킨다.</summary>
+    private void ReturnSessionFromExternal(SessionItem session)
+    {
+        if (!session.IsExternal) return;
+        ExternalSessionService.RequestReturn(session.Id);
+        DiagLog.Write($"ExternalSession return requested room={session.Id}");
+        CheckExternalSessions(); // 타이머 tick 을 기다리지 않고 즉시 한 번 확인(반응성)
     }
 
     /// <summary>/send-new: 부모(A) 세션의 자식 세션을 만들어 열고, 부팅 완료되면 브리핑을 주입한다(InjectWhenReady).

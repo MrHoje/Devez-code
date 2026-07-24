@@ -50,6 +50,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     public event Action<string, int?, int?>? FileOpenRequested;
     /// <summary>터미널 URL을 현재 프로젝트의 인앱 브라우저 탭으로 열기 요청.</summary>
     public event Action<string>? BrowserUrlOpenRequested;
+    /// <summary>Explorer 파일 드래그가 WebView2 터미널 표면에 들어옴. WPF 패널 전체 드롭 선택 화면 전환용.</summary>
+    public event Action? ExternalFileDragEntered;
+    /// <summary>WebView2가 파일 드롭을 직접 받은 폴백 경로. 경로 입력 전에 열린 WPF 드롭 화면 정리용.</summary>
+    public event Action? ExternalFileDropReceived;
     /// <summary>synced reveal 준비 완료(폭 안정·fit·재동기 끝, 커튼은 아직 유지) — 셸이 양쪽 준비를 모아 동시에 걷는다.</summary>
     public event Action? RevealPrepared;
     /// <summary>web 로딩 커버가 DOM 에 반영·페인트됨 — 셸이 이 ACK 후에 터미널 HWND 를 unpark 해 콜드 세션
@@ -531,7 +535,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                     break;
                 }
                 case "fileDrop":
+                    ExternalFileDropReceived?.Invoke();
                     InsertFilePaths(e.AdditionalObjects.OfType<CoreWebView2File>().Select(file => file.Path));
+                    break;
+                case "fileDragEnter":
+                    ExternalFileDragEntered?.Invoke();
                     break;
                 case "interact":
                     UserInteracted?.Invoke();

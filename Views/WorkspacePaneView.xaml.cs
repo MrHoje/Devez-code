@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -78,6 +79,8 @@ public partial class WorkspacePaneView : UserControl
     public event Action<SessionItem>? ExportSessionRequested;
     /// <summary>세션 탭 우클릭 "외부 터미널로 열기" → 셸이 같은 세션 ID를 외부로 인계.</summary>
     public event Action<SessionItem>? ExternalSessionRequested;
+    /// <summary>외부 실행 오버레이 "인앱으로 가져오기" → 외부 터미널을 종료시키고 세션을 인앱으로 복귀.</summary>
+    public event Action<SessionItem>? ReturnExternalSessionRequested;
     /// <summary>세션 탭 우클릭 "잠금/잠금 해제" → MainWindow 가 토글.</summary>
     public event Action<SessionItem>? ToggleSessionLockRequested;
     /// <summary>세션 숨김/닫기/삭제는 부모-자식 서브트리 단위 처리를 위해 MainWindow에 위임.</summary>
@@ -143,6 +146,11 @@ public partial class WorkspacePaneView : UserControl
         // 터미널 → 경로 Ctrl+클릭 → 파일은 에디터 탭, 폴더는 Explorer.
         _terminal.FileOpenRequested += OnTerminalFileOpenRequested;
         _terminal.BrowserUrlOpenRequested += OnTerminalBrowserUrlOpenRequested;
+        // Explorer 파일이 WebView2 터미널에 들어오면 HWND를 숨기고 패널 전체 드롭 선택 화면으로 전환.
+        _terminal.ExternalFileDragEntered += ShowFileDropOverlay;
+        _terminal.ExternalFileDropReceived += DismissFileDropOverlay;
+        _fileDropOverlayCursorTimer.Tick += (_, _) => CheckFileDropOverlayCursor();
+        Unloaded += (_, _) => _fileDropOverlayCursorTimer.Stop();
         // synced reveal 준비 완료 → 셸로 전달(셸이 좌우를 모아 동시에 fade)
         _terminal.RevealPrepared += () => RevealPrepared?.Invoke(this);
         // 콜드 세션: web 로딩 커버가 켜진 것(ACK)을 확인한 뒤에만 터미널 HWND 를 unpark 한다.
@@ -192,6 +200,222 @@ public partial class WorkspacePaneView : UserControl
     }
 
     private void Pane_PreviewInteract(object sender, MouseButtonEventArgs e) => FocusRequested?.Invoke(this);
+
+    /// <summary>
+    /// 외부 Explorer 파일을 프로젝트 정보 바·탭 바·세션 타이틀 바에 드롭하면
+    /// 터미널 입력으로 넘기지 않고 현재 패널의 파일 탭으로 연다.
+    /// </summary>
+    private void FileOpenHeader_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        bool canDrop = _activeProject != null && GetDroppedFiles(e).Length > 0;
+        e.Effects = canDrop ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+        if (canDrop) ShowFileDropOverlay();
+    }
+
+    private void FileOpenHeader_PreviewDrop(object sender, DragEventArgs e)
+    {
+        var files = GetDroppedFiles(e);
+        e.Handled = true;
+        HideFileDropOverlay();
+        if (_activeProject == null || files.Length == 0) return;
+
+        FocusRequested?.Invoke(this);
+        foreach (var path in files)
+            OpenFileAsTab(path);
+    }
+
+    private static string[] GetDroppedFiles(DragEventArgs e)
+    {
+        try
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop) ||
+                e.Data.GetData(DataFormats.FileDrop) is not string[] paths)
+                return [];
+
+            return paths
+                .Where(File.Exists)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private bool _fileDropOverlayActive;
+    private Border? _highlightedFileDropZone;
+    private readonly System.Windows.Threading.DispatcherTimer _fileDropOverlayCursorTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(60)
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out CursorPoint point);
+
+    /// <summary>
+    /// 현재 패널 전체를 파일 드롭 선택 화면으로 전환한다.
+    /// HwndHost(WebView2) 위에는 WPF가 그려지지 않으므로 세 콘텐츠 호스트를 Collapsed 처리한다.
+    /// </summary>
+    public void ShowFileDropOverlay()
+    {
+        if (_activeProject == null || _fileDropOverlayActive) return;
+
+        _fileDropOverlayActive = true;
+        AddFileDropZone.IsEnabled = _activeSession is { IsExternal: false } session
+            && TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true };
+        FileDropOverlay.Visibility = Visibility.Visible;
+
+        TerminalHostContainer.Visibility = Visibility.Collapsed;
+        FileEditorHostContainer.Visibility = Visibility.Collapsed;
+        BrowserHostContainer.Visibility = Visibility.Collapsed;
+        _fileDropOverlayCursorTimer.Start();
+        FocusRequested?.Invoke(this);
+    }
+
+    private void HideFileDropOverlay(bool restoreContent = true)
+    {
+        if (!_fileDropOverlayActive) return;
+        _fileDropOverlayCursorTimer.Stop();
+        SetHighlightedFileDropZone(null);
+        _fileDropOverlayActive = false;
+        FileDropOverlay.Visibility = Visibility.Collapsed;
+        if (restoreContent) UpdateEmptyState();
+    }
+
+    public void DismissFileDropOverlay() => HideFileDropOverlay();
+
+    private void CheckFileDropOverlayCursor()
+    {
+        if (!_fileDropOverlayActive)
+        {
+            _fileDropOverlayCursorTimer.Stop();
+            return;
+        }
+
+        if (!IsLoaded || !IsVisible || ActualWidth <= 0 || ActualHeight <= 0)
+        {
+            HideFileDropOverlay();
+            return;
+        }
+
+        if (!GetCursorPos(out var cursor)) return;
+
+        Point local;
+        try
+        {
+            local = PointFromScreen(new Point(cursor.X, cursor.Y));
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        const double tolerance = 2;
+        if (local.X < -tolerance || local.Y < -tolerance ||
+            local.X > ActualWidth + tolerance || local.Y > ActualHeight + tolerance)
+        {
+            HideFileDropOverlay();
+            return;
+        }
+
+        Border? hoveredZone = IsCursorInside(OpenFileDropZone, cursor)
+            ? OpenFileDropZone
+            : IsCursorInside(AddFileDropZone, cursor) && AddFileDropZone.IsEnabled
+                ? AddFileDropZone
+                : null;
+        SetHighlightedFileDropZone(hoveredZone);
+    }
+
+    private static bool IsCursorInside(FrameworkElement element, CursorPoint cursor)
+    {
+        try
+        {
+            var point = element.PointFromScreen(new Point(cursor.X, cursor.Y));
+            return point.X >= 0 && point.Y >= 0 &&
+                   point.X <= element.ActualWidth && point.Y <= element.ActualHeight;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private void SetHighlightedFileDropZone(Border? zone)
+    {
+        if (ReferenceEquals(_highlightedFileDropZone, zone)) return;
+
+        if (_highlightedFileDropZone != null)
+        {
+            _highlightedFileDropZone.SetResourceReference(
+                Border.BackgroundProperty, "PanelSoftBrush");
+            _highlightedFileDropZone.SetResourceReference(
+                Border.BorderBrushProperty, "LineBrush");
+        }
+
+        _highlightedFileDropZone = zone;
+        if (zone == null) return;
+
+        zone.SetResourceReference(Border.BackgroundProperty, "ProjectCardHoverBrush");
+        zone.SetResourceReference(Border.BorderBrushProperty, "ProjectCardHoverBorderBrush");
+    }
+
+    private void FileDropOverlay_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.Handled) return;
+        SetHighlightedFileDropZone(null);
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void FileDropOverlay_Drop(object sender, DragEventArgs e)
+    {
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+        HideFileDropOverlay();
+    }
+
+    private void FileDropZone_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        bool canDrop = sender is FrameworkElement { IsEnabled: true } &&
+                       GetDroppedFiles(e).Length > 0;
+        SetHighlightedFileDropZone(canDrop ? sender as Border : null);
+        e.Effects = canDrop ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void FileDropZone_PreviewDrop(object sender, DragEventArgs e)
+    {
+        var files = GetDroppedFiles(e);
+        var action = (sender as FrameworkElement)?.Tag as string;
+        bool enabled = sender is FrameworkElement { IsEnabled: true };
+        e.Handled = true;
+
+        if (!enabled || files.Length == 0)
+        {
+            HideFileDropOverlay();
+            return;
+        }
+
+        HideFileDropOverlay();
+        if (string.Equals(action, "Add", StringComparison.Ordinal))
+        {
+            _terminal.InsertFilePaths(files);
+            return;
+        }
+
+        foreach (var path in files)
+            OpenFileAsTab(path);
+    }
 
     /// <summary>분할 시 이 패널이 우측(PaneB)인지. 좌/우 위치 스왑 추적에 쓰인다.</summary>
     public bool IsRightPane { get; set; }
@@ -1105,6 +1329,7 @@ public partial class WorkspacePaneView : UserControl
     private const string HideStopLabel = "세션을 안전하게 종료하는 중…";
     private const int HideStopDelayMs = 3000; // 실수 숨김 복구 유예
     private string? _externalPreviewRoomId;
+    private bool _externalReady = true; // 외부 오버레이 상태: true=실행 중(버튼), false=여는 중(스피너)
 
     private void ActivateSession(SessionItem session, bool unHide = true)
     {
@@ -2179,22 +2404,15 @@ public partial class WorkspacePaneView : UserControl
     /// </summary>
     public async Task SetSessionExternalAsync(SessionItem session)
     {
-        bool retained = false;
+        // 라이브 미러 보존 없이 항상 정지 스냅샷으로 전환한다. 내부 방은 외부 프록시가 소유하므로 정리.
+        // 오버레이 첫 표시부터 '여는 중' 상태로 — 그래야 실행중(버튼) 패널이 한 프레임 깜빡이지 않는다.
+        _externalReady = false;
         if (ReferenceEquals(_activeSession, session))
         {
-            retained = _terminal.BeginExternalPreview(session.Id);
-            if (retained)
-            {
-                ShowExternalSessionPreview(session);
-            }
-            else
-            {
-                LoadExternalSessionPreview(session);
-                await WaitForFramesAsync(2);
-            }
+            LoadExternalSessionPreview(session);
+            await WaitForFramesAsync(2);
         }
-        if (!retained)
-            CloseTerminalRoom(session.Id);
+        CloseTerminalRoom(session.Id);
         if (ReferenceEquals(_activeSession, session))
             UpdateEmptyState();
     }
@@ -2216,15 +2434,11 @@ public partial class WorkspacePaneView : UserControl
     }
 
     /// <summary>메인 타이머가 호출한다. 이 패널에 외부 xterm이 있으면 독립 offset으로 새 출력을 반영한다.</summary>
-    public void PumpExternalSessionOutput(SessionItem session)
-    {
-        if (ReferenceEquals(_activeSession, session) && !_terminal.HasExternalPreview(session.Id))
-            _terminal.ShowExternalPreview(session.Id);
-        _terminal.PumpExternalPreview(session.Id);
-    }
+    // 정지 스냅샷 모드에서는 라이브 출력 펌핑을 하지 않는다(내부는 블러 배경만 표시).
+    public void PumpExternalSessionOutput(SessionItem session) { }
 
-    public bool IsExternalSessionOutputCaughtUp(SessionItem session)
-        => _terminal.IsExternalPreviewCaughtUp(session.Id);
+    // 미러 재생을 안 하므로 항상 "따라잡음" — 외부 종료 시 복귀가 막히지 않는다(복귀는 CLI 세션 resume).
+    public bool IsExternalSessionOutputCaughtUp(SessionItem session) => true;
 
     /// <summary>숨김 graceful 종료가 완료됨(이 패널에서 종료가 실행됨) — 셸이 모든 패널로 중계한다.</summary>
     public event Action<SessionItem>? HideStopFinished;
@@ -2679,15 +2893,6 @@ public partial class WorkspacePaneView : UserControl
             exportItem.Click += (_, _) => ExportSessionRequested?.Invoke(s);
             cm.Items.Add(exportItem);
 
-            // Lock toggle
-            var lockItem = new MenuItem
-            {
-                Header = s.IsLocked ? "잠금 해제" : "세션 잠금",
-                Icon = BuildMenuIcon(s.IsLocked ? "IconLockOpen" : "IconLock"),
-            };
-            lockItem.Click += (_, _) => ToggleSessionLockRequested?.Invoke(s);
-            cm.Items.Add(lockItem);
-
             var externalItem = new MenuItem
             {
                 Header = s.IsExternal ? "외부 터미널에서 실행 중" : "외부 터미널로 열기",
@@ -2705,6 +2910,15 @@ public partial class WorkspacePaneView : UserControl
             cm.Items.Add(BuildSplitMoveItem(s));
 
             cm.Items.Add(new Separator());
+
+            // Lock toggle — 숨기기 바로 위.
+            var lockItem = new MenuItem
+            {
+                Header = s.IsLocked ? "잠금 해제" : "세션 잠금",
+                Icon = BuildMenuIcon(s.IsLocked ? "IconLockOpen" : "IconLock"),
+            };
+            lockItem.Click += (_, _) => ToggleSessionLockRequested?.Invoke(s);
+            cm.Items.Add(lockItem);
 
             var hideItem = new MenuItem { Header = "숨기기", Icon = BuildMenuIcon("IconEyeOff") };
             hideItem.Click += (_, _) => HideSession(s);
@@ -3463,31 +3677,48 @@ public partial class WorkspacePaneView : UserControl
 
     private void LoadExternalSessionPreview(SessionItem session)
     {
+        // 정지 스냅샷을 블러 전용 이미지에 싣는다(공유 TerminalSnapshot 은 분할/종료 스냅샷 용도라 안 건드린다).
         if (!string.Equals(_externalPreviewRoomId, session.Id, StringComparison.Ordinal))
         {
             _externalPreviewRoomId = session.Id;
             var png = ExternalSessionService.LoadSnapshot(session.Id);
-            TerminalSnapshot.Source = png == null ? null : TerminalHostView.BitmapFromPng(png);
+            ExternalSnapshotBlur.Source = png == null ? null : TerminalHostView.BitmapFromPng(png);
         }
-        TerminalSnapshot.Width = double.NaN;
-        TerminalSnapshot.Height = double.NaN;
-        TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
-        TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
-        TerminalSnapshot.Visibility = TerminalSnapshot.Source == null
+        ExternalSnapshotBlur.Visibility = ExternalSnapshotBlur.Source == null
             ? Visibility.Collapsed : Visibility.Visible;
         ExternalSessionOverlay.Visibility = Visibility.Visible;
+        ApplyExternalOverlayState();
+    }
+
+    // 여는 중(스피너) ↔ 실행 중(버튼) 오버레이 상태 반영.
+    private void ApplyExternalOverlayState()
+    {
+        ExternalLaunchingPanel.Visibility = _externalReady ? Visibility.Collapsed : Visibility.Visible;
+        ExternalReadyPanel.Visibility = _externalReady ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>외부 인계 시작 — 외부 터미널이 완전히 열릴 때까지 오버레이에 스피너를 표시한다.</summary>
+    public void SetExternalLaunching(SessionItem session)
+    {
+        if (!ReferenceEquals(_activeSession, session)) return;
+        _externalReady = false;
+        if (ExternalSessionOverlay.Visibility == Visibility.Visible) ApplyExternalOverlayState();
+    }
+
+    /// <summary>외부 터미널이 열려 lock 을 잡음 — 스피너를 걷고 안내+복귀 버튼으로 전환.</summary>
+    public void MarkExternalSessionReady(SessionItem session)
+    {
+        _externalReady = true;
+        if (ReferenceEquals(_activeSession, session)
+            && ExternalSessionOverlay.Visibility == Visibility.Visible)
+            ApplyExternalOverlayState();
     }
 
     private void ShowExternalSessionPreview(SessionItem session)
     {
         _gateUnpark = false;
         _unparkFallback?.Stop();
-        if (_terminal.ShowExternalPreview(session.Id))
-        {
-            RevealExternalSessionPreview();
-            return;
-        }
-
+        // 라이브 미러 대신 항상 정지 스냅샷(블러). WebView 터미널은 park 해 숨긴다.
         LoadExternalSessionPreview(session);
         ParkTerminalHost();
         ParkFileEditorHost();
@@ -3510,21 +3741,35 @@ public partial class WorkspacePaneView : UserControl
     private void HideExternalSessionPreview()
     {
         ExternalSessionOverlay.Visibility = Visibility.Collapsed;
+        // 다음에 다시 외부로 열 때 버튼이 활성/기본 문구로 보이게 복원.
+        ReturnInAppBtn.IsEnabled = true;
         if (_externalPreviewRoomId == null) return;
         _externalPreviewRoomId = null;
-        TerminalSnapshot.Visibility = Visibility.Collapsed;
-        TerminalSnapshot.Source = null;
-        TerminalSnapshot.Width = double.NaN;
-        TerminalSnapshot.Height = double.NaN;
-        TerminalSnapshot.HorizontalAlignment = HorizontalAlignment.Stretch;
-        TerminalSnapshot.VerticalAlignment = VerticalAlignment.Stretch;
+        ExternalSnapshotBlur.Visibility = Visibility.Collapsed;
+        ExternalSnapshotBlur.Source = null;
+    }
+
+    /// <summary>오버레이 "인앱으로 가져오기" — 외부 터미널 종료를 요청한다. 실제 복귀는
+    /// 외부 lock 해제를 감지한 셸(CheckExternalSessions)이 OnExternalSessionEnded 로 처리한다.</summary>
+    private void ReturnInApp_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeSession is not { IsExternal: true } session) return;
+        ReturnInAppBtn.IsEnabled = false; // 중복 클릭 방지 — 복귀 완료 시 오버레이가 사라지며 리셋
+        ReturnExternalSessionRequested?.Invoke(session);
     }
 
     private void UpdateEmptyState()
     {
         bool hasActive = _activeTab != null;
 
-        if (_activeTab is SessionItem { IsExternal: true } externalSession)
+        if (_fileDropOverlayActive)
+        {
+            // 파일 드롭 선택 화면이 떠 있는 동안 훅·상태 갱신이 HWND를 다시 표시하지 못하게 막는다.
+            TerminalHostContainer.Visibility = Visibility.Collapsed;
+            FileEditorHostContainer.Visibility = Visibility.Collapsed;
+            BrowserHostContainer.Visibility = Visibility.Collapsed;
+        }
+        else if (_activeTab is SessionItem { IsExternal: true } externalSession)
         {
             ShowExternalSessionPreview(externalSession);
         }
