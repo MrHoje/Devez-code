@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:DevezCode.Models"
              xmlns:v="clr-namespace:DevezCode.Views"
+             xmlns:b="clr-namespace:DevezCode.Behaviors"
              FontFamily="{StaticResource PretendardFont}">
 
     <!-- Center: tabs + content (좌·우 보더로 채널 형성).
@@ -328,7 +329,8 @@
                                 </Grid>
                             </Border>
 
-                            <!-- 입력 대기 진입 또는 busy 완료: 확인할 때까지 이어지는 연한 펄스. -->
+                            <!-- 입력 대기 진입 또는 busy 완료: 확인할 때까지 이어지는 연한 펄스.
+                                 공용 위상 시계(AttentionPulse)에 스냅해 사이드바 행·다른 탭과 같은 박자로 뛴다. -->
                             <Border x:Name="TabCompletionPulse"
                                     Margin="0,0,0,-1"
                                     Height="{Binding ActualHeight, ElementName=TabBd}"
@@ -337,7 +339,9 @@
                                     Background="{DynamicResource PrimaryBrush}"
                                     Opacity="0"
                                     IsHitTestVisible="False"
-                                    Panel.ZIndex="1"/>
+                                    Panel.ZIndex="1"
+                                    b:AttentionPulse.PeakOpacity="0.12"
+                                    b:AttentionPulse.IsPulsing="{Binding IsCompletionPulsing}"/>
 
                             <Path x:Name="TabFootLeftFill"
                                   HorizontalAlignment="Left" VerticalAlignment="Bottom"
@@ -398,24 +402,6 @@
                                     <Setter TargetName="TabBusySpinner" Property="Visibility" Value="Collapsed"/>
                                     <Setter TargetName="TabWaitingIcon" Property="Visibility" Value="Collapsed"/>
                                     <Setter TargetName="TabExternalIcon" Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding IsCompletionPulsing}" Value="True">
-                                    <DataTrigger.EnterActions>
-                                        <BeginStoryboard x:Name="CompletionPulseStoryboard">
-                                            <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetName="TabCompletionPulse"
-                                                                 Storyboard.TargetProperty="Opacity"
-                                                                 From="0" To="0.12"
-                                                                 Duration="0:0:0.8"
-                                                                 AutoReverse="True"
-                                                                 RepeatBehavior="Forever"
-                                                                 FillBehavior="Stop"/>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </DataTrigger.EnterActions>
-                                    <DataTrigger.ExitActions>
-                                        <RemoveStoryboard BeginStoryboardName="CompletionPulseStoryboard"/>
-                                    </DataTrigger.ExitActions>
                                 </DataTrigger>
                                 <DataTrigger Value="True">
                                     <DataTrigger.Binding>

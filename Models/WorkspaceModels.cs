@@ -165,15 +165,10 @@ public sealed class SessionItem : TabItemBase
     {
         // 이미 보고 있는 세션에는 표시하지 않는다.
         if (IsActive) return;
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher == null) return;
 
-        // 연속 알림도 Storyboard EnterActions 를 다시 실행하도록 false→true 전환을 새 UI tick에 만든다.
-        IsCompletionPulsing = false;
-        dispatcher.BeginInvoke(new Action(() =>
-        {
-            IsCompletionPulsing = true;
-        }), DispatcherPriority.DataBind);
+        // 펄스는 공용 위상 시계(Behaviors.AttentionPulse)가 재생하므로 재트리거용 false→true 토글이 필요 없다.
+        // 이미 켜져 있으면 그대로 이어가고(끊김 없음), 새로 켜질 땐 시계 위상에 스냅해 다른 펄스와 박자가 맞는다.
+        IsCompletionPulsing = true;
     }
 
     /// <summary>탭을 열거나 다시 클릭했을 때 지속 중인 완료 펄스를 해제한다.</summary>

@@ -342,12 +342,15 @@
                               Width="11" Height="11" Stretch="Uniform"/>
                     </Button>
                 </Grid>
+                <!-- 완료·입력대기 펄스. 공용 위상 시계(AttentionPulse)에 스냅해 다른 행·탭과 같은 박자로 뛴다. -->
                 <Border x:Name="SessionCompletionPulse"
                         Background="{DynamicResource PrimaryBrush}"
                         CornerRadius="7"
                         Opacity="0"
                         IsHitTestVisible="False"
-                        Panel.ZIndex="1"/>
+                        Panel.ZIndex="1"
+                        b:AttentionPulse.PeakOpacity="0.10"
+                        b:AttentionPulse.IsPulsing="{Binding IsCompletionPulsing}"/>
                 </Grid>
                 </Border>
             </Grid>
@@ -360,24 +363,6 @@
                 <!-- 활성(보고 있는) 세션: 배경색 변경으로 구분 -->
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
                     <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding IsCompletionPulsing}" Value="True">
-                    <DataTrigger.EnterActions>
-                        <BeginStoryboard x:Name="SessionCompletionPulseStoryboard">
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetName="SessionCompletionPulse"
-                                                 Storyboard.TargetProperty="Opacity"
-                                                 From="0" To="0.10"
-                                                 Duration="0:0:0.8"
-                                                 AutoReverse="True"
-                                                 RepeatBehavior="Forever"
-                                                 FillBehavior="Stop"/>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </DataTrigger.EnterActions>
-                    <DataTrigger.ExitActions>
-                        <RemoveStoryboard BeginStoryboardName="SessionCompletionPulseStoryboard"/>
-                    </DataTrigger.ExitActions>
                 </DataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
                 <DataTrigger Binding="{Binding IsEffectivelyHidden}" Value="True">
