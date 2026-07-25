@@ -26,6 +26,9 @@ public sealed class AgentDef
     /// <summary>기존 세션 재오픈 시 같이 넘기는 플래그. codex="--last", opencode="-c".
     /// Claude 는 resume/session-id 를 별도 처리하므로 null.</summary>
     public string? ResumeFlag { get; init; }
+    /// <summary>준비 중 안내 문구. 비어 있지 않으면 설정 &gt; 에이전트 목록에 그대로 표시되고,
+    /// 활성화 토글이 잠긴다(공개 전 기능 — 연속 클릭으로만 열린다). 첫 실행 기본값에서도 제외된다.</summary>
+    public string PreviewNote { get; init; } = "";
 
     public override string ToString() => DisplayName;
 }
@@ -75,6 +78,7 @@ public static class AgentRegistry
             InstallCommand = "",
             UpdateCommand = "", // `dvz update` 는 새 콘솔을 띄우는 대화형이라 앱 시작 시 자동 호출 대상이 아님
             ResumeFlag = "-c",  // Tier1 폴백 전용(전용 분기는 -r <id>)
+            PreviewNote = "(준비중인 기능입니다.)",
         },
         new()
         {

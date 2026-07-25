@@ -1870,6 +1870,9 @@ public partial class SettingsDialog : UserControl
                 LastUpdatedText = path != null
                     ? File.GetLastWriteTime(path).ToString("yyyy-MM-dd")
                     : "—",
+                // PreviewNote/PreviewLocked 는 Enabled 보다 먼저 — 잠금 판정이 Enabled setter 안에서 일어난다.
+                PreviewNote = agent.PreviewNote,
+                PreviewLocked = agent.PreviewNote.Length > 0 && !enabledSet.Contains(agent.Id),
                 Enabled = installed && enabledSet.Contains(agent.Id),
                 IsClaudeCode = agent.Id == "claude",
                 RetentionDays = agent.Id == "claude"
@@ -2038,8 +2041,42 @@ public sealed class AgentItem : INotifyPropertyChanged
         set { if (!ReferenceEquals(_installedBrush, value)) { _installedBrush = value; OnPropertyChanged(); } }
     }
 
+    /// <summary>공개 전 에이전트에 붙는 안내 문구(빈 값이면 행을 숨긴다).</summary>
+    public string PreviewNote { get; set; } = "";
+    public Visibility PreviewNoteVisibility
+        => string.IsNullOrEmpty(PreviewNote) ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>준비 중 에이전트의 켜기 잠금. 이미 켜진 채로 목록에 들어온 항목은 잠그지 않는다 —
+    /// 한 번 연 사람이 껐다 켤 때마다 다시 열 번을 누르게 하지는 않는다.
+    /// <see cref="BuildAgentList"/> 에서 <see cref="Enabled"/> 보다 먼저 대입해야 한다.</summary>
+    public bool PreviewLocked { get; set; }
+
+    /// <summary>잠금이 열리는 연속 클릭 수.</summary>
+    private const int PreviewUnlockTaps = 10;
+    private int _previewTaps;
+
     private bool _enabled;
-    public bool Enabled { get => _enabled; set { if (_enabled != value) { _enabled = value; OnPropertyChanged(); } } }
+    public bool Enabled
+    {
+        get => _enabled;
+        set
+        {
+            if (value && PreviewLocked)
+            {
+                if (++_previewTaps < PreviewUnlockTaps)
+                {
+                    // 바인딩이 값을 쓰는 도중이라 지금 보내는 알림은 삼켜진다 — 다음 디스패치에 되돌린다.
+                    Application.Current?.Dispatcher.BeginInvoke(
+                        new Action(() => OnPropertyChanged(nameof(Enabled))));
+                    return;
+                }
+                PreviewLocked = false;  // 열렸다 — 이후로는 평범한 토글
+            }
+            if (_enabled == value) return;
+            _enabled = value;
+            OnPropertyChanged();
+        }
+    }
 
     private string _versionText = "—";
     public string VersionText

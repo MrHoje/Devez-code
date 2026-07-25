@@ -873,6 +873,12 @@
                                                                       Stroke="{DynamicResource TextMutedBrush}"/>
                                                             </Button>
                                                         </StackPanel>
+                                                        <!-- 공개 전 에이전트 안내 (PreviewNote 가 있을 때만) -->
+                                                        <TextBlock Text="{Binding PreviewNote}"
+                                                                   Visibility="{Binding PreviewNoteVisibility}"
+                                                                   FontSize="{DynamicResource Fs11}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   Margin="0,3,0,0"/>
                                                         <TextBlock FontSize="{DynamicResource Fs11}"
                                                                    Foreground="{DynamicResource TextMutedBrush}"
                                                                    Margin="0,3,0,0">

@@ -475,7 +475,8 @@ public static class SettingsService
         var list = current.EnabledAgents;
         if (list.Count == 0 && !current.EnabledAgentsConfigured)
             return AgentRegistry.All
-                .Where(a => a.Id != "opencode" && !AgentRegistry.HiddenFromUI.Contains(a.Id))
+                .Where(a => a.Id != "opencode" && a.PreviewNote.Length == 0
+                            && !AgentRegistry.HiddenFromUI.Contains(a.Id))
                 .Select(a => a.Id).ToList();
         return list;
     }
