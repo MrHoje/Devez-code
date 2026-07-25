@@ -1684,7 +1684,7 @@
     // ── 복사 / 붙여넣기 ──
     // Ctrl+C: 선택이 있으면 복사(+선택 해제), 없으면 그대로 SIGINT 전달 (WT 동작)
     if (ctrl && !shift && !alt && (key === 'c' || key === 'C')) {
-      if (hasSel) { e.preventDefault(); doCopy(term); return false; }
+      if (hasSel) { e.preventDefault(); doCopy(entry); return false; }
       // gjc 는 생성 중 고빈도 풀 재페인트(\x1b[2J)가 xterm 선택을 지운다 → 드래그 직후 Ctrl+C 가
       // 선택을 못 보고 \x03(SIGINT)로 빠져 gjc 가 중단됨. 최근 선택(grace)이 있으면 그걸 복사하고
       // SIGINT 를 억제한다. 한 번 더(또는 grace 밖) 누르면 lastSel 이 비어 정상 인터럽트.
@@ -1700,7 +1700,7 @@
     // Ctrl+Shift+C / Ctrl+Insert: 복사 (선택이 없으면 가로채지 않고 PTY 로 통과)
     if ((ctrl && shift && !alt && (key === 'c' || key === 'C')) ||
         (ctrl && !shift && !alt && key === 'Insert')) {
-      if (hasSel) { e.preventDefault(); doCopy(term); return false; }
+      if (hasSel) { e.preventDefault(); doCopy(entry); return false; }
       return true;
     }
     // Ctrl+V / Ctrl+Shift+V / Shift+Insert: 붙여넣기 (WT 기본 = Ctrl+V 도 붙여넣기)
@@ -1777,15 +1777,64 @@
     copyToastTimer = setTimeout(function () { copyToastEl.classList.remove('on'); }, 1400);
   }
 
-  function doCopy(term) {
-    const sel = term.getSelection();
+  function selectionJoinSeparator(left, right) {
+    if (!left || !right) return '';
+    const cjk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+    if (cjk.test(left.slice(-1)) || cjk.test(right.charAt(0))) return '';
+    if (/^[,.;:!?…)\]}]/.test(right) || /[(\[{\/-]$/.test(left)) return '';
+    return ' ';
+  }
+
+  // Devez CLI가 OSC 777로 남긴 행 메타데이터를 사용해 UI 전용 marker/indent를 복사에서
+  // 제외하고, 화면 폭 때문에 생긴 줄바꿈만 다시 이어 붙인다. 실제 Enter는 그대로 보존한다.
+  function normalizedSelection(entry) {
+    const term = entry.term;
+    const position = term.getSelectionPosition();
+    if (!position) return term.getSelection();
+    const rows = entry.devezCopyRows;
+    const firstMeta = rows && rows.get(position.start.y);
+    if (firstMeta && firstMeta.markerSkip > position.start.x) {
+      const startX = firstMeta.markerSkip;
+      const length = (position.end.y - position.start.y) * term.cols + position.end.x - startX;
+      if (length <= 0) {
+        term.clearSelection();
+        return '';
+      }
+      term.select(startX, position.start.y, length);
+    }
+
+    const adjusted = term.getSelectionPosition();
+    const raw = term.getSelection();
+    if (!adjusted || !raw || !rows || !rows.size) return raw;
+    const lines = raw.split(/\r?\n/);
+    const output = [];
+    for (let i = 0; i < lines.length; i++) {
+      const row = adjusted.start.y + i;
+      const previous = i > 0 ? rows.get(row - 1) : null;
+      const current = rows.get(row);
+      let line = lines[i];
+      if (previous && previous.joinNext) {
+        const strip = current ? current.prefixWidth : 0;
+        if (strip > 0) line = line.slice(strip);
+        const last = output.length ? output[output.length - 1] : '';
+        output[output.length - 1] = last + selectionJoinSeparator(last, line) + line;
+      } else {
+        output.push(line);
+      }
+    }
+    return output.join('\n');
+  }
+
+  function doCopy(entry) {
+    const term = entry.term;
+    const sel = normalizedSelection(entry);
     if (sel) { post({ type: 'copy', data: sel }); showCopyToast(Array.from(sel).length); }
     term.clearSelection();
   }
 
   // copy-on-select: 선택이 있으면 복사하되 선택은 유지(무엇을 복사했는지 보이게). Ctrl+C 와 달리 clear 안 함.
-  function doCopyKeep(term) {
-    const sel = term.getSelection();
+  function doCopyKeep(entry) {
+    const sel = normalizedSelection(entry);
     if (sel) { post({ type: 'copy', data: sel }); showCopyToast(Array.from(sel).length); }
   }
 
@@ -1914,7 +1963,7 @@
         t.el && typeof t.el._recoverStaleImeOnPointerDown === 'function')
       t.el._recoverStaleImeOnPointerDown();
     if (e.button !== 2) return;
-    if (t.term.hasSelection()) { doCopy(t.term); return; }
+    if (t.term.hasSelection()) { doCopy(t); return; }
     post({ type: 'requestPaste', roomId: activeRoomId });
   }, { capture: true });
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -1993,8 +2042,28 @@
     term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId };
+    const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
     terms[roomId] = entry;
+    // Devez CLI 전용 copy metadata. 현재 버퍼의 절대 행에 marker 폭과 soft-wrap 여부를 기록한다.
+    // 다른 CLI의 OSC는 건드리지 않으며, clear 신호에서 오래된 행 정보를 함께 비운다.
+    try {
+      entry.copyOsc = term.parser.registerOscHandler(777, function (data) {
+        if (data === 'devez-copy-clear') {
+          entry.devezCopyRows.clear();
+          return true;
+        }
+        const match = /^devez-copy-v1;(\d+);([01]);(\d+)$/.exec(data || '');
+        if (!match) return false;
+        const buffer = term.buffer.active;
+        const row = buffer.baseY + buffer.cursorY;
+        entry.devezCopyRows.set(row, {
+          markerSkip: Number(match[1]),
+          joinNext: match[2] === '1',
+          prefixWidth: Number(match[3])
+        });
+        return true;
+      });
+    } catch (e) {}
     // 외부 미러 중에는 일반 레이아웃 경로의 fit이 프록시 ConPTY 크기를 덮어쓰면 안 된다.
     // 기존 호출부를 모두 건드리지 않고 FitAddon 진입점 하나에서 차단한다.
     const nativeFit = fit.fit.bind(fit);
@@ -2199,7 +2268,7 @@
     // 확정한 뒤 읽도록 다음 프레임에 조회. (TUI 마우스 모드에선 Shift+드래그로 선택해야 함)
     el.addEventListener('mouseup', function () {
       if (entry.dead) return;
-      setTimeout(function () { if (term.hasSelection()) doCopyKeep(term); }, 0);
+      setTimeout(function () { if (term.hasSelection()) doCopyKeep(entry); }, 0);
     });
 
     // 검색 결과 카운트 갱신 — 활성 방일 때만 검색바에 반영
