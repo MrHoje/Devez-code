@@ -883,6 +883,15 @@ public partial class SidebarView : UserControl
         if (e.ExtentHeightChange != 0 || e.ViewportHeightChange != 0)
             UpdateHiddenScrollHeight(sv);
         UpdateHiddenScrollFade(sv);
+
+        // 행이 화면에서 밀린 시점 기록 — 클릭 직전 재배치였는지(누른 행 자체가 이미 어긋났는지) 대조용.
+        if (e.VerticalChange != 0 || e.ExtentHeightChange != 0)
+        {
+            _hiddenGroupShiftTick = Environment.TickCount;
+            DiagLog.Write(
+                $"HIDDEN-GROUP-SHIFT: dOffset={e.VerticalChange:0.#} dExtent={e.ExtentHeightChange:0.#} "
+                + $"offset={e.VerticalOffset:0.#} extent={e.ExtentHeight:0.#}");
+        }
     }
 
     /// <summary>10개 이하는 제한 없음, 초과면 앞 10개 행의 실제 높이 합으로 MaxHeight 고정.</summary>
@@ -1050,9 +1059,14 @@ public partial class SidebarView : UserControl
 
     private void Session_Click(object sender, MouseButtonEventArgs e)
     {
-        if (_didDrag) { _didDrag = false; return; }
+        if (_didDrag) { _didDrag = false; _pressedSession = null; return; }
         if (IsWithinButton(e.OriginalSource as DependencyObject)) return;
-        if (sender is not FrameworkElement { DataContext: SessionItem session }) return;
+        if (sender is not FrameworkElement { DataContext: SessionItem upSession }) return;
+
+        // MouseUp 은 '놓는 순간 커서 아래 행'으로 라우팅된다(행에 마우스 캡처가 없다).
+        // 누른 뒤 목록이 재배치되면(숨김 그룹 재동기화, 리스트 높이 변화, 스크롤 이동)
+        // 누르지 않은 세션이 활성화되므로, 버튼처럼 '누른 행'을 기준으로 삼는다.
+        var session = ResolvePressedSession(upSession);
 
         var modifiers = Keyboard.Modifiers;
         bool control = (modifiers & ModifierKeys.Control) != 0;
@@ -1074,6 +1088,11 @@ public partial class SidebarView : UserControl
         // 파일 탐색기처럼 보조키 없는 클릭은 기존 다중 선택을 해제하고 클릭한 항목을 기준점으로 삼는다.
         ClearSessionMultiSelection();
         _sessionSelectionAnchor = session;
+
+        // 숨김 세션 활성화만 기록(빈도 낮음) — 엉뚱한 세션이 켜졌다는 제보와 대조.
+        if (session.Hidden)
+            DiagLog.Write($"HIDDEN-SESSION-ACTIVATE: '{session.Name}' "
+                + $"sinceHiddenShift={unchecked(Environment.TickCount - _hiddenGroupShiftTick)}ms");
 
         // 비선택 프로젝트 세션 클릭도 OpenSession 이 프로젝트 전환까지 처리.
         // (ProjectSelected 를 따로 호출하면 첫 세션이 추가로 로드되므로 호출하지 않음)
@@ -1604,6 +1623,7 @@ public partial class SidebarView : UserControl
         _pendingTab = null;
         _pendingFile = null;
         _didDrag = false;
+        LatchPressedSession(null);
     }
 
     private void FolderHeader_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1615,6 +1635,7 @@ public partial class SidebarView : UserControl
         _pendingTab = null;
         _pendingFile = null;
         _didDrag = false;
+        LatchPressedSession(null);
     }
 
     private static bool IsWithinButton(DependencyObject? current)
@@ -1645,6 +1666,36 @@ public partial class SidebarView : UserControl
         _pendingProject = null;
         _pendingFile = null;
         _didDrag = false;
+        LatchPressedSession(IsWithinButton(e.OriginalSource as DependencyObject)
+            ? null
+            : (sender as FrameworkElement)?.DataContext as SessionItem);
+    }
+
+    // ── 클릭 대상 확정: MouseUp 라우팅이 아니라 '누른 행' 기준 ──
+    private SessionItem? _pressedSession;
+    private int _pressedSessionTick;
+    private static int _hiddenGroupShiftTick;
+
+    private void LatchPressedSession(SessionItem? session)
+    {
+        _pressedSession = session;
+        _pressedSessionTick = Environment.TickCount;
+    }
+
+    /// <summary>누른 세션과 놓은 세션이 다르면(사이 재배치) 누른 세션을 반환하고 진단 로그를 남긴다.</summary>
+    private SessionItem ResolvePressedSession(SessionItem upSession)
+    {
+        var pressed = _pressedSession;
+        _pressedSession = null;
+        bool fresh = unchecked(Environment.TickCount - _pressedSessionTick) < 2000;
+        if (pressed == null || !fresh || ReferenceEquals(pressed, upSession)) return upSession;
+
+        DiagLog.Write(
+            $"SIDEBAR-CLICK-MISMATCH: pressed='{pressed.Name}'(hidden={pressed.Hidden}) "
+            + $"up='{upSession.Name}'(hidden={upSession.Hidden}) "
+            + $"pressAge={unchecked(Environment.TickCount - _pressedSessionTick)}ms "
+            + $"sinceHiddenShift={unchecked(Environment.TickCount - _hiddenGroupShiftTick)}ms → 누른 세션으로 처리");
+        return pressed;
     }
 
     private void SessionRow_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -1665,6 +1716,7 @@ public partial class SidebarView : UserControl
         _pendingProject = null;
         _pendingTab = null;
         _didDrag = false;
+        LatchPressedSession(null);
     }
 
     private void Sidebar_PreviewMouseMove(object sender, MouseEventArgs e)
