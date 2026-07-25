@@ -361,7 +361,7 @@ async fn execute_action(
                         "cwd": state.cwd,
                         "model": state.selected_model_name(),
                         "sessionStartSource": "clear",
-                        "threadSource": "devez-code-cli"
+                        "threadSource": "devez-cli"
                     }),
                 )
                 .await;
@@ -385,12 +385,9 @@ async fn execute_action(
                         .and_then(Value::as_str)
                         .map(ToOwned::to_owned);
                     if let (Some(thread_id), Some(cwd), Some(model)) = (thread_id, cwd, model) {
+                        renderer.clear_screen()?;
+                        state.prepare_new_thread();
                         state.set_thread(thread_id, cwd, &model, effort.as_deref());
-                        state.push_notice(
-                            BlockKind::Success,
-                            "새 대화",
-                            "새 thread를 시작했습니다.",
-                        );
                     } else {
                         state.set_request_failed("thread/start 응답이 올바르지 않습니다.");
                     }
@@ -488,7 +485,7 @@ async fn start_or_resume_thread(
                     "cwd": new_cwd.to_string_lossy(),
                     "model": model,
                     "sessionStartSource": "startup",
-                    "threadSource": "devez-code-cli"
+                    "threadSource": "devez-cli"
                 }),
             )
             .await

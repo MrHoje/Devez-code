@@ -1,5 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    env, fs,
+    path::{Path, PathBuf},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -467,6 +469,11 @@ pub struct AppState {
     command_selection: usize,
     spinner_frame: usize,
     turn_started_at: Option<Instant>,
+    branch: Option<String>,
+    five_hour_percent: Option<u8>,
+    weekly_percent: Option<u8>,
+    fast_mode: bool,
+    status_metadata_refreshed_at: Instant,
 }
 
 impl AppState {
@@ -493,6 +500,8 @@ impl AppState {
             })
             .or_else(|| effort.map(ToOwned::to_owned))
             .unwrap_or_else(|| "high".to_owned());
+        let branch = read_git_branch(&cwd);
+        let (five_hour_percent, weekly_percent) = read_codex_usage();
 
         Self {
             editor: Editor::default(),
@@ -515,6 +524,11 @@ impl AppState {
             command_selection: 0,
             spinner_frame: 0,
             turn_started_at: None,
+            branch,
+            five_hour_percent,
+            weekly_percent,
+            fast_mode: read_fast_mode(),
+            status_metadata_refreshed_at: Instant::now(),
         }
     }
 
@@ -547,6 +561,7 @@ impl AppState {
     ) {
         self.thread_id = thread_id;
         self.cwd = cwd;
+        self.branch = read_git_branch(&self.cwd);
         self.turn_id = None;
         self.busy = false;
         self.turn_started_at = None;
@@ -625,6 +640,12 @@ impl AppState {
         self.turn_started_at = None;
     }
 
+    pub fn prepare_new_thread(&mut self) {
+        self.prepare_resume();
+        self.editor.clear();
+        self.show_welcome = true;
+    }
+
     pub fn push_notice(
         &mut self,
         kind: BlockKind,
@@ -669,6 +690,12 @@ impl AppState {
     pub fn tick(&mut self) {
         if self.busy {
             self.spinner_frame = (self.spinner_frame + 1) % SPINNER.len();
+        }
+        if self.status_metadata_refreshed_at.elapsed().as_secs() >= 3 {
+            self.branch = read_git_branch(&self.cwd);
+            (self.five_hour_percent, self.weekly_percent) = read_codex_usage();
+            self.fast_mode = read_fast_mode();
+            self.status_metadata_refreshed_at = Instant::now();
         }
     }
 
@@ -1703,9 +1730,13 @@ impl AppState {
             })
         });
         StatusLineView {
+            branch: self.branch.clone(),
             model: self.selected_model_display_name().to_owned(),
             effort: self.selected_effort.clone(),
             context,
+            five_hour_percent: self.five_hour_percent,
+            weekly_percent: self.weekly_percent,
+            fast_mode: self.fast_mode,
             notice: self.transient_status.clone(),
         }
     }
@@ -2252,6 +2283,100 @@ fn format_token_count(tokens: u64) -> String {
     }
 }
 
+fn read_git_branch(cwd: &str) -> Option<String> {
+    let mut directory = PathBuf::from(cwd);
+    for _ in 0..10 {
+        let marker = directory.join(".git");
+        let head = if marker.is_dir() {
+            fs::read_to_string(marker.join("HEAD")).ok()
+        } else if marker.is_file() {
+            fs::read_to_string(&marker).ok().and_then(|git_file| {
+                let git_dir = git_file.trim().strip_prefix("gitdir:")?.trim();
+                let git_dir = Path::new(git_dir);
+                let git_dir = if git_dir.is_absolute() {
+                    git_dir.to_owned()
+                } else {
+                    directory.join(git_dir)
+                };
+                fs::read_to_string(git_dir.join("HEAD")).ok()
+            })
+        } else {
+            None
+        };
+        if let Some(branch) = head.as_deref().and_then(parse_git_branch) {
+            return Some(branch);
+        }
+        if !directory.pop() {
+            break;
+        }
+    }
+    None
+}
+
+fn parse_git_branch(head: &str) -> Option<String> {
+    let head = head.trim();
+    head.strip_prefix("ref: refs/heads/")
+        .map(ToOwned::to_owned)
+        .or_else(|| (head.chars().count() >= 7).then(|| head.chars().take(7).collect::<String>()))
+}
+
+fn read_codex_usage() -> (Option<u8>, Option<u8>) {
+    let Some(path) = env::var_os("APPDATA").map(|app_data| {
+        PathBuf::from(app_data)
+            .join("DevezCode")
+            .join("codex-usage.json")
+    }) else {
+        return (None, None);
+    };
+    let Some(root) = fs::read_to_string(path)
+        .ok()
+        .and_then(|json| serde_json::from_str::<Value>(&json).ok())
+    else {
+        return (None, None);
+    };
+    parse_codex_usage(&root)
+}
+
+fn parse_codex_usage(root: &Value) -> (Option<u8>, Option<u8>) {
+    (
+        usage_percent(root, "five_hour"),
+        usage_percent(root, "weekly"),
+    )
+}
+
+fn usage_percent(root: &Value, key: &str) -> Option<u8> {
+    root.get(key)?
+        .get("used_percent")?
+        .as_f64()
+        .map(|percent| percent.round().clamp(0.0, 100.0) as u8)
+}
+
+fn read_fast_mode() -> bool {
+    let codex_home = env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".codex")));
+    codex_home
+        .and_then(|home| fs::read_to_string(home.join("config.toml")).ok())
+        .is_some_and(|config| parse_fast_mode(&config))
+}
+
+fn parse_fast_mode(config: &str) -> bool {
+    config
+        .lines()
+        .take_while(|line| !line.trim_start().starts_with('['))
+        .filter_map(|line| line.split('#').next())
+        .filter_map(|line| line.split_once('='))
+        .find_map(|(key, value)| {
+            (key.trim() == "service_tier").then(|| {
+                value
+                    .trim()
+                    .trim_matches(['"', '\''])
+                    .eq_ignore_ascii_case("fast")
+            })
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2375,5 +2500,58 @@ mod tests {
         assert!(labels.contains("low"));
         assert!(labels.contains("ultra"));
         assert_eq!(endpoints.chars().count(), track.chars().count());
+    }
+
+    #[test]
+    fn new_thread_resets_the_conversation_view() {
+        let model = test_model("gpt-5.6-sol", "GPT-5.6-Sol", true);
+        let mut state = AppState::new(
+            "old-thread".to_owned(),
+            "cwd".to_owned(),
+            "account".to_owned(),
+            vec![model],
+            "gpt-5.6-sol",
+            Some("high"),
+        );
+        state.editor.set_text("leftover input");
+        state
+            .committed
+            .push(Block::new(BlockKind::Assistant, "", "old response"));
+        state.total_tokens = 42;
+        state.context_window = Some(100);
+        state.transient_status = Some("old status".to_owned());
+        state.busy = true;
+        state.turn_id = Some("old-turn".to_owned());
+        state.turn_started_at = Some(Instant::now());
+
+        state.prepare_new_thread();
+
+        assert!(state.editor.is_empty());
+        assert!(state.committed.is_empty());
+        assert_eq!(state.total_tokens, 0);
+        assert_eq!(state.context_window, None);
+        assert_eq!(state.transient_status, None);
+        assert!(!state.busy);
+        assert_eq!(state.turn_id, None);
+        assert!(state.turn_started_at.is_none());
+        assert!(state.view().welcome.is_some());
+    }
+
+    #[test]
+    fn status_metadata_parses_usage_fast_mode_and_branch() {
+        let usage = json!({
+            "five_hour": { "used_percent": 12.4 },
+            "weekly": { "used_percent": 70 }
+        });
+
+        assert_eq!(parse_codex_usage(&usage), (Some(12), Some(70)));
+        assert!(parse_fast_mode(
+            "service_tier = \"fast\"\n[features]\nexample = true"
+        ));
+        assert!(!parse_fast_mode("service_tier = \"default\""));
+        assert_eq!(
+            parse_git_branch("ref: refs/heads/feature/status-line\n"),
+            Some("feature/status-line".to_owned())
+        );
     }
 }

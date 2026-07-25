@@ -79,9 +79,13 @@ pub struct SuggestionView {
 }
 
 pub struct StatusLineView {
+    pub branch: Option<String>,
     pub model: String,
     pub effort: String,
     pub context: Option<String>,
+    pub five_hour_percent: Option<u8>,
+    pub weekly_percent: Option<u8>,
+    pub fast_mode: bool,
     pub notice: Option<String>,
 }
 
@@ -367,6 +371,11 @@ enum Tone {
     ModelTerra,
     ModelLuna,
     Model55,
+    Branch,
+    LimitFiveHour,
+    LimitWeekly,
+    FastOn,
+    FastOff,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -440,12 +449,8 @@ fn normal_frame(
         lines.push(PaintLine::blank());
     }
 
-    let (input_lines, input_cursor_line, input_cursor_col) = input_lines(
-        editor,
-        width,
-        "Message",
-        "Ask Codex to build, fix, or explain…",
-    );
+    let (input_lines, input_cursor_line, input_cursor_col) =
+        input_lines(editor, width, "", "Ask Codex to build, fix, or explain…");
     let dock_index = lines.len();
     let cursor_line = lines.len() + input_cursor_line;
     lines.extend(input_lines);
@@ -473,7 +478,7 @@ fn welcome_lines(welcome: WelcomeView, width: u16) -> Vec<PaintLine> {
         tail: Vec::new(),
     });
     lines.push(panel_line(
-        "  ✦  DEVEZ CODE",
+        "  ✦  DEVEZ CLI",
         panel_width,
         Tone::Accent,
         true,
@@ -761,46 +766,49 @@ fn status_line_row(status: Option<StatusLineView>, fallback: &str, width: u16) -
         "max" => Tone::EffortMax,
         _ => Tone::StatusText,
     };
-    let mut spans = vec![
-        PaintSpan {
-            text: format!(" {}", compact_right(&status.model, 28)),
-            tone: model_tone(&status.model).unwrap_or(Tone::StatusText),
-            bold: false,
-        },
-        PaintSpan {
-            text: " | ".to_owned(),
-            tone: Tone::StatusSeparator,
-            bold: false,
-        },
-        PaintSpan {
-            text: format!("eff: {}", status.effort),
-            tone: effort_tone,
-            bold: false,
-        },
-    ];
-    if let Some(context) = status.context.filter(|context| !context.is_empty()) {
-        spans.push(PaintSpan {
-            text: " | ".to_owned(),
-            tone: Tone::StatusSeparator,
-            bold: false,
-        });
-        spans.push(PaintSpan {
-            text: context,
-            tone: Tone::Context,
-            bold: false,
-        });
+    let mut spans = Vec::new();
+    if let Some(branch) = status.branch.filter(|branch| !branch.is_empty()) {
+        push_status_span(&mut spans, compact_right(&branch, 32), Tone::Branch);
     }
+    push_status_span(
+        &mut spans,
+        compact_right(&status.model, 28),
+        model_tone(&status.model).unwrap_or(Tone::StatusText),
+    );
+    push_status_span(&mut spans, format!("eff: {}", status.effort), effort_tone);
+    if let Some(context) = status.context.filter(|context| !context.is_empty()) {
+        push_status_span(&mut spans, context, Tone::Context);
+    }
+    push_status_span(
+        &mut spans,
+        status
+            .five_hour_percent
+            .map_or_else(|| "5h: --".to_owned(), |percent| format!("5h: {percent}%")),
+        Tone::LimitFiveHour,
+    );
+    push_status_span(
+        &mut spans,
+        status.weekly_percent.map_or_else(
+            || "week: --".to_owned(),
+            |percent| format!("week: {percent}%"),
+        ),
+        Tone::LimitWeekly,
+    );
+    push_status_span(
+        &mut spans,
+        if status.fast_mode {
+            "Fast On"
+        } else {
+            "Fast Off"
+        },
+        if status.fast_mode {
+            Tone::FastOn
+        } else {
+            Tone::FastOff
+        },
+    );
     if let Some(notice) = status.notice.filter(|notice| !notice.is_empty()) {
-        spans.push(PaintSpan {
-            text: " | ".to_owned(),
-            tone: Tone::StatusSeparator,
-            bold: false,
-        });
-        spans.push(PaintSpan {
-            text: notice,
-            tone: Tone::Muted,
-            bold: false,
-        });
+        push_status_span(&mut spans, notice, Tone::Muted);
     }
     trim_spans(&mut spans, width.max(1) as usize);
 
@@ -817,6 +825,27 @@ fn status_line_row(status: Option<StatusLineView>, fallback: &str, width: u16) -
         bold: first.bold,
         tail: spans.into_iter().skip(1).collect(),
     }
+}
+
+fn push_status_span(spans: &mut Vec<PaintSpan>, text: impl Into<String>, tone: Tone) {
+    if spans.is_empty() {
+        spans.push(PaintSpan {
+            text: format!(" {}", text.into()),
+            tone,
+            bold: false,
+        });
+        return;
+    }
+    spans.push(PaintSpan {
+        text: " | ".to_owned(),
+        tone: Tone::StatusSeparator,
+        bold: false,
+    });
+    spans.push(PaintSpan {
+        text: text.into(),
+        tone,
+        bold: false,
+    });
 }
 
 fn trim_spans(spans: &mut Vec<PaintSpan>, max_width: usize) {
@@ -1119,13 +1148,18 @@ fn input_lines(
     }
 
     let mut rows = Vec::with_capacity(raw_rows.len() + 2);
-    let top_label = format!(" {label} ");
+    let top_label = (!label.is_empty()).then(|| format!(" {label} "));
     rows.push(PaintLine {
         prefix: String::new(),
         prefix_tone: Tone::Muted,
-        text: format!(
-            "──{top_label}{}",
-            "─".repeat(panel_width.saturating_sub(2 + top_label.len()))
+        text: top_label.map_or_else(
+            || "─".repeat(panel_width),
+            |label| {
+                format!(
+                    "──{label}{}",
+                    "─".repeat(panel_width.saturating_sub(2 + label.len()))
+                )
+            },
         ),
         tone: Tone::Muted,
         bold: false,
@@ -1367,9 +1401,9 @@ fn set_tone(out: &mut Stdout, tone: Tone) -> Result<()> {
             b: 11,
         },
         Tone::ModelTerra => Color::Rgb {
-            r: 52,
-            g: 211,
-            b: 153,
+            r: 248,
+            g: 113,
+            b: 113,
         },
         Tone::ModelLuna => Color::Rgb {
             r: 167,
@@ -1380,6 +1414,31 @@ fn set_tone(out: &mut Stdout, tone: Tone) -> Result<()> {
             r: 96,
             g: 165,
             b: 250,
+        },
+        Tone::Branch => Color::Rgb {
+            r: 147,
+            g: 197,
+            b: 253,
+        },
+        Tone::LimitFiveHour => Color::Rgb {
+            r: 96,
+            g: 165,
+            b: 250,
+        },
+        Tone::LimitWeekly => Color::Rgb {
+            r: 167,
+            g: 139,
+            b: 250,
+        },
+        Tone::FastOn => Color::Rgb {
+            r: 91,
+            g: 192,
+            b: 134,
+        },
+        Tone::FastOff => Color::Rgb {
+            r: 128,
+            g: 128,
+            b: 128,
         },
     };
     queue!(out, SetForegroundColor(color))?;
@@ -1443,10 +1502,12 @@ mod tests {
         let mut editor = Editor::default();
         editor.set_text("wrapped prompt text");
 
-        let (rows, _, _) = input_lines(&editor, 18, "Message", "placeholder");
+        let (rows, _, _) = input_lines(&editor, 18, "", "placeholder");
         let prompt_rows = &rows[1..rows.len() - 1];
 
         assert!(prompt_rows.len() > 1);
+        assert!(!rows[0].text.contains("Message"));
+        assert!(rows[0].text.chars().all(|ch| ch == '─'));
         assert!(!rows[0].text.contains(['╭', '╮', '╰', '╯']));
         assert!(
             rows.last()
@@ -1480,9 +1541,13 @@ mod tests {
     fn status_line_is_trimmed_to_terminal_width() {
         let line = status_line_row(
             Some(StatusLineView {
+                branch: Some("main".to_owned()),
                 model: "GPT-5.6 Codex".to_owned(),
                 effort: "xhigh".to_owned(),
                 context: Some("ctx: 45k/256k (18%)".to_owned()),
+                five_hour_percent: Some(12),
+                weekly_percent: Some(34),
+                fast_mode: false,
                 notice: Some("connected".to_owned()),
             }),
             "",
@@ -1496,7 +1561,7 @@ mod tests {
                 .sum::<usize>();
 
         assert!(width <= 32);
-        assert!(line.text.starts_with(" GPT-5.6 Codex"));
+        assert!(line.text.starts_with(" main"));
     }
 
     #[test]

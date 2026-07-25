@@ -7,6 +7,7 @@ Codex의 인증, 하네스 프롬프트, 도구, 스킬, `AGENTS.md`, 샌드박�
 ## 현재 범위
 
 - 새 스레드 시작, 세션 검색 피커, ID/이름 기반 resume
+- `/new` 성공 시 이전 대화와 화면을 비우고 새 세션으로 전환
 - `--resume [SESSION]`, `--continue` 및 실행 중 `/resume`
 - 모델 카탈로그 기반 `/model` 선택과 좌우 effort 조절
 - `/effort` 슬라이더에서 서버 지원 effort만 노출 (`max`·`ultra` 포함)
@@ -15,7 +16,7 @@ Codex의 인증, 하네스 프롬프트, 도구, 스킬, `AGENTS.md`, 샌드박�
 - 실행 중 입력 steer 및 `Esc`/`Ctrl+C` 중단
 - 일반 터미널 스크롤백을 보존하는 증분 렌더링
 - 좌우 테두리와 복사용 공백이 없는 Claude Code형 하단 composer
-- 모델명, effort, context 사용량을 표시하는 Claude statusline형 하단 상태줄
+- Git 브랜치, 모델, effort, context, 5h/주간 한도, Fast 상태를 표시하는 하단 상태줄
 - Codex CLI 정렬을 유지하고 hidden 모델을 제외한 `/model` 피커
 - `/model sol`, `/model terra`, `/model luna`, `/model spark` 등 짧은 모델 별칭
 - 모델 번호 표시 및 피커에서 `1`~`9` 숫자키 즉시 선택
@@ -35,7 +36,6 @@ Codex의 인증, 하네스 프롬프트, 도구, 스킬, `AGENTS.md`, 샌드박�
 Codex CLI가 설치되고 로그인된 환경에서:
 
 ```powershell
-cd cli
 cargo run --release
 ```
 

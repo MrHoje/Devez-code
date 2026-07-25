@@ -173,7 +173,7 @@ impl AppServer {
                 "initialize",
                 json!({
                     "clientInfo": {
-                        "name": "devez-code-cli",
+                        "name": "devez-cli",
                         "title": "Devez CLI",
                         "version": env!("CARGO_PKG_VERSION")
                     },

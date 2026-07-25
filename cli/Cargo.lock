@@ -182,8 +182,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "devez-code-cli"
-version = "0.4.3"
+name = "devez-cli"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "clap",
