@@ -723,6 +723,16 @@ public partial class MainWindow : Window
         // 창 위치/크기는 닫히기 직전(Closing)에 저장한다 — RestoreBounds 가 유효한 시점.
         Closing += OnWindowClosing;
 
+        // + 이동/리사이즈/상태변경 후에도 디바운스 저장(크래시·강제 종료·로그오프로 Closing 을 못 타는 경우 대비).
+        _placementSaveTimer.Tick += (_, _) => { _placementSaveTimer.Stop(); SaveWindowPlacement(); };
+        LocationChanged += (_, _) => ScheduleWindowPlacementSave();
+        SizeChanged     += (_, _) => ScheduleWindowPlacementSave();
+        StateChanged    += (_, _) =>
+        {
+            if (WindowState != WindowState.Minimized) _lastNonMinState = WindowState;
+            ScheduleWindowPlacementSave();
+        };
+
         Closed += (_, _) =>
         {
             _idleSessionShutdownTimer.Stop();
@@ -768,43 +778,97 @@ public partial class MainWindow : Window
         };
     }
 
-    /// <summary>마지막 실행의 창 위치/크기/최대화를 복원. 저장값이 화면 밖이면(모니터 분리·해상도 변경) 무시.</summary>
+    /// <summary>마지막 실행의 창 위치/크기/최대화를 복원. 저장값이 화면 밖이면(모니터 분리·해상도 변경)
+    /// 버리지 않고 가상 화면 안으로 밀어 넣는다 — 통째로 무시하면 "위치 기억이 안 된다"로 보인다.</summary>
     private void RestoreWindowPlacement()
     {
         var (l, t, w, h, max) = SettingsService.LoadWindowPlacement();
-        if (l is double ll && t is double tt && w is double ww && h is double hh && ww > 0 && hh > 0)
+        if (l is double ll && t is double tt && w is double ww && h is double hh
+            && IsFinite(ll) && IsFinite(tt) && ww > 0 && hh > 0)
         {
             var saved = new Rect(ll, tt, ww, hh);
             var virt  = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
                                  SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
             var inter = Rect.Intersect(saved, virt);
-            // 창이 화면과 충분히 겹칠 때만 복원(완전히 화면 밖이면 CenterScreen 으로 둔다).
-            if (!inter.IsEmpty && inter.Width >= 100 && inter.Height >= 60)
+            // 화면과 충분히 겹치지 않으면(모니터 제거·해상도 축소) 크기는 유지하고 위치만 화면 안으로 클램프.
+            if (inter.IsEmpty || inter.Width < 100 || inter.Height < 60)
+                saved = ClampToScreen(saved, virt);
+            if (saved.Width > 0 && saved.Height > 0)
             {
                 WindowStartupLocation = WindowStartupLocation.Manual;
-                Left = ll; Top = tt; Width = ww; Height = hh;
+                Left = saved.Left; Top = saved.Top; Width = saved.Width; Height = saved.Height;
             }
         }
         if (max)
         {
-            // 전체화면 복원: Maximized 로 만들면 Left/Top 이 무시돼 주 모니터로 최대화됨 →
-            // EnterFullScreen 이 잘못된 모니터를 잡는다. 일반 bounds(Normal) 유지 후
-            // OnSourceInitialized 에서 전체화면 진입 → MonitorFromWindow 가 올바른 모니터 감지.
+            // 최대화/전체화면 복원은 둘 다 hwnd 생성 뒤(OnSourceInitialized)로 미룬다.
+            // ctor 에서 WindowState=Maximized 로 만들면 Left/Top 이 무시돼 주 모니터로 최대화되고,
+            // EnterFullScreen 도 잘못된 모니터를 잡는다. 일반 bounds(Normal)로 hwnd 를 만든 뒤
+            // 최대화/전체화면 진입 → MonitorFromWindow 가 올바른 모니터를 감지한다.
             if (_useFullScreen) _restoreFullScreen = true;
-            else WindowState = WindowState.Maximized;
+            else _restoreMaximized = true;
         }
     }
 
-    /// <summary>현재 창 위치/크기/최대화를 저장. 최대화·최소화 상태여도 RestoreBounds 로 일반 크기를 기록.</summary>
+    private static bool IsFinite(double v) => !double.IsNaN(v) && !double.IsInfinity(v);
+
+    /// <summary>rect 를 크기는 유지하며 가상 화면 안으로 이동(필요하면 화면 크기까지 축소).</summary>
+    private static Rect ClampToScreen(Rect r, Rect virt)
+    {
+        double w = Math.Min(r.Width, virt.Width), h = Math.Min(r.Height, virt.Height);
+        double x = Math.Min(Math.Max(r.Left, virt.Left), virt.Right - w);
+        double y = Math.Min(Math.Max(r.Top, virt.Top), virt.Bottom - h);
+        return new Rect(x, y, w, h);
+    }
+
+    /// <summary>창의 실제 화면 rect(DIP). 스냅(dock)·일반 상태의 "지금 보이는" 위치/크기다.</summary>
+    private Rect CurrentWindowRectDip()
+    {
+        if (_mainHwnd != IntPtr.Zero && GetWindowRect(_mainHwnd, out var r))
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            return new Rect(r.Left / dpi.DpiScaleX, r.Top / dpi.DpiScaleY,
+                            (r.Right - r.Left) / dpi.DpiScaleX, (r.Bottom - r.Top) / dpi.DpiScaleY);
+        }
+        return new Rect(Left, Top, ActualWidth, ActualHeight);
+    }
+
+    /// <summary>현재 창 위치/크기/최대화를 저장.
+    /// - 전체화면: 진입 전 일반 bounds(<see cref="_preFsBounds"/>)
+    /// - 최대화/최소화: RestoreBounds(그때만 일반 크기를 담는다)
+    /// - 일반: 실제 창 rect. Windows 스냅(dock)된 창은 WindowState 가 Normal 인데 RestoreBounds(=Win32
+    ///   rcNormalPosition)엔 스냅 *전* 크기가 남아 있어서, 그대로 저장하면 dock 위치가 기억되지 않는다.</summary>
     private void SaveWindowPlacement()
     {
-        bool max = WindowState == WindowState.Maximized || _inFullScreen;
-        // 전체화면 중엔 현재 bounds 가 모니터 전체이므로, 진입 전 일반 bounds 를 저장.
-        var b = _inFullScreen ? _preFsBounds : RestoreBounds;
-        if (b.IsEmpty || b.Width <= 0 || b.Height <= 0)
-            b = new Rect(Left, Top, ActualWidth, ActualHeight);
+        // 최소화 상태로 종료해도 최대화 기억은 유지(최소화 직전 상태로 판정).
+        bool max = _inFullScreen || WindowState == WindowState.Maximized
+                || (WindowState == WindowState.Minimized && _lastNonMinState == WindowState.Maximized);
+        var b = _inFullScreen                        ? _preFsBounds
+              : WindowState == WindowState.Normal    ? CurrentWindowRectDip()
+                                                     : RestoreBounds;
+        if (!IsValidBounds(b)) b = CurrentWindowRectDip();
+        if (!IsValidBounds(b)) b = new Rect(Left, Top, ActualWidth, ActualHeight);
+        if (!IsValidBounds(b)) return; // 쓸 수 있는 값이 없으면 기존 저장값을 덮지 않는다.
         SettingsService.SaveWindowPlacement(b.Left, b.Top, b.Width, b.Height, max);
     }
+
+    private static bool IsValidBounds(Rect r)
+        => !r.IsEmpty && IsFinite(r.Left) && IsFinite(r.Top)
+        && IsFinite(r.Width) && IsFinite(r.Height) && r.Width > 0 && r.Height > 0;
+
+    /// <summary>이동/리사이즈가 멎으면 창 배치를 저장(디바운스). 종료 시 저장만으로는 크래시·강제 종료·
+    /// 로그오프에서 마지막 위치가 유실된다.</summary>
+    private void ScheduleWindowPlacementSave()
+    {
+        if (!IsLoaded || _shuttingDown) return;
+        _placementSaveTimer.Stop();
+        _placementSaveTimer.Start();
+    }
+
+    private readonly System.Windows.Threading.DispatcherTimer _placementSaveTimer = new()
+    { Interval = TimeSpan.FromSeconds(2) };
+
+    private WindowState _lastNonMinState = WindowState.Normal; // 최소화 직전 상태(최대화 기억 보존용)
 
     private bool _shuttingDown;
     private bool _readyToClose; // 안전 정리(스냅샷/오버레이/graceful) 완료 후 우리가 부른 Close() 만 통과시킨다.
@@ -840,6 +904,7 @@ public partial class MainWindow : Window
         }
 
         SaveWindowPlacement();
+        _placementSaveTimer.Stop(); // 종료 중 디바운스 저장이 뒤늦게 덮어쓰지 않도록
         _wakeScheduler.Stop();
         _idleSessionShutdownTimer.Stop();
         _externalSessionTimer.Stop();
@@ -5991,6 +6056,7 @@ public partial class MainWindow : Window
     private bool _inFullScreen;        // 현재 수동 전체화면 중
     private bool _fsGuard;             // WindowState 변경 재진입 방지
     private bool _restoreFullScreen;   // 시작 복원 시 전체화면 진입 예약(올바른 모니터 감지용)
+    private bool _restoreMaximized;    // 시작 복원 시 최대화 예약(hwnd 생성 후 = 저장 위치의 모니터로 최대화)
     private Rect _preFsBounds;         // 전체화면 진입 전 일반 창 bounds(복원용)
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -6001,6 +6067,16 @@ public partial class MainWindow : Window
         EnableDwmTransitions(_mainHwnd); // 최대화/복원 시 DWM 부드러운 전환 활성화
         ApplyCornerPreference();          // 최대화 시 각진 모서리(둥근 모서리가 화면 모서리를 깎는 문제 방지)
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
+        // 저장된 '최대화' 복원: hwnd 가 이미 저장 위치에 만들어졌으므로 그 모니터로 최대화된다.
+        // (ctor 에서 Maximized 로 두면 Left/Top 이 무시돼 항상 주 모니터로 최대화됨.)
+        // StateChanged 구독 전에 처리 → 시작 시 전환 커버가 헛돌지 않는다.
+        if (_restoreMaximized)
+        {
+            _restoreMaximized = false;
+            WindowState = WindowState.Maximized;
+            ApplyCornerPreference();
+            ApplyMaximizeMargin();
+        }
         _lastWindowState = WindowState; // 시작 복원 상태 기준으로 초기화(첫 StateChanged 의 prev 오판 방지)
         StateChanged += OnStateChangedForFullScreen;
         Activated   += (_, _) => { StopTaskbarAttention(); UpdateFullScreenTopmost(); };
@@ -6063,9 +6139,15 @@ public partial class MainWindow : Window
         // 진입 전 일반 창 bounds(해제 시 복원용). 수동 전체화면은 WindowState=Normal 을 유지하므로
         // 최대화 이력이 없으면 RestoreBounds 가 Empty → exit 가 전체화면 크기로 폴백되던 버그.
         // Maximized 일 때만 RestoreBounds(그때만 일반 크기를 담음), 그 외엔 현재 실제 창 크기를 직접 캡처.
-        _preFsBounds = (WindowState == WindowState.Maximized) ? RestoreBounds : new Rect(Left, Top, ActualWidth, ActualHeight);
-        if (_preFsBounds.IsEmpty || _preFsBounds.Width <= 0 || _preFsBounds.Height <= 0)
-            _preFsBounds = new Rect(Left, Top, Math.Max(ActualWidth, MinWidth), Math.Max(ActualHeight, MinHeight));
+        // 시작 복원 경로(OnSourceInitialized)에선 아직 레이아웃 전이라 ActualWidth/Height 가 0 →
+        // 복원된 Width/Height 프로퍼티로 대체. (안 하면 MinWidth/MinHeight 로 붕괴돼 다음 종료 때
+        // '전체화면 해제 시 크기'가 최소 크기로 저장된다.)
+        double pw = ActualWidth  > 0 ? ActualWidth  : (IsFinite(Width)  ? Width  : 0);
+        double ph = ActualHeight > 0 ? ActualHeight : (IsFinite(Height) ? Height : 0);
+        _preFsBounds = (WindowState == WindowState.Maximized) ? RestoreBounds : new Rect(Left, Top, pw, ph);
+        if (!IsValidBounds(_preFsBounds)) _preFsBounds = CurrentWindowRectDip();
+        if (!IsValidBounds(_preFsBounds))
+            _preFsBounds = new Rect(0, 0, Math.Max(ActualWidth, MinWidth), Math.Max(ActualHeight, MinHeight));
         _inFullScreen = true;
         // 작업표시줄은 WS_EX_TOPMOST 라 일반 창은 못 덮음(보조 모니터는 셸 전체화면 감지도 안 먹음).
         // WPF Topmost 속성으로 올려 z-order 로 확실히 덮는다.
