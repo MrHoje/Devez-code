@@ -851,8 +851,9 @@
                                                                            Foreground="White" VerticalAlignment="Center"/>
                                                             </Border>
                                                         </StackPanel>
-                                                        <!-- 설치 명령 + 복사 -->
-                                                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                        <!-- 설치 명령 + 복사 (설치 명령이 없는 에이전트는 행 자체를 숨김) -->
+                                                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0"
+                                                                    Visibility="{Binding InstallCommandVisibility}">
                                                             <TextBlock Text="설치 명령:" FontSize="{DynamicResource Fs11}"
                                                                        Foreground="{DynamicResource TextMutedBrush}"
                                                                        VerticalAlignment="Center" Margin="0,0,4,0"/>

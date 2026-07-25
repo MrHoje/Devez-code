@@ -172,6 +172,15 @@ public sealed class TerminalSessionManager
                 var direct = TryBuildCodexDirectLaunch(roomId, ccDir, out inject);
                 if (direct != null) commandLine = direct;
             }
+            else if (ccDir != null && agent.Id == "devezcli")
+            {
+                // dvz: 자체 상태 기록(sessions/busy/waiting/lastmsg) + `dvz -r <threadId>` 복원.
+                // 훅이 없어 설치기도 없다 — CLI 가 DEVEZCODE_ROOM_ID 를 직접 보고 기록한다.
+                // 앱레벨 자동 재진입(codex/grok 패턴).
+                startDir = ccDir;
+                var direct = TryBuildDevezCliDirectLaunch(roomId, out inject);
+                if (direct != null) commandLine = direct;
+            }
             else if (ccDir != null && agent.Id == "grok")
             {
                 // grok: 훅 + `grok -r <id>` 복원. 앱레벨 자동 재진입(codex 패턴).
@@ -749,6 +758,76 @@ public sealed class TerminalSessionManager
         }
     }
 
+    private static string DevezCliLaunchDir() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "DevezCode", "devezcli", "launch");
+
+    /// <summary>Devez CLI(dvz) 방 직접 실행. dvz 가 기록한 thread ID 가 있으면 <c>dvz -r &lt;id&gt;</c>,
+    /// 없으면 신규. 배치 끝 exit + cmd /c → ConPTY 종료 → IsAutoReenterRoom(devezcli) 앱레벨 재진입.
+    /// <para>세션 실체는 codex thread 라 유효성은 codex rollout 존재로 판정한다(같은 파일).
+    /// 포크는 rollout 복사본의 새 ID 가 <see cref="SettingsService.SaveDevezCliRoomSession"/> 에
+    /// 들어오는 방식이라 여기서 따로 분기하지 않는다 — 그냥 -r 로 열린다.</para></summary>
+    private string? TryBuildDevezCliDirectLaunch(string roomId, out string? injectFallback)
+    {
+        injectFallback = null;
+
+        var agent = AgentRegistry.Find("devezcli");
+        var exePath = agent == null ? null : AgentRegistry.ResolvePath(agent);
+        var command = string.IsNullOrWhiteSpace(exePath)
+            ? "dvz"
+            : $"\"{exePath.Replace("\"", "\"\"")}\"";
+
+        // dvz 가 방금 떨군 값 우선, 없으면 settings. rollout 이 사라졌으면(세션 삭제) 폐기하고 새 대화.
+        var tracked = DevezCliStateService.LoadTrackedSessionId(roomId);
+        var saved = SettingsService.LoadDevezCliRoomSession(roomId);
+        string? sessionId = null;
+        foreach (var candidate in new[] { tracked, saved })
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) continue;
+            if (FindCodexTranscriptPath(candidate) == null) continue;
+            sessionId = candidate;
+            break;
+        }
+        if (sessionId != null)
+        {
+            if (!string.Equals(saved, sessionId, StringComparison.OrdinalIgnoreCase))
+                SettingsService.SaveDevezCliRoomSession(roomId, sessionId);
+        }
+        else if (!string.IsNullOrWhiteSpace(saved))
+        {
+            SettingsService.ClearDevezCliRoomSession(roomId);
+            DiagLog.Write($"launch[{roomId}]: dvz thread={saved} rollout 없음 → 새 세션");
+        }
+        SettingsService.MarkAgentRoomLaunched(roomId, "devezcli");
+
+        // dvz 는 %APPDATA%\DevezCLI\theme.txt 를 DevezCode\theme.txt 보다 먼저 읽는다. CLI 안에서
+        // /theme 을 한 번이라도 쓰면 그 값이 고착되므로, 앱 테마를 인자로 못박아 우선순위를 덮는다.
+        var theme = DevezCode.App.CurrentTheme;
+        if (theme is not ("minimal" or "soft" or "dark")) theme = "dark";
+
+        string body = string.IsNullOrEmpty(sessionId)
+            ? $"call {command} --theme {theme}\r\nexit"
+            : $"call {command} --theme {theme} -r {sessionId}\r\nexit";
+
+        try
+        {
+            var dir = DevezCliLaunchDir();
+            Directory.CreateDirectory(dir);
+            var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
+            // set 으로 DEVEZCODE_ROOM_ID 명시(ConPTY env 상속 백업) — dvz 는 이 값이 있을 때만 상태를 기록한다.
+            File.WriteAllText(batchPath,
+                "@echo off\r\n" +
+                $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                body + "\r\n");
+            return $"cmd.exe /c \"{batchPath}\"";
+        }
+        catch
+        {
+            injectFallback = body + "\r";
+            return null;
+        }
+    }
+
     private static string AntigravityLaunchDir() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "DevezCode", "antigravity", "launch");
@@ -1168,6 +1247,7 @@ public sealed class TerminalSessionManager
                     SettingsService.LoadGrokRoomSession(roomId),
                     SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
                 "kimi" => ResolveKimiSessionId(roomId, SettingsService.LoadClaudeCodeRoomDir(roomId)) != null,
+                "devezcli" => FindCodexTranscriptPath(SettingsService.LoadDevezCliRoomSession(roomId)) != null,
                 _ => false,
             };
         }
@@ -2825,6 +2905,15 @@ public sealed class TerminalSessionManager
                             SettingsService.SaveCodexRoomSession(roomId, cx);
                     }
                     break;
+                case "devezcli":
+                    // dvz 가 sessions\<room>.txt 에 쓴 최신 thread ID 를 종료 시점에 확정 저장. 평시엔
+                    // SessionChanged(워처)가 라이브 저장하지만, 종료 직전 write 를 놓치면 stale ID 로
+                    // resume 돼 "예전 대화가 뜨는" 버그가 된다(codex 와 같은 유형).
+                    var dz = DevezCliStateService.LoadTrackedSessionId(roomId);
+                    if (dz != null && FindCodexTranscriptPath(dz) != null
+                        && dz != SettingsService.LoadDevezCliRoomSession(roomId))
+                        SettingsService.SaveDevezCliRoomSession(roomId, dz);
+                    break;
                 case "grok":
                     var gk = GrokHookService.LoadTrackedSessionId(roomId);
                     var gkDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
@@ -2922,6 +3011,12 @@ public sealed class TerminalSessionManager
         {
             // Ctrl+Q 두 번은 Grok의 전역 종료키. Esc는 실행 중 무시되고 Ctrl+D는 스크롤과 충돌한다.
             return ("\x11", 2, false);
+        }
+        if (agent == "devezcli")
+        {
+            // dvz 의 Ctrl+C 는 codex 와 같은 의미다 — 초안이 있으면 지우고, 빈 입력이면 종료.
+            // busy 면 Esc 로 진행 중 턴을 먼저 중단해야 종료 키가 먹는다.
+            return ("\x03", 2, DevezCliStateService.IsBusyRunning(roomId));
         }
         if (agent == "antigravity")
         {
@@ -3129,6 +3224,10 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(kimiDir, "waiting", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(KimiLaunchDir(), roomFile + ".cmd"));
 
+        // dvz 는 훅 없이 CLI 자신이 쓴다 — 파일 이름 규약은 위 에이전트들과 같다.
+        DevezCliStateService.DeleteRoomFiles(roomId);
+        TryDeleteFile(Path.Combine(DevezCliLaunchDir(), roomFile + ".cmd"));
+
         var opencodeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "opencode");
         TryDeleteFile(Path.Combine(opencodeDir, "sessions", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(opencodeDir, "lastmsg", roomFile + ".txt"));
@@ -3234,6 +3333,10 @@ public sealed class TerminalSessionManager
             Collect(Path.Combine(appData, "DevezCode", "kimi", "busy"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "kimi", "waiting"), ".txt");
             Collect(Path.Combine(appData, "DevezCode", "kimi", "lastmsg"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "devezcli", "sessions"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "devezcli", "busy"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "devezcli", "waiting"), ".txt");
+            Collect(Path.Combine(appData, "DevezCode", "devezcli", "lastmsg"), ".txt");
             // statusline-cache-<room>-<sig>.txt 는 ClaudeTrackDir 루트에 바로 있고 접두사 매칭 필요.
             try
             {

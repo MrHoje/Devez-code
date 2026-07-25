@@ -26,6 +26,8 @@ public static class SessionExporter
             "opencode" => FromOpenCode(roomId),
             "gajae"    => FromGajae(roomId),
             "codex"    => FromCodex(roomId),
+            // dvz 는 codex app-server 를 쓰므로 대화가 같은 rollout 에 남는다 — 파서를 그대로 재사용.
+            "devezcli" => FromCodex(roomId, SettingsService.LoadDevezCliRoomSession(roomId)),
             "kimi"     => FromKimi(roomId),
             _          => new List<(string role, string text)>(),
         };
@@ -49,7 +51,7 @@ public static class SessionExporter
     private static string AgentLabel(string a) => a switch
     {
         "claude" => "Claude", "opencode" => "OpenCode", "gajae" => "가재코드",
-        "codex" => "Codex", "grok" => "Grok", "kimi" => "Kimi", _ => a,
+        "codex" => "Codex", "grok" => "Grok", "kimi" => "Kimi", "devezcli" => "Devez CLI", _ => a,
     };
 
     // ── grok: 최신 CLI는 transcript를 SQLite에 저장하므로 공식 export 명령을 사용 ──
@@ -96,10 +98,12 @@ public static class SessionExporter
 
     // ── codex: ~/.codex/sessions/**/rollout-*-<sid>.jsonl (type=response_item, payload.type=message,
     //    role=user|assistant, content=[{type:input_text|output_text, text}]). role=developer(시스템) 제외. ──
-    private static List<(string role, string text)> FromCodex(string roomId)
+    /// <param name="sessionId">rollout 을 codex 가 아닌 다른 저장소에서 추적하는 에이전트(dvz)용 우회.
+    /// null 이면 codex 방의 세션 ID 를 쓴다.</param>
+    private static List<(string role, string text)> FromCodex(string roomId, string? sessionId = null)
     {
         var turns = new List<(string, string)>();
-        var sid = SettingsService.LoadCodexRoomSession(roomId);
+        var sid = sessionId ?? SettingsService.LoadCodexRoomSession(roomId);
         var path = TerminalSessionManager.FindCodexTranscriptPath(sid);
         if (path == null) return turns;
         foreach (var line in ReadLinesShared(path))

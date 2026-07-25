@@ -792,7 +792,7 @@
     // B형(hw커서형): 입력 캐럿 = 논리 커서. 조합 중 리페인트가 커서를 viewport 밖/statusLine
     // 으로 옮기면 xterm 이 조합뷰를 못 따라가거나(0,0 잔류) 여기저기 튄다 → 조합 중 고정 대상.
     // 새 B형 에이전트는 여기에 id 만 추가하면 pin/chain/ghost/커서숨김 전부 자동 적용된다.
-    const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode');
+    const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode' || agent === 'devezcli');
     // claude 는 A형(자체커서형)이지만 조합 위치가 틀어지는 유일한 A형이라 블록커서 스캔으로 처리.
     const isClaude = (agent === 'claude');
     const needsCaretFix = pinsLogicalCaret || isClaude; // 그 외(gajae/grok/셸)는 전부 무개입

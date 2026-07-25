@@ -2009,8 +2009,13 @@ public sealed class AgentItem : INotifyPropertyChanged
 {
     public string Id { get; set; } = "";
     public string DisplayName { get; set; } = "";
-    /// <summary>설치 명령(복사 대상). 예: irm https://claude.ai/install.ps1 | iex</summary>
+    /// <summary>설치 명령(복사 대상). 예: irm https://claude.ai/install.ps1 | iex.
+    /// 배포 경로가 없는 에이전트(dvz)는 비어 있고, 그 줄은 통째로 숨긴다.</summary>
     public string InstallCommand { get; set; } = "";
+
+    /// <summary>설치 명령 행 표시 여부. 빈 명령이면 "설치 명령:" 라벨만 남는 빈 줄이 되므로 접는다.</summary>
+    public Visibility InstallCommandVisibility
+        => string.IsNullOrWhiteSpace(InstallCommand) ? Visibility.Collapsed : Visibility.Visible;
 
     private bool _installed;
     public bool Installed

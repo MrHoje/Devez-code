@@ -93,6 +93,10 @@ public static class SettingsService
         // Kimi(kimi-code) 방별 세션 ID (session_&lt;uuid&gt;). SessionStart 훅이 기록한 ID 를 영속 →
         // 재오픈 시 `kimi -S <id>`(전역 session_index.jsonl, cwd 무관) 로 같은 대화 복원.
         public Dictionary<string, string> KimiRoomSessions { get; set; } = new();
+        // Devez CLI(dvz) 방별 스레드 ID. dvz 는 codex app-server 의 thread 를 그대로 쓰므로 값은
+        // codex rollout 과 같은 UUID 다(별도 저장소인 이유: 같은 방을 codex/dvz 로 오가도 안 섞이게).
+        // dvz 가 sessions\<room>.txt 에 기록한 ID 를 영속 → 재오픈 시 `dvz -r <id>` 로 같은 대화 복원.
+        public Dictionary<string, string> DevezCliRoomSessions { get; set; } = new();
         // 세션 포크: 새 방(roomId) → 포크 원본 세션 ID. 새 방 첫 실행에 --fork-session/--fork 로 1회 소비.
         public Dictionary<string, string> RoomForkSources { get; set; } = new();
         // 방별 에이전트 ID (예: "claude", "codex"). 미설정이면 기본값(claude) — 기존 세션 호환.
@@ -426,6 +430,7 @@ public static class SettingsService
         changed |= Current.GrokRoomSessions.Remove(roomId);
         changed |= Current.AntigravityRoomSessions.Remove(roomId);
         changed |= Current.KimiRoomSessions.Remove(roomId);
+        changed |= Current.DevezCliRoomSessions.Remove(roomId);
         changed |= Current.RoomForkSources.Remove(roomId);
         changed |= Current.AgentRoomsLaunched.RemoveAll(k => k.StartsWith(roomId + "|", StringComparison.Ordinal)) > 0;
         if (changed) Save();
@@ -441,7 +446,9 @@ public static class SettingsService
                 Current.ClaudeCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.OpenCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.GajaeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
-                Current.CodexRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
+                // dvz 세션은 codex rollout 파일 그 자체라 codex 보호 목록에 합친다(클리너 카테고리도 codex).
+                Current.CodexRoomSessions.Values.Concat(Current.DevezCliRoomSessions.Values)
+                    .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 Current.GrokRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.AntigravityRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.KimiRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
@@ -991,6 +998,23 @@ public static class SettingsService
     public static void ClearKimiRoomSession(string roomId)
     {
         if (Current.KimiRoomSessions.Remove(roomId)) Save();
+    }
+
+    // ── Devez CLI(dvz) 스레드 ID (dvz 가 sessions\<room>.txt 에 기록 → settings 영속) ─────
+    public static string? LoadDevezCliRoomSession(string roomId)
+        => Current.DevezCliRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+
+    public static void SaveDevezCliRoomSession(string roomId, string sessionId)
+    {
+        // codex thread id = UUID. 형식이 어긋난 값(내부 에이전트 ID 등)은 resume 이 불가능하므로 버린다.
+        if (!Guid.TryParse(sessionId, out _)) return;
+        Current.DevezCliRoomSessions[roomId] = sessionId;
+        Save();
+    }
+
+    public static void ClearDevezCliRoomSession(string roomId)
+    {
+        if (Current.DevezCliRoomSessions.Remove(roomId)) Save();
     }
 
     // ── grok 세션 ID (훅 → settings 영속) ─────

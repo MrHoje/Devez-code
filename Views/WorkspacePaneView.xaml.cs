@@ -1198,11 +1198,12 @@ public partial class WorkspacePaneView : UserControl
         // 포크 지원 에이전트만. claude/opencode/grok=CLI 네이티브, gajae/codex=jsonl 복사.
         // antigravity 는 미지원 — db 복사 실측 결과 "trajectory not found"(대화가 서버측 trajectory 에
         // 등록되어야 해 로컬 복사로 분기 불가, agy TUI 내 /fork 만 유효. 2026-07-13 실측).
-        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae" && agentId != "codex" && agentId != "grok" && agentId != "kimi")
+        if (agentId != "claude" && agentId != "opencode" && agentId != "gajae" && agentId != "codex"
+            && agentId != "grok" && agentId != "kimi" && agentId != "devezcli")
         {
             ConfirmDialog.Alert("포크 미지원", agentId == "antigravity"
                 ? "Antigravity 는 대화가 서버에 묶여 있어 앱에서 포크할 수 없습니다.\nagy 화면 안에서 /fork 명령을 사용하세요."
-                : "포크는 Claude · OpenCode · 가재코드 · Codex · Grok · Kimi 세션만 지원합니다.");
+                : "포크는 Claude · OpenCode · 가재코드 · Codex · Grok · Kimi · Devez CLI 세션만 지원합니다.");
             return;
         }
 
@@ -1212,6 +1213,7 @@ public partial class WorkspacePaneView : UserControl
                    : agentId == "codex"    ? SettingsService.LoadCodexRoomSession(source.Id)
                    : agentId == "grok"     ? SettingsService.LoadGrokRoomSession(source.Id)
                    : agentId == "kimi"     ? (SettingsService.LoadKimiRoomSession(source.Id) ?? KimiHookService.LoadTrackedSessionId(source.Id))
+                   : agentId == "devezcli" ? (SettingsService.LoadDevezCliRoomSession(source.Id) ?? DevezCliStateService.LoadTrackedSessionId(source.Id))
                    : null;
         if (agentId != "gajae" && string.IsNullOrWhiteSpace(srcSid))
         {
@@ -1230,7 +1232,8 @@ public partial class WorkspacePaneView : UserControl
             forkedId = TerminalSessionManager.TryForkGajaeSession(source.Id, session.Id);
         else if (agentId == "claude")
             forkedId = TerminalSessionManager.TryForkClaudeSession(srcSid!, proj.Path);
-        else if (agentId == "codex")
+        else if (agentId == "codex" || agentId == "devezcli")
+            // dvz 세션은 codex rollout 그 자체라 같은 복사기를 쓴다(새 id 로 복사 + 내부 id 치환).
             forkedId = TerminalSessionManager.TryForkCodexSession(srcSid!);
         else if (agentId == "kimi")
             forkedId = TerminalSessionManager.TryForkKimiSession(srcSid!);
@@ -1253,6 +1256,8 @@ public partial class WorkspacePaneView : UserControl
             SettingsService.SaveCodexRoomSession(session.Id, forkedId!);   // 복사한 새 세션 id 로 바로 resume
         else if (agentId == "kimi")
             SettingsService.SaveKimiRoomSession(session.Id, forkedId!);    // 복사한 새 세션 id 로 바로 resume
+        else if (agentId == "devezcli")
+            SettingsService.SaveDevezCliRoomSession(session.Id, forkedId!); // 복사한 rollout id 로 바로 -r
         else
             SettingsService.SaveRoomForkSource(session.Id, srcSid!);        // opencode/grok: 첫 실행에 --fork 소비
         WorkspaceStore.Save(Projects);

@@ -111,7 +111,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 || string.Equals(a, "codex", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(a, "grok", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(a, "antigravity", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(a, "kimi", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(a, "kimi", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(a, "devezcli", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }
