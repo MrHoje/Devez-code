@@ -81,6 +81,7 @@ Start-Process "bin\DevezCode.exe"
 | claude 완료카드가 한 프롬프트에 여러 장(Task 서브마다), 가짜 응답완료 알림, 턴종료 마커(done) 게이트 | `.knowledge/claude-완료카드-턴종료마커.md` |
 | Grok 장시간 작업 중 스피너 중간에 꺼짐(멀티루프 턴·조기 idle) | `.knowledge/grok-장시간턴-스피너조기소등.md` |
 | 같은 에이전트인데 세션별로 버그 있/없이 갈림(자동업데이트 후 옛 프로세스 잔재) | `.knowledge/에이전트-자동업데이트-세션별-증상불일치.md` |
+| 자식·내부 에이전트가 부모 방의 스피너/완료기록/lastmsg/resume ID를 오염함 | `.knowledge/세션-추적-이벤트-소유권.md` |
 
 > 위에 없는 일회성 버그 교훈(특정 컨트롤 트리거 등)은 `.knowledge/wpf-*.md` 로 남아 있으니, 비슷한 증상을 만나면 폴더를 이름으로 grep 해서 찾는다.
 
