@@ -11,9 +11,9 @@ using DevezCode.Services.Terminal;
 namespace DevezCode.Services;
 
 /// <summary>세션 대화 로그(JSONL)에서 입/출력 토큰 사용량을 누적 집계한다.
-/// claude(~/.claude/projects/*/&lt;sid&gt;.jsonl 의 message.usage)와 codex(token_count 이벤트의
-/// total_token_usage) 만 정확 지원 — 두 CLI 가 API 응답 usage 를 그대로 기록하므로 공급자 청구 토큰과 동일하다.
-/// 부하 최소화: claude 는 파일 끝에 붙은 새 줄만 증분 파싱(방별 offset·누적 캐시), codex 는 파일 끝
+/// claude(~/.claude/projects/*/&lt;sid&gt;.jsonl 의 message.usage)와 codex/devezcli(token_count 이벤트의
+/// total_token_usage)를 정확 지원 — 세 CLI 가 API 응답 usage 를 그대로 기록하므로 공급자 청구 토큰과 동일하다.
+/// 부하 최소화: claude 는 파일 끝에 붙은 새 줄만 증분 파싱(방별 offset·누적 캐시), codex/devezcli 는 파일 끝
 /// 마지막 token_count 한 줄만 tail 로 읽는다. 상태는 %AppData%\DevezCode\usage.json 에 영속(재시작 시 이어읽기).</summary>
 public static class SessionUsageService
 {
@@ -77,7 +77,7 @@ public static class SessionUsageService
         return null;
     }
 
-    /// <summary>파싱 시 계산해 둔 비용 추정치. (모델별 단가 합산은 ParseClaudeFull/ReadCodex 에서 수행)</summary>
+    /// <summary>파싱 시 계산해 둔 비용 추정치. (모델별 단가 합산은 ParseClaudeFull/ReadCodexLike 에서 수행)</summary>
     public static double? EstimateCost(in UsageTotals t) => t.Cost;
 
     /// <summary>단일 모델·토큰 묶음의 비용($). 캐시 배수는 모델 규칙별(Price)에서 온다. 단가 미상이면 null.</summary>
@@ -89,7 +89,7 @@ public static class SessionUsageService
     }
 
     /// <summary>지원 에이전트인지 (정확 집계 가능). 그 외는 표시하지 않는다.</summary>
-    public static bool IsSupported(string agentId) => agentId is "claude" or "codex";
+    public static bool IsSupported(string agentId) => agentId is "claude" or "codex" or "devezcli";
 
     /// <summary>메모리/usage.json 에 남아 있는 이 방의 마지막 집계값(경로 미해석 시 폴백 표시용). 없으면 null.</summary>
     private static UsageTotals? LastKnown(string roomId)
@@ -104,7 +104,8 @@ public static class SessionUsageService
             return agentId switch
             {
                 "claude" => ReadClaude(roomId, cwd),
-                "codex" => ReadCodex(roomId),
+                "codex" => ReadCodexLike(roomId, SettingsService.LoadCodexRoomSession(roomId), "Codex"),
+                "devezcli" => ReadCodexLike(roomId, SettingsService.LoadDevezCliRoomSession(roomId), "Devez CLI"),
                 _ => null,
             };
         }
@@ -200,10 +201,9 @@ public static class SessionUsageService
         return m;
     }
 
-    // ── codex: 파일 끝 마지막 token_count 이벤트 한 줄만 (누적값 내장) ──
-    private static UsageTotals? ReadCodex(string roomId)
+    // ── codex/devezcli: 파일 끝 마지막 token_count 이벤트 한 줄만 (누적값 내장) ──
+    private static UsageTotals? ReadCodexLike(string roomId, string? sid, string agentLabel)
     {
-        var sid = SettingsService.LoadCodexRoomSession(roomId);
         var path = TerminalSessionManager.FindCodexTranscriptPath(sid);
         if (path == null) return LastKnown(roomId); // 재시작 직후 등 경로 미해석 → 마지막 저장값
 
@@ -233,7 +233,7 @@ public static class SessionUsageService
             long cw = GetLong(info, "cache_write_input_tokens"); // GPT-5.6부터 write 과금(×1.25) — CacheWrite5m 버킷으로 계산
             long output = GetLong(info, "output_tokens");
             long inNew = Math.Max(0, input - cached - cw); // input_tokens 는 cached/write 포함 총계
-            var t = new UsageTotals(inNew, cw, 0, cached, output, model ?? "gpt-5-codex", "Codex")
+            var t = new UsageTotals(inNew, cw, 0, cached, output, model ?? "gpt-5-codex", agentLabel)
             { Cost = CostOf(model ?? "gpt-5-codex", inNew, cw, 0, cached, output) };
             _cache[roomId] = new Entry { Sid = sid, LastLen = len, Totals = t, Offset = -1 };
             return t.HasData ? t : null;
