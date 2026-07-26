@@ -36,9 +36,9 @@ public sealed class AgentLastMessageService : IDisposable
         _opencodePoll.Tick += (_, _) => PollOpenCode();
     }
 
-    /// <summary>(workingDir, lastPrompt) — 해당 디렉터리의 활성 세션이 마지막으로 보낸 메시지.
-    /// 같은 디렉터리에 여러 DevezCode 세션이 있으면 모두 같은 last prompt 를 공유한다 (acceptable MVP).</summary>
-    public event Action<string, string>? LastPromptChanged;
+    /// <summary>(workingDir, agentId, lastPrompt) — 해당 디렉터리·에이전트의 마지막 메시지.
+    /// 같은 디렉터리의 다른 에이전트 세션에는 전파하지 않는다.</summary>
+    public event Action<string, string, string>? LastPromptChanged;
 
     /// <summary>경로 정규화 — 트레일링 슬래시 제거 + 풀패스화 (MainWindow 의 project.Path 와 매칭 가능하게).</summary>
     private static string NormalizePath(string p)
@@ -273,7 +273,7 @@ public sealed class AgentLastMessageService : IDisposable
         var compact = OneLine(prompt);
         if (_lastPrompt.TryGetValue(key, out var prev) && prev == compact) return;
         _lastPrompt[key] = compact;
-        LastPromptChanged?.Invoke(norm, compact);
+        LastPromptChanged?.Invoke(norm, agentId, compact);
     }
 
     private void ScanForKey(TrackKey key)

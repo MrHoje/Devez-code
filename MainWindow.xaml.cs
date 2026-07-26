@@ -122,6 +122,7 @@ public partial class MainWindow : Window
     private bool _idleSessionShutdownChecking;
     private bool _externalSessionChecking;
     private readonly HashSet<string> _externalSessionLaunches = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTime> _rejectedAgentEventLogs = new(StringComparer.Ordinal);
 
     static MainWindow()
     {
@@ -276,8 +277,9 @@ public partial class MainWindow : Window
         _sessionBusy.BusyChanged += (id, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(id, "claude", "busy");
+                if (s == null) return;
                 MarkSessionActivity(id);
-                var s = FindSession(id);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
                 {
@@ -299,7 +301,7 @@ public partial class MainWindow : Window
         _sessionBusy.TurnEndMarker += id =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(id);
+                var s = FindOwnedSession(id, "claude", "turn-end");
                 if (s == null || s.IsBusy) return;           // busy 전이 경로가 처리(마커는 그쪽에서 소비)
                 if (_sessionBusy.IsRoomActive(id)) return;   // 아직 활성 → 드레인 완료 idle 에서 소비
                 if (!SessionBusyService.ConsumeTurnEndMarker(id)) return; // 이미 소비됨(중복 FSW/디바운스)
@@ -309,8 +311,9 @@ public partial class MainWindow : Window
         _sessionBusy.WaitingChoiceChanged += (id, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(id, "claude", "waiting");
+                if (s == null) return;
                 MarkSessionActivity(id);
-                var s = FindSession(id);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 NotifyIfSessionWaiting(s, wasWaiting, waiting);
@@ -319,20 +322,24 @@ public partial class MainWindow : Window
 
         // statusLine 훅이 떨군 방별 실제 model/effort → 해당 세션을 보여주는 패널 콤보를 라이브 갱신.
         _modelEffort.Changed += (roomId, modelId, effortLevel) =>
-            Dispatcher.InvokeAsync(() => { foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId); });
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (FindOwnedSession(roomId, "claude", "model-effort") == null) return;
+                foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
+            });
 
         // 마지막 보낸 메시지: busy 훅이 떨군 lastmsg 파일을 감시 → 세션에 반영(헤더 부제 라이브 갱신).
         _sessionLastMsg.MessageChanged += (id, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(id);
+                var s = FindOwnedSession(id, "claude", "message");
                 if (s == null) return;
                 if (!ApplyHeaderMessage(s, msg)) return;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
 
         // 비-Claude 비-codex 에이전트(opencode/gjc) — (workingDir, lastPrompt) 이벤트로 같은 디렉터리 세션 모두 갱신.
-        _agentLastMsg.LastPromptChanged += (workingDir, msg) =>
+        _agentLastMsg.LastPromptChanged += (workingDir, sourceAgentId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
                 var norm = System.IO.Path.GetFullPath(workingDir).TrimEnd('\\', '/');
@@ -342,6 +349,7 @@ public partial class MainWindow : Window
                     if (!string.Equals(pNorm, norm, StringComparison.OrdinalIgnoreCase)) continue;
                     foreach (var s in p.Tabs.OfType<SessionItem>())
                     {
+                        if (!AgentEventOwnership.IsMatch(s.AgentId, sourceAgentId)) continue;
                         if (!ApplyHeaderMessage(s, msg)) continue;
                         foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
                     }
@@ -352,7 +360,7 @@ public partial class MainWindow : Window
         _opencodeLastMsg.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(roomId);
+                var s = FindOwnedSession(roomId, "opencode", "message");
                 if (s == null) return;
                 if (!ApplyHeaderMessage(s, msg)) return;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
@@ -362,7 +370,7 @@ public partial class MainWindow : Window
         _gajaeLastMsg.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(roomId);
+                var s = FindOwnedSession(roomId, "gajae", "message");
                 if (s == null) return;
                 if (!ApplyHeaderMessage(s, msg)) return;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
@@ -374,8 +382,9 @@ public partial class MainWindow : Window
         _opencodeBusy.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "opencode", "busy");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
                 {
@@ -391,8 +400,9 @@ public partial class MainWindow : Window
         _opencodeBusy.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "opencode", "waiting");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 NotifyIfSessionWaiting(s, wasWaiting, waiting);
@@ -409,8 +419,9 @@ public partial class MainWindow : Window
         _gajaeLastMsg.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "gajae", "busy");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
                 {
@@ -429,7 +440,7 @@ public partial class MainWindow : Window
         _gajaeLastMsg.GoalCompleted += (roomId, objective, completedAt) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(roomId);
+                var s = FindOwnedSession(roomId, "gajae", "goal-completed");
                 if (s == null) return;
                 AddGoalCompletionRecord(s, objective, completedAt);
             });
@@ -439,8 +450,9 @@ public partial class MainWindow : Window
         _gajaeLastMsg.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "gajae", "waiting");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 NotifyIfSessionWaiting(s, wasWaiting, waiting);
@@ -452,7 +464,7 @@ public partial class MainWindow : Window
         _codexHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(roomId);
+                var s = FindOwnedSession(roomId, "codex", "message");
                 if (s == null) return;
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
@@ -461,8 +473,9 @@ public partial class MainWindow : Window
         _codexHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "codex", "busy");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
                 {
@@ -476,8 +489,9 @@ public partial class MainWindow : Window
         _codexHook.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "codex", "waiting");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 // Codex 는 자동 승인으로 즉시 해소되는 PermissionRequest 도 내보낼 수 있다.
@@ -488,6 +502,7 @@ public partial class MainWindow : Window
         _codexHook.CodexSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() =>
             {
+                if (FindOwnedSession(roomId, "codex", "session") == null) return;
                 SettingsService.SaveCodexRoomSession(roomId, sid);
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
@@ -496,7 +511,7 @@ public partial class MainWindow : Window
         _grokHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(roomId);
+                var s = FindOwnedSession(roomId, "grok", "message");
                 if (s == null) return;
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
@@ -505,8 +520,9 @@ public partial class MainWindow : Window
         _grokHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "grok", "busy");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null) s.IsBusy = busy;
                 if (!busy && s != null) s.IsWaitingChoice = false;
@@ -517,8 +533,9 @@ public partial class MainWindow : Window
         _grokHook.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "grok", "waiting");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 NotifyIfSessionWaiting(s, wasWaiting, waiting);
@@ -527,6 +544,7 @@ public partial class MainWindow : Window
         _grokHook.GrokSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() =>
             {
+                if (FindOwnedSession(roomId, "grok", "session") == null) return;
                 var workingDir = SettingsService.LoadClaudeCodeRoomDir(roomId);
                 if (!GrokHookService.IsRootTrackedSession(roomId, sid)
                     || TerminalSessionManager.FindGrokChatHistoryPathForWorkingDirectory(sid, workingDir) == null)
@@ -539,7 +557,7 @@ public partial class MainWindow : Window
         _kimiHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(roomId);
+                var s = FindOwnedSession(roomId, "kimi", "message");
                 if (s == null) return;
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
@@ -548,8 +566,9 @@ public partial class MainWindow : Window
         _kimiHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "kimi", "busy");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
                 {
@@ -563,8 +582,9 @@ public partial class MainWindow : Window
         _kimiHook.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "kimi", "waiting");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 NotifyIfSessionWaiting(s, wasWaiting, waiting, notificationDelayMs: 1500);
@@ -573,6 +593,7 @@ public partial class MainWindow : Window
         _kimiHook.KimiSessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() =>
             {
+                if (FindOwnedSession(roomId, "kimi", "session") == null) return;
                 SettingsService.SaveKimiRoomSession(roomId, sid);
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
@@ -581,7 +602,7 @@ public partial class MainWindow : Window
         _devezCliState.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(roomId);
+                var s = FindOwnedSession(roomId, "devezcli", "message");
                 if (s == null) return;
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
@@ -589,8 +610,9 @@ public partial class MainWindow : Window
         _devezCliState.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "devezcli", "busy");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
                 {
@@ -604,8 +626,9 @@ public partial class MainWindow : Window
         _devezCliState.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "devezcli", "waiting");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 NotifyIfSessionWaiting(s, wasWaiting, waiting, notificationDelayMs: 1500);
@@ -614,6 +637,7 @@ public partial class MainWindow : Window
         _devezCliState.SessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() =>
             {
+                if (FindOwnedSession(roomId, "devezcli", "session") == null) return;
                 SettingsService.SaveDevezCliRoomSession(roomId, sid);
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
@@ -624,8 +648,9 @@ public partial class MainWindow : Window
         _antigravityHook.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "antigravity", "busy");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool was = s?.IsBusy ?? false;
                 if (s != null)
                 {
@@ -638,8 +663,9 @@ public partial class MainWindow : Window
         _antigravityHook.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
+                var s = FindOwnedSession(roomId, "antigravity", "waiting");
+                if (s == null) return;
                 MarkSessionActivity(roomId);
-                var s = FindSession(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
                 if (s != null) s.IsWaitingChoice = waiting;
                 NotifyIfSessionWaiting(s, wasWaiting, waiting);
@@ -648,6 +674,7 @@ public partial class MainWindow : Window
         _antigravityHook.SessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() =>
             {
+                if (FindOwnedSession(roomId, "antigravity", "session") == null) return;
                 if (!AntigravityHookService.IsRootTrackedSession(roomId, sid)
                     || !TerminalSessionManager.AntigravityConversationExists(sid)) return;
                 SettingsService.SaveAntigravityRoomSession(roomId, sid);
@@ -655,7 +682,7 @@ public partial class MainWindow : Window
         _antigravityHook.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindSession(roomId);
+                var s = FindOwnedSession(roomId, "antigravity", "message");
                 if (s == null) return;
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
@@ -3975,6 +4002,31 @@ public partial class MainWindow : Window
 
     private SessionItem? FindSession(string id)
         => _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == id);
+
+    /// <summary>방 상태 이벤트는 roomId만으로 신뢰하지 않는다. 이벤트 소스와 방의 실제 에이전트가
+    /// 일치할 때만 UI·세션ID·완료기록을 변경한다.</summary>
+    private SessionItem? FindOwnedSession(string roomId, string sourceAgentId, string eventName)
+    {
+        var session = FindSession(roomId);
+        var ownerAgentId = session == null
+            ? null
+            : string.IsNullOrWhiteSpace(session.AgentId)
+                ? SettingsService.LoadAgentForRoom(roomId)
+                : session.AgentId;
+        if (session != null && AgentEventOwnership.IsMatch(ownerAgentId, sourceAgentId))
+            return session;
+
+        var logKey = $"{roomId}\n{sourceAgentId}\n{eventName}";
+        var now = DateTime.UtcNow;
+        if (!_rejectedAgentEventLogs.TryGetValue(logKey, out var last)
+            || now - last >= TimeSpan.FromSeconds(30))
+        {
+            _rejectedAgentEventLogs[logKey] = now;
+            DiagLog.Write(
+                $"tracking event rejected room={roomId} owner={ownerAgentId ?? "<missing>"} source={sourceAgentId} event={eventName}");
+        }
+        return null;
+    }
 
     /// <summary>앱 재시작 시 외부 lock/ticket과 저장 상태를 맞추고 내부 중복 실행을 막는다.</summary>
     private void ReconcileExternalSessions()

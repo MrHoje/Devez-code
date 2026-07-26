@@ -28,6 +28,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 독립 추적 회귀 테스트 프로젝트의 소스는 WPF 앱 기본 Compile glob에서 제외. -->
+    <Compile Remove="Tests\**\*.cs" />
+
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
