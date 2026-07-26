@@ -47,11 +47,11 @@ document.body.dataset.bottom = style.paddingBottom;
     if ($right -ne '10px') {
         throw "DevezCLI right safe area must be 10px; actual: '$right'."
     }
-    if ($bottom -ne '16px') {
-        throw "DevezCLI bottom padding must preserve the base 6px plus 10px; actual: '$bottom'."
+    if ($bottom -ne '11px') {
+        throw "DevezCLI bottom padding must preserve the base 6px plus 5px; actual: '$bottom'."
     }
 
-    Write-Output 'PASS: DevezCLI terminal keeps 10px right safe area and 10px additional bottom spacing.'
+    Write-Output 'PASS: DevezCLI terminal keeps 10px right safe area and 5px additional bottom spacing.'
 }
 finally {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
