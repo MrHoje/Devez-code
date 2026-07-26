@@ -121,8 +121,9 @@
     <!-- kimi(Kimi Code): dark=흰색 글리프, light=검정 글리프 (opencode/grok 와 동일 패턴) -->
     <Resource Include="Resources\Images\ShellPresets\kimi_icon_white_50.png" />
     <Resource Include="Resources\Images\ShellPresets\kimi_icon_black_50.png" />
-    <!-- devezcli(Devez CLI, dvz): 원형 배지 디자인 자체 배경이 있어 테마 무관 단일 아이콘 -->
-    <Resource Include="Resources\Images\ShellPresets\devezcli_icon_50.png" />
+    <!-- devezcli(Devez CLI, dvz): 선화 로고라 배경에 묻힌다 — dark=흰색 글리프, light=검정 글리프 -->
+    <Resource Include="Resources\Images\ShellPresets\devezcli_icon_white_50.png" />
+    <Resource Include="Resources\Images\ShellPresets\devezcli_icon_black_50.png" />
     <!-- Visual Studio 2022 Image Library 파일 형식 아이콘.
          Microsoft Software License Terms 적용(MIT 아님) — 설정 > 라이선스에서 전문 제공. -->
     <Resource Include="Resources\Images\FileTypes\VisualStudio2022\*.png" />

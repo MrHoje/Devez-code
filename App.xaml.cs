@@ -46,6 +46,9 @@ public partial class App : Application
     /// <summary>테마별 Kimi 아이콘 pack URI (dark=흰색, light=검정). 푸터/사용량 패널 공용 소스.</summary>
     public static string KimiIconUri =>
         $"pack://application:,,,/Resources/Images/ShellPresets/kimi_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
+    /// <summary>테마별 Devez CLI 아이콘 pack URI (dark=흰색, light=검정).</summary>
+    public static string DevezCliIconUri =>
+        $"pack://application:,,,/Resources/Images/ShellPresets/devezcli_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
     /// <summary>테마별 Grok 아이콘 pack URI (dark=흰색, light=검정).</summary>
     public static string GrokIconUri =>
         $"pack://application:,,,/Resources/Images/ShellPresets/grok_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
