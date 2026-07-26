@@ -21,6 +21,7 @@ try {
 
 $room = $env:DEVEZCODE_ROOM_ID
 if (-not $room) { exit 0 }
+if ($env:DEVEZCODE_TRACKING_AGENT -ne 'codex') { exit 0 }
 
 # 파일명 안전: 비-워드문자 제거 (codex 의 -replace 와 동일 규칙)
 $roomSafe = $room -replace '[^\w\-]', ''

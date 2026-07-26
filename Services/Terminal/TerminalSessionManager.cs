@@ -1924,7 +1924,8 @@ public sealed class TerminalSessionManager
             return busy.Contains("roomArg") && busy.Contains("last_assistant_message") &&
                    busy.Contains("Touch-LiveSubruns") && busy.Contains("'permission'") &&
                    busy.Contains("agent_needs_input") && // ❗ Notification type 분기 + 서브 unwait 무시 버전
-                   busy.Contains(@"claude\done"); // 턴종료 마커(완료카드 게이트) 버전
+                   busy.Contains(@"claude\done") && // 턴종료 마커(완료카드 게이트) 버전
+                   busy.Contains("DEVEZCODE_TRACKING_AGENT"); // 교차 에이전트 상속 차단 버전
         }
         catch { return false; }
     }
@@ -2004,6 +2005,10 @@ public sealed class TerminalSessionManager
                 # 환경 대비 — 인자가 1차, env 는 폴백).
                 param([string]$roomArg = '')
                 try {
+                  if ($env:DEVEZCODE_TRACKING_AGENT -ne 'claude') {
+                    [Console]::In.ReadToEnd() | Out-Null
+                    exit 0
+                  }
                   # tmp 파일에 먼저 쓰고 교체(원자적) — 강제종료가 쓰기 도중 끼어들어도 파일이 잘린 채로
                   # 남지 않는다(직접 Set-Content 는 중간에 죽으면 손상/빈 파일이 남아 session_id 를 통째로 잃는다).
                   function Write-State($path, $value, $encoding = 'Ascii') {
@@ -2063,6 +2068,10 @@ public sealed class TerminalSessionManager
                 # user's own statusLine so the original CLI status line keeps rendering.
                 # roomId 는 settings command 인자(우선) 또는 env(폴백)로 받는다.
                 param([string]$roomArg = '')
+                if ($env:DEVEZCODE_TRACKING_AGENT -ne 'claude') {
+                  [Console]::In.ReadToEnd() | Out-Null
+                  exit 0
+                }
                 $rid = if ($roomArg) { $roomArg } else { $env:DEVEZCODE_ROOM_ID }
                 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                 $raw = [Console]::In.ReadToEnd()
@@ -2125,6 +2134,7 @@ public sealed class TerminalSessionManager
                 let raw = "";
                 process.stdin.on("data", c => raw += c);
                 process.stdin.on("end", () => {
+                  if (process.env.DEVEZCODE_TRACKING_AGENT !== "claude") return;
                   let o = null;
                   try { o = JSON.parse(raw); } catch (e) {}
                   const appData = process.env.APPDATA;
@@ -2195,6 +2205,10 @@ public sealed class TerminalSessionManager
                 # 스피너 = (메인 턴 진행중) OR (살아있는 서브에이전트 >=1). 둘 다 room 키 → resume 로 session_id 바뀌어도 안 깨짐.
                 param([string]$status = 'idle', [string]$roomArg = '')
                 try {
+                  if ($env:DEVEZCODE_TRACKING_AGENT -ne 'claude') {
+                    [Console]::In.ReadToEnd() | Out-Null
+                    exit 0
+                  }
                   $room = if ($roomArg) { $roomArg } else { $env:DEVEZCODE_ROOM_ID }
                   if (-not $room) { exit 0 }
                   $room = $room -replace '[^\w\-]', ''

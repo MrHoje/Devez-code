@@ -8,6 +8,10 @@ if "%DEVEZCODE_ROOM_ID%"=="" (
   "%SystemRoot%\System32\more.com" >nul 2>nul
   exit /b 0
 )
+if /i not "%DEVEZCODE_TRACKING_AGENT%"=="kimi" (
+  "%SystemRoot%\System32\more.com" >nul 2>nul
+  exit /b 0
+)
 
 set "base=%APPDATA%\DevezCode\kimi"
 set "room=%DEVEZCODE_ROOM_ID%"

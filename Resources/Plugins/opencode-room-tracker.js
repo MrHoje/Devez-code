@@ -16,7 +16,7 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   const safe = String(room || "").replace(/[^\w\-]/g, "");
   // 플러그인은 OpenCode 전역 설정에서 로드된다. DevezCode가 띄운 세션이 아니면
   // 파일 모듈 로드·클라이언트 조회·이벤트 핸들러 등록·진단 로그를 전부 생략한다.
-  if (!safe) return {};
+  if (!safe || process.env.DEVEZCODE_TRACKING_AGENT !== "opencode") return {};
 
   const client = _ctx && _ctx.client;
   const fs = require("node:fs");

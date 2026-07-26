@@ -17,6 +17,7 @@ try {
 
 $room = $env:DEVEZCODE_ROOM_ID
 if (-not $room) { exit 0 }
+if ($env:DEVEZCODE_TRACKING_AGENT -ne 'grok') { exit 0 }
 
 $roomSafe = $room -replace '[^\w\-]', ''
 $base = Join-Path $env:APPDATA 'DevezCode\grok'
