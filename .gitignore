@@ -31,3 +31,6 @@ installer/Output/
 
 # hoje-code goal 세션 추적(로컬 전용)
 .hoje/
+
+# superpowers 산출물(plans/specs — 로컬 전용)
+docs/superpowers/
