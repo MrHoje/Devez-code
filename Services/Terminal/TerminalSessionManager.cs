@@ -798,6 +798,15 @@ public sealed class TerminalSessionManager
     private string? TryBuildDevezCliDirectLaunch(string roomId, out string? injectFallback)
     {
         injectFallback = null;
+        // 이 메서드는 DevezCode가 새 최상위 dvz 프로세스를 만들 때만 호출된다.
+        // 이전 프로세스가 비정상 종료하며 남긴 소유권을 지운 뒤 새 루트가 create_new로 claim한다.
+        try
+        {
+            File.Delete(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "devezcli", "owners", SafeRoomFileName(roomId) + ".txt"));
+        }
+        catch { }
 
         var agent = AgentRegistry.Find("devezcli");
         var exePath = agent == null ? null : AgentRegistry.ResolvePath(agent);

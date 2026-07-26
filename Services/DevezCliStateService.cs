@@ -64,6 +64,7 @@ public sealed class DevezCliStateService : IDisposable
         var name = Sanitize(room) + ".txt";
         foreach (var dir in new[] { LastmsgDir, BusyDir, WaitingDir, SessionDir })
             try { File.Delete(Path.Combine(dir, name)); } catch { }
+        try { File.Delete(Path.Combine(BaseDir, "owners", name)); } catch { }
     }
 
     public void Start()
