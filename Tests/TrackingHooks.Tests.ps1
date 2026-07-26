@@ -93,6 +93,30 @@ try {
     Invoke-PowerShellHook 'Resources\Hooks\codex-hook.ps1' $codexPrompt
     Assert-Value (Join-Path $testAppData "DevezCode\codex\busy\$room.txt") 'running' 'codex hook match'
 
+    Reset-State
+    $env:DEVEZCODE_TRACKING_AGENT = 'codex'
+    $codexChildSid = [Guid]::NewGuid().ToString()
+    $childRollout = Join-Path $rolloutDir ("rollout-$codexChildSid.jsonl")
+    '{"payload":{"id":"' + $codexChildSid + '"}}' | Set-Content -LiteralPath $childRollout -Encoding UTF8
+    $codexChildStart = @{
+        hook_event_name = 'SessionStart'
+        source = 'startup'
+        session_id = $codexChildSid
+        transcript_path = $childRollout
+    } | ConvertTo-Json -Compress
+    Invoke-PowerShellHook 'Resources\Hooks\codex-hook.ps1' $codexStart
+    Invoke-PowerShellHook 'Resources\Hooks\codex-hook.ps1' $codexChildStart
+    Assert-Value (Join-Path $testAppData "DevezCode\codex\sessions\$room.txt") $codexSid 'codex root fence'
+    $codexChildPrompt = @{
+        hook_event_name = 'UserPromptSubmit'
+        session_id = $codexChildSid
+        transcript_path = $childRollout
+        turn_id = 'turn-child'
+        prompt = 'nested codex prompt'
+    } | ConvertTo-Json -Compress
+    Invoke-PowerShellHook 'Resources\Hooks\codex-hook.ps1' $codexChildPrompt
+    Assert-Missing (Join-Path $testAppData "DevezCode\codex\lastmsg\$room.txt") 'codex child prompt'
+
     $kimiStart = '{"hook_event_name":"SessionStart","session_id":"session_root"}'
     $kimiPrompt = '{"hook_event_name":"UserPromptSubmit","session_id":"session_root","prompt":[{"type":"text","text":"child prompt"}]}'
     Reset-State
@@ -102,6 +126,25 @@ try {
     Assert-Missing (Join-Path $testAppData "DevezCode\kimi\busy\$room.txt") 'kimi hook'
 
     Reset-State
+    $env:DEVEZCODE_TRACKING_AGENT = 'kimi'
+    Invoke-PowerShellHook 'Resources\Hooks\kimi-hook.ps1' $kimiStart
+    Invoke-PowerShellHook 'Resources\Hooks\kimi-hook.ps1' (
+        '{"hook_event_name":"SessionStart","session_id":"session_child"}')
+    Assert-Value (Join-Path $testAppData "DevezCode\kimi\sessions\$room.txt") 'session_root' 'kimi root fence'
+    Invoke-PowerShellHook 'Resources\Hooks\kimi-hook.ps1' (
+        '{"hook_event_name":"UserPromptSubmit","session_id":"session_child","prompt":[{"type":"text","text":"nested kimi prompt"}]}')
+    Assert-Missing (Join-Path $testAppData "DevezCode\kimi\lastmsg\$room.txt") 'kimi child prompt'
+    Invoke-PowerShellHook 'Resources\Hooks\kimi-hook.ps1' $kimiPrompt
+    $kimiWaiting = Join-Path $testAppData "DevezCode\kimi\waiting\$room.txt"
+    Remove-Item -LiteralPath $kimiWaiting -Force -ErrorAction SilentlyContinue
+    Invoke-CmdHook 'Resources\Hooks\kimi-state-hook.cmd' 'waiting-on' (
+        '{"session_id":"session_child"}')
+    Assert-Missing $kimiWaiting 'kimi child state hook'
+    Invoke-CmdHook 'Resources\Hooks\kimi-state-hook.cmd' 'waiting-on' (
+        '{"session_id":"session_root"}')
+    Assert-Value $kimiWaiting 'waiting' 'kimi root state hook'
+
+    Reset-State
     $env:DEVEZCODE_TRACKING_AGENT = 'claude'
     $grokSid = [Guid]::NewGuid().ToString()
     Invoke-PowerShellHook 'Resources\Hooks\grok-hook.ps1' (
@@ -109,10 +152,30 @@ try {
     Assert-Missing (Join-Path $testAppData "DevezCode\grok\sessions\$room.txt") 'grok hook'
 
     Reset-State
+    $env:DEVEZCODE_TRACKING_AGENT = 'grok'
+    $grokChildSid = [Guid]::NewGuid().ToString()
+    Invoke-PowerShellHook 'Resources\Hooks\grok-hook.ps1' (
+        '{"hookEventName":"SessionStart","sessionId":"' + $grokSid + '"}')
+    Invoke-PowerShellHook 'Resources\Hooks\grok-hook.ps1' (
+        '{"hookEventName":"SessionStart","sessionId":"' + $grokChildSid + '"}')
+    Assert-Value (Join-Path $testAppData "DevezCode\grok\sessions\$room.txt") `
+        $grokSid 'grok root fence'
+
+    Reset-State
     $env:DEVEZCODE_TRACKING_AGENT = 'claude'
     $env:ANTIGRAVITY_CONVERSATION_ID = [Guid]::NewGuid().ToString()
     Invoke-CmdHook 'Resources\Hooks\antigravity-hook.cmd' 'SessionStart' '{}'
     Assert-Missing (Join-Path $testAppData "DevezCode\antigravity\sessions\$room.txt") 'antigravity hook'
+
+    Reset-State
+    $env:DEVEZCODE_TRACKING_AGENT = 'antigravity'
+    $antigravityRootSid = [Guid]::NewGuid().ToString()
+    $env:ANTIGRAVITY_CONVERSATION_ID = $antigravityRootSid
+    Invoke-CmdHook 'Resources\Hooks\antigravity-hook.cmd' 'SessionStart' '{}'
+    $env:ANTIGRAVITY_CONVERSATION_ID = [Guid]::NewGuid().ToString()
+    Invoke-CmdHook 'Resources\Hooks\antigravity-hook.cmd' 'SessionStart' '{}'
+    Assert-Value (Join-Path $testAppData "DevezCode\antigravity\sessions\$room.txt") `
+        $antigravityRootSid 'antigravity root fence'
 
     Reset-State
     $env:DEVEZCODE_TRACKING_AGENT = 'claude'
@@ -126,6 +189,60 @@ try {
     $plugin = Get-Content -LiteralPath (Join-Path $repoRoot 'Resources\Plugins\opencode-room-tracker.js') -Raw
     if ($plugin -notmatch 'DEVEZCODE_TRACKING_AGENT' -or $plugin -notmatch '"opencode"') {
         $failures.Add('opencode plugin has no tracking-agent guard')
+    }
+
+    Reset-State
+    $env:DEVEZCODE_TRACKING_AGENT = 'opencode'
+    $pluginModule = Join-Path $testRoot 'opencode-room-tracker.mjs'
+    @'
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+'@ + $plugin | Set-Content -LiteralPath $pluginModule -Encoding UTF8
+    $nodeRunner = Join-Path $testRoot 'opencode-owner-runner.mjs'
+    @'
+import fs from "node:fs";
+import { pathToFileURL } from "node:url";
+const [pluginPath, sessionId, holdMs, readyPath] = process.argv.slice(2);
+const module = await import(pathToFileURL(pluginPath).href + `?pid=${process.pid}`);
+const hooks = await module.DevezCodeRoomTracker({});
+if (hooks.event) {
+  await hooks.event({ event: {
+    type: "session.created",
+    properties: { info: { id: sessionId } }
+  }});
+}
+if (readyPath) fs.writeFileSync(readyPath, "ready");
+await new Promise(resolve => setTimeout(resolve, Number(holdMs || 0)));
+'@ | Set-Content -LiteralPath $nodeRunner -Encoding UTF8
+
+    $readyFile = Join-Path $testRoot 'opencode-root.ready'
+    $nodeErrorFile = Join-Path $testRoot 'opencode-root.error'
+    $nodeArgs = '"{0}" "{1}" open_root 3000 "{2}"' -f $nodeRunner, $pluginModule, $readyFile
+    $rootNode = Start-Process -FilePath 'node.exe' -ArgumentList $nodeArgs `
+        -PassThru -WindowStyle Hidden -RedirectStandardError $nodeErrorFile
+    if ($null -eq $rootNode) {
+        $failures.Add('opencode root test process did not start')
+    } else {
+        $readyDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        while (-not (Test-Path -LiteralPath $readyFile) -and
+               [DateTime]::UtcNow -lt $readyDeadline -and
+               -not $rootNode.HasExited) {
+            Start-Sleep -Milliseconds 50
+        }
+        if (-not (Test-Path -LiteralPath $readyFile)) {
+            $nodeError = if (Test-Path -LiteralPath $nodeErrorFile) {
+                (Get-Content -LiteralPath $nodeErrorFile -Raw).Trim()
+            } else { '' }
+            $failures.Add("opencode root test process was not ready: $nodeError")
+        } else {
+            & node.exe $nodeRunner $pluginModule 'open_child' '0' | Out-Null
+            Assert-Value (Join-Path $testAppData "DevezCode\opencode\sessions\$room.txt") `
+                'open_root' 'opencode process owner fence'
+        }
+        if (-not $rootNode.WaitForExit(5000)) {
+            $failures.Add('opencode root test process did not exit')
+        }
+        $rootNode.Dispose()
     }
 }
 finally {

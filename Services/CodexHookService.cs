@@ -18,6 +18,8 @@ public sealed class CodexHookService : IDisposable
     private static string WaitingDir => Path.Combine(BaseDir, "waiting");
     private static string ActiveDir => Path.Combine(BaseDir, "active");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
+    private static string RootSessionPath(string roomId) =>
+        Path.Combine(SessionDir, Sanitize(roomId) + ".root.txt");
 
     private FileSystemWatcher? _lastmsgWatcher;
     private FileSystemWatcher? _busyWatcher;
@@ -164,12 +166,48 @@ public sealed class CodexHookService : IDisposable
     {
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
+        if (room.EndsWith(".root", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".prev", StringComparison.OrdinalIgnoreCase)) return;
         var sid = TryRead(path);
         // Codex 내부 Memory Writing Agent도 부모 DEVEZCODE_ROOM_ID를 상속해 SessionStart 훅을
         // 발화할 수 있다. resume 가능한 실제 rollout이 없는 내부 ID는 settings로 전파하지 않는다.
         if (sid != null && Guid.TryParse(sid, out _)
+            && IsRootTrackedSession(room, sid)
             && TerminalSessionManager.FindCodexTranscriptPath(sid) != null)
             CodexSessionChanged?.Invoke(room, sid);
+    }
+
+    public static bool IsRootTrackedSession(string roomId, string? sessionId)
+    {
+        if (!Guid.TryParse(sessionId, out var parsed)) return false;
+        var root = TryRead(RootSessionPath(roomId));
+        return string.Equals(root, parsed.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static void RestoreTrackedSessionId(string roomId, string sessionId)
+    {
+        if (!Guid.TryParse(sessionId, out var parsed)) return;
+        try
+        {
+            Directory.CreateDirectory(SessionDir);
+            WriteAtomic(RootSessionPath(roomId), parsed.ToString());
+            WriteAtomic(Path.Combine(SessionDir, Sanitize(roomId) + ".txt"), parsed.ToString());
+        }
+        catch { }
+    }
+
+    private static void WriteAtomic(string path, string value)
+    {
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, value, Encoding.ASCII);
+            File.Move(temp, path, true);
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+        }
     }
 
     private static string? TryRead(string path)

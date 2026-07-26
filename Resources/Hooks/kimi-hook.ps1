@@ -43,6 +43,54 @@ function Write-State($path, $value, $encoding = 'Ascii') {
 function Write-Busy([string]$status)    { Write-State (Join-Path $base ('busy\'    + $roomSafe + '.txt')) $status }
 function Write-Waiting([string]$status) { Write-State (Join-Path $base ('waiting\' + $roomSafe + '.txt')) $status }
 
+function Get-SessionPath([string]$suffix = '') {
+    return Join-Path $base ('sessions\' + $roomSafe + $suffix + '.txt')
+}
+
+function Read-Session([string]$path) {
+    try {
+        if (-not (Test-Path -LiteralPath $path)) { return '' }
+        return (Get-Content -LiteralPath $path -Raw -Encoding UTF8).Trim()
+    } catch { return '' }
+}
+
+function Test-CurrentRoomSession([string]$sid) {
+    if (-not $sid) { return $false }
+    $tracked = Read-Session (Get-SessionPath)
+    $root = Read-Session (Get-SessionPath '.root')
+    return $tracked -and $root -and
+           [string]::Equals($tracked, $sid, [StringComparison]::OrdinalIgnoreCase) -and
+           [string]::Equals($root, $sid, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-ActivePath {
+    return Join-Path $base ('active\' + $roomSafe + '.txt')
+}
+
+$rootMutex = $null
+$rootMutexHeld = $false
+function Enter-RootLock {
+    try {
+        $script:rootMutex = New-Object System.Threading.Mutex(
+            $false, ('Local\DevezCode.KimiRoot.' + $roomSafe))
+        try {
+            $script:rootMutexHeld = $script:rootMutex.WaitOne(10000)
+        } catch [System.Threading.AbandonedMutexException] {
+            $script:rootMutexHeld = $true
+        }
+        return $script:rootMutexHeld
+    } catch { return $false }
+}
+
+function Exit-RootLock {
+    try {
+        if ($script:rootMutexHeld -and $script:rootMutex) { $script:rootMutex.ReleaseMutex() }
+    } catch { }
+    try { if ($script:rootMutex) { $script:rootMutex.Dispose() } } catch { }
+    $script:rootMutexHeld = $false
+    $script:rootMutex = $null
+}
+
 # UserPromptSubmit 의 prompt 는 ContentPart[] ({type,text} 배열). text 파트만 이어붙인다.
 # 방어적으로 문자열/기타 형태도 처리.
 function Get-PromptText($prompt) {
@@ -62,12 +110,32 @@ switch ($event) {
         # Kimi 세션 id 형식은 session_<uuid>. 형식 검증만 하고 존재확인은 앱 측에서.
         $sid = [string]$j.session_id
         if ($sid -and $sid -match '^session_[0-9A-Za-z_-]+$') {
-            Write-State (Join-Path $base ('sessions\' + $roomSafe + '.txt')) $sid
+            if (-not (Enter-RootLock)) { break }
+            try {
+                $rootPath = Get-SessionPath '.root'
+                $trackedPath = Get-SessionPath
+                $root = Read-Session $rootPath
+                $source = [string]$j.source
+                $allowExplicitTransition = $source -eq 'clear' -or $source -eq 'new'
+                if ($root -and -not [string]::Equals($root, $sid,
+                        [StringComparison]::OrdinalIgnoreCase)) {
+                    if (-not $allowExplicitTransition) { break }
+                    Write-State (Get-SessionPath '.prev') $root
+                    try { Remove-Item -LiteralPath (Get-ActivePath) -Force -ErrorAction SilentlyContinue } catch { }
+                }
+                Write-State $rootPath $sid
+                Write-State $trackedPath $sid
+            } finally {
+                Exit-RootLock
+            }
         }
     }
     'UserPromptSubmit' {
+        $sid = [string]$j.session_id
+        if (-not (Test-CurrentRoomSession $sid)) { break }
         Write-Busy 'running'
         Write-Waiting 'idle'
+        Write-State (Get-ActivePath) $sid
         $txt = Get-PromptText $j.prompt
         if ($txt) {
             $txt = ($txt -replace '\s+', ' ').Trim()
@@ -75,8 +143,20 @@ switch ($event) {
             if ($txt) { Write-State (Join-Path $base ('lastmsg\' + $roomSafe + '.txt')) $txt 'UTF8' }
         }
     }
-    'Stop'        { Write-Busy 'idle'; Write-Waiting 'idle' }
-    'StopFailure' { Write-Busy 'idle'; Write-Waiting 'idle' }
+    'Stop' {
+        $sid = [string]$j.session_id
+        if (-not (Test-CurrentRoomSession $sid)) { break }
+        Write-Busy 'idle'
+        Write-Waiting 'idle'
+        try { Remove-Item -LiteralPath (Get-ActivePath) -Force -ErrorAction SilentlyContinue } catch { }
+    }
+    'StopFailure' {
+        $sid = [string]$j.session_id
+        if (-not (Test-CurrentRoomSession $sid)) { break }
+        Write-Busy 'idle'
+        Write-Waiting 'idle'
+        try { Remove-Item -LiteralPath (Get-ActivePath) -Force -ErrorAction SilentlyContinue } catch { }
+    }
 }
 
 exit 0

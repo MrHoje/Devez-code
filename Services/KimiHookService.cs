@@ -36,12 +36,29 @@ public sealed class KimiHookService : IDisposable
     private static string Sanitize(string room) => Regex.Replace(room ?? "", @"[^\w\-]", "");
 
     private static string SessionPath(string room) => Path.Combine(SessionDir, Sanitize(room) + ".txt");
+    private static string RootSessionPath(string room) => Path.Combine(SessionDir, Sanitize(room) + ".root.txt");
 
     /// <summary>방의 추적 세션 id 를 읽는다(스냅샷/복원용). 형식이 kimi session_ 이 아니면 null.</summary>
     public static string? LoadTrackedSessionId(string room)
     {
         var sid = TryRead(SessionPath(room));
         return LooksLikeKimiSessionId(sid) ? sid : null;
+    }
+
+    public static bool IsRootTrackedSession(string room, string? sessionId)
+        => LooksLikeKimiSessionId(sessionId)
+           && string.Equals(TryRead(RootSessionPath(room)), sessionId, StringComparison.OrdinalIgnoreCase);
+
+    public static void RestoreTrackedSessionId(string room, string sessionId)
+    {
+        if (!LooksLikeKimiSessionId(sessionId)) return;
+        try
+        {
+            Directory.CreateDirectory(SessionDir);
+            WriteAtomic(RootSessionPath(room), sessionId);
+            WriteAtomic(SessionPath(room), sessionId);
+        }
+        catch { }
     }
 
     /// <summary>kimi 세션 id 형식(session_&lt;uuid&gt;) 검증.</summary>
@@ -162,8 +179,25 @@ public sealed class KimiHookService : IDisposable
     {
         var room = Path.GetFileNameWithoutExtension(path);
         if (string.IsNullOrEmpty(room)) return;
+        if (room.EndsWith(".root", StringComparison.OrdinalIgnoreCase)
+            || room.EndsWith(".prev", StringComparison.OrdinalIgnoreCase)) return;
         var sid = TryRead(path);
-        if (LooksLikeKimiSessionId(sid)) KimiSessionChanged?.Invoke(room, sid!);
+        if (LooksLikeKimiSessionId(sid) && IsRootTrackedSession(room, sid))
+            KimiSessionChanged?.Invoke(room, sid!);
+    }
+
+    private static void WriteAtomic(string path, string value)
+    {
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, value, Encoding.ASCII);
+            File.Move(temp, path, true);
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch { }
+        }
     }
 
     private static string? TryRead(string path)

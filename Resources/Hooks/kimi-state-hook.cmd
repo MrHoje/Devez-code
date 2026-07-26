@@ -16,25 +16,37 @@ if /i not "%DEVEZCODE_TRACKING_AGENT%"=="kimi" (
 set "base=%APPDATA%\DevezCode\kimi"
 set "room=%DEVEZCODE_ROOM_ID%"
 if not exist "%base%" mkdir "%base%" >nul 2>&1
-rem Drain stdin so the hook runner's write completes cleanly.
-"%SystemRoot%\System32\more.com" >nul 2>nul
+set "payload=%base%\payload-%RANDOM%%RANDOM%.tmp"
+"%SystemRoot%\System32\more.com" >"%payload%" 2>nul
+set "root="
+set "active="
+if exist "%base%\sessions\%room%.root.txt" set /p "root="<"%base%\sessions\%room%.root.txt"
+if exist "%base%\active\%room%.txt" set /p "active="<"%base%\active\%room%.txt"
+if "%root%"=="" goto :cleanup
+if /i not "%active%"=="%root%" goto :cleanup
+"%SystemRoot%\System32\findstr.exe" /i /r /c:"\"session_id\"[ ]*:[ ]*\"%root%\"" /c:"\"sessionId\"[ ]*:[ ]*\"%root%\"" "%payload%" >nul 2>nul
+if errorlevel 1 goto :cleanup
 
 if /i "%~1"=="working" (
-  rem Keepalive while tools/subagents run. Do not invent a "main turn" fence here —
+  rem Keepalive while tools/subagents run. Do not invent a "main turn" fence here ?
   rem Stop is the sole idle authority. Late SubagentStart after a real Stop can still
   rem re-arm running briefly; next Stop/StopFailure clears it (same as PreToolUse).
   call :write "%base%\busy\%room%.txt" "running"
-  goto :eof
+  goto :cleanup
 )
 if /i "%~1"=="waiting-on" (
   call :write "%base%\waiting\%room%.txt" "waiting"
-  goto :eof
+  goto :cleanup
 )
 if /i "%~1"=="waiting-off" (
   call :write "%base%\waiting\%room%.txt" "idle"
-  goto :eof
+  goto :cleanup
 )
-goto :eof
+goto :cleanup
+
+:cleanup
+if exist "%payload%" del /f /q "%payload%" >nul 2>&1
+exit /b 0
 
 :write
 rem Atomic temp+move: a killed hook never leaves a zero-byte state file.

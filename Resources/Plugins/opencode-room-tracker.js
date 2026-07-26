@@ -25,6 +25,53 @@ export const DevezCodeRoomTracker = async (_ctx) => {
   const base = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
   const logPath = path.join(base, "DevezCode", "opencode", "plugin-debug.log");
   const debugEnabled = process.env.DEVEZCODE_OPENCODE_PLUGIN_DEBUG === "1";
+  const ownerDir = path.join(base, "DevezCode", "opencode", "owners");
+  const ownerPath = path.join(ownerDir, safe + ".txt");
+
+  // The plugin is global, so a second OpenCode process launched from a tool inherits
+  // the same room and loads another independent plugin instance. Only one live process
+  // may own a room across processes; an in-memory rootSessionId alone cannot enforce it.
+  const isProcessAlive = (pid) => {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return error && error.code === "EPERM";
+    }
+  };
+
+  const claimProcessOwner = () => {
+    try { fs.mkdirSync(ownerDir, { recursive: true }); } catch (error) { return false; }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let fd = null;
+      try {
+        fd = fs.openSync(ownerPath, "wx");
+        fs.writeFileSync(fd, String(process.pid));
+        return true;
+      } catch (error) {
+        if (!error || error.code !== "EEXIST") return false;
+        let current = 0;
+        try { current = Number(fs.readFileSync(ownerPath, "utf8").trim()); } catch (readError) {}
+        if (current === process.pid) return true;
+        if (isProcessAlive(current)) return false;
+        try { fs.rmSync(ownerPath, { force: true }); } catch (removeError) { return false; }
+      } finally {
+        if (fd !== null) {
+          try { fs.closeSync(fd); } catch (closeError) {}
+        }
+      }
+    }
+    return false;
+  };
+
+  if (!claimProcessOwner()) return {};
+  process.once("exit", () => {
+    try {
+      const current = Number(fs.readFileSync(ownerPath, "utf8").trim());
+      if (current === process.pid) fs.rmSync(ownerPath, { force: true });
+    } catch (error) {}
+  });
 
   // 로그 상한 1MB — message.part.updated 가 스트리밍 청크마다 발화해 무한 증식하므로
   // 초과 시 .1 로 로테이션(직전 1MB 는 진단용으로 보존, 그 이전은 폐기).

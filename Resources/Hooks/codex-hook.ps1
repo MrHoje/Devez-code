@@ -81,10 +81,16 @@ function Test-ResumableSession($sid, $transcriptPath) {
 function Test-CurrentRoomSession($sid, $transcriptPath) {
     if (-not (Test-ResumableSession $sid $transcriptPath)) { return $false }
     try {
-        $trackedPath = Join-Path (Join-Path $base 'sessions') ($roomSafe + '.txt')
-        if (-not (Test-Path -LiteralPath $trackedPath)) { return $false }
+        $sessionDir = Join-Path $base 'sessions'
+        $trackedPath = Join-Path $sessionDir ($roomSafe + '.txt')
+        $rootPath = Join-Path $sessionDir ($roomSafe + '.root.txt')
+        if (-not (Test-Path -LiteralPath $trackedPath) -or -not (Test-Path -LiteralPath $rootPath)) {
+            return $false
+        }
         $tracked = (Get-Content -LiteralPath $trackedPath -Raw -Encoding UTF8).Trim()
-        return [string]::Equals([string]$tracked, [string]$sid, [StringComparison]::OrdinalIgnoreCase)
+        $root = (Get-Content -LiteralPath $rootPath -Raw -Encoding UTF8).Trim()
+        return [string]::Equals([string]$tracked, [string]$sid, [StringComparison]::OrdinalIgnoreCase) -and
+               [string]::Equals([string]$root, [string]$sid, [StringComparison]::OrdinalIgnoreCase)
     } catch { return $false }
 }
 
@@ -235,9 +241,35 @@ switch ($event) {
         # transcript 없는 내부 Memory Writing Agent ID는 Test-ResumableSession 에서 차단.
         $sid = $j.session_id
         if ($sid -and (Test-ResumableSession $sid $j.transcript_path)) {
+            if (-not (Enter-TurnLock)) { break }
+            try {
             $sDir = Join-Path $base 'sessions'
             New-Item -ItemType Directory -Force -Path $sDir | Out-Null
-            Write-State (Join-Path $sDir ($roomSafe + '.txt')) $sid
+                $trackedPath = Join-Path $sDir ($roomSafe + '.txt')
+                $rootPath = Join-Path $sDir ($roomSafe + '.root.txt')
+                $previousPath = Join-Path $sDir ($roomSafe + '.prev.txt')
+                $root = ''
+                try {
+                    if (Test-Path -LiteralPath $rootPath) {
+                        $root = (Get-Content -LiteralPath $rootPath -Raw -Encoding UTF8).Trim()
+                    }
+                } catch { }
+
+                $source = [string]$j.source
+                $allowExplicitTransition = $source -eq 'clear'
+                if ($root -and -not [string]::Equals($root, [string]$sid,
+                        [StringComparison]::OrdinalIgnoreCase)) {
+                    if (-not $allowExplicitTransition) { break }
+                    Write-State $previousPath $root
+                    try { Remove-Item -LiteralPath (Get-ActiveTurnPath) -Force -ErrorAction SilentlyContinue } catch { }
+                }
+
+                # Root marker first. A half-written transition fails closed in C# and later hooks.
+                Write-State $rootPath $sid
+                Write-State $trackedPath $sid
+            } finally {
+                Exit-TurnLock
+            }
         }
     }
 }

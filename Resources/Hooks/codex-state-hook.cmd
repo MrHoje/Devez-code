@@ -49,7 +49,7 @@ exit /b 0
 
 :validate_active
 rem Close the read/write race with Stop or a newer prompt. If this payload's turn no longer
-rem owns the room, converge waiting back to idle. Do NOT write busy=idle here — a concurrent
+rem owns the room, converge waiting back to idle. Do NOT write busy=idle here ? a concurrent
 rem UserPromptSubmit may already own a newer active turn with busy=running.
 set "current="
 if exist "%base%\active\%room%.txt" set /p "current="<"%base%\active\%room%.txt"

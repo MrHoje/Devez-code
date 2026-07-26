@@ -1,4 +1,5 @@
 using System.IO;
+using DevezCode.Services;
 
 namespace DevezCode.Services.Terminal;
 
@@ -366,6 +367,8 @@ public sealed class TerminalSessionManager
                 DiagLog.Write($"launch[{roomId}]: codex sid={staleSessionId} transcript 없음, 복구 후보 없음 → 새 세션");
             }
         }
+        if (sessionId != null)
+            SaveTrackedCodexSessionId(roomId, sessionId);
         SettingsService.MarkAgentRoomLaunched(roomId, "codex"); // 추적용
 
         string options = "--no-alt-screen";
@@ -429,7 +432,11 @@ public sealed class TerminalSessionManager
             : $"\"{kimiPath.Replace("\"", "\"\"")}\"";
 
         var sessionId = ResolveKimiSessionId(roomId, workingDir);
-        if (sessionId != null) SettingsService.SaveKimiRoomSession(roomId, sessionId);
+        if (sessionId != null)
+        {
+            SettingsService.SaveKimiRoomSession(roomId, sessionId);
+            KimiHookService.RestoreTrackedSessionId(roomId, sessionId);
+        }
         SettingsService.MarkAgentRoomLaunched(roomId, "kimi");
 
         // call + exit: kimi 종료 후 제어가 배치로 돌아와 exit 로 cmd 를 확실히 닫는다 → onExited → 앱 재진입.
@@ -558,6 +565,15 @@ public sealed class TerminalSessionManager
     {
         injectFallback = null;
         OpenCodePluginInstaller.EnsureInstalled();
+        // 이 메서드는 DevezCode가 새 최상위 OpenCode 프로세스를 만들 때만 호출된다.
+        // 이전 프로세스 크래시가 남긴 PID 소유권을 비워 새 루트가 원자적으로 다시 claim하게 한다.
+        try
+        {
+            File.Delete(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DevezCode", "opencode", "owners", SafeRoomFileName(roomId) + ".txt"));
+        }
+        catch { }
 
         var tracked = OpenCodePluginInstaller.LoadTrackedSessionId(roomId);
         var sessionId = SettingsService.LoadOpenCodeRoomSession(roomId);
@@ -1151,18 +1167,19 @@ public sealed class TerminalSessionManager
 
     private static void SaveTrackedCodexSessionId(string roomId, string sessionId)
     {
-        try
-        {
-            var path = CodexTrackedSessionPath(roomId);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, sessionId);
-        }
-        catch { }
+        CodexHookService.RestoreTrackedSessionId(roomId, sessionId);
     }
 
     private static void DeleteTrackedCodexSessionFile(string roomId)
     {
         try { File.Delete(CodexTrackedSessionPath(roomId)); } catch { }
+        try
+        {
+            File.Delete(Path.Combine(
+                Path.GetDirectoryName(CodexTrackedSessionPath(roomId))!,
+                SafeRoomFileName(roomId) + ".root.txt"));
+        }
+        catch { }
     }
 
     /// <summary>grok 세션 chat_history.jsonl.
@@ -3235,6 +3252,8 @@ public sealed class TerminalSessionManager
 
         var codexDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "codex");
         TryDeleteFile(Path.Combine(codexDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(codexDir, "sessions", roomFile + ".root.txt"));
+        TryDeleteFile(Path.Combine(codexDir, "sessions", roomFile + ".prev.txt"));
         TryDeleteFile(Path.Combine(codexDir, "lastmsg", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(codexDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(codexDir, "waiting", roomFile + ".txt"));
@@ -3254,9 +3273,12 @@ public sealed class TerminalSessionManager
 
         var kimiDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "kimi");
         TryDeleteFile(Path.Combine(kimiDir, "sessions", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(kimiDir, "sessions", roomFile + ".root.txt"));
+        TryDeleteFile(Path.Combine(kimiDir, "sessions", roomFile + ".prev.txt"));
         TryDeleteFile(Path.Combine(kimiDir, "lastmsg", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(kimiDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(kimiDir, "waiting", roomFile + ".txt"));
+        TryDeleteFile(Path.Combine(kimiDir, "active", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(KimiLaunchDir(), roomFile + ".cmd"));
 
         // dvz 는 훅 없이 CLI 자신이 쓴다 — 파일 이름 규약은 위 에이전트들과 같다.
@@ -3270,6 +3292,7 @@ public sealed class TerminalSessionManager
         TryDeleteFile(Path.Combine(opencodeDir, "busy", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(opencodeDir, "waiting", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(opencodeDir, "todos", roomFile + ".json"));
+        TryDeleteFile(Path.Combine(opencodeDir, "owners", roomFile + ".txt"));
         TryDeleteFile(Path.Combine(OpenCodeLaunchDir(), roomFile + ".cmd"));
 
         TryDeleteFile(Path.Combine(GajaeLaunchDir(), roomFile + ".cmd"));
@@ -3333,7 +3356,16 @@ public sealed class TerminalSessionManager
                 try
                 {
                     foreach (var f in Directory.EnumerateFiles(dir, "*" + ext, SearchOption.TopDirectoryOnly))
-                        tracked.Add(Path.GetFileNameWithoutExtension(f));
+                    {
+                        var room = Path.GetFileNameWithoutExtension(f);
+                        foreach (var suffix in new[] { ".root", ".prev", ".good", ".ended" })
+                        {
+                            if (!room.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
+                            room = room[..^suffix.Length];
+                            break;
+                        }
+                        tracked.Add(room);
+                    }
                 }
                 catch { }
             }
