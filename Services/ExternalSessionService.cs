@@ -268,7 +268,7 @@ public static class ExternalSessionService
 
             File.WriteAllText(
                 runnerPath,
-                BuildRunnerScript(roomId, workingDir, executable, args),
+                BuildRunnerScript(roomId, agent.Id, workingDir, executable, args),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
             var spec = new ExternalSessionProxySpec
@@ -303,7 +303,7 @@ public static class ExternalSessionService
                 ScriptPath(roomId),
                 BuildWrapperScript(
                     TicketPath(roomId), token, roomId,
-                    workingDir, proxyExecutable, specPath),
+                    agent.Id, workingDir, proxyExecutable, specPath),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
             ProcessStartInfo start;
@@ -445,6 +445,7 @@ public static class ExternalSessionService
 
     private static string BuildRunnerScript(
         string roomId,
+        string agentId,
         string workingDir,
         string executable,
         IReadOnlyList<string> args)
@@ -454,6 +455,7 @@ public static class ExternalSessionService
         return
             "$ErrorActionPreference = 'Stop'\r\n" +
             $"$env:DEVEZCODE_ROOM_ID = {Q(roomId)}\r\n" +
+            $"$env:{TrackingEnvironment.VariableName} = {Q(agentId)}\r\n" +
             "$env:FORCE_COLOR = '3'\r\n" +
             "$env:COLORTERM = 'truecolor'\r\n" +
             "Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue\r\n" +
@@ -469,6 +471,7 @@ public static class ExternalSessionService
         string ticketPath,
         string token,
         string roomId,
+        string agentId,
         string workingDir,
         string proxyExecutable,
         string specPath)
@@ -481,6 +484,7 @@ public static class ExternalSessionService
             "if (-not (Test-Path -LiteralPath $ticketPath) -or " +
             "(Get-Content -LiteralPath $ticketPath -Raw).Trim() -ne $expectedToken) { exit 2 }\r\n" +
             $"$env:DEVEZCODE_ROOM_ID = {Q(roomId)}\r\n" +
+            $"$env:{TrackingEnvironment.VariableName} = {Q(agentId)}\r\n" +
             $"$env:DEVEZCODE_EXTERNAL_SPEC = {Q(specPath)}\r\n" +
             $"$env:DEVEZCODE_EXTERNAL_TOKEN = {Q(token)}\r\n" +
             "$env:FORCE_COLOR = '3'\r\n" +

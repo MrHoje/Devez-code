@@ -247,19 +247,23 @@ public sealed class TerminalSessionManager
 
             TerminalSession session;
             var previousOpenCodeTuiConfig = Environment.GetEnvironmentVariable("OPENCODE_TUI_CONFIG");
+            var previousRoomId = Environment.GetEnvironmentVariable("DEVEZCODE_ROOM_ID");
+            var previousTrackingAgent = Environment.GetEnvironmentVariable(TrackingEnvironment.VariableName);
             try
             {
                 // SessionStart 훅(room-hook.ps1)이 어느 방의 claude 세션인지 알 수 있게
                 // 방 ID를 자식(cmd→claude→훅)에 상속시킨다. 생성 직후 해제해 다른 자식 프로세스로 새지 않게 한다.
                 // (Claude 외 에이전트는 훅이 없으므로 무해.)
                 Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", roomId);
+                Environment.SetEnvironmentVariable(TrackingEnvironment.VariableName, agent.Id);
                 if (isOpenCode)
                     Environment.SetEnvironmentVariable("OPENCODE_TUI_CONFIG", OpenCodeCustomThemes.TuiConfigPath);
                 session = new TerminalSession(commandLine, startDir, cols, rows);
             }
             finally
             {
-                Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", null);
+                Environment.SetEnvironmentVariable("DEVEZCODE_ROOM_ID", previousRoomId);
+                Environment.SetEnvironmentVariable(TrackingEnvironment.VariableName, previousTrackingAgent);
                 if (isOpenCode)
                     Environment.SetEnvironmentVariable("OPENCODE_TUI_CONFIG", previousOpenCodeTuiConfig);
             }
@@ -390,7 +394,11 @@ public sealed class TerminalSessionManager
             var dir = CodexLaunchDir();
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
-            File.WriteAllText(batchPath, "@echo off\r\n" + body + "\r\n");
+            File.WriteAllText(batchPath,
+                "@echo off\r\n" +
+                $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                TrackingEnvironment.CmdSetLine("codex") +
+                body + "\r\n");
             // /c: 배치가 끝나면(codex 반환 시) cmd 가 자동 종료 → ConPTY 종료 → onExited → 앱 재진입.
             // (/k 는 배치의 exit 에 의존하는데, codex 종료 경로에서 exit 에 도달 못 하고 프롬프트가 남는
             //  사례가 있어 /c 로 확실히 닫는다.)
@@ -435,7 +443,8 @@ public sealed class TerminalSessionManager
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
             // set 으로 DEVEZCODE_ROOM_ID 명시(ConPTY env 상속 백업 — 훅이 방을 식별).
-            var batch = "@echo off\r\nset \"DEVEZCODE_ROOM_ID=" + roomId + "\"\r\n" + body + "\r\n";
+            var batch = "@echo off\r\nset \"DEVEZCODE_ROOM_ID=" + roomId + "\"\r\n" +
+                        TrackingEnvironment.CmdSetLine("kimi") + body + "\r\n";
             File.WriteAllText(batchPath, batch);
             return $"cmd.exe /c \"{batchPath}\"";
         }
@@ -574,6 +583,7 @@ public sealed class TerminalSessionManager
             {
                 string forkBody = $"@echo off\r\n" +
                                   $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                                  TrackingEnvironment.CmdSetLine("opencode") +
                                   $"call opencode --session {forkSrc} --fork || call opencode\r\n";
                 try
                 {
@@ -615,6 +625,7 @@ public sealed class TerminalSessionManager
         // roomId 에 공백/특수문자 가능 — set "VAR=value" 형식으로 안전하게.
         string body = $"@echo off\r\n" +
                       $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                      TrackingEnvironment.CmdSetLine("opencode") +
                       $"set \"OPENCODE_TUI_CONFIG={OpenCodeCustomThemes.TuiConfigPath}\"\r\n" +
                       $"{opencodeCmd}\r\n";
 
@@ -748,6 +759,7 @@ public sealed class TerminalSessionManager
             File.WriteAllText(batchPath,
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                TrackingEnvironment.CmdSetLine("grok") +
                 body + "\r\n");
             return $"cmd.exe /c \"{batchPath}\"";
         }
@@ -818,6 +830,7 @@ public sealed class TerminalSessionManager
             File.WriteAllText(batchPath,
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                TrackingEnvironment.CmdSetLine("devezcli") +
                 body + "\r\n");
             return $"cmd.exe /c \"{batchPath}\"";
         }
@@ -918,6 +931,7 @@ public sealed class TerminalSessionManager
             File.WriteAllText(batchPath,
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                TrackingEnvironment.CmdSetLine("antigravity") +
                 body + "\r\n");
             return $"cmd.exe /c \"{batchPath}\"";
         }
@@ -1488,6 +1502,8 @@ public sealed class TerminalSessionManager
             // terminal.html 파서에서 gjc 방 한정으로 삼켜 스크롤백/휠 스크롤을 보존한다.
             File.WriteAllText(batchPath,
                 "@echo off\r\n" +
+                $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                TrackingEnvironment.CmdSetLine("gajae") +
                 cmd + "\r\n" +
                 GajaeReentryLoop(sd, GajaeQuitFlagPath(roomId), RegisterReenterFlag(roomId)));
             return $"cmd.exe /k \"{batchPath}\"";
@@ -1687,7 +1703,12 @@ public sealed class TerminalSessionManager
         {
             Directory.CreateDirectory(LaunchDir);
             var trackFile = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
-            File.WriteAllText(LaunchBatchPath(roomId), "@echo off\r\n" + body + "\r\n" + ClaudeReentryLoop(flags, trackFile, ClaudeQuitFlagPath(roomId), RegisterReenterFlag(roomId)));
+            File.WriteAllText(LaunchBatchPath(roomId),
+                "@echo off\r\n" +
+                $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
+                TrackingEnvironment.CmdSetLine("claude") +
+                body + "\r\n" +
+                ClaudeReentryLoop(flags, trackFile, ClaudeQuitFlagPath(roomId), RegisterReenterFlag(roomId)));
             // 경로에 공백이 있어도 cmd /k "<단일 토큰>" 규칙으로 안전(따옴표 보존/제거 모두 정상 실행).
             return $"cmd.exe /k \"{LaunchBatchPath(roomId)}\"";
         }

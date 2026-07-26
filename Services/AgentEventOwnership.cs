@@ -7,3 +7,14 @@ internal static class AgentEventOwnership
            && !string.IsNullOrWhiteSpace(sourceAgentId)
            && string.Equals(sessionAgentId, sourceAgentId, StringComparison.OrdinalIgnoreCase);
 }
+
+internal static class TrackingEnvironment
+{
+    internal const string VariableName = "DEVEZCODE_TRACKING_AGENT";
+
+    internal static bool IsExpected(string? actualAgentId, string expectedAgentId)
+        => AgentEventOwnership.IsMatch(actualAgentId, expectedAgentId);
+
+    internal static string CmdSetLine(string agentId)
+        => $"set \"{VariableName}={agentId}\"\r\n";
+}

@@ -7,6 +7,12 @@ Check(AgentEventOwnership.IsMatch("CoDeX", "codex"), "case-insensitive");
 Check(!AgentEventOwnership.IsMatch("claude", "codex"), "cross-agent");
 Check(!AgentEventOwnership.IsMatch("", "codex"), "missing owner fails closed");
 Check(!AgentEventOwnership.IsMatch("codex", ""), "missing source fails closed");
+Check(TrackingEnvironment.IsExpected("codex", "codex"), "matching marker");
+Check(!TrackingEnvironment.IsExpected("claude", "codex"), "mismatched marker");
+Check(!TrackingEnvironment.IsExpected(null, "codex"), "missing marker");
+Check(
+    TrackingEnvironment.CmdSetLine("kimi") == "set \"DEVEZCODE_TRACKING_AGENT=kimi\"\r\n",
+    "cmd marker");
 
 if (failures.Count > 0)
 {
