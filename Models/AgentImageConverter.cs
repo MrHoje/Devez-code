@@ -5,7 +5,8 @@ using DevezCode.Services;
 namespace DevezCode.Models;
 
 /// <summary>세션의 AgentId(string) → pack URI 이미지 (Image.Source 바인딩용).
-/// opencode·grok·kimi·devezvibe 는 다크/라이트 테마에 따라 흑/백 변형 아이콘을 사용 (devez 정합).
+/// opencode·grok·kimi 는 다크/라이트 테마에 따라 흑/백 변형 아이콘을 사용 (devez 정합).
+/// devezvibe 는 채워진 컬러 로고라 테마 무관 한 장.
 /// 빈 값 / 미등록 에이전트는 Claude 아이콘으로 폴백.
 /// 테마 전환 시 바인딩 재평가: SessionItem.RefreshAgentIcon() → PropertyChanged(AgentId).</summary>
 public sealed class AgentImageConverter : IValueConverter
@@ -27,7 +28,7 @@ public sealed class AgentImageConverter : IValueConverter
             "gajae"       => "gajae_code.png",
             "antigravity" => "anti.png",
             "kimi"        => isDark ? "kimi_icon_white_50.png" : "kimi_icon_black_50.png",
-            "devezvibe"    => isDark ? "devezvibe_icon_white_50.png" : "devezvibe_icon_black_50.png",
+            "devezvibe"   => "devezvibe_icon.png",
             _             => "claude_code.png",
         };
         return new System.Uri($"pack://application:,,,/Resources/Images/ShellPresets/{fileName}", System.UriKind.Absolute);
