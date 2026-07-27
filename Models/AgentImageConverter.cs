@@ -14,7 +14,8 @@ public sealed class AgentImageConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        var id = (value as string)?.ToLowerInvariant() ?? "";
+        // 저장소에 남은 개명 이전 ID(devezcli 등)가 default 로 떨어져 claude 아이콘이 되는 것 방지.
+        var id = AgentRegistry.NormalizeId(value as string).ToLowerInvariant();
         if (string.IsNullOrEmpty(id)) id = AgentRegistry.DefaultAgentId;
         bool isDark = App.CurrentTheme == "dark";
         string fileName = id switch

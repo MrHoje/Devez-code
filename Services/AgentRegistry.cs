@@ -154,8 +154,19 @@ public static class AgentRegistry
         },
     };
 
+    /// <summary>개명 이전 ID → 현재 ID. 저장소(workspace.json 의 <c>Agent</c>, settings.json 의 RoomAgents)에는
+    /// 옛 값이 그대로 남아 있고, 정규화하지 않으면 <see cref="Find"/> 가 null 을 돌려줘 세션이 조용히
+    /// 기본 에이전트(claude)로 떨어진다(아이콘·실행 커맨드까지 claude 가 된다).
+    /// 에이전트를 또 개명하면 여기에 한 줄 추가하는 것이 전부여야 한다.</summary>
+    private static readonly Dictionary<string, string> RenamedIds =
+        new(StringComparer.OrdinalIgnoreCase) { ["devezcli"] = "devezvibe" };
+
+    /// <summary>저장된 에이전트 ID 를 현재 ID 로 정규화. 빈 값/미개명 값은 그대로 돌려준다.</summary>
+    public static string NormalizeId(string? id)
+        => id != null && RenamedIds.TryGetValue(id, out var current) ? current : id ?? "";
+
     public static AgentDef? Find(string? id)
-        => id != null ? All.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) : null;
+        => id != null ? All.FirstOrDefault(a => a.Id.Equals(NormalizeId(id), StringComparison.OrdinalIgnoreCase)) : null;
 
     public static AgentDef GetDefault() => Find(DefaultAgentId) ?? All[0];
 

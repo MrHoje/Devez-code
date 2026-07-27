@@ -528,7 +528,8 @@ public static class SettingsService
 
     // ── 방별 에이전트 ID (미설정 시 기본값 claude) ────────────────
     public static string LoadAgentForRoom(string roomId)
-        => Current.RoomAgents.TryGetValue(roomId, out var a) ? a : AgentRegistry.DefaultAgentId;
+        => Current.RoomAgents.TryGetValue(roomId, out var a)
+            ? AgentRegistry.NormalizeId(a) : AgentRegistry.DefaultAgentId;
 
     public static void SaveAgentForRoom(string roomId, string agentId)
     {
