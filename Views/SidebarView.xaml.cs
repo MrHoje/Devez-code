@@ -1973,7 +1973,7 @@ public partial class SidebarView : UserControl
     {
         for (DependencyObject? current = InputHitTest(point) as DependencyObject;
              current != null && !ReferenceEquals(current, this);
-             current = VisualTreeHelper.GetParent(current))
+             current = GetParentObject(current))
         {
             if (current is not Border { DataContext: ProjectFolderItem folder } border)
                 continue;
@@ -1985,7 +1985,7 @@ public partial class SidebarView : UserControl
             var previewBorder = border;
             for (DependencyObject? parent = VisualTreeHelper.GetParent(border);
                  parent != null && !ReferenceEquals(parent, this);
-                 parent = VisualTreeHelper.GetParent(parent))
+                 parent = GetParentObject(parent))
             {
                 if (parent is Border { Name: "FolderRoot" } root)
                 {
@@ -2422,9 +2422,19 @@ public partial class SidebarView : UserControl
         catch { return double.PositiveInfinity; }
     }
 
+    /// <summary>히트 테스트 결과에는 Run 같은 비-Visual 요소가 섞여 올 수 있으므로,
+    /// 시각 트리와 논리 트리를 모두 다뤄 안전하게 부모를 얻는다.</summary>
+    private static DependencyObject? GetParentObject(DependencyObject current) => current switch
+    {
+        FrameworkContentElement content => content.Parent,
+        Visual _ => VisualTreeHelper.GetParent(current),
+        System.Windows.Media.Media3D.Visual3D _ => VisualTreeHelper.GetParent(current),
+        _ => LogicalTreeHelper.GetParent(current),
+    };
+
     private static T? FindVisualAncestor<T>(DependencyObject? current) where T : DependencyObject
     {
-        for (; current != null; current = VisualTreeHelper.GetParent(current))
+        for (; current != null; current = GetParentObject(current))
             if (current is T match) return match;
         return null;
     }
@@ -2432,7 +2442,7 @@ public partial class SidebarView : UserControl
     private static T? FindVisualAncestorByName<T>(DependencyObject? current, string name)
         where T : FrameworkElement
     {
-        for (; current != null; current = VisualTreeHelper.GetParent(current))
+        for (; current != null; current = GetParentObject(current))
             if (current is T { Name: var elementName } match && elementName == name)
                 return match;
         return null;
