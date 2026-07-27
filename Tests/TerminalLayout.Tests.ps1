@@ -44,14 +44,16 @@ document.body.dataset.bottom = style.paddingBottom;
         throw "Browser fixture did not expose computed padding. DOM: $($dump.Substring(0, [Math]::Min(500, $dump.Length)))"
     }
 
-    if ($right -ne '10px') {
-        throw "Devez Vibe right safe area must be 10px; actual: '$right'."
+    # 우측 여백은 dvz 가 마지막 셀을 스스로 보호한다 — 호스트가 한 번 더 빼면 컴포저 경계가
+    # 본문보다 일찍 끝나므로 0 이어야 한다. 하단은 기본 6px + 6px 유지.
+    if ($right -ne '0px') {
+        throw "Devez Vibe right padding must stay 0px (dvz protects its own last cell); actual: '$right'."
     }
     if ($bottom -ne '12px') {
         throw "Devez Vibe bottom padding must preserve the base 6px plus 6px; actual: '$bottom'."
     }
 
-    Write-Output 'PASS: Devez Vibe terminal keeps 10px right safe area and 6px additional bottom spacing.'
+    Write-Output 'PASS: Devez Vibe terminal adds no right padding and keeps 6px additional bottom spacing.'
 }
 finally {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
