@@ -11,9 +11,9 @@ using DevezCode.Services.Terminal;
 namespace DevezCode.Services;
 
 /// <summary>세션 대화 로그(JSONL)에서 입/출력 토큰 사용량을 누적 집계한다.
-/// claude(~/.claude/projects/*/&lt;sid&gt;.jsonl 의 message.usage)와 codex/devezcli(token_count 이벤트의
+/// claude(~/.claude/projects/*/&lt;sid&gt;.jsonl 의 message.usage)와 codex/devezvibe(token_count 이벤트의
 /// total_token_usage)를 정확 지원 — 세 CLI 가 API 응답 usage 를 그대로 기록하므로 공급자 청구 토큰과 동일하다.
-/// 부하 최소화: claude 는 파일 끝에 붙은 새 줄만 증분 파싱(방별 offset·누적 캐시), codex/devezcli 는 파일 끝
+/// 부하 최소화: claude 는 파일 끝에 붙은 새 줄만 증분 파싱(방별 offset·누적 캐시), codex/devezvibe 는 파일 끝
 /// 마지막 token_count 한 줄만 tail 로 읽는다. 상태는 %AppData%\DevezCode\usage.json 에 영속(재시작 시 이어읽기).</summary>
 public static class SessionUsageService
 {
@@ -89,7 +89,7 @@ public static class SessionUsageService
     }
 
     /// <summary>지원 에이전트인지 (정확 집계 가능). 그 외는 표시하지 않는다.</summary>
-    public static bool IsSupported(string agentId) => agentId is "claude" or "codex" or "devezcli";
+    public static bool IsSupported(string agentId) => agentId is "claude" or "codex" or "devezvibe";
 
     /// <summary>메모리/usage.json 에 남아 있는 이 방의 마지막 집계값(경로 미해석 시 폴백 표시용). 없으면 null.</summary>
     private static UsageTotals? LastKnown(string roomId)
@@ -105,7 +105,7 @@ public static class SessionUsageService
             {
                 "claude" => ReadClaude(roomId, cwd),
                 "codex" => ReadCodexLike(roomId, SettingsService.LoadCodexRoomSession(roomId), "Codex"),
-                "devezcli" => ReadCodexLike(roomId, SettingsService.LoadDevezCliRoomSession(roomId), "Devez CLI"),
+                "devezvibe" => ReadCodexLike(roomId, SettingsService.LoadDevezVibeRoomSession(roomId), "Devez Vibe"),
                 _ => null,
             };
         }
@@ -201,7 +201,7 @@ public static class SessionUsageService
         return m;
     }
 
-    // ── codex/devezcli: 파일 끝 마지막 token_count 이벤트 한 줄만 (누적값 내장) ──
+    // ── codex/devezvibe: 파일 끝 마지막 token_count 이벤트 한 줄만 (누적값 내장) ──
     private static UsageTotals? ReadCodexLike(string roomId, string? sid, string agentLabel)
     {
         var path = TerminalSessionManager.FindCodexTranscriptPath(sid);

@@ -20,7 +20,7 @@ try {
     @"
 <!doctype html>
 <style>$style</style>
-<div id="target" class="term-container agent-devezcli active"></div>
+<div id="target" class="term-container agent-devezvibe active"></div>
 <script>
 const style = getComputedStyle(document.getElementById('target'));
 document.body.dataset.right = style.paddingRight;
@@ -45,13 +45,13 @@ document.body.dataset.bottom = style.paddingBottom;
     }
 
     if ($right -ne '10px') {
-        throw "DevezCLI right safe area must be 10px; actual: '$right'."
+        throw "Devez Vibe right safe area must be 10px; actual: '$right'."
     }
     if ($bottom -ne '12px') {
-        throw "DevezCLI bottom padding must preserve the base 6px plus 6px; actual: '$bottom'."
+        throw "Devez Vibe bottom padding must preserve the base 6px plus 6px; actual: '$bottom'."
     }
 
-    Write-Output 'PASS: DevezCLI terminal keeps 10px right safe area and 6px additional bottom spacing.'
+    Write-Output 'PASS: Devez Vibe terminal keeps 10px right safe area and 6px additional bottom spacing.'
 }
 finally {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue

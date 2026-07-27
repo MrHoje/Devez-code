@@ -154,7 +154,7 @@ public static class SessionCleanerService
             AddTrackedFileIds(gajaeIds, Path.Combine(appData, "DevezCode", "gajae", "sessions"), GuidRegex, fromGajaeRoomDir: true);
             AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "codex", "sessions"), GuidRegex);
             // dvz 세션은 codex rollout 그 자체라 codex 보호 목록에 합친다 — 안 그러면 codex 정리에 쓸려간다.
-            AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "devezcli", "sessions"), GuidRegex);
+            AddTrackedFileIds(codexIds, Path.Combine(appData, "DevezCode", "devezvibe", "sessions"), GuidRegex);
             AddTrackedFileIds(grokIds, Path.Combine(appData, "DevezCode", "grok", "sessions"), GuidRegex);
             AddTrackedFileIds(antigravityIds, Path.Combine(appData, "DevezCode", "antigravity", "sessions"), GuidRegex);
             AddTrackedFileIds(kimiIds, Path.Combine(appData, "DevezCode", "kimi", "sessions"), KimiIdRegex);

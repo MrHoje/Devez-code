@@ -137,14 +137,14 @@ public static class AgentRegistry
         },
         new()
         {
-            // Devez CLI(dvz) — 공식 codex app-server 를 쓰는 자체 TUI. 세션 실체는 codex thread 라
+            // Devez Vibe(dvz) — 공식 codex app-server 를 쓰는 자체 TUI. 세션 실체는 codex thread 라
             // rollout(.codex\sessions)·MCP·인증을 codex 와 공유하고, 화면/입력만 dvz 가 소유한다.
             // 세션 ID 사전 발급 플래그가 없어(thread/start 가 발급) 방별 정확 복원은
-            // TryBuildDevezCliDirectLaunch 가 dvz 가 직접 기록한 sessions\<room>.txt → `dvz -r <id>` 로 처리.
-            // 상태(busy/waiting/lastmsg)도 dvz 가 %APPDATA%\DevezCode\devezcli\ 에 직접 쓴다(훅 없음).
+            // TryBuildDevezVibeDirectLaunch 가 dvz 가 직접 기록한 sessions\<room>.txt → `dvz -r <id>` 로 처리.
+            // 상태(busy/waiting/lastmsg)도 dvz 가 %APPDATA%\DevezCode\devezvibe\ 에 직접 쓴다(훅 없음).
             // 테마는 --theme minimal|soft|dark 로 DevezCode 3테마와 1:1. alt-screen TUI → InlineTui=false.
             // 설치 명령은 배포 경로가 확정되기 전까지 비워 둔다(설정 목록에서 '설치 명령' 행이 사라짐).
-            Id = "devezcli", DisplayName = "Devez CLI", Provider = "Devez",
+            Id = "devezvibe", DisplayName = "Devez Vibe", Provider = "Devez",
             ExeNames = new[] { "dvz.exe", "dvz.cmd", "dvz.bat", "dvz.ps1", "dvz" },
             Command = "dvz",
             InstallCommand = "",

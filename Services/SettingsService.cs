@@ -93,9 +93,11 @@ public static class SettingsService
         // Kimi(kimi-code) 방별 세션 ID (session_&lt;uuid&gt;). SessionStart 훅이 기록한 ID 를 영속 →
         // 재오픈 시 `kimi -S <id>`(전역 session_index.jsonl, cwd 무관) 로 같은 대화 복원.
         public Dictionary<string, string> KimiRoomSessions { get; set; } = new();
-        // Devez CLI(dvz) 방별 스레드 ID. dvz 는 codex app-server 의 thread 를 그대로 쓰므로 값은
+        // Devez Vibe(dvz) 방별 스레드 ID. dvz 는 codex app-server 의 thread 를 그대로 쓰므로 값은
         // codex rollout 과 같은 UUID 다(별도 저장소인 이유: 같은 방을 codex/dvz 로 오가도 안 섞이게).
         // dvz 가 sessions\<room>.txt 에 기록한 ID 를 영속 → 재오픈 시 `dvz -r <id>` 로 같은 대화 복원.
+        public Dictionary<string, string> DevezVibeRoomSessions { get; set; } = new();
+        // 레거시(devezcli 시절) 스레드 ID 저장소. 로드 시 DevezVibeRoomSessions 로 1회 흡수하고 비운다.
         public Dictionary<string, string> DevezCliRoomSessions { get; set; } = new();
         // 세션 포크: 새 방(roomId) → 포크 원본 세션 ID. 새 방 첫 실행에 --fork-session/--fork 로 1회 소비.
         public Dictionary<string, string> RoomForkSources { get; set; } = new();
@@ -225,9 +227,76 @@ public static class SettingsService
                     try { _current = JsonSerializer.Deserialize<SettingsData>(text); }
                     catch { /* 손상 시 새로 시작 */ }
                 }
+                if (_current != null && MigrateDevezVibeRename(_current)) _ = TrySave();
                 return _current ??= new SettingsData();
             }
         }
+    }
+
+    /// <summary>Devez CLI → Devez Vibe 개명 1회 마이그레이션. 에이전트 ID 가 settings 전반의 키/값에
+    /// 들어가 있어(방별 에이전트·활성 목록·"room|agent" 키) 그대로 두면 기존 방이 에이전트를 잃는다.
+    /// 이미 마이그레이션된 설정에서는 아무것도 바꾸지 않으므로 매 로드 호출해도 안전하다.</summary>
+    private static bool MigrateDevezVibeRename(SettingsData d)
+    {
+        const string OldId = "devezcli";
+        const string NewId = "devezvibe";
+        bool changed = false;
+
+        foreach (var roomId in d.RoomAgents.Where(kv => OldId.Equals(kv.Value, StringComparison.OrdinalIgnoreCase))
+                                           .Select(kv => kv.Key).ToList())
+        {
+            d.RoomAgents[roomId] = NewId;
+            changed = true;
+        }
+
+        for (int i = 0; i < d.EnabledAgents.Count; i++)
+        {
+            if (!OldId.Equals(d.EnabledAgents[i], StringComparison.OrdinalIgnoreCase)) continue;
+            d.EnabledAgents[i] = d.EnabledAgents.Contains(NewId, StringComparer.OrdinalIgnoreCase) ? "" : NewId;
+            changed = true;
+        }
+        if (changed) d.EnabledAgents.RemoveAll(string.IsNullOrEmpty);
+
+        // "roomId|agentId" 복합 키(첫 실행 여부·모델·effort).
+        for (int i = 0; i < d.AgentRoomsLaunched.Count; i++)
+        {
+            var renamed = RenameAgentSuffix(d.AgentRoomsLaunched[i], OldId, NewId);
+            if (renamed == null) continue;
+            d.AgentRoomsLaunched[i] = renamed;
+            changed = true;
+        }
+        foreach (var map in new[] { d.AgentRoomModel, d.AgentRoomEffort })
+        {
+            foreach (var key in map.Keys.ToList())
+            {
+                var renamed = RenameAgentSuffix(key, OldId, NewId);
+                if (renamed == null || map.ContainsKey(renamed)) continue;
+                map[renamed] = map[key];
+                map.Remove(key);
+                changed = true;
+            }
+        }
+
+        // 스레드 ID: 새 저장소에 없는 방만 옮긴다(이미 새 이름으로 돌린 세션이 우선).
+        if (d.DevezCliRoomSessions.Count > 0)
+        {
+            foreach (var kv in d.DevezCliRoomSessions)
+                if (!d.DevezVibeRoomSessions.ContainsKey(kv.Key)) d.DevezVibeRoomSessions[kv.Key] = kv.Value;
+            d.DevezCliRoomSessions.Clear();
+            changed = true;
+        }
+        return changed;
+    }
+
+    /// <summary>"roomId|devezcli" → "roomId|devezvibe". 해당 없으면 null.</summary>
+    private static string? RenameAgentSuffix(string key, string oldId, string newId)
+    {
+        if (string.IsNullOrEmpty(key)) return null;
+        var cut = key.LastIndexOf('|');
+        if (cut < 0) return null;
+        return key.AsSpan(cut + 1).Equals(oldId, StringComparison.OrdinalIgnoreCase)
+            ? key[..(cut + 1)] + newId
+            : null;
     }
 
     private static bool IsParseable(string text)
@@ -430,7 +499,7 @@ public static class SettingsService
         changed |= Current.GrokRoomSessions.Remove(roomId);
         changed |= Current.AntigravityRoomSessions.Remove(roomId);
         changed |= Current.KimiRoomSessions.Remove(roomId);
-        changed |= Current.DevezCliRoomSessions.Remove(roomId);
+        changed |= Current.DevezVibeRoomSessions.Remove(roomId);
         changed |= Current.RoomForkSources.Remove(roomId);
         changed |= Current.AgentRoomsLaunched.RemoveAll(k => k.StartsWith(roomId + "|", StringComparison.Ordinal)) > 0;
         if (changed) Save();
@@ -447,7 +516,7 @@ public static class SettingsService
                 Current.OpenCodeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.GajaeRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 // dvz 세션은 codex rollout 파일 그 자체라 codex 보호 목록에 합친다(클리너 카테고리도 codex).
-                Current.CodexRoomSessions.Values.Concat(Current.DevezCliRoomSessions.Values)
+                Current.CodexRoomSessions.Values.Concat(Current.DevezVibeRoomSessions.Values)
                     .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 Current.GrokRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
                 Current.AntigravityRoomSessions.Values.Where(v => !string.IsNullOrWhiteSpace(v)).ToList(),
@@ -1001,21 +1070,21 @@ public static class SettingsService
         if (Current.KimiRoomSessions.Remove(roomId)) Save();
     }
 
-    // ── Devez CLI(dvz) 스레드 ID (dvz 가 sessions\<room>.txt 에 기록 → settings 영속) ─────
-    public static string? LoadDevezCliRoomSession(string roomId)
-        => Current.DevezCliRoomSessions.TryGetValue(roomId, out var s) ? s : null;
+    // ── Devez Vibe(dvz) 스레드 ID (dvz 가 sessions\<room>.txt 에 기록 → settings 영속) ─────
+    public static string? LoadDevezVibeRoomSession(string roomId)
+        => Current.DevezVibeRoomSessions.TryGetValue(roomId, out var s) ? s : null;
 
-    public static void SaveDevezCliRoomSession(string roomId, string sessionId)
+    public static void SaveDevezVibeRoomSession(string roomId, string sessionId)
     {
         // codex thread id = UUID. 형식이 어긋난 값(내부 에이전트 ID 등)은 resume 이 불가능하므로 버린다.
         if (!Guid.TryParse(sessionId, out _)) return;
-        Current.DevezCliRoomSessions[roomId] = sessionId;
+        Current.DevezVibeRoomSessions[roomId] = sessionId;
         Save();
     }
 
-    public static void ClearDevezCliRoomSession(string roomId)
+    public static void ClearDevezVibeRoomSession(string roomId)
     {
-        if (Current.DevezCliRoomSessions.Remove(roomId)) Save();
+        if (Current.DevezVibeRoomSessions.Remove(roomId)) Save();
     }
 
     // ── grok 세션 ID (훅 → settings 영속) ─────

@@ -405,7 +405,7 @@ public static class ExternalSessionService
         "opencode" => SettingsService.LoadOpenCodeRoomSession(roomId),
         "gajae" => SettingsService.LoadGajaeRoomSession(roomId),
         "antigravity" => SettingsService.LoadAntigravityRoomSession(roomId),
-        "devezcli" => SettingsService.LoadDevezCliRoomSession(roomId),
+        "devezvibe" => SettingsService.LoadDevezVibeRoomSession(roomId),
         _ => null,
     };
 
@@ -425,7 +425,7 @@ public static class ExternalSessionService
             sessionId,
         },
         "antigravity" => new[] { "--conversation", sessionId, "--dangerously-skip-permissions" },
-        "devezcli" => new[] { "-r", sessionId },
+        "devezvibe" => new[] { "-r", sessionId },
         _ => null,
     };
 

@@ -94,7 +94,7 @@ public partial class MainWindow : Window
     // grok — ~/.grok/hooks + 방별 상태 파일로 lastmsg/busy/session_id 추적 (codex 패턴).
     private readonly GrokHookService _grokHook = new();
     private readonly KimiHookService _kimiHook = new();
-    private readonly DevezCliStateService _devezCliState = new();
+    private readonly DevezVibeStateService _devezVibeState = new();
     // antigravity(agy) — hooks.json 훅(busy/waiting/conversation_id) + transcript_full.jsonl 폴링
     // (빠른 idle 확정 + lastmsg). ask_question/ask_permission 은 waiting(❗)으로 분리한다.
     private readonly AntigravityHookService _antigravityHook = new();
@@ -598,19 +598,19 @@ public partial class MainWindow : Window
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
 
-        // Devez CLI(dvz) — 훅 없이 CLI 자신이 상태 파일을 쓴다(kimi 와 같은 파일 규약).
-        _devezCliState.MessageChanged += (roomId, msg) =>
+        // Devez Vibe(dvz) — 훅 없이 CLI 자신이 상태 파일을 쓴다(kimi 와 같은 파일 규약).
+        _devezVibeState.MessageChanged += (roomId, msg) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindOwnedSession(roomId, "devezcli", "message");
+                var s = FindOwnedSession(roomId, "devezvibe", "message");
                 if (s == null) return;
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
-        _devezCliState.BusyChanged += (roomId, busy) =>
+        _devezVibeState.BusyChanged += (roomId, busy) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindOwnedSession(roomId, "devezcli", "busy");
+                var s = FindOwnedSession(roomId, "devezvibe", "busy");
                 if (s == null) return;
                 MarkSessionActivity(roomId);
                 bool was = s?.IsBusy ?? false;
@@ -619,14 +619,14 @@ public partial class MainWindow : Window
                     s.IsBusy = busy;
                     if (!busy) s.IsWaitingChoice = false;
                 }
-                NotifyIfSessionFinished(s, was, busy, () => _devezCliState.IsRoomBusy(roomId));
+                NotifyIfSessionFinished(s, was, busy, () => _devezVibeState.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
-        _devezCliState.WaitingChoiceChanged += (roomId, waiting) =>
+        _devezVibeState.WaitingChoiceChanged += (roomId, waiting) =>
             Dispatcher.InvokeAsync(() =>
             {
-                var s = FindOwnedSession(roomId, "devezcli", "waiting");
+                var s = FindOwnedSession(roomId, "devezvibe", "waiting");
                 if (s == null) return;
                 MarkSessionActivity(roomId);
                 bool wasWaiting = s?.IsWaitingChoice ?? false;
@@ -634,11 +634,11 @@ public partial class MainWindow : Window
                 NotifyIfSessionWaiting(s, wasWaiting, waiting, notificationDelayMs: 1500);
                 UpdateSessionBusyDisplay();
             });
-        _devezCliState.SessionChanged += (roomId, sid) =>
+        _devezVibeState.SessionChanged += (roomId, sid) =>
             Dispatcher.InvokeAsync(() =>
             {
-                if (FindOwnedSession(roomId, "devezcli", "session") == null) return;
-                SettingsService.SaveDevezCliRoomSession(roomId, sid);
+                if (FindOwnedSession(roomId, "devezvibe", "session") == null) return;
+                SettingsService.SaveDevezVibeRoomSession(roomId, sid);
                 foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
 
@@ -736,7 +736,7 @@ public partial class MainWindow : Window
             _antigravityHook.Start();
             KimiHookInstaller.EnsureInstalled();
             _kimiHook.Start();
-            _devezCliState.Start();  // dvz 는 설치할 훅이 없다 — CLI 가 직접 기록한 파일만 감시
+            _devezVibeState.Start();  // dvz 는 설치할 훅이 없다 — CLI 가 직접 기록한 파일만 감시
             OpenCodePluginInstaller.EnsureInstalled();
             _opencodeLastMsg.Start();
             _opencodeBusy.Start();
@@ -834,7 +834,7 @@ public partial class MainWindow : Window
             _grokHook.Dispose();
             _antigravityHook.Dispose();
             _kimiHook.Dispose();
-            _devezCliState.Dispose();
+            _devezVibeState.Dispose();
             _opencodeLastMsg.Dispose();
             _opencodeBusy.Dispose();
             _gajaeLastMsg.Dispose();
@@ -5529,8 +5529,8 @@ public partial class MainWindow : Window
     private static bool HasBusyOrWaitingTrackingFile(string? agentId, string roomId)
     {
         var agent = (agentId ?? "claude").Trim().ToLowerInvariant();
-        // 폴더명 = agentId 규약. devezcli 도 %APPDATA%\DevezCode\devezcli\{busy,waiting} 로 같은 모양이다.
-        if (agent is not ("codex" or "opencode" or "grok" or "antigravity" or "kimi" or "devezcli")) return false;
+        // 폴더명 = agentId 규약. devezvibe 도 %APPDATA%\DevezCode\devezvibe\{busy,waiting} 로 같은 모양이다.
+        if (agent is not ("codex" or "opencode" or "grok" or "antigravity" or "kimi" or "devezvibe")) return false;
         var safe = new string(roomId.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
         if (safe.Length == 0) return true;
         var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

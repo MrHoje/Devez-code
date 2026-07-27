@@ -27,7 +27,7 @@ public static class SessionExporter
             "gajae"    => FromGajae(roomId),
             "codex"    => FromCodex(roomId),
             // dvz 는 codex app-server 를 쓰므로 대화가 같은 rollout 에 남는다 — 파서를 그대로 재사용.
-            "devezcli" => FromCodex(roomId, SettingsService.LoadDevezCliRoomSession(roomId)),
+            "devezvibe" => FromCodex(roomId, SettingsService.LoadDevezVibeRoomSession(roomId)),
             "kimi"     => FromKimi(roomId),
             _          => new List<(string role, string text)>(),
         };
@@ -51,7 +51,7 @@ public static class SessionExporter
     private static string AgentLabel(string a) => a switch
     {
         "claude" => "Claude", "opencode" => "OpenCode", "gajae" => "가재코드",
-        "codex" => "Codex", "grok" => "Grok", "kimi" => "Kimi", "devezcli" => "Devez CLI", _ => a,
+        "codex" => "Codex", "grok" => "Grok", "kimi" => "Kimi", "devezvibe" => "Devez Vibe", _ => a,
     };
 
     // ── grok: 최신 CLI는 transcript를 SQLite에 저장하므로 공식 export 명령을 사용 ──

@@ -6,18 +6,21 @@ using System.Threading;
 
 namespace DevezCode.Services;
 
-/// <summary>Devez CLI(dvz) 가 방별로 떨군 상태 파일(sessions/busy/waiting/lastmsg)을 감시해
+/// <summary>Devez Vibe(dvz) 가 방별로 떨군 상태 파일(sessions/busy/waiting/lastmsg)을 감시해
 /// 마지막 user prompt · busy · ❗대기 · thread ID 를 알린다. 다른 에이전트와 달리 훅 스크립트가 없다 —
 /// dvz 자체(src/devezcode.rs)가 <c>DEVEZCODE_ROOM_ID</c> 를 보고 같은 경로에 직접 기록한다.
 /// 파일 규약은 KimiHookService/CodexHookService 와 동일(roomId 키, 원자적 rename 쓰기).</summary>
-public sealed class DevezCliStateService : IDisposable
+public sealed class DevezVibeStateService : IDisposable
 {
     private static string BaseDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "devezcli");
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "devezvibe");
     private static string LastmsgDir => Path.Combine(BaseDir, "lastmsg");
     private static string BusyDir => Path.Combine(BaseDir, "busy");
     private static string WaitingDir => Path.Combine(BaseDir, "waiting");
     private static string SessionDir => Path.Combine(BaseDir, "sessions");
+    /// <summary>개명 전(devezcli) 상태 폴더. 새 폴더가 없을 때만 통째로 옮겨 세션 복원을 잇는다.</summary>
+    private static string LegacyBaseDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "devezcli");
 
     private FileSystemWatcher? _lastmsgWatcher;
     private FileSystemWatcher? _busyWatcher;
@@ -67,10 +70,23 @@ public sealed class DevezCliStateService : IDisposable
         try { File.Delete(Path.Combine(BaseDir, "owners", name)); } catch { }
     }
 
+    /// <summary>Devez CLI → Devez Vibe 개명 1회 이관. 새 폴더가 이미 있으면(새 이름 dvz 가 한 번 돈 뒤)
+    /// 그쪽이 최신이라 건드리지 않는다 — 스레드 ID 는 settings 에도 있어 복원은 유지된다.</summary>
+    private static void MigrateLegacyDirOnce()
+    {
+        try
+        {
+            if (Directory.Exists(BaseDir) || !Directory.Exists(LegacyBaseDir)) return;
+            Directory.Move(LegacyBaseDir, BaseDir);
+        }
+        catch { /* 실패해도 새 폴더로 새로 시작 */ }
+    }
+
     public void Start()
     {
         try
         {
+            MigrateLegacyDirOnce();
             Directory.CreateDirectory(LastmsgDir);
             Directory.CreateDirectory(BusyDir);
             Directory.CreateDirectory(WaitingDir);

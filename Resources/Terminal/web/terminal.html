@@ -13,8 +13,9 @@
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0C0C0C; }
   .term-container { position: absolute; inset: 0; padding: 6px 0 6px 22px; display: none; }
   .term-container.external-mirror { overflow: hidden; }
-  /* Devez CLI: 우측 마지막 셀이 경계에 붙어 잘리지 않게 안전영역을 두고, 하단은 기본 6px에 6px 추가. */
-  .term-container.agent-devezcli { padding-right: 10px; padding-bottom: 12px; }
+  /* Devez Vibe가 마지막 터미널 셀을 자체적으로 보호한다. 호스트에서 우측
+     안전영역을 한 번 더 빼면 컴포저 경계가 본문보다 일찍 끝난다. */
+  .term-container.agent-devezvibe { padding-bottom: 12px; }
   /* opencode 세션: 좌우 여백을 더 줄인다 — 패딩 0 + 컨테이너 경계를 바깥으로 밀어(좌 8 / 우 17) 여백 제거 */
   .term-container.agent-opencode { padding: 6px 0 12px 0; left: 6px; right: -9px; bottom: -22px; }
   /* 가재코드(gjc) 인라인 TUI — 입력창이 바닥에 딱 붙지 않게 하단 여백 + 우측 여백 8px 확보. */
@@ -794,7 +795,7 @@
     // B형(hw커서형): 입력 캐럿 = 논리 커서. 조합 중 리페인트가 커서를 viewport 밖/statusLine
     // 으로 옮기면 xterm 이 조합뷰를 못 따라가거나(0,0 잔류) 여기저기 튄다 → 조합 중 고정 대상.
     // 새 B형 에이전트는 여기에 id 만 추가하면 pin/chain/ghost/커서숨김 전부 자동 적용된다.
-    const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode' || agent === 'devezcli');
+    const pinsLogicalCaret = (agent === 'codex' || agent === 'opencode' || agent === 'devezvibe');
     // claude 는 A형(자체커서형)이지만 조합 위치가 틀어지는 유일한 A형이라 블록커서 스캔으로 처리.
     const isClaude = (agent === 'claude');
     const needsCaretFix = pinsLogicalCaret || isClaude; // 그 외(gajae/grok/셸)는 전부 무개입
@@ -1787,7 +1788,7 @@
     return ' ';
   }
 
-  // Devez CLI가 OSC 777로 남긴 행 메타데이터를 사용해 UI 전용 marker/indent를 복사에서
+  // Devez Vibe가 OSC 777로 남긴 행 메타데이터를 사용해 UI 전용 marker/indent를 복사에서
   // 제외하고, 화면 폭 때문에 생긴 줄바꿈만 다시 이어 붙인다. 실제 Enter는 그대로 보존한다.
   function normalizedSelection(entry) {
     const term = entry.term;
@@ -2046,7 +2047,7 @@
 
     const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
     terms[roomId] = entry;
-    // Devez CLI 전용 copy metadata. 현재 버퍼의 절대 행에 marker 폭과 soft-wrap 여부를 기록한다.
+    // Devez Vibe 전용 copy metadata. 현재 버퍼의 절대 행에 marker 폭과 soft-wrap 여부를 기록한다.
     // 다른 CLI의 OSC는 건드리지 않으며, clear 신호에서 오래된 행 정보를 함께 비운다.
     try {
       entry.copyOsc = term.parser.registerOscHandler(777, function (data) {
