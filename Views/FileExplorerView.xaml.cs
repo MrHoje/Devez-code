@@ -937,6 +937,13 @@ public partial class FileExplorerView : UserControl
         catch { /* 실패 무시 */ }
     }
 
+    private void OpenDirectoryInExplorer_Click(object sender, RoutedEventArgs e)
+    {
+        if (NodeOf(sender) is not { IsDirectory: true } node || !Directory.Exists(node.FullPath)) return;
+        try { Process.Start(new ProcessStartInfo("explorer.exe", $"\"{node.FullPath}\"") { UseShellExecute = false }); }
+        catch { /* 실패 무시 */ }
+    }
+
     /// <summary>빈 영역 메뉴의 "탐색기에서 열기" — 루트 폴더를 Windows Explorer 에서 연다.</summary>
     private void RootRevealInExplorer_Click(object sender, RoutedEventArgs e)
     {

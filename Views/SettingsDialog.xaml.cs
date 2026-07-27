@@ -95,7 +95,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.19.2", "2026-07-27", true, new[]
+        ("v1.19.3", "2026-07-28", true, new[]
+        {
+            "사이드패널 파일 목록의 우클릭 메뉴를 폴더/파일에 맞게 정리했습니다.",
+            "폴더 우클릭 메뉴에 \"새 파일\", \"새 폴더\", \"탐색기에서 열기\"를 추가했습니다.",
+            "파일 이름 옆 빈 여백에서도 우클릭 메뉴가 열리도록 개선했습니다.",
+        }),
+        ("v1.19.2", "2026-07-27", false, new[]
         {
             "Devez Vibe CLI 에이전트를 추가했습니다.",
         }),
