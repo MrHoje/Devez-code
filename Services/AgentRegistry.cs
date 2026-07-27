@@ -150,7 +150,6 @@ public static class AgentRegistry
             InstallCommand = "npm install -g devez-vibe",
             UpdateCommand = "", // `dvz update` 는 새 콘솔을 띄우는 대화형이라 앱 시작 시 자동 호출 대상이 아님
             ResumeFlag = "-c",  // Tier1 폴백 전용(전용 분기는 -r <id>)
-            PreviewNote = "(준비중인 기능입니다.)",
         },
     };
 
