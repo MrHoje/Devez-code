@@ -143,11 +143,11 @@ public static class AgentRegistry
             // TryBuildDevezVibeDirectLaunch 가 dvz 가 직접 기록한 sessions\<room>.txt → `dvz -r <id>` 로 처리.
             // 상태(busy/waiting/lastmsg)도 dvz 가 %APPDATA%\DevezCode\devezvibe\ 에 직접 쓴다(훅 없음).
             // 테마는 --theme minimal|soft|dark 로 DevezCode 3테마와 1:1. alt-screen TUI → InlineTui=false.
-            // 설치 명령은 배포 경로가 확정되기 전까지 비워 둔다(설정 목록에서 '설치 명령' 행이 사라짐).
+            // npm 전역 설치로 배포하며, 설치 후 실행 커맨드는 그대로 `dvz`.
             Id = "devezvibe", DisplayName = "Devez Vibe", Provider = "Devez",
             ExeNames = new[] { "dvz.exe", "dvz.cmd", "dvz.bat", "dvz.ps1", "dvz" },
             Command = "dvz",
-            InstallCommand = "",
+            InstallCommand = "npm install -g devez-vibe",
             UpdateCommand = "", // `dvz update` 는 새 콘솔을 띄우는 대화형이라 앱 시작 시 자동 호출 대상이 아님
             ResumeFlag = "-c",  // Tier1 폴백 전용(전용 분기는 -r <id>)
             PreviewNote = "(준비중인 기능입니다.)",
