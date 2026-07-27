@@ -95,7 +95,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.19.0", "2026-07-24", true, new[]
+        ("v1.19.1", "2026-07-27", true, new[]
+        {
+            "프로젝트 드래그 시 간헐적으로 앱이 크래시로 종료되던 문제를 수정했습니다.",
+        }),
+        ("v1.19.0", "2026-07-24", false, new[]
         {
             "웹브라우저 탭을 Windows 기본 브라우저에서 열 수 있는 기능을 추가했습니다.",
             "웹브라우저 탭 우클릭 메뉴에 \"URL 복사\"를 추가했습니다.",
