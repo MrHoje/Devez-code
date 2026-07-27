@@ -842,9 +842,14 @@ public sealed class TerminalSessionManager
         var theme = DevezCode.App.CurrentTheme;
         if (theme is not ("minimal" or "soft" or "dark")) theme = "dark";
 
+        // ConPTY 콘솔의 기본 출력 코드페이지는 949(시스템 ANSI)다. claude/codex 는 node 가 콘솔에
+        // WriteConsoleW(유니코드)로 쓰거나 스스로 UTF-8 로 올려서 무관하지만, dvz 의 OpenTUI 백엔드는
+        // 렌더 프레임을 원시 UTF-8 바이트로 콘솔 핸들에 직접 쓴다 → 949 로 해석돼 박스문자·기호는 '?',
+        // 한글은 바이트 짝이 어긋나 ESC 까지 삼키며 화면 전체가 깨졌다(외부 터미널은 65001 이라 정상).
+        // 실측: 같은 프레임이 949 에서 '?' 1083바이트, 65001 에서 45바이트.
         string body = string.IsNullOrEmpty(sessionId)
-            ? $"call {command} --theme {theme}\r\nexit"
-            : $"call {command} --theme {theme} -r {sessionId}\r\nexit";
+            ? $"chcp 65001 >nul\r\ncall {command} --theme {theme}\r\nexit"
+            : $"chcp 65001 >nul\r\ncall {command} --theme {theme} -r {sessionId}\r\nexit";
 
         try
         {
