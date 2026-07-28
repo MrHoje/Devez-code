@@ -2150,6 +2150,8 @@ public partial class SidebarView : UserControl
             hitTestSlots: true,
             suppressDisplacement: _projectColumns >= 2,
             preserveRowOrder: true,
+            // 빈 공간 최근접 판정이 포인터가 속한 컬럼을 우선하도록 컬럼 경계를 전달(1열이면 무한대=비활성).
+            gridMidX: gridMidX,
             hitTestXOverride: folderHitTestX,
             useLiveLayoutPlaceholder: _projectColumns >= 2 && item is ProjectFolderItem { EffectiveColumns: >= 2 },
             useFixedLayoutPlaceholder: _projectColumns < 2,

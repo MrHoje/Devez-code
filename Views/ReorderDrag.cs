@@ -793,6 +793,21 @@ internal sealed class ReorderDrag<T> where T : class
             .ToList();
         if (candidates.Count == 0) return false;
 
+        // 2열 루트 목록(gridMidX 지정): 포인터가 속한 컬럼의 카드로 후보를 먼저 제한한다.
+        // 반대 컬럼 카드가 단지 세로로 가깝다는 이유로 선택되면, 소스가 flat 순서상 목표 컬럼
+        // 카드의 위/아래 어디에 꽂힐지 예측할 수 없어 프리뷰가 목표 컬럼 카드를 위아래로 널뛰게 한다.
+        // 전체폭 폴더는 양쪽 컬럼에 걸치므로 항상 남기고, 해당 컬럼에 후보가 없으면 전체로 폴백한다.
+        if (!_horizontal && _gridMidX > 0 && !double.IsPositiveInfinity(_gridMidX))
+        {
+            bool pointerInRightColumn = pointer.X >= _gridMidX;
+            var laneCandidates = candidates
+                .Where(candidate =>
+                    (candidate.Bounds.Left < _gridMidX && candidate.Bounds.Right > _gridMidX)
+                    || (candidate.Bounds.Left + candidate.Bounds.Width / 2 >= _gridMidX) == pointerInRightColumn)
+                .ToList();
+            if (laneCandidates.Count > 0) candidates = laneCandidates;
+        }
+
         // 2열의 짧은 컬럼 아래에서는 같은 Y의 반대 컬럼 카드보다, 포인터가 속한 컬럼의
         // 마지막 카드를 우선해야 한다. 해당 축을 덮는 일반 폭 슬롯이 있을 때만 같은 lane으로 제한한다.
         // 전체 폭 폴더만 포인터를 덮거나 빈 컬럼처럼 기준 슬롯이 없으면 전체 중 가장 가까운 항목으로 폴백한다.
