@@ -6,7 +6,7 @@ using System.Windows.Input;
 namespace DevezCode.Services;
 
 /// <summary>
-/// 전역 저수준 키보드 훅: 한자키 + 좌/우 방향키로 활성 세션 탭을 이전/다음으로 이동.
+/// 전역 저수준 키보드 훅: 한자키 + 방향키로 활성 세션 탭을 이전/다음으로 이동.
 /// 임베디드 터미널(WebView2=별도 Edge 프로세스)이 키 입력을 점유 중이어도 훅이 먼저 가로채
 /// 터미널로 전파되지 않게 차단(return 1)한 뒤 자체 탭 전환을 호출한다.
 ///
@@ -15,7 +15,7 @@ namespace DevezCode.Services;
 ///
 /// 시스템 전역으로 동작 — 우리 앱이 포그라운드가 아니어도(다른 앱/터미널이 점유 중이어도)
 /// 한자+방향키를 가로챈다. 콜백에서 탭 전환 + 창 활성화(앞으로)를 처리한다.
-/// (트레이드오프: 한자+좌/우 조합은 모든 앱에서 가로채진다. 한자/방향키 단독은 통과.)
+/// (트레이드오프: 한자+방향키 조합은 모든 앱에서 가로채진다. 한자/방향키 단독은 통과.)
 ///
 /// <para>훅은 전용 스레드(자체 메시지 펌프)에 설치한다. WH_KEYBOARD_LL 콜백은 훅을 설치한
 /// 스레드의 메시지 큐에서 처리되므로, UI 스레드에 설치하면 UI 스레드가 바쁠 때(레이아웃/렌더 폭주 등)
@@ -32,7 +32,7 @@ public static class GlobalTabHotkey
     private const int WM_SYSKEYUP    = 0x0105;
     private const int WM_QUIT        = 0x0012;
 
-    // 사용자 설정 가능 — 기본 한자(0x19) + 좌(0x25)/우(0x27) 방향키. SettingsService 에서 로드.
+    // 사용자 설정 가능 — 기본 한자(0x19) + 좌(0x25)/우(0x27) 방향키. 위/아래는 각각 좌/우 별칭.
     private static volatile int _modVk  = 0x19;
     private static volatile int _prevVk = 0x25;
     private static volatile int _nextVk = 0x27;
@@ -123,9 +123,10 @@ public static class GlobalTabHotkey
                 if (isDown) _modDown = true;
                 else if (isUp) _modDown = false;
             }
-            else if (isDown && _modDown && (vk == _prevVk || vk == _nextVk))
+            else if (isDown && _modDown &&
+                     (vk == _prevVk || vk == 0x26 || vk == _nextVk || vk == 0x28))
             {
-                bool next = vk == _nextVk;
+                bool next = vk == _nextVk || vk == 0x28;
                 var cb = _onPrevNext;
                 if (cb != null)
                     Application.Current?.Dispatcher.BeginInvoke(() => cb(next));
