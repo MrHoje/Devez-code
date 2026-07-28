@@ -148,7 +148,7 @@ public static class AgentRegistry
             ExeNames = new[] { "dvz.exe", "dvz.cmd", "dvz.bat", "dvz.ps1", "dvz" },
             Command = "dvz",
             InstallCommand = "npm install -g devez-vibe",
-            UpdateCommand = "", // `dvz update` 는 새 콘솔을 띄우는 대화형이라 앱 시작 시 자동 호출 대상이 아님
+            UpdateCommand = "dvz update",
             ResumeFlag = "-c",  // Tier1 폴백 전용(전용 분기는 -r <id>)
         },
     };
