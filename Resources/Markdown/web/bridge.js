@@ -127,6 +127,7 @@
   // <mark>를 직접 박으면 제거된다. Highlight API는 DOM을 수정하지 않아 안전하다.
   var searchRanges = [];    // 현재 검색 결과 Range[]
   var searchIndex = -1;     // 현재 선택된 매치 인덱스
+  var lastQuery = null;     // 직전에 검색을 돌린 질의 (input 중복 발생 가드 — 아래 input 핸들러 주석 참고)
 
   function getWysiwygRoot() {
     // Toast UI Editor WYSIWYG 모드의 편집 가능 영역
@@ -200,6 +201,7 @@
     clearHighlights();
     searchEl.classList.add('open');
     searchInput.value = '';
+    lastQuery = null;
     searchCount.textContent = '0/0';
     setTimeout(function () { searchInput.focus(); }, 0);
   }
@@ -207,13 +209,20 @@
   function closeSearch() {
     searchEl.classList.remove('open');
     clearHighlights();
+    searchInput.value = '';   // 닫으면 검색어를 비운다 → 다시 열면 빈 상태
+    lastQuery = null;
     editor.focus();
   }
 
   document.getElementById('md-search-close').addEventListener('click', closeSearch);
   document.getElementById('md-search-prev').addEventListener('click', function () { selectMatch(-1); });
   document.getElementById('md-search-next').addEventListener('click', function () { selectMatch(1); });
+  // IME 조합 확정(한글 입력 후 첫 Enter)은 값이 그대로인 input 이벤트를 한 번 더 발생시키는데,
+  // 그때 highlightText 를 다시 돌리면 방금 Enter 로 옮긴 인덱스가 1로 되돌아가
+  // "첫 Enter 가 먹지 않는" 증상이 된다 → 값이 같으면 재검색을 건너뛴다.
   searchInput.addEventListener('input', function () {
+    if (searchInput.value === lastQuery) return;
+    lastQuery = searchInput.value;
     highlightText(searchInput.value);
   });
   searchInput.addEventListener('keydown', function (e) {

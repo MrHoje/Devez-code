@@ -202,7 +202,8 @@
 
   /* ── 검색 오버레이 ────────────────────────────────────────── */
   #md-search {
-    position: absolute; top: 4px; right: 12px; z-index: 9998;
+    /* top 40px — 상단 툴바(뷰 전환/편집 컨트롤) 아래로 내려 겹치지 않게 한다. */
+    position: absolute; top: 40px; right: 12px; z-index: 9998;
     display: none; align-items: center; gap: 6px;
     background: var(--md-bg, #fff); border: 1px solid var(--ob-border);
     border-radius: 8px; padding: 5px 8px;

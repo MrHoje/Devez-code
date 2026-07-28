@@ -89,32 +89,40 @@
     white-space: pre; pointer-events: none;
   }
 
-  /* ── 터미널 내 검색창 (Ctrl+Shift+F) — Windows Terminal 검색바 정합 ── */
+  /* ── 터미널 내 검색창 (Ctrl+Shift+F) ──────────────────────────
+     마크다운 뷰어 검색창(#md-search)과 같은 형태로 맞춘다: 입력칸에 따로 보더를 두지 않고
+     바깥 카드 하나로 감싸고, 카운트는 흐린 소형 텍스트, 버튼은 22px 정사각 + 호버 배경.
+     색만 --term-bg/--term-fg 기반 회색 반투명이라 라이트/다크 테마 모두 대응한다. */
   #search-bar {
     position: absolute; top: 8px; right: 12px; z-index: 10;
     display: none; align-items: center; gap: 6px;
-    padding: 6px 8px; border-radius: 8px;
+    padding: 5px 8px; border-radius: 8px;
     background: var(--term-bg, #1b1b1b);
-    border: 1px solid rgba(255,255,255,0.18);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+    border: 1px solid rgba(128,128,128,0.32);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.28);
     font-family: 'Pretendard', 'Malgun Gothic', sans-serif; font-size: 12px;
-    color: var(--term-fg, #CCCCCC);
+    color: var(--term-fg, #CCCCCC); user-select: none;
   }
   #search-bar.open { display: flex; }
   #search-input {
-    width: 200px; padding: 4px 6px; border-radius: 5px;
-    border: 1px solid rgba(255,255,255,0.22);
-    background: rgba(0,0,0,0.25); color: var(--term-fg, #CCCCCC);
-    font-size: 12px; outline: none;
+    width: 160px; height: 24px; padding: 0 8px; margin: 0;
+    border: none; outline: none; background: transparent;
+    color: var(--term-fg, #CCCCCC); font-size: 13px; font-family: inherit;
   }
-  #search-input:focus { border-color: rgba(120,170,255,0.8); }
-  #search-count { min-width: 54px; text-align: center; opacity: 0.7; font-variant-numeric: tabular-nums; }
+  #search-input::placeholder { color: var(--term-fg, #CCCCCC); opacity: 0.55; }
+  #search-count {
+    min-width: 40px; text-align: center; white-space: nowrap;
+    font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums;
+  }
   #search-bar button {
-    width: 24px; height: 24px; padding: 0; cursor: pointer;
-    border: none; border-radius: 5px; background: transparent;
-    color: var(--term-fg, #CCCCCC); font-size: 13px; line-height: 1;
+    width: 22px; height: 22px; padding: 0; margin: 0; cursor: pointer;
+    border: none; border-radius: 4px; background: transparent;
+    color: var(--term-fg, #CCCCCC); font-size: 14px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
   }
-  #search-bar button:hover { background: rgba(255,255,255,0.12); }
+  #search-bar button:hover { background: rgba(128,128,128,0.15); }
+  #search-close { font-size: 15px; opacity: 0.65; margin-left: 2px; }
+  #search-close:hover { opacity: 1; }
 
   /* ── 세션 로딩 스피너 (테마 변경 재시작·세션 진입 중) ──────────────
      WebView2 는 HwndHost 라 항상 WPF 위에 그려진다 → WPF 오버레이로는 터미널을
@@ -208,15 +216,16 @@
   }
   #copy-toast.on { opacity: 1; transform: translateY(0); }
 
-  /* 세션 단축키 힌트 오버레이 — Ctrl+Shift 누르면 터미널 우상단(우/상 각 15px)에 표시.
-     애니메이션은 opacity fade 만 쓴다: transform(translateY) 을 쓰면 서브픽셀 이동으로 텍스트가
-     흐려지므로 위치는 고정하고 opacity 만 전환 → 선명 유지. visibility 로 숨김 시 완전히 비활성.
+  /* 세션 단축키 힌트 오버레이 — 터미널 우상단(우/상 각 15px)에 평상시엔 접힌 배지("Ctrl+Shift
+     단축키")로 반투명하게 떠 있고, Ctrl+Shift 를 누르면 같은 자리에서 목록으로 펼쳐진다.
+     애니메이션은 opacity/padding 만 쓴다: transform(translateY) 을 쓰면 서브픽셀 이동으로 텍스트가
+     흐려지므로 위치는 고정한다 → 선명 유지.
      색은 --term-bg/--term-fg 기반 + 회색 반투명이라 라이트/다크 모두 대응. */
   #shortcut-hint {
-    opacity: 0; visibility: hidden;
-    transition: opacity 0.14s ease, visibility 0s linear 0.14s;
+    opacity: 0.5;
+    transition: opacity 0.14s ease, padding 0.14s ease, border-radius 0.14s ease;
     position: absolute; right: 15px; top: 15px; z-index: 70;
-    padding: 12px 14px; border-radius: 12px;
+    padding: 5px 9px; border-radius: 8px;
     background: var(--term-bg, #1b1b1b); color: var(--term-fg, #CCCCCC);
     border: 1px solid rgba(128,128,128,0.32);
     box-shadow: 0 8px 22px rgba(0,0,0,0.35);
@@ -224,10 +233,20 @@
     pointer-events: none;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   }
-  #shortcut-hint.on { opacity: 1; visibility: visible; transition: opacity 0.14s ease; }
-  #shortcut-hint .sh-title { font-size: 12px; font-weight: 600; color: var(--term-fg, #CCCCCC); margin: 0 2px 9px; }
-  #shortcut-hint .sh-row { display: flex; align-items: center; margin-top: 6px; }
-  #shortcut-hint .sh-row:first-of-type { margin-top: 0; }
+  #shortcut-hint.on { opacity: 1; padding: 12px 14px; border-radius: 12px; }
+  /* 로딩 스피너·외부 터미널 인계 중에는 배지를 숨긴다(그 화면 위에 떠 있으면 어수선하다).
+     검색창은 같은 우상단이고 z-index 도 배지보다 낮아 반드시 비켜줘야 한다. */
+  body:has(#loading-overlay.on) #shortcut-hint,
+  body:has(#external-session-overlay.on) #shortcut-hint,
+  body:has(#search-bar.open) #shortcut-hint { opacity: 0; }
+  #shortcut-hint .sh-title { font-size: 11px; font-weight: 600; color: var(--term-fg, #CCCCCC); margin: 0; }
+  #shortcut-hint.on .sh-title { font-size: 12px; margin: 0 2px 9px; }
+  /* 접힘/펼침에 따라 제목 문구 교체 + 목록 표시 */
+  #shortcut-hint .sh-title-open, #shortcut-hint .sh-row { display: none; }
+  #shortcut-hint.on .sh-title-idle { display: none; }
+  #shortcut-hint.on .sh-title-open { display: inline; }
+  #shortcut-hint.on .sh-row { display: flex; align-items: center; margin-top: 6px; }
+  #shortcut-hint.on .sh-row:first-of-type { margin-top: 0; }
   #shortcut-hint .sh-key {
     display: inline-block; min-width: 104px; text-align: center; box-sizing: border-box;
     padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--term-fg, #CCCCCC);
@@ -273,18 +292,27 @@
 </div>
 <div id="copy-toast"></div>
 <div id="shortcut-hint">
-  <div class="sh-title">세션 단축키</div>
+  <div class="sh-title"><span class="sh-title-idle">Ctrl+Shift 단축키</span><span class="sh-title-open">세션 단축키</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+T</span><span class="sh-label">새 세션</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+N</span><span class="sh-label">이름 바꾸기</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+H</span><span class="sh-label">세션 숨기기</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+W</span><span class="sh-label">세션 닫기</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+Del</span><span class="sh-label">세션 삭제</span></div>
+  <div class="sh-row"><span class="sh-key">Ctrl+Shift+F</span><span class="sh-label">세션 내 검색</span></div>
 </div>
 <div id="search-bar">
-  <input id="search-input" type="text" placeholder="검색" spellcheck="false" />
+  <input id="search-input" type="text" placeholder="검색…" autocomplete="off" spellcheck="false" />
   <span id="search-count"></span>
-  <button id="search-prev" title="이전 (Shift+Enter)">&#8593;</button>
-  <button id="search-next" title="다음 (Enter)">&#8595;</button>
+  <button id="search-prev" title="이전 (Shift+Enter)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="18 15 12 9 6 15"/>
+    </svg>
+  </button>
+  <button id="search-next" title="다음 (Enter)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </button>
   <button id="search-close" title="닫기 (Esc)">&#10005;</button>
 </div>
 <script>
@@ -381,8 +409,9 @@
     e.stopImmediatePropagation();
   }, true);
 
-  // ── Ctrl+Shift 홀드 → 세션 단축키 힌트 오버레이 (터미널 우상단, 0.2초) ──
-  // Ctrl+Shift 만(Alt 없이) 다른 키 없이 0.2초 누르면 표시. 떼거나 다른 키를 누르면 즉시 숨김.
+  // ── Ctrl+Shift 홀드 → 세션 단축키 오버레이 펼침 (터미널 우상단) ──
+  // 평상시엔 접힌 배지가 반투명하게 떠 있고, Ctrl+Shift 만(Alt 없이) 누르면 목록으로 펼쳐진다.
+  // 떼거나 다른 키를 누르면 즉시 다시 접힌다('on' 제거 = 접힘, 배지는 계속 표시).
   let _hintShown = false;
   function _hintShow() { const el = document.getElementById('shortcut-hint'); if (el) el.classList.add('on'); _hintShown = true; }
   function _hintCancel() {
@@ -1852,6 +1881,8 @@
     },
   };
 
+  let lastSearchQuery = null; // 직전에 검색을 돌린 질의 (input 중복 발생 가드 — 아래 input 핸들러 참고)
+
   function openSearch() {
     searchBar.classList.add('open');
     searchInput.focus();
@@ -1860,6 +1891,9 @@
   }
   function closeSearch() {
     searchBar.classList.remove('open');
+    searchInput.value = '';   // 닫으면 검색어를 비운다 → 다시 열면 빈 상태
+    lastSearchQuery = null;
+    searchCount.textContent = '';
     const a = terms[activeRoomId];
     if (a) { try { a.search.clearDecorations(); } catch (e) {} a.term.focus(); }
   }
@@ -1882,7 +1916,14 @@
     if (e.key === 'Enter')       { e.preventDefault(); runSearch(e.shiftKey ? 'prev' : 'next'); }
     else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
   });
-  searchInput.addEventListener('input', function () { runSearch('next'); });
+  // IME 조합 확정(한글 입력 후 첫 Enter)은 값이 그대로인 input 이벤트를 한 번 더 발생시킨다.
+  // 그때 findNext 를 또 호출하면 방금 Enter 로 옮긴 위치에서 한 칸 더 밀려버리므로,
+  // 값이 바뀌지 않았으면 재검색하지 않는다.
+  searchInput.addEventListener('input', function () {
+    if (searchInput.value === lastSearchQuery) return;
+    lastSearchQuery = searchInput.value;
+    runSearch('next');
+  });
   document.getElementById('search-next').addEventListener('click', function () { runSearch('next'); searchInput.focus(); });
   document.getElementById('search-prev').addEventListener('click', function () { runSearch('prev'); searchInput.focus(); });
   document.getElementById('search-close').addEventListener('click', closeSearch);
@@ -3134,7 +3175,11 @@
           try { t.el.remove(); } catch (e) {}
           delete terms[msg.roomId];
           if (activeRoomId === msg.roomId) {
-            if (searchBar.classList.contains('open')) { searchBar.classList.remove('open'); searchCount.textContent = ''; }
+            // 세션 폐기로 검색창을 닫는 경로 — Esc 와 동일하게 검색어까지 비운다.
+            if (searchBar.classList.contains('open')) {
+              searchBar.classList.remove('open');
+              searchInput.value = ''; lastSearchQuery = null; searchCount.textContent = '';
+            }
             activeRoomId = null;
           }
           syncExternalOverlay();
