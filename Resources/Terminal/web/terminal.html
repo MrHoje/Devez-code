@@ -216,16 +216,15 @@
   }
   #copy-toast.on { opacity: 1; transform: translateY(0); }
 
-  /* 세션 단축키 힌트 오버레이 — 터미널 우상단(우/상 각 15px)에 평상시엔 접힌 배지("Ctrl+Shift
-     단축키")로 반투명하게 떠 있고, Ctrl+Shift 를 누르면 같은 자리에서 목록으로 펼쳐진다.
-     애니메이션은 opacity/padding 만 쓴다: transform(translateY) 을 쓰면 서브픽셀 이동으로 텍스트가
-     흐려지므로 위치는 고정한다 → 선명 유지.
+  /* 세션 단축키 힌트 오버레이 — Ctrl+Shift 누르면 터미널 우상단(우/상 각 15px)에 표시.
+     애니메이션은 opacity fade 만 쓴다: transform(translateY) 을 쓰면 서브픽셀 이동으로 텍스트가
+     흐려지므로 위치는 고정하고 opacity 만 전환 → 선명 유지. visibility 로 숨김 시 완전히 비활성.
      색은 --term-bg/--term-fg 기반 + 회색 반투명이라 라이트/다크 모두 대응. */
   #shortcut-hint {
-    opacity: 0.5;
-    transition: opacity 0.14s ease, padding 0.14s ease, border-radius 0.14s ease;
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.14s ease, visibility 0s linear 0.14s;
     position: absolute; right: 15px; top: 15px; z-index: 70;
-    padding: 5px 9px; border-radius: 8px;
+    padding: 12px 14px; border-radius: 12px;
     background: var(--term-bg, #1b1b1b); color: var(--term-fg, #CCCCCC);
     border: 1px solid rgba(128,128,128,0.32);
     box-shadow: 0 8px 22px rgba(0,0,0,0.35);
@@ -233,20 +232,10 @@
     pointer-events: none;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   }
-  #shortcut-hint.on { opacity: 1; padding: 12px 14px; border-radius: 12px; }
-  /* 로딩 스피너·외부 터미널 인계 중에는 배지를 숨긴다(그 화면 위에 떠 있으면 어수선하다).
-     검색창은 같은 우상단이고 z-index 도 배지보다 낮아 반드시 비켜줘야 한다. */
-  body:has(#loading-overlay.on) #shortcut-hint,
-  body:has(#external-session-overlay.on) #shortcut-hint,
-  body:has(#search-bar.open) #shortcut-hint { opacity: 0; }
-  #shortcut-hint .sh-title { font-size: 11px; font-weight: 600; color: var(--term-fg, #CCCCCC); margin: 0; }
-  #shortcut-hint.on .sh-title { font-size: 12px; margin: 0 2px 9px; }
-  /* 접힘/펼침에 따라 제목 문구 교체 + 목록 표시 */
-  #shortcut-hint .sh-title-open, #shortcut-hint .sh-row { display: none; }
-  #shortcut-hint.on .sh-title-idle { display: none; }
-  #shortcut-hint.on .sh-title-open { display: inline; }
-  #shortcut-hint.on .sh-row { display: flex; align-items: center; margin-top: 6px; }
-  #shortcut-hint.on .sh-row:first-of-type { margin-top: 0; }
+  #shortcut-hint.on { opacity: 1; visibility: visible; transition: opacity 0.14s ease; }
+  #shortcut-hint .sh-title { font-size: 12px; font-weight: 600; color: var(--term-fg, #CCCCCC); margin: 0 2px 9px; }
+  #shortcut-hint .sh-row { display: flex; align-items: center; margin-top: 6px; }
+  #shortcut-hint .sh-row:first-of-type { margin-top: 0; }
   #shortcut-hint .sh-key {
     display: inline-block; min-width: 104px; text-align: center; box-sizing: border-box;
     padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--term-fg, #CCCCCC);
@@ -292,7 +281,7 @@
 </div>
 <div id="copy-toast"></div>
 <div id="shortcut-hint">
-  <div class="sh-title"><span class="sh-title-idle">Ctrl+Shift 단축키</span><span class="sh-title-open">세션 단축키</span></div>
+  <div class="sh-title">세션 단축키</div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+T</span><span class="sh-label">새 세션</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+N</span><span class="sh-label">이름 바꾸기</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+H</span><span class="sh-label">세션 숨기기</span></div>
@@ -409,9 +398,8 @@
     e.stopImmediatePropagation();
   }, true);
 
-  // ── Ctrl+Shift 홀드 → 세션 단축키 오버레이 펼침 (터미널 우상단) ──
-  // 평상시엔 접힌 배지가 반투명하게 떠 있고, Ctrl+Shift 만(Alt 없이) 누르면 목록으로 펼쳐진다.
-  // 떼거나 다른 키를 누르면 즉시 다시 접힌다('on' 제거 = 접힘, 배지는 계속 표시).
+  // ── Ctrl+Shift 홀드 → 세션 단축키 힌트 오버레이 (터미널 우상단) ──
+  // Ctrl+Shift 만(Alt 없이) 다른 키 없이 누르면 표시. 떼거나 다른 키를 누르면 즉시 숨김.
   let _hintShown = false;
   function _hintShow() { const el = document.getElementById('shortcut-hint'); if (el) el.classList.add('on'); _hintShown = true; }
   function _hintCancel() {
