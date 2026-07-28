@@ -95,7 +95,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.19.3", "2026-07-28", true, new[]
+        ("v1.19.4", "2026-07-28", true, new[]
+        {
+            "프로젝트를 2열로 배치한 상태에서 드래그로 순서를 바꿀 때 엉뚱한 위치로 이동되던 문제를 수정했습니다.",
+            "Ctrl+Shift 단축키 안내에 세션 내 검색(Ctrl+Shift+F) 항목을 추가했습니다.",
+        }),
+        ("v1.19.3", "2026-07-28", false, new[]
         {
             "사이드패널 파일 목록의 우클릭 메뉴를 폴더/파일에 맞게 정리했습니다.",
             "폴더 우클릭 메뉴에 \"새 파일\", \"새 폴더\", \"탐색기에서 열기\"를 추가했습니다.",
