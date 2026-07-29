@@ -90,7 +90,7 @@
   ::-webkit-scrollbar-corner { background: transparent; }
 
   /* 파일 미선택 오버레이 */
-  #cover { position: absolute; inset: 0; display: none; z-index: 10;
+  #cover { position: absolute; inset: 0; display: none; z-index: 101;
     background: var(--md-bg, #fff); cursor: default; }
   body.md-locked #cover { display: block; }
 
@@ -180,9 +180,25 @@
   .toastui-editor-contents pre {
     background: rgba(135,135,135,0.12);
     border: 1px solid var(--ob-border);
-    border-radius: 8px; padding: 0.9em 1em; line-height: 1.5;
+    border-radius: 8px; padding: 2.8em 1em 0.9em; line-height: 1.5;
+    position: relative;
   }
   .toastui-editor-contents pre code { color: var(--md-text, inherit); background: transparent; }
+  .md-code-actions {
+    position: fixed; z-index: 100;
+    display: flex; gap: 4px; user-select: none; pointer-events: auto;
+  }
+  .md-code-action {
+    width: 28px; height: 28px; padding: 0; border: 1px solid var(--ob-border);
+    border-radius: 6px; background: var(--md-panel, var(--md-bg, #fff));
+    color: var(--ob-muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; pointer-events: auto;
+  }
+  .md-code-action:hover { color: var(--md-text, inherit); background: rgba(128,128,128,0.15); }
+  .md-code-action svg {
+    width: 15px; height: 15px; fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
 
   /* 표 — 깔끔한 보더, 헤더 옅은 배경 */
   .toastui-editor-contents table { border-collapse: collapse; margin: 0.8em 0; }
@@ -232,6 +248,44 @@
   #md-search .btn.close { font-size: 16px; color: var(--ob-muted); margin-left: 2px; }
   #md-search .btn.close:hover { color: var(--md-text, inherit); }
 
+  #md-toc-toggle {
+    position: absolute; top: 1px; right: 12px; z-index: 9997;
+    width: 28px; height: 28px; padding: 0; border: none;
+    border-radius: 6px; background: transparent;
+    color: var(--ob-muted); cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+  }
+  #md-toc-toggle.available { display: flex; }
+  #md-toc-toggle:hover,
+  #md-toc-toggle.open { color: var(--md-text, inherit); background: rgba(128,128,128,0.15); }
+  #md-toc-toggle svg {
+    width: 16px; height: 16px; fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+  #md-toc {
+    position: absolute; top: 40px; right: 12px; z-index: 9997;
+    display: none; width: min(320px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 56px));
+    overflow: auto; padding: 6px;
+    background: var(--md-bg, #fff); border: 1px solid var(--ob-border);
+    border-radius: 8px; box-shadow: 0 4px 18px rgba(0,0,0,0.16);
+    font-family: 'Segoe UI', 'Pretendard', system-ui, sans-serif;
+  }
+  #md-toc.open { display: block; }
+  body.md-locked #md-toc-toggle,
+  body.md-locked #md-toc { display: none !important; }
+  .md-toc-title {
+    padding: 6px 8px 8px; color: var(--ob-muted);
+    font-size: 11px; font-weight: 600; user-select: none;
+  }
+  .md-toc-item {
+    width: 100%; min-height: 30px; margin: 0; padding: 5px 8px;
+    border: none; border-radius: 5px; background: transparent;
+    color: var(--md-text, inherit); cursor: pointer;
+    font: inherit; font-size: 12px; line-height: 1.4; text-align: left;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .md-toc-item:hover { background: rgba(128,128,128,0.15); }
+
   /* 검색 하이라이트 */
   ::highlight(search-match) {
     background: rgba(255, 213, 0, 0.35);
@@ -263,6 +317,15 @@
   </button>
   <button class="btn close" id="md-search-close" title="닫기 (Esc)">&#x2715;</button>
 </div>
+<button id="md-toc-toggle" type="button" title="목차" aria-label="목차" aria-expanded="false">
+  <svg viewBox="0 0 24 24">
+    <path d="M4 6h16M4 12h16M4 18h16"/>
+    <circle cx="2" cy="6" r=".5" fill="currentColor" stroke="none"/>
+    <circle cx="2" cy="12" r=".5" fill="currentColor" stroke="none"/>
+    <circle cx="2" cy="18" r=".5" fill="currentColor" stroke="none"/>
+  </svg>
+</button>
+<div id="md-toc" role="navigation" aria-label="문서 목차"></div>
 <!-- bridge.js 는 페이지 쿼리(?v=<ticks>)를 그대로 붙여 로드 → WebView2 HTTP 캐시 무력화.
      (editor.html 만 캐시버스팅하면 <script src="bridge.js"> 는 캐시본이 로드돼 코드 변경이 반영 안 됨) -->
 <script>

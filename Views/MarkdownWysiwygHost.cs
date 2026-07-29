@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -82,10 +83,15 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
                 VirtualHost, webRoot, CoreWebView2HostResourceAccessKind.Allow);
 
             core.WebMessageReceived += OnWebMessageReceived;
-            // bridge.js 가 바뀔 때마다 새로 로드되도록 캐시 무력화(?v=<ticks>). editor.html 이 이 쿼리를
-            // 그대로 bridge.js 로 전파한다 → WebView2 HTTP 캐시가 옛 스크립트를 서빙하는 것 방지.
+            // editor.html 또는 bridge.js 변경 시 새 URL로 로드해 WebView2 HTTP 캐시를 무력화한다.
             long ver = 0;
-            try { ver = File.GetLastWriteTimeUtc(Path.Combine(webRoot, "bridge.js")).Ticks; } catch { }
+            try
+            {
+                ver = Math.Max(
+                    File.GetLastWriteTimeUtc(Path.Combine(webRoot, "bridge.js")).Ticks,
+                    File.GetLastWriteTimeUtc(Path.Combine(webRoot, "editor.html")).Ticks);
+            }
+            catch { }
             core.Navigate($"https://{VirtualHost}/editor.html?v={ver}");
 
             // pageReady(JS)가 안 오면(스크립트 예외 등) 스피너가 영원히 도는 것 방지 — 15초 폴백.
@@ -146,6 +152,10 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
                 case "interact":
                     Interacted?.Invoke();
                     break;
+                case "runHtml":
+                    if (root.TryGetProperty("html", out var html))
+                        RunHtmlInBrowser(html.GetString() ?? "");
+                    break;
                 case "zoom":
                     if (_webView != null && root.TryGetProperty("factor", out var zf))
                         _webView.ZoomFactor = Math.Clamp(zf.GetDouble(), 0.5, 2.5);
@@ -153,6 +163,28 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
             }
         }
         catch { }
+    }
+
+    private static void RunHtmlInBrowser(string html)
+    {
+        var previewDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "DevezCode", "HtmlPreview");
+        Directory.CreateDirectory(previewDirectory);
+
+        foreach (var oldFile in Directory.EnumerateFiles(previewDirectory, "*.html"))
+        {
+            try
+            {
+                if (File.GetLastWriteTimeUtc(oldFile) < DateTime.UtcNow.AddDays(-1))
+                    File.Delete(oldFile);
+            }
+            catch { }
+        }
+
+        var previewPath = Path.Combine(previewDirectory, $"preview-{Guid.NewGuid():N}.html");
+        File.WriteAllText(previewPath, html, new System.Text.UTF8Encoding(false));
+        Process.Start(new ProcessStartInfo(previewPath) { UseShellExecute = true });
     }
 
     public void SetMarkdown(string md, bool markClean)

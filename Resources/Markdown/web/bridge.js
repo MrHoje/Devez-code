@@ -65,6 +65,10 @@
         openSearch();
       }
     }
+    if (e.key === 'Escape' && tocEl && tocEl.classList.contains('open')) {
+      e.preventDefault();
+      closeToc();
+    }
   }, true);
 
   // Ctrl+휠 → 전체 뷰 배율 조절(0.5~2.5). 실제 줌은 WebView2.ZoomFactor(C#)가 적용한다.
@@ -119,6 +123,171 @@
   }
 
   // ── 검색 ──────────────────────────────────────────────────
+  function codeLanguage(code) {
+    var languageClass = Array.from(code.classList || []).find(function (name) {
+      return name.indexOf('language-') === 0;
+    });
+    return languageClass ? languageClass.substring(9).toLowerCase() : '';
+  }
+
+  function codeActionButton(title, svg, action) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'md-code-action';
+    button.title = title;
+    button.setAttribute('aria-label', title);
+    button.setAttribute('contenteditable', 'false');
+    button.innerHTML = svg;
+    button.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    button.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      action();
+    });
+    return button;
+  }
+
+  function copyCode(text) {
+    function copied() { showToast('코드를 복사했습니다.'); }
+    function fallbackCopy(value) {
+      var area = document.createElement('textarea');
+      area.value = value;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      try { document.execCommand('copy'); copied(); }
+      finally { area.remove(); }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(copied).catch(function () { fallbackCopy(text); });
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
+  var codeActions = new Map();
+
+  function positionCodeActions() {
+    codeActions.forEach(function (actions, pre) {
+      if (!pre.isConnected) {
+        actions.remove();
+        codeActions.delete(pre);
+        return;
+      }
+      var rect = pre.getBoundingClientRect();
+      actions.style.top = (rect.top + 7) + 'px';
+      actions.style.right = (window.innerWidth - rect.right + 7) + 'px';
+      actions.style.display = rect.bottom > 0 && rect.top < window.innerHeight ? 'flex' : 'none';
+    });
+  }
+
+  function decorateCodeBlocks() {
+    document.querySelectorAll('.toastui-editor-contents pre').forEach(function (pre) {
+      if (codeActions.has(pre)) return;
+      var code = pre.querySelector(':scope > code');
+      if (!code) return;
+
+      var actions = document.createElement('div');
+      actions.className = 'md-code-actions';
+      actions.setAttribute('contenteditable', 'false');
+      if (codeLanguage(code) === 'html') {
+        actions.appendChild(codeActionButton('브라우저에서 HTML 실행',
+          '<svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
+          function () { post({ type: 'runHtml', html: code.textContent || '' }); }));
+      }
+      actions.appendChild(codeActionButton('코드 복사',
+        '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
+        function () { copyCode(code.textContent || ''); }));
+      document.body.appendChild(actions);
+      codeActions.set(pre, actions);
+    });
+    positionCodeActions();
+  }
+
+  var tocToggle = document.getElementById('md-toc-toggle');
+  var tocEl = document.getElementById('md-toc');
+  var tocFrame = 0;
+
+  function closeToc() {
+    tocEl.classList.remove('open');
+    tocToggle.classList.remove('open');
+    tocToggle.setAttribute('aria-expanded', 'false');
+  }
+
+  function rebuildToc() {
+    tocFrame = 0;
+    var headings = Array.from(document.querySelectorAll(
+      '.toastui-editor-ww-container .toastui-editor-contents h1,' +
+      '.toastui-editor-ww-container .toastui-editor-contents h2,' +
+      '.toastui-editor-ww-container .toastui-editor-contents h3,' +
+      '.toastui-editor-ww-container .toastui-editor-contents h4,' +
+      '.toastui-editor-ww-container .toastui-editor-contents h5,' +
+      '.toastui-editor-ww-container .toastui-editor-contents h6'
+    )).filter(function (heading) { return heading.textContent.trim().length > 0; });
+
+    tocEl.replaceChildren();
+    tocToggle.classList.toggle('available', headings.length > 0);
+    if (headings.length === 0) {
+      closeToc();
+      return;
+    }
+
+    var title = document.createElement('div');
+    title.className = 'md-toc-title';
+    title.textContent = '목차';
+    tocEl.appendChild(title);
+
+    var minLevel = Math.min.apply(null, headings.map(function (heading) {
+      return Number(heading.tagName.substring(1));
+    }));
+    headings.forEach(function (heading) {
+      var level = Number(heading.tagName.substring(1));
+      var item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'md-toc-item';
+      item.textContent = heading.textContent.trim();
+      item.title = item.textContent;
+      item.style.paddingLeft = (8 + (level - minLevel) * 14) + 'px';
+      item.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeToc();
+        heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      tocEl.appendChild(item);
+    });
+  }
+
+  function scheduleContentDecorations() {
+    decorateCodeBlocks();
+    if (!tocFrame) tocFrame = requestAnimationFrame(rebuildToc);
+  }
+
+  tocToggle.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var open = !tocEl.classList.contains('open');
+    closeToc();
+    if (open) {
+      tocEl.classList.add('open');
+      tocToggle.classList.add('open');
+      tocToggle.setAttribute('aria-expanded', 'true');
+    }
+  });
+  document.addEventListener('pointerdown', function (e) {
+    if (!tocEl.contains(e.target) && !tocToggle.contains(e.target)) closeToc();
+  });
+
+  new MutationObserver(scheduleContentDecorations)
+    .observe(document.getElementById('editor'), { childList: true, subtree: true, characterData: true });
+  document.addEventListener('scroll', positionCodeActions, true);
+  window.addEventListener('resize', positionCodeActions);
+  scheduleContentDecorations();
+
   var searchEl = document.getElementById('md-search');
   var searchInput = document.getElementById('md-search-input');
   var searchCount = document.getElementById('md-search-count');
