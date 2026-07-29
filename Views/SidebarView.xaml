@@ -581,6 +581,14 @@
                 <Border.ContextMenu>
                     <!-- 카드 어디서든 우클릭하면 프로젝트 메뉴가 뜨도록 outer Border로 이동 -->
                     <ContextMenu Opened="ProjectMenu_Opened">
+                        <MenuItem Header="폴더에서 꺼내기" Tag="{Binding}" Click="RemoveProjectFromFolder_Click"
+                                  Visibility="{Binding HasProjectFolder, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolderOpen}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <Separator Visibility="{Binding HasProjectFolder, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"/>
                         <MenuItem Header="세션 추가" Tag="{Binding}" Click="AddSession_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlus}"
@@ -695,13 +703,6 @@
                                     <Ellipse Width="10" Height="10" Fill="{DynamicResource ProjectMarkerPinkBrush}"/>
                                 </MenuItem.Icon>
                             </MenuItem>
-                        </MenuItem>
-                        <MenuItem Header="폴더에서 꺼내기" Tag="{Binding}" Click="RemoveProjectFromFolder_Click"
-                                  Visibility="{Binding HasProjectFolder, Converter={x:Static models:BoolToVisibilityConverter.Instance}}">
-                            <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolderOpen}"
-                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
-                            </MenuItem.Icon>
                         </MenuItem>
                         <!-- 폴더 밖 활성 프로젝트: 보관함 이동 / 폴더 밖 보관 프로젝트: 꺼내기 -->
                         <MenuItem Header="보관함 이동" Tag="{Binding}" Click="ArchiveProject_Click"
