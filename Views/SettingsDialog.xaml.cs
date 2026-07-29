@@ -95,7 +95,15 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.19.4", "2026-07-28", true, new[]
+        ("v1.19.5", "2026-07-29", true, new[]
+        {
+            "Windows 사용자 이름이 한글인 PC에서 자동 업데이트가 적용되지 않던 문제를 해결했습니다.",
+            "Markdown 문서에 목차 버튼을 추가하고, 코드 블록에서 코드 복사와 HTML 브라우저 실행을 바로 할 수 있게 했습니다.",
+            "세션을 클릭할 때 프로젝트 목록이 위아래로 튀던 문제를 수정했습니다.",
+            "업데이트에 관리자 권한이 필요한데 승격을 취소한 경우, 일반 실패와 구분해 안내합니다.",
+            "Devez Vibe(dvz)를 에이전트 자동 업데이트 대상에 추가했습니다.",
+        }),
+        ("v1.19.4", "2026-07-28", false, new[]
         {
             "프로젝트를 2열로 배치한 상태에서 드래그로 순서를 바꿀 때 엉뚱한 위치로 이동되던 문제를 수정했습니다.",
             "Ctrl+Shift 단축키 안내에 세션 내 검색(Ctrl+Shift+F) 항목을 추가했습니다.",
