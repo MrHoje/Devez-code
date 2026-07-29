@@ -427,6 +427,16 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>pageReady 전에 들어온 포커스 요청 보류 플래그 (첫 init 중 호출 대비).</summary>
     private bool _pendingFocus;
 
+    /// <summary>WPF 모달(에이전트 선택·이름 입력·확인창)을 띄우기 직전에 호출.
+    /// ShowDialog 는 부모 HWND 만 disable 해 WebView2 안 helper-textarea 의 blur 이벤트가 오지 않는다.
+    /// 그 결과 IME 조합·고스트·조합 예약이 stale 로 남아, 모달을 닫고 (특히 새로 만든) 세션에
+    /// 처음 입력할 때 한글 확정 문자열이 두 번 들어간다. 미리 조합 상태를 끊어 그 경로를 막는다.</summary>
+    public void AbortIme()
+    {
+        if (_pageReady && _activeRoomId != null)
+            PostJson(new { type = "imeAbort", roomId = _activeRoomId });
+    }
+
     public void FocusTerminal()
     {
         if (_pageReady && _activeRoomId != null)

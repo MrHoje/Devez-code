@@ -1060,18 +1060,45 @@
     // 이어지는 경우가 있다. 이 상태에서는 한글 확정 문자열이 두 번 들어가며, 사용자가 터미널 밖을
     // 클릭했다 돌아오면 정상화된다. 최초 포커스에 한해서 그 동작을 그대로 재현한다. WebView HWND
     // 포커스가 show 메시지보다 늦게 적용될 수 있어 짧게 재시도한다.
+    // 단축키(Ctrl+Shift+T)로 만든 새 세션은 그 사이에 WPF 모달(에이전트 선택·이름 입력)이 끼어
+    // 창 활성화가 늦게 돌아온다. 기존 8회(≈256ms) 재시도로는 소진돼 리셋이 통째로 유실됐고,
+    // 그 방은 "확정 한글이 두 번 들어가는" 상태로 굳었다. 재시도 창을 늘리고, 그래도 못 하면
+    // 예약을 남겨 실제로 포커스가 들어오는 순간(focus 메시지)에 반드시 한 번 수행한다.
+    let initialResetPending = false;
     el._resetImeOnInitialFocus = function () {
-      let retries = 8;
+      initialResetPending = true;
+      let retries = 40; // 32ms × 40 ≈ 1.3초
       const tryReset = function () {
-        if (roomId !== activeRoomId) return;
+        if (!initialResetPending || roomId !== activeRoomId) return;
         term.focus();
         if (document.hasFocus() && document.activeElement === ta) {
+          initialResetPending = false;
           resetImeNow('initial-focus', false);
           return;
         }
         if (--retries > 0) setTimeout(tryReset, 32);
+        // 소진돼도 initialResetPending 은 남긴다 — _flushPendingImeReset 이 이어받는다.
       };
       requestAnimationFrame(tryReset);
+    };
+
+    /// 미완료 최초 리셋을 지금(포커스가 실제로 들어온 시점) 수행. focus 메시지에서 호출.
+    el._flushPendingImeReset = function () {
+      if (!initialResetPending) return;
+      if (roomId !== activeRoomId || !document.hasFocus() || document.activeElement !== ta) return;
+      initialResetPending = false;
+      resetImeNow('initial-focus-late', false);
+    };
+
+    /// 다른 방 전환 로직이 "지금 조합 중인가"를 물어보는 훅(조합 중 강제 blur 방지용).
+    el._isImeComposing = function () { return isImeComposing; };
+
+    /// WPF 모달이 뜨기 직전 호출 — ShowDialog 는 부모 HWND 만 disable 해 helper-textarea 의
+    /// blur 이벤트가 오지 않는다(1575~ 주석 참고). 조합/고스트 상태가 stale 로 남으면 모달을
+    /// 닫은 뒤 첫 입력이 중복된다. resetImeNow 는 hasFocus 가드에 걸리므로 직접 정리한다.
+    el._abortIme = function () {
+      try { ta.value = ''; } catch (e) {} // 누락된 compositionend 가 확정 문자열을 재전송하지 않게
+      clearImeAfterBlur('modal');
     };
 
     // B형: 조합 중이 아닐 때 논리 커서를 계속 기억해 둔다(onCursorMove 마다).
@@ -1590,6 +1617,16 @@
   // 순정 gjc Ctrl+W 처럼 조합 중 글자도 먼저 PTY 로 확정된 뒤 단어가 지워지게 순서를 보장한다.
   let pendingComposeWordDelete = null;
   let composeWordDeleteAt = 0; // 확정 후 따라오는 비조합 Backspace keydown 흡수(중복 \x17 방지)
+
+  // 위 4개는 방 공용(전역)이다. 방을 전환하거나 WPF 모달이 끼어들면 조합이 확정되지 않은 채
+  // 예약만 남을 수 있고, 그 잔재가 다음 방의 첫 Enter/Backspace 를 잘못 흡수하거나 줄바꿈을
+  // 중복 전송한다. 경계(방 전환·모달 진입)에서 버린다.
+  function clearPendingComposeState() {
+    pendingComposeNewline = null;
+    pendingComposeWordDelete = null;
+    composeEnterAt = 0;
+    composeWordDeleteAt = 0;
+  }
 
   // ── 키보드 단축키 (Windows Terminal 정합) ─────────────────────────────
   // attachCustomKeyEventHandler 규약: false 반환 = xterm 이 처리하지 않음(PTY 전송 차단),
@@ -2235,6 +2272,7 @@
     if (isNew) entry = createTerm(roomId, agent, fontSizeOverride);
 
     for (const id in terms) terms[id].el.classList.toggle('active', id === roomId);
+    if (activeRoomId !== roomId) clearPendingComposeState(); // 방 경계 — 이전 방의 조합 예약 폐기
     activeRoomId = roomId;
     syncExternalOverlay();
     // returnResync 가 다른 방 전환으로 중단돼 투명(opacity:0)하게 남았을 수 있음 — 표시 시 복원.
@@ -2946,9 +2984,21 @@
         // 탭 전환 때 WebView2 안의 기존 textarea 포커스를 그대로 넘겨 쓰면 Windows IME가 이전
         // 조합창 기준점을 보존해 (0,0)에 조합 글자를 띄우는 경우가 있다. 사용자가 프로젝트 영역을
         // 눌렀다가 터미널로 돌아오는 것처럼 실제 blur→focus 경계를 만들어 IME 컨텍스트를 갱신한다.
+        // 단, 그 textarea 가 "지금 조합 중"이면 blur 하지 않는다 — blur 는 조합을 확정시키고
+        // 재포커스 후 IME 가 같은 글자를 다시 넣어 중복 입력이 된다(새 세션 생성 직후처럼
+        // show 의 term.focus 와 이 focus 메시지가 사용자 타이핑과 겹칠 때 실제로 발생).
         const active = document.activeElement;
-        if (active && active.classList && active.classList.contains('xterm-helper-textarea'))
-          active.blur();
+        if (active && active.classList && active.classList.contains('xterm-helper-textarea')) {
+          let composing = false;
+          for (const id in terms) {
+            const other = terms[id];
+            if (other.el && other.el.contains(active)) {
+              composing = typeof other.el._isImeComposing === 'function' && other.el._isImeComposing();
+              break;
+            }
+          }
+          if (!composing) active.blur();
+        }
 
         // 전역 탭 단축키는 C#에서 탭을 먼저 바꾸고 그 직후 앱 창을 포그라운드로 올린다. 첫 프레임의
         // document.hasFocus()가 false여도 요청을 버리지 말고 창 활성화가 도착할 때까지만 짧게 기다린다.
@@ -2969,8 +3019,19 @@
           } catch (e) {}
           // show 없이 현재 탭을 다시 클릭한 경우에도 Claude 자체 블록커서를 즉시 다시 준비한다.
           if (t.el && typeof t.el._prepareImeCaret === 'function') t.el._prepareImeCaret();
+          // 새 방의 최초 IME 리셋이 창 활성화 지연으로 미뤄져 있었다면 지금 수행한다.
+          if (t.el && typeof t.el._flushPendingImeReset === 'function') t.el._flushPendingImeReset();
         };
         requestAnimationFrame(applyFocus);
+        break;
+      }
+      case 'imeAbort': {
+        // WPF 모달(에이전트 선택·세션 이름 입력·확인창)이 뜨기 직전 호스트가 보낸다.
+        // ShowDialog 는 부모 HWND 만 disable 해 textarea blur 가 오지 않으므로, 조합/고스트/
+        // 조합 예약이 stale 로 남아 모달을 닫은 뒤 첫 입력이 중복된다. 미리 정리한다.
+        clearPendingComposeState();
+        const t = terms[msg.roomId || activeRoomId];
+        if (t && t.el && typeof t.el._abortIme === 'function') t.el._abortIme();
         break;
       }
       case 'paste': {

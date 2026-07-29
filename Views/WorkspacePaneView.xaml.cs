@@ -1036,9 +1036,12 @@ public partial class WorkspacePaneView : UserControl
     // ── 세션 ─────────────────────────────────────────────────────
     private void OnTerminalSessionAction(string name, int index) => Dispatcher.BeginInvoke(() =>
     {
+        // 이 액션들은 터미널 안에서 키로 들어온다 — 모달을 띄우거나 방을 바꾸기 전에 조합 상태를
+        // 끊어, 모달 뒤/새 방에서 첫 한글이 중복 입력되는 것을 막는다(TerminalHostView.AbortIme 참고).
+        _terminal.AbortIme();
         switch (name)
         {
-            case "newSession": if (_activeProject != null) AddSession(_activeProject, keyboardMode: true); break;
+            case "newSession": if (_activeProject != null) AddSession(_activeProject); break;
             case "closeSession": if (_activeSession != null) StopTrackingSession(_activeSession); break;
             case "hideSession": if (_activeSession != null) HideSession(_activeSession); break;
             case "deleteSession": if (_activeSession != null) DeleteSession(_activeSession); break;
@@ -1137,10 +1140,9 @@ public partial class WorkspacePaneView : UserControl
         return max == 0 ? "웹 브라우저" : $"웹 브라우저 {max + 1}";
     }
 
-    /// <param name="keyboardMode">단축키로 새 세션을 열었는지. true 면 에이전트 피커가 키보드 네비게이션
-    /// (첫 항목 하이라이트 + ↑/↓ 이동 + Enter 확정) 모드로 뜬다. 마우스 경로는 false(현 동작 유지).</param>
-    public SessionItem? AddSession(ProjectItem proj, bool keyboardMode = false)
+    public SessionItem? AddSession(ProjectItem proj)
     {
+        _terminal.AbortIme(); // 아래 모달(에이전트 선택·이름 입력) 전에 조합 상태 정리 — 중복 입력 방지
         var available = AgentRegistry.GetEnabledAndInstalled();
         if (available.Count == 0)
         {
@@ -1152,7 +1154,7 @@ public partial class WorkspacePaneView : UserControl
         if (available.Count == 1) agentId = available[0].Id;
         else
         {
-            var picked = AgentPickerDialog.Pick(Window.GetWindow(this), available, proj.Path, keyboardMode);
+            var picked = AgentPickerDialog.Pick(Window.GetWindow(this), available, proj.Path);
             if (picked == null) return null;
             agentId = picked;
         }
