@@ -35,7 +35,8 @@ public static class GrokHookInstaller
         }
         var src = Path.Combine(AppContext.BaseDirectory, "Resources", "Hooks", "grok-hook.ps1");
         if (File.Exists(src)) return File.ReadAllText(src);
-        return File.ReadAllText(ScriptInstallPath);
+        // 설치본 폴백 — 설치할 때와 같은 인코딩으로 읽어야 비교/재기록이 깨지지 않는다.
+        return File.ReadAllText(ScriptInstallPath, ScriptFile.Ps1);
     }
 
     private static string ReadFastStateScript()
@@ -51,8 +52,10 @@ public static class GrokHookInstaller
         {
             Directory.CreateDirectory(Path.GetDirectoryName(ScriptInstallPath)!);
             var content = ReadEmbeddedScript();
-            if (!File.Exists(ScriptInstallPath) || File.ReadAllText(ScriptInstallPath) != content)
-                AtomicFile.WriteAllText(ScriptInstallPath, content);
+            if (ScriptFile.Ps1NeedsWrite(ScriptInstallPath, content))
+                AtomicFile.WriteAllText(ScriptInstallPath, content, ScriptFile.Ps1);
+            // state-hook.cmd 는 grok 콘솔을 상속해 실행되므로 chcp 프롤로그를 넣지 않는다.
+            // 내용은 ASCII 로만 유지해 인코딩 의존을 없앤다.
             var fastContent = ReadFastStateScript();
             if (!File.Exists(FastStateScriptInstallPath) || File.ReadAllText(FastStateScriptInstallPath) != fastContent)
                 AtomicFile.WriteAllText(FastStateScriptInstallPath, fastContent);

@@ -314,7 +314,10 @@ public partial class App : Application
             // 현재 프로세스가 완전히 종료(=뮤텍스 해제)된 뒤에 새 인스턴스를 띄운다 → 단일 인스턴스 충돌 방지.
             File.WriteAllText(script,
                 $"try {{ Wait-Process -Id {pid} -Timeout 60 -ErrorAction SilentlyContinue }} catch {{ }}\n" +
-                $"Start-Process '{exeLit}' -ArgumentList '--update-agents-now' -WorkingDirectory (Split-Path '{exeLit}')\n");
+                $"Start-Process '{exeLit}' -ArgumentList '--update-agents-now' -WorkingDirectory (Split-Path '{exeLit}')\n",
+                // ScriptFile.Ps1(BOM) 필수 — 없으면 powershell 5.1 이 CP949 로 읽어 한글 사용자명
+                // 경로(C:\Users\김이영\...)가 깨지고 재실행이 조용히 실패한다.
+                Services.ScriptFile.Ps1);
 
             var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {

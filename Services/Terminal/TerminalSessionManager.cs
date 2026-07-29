@@ -397,7 +397,7 @@ public sealed class TerminalSessionManager
             var dir = CodexLaunchDir();
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
-            File.WriteAllText(batchPath,
+            ScriptFile.WriteLaunchCmd(batchPath,
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                 TrackingEnvironment.CmdSetLine("codex") +
@@ -452,7 +452,7 @@ public sealed class TerminalSessionManager
             // set 으로 DEVEZCODE_ROOM_ID 명시(ConPTY env 상속 백업 — 훅이 방을 식별).
             var batch = "@echo off\r\nset \"DEVEZCODE_ROOM_ID=" + roomId + "\"\r\n" +
                         TrackingEnvironment.CmdSetLine("kimi") + body + "\r\n";
-            File.WriteAllText(batchPath, batch);
+            ScriptFile.WriteLaunchCmd(batchPath, batch);
             return $"cmd.exe /c \"{batchPath}\"";
         }
         catch
@@ -607,7 +607,7 @@ public sealed class TerminalSessionManager
                     Directory.CreateDirectory(fdir);
                     var fbatch = Path.Combine(fdir, SafeRoomFileName(roomId) + ".cmd");
                     // 위와 동일 — opencode 는 exit 로 cmd 를 닫고 앱이 새 세션으로 재시작(0xc0000142 회피).
-                    File.WriteAllText(fbatch, forkBody + "exit\r\n");
+                    ScriptFile.WriteLaunchCmd(fbatch, forkBody + "exit\r\n");
                     return $"cmd.exe /k \"{fbatch}\"";
                 }
                 catch
@@ -653,7 +653,7 @@ public sealed class TerminalSessionManager
             // opencode 는 opencode.exe(bun TUI) 를 종료한 ConPTY 에서 in-place 재기동하면 0xc0000142
             // (DLL init 실패)가 난다. 그래서 배치 루프(claude/gjc 방식)를 쓰지 않고, 세션이 끝나면 exit 로
             // cmd 를 닫아 앱(TerminalHostView.onExited)이 "새 ConPTY 세션"으로 같은 세션을 resume 재시작한다.
-            File.WriteAllText(batchPath, body + "exit\r\n");
+            ScriptFile.WriteLaunchCmd(batchPath, body + "exit\r\n");
             return $"cmd.exe /k \"{batchPath}\"";
         }
         catch
@@ -772,7 +772,7 @@ public sealed class TerminalSessionManager
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
             // DEVEZCODE_ROOM_ID 를 배치에서도 set — ConPTY env 상속 실패 대비 (훅 room 식별).
-            File.WriteAllText(batchPath,
+            ScriptFile.WriteLaunchCmd(batchPath,
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                 TrackingEnvironment.CmdSetLine("grok") +
@@ -857,7 +857,7 @@ public sealed class TerminalSessionManager
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
             // set 으로 DEVEZCODE_ROOM_ID 명시(ConPTY env 상속 백업) — dvz 는 이 값이 있을 때만 상태를 기록한다.
-            File.WriteAllText(batchPath,
+            ScriptFile.WriteLaunchCmd(batchPath,
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                 TrackingEnvironment.CmdSetLine("devezvibe") +
@@ -958,7 +958,7 @@ public sealed class TerminalSessionManager
             Directory.CreateDirectory(dir);
             var batchPath = Path.Combine(dir, SafeRoomFileName(roomId) + ".cmd");
             // DEVEZCODE_ROOM_ID 를 배치에서도 set — ConPTY env 상속 실패 대비 (훅 room 식별).
-            File.WriteAllText(batchPath,
+            ScriptFile.WriteLaunchCmd(batchPath,
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                 TrackingEnvironment.CmdSetLine("antigravity") +
@@ -1531,7 +1531,7 @@ public sealed class TerminalSessionManager
             // gjc 일반(비멀티플렉서) 모드로 실행 — 멀티플렉서 모드(STY)는 입력창 하단에 빈 줄을
             // 더 그려서 제외했다. 일반 모드가 풀 재페인트마다 보내는 스크롤백 클리어(\x1b[3J)는
             // terminal.html 파서에서 gjc 방 한정으로 삼켜 스크롤백/휠 스크롤을 보존한다.
-            File.WriteAllText(batchPath,
+            ScriptFile.WriteLaunchCmd(batchPath,
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                 TrackingEnvironment.CmdSetLine("gajae") +
@@ -1734,7 +1734,7 @@ public sealed class TerminalSessionManager
         {
             Directory.CreateDirectory(LaunchDir);
             var trackFile = Path.Combine(ClaudeTrackDir, "sessions", SafeRoomFileName(roomId) + ".txt");
-            File.WriteAllText(LaunchBatchPath(roomId),
+            ScriptFile.WriteLaunchCmd(LaunchBatchPath(roomId),
                 "@echo off\r\n" +
                 $"set \"DEVEZCODE_ROOM_ID={roomId}\"\r\n" +
                 TrackingEnvironment.CmdSetLine("claude") +
@@ -2088,7 +2088,7 @@ public sealed class TerminalSessionManager
                 } catch { }
                 exit 0
                 """;
-            File.WriteAllText(HookScriptPath, script);
+            ScriptFile.WritePs1(HookScriptPath, script);
 
             // statusLine 훅: 받은 JSON 을 ratelimit.json 에 저장(앱 푸터용)한 뒤, 사용자의 원래
             // statusLine(~/.claude/settings.json)에 같은 JSON 을 넘겨 그 출력을 그대로 통과시킨다.
@@ -2153,7 +2153,7 @@ public sealed class TerminalSessionManager
                 } catch { }
                 exit 0
                 """;
-            File.WriteAllText(StatusLineScriptPath, statusScript);
+            ScriptFile.WritePs1(StatusLineScriptPath, statusScript);
 
             // statusLine 렌더 node 스크립트: powershell→cmd→node 체인(1.4~2초) 대신 node 한 번(~150ms)으로
             // ① rate_limits 캡처(ratelimit.json) ② 방별 model/effort 기록 ③ 사용자 statusline.js 스폰 렌더.
@@ -2547,7 +2547,7 @@ public sealed class TerminalSessionManager
                 if ((attributes & FileAttributes.ReadOnly) != 0)
                     File.SetAttributes(BusyHookScriptPath, attributes & ~FileAttributes.ReadOnly);
             }
-            File.WriteAllText(BusyHookScriptPath, busyScript);
+            ScriptFile.WritePs1(BusyHookScriptPath, busyScript);
         }
         catch (Exception) { /* 추적 실패해도 claude 실행은 계속 — flags 에서 파일 존재 확인 */ }
     }

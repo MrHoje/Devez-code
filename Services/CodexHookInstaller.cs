@@ -75,8 +75,8 @@ public static class CodexHookInstaller
         // 폴백 — 소스 트리 (개발/디버그용)
         var src = Path.Combine(AppContext.BaseDirectory, "Resources", "Hooks", "codex-hook.ps1");
         if (File.Exists(src)) return File.ReadAllText(src);
-        // 마지막 폴백 — csproj Content 가 출력 폴더에 복사한 경로
-        return File.ReadAllText(ScriptInstallPath);
+        // 마지막 폴백 — 이미 설치된 파일. 설치할 때와 같은 인코딩으로 읽어야 비교/재기록이 깨지지 않는다.
+        return File.ReadAllText(ScriptInstallPath, ScriptFile.Ps1);
     }
 
     private static string ReadFastStateScript()
@@ -93,8 +93,10 @@ public static class CodexHookInstaller
         {
             Directory.CreateDirectory(Path.GetDirectoryName(ScriptInstallPath)!);
             var content = ReadEmbeddedScript();
-            if (!File.Exists(ScriptInstallPath) || File.ReadAllText(ScriptInstallPath) != content)
-                AtomicFile.WriteAllText(ScriptInstallPath, content);
+            if (ScriptFile.Ps1NeedsWrite(ScriptInstallPath, content))
+                AtomicFile.WriteAllText(ScriptInstallPath, content, ScriptFile.Ps1);
+            // state-hook.cmd 는 codex 콘솔을 상속해 실행되므로 chcp 프롤로그를 넣지 않는다(그 콘솔의
+            // 코드페이지를 바꾸면 TUI 렌더가 흔들린다). 대신 내용을 ASCII 로만 유지해 인코딩 의존을 없앤다.
             var fastContent = ReadFastStateScript();
             if (!File.Exists(FastStateScriptInstallPath) || File.ReadAllText(FastStateScriptInstallPath) != fastContent)
                 AtomicFile.WriteAllText(FastStateScriptInstallPath, fastContent);

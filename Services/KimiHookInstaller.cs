@@ -64,8 +64,10 @@ public static class KimiHookInstaller
         {
             Directory.CreateDirectory(Path.GetDirectoryName(ScriptInstallPath)!);
             var content = ReadEmbeddedScript("kimi-hook.ps1", ScriptInstallPath);
-            if (!File.Exists(ScriptInstallPath) || File.ReadAllText(ScriptInstallPath) != content)
-                AtomicFile.WriteAllText(ScriptInstallPath, content);
+            if (ScriptFile.Ps1NeedsWrite(ScriptInstallPath, content))
+                AtomicFile.WriteAllText(ScriptInstallPath, content, ScriptFile.Ps1);
+            // state-hook.cmd 는 kimi 콘솔을 상속해 실행되므로 chcp 프롤로그를 넣지 않는다.
+            // 내용은 ASCII 로만 유지해 인코딩 의존을 없앤다.
             var fast = ReadEmbeddedScript("kimi-state-hook.cmd", FastStateScriptInstallPath);
             if (!File.Exists(FastStateScriptInstallPath) || File.ReadAllText(FastStateScriptInstallPath) != fast)
                 AtomicFile.WriteAllText(FastStateScriptInstallPath, fast);
@@ -86,7 +88,9 @@ public static class KimiHookInstaller
         }
         var src = Path.Combine(AppContext.BaseDirectory, "Resources", "Hooks", fileName);
         if (File.Exists(src)) return File.ReadAllText(src);
-        return File.ReadAllText(installPath);
+        // 설치본 폴백 — .ps1 은 BOM 있는 UTF-8 로 설치되므로 같은 인코딩으로 읽는다(.cmd 는 ASCII).
+        return File.ReadAllText(installPath,
+            fileName.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) ? ScriptFile.Ps1 : ScriptFile.Cmd);
     }
 
     /// <summary>스크립트 설치 + config.toml [[hooks]] 주입. 멱등. 예외는 삼켜 다음 시작에 재시도.</summary>

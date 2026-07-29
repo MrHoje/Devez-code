@@ -10,7 +10,12 @@ public static class AtomicFile
 {
     /// <summary>임시 파일에 쓰고 디스크까지 flush 한 뒤 원자적으로 교체한다.
     /// 교체 시 직전 정상본을 path.bak 으로 보존(읽기 폴백용).</summary>
-    public static void WriteAllText(string path, string content)
+    public static void WriteAllText(string path, string content) => WriteAllText(path, content, new UTF8Encoding(false));
+
+    /// <summary>인코딩 지정 버전. `.ps1` 은 반드시 BOM 포함 UTF-8 로 쓴다 —
+    /// powershell.exe 5.1 은 BOM 없는 스크립트를 시스템 ANSI(한국어=CP949)로 디코딩하므로
+    /// 한글 주석·한글 경로(C:\Users\김이영)가 깨진다.</summary>
+    public static void WriteAllText(string path, string content, Encoding encoding)
     {
         var dir = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(dir);
@@ -20,7 +25,7 @@ public static class AtomicFile
         try
         {
             using (var fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            using (var sw = new StreamWriter(fs, new UTF8Encoding(false)))
+            using (var sw = new StreamWriter(fs, encoding))
             {
                 sw.Write(content);
                 sw.Flush();

@@ -269,7 +269,7 @@ public static class ExternalSessionService
             File.WriteAllText(
                 runnerPath,
                 BuildRunnerScript(roomId, agent.Id, workingDir, executable, args),
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                ScriptFile.Ps1);
 
             var spec = new ExternalSessionProxySpec
             {
@@ -304,7 +304,7 @@ public static class ExternalSessionService
                 BuildWrapperScript(
                     TicketPath(roomId), token, roomId,
                     agent.Id, workingDir, proxyExecutable, specPath),
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                ScriptFile.Ps1);
 
             ProcessStartInfo start;
             if (windowsTerminal != null)

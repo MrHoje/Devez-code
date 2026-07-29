@@ -138,8 +138,8 @@ public static class UserStatusLineInstaller
               exit $p.ExitCode
             } catch { exit 0 }
             """;
-        if (!File.Exists(StatusLineProxyPath) || File.ReadAllText(StatusLineProxyPath) != script)
-            File.WriteAllText(StatusLineProxyPath, script, new UTF8Encoding(false));
+        if (ScriptFile.Ps1NeedsWrite(StatusLineProxyPath, script))
+            ScriptFile.WritePs1(StatusLineProxyPath, script);
     }
 
     /// <summary>번들 statusline.js 를 ~/.claude\statusline.js 로 동기화.

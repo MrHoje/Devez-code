@@ -63,6 +63,8 @@ public static class AntigravityHookInstaller
         try
         {
             var content = ReadEmbeddedScript();
+            // hook.cmd 는 agy 콘솔을 상속해 실행되므로 chcp 프롤로그를 넣지 않는다(그 콘솔의 코드페이지를
+            // 바꾸면 렌더가 흔들린다). 내용은 ASCII 로만 유지해 인코딩 의존을 없앤다.
             if (!File.Exists(ScriptInstallPath) || File.ReadAllText(ScriptInstallPath) != content)
                 AtomicFile.WriteAllText(ScriptInstallPath, content);
         }

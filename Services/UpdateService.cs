@@ -301,7 +301,10 @@ public static class UpdateService
             $"    # 교체 실패(백신 잠금·프로세스 점유 등) — 받아둔 새 exe를 실패 플래그로 실행\n" +
             $"    # → 앱이 '자동 업데이트 미적용' 안내 + 수동 재설치 유도를 띄운다.\n" +
             $"    Start-Process $src -ArgumentList '--update-failed' -WorkingDirectory (Split-Path $src)\n" +
-            $"}}\n");
+            $"}}\n",
+            // ScriptFile.Ps1(BOM 있는 UTF-8) 필수 — BOM 이 없으면 powershell 5.1 이 CP949 로 읽어
+            // 한글 사용자명 경로(C:\Users\김이영)의 $src/$dst 가 깨지고 업데이트가 조용히 실패한다.
+            ScriptFile.Ps1);
 
         var pfX64 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         var pfX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
