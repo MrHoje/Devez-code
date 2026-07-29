@@ -43,6 +43,10 @@ public partial class SidebarView : UserControl
         };
         ProjectsHost.ItemsSource = _activeRootItems;
         ArchivedHost.ItemsSource = _archivedRootItems;
+        // 세션 클릭/포커스 시 WPF 자동 BringIntoView 가 프로젝트 패널을 스크롤하는 것 차단
+        // (외부 ScrollViewer 의 ScrollContentPresenter 보다 아래에서 삼켜야 내부 숨김세션 스크롤은 그대로 동작).
+        ProjectsHost.AddHandler(RequestBringIntoViewEvent, new RequestBringIntoViewEventHandler(ProjectHost_RequestBringIntoView));
+        ArchivedHost.AddHandler(RequestBringIntoViewEvent, new RequestBringIntoViewEventHandler(ProjectHost_RequestBringIntoView));
         WorkspaceStore.ProjectFolders.CollectionChanged += ProjectFolders_CollectionChanged;
         PreviewMouseMove += Sidebar_PreviewMouseMove;
         PreviewMouseLeftButtonUp += Sidebar_PreviewMouseUp;
@@ -50,6 +54,8 @@ public partial class SidebarView : UserControl
         PreviewMouseLeftButtonDown += Sidebar_PreviewMouseLeftButtonDown;
         PreviewKeyDown += Sidebar_PreviewKeyDown;
     }
+
+    private static void ProjectHost_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e) => e.Handled = true;
 
     public event Action? AddProjectRequested;
     public event Action<ProjectItem>? ProjectSelected;
