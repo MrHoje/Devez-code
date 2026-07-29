@@ -148,7 +148,12 @@ public static class AgentRegistry
             ExeNames = new[] { "dvz.exe", "dvz.cmd", "dvz.bat", "dvz.ps1", "dvz" },
             Command = "dvz",
             InstallCommand = "npm install -g devez-vibe",
-            UpdateCommand = "dvz update",
+            // `dvz update` 를 쓰지 않는다 — 그 자체 업데이터는 (사용자가 직접 dvz 를 실행 중일 때 exe 가 잠기는
+            // 것을 피하려고) 새 콘솔 창을 띄워 npm 을 위임하고 즉시 exit 0 한다. 우리 경로는 dvz 가 아니라
+            // PowerShell(CreateNoWindow) 이 실행 주체라 잠금이 없는데도 창이 뜨고(pause 로 남기까지 한다),
+            // 설치 완료 전에 리턴해 before/after 버전 비교가 항상 '최신' 오판정 + 로그·복구(B/C) 무력화됐다.
+            // npm 을 직접 호출해 codex/gajae 와 동일하게 조용히·동기적으로 처리한다.
+            UpdateCommand = "npm install -g devez-vibe@latest",
             ResumeFlag = "-c",  // Tier1 폴백 전용(전용 분기는 -r <id>)
         },
     };
