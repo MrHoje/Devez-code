@@ -1599,6 +1599,9 @@ public partial class SidebarView : UserControl
     private ReorderDrag<TabItemBase>? _tabDrag;
     private ReorderDrag<ProjectFile>? _fileDrag;
     private Border? _sessionChildDropTarget;
+    // 드래그 중 자식 편입 화살표를 띄운 세션들과, 현재 화살표 위에 커서가 있는 세션.
+    private readonly List<SessionItem> _sessionChildDropHints = new();
+    private SessionItem? _sessionChildDropHintActive;
     private bool _didDrag;
     private ProjectItem? _draggedProject;
     private ProjectFolderItem? _projectFolderHoverTarget;
@@ -1832,6 +1835,7 @@ public partial class SidebarView : UserControl
         }
         finally
         {
+            ClearSessionChildDropHints();
             _endingDrag = false;
         }
     }
@@ -2588,6 +2592,32 @@ public partial class SidebarView : UserControl
         var src = rows.FirstOrDefault(row => ReferenceEquals(row.Item, s));
         if (src.Element == null) return;
 
+        bool CanDropIntoSession(TabItemBase source, TabItemBase target)
+            => !siblingsOnly
+               && source is SessionItem { ParentSessionId: null } child
+               && target is SessionItem parent
+               && project.CanSetSessionParent(child, parent);
+
+        // 자식 편입은 대상 행 우측 화살표(핫스팟) 위에서만 허용한다. 행의 나머지 영역은 순서 이동.
+        var dropHandles = new Dictionary<TabItemBase, FrameworkElement?>();
+        FrameworkElement? ChildDropHandle(TabItemBase item)
+        {
+            if (dropHandles.TryGetValue(item, out var cached)) return cached;
+            var container = rows.FirstOrDefault(row => ReferenceEquals(row.Item, item)).Element;
+            var handle = container == null
+                ? null
+                : FindVisualChildren<FrameworkElement>(container)
+                    .FirstOrDefault(element => element.Name == "SessionChildDropHandle");
+            dropHandles[item] = handle;
+            return handle;
+        }
+
+        // 편입 가능한 대상(자식 세션·자기 자신·순환 대상 제외)에만 화살표를 띄운다.
+        ShowSessionChildDropHints(rows
+            .Select(row => row.Item)
+            .OfType<SessionItem>()
+            .Where(item => CanDropIntoSession(s, item)));
+
         _tabDrag = ReorderDrag<TabItemBase>.TryStart(this, rows, s, src.Element,
             (item, hostTarget, _) =>
             {
@@ -2618,10 +2648,9 @@ public partial class SidebarView : UserControl
                     SessionsReordered?.Invoke(project);
                 return Task.CompletedTask;
             }, exactFollow: true,
-            canDropInto: (source, target) => !siblingsOnly
-                && source is SessionItem { ParentSessionId: null } child
-                && target is SessionItem parent
-                && project.CanSetSessionParent(child, parent),
+            canDropInto: CanDropIntoSession,
+            dropIntoHitTest: (target, pointer) =>
+                IsPointerOverChildDropHandle(ChildDropHandle(target), pointer),
             dropIntoPreviewChanged: SetSessionChildDropPreview,
             onDropInto: (source, target) =>
             {
@@ -2631,23 +2660,81 @@ public partial class SidebarView : UserControl
                 return Task.CompletedTask;
             },
             groupedElements: GroupElements,
-            hitTestSlots: true,
-            useQuarterReorderHysteresis: (source, target) =>
-                source is SessionItem && target is SessionItem);
+            hitTestSlots: true);
         if (_tabDrag != null)
         {
             _didDrag = true;
             CaptureMouse();
         }
+        else
+        {
+            ClearSessionChildDropHints();
+        }
         _pendingTab = null;
     }
+
+    /// <summary>세션 드래그 중 편입 가능한 대상 행 우측에 자식 편입 화살표를 표시한다.</summary>
+    private void ShowSessionChildDropHints(IEnumerable<SessionItem> targets)
+    {
+        ClearSessionChildDropHints();
+        foreach (var session in targets)
+        {
+            session.IsChildDropHintVisible = true;
+            _sessionChildDropHints.Add(session);
+        }
+        // 화살표가 행 폭을 차지하므로, 드래그 슬롯 좌표를 잡기 전에 새 레이아웃을 확정한다.
+        if (_sessionChildDropHints.Count > 0) UpdateLayout();
+    }
+
+    private void ClearSessionChildDropHints()
+    {
+        foreach (var session in _sessionChildDropHints)
+        {
+            session.IsChildDropHintVisible = false;
+            session.IsChildDropHintActive = false;
+        }
+        _sessionChildDropHints.Clear();
+        if (_sessionChildDropHintActive != null)
+        {
+            _sessionChildDropHintActive.IsChildDropHintActive = false;
+            _sessionChildDropHintActive = null;
+        }
+    }
+
+    /// <summary>포인터가 대상 세션 행의 자식 편입 화살표 위에 있는지. 화살표는 재정렬 애니메이션과
+    /// 함께 움직이므로 드래그 시작 시 캡처한 좌표가 아니라 현재 화면 위치로 판정한다.</summary>
+    private bool IsPointerOverChildDropHandle(FrameworkElement? handle, Point pointer)
+    {
+        const double padding = 3;
+        if (handle == null || !handle.IsVisible
+            || handle.ActualWidth <= 0.5 || handle.ActualHeight <= 0.5) return false;
+        try
+        {
+            var origin = handle.TransformToAncestor(this).Transform(new Point());
+            var bounds = new Rect(
+                origin.X - padding,
+                origin.Y - padding,
+                handle.ActualWidth + padding * 2,
+                handle.ActualHeight + padding * 2);
+            return bounds.Contains(pointer);
+        }
+        catch { return false; }
+    }
+
     private void SetSessionChildDropPreview(TabItemBase? target, FrameworkElement? container)
     {
         if (_sessionChildDropTarget != null)
             _sessionChildDropTarget.ClearValue(Border.BorderBrushProperty);
         _sessionChildDropTarget = null;
+        if (_sessionChildDropHintActive != null)
+        {
+            _sessionChildDropHintActive.IsChildDropHintActive = false;
+            _sessionChildDropHintActive = null;
+        }
 
-        if (target is not SessionItem || container == null) return;
+        if (target is not SessionItem session || container == null) return;
+        session.IsChildDropHintActive = true;
+        _sessionChildDropHintActive = session;
         _sessionChildDropTarget = FindVisualChildren<Border>(container)
             .FirstOrDefault(border => border.Name == "SessionRow");
         _sessionChildDropTarget?.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");

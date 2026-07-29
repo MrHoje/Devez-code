@@ -222,6 +222,17 @@ public sealed class SessionItem : TabItemBase
     private bool _isSidebarGloballyHidden;
     public bool IsSidebarGloballyHidden { get => _isSidebarGloballyHidden; private set => Set(ref _isSidebarGloballyHidden, value); }
 
+    /// <summary>세션 드래그 중, 이 세션이 자식 편입 대상이 될 수 있어 행 우측에 편입 화살표를 보여줄지 여부.
+    /// 화살표 위에서만 자식 편입이 동작하고 나머지 영역은 순서 이동이다. 런타임 전용(비영속).</summary>
+    private bool _isChildDropHintVisible;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsChildDropHintVisible { get => _isChildDropHintVisible; set => Set(ref _isChildDropHintVisible, value); }
+
+    /// <summary>편입 화살표 위에 커서가 올라가 자식 편입이 대기 중인지 여부(화살표 강조). 런타임 전용(비영속).</summary>
+    private bool _isChildDropHintActive;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsChildDropHintActive { get => _isChildDropHintActive; set => Set(ref _isChildDropHintActive, value); }
+
     private bool _hasSessionChildren;
     [System.Text.Json.Serialization.JsonIgnore]
     public bool HasSessionChildren { get => _hasSessionChildren; private set => Set(ref _hasSessionChildren, value); }

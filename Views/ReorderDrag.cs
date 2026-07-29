@@ -43,6 +43,9 @@ internal sealed class ReorderDrag<T> where T : class
     private readonly double _grabOffsetX; // 잡은 지점의 source 내부 오프셋 — 드래그 카드 중심 계산용
     private readonly double _grabOffsetY;
     private readonly Func<T, T, bool>? _canDropInto;
+    // 지정되면 '드롭 핫스팟' 모드: 이 콜백이 true 인 좁은 영역(예: 자식 편입 화살표) 위에서만
+    // Into 로 판정하고, 대상 행의 나머지 영역은 전부 순수 재정렬(Before/After)로 처리한다.
+    private readonly Func<T, Point, bool>? _dropIntoHitTest;
     private readonly Action<T?, FrameworkElement?>? _dropIntoPreviewChanged;
     private readonly Func<T, T, Task>? _onDropInto;
     private readonly Action<T?, FrameworkElement?, bool>? _reorderPreviewChanged;
@@ -81,7 +84,8 @@ internal sealed class ReorderDrag<T> where T : class
     private ReorderDrag(UIElement coordHost, List<Slot> slots, T source, int sourceIndex,
         DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal,
         int columns, double gridMidX, double grabOffsetX, double grabOffsetY,
-        Func<T, T, bool>? canDropInto, Action<T?, FrameworkElement?>? dropIntoPreviewChanged,
+        Func<T, T, bool>? canDropInto, Func<T, Point, bool>? dropIntoHitTest,
+        Action<T?, FrameworkElement?>? dropIntoPreviewChanged,
         Func<T, T, Task>? onDropInto, bool commitUnchanged,
         bool hitTestSlots, bool suppressDisplacement,
         bool useLiveLayoutPlaceholder, bool useFixedLayoutPlaceholder,
@@ -93,7 +97,8 @@ internal sealed class ReorderDrag<T> where T : class
         _coordHost = coordHost; _slots = slots; _source = source; _sourceIndex = sourceIndex;
         _ghost = ghost; _onCommit = onCommit; _exactFollow = exactFollow; _horizontal = horizontal;
         _columns = columns; _gridMidX = gridMidX; _grabOffsetX = grabOffsetX; _grabOffsetY = grabOffsetY;
-        _canDropInto = canDropInto; _dropIntoPreviewChanged = dropIntoPreviewChanged;
+        _canDropInto = canDropInto; _dropIntoHitTest = dropIntoHitTest;
+        _dropIntoPreviewChanged = dropIntoPreviewChanged;
         _onDropInto = onDropInto; _commitUnchanged = commitUnchanged;
         _hitTestSlots = hitTestSlots; _suppressDisplacement = suppressDisplacement;
         _useLiveLayoutPlaceholder = useLiveLayoutPlaceholder;
@@ -176,6 +181,7 @@ internal sealed class ReorderDrag<T> where T : class
         double gridMidX = 0,
         FrameworkElement? ghostSource = null,
         Func<T, T, bool>? canDropInto = null,
+        Func<T, Point, bool>? dropIntoHitTest = null,
         Action<T?, FrameworkElement?>? dropIntoPreviewChanged = null,
         Func<T, T, Task>? onDropInto = null,
         bool commitUnchanged = false,
@@ -296,7 +302,8 @@ internal sealed class ReorderDrag<T> where T : class
         }
 
         return new ReorderDrag<T>(coordHost, captured, source, srcIdx, ghost, onCommit, exactFollow, horizontal,
-            columns, gridMidX, reorderGrabX, reorderGrabY, canDropInto, dropIntoPreviewChanged,
+            columns, gridMidX, reorderGrabX, reorderGrabY, canDropInto, dropIntoHitTest,
+            dropIntoPreviewChanged,
             onDropInto, commitUnchanged,
             hitTestSlots, suppressDisplacement,
             useLiveLayoutPlaceholder, useFixedLayoutPlaceholder,
@@ -648,6 +655,26 @@ internal sealed class ReorderDrag<T> where T : class
             double relative = _horizontal
                 ? (pointer.X - bounds.Left) / bounds.Width
                 : (pointer.Y - bounds.Top) / bounds.Height;
+
+            // 핫스팟 모드: 자식 편입은 좁은 핫스팟 위에서만, 나머지 영역은 항상 순서 이동.
+            // 방향형 25/75 판정은 쓰지 않으므로 관련 잠금 상태도 남기지 않는다.
+            if (_dropIntoHitTest != null)
+            {
+                _quarterReorderTarget = null;
+                _directionalDropTarget = null;
+                if (canDropInto && _dropIntoHitTest(slot.Item, pointer))
+                {
+                    zone = DropZone.Into;
+                }
+                else
+                {
+                    bool afterSlot = ResolveReorderAfter(slot, relative >= 0.5, pointer);
+                    zone = afterSlot ? DropZone.After : DropZone.Before;
+                }
+                target = slot;
+                return true;
+            }
+
             bool directionalDrop = UsesQuarterReorderHysteresis(slot);
             if (directionalDrop && ReferenceEquals(_quarterReorderTarget, slot))
             {

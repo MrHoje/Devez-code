@@ -243,6 +243,7 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <!-- 잠금 아이콘(에이전트 아이콘 왼쪽) + 세션 아이콘 -->
                     <CheckBox Grid.Column="0" Width="14" Height="14" Margin="0,0,8,0"
@@ -341,6 +342,20 @@
                               Data="{Binding AreSessionChildrenExpanded, Converter={x:Static models:ChevronConverter.Instance}}"
                               Width="11" Height="11" Stretch="Uniform"/>
                     </Button>
+                    <!-- 세션 드래그 중에만 나타나는 자식 편입 핫스팟. 이 화살표 위에 커서가 있을 때만
+                         자식으로 넣기가 동작하고, 행의 나머지 영역은 순서 이동으로 동작한다. -->
+                    <!-- 높이는 기존 행 콘텐츠(16px)를 넘기지 않게 유지해 드래그 시작 시 행 높이가 변하지 않는다. -->
+                    <Border x:Name="SessionChildDropHandle" Grid.Column="6"
+                            Width="22" Height="16" Margin="4,0,0,0"
+                            VerticalAlignment="Center" CornerRadius="4"
+                            Background="{DynamicResource ProjectCardHoverBrush}"
+                            Visibility="{Binding IsChildDropHintVisible, Converter={x:Static models:BoolToVisibilityConverter.Instance}}"
+                            ToolTip="여기에 놓으면 이 세션의 자식으로 들어갑니다">
+                        <Path x:Name="SessionChildDropArrow" Style="{StaticResource LucideIcon}"
+                              Data="{StaticResource IconCornerDownLeft}"
+                              Width="12" Height="12" Stretch="Uniform"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                    </Border>
                 </Grid>
                 <!-- 완료·입력대기 펄스. 공용 위상 시계(AttentionPulse)에 스냅해 다른 행·탭과 같은 박자로 뛴다. -->
                 <Border x:Name="SessionCompletionPulse"
@@ -363,6 +378,11 @@
                 <!-- 활성(보고 있는) 세션: 배경색 변경으로 구분 -->
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
                     <Setter TargetName="SessionRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
+                </DataTrigger>
+                <!-- 자식 편입 화살표 위에 커서가 올라간 상태: 화살표를 primary 로 강조. -->
+                <DataTrigger Binding="{Binding IsChildDropHintActive}" Value="True">
+                    <Setter TargetName="SessionChildDropArrow" Property="Stroke" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter TargetName="SessionChildDropHandle" Property="Background" Value="{DynamicResource PrimaryOverlay50Brush}"/>
                 </DataTrigger>
                 <!-- 숨김 세션(탭 X): 점/스피너 숨기고 추적중지 아이콘 노출. IsBusy 보다 우선. -->
                 <DataTrigger Binding="{Binding IsEffectivelyHidden}" Value="True">
