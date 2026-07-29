@@ -255,6 +255,8 @@ public static class WorkspaceStore
 
     private static void SaveCore(ICollection<ProjectItem> list)
     {
+        if (System.Diagnostics.Debugger.IsAttached) return;
+
         try
         {
             var archived = _archivedRef as ICollection<ProjectItem> ?? _archivedRef?.ToList();

@@ -164,12 +164,15 @@ public partial class App : Application
 
         // 단일 인스턴스: 이미 떠 있으면 기존 창을 앞으로 가져오고 종료한다.
         // (여러 인스턴스가 동시에 떠 있으면 workspace.json 을 서로 덮어써 등록한 프로젝트/세션이 사라진다.)
-        _singleInstanceMutex = new System.Threading.Mutex(initiallyOwned: true, SingleInstanceMutexName, out bool isFirst);
-        if (!isFirst)
+        if (!System.Diagnostics.Debugger.IsAttached)
         {
-            ActivateExistingInstance();
-            Shutdown();
-            return;
+            _singleInstanceMutex = new System.Threading.Mutex(initiallyOwned: true, SingleInstanceMutexName, out bool isFirst);
+            if (!isFirst)
+            {
+                ActivateExistingInstance();
+                Shutdown();
+                return;
+            }
         }
 
         // 원격 접속(RDP/터미널 세션, Chrome Remote Desktop)에서는 GPU 합성 화면이 원격 프로토콜로
