@@ -2919,7 +2919,7 @@ public partial class MainWindow : Window
                     "관리자 권한 필요",
                     "업데이트 적용에 관리자 권한이 필요합니다.\n" +
                     "다시 시도한 뒤 표시되는 권한 요청 창에서 \"예\"를 선택해 주세요.",
-                    okLabel: "다시 시도", iconKey: "IconDownload"))
+                    okLabel: "다시 시도", iconKey: "IconShield"))
                 OpenUpdatePopup();
             return;
         }
