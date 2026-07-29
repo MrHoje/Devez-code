@@ -66,6 +66,7 @@ Start-Process "bin\DevezCode.exe"
 | 버튼·카드 등 클릭 가능 컨트롤 추가 (커서=Arrow, Hand 금지) | `.knowledge/컨트롤추가규칙.md` |
 | 새 AI CLI 에이전트 추가, 에이전트별 분기 수정(세션 추적/복원·재진입·종료·포크·테마·상태표시·사용량·MCP·클리너) | `.knowledge/에이전트추가규칙.md` |
 | 터미널 입력/마우스/클립보드/IME/스크롤 등 커스텀 동작 | `.knowledge/터미널커스텀동작.md` |
+| 세션 내 텍스트 검색 요청, 터미널 스크롤백이 비어 보임, 에이전트별 스크롤/검색 동작 차이 | `.knowledge/claude-대체화면-세션내검색-불가.md` |
 | 탭바에 탭 추가/생성, 드래그 재정렬, 선택 탭 하단 밑줄(seam)·그라데이션 등 탭바 UI 수정 | `.knowledge/탭바-생성-규칙.md`, `.knowledge/탭바-SelectedTabSeam-밑줄-그라데이션.md` |
 | 중앙 2분할(Split) 패널·탭 격리·파트너·포커스·터미널 재진입 | `.knowledge/분할패널-탭격리-파트너-포커스.md` |
 | 패널 리사이즈/오버레이 시 터미널 깜빡임(WebView2 airspace) | `.knowledge/webview2-airspace-패널리사이즈-깜빡임.md` |

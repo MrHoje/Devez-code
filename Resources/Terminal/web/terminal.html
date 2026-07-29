@@ -89,41 +89,6 @@
     white-space: pre; pointer-events: none;
   }
 
-  /* ── 터미널 내 검색창 (Ctrl+Shift+F) ──────────────────────────
-     마크다운 뷰어 검색창(#md-search)과 같은 형태로 맞춘다: 입력칸에 따로 보더를 두지 않고
-     바깥 카드 하나로 감싸고, 카운트는 흐린 소형 텍스트, 버튼은 22px 정사각 + 호버 배경.
-     색만 --term-bg/--term-fg 기반 회색 반투명이라 라이트/다크 테마 모두 대응한다. */
-  #search-bar {
-    position: absolute; top: 8px; right: 12px; z-index: 10;
-    display: none; align-items: center; gap: 6px;
-    padding: 5px 8px; border-radius: 8px;
-    background: var(--term-bg, #1b1b1b);
-    border: 1px solid rgba(128,128,128,0.32);
-    box-shadow: 0 2px 12px rgba(0,0,0,0.28);
-    font-family: 'Pretendard', 'Malgun Gothic', sans-serif; font-size: 12px;
-    color: var(--term-fg, #CCCCCC); user-select: none;
-  }
-  #search-bar.open { display: flex; }
-  #search-input {
-    width: 160px; height: 24px; padding: 0 8px; margin: 0;
-    border: none; outline: none; background: transparent;
-    color: var(--term-fg, #CCCCCC); font-size: 13px; font-family: inherit;
-  }
-  #search-input::placeholder { color: var(--term-fg, #CCCCCC); opacity: 0.55; }
-  #search-count {
-    min-width: 40px; text-align: center; white-space: nowrap;
-    font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums;
-  }
-  #search-bar button {
-    width: 22px; height: 22px; padding: 0; margin: 0; cursor: pointer;
-    border: none; border-radius: 4px; background: transparent;
-    color: var(--term-fg, #CCCCCC); font-size: 14px; line-height: 1;
-    display: flex; align-items: center; justify-content: center;
-  }
-  #search-bar button:hover { background: rgba(128,128,128,0.15); }
-  #search-close { font-size: 15px; opacity: 0.65; margin-left: 2px; }
-  #search-close:hover { opacity: 1; }
-
   /* ── 세션 로딩 스피너 (테마 변경 재시작·세션 진입 중) ──────────────
      WebView2 는 HwndHost 라 항상 WPF 위에 그려진다 → WPF 오버레이로는 터미널을
      덮을 수 없으므로 스피너를 웹 레이어 안에 둔다. 배경은 --term-bg 라 테마를 따라간다.
@@ -245,23 +210,21 @@
 </style>
 <script src="xterm.min.js"></script>
 <script src="addon-fit.min.js"></script>
-<script src="addon-search.min.js"></script>
 <script src="addon-webgl.min.js"></script>
 <!-- codex 전용 xterm 6.0 — 렌더러 레벨 ?2026(동기화 출력) 네이티브 지원으로 codex 리페인트
      티어링을 근본 차단한다. 다른 에이전트는 기존 5.5 유지(6.0 뷰포트/스크롤바 개편의 회귀 회피).
      로드 순서상 6.0 스크립트가 window.Terminal 등 전역을 덮으므로, 6.0 을 *6 전역으로 스냅샷한 뒤
      기본 전역(window.Terminal/FitAddon/…)은 5.5 로 되돌린다 → 기존 코드는 그대로 5.5 를 쓴다. -->
-<script>window.__t5 = { Terminal: window.Terminal, FitAddon: window.FitAddon, SearchAddon: window.SearchAddon, WebglAddon: window.WebglAddon };</script>
+<script>window.__t5 = { Terminal: window.Terminal, FitAddon: window.FitAddon, WebglAddon: window.WebglAddon };</script>
 <script src="xterm6.min.js"></script>
 <script src="addon-fit6.min.js"></script>
-<script src="addon-search6.min.js"></script>
 <script src="addon-webgl6.min.js"></script>
 <script>
   window.Terminal6 = window.Terminal; window.FitAddon6 = window.FitAddon;
-  window.SearchAddon6 = window.SearchAddon; window.WebglAddon6 = window.WebglAddon;
+  window.WebglAddon6 = window.WebglAddon;
   // 기본 전역을 5.5 로 복원 (codex 외 모든 경로는 5.5 사용)
   window.Terminal = window.__t5.Terminal; window.FitAddon = window.__t5.FitAddon;
-  window.SearchAddon = window.__t5.SearchAddon; window.WebglAddon = window.__t5.WebglAddon;
+  window.WebglAddon = window.__t5.WebglAddon;
 </script>
 </head>
 <body>
@@ -287,22 +250,6 @@
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+H</span><span class="sh-label">세션 숨기기</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+W</span><span class="sh-label">세션 닫기</span></div>
   <div class="sh-row"><span class="sh-key">Ctrl+Shift+Del</span><span class="sh-label">세션 삭제</span></div>
-  <div class="sh-row"><span class="sh-key">Ctrl+Shift+F</span><span class="sh-label">세션 내 검색</span></div>
-</div>
-<div id="search-bar">
-  <input id="search-input" type="text" placeholder="검색…" autocomplete="off" spellcheck="false" />
-  <span id="search-count"></span>
-  <button id="search-prev" title="이전 (Shift+Enter)">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="18 15 12 9 6 15"/>
-    </svg>
-  </button>
-  <button id="search-next" title="다음 (Enter)">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="6 9 12 15 18 9"/>
-    </svg>
-  </button>
-  <button id="search-close" title="닫기 (Esc)">&#10005;</button>
 </div>
 <script>
 (function () {
@@ -1729,10 +1676,6 @@
       e.preventDefault(); post({ type: 'requestPaste', roomId: roomId }); return false;
     }
 
-    // ── 검색 (Ctrl+Shift+F) ──
-    if (ctrl && shift && !alt && (key === 'f' || key === 'F')) {
-      e.preventDefault(); openSearch(); return false;
-    }
     // ── 전체 선택 (Ctrl+Shift+A) ──
     if (ctrl && shift && !alt && (key === 'a' || key === 'A')) {
       e.preventDefault(); term.selectAll(); return false;
@@ -1857,64 +1800,6 @@
     const sel = normalizedSelection(entry);
     if (sel) { post({ type: 'copy', data: sel }); showCopyToast(Array.from(sel).length); }
   }
-
-  // ── 검색바 ──────────────────────────────────────────────────────────
-  const searchBar   = document.getElementById('search-bar');
-  const searchInput = document.getElementById('search-input');
-  const searchCount = document.getElementById('search-count');
-  const SEARCH_OPTS = {
-    decorations: {
-      matchOverviewRuler: '#7a7a32', activeMatchColorOverviewRuler: '#d8b400',
-      matchBackground: '#5a4a00', activeMatchBackground: '#c8a000',
-    },
-  };
-
-  let lastSearchQuery = null; // 직전에 검색을 돌린 질의 (input 중복 발생 가드 — 아래 input 핸들러 참고)
-
-  function openSearch() {
-    searchBar.classList.add('open');
-    searchInput.focus();
-    searchInput.select();
-    if (searchInput.value) runSearch('next');
-  }
-  function closeSearch() {
-    searchBar.classList.remove('open');
-    searchInput.value = '';   // 닫으면 검색어를 비운다 → 다시 열면 빈 상태
-    lastSearchQuery = null;
-    searchCount.textContent = '';
-    const a = terms[activeRoomId];
-    if (a) { try { a.search.clearDecorations(); } catch (e) {} a.term.focus(); }
-  }
-  function runSearch(dir) {
-    const a = terms[activeRoomId];
-    if (!a) return;
-    const q = searchInput.value;
-    if (!q) { a.search.clearDecorations(); searchCount.textContent = ''; return; }
-    if (dir === 'prev') a.search.findPrevious(q, SEARCH_OPTS);
-    else                a.search.findNext(q, SEARCH_OPTS);
-  }
-  function updateSearchCount(r) {
-    if (!r || r.resultCount === undefined) { searchCount.textContent = ''; return; }
-    if (r.resultCount < 0) { searchCount.textContent = '많음'; return; }
-    if (r.resultCount === 0) { searchCount.textContent = '0/0'; return; }
-    searchCount.textContent = (r.resultIndex >= 0 ? r.resultIndex + 1 : 0) + '/' + r.resultCount;
-  }
-
-  searchInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter')       { e.preventDefault(); runSearch(e.shiftKey ? 'prev' : 'next'); }
-    else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
-  });
-  // IME 조합 확정(한글 입력 후 첫 Enter)은 값이 그대로인 input 이벤트를 한 번 더 발생시킨다.
-  // 그때 findNext 를 또 호출하면 방금 Enter 로 옮긴 위치에서 한 칸 더 밀려버리므로,
-  // 값이 바뀌지 않았으면 재검색하지 않는다.
-  searchInput.addEventListener('input', function () {
-    if (searchInput.value === lastSearchQuery) return;
-    lastSearchQuery = searchInput.value;
-    runSearch('next');
-  });
-  document.getElementById('search-next').addEventListener('click', function () { runSearch('next'); searchInput.focus(); });
-  document.getElementById('search-prev').addEventListener('click', function () { runSearch('prev'); searchInput.focus(); });
-  document.getElementById('search-close').addEventListener('click', closeSearch);
 
   // ── Ctrl+휠: 폰트 확대/축소 (WT 정합). capture+passive:false 로 xterm 스크롤보다 먼저 가로챔 ──
   document.addEventListener('wheel', function (e) {
@@ -2042,7 +1927,6 @@
     const use6 = (agent === 'codex') && window.Terminal6;
     const TerminalCtor = use6 ? window.Terminal6 : window.Terminal;
     const FitNS       = use6 ? window.FitAddon6 : window.FitAddon;
-    const SearchNS    = use6 ? window.SearchAddon6 : window.SearchAddon;
     const WebglNS     = use6 ? window.WebglAddon6 : window.WebglAddon;
 
     const termOptions = {
@@ -2070,11 +1954,9 @@
     const term = new TerminalCtor(termOptions);
     const fit = new FitNS.FitAddon();
     term.loadAddon(fit);
-    const search = new SearchNS.SearchAddon();
-    term.loadAddon(search);
     term.open(el);
 
-    const entry = { term, fit, el, search, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
+    const entry = { term, fit, el, webgl: null, agent: agent || '', dead: false, ro: null, inSync: false, syncChunks: [], syncCarry: null, lastSelText: '', lastSelAt: 0, needCreate: false, follow: true, roomId: roomId, devezCopyRows: new Map() };
     terms[roomId] = entry;
     // Devez Vibe 전용 copy metadata. 현재 버퍼의 절대 행에 marker 폭과 soft-wrap 여부를 기록한다.
     // 다른 CLI의 OSC는 건드리지 않으며, clear 신호에서 오래된 행 정보를 함께 비운다.
@@ -2303,13 +2185,6 @@
       setTimeout(function () { if (term.hasSelection()) doCopyKeep(entry); }, 0);
     });
 
-    // 검색 결과 카운트 갱신 — 활성 방일 때만 검색바에 반영
-    try {
-      search.onDidChangeResults(function (r) {
-        if (roomId === activeRoomId && searchBar.classList.contains('open')) updateSearchCount(r);
-      });
-    } catch (e) {}
-
     term.onData(function (data) {
       if (entry.external) return;
       if (entry.dead) {
@@ -2359,7 +2234,6 @@
     const isNew = !entry;
     if (isNew) entry = createTerm(roomId, agent, fontSizeOverride);
 
-    if (searchBar.classList.contains('open')) closeSearch(); // 방 전환 시 검색바 닫기
     for (const id in terms) terms[id].el.classList.toggle('active', id === roomId);
     activeRoomId = roomId;
     syncExternalOverlay();
@@ -3162,14 +3036,7 @@
           try { t.term.dispose(); } catch (e) {}
           try { t.el.remove(); } catch (e) {}
           delete terms[msg.roomId];
-          if (activeRoomId === msg.roomId) {
-            // 세션 폐기로 검색창을 닫는 경로 — Esc 와 동일하게 검색어까지 비운다.
-            if (searchBar.classList.contains('open')) {
-              searchBar.classList.remove('open');
-              searchInput.value = ''; lastSearchQuery = null; searchCount.textContent = '';
-            }
-            activeRoomId = null;
-          }
+          if (activeRoomId === msg.roomId) activeRoomId = null;
           syncExternalOverlay();
         }
         break;
