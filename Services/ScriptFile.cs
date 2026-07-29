@@ -32,11 +32,24 @@ public static class ScriptFile
 
     public static void WritePs1(string path, string content) => File.WriteAllText(path, content, Ps1);
 
-    /// <summary>DevezCode 가 소유한 ConPTY 에서 실행할 런치 배치를 쓴다(코드페이지 프롤로그 포함).
+    /// <summary>DevezCode 가 소유한 ConPTY 에서 실행할 런치 배치를 쓴다.
+    ///
+    /// 본문에 비ASCII 문자가 <b>있을 때만</b> 코드페이지 프롤로그를 붙인다. 순수 ASCII 본문은
+    /// 어떤 코드페이지에서도 같은 바이트로 읽히므로 고칠 게 없고, 프롤로그를 붙이면 멀쩡한
+    /// 환경의 콘솔 코드페이지만 바꾸는 셈이 된다(= 지금까지 정상 동작한 PC 에 불필요한 변화).
+    /// → ASCII 본문은 종전과 <b>바이트 단위로 동일한 파일</b>이 되고, 한글 경로가 섞인 경우에만
+    ///   프롤로그로 UTF-8 해석을 못박는다.
+    ///
     /// 에이전트 훅처럼 <b>남의 콘솔을 상속해 실행되는</b> .cmd 에는 쓰지 말 것 — 그 콘솔의
     /// 코드페이지를 바꿔 에이전트 렌더링에 영향을 준다.</summary>
     public static void WriteLaunchCmd(string path, string content)
-        => File.WriteAllText(path, CmdPrologue + content, Cmd);
+        => File.WriteAllText(path, IsAscii(content) ? content : CmdPrologue + content, Cmd);
+
+    private static bool IsAscii(string s)
+    {
+        foreach (var c in s) if (c > 0x7F) return false;
+        return true;
+    }
 
     /// <summary>.ps1 을 다시 써야 하는지 판단. 내용이 같아도 <b>BOM 이 없으면 다시 쓴다</b> —
     /// BOM 없이 설치된 구버전 파일은 내용 비교만으로는 절대 갱신되지 않아 버그가 남는다.</summary>
