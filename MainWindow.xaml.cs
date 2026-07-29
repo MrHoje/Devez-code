@@ -2911,6 +2911,19 @@ public partial class MainWindow : Window
         if (test) { _pendingUpdate = null; Sidebar.HideUpdateButton(); return; } // 테스트: 뒷정리만
         Sidebar.ShowUpdateButton(info.Version); // 취소·실패 → 버튼 복원
 
+        if (outcome == UpdateOutcome.ElevationDenied)
+        {
+            // Program Files 설치본은 exe 교체에 승격이 필요하다. 사용자가 UAC 를 취소한 것이므로
+            // 다운로드 안내가 아니라 권한 승인 후 재시도를 안내한다(브라우저 재다운로드는 해결책이 아님).
+            if (ConfirmDialog.Show(
+                    "관리자 권한 필요",
+                    "업데이트 적용에 관리자 권한이 필요합니다.\n" +
+                    "다시 시도한 뒤 표시되는 권한 요청 창에서 \"예\"를 선택해 주세요.",
+                    okLabel: "다시 시도", iconKey: "IconDownload"))
+                OpenUpdatePopup();
+            return;
+        }
+
         if (outcome == UpdateOutcome.Failed)
         {
             // 자동 업데이트 실패 → 브라우저로 직접 다운로드 유도.

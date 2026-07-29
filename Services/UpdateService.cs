@@ -8,6 +8,10 @@ namespace DevezCode.Services;
 
 public record UpdateReleaseNote(string Version, string Notes);
 
+/// <summary>Program Files 설치본의 exe 교체에 필요한 관리자 권한 승격을 사용자가 거부(UAC 취소)했을 때.
+/// 일반 실패(다운로드·해시·서명·교체)와 원인이 완전히 달라 안내 문구도 달라야 하므로 별도 타입으로 구분한다.</summary>
+public sealed class UpdateElevationDeniedException(string message) : Exception(message);
+
 public record UpdateInfo(
     string Version, string Url, string Notes = "", bool IsUrgent = false,
     string PatchUrl = "", string PatchFrom = "", string Sha256 = "",
@@ -304,15 +308,26 @@ public static class UpdateService
         var needsElevation = currentExe.StartsWith(pfX64, StringComparison.OrdinalIgnoreCase)
                           || currentExe.StartsWith(pfX86, StringComparison.OrdinalIgnoreCase);
 
-        Process.Start(new ProcessStartInfo
+        try
         {
-            FileName = "powershell.exe",
-            Arguments = $"-NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"{script}\"",
-            UseShellExecute = needsElevation,
-            Verb = needsElevation ? "runas" : "",
-            CreateNoWindow = !needsElevation,
-            WindowStyle = ProcessWindowStyle.Hidden
-        });
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"{script}\"",
+                UseShellExecute = needsElevation,
+                Verb = needsElevation ? "runas" : "",
+                CreateNoWindow = !needsElevation,
+                WindowStyle = ProcessWindowStyle.Hidden
+            });
+        }
+        // ERROR_CANCELLED(1223) = UAC 프롬프트를 사용자가 취소하거나 정책이 승격을 막은 경우.
+        // 여기서 구분하지 않으면 호출부가 "자동 업데이트 실패"로 뭉쳐 표시해 원인 오진단을 유발한다.
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            try { File.Delete(tempExe); } catch { }
+            try { File.Delete(script); } catch { }
+            throw new UpdateElevationDeniedException("업데이트 적용에 필요한 관리자 권한 승격이 거부되었습니다.");
+        }
 
         // Shutdown() 을 직접 부르면 MainWindow.OnWindowClosing 의 안전 종료(스냅샷·오버레이·graceful)를
         // 우회한다 → 세션이 안전 경로를 못 타고 App.OnExit 폴백으로만 정리된다. 메인 창을 Close() 해

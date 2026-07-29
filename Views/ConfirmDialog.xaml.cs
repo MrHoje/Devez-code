@@ -8,7 +8,7 @@ namespace DevezCode.Views;
 public enum ConfirmChoice { Primary, Secondary, Cancel }
 
 /// <summary>ShowUpdate 결과(성공 시 앱이 재실행되어 반환되지 않으므로 없음).</summary>
-public enum UpdateOutcome { Cancelled, Failed }
+public enum UpdateOutcome { Cancelled, Failed, ElevationDenied }
 
 public partial class ConfirmDialog : Window
 {
@@ -318,10 +318,13 @@ public partial class ConfirmDialog : Window
             _downloading = false;
             DialogResult = true;
         }
-        catch
+        catch (Exception ex)
         {
             _downloading = false;
-            _updateOutcome = UpdateOutcome.Failed;
+            // UAC 거부는 파일·네트워크 실패와 조치가 달라(권한 승인 후 재시도) 별도 결과로 올린다.
+            _updateOutcome = ex is DevezCode.Services.UpdateElevationDeniedException
+                ? UpdateOutcome.ElevationDenied
+                : UpdateOutcome.Failed;
             DialogResult = false; // 창을 닫고 호출측이 수동 설치 안내를 하도록 한다.
         }
     }
