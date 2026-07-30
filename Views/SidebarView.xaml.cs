@@ -1814,30 +1814,104 @@ public partial class SidebarView : UserControl
         UpdateActiveDrag(e);
     }
 
-    private bool UpdateActiveDrag(MouseEventArgs e)
+    private bool UpdateActiveDrag(MouseEventArgs e) => UpdateActiveDrag(e.GetPosition(this));
+
+    private bool UpdateActiveDrag(Point pointer)
     {
         if (_rootDrag != null)
         {
             var folderDrop = _draggedProject == null
                 ? ProjectFolderDropPreview.None
-                : UpdateProjectFolderDropPreview(e.GetPosition(this));
+                : UpdateProjectFolderDropPreview(pointer);
             _rootDrag.SetExternalDropPreview(
                 folderDrop != ProjectFolderDropPreview.None,
                 preserveReorder: folderDrop == ProjectFolderDropPreview.IntoPreserveReorder);
-            _rootDrag.Update(e);
+            _rootDrag.Update(pointer);
+            UpdateProjectDragAutoScroll(pointer);
             return true;
         }
         if (_projectDrag != null)
         {
-            var folderDrop = UpdateProjectFolderDropPreview(e.GetPosition(this));
+            var folderDrop = UpdateProjectFolderDropPreview(pointer);
             _projectDrag.SetExternalDropPreview(folderDrop != ProjectFolderDropPreview.None);
-            _projectDrag.Update(e);
+            _projectDrag.Update(pointer);
             UpdateProjectGridHeightPreview(_projectDrag.CurrentTargetColumn);
+            UpdateProjectDragAutoScroll(pointer);
             return true;
         }
-        if (_tabDrag != null) { _tabDrag.Update(e); return true; }
-        if (_fileDrag != null) { _fileDrag.Update(e); return true; }
+        if (_tabDrag != null) { _tabDrag.Update(pointer); return true; }
+        if (_fileDrag != null) { _fileDrag.Update(pointer); return true; }
         return false;
+    }
+
+    // ── 프로젝트 드래그 오토스크롤 ──────────────────────────────
+    // 고스트는 패널 좌우로 못 나가지만 위/아래로는 나갈 수 있다. 포인터가 목록 위·아래
+    // 가장자리 영역(AutoScrollZone)에 들어가면 그 깊이에 비례한 속도로 목록을 스크롤한다.
+    private const double ProjectAutoScrollZone = 56;
+    private const double ProjectAutoScrollMaxStep = 16;
+    private DispatcherTimer? _projectAutoScrollTimer;
+    private double _projectAutoScrollStep;
+
+    private ScrollViewer ProjectScrollFor(bool archived)
+        => archived ? ArchiveProjectScroll : ActiveProjectScroll;
+
+    private ScrollViewer CurrentProjectScroll => ProjectScrollFor(_archiveOpen);
+
+    private void UpdateProjectDragAutoScroll(Point pointer)
+    {
+        var scroll = CurrentProjectScroll;
+        if (scroll.ScrollableHeight <= 0.5) { StopProjectDragAutoScroll(); return; }
+
+        double top, height;
+        try
+        {
+            top = scroll.TransformToAncestor(this).Transform(new Point()).Y;
+            height = scroll.ActualHeight;
+        }
+        catch { StopProjectDragAutoScroll(); return; }
+        if (height <= ProjectAutoScrollZone * 2) { StopProjectDragAutoScroll(); return; }
+
+        // 가장자리 영역 밖(위/아래로 완전히 벗어남 포함)에서는 최대 속도로 계속 스크롤한다.
+        double aboveDepth = top + ProjectAutoScrollZone - pointer.Y;
+        double belowDepth = pointer.Y - (top + height - ProjectAutoScrollZone);
+        double step = aboveDepth > 0
+            ? -Math.Min(1, aboveDepth / ProjectAutoScrollZone) * ProjectAutoScrollMaxStep
+            : belowDepth > 0
+                ? Math.Min(1, belowDepth / ProjectAutoScrollZone) * ProjectAutoScrollMaxStep
+                : 0;
+
+        if (step == 0) { StopProjectDragAutoScroll(); return; }
+        _projectAutoScrollStep = step;
+        if (_projectAutoScrollTimer != null) return;
+
+        _projectAutoScrollTimer = new DispatcherTimer(DispatcherPriority.Render)
+        {
+            Interval = TimeSpan.FromMilliseconds(16),
+        };
+        _projectAutoScrollTimer.Tick += ProjectAutoScrollTick;
+        _projectAutoScrollTimer.Start();
+    }
+
+    private void ProjectAutoScrollTick(object? sender, EventArgs e)
+    {
+        if (!HasActiveDrag) { StopProjectDragAutoScroll(); return; }
+        var scroll = CurrentProjectScroll;
+        double offset = Math.Clamp(
+            scroll.VerticalOffset + _projectAutoScrollStep, 0, scroll.ScrollableHeight);
+        if (Math.Abs(offset - scroll.VerticalOffset) < 0.01) { StopProjectDragAutoScroll(); return; }
+
+        scroll.ScrollToVerticalOffset(offset);
+        scroll.UpdateLayout(); // 새 위치 기준으로 재정렬 프리뷰를 즉시 재계산
+        UpdateActiveDrag(Mouse.GetPosition(this));
+    }
+
+    private void StopProjectDragAutoScroll()
+    {
+        if (_projectAutoScrollTimer == null) return;
+        _projectAutoScrollTimer.Stop();
+        _projectAutoScrollTimer.Tick -= ProjectAutoScrollTick;
+        _projectAutoScrollTimer = null;
+        _projectAutoScrollStep = 0;
     }
 
     private async void Sidebar_PreviewMouseUp(object sender, MouseButtonEventArgs e) => await EndDragAsync(commit: true);
@@ -1848,6 +1922,7 @@ public partial class SidebarView : UserControl
     {
         if (_endingDrag) return;
         _endingDrag = true;
+        StopProjectDragAutoScroll();
         try
         {
             var rootDrag = _rootDrag;
@@ -2241,7 +2316,8 @@ public partial class SidebarView : UserControl
             ghostBackgroundTarget: folderGhostSource,
             ghostBackground: folderGhostBackground,
             useQuarterReorderHysteresis: (sourceItem, targetItem) =>
-                sourceItem is ProjectItem && targetItem is ProjectFolderItem);
+                sourceItem is ProjectItem && targetItem is ProjectFolderItem,
+            ghostClampHost: ProjectScrollFor(archived));
 
         if (_rootDrag != null)
         {
@@ -2350,7 +2426,8 @@ public partial class SidebarView : UserControl
                     return Task.CompletedTask;
                 }, exactFollow: true, columns: 2, gridMidX: midX,
                 useGridPlaceholder: true,
-                includeElementMarginsInBounds: true);
+                includeElementMarginsInBounds: true,
+                ghostClampHost: ProjectScrollFor(p.IsArchived));
         }
         else
         {
@@ -2360,7 +2437,8 @@ public partial class SidebarView : UserControl
                     if (MoveProjectWithinVisible(coll, project, hostTarget, visibleItems))
                         ProjectsReordered?.Invoke();
                     return Task.CompletedTask;
-                }, exactFollow: true, useFixedLayoutPlaceholder: true);
+                }, exactFollow: true, useFixedLayoutPlaceholder: true,
+                ghostClampHost: ProjectScrollFor(p.IsArchived));
         }
 
         if (_projectDrag != null)

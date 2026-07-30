@@ -115,16 +115,21 @@ internal static class DragHelper
         private readonly List<(FrameworkElement Target, double Opacity, bool HadLocalOpacity, bool IsHitTestVisible)> _hideTargets;
         private readonly Point _grab;
         private readonly double _ghostH;
+        private readonly double _ghostW;
+        private readonly FrameworkElement? _clampHost; // 지정되면 고스트 X를 이 요소의 좌우 안쪽으로 제한(Y는 자유).
         private bool _disposed;
 
         internal ManualDragSession(Window window, AdornerLayer layer, UIElement root,
             FrameworkElement snapshotSource, FrameworkElement hideTarget,
-            FrameworkElement? snapshotBackgroundTarget, Brush? snapshotBackground)
+            FrameworkElement? snapshotBackgroundTarget, Brush? snapshotBackground,
+            FrameworkElement? clampHost)
         {
             _window = window;
             _layer = layer;
             _grab = Mouse.GetPosition(snapshotSource);
             _ghostH = snapshotSource.ActualHeight;
+            _ghostW = snapshotSource.ActualWidth;
+            _clampHost = clampHost;
             _adorner = new DragAdorner(
                 root,
                 snapshotSource,
@@ -136,12 +141,15 @@ internal static class DragHelper
         }
 
         internal ManualDragSession(Window window, AdornerLayer layer, UIElement root,
-            Brush snapshot, Size size, Point grab, IReadOnlyList<FrameworkElement> hideTargets)
+            Brush snapshot, Size size, Point grab, IReadOnlyList<FrameworkElement> hideTargets,
+            FrameworkElement? clampHost)
         {
             _window = window;
             _layer = layer;
             _grab = grab;
             _ghostH = size.Height;
+            _ghostW = size.Width;
+            _clampHost = clampHost;
             _adorner = new DragAdorner(root, snapshot, size);
             _layer.Add(_adorner);
             _hideTargets = HideTargets(hideTargets);
@@ -173,7 +181,25 @@ internal static class DragHelper
             var x = windowPt.X - _grab.X;
             var y = windowPt.Y - _grab.Y;
             if (_ghostH > 0) y = Math.Min(y, _window.ActualHeight - _ghostH);
+            if (TryGetClampRect(out var clamp))
+            {
+                double maxX = Math.Max(clamp.Left, clamp.Right - _ghostW);
+                x = Math.Clamp(x, clamp.Left, maxX);
+            }
             _adorner.SetPosition(x, y);
+        }
+
+        private bool TryGetClampRect(out Rect rect)
+        {
+            rect = Rect.Empty;
+            if (_clampHost == null || _clampHost.ActualWidth <= 0) return false;
+            try
+            {
+                var origin = _clampHost.TransformToAncestor(_window).Transform(new Point());
+                rect = new Rect(origin.X, origin.Y, _clampHost.ActualWidth, _clampHost.ActualHeight);
+                return true;
+            }
+            catch { return false; } // 트리에서 분리된 호스트는 클램프 없이 진행
         }
 
         public void Dispose()
@@ -194,7 +220,8 @@ internal static class DragHelper
         FrameworkElement source,
         FrameworkElement? hideTarget = null,
         FrameworkElement? snapshotBackgroundTarget = null,
-        Brush? snapshotBackground = null)
+        Brush? snapshotBackground = null,
+        FrameworkElement? clampHost = null)
     {
         var window = Window.GetWindow(source);
         if (window == null) return null;
@@ -214,14 +241,16 @@ internal static class DragHelper
             source,
             hideTarget ?? source,
             snapshotBackgroundTarget,
-            snapshotBackground);
+            snapshotBackground,
+            clampHost);
     }
 
     public static ManualDragSession? BeginManualDrag(
         UIElement snapshotHost,
         Rect snapshotBounds,
         IReadOnlyList<FrameworkElement> hideTargets,
-        Point grab)
+        Point grab,
+        FrameworkElement? clampHost = null)
     {
         var window = Window.GetWindow(snapshotHost);
         if (window == null || snapshotBounds.IsEmpty) return null;
@@ -242,7 +271,8 @@ internal static class DragHelper
             CaptureSnapshot(snapshotHost, snapshotBounds),
             size,
             grab,
-            hideTargets);
+            hideTargets,
+            clampHost);
     }
 
     private static AdornerLayer? FindOutermostAdornerLayer(DependencyObject start)

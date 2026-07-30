@@ -198,7 +198,8 @@ internal sealed class ReorderDrag<T> where T : class
         bool useLogicalHitTestBounds = false,
         FrameworkElement? ghostBackgroundTarget = null,
         Brush? ghostBackground = null,
-        Func<T, T, bool>? useQuarterReorderHysteresis = null)
+        Func<T, T, bool>? useQuarterReorderHysteresis = null,
+        FrameworkElement? ghostClampHost = null)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -280,7 +281,8 @@ internal sealed class ReorderDrag<T> where T : class
                 coordHost,
                 new Rect(sourceSlot.Left, sourceSlot.Top, sourceSlot.Width, sourceSlot.Height),
                 sourceSlot.Elements,
-                grabPt);
+                grabPt,
+                ghostClampHost);
         }
         else
         {
@@ -289,7 +291,8 @@ internal sealed class ReorderDrag<T> where T : class
                 ghostSource ?? sourceElement,
                 sourceElement,
                 ghostBackgroundTarget,
-                ghostBackground);
+                ghostBackground,
+                ghostClampHost);
         }
         if (ghost == null) return null;
 
@@ -381,7 +384,11 @@ internal sealed class ReorderDrag<T> where T : class
         _needsReapply = false;
     }
 
-    public void Update(MouseEventArgs e)
+    public void Update(MouseEventArgs e) => Update(e.GetPosition(_coordHost));
+
+    /// <summary>coordHost 좌표 기준 포인터 위치로 갱신. 드래그 중 오토스크롤처럼
+    /// 마우스 이벤트 없이 화면이 움직일 때도 프리뷰를 재계산하기 위해 사용한다.</summary>
+    public void Update(Point pointerPosition)
     {
         if (_finished) return;
         _ghost.MoveToMouse();
@@ -391,7 +398,7 @@ internal sealed class ReorderDrag<T> where T : class
             // 2열: 마우스 X로 목표 컬럼을, 마우스 Y로 그 컬럼 안의 삽입 위치를 정한다.
             // 좌/우 컬럼은 각각 독립된 세로 리스트로 시프트 애니메이션한다 — 같은 컬럼이면 그 안에서
             // 재정렬, 다른 컬럼으로 넘기면 원래 컬럼은 빈자리를 위로 메우고 목표 컬럼은 자리를 연다.
-            var p = e.GetPosition(_coordHost);
+            var p = pointerPosition;
             double cx = p.X;
             double cy = p.Y;
             if (_useGridPlaceholder)
@@ -407,7 +414,7 @@ internal sealed class ReorderDrag<T> where T : class
             return;
         }
 
-        var pointer = e.GetPosition(_coordHost);
+        var pointer = pointerPosition;
         if (_hitTestXOverride is double hitTestX) pointer.X = hitTestX;
 
         // 2열 전체폭 폴더는 컬렉션 자체를 라이브 재배치하므로, 고정 X를 유지하면서
