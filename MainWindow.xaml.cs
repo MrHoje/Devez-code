@@ -4622,10 +4622,12 @@ public partial class MainWindow : Window
 
     private void SessionHistoryScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        var sv = (ScrollViewer)sender;
+        // sender 는 목록(ItemsControl)이다 — 스크롤은 그 Template 안의 ScrollViewer 가 하고
+        // ScrollChanged 가 버블링되므로, 오프셋은 이벤트 인자에서 읽는다.
         const double edgeTolerance = 1.0;
-        bool top = sv.VerticalOffset > edgeTolerance;
-        bool bottom = sv.VerticalOffset < sv.ScrollableHeight - edgeTolerance;
+        double scrollable = e.ExtentHeight - e.ViewportHeight;
+        bool top = e.VerticalOffset > edgeTolerance;
+        bool bottom = e.VerticalOffset < scrollable - edgeTolerance;
         SessionHistoryFadeTop.Visibility = top ? Visibility.Visible : Visibility.Collapsed;
         SessionHistoryFadeBottom.Visibility = bottom ? Visibility.Visible : Visibility.Collapsed;
         // 상하 spacer 가 콘텐츠와 함께 스크롤된다.

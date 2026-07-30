@@ -337,12 +337,15 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
-                        <ScrollViewer x:Name="SessionHistoryScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                      ScrollChanged="SessionHistoryScrollChanged"
-                                      Padding="8,0,8,0">
-                            <StackPanel>
-                                <!-- 상하 여백도 스크롤 콘텐츠로 포함: 경계에서만 보이고 중간에서는 완전히 사라진다. -->
-                                <Border Height="8" IsHitTestVisible="False"/>
+                        <!-- 대기 카드는 위에 고정, 완료기록만 자체 스크롤 + 가상화(VirtualizedCardList).
+                             비가상화 목록은 창 크기가 바뀔 때 카드 전부를 재배치해 최대화 전환의 첫 프레임이
+                             늦어지고, 그동안 DWM 이 이전 화면을 확대해 겹쳐 보여준다("당겨짐" 깜빡임). -->
+                        <Grid Grid.Row="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Margin="8,8,8,0">
                                 <!-- ── 응답 대기(선택지) 세션 카드 — 항상 완료기록 위. 내용은 내가 보낸 프롬프트(LastMessage). ── -->
                                 <ItemsControl x:Name="WaitingList" Visibility="Collapsed">
                                     <ItemsControl.ItemTemplate>
@@ -419,8 +422,11 @@
                                 <!-- 세퍼레이터: 대기 카드와 완료기록 구분(둘 다 있을 때만) -->
                                 <Border x:Name="WaitingSeparator" Visibility="Collapsed" Height="1"
                                         Margin="2,7,2,9" Background="{DynamicResource LineBrush}"/>
+                            </StackPanel>
 
-                                <ItemsControl x:Name="SessionHistoryList">
+                            <ItemsControl x:Name="SessionHistoryList" Grid.Row="1"
+                                          Style="{StaticResource VirtualizedCardList}"
+                                          ScrollViewer.ScrollChanged="SessionHistoryScrollChanged">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:SessionCompletionRecord}">
                                             <Grid Margin="0,3,0,3">
@@ -585,14 +591,13 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
-                                <TextBlock x:Name="SessionHistoryEmpty"
-                                           Text="완료된 세션 기록이 없습니다."
-                                           Margin="2,4,2,2" TextWrapping="Wrap" LineHeight="18"
-                                           FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                                <Border Height="8" IsHitTestVisible="False"/>
-                            </StackPanel>
-                        </ScrollViewer>
+                            <TextBlock x:Name="SessionHistoryEmpty" Grid.Row="1"
+                                       Text="완료된 세션 기록이 없습니다."
+                                       Margin="10,4,10,2" TextWrapping="Wrap" LineHeight="18"
+                                       VerticalAlignment="Top"
+                                       FontSize="{DynamicResource Fs12}"
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                        </Grid>
                         <Rectangle x:Name="SessionHistoryFadeTop" Grid.Row="2" Height="24" VerticalAlignment="Top" IsHitTestVisible="False" Panel.ZIndex="1"
                                    Visibility="Collapsed"
                                    Fill="{DynamicResource PanelBrush}">
