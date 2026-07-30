@@ -6424,6 +6424,7 @@ public partial class MainWindow : Window
         if (!IsValidBounds(_preFsBounds))
             _preFsBounds = new Rect(0, 0, Math.Max(ActualWidth, MinWidth), Math.Max(ActualHeight, MinHeight));
         _inFullScreen = true;
+        SuppressDwmTransitionsForFullScreenSwitch(); // 이전 화면이 늘어나 보이는 DWM 전환 억제
         // 작업표시줄은 WS_EX_TOPMOST 라 일반 창은 못 덮음(보조 모니터는 셸 전체화면 감지도 안 먹음).
         // WPF Topmost 속성으로 올려 z-order 로 확실히 덮는다.
         Topmost = true;
@@ -6457,6 +6458,7 @@ public partial class MainWindow : Window
     {
         if (!_inFullScreen) return;
         _inFullScreen = false;
+        SuppressDwmTransitionsForFullScreenSwitch(); // 진입과 대칭 — 해제도 수동 리사이즈다
         Topmost = false;
         ResizeMode = ResizeMode.CanResize;
         SetBoundsInstant(HalfCenteredOnMonitor());
@@ -7112,6 +7114,27 @@ public partial class MainWindow : Window
         int style = GetWindowLong(hwnd, GWL_STYLE);
         SetWindowLong(hwnd, GWL_STYLE, style | WS_CAPTION);
     }
+
+    /// <summary>이 창의 DWM 전환 애니메이션을 일시적으로 끈다.
+    /// WS_CAPTION 을 부여해 최대화/복원 애니메이션을 살렸는데(EnableDwmTransitions), 전체화면은
+    /// WindowState=Normal 을 모니터 크기로 리사이즈하는 <b>수동</b> 전환이라 DWM 이 이전 프레임을
+    /// 새 크기로 스트레치하며 그린다 — "이전 화면이 당겨지는" 한 번의 깜빡임이 그것이다.
+    /// 전체화면 진입/해제 구간에만 끄고 다음 유휴 시점에 되돌려, 최대화/복원 애니메이션은 유지한다.</summary>
+    private void SuppressDwmTransitionsForFullScreenSwitch()
+    {
+        if (_mainHwnd == IntPtr.Zero) return;
+        int disabled = 1;
+        DwmSetWindowAttribute(_mainHwnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref disabled, sizeof(int));
+        // 리사이즈가 모두 반영된 뒤 복구(즉시 복구하면 같은 전환에 애니메이션이 다시 걸린다).
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (_mainHwnd == IntPtr.Zero) return;
+            int enabled = 0;
+            DwmSetWindowAttribute(_mainHwnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref enabled, sizeof(int));
+        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+    }
+
+    private const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
     [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
