@@ -477,6 +477,14 @@ public partial class SettingsDialog : UserControl
     public SettingsDialog()
     {
         InitializeComponent();
+        // 부모 창의 최대화 상태(초기값 + OS 주도 스냅/복원)를 헤더 버튼 아이콘에 반영.
+        Loaded += (_, _) =>
+        {
+            var win = Window.GetWindow(this);
+            if (win == null) return;
+            SyncMaximizeIcon(win);
+            win.StateChanged += (_, _) => SyncMaximizeIcon(win);
+        };
         CodexLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         CodexCatIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         GrokLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
@@ -1523,9 +1531,43 @@ public partial class SettingsDialog : UserControl
     /// <summary>헤더 X — devez 처럼 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     private void CancelBtn_Click(object sender, RoutedEventArgs e) => TryCloseWithConfirm();
 
-    /// <summary>헤더 드래그 → 부모 SettingsWindow 이동 (devez SettingsDialog 이식).</summary>
+    /// <summary>헤더 드래그 → 부모 SettingsWindow 이동. 더블클릭은 최대화/복원 토글.
+    /// 최대화 상태에서 DragMove() 는 예외이므로 무시한다.</summary>
     private void Header_DragMove(object sender, MouseButtonEventArgs e)
-        => Window.GetWindow(this)?.DragMove();
+    {
+        var win = Window.GetWindow(this);
+        if (win == null) return;
+        if (e.ClickCount == 2) { ToggleMaximize(win); return; }
+        if (win.WindowState == WindowState.Maximized) return;
+        win.DragMove();
+    }
+
+    private void WinMinBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var win = Window.GetWindow(this);
+        if (win != null) win.WindowState = WindowState.Minimized;
+    }
+
+    private void WinMaxBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var win = Window.GetWindow(this);
+        if (win != null) ToggleMaximize(win);
+    }
+
+    /// <summary>최대화/복원 토글 + 헤더 버튼 아이콘 동기화.</summary>
+    private void ToggleMaximize(Window win)
+    {
+        win.WindowState = win.WindowState == WindowState.Maximized
+                        ? WindowState.Normal : WindowState.Maximized;
+        SyncMaximizeIcon(win);
+    }
+
+    private void SyncMaximizeIcon(Window win)
+    {
+        bool max = win.WindowState == WindowState.Maximized;
+        WinMaxBtnIcon.Data = (System.Windows.Media.Geometry)FindResource(max ? "IconWinRestore" : "IconWinMaximize");
+        WinMaxBtn.ToolTip = max ? "이전 크기로 복원" : "최대화";
+    }
 
     /// <summary>ESC / 외부에서 호출하는 닫기 — 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     public void TryCloseWithConfirm()
