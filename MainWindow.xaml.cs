@@ -120,6 +120,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, DateTime> _sessionLastActivityUtc = new(StringComparer.Ordinal);
     private int _idleSessionShutdownMinutes;
     private bool _idleSessionShutdownChecking;
+    private readonly HashSet<string> _turningOffSessionIds = new(StringComparer.Ordinal);
     private bool _externalSessionChecking;
     private readonly HashSet<string> _externalSessionLaunches = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTime> _rejectedAgentEventLogs = new(StringComparer.Ordinal);
@@ -263,6 +264,7 @@ public partial class MainWindow : Window
         Sidebar.SessionDeleteRequested += DeleteSession;
         Sidebar.SessionRenameRequested += RenameSession;
         Sidebar.SessionStopTrackingRequested += StopTrackingSession;
+        Sidebar.SessionTurnOffRequested += TurnOffSession;
         Sidebar.SessionHideRequested += HideSessionFromSidebar;
         Sidebar.SessionForkRequested += ForkSession;
         Sidebar.SessionExternalRequested += OpenSessionInExternalTerminal;
@@ -5560,6 +5562,59 @@ public partial class MainWindow : Window
 
     private bool IsSessionDisplayed(SessionItem session)
         => _panes.Any(p => p.IsVisible && ReferenceEquals(p.ActiveSession, session));
+
+    /// <summary>사이드바의 "세션 꺼두기". 목록·대화 기록은 유지하고 선택한 방 하나만
+    /// 앱 종료와 같은 graceful 경로로 종료한다. 다시 행을 누르면 저장된 대화로 resume 한다.</summary>
+    private async void TurnOffSession(SessionItem session)
+    {
+        if (_shuttingDown || session.IsExternal || !_turningOffSessionIds.Add(session.Id)) return;
+        try
+        {
+            if ((session.IsBusy || session.IsWaitingChoice)
+                && !ConfirmDialog.Show("세션 꺼두기",
+                    $"'{session.Name}' 세션은 현재 작업 중입니다.\n진행 중인 작업을 중단하고 꺼둘까요?",
+                    okLabel: "꺼두기", iconKey: "IconPower"))
+                return;
+
+            var roomId = session.Id;
+            DiagLog.Write($"SessionTurnOff start room={roomId} agent={session.AgentId}");
+
+            // 먼저 모든 xterm 배선을 끊어 종료 이벤트의 자동 재진입을 막는다. 현재 표시 중인
+            // 패널은 활성 탭만 비워, 같은 행을 다시 누르면 반드시 새 resume 경로를 타게 한다.
+            foreach (var pane in _panes) pane.PrepareSessionTurnOff(session);
+            session.IsAlive = false;
+            session.IsBusy = false;
+            session.IsWaitingChoice = false;
+            UpdateSessionBusyDisplay();
+
+            try
+            {
+                await TerminalSessionManager.Instance.GracefulDisposeRoomsAsync(new[] { roomId });
+            }
+            catch (Exception ex)
+            {
+                DiagLog.Write($"SessionTurnOff dispose failed room={roomId}: {ex.Message}");
+            }
+            finally
+            {
+                try { TerminalSessionManager.Instance.ClearDisposedRoom(roomId); } catch { }
+                _sessionLastActivityUtc.Remove(roomId);
+                if (ReferenceEquals(FindSession(roomId), session))
+                {
+                    session.IsAlive = false;
+                    session.IsBusy = false;
+                    session.IsWaitingChoice = false;
+                    OnPaneHideStopFinished(session);
+                }
+                UpdateSessionBusyDisplay();
+            }
+            DiagLog.Write($"SessionTurnOff complete room={roomId}");
+        }
+        finally
+        {
+            _turningOffSessionIds.Remove(session.Id);
+        }
+    }
 
     private bool CanStopIdleSession(SessionItem session, DateTime nowUtc)
     {
