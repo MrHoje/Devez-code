@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -6433,7 +6433,7 @@ public partial class MainWindow : Window
         if (!IsValidBounds(_preFsBounds))
             _preFsBounds = new Rect(0, 0, Math.Max(ActualWidth, MinWidth), Math.Max(ActualHeight, MinHeight));
         _inFullScreen = true;
-        SuppressDwmTransitionOnce(); // 이전 화면이 늘어나 보이는 DWM 전환 억제
+        SuppressDwmTransitionsForFullScreenSwitch(); // 이전 화면이 늘어나 보이는 DWM 전환 억제
         // 작업표시줄은 WS_EX_TOPMOST 라 일반 창은 못 덮음(보조 모니터는 셸 전체화면 감지도 안 먹음).
         // WPF Topmost 속성으로 올려 z-order 로 확실히 덮는다.
         Topmost = true;
@@ -6467,7 +6467,7 @@ public partial class MainWindow : Window
     {
         if (!_inFullScreen) return;
         _inFullScreen = false;
-        SuppressDwmTransitionOnce(); // 진입과 대칭 — 해제도 수동 리사이즈다
+        SuppressDwmTransitionsForFullScreenSwitch(); // 진입과 대칭 — 해제도 수동 리사이즈다
         Topmost = false;
         ResizeMode = ResizeMode.CanResize;
         SetBoundsInstant(HalfCenteredOnMonitor());
@@ -6664,7 +6664,6 @@ public partial class MainWindow : Window
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
 
     private const int WM_SYSCOMMAND = 0x0112;
-    private const long SC_MAXIMIZE = 0xF030, SC_RESTORE = 0xF120;
     private const int SC_KEYMENU = 0xF100;
     private const int WM_NCLBUTTONDBLCLK = 0x00A3;
     private const int WM_NCLBUTTONDOWN = 0x00A1;
@@ -6691,11 +6690,6 @@ public partial class MainWindow : Window
         // Alt+Space(lParam=' ')의 의도적 시스템 메뉴 호출은 통과.
         else if (msg == WM_SYSCOMMAND && (wParam.ToInt64() & 0xFFF0) == SC_KEYMENU && lParam == IntPtr.Zero)
             handled = true;
-        // OS 주도 최대화/복원(Win+↑/↓, 작업표시줄 메뉴, 드래그 스냅) — 처리는 OS 에 맡기고(handled=false)
-        // DWM 전환 애니메이션만 이번 전환에 한해 끈다. 우리 버튼·더블클릭 경로는 토글 함수에서 처리.
-        else if (msg == WM_SYSCOMMAND
-              && ((wParam.ToInt64() & 0xFFF0) is SC_MAXIMIZE or SC_RESTORE))
-            SuppressDwmTransitionOnce();
         // 상단바(캡션) 더블클릭: 전체화면 ON 은 기본 최대화 대신 전체화면 토글(기존 동작, hit-test 무관),
         // OFF 도 OS 기본 최대화 대신 우리 토글로 가로채 사전 캡처 커버를 적용한다(캡션에 한정 —
         // 테두리 더블클릭의 OS 수직 최대화 등 기타 NC 동작은 보존).
@@ -7073,11 +7067,10 @@ public partial class MainWindow : Window
             });
             return;
         }
-        // 전체화면 미사용: 커버 없이 상태만 바꾸고, 리사이즈 후 재fit·ConPTY 재동기는
+        // 전체화면 미사용: OS 최대화/복원은 DWM 이 알아서 자연스럽게 애니메이션한다(devez 와 동일).
+        // 여기에 캡처 커버를 씌우면 커버 이미지가 뷰포트에 맞춰 늘어나며 "이전 화면이 당겨지는"
+        // 전환으로 보인다 → 커버 없이 상태만 바꾸고, 리사이즈 후 재fit·ConPTY 재동기는
         // StateChanged(post-hoc) 경로가 담당한다.
-        // DWM 전환 애니메이션(이전 프레임 확대 + 교차 디졸브)은 이 창에서 "이전 화면이 당겨지는"
-        // 깜빡임으로 보이므로 이번 전환에 한해 끈다.
-        SuppressDwmTransitionOnce();
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     }
 
@@ -7133,13 +7126,12 @@ public partial class MainWindow : Window
         SetWindowLong(hwnd, GWL_STYLE, style | WS_CAPTION);
     }
 
-    /// <summary>이 창의 DWM 전환 애니메이션을 이번 전환 동안만 끈다.
-    /// EnableDwmTransitions 로 WS_CAPTION 을 부여하면 DWM 이 창 크기 전환에 애니메이션을 넣는데,
-    /// 그 구현은 <b>이전 프레임을 새 크기로 확대해 새 프레임과 교차 디졸브</b>하는 방식이다.
-    /// 콘텐츠가 많은 이 창에서는 큰 글자·패널이 겹쳐 보여 "이전 화면이 당겨지는" 깜빡임이 된다
-    /// (녹화 프레임에서 확인). 최대화/복원·전체화면 전환 직전에 끄고 유휴 시점에 되돌린다 —
-    /// 최소화/트레이 복귀 등 다른 전환의 애니메이션은 유지된다.</summary>
-    private void SuppressDwmTransitionOnce()
+    /// <summary>이 창의 DWM 전환 애니메이션을 일시적으로 끈다.
+    /// WS_CAPTION 을 부여해 최대화/복원 애니메이션을 살렸는데(EnableDwmTransitions), 전체화면은
+    /// WindowState=Normal 을 모니터 크기로 리사이즈하는 <b>수동</b> 전환이라 DWM 이 이전 프레임을
+    /// 새 크기로 스트레치하며 그린다 — "이전 화면이 당겨지는" 한 번의 깜빡임이 그것이다.
+    /// 전체화면 진입/해제 구간에만 끄고 다음 유휴 시점에 되돌려, 최대화/복원 애니메이션은 유지한다.</summary>
+    private void SuppressDwmTransitionsForFullScreenSwitch()
     {
         if (_mainHwnd == IntPtr.Zero) return;
         int disabled = 1;
