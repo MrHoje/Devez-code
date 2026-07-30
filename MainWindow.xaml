@@ -1,4 +1,4 @@
-﻿<Window x:Class="DevezCode.MainWindow"
+<Window x:Class="DevezCode.MainWindow"
         x:Name="ThisWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -19,7 +19,7 @@
     </shell:WindowChrome.WindowChrome>
 
     <Border x:Name="RootChrome" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-        <Grid x:Name="RootGrid">
+        <Grid x:Name="RootGrid" Grid.IsSharedSizeScope="True">
             <Grid.RowDefinitions>
                 <RowDefinition Height="32"/>
                 <RowDefinition Height="Auto"/>
@@ -142,11 +142,11 @@
             <!-- ── 3-pane body ─────────────────────────────────────────── -->
             <Grid Grid.Row="2" x:Name="BodyGrid" SizeChanged="BodyGrid_SizeChanged">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="SidebarCol" Width="262" MinWidth="220"/>
-                    <ColumnDefinition x:Name="SidebarSplitterCol" Width="4"/>
+                    <ColumnDefinition x:Name="SidebarCol" Width="262" MinWidth="220" SharedSizeGroup="MainSidebar"/>
+                    <ColumnDefinition x:Name="SidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                     <ColumnDefinition x:Name="CenterCol" Width="*" MinWidth="360"/>
-                    <ColumnDefinition x:Name="FileExpSplitterCol" Width="4"/>
-                    <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="0"/>
+                    <ColumnDefinition x:Name="FileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
+                    <ColumnDefinition x:Name="FileExpCol" Width="300" MinWidth="0" SharedSizeGroup="MainFileExp"/>
                     <!-- 세션 완료 기록 사이드바 스플리터 / 사이드바 / 계정 사용량 ── col5=splitter, col6=기록, col7=사용량 -->
                     <ColumnDefinition x:Name="SessionHistorySplitterCol" Width="4" MinWidth="0"/>
                     <ColumnDefinition x:Name="SessionHistoryCol" Width="0" MinWidth="150"/>
@@ -781,8 +781,8 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition x:Name="FooterSidebarCol" Width="Auto" MinWidth="220"/>
                         <ColumnDefinition Width="*"/>
-                    <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4"/>
-                    <ColumnDefinition x:Name="FooterFileExpCol" Width="300" MinWidth="0"/>
+                    <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
+                    <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="0"/>
                     <!-- 우측 패널 접힘과 무관하게 항상 보이는 설정 버튼용 고정폭 컬럼 -->
                     <ColumnDefinition x:Name="FooterActionsCol" Width="Auto" MinWidth="48"/>
                 </Grid.ColumnDefinitions>
