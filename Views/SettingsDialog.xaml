@@ -219,7 +219,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-                    <!-- Header: 아이콘 + "설정" + 창 컨트롤. 헤더 드래그 → 창 이동(최대화 시 무시), 더블클릭 → 최대화 토글 -->
+                    <!-- Header: 아이콘 + "설정" + 닫기. 헤더 드래그 → 붙어 있는 메인창을 함께 이동 -->
                     <Border Grid.Row="0"
                             Background="{DynamicResource PanelBrush}"
                             BorderBrush="{DynamicResource LineBrush}"
@@ -237,21 +237,12 @@
 								           Foreground="{DynamicResource TextBrush}"
 								           />
                             </StackPanel>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                        VerticalAlignment="Center" Margin="0,0,8,0">
-                                <Button Click="WinMinBtn_Click" Style="{StaticResource WinCtrlBtn}" ToolTip="최소화">
-                                    <TextBlock Text="&#x2013;" FontSize="16"/>
-                                </Button>
-                                <Button x:Name="WinMaxBtn" Click="WinMaxBtn_Click"
-                                        Style="{StaticResource WinCtrlBtn}" ToolTip="최대화">
-                                    <Path x:Name="WinMaxBtnIcon" Style="{StaticResource LucideButtonIcon}"
-                                          Data="{StaticResource IconWinMaximize}" Width="11" Height="11"
-                                          StrokeThickness="1.4"/>
-                                </Button>
-                                <Button Click="CancelBtn_Click" Style="{StaticResource WinCloseBtn}">
-                                    <TextBlock Text="&#x2715;" FontSize="13"/>
-                                </Button>
-                            </StackPanel>
+                            <Button Click="CancelBtn_Click"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Width="40" Height="32" Margin="0,0,8,0"
+                                    Style="{StaticResource WinCloseBtn}">
+                                <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
+                            </Button>
                         </Grid>
                     </Border>
 

@@ -5940,7 +5940,7 @@ public partial class MainWindow : Window
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
         await SuspendTerminalWithSnapshotAsync(blankCurtain: true);   // 터미널을 숨기고 단색 커튼(배경색)만 보이게.
-        // 설정창은 화면을 꽉 채우는 창(Maximized) — 중앙 배치 계산이 필요 없다.
+        // 설정창은 이 창(Owner)을 꽉 채운다 — 위치·크기는 SettingsWindow 가 Owner 에 맞추므로 중앙 배치 불필요.
         var dlg = new Views.SettingsWindow { Owner = this };
         dlg.Closed += (_, _) =>
         {
