@@ -64,8 +64,10 @@ public partial class App : Application
     /// MainWindow 로드 후 수동 재설치 안내를 띄우는 데 사용.</summary>
     public static bool UpdateFailedRelaunch { get; private set; }
 
+#if !DEBUG
     private System.Threading.Mutex? _singleInstanceMutex;
     private const string SingleInstanceMutexName = @"Global\DevezCode.SingleInstance";
+#endif
 
     /// <summary>'지금 재시작하고 업데이트'(RestartForAgentUpdate)로 재실행됐는지 — 시작 시 에이전트 업데이트를
     /// 데일리 게이트/자동업데이트 토글과 무관하게 강제 실행한다. --update-agents-now 인자로 전달.</summary>
@@ -168,6 +170,10 @@ public partial class App : Application
 
         // 단일 인스턴스: 이미 떠 있으면 기존 창을 앞으로 가져오고 종료한다.
         // (여러 인스턴스가 동시에 떠 있으면 workspace.json 을 서로 덮어써 등록한 프로젝트/세션이 사라진다.)
+        // Debug 빌드는 설치본과 나란히 띄워 개발하려고 이 게이트를 통째로 끈다(디버거 attach 불필요).
+        // ⚠ %AppData%\DevezCode\ 는 여전히 공유하므로, 디버그 쪽에서 프로젝트 추가·세션 열기 등
+        //    workspace 를 변경하는 작업을 하면 설치본 상태를 덮어쓴다.
+#if !DEBUG
         if (!System.Diagnostics.Debugger.IsAttached)
         {
             _singleInstanceMutex = new System.Threading.Mutex(initiallyOwned: true, SingleInstanceMutexName, out bool isFirst);
@@ -178,6 +184,7 @@ public partial class App : Application
                 return;
             }
         }
+#endif
 
         // 원격 접속(RDP/터미널 세션, Chrome Remote Desktop)에서는 GPU 합성 화면이 원격 프로토콜로
         // 전달되지 않아 창이 검게/안 보이거나 멈춰 보인다. 원격이거나 사용자가 GPU 를 끈 경우
@@ -530,8 +537,10 @@ public partial class App : Application
         catch { /* best-effort */ }
         try { DevezCode.Services.SessionUsageService.Save(); } catch { /* 토큰 집계 영속 best-effort */ }
         try { TerminalSessionManager.Instance.DisposeAll(); } catch { /* 종료 정리 best-effort */ }
+#if !DEBUG
         try { _singleInstanceMutex?.ReleaseMutex(); } catch { /* 소유 안 한 경우 무시 */ }
         _singleInstanceMutex?.Dispose();
+#endif
         base.OnExit(e);
     }
 

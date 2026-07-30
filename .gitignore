@@ -1,4 +1,5 @@
 bin/
+bin-debug/
 obj/
 .vs/
 *.user

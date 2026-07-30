@@ -12,7 +12,10 @@
     <ApplicationIcon>Resources\Logos\app.ico</ApplicationIcon>
     <!-- devez 방식: 일반 빌드 산출물을 bin\Release(\rid) 가 아니라 bin\ 에 바로 떨군다.
          (publish 는 build_installer.ps1 의 -o 로 bin\win-x64\publish 로 따로 나간다) -->
-    <OutputPath>bin\</OutputPath>
+    <!-- Debug 만 bin-debug\ 로 분리: 설치본/Release 산출물과 exe 를 공유하면 파일 락으로 빌드가
+         실패하고, 디버그 빌드가 로컬 Release 산출물을 덮어쓴다. -->
+    <OutputPath Condition="'$(Configuration)' == 'Debug'">bin-debug\</OutputPath>
+    <OutputPath Condition="'$(Configuration)' != 'Debug'">bin\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <!-- 단일 버전 소스: UpdateService.CurrentVersion 이 이 값을 읽는다. 릴리스 때 여기만 올린다.
