@@ -1,4 +1,4 @@
-<UserControl x:Class="DevezCode.Views.SettingsDialog"
+﻿<UserControl x:Class="DevezCode.Views.SettingsDialog"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="clr-namespace:DevezCode.Models"
@@ -375,7 +375,7 @@
                                       Background="{DynamicResource PanelBrush}">
                           <Grid MaxWidth="1040">
                             <!-- 일반 패널 -->
-                            <StackPanel x:Name="GeneralPanel" Margin="28,22,28,20">
+                            <StackPanel x:Name="GeneralPanel" Margin="28,32,28,20">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconSettings}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -473,7 +473,7 @@
                             </StackPanel>
 
                             <!-- 프로젝트 패널 -->
-                            <StackPanel x:Name="ProjectPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="ProjectPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Style="{StaticResource SettingsContentTitleRow}">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolder}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -550,7 +550,7 @@
                             </StackPanel>
 
                             <!-- 세션 패널 -->
-                            <StackPanel x:Name="SessionPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="SessionPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Style="{StaticResource SettingsContentTitleRow}">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -700,7 +700,7 @@
                             </StackPanel>
 
                             <!-- 브라우저 패널 -->
-                            <StackPanel x:Name="BrowserPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="BrowserPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Style="{StaticResource SettingsContentTitleRow}">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconGlobe}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -759,7 +759,7 @@
                             </StackPanel>
 
                             <!-- 에이전트 패널 (설치된 CLI + 활성화 토글) -->
-                            <StackPanel x:Name="AgentPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="AgentPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconTerminal}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -897,7 +897,7 @@
                             </StackPanel>
 
                             <!-- 세션 클리너 패널 (SessionCleanerWindow 이식 — 설정창 내부 탭) -->
-                            <StackPanel x:Name="CleanerPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="CleanerPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBrushCleaning}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -1031,7 +1031,7 @@
                             </StackPanel>
 
                             <!-- MCP 서버 패널 (별도 오버레이로 열기 — Theme/Agent 와 성격이 다름) -->
-                            <StackPanel x:Name="McpPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="McpPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconServer}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -1054,7 +1054,7 @@
                             </StackPanel>
 
                             <!-- 업데이트 내역(Changelog) 패널 — devez 정합 -->
-                            <StackPanel x:Name="ChangelogPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="ChangelogPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                  <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                      <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconClock}"
                                            Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -1108,7 +1108,7 @@
                             </StackPanel>
 
                             <!-- 오픈소스 및 외부 리소스 라이선스 -->
-                            <StackPanel x:Name="LicensesPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="LicensesPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -1206,7 +1206,7 @@
                             </StackPanel>
 
                             <!-- 사이드 패널 버튼 표시/숨김 패널 -->
-                            <StackPanel x:Name="SidePanelPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="SidePanelPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelLeft}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -1296,7 +1296,7 @@
                             </StackPanel>
 
                             <!-- 계정 사용량 패널 — 계정 연결(로그인) + 표시 방식 -->
-                            <StackPanel x:Name="UsagePanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="UsagePanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconChartBar}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -1619,7 +1619,7 @@
                             </StackPanel>
 
                             <!-- 단축키 패널 — 탭 이동 전역 단축키 수식키 리바인드 -->
-                            <StackPanel x:Name="ShortcutPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="ShortcutPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconZap}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -1660,7 +1660,7 @@
                             </StackPanel>
 
                             <!-- 테마 패널 -->
-                            <StackPanel x:Name="ThemePanel" Margin="28,22,28,32" Visibility="Collapsed">
+                            <StackPanel x:Name="ThemePanel" Margin="28,32,28,32" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPalette}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -2144,7 +2144,7 @@
                             </StackPanel>
 
                             <!-- 알림 패널 — 세션 종료 알림 / 자동 닫힘 / 표시 위치 / 모니터 -->
-                            <StackPanel x:Name="NotifyPanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="NotifyPanel" Margin="28,32,28,20" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconBell}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"

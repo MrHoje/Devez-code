@@ -6483,9 +6483,24 @@ public partial class MainWindow : Window
 
     private static Rect OverCover(Rect r) => new(r.Left - 1, r.Top - 1, r.Width + 2, r.Height + 2);
 
+    /// <summary>창 위치·크기를 한 번에 적용. Left/Top/Width/Height 를 각각 대입하면 WPF 가 그때마다
+    /// 창을 옮기고 늘려(SetWindowPos 다중 호출) 창이 <b>커지는</b> 전환에서 아직 그려지지 않은 영역이
+    /// 중간 프레임에 노출된다(전체화면 진입 시 한 번 깜빡이는 증상 — 줄어드는 해제 방향은 안 보인다).
+    /// 단일 SetWindowPos 로 한 프레임에 확정한다.</summary>
     private void SetBoundsInstant(Rect r)
     {
-        Left = r.Left; Top = r.Top; Width = r.Width; Height = r.Height;
+        if (_mainHwnd != IntPtr.Zero)
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int x  = (int)Math.Round(r.Left  * dpi.DpiScaleX);
+            int y  = (int)Math.Round(r.Top   * dpi.DpiScaleY);
+            int cx = (int)Math.Round(r.Width * dpi.DpiScaleX);
+            int cy = (int)Math.Round(r.Height* dpi.DpiScaleY);
+            if (cx > 0 && cy > 0
+                && SetWindowPos(_mainHwnd, IntPtr.Zero, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE))
+                return;
+        }
+        Left = r.Left; Top = r.Top; Width = r.Width; Height = r.Height;   // 폴백(핸들 없음 등)
     }
 
     private bool _fsCoverBusy; // 전체화면 전환 커버 진행 중(연타 무시용)
