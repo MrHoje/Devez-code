@@ -117,13 +117,15 @@ internal static class DragHelper
         private readonly double _ghostH;
         private readonly double _ghostW;
         private readonly FrameworkElement? _clampHost; // 지정되면 고스트 X를 이 요소의 좌우 안쪽으로 제한(Y는 자유).
+        private readonly Thickness _clampInset;        // 좌/우 허용 여유(양수 = 그만큼 바깥까지 허용).
         private bool _disposed;
 
         internal ManualDragSession(Window window, AdornerLayer layer, UIElement root,
             FrameworkElement snapshotSource, FrameworkElement hideTarget,
             FrameworkElement? snapshotBackgroundTarget, Brush? snapshotBackground,
-            FrameworkElement? clampHost)
+            FrameworkElement? clampHost, Thickness clampInset)
         {
+            _clampInset = clampInset;
             _window = window;
             _layer = layer;
             _grab = Mouse.GetPosition(snapshotSource);
@@ -142,8 +144,9 @@ internal static class DragHelper
 
         internal ManualDragSession(Window window, AdornerLayer layer, UIElement root,
             Brush snapshot, Size size, Point grab, IReadOnlyList<FrameworkElement> hideTargets,
-            FrameworkElement? clampHost)
+            FrameworkElement? clampHost, Thickness clampInset)
         {
+            _clampInset = clampInset;
             _window = window;
             _layer = layer;
             _grab = grab;
@@ -196,7 +199,11 @@ internal static class DragHelper
             try
             {
                 var origin = _clampHost.TransformToAncestor(_window).Transform(new Point());
-                rect = new Rect(origin.X, origin.Y, _clampHost.ActualWidth, _clampHost.ActualHeight);
+                rect = new Rect(
+                    origin.X - _clampInset.Left,
+                    origin.Y,
+                    Math.Max(1, _clampHost.ActualWidth + _clampInset.Left + _clampInset.Right),
+                    Math.Max(1, _clampHost.ActualHeight));
                 return true;
             }
             catch { return false; } // 트리에서 분리된 호스트는 클램프 없이 진행
@@ -221,7 +228,8 @@ internal static class DragHelper
         FrameworkElement? hideTarget = null,
         FrameworkElement? snapshotBackgroundTarget = null,
         Brush? snapshotBackground = null,
-        FrameworkElement? clampHost = null)
+        FrameworkElement? clampHost = null,
+        Thickness clampInset = default)
     {
         var window = Window.GetWindow(source);
         if (window == null) return null;
@@ -242,7 +250,8 @@ internal static class DragHelper
             hideTarget ?? source,
             snapshotBackgroundTarget,
             snapshotBackground,
-            clampHost);
+            clampHost,
+            clampInset);
     }
 
     public static ManualDragSession? BeginManualDrag(
@@ -250,7 +259,8 @@ internal static class DragHelper
         Rect snapshotBounds,
         IReadOnlyList<FrameworkElement> hideTargets,
         Point grab,
-        FrameworkElement? clampHost = null)
+        FrameworkElement? clampHost = null,
+        Thickness clampInset = default)
     {
         var window = Window.GetWindow(snapshotHost);
         if (window == null || snapshotBounds.IsEmpty) return null;
@@ -272,7 +282,8 @@ internal static class DragHelper
             size,
             grab,
             hideTargets,
-            clampHost);
+            clampHost,
+            clampInset);
     }
 
     private static AdornerLayer? FindOutermostAdornerLayer(DependencyObject start)

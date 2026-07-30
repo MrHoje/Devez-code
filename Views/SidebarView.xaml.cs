@@ -1874,10 +1874,13 @@ public partial class SidebarView : UserControl
     private ScrollViewer ProjectScrollFor(bool archived)
         => archived ? ArchiveProjectScroll : ActiveProjectScroll;
 
-    // 고스트 좌우 제한은 ScrollViewer(패딩 포함)가 아니라 카드가 실제로 놓이는 레인 기준이어야
-    // 좌·우 모두 카드 보더에 딱 맞는다.
+    // 고스트 좌우 제한은 카드가 실제로 놓이는 레인(ItemsControl) 기준.
+    // ScrollViewer 를 쓰면 오른쪽 패딩·스크롤바 폭만큼 카드 보더 밖으로 나간다.
     private FrameworkElement ProjectLaneFor(bool archived)
         => archived ? ArchivedHost : ProjectsHost;
+
+    // 왼쪽은 ScrollViewer 좌측 패딩(8px)까지 들어가는 편이 자연스러워 그만큼만 여유를 준다.
+    private static readonly Thickness ProjectGhostClampInset = new(8, 0, 0, 0);
 
     private ScrollViewer CurrentProjectScroll => ProjectScrollFor(_archiveOpen);
 
@@ -2355,7 +2358,8 @@ public partial class SidebarView : UserControl
             ghostBackground: folderGhostBackground,
             useQuarterReorderHysteresis: (sourceItem, targetItem) =>
                 sourceItem is ProjectItem && targetItem is ProjectFolderItem,
-            ghostClampHost: ProjectLaneFor(archived));
+            ghostClampHost: ProjectLaneFor(archived),
+            ghostClampInset: ProjectGhostClampInset);
 
         if (_rootDrag != null)
         {
@@ -2466,7 +2470,8 @@ public partial class SidebarView : UserControl
                 }, exactFollow: true, columns: 2, gridMidX: midX,
                 useGridPlaceholder: true,
                 includeElementMarginsInBounds: true,
-                ghostClampHost: ProjectLaneFor(p.IsArchived));
+                ghostClampHost: ProjectLaneFor(p.IsArchived),
+                ghostClampInset: ProjectGhostClampInset);
         }
         else
         {
@@ -2477,7 +2482,8 @@ public partial class SidebarView : UserControl
                         ProjectsReordered?.Invoke();
                     return Task.CompletedTask;
                 }, exactFollow: true, useFixedLayoutPlaceholder: true,
-                ghostClampHost: ProjectLaneFor(p.IsArchived));
+                ghostClampHost: ProjectLaneFor(p.IsArchived),
+                ghostClampInset: ProjectGhostClampInset);
         }
 
         if (_projectDrag != null)

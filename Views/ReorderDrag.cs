@@ -213,7 +213,8 @@ internal sealed class ReorderDrag<T> where T : class
         FrameworkElement? ghostBackgroundTarget = null,
         Brush? ghostBackground = null,
         Func<T, T, bool>? useQuarterReorderHysteresis = null,
-        FrameworkElement? ghostClampHost = null)
+        FrameworkElement? ghostClampHost = null,
+        Thickness ghostClampInset = default)
     {
         var captured = new List<Slot>();
         foreach (var (item, el) in rows)
@@ -296,7 +297,8 @@ internal sealed class ReorderDrag<T> where T : class
                 new Rect(sourceSlot.Left, sourceSlot.Top, sourceSlot.Width, sourceSlot.Height),
                 sourceSlot.Elements,
                 grabPt,
-                ghostClampHost);
+                ghostClampHost,
+                ghostClampInset);
         }
         else
         {
@@ -306,7 +308,8 @@ internal sealed class ReorderDrag<T> where T : class
                 sourceElement,
                 ghostBackgroundTarget,
                 ghostBackground,
-                ghostClampHost);
+                ghostClampHost,
+                ghostClampInset);
         }
         if (ghost == null) return null;
 
