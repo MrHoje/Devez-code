@@ -147,7 +147,7 @@
                                     MinWidth="80" Height="38" Padding="16,0"
                                     Style="{StaticResource SecondaryButton}"
                                     FontSize="{DynamicResource Fs13}" Margin="0,0,8,0">
-                                <TextBlock Text="취소" TextTrimming="None"/>
+                                <TextBlock x:Name="CancelText" Text="취소" TextTrimming="None"/>
                             </Button>
 
                             <!-- 3버튼 모드 전용 중간 버튼 (예: '저장 안 함'). 기본 숨김. -->

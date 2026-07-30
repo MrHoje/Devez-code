@@ -21,13 +21,14 @@ public partial class ConfirmDialog : Window
     private bool _downloading;
     private UpdateOutcome _updateOutcome = UpdateOutcome.Cancelled;
 
-    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false)
+    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false, string? cancelLabel = null)
     {
         InitializeComponent();
         Title = title;
         TitleText.Text = title;
         MessageText.Text = message;
         OkText.Text = okLabel;
+        if (cancelLabel != null) CancelText.Text = cancelLabel;   // 취소가 단순 취소가 아닌 경우(예: 되돌리기)
         _confirmText = confirmText;
 
         if (confirmText != null)
@@ -78,9 +79,10 @@ public partial class ConfirmDialog : Window
         string? confirmText = null,
         bool topMost = false,
         bool wideLayout = false,
-        bool autoWidth = false)
+        bool autoWidth = false,
+        string? cancelLabel = null)
     {
-        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger, confirmText, wideLayout, autoWidth);
+        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger, confirmText, wideLayout, autoWidth, cancelLabel);
 
         if (Application.Current.MainWindow != null
             && Application.Current.MainWindow.IsLoaded

@@ -1550,14 +1550,38 @@ public partial class SettingsDialog : UserControl
     /// <summary>헤더 X — devez 처럼 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     private void CancelBtn_Click(object sender, RoutedEventArgs e) => TryCloseWithConfirm();
 
-    /// <summary>타이틀바 드래그 → 설정창이 덮고 있는 메인창을 함께 이동(설정창은 Owner 를 따라온다).
-    /// 더블클릭은 메인창 상단바와 동일하게 최대화/복원 토글.</summary>
-    private void Header_DragMove(object sender, MouseButtonEventArgs e)
+    // ── 타이틀바 드래그 → 덮고 있는 메인창을 함께 이동 ────────────────
+    // 이 창은 모달이라 Owner 가 비활성 상태 → Owner.DragMove() 가 먹지 않는다.
+    // 마우스를 직접 캡처해 이동량만큼 Owner 좌표를 옮기고, 설정창은 FitToOwner 로 따라온다.
+    private Point? _headerDragOrigin;   // 화면 좌표(device px)
+
+    /// <summary>더블클릭은 메인창 상단바와 동일하게 최대화/복원 토글.</summary>
+    private void Header_DragStart(object sender, MouseButtonEventArgs e)
     {
-        var win = Window.GetWindow(this) as SettingsWindow;
-        if (win == null) return;
-        if (e.ClickCount == 2) win.ToggleMaximizeOwner();
-        else                   win.DragOwnerWindow();
+        if (Window.GetWindow(this) is not SettingsWindow win) return;
+        if (e.ClickCount == 2) { win.ToggleMaximizeOwner(); return; }
+        if (win.IsOwnerMaximized) return;   // 최대화·전체화면에서는 이동하지 않는다
+        _headerDragOrigin = PointToScreen(e.GetPosition(this));
+        ((UIElement)sender).CaptureMouse();
+    }
+
+    private void Header_DragMove(object sender, MouseEventArgs e)
+    {
+        if (_headerDragOrigin is not { } origin) return;
+        if (e.LeftButton != MouseButtonState.Pressed) { Header_DragEnd(sender, e); return; }
+        var now = PointToScreen(e.GetPosition(this));
+        double dx = now.X - origin.X, dy = now.Y - origin.Y;
+        if (dx == 0 && dy == 0) return;
+        (Window.GetWindow(this) as SettingsWindow)?.MoveOwnerBy(dx, dy);
+        // 창이 움직이면 같은 화면 좌표를 다시 기준으로 삼는다(누적 오차 없음).
+        _headerDragOrigin = PointToScreen(e.GetPosition(this));
+    }
+
+    private void Header_DragEnd(object sender, EventArgs e)
+    {
+        if (_headerDragOrigin == null) return;
+        _headerDragOrigin = null;
+        if (sender is UIElement el && el.IsMouseCaptured) el.ReleaseMouseCapture();
     }
 
     // ── 재현한 타이틀바의 창 컨트롤 — 실제 대상은 덮고 있는 메인창(Owner) ──
@@ -1590,17 +1614,31 @@ public partial class SettingsDialog : UserControl
             _themeReloadPending = false;
             var restart = ConfirmDialog.Show(
                 "테마 변경 적용",
-                "테마 변경을 열려 있는 세션에 적용하려면 세션을 다시 시작해야 합니다.\n" +
-                "응답 생성 중인 세션은 중단될 수 있으며, 필요한 경우 요청을 다시 보내야 합니다.\n\n" +
-                "지금 다시 시작하시겠습니까? (다시 시작하지 않아도 변경은 저장되며 다음 실행부터 적용됩니다)",
-                okLabel: "다시 시작",
+                "테마 변경을 적용하려면 열려 있는 세션을 다시 시작해야 합니다.\n" +
+                "응답 생성 중인 세션은 중단될 수 있으며, 필요한 경우 요청을 다시 보내야 합니다.",
+                okLabel: "다시 시작하고 변경",
+                cancelLabel: "테마 되돌리기",
                 iconKey: "IconPalette",
                 wideLayout: true); // 세션 재시작 안내 — 긴 본문이라 넓게 유지
-            if (restart)
-                (Application.Current.MainWindow as MainWindow)?.ReloadAllSessionsForTheme();
+            if (restart) (Application.Current.MainWindow as MainWindow)?.ReloadAllSessionsForTheme();
+            else         RevertTheme();
         }
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>재시작을 거절한 경우 — 테마를 변경 전 값으로 되돌려 저장한다(세션과 앱 색을 일치시킨다).</summary>
+    private void RevertTheme()
+    {
+        if (_themeBeforeChange == null || _themeBeforeChange == _selectedTheme) return;
+        _selectedTheme = _themeBeforeChange;
+        _originalTheme = _themeBeforeChange;
+        (Application.Current as App)?.SetTheme(_themeBeforeChange);   // persist
+        UpdateThemeSelectionVisual();
+        _themeBeforeChange = null;
+    }
+
+    /// <summary>테마를 처음 바꾼 시점의 이전 테마(되돌리기 기준).</summary>
+    private string? _themeBeforeChange;
 
     /// <summary>앱을 닫으면서 설정창을 정리하는 경로 — 저장만 확정하고 세션 재시작은 묻지 않는다
     /// (곧 종료되므로 재시작 안내가 의미 없다).</summary>
@@ -1627,7 +1665,12 @@ public partial class SettingsDialog : UserControl
     private void ApplySettingsCore()
     {
         // 테마는 저장은 즉시 하되 세션 재시작이 필요하므로, 재시작 여부는 창을 닫을 때 묻는다.
-        if (_selectedTheme != _originalTheme) _themeReloadPending = true;
+        // 되돌리기 기준은 "처음 바꾼 시점의 이전 테마"를 유지한다(여러 번 바꿔도 원본으로 복귀).
+        if (_selectedTheme != _originalTheme)
+        {
+            _themeBeforeChange ??= _originalTheme;
+            _themeReloadPending = true;
+        }
 
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);

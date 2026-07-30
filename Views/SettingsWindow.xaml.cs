@@ -60,10 +60,32 @@ public partial class SettingsWindow : Window
 
     // ── 설정창이 재현한 타이틀바의 창 컨트롤 → 덮고 있는 메인창을 실제로 제어 ──
 
-    /// <summary>메인창 최소화. owned window 인 설정창은 함께 숨고, 복원 시 다시 나타난다.</summary>
+    /// <summary>메인창 최소화. owned window 인 설정창은 함께 숨고, 복원 시 다시 나타난다.
+    /// 이 창이 모달이라 Owner 는 비활성 상태 — WindowState 대입은 활성 모달에 되돌려질 수 있으므로
+    /// Win32 ShowWindow 로 직접 최소화한다.</summary>
     public void MinimizeOwner()
     {
-        if (Owner is { } owner) owner.WindowState = WindowState.Minimized;
+        if (Owner is not { } owner) return;
+        var h = new WindowInteropHelper(owner).Handle;
+        if (h != IntPtr.Zero) ShowWindow(h, SW_MINIMIZE);
+        else owner.WindowState = WindowState.Minimized;
+    }
+
+    /// <summary>Owner 가 최대화/전체화면 상태인지 — 이 상태에서는 헤더 드래그로 이동하지 않는다.</summary>
+    public bool IsOwnerMaximized
+        => (Owner as MainWindow)?.IsSquareCornerState
+        ?? Owner?.WindowState == WindowState.Maximized;
+
+    /// <summary>헤더 드래그 — 비활성(모달 Owner)에는 DragMove 가 먹지 않으므로 좌표를 직접 옮긴다.
+    /// 이동량은 device px 로 받아 DIP 로 환산한다. 설정창은 FitToOwner 로 따라온다.</summary>
+    public void MoveOwnerBy(double dxDevice, double dyDevice)
+    {
+        if (Owner is not { WindowState: WindowState.Normal } owner) return;
+        if (IsOwnerMaximized) return;   // 전체화면은 WindowState=Normal 을 유지하므로 별도 차단
+        var dpi = VisualTreeHelper.GetDpi(owner);
+        owner.Left += dxDevice / dpi.DpiScaleX;
+        owner.Top  += dyDevice / dpi.DpiScaleY;
+        FitToOwner();
     }
 
     /// <summary>메인창 최대화/복원. 전체화면 설정까지 반영되도록 MainWindow 의 공통 토글을 쓴다.</summary>
@@ -75,13 +97,13 @@ public partial class SettingsWindow : Window
                               ? WindowState.Normal : WindowState.Maximized;
     }
 
-    /// <summary>앱 닫기. 모달인 설정창을 먼저 정리(대기 중 저장 확정)한 뒤 메인창을 닫는다.</summary>
+    /// <summary>앱 닫기. 모달인 설정창을 먼저 정리(대기 중 저장 확정)하고, 모달 루프가 끝난 뒤
+    /// 메인창을 닫는다(모달이 살아 있는 동안 Owner.Close() 는 처리되지 않는다).</summary>
     public void CloseOwner()
     {
         var owner = Owner;
+        Closed += (_, _) => owner?.Close();
         SettingsView.CloseForAppExit();              // CloseRequested → 이 창 Close()
-        if (IsVisible) return;                       // 아직 열려 있으면(예외 상황) 앱은 닫지 않는다
-        owner?.Close();
     }
 
     /// <summary>Owner 의 시각적 콘텐츠 영역(RootChrome)에 좌표·크기를 맞춘다.
@@ -103,12 +125,6 @@ public partial class SettingsWindow : Window
         Top    = origin.Y / dpi.DpiScaleY;
         Width  = anchor.ActualWidth;
         Height = anchor.ActualHeight;
-    }
-
-    /// <summary>헤더 드래그 → 붙어 있는 메인창을 함께 움직인다(설정창은 FitToOwner 로 따라옴).</summary>
-    public void DragOwnerWindow()
-    {
-        if (Owner is { WindowState: WindowState.Normal } owner) owner.DragMove();
     }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
@@ -148,5 +164,7 @@ public partial class SettingsWindow : Window
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_DONOTROUND = 1;
     private const int DWMWCP_ROUND = 2;
+    private const int SW_MINIMIZE = 6;
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 }

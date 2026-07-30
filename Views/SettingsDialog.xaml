@@ -225,7 +225,10 @@
                             Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}"
                             BorderThickness="0,0,0,1"
-                            MouseLeftButtonDown="Header_DragMove">
+                            MouseLeftButtonDown="Header_DragStart"
+                            MouseMove="Header_DragMove"
+                            MouseLeftButtonUp="Header_DragEnd"
+                            LostMouseCapture="Header_DragEnd">
                         <Grid>
                             <TextBlock Text="DevezCode" FontSize="12" FontWeight="Bold"
                                        FontFamily="{StaticResource BrunoAceSCFont}"
@@ -1708,7 +1711,20 @@
                                 </StackPanel>
 
                                 <TextBlock Text="앱 전체에 적용되는 색 테마를 선택합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"/>
+                                <!-- 테마는 세션(터미널) 색까지 바꾸므로 재시작이 필요하다 — 고르기 전에 미리 알린다 -->
+                                <Border Background="{DynamicResource PanelSoftBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                        CornerRadius="8" Padding="12,10" Margin="0,0,0,20">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconInfo}"
+                                              Width="15" Height="15" Margin="0,1,9,0" VerticalAlignment="Top"
+                                              Stroke="{DynamicResource TextMutedBrush}"/>
+                                        <TextBlock FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   Text="테마를 바꾸면 열려 있는 세션을 다시 시작해야 적용됩니다. 설정을 닫을 때 다시 시작할지 물어보며, 다시 시작하지 않으면 테마는 원래대로 되돌아갑니다. 응답 생성 중인 세션은 중단될 수 있습니다."/>
+                                    </StackPanel>
+                                </Border>
 
                                 <!-- 테마 카드 (클릭 시 즉시 적용·저장) -->
                                 <StackPanel Margin="0,16,0,0">
