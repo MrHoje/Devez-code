@@ -149,6 +149,11 @@ public partial class MainWindow : Window
         InitializeComponent();
         _wakeScheduler = new WakeSchedulerService(DispatchWakeAsync);
 
+#if DEBUG
+        // Debug 빌드 식별: 좌상단 로고를 빨간 DEBUG 로 교체 (설치본과 나란히 띄울 때 혼동 방지).
+        DevezCode.Services.DebugBuildMarker.MarkTitle(TitleLogoText);
+#endif
+
         // 하단 터미널 패널: 셸이 exit 로 끝나면 패널을 닫고 방을 정리 — 다음 토글에 새 pwsh.
         ShellTerminal.SessionExited += id =>
         {
