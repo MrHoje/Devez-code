@@ -841,10 +841,9 @@ public sealed class TerminalSessionManager
         // /theme 을 한 번이라도 쓰면 그 값이 고착되므로, 앱 테마를 인자로 못박아 우선순위를 덮는다.
         var theme = DevezCode.App.CurrentTheme switch
         {
-            // dvz가 아직 3종 enum만 지원하므로 새 라이트 테마는 가장 가까운 soft로 연결한다.
-            "gray" or "softpink" => "soft",
-            "midnight" => "dark",
-            "minimal" or "soft" or "dark" => DevezCode.App.CurrentTheme,
+            // dvz 0.1.27부터 DevezCode 6종 테마 키를 그대로 지원한다.
+            "minimal" or "soft" or "dark" or "gray" or "softpink" or "midnight"
+                => DevezCode.App.CurrentTheme,
             _ => "dark",
         };
 

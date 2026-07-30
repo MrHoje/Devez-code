@@ -1676,7 +1676,7 @@
                             </StackPanel>
 
                             <!-- 테마 패널 -->
-                            <StackPanel x:Name="ThemePanel" Margin="28,22,28,20" Visibility="Collapsed">
+                            <StackPanel x:Name="ThemePanel" Margin="28,22,28,32" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                     <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPalette}"
                                           Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
@@ -1689,7 +1689,8 @@
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- 테마 카드 (클릭 시 즉시 적용·저장) -->
-                                <WrapPanel Margin="0,16,0,0" ItemHeight="150">
+                                <StackPanel Margin="0,16,0,0">
+                                    <WrapPanel ItemHeight="150">
 
                                     <!-- ── 심플 (minimal) ─────────────────────────── -->
                                     <Border x:Name="ThemeCard_Minimal" Tag="minimal"
@@ -1850,7 +1851,139 @@
                                         </Grid>
                                     </Border>
 
-                                </WrapPanel>
+                                    </WrapPanel>
+
+                                    <WrapPanel Margin="0,12,0,0" ItemHeight="150">
+                                        <Border x:Name="ThemeCard_Gray" Tag="gray" Width="150" Height="150"
+                                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                                Background="{DynamicResource PanelBrush}"
+                                                CornerRadius="10" Margin="0,0,12,0"
+                                                Cursor="Arrow" MouseLeftButtonDown="ThemeCard_Click">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="38"/>
+                                                </Grid.RowDefinitions>
+                                                <Border Grid.Row="0" CornerRadius="8,8,0,0" Margin="1"
+                                                        Background="#F3F4F6" ClipToBounds="True">
+                                                    <Grid Margin="7">
+                                                        <Border Width="34" HorizontalAlignment="Left"
+                                                                Background="#FFFFFF" BorderBrush="#D1D5DB"
+                                                                BorderThickness="1" CornerRadius="3"/>
+                                                        <Border Margin="40,0,0,0" Background="#FFFFFF"
+                                                                BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="3">
+                                                            <StackPanel Margin="7">
+                                                                <Border Width="44" Height="4" Background="#1F2937"
+                                                                        HorizontalAlignment="Left" CornerRadius="2"/>
+                                                                <Border Height="10" Margin="0,7,8,0"
+                                                                        Background="#E2E5E9" CornerRadius="3"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                                <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}"
+                                                        BorderThickness="0,1,0,0">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center">
+                                                        <Grid Width="14" Height="14" Margin="0,0,6,0">
+                                                            <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                            <Ellipse x:Name="ThemeRadioDot_Gray" Width="7" Height="7"
+                                                                     Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                                        </Grid>
+                                                        <TextBlock Text="그레이" FontSize="{DynamicResource Fs12}"
+                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+
+                                        <Border x:Name="ThemeCard_SoftPink" Tag="softpink" Width="150" Height="150"
+                                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                                Background="{DynamicResource PanelBrush}"
+                                                CornerRadius="10" Margin="0,0,12,0"
+                                                Cursor="Arrow" MouseLeftButtonDown="ThemeCard_Click">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="38"/>
+                                                </Grid.RowDefinitions>
+                                                <Border Grid.Row="0" CornerRadius="8,8,0,0" Margin="1"
+                                                        Background="#FFF7FA" ClipToBounds="True">
+                                                    <Grid Margin="7">
+                                                        <Border Width="34" HorizontalAlignment="Left"
+                                                                Background="#FFFCFD" BorderBrush="#EBCFD9"
+                                                                BorderThickness="1" CornerRadius="3"/>
+                                                        <Border Margin="40,0,0,0" Background="#FFFCFD"
+                                                                BorderBrush="#EBCFD9" BorderThickness="1" CornerRadius="3">
+                                                            <StackPanel Margin="7">
+                                                                <Border Width="44" Height="4" Background="#3B2931"
+                                                                        HorizontalAlignment="Left" CornerRadius="2"/>
+                                                                <Border Height="10" Margin="0,7,8,0"
+                                                                        Background="#F8DCE6" CornerRadius="3"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                                <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}"
+                                                        BorderThickness="0,1,0,0">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center">
+                                                        <Grid Width="14" Height="14" Margin="0,0,6,0">
+                                                            <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                            <Ellipse x:Name="ThemeRadioDot_SoftPink" Width="7" Height="7"
+                                                                     Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                                        </Grid>
+                                                        <TextBlock Text="소프트 핑크" FontSize="{DynamicResource Fs12}"
+                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+
+                                        <Border x:Name="ThemeCard_Midnight" Tag="midnight" Width="150" Height="150"
+                                                BorderBrush="{DynamicResource LineBrush}" BorderThickness="2"
+                                                Background="{DynamicResource PanelBrush}"
+                                                CornerRadius="10" Margin="0"
+                                                Cursor="Arrow" MouseLeftButtonDown="ThemeCard_Click">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="38"/>
+                                                </Grid.RowDefinitions>
+                                                <Border Grid.Row="0" CornerRadius="8,8,0,0" Margin="1"
+                                                        Background="#111827" ClipToBounds="True">
+                                                    <Grid Margin="7">
+                                                        <Border Width="34" HorizontalAlignment="Left"
+                                                                Background="#1F2937" BorderBrush="#374151"
+                                                                BorderThickness="1" CornerRadius="3"/>
+                                                        <Border Margin="40,0,0,0" Background="#1F2937"
+                                                                BorderBrush="#374151" BorderThickness="1" CornerRadius="3">
+                                                            <StackPanel Margin="7">
+                                                                <Border Width="44" Height="4" Background="#E5E7EB"
+                                                                        HorizontalAlignment="Left" CornerRadius="2"/>
+                                                                <Border Height="10" Margin="0,7,8,0"
+                                                                        Background="#1E3A5F" CornerRadius="3"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                                <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}"
+                                                        BorderThickness="0,1,0,0">
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center">
+                                                        <Grid Width="14" Height="14" Margin="0,0,6,0">
+                                                            <Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/>
+                                                            <Ellipse x:Name="ThemeRadioDot_Midnight" Width="7" Height="7"
+                                                                     Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/>
+                                                        </Grid>
+                                                        <TextBlock Text="미드나이트 블루" FontSize="{DynamicResource Fs12}"
+                                                                   Foreground="{DynamicResource TextBrush}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </WrapPanel>
+                                </StackPanel>
 
                                 <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
 

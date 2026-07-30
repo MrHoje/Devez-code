@@ -18,8 +18,18 @@ public partial class SettingsWindow : Window
         SettingsView.CloseRequested += (_, _) => Close();
         Opacity = 0;
         SettingsView.SizeChanged += (_, _) => ApplyRoundedClip();
-        Loaded += (_, _) => ApplyRoundedClip();
+        Loaded += (_, _) =>
+        {
+            FitHeightToOwner();
+            ApplyRoundedClip();
+        };
         ContentRendered += (_, _) => AnimateOpen();
+    }
+
+    private void FitHeightToOwner()
+    {
+        if (Owner?.ActualHeight is not > 0) return;
+        Height = Math.Min(Height, Math.Max(360, Owner.ActualHeight - 32));
     }
 
     private void ApplyRoundedClip()

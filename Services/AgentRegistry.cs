@@ -142,7 +142,8 @@ public static class AgentRegistry
             // 세션 ID 사전 발급 플래그가 없어(thread/start 가 발급) 방별 정확 복원은
             // TryBuildDevezVibeDirectLaunch 가 dvz 가 직접 기록한 sessions\<room>.txt → `dvz -r <id>` 로 처리.
             // 상태(busy/waiting/lastmsg)도 dvz 가 %APPDATA%\DevezCode\devezvibe\ 에 직접 쓴다(훅 없음).
-            // 테마는 --theme minimal|soft|dark 로 DevezCode 3테마와 1:1. alt-screen TUI → InlineTui=false.
+            // 테마는 --theme minimal|soft|dark|gray|softpink|midnight 로 DevezCode 6테마와 1:1.
+            // alt-screen TUI → InlineTui=false.
             // npm 전역 설치로 배포하며, 설치 후 실행 커맨드는 그대로 `dvz`.
             Id = "devezvibe", DisplayName = "Devez Vibe", Provider = "Devez",
             ExeNames = new[] { "dvz.exe", "dvz.cmd", "dvz.bat", "dvz.ps1", "dvz" },

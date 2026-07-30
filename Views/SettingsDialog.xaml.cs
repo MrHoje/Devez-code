@@ -95,7 +95,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.19.8", "2026-07-30", true, new[]
+        ("v1.20.0", "2026-07-30", true, new[]
+        {
+            "그레이, 소프트 핑크, 미드나이트 블루 테마를 추가했습니다.",
+        }),
+        ("v1.19.8", "2026-07-30", false, new[]
         {
             "실행 중인 세션이 있는 프로젝트만 보여주는 활성 프로젝트 필터를 추가했습니다.",
             "프로젝트 목록 우클릭 메뉴에서 세션을 분할 화면으로 바로 옮길 수 있습니다.",
@@ -1860,6 +1864,9 @@ public partial class SettingsDialog : UserControl
             (ThemeCard_Minimal, ThemeRadioDot_Minimal, "minimal"),
             (ThemeCard_Soft,    ThemeRadioDot_Soft,    "soft"),
             (ThemeCard_Dark,    ThemeRadioDot_Dark,    "dark"),
+            (ThemeCard_Gray, ThemeRadioDot_Gray, "gray"),
+            (ThemeCard_SoftPink, ThemeRadioDot_SoftPink, "softpink"),
+            (ThemeCard_Midnight, ThemeRadioDot_Midnight, "midnight"),
         })
         {
             var selected = _selectedTheme == key;
