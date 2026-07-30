@@ -209,48 +209,10 @@
         </Style>
     </UserControl.Resources>
 
-    <!-- 설정창 콘텐츠 (devez SettingsDialog 이식).
-         둥근 모서리/그림자/외곽선은 부모 SettingsWindow 가 담당하고, 이 컨트롤은 콘텐츠만 채운다.
-         라운드 클립이 부모 Border(ClipToBounds=True)에서 적용되므로 자식 영역은 직각이어도 된다. -->
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="32"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-
-                    <!-- Title bar: 메인창 상단바를 그대로 재현(앱 이름 + 창 컨트롤).
-                         설정창이 메인창을 덮고 있으므로 이 버튼들은 메인창을 직접 제어한다.
-                         드래그 → 메인창 이동, 더블클릭 → 최대화/복원. 설정 닫기는 좌측 "앱으로 돌아가기". -->
-                    <Border Grid.Row="0"
-                            Background="{DynamicResource BgBrush}"
-                            BorderBrush="{DynamicResource LineBrush}"
-                            BorderThickness="0,0,0,1"
-                            MouseLeftButtonDown="Header_DragMove">
-                        <Grid>
-                            <TextBlock Text="DevezCode" FontSize="12" FontWeight="Bold"
-                                       FontFamily="{StaticResource BrunoAceSCFont}"
-                                       Foreground="{DynamicResource TextBrush}"
-                                       HorizontalAlignment="Left" VerticalAlignment="Center"
-                                       Margin="9,1,0,0"/>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,4,0">
-                                <Button Style="{StaticResource WinCtrlBtn}" Click="OwnerMinBtn_Click" ToolTip="최소화">
-                                    <TextBlock Text="&#x2013;" FontSize="16"/>
-                                </Button>
-                                <Button x:Name="OwnerMaxBtn" Click="OwnerMaxBtn_Click"
-                                        Style="{StaticResource WinCtrlBtn}" ToolTip="최대화">
-                                    <Path x:Name="OwnerMaxBtnIcon" Style="{StaticResource LucideButtonIcon}"
-                                          Data="{StaticResource IconWinMaximize}" Width="11" Height="11"
-                                          StrokeThickness="1.4"/>
-                                </Button>
-                                <Button Style="{StaticResource WinCloseBtn}" Click="OwnerCloseBtn_Click">
-                                    <TextBlock Text="&#x2715;" FontSize="13"/>
-                                </Button>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <!-- Body: 좌측 카테고리 | 우측 콘텐츠 -->
-                    <Grid Grid.Row="1">
+    <!-- 설정창 콘텐츠 (devez SettingsDialog 이식). 외곽선/둥근 모서리는 부모 SettingsWindow 가 담당한다.
+         자체 헤더·푸터 없음: 메인창 상단바가 그대로 위에 남고 이 컨트롤은 그 아래 본문만 채우며,
+         옵션은 변경 즉시 저장된다. 닫는 진입점은 좌측 카테고리 맨 위의 "앱으로 돌아가기". -->
+                    <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="240"/>
                             <ColumnDefinition Width="*"/>
@@ -1708,7 +1670,28 @@
                                 </StackPanel>
 
                                 <TextBlock Text="앱 전체에 적용되는 색 테마를 선택합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"/>
+                                <!-- 테마는 세션(터미널) 색까지 바꾸므로 재시작이 필요하다 — 고르기 전에 미리 알린다.
+                                     Grid + 열 정의로 배치해야 긴 문장이 잘리지 않고 줄바꿈된다
+                                     (가로 StackPanel 안의 TextBlock 은 폭 제한을 못 받아 잘린다). -->
+                                <Border Background="{DynamicResource PanelSoftBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                        CornerRadius="8" Padding="12,10" Margin="0,0,0,20">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
+                                              Data="{StaticResource IconInfo}"
+                                              Width="15" Height="15" Margin="0,0,9,0" VerticalAlignment="Center"
+                                              Stroke="{DynamicResource TextMutedBrush}"/>
+                                        <TextBlock Grid.Column="1" FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   Text="테마 변경 시 실행 중인 세션들이 재시작됩니다."/>
+                                    </Grid>
+                                </Border>
 
                                 <!-- 테마 카드 (클릭 시 즉시 적용·저장) -->
                                 <StackPanel Margin="0,16,0,0">
@@ -2350,7 +2333,4 @@
                           </Grid>
                         </ScrollViewer>
                     </Grid>
-
-                    <!-- Footer 없음: 옵션은 변경 즉시 저장된다(저장/취소 버튼 폐지). -->
-    </Grid>
 </UserControl>

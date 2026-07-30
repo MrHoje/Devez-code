@@ -1550,34 +1550,6 @@ public partial class SettingsDialog : UserControl
     /// <summary>헤더 X — devez 처럼 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     private void CancelBtn_Click(object sender, RoutedEventArgs e) => TryCloseWithConfirm();
 
-    /// <summary>타이틀바 드래그 → 설정창이 덮고 있는 메인창을 함께 이동(설정창은 Owner 를 따라온다).
-    /// 더블클릭은 메인창 상단바와 동일하게 최대화/복원 토글.</summary>
-    private void Header_DragMove(object sender, MouseButtonEventArgs e)
-    {
-        var win = Window.GetWindow(this) as SettingsWindow;
-        if (win == null) return;
-        if (e.ClickCount == 2) win.ToggleMaximizeOwner();
-        else                   win.DragOwnerWindow();
-    }
-
-    // ── 재현한 타이틀바의 창 컨트롤 — 실제 대상은 덮고 있는 메인창(Owner) ──
-    private void OwnerMinBtn_Click(object sender, RoutedEventArgs e)
-        => (Window.GetWindow(this) as SettingsWindow)?.MinimizeOwner();
-
-    private void OwnerMaxBtn_Click(object sender, RoutedEventArgs e)
-        => (Window.GetWindow(this) as SettingsWindow)?.ToggleMaximizeOwner();
-
-    private void OwnerCloseBtn_Click(object sender, RoutedEventArgs e)
-        => (Window.GetWindow(this) as SettingsWindow)?.CloseOwner();
-
-    /// <summary>메인창 최대화 상태를 타이틀바 버튼 아이콘에 반영(SettingsWindow 가 호출).</summary>
-    public void SyncOwnerMaximizeIcon(bool maximized)
-    {
-        OwnerMaxBtnIcon.Data = (System.Windows.Media.Geometry)FindResource(
-            maximized ? "IconWinRestore" : "IconWinMaximize");
-        OwnerMaxBtn.ToolTip = maximized ? "이전 크기로 복원" : "최대화";
-    }
-
     /// <summary>ESC / "앱으로 돌아가기" / 외부에서 호출하는 닫기.
     /// 옵션은 이미 즉시 저장돼 있으므로 저장 여부는 묻지 않고, 테마를 바꿨을 때만
     /// 세션 재시작 여부를 여기서 묻는다(재시작하지 않아도 저장은 유지된다).</summary>
@@ -1590,25 +1562,38 @@ public partial class SettingsDialog : UserControl
             _themeReloadPending = false;
             var restart = ConfirmDialog.Show(
                 "테마 변경 적용",
-                "테마 변경을 열려 있는 세션에 적용하려면 세션을 다시 시작해야 합니다.\n" +
-                "응답 생성 중인 세션은 중단될 수 있으며, 필요한 경우 요청을 다시 보내야 합니다.\n\n" +
-                "지금 다시 시작하시겠습니까? (다시 시작하지 않아도 변경은 저장되며 다음 실행부터 적용됩니다)",
-                okLabel: "다시 시작",
+                "테마 변경을 적용하려면 열려 있는 세션을 다시 시작해야 합니다.\n" +
+                "응답 생성 중인 세션은 중단될 수 있으며, 필요한 경우 요청을 다시 보내야 합니다.",
+                okLabel: "다시 시작하고 변경",
+                cancelLabel: "테마 되돌리기",
                 iconKey: "IconPalette",
                 wideLayout: true); // 세션 재시작 안내 — 긴 본문이라 넓게 유지
-            if (restart)
-                (Application.Current.MainWindow as MainWindow)?.ReloadAllSessionsForTheme();
+            if (restart) (Application.Current.MainWindow as MainWindow)?.ReloadAllSessionsForTheme();
+            else         RevertTheme();
         }
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>앱을 닫으면서 설정창을 정리하는 경로 — 저장만 확정하고 세션 재시작은 묻지 않는다
-    /// (곧 종료되므로 재시작 안내가 의미 없다).</summary>
-    public void CloseForAppExit()
+    /// <summary>재시작을 거절한 경우 — 테마를 변경 전 값으로 되돌려 저장한다(세션과 앱 색을 일치시킨다).</summary>
+    private void RevertTheme()
+    {
+        if (_themeBeforeChange == null || _themeBeforeChange == _selectedTheme) return;
+        _selectedTheme = _themeBeforeChange;
+        _originalTheme = _themeBeforeChange;
+        (Application.Current as App)?.SetTheme(_themeBeforeChange);   // persist
+        UpdateThemeSelectionVisual();
+        _themeBeforeChange = null;
+    }
+
+    /// <summary>테마를 처음 바꾼 시점의 이전 테마(되돌리기 기준).</summary>
+    private string? _themeBeforeChange;
+
+    /// <summary>앱 종료 등 외부 사유로 화면이 사라질 때 — 대기 중인 저장만 확정한다.
+    /// (테마 재시작 안내는 곧 종료되므로 띄우지 않는다.)</summary>
+    public void FlushPendingSave()
     {
         FlushAutoSave();
         _themeReloadPending = false;
-        CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>테마가 바뀐 뒤 아직 세션에 반영(재시작)되지 않았음.</summary>
@@ -1627,7 +1612,12 @@ public partial class SettingsDialog : UserControl
     private void ApplySettingsCore()
     {
         // 테마는 저장은 즉시 하되 세션 재시작이 필요하므로, 재시작 여부는 창을 닫을 때 묻는다.
-        if (_selectedTheme != _originalTheme) _themeReloadPending = true;
+        // 되돌리기 기준은 "처음 바꾼 시점의 이전 테마"를 유지한다(여러 번 바꿔도 원본으로 복귀).
+        if (_selectedTheme != _originalTheme)
+        {
+            _themeBeforeChange ??= _originalTheme;
+            _themeReloadPending = true;
+        }
 
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);

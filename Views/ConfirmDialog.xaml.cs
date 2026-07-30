@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Controls;
@@ -21,13 +22,24 @@ public partial class ConfirmDialog : Window
     private bool _downloading;
     private UpdateOutcome _updateOutcome = UpdateOutcome.Cancelled;
 
-    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false)
+    /// <summary>Owner 는 "지금 활성인 창" 우선 — 설정 화면처럼 메인창 위에 떠 있는 비모달 창에서 띄울 때
+    /// Owner 를 메인창으로 고정하면 형제 창인 그 창 뒤로 숨을 수 있다.</summary>
+    private static void ApplyOwner(Window dialog)
+    {
+        var active = Application.Current.Windows.OfType<Window>()
+            .FirstOrDefault(w => w.IsActive && w.IsLoaded && w != dialog);
+        var owner = active ?? Application.Current.MainWindow;
+        if (owner is { IsLoaded: true } && owner != dialog) dialog.Owner = owner;
+    }
+
+    private ConfirmDialog(string title, string message, string okLabel, string iconKey, bool danger, string? confirmText, bool wideLayout, bool autoWidth = false, string? cancelLabel = null)
     {
         InitializeComponent();
         Title = title;
         TitleText.Text = title;
         MessageText.Text = message;
         OkText.Text = okLabel;
+        if (cancelLabel != null) CancelText.Text = cancelLabel;   // 취소가 단순 취소가 아닌 경우(예: 되돌리기)
         _confirmText = confirmText;
 
         if (confirmText != null)
@@ -78,16 +90,12 @@ public partial class ConfirmDialog : Window
         string? confirmText = null,
         bool topMost = false,
         bool wideLayout = false,
-        bool autoWidth = false)
+        bool autoWidth = false,
+        string? cancelLabel = null)
     {
-        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger, confirmText, wideLayout, autoWidth);
+        var dialog = new ConfirmDialog(title, message, okLabel, iconKey, danger, confirmText, wideLayout, autoWidth, cancelLabel);
 
-        if (Application.Current.MainWindow != null
-            && Application.Current.MainWindow.IsLoaded
-            && Application.Current.MainWindow != dialog)
-        {
-            dialog.Owner = Application.Current.MainWindow;
-        }
+        ApplyOwner(dialog);
 
         // Topmost 플로팅 창(스티커 메모 등) 위로 뜨도록
         if (topMost) dialog.Topmost = true;
@@ -115,12 +123,7 @@ public partial class ConfirmDialog : Window
         dialog.MaxHeight = 430;
         dialog.Width = dialog.MinWidth = dialog.MaxWidth = 560;
 
-        if (Application.Current.MainWindow != null
-            && Application.Current.MainWindow.IsLoaded
-            && Application.Current.MainWindow != dialog)
-        {
-            dialog.Owner = Application.Current.MainWindow;
-        }
+        ApplyOwner(dialog);
 
         dialog.ShowDialog();
         return dialog._updateOutcome;
@@ -142,12 +145,7 @@ public partial class ConfirmDialog : Window
         dialog.MiddleBtn.Visibility = Visibility.Visible;
         if (hideCancel) dialog.CancelBtn.Visibility = Visibility.Collapsed; // 취소 버튼 숨김(두 선택지만)
 
-        if (Application.Current.MainWindow != null
-            && Application.Current.MainWindow.IsLoaded
-            && Application.Current.MainWindow != dialog)
-        {
-            dialog.Owner = Application.Current.MainWindow;
-        }
+        ApplyOwner(dialog);
 
         if (topMost) dialog.Topmost = true;
 
@@ -199,12 +197,7 @@ public partial class ConfirmDialog : Window
         var dialog = new ConfirmDialog(title, message, okLabel, iconKey, false, null, wideLayout: false);
         dialog.CancelBtn.Visibility = Visibility.Collapsed;
 
-        if (Application.Current.MainWindow != null
-            && Application.Current.MainWindow.IsLoaded
-            && Application.Current.MainWindow != dialog)
-        {
-            dialog.Owner = Application.Current.MainWindow;
-        }
+        ApplyOwner(dialog);
 
         dialog.ShowDialog();
     }
@@ -223,12 +216,7 @@ public partial class ConfirmDialog : Window
         dialog.LinkText.Text = linkLabel;
         dialog.LinkText.Visibility = Visibility.Visible;
 
-        if (Application.Current.MainWindow != null
-            && Application.Current.MainWindow.IsLoaded
-            && Application.Current.MainWindow != dialog)
-        {
-            dialog.Owner = Application.Current.MainWindow;
-        }
+        ApplyOwner(dialog);
 
         dialog.ShowDialog();
         return dialog._linkClicked;
