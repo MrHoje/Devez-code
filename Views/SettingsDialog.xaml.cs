@@ -1524,9 +1524,33 @@ public partial class SettingsDialog : UserControl
     /// <summary>헤더 X — devez 처럼 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     private void CancelBtn_Click(object sender, RoutedEventArgs e) => TryCloseWithConfirm();
 
-    /// <summary>헤더 드래그 → 설정창이 덮고 있는 메인창을 함께 이동(설정창은 Owner 를 따라온다).</summary>
+    /// <summary>타이틀바 드래그 → 설정창이 덮고 있는 메인창을 함께 이동(설정창은 Owner 를 따라온다).
+    /// 더블클릭은 메인창 상단바와 동일하게 최대화/복원 토글.</summary>
     private void Header_DragMove(object sender, MouseButtonEventArgs e)
-        => (Window.GetWindow(this) as SettingsWindow)?.DragOwnerWindow();
+    {
+        var win = Window.GetWindow(this) as SettingsWindow;
+        if (win == null) return;
+        if (e.ClickCount == 2) win.ToggleMaximizeOwner();
+        else                   win.DragOwnerWindow();
+    }
+
+    // ── 재현한 타이틀바의 창 컨트롤 — 실제 대상은 덮고 있는 메인창(Owner) ──
+    private void OwnerMinBtn_Click(object sender, RoutedEventArgs e)
+        => (Window.GetWindow(this) as SettingsWindow)?.MinimizeOwner();
+
+    private void OwnerMaxBtn_Click(object sender, RoutedEventArgs e)
+        => (Window.GetWindow(this) as SettingsWindow)?.ToggleMaximizeOwner();
+
+    private void OwnerCloseBtn_Click(object sender, RoutedEventArgs e)
+        => (Window.GetWindow(this) as SettingsWindow)?.CloseOwner();
+
+    /// <summary>메인창 최대화 상태를 타이틀바 버튼 아이콘에 반영(SettingsWindow 가 호출).</summary>
+    public void SyncOwnerMaximizeIcon(bool maximized)
+    {
+        OwnerMaxBtnIcon.Data = (System.Windows.Media.Geometry)FindResource(
+            maximized ? "IconWinRestore" : "IconWinMaximize");
+        OwnerMaxBtn.ToolTip = maximized ? "이전 크기로 복원" : "최대화";
+    }
 
     /// <summary>ESC / 외부에서 호출하는 닫기 — 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     public void TryCloseWithConfirm()

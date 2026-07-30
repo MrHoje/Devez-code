@@ -6895,6 +6895,9 @@ public partial class MainWindow : Window
 
     private void MaxBtn_Click(object sender, RoutedEventArgs e) => ToggleMaximizeOrFullScreen();
 
+    /// <summary>이 창을 덮고 있는 자식 창(설정창)이 재현한 타이틀바에서 호출하는 최대화 토글.</summary>
+    public void ToggleMaximizeFromChild() => ToggleMaximizeOrFullScreen();
+
     /// <summary>최대화 버튼·상단바 더블클릭 공통 토글. 전체화면 설정 ON 이면 Maximized 상태를
     /// 거치지 않고 Normal 에서 바로 전체화면 진입/해제(최대화→복원 2단 애니메이션 제거).</summary>
     private void ToggleMaximizeOrFullScreen()

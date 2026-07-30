@@ -214,35 +214,39 @@
          라운드 클립이 부모 Border(ClipToBounds=True)에서 적용되므로 자식 영역은 직각이어도 된다. -->
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="48"/>
+            <RowDefinition Height="32"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-                    <!-- Header: 아이콘 + "설정" + 닫기. 헤더 드래그 → 붙어 있는 메인창을 함께 이동 -->
+                    <!-- Title bar: 메인창 상단바를 그대로 재현(앱 이름 + 창 컨트롤).
+                         설정창이 메인창을 덮고 있으므로 이 버튼들은 메인창을 직접 제어한다.
+                         드래그 → 메인창 이동, 더블클릭 → 최대화/복원. 설정 닫기는 좌측 "앱으로 돌아가기". -->
                     <Border Grid.Row="0"
-                            Background="{DynamicResource PanelBrush}"
+                            Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}"
                             BorderThickness="0,0,0,1"
                             MouseLeftButtonDown="Header_DragMove">
                         <Grid>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                                <Path Style="{StaticResource LucideIcon}"
-                                      Data="{StaticResource IconSettings}"
-                                      Width="16" Height="16" VerticalAlignment="Center"
-                                      Stroke="{DynamicResource TextBrush}"
-                                      Margin="0,-1,11,0"/>
-								<TextBlock x:Name="SettingsTitle" Text="설정" VerticalAlignment="Center"
-								           FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
-								           Foreground="{DynamicResource TextBrush}"
-								           />
+                            <TextBlock Text="DevezCode" FontSize="12" FontWeight="Bold"
+                                       FontFamily="{StaticResource BrunoAceSCFont}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       HorizontalAlignment="Left" VerticalAlignment="Center"
+                                       Margin="9,1,0,0"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,4,0">
+                                <Button Style="{StaticResource WinCtrlBtn}" Click="OwnerMinBtn_Click" ToolTip="최소화">
+                                    <TextBlock Text="&#x2013;" FontSize="16"/>
+                                </Button>
+                                <Button x:Name="OwnerMaxBtn" Click="OwnerMaxBtn_Click"
+                                        Style="{StaticResource WinCtrlBtn}" ToolTip="최대화">
+                                    <Path x:Name="OwnerMaxBtnIcon" Style="{StaticResource LucideButtonIcon}"
+                                          Data="{StaticResource IconWinMaximize}" Width="11" Height="11"
+                                          StrokeThickness="1.4"/>
+                                </Button>
+                                <Button Style="{StaticResource WinCloseBtn}" Click="OwnerCloseBtn_Click">
+                                    <TextBlock Text="&#x2715;" FontSize="13"/>
+                                </Button>
                             </StackPanel>
-                            <Button Click="CancelBtn_Click"
-                                    HorizontalAlignment="Right" VerticalAlignment="Center"
-                                    Width="40" Height="32" Margin="0,0,8,0"
-                                    Style="{StaticResource WinCloseBtn}">
-                                <TextBlock Text="&#x2715;" FontSize="{DynamicResource Fs11}"/>
-                            </Button>
                         </Grid>
                     </Border>
 
@@ -260,6 +264,16 @@
                                 BorderThickness="0,0,1,0">
                             <DockPanel Margin="10,16,10,16" LastChildFill="True">
                                 <StackPanel>
+                                <!-- 설정 닫기 진입점(헤더 X 대체) — 미저장 변경이 있으면 저장 여부를 묻는다 -->
+                                <Button Click="CancelBtn_Click" Margin="0,0,0,14"
+                                        Style="{StaticResource CategoryItem}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconArrowLeft}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="앱으로 돌아가기" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
                                 <Button x:Name="CatGeneralBtn" Tag="general"
                                         Style="{StaticResource CategoryItem}" Click="Category_Click">
                                     <StackPanel Orientation="Horizontal">
@@ -846,7 +860,7 @@
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
                                                     <!-- 에이전트 아이콘: 이름·설치 명령·버전 3줄 높이를 채우는 크기 -->
-                                                    <Image Grid.Column="0" Width="48" Height="48"
+                                                    <Image Grid.Column="0" Width="42" Height="42"
                                                            Margin="0,0,16,0" VerticalAlignment="Center"
                                                            Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
                                                            RenderOptions.BitmapScalingMode="HighQuality"/>
