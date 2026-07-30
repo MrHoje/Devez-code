@@ -101,8 +101,6 @@ public partial class SidebarView : UserControl
     public event Action<SessionItem>? SessionDeleteRequested;
     public event Action<SessionItem>? SessionRenameRequested;
     public event Action<SessionItem>? SessionStopTrackingRequested;
-    /// <summary>세션 메뉴 "세션 꺼두기" — 목록과 기록은 유지하고 실행 중인 프로세스만 종료.</summary>
-    public event Action<SessionItem>? SessionTurnOffRequested;
     /// <summary>세션 메뉴 "세션 숨기기" — 탭 X 숨기기와 동일(MainWindow 위임).</summary>
     public event Action<SessionItem>? SessionHideRequested;
     /// <summary>세션 메뉴 "포크" 요청(MainWindow 위임) — 원본 대화를 복사한 새 세션 생성.</summary>
@@ -1520,8 +1518,6 @@ public partial class SidebarView : UserControl
                     ? Visibility.Visible : Visibility.Collapsed,
                 "Hide" => (batch ? anyVisible : !target.Hidden)
                     ? Visibility.Visible : Visibility.Collapsed,
-                "TurnOff" => !batch && target.IsAlive && !target.IsExternal
-                    ? Visibility.Visible : Visibility.Collapsed,
                 "Close" or "Delete" => Visibility.Visible,
                 _ => item.Visibility,
             };
@@ -1532,7 +1528,6 @@ public partial class SidebarView : UserControl
                 "Lock" => showCount ? $"세션 {count}개 잠금" : "세션 잠금",
                 "Unlock" => showCount ? $"세션 {count}개 잠금 해제" : "잠금 해제",
                 "Hide" => showCount ? $"세션 {count}개 숨기기" : "세션 숨기기",
-                "TurnOff" => "세션 꺼두기",
                 "Close" => showCount ? $"세션 {count}개 닫기" : "세션 닫기",
                 "Delete" => showCount ? $"세션 {count}개 삭제" : "세션 삭제",
                 _ => item.Header,
@@ -1622,12 +1617,6 @@ public partial class SidebarView : UserControl
             SessionsStopTrackingRequested?.Invoke(targets);
         else if (targets.Count == 1)
             SessionStopTrackingRequested?.Invoke(targets[0]);
-    }
-
-    private void SessionTurnOff_Click(object sender, RoutedEventArgs e)
-    {
-        if (ItemOf<SessionItem>(sender) is { IsAlive: true, IsExternal: false } session)
-            SessionTurnOffRequested?.Invoke(session);
     }
 
     private void SessionHide_Click(object sender, RoutedEventArgs e)

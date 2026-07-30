@@ -224,12 +224,6 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
-                        <MenuItem Header="세션 꺼두기" Tag="{Binding}" CommandParameter="TurnOff" Click="SessionTurnOff_Click">
-                            <MenuItem.Icon>
-                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPower}"
-                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
-                            </MenuItem.Icon>
-                        </MenuItem>
                         <MenuItem Header="세션 닫기" Tag="{Binding}" CommandParameter="Close" Click="SessionStopTracking_Click"
                                   Visibility="{Binding IsLocked, Converter={x:Static models:BoolToVisibilityConverter.Instance}, ConverterParameter=invert}">
                             <MenuItem.Icon>

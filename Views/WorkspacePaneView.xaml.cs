@@ -2412,28 +2412,6 @@ public partial class WorkspacePaneView : UserControl
         try { _terminal.CloseTerminal(roomId); } catch { /* ignore */ }
     }
 
-    /// <summary>세션 하나를 꺼두기 전에 이 패널의 xterm 배선을 끊는다. 현재 표시 중인 세션이면
-    /// 프로젝트·목록은 유지한 채 활성 탭만 비워, 사용자가 다시 행을 눌렀을 때 resume 경로를 타게 한다.</summary>
-    public void PrepareSessionTurnOff(SessionItem session)
-    {
-        CancelPendingHideStop(session.Id);
-        CloseTerminalRoom(session.Id);
-        _shownSessionSizes.Remove(session.Id);
-        if (!ReferenceEquals(_activeSession, session)) return;
-
-        var parent = ParentOf(session);
-        if (parent != null)
-        {
-            if (_split && IsRightPane)
-                parent.SplitRightActiveRef = null;
-            else
-                parent.LastActiveTabRef = null;
-        }
-        session.IsActive = false;
-        ClearActiveSession();
-        WorkspaceStore.Save(Projects);
-    }
-
     /// <summary>
     /// 외부 인계된 세션의 내부 배선을 끊되 현재 xterm 버퍼는 보존한다.
     /// 버퍼가 없는 재시작 복원 경로에서만 저장된 스냅샷을 사용한다.
