@@ -6470,6 +6470,14 @@ public partial class MainWindow : Window
         else RootChrome.Margin = default;
     }
 
+    /// <summary>창을 덮는 자식 오버레이(설정창)가 맞춰야 할 시각적 콘텐츠 루트.
+    /// 최대화 시 창은 프레임만큼 화면 밖에 있고 ApplyMaximizeMargin 이 이 요소의 마진으로 보정하므로,
+    /// 창 rect 가 아니라 이 요소의 화면 위치·크기를 기준으로 해야 어긋나지 않는다.</summary>
+    public FrameworkElement ChromeRootElement => RootChrome;
+
+    /// <summary>둥근 모서리를 쓰지 않는 상태(최대화/전체화면). 자식 오버레이도 같은 기준을 따라야 한다.</summary>
+    public bool IsSquareCornerState => WindowState == WindowState.Maximized || _inFullScreen;
+
     /// <summary>전체화면(작업표시줄 덮기) 설정 적용. 현재 최대화/전체화면 상태면 즉시 전환.</summary>
     public void ApplyFullScreen(bool useFullScreen)
     {

@@ -17,9 +17,13 @@
         FontFamily="{StaticResource PretendardFont}">
 
     <!-- 메인창을 꽉 채우는 설정 화면(Slack 스타일).
-         Owner(MainWindow)의 클라이언트 영역에 정확히 겹치고 이동·리사이즈를 따라간다.
-         꽉 차므로 라운드/그림자/투명도는 쓰지 않는다(투명 창은 최대화 시 작업표시줄을 덮음). -->
-    <Border x:Name="RootLayer" Background="{DynamicResource BgBrush}" SnapsToDevicePixels="True">
+         Owner(MainWindow)의 시각적 콘텐츠 영역에 정확히 겹치고 이동·리사이즈를 따라간다.
+         둥근 모서리는 메인창과 같은 방식(DWM CORNER_PREFERENCE)으로 코드에서 적용하고,
+         테두리는 메인창(RootChrome)과 같은 1px 라인을 그려 덮은 자리를 그대로 잇는다.
+         AllowsTransparency 는 쓰지 않는다(투명 창은 최대화 시 작업표시줄을 덮고 DWM 라운드도 무시됨). -->
+    <Border x:Name="RootLayer" Background="{DynamicResource BgBrush}"
+            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+            SnapsToDevicePixels="True">
         <views:SettingsDialog x:Name="SettingsView"/>
     </Border>
 </Window>
