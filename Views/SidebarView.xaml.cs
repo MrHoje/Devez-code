@@ -1874,6 +1874,11 @@ public partial class SidebarView : UserControl
     private ScrollViewer ProjectScrollFor(bool archived)
         => archived ? ArchiveProjectScroll : ActiveProjectScroll;
 
+    // 고스트 좌우 제한은 ScrollViewer(패딩 포함)가 아니라 카드가 실제로 놓이는 레인 기준이어야
+    // 좌·우 모두 카드 보더에 딱 맞는다.
+    private FrameworkElement ProjectLaneFor(bool archived)
+        => archived ? ArchivedHost : ProjectsHost;
+
     private ScrollViewer CurrentProjectScroll => ProjectScrollFor(_archiveOpen);
 
     private void UpdateProjectDragAutoScroll(Point pointer)
@@ -2342,7 +2347,7 @@ public partial class SidebarView : UserControl
             ghostBackground: folderGhostBackground,
             useQuarterReorderHysteresis: (sourceItem, targetItem) =>
                 sourceItem is ProjectItem && targetItem is ProjectFolderItem,
-            ghostClampHost: ProjectScrollFor(archived));
+            ghostClampHost: ProjectLaneFor(archived));
 
         if (_rootDrag != null)
         {
@@ -2453,7 +2458,7 @@ public partial class SidebarView : UserControl
                 }, exactFollow: true, columns: 2, gridMidX: midX,
                 useGridPlaceholder: true,
                 includeElementMarginsInBounds: true,
-                ghostClampHost: ProjectScrollFor(p.IsArchived));
+                ghostClampHost: ProjectLaneFor(p.IsArchived));
         }
         else
         {
@@ -2464,7 +2469,7 @@ public partial class SidebarView : UserControl
                         ProjectsReordered?.Invoke();
                     return Task.CompletedTask;
                 }, exactFollow: true, useFixedLayoutPlaceholder: true,
-                ghostClampHost: ProjectScrollFor(p.IsArchived));
+                ghostClampHost: ProjectLaneFor(p.IsArchived));
         }
 
         if (_projectDrag != null)
