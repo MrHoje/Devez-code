@@ -2089,7 +2089,14 @@ public partial class SidebarView : UserControl
     }
 
     private void TryStartFolderDrag(ProjectFolderItem folder)
-        => TryStartRootDrag(folder, folder.IsArchived);
+    {
+        if (IsReorderBlockedByActiveFilter(folder.IsArchived)) return;
+        TryStartRootDrag(folder, folder.IsArchived);
+    }
+
+    // 활성 필터가 켜지면 활성 목록은 실제 순서의 부분집합만 보여주므로 재정렬을 막는다(보관 목록은 필터 대상 아님).
+    private bool IsReorderBlockedByActiveFilter(bool isArchived)
+        => _showActiveProjectsOnly && !isArchived;
 
     // 루트 카드의 컬럼(0/1) 읽기·쓰기 — 프로젝트와 1열(반폭) 폴더 공통.
     private static int ColumnOfItem(object item) => item switch
@@ -2303,6 +2310,8 @@ public partial class SidebarView : UserControl
 
     private void TryStartProjectDrag(ProjectItem p)
     {
+        if (IsReorderBlockedByActiveFilter(p.IsArchived)) return;
+
         if (p.FolderId == null)
         {
             TryStartRootDrag(p, p.IsArchived);
