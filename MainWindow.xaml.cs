@@ -2178,8 +2178,8 @@ public partial class MainWindow : Window
     private bool   _leftCollapsed;
     private bool   _rightCollapsed;
     private double _sidebarWidth = 262;
-    // 1열=205: 헤더의 "프로젝트" 타이틀 + 활성필터 토글 + 아이콘 3개가 잘리지 않는 폭.
-    private double _sidebarMinWidth = 205;  // 2열=380. ApplyProjectColumns 가 갱신.
+    // 1열=220: 헤더의 "프로젝트" 타이틀 + 활성필터 토글 + 아이콘 3개가 잘리지 않는 폭.
+    private double _sidebarMinWidth = 220;  // 2열=380. ApplyProjectColumns 가 갱신.
     private double _fileExpWidth = 300;
     private double _fileExpMinWidth;       // 탭 버튼 4개가 온전히 보이는 최소 폭(런타임 측정)
 
@@ -2612,7 +2612,7 @@ public partial class MainWindow : Window
     public void ApplyProjectColumns(int cols)
     {
         cols = cols == 2 ? 2 : 1;
-        _sidebarMinWidth = cols == 2 ? 380 : 205;
+        _sidebarMinWidth = cols == 2 ? 380 : 220;
         Sidebar.ApplyProjectColumns(cols);
         if (_leftCollapsed) return; // 접힌 상태에선 폭 0 유지(펼칠 때 _sidebarMinWidth 적용됨)
 
@@ -4065,7 +4065,9 @@ public partial class MainWindow : Window
             // 즉시 재활성화된다. (스왑은 유지 콘텐츠를 PaneA 로 재부착하므로 더블 배선 방지 위해 위에서 dispose 함.)
             if (!swapped) PaneB.ClearForHide(disposeTerminal: false);
             PaneB.ResumeTerminalOnly();   // 숨겨진 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록). PaneB 는 hide 되므로 collapse 경로 유지.
-            PaneA.ResumeTerminalOnly(webCover: true);   // 살아남아 전체폭으로 넓어지는 PaneA 는 사이드패널과 동일 무플래시 크로스페이드.
+            // 살아남는 claude 화면은 최종 폭보다 잠깐 넓혔다가 최종 폭으로 줄여, 최대화→복원처럼
+            // 마지막 리사이즈가 "축소"가 되게 한다. Ink 가 넓어질 때 지운 옛 줄을 최종 축소 재렌더가 다시 채운다.
+            PaneA.ResumeTerminalOnly(webCover: true, recoverWiden: true);
             UpdatePaneFocusVisual(animate: false);
             PersistSplitState();
         }
