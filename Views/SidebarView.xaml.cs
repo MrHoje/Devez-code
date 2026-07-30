@@ -92,6 +92,8 @@ public partial class SidebarView : UserControl
     public event Action<FileTabItem>? OpenDocSelected;
     /// <summary>카드 문서 우클릭 "문서 닫기" — 해당 파일 탭을 닫는다(MainWindow 위임).</summary>
     public event Action<FileTabItem>? OpenDocCloseRequested;
+    public Func<TabItemBase, (string Header, string IconKey)>? SplitMovePresentationProvider { get; set; }
+    public event Action<TabItemBase>? SplitMoveRequested;
     /// <summary>카드의 웹 브라우저 탭 클릭/닫기 요청.</summary>
     public event Action<BrowserTabItem>? BrowserTabSelected;
     public event Action<BrowserTabItem>? BrowserTabCloseRequested;
@@ -1507,6 +1509,35 @@ public partial class SidebarView : UserControl
                 ? Visibility.Visible : Visibility.Collapsed;
         if (separators.Count > 1)
             separators[1].Visibility = Visibility.Visible;
+
+        UpdateSplitMoveMenu(cm, target, !batch);
+    }
+
+    private void TabMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu cm) return;
+        var target = cm.DataContext as TabItemBase
+                     ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as TabItemBase;
+        if (target != null) UpdateSplitMoveMenu(cm, target, true);
+    }
+
+    private void UpdateSplitMoveMenu(ContextMenu menu, TabItemBase target, bool visible)
+    {
+        var item = menu.Items.OfType<MenuItem>()
+            .FirstOrDefault(candidate => Equals(candidate.CommandParameter, "SplitMove"));
+        if (item == null) return;
+
+        item.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        var presentation = SplitMovePresentationProvider?.Invoke(target)
+                           ?? ("분할 보기", "IconPanelLeftOpen");
+        item.Header = presentation.Header;
+        if (item.Icon is System.Windows.Shapes.Path icon)
+            icon.Data = (Geometry)FindResource(presentation.IconKey);
+    }
+
+    private void TabSplitMove_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<TabItemBase>(sender) is { } tab) SplitMoveRequested?.Invoke(tab);
     }
 
     private void SessionDetach_Click(object sender, RoutedEventArgs e)

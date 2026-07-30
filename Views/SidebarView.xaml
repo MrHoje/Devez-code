@@ -194,6 +194,13 @@
                                       Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="분할 보기" Tag="{Binding}" CommandParameter="SplitMove"
+                                  Click="TabSplitMove_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelLeftOpen}"
+                                      Width="13" Height="13" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <Separator/>
                         <!-- Lock toggle -->
                         <MenuItem Header="세션 잠금" Tag="{Binding}" CommandParameter="Lock" Click="SessionLock_Click"
@@ -494,10 +501,17 @@
                     Cursor="Arrow"
                     ToolTip="{Binding FilePath}">
                 <Border.ContextMenu>
-                    <ContextMenu>
+                    <ContextMenu Opened="TabMenu_Opened">
                         <MenuItem Header="파일 경로 복사" Tag="{Binding}" Click="OpenDocCopyPath_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconCopy}"
+                                      Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="분할 보기" Tag="{Binding}" CommandParameter="SplitMove"
+                                  Click="TabSplitMove_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPanelLeftOpen}"
                                       Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>

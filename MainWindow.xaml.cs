@@ -255,6 +255,8 @@ public partial class MainWindow : Window
         Sidebar.SessionSelected        += OpenSessionFromSidebar;
         Sidebar.OpenDocSelected        += OpenDocFromSidebar;
         Sidebar.OpenDocCloseRequested  += CloseDocFromSidebar;
+        Sidebar.SplitMovePresentationProvider = GetSidebarSplitMovePresentation;
+        Sidebar.SplitMoveRequested += MoveSidebarTabAcrossSplit;
         Sidebar.BrowserTabSelected     += OpenBrowserFromSidebar;
         Sidebar.BrowserTabCloseRequested += CloseBrowserFromSidebar;
         Sidebar.BrowserTabRenameRequested += RenameBrowserFromSidebar;
@@ -3611,6 +3613,64 @@ public partial class MainWindow : Window
             PaneA.RefreshSplitIndicator();
             PaneB.RefreshSplitIndicator();
         }
+    }
+
+    private (string Header, string IconKey) GetSidebarSplitMovePresentation(TabItemBase tab)
+    {
+        var pane = FindLivePaneForSidebarTab(tab);
+        if (!_splitActive || pane == null)
+            return ("분할 보기", "IconPanelLeftOpen");
+        return ReferenceEquals(pane, RightPane)
+            ? ("왼쪽으로 이동", "IconChevronLeft")
+            : ("오른쪽으로 이동", "IconChevronRight");
+    }
+
+    private void MoveSidebarTabAcrossSplit(TabItemBase tab)
+    {
+        var source = FindLivePaneForSidebarTab(tab);
+        bool wasAlreadyVisible = source != null;
+
+        if (source == null)
+        {
+            if (tab is SessionItem session) OpenSessionFromSidebar(session);
+            else if (tab is FileTabItem file) OpenDocFromSidebar(file);
+            else return;
+            source = FindLivePaneForSidebarTab(tab);
+        }
+        if (source == null) return;
+
+        if (!wasAlreadyVisible && _splitActive && ReferenceEquals(source, RightPane))
+            return;
+
+        OnPaneSplitViewRequested(source, tab);
+        RefreshCardGroups();
+    }
+
+    private WorkspacePaneView? FindLivePaneForSidebarTab(TabItemBase tab)
+    {
+        var project = _projects.Concat(_archivedProjects)
+            .FirstOrDefault(candidate => candidate.Tabs.Contains(tab));
+        if (project == null) return null;
+
+        if (_splitActive)
+        {
+            if (project.RightItems.Contains(tab)
+                && ReferenceEquals(RightPane.ActiveProject, project)
+                && RightPane.ShowsTab(tab))
+                return RightPane;
+            if (project.LeftItems.Contains(tab)
+                && ReferenceEquals(LeftPane.ActiveProject, project)
+                && LeftPane.ShowsTab(tab))
+                return LeftPane;
+        }
+
+        var visible = new[] { LeftPane, RightPane }
+            .Where(pane => ReferenceEquals(pane.ActiveProject, project) && pane.ShowsTab(tab))
+            .ToList();
+        if (visible.Count == 0) return null;
+        if (visible.Contains(_focusedPane)) return _focusedPane;
+        var active = visible.FirstOrDefault(pane => ReferenceEquals(pane.ActiveTab, tab));
+        return active ?? visible[0];
     }
 
     /// <summary>파일탐색기 더블클릭 → 파일 탭 열기. 분할 중이면 더블클릭 파일을 '우측' 패널에 연다:
