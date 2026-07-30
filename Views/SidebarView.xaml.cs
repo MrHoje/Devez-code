@@ -636,7 +636,8 @@ public partial class SidebarView : UserControl
 
     private void ActiveProjectFilterSwitch_Click(object sender, RoutedEventArgs e)
     {
-        _showActiveProjectsOnly = ActiveProjectFilterSwitch.IsChecked == true;
+        _showActiveProjectsOnly = !_showActiveProjectsOnly;
+        ActiveProjectFilterRow.Tag = _showActiveProjectsOnly ? "active" : null;
         RefreshProjectGroups();
     }
 
@@ -1879,8 +1880,8 @@ public partial class SidebarView : UserControl
     private FrameworkElement ProjectLaneFor(bool archived)
         => archived ? ArchivedHost : ProjectsHost;
 
-    // 왼쪽은 ScrollViewer 좌측 패딩(8px)까지 들어가는 편이 자연스러워 그만큼만 여유를 준다.
-    private static readonly Thickness ProjectGhostClampInset = new(8, 0, 0, 0);
+    // 왼쪽은 ScrollViewer 좌측 패딩(8px)까지 허용, 오른쪽은 반대로 8px 덜 가게 한다.
+    private static readonly Thickness ProjectGhostClampInset = new(8, 0, -8, 0);
 
     private ScrollViewer CurrentProjectScroll => ProjectScrollFor(_archiveOpen);
 
