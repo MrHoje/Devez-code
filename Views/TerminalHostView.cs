@@ -1824,15 +1824,18 @@ public sealed class TerminalHostView : ContentControl, IDisposable
 
     /// <summary>분할 열림/닫힘 전환 직전 호출 — 웹 레이어 단색 커튼으로 터미널을 즉시 덮어 이후 리사이즈
     /// 리플로우 깜빡임을 감춘다. RevealAfterTransition 으로 걷는다(누락돼도 2s 뒤 자동 해제).</summary>
-    public void CoverForTransition() => PostJson(new { type = "xferCover" });
+    public void CoverForTransition(bool captureSplitWide = false)
+        => PostJson(new { type = "xferCover", captureSplitWide });
 
     /// <summary>전환 커버를 단색 대신 '캡처 이미지'로 띄운다. HWND 를 Collapsed 로 숨겼다 되살릴 때(사이드패널
     /// 토글 등) 커버 이미지가 직전 WPF 스냅샷과 동일 내용이라 handoff 가 무깜빡이고, RevealAfterTransition 시
     /// 최종 폭 터미널로 크로스페이드된다. imgW/imgH 는 캡처 시점 컨테이너 크기(DIP=CSS px)로 좌상단 고정 표시.
     /// stretch=true 면 좌상단 px 고정 대신 뷰포트에 맞춰 늘린다 — 전체화면 토글처럼 창 전체가 한 번에
     /// 크게 변하는 전환용(px 고정은 창이 커질 때 캡처 밖 영역이 배경색만 남아 '비어' 보인다).</summary>
-    public void CoverForTransitionImage(byte[] png, double imgW, double imgH, bool stretch = false)
-        => PostJson(new { type = "xferCover", image = "data:image/png;base64," + Convert.ToBase64String(png), imgW, imgH, stretch });
+    public void CoverForTransitionImage(byte[] png, double imgW, double imgH, bool stretch = false,
+        bool captureSplitWide = false)
+        => PostJson(new { type = "xferCover", image = "data:image/png;base64," + Convert.ToBase64String(png),
+            imgW, imgH, stretch, captureSplitWide });
 
     /// <summary>전환 후 호출 — 레이아웃이 최종 폭으로 확정되면 fit 으로 재측정(→ConPTY resize→TUI 재렌더)한
     /// 뒤 커튼을 fade-out 한다. roomId 는 fit 대상(활성 세션). 없으면 그냥 커튼만 걷는다.</summary>
@@ -1841,8 +1844,11 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>bounce=true: post-hoc 전환(리사이즈가 커버 '전'에 이미 발생 — OS 주도 최대화/복원 등)용.
     /// reveal 의 fit 이 무변화면 same-size 킥은 no-op 이라 재방출이 없어 무방비 리사이즈의 tear 가
     /// 고착될 수 있다 → rows-1→rows 바운스로 커버 아래서 깨끗한 전체 재방출을 강제한다.</summary>
-    public void RevealAfterTransition(string? roomId, bool kick = false, double expectWidth = 0, bool bounce = false)
-        => PostJson(new { type = "xferReveal", roomId, kick, expectWidth, bounce });
+    /// <summary>recoverWiden=true: 분할 닫기 최종폭 재렌더 뒤 새로 생긴 내부 빈 줄을 분할 전
+    /// 전체폭 xterm 셀 스냅샷으로 복원한다. 프로세스 입력이나 clear 없이 로컬 버퍼만 보정한다.</summary>
+    public void RevealAfterTransition(string? roomId, bool kick = false, double expectWidth = 0,
+        bool bounce = false, bool recoverWiden = false)
+        => PostJson(new { type = "xferReveal", roomId, kick, expectWidth, bounce, recoverWiden });
 
     /// <summary>동시(synced) reveal 준비 — 폭 안정·fit·재동기까지만 하고 커튼은 유지한 채 RevealPrepared 를 낸다.
     /// 셸이 좌우 모두의 준비를 받으면 FadeNow 로 동시에 걷는다(느린 쪽 기준으로 함께 표시).</summary>

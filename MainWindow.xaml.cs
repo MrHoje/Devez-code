@@ -3888,7 +3888,9 @@ public partial class MainWindow : Window
     /// PaneB 를 0%→저장된 비율로 펼치고, 완료 시 라이브 터미널로 크로스페이드 복원한다.</summary>
     private async Task AnimateSplitOpenAsync()
     {
-        await Task.WhenAll(PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true), PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true));
+        await Task.WhenAll(
+            PaneA.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true, captureSplitWide: true),
+            PaneB.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true));
         PaneB.SetEmptyTextWrapping(false); // 펼침 애니메이션 중 줄바꿈 방지
         double targetStar = SettingsService.LoadSplitBStar();
         AnimatePaneSplit(0, targetStar, () =>
@@ -4065,8 +4067,8 @@ public partial class MainWindow : Window
             // 즉시 재활성화된다. (스왑은 유지 콘텐츠를 PaneA 로 재부착하므로 더블 배선 방지 위해 위에서 dispose 함.)
             if (!swapped) PaneB.ClearForHide(disposeTerminal: false);
             PaneB.ResumeTerminalOnly();   // 숨겨진 PaneB 의 스냅샷 오버레이 정리(다음 분할 때 라이브 위에 안 남도록). PaneB 는 hide 되므로 collapse 경로 유지.
-            // 살아남는 claude 화면은 최종 폭보다 잠깐 넓혔다가 최종 폭으로 줄여, 최대화→복원처럼
-            // 마지막 리사이즈가 "축소"가 되게 한다. Ink 가 넓어질 때 지운 옛 줄을 최종 축소 재렌더가 다시 채운다.
+            // 살아남는 claude 화면은 분할 열기 직전 전체폭 셀 스냅샷과 비교해, 최종폭 재렌더가 새로 만든
+            // 큰 내부 공백만 로컬 xterm 버퍼에서 복원한다. clear/입력/세션 재시작은 하지 않는다.
             PaneA.ResumeTerminalOnly(webCover: true, recoverWiden: true);
             UpdatePaneFocusVisual(animate: false);
             PersistSplitState();

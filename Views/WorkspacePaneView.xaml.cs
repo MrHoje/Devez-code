@@ -4166,7 +4166,8 @@ public partial class WorkspacePaneView : UserControl
     /// anchorTopLeft=true 면 캡처 시점 크기로 좌상단 고정 → 패널이 리사이즈돼도 이미지가 같이 늘어나지 않고 잘려 보인다(분할 애니메이션용).
     /// stretchCover=true(webCover 전용)면 커버를 뷰포트에 맞춰 늘린다 — 전체화면 토글처럼 창 전체가
     /// 한 번에 크게 변하는 전환용(좌상단 고정은 커지는 쪽 영역이 배경색만 남아 '비어' 보인다).</summary>
-    public async Task SuspendTerminalOnlyAsync(bool anchorTopLeft = false, bool webCover = false, bool stretchCover = false)
+    public async Task SuspendTerminalOnlyAsync(bool anchorTopLeft = false, bool webCover = false,
+        bool stretchCover = false, bool captureSplitWide = false)
     {
         if (_activeTab is BrowserTabItem browser)
         {
@@ -4187,8 +4188,8 @@ public partial class WorkspacePaneView : UserControl
             // fit 은 억제되고(리플로우 없음) 커버가 정지 화면을 보여주므로 라이브가 비쳐 깜빡이지 않는다.
             // resume(RevealAfterTransition)이 최종 폭에서 fit 후 커버→라이브 크로스페이드. HWND 전환 0회 = 무플래시.
             var png = await _terminal.CapturePngAsync();
-            if (png != null) _terminal.CoverForTransitionImage(png, cw, ch, stretchCover);
-            else _terminal.CoverForTransition(); // 폴백: 단색 커버
+            if (png != null) _terminal.CoverForTransitionImage(png, cw, ch, stretchCover, captureSplitWide);
+            else _terminal.CoverForTransition(captureSplitWide); // 폴백: 단색 커버
             await WaitForFramesAsync(2); // 커버가 올라온 뒤 애니메이션 시작(가리기 전 리플로우 프레임 방지)
             return;
         }
@@ -4284,7 +4285,7 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
-    public void ResumeTerminalOnly(bool webCover = false)
+    public void ResumeTerminalOnly(bool webCover = false, bool recoverWiden = false)
     {
         if (_activeTab is BrowserTabItem browser)
         {
@@ -4307,7 +4308,8 @@ public partial class WorkspacePaneView : UserControl
                 UpdateLayout();
                 double target = TerminalHostContainer?.ActualWidth ?? 0;
                 RememberActiveSessionSize(target);
-                _terminal.RevealAfterTransition(_activeSession.Id, kick: true, expectWidth: target);
+                _terminal.RevealAfterTransition(_activeSession.Id, kick: true, expectWidth: target,
+                    recoverWiden: recoverWiden);
             }
             return;
         }

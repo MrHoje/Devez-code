@@ -278,6 +278,8 @@
   let _xferGen = 0; // 전환 세대 — cover/resync 시작마다 증가. 빠른 연속 전환 시 이전 전환의 지연 타이머(fade/step)를 무효화해 커튼이 엉뚱한 시점에 걷히는 깜빡임을 막는다.
   let _fitSuppressed = false; // 전환(커버) 중 true — 컨테이너가 전체폭→절반으로 줄어드는 중간 폭에서 fit 하면
                               // TUI 가 그 폭으로 그렸다 다시 리플로우돼 깨진다. 억제했다가 reveal 이 안정된 최종 폭에서 한 번만 fit.
+  // 분할 닫기 버퍼 복구 롤백 스위치. false 로 바꾸면 기존 단일 fit 경로로 즉시 복귀한다.
+  const SPLIT_CLOSE_BUFFER_REPAIR = true;
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
@@ -393,6 +395,111 @@
       dlog('map(' + tag + ') room=' + roomId + ' type=' + b.type + ' ' + filled + '/' + t.term.rows
         + ' grid=' + t.term.cols + 'x' + t.term.rows + ' client=' + t.el.clientWidth + 'x' + t.el.clientHeight + ' [' + map + ']');
     } catch (e) { dlog('map(' + tag + ') err ' + e); }
+  }
+
+  // xterm public Buffer API는 읽기 전용이다. 현재 고정 번들의 내부 BufferLine.clone/copyFrom을
+  // 가드해서 사용하면 ANSI를 다시 주입하지 않고도 셀의 글자·색·폭(CJK)·링크 속성을 그대로 보존할 수 있다.
+  // 내부 경로가 바뀐 번들에서는 null/false로 빠져 기존 resize 동작만 남는다.
+  function internalViewportLines(entry) {
+    try {
+      const service = entry && entry.term && entry.term._core && entry.term._core._bufferService;
+      const buffer = service && service.buffer;
+      if (!buffer || !buffer.lines || typeof buffer.lines.get !== 'function') return null;
+      const top = buffer.ydisp || 0;
+      const lines = [];
+      for (let row = 0; row < entry.term.rows; row++) {
+        const line = buffer.lines.get(top + row);
+        if (!line) return null;
+        lines.push(line);
+      }
+      return lines;
+    } catch (e) { return null; }
+  }
+  function lineHasText(line) {
+    try { return !!line && line.translateToString(true).trim().length > 0; }
+    catch (e) { return false; }
+  }
+  function interiorBlankInfo(lines) {
+    let first = -1, last = -1;
+    for (let row = 0; row < lines.length; row++) {
+      if (!lineHasText(lines[row])) continue;
+      if (first < 0) first = row;
+      last = row;
+    }
+    const runs = [];
+    let max = 0;
+    if (first >= 0) {
+      let start = -1;
+      for (let row = first; row <= last + 1; row++) {
+        const blank = row <= last && !lineHasText(lines[row]);
+        if (blank && start < 0) start = row;
+        if (!blank && start >= 0) {
+          const count = row - start;
+          runs.push({ start: start, count: count });
+          if (count > max) max = count;
+          start = -1;
+        }
+      }
+    }
+    return { max: max, runs: runs };
+  }
+  function captureSplitWideSnapshot(entry) {
+    try {
+      if (!entry || entry.agent !== 'claude' || entry.term.buffer.active.type !== 'alternate') return null;
+      const live = internalViewportLines(entry);
+      if (!live) return null;
+      const lines = [];
+      for (let row = 0; row < live.length; row++) {
+        if (typeof live[row].clone !== 'function') return null;
+        lines.push(live[row].clone());
+      }
+      return {
+        cols: entry.term.cols,
+        rows: entry.term.rows,
+        type: 'alternate',
+        lines: lines,
+        gap: interiorBlankInfo(lines).max,
+        capturedAt: Date.now()
+      };
+    } catch (e) { return null; }
+  }
+  function repairSplitCloseBuffer(entry, snapshot, roomId) {
+    try {
+      if (!snapshot || snapshot.type !== 'alternate'
+          || snapshot.cols !== entry.term.cols || snapshot.rows !== entry.term.rows
+          || entry.term.buffer.active.type !== 'alternate') return false;
+      const live = internalViewportLines(entry);
+      if (!live || live.length !== snapshot.lines.length) return false;
+      const damaged = interiorBlankInfo(live);
+      // 정상 상단/하단 여백은 건드리지 않는다. 분할 전 화면보다 커진 4줄 이상의 "내부" 공백만 손상으로 판정.
+      if (damaged.max < 4 || damaged.max <= snapshot.gap) {
+        dlog('splitCloseRepair skip room=' + roomId + ' gap=' + damaged.max + ' saved=' + snapshot.gap);
+        return false;
+      }
+      let restored = 0;
+      for (let i = 0; i < damaged.runs.length; i++) {
+        const run = damaged.runs[i];
+        if (run.count < 4) continue;
+        for (let row = run.start; row < run.start + run.count; row++) {
+          const saved = snapshot.lines[row], current = live[row];
+          if (lineHasText(current) || !lineHasText(saved) || typeof current.copyFrom !== 'function') continue;
+          current.copyFrom(saved);
+          restored++;
+        }
+      }
+      if (!restored) {
+        dlog('splitCloseRepair no-cells room=' + roomId + ' gap=' + damaged.max + ' saved=' + snapshot.gap);
+        return false;
+      }
+      try { entry.term.refresh(0, entry.term.rows - 1); } catch (e) {}
+      const after = interiorBlankInfo(live).max;
+      dlog('splitCloseRepair restored room=' + roomId + ' rows=' + restored
+        + ' gap=' + damaged.max + '->' + after + ' saved=' + snapshot.gap);
+      return true;
+    } catch (e) {
+      dlog('splitCloseRepair error room=' + roomId + ' ' + e);
+      return false;
+    }
   }
 
   // ── 극소 박스 가드 ────────────────────────────────────────────────────
@@ -623,6 +730,13 @@
       t._dbgCount = (t._dbgCount || 0) + 1;
       var snip = String(bytes).slice(0, 70).replace(/\x1b/g, '\\e').replace(/[\x00-\x1f]/g, function (c) { return '\\x' + c.charCodeAt(0).toString(16); });
       dlog('out room=' + t.roomId + ' len=' + (bytes && bytes.length) + ' "' + snip + '"');
+    }
+    // 분할 열기 자체의 SIGWINCH 재렌더는 저장 화면과 같은 내용이므로 잠깐 허용한다. 이후 실제 출력이
+    // 진행되면(다른 패널이 활성이라도) 오래된 전체폭 스냅샷을 쓰지 않고 닫기 직전
+    // pre-redraw 셀을 폴백으로 사용한다.
+    if (t._splitWideSnapshot && Date.now() - t._splitWideSnapshot.capturedAt > 1200) {
+      t._splitWideSnapshot = null;
+      dlog('splitCloseCapture invalidated room=' + t.roomId + ' reason=output');
     }
     if (!activeRoomId || terms[activeRoomId] !== t) { t.term.write(bytes); return; }
     if (Date.now() < _pinBottomUntil) {
@@ -2302,6 +2416,12 @@
         if (/^\x1b(\[[0-9;]*|O)[ABCD]$/.test(data)) entry._lastInputAt = Date.now();
         try { term.scrollToBottom(); } catch (e) {}
       }
+      // 키·마우스 입력 뒤 화면 내용은 분할 열기 전 스냅샷보다 새 상태일 수 있다. 오래된 줄을
+      // 복원하지 않게 즉시 폐기한다. 포커스 in/out 리포트만 화면을 바꾸지 않으므로 제외.
+      if (entry._splitWideSnapshot && data !== '\x1b[I' && data !== '\x1b[O') {
+        entry._splitWideSnapshot = null;
+        dlog('splitCloseCapture invalidated room=' + roomId + ' reason=input');
+      }
       post({ type: 'input', roomId: roomId, data: data });
     });
     term.onResize(function (size) {
@@ -2746,6 +2866,12 @@
             const b = covAct.term.buffer.active;
             _xferWasAtBottom = b.viewportY >= b.baseY;
           } catch (e) {}
+          if (SPLIT_CLOSE_BUFFER_REPAIR && msg.captureSplitWide) {
+            covAct._splitWideSnapshot = captureSplitWideSnapshot(covAct);
+            const saved = covAct._splitWideSnapshot;
+            dlog('splitCloseCapture room=' + activeRoomId + ' '
+              + (saved ? saved.cols + 'x' + saved.rows + ' gap=' + saved.gap : 'unavailable'));
+          }
         }
         const cov = document.getElementById('xfer-cover');
         cov.style.transition = 'none';
@@ -2837,6 +2963,7 @@
         const room = msg.roomId;
         const kick = !!msg.kick;
         const bounce = !!msg.bounce; // post-hoc 전환(리사이즈가 커버 '전'에 이미 발생): fit 무변화면 재방출 강제
+        const recoverWiden = SPLIT_CLOSE_BUFFER_REPAIR && !!msg.recoverWiden;
         const synced = !!msg.synced; // true 면 fade 하지 않고 준비 완료만 C# 에 보고 → C# 이 양쪽 준비 후 fadeNow 로 동시 걷음
         const expectW = msg.expectWidth || 0; // C# 이 확정한 최종 목표 폭(px). clientWidth 가 여기 근접할 때까지 대기.
         const fadeOut = function () {
@@ -2850,8 +2977,16 @@
         };
         const finish = function (e) {
           const preC = e.term.cols, preR = e.term.rows; // bounce 판단용 — 이 reveal 의 fit 이 크기를 바꿨나
+          const hadLiveGrid = !e.needCreate;
           _fitSuppressed = false;                 // 억제 해제 후 최종 폭에서 한 번만 fit
           try { e.fit.fit(); } catch (err) {}
+          const shouldRecoverWiden = recoverWiden && hadLiveGrid && e.agent === 'claude'
+            && e.term.cols > preC && e.term.rows === preR && canPostSize(e);
+          if (recoverWiden && !shouldRecoverWiden && e._splitWideSnapshot) {
+            e._splitWideSnapshot = null;
+            dlog('splitCloseCapture invalidated room=' + room + ' reason=ineligible'
+              + ' grid=' + preC + 'x' + preR + '->' + e.term.cols + 'x' + e.term.rows);
+          }
           if (e.needCreate && !canPostSize(e)) {
             // 커버가 걷힐 시점인데도 박스가 아직 극소다(패널 인수 직후 등) — 이 크기로 통보하면 살아있는
             // 세션이 2컬럼으로 리사이즈된다. 폭이 잡힐 때까지 유예(waitSaneThenCreate 가 이어받는다).
@@ -2869,7 +3004,7 @@
             // 아래 waiter 가 받아 걷으므로 무깜빡이다. (fit 이 크기를 바꿨으면 그 자체가 재방출 ✓)
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows - 1 });
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
-          } else if (kick && canPostSize(e)) {
+          } else if (kick && !shouldRecoverWiden && canPostSize(e)) {
             // 재배선 세션(분할 보기): ConPTY 를 xterm 현재 크기로 강제 재동기(xterm 미변경 → 스크롤백
             // 리플로우 없음). 늦게 오는 WireSession resize 와의 경쟁에서 이 값이 마지막이 되고 SIGWINCH 로 재렌더.
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
@@ -2930,7 +3065,42 @@
               requestAnimationFrame(fadeOut);
             });
           };
-          armRevealWaiter(doFade);
+          if (shouldRecoverWiden) {
+            // 분할 열기 직전 전체폭 셀 스냅샷을 보존해 두었다가, 최종폭 SIGWINCH 재렌더가 조용해진 뒤
+            // 새로 생긴 큰 내부 공백만 원본 BufferLine으로 되돌린다. ANSI 재주입이 아니라 로컬 xterm
+            // 셀 복사라 프로세스 화면/커서/입력 상태를 바꾸지 않고 CJK·색상도 그대로 보존한다.
+            // 전체폭 스냅샷이 없거나 창 폭이 달라졌다면, fit 직후(비동기 재렌더 전)의 현재 셀을 폴백으로 쓴다.
+            let snapshot = e._splitWideSnapshot;
+            const source = snapshot && snapshot.cols === e.term.cols && snapshot.rows === e.term.rows
+              ? 'split-open' : 'pre-redraw';
+            if (source === 'pre-redraw') snapshot = captureSplitWideSnapshot(e);
+            e._splitWideSnapshot = null; // 이번 닫기에서 1회만 소비
+            let done = false, quietTimer = 0, maxTimer = 0;
+            const finishRepair = function () {
+              if (done || gen !== _xferGen) return;
+              done = true;
+              clearTimeout(quietTimer);
+              clearTimeout(maxTimer);
+              _xferDataWaiter = null;
+              dumpMap(room, 'split-close-before-repair');
+              const repaired = repairSplitCloseBuffer(e, snapshot, room);
+              dumpMap(room, repaired ? 'split-close-repaired' : 'split-close-clean');
+              doFade();
+            };
+            const waitQuietThenRepair = function () {
+              clearTimeout(quietTimer);
+              quietTimer = setTimeout(finishRepair, 180);
+            };
+            // Claude/Ink 재렌더는 여러 출력 청크로 올 수 있다. 첫 청크에 커버를 걷거나 복원하면 뒤 청크가
+            // 다시 지우므로 180ms quiet를 기다린다. 무출력 화면 320ms, 연속 출력 1s 상한.
+            quietTimer = setTimeout(finishRepair, 320);
+            maxTimer = setTimeout(finishRepair, 1000);
+            _xferDataWaiter = { room: room, fire: waitQuietThenRepair };
+            dlog('splitCloseRepair armed room=' + room + ' source=' + source
+              + ' grid=' + e.term.cols + 'x' + e.term.rows + ' savedGap=' + (snapshot ? snapshot.gap : 'x'));
+          } else {
+            armRevealWaiter(doFade);
+          }
         };
         let waited = 0;
         const step = function () {
