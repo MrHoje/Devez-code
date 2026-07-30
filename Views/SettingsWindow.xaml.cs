@@ -16,7 +16,9 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         SettingsView.CloseRequested += (_, _) => Close();
-        Loaded += (_, _) => AttachToOwner();
+        // 크기·위치 확정은 OnSourceInitialized(창이 화면에 나오기 전)에서 한다.
+        // Loaded 에서 하면 XAML 의 초기 크기로 한 프레임 그려진 뒤 줄어드는 게 눈에 보인다.
+        Loaded += (_, _) => FitToOwner();   // 레이아웃 확정 후 한 번 더 보정
     }
 
     private FrameworkElement? _ownerChrome;   // Owner 의 시각적 루트(최대화 프레임 보정이 반영된 요소)
@@ -129,6 +131,8 @@ public partial class SettingsWindow : Window
     {
         base.OnSourceInitialized(e);
         _hwnd = new WindowInteropHelper(this).Handle;
+        // 창이 화면에 나오기 전 시점 — 여기서 Owner 에 맞춰야 첫 프레임부터 제 크기로 뜬다.
+        AttachToOwner();
         ApplyCornerPreference();
     }
 
