@@ -15,7 +15,7 @@ public partial class App : Application
     private static string ThemeFile => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DevezCode", "theme.txt");
 
-    /// <summary>현재 적용된 테마 ("minimal" | "soft" | "dark"). 미리보기 중에는 preview 값으로 바뀐다.</summary>
+    /// <summary>현재 적용된 테마. 미리보기 중에는 preview 값으로 바뀐다.</summary>
     public static string CurrentTheme { get; private set; } = "dark";
 
     /// <summary>디스크에 확정 저장된 테마(persist=true 로만 갱신). 미리보기(persist=false)는 반영 안 됨.
@@ -30,6 +30,8 @@ public partial class App : Application
         {
             "dark" => "DevezCode Dark",
             "soft" => "DevezCode Soft",
+            "gray" => "DevezCode Gray",
+            "softpink" => "DevezCode Soft Pink",
             _      => "DevezCode Minimal",
         };
         return Services.Terminal.WtColorScheme.BuiltIns.TryGetValue(name, out var s)
@@ -533,7 +535,7 @@ public partial class App : Application
 
     private static string LoadSavedTheme()
     {
-        try { if (File.Exists(ThemeFile)) { var t = File.ReadAllText(ThemeFile).Trim(); if (t is "minimal" or "soft" or "dark") return t; } }
+        try { if (File.Exists(ThemeFile)) { var t = File.ReadAllText(ThemeFile).Trim(); if (t is "minimal" or "soft" or "dark" or "gray" or "softpink") return t; } }
         catch { /* 무시 */ }
         return "dark"; // 기본값
     }
@@ -637,6 +639,66 @@ public partial class App : Application
             markerPurple   = Color.FromRgb(0x80, 0x64, 0xa2);
             markerPink     = Color.FromRgb(0xb3, 0x5d, 0x79);
         }
+        else if (theme == "gray")
+        {
+            bg           = Color.FromRgb(0xf3, 0xf4, 0xf6);
+            panel        = Colors.White;
+            panelSoft    = Color.FromRgb(0xe5, 0xe7, 0xeb);
+            line         = Color.FromRgb(0xd1, 0xd5, 0xdb);
+            text         = Color.FromRgb(0x1f, 0x29, 0x37);
+            textMuted    = Color.FromRgb(0x5f, 0x67, 0x74);
+            primary      = Color.FromRgb(0x4b, 0x55, 0x63);
+            primaryHover = Color.FromRgb(0x37, 0x41, 0x51);
+            primaryPressed = Color.FromRgb(0x1f, 0x29, 0x37);
+            primarySoft  = Color.FromRgb(0xe2, 0xe5, 0xe9);
+            bubble       = Color.FromRgb(0xec, 0xee, 0xf1);
+            bubbleBorder = Color.FromRgb(0xc7, 0xcd, 0xd4);
+            danger       = Color.FromRgb(0xc2, 0x41, 0x3e);
+            checkedBubble = Color.FromRgb(0xf0, 0xfd, 0xf4);
+            checkedBorder = Color.FromRgb(0x86, 0xef, 0xac);
+            checkedText   = Color.FromRgb(0x16, 0x65, 0x34);
+            star          = Color.FromRgb(0xb7, 0x79, 0x1f);
+            sidebarSubText = textMuted;
+            today         = Color.FromRgb(0xc2, 0x41, 0x0c);
+            markerRed      = Color.FromRgb(0xc2, 0x41, 0x3e);
+            markerOrange   = Color.FromRgb(0xb4, 0x53, 0x09);
+            markerYellow   = Color.FromRgb(0x92, 0x61, 0x16);
+            markerGreen    = Color.FromRgb(0x15, 0x80, 0x3d);
+            markerTeal     = Color.FromRgb(0x0f, 0x76, 0x70);
+            markerBlue     = Color.FromRgb(0x32, 0x6a, 0xa5);
+            markerPurple   = Color.FromRgb(0x76, 0x55, 0x8f);
+            markerPink     = Color.FromRgb(0xa8, 0x45, 0x68);
+        }
+        else if (theme == "softpink")
+        {
+            bg           = Color.FromRgb(0xff, 0xf7, 0xfa);
+            panel        = Color.FromRgb(0xff, 0xfc, 0xfd);
+            panelSoft    = Color.FromRgb(0xfc, 0xef, 0xf4);
+            line         = Color.FromRgb(0xeb, 0xcf, 0xd9);
+            text         = Color.FromRgb(0x3b, 0x29, 0x31);
+            textMuted    = Color.FromRgb(0x73, 0x57, 0x63);
+            primary      = Color.FromRgb(0xb5, 0x4a, 0x6b);
+            primaryHover = Color.FromRgb(0xa4, 0x3d, 0x5f);
+            primaryPressed = Color.FromRgb(0x8e, 0x34, 0x51);
+            primarySoft  = Color.FromRgb(0xf8, 0xdc, 0xe6);
+            bubble       = Color.FromRgb(0xfb, 0xe7, 0xee);
+            bubbleBorder = Color.FromRgb(0xe8, 0xbf, 0xcf);
+            danger       = Color.FromRgb(0xc2, 0x41, 0x3e);
+            checkedBubble = Color.FromRgb(0xe9, 0xf5, 0xec);
+            checkedBorder = Color.FromRgb(0x91, 0xc7, 0x9b);
+            checkedText   = Color.FromRgb(0x25, 0x72, 0x3c);
+            star          = Color.FromRgb(0x9a, 0x65, 0x0b);
+            sidebarSubText = textMuted;
+            today         = Color.FromRgb(0xc2, 0x41, 0x0c);
+            markerRed      = Color.FromRgb(0xc2, 0x41, 0x3e);
+            markerOrange   = Color.FromRgb(0xa1, 0x62, 0x07);
+            markerYellow   = Color.FromRgb(0x92, 0x61, 0x16);
+            markerGreen    = Color.FromRgb(0x25, 0x72, 0x3c);
+            markerTeal     = Color.FromRgb(0x16, 0x75, 0x8a);
+            markerBlue     = Color.FromRgb(0x32, 0x6a, 0x9f);
+            markerPurple   = Color.FromRgb(0x84, 0x58, 0x8f);
+            markerPink     = primary;
+        }
         else // minimal
         {
             bg           = Color.FromRgb(0xf8, 0xfa, 0xfc);
@@ -728,10 +790,14 @@ public partial class App : Application
         res["SessionHoverBrush"] = new SolidColorBrush(
             theme == "dark" ? panelSoft  // 다크: 호버=기본(변화 없음)
             : theme == "soft" ? Color.FromRgb(0xea, 0xe5, 0xdc)
+            : theme == "gray" ? Color.FromRgb(0xe9, 0xeb, 0xef)
+            : theme == "softpink" ? Color.FromRgb(0xfa, 0xe8, 0xef)
             : Color.FromRgb(0xef, 0xf3, 0xf7)); // minimal
         res["SessionFocusBrush"] = new SolidColorBrush(
             theme == "dark" ? Color.FromRgb(0x5a, 0x5a, 0x5a)
             : theme == "soft" ? Color.FromRgb(0xdc, 0xea, 0xd4)
+            : theme == "gray" ? Color.FromRgb(0xd9, 0xdd, 0xe3)
+            : theme == "softpink" ? Color.FromRgb(0xf2, 0xc9, 0xd7)
             : Color.FromRgb(0xd9, 0xe8, 0xfc)); // minimal
         res["DangerBrush"]            = new SolidColorBrush(danger);
         var successGreen = theme == "dark"
@@ -805,6 +871,22 @@ public partial class App : Application
             codeActiveBg    = Color.FromRgb(0xde, 0xec, 0xd6);
             codeActiveText  = Color.FromRgb(0x5c, 0x8c, 0x4a);
             codeHover       = Color.FromArgb(0x1a, 0x5c, 0x8c, 0x4a);
+        }
+        else if (theme == "gray")
+        {
+            codeBg = bg; codePanel = Colors.White; codeBorder = Color.FromRgb(0xd1, 0xd5, 0xdb);
+            codeText = Color.FromRgb(0x1f, 0x29, 0x37); codeMuted = Color.FromRgb(0x5f, 0x67, 0x74);
+            codeLabelBg = Color.FromRgb(0xec, 0xee, 0xf1); codeLabelBorder = Color.FromRgb(0xc7, 0xcd, 0xd4);
+            codeLabelText = Color.FromRgb(0x4b, 0x55, 0x63); codeActiveBg = Color.FromRgb(0xe2, 0xe5, 0xe9);
+            codeActiveText = Color.FromRgb(0x37, 0x41, 0x51); codeHover = Color.FromArgb(0x1a, 0x4b, 0x55, 0x63);
+        }
+        else if (theme == "softpink")
+        {
+            codeBg = bg; codePanel = Color.FromRgb(0xff, 0xfc, 0xfd); codeBorder = Color.FromRgb(0xeb, 0xcf, 0xd9);
+            codeText = Color.FromRgb(0x3b, 0x29, 0x31); codeMuted = Color.FromRgb(0x73, 0x57, 0x63);
+            codeLabelBg = Color.FromRgb(0xfb, 0xe7, 0xee); codeLabelBorder = Color.FromRgb(0xe8, 0xbf, 0xcf);
+            codeLabelText = Color.FromRgb(0xb5, 0x4a, 0x6b); codeActiveBg = Color.FromRgb(0xf8, 0xdc, 0xe6);
+            codeActiveText = Color.FromRgb(0xa4, 0x3d, 0x5f); codeHover = Color.FromArgb(0x1a, 0xb5, 0x4a, 0x6b);
         }
         else // minimal
         {

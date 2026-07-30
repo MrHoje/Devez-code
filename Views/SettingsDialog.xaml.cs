@@ -1853,6 +1853,8 @@ public partial class SettingsDialog : UserControl
             (ThemeCard_Minimal, ThemeRadioDot_Minimal, "minimal"),
             (ThemeCard_Soft,    ThemeRadioDot_Soft,    "soft"),
             (ThemeCard_Dark,    ThemeRadioDot_Dark,    "dark"),
+            (ThemeCard_Gray,    ThemeRadioDot_Gray,    "gray"),
+            (ThemeCard_SoftPink, ThemeRadioDot_SoftPink, "softpink"),
         })
         {
             var selected = _selectedTheme == key;

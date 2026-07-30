@@ -19,7 +19,7 @@ public static class GrokCustomThemes
     public static string MapToGrokTheme(string devezCodeTheme) => devezCodeTheme switch
     {
         "dark" => "groknight",
-        "soft" or "minimal" => "grokday",
+        "soft" or "minimal" or "gray" or "softpink" => "grokday",
         _ => "groknight",
     };
 

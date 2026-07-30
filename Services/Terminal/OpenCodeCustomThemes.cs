@@ -15,6 +15,8 @@ public static class OpenCodeCustomThemes
     private const string DarkSlug     = "devez-dark";
     private const string SoftSlug     = "devez-soft";
     private const string MinimalSlug  = "devez-minimal";
+    private const string GraySlug     = "devez-gray";
+    private const string SoftPinkSlug = "devez-softpink";
 
     private static string ThemesDir
     {
@@ -43,6 +45,8 @@ public static class OpenCodeCustomThemes
             File.WriteAllText(Path.Combine(dir, DarkSlug + ".json"),    DarkThemeJson,    new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, SoftSlug + ".json"),    SoftThemeJson,    new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson, new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, GraySlug + ".json"), GrayThemeJson, new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, SoftPinkSlug + ".json"), SoftPinkThemeJson, new UTF8Encoding(false));
         }
         catch { /* best-effort — 실패해도 per-project 주입이 안 될 뿐 */ }
     }
@@ -53,6 +57,8 @@ public static class OpenCodeCustomThemes
         "dark"    => DarkSlug,
         "soft"    => SoftSlug,
         "minimal" => MinimalSlug,
+        "gray"    => GraySlug,
+        "softpink" => SoftPinkSlug,
         _         => DarkSlug,
     };
 
@@ -88,7 +94,7 @@ public static class OpenCodeCustomThemes
                     AllowTrailingCommas = true,
                 }) as System.Text.Json.Nodes.JsonObject;
             var theme = root?["theme"]?.GetValue<string>();
-            if (theme is not (DarkSlug or SoftSlug or MinimalSlug)) return;
+            if (theme is not (DarkSlug or SoftSlug or MinimalSlug or GraySlug or SoftPinkSlug)) return;
 
             root!.Remove("theme");
             if (root.Count == 0)
@@ -284,6 +290,38 @@ public static class OpenCodeCustomThemes
       }
     }
     """;
+
+    private static readonly string GrayThemeJson = SoftThemeJson
+        .Replace("Devez Soft", "Devez Gray", StringComparison.Ordinal)
+        .Replace("#F2EDE6", "#F3F4F6", StringComparison.Ordinal)
+        .Replace("#FAF7F2", "#FFFFFF", StringComparison.Ordinal)
+        .Replace("#ECE7DE", "#E5E7EB", StringComparison.Ordinal)
+        .Replace("#D8D2C6", "#D1D5DB", StringComparison.Ordinal)
+        .Replace("#2A2620", "#1F2937", StringComparison.Ordinal)
+        .Replace("#5A5448", "#5F6774", StringComparison.Ordinal)
+        .Replace("#5C8C4A", "#4B5563", StringComparison.Ordinal)
+        .Replace("#7BAA68", "#326AA5", StringComparison.Ordinal)
+        .Replace("#D95F5F", "#C2413E", StringComparison.Ordinal)
+        .Replace("#C97C1A", "#A16207", StringComparison.Ordinal)
+        .Replace("#4E7A3E", "#15803D", StringComparison.Ordinal)
+        .Replace("#DEECD6", "#E7F6EB", StringComparison.Ordinal)
+        .Replace("#F2D6D6", "#FCE8E8", StringComparison.Ordinal);
+
+    private static readonly string SoftPinkThemeJson = SoftThemeJson
+        .Replace("Devez Soft", "Devez Soft Pink", StringComparison.Ordinal)
+        .Replace("#F2EDE6", "#FFF7FA", StringComparison.Ordinal)
+        .Replace("#FAF7F2", "#FFFCFD", StringComparison.Ordinal)
+        .Replace("#ECE7DE", "#FCEFF4", StringComparison.Ordinal)
+        .Replace("#D8D2C6", "#EBCFD9", StringComparison.Ordinal)
+        .Replace("#2A2620", "#3B2931", StringComparison.Ordinal)
+        .Replace("#5A5448", "#735763", StringComparison.Ordinal)
+        .Replace("#5C8C4A", "#B54A6B", StringComparison.Ordinal)
+        .Replace("#7BAA68", "#CE7892", StringComparison.Ordinal)
+        .Replace("#D95F5F", "#C2413E", StringComparison.Ordinal)
+        .Replace("#C97C1A", "#9A650B", StringComparison.Ordinal)
+        .Replace("#4E7A3E", "#25723C", StringComparison.Ordinal)
+        .Replace("#DEECD6", "#E9F5EC", StringComparison.Ordinal)
+        .Replace("#F2D6D6", "#FDE7E7", StringComparison.Ordinal);
 
     private const string MinimalThemeJson = """
     {

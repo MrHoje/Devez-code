@@ -41,18 +41,34 @@ public static class SyntaxThemeService
         Number:    Color.FromRgb(0x3C, 0x80, 0x60),
         Attribute: Color.FromRgb(0xC0, 0x50, 0x4D));
 
+    private static readonly Palette Gray = new(
+        Comment:   Color.FromRgb(0x5F, 0x67, 0x74),
+        Str:       Color.FromRgb(0x9D, 0x3D, 0x3A),
+        Keyword:   Color.FromRgb(0x3D, 0x5F, 0x8A),
+        Number:    Color.FromRgb(0x2F, 0x7A, 0x55),
+        Attribute: Color.FromRgb(0x76, 0x55, 0x8F));
+
+    private static readonly Palette SoftPink = new(
+        Comment:   Color.FromRgb(0x73, 0x57, 0x63),
+        Str:       Color.FromRgb(0xA1, 0x4D, 0x62),
+        Keyword:   Color.FromRgb(0x6C, 0x4A, 0x9A),
+        Number:    Color.FromRgb(0x2F, 0x7A, 0x55),
+        Attribute: Color.FromRgb(0xB5, 0x4A, 0x6B));
+
     /// <summary>테마별 하이퍼링크(자동 URL) 색. 다크에서 안 보이던 기본 진파랑을 밝게 교체.</summary>
     public static Color LinkColor(string theme) => theme switch
     {
         "dark" => Color.FromRgb(0x4F, 0xA6, 0xFF),
         "soft" => Color.FromRgb(0x3A, 0x6F, 0xA5),
+        "gray" => Color.FromRgb(0x32, 0x6A, 0xA5),
+        "softpink" => Color.FromRgb(0x32, 0x6A, 0x9F),
         _      => Color.FromRgb(0x05, 0x63, 0xC1),
     };
 
     /// <summary>등록된 모든 내장 정의의 named color 를 현재 테마 팔레트로 덮어쓴다.</summary>
     public static void Apply(string theme)
     {
-        var p = theme switch { "dark" => Dark, "soft" => Soft, _ => Minimal };
+        var p = theme switch { "dark" => Dark, "soft" => Soft, "gray" => Gray, "softpink" => SoftPink, _ => Minimal };
         foreach (var def in HighlightingManager.Instance.HighlightingDefinitions)
         {
             foreach (var c in def.NamedHighlightingColors)

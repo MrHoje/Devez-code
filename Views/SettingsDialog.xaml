@@ -1688,8 +1688,8 @@
                                 <TextBlock Text="앱 전체에 적용되는 색 테마를 선택합니다." FontSize="{DynamicResource Fs12}"
                                            Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
-                                <!-- 테마 카드 3종 (클릭 시 즉시 적용·저장) -->
-                                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                <!-- 테마 카드 (클릭 시 즉시 적용·저장) -->
+                                <WrapPanel Margin="0,16,0,0" ItemHeight="150">
 
                                     <!-- ── 심플 (minimal) ─────────────────────────── -->
                                     <Border x:Name="ThemeCard_Minimal" Tag="minimal"
@@ -1850,7 +1850,25 @@
                                         </Grid>
                                     </Border>
 
-                                </StackPanel>
+                                    <Border x:Name="ThemeCard_Gray" Tag="gray" Width="150" Height="150"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2" Background="{DynamicResource PanelBrush}"
+                                            CornerRadius="10" Margin="0,0,12,12" Cursor="Arrow" MouseLeftButtonDown="ThemeCard_Click">
+                                        <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="38"/></Grid.RowDefinitions>
+                                            <Border CornerRadius="8,8,0,0" Margin="1" Background="#F3F4F6"><Grid Margin="7"><Border Width="34" HorizontalAlignment="Left" Background="#FFFFFF" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="3"/><Border Margin="40,0,0,0" Background="#FFFFFF" BorderBrush="#D1D5DB" BorderThickness="1" CornerRadius="3"><StackPanel Margin="7"><Border Width="44" Height="4" Background="#1F2937" HorizontalAlignment="Left" CornerRadius="2"/><Border Height="10" Margin="0,7,8,0" Background="#E2E5E9" CornerRadius="3"/></StackPanel></Border></Grid></Border>
+                                            <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"><Grid Width="14" Height="14" Margin="0,0,6,0"><Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/><Ellipse x:Name="ThemeRadioDot_Gray" Width="7" Height="7" Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/></Grid><TextBlock Text="그레이" FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/></StackPanel></Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border x:Name="ThemeCard_SoftPink" Tag="softpink" Width="150" Height="150"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="2" Background="{DynamicResource PanelBrush}"
+                                            CornerRadius="10" Margin="0,0,12,12" Cursor="Arrow" MouseLeftButtonDown="ThemeCard_Click">
+                                        <Grid><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="38"/></Grid.RowDefinitions>
+                                            <Border CornerRadius="8,8,0,0" Margin="1" Background="#FFF7FA"><Grid Margin="7"><Border Width="34" HorizontalAlignment="Left" Background="#FFFCFD" BorderBrush="#EBCFD9" BorderThickness="1" CornerRadius="3"/><Border Margin="40,0,0,0" Background="#FFFCFD" BorderBrush="#EBCFD9" BorderThickness="1" CornerRadius="3"><StackPanel Margin="7"><Border Width="44" Height="4" Background="#3B2931" HorizontalAlignment="Left" CornerRadius="2"/><Border Height="10" Margin="0,7,8,0" Background="#F8DCE6" CornerRadius="3"/></StackPanel></Border></Grid></Border>
+                                            <Border Grid.Row="1" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"><Grid Width="14" Height="14" Margin="0,0,6,0"><Ellipse Stroke="{DynamicResource LineBrush}" StrokeThickness="1.5"/><Ellipse x:Name="ThemeRadioDot_SoftPink" Width="7" Height="7" Fill="{DynamicResource PrimaryBrush}" Visibility="Collapsed"/></Grid><TextBlock Text="소프트 핑크" FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/></StackPanel></Border>
+                                        </Grid>
+                                    </Border>
+
+                                </WrapPanel>
 
                                 <Separator Margin="0,22,0,0" Background="{DynamicResource LineBrush}"/>
 

@@ -839,8 +839,13 @@ public sealed class TerminalSessionManager
 
         // dvz 는 %APPDATA%\DevezVibe\theme.txt 를 DevezCode\theme.txt 보다 먼저 읽는다. CLI 안에서
         // /theme 을 한 번이라도 쓰면 그 값이 고착되므로, 앱 테마를 인자로 못박아 우선순위를 덮는다.
-        var theme = DevezCode.App.CurrentTheme;
-        if (theme is not ("minimal" or "soft" or "dark")) theme = "dark";
+        var theme = DevezCode.App.CurrentTheme switch
+        {
+            // dvz가 아직 3종 enum만 지원하므로 새 라이트 테마는 가장 가까운 soft로 연결한다.
+            "gray" or "softpink" => "soft",
+            "minimal" or "soft" or "dark" => DevezCode.App.CurrentTheme,
+            _ => "dark",
+        };
 
         // ConPTY 콘솔의 기본 출력 코드페이지는 949(시스템 ANSI)다. claude/codex 는 node 가 콘솔에
         // WriteConsoleW(유니코드)로 쓰거나 스스로 UTF-8 로 올려서 무관하지만, dvz 의 OpenTUI 백엔드는

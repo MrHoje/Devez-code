@@ -153,6 +153,26 @@ public static class GajaeCustomThemes
             ["diffAdded"] = "#2563EB", ["diffRemoved"] = "#DC2626", ["diffContext"] = "#475569",
             ["addedBg"] = "#DBEAFE", ["removedBg"] = "#FEE2E2",
         },
+        "gray" => new()
+        {
+            ["background"] = "#F3F4F6", ["currentLine"] = "#E5E7EB", ["selection"] = "#D9DDE3",
+            ["backgroundDarker"] = "#E9EBEF", ["foreground"] = "#1F2937", ["comment"] = "#5F6774",
+            ["primary"] = "#4B5563", ["secondary"] = "#326AA5", ["accentPurple"] = "#76558F",
+            ["errorRed"] = "#C2413E", ["warningOrange"] = "#A16207", ["successGreen"] = "#15803D",
+            ["infoCyan"] = "#0E7490", ["emphasizedYellow"] = "#A16207", ["border"] = "#D1D5DB",
+            ["diffAdded"] = "#15803D", ["diffRemoved"] = "#C2413E", ["diffContext"] = "#5F6774",
+            ["addedBg"] = "#E7F6EB", ["removedBg"] = "#FCE8E8",
+        },
+        "softpink" => new()
+        {
+            ["background"] = "#FFF7FA", ["currentLine"] = "#FCEFF4", ["selection"] = "#F2C9D7",
+            ["backgroundDarker"] = "#FAE8EF", ["foreground"] = "#3B2931", ["comment"] = "#735763",
+            ["primary"] = "#B54A6B", ["secondary"] = "#326A9F", ["accentPurple"] = "#84588F",
+            ["errorRed"] = "#C2413E", ["warningOrange"] = "#9A650B", ["successGreen"] = "#25723C",
+            ["infoCyan"] = "#16758A", ["emphasizedYellow"] = "#9A650B", ["border"] = "#EBCFD9",
+            ["diffAdded"] = "#25723C", ["diffRemoved"] = "#C2413E", ["diffContext"] = "#735763",
+            ["addedBg"] = "#E9F5EC", ["removedBg"] = "#FDE7E7",
+        },
         _ => new() // dark
         {
             ["background"] = "#1F1F1E", ["currentLine"] = "#272727", ["selection"] = "#303030",

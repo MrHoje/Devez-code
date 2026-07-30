@@ -137,6 +137,24 @@ public sealed class WtColorScheme
             BrightBlack = "#475569", BrightRed = "#EF4444", BrightGreen = "#22C55E", BrightYellow = "#EAB308",
             BrightBlue = "#3B82F6", BrightPurple = "#8B5CF6", BrightCyan = "#06B6D4", BrightWhite = "#FFFFFF",
         },
+        ["DevezCode Gray"] = new()
+        {
+            Name = "DevezCode Gray", Background = "#F3F4F6", Foreground = "#1F2937",
+            CursorColor = "#4B5563", SelectionBackground = "#D9DDE3",
+            Black = "#1F2937", Red = "#C2413E", Green = "#15803D", Yellow = "#A16207",
+            Blue = "#326AA5", Purple = "#76558F", Cyan = "#0E7490", White = "#FFFFFF",
+            BrightBlack = "#5F6774", BrightRed = "#DC5B57", BrightGreen = "#2F9A57", BrightYellow = "#C28A2C",
+            BrightBlue = "#4D82B8", BrightPurple = "#926EAE", BrightCyan = "#268CA2", BrightWhite = "#FFFFFF",
+        },
+        ["DevezCode Soft Pink"] = new()
+        {
+            Name = "DevezCode Soft Pink", Background = "#FFF7FA", Foreground = "#3B2931",
+            CursorColor = "#B54A6B", SelectionBackground = "#F2C9D7",
+            Black = "#3B2931", Red = "#C2413E", Green = "#25723C", Yellow = "#9A650B",
+            Blue = "#326A9F", Purple = "#84588F", Cyan = "#16758A", White = "#FFFCFD",
+            BrightBlack = "#735763", BrightRed = "#DC5B57", BrightGreen = "#3D9254", BrightYellow = "#BB852B",
+            BrightBlue = "#4A83B5", BrightPurple = "#A16DAE", BrightCyan = "#308CA0", BrightWhite = "#FFFFFF",
+        },
     };
 }
 

@@ -1045,6 +1045,8 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         {
             "dark" => "\x1b[48;2;39;39;39m",     // gjc currentLine #272727
             "soft" => "\x1b[48;2;231;224;213m",  // soft #E7E0D5
+            "gray" => "\x1b[48;2;236;238;241m",  // gray #ECEEF1
+            "softpink" => "\x1b[48;2;251;231;238m", // soft pink #FBE7EE
             _      => "\x1b[48;2;234;240;245m",  // minimal #EAF0F5
         });
 
@@ -1108,13 +1110,15 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         data = ReplaceCodexBackground(data, _codexUserMsgBgSrc, CodexUserMsgBgTarget());
         if (DevezCode.App.CurrentTheme == "dark") return data;
 
-        bool isSoft = DevezCode.App.CurrentTheme == "soft";
-        var added = System.Text.Encoding.ASCII.GetBytes(isSoft
-            ? "\x1b[48;2;222;236;214m"  // Claude soft diffAdded #DEECD6
-            : "\x1b[48;2;219;234;254m"); // Claude minimal diffAdded #DBEAFE
-        var removed = System.Text.Encoding.ASCII.GetBytes(isSoft
-            ? "\x1b[48;2;242;214;214m"  // Claude soft diffRemoved #F2D6D6
-            : "\x1b[48;2;254;226;226m"); // Claude minimal diffRemoved #FEE2E2
+        var (addedAnsi, removedAnsi) = DevezCode.App.CurrentTheme switch
+        {
+            "soft" => ("\x1b[48;2;222;236;214m", "\x1b[48;2;242;214;214m"),
+            "gray" => ("\x1b[48;2;231;246;235m", "\x1b[48;2;252;232;232m"),
+            "softpink" => ("\x1b[48;2;233;245;236m", "\x1b[48;2;253;231;231m"),
+            _ => ("\x1b[48;2;219;234;254m", "\x1b[48;2;254;226;226m"),
+        };
+        var added = System.Text.Encoding.ASCII.GetBytes(addedAnsi);
+        var removed = System.Text.Encoding.ASCII.GetBytes(removedAnsi);
 
         data = ReplaceCodexBackground(data, _codexDiffAddedBgSrc, added);
         data = ReplaceCodexBackground(data, _codexLegacyDiffAddedBgSrc, added);

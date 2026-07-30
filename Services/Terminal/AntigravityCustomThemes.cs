@@ -23,7 +23,7 @@ public static class AntigravityCustomThemes
     public static string MapToAntigravityScheme(string devezCodeTheme) => devezCodeTheme switch
     {
         "dark" => "dark",
-        "soft" or "minimal" => "terminal",
+        "soft" or "minimal" or "gray" or "softpink" => "terminal",
         _ => "dark",
     };
 

@@ -16,6 +16,8 @@ public static class ClaudeCustomThemes
     private const string ThemesDirName = "themes";
     private const string SoftSlug     = "devez-soft";
     private const string MinimalSlug  = "devez-minimal";
+    private const string GraySlug     = "devez-gray";
+    private const string SoftPinkSlug = "devez-softpink";
 
     /// <summary>앱 시작 시 호출. 매번 번들 내용으로 덮어써 최신 팔레트를 강제 반영한다.</summary>
     public static void EnsureInstalled()
@@ -28,6 +30,8 @@ public static class ClaudeCustomThemes
 
             File.WriteAllText(Path.Combine(dir, SoftSlug + ".json"), SoftThemeJson, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson, new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, GraySlug + ".json"), GrayThemeJson, new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, SoftPinkSlug + ".json"), SoftPinkThemeJson, new UTF8Encoding(false));
         }
         catch { /* best-effort — 실패해도 per-session 주입이 안 될 뿐 */ }
     }
@@ -38,6 +42,8 @@ public static class ClaudeCustomThemes
         "dark"    => "dark",
         "soft"    => "custom:" + SoftSlug,
         "minimal" => "custom:" + MinimalSlug,
+        "gray"    => "custom:" + GraySlug,
+        "softpink" => "custom:" + SoftPinkSlug,
         _         => "dark",
     };
 
@@ -139,6 +145,46 @@ public static class ClaudeCustomThemes
         "rate_limit_empty": "#E2E8F0",
         "briefLabelYou": "#2563EB",
         "briefLabelClaude": "#475569"
+      }
+    }
+    """;
+
+    private const string GrayThemeJson = """
+    {
+      "name": "Devez Gray",
+      "base": "light",
+      "overrides": {
+        "claude": "#4B5563", "claudeShimmer": "#6B7280", "text": "#1F2937", "inverseText": "#FFFFFF",
+        "inactive": "#5F6774", "inactiveShimmer": "#7B8491", "subtle": "#1F2937",
+        "suggestion": "#4B5563", "permission": "#4B5563", "permissionShimmer": "#6B7280",
+        "remember": "#4B5563", "success": "#15803D", "warning": "#A16207", "error": "#C2413E",
+        "merged": "#4B5563", "promptBorder": "#4B5563", "promptBorderShimmer": "#6B7280",
+        "planMode": "#4B5563", "autoAccept": "#4B5563", "bashBorder": "#4B5563", "ide": "#5F6774", "fastMode": "#4B5563",
+        "userMessageBackground": "#E2E5E9", "userMessageBackgroundHover": "#C7CDD4",
+        "messageActionsBackground": "#E5E7EB", "bashMessageBackgroundColor": "#E5E7EB", "memoryBackgroundColor": "#E5E7EB", "selectionBg": "#D9DDE3",
+        "diffAdded": "#E7F6EB", "diffAddedDimmed": "#F3F4F6", "diffAddedWord": "#15803D",
+        "diffRemoved": "#FCE8E8", "diffRemovedDimmed": "#F3F4F6", "diffRemovedWord": "#C2413E",
+        "rate_limit_fill": "#4B5563", "rate_limit_empty": "#D1D5DB", "briefLabelYou": "#4B5563", "briefLabelClaude": "#5F6774"
+      }
+    }
+    """;
+
+    private const string SoftPinkThemeJson = """
+    {
+      "name": "Devez Soft Pink",
+      "base": "light",
+      "overrides": {
+        "claude": "#B54A6B", "claudeShimmer": "#CE7892", "text": "#3B2931", "inverseText": "#FFFCFD",
+        "inactive": "#735763", "inactiveShimmer": "#957381", "subtle": "#3B2931",
+        "suggestion": "#B54A6B", "permission": "#B54A6B", "permissionShimmer": "#CE7892",
+        "remember": "#B54A6B", "success": "#25723C", "warning": "#9A650B", "error": "#C2413E",
+        "merged": "#B54A6B", "promptBorder": "#B54A6B", "promptBorderShimmer": "#CE7892",
+        "planMode": "#B54A6B", "autoAccept": "#B54A6B", "bashBorder": "#B54A6B", "ide": "#735763", "fastMode": "#B54A6B",
+        "userMessageBackground": "#F8DCE6", "userMessageBackgroundHover": "#E8BFCF",
+        "messageActionsBackground": "#FCEFF4", "bashMessageBackgroundColor": "#FCEFF4", "memoryBackgroundColor": "#FCEFF4", "selectionBg": "#F2C9D7",
+        "diffAdded": "#E9F5EC", "diffAddedDimmed": "#FFF7FA", "diffAddedWord": "#25723C",
+        "diffRemoved": "#FDE7E7", "diffRemovedDimmed": "#FFF7FA", "diffRemovedWord": "#C2413E",
+        "rate_limit_fill": "#B54A6B", "rate_limit_empty": "#EBCFD9", "briefLabelYou": "#B54A6B", "briefLabelClaude": "#735763"
       }
     }
     """;
