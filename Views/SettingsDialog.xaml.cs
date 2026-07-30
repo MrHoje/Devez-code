@@ -1550,58 +1550,6 @@ public partial class SettingsDialog : UserControl
     /// <summary>헤더 X — devez 처럼 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     private void CancelBtn_Click(object sender, RoutedEventArgs e) => TryCloseWithConfirm();
 
-    // ── 타이틀바 드래그 → 덮고 있는 메인창을 함께 이동 ────────────────
-    // 이 창은 모달이라 Owner 가 비활성 상태 → Owner.DragMove() 가 먹지 않는다.
-    // 마우스를 직접 캡처해 이동량만큼 Owner 좌표를 옮기고, 설정창은 FitToOwner 로 따라온다.
-    private Point? _headerDragOrigin;   // 화면 좌표(device px)
-
-    /// <summary>더블클릭은 메인창 상단바와 동일하게 최대화/복원 토글.</summary>
-    private void Header_DragStart(object sender, MouseButtonEventArgs e)
-    {
-        if (Window.GetWindow(this) is not SettingsWindow win) return;
-        if (e.ClickCount == 2) { win.ToggleMaximizeOwner(); return; }
-        if (win.IsOwnerMaximized) return;   // 최대화·전체화면에서는 이동하지 않는다
-        _headerDragOrigin = PointToScreen(e.GetPosition(this));
-        ((UIElement)sender).CaptureMouse();
-    }
-
-    private void Header_DragMove(object sender, MouseEventArgs e)
-    {
-        if (_headerDragOrigin is not { } origin) return;
-        if (e.LeftButton != MouseButtonState.Pressed) { Header_DragEnd(sender, e); return; }
-        var now = PointToScreen(e.GetPosition(this));
-        double dx = now.X - origin.X, dy = now.Y - origin.Y;
-        if (dx == 0 && dy == 0) return;
-        (Window.GetWindow(this) as SettingsWindow)?.MoveOwnerBy(dx, dy);
-        // 창이 움직이면 같은 화면 좌표를 다시 기준으로 삼는다(누적 오차 없음).
-        _headerDragOrigin = PointToScreen(e.GetPosition(this));
-    }
-
-    private void Header_DragEnd(object sender, EventArgs e)
-    {
-        if (_headerDragOrigin == null) return;
-        _headerDragOrigin = null;
-        if (sender is UIElement el && el.IsMouseCaptured) el.ReleaseMouseCapture();
-    }
-
-    // ── 재현한 타이틀바의 창 컨트롤 — 실제 대상은 덮고 있는 메인창(Owner) ──
-    private void OwnerMinBtn_Click(object sender, RoutedEventArgs e)
-        => (Window.GetWindow(this) as SettingsWindow)?.MinimizeOwner();
-
-    private void OwnerMaxBtn_Click(object sender, RoutedEventArgs e)
-        => (Window.GetWindow(this) as SettingsWindow)?.ToggleMaximizeOwner();
-
-    private void OwnerCloseBtn_Click(object sender, RoutedEventArgs e)
-        => (Window.GetWindow(this) as SettingsWindow)?.CloseOwner();
-
-    /// <summary>메인창 최대화 상태를 타이틀바 버튼 아이콘에 반영(SettingsWindow 가 호출).</summary>
-    public void SyncOwnerMaximizeIcon(bool maximized)
-    {
-        OwnerMaxBtnIcon.Data = (System.Windows.Media.Geometry)FindResource(
-            maximized ? "IconWinRestore" : "IconWinMaximize");
-        OwnerMaxBtn.ToolTip = maximized ? "이전 크기로 복원" : "최대화";
-    }
-
     /// <summary>ESC / "앱으로 돌아가기" / 외부에서 호출하는 닫기.
     /// 옵션은 이미 즉시 저장돼 있으므로 저장 여부는 묻지 않고, 테마를 바꿨을 때만
     /// 세션 재시작 여부를 여기서 묻는다(재시작하지 않아도 저장은 유지된다).</summary>

@@ -5944,19 +5944,25 @@ public partial class MainWindow : Window
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
+        if (_settingsWindow is { IsLoaded: true } open) { open.Activate(); return; }   // 이미 열려 있으면 그 창으로
         await SuspendTerminalWithSnapshotAsync(blankCurtain: true);   // 터미널을 숨기고 단색 커튼(배경색)만 보이게.
-        // 설정창은 이 창(Owner)을 꽉 채운다 — 위치·크기는 SettingsWindow 가 Owner 에 맞추므로 중앙 배치 불필요.
+        // 설정 화면은 이 창의 상단바 아래를 채운다(위치·크기는 SettingsWindow 가 SettingsHostRectDip 에 맞춘다).
+        // 상단바를 계속 쓰려면 이 창이 비활성(모달)이면 안 되므로 Show() 로 띄운다.
         var dlg = new Views.SettingsWindow { Owner = this };
+        _settingsWindow = dlg;
         dlg.Closed += (_, _) =>
         {
+            _settingsWindow = null;
             ResumeTerminal();
             // 설정의 계정 사용량에서 로그인/재연결했을 수 있으니 즉시 갱신.
             _usageApi.RefreshNow();
             _codex.RefreshNow();
             _openCodeGo.RefreshNow();
         };
-        dlg.ShowDialog();
+        dlg.Show();
     }
+
+    private Views.SettingsWindow? _settingsWindow;   // 열려 있는 설정 화면(비모달) — 중복 오픈 방지
 
     private async void McpBtn_Click(object sender, RoutedEventArgs e)
     {
@@ -6480,6 +6486,19 @@ public partial class MainWindow : Window
     /// 창 rect 가 아니라 이 요소의 화면 위치·크기를 기준으로 해야 어긋나지 않는다.</summary>
     public FrameworkElement ChromeRootElement => RootChrome;
 
+    /// <summary>설정 화면이 채울 영역 — 이 창의 <b>상단바 아래</b>, 테두리 안쪽(화면 좌표 DIP).
+    /// 상단바는 그대로 노출해 앱 이름·패널 토글·창 컨트롤이 계속 동작하게 한다.</summary>
+    public Rect SettingsHostRectDip()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var chromeOrigin = RootChrome.PointToScreen(new Point(0, 0));
+        var titleBottom  = TitleBarRow.PointToScreen(new Point(0, TitleBarRow.ActualHeight));
+        double left   = chromeOrigin.X / dpi.DpiScaleX;
+        double top    = titleBottom.Y  / dpi.DpiScaleY;
+        double bottom = chromeOrigin.Y / dpi.DpiScaleY + RootChrome.ActualHeight;
+        return new Rect(left, top, RootChrome.ActualWidth, Math.Max(0, bottom - top));
+    }
+
     /// <summary>둥근 모서리를 쓰지 않는 상태(최대화/전체화면). 자식 오버레이도 같은 기준을 따라야 한다.</summary>
     public bool IsSquareCornerState => WindowState == WindowState.Maximized || _inFullScreen;
 
@@ -6907,9 +6926,6 @@ public partial class MainWindow : Window
     private void RightScrim_Click(object sender, MouseButtonEventArgs e) => CloseRightOverlay();
 
     private void MaxBtn_Click(object sender, RoutedEventArgs e) => ToggleMaximizeOrFullScreen();
-
-    /// <summary>이 창을 덮고 있는 자식 창(설정창)이 재현한 타이틀바에서 호출하는 최대화 토글.</summary>
-    public void ToggleMaximizeFromChild() => ToggleMaximizeOrFullScreen();
 
     /// <summary>최대화 버튼·상단바 더블클릭 공통 토글. 전체화면 설정 ON 이면 Maximized 상태를
     /// 거치지 않고 Normal 에서 바로 전체화면 진입/해제(최대화→복원 2단 애니메이션 제거).</summary>
