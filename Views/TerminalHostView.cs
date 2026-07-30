@@ -563,6 +563,22 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "revealPrepared":
                     RevealPrepared?.Invoke();
                     break;
+                case "healCover":
+                {
+                    // 공백 자가치유(blankAudit)의 커버 요청 — 현재 화면을 캡처해 돌려주면 JS 가 그
+                    // 이미지로 덮은 채 스크롤 버스트를 돌린다(무깜빡: 정지 화면 → 치유된 화면 크로스페이드).
+                    var roomId = root.GetProperty("roomId").GetString()!;
+                    double w = ActualWidth, h = ActualHeight; // DIP = CSS px
+                    _ = Dispatcher.BeginInvoke(async () =>
+                    {
+                        byte[]? png = null;
+                        try { png = await CapturePngAsync(); } catch { /* 캡처 실패 → 커버 없이 진행 */ }
+                        PostJson(png != null
+                            ? new { type = "healCoverImg", roomId, image = (string?)("data:image/png;base64," + Convert.ToBase64String(png)), imgW = w, imgH = h }
+                            : new { type = "healCoverImg", roomId, image = (string?)null, imgW = 0.0, imgH = 0.0 });
+                    });
+                    break;
+                }
                 case "loadingShown":
                     LoadingShown?.Invoke();
                     break;

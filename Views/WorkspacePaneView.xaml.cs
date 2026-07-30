@@ -1357,13 +1357,19 @@ public partial class WorkspacePaneView : UserControl
         // 사후 opacity/refresh 로는 이미 어긋난 입력영역을 안정적으로 복구하지 못한다.
         // 커버를 먼저 올리면 show 의 fit 이 억제되고, RevealAfterTransition 이 최종 폭에서 fit한 뒤
         // Codex 출력이 quiet 해질 때까지 기다려 완성 프레임만 보여준다.
+        // 인라인 TUI(codex/gjc) 한정 — alt-screen 에이전트(claude 등)는 SIGWINCH 한 번에 스스로
+        // 완전한 프레임을 다시 그리므로 커버→fit 억제→reveal 개입이 오히려 재렌더와 간섭해
+        // 하단 입력영역이 사라진 채 고착됐다(창모드 세션 로드 증상). devez 는 커버 없이 정상.
         double currentTerminalWidth = TerminalHostContainer?.ActualWidth ?? 0;
         double currentTerminalHeight = TerminalHostContainer?.ActualHeight ?? 0;
         bool hadPreviousSize = _shownSessionSizes.TryGetValue(session.Id, out var previousSize);
         bool sizeChanged = !hadPreviousSize
             || (currentTerminalWidth > 1 && Math.Abs(currentTerminalWidth - previousSize.W) > 2)
             || (currentTerminalHeight > 1 && Math.Abs(currentTerminalHeight - previousSize.H) > 2); // 하단 터미널 패널 = 높이 변화
-        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && sizeChanged;
+        var reflowAgent = AgentRegistry.Find(string.IsNullOrWhiteSpace(session.AgentId)
+            ? SettingsService.LoadAgentForRoom(session.Id) : session.AgentId);
+        bool coverReflow = !_coverActive && _terminal.IsReady(session.Id) && sizeChanged
+            && reflowAgent?.InlineTui == true;
         if (coverReflow)
         {
             DiagLog.Write($"ActivateSession reflow cover room={session.Id} size={(hadPreviousSize ? $"{previousSize.W:F1}x{previousSize.H:F1}" : "first")}->{currentTerminalWidth:F1}x{currentTerminalHeight:F1}");

@@ -168,6 +168,13 @@ public sealed class TerminalSession : IDisposable
         Environment.SetEnvironmentVariable("COLORFGBG",
             colorFgBg ?? (DevezCode.App.IsDarkTheme(DevezCode.App.CommittedTheme) ? "15;0" : "0;15"));
 
+        // claude fullscreen(alt-screen)은 증분 diff 렌더러라, 리사이즈 뒤 stale 화면 모델 기준의
+        // diff 프레임이 '지움만 하고 재출력은 생략'해 화면 중간이 텅 빈 채 고착된다(수 초 뒤 유휴
+        // 재페인트에서도 발생, 스크롤을 크게 움직여야 복구 — 최대화/창모드 전환의 diff 블록 공백 실체).
+        // 공식 스위치(claude-code#69619, v2.1.183+)로 매 프레임 전체 리페인트로 전환한다.
+        // 변수명은 로컬 claude.exe(2.1.220) 바이너리에서 실재 확인. 다른 에이전트는 이 변수를 무시한다.
+        Environment.SetEnvironmentVariable("CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT", "1");
+
         // 1) 파이프 2쌍: (셸이 읽는 stdin), (셸이 쓰는 stdout)
         if (!CreatePipe(out var inputRead, out var inputWriteRaw, IntPtr.Zero, 0))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "CreatePipe(input) 실패");

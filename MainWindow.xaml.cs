@@ -2283,13 +2283,17 @@ public partial class MainWindow : Window
         => Task.WhenAll(_panes.Where(p => p.Visibility == Visibility.Visible)
                               .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true, stretchCover: stretchCover)));
 
-    /// <summary>리사이즈가 끝난 뒤 터미널 재fit·ConPTY 재동기만 수행(커버 없음).
+    /// <summary>리사이즈가 끝난 뒤 터미널 재fit만 수행(커버 없음).
     /// OS 최대화/복원은 DWM 애니메이션이 자연스러우므로 캡처·단색 커버를 씌우지 않는다 —
-    /// 커버는 그 자체가 "이전 화면이 늘어나는/한 번 깜빡이는" 전환으로 보인다.</summary>
+    /// 커버는 그 자체가 "이전 화면이 늘어나는/한 번 깜빡이는" 전환으로 보인다.
+    /// kick/bounce 금지: JS 가 최종 크기 하나만 디바운스로 ConPTY 에 보내는데(§6.7 뿌리 수정),
+    /// 그 직후 rows-1→rows 바운스를 쏘면 claude 가 41→42줄로 연속 재렌더하며 부분 프레임
+    /// 조각(중앙 공백 — diff 등 큰 블록 자리)이 alt 버퍼에 고착된다. devez 는 fit→단일 resize 뿐이고
+    /// 이 증상이 없다 — 같은 형태로 맞춘다.</summary>
     private void RefitWorkspaceTerminalsAfterResize()
     {
         foreach (var p in _panes.Where(p => p.Visibility == Visibility.Visible))
-            p.RevealAfterTransition(kick: true, bounce: true);
+            p.RevealAfterTransition();
     }
 
     private void UnfreezeWorkspaceTerminals()

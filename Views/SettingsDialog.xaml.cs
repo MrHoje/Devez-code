@@ -96,7 +96,11 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.20.0", "2026-07-30", true, new[]
+        ("v1.21.0", "2026-07-31", true, new[]
+        {
+            "설정 화면을 별도 창이 아닌 앱 내부 화면(도킹) 방식으로 변경했습니다.",
+        }),
+        ("v1.20.0", "2026-07-30", false, new[]
         {
             "그레이, 소프트 핑크, 미드나이트 블루 테마를 추가했습니다.",
         }),

@@ -280,6 +280,13 @@
                               // TUI 가 그 폭으로 그렸다 다시 리플로우돼 깨진다. 억제했다가 reveal 이 안정된 최종 폭에서 한 번만 fit.
   // 분할 닫기 버퍼 복구 롤백 스위치. false 로 바꾸면 기존 단일 fit 경로로 즉시 복귀한다.
   const SPLIT_CLOSE_BUFFER_REPAIR = true;
+  // 리사이즈 후 내부 공백 자가치유(claude alt-screen) 롤백 스위치. false 면 판정·자극을 모두 건너뛴다.
+  const BLANK_HEAL_SCROLL = true;
+  const BlankHealMinGap = 5;        // 내부 연속 빈 줄이 이 이상일 때만 손상으로 본다(정상 화면 실측 gap=1)
+  const BlankAuditWindowMs = 15000; // 리사이즈 후 감시 창 — 손상이 리사이즈 7초+ 뒤(유휴 재페인트)에도 생긴다(실측 00:32)
+  // fit → ConPTY 크기 통보 디바운스(ms). 한 전환에서 레이아웃이 여러 단계로 반영돼 fit 이 3~7회
+  // 연속 실행되는데, 그 중간 크기가 전부 SIGWINCH 로 나가면 claude 프레임이 깨진다(§6.7 계열의 뿌리).
+  const ResizePostDebounceMs = 110;
 
   function post(msg) { window.chrome.webview.postMessage(msg); }
 
@@ -500,6 +507,242 @@
       dlog('splitCloseRepair error room=' + roomId + ' ' + e);
       return false;
     }
+  }
+
+  // ── 리사이즈 후 내부 공백 자가치유(claude alt-screen) ────────────────────
+  // §6.7: claude/Ink 는 리사이즈 뒤 '직전 프레임 영역을 지우고 더 짧은 새 프레임만' 써서 alt 버퍼에
+  // 실제 빈 셀을 남긴다. 문자 자체가 없으므로 refresh()·같은 크기 resize·rows 바운스로는 복구되지
+  // 않는다. 분할 닫기(cols 만 변화)는 전환 전 셀 스냅샷을 되돌려 고쳤지만(repairSplitCloseBuffer),
+  // 최대화/창모드 전환은 cols·rows 가 함께 바뀌어 행 대응이 없어 스냅샷 복구가 불가능하다.
+  // 실측으로 유일하게 복구되는 자극은 '스크롤'이다 — 사용자가 휠을 올렸다 내리면 정상으로 돌아온다
+  // (claude 가 스크롤 오프셋 변화에 대해 프레임 전체를 다시 쓴다). 앱 마우스 모드가 켜져 있으면
+  // 휠 위→아래 1회 왕복을 PTY 로 보내, 스크롤 위치는 그대로 두고 전체 재작성만 유발한다.
+  // Ctrl+L / ESC[2J 는 화면 clear 를 포함해 자동 주입 금지(§6.7) — 스크롤 리포트는 화면을 지우지 않는다.
+  function altInteriorGap(entry) {
+    try {
+      if (!entry || entry.dead || entry.agent !== 'claude') return -1;
+      if (entry.term.buffer.active.type !== 'alternate') return -1;
+      const lines = internalViewportLines(entry);
+      if (!lines) return -1;
+      // interiorBlankInfo 는 첫 내용 줄 '이전'(상단 여백)을 제외한다 — 분할 복구용으로는 맞지만,
+      // widen 손상은 여기서 놓친다: claude 프레임은 하단(입력줄) 고정이라 넓어져 프레임이 짧아지면
+      // 지워진 잔여가 '상단 빈 띠'로 남는다(실측 01:04 깨우기 — 위 7줄 빈 채 gap=1 로 clean 오판).
+      // → 마지막 내용 줄이 화면 하단에 붙어 있으면(하단 고정 프레임) 선두 빈 줄도 손상 후보로 센다.
+      let last = -1, first = -1;
+      for (let r = 0; r < lines.length; r++) {
+        if (!lineHasText(lines[r])) continue;
+        if (first < 0) first = r;
+        last = r;
+      }
+      if (first < 0) return 0; // 전부 빈 화면 — 기준선(pre)과의 비교는 호출부 몫
+      const interior = interiorBlankInfo(lines).max;
+      const bottomAnchored = last >= lines.length - 3;
+      return bottomAnchored ? Math.max(interior, first) : interior;
+    } catch (e) { return -1; }
+  }
+  // xterm 의 휠 마우스 리포트를 그대로 발생시킨다(인코딩/프로토콜 판단은 xterm 에 맡긴다 —
+  // 번들 wheel 경로와 동일한 button=WHEEL(4), action=UP(0)/DOWN(1)). 앱 마우스 모드가 아니면
+  // triggerMouseEvent 가 false 를 돌려주므로 그때는 자극을 포기한다(로컬 스크롤은 claude 에 안 먹는다).
+  function sendAltWheel(entry, dir) {
+    try {
+      const svc = entry.term._core && entry.term._core.coreMouseService;
+      if (!svc || typeof svc.triggerMouseEvent !== 'function') return false;
+      if (!svc.activeProtocol || svc.activeProtocol === 'NONE') return false;
+      return !!svc.triggerMouseEvent({
+        col: 0, row: 0, x: 1, y: 1,
+        button: 4, action: dir === 'up' ? 0 : 1,
+        ctrl: false, alt: false, shift: false
+      });
+    } catch (e) { return false; }
+  }
+  // 행별 '보이지 않는 글자' 판별 맵 — 버퍼에 글자는 있는데(gap 작음) 화면이 비어 보이는 모순의
+  // 최종 판별자. 각 행: '#'=보이는 글자 있음, 'I'=글자 전부 fg==bg(투명 글자 = SGR 색 desync),
+  // '.'=빈 행. 'I' 가 나오면 셀 손실도 페인트 낡음도 아니라 '색 상태 오염'이 원인으로 확정된다.
+  function attrMap(entry, roomId, tag, logAlways) {
+    try {
+      const buf = entry.term.buffer.active;
+      let map = '', sample = '';
+      for (let y = 0; y < entry.term.rows; y++) {
+        const line = buf.getLine(y);
+        if (!line) { map += '?'; continue; }
+        let text = 0, invisible = 0;
+        for (let x = 0; x < line.length; x++) {
+          const c = line.getCell(x);
+          if (!c) continue;
+          const ch = c.getChars();
+          if (!ch || ch === ' ') continue;
+          text++;
+          // fg 와 bg 가 같은 모드·같은 값이면 투명 글자. 기본색(fg default 위 bg default)은 정상 표시.
+          const fgD = c.isFgDefault(), bgD = c.isBgDefault();
+          const same = (!fgD && !bgD)
+            ? (c.getFgColor() === c.getBgColor()
+               && !!c.isFgRGB() === !!c.isBgRGB() && !!c.isFgPalette() === !!c.isBgPalette())
+            : false;
+          if (same) {
+            invisible++;
+            if (!sample) sample = 'y=' + y + ' x=' + x + ' ch=' + ch
+              + ' fg=' + c.getFgColor() + (c.isFgRGB() ? 'rgb' : c.isFgPalette() ? 'pal' : 'def')
+              + ' bg=' + c.getBgColor() + (c.isBgRGB() ? 'rgb' : c.isBgPalette() ? 'pal' : 'def');
+          }
+        }
+        map += text === 0 ? '.' : (invisible >= text * 0.8 ? 'I' : '#');
+      }
+      // 'I'(투명 글자 행)가 있을 때만 로그 — 정상 화면에서 매 tick 스팸 방지. logAlways 는 기준선용.
+      if (logAlways || map.indexOf('I') !== -1)
+        dlog('attrMap(' + tag + ') room=' + roomId + ' [' + map + ']' + (sample ? ' ' + sample : ''));
+      return map;
+    } catch (e) { dlog('attrMap(' + tag + ') err ' + e); return ''; }
+  }
+
+  // fit(리사이즈)마다 무장하는 감시자. 전환 커버·reveal 경로와 완전히 독립이다 — 커버 갈래와
+  // 세대 무효화에 걸려 실행되지 않던 문제(실측: 최대화 전환에서 판정 자체가 안 돌았다)를 피한다.
+  // pre 는 '리사이즈 직전'(=정상 프레임) 화면의 최대 내부 공백. 기준선이 없으면 손대지 않는다 —
+  // 세션 재실행(resume)·신규 생성 직후는 claude 가 히스토리를 다시 그리는 중이라 '비어 있는 게
+  // 정상'이고, 그걸 손상으로 오판해 자극하면 claude 가 과거 히스토리 위로 스크롤된 채 남는다.
+  function armBlankAudit(entry, roomId, preGap, tag) {
+    if (!BLANK_HEAL_SCROLL || preGap < 0) return;
+    entry._auditDeadline = Date.now() + BlankAuditWindowMs;
+    if (entry._auditTimer) return;     // 이미 감시 중 — 첫(정상 화면) 기준선을 유지하고 창만 연장
+    entry._auditPre = preGap;
+    entry._auditLastGap = -2;
+    entry._auditHeals = 0;
+    entry._auditDamageAt = 0;
+    dlog('blankAudit armed room=' + roomId + ' pre=' + preGap + ' ' + (tag || ''));
+    const tick = function () {
+      entry._auditTimer = 0;
+      if (entry.dead || terms[roomId] !== entry) return;
+      const now = Date.now();
+      if (entry._healing || now - (entry._lastAnyInputAt || 0) < 2000) {
+        if (now < entry._auditDeadline) entry._auditTimer = setTimeout(tick, 200);
+        return;
+      }
+      // busy(출력이 흐르는 중)엔 개입 금지 — full-repaint claude 는 매 렌더마다 전체 프레임을
+      // 다시 그려서 띠가 스스로 메워지고, 프레임 높이도 정상적으로 출렁인다(실측 01:15 gap 1↔7↔9).
+      // 그때 치유하면 정상 렌더와 싸워 왕복 깜빡임이 된다. idle 1.2s 이상일 때만 판정한다.
+      if (now - (entry._lastOutAt || 0) < 1200) {
+        entry._auditDamageAt = 0; // 출력이 흐르면 손상 지속 관측 리셋
+        if (now < entry._auditDeadline) entry._auditTimer = setTimeout(tick, 300);
+        return;
+      }
+      const gap = altInteriorGap(entry);
+      // '건강한 프레임' 실측 기준선 — 이 방에서 gap<=2 를 한 번이라도 보면 그게 기준이다.
+      // 무장 시점 스냅샷(pre)만 쓰면 손상 상태에서 재무장할 때 기준선이 오염돼(실측 pre=22)
+      // 이후 손상을 전혀 못 본다(분할 후 "조정 로직이 안 탄다"의 실체).
+      if (gap >= 0 && gap <= 2) entry._healthyGap = gap;
+      const base = (entry._healthyGap != null) ? entry._healthyGap : entry._auditPre;
+      if (gap >= BlankHealMinGap && gap > base) {
+        if (!entry._auditDamageAt) {
+          // 1차 관측 — 600ms 뒤에도 남아 있어야 손상으로 확정(일시 프레임 오판 방지).
+          entry._auditDamageAt = now;
+          entry._auditDeadline = Math.max(entry._auditDeadline, now + 4000);
+          entry._auditTimer = setTimeout(tick, 700);
+          return;
+        }
+        // 전환 커버가 올라와 있으면(분할 등) 폭이 유동적이고 어차피 가려져 있다 — 끝난 뒤로 미룬다.
+        // (실측 01:22 bounce#1 이 이 상태에서 조용히 무시돼 치유 1회를 공쳤다.)
+        if (_fitSuppressed) {
+          entry._auditDamageAt = now;
+          entry._auditTimer = setTimeout(tick, 500);
+          return;
+        }
+        entry._auditHeals++;
+        entry._auditDeadline = Math.max(entry._auditDeadline, now + 6000);
+        entry._auditDamageAt = 0;
+        if (entry._auditHeals <= 2) {
+          // 치유 = 캡처 이미지로 덮은 스크롤 버스트. 깊은 스크롤만이 유일하게 유효하다(반복 실측:
+          // rows 바운스 무효 01:22 gap 7→7 — full-repaint 도 '프레임'만 다시 그려 프레임 밖 상단
+          // 띠는 영영 안 그린다). 현재 화면 캡처로 덮고 진행하면 사용자에게는 정지 화면이
+          // 치유된 화면으로 크로스페이드되는 것으로만 보인다(무깜빡).
+          entry._healing = true;
+          entry._healStarted = false;
+          dlog('blankHeal request-cover room=' + roomId + ' gap=' + gap + ' base=' + base);
+          dumpMap(roomId, 'blank-heal-before');
+          post({ type: 'healCover', roomId: roomId });
+          // C# 캡처 응답(healCoverImg)이 버스트를 시작한다. 응답 유실 폴백: 900ms 후 커버 없이 시작.
+          setTimeout(function () {
+            if (entry._healing && !entry._healStarted) startHealBurst(entry, roomId, null);
+          }, 900);
+          entry._auditTimer = setTimeout(tick, 1200);
+        } else {
+          dlog('blankAudit give-up room=' + roomId + ' gap=' + gap + ' base=' + base);
+        }
+        return;
+      }
+      entry._auditDamageAt = 0;
+      if (gap !== entry._auditLastGap) { // 변화만 기록(로그 스팸 방지)
+        entry._auditLastGap = gap;
+        dlog('blankAudit clean room=' + roomId + ' gap=' + gap + ' base=' + base);
+        dumpMap(roomId, 'blank-audit-clean');
+      }
+      // claude 재렌더는 수 초에 걸쳐 나뉘어 오고 손상은 유휴 재페인트에서 늦게도 생긴다 — 창이 남은 동안 재검사.
+      if (now < entry._auditDeadline) entry._auditTimer = setTimeout(tick, 400);
+    };
+    entry._auditTimer = setTimeout(tick, 300);
+  }
+  // 치유 커버(캡처 이미지) 전용 오버레이 — xfer-cover 의 전환 상태기계(gen/suppress)와 분리해
+  // 서로의 표시 상태를 오염시키지 않는다. z-index 는 xfer-cover(45)보다 위(46).
+  let _healCoverEl = null;
+  function ensureHealCover() {
+    if (_healCoverEl) return _healCoverEl;
+    const d = document.createElement('div');
+    d.id = 'heal-cover';
+    d.style.cssText = 'position:absolute;inset:0;z-index:46;display:none;pointer-events:none;'
+      + 'background-color:var(--term-bg,#0C0C0C);background-repeat:no-repeat;background-position:top left;';
+    document.body.appendChild(d);
+    _healCoverEl = d;
+    return d;
+  }
+  // 스크롤 버스트 본체(무깜빡판) — 사용자의 실제 회복 조작("휠을 쭉 올렸다 내리면 정상")의 재현.
+  // 얕은 왕복(1틱·3틱)은 무효/역효과 실측 — claude 는 깊은 스크롤로 과거 전사가 실제로 뷰에
+  // 들어와야 그 행들을 다시 그린다. imgMsg(현재 화면 캡처)가 있으면 그 이미지로 덮은 채 진행해
+  // 스크롤이 전혀 보이지 않고, 끝나면 치유된 화면으로 크로스페이드된다.
+  function startHealBurst(entry, roomId, imgMsg) {
+    if (entry._healStarted) return; // 캡처 응답과 900ms 폴백의 중복 시작 방지
+    entry._healStarted = true;
+    if (entry.dead || terms[roomId] !== entry) { entry._healing = false; return; }
+    if (!sendAltWheel(entry, 'up')) {
+      entry._healing = false;
+      dlog('blankHeal unavailable room=' + roomId
+        + ' proto=' + ((entry.term._core && entry.term._core.coreMouseService
+          && entry.term._core.coreMouseService.activeProtocol) || 'x'));
+      return;
+    }
+    const cov = imgMsg && imgMsg.image ? ensureHealCover() : null;
+    if (cov) {
+      cov.style.transition = 'none';
+      cov.style.backgroundImage = 'url("' + imgMsg.image + '")';
+      cov.style.backgroundSize = (imgMsg.imgW > 0 && imgMsg.imgH > 0)
+        ? (imgMsg.imgW + 'px ' + imgMsg.imgH + 'px') : '100% 100%';
+      cov.style.opacity = '1';
+      cov.style.display = 'block';
+    }
+    dlog('blankHeal scrollburst room=' + roomId + (cov ? ' img-covered' : ' bare'));
+    const uncover = function () {
+      if (!cov) return;
+      cov.style.transition = 'opacity 0.16s ease';
+      cov.style.opacity = '0';
+      setTimeout(function () { cov.style.display = 'none'; cov.style.backgroundImage = ''; }, 220);
+    };
+    let up = 0;
+    const upT = setInterval(function () {
+      sendAltWheel(entry, 'up');
+      if (++up >= 12) clearInterval(upT);
+    }, 20);
+    setTimeout(function () {
+      let down = 0;
+      const downT = setInterval(function () {
+        sendAltWheel(entry, 'down');
+        if (++down >= 30) clearInterval(downT);
+      }, 20);
+      setTimeout(function () {
+        entry._healing = false;
+        const after = altInteriorGap(entry);
+        dlog('blankHeal done room=' + roomId + ' ->' + after);
+        dumpMap(roomId, 'blank-heal-after');
+        // 바닥 복귀 재렌더가 페인트된 다음 프레임에 걷어 커버 아래 완성 화면만 보이게.
+        requestAnimationFrame(function () { requestAnimationFrame(uncover); });
+      }, 30 * 20 + 420);
+    }, 12 * 20 + 260);
   }
 
   // ── 극소 박스 가드 ────────────────────────────────────────────────────
@@ -724,6 +967,7 @@
 
   // pin/suppress 정책을 적용해 실제 term 에 쓴다(기존 output 분기 로직을 함수화).
   function writeOut(t, bytes) {
+    t._lastOutAt = Date.now(); // 리사이즈 후 재렌더 quiet 판정용(armBlankAudit)
     // 비활성(display:none) 탭은 스크롤 위치 계산이 무의미하고, scrollHeight 읽기가 강제 레이아웃을
     // 유발해 5세션 동시 출력 시 큰 비용이 된다. write 만 하고 끝낸다(탭 전환 show 시 scrollToBottom 처리).
     if (t._dbgUntil && Date.now() < t._dbgUntil && (t._dbgCount || 0) < 14) {
@@ -2184,7 +2428,15 @@
           + ' grid=' + term.cols + 'x' + term.rows);
         return;
       }
-      return nativeFit();
+      // 리사이즈 '직전'(=정상 프레임) 화면의 내부 공백을 기준선으로 잡아, 리사이즈 뒤 커진 공백
+      // (claude/Ink 가 짧아진 프레임만 써서 남기는 alt 버퍼 빈 셀, §6.7)을 감시·치유한다.
+      // claude alt 방이 아니면 altInteriorGap 이 즉시 -1 이라 비용도 무장도 없다.
+      const preGap = BLANK_HEAL_SCROLL ? altInteriorGap(entry) : -1;
+      const pc = term.cols, pr = term.rows;
+      const ret = nativeFit();
+      if (preGap >= 0 && (term.cols !== pc || term.rows !== pr))
+        armBlankAudit(entry, roomId, preGap, pc + 'x' + pr + '->' + term.cols + 'x' + term.rows);
+      return ret;
     };
 
     // WebGL 렌더러(GPU) — 글자 그리기를 CPU(DOM) 대신 GPU 로 올려 활성 탭 렌더 비용을 낮춘다(WT 정합).
@@ -2416,6 +2668,9 @@
         if (/^\x1b(\[[0-9;]*|O)[ABCD]$/.test(data)) entry._lastInputAt = Date.now();
         try { term.scrollToBottom(); } catch (e) {}
       }
+      // 실제 사용자 입력 시각(포커스 리포트 제외) — blankAudit 이 사용자의 조작(스크롤/타이핑)과
+      // 충돌하지 않게 잠시 물러나는 기준. 치유 자신이 보내는 휠은 onData 를 거치지 않아 안 섞인다.
+      if (data !== '\x1b[I' && data !== '\x1b[O' && !entry._healing) entry._lastAnyInputAt = Date.now();
       // 키·마우스 입력 뒤 화면 내용은 분할 열기 전 스냅샷보다 새 상태일 수 있다. 오래된 줄을
       // 복원하지 않게 즉시 폐기한다. 포커스 in/out 리포트만 화면을 바꾸지 않으므로 제외.
       if (entry._splitWideSnapshot && data !== '\x1b[I' && data !== '\x1b[O') {
@@ -2426,9 +2681,18 @@
     });
     term.onResize(function (size) {
       if (entry.external) return;
-      // 넓어지는 패널 전환 중이면 ConPTY 에는 알리지 않는다(claude 가 화면을 지우지 않게) — 다음 입력이나
-      // 사용자의 직접 리사이즈에서 해제된다. 유예가 지난 리사이즈는 사용자 조작으로 보고 바로 해제·통보.
-      post({ type: 'resize', roomId: roomId, cols: size.cols, rows: size.rows });
+      // 한 번의 창 전환에서 레이아웃이 여러 단계(마진·스크롤바·타이틀바)로 반영되며 fit 이 3~7회
+      // 연속 실행된다. 그때마다 ConPTY 에 통보하면 claude 는 SIGWINCH 를 그 횟수만큼 받아 매번
+      // 레이아웃을 다시 계산하고, 중간 크기로 그린 프레임 조각이 alt 버퍼에 남아 화면이 깨진다
+      // (실측 23:30:47 — 142x41→142x42→144x43→64x30→64x29→62x29→142x42 로 요동, 내부 공백 36줄).
+      // → 마지막 크기만 디바운스로 한 번 통보한다. 명시적 킥(cols/rows 바운스)은 이 경로를 타지 않아
+      // 그대로 즉시 나간다. xterm 쪽 그리드는 이미 최종값이므로 화면 크기는 즉시 맞는다.
+      clearTimeout(entry._resizePostTimer);
+      entry._resizePostTimer = setTimeout(function () {
+        entry._resizePostTimer = 0;
+        if (entry.dead || entry.external) return;
+        post({ type: 'resize', roomId: roomId, cols: term.cols, rows: term.rows });
+      }, ResizePostDebounceMs);
       // 재배선 정착 대기 중이면 재무장 — 로딩 중 늦게 폭이 바뀌어도 '마지막' 폭에서 한 번만 바운스한다.
       if (entry._reSettleUntil && Date.now() < entry._reSettleUntil) scheduleReattachSettle(roomId);
       // fit 으로 그리드가 바뀌면 스크롤백이 리플로우되며 스크롤이 점프한다. pin 윈도우(인라인 TUI resume)
@@ -2916,6 +3180,14 @@
         }, 2000);
         break;
       }
+      case 'healCoverImg': {
+        // healCover 요청에 대한 C# 캡처 응답 — 이미지가 있으면 덮은 채, 없으면(캡처 실패) 맨 채로
+        // 스크롤 버스트 치유를 시작한다. 그 사이 치유가 취소/시작됐으면(_healing/_healStarted) 무시.
+        const hr = msg.roomId;
+        const he = hr ? terms[hr] : null;
+        if (he && he._healing && !he._healStarted) startHealBurst(he, hr, msg.image ? msg : null);
+        break;
+      }
       case 'fadeNow': {
         // C# 이 좌우 모두 준비됨을 확인하고 동시에 커튼을 걷으라고 지시(synced reveal). 즉시 제거한다 —
         // 파일 패널(md=WebView2)은 airspace 로 커튼 fade 가 안 먹어 즉시 나타나므로, 세션 커버도 즉시 걷어야
@@ -3099,6 +3371,9 @@
             dlog('splitCloseRepair armed room=' + room + ' source=' + source
               + ' grid=' + e.term.cols + 'x' + e.term.rows + ' savedGap=' + (snapshot ? snapshot.gap : 'x'));
           } else {
+            // 내부 공백 치유는 이 경로에 얹지 않는다 — 전환 갈래(캡처/단색 커버·synced·2s 폴백)와
+            // 세대 무효화(_xferGen)에 따라 실행이 보장되지 않아 실측에서 아예 돌지 않았다.
+            // 대신 fit 래퍼가 리사이즈마다 armBlankAudit 로 감시한다(커버와 무관하게 항상 동작).
             armRevealWaiter(doFade);
           }
         };
