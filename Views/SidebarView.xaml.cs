@@ -671,14 +671,22 @@ public partial class SidebarView : UserControl
     private void ProjectScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         UpdateProjectScrollVisuals((ScrollViewer)sender);
-        // 드래그 중 목록이 스크롤되면 카드가 그만큼 위로 올라간다 → 캡처 기준도 같이 옮긴다.
-        if (e.VerticalChange != 0) ShiftActiveDragOrigin(-e.VerticalChange);
+        SyncDragScrollOrigin();
     }
 
-    private void ShiftActiveDragOrigin(double dy)
+    /// <summary>드래그 중 목록이 스크롤된 만큼 캡처 좌표 기준을 옮긴다.
+    /// 앵커(마지막 반영 오프셋) 비교라 여러 번 호출돼도 중복 적용되지 않는다.
+    /// (ScrollChanged 는 버블링이라 카드 내부 스크롤도 올라오지만, 여기서는 목록 자신의
+    /// VerticalOffset 만 보므로 무해하게 no-op 된다.)</summary>
+    private void SyncDragScrollOrigin()
     {
-        _rootDrag?.ShiftCapturedOrigin(0, dy);
-        _projectDrag?.ShiftCapturedOrigin(0, dy);
+        if (_rootDrag == null && _projectDrag == null) return;
+        double offset = CurrentProjectScroll.VerticalOffset;
+        double delta = offset - _dragScrollAnchor;
+        if (Math.Abs(delta) < 0.01) return;
+        _dragScrollAnchor = offset;
+        _rootDrag?.ShiftCapturedOrigin(0, -delta);
+        _projectDrag?.ShiftCapturedOrigin(0, -delta);
     }
 
     private void UpdateProjectScrollVisuals(ScrollViewer sv)
@@ -1861,6 +1869,7 @@ public partial class SidebarView : UserControl
     private const double ProjectAutoScrollMaxStep = 16;
     private DispatcherTimer? _projectAutoScrollTimer;
     private double _projectAutoScrollStep;
+    private double _dragScrollAnchor; // 캡처 좌표 보정에 이미 반영한 스크롤 오프셋
 
     private ScrollViewer ProjectScrollFor(bool archived)
         => archived ? ArchiveProjectScroll : ActiveProjectScroll;
@@ -1904,7 +1913,12 @@ public partial class SidebarView : UserControl
 
     private void ProjectAutoScrollTick(object? sender, EventArgs e)
     {
-        if (!HasActiveDrag) { StopProjectDragAutoScroll(); return; }
+        // 캡처 유실 등으로 MouseUp 을 놓친 경우 타이머가 혼자 살아남지 않게 한다.
+        if (!HasActiveDrag || Mouse.LeftButton != MouseButtonState.Pressed)
+        {
+            StopProjectDragAutoScroll();
+            return;
+        }
         var scroll = CurrentProjectScroll;
         double offset = Math.Clamp(
             scroll.VerticalOffset + _projectAutoScrollStep, 0, scroll.ScrollableHeight);
@@ -1912,6 +1926,7 @@ public partial class SidebarView : UserControl
 
         scroll.ScrollToVerticalOffset(offset);
         scroll.UpdateLayout(); // 새 위치 기준으로 재정렬 프리뷰를 즉시 재계산
+        SyncDragScrollOrigin();
         UpdateActiveDrag(Mouse.GetPosition(this));
     }
 
@@ -2331,6 +2346,7 @@ public partial class SidebarView : UserControl
 
         if (_rootDrag != null)
         {
+            _dragScrollAnchor = ProjectScrollFor(archived).VerticalOffset;
             _draggedProject = item as ProjectItem;
             _didDrag = true;
             CaptureMouse();
@@ -2453,6 +2469,7 @@ public partial class SidebarView : UserControl
 
         if (_projectDrag != null)
         {
+            _dragScrollAnchor = ProjectScrollFor(p.IsArchived).VerticalOffset;
             if (gridPanel != null)
                 BeginProjectGridHeightPreview(gridPanel, rows, p);
             _draggedProject = p;
