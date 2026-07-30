@@ -392,11 +392,13 @@
                         </Border>
 
                         <!-- 우측 콘텐츠 -->
-                        <!-- 창이 화면 폭을 꽉 채우므로 콘텐츠는 읽기 좋은 최대 폭(920)으로 제한해 좌측 정렬한다. -->
+                        <!-- 콘텐츠는 읽기 좋은 최대 폭(1040)으로 제한하고 중앙 정렬.
+                             Stretch(기본) + MaxWidth 조합이면 남는 공간이 좌우로 균등 분배돼 중앙에 놓이고,
+                             창이 좁을 때는 그대로 폭을 꽉 채운다. -->
                         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled"
                                       Background="{DynamicResource PanelBrush}">
-                          <Grid MaxWidth="920" HorizontalAlignment="Left">
+                          <Grid MaxWidth="1040">
                             <!-- 일반 패널 -->
                             <StackPanel x:Name="GeneralPanel" Margin="28,22,28,20">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
