@@ -19,9 +19,6 @@ public static class ClaudeCustomThemes
     private const string GraySlug     = "devez-gray";
     private const string SoftPinkSlug = "devez-softpink";
     private const string MidnightSlug = "devez-midnight";
-    private const string NordSlug     = "devez-nord";
-    private const string MonokaiSlug  = "devez-monokai";
-    private const string MochaSlug    = "devez-mocha";
 
     /// <summary>앱 시작 시 호출. 매번 번들 내용으로 덮어써 최신 팔레트를 강제 반영한다.</summary>
     public static void EnsureInstalled()
@@ -37,9 +34,6 @@ public static class ClaudeCustomThemes
             File.WriteAllText(Path.Combine(dir, GraySlug + ".json"), GrayThemeJson, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, SoftPinkSlug + ".json"), SoftPinkThemeJson, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, MidnightSlug + ".json"), MidnightThemeJson, new UTF8Encoding(false));
-            File.WriteAllText(Path.Combine(dir, NordSlug + ".json"), NordThemeJson, new UTF8Encoding(false));
-            File.WriteAllText(Path.Combine(dir, MonokaiSlug + ".json"), MonokaiThemeJson, new UTF8Encoding(false));
-            File.WriteAllText(Path.Combine(dir, MochaSlug + ".json"), MochaThemeJson, new UTF8Encoding(false));
         }
         catch { /* best-effort — 실패해도 per-session 주입이 안 될 뿐 */ }
     }
@@ -53,9 +47,6 @@ public static class ClaudeCustomThemes
         "gray"    => "custom:" + GraySlug,
         "softpink" => "custom:" + SoftPinkSlug,
         "midnight" => "custom:" + MidnightSlug,
-        "nord"    => "custom:" + NordSlug,
-        "monokai" => "custom:" + MonokaiSlug,
-        "mocha"   => "custom:" + MochaSlug,
         _         => "dark",
     };
 
@@ -217,69 +208,6 @@ public static class ClaudeCustomThemes
         "diffAdded": "#16362F", "diffAddedDimmed": "#111827", "diffAddedWord": "#1E5E4C",
         "diffRemoved": "#3B1F2B", "diffRemovedDimmed": "#111827", "diffRemovedWord": "#7E3345",
         "rate_limit_fill": "#60A5FA", "rate_limit_empty": "#374151", "briefLabelYou": "#93C5FD", "briefLabelClaude": "#CBD5E1"
-      }
-    }
-    """;
-
-    // inverseText = 각 테마 바탕색. claude 는 강조색 배지 위 글자에 이 토큰을 쓰므로,
-    // 밝은 강조색(프로스트·옐로·그린)에는 흰색이 아니라 바탕 잉크를 넣어야 읽힌다(App 의 OnPrimaryBrush 와 동일 규칙).
-    private const string NordThemeJson = """
-    {
-      "name": "Devez Nord",
-      "base": "dark",
-      "overrides": {
-        "claude": "#88C0D0", "claudeShimmer": "#9FCDD9", "text": "#ECEFF4", "inverseText": "#2E3440",
-        "inactive": "#B6C0CF", "inactiveShimmer": "#CDD5E0", "subtle": "#D8DEE9",
-        "suggestion": "#88C0D0", "permission": "#88C0D0", "permissionShimmer": "#9FCDD9",
-        "remember": "#B48EAD", "success": "#A3BE8C", "warning": "#EBCB8B", "error": "#BF616A",
-        "merged": "#B48EAD", "promptBorder": "#88C0D0", "promptBorderShimmer": "#9FCDD9",
-        "planMode": "#88C0D0", "autoAccept": "#A3BE8C", "bashBorder": "#88C0D0", "ide": "#B6C0CF", "fastMode": "#88C0D0",
-        "userMessageBackground": "#3B4C57", "userMessageBackgroundHover": "#4A5A6B",
-        "messageActionsBackground": "#3B4252", "bashMessageBackgroundColor": "#3B4252", "memoryBackgroundColor": "#3B4252", "selectionBg": "#434C5E",
-        "diffAdded": "#2E4136", "diffAddedDimmed": "#2E3440", "diffAddedWord": "#3E5C48",
-        "diffRemoved": "#4A3440", "diffRemovedDimmed": "#2E3440", "diffRemovedWord": "#6E4653",
-        "rate_limit_fill": "#88C0D0", "rate_limit_empty": "#4C566A", "briefLabelYou": "#88C0D0", "briefLabelClaude": "#D8DEE9"
-      }
-    }
-    """;
-
-    private const string MonokaiThemeJson = """
-    {
-      "name": "Devez Monokai Machine",
-      "base": "dark",
-      "overrides": {
-        "claude": "#FFD866", "claudeShimmer": "#FFE28A", "text": "#F2FFFC", "inverseText": "#273136",
-        "inactive": "#AAB6B6", "inactiveShimmer": "#C7D3D3", "subtle": "#D9E5E2",
-        "suggestion": "#FFD866", "permission": "#FFD866", "permissionShimmer": "#FFE28A",
-        "remember": "#BAA0F8", "success": "#A2E57B", "warning": "#FC9867", "error": "#FF6D7E",
-        "merged": "#BAA0F8", "promptBorder": "#FFD866", "promptBorderShimmer": "#FFE28A",
-        "planMode": "#FFD866", "autoAccept": "#A2E57B", "bashBorder": "#FFD866", "ide": "#AAB6B6", "fastMode": "#FFD866",
-        "userMessageBackground": "#463F2A", "userMessageBackgroundHover": "#5A5133",
-        "messageActionsBackground": "#2E3A40", "bashMessageBackgroundColor": "#2E3A40", "memoryBackgroundColor": "#2E3A40", "selectionBg": "#3A4449",
-        "diffAdded": "#2B4236", "diffAddedDimmed": "#273136", "diffAddedWord": "#3A5F46",
-        "diffRemoved": "#483336", "diffRemovedDimmed": "#273136", "diffRemovedWord": "#6B4448",
-        "rate_limit_fill": "#FFD866", "rate_limit_empty": "#4A5559", "briefLabelYou": "#FFD866", "briefLabelClaude": "#D9E5E2"
-      }
-    }
-    """;
-
-    // 강조색이 초록이라 success 와 같은 값이 된다. 진행 상태(autoAccept 등)는 peach 로 떼어 완료와 구분한다.
-    private const string MochaThemeJson = """
-    {
-      "name": "Devez Mocha Deep",
-      "base": "dark",
-      "overrides": {
-        "claude": "#A6E3A1", "claudeShimmer": "#B8EAB4", "text": "#CDD6F4", "inverseText": "#11111B",
-        "inactive": "#9399B2", "inactiveShimmer": "#BAC2DE", "subtle": "#BAC2DE",
-        "suggestion": "#A6E3A1", "permission": "#A6E3A1", "permissionShimmer": "#B8EAB4",
-        "remember": "#89B4FA", "success": "#A6E3A1", "warning": "#FAB387", "error": "#F38BA8",
-        "merged": "#89B4FA", "promptBorder": "#A6E3A1", "promptBorderShimmer": "#B8EAB4",
-        "planMode": "#89B4FA", "autoAccept": "#FAB387", "bashBorder": "#A6E3A1", "ide": "#9399B2", "fastMode": "#FAB387",
-        "userMessageBackground": "#1C3323", "userMessageBackgroundHover": "#2A4830",
-        "messageActionsBackground": "#1E1E2E", "bashMessageBackgroundColor": "#1E1E2E", "memoryBackgroundColor": "#1E1E2E", "selectionBg": "#262637",
-        "diffAdded": "#14211A", "diffAddedDimmed": "#11111B", "diffAddedWord": "#26402C",
-        "diffRemoved": "#251722", "diffRemovedDimmed": "#11111B", "diffRemovedWord": "#4A2334",
-        "rate_limit_fill": "#A6E3A1", "rate_limit_empty": "#3D3F52", "briefLabelYou": "#A6E3A1", "briefLabelClaude": "#BAC2DE"
       }
     }
     """;

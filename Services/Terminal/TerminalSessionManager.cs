@@ -842,8 +842,6 @@ public sealed class TerminalSessionManager
         var theme = DevezCode.App.CurrentTheme switch
         {
             // dvz 0.1.27부터 DevezCode 6종 테마 키를 그대로 지원한다.
-            // nord/monokai/mocha 는 dvz 가 아직 모르는 키라 "dark" 로 떨어진다(아래 폴백) —
-            // dvz 쪽에 키가 추가되면 이 목록에 넣으면 된다.
             "minimal" or "soft" or "dark" or "gray" or "softpink" or "midnight"
                 => DevezCode.App.CurrentTheme,
             _ => "dark",

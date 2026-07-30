@@ -314,7 +314,7 @@
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -433,7 +433,7 @@
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryBrush}"/>
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
                         </Trigger>
                         <Trigger Property="IsBlackedOut" Value="True">
                             <Setter Property="Opacity" Value="0.3"/>
@@ -682,8 +682,7 @@
         <Setter Property="IsTabStop" Value="False"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-        <!-- 강조색 위 글자는 OnPrimaryBrush — 밝은 강조색 테마(Nord/Monokai/Mocha)에서는 흰색이 아니라 바탕 잉크다. -->
-        <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
@@ -756,8 +755,7 @@
         <Setter Property="IsTabStop" Value="False"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Background" Value="{DynamicResource SuccessBrush}"/>
-        <!-- 다크 테마의 성공색은 밝은 초록이라 흰 글자가 뜬다 → OnSuccessBrush(밝기에 따라 바탕 잉크). -->
-        <Setter Property="Foreground" Value="{DynamicResource OnSuccessBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
@@ -888,7 +886,7 @@
                              IsMouseOver 트리거보다 뒤에 두어 hover 시에도 강조색이 우선. -->
                         <Trigger Property="Tag" Value="active">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
                         </Trigger>
                         <!-- 활성 + 호버 조합: 더 어두운 파란색 -->
                         <MultiTrigger>
@@ -897,7 +895,7 @@
                                 <Condition Property="Tag" Value="active"/>
                             </MultiTrigger.Conditions>
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHoverBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
                         </MultiTrigger>
                         <!-- 비활성: 흐리게 표시(커스텀 템플릿이라 기본 disabled 비주얼이 없어 직접 처리). -->
                         <Trigger Property="IsEnabled" Value="False">
@@ -985,7 +983,7 @@
                         </Trigger>
                         <Trigger Property="Tag" Value="active">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
                         </Trigger>
                         <!-- 레일이 펼쳐지면 캡션 노출 -->
                         <DataTrigger Binding="{Binding DataContext.IsRailExpanded, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
@@ -1216,7 +1214,7 @@
         <Setter Property="IsTabStop" Value="False"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Background" Value="{DynamicResource PrimaryBrush}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
         <Setter Property="Template">
@@ -1405,7 +1403,7 @@
                                   Stretch="None"
                                   HorizontalAlignment="Center"
                                   VerticalAlignment="Center"
-                                  Stroke="{DynamicResource OnPrimaryBrush}" StrokeThickness="2"
+                                  Stroke="White" StrokeThickness="2"
                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                   StrokeLineJoin="Round"
                                   Visibility="Collapsed"/>

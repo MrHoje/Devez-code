@@ -22,7 +22,7 @@ public static class AntigravityCustomThemes
     /// <summary>DevezCode 테마 → agy 내장 colorScheme 값.</summary>
     public static string MapToAntigravityScheme(string devezCodeTheme) => devezCodeTheme switch
     {
-        "dark" or "midnight" or "nord" or "monokai" or "mocha" => "dark",
+        "dark" or "midnight" => "dark",
         "soft" or "minimal" or "gray" or "softpink" => "terminal",
         _ => "dark",
     };

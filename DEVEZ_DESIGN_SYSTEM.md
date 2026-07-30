@@ -112,7 +112,6 @@
 | 강조 hover | `AccentHover` | `PrimaryHoverBrush` | `AccentHover` |
 | 강조 pressed | `AccentPressed` | `PrimaryPressedBrush` | `AccentPressed` |
 | 약한 강조 | `AccentSoft` | `PrimarySoftBrush` | `AccentSoft` |
-| 강조 위 글자·아이콘 | `AccentOn` | `OnPrimaryBrush` | — |
 | 성공 | `Success` | `SuccessBrush` | `SuccessBrush` |
 | 위험 | `Danger` | `DangerBrush` | `DangerBrush` |
 | 경고 | `Warning` | `WarningBrush` | `WarningBrush` |
@@ -208,9 +207,8 @@ hover 토큰 규칙:
 - 소비자는 `{DynamicResource ...}`를 사용한다.
 - 테마 전환 때 기존 brush의 `Color`만 바꾸지 말고 새 `SolidColorBrush` 인스턴스를 리소스에 다시 넣는다.
 - Color와 Brush가 모두 필요한 토큰은 `AccentColor` + `Accent`처럼 함께 제공한다.
-- 하드코딩이 허용되는 값은 투명 오버레이와 브랜드 자산의 고정색 정도다.
-- **강조색 위 글자·아이콘에 `White` 를 하드코딩하지 않는다.** `OnPrimaryBrush`(강조색 밝기 0.62 초과면 테마 바탕색, 그 외 흰색)를 쓴다. Nord·Monokai·Mocha 처럼 강조색이 밝은 테마에서 흰 글자는 대비가 1.4~2.5:1 로 무너진다. 성공색을 배경으로 쓰는 컨트롤은 같은 규칙의 `OnSuccessBrush` 를 쓴다.
-- dark 여부로만 분기하지 않는다. 각 테마를 독립 palette로 취급한다(현재 9종: `minimal`·`soft`·`gray`·`softpink` / `dark`·`midnight`·`nord`·`monokai`·`mocha`).
+- 하드코딩이 허용되는 값은 `White`, 투명 오버레이, 브랜드 자산의 고정색 정도다.
+- dark 여부로만 분기하지 않는다. `minimal`, `soft`, `dark`를 독립 palette로 취급한다.
 
 ## 4. 타이포그래피
 
@@ -519,7 +517,7 @@ Rail 버튼 상태:
 | normal | `Transparent` | `RailIconBrush` |
 | hover | `PanelSoftBrush` | 유지 |
 | pressed | `LineBrush` | 유지 |
-| active (`Tag="active"`) | `PrimaryBrush` | `OnPrimaryBrush` |
+| active (`Tag="active"`) | `PrimaryBrush` | `White` |
 
 확장 상태에서는 아이콘용 고정 `32` 열 오른쪽에 `ToolTip` 문자열을 caption으로 재사용한다. caption은 `Fs13`, `CharacterEllipsis`. 축소 상태에서는 caption을 `Collapsed`로 두고 tooltip만 사용한다.
 

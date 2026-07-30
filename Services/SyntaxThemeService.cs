@@ -62,30 +62,6 @@ public static class SyntaxThemeService
         Number:    Color.FromRgb(0x34, 0xD3, 0x99),
         Attribute: Color.FromRgb(0xA7, 0x8B, 0xFA));
 
-    // Nord — 팔레트 자체가 저채도라 원색을 그대로 쓰면 바탕에 묻는다(주석 4.2:1). 한 단 밝혀 5.4:1 이상 확보.
-    private static readonly Palette Nord = new(
-        Comment:   Color.FromRgb(0xA0, 0xAC, 0xC2),
-        Str:       Color.FromRgb(0xB2, 0xCB, 0x9C),
-        Keyword:   Color.FromRgb(0x95, 0xB4, 0xCF),
-        Number:    Color.FromRgb(0xC7, 0xA2, 0xBF),
-        Attribute: Color.FromRgb(0x9F, 0xCA, 0xCA));
-
-    // Monokai Machine — 원본 에디터 배색을 그대로(문자열=옐로, 키워드=레드, 숫자=퍼플, 속성=그린).
-    private static readonly Palette Monokai = new(
-        Comment:   Color.FromRgb(0xA3, 0xAF, 0xAF),
-        Str:       Color.FromRgb(0xFF, 0xD8, 0x66),
-        Keyword:   Color.FromRgb(0xFF, 0x6D, 0x7E),
-        Number:    Color.FromRgb(0xBA, 0xA0, 0xF8),
-        Attribute: Color.FromRgb(0xA2, 0xE5, 0x7B));
-
-    // Mocha Deep — 키워드는 blue, 숫자는 peach. 강조색(그린)은 문자열에만 쓴다.
-    private static readonly Palette Mocha = new(
-        Comment:   Color.FromRgb(0x80, 0x87, 0xA2),
-        Str:       Color.FromRgb(0xA6, 0xE3, 0xA1),
-        Keyword:   Color.FromRgb(0x89, 0xB4, 0xFA),
-        Number:    Color.FromRgb(0xFA, 0xB3, 0x87),
-        Attribute: Color.FromRgb(0x94, 0xE2, 0xD5));
-
     /// <summary>테마별 하이퍼링크(자동 URL) 색. 다크에서 안 보이던 기본 진파랑을 밝게 교체.</summary>
     public static Color LinkColor(string theme) => theme switch
     {
@@ -94,21 +70,13 @@ public static class SyntaxThemeService
         "gray" => Color.FromRgb(0x32, 0x6A, 0xA5),
         "softpink" => Color.FromRgb(0x32, 0x6A, 0x9F),
         "midnight" => Color.FromRgb(0x60, 0xA5, 0xFA),
-        "nord" => Color.FromRgb(0x88, 0xC0, 0xD0),
-        "monokai" => Color.FromRgb(0x7C, 0xD5, 0xF1),
-        "mocha" => Color.FromRgb(0x89, 0xB4, 0xFA),
         _      => Color.FromRgb(0x05, 0x63, 0xC1),
     };
 
     /// <summary>등록된 모든 내장 정의의 named color 를 현재 테마 팔레트로 덮어쓴다.</summary>
     public static void Apply(string theme)
     {
-        var p = theme switch
-        {
-            "dark" => Dark, "soft" => Soft, "gray" => Gray, "softpink" => SoftPink, "midnight" => Midnight,
-            "nord" => Nord, "monokai" => Monokai, "mocha" => Mocha,
-            _ => Minimal,
-        };
+        var p = theme switch { "dark" => Dark, "soft" => Soft, "gray" => Gray, "softpink" => SoftPink, "midnight" => Midnight, _ => Minimal };
         foreach (var def in HighlightingManager.Instance.HighlightingDefinitions)
         {
             foreach (var c in def.NamedHighlightingColors)

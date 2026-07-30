@@ -1571,7 +1571,7 @@
                                                       BlurRadius="12" ShadowDepth="2" Direction="270"/>
                                 </Border.Effect>
                                 <Path Data="{StaticResource IconPlus}"
-                                      Stroke="{DynamicResource OnPrimaryBrush}" StrokeThickness="2"
+                                      Stroke="White" StrokeThickness="2"
                                       StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
                                       Width="14" Height="14" Stretch="Uniform"
                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -1600,9 +1600,9 @@
                     <Border x:Name="Bd" CornerRadius="8" Background="{DynamicResource PrimaryBrush}">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconDownload}"
-                                  Width="13" Height="13" Margin="0,0,7,0" Stroke="{DynamicResource OnPrimaryBrush}" VerticalAlignment="Center"/>
+                                  Width="13" Height="13" Margin="0,0,7,0" Stroke="White" VerticalAlignment="Center"/>
                             <TextBlock VerticalAlignment="Center"
-                                       FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" Foreground="{DynamicResource OnPrimaryBrush}">
+                                       FontSize="{DynamicResource Fs12}" FontWeight="SemiBold" Foreground="White">
                                 <Run Text="업데이트 v"/><Run Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
                             </TextBlock>
                         </StackPanel>

@@ -195,7 +195,7 @@ function Resolve-OpenCodeColor($theme, [string]$token, [string]$variant) {
 
 function Get-GajaeThemeMap([string]$source) {
     $themes = @{}
-    $blockPattern = '"(?<name>soft|minimal|gray|softpink|midnight|nord|monokai|mocha)"\s*=>\s*new\(\)\s*\{(?<body>.*?)\n\s*\},'
+    $blockPattern = '"(?<name>soft|minimal|gray|softpink|midnight)"\s*=>\s*new\(\)\s*\{(?<body>.*?)\n\s*\},'
     foreach ($match in [regex]::Matches(
         $source,
         $blockPattern,
@@ -230,10 +230,10 @@ $gajaePath = Join-Path $repoRoot "Services\Terminal\GajaeCustomThemes.cs"
 
 $claudeSource = Get-Content -LiteralPath $claudePath -Raw
 $claudeJson = Get-RawThemeJsonMap $claudeSource
-Assert-True ($claudeJson.Count -eq 8) "Claude custom theme count is not 8: $($claudeJson.Count)"
+Assert-True ($claudeJson.Count -eq 5) "Claude custom theme count is not 5: $($claudeJson.Count)"
 $claudePalettes = @{}
 
-foreach ($name in @("soft", "minimal", "gray", "softpink", "midnight", "nord", "monokai", "mocha")) {
+foreach ($name in @("soft", "minimal", "gray", "softpink", "midnight")) {
     Assert-True ($claudeJson.ContainsKey($name)) "Claude theme missing: $name"
     if (-not $claudeJson.ContainsKey($name)) {
         continue
@@ -284,10 +284,10 @@ foreach ($name in @("soft", "minimal", "gray", "softpink", "midnight", "nord", "
 $openCodeSource = Get-Content -LiteralPath $openCodePath -Raw
 $openCodeJson = Get-RawThemeJsonMap $openCodeSource
 Add-DerivedThemeJson $openCodeJson $openCodeSource
-Assert-True ($openCodeJson.Count -eq 9) "OpenCode theme count is not 9: $($openCodeJson.Count)"
+Assert-True ($openCodeJson.Count -eq 6) "OpenCode theme count is not 6: $($openCodeJson.Count)"
 $openCodePalettes = @{}
 
-foreach ($name in @("dark", "soft", "minimal", "gray", "softpink", "midnight", "nord", "monokai", "mocha")) {
+foreach ($name in @("dark", "soft", "minimal", "gray", "softpink", "midnight")) {
     Assert-True ($openCodeJson.ContainsKey($name)) "OpenCode theme missing: $name"
     if (-not $openCodeJson.ContainsKey($name)) {
         continue
@@ -295,7 +295,7 @@ foreach ($name in @("dark", "soft", "minimal", "gray", "softpink", "midnight", "
 
     try {
         $theme = $openCodeJson[$name] | ConvertFrom-Json
-        $variant = if ($name -in @("dark", "midnight", "nord", "monokai", "mocha")) { "dark" } else { "light" }
+        $variant = if ($name -in @("dark", "midnight")) { "dark" } else { "light" }
         $background = Resolve-OpenCodeColor $theme "background" $variant
         $text = Resolve-OpenCodeColor $theme "text" $variant
         $addText = Resolve-OpenCodeColor $theme "diffAdded" $variant
@@ -353,9 +353,9 @@ foreach ($name in @("dark", "soft", "minimal", "gray", "softpink", "midnight", "
 
 $gajaeSource = Get-Content -LiteralPath $gajaePath -Raw
 $gajaeThemes = Get-GajaeThemeMap $gajaeSource
-Assert-True ($gajaeThemes.Count -eq 9) "Gajae theme count is not 9: $($gajaeThemes.Count)"
+Assert-True ($gajaeThemes.Count -eq 6) "Gajae theme count is not 6: $($gajaeThemes.Count)"
 
-foreach ($name in @("dark", "soft", "minimal", "gray", "softpink", "midnight", "nord", "monokai", "mocha")) {
+foreach ($name in @("dark", "soft", "minimal", "gray", "softpink", "midnight")) {
     Assert-True ($gajaeThemes.ContainsKey($name)) "Gajae theme missing: $name"
     if (-not $gajaeThemes.ContainsKey($name)) {
         continue
@@ -419,4 +419,4 @@ if ($failures.Count -gt 0) {
     throw "Theme color validation failed ($($failures.Count)):`n- $($failures -join "`n- ")"
 }
 
-Write-Output "Theme color validation passed: Claude 8, OpenCode 9, Gajae 9"
+Write-Output "Theme color validation passed: Claude 5, OpenCode 6, Gajae 6"

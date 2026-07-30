@@ -1093,9 +1093,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             "gray" => "\x1b[48;2;236;238;241m",  // gray #ECEEF1
             "softpink" => "\x1b[48;2;251;231;238m", // soft pink #FBE7EE
             "midnight" => "\x1b[48;2;30;58;95m", // midnight #1E3A5F
-            "nord" => "\x1b[48;2;59;76;87m",     // nord primarySoft #3B4C57
-            "monokai" => "\x1b[48;2;70;63;42m",  // monokai primarySoft #463F2A
-            "mocha" => "\x1b[48;2;28;51;35m",    // mocha primarySoft #1C3323
             _      => "\x1b[48;2;234;240;245m",  // minimal #EAF0F5
         });
 
@@ -1165,9 +1162,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             "gray" => ("\x1b[48;2;231;246;235m", "\x1b[48;2;252;232;232m"),
             "softpink" => ("\x1b[48;2;233;245;236m", "\x1b[48;2;253;231;231m"),
             "midnight" => ("\x1b[48;2;22;54;47m", "\x1b[48;2;59;31;43m"),
-            "nord" => ("\x1b[48;2;46;65;54m", "\x1b[48;2;74;52;64m"),      // #2E4136 / #4A3440
-            "monokai" => ("\x1b[48;2;43;66;54m", "\x1b[48;2;72;51;54m"),   // #2B4236 / #483336
-            "mocha" => ("\x1b[48;2;20;33;26m", "\x1b[48;2;37;23;34m"),     // #14211A / #251722
             _ => ("\x1b[48;2;219;234;254m", "\x1b[48;2;254;226;226m"),
         };
         var added = System.Text.Encoding.ASCII.GetBytes(addedAnsi);
@@ -1485,9 +1479,6 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         {
             "dark" => (31, 31, 30),
             "midnight" => (17, 24, 39),
-            "nord" => (46, 52, 64),
-            "monokai" => (39, 49, 54),
-            "mocha" => (17, 17, 27),
             "soft" => (242, 237, 230),
             _ => (248, 250, 252),
         };
