@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -5950,7 +5950,6 @@ public partial class MainWindow : Window
     /// (푸터/사이드바는 캐시된 데이터로 SetBar → RlBrush(c) → FindResource 를 다시 태워 새 테마색을 즉시 반영)</summary>
     private void OnThemeChanged_UpdatePanels(string _) => Dispatcher.BeginInvoke(new Action(() =>
     {
-        ApplyWindowClassBackground();   // 리사이즈 중 채워질 배경색도 새 테마로
         UpdatePanelToggleVisual();
         ApplyFooterUsageVisibility();
         CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
@@ -6348,7 +6347,6 @@ public partial class MainWindow : Window
         _mainHwnd = new WindowInteropHelper(this).Handle;
         if (PresentationSource.FromVisual(this) is HwndSource src) src.AddHook(WndProc);
         EnableDwmTransitions(_mainHwnd); // 최대화/복원 시 DWM 부드러운 전환 활성화
-        ApplyWindowClassBackground();     // 창이 커질 때 새 영역이 배경색으로 채워지게(깜빡임 완화)
         ApplyCornerPreference();          // 최대화 시 각진 모서리(둥근 모서리가 화면 모서리를 깎는 문제 방지)
         ApplyMaximizeMargin();            // 최대화 시 프레임 두께만큼 마진 보정(가장자리 잘림 방지)
         // 저장된 '최대화' 복원: hwnd 가 이미 저장 위치에 만들어졌으므로 그 모니터로 최대화된다.
@@ -6979,12 +6977,13 @@ public partial class MainWindow : Window
     /// (표시 중이었으면 오버레이로 계속 표시, 접혀 있었으면 오버레이도 닫힘).</summary>
     private void EnterNarrowMode(bool shown)
     {
-        // 우측 컬럼 제거(폭 0). SharedSizeGroup 을 풀어야 폭 0 이 실제로 먹는다.
-        FileExpSplitterCol.SharedSizeGroup = null;
-        FileExpCol.SharedSizeGroup = null;
+        // 우측 컬럼 제거(폭 0). 푸터 미러도 함께 0 으로 — 폭 동기화는 SharedSizeGroup 대신 코드가 맡는다.
         FileExpSplitterCol.Width = new GridLength(0);
         FileExpCol.MinWidth = 0;
         FileExpCol.Width = new GridLength(0);
+        FooterFileExpSplitterCol.Width = new GridLength(0);
+        FooterFileExpCol.MinWidth = 0;
+        FooterFileExpCol.Width = new GridLength(0);
 
         if (shown)
         {
@@ -7008,14 +7007,14 @@ public partial class MainWindow : Window
         ResumeTerminalOnly();   // 오버레이가 열린 채 넓어졌다면 터미널 복원
         _rightT.X = 0;
         DockFileExplorer();
-        // SharedSizeGroup 복원(상태바 컬럼과 정렬).
-        FileExpSplitterCol.SharedSizeGroup = "MainFileExpSplitter";
-        FileExpCol.SharedSizeGroup = "MainFileExp";
         _rightCollapsed = !shown;   // 표시 상태 보존
         FileExplorer.Visibility = _rightCollapsed ? Visibility.Collapsed : Visibility.Visible;
         FileExpSplitterCol.Width = new GridLength(_rightCollapsed ? 0 : 4);
         SetMinWidth(_rightCollapsed ? 0 : _fileExpMinWidth, FileExpCol, FooterFileExpCol);
         FileExpCol.Width = new GridLength(_rightCollapsed ? 0 : _fileExpWidth);
+        // 푸터 미러도 같은 값으로(상태바 컬럼 정렬) — SharedSizeGroup 을 쓰지 않으므로 직접 맞춘다.
+        FooterFileExpSplitterCol.Width = FileExpSplitterCol.Width;
+        FooterFileExpCol.Width = FileExpCol.Width;
         SettingsService.SaveRightPanel(_rightCollapsed, _fileExpWidth);
         UpdatePanelToggleVisual();
     }
@@ -7082,40 +7081,6 @@ public partial class MainWindow : Window
     // 부드러운 전환을 그려준다. 시각적 캡션/테두리는 WindowChrome 의 NCCALCSIZE 가 덮어 안 보인다.
     private const int GWL_STYLE   = -16;
     private const int WS_CAPTION  = 0x00C00000;
-
-    // ── 창이 커질 때의 한 프레임 깜빡임 완화 ────────────────────────────
-    // WPF 창의 클래스 배경 브러시는 NULL 이라, 창이 커지면 WPF 가 다음 렌더 틱에 새 영역을 그릴
-    // 때까지 OS 가 그 영역을 아무 색으로도 칠하지 않는다(이전 잔상/검정이 한 프레임 노출 =
-    // 전체화면 진입 시 "한 번 깜빡"). 테마 배경색 브러시를 이 창 클래스에 심어 그 프레임도 배경색으로
-    // 채워지게 한다. 창 클래스는 WPF 가 창마다 따로 만들므로 다른 창에는 영향이 없다.
-    private IntPtr _classBgBrush;
-
-    private void ApplyWindowClassBackground()
-    {
-        if (_mainHwnd == IntPtr.Zero) return;
-        if (TryFindResource("BgBrush") is not SolidColorBrush b) return;
-        var c = b.Color;
-        var brush = CreateSolidBrush(c.R | (c.G << 8) | (c.B << 16));   // COLORREF = 0x00BBGGRR
-        if (brush == IntPtr.Zero) return;
-        SetClassBackgroundBrush(_mainHwnd, brush);
-        if (_classBgBrush != IntPtr.Zero) DeleteObject(_classBgBrush);   // 이전 브러시 정리
-        _classBgBrush = brush;
-    }
-
-    private const int GCLP_HBRBACKGROUND = -10;
-
-    private static void SetClassBackgroundBrush(IntPtr hwnd, IntPtr brush)
-    {
-        if (IntPtr.Size == 8) SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, brush);
-        else                  SetClassLongW(hwnd, GCLP_HBRBACKGROUND, (uint)brush.ToInt32());
-    }
-
-    [DllImport("user32.dll", EntryPoint = "SetClassLongPtrW")]
-    private static extern IntPtr SetClassLongPtrW(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-    [DllImport("user32.dll", EntryPoint = "SetClassLongW")]
-    private static extern uint SetClassLongW(IntPtr hWnd, int nIndex, uint dwNewLong);
-    [DllImport("gdi32.dll")] private static extern IntPtr CreateSolidBrush(int crColor);
-    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr hObject);
 
     private void EnableDwmTransitions(IntPtr hwnd)
     {
