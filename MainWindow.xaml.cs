@@ -3174,10 +3174,13 @@ public partial class MainWindow : Window
 
     private void PersistSplitState()
     {
+        // 우측이 비었으면(마지막 탭을 닫음) 파트너 경로를 저장하지 않는다 — 경로만 남기면 복원 시
+        // '같은 폴더를 가리키는 다른 프로젝트 항목'이 파트너로 잡혀 엉뚱한 프로젝트 세션이 우측에 열린다.
+        string? rightPartnerPath = RightPane.ActiveTab == null ? null : RightPane.ActiveProject?.Path;
         SettingsService.SaveFullSplitState(
             _splitActive,
             LeftPane.ActiveProject?.Path, LeftPane.ActiveSession?.Id,
-            RightPane.ActiveProject?.Path, RightPane.ActiveSession?.Id,
+            rightPartnerPath, RightPane.ActiveSession?.Id,
             _panesSwapped);
 
         // 프로젝트 단위 분할 기억 — 메인(좌측) 프로젝트가 분할 켬 상태면 현재 파트너를 계속 갱신해
@@ -3185,7 +3188,7 @@ public partial class MainWindow : Window
         var leftProj = LeftPane.ActiveProject;
         if (_splitActive && leftProj != null && leftProj.SplitEnabled)
         {
-            leftProj.SplitPartnerProjectPath = RightPane.ActiveProject?.Path;
+            leftProj.SplitPartnerProjectPath = rightPartnerPath;
             leftProj.SplitPartnerSessionId = RightPane.ActiveSession?.Id;
             // 우측이 파일 탭이면(ActiveSession=null) 파일 경로를 파트너로 저장 — 안 하면 복원 시
             // 세션ID/파일 둘 다 없어 자기 프로젝트를 통째로 우측에 여는 중복 버그가 난다.
@@ -3347,6 +3350,8 @@ public partial class MainWindow : Window
         if (!string.IsNullOrEmpty(proj.SplitPartnerSessionId))
             partnerSession = _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs)
                 .OfType<SessionItem>().FirstOrDefault(s => s.Id == proj.SplitPartnerSessionId);
+        // 그 사이 숨겨진 세션은 파트너로 쓰지 않는다 — OpenSession 이 unHide 로 되살려 "숨긴 세션이 저절로 열림"이 된다.
+        if (partnerSession != null && partnerSession.IsEffectivelyHidden) partnerSession = null;
         if (partnerSession != null) return (null, partnerSession, null);
 
         // 세션이 없으면 같은 프로젝트의 파일 파트너(우측이 파일 탭이었던 경우) 시도.
@@ -3357,7 +3362,12 @@ public partial class MainWindow : Window
         ProjectItem? partnerProj = null;
         if (!string.IsNullOrEmpty(proj.SplitPartnerProjectPath))
             partnerProj = _projects.Concat(_archivedProjects).FirstOrDefault(p => p.Path == proj.SplitPartnerProjectPath);
-        if (ReferenceEquals(partnerProj, proj)) partnerProj = null;
+        // 자기자신 판정은 '경로'로 한다 — 같은 폴더를 등록한 다른 프로젝트 항목이 파트너로 잡히면
+        // 우측에 그 프로젝트가 통째로 열려 엉뚱한(숨김 포함) 세션이 로드된다.
+        if (partnerProj != null
+            && (ReferenceEquals(partnerProj, proj)
+                || string.Equals(partnerProj.Path, proj.Path, StringComparison.OrdinalIgnoreCase)))
+            partnerProj = null;
         return (partnerProj, null, null);
     }
 
@@ -3431,7 +3441,9 @@ public partial class MainWindow : Window
         var key = @ref[2..];
         if (@ref[0] == 'S')
         {
-            var s = _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(x => x.Id == key);
+            // 숨겨진 세션은 복원 대상에서 제외 — 열면 unHide 로 되살아나 "숨긴 세션이 저절로 열림"이 된다.
+            var s = _projects.Concat(_archivedProjects).SelectMany(p => p.Tabs).OfType<SessionItem>()
+                .FirstOrDefault(x => x.Id == key && !x.IsEffectivelyHidden);
             if (s != null) pane.OpenSession(s);
         }
         else if (@ref[0] == 'F')
@@ -3903,8 +3915,12 @@ public partial class MainWindow : Window
         var aProj = aSess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(aSess))
               : _projects.FirstOrDefault(p => p.Path == aProjPath);
         var bSess = bSessId != null ? _projects.SelectMany(p => p.Tabs).OfType<SessionItem>().FirstOrDefault(s => s.Id == bSessId) : null;
+        // 경로 폴백은 좌측과 같은 경로면 '좌측 프로젝트 객체'를 쓴다 — 같은 폴더를 등록한 다른 프로젝트
+        // 항목이 잡히면 우측에 엉뚱한 프로젝트가 열린다(같은 프로젝트 분할 복원도 깨짐).
         var bProj = bSess != null ? _projects.FirstOrDefault(p => p.Tabs.Contains(bSess))
-              : _projects.FirstOrDefault(p => p.Path == bProjPath);
+              : (aProj != null && string.Equals(aProjPath, bProjPath, StringComparison.OrdinalIgnoreCase)
+                    ? aProj
+                    : _projects.FirstOrDefault(p => p.Path == bProjPath));
 
         // EnableSplit: 레이아웃만 생성(persist=false로 PersistSplitState/SyncShellToFocusedPane 스킵)
         EnableSplit(null, null, animate: false, persist: false);
