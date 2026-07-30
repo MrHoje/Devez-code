@@ -2283,6 +2283,15 @@ public partial class MainWindow : Window
         => Task.WhenAll(_panes.Where(p => p.Visibility == Visibility.Visible)
                               .Select(p => p.SuspendTerminalOnlyAsync(anchorTopLeft: true, webCover: true, stretchCover: stretchCover)));
 
+    /// <summary>리사이즈가 끝난 뒤 터미널 재fit·ConPTY 재동기만 수행(커버 없음).
+    /// OS 최대화/복원은 DWM 애니메이션이 자연스러우므로 캡처·단색 커버를 씌우지 않는다 —
+    /// 커버는 그 자체가 "이전 화면이 늘어나는/한 번 깜빡이는" 전환으로 보인다.</summary>
+    private void RefitWorkspaceTerminalsAfterResize()
+    {
+        foreach (var p in _panes.Where(p => p.Visibility == Visibility.Visible))
+            p.RevealAfterTransition(kick: true, bounce: true);
+    }
+
     private void UnfreezeWorkspaceTerminals()
     {
         // freeze 와 동일하게 '보이는' 패널만 reveal — 숨긴 패널에 불필요한 fit/재동기를 걸지 않는다.
@@ -6385,14 +6394,14 @@ public partial class MainWindow : Window
                     EnterFullScreen();
             }, solidCover: true);
         }
-        // 전체화면 미사용: OS 주도 최대화/복원(드래그 상단 스냅, 최대화 상태에서 캡션 끌어내리기,
-        // Win+화살표, 작업표시줄 등) — 리사이즈가 이미 일어난 뒤 통지되므로 post-hoc 단색 커버로
-        // 재fit·ConPTY 재동기·하단 복원만 수행한다. 우리 래퍼가 주도한 전환(_fsCoverBusy)은 자체 처리.
+        // 전체화면 미사용: 최대화/복원(우리 버튼·더블클릭 + OS 주도 스냅·Win+화살표·캡션 끌어내리기)
+        // — 리사이즈는 이미 끝났으므로 커버 없이 재fit·ConPTY 재동기만 한다. 단색 커버를 덮으면
+        // 그 자체가 한 번 깜빡이는 전환으로 보인다(devez 는 커버 없이 최대화만 한다).
         // (최소화↔복원은 크기가 안 변하므로 Normal↔Maximized 간 전환만 해당.)
         else if (!_overlaySuspended
               && ((prev == WindowState.Maximized && WindowState == WindowState.Normal)
                || (prev == WindowState.Normal && WindowState == WindowState.Maximized)))
-            RunFullScreenTransitionCovered(() => { }, solidCover: true);
+            RefitWorkspaceTerminalsAfterResize();
         UpdateMaxBtnVisual();
     }
 
@@ -7055,12 +7064,11 @@ public partial class MainWindow : Window
             });
             return;
         }
-        // 전체화면 미사용: 일반 최대화/복원도 리사이즈 리플로우는 동일 → 사전 캡처 커버로 감싼다.
-        // (여기서 바뀐 WindowState 의 StateChanged post-hoc 커버는 _fsCoverBusy 가드로 중복 방지.)
-        RunFullScreenTransitionCovered(() =>
-        {
-            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-        });
+        // 전체화면 미사용: OS 최대화/복원은 DWM 이 알아서 자연스럽게 애니메이션한다(devez 와 동일).
+        // 여기에 캡처 커버를 씌우면 커버 이미지가 뷰포트에 맞춰 늘어나며 "이전 화면이 당겨지는"
+        // 전환으로 보인다 → 커버 없이 상태만 바꾸고, 리사이즈 후 재fit·ConPTY 재동기는
+        // StateChanged(post-hoc) 경로가 담당한다.
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
