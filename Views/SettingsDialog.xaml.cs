@@ -1130,6 +1130,7 @@ public partial class SettingsDialog : UserControl
             OpenCodeLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri));
             OpenCodeCatIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.OpenCodeIconUri));
             GrokLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
+            foreach (var a in _agentItems) a.RefreshAgentIcon();   // 에이전트 목록 아이콘(흑/백) 테마 반영
         }));
     }
 
@@ -2161,6 +2162,10 @@ public sealed class AgentItem : INotifyPropertyChanged
 
     private int _retentionDays = ClaudeGlobalSettings.DefaultCleanupPeriodDays;
     public int RetentionDays { get => _retentionDays; set { if (_retentionDays != value) { _retentionDays = value; OnPropertyChanged(); } } }
+
+    /// <summary>테마 미리보기 전환 시 아이콘 재평가(흑/백 png 는 AgentImageConverter 가 현재 테마로 고르므로
+    /// Id 바인딩을 다시 통보해야 그림이 바뀐다).</summary>
+    public void RefreshAgentIcon() => OnPropertyChanged(nameof(Id));
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));

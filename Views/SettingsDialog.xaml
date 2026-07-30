@@ -841,10 +841,16 @@
                                                     Background="Transparent">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
-                                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <!-- 에이전트 아이콘: 이름·설치 명령·버전 3줄 높이를 채우는 크기 -->
+                                                    <Image Grid.Column="0" Width="48" Height="48"
+                                                           Margin="0,0,16,0" VerticalAlignment="Center"
+                                                           Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                         <StackPanel Orientation="Horizontal">
                                                             <TextBlock Text="{Binding DisplayName}" FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                                                        Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
@@ -892,7 +898,7 @@
                                                         </TextBlock>
                                                     </StackPanel>
                                                     <!-- 새로고침(설치 상태 재스캔) + 활성화 토글 -->
-                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                                         <Button Style="{StaticResource IconButton}" Width="28" Height="28"
                                                                 Margin="0,0,8,0" Padding="4"
                                                                 VerticalAlignment="Center" Cursor="Hand"
