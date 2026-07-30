@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Shell;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -43,9 +44,8 @@ public abstract class BrowserPopupWindowBase : Window
         SetResourceReference(FontFamilyProperty, "PretendardFont");
         SetResourceReference(BackgroundProperty, "BgBrush");
 
-        bool dark = App.CurrentTheme == "dark";
-        _view.DefaultBackgroundColor = dark
-            ? System.Drawing.Color.FromArgb(0x1e, 0x1e, 0x1e)
+        _view.DefaultBackgroundColor = Application.Current.TryFindResource("BgBrush") is SolidColorBrush bg
+            ? System.Drawing.Color.FromArgb(0xFF, bg.Color.R, bg.Color.G, bg.Color.B)
             : System.Drawing.Color.White;
 
         var logo = new TextBlock
@@ -138,7 +138,7 @@ public abstract class BrowserPopupWindowBase : Window
             "DevezCode", "WebView2");
         var env = await CoreWebView2Environment.CreateAsync(null, userDataDir);
         await _view.EnsureCoreWebView2Async(env);
-        _view.CoreWebView2.Profile.PreferredColorScheme = App.CurrentTheme == "dark"
+        _view.CoreWebView2.Profile.PreferredColorScheme = App.IsDarkTheme(App.CurrentTheme)
             ? CoreWebView2PreferredColorScheme.Dark
             : CoreWebView2PreferredColorScheme.Light;
     }

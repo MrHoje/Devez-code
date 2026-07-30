@@ -17,6 +17,7 @@ public partial class App : Application
 
     /// <summary>현재 적용된 테마. 미리보기 중에는 preview 값으로 바뀐다.</summary>
     public static string CurrentTheme { get; private set; } = "dark";
+    public static bool IsDarkTheme(string theme) => theme is "dark" or "midnight";
 
     /// <summary>디스크에 확정 저장된 테마(persist=true 로만 갱신). 미리보기(persist=false)는 반영 안 됨.
     /// 프로세스 내부에 고정되는 색(codex OSC 감지, COLORFGBG 폴백)은 미리보기가 새면 취소해도
@@ -32,6 +33,7 @@ public partial class App : Application
             "soft" => "DevezCode Soft",
             "gray" => "DevezCode Gray",
             "softpink" => "DevezCode Soft Pink",
+            "midnight" => "DevezCode Midnight Blue",
             _      => "DevezCode Minimal",
         };
         return Services.Terminal.WtColorScheme.BuiltIns.TryGetValue(name, out var s)
@@ -44,16 +46,16 @@ public partial class App : Application
         "pack://application:,,,/Resources/Images/ShellPresets/codex.png";
     /// <summary>테마별 OpenCode 아이콘 pack URI (dark=흰색, light=검정). 푸터/사용량 패널 공용 소스.</summary>
     public static string OpenCodeIconUri =>
-        $"pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
+        $"pack://application:,,,/Resources/Images/ShellPresets/opencode_icon_{(IsDarkTheme(CurrentTheme) ? "white" : "black")}_50.png";
     /// <summary>테마별 Kimi 아이콘 pack URI (dark=흰색, light=검정). 푸터/사용량 패널 공용 소스.</summary>
     public static string KimiIconUri =>
-        $"pack://application:,,,/Resources/Images/ShellPresets/kimi_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
+        $"pack://application:,,,/Resources/Images/ShellPresets/kimi_icon_{(IsDarkTheme(CurrentTheme) ? "white" : "black")}_50.png";
     /// <summary>Devez Vibe 아이콘 pack URI. 채워진 컬러 로고라 테마 변형이 없다.</summary>
     public static string DevezVibeIconUri =>
         "pack://application:,,,/Resources/Images/ShellPresets/devezvibe_icon.png";
     /// <summary>테마별 Grok 아이콘 pack URI (dark=흰색, light=검정).</summary>
     public static string GrokIconUri =>
-        $"pack://application:,,,/Resources/Images/ShellPresets/grok_icon_{(CurrentTheme == "dark" ? "white" : "black")}_50.png";
+        $"pack://application:,,,/Resources/Images/ShellPresets/grok_icon_{(IsDarkTheme(CurrentTheme) ? "white" : "black")}_50.png";
     /// <summary>테마 변경 시 발생.</summary>
     public static event Action<string>? ThemeChanged;
     public static event Action<int>? FontScaleChanged;
@@ -535,7 +537,7 @@ public partial class App : Application
 
     private static string LoadSavedTheme()
     {
-        try { if (File.Exists(ThemeFile)) { var t = File.ReadAllText(ThemeFile).Trim(); if (t is "minimal" or "soft" or "dark" or "gray" or "softpink") return t; } }
+        try { if (File.Exists(ThemeFile)) { var t = File.ReadAllText(ThemeFile).Trim(); if (t is "minimal" or "soft" or "dark" or "gray" or "softpink" or "midnight") return t; } }
         catch { /* 무시 */ }
         return "dark"; // 기본값
     }
@@ -573,6 +575,7 @@ public partial class App : Application
     public void SetTheme(string theme, bool persist = true)
     {
         var res = Application.Current.Resources;
+        var isDarkTheme = IsDarkTheme(theme);
 
         Color bg, panel, panelSoft, line, text, textMuted, primary, primaryHover, primaryPressed, primarySoft, bubble, bubbleBorder, danger;
         Color checkedBubble, checkedBorder, checkedText;
@@ -606,6 +609,36 @@ public partial class App : Application
             markerGreen    = Color.FromRgb(0x4a, 0xde, 0x80);
             markerTeal     = Color.FromRgb(0x2d, 0xd4, 0xbf);
             markerBlue     = Color.FromRgb(0x60, 0xa5, 0xfa);
+            markerPurple   = Color.FromRgb(0xa7, 0x8b, 0xfa);
+            markerPink     = Color.FromRgb(0xf4, 0x72, 0xb6);
+        }
+        else if (theme == "midnight")
+        {
+            bg             = Color.FromRgb(0x11, 0x18, 0x27);
+            panel          = Color.FromRgb(0x1f, 0x29, 0x37);
+            panelSoft      = Color.FromRgb(0x29, 0x35, 0x48);
+            line           = Color.FromRgb(0x37, 0x41, 0x51);
+            text           = Color.FromRgb(0xe5, 0xe7, 0xeb);
+            textMuted      = Color.FromRgb(0x9c, 0xa3, 0xaf);
+            primary        = Color.FromRgb(0x60, 0xa5, 0xfa);
+            primaryHover   = Color.FromRgb(0x3b, 0x82, 0xf6);
+            primaryPressed = Color.FromRgb(0x25, 0x63, 0xeb);
+            primarySoft    = Color.FromRgb(0x1e, 0x3a, 0x5f);
+            bubble         = Color.FromRgb(0x17, 0x24, 0x3a);
+            bubbleBorder   = Color.FromRgb(0x2d, 0x4a, 0x6b);
+            danger         = Color.FromRgb(0xf8, 0x71, 0x71);
+            checkedBubble  = Color.FromRgb(0x12, 0x35, 0x2d);
+            checkedBorder  = Color.FromRgb(0x2a, 0x76, 0x61);
+            checkedText    = Color.FromRgb(0x6e, 0xe7, 0xb7);
+            star           = Color.FromRgb(0xfb, 0xbf, 0x24);
+            sidebarSubText = Color.FromRgb(0xcb, 0xd5, 0xe1);
+            today          = Color.FromRgb(0xfb, 0x92, 0x3c);
+            markerRed      = Color.FromRgb(0xf8, 0x71, 0x71);
+            markerOrange   = Color.FromRgb(0xfb, 0x92, 0x3c);
+            markerYellow   = Color.FromRgb(0xfa, 0xcc, 0x15);
+            markerGreen    = Color.FromRgb(0x34, 0xd3, 0x99);
+            markerTeal     = Color.FromRgb(0x2d, 0xd4, 0xbf);
+            markerBlue     = primary;
             markerPurple   = Color.FromRgb(0xa7, 0x8b, 0xfa);
             markerPink     = Color.FromRgb(0xf4, 0x72, 0xb6);
         }
@@ -742,14 +775,14 @@ public partial class App : Application
         res["PrimarySoftColor"]    = primarySoft;
         res["BubbleColor"]         = bubble;
         res["BubbleBorderColor"]   = bubbleBorder;
-        res["LightFileIconOpacity"] = theme == "dark" ? 0.0 : 1.0;
-        res["DarkFileIconOpacity"]  = theme == "dark" ? 1.0 : 0.0;
+        res["LightFileIconOpacity"] = isDarkTheme ? 0.0 : 1.0;
+        res["DarkFileIconOpacity"]  = isDarkTheme ? 1.0 : 0.0;
 
         res["BgBrush"]                = new SolidColorBrush(bg);
         res["PanelBrush"]             = new SolidColorBrush(panel);
         res["PanelSoftBrush"]         = new SolidColorBrush(panelSoft);
-        res["HoverBrush"] = theme == "dark"
-            ? new SolidColorBrush(Color.FromRgb(0x42, 0x42, 0x42))
+        res["HoverBrush"] = isDarkTheme
+            ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x26, 0x34, 0x49) : Color.FromRgb(0x42, 0x42, 0x42))
             : new SolidColorBrush(panelSoft);
         res["LineBrush"]              = new SolidColorBrush(line);
         res["TextBrush"]              = new SolidColorBrush(text);
@@ -765,19 +798,19 @@ public partial class App : Application
         res["ProjectMarkerPinkBrush"]   = new SolidColorBrush(markerPink);
         res["TabFocusRingBrush"]      = new SolidColorBrush(Color.FromArgb(0x8C, primary.R, primary.G, primary.B));
         res["PrimaryOverlay50Brush"]  = new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
-        res["ProjectCardHoverBrush"] = theme == "dark"
-            ? new SolidColorBrush(Color.FromRgb(0x42, 0x42, 0x42))
+        res["ProjectCardHoverBrush"] = isDarkTheme
+            ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x26, 0x34, 0x49) : Color.FromRgb(0x42, 0x42, 0x42))
             : new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
-        res["ProjectCardHoverBorderBrush"] = theme == "dark"
-            ? new SolidColorBrush(Color.FromRgb(0x5a, 0x5a, 0x5a))
+        res["ProjectCardHoverBorderBrush"] = isDarkTheme
+            ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x4b, 0x63, 0x80) : Color.FromRgb(0x5a, 0x5a, 0x5a))
             : new SolidColorBrush(Color.FromArgb(0x80, primary.R, primary.G, primary.B));
         res["PrimaryHoverBrush"]      = new SolidColorBrush(primaryHover);
         res["PrimaryPressedBrush"]    = new SolidColorBrush(primaryPressed);
-        var tableHl = theme == "dark" ? primarySoft : primary;
-        byte tableHlAlpha = theme == "dark" ? (byte)0x80 : (byte)0x20;
+        var tableHl = isDarkTheme ? primarySoft : primary;
+        byte tableHlAlpha = isDarkTheme ? (byte)0x80 : (byte)0x20;
         res["TableHighlightBrush"]    = new SolidColorBrush(Color.FromArgb(tableHlAlpha, tableHl.R, tableHl.G, tableHl.B));
-        res["TableHighlightLineBrush"] = theme == "dark"
-            ? new SolidColorBrush(Color.FromRgb(0x5e, 0x5e, 0x5e))
+        res["TableHighlightLineBrush"] = isDarkTheme
+            ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x4b, 0x63, 0x80) : Color.FromRgb(0x5e, 0x5e, 0x5e))
             : new SolidColorBrush(Color.FromArgb(0x55, tableHl.R, tableHl.G, tableHl.B));
         res["PrimarySoftBrush"]       = new SolidColorBrush(primarySoft);
         res["PrimarySoftLighterBrush"] = new SolidColorBrush(Color.FromRgb(
@@ -789,30 +822,32 @@ public partial class App : Application
         // 세션 row 호버/포커스 배경 (devez 정합: 테마별 색상 구조 상이)
         res["SessionHoverBrush"] = new SolidColorBrush(
             theme == "dark" ? panelSoft  // 다크: 호버=기본(변화 없음)
+            : theme == "midnight" ? Color.FromRgb(0x26, 0x34, 0x49)
             : theme == "soft" ? Color.FromRgb(0xea, 0xe5, 0xdc)
             : theme == "gray" ? Color.FromRgb(0xe9, 0xeb, 0xef)
             : theme == "softpink" ? Color.FromRgb(0xfa, 0xe8, 0xef)
             : Color.FromRgb(0xef, 0xf3, 0xf7)); // minimal
         res["SessionFocusBrush"] = new SolidColorBrush(
             theme == "dark" ? Color.FromRgb(0x5a, 0x5a, 0x5a)
+            : theme == "midnight" ? Color.FromRgb(0x1e, 0x3a, 0x5f)
             : theme == "soft" ? Color.FromRgb(0xdc, 0xea, 0xd4)
             : theme == "gray" ? Color.FromRgb(0xd9, 0xdd, 0xe3)
             : theme == "softpink" ? Color.FromRgb(0xf2, 0xc9, 0xd7)
             : Color.FromRgb(0xd9, 0xe8, 0xfc)); // minimal
         res["DangerBrush"]            = new SolidColorBrush(danger);
-        var successGreen = theme == "dark"
-            ? Color.FromRgb(0x22, 0xc5, 0x5e)
+        var successGreen = isDarkTheme
+            ? (theme == "midnight" ? Color.FromRgb(0x34, 0xd3, 0x99) : Color.FromRgb(0x22, 0xc5, 0x5e))
             : Color.FromRgb(0x15, 0x80, 0x3d);
         res["SuccessColor"]           = successGreen;
         res["SuccessBrush"]           = new SolidColorBrush(successGreen);
-        var saturday = theme == "dark"
+        var saturday = isDarkTheme
             ? Color.FromRgb(0x60, 0xa5, 0xfa)
             : Color.FromRgb(0x25, 0x63, 0xeb);
         res["SaturdayColor"]          = saturday;
         res["SaturdayBrush"]          = new SolidColorBrush(saturday);
         res["SidebarSubTextColor"]    = sidebarSubText;
         res["SidebarSubTextBrush"]    = new SolidColorBrush(sidebarSubText);
-        var railIcon = theme == "dark" ? Color.FromRgb(0xc4, 0xc4, 0xc4) : textMuted;
+        var railIcon = isDarkTheme ? (theme == "midnight" ? Color.FromRgb(0xcb, 0xd5, 0xe1) : Color.FromRgb(0xc4, 0xc4, 0xc4)) : textMuted;
         res["RailIconColor"]          = railIcon;
         res["RailIconBrush"]          = new SolidColorBrush(railIcon);
         res["CheckedBubbleBrush"]     = new SolidColorBrush(checkedBubble);
@@ -821,13 +856,13 @@ public partial class App : Application
         res["BubbleCheckedBgColor"]     = checkedBubble;
         res["BubbleCheckedBorderColor"] = checkedBorder;
         res["BubbleCheckedTextColor"]   = checkedText;
-        res["CheckedBubbleOpacity"]     = theme == "dark" ? 0.3 : 0.4;
+        res["CheckedBubbleOpacity"]     = isDarkTheme ? 0.3 : 0.4;
         res["ShadowColor"]              = Colors.Black;
-        res["ShadowOpacity"]            = theme == "dark" ? 0.68 : 0.35;
-        res["PopupShadowOpacity"]       = theme == "dark" ? 0.42 : 0.18;
-        res["WindowShadowBlurRadius"]   = theme == "dark" ? 48.0 : 40.0;
-        res["WindowShadowOuterMargin"]  = theme == "dark" ? new Thickness(22) : new Thickness(20);
-        res["WindowShadowInnerMargin"]  = theme == "dark" ? new Thickness(3) : new Thickness(1);
+        res["ShadowOpacity"]            = isDarkTheme ? 0.68 : 0.35;
+        res["PopupShadowOpacity"]       = isDarkTheme ? 0.42 : 0.18;
+        res["WindowShadowBlurRadius"]   = isDarkTheme ? 48.0 : 40.0;
+        res["WindowShadowOuterMargin"]  = isDarkTheme ? new Thickness(22) : new Thickness(20);
+        res["WindowShadowInnerMargin"]  = isDarkTheme ? new Thickness(3) : new Thickness(1);
         res["StarBrush"]              = new SolidColorBrush(star);
         res["TodayColor"]             = today;
         res["TodayBrush"]             = new SolidColorBrush(today);
@@ -857,6 +892,20 @@ public partial class App : Application
             codeActiveBg    = Color.FromArgb(0x14, 0xff, 0xff, 0xff);
             codeActiveText  = Color.FromRgb(0xe8, 0xe8, 0xe8);
             codeHover       = Color.FromArgb(0x10, 0xff, 0xff, 0xff);
+        }
+        else if (theme == "midnight")
+        {
+            codeBg          = bg;
+            codePanel       = Color.FromRgb(0x1f, 0x29, 0x37);
+            codeBorder      = Color.FromRgb(0x37, 0x41, 0x51);
+            codeText        = Color.FromRgb(0xe5, 0xe7, 0xeb);
+            codeMuted       = Color.FromRgb(0x9c, 0xa3, 0xaf);
+            codeLabelBg     = Color.FromRgb(0x17, 0x24, 0x3a);
+            codeLabelBorder = Color.FromRgb(0x2d, 0x4a, 0x6b);
+            codeLabelText   = Color.FromRgb(0x93, 0xc5, 0xfd);
+            codeActiveBg    = Color.FromRgb(0x1e, 0x3a, 0x5f);
+            codeActiveText  = Color.FromRgb(0x93, 0xc5, 0xfd);
+            codeHover       = Color.FromArgb(0x24, 0x60, 0xa5, 0xfa);
         }
         else if (theme == "soft")
         {

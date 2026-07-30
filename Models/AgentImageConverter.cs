@@ -18,7 +18,7 @@ public sealed class AgentImageConverter : IValueConverter
         // 저장소에 남은 개명 이전 ID(devezcli 등)가 default 로 떨어져 claude 아이콘이 되는 것 방지.
         var id = AgentRegistry.NormalizeId(value as string).ToLowerInvariant();
         if (string.IsNullOrEmpty(id)) id = AgentRegistry.DefaultAgentId;
-        bool isDark = App.CurrentTheme == "dark";
+        bool isDark = App.IsDarkTheme(App.CurrentTheme);
         string fileName = id switch
         {
             "opencode"    => isDark ? "opencode_icon_white_50.png" : "opencode_icon_black_50.png",

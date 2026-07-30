@@ -155,6 +155,15 @@ public sealed class WtColorScheme
             BrightBlack = "#735763", BrightRed = "#DC5B57", BrightGreen = "#3D9254", BrightYellow = "#BB852B",
             BrightBlue = "#4A83B5", BrightPurple = "#A16DAE", BrightCyan = "#308CA0", BrightWhite = "#FFFFFF",
         },
+        ["DevezCode Midnight Blue"] = new()
+        {
+            Name = "DevezCode Midnight Blue", Background = "#111827", Foreground = "#E5E7EB",
+            CursorColor = "#60A5FA", SelectionBackground = "#1E3A5F",
+            Black = "#111827", Red = "#F87171", Green = "#34D399", Yellow = "#FBBF24",
+            Blue = "#60A5FA", Purple = "#A78BFA", Cyan = "#22D3EE", White = "#E5E7EB",
+            BrightBlack = "#9CA3AF", BrightRed = "#FCA5A5", BrightGreen = "#6EE7B7", BrightYellow = "#FCD34D",
+            BrightBlue = "#93C5FD", BrightPurple = "#C4B5FD", BrightCyan = "#67E8F9", BrightWhite = "#FFFFFF",
+        },
     };
 }
 

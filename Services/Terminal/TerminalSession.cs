@@ -166,7 +166,7 @@ public sealed class TerminalSession : IDisposable
         // 실패해도 밝기 판별이 앱 테마와 일치하도록 환경변수 폴백을 같이 깔아 둔다.
         // 테마 변경은 세션 재시작을 타므로 세션 생성 시점 값이면 충분하다.
         Environment.SetEnvironmentVariable("COLORFGBG",
-            colorFgBg ?? (DevezCode.App.CommittedTheme == "dark" ? "15;0" : "0;15"));
+            colorFgBg ?? (DevezCode.App.IsDarkTheme(DevezCode.App.CommittedTheme) ? "15;0" : "0;15"));
 
         // 1) 파이프 2쌍: (셸이 읽는 stdin), (셸이 쓰는 stdout)
         if (!CreatePipe(out var inputRead, out var inputWriteRaw, IntPtr.Zero, 0))

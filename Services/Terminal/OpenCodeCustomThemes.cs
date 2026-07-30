@@ -17,6 +17,7 @@ public static class OpenCodeCustomThemes
     private const string MinimalSlug  = "devez-minimal";
     private const string GraySlug     = "devez-gray";
     private const string SoftPinkSlug = "devez-softpink";
+    private const string MidnightSlug = "devez-midnight";
 
     private static string ThemesDir
     {
@@ -47,6 +48,7 @@ public static class OpenCodeCustomThemes
             File.WriteAllText(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, GraySlug + ".json"), GrayThemeJson, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, SoftPinkSlug + ".json"), SoftPinkThemeJson, new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, MidnightSlug + ".json"), MidnightThemeJson, new UTF8Encoding(false));
         }
         catch { /* best-effort — 실패해도 per-project 주입이 안 될 뿐 */ }
     }
@@ -59,6 +61,7 @@ public static class OpenCodeCustomThemes
         "minimal" => MinimalSlug,
         "gray"    => GraySlug,
         "softpink" => SoftPinkSlug,
+        "midnight" => MidnightSlug,
         _         => DarkSlug,
     };
 
@@ -94,7 +97,7 @@ public static class OpenCodeCustomThemes
                     AllowTrailingCommas = true,
                 }) as System.Text.Json.Nodes.JsonObject;
             var theme = root?["theme"]?.GetValue<string>();
-            if (theme is not (DarkSlug or SoftSlug or MinimalSlug or GraySlug or SoftPinkSlug)) return;
+            if (theme is not (DarkSlug or SoftSlug or MinimalSlug or GraySlug or SoftPinkSlug or MidnightSlug)) return;
 
             root!.Remove("theme");
             if (root.Count == 0)
@@ -322,6 +325,31 @@ public static class OpenCodeCustomThemes
         .Replace("#4E7A3E", "#25723C", StringComparison.Ordinal)
         .Replace("#DEECD6", "#E9F5EC", StringComparison.Ordinal)
         .Replace("#F2D6D6", "#FDE7E7", StringComparison.Ordinal);
+
+    private static readonly string MidnightThemeJson = DarkThemeJson
+        .Replace("Devez Dark", "Devez Midnight Blue", StringComparison.Ordinal)
+        .Replace("#1F1F1E", "#111827", StringComparison.OrdinalIgnoreCase)
+        .Replace("#272727", "#1F2937", StringComparison.OrdinalIgnoreCase)
+        .Replace("#2F2F2F", "#293548", StringComparison.OrdinalIgnoreCase)
+        .Replace("#404040", "#374151", StringComparison.OrdinalIgnoreCase)
+        .Replace("#282828", "#172033", StringComparison.OrdinalIgnoreCase)
+        .Replace("#323232", "#263449", StringComparison.OrdinalIgnoreCase)
+        .Replace("#606060", "#4B6380", StringComparison.OrdinalIgnoreCase)
+        .Replace("#fab283", "#60A5FA", StringComparison.OrdinalIgnoreCase)
+        .Replace("#ffc09f", "#93C5FD", StringComparison.OrdinalIgnoreCase)
+        .Replace("#808080", "#9CA3AF", StringComparison.OrdinalIgnoreCase)
+        .Replace("#eeeeee", "#E5E7EB", StringComparison.OrdinalIgnoreCase)
+        .Replace("#5c9cf5", "#38BDF8", StringComparison.OrdinalIgnoreCase)
+        .Replace("#9d7cd8", "#A78BFA", StringComparison.OrdinalIgnoreCase)
+        .Replace("#e06c75", "#F87171", StringComparison.OrdinalIgnoreCase)
+        .Replace("#f5a742", "#FBBF24", StringComparison.OrdinalIgnoreCase)
+        .Replace("#7fd88f", "#34D399", StringComparison.OrdinalIgnoreCase)
+        .Replace("#56b6c2", "#22D3EE", StringComparison.OrdinalIgnoreCase)
+        .Replace("#e5c07b", "#FCD34D", StringComparison.OrdinalIgnoreCase)
+        .Replace("#20303b", "#16362F", StringComparison.OrdinalIgnoreCase)
+        .Replace("#37222c", "#3B1F2B", StringComparison.OrdinalIgnoreCase)
+        .Replace("#1b2b34", "#102E29", StringComparison.OrdinalIgnoreCase)
+        .Replace("#2d1f26", "#321B25", StringComparison.OrdinalIgnoreCase);
 
     private const string MinimalThemeJson = """
     {

@@ -421,8 +421,12 @@ public partial class SidebarView : UserControl
     /// <summary>현재 보기의 대상 컬렉션(검색/일괄펼침/드래그 공용).</summary>
     private ObservableCollection<ProjectItem> CurrentProjects => _archiveOpen ? ArchivedProjects : Projects;
 
-    private void ArchiveToggleBtn_Click(object sender, RoutedEventArgs e) => OpenArchivePanel();
-    private void ArchiveBack_Click(object sender, RoutedEventArgs e) => CloseArchivePanel();
+    // 보관함 버튼은 토글 — 열면 Tag="active"(Primary 배경), 다시 누르면 프로젝트 보기로 복귀.
+    private void ArchiveToggleBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_archiveOpen) CloseArchivePanel();
+        else OpenArchivePanel();
+    }
 
     private void OpenArchivePanel()
     {
@@ -441,8 +445,7 @@ public partial class SidebarView : UserControl
         SlideTo(ActivePanelTransform, 0, -w, () => ActivePanel.Visibility = Visibility.Collapsed);
 
         HeaderTitle.Text = "보관함";
-        BackBtn.Visibility = Visibility.Visible;
-        ArchiveToggleBtn.Visibility = Visibility.Collapsed;
+        ArchiveToggleBtn.Tag = "active";
         ActiveProjectFilterRow.Visibility = Visibility.Collapsed;
     }
 
@@ -460,8 +463,7 @@ public partial class SidebarView : UserControl
         SlideTo(ArchivePanelTransform, 0, w, () => ArchivePanel.Visibility = Visibility.Collapsed);
 
         HeaderTitle.Text = "프로젝트";
-        BackBtn.Visibility = Visibility.Collapsed;
-        ArchiveToggleBtn.Visibility = Visibility.Visible;
+        ArchiveToggleBtn.Tag = null;
         ActiveProjectFilterRow.Visibility = Visibility.Visible;
     }
 
@@ -556,6 +558,7 @@ public partial class SidebarView : UserControl
     private void SetSidebarSearchOpen(bool open)
     {
         _searchOpen = open;
+        SearchToggleBtn.Tag = _searchOpen ? "active" : null;
         var anim = new DoubleAnimation
         {
             To = _searchOpen ? SearchRowHeight : 0,

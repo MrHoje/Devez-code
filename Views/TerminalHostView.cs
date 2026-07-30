@@ -1092,6 +1092,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             "soft" => "\x1b[48;2;231;224;213m",  // soft #E7E0D5
             "gray" => "\x1b[48;2;236;238;241m",  // gray #ECEEF1
             "softpink" => "\x1b[48;2;251;231;238m", // soft pink #FBE7EE
+            "midnight" => "\x1b[48;2;30;58;95m", // midnight #1E3A5F
             _      => "\x1b[48;2;234;240;245m",  // minimal #EAF0F5
         });
 
@@ -1160,6 +1161,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             "soft" => ("\x1b[48;2;222;236;214m", "\x1b[48;2;242;214;214m"),
             "gray" => ("\x1b[48;2;231;246;235m", "\x1b[48;2;252;232;232m"),
             "softpink" => ("\x1b[48;2;233;245;236m", "\x1b[48;2;253;231;231m"),
+            "midnight" => ("\x1b[48;2;22;54;47m", "\x1b[48;2;59;31;43m"),
             _ => ("\x1b[48;2;219;234;254m", "\x1b[48;2;254;226;226m"),
         };
         var added = System.Text.Encoding.ASCII.GetBytes(addedAnsi);
@@ -1280,7 +1282,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             || sgr.Contains("48;", StringComparison.Ordinal)
             || sgr.Contains("48:", StringComparison.Ordinal);
         if (!hasExtendedColor)
-            return DevezCode.App.CurrentTheme == "dark" ? sgr : RemapGrokAnsiPurple(sgr);
+            return DevezCode.App.IsDarkTheme(DevezCode.App.CurrentTheme) ? sgr : RemapGrokAnsiPurple(sgr);
 
         string ReplaceBackgroundRgb(Match match)
         {
@@ -1300,14 +1302,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             if (!int.TryParse(match.Groups["index"].Value, out var index) || index is < 16 or > 255
                 || !TryXterm256Rgb(index, out var r, out var g, out var b)
                 || !TryMapGrokNeutralBackground(r, g, b, out var mapped,
-                    DevezCode.App.CurrentTheme == "dark" ? 18 : 238))
+                    DevezCode.App.IsDarkTheme(DevezCode.App.CurrentTheme) ? 18 : 238))
                 return match.Value;
             return $"48;2;{mapped.R};{mapped.G};{mapped.B}";
         }
         result = GrokBgIndexed.Replace(result, ReplaceBackgroundIndexed);
         result = GrokBgIndexedColon.Replace(result, ReplaceBackgroundIndexed);
 
-        if (DevezCode.App.CurrentTheme == "dark") return result;
+        if (DevezCode.App.IsDarkTheme(DevezCode.App.CurrentTheme)) return result;
 
         string ReplaceForegroundRgb(Match match)
         {
@@ -1360,7 +1362,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private static bool TryMapGrokForeground(int r, int g, int b, out (int R, int G, int B) mapped)
     {
         mapped = default;
-        if (DevezCode.App.CurrentTheme == "dark"
+        if (DevezCode.App.IsDarkTheme(DevezCode.App.CurrentTheme)
             || (uint)r > 255 || (uint)g > 255 || (uint)b > 255) return false;
 
         int max = Math.Max(r, Math.Max(g, b));
@@ -1435,7 +1437,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         // 어두운 diff 배경(#303a30 등)은 절대 RGB 차가 작아도 상대 채도가 높다.
         if (chroma > 12 || (max > 0 && chroma / (double)max > 0.14)) return false;
 
-        bool dark = DevezCode.App.CurrentTheme == "dark";
+        bool dark = DevezCode.App.IsDarkTheme(DevezCode.App.CurrentTheme);
         if (dark ? max > 96 : min < 180) return false; // 활성 내장 테마의 중립 배경군만 허용
 
         var target = SchemeBackgroundRgb();
@@ -1476,6 +1478,7 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         return DevezCode.App.CurrentTheme switch
         {
             "dark" => (31, 31, 30),
+            "midnight" => (17, 24, 39),
             "soft" => (242, 237, 230),
             _ => (248, 250, 252),
         };

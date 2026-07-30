@@ -18,6 +18,7 @@ public static class ClaudeCustomThemes
     private const string MinimalSlug  = "devez-minimal";
     private const string GraySlug     = "devez-gray";
     private const string SoftPinkSlug = "devez-softpink";
+    private const string MidnightSlug = "devez-midnight";
 
     /// <summary>앱 시작 시 호출. 매번 번들 내용으로 덮어써 최신 팔레트를 강제 반영한다.</summary>
     public static void EnsureInstalled()
@@ -32,6 +33,7 @@ public static class ClaudeCustomThemes
             File.WriteAllText(Path.Combine(dir, MinimalSlug + ".json"), MinimalThemeJson, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, GraySlug + ".json"), GrayThemeJson, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(dir, SoftPinkSlug + ".json"), SoftPinkThemeJson, new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(dir, MidnightSlug + ".json"), MidnightThemeJson, new UTF8Encoding(false));
         }
         catch { /* best-effort — 실패해도 per-session 주입이 안 될 뿐 */ }
     }
@@ -44,6 +46,7 @@ public static class ClaudeCustomThemes
         "minimal" => "custom:" + MinimalSlug,
         "gray"    => "custom:" + GraySlug,
         "softpink" => "custom:" + SoftPinkSlug,
+        "midnight" => "custom:" + MidnightSlug,
         _         => "dark",
     };
 
@@ -185,6 +188,26 @@ public static class ClaudeCustomThemes
         "diffAdded": "#E9F5EC", "diffAddedDimmed": "#FFF7FA", "diffAddedWord": "#25723C",
         "diffRemoved": "#FDE7E7", "diffRemovedDimmed": "#FFF7FA", "diffRemovedWord": "#C2413E",
         "rate_limit_fill": "#B54A6B", "rate_limit_empty": "#EBCFD9", "briefLabelYou": "#B54A6B", "briefLabelClaude": "#735763"
+      }
+    }
+    """;
+
+    private const string MidnightThemeJson = """
+    {
+      "name": "Devez Midnight Blue",
+      "base": "dark",
+      "overrides": {
+        "claude": "#60A5FA", "claudeShimmer": "#93C5FD", "text": "#E5E7EB", "inverseText": "#111827",
+        "inactive": "#9CA3AF", "inactiveShimmer": "#CBD5E1", "subtle": "#CBD5E1",
+        "suggestion": "#60A5FA", "permission": "#60A5FA", "permissionShimmer": "#93C5FD",
+        "remember": "#A78BFA", "success": "#34D399", "warning": "#FBBF24", "error": "#F87171",
+        "merged": "#A78BFA", "promptBorder": "#60A5FA", "promptBorderShimmer": "#93C5FD",
+        "planMode": "#60A5FA", "autoAccept": "#34D399", "bashBorder": "#60A5FA", "ide": "#9CA3AF", "fastMode": "#60A5FA",
+        "userMessageBackground": "#1E3A5F", "userMessageBackgroundHover": "#2D4A6B",
+        "messageActionsBackground": "#1F2937", "bashMessageBackgroundColor": "#1F2937", "memoryBackgroundColor": "#1F2937", "selectionBg": "#1E3A5F",
+        "diffAdded": "#16362F", "diffAddedDimmed": "#111827", "diffAddedWord": "#34D399",
+        "diffRemoved": "#3B1F2B", "diffRemovedDimmed": "#111827", "diffRemovedWord": "#F87171",
+        "rate_limit_fill": "#60A5FA", "rate_limit_empty": "#374151", "briefLabelYou": "#93C5FD", "briefLabelClaude": "#CBD5E1"
       }
     }
     """;

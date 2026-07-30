@@ -55,6 +55,13 @@ public static class SyntaxThemeService
         Number:    Color.FromRgb(0x2F, 0x7A, 0x55),
         Attribute: Color.FromRgb(0xB5, 0x4A, 0x6B));
 
+    private static readonly Palette Midnight = new(
+        Comment:   Color.FromRgb(0x9C, 0xA3, 0xAF),
+        Str:       Color.FromRgb(0xF8, 0x71, 0x71),
+        Keyword:   Color.FromRgb(0x93, 0xC5, 0xFD),
+        Number:    Color.FromRgb(0x34, 0xD3, 0x99),
+        Attribute: Color.FromRgb(0xA7, 0x8B, 0xFA));
+
     /// <summary>테마별 하이퍼링크(자동 URL) 색. 다크에서 안 보이던 기본 진파랑을 밝게 교체.</summary>
     public static Color LinkColor(string theme) => theme switch
     {
@@ -62,13 +69,14 @@ public static class SyntaxThemeService
         "soft" => Color.FromRgb(0x3A, 0x6F, 0xA5),
         "gray" => Color.FromRgb(0x32, 0x6A, 0xA5),
         "softpink" => Color.FromRgb(0x32, 0x6A, 0x9F),
+        "midnight" => Color.FromRgb(0x60, 0xA5, 0xFA),
         _      => Color.FromRgb(0x05, 0x63, 0xC1),
     };
 
     /// <summary>등록된 모든 내장 정의의 named color 를 현재 테마 팔레트로 덮어쓴다.</summary>
     public static void Apply(string theme)
     {
-        var p = theme switch { "dark" => Dark, "soft" => Soft, "gray" => Gray, "softpink" => SoftPink, _ => Minimal };
+        var p = theme switch { "dark" => Dark, "soft" => Soft, "gray" => Gray, "softpink" => SoftPink, "midnight" => Midnight, _ => Minimal };
         foreach (var def in HighlightingManager.Instance.HighlightingDefinitions)
         {
             foreach (var c in def.NamedHighlightingColors)

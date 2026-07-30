@@ -18,7 +18,7 @@ public static class GrokCustomThemes
     /// <summary>DevezCode 테마 → grok 내장 theme 슬러그.</summary>
     public static string MapToGrokTheme(string devezCodeTheme) => devezCodeTheme switch
     {
-        "dark" => "groknight",
+        "dark" or "midnight" => "groknight",
         "soft" or "minimal" or "gray" or "softpink" => "grokday",
         _ => "groknight",
     };

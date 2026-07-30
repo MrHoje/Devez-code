@@ -173,6 +173,16 @@ public static class GajaeCustomThemes
             ["diffAdded"] = "#25723C", ["diffRemoved"] = "#C2413E", ["diffContext"] = "#735763",
             ["addedBg"] = "#E9F5EC", ["removedBg"] = "#FDE7E7",
         },
+        "midnight" => new()
+        {
+            ["background"] = "#111827", ["currentLine"] = "#1F2937", ["selection"] = "#1E3A5F",
+            ["backgroundDarker"] = "#0B1220", ["foreground"] = "#E5E7EB", ["comment"] = "#9CA3AF",
+            ["primary"] = "#60A5FA", ["secondary"] = "#38BDF8", ["accentPurple"] = "#A78BFA",
+            ["errorRed"] = "#F87171", ["warningOrange"] = "#FBBF24", ["successGreen"] = "#34D399",
+            ["infoCyan"] = "#22D3EE", ["emphasizedYellow"] = "#FCD34D", ["border"] = "#374151",
+            ["diffAdded"] = "#34D399", ["diffRemoved"] = "#F87171", ["diffContext"] = "#9CA3AF",
+            ["addedBg"] = "#16362F", ["removedBg"] = "#3B1F2B",
+        },
         _ => new() // dark
         {
             ["background"] = "#1F1F1E", ["currentLine"] = "#272727", ["selection"] = "#303030",

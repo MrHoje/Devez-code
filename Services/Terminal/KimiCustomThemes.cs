@@ -25,7 +25,7 @@ public static class KimiCustomThemes
 
     /// <summary>DevezCode 테마 → kimi theme 값.</summary>
     public static string MapToKimiTheme(string devezCodeTheme)
-        => string.Equals(devezCodeTheme, "dark", StringComparison.OrdinalIgnoreCase) ? "dark" : "light";
+        => DevezCode.App.IsDarkTheme(devezCodeTheme) ? "dark" : "light";
 
     public static void Apply(string devezCodeTheme)
     {

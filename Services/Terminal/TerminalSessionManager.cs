@@ -843,6 +843,7 @@ public sealed class TerminalSessionManager
         {
             // dvz가 아직 3종 enum만 지원하므로 새 라이트 테마는 가장 가까운 soft로 연결한다.
             "gray" or "softpink" => "soft",
+            "midnight" => "dark",
             "minimal" or "soft" or "dark" => DevezCode.App.CurrentTheme,
             _ => "dark",
         };

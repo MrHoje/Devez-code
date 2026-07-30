@@ -197,7 +197,7 @@ public partial class BrowserHostView : UserControl
     }
 
     private static CoreWebView2PreferredColorScheme PreferredScheme =>
-        App.CurrentTheme == "dark"
+        App.IsDarkTheme(App.CurrentTheme)
             ? CoreWebView2PreferredColorScheme.Dark
             : CoreWebView2PreferredColorScheme.Light;
 

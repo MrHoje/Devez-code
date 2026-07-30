@@ -233,7 +233,7 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
         PostJson(new
         {
             type = "setTheme",
-            dark = theme == "dark",
+            dark = App.IsDarkTheme(theme),
             bg = Hex("BgBrush", "#ffffff"),
             panel = Hex("PanelBrush", "#ffffff"),
             text = Hex("TextBrush", "#0f172a"),

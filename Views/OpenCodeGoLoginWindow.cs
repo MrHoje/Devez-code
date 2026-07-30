@@ -47,7 +47,7 @@ public sealed class OpenCodeGoLoginWindow : UsageLoginWindowBase
             // opencode.ai(OpenAuth) 로그인 UI 가 prefers-color-scheme 를 무시할 때를 대비해,
             // 디자인 변수(--color-*)를 다크값으로 강제하는 CSS 를 주입(헤더·배경 다크).
             // 문서 생성 시점(깜빡임 방지) + 네비게이션 완료 후(확실한 적용) 양쪽에서 주입.
-            if (App.CurrentTheme == "dark")
+            if (App.IsDarkTheme(App.CurrentTheme))
             {
                 await _view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(InjectDarkScript);
                 _view.CoreWebView2.NavigationCompleted += async (_, _) =>

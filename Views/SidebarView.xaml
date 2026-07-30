@@ -1352,16 +1352,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- 뒤로가기: 보관함 보기일 때만 노출 → 프로젝트 보기로 복귀 -->
-                    <!-- 음수 좌마진(-5.5): IconButton Padding4 + 글리프 중앙정렬 inset 만큼 당겨 화살표 시작 x를 "프로젝트" 타이틀 시작 x(좌단 16)와 정렬 -->
-                    <Button x:Name="BackBtn" Width="24" Height="24" Margin="-5.5,0,4,0"
-                            Visibility="Collapsed"
-                            Style="{StaticResource IconButton}"
-                            Click="ArchiveBack_Click" ToolTip="프로젝트로 돌아가기">
-                        <Path Style="{StaticResource LucideButtonIcon}"
-                              Data="{StaticResource IconArrowLeft}"
-                              Width="13" Height="13"/>
-                    </Button>
+                    <!-- 보관함 복귀는 보관함 버튼 재클릭(토글)로 처리 — 별도 뒤로가기 버튼 없음 -->
                     <TextBlock x:Name="HeaderTitle" Text="프로젝트" VerticalAlignment="Center"
                                FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextBrush}"/>
@@ -1369,16 +1360,16 @@
                                FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                Foreground="{DynamicResource PrimaryBrush}"/>
                 </StackPanel>
-                <!-- 활성 프로젝트만 보기 토글. 보관함 아이콘 왼쪽에 배치 -->
-                <StackPanel x:Name="ActiveProjectFilterRow" Grid.Column="1"
-                            Orientation="Horizontal" VerticalAlignment="Center"
-                            Margin="0,0,8,0">
-                    <CheckBox x:Name="ActiveProjectFilterSwitch"
-                              VerticalAlignment="Center"
-                              Style="{StaticResource ToggleSwitchSmall}"
-                              Click="ActiveProjectFilterSwitch_Click"
-                              ToolTip="실행 중인 세션이 있는 프로젝트만 표시"/>
-                </StackPanel>
+                <!-- 활성 프로젝트만 보기 필터. 켜짐은 IconButton 의 Tag="active"(Primary 배경) 로 표시 -->
+                <Button x:Name="ActiveProjectFilterRow" Grid.Column="1"
+                        Width="24" Height="24" Margin="0,0,4,0"
+                        Style="{StaticResource IconButton}"
+                        Click="ActiveProjectFilterSwitch_Click"
+                        ToolTip="실행 중인 세션이 있는 프로젝트만 표시">
+                    <Path Style="{StaticResource LucideButtonIcon}"
+                          Data="{StaticResource IconZap}"
+                          Width="13" Height="13"/>
+                </Button>
                 <!-- 보관함 열기: 프로젝트 보기에서 보관함으로 슬라이드 전환 -->
                 <Button x:Name="ArchiveToggleBtn" Grid.Column="2"
                         Width="24" Height="24" Margin="0,0,4,0"

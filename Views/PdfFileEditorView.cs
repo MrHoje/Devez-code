@@ -80,7 +80,7 @@ public sealed class PdfFileEditorView : UserControl, IFileTabEditor
     }
 
     private static CoreWebView2PreferredColorScheme PreferredColorScheme
-        => App.CurrentTheme == "dark"
+        => App.IsDarkTheme(App.CurrentTheme)
             ? CoreWebView2PreferredColorScheme.Dark
             : CoreWebView2PreferredColorScheme.Light;
 
