@@ -178,6 +178,74 @@
             </Setter>
         </Style>
 
+        <!-- 깨우기 시간 콤보 (직접 입력 + 30분 간격 드롭다운) -->
+        <Style x:Key="WakeTimeCombo" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FontFamily" Value="{StaticResource PretendardFont}"/>
+            <Setter Property="FontSize" Value="{DynamicResource Fs13}"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="IsEditable" Value="True"/>
+            <Setter Property="IsTextSearchEnabled" Value="True"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ThemedComboItem}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Border CornerRadius="10" BorderThickness="1"
+                                BorderBrush="{DynamicResource LineBrush}"
+                                Background="{DynamicResource PanelBrush}">
+                            <Grid>
+                                <Path HorizontalAlignment="Left" VerticalAlignment="Center"
+                                      Margin="14,0,0,0" IsHitTestVisible="False"
+                                      Data="{DynamicResource IconClock}"
+                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.5"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      Width="14" Height="14" Stretch="Uniform" Fill="Transparent"/>
+                                <TextBox x:Name="PART_EditableTextBox"
+                                         Margin="36,0,36,0" VerticalAlignment="Center"
+                                         Background="Transparent" BorderThickness="0"
+                                         Foreground="{DynamicResource TextBrush}"
+                                         CaretBrush="{DynamicResource TextBrush}"
+                                         FontSize="{DynamicResource Fs13}" FontFamily="{StaticResource PretendardFont}"
+                                         TextOptions.TextFormattingMode="Ideal"
+                                         TextOptions.TextRenderingMode="ClearType"
+                                         FocusVisualStyle="{x:Null}"
+                                         IsReadOnly="{TemplateBinding IsReadOnly}"/>
+                                <ToggleButton x:Name="PART_ToggleButton"
+                                              HorizontalAlignment="Right" Width="36"
+                                              Focusable="False" ClickMode="Press"
+                                              IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border Background="Transparent">
+                                                <Path Data="{DynamicResource IconChevronDown}"
+                                                      Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="2"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                                      Width="12" Height="12" Stretch="Uniform" Fill="Transparent"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+                                <Popup x:Name="PART_Popup" Placement="Bottom" VerticalOffset="3"
+                                       IsOpen="{TemplateBinding IsDropDownOpen}"
+                                       AllowsTransparency="True" Focusable="False">
+                                    <Border Background="{DynamicResource PanelBrush}"
+                                            BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                            CornerRadius="8" SnapsToDevicePixels="True"
+                                            MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ComboBox}}">
+                                        <ScrollViewer MaxHeight="200" Background="Transparent" Margin="3">
+                                            <ItemsPresenter/>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- 폼 입력 카드 (둥근 모서리 + 포커스 시 PrimaryBrush 테두리) -->
         <Style x:Key="FormFieldBox" TargetType="Border" BasedOn="{StaticResource AuthInputBorder}">
             <Setter Property="Height" Value="38"/>
@@ -332,6 +400,15 @@
                                               Data="{StaticResource IconZap}" Width="15" Height="15"
                                               Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <TextBlock Text="단축키" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CatWakeBtn" Tag="wake"
+                                        Style="{StaticResource CategoryItem}" Click="Category_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Style="{StaticResource LucideButtonIcon}"
+                                              Data="{StaticResource IconAlarmClock}" Width="15" Height="15"
+                                              Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="깨우기" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="CatChangelogBtn" Tag="changelog"
@@ -1657,6 +1734,89 @@
                                                    FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
                                     </Border>
                                 </Grid>
+                            </StackPanel>
+
+                            <!-- 깨우기 패널 (WakeSchedulerWindow 이식 — 설정창 내부 탭) -->
+                            <StackPanel x:Name="WakePanel" Margin="28,32,28,20" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconAlarmClock}"
+                                          Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,9,0"
+                                          Stroke="{DynamicResource TextBrush}"/>
+                                    <TextBlock Text="깨우기" FontSize="{DynamicResource Fs14}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="정해진 시간에 고정된 메세지를 보내 5h limit 타이머를 시작시킵니다."
+                                           FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
+                                <TextBlock Text="예약 시간에는 DevezCode가 실행 중이어야 합니다."
+                                           FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"/>
+
+                                <ItemsControl x:Name="WakeList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,16,0,0" Padding="0,0,0,16"
+                                                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+                                                    Background="Transparent">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Image Grid.Column="0" Width="32" Height="32"
+                                                           Margin="0,0,14,0" VerticalAlignment="Center"
+                                                           Source="{Binding Id, Converter={x:Static models:AgentImageConverter.Instance}}"
+                                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding DisplayName}" FontSize="{DynamicResource Fs13}"
+                                                                   FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                                                        <TextBlock FontSize="{DynamicResource Fs11}" Margin="0,3,0,0"
+                                                                   Foreground="{DynamicResource TextMutedBrush}">
+                                                            <Run Text="최근 실행: "/>
+                                                            <Run Text="{Binding LastExecutionDisplay, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <ComboBox Width="128" Margin="0,0,14,0"
+                                                                  Style="{StaticResource WakeTimeCombo}"
+                                                                  ItemsSource="{Binding TimeOptions}"
+                                                                  Text="{Binding Time, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                  Loaded="WakeTimeCombo_Loaded"
+                                                                  LostFocus="WakeTimeCombo_LostFocus"/>
+                                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                                  Click="WakeEnabledToggle_Click"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock x:Name="WakeEmptyHint"
+                                           Text="설정 &gt; 에이전트에서 Claude 또는 Codex를 사용으로 켜면 여기에 표시됩니다."
+                                           Margin="0,16,0,0" TextWrapping="Wrap" FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           Visibility="Collapsed"/>
+
+                                <Border x:Name="WakeTrustPanel" Margin="0,18,0,0" Padding="14,12" CornerRadius="10"
+                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
+                                        Background="{DynamicResource PanelSoftBrush}" Visibility="Collapsed">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconShield}"
+                                              Width="15" Height="15" Margin="2,2,11,0" VerticalAlignment="Top"
+                                              Stroke="{DynamicResource TextMutedBrush}"/>
+                                        <TextBlock x:Name="WakeTrustMessage" Grid.Column="1"
+                                                   Text="프로젝트 경로의 신뢰 설정을 자동으로 확인하고 있습니다."
+                                                   TextWrapping="Wrap" FontSize="{DynamicResource Fs12}"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
 
                             <!-- 테마 패널 -->

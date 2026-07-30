@@ -603,6 +603,8 @@ public partial class SettingsDialog : UserControl
         CatShortcutBtn.Foreground  = key == "shortcut"   ? primary : text;
         CatNotifyBtn.Background    = key == "notify"     ? active : Brushes.Transparent;
         CatNotifyBtn.Foreground    = key == "notify"     ? primary : text;
+        CatWakeBtn.Background      = key == "wake"       ? active : Brushes.Transparent;
+        CatWakeBtn.Foreground      = key == "wake"       ? primary : text;
 
         GeneralPanel.Visibility    = key == "general"    ? Visibility.Visible : Visibility.Collapsed;
         ProjectPanel.Visibility    = key == "project"    ? Visibility.Visible : Visibility.Collapsed;
@@ -618,8 +620,10 @@ public partial class SettingsDialog : UserControl
         LicensesPanel.Visibility   = key == "licenses"   ? Visibility.Visible : Visibility.Collapsed;
         ShortcutPanel.Visibility   = key == "shortcut"   ? Visibility.Visible : Visibility.Collapsed;
         NotifyPanel.Visibility     = key == "notify"     ? Visibility.Visible : Visibility.Collapsed;
+        WakePanel.Visibility       = key == "wake"       ? Visibility.Visible : Visibility.Collapsed;
 
         if (key != "shortcut") CancelShortcutCapture(); // 패널 떠나면 캡처 중단
+        if (key == "wake") EnterWake();
         if (key == "sidepanel") LoadSidePanelSettings();
         if (key == "usage") LoadFooterUsageSettings();
         if (key == "notify") LoadNotifySettings();
@@ -1473,6 +1477,194 @@ public partial class SettingsDialog : UserControl
     }
 
 
+    // ── 깨우기 (WakeSchedulerWindow 이식 — 설정창 내부 탭) ─────────
+    private static readonly DayOfWeek[] _wakeEveryDay = Enum.GetValues<DayOfWeek>();
+    private readonly ObservableCollection<WakeItem> _wakeItems = new();
+    private readonly List<WakeScheduleEntry> _wakeHiddenEntries = new();   // UI 대상이 아닌 예약(꺼진 에이전트)은 그대로 보존
+    private AgentDef? _untrustedWakeAgent;
+    private bool _wakeBuilt;
+    private bool _wakeTimeFormatting;
+    private bool _wakeTrustCheckInProgress;
+    private string _originalWakeSignature = "";
+
+    /// <summary>깨우기 탭 진입 — 최초 1회 목록을 구성하고, 켜진 항목의 신뢰 설정을 확인한다.</summary>
+    private void EnterWake()
+    {
+        if (!_wakeBuilt) BuildWakeList();
+        RefreshWakeTrustState();
+        _ = EnsureRequiredWakeTrustAsync();
+    }
+
+    private void BuildWakeList()
+    {
+        _wakeBuilt = true;
+        var agents = AgentRegistry.GetEnabledAndInstalled()
+            .Where(a => string.Equals(a.Id, "claude", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(a.Id, "codex", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var providerIds = agents.Select(a => a.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var schedules = SettingsService.LoadWakeSchedules().Select(e => e.Clone()).ToList();
+
+        _wakeHiddenEntries.Clear();
+        _wakeHiddenEntries.AddRange(schedules.Where(e => !providerIds.Contains(e.Provider)));
+
+        _wakeItems.Clear();
+        foreach (var agent in agents)
+        {
+            var entry = schedules.FirstOrDefault(e =>
+                            string.Equals(e.Provider, agent.Id, StringComparison.OrdinalIgnoreCase))
+                        ?? new WakeScheduleEntry { Provider = agent.Id, Enabled = false };
+            entry.Weekdays = _wakeEveryDay.ToList();   // 요일 선택 없이 매일 고정
+            _wakeItems.Add(new WakeItem(agent, entry));
+        }
+
+        WakeList.ItemsSource = _wakeItems;
+        WakeEmptyHint.Visibility = _wakeItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _originalWakeSignature = WakeSignature();
+    }
+
+    private string WakeSignature()
+        => string.Join("|", _wakeItems.Select(i => $"{i.Id}:{i.Enabled}:{i.Time}"));
+
+    /// <summary>깨우기 예약 저장 — 시간이 유효할 때만 디스크에 쓰고 스케줄러에 알린다.
+    /// (유효하지 않은 값은 콤보 LostFocus 에서 보정된 뒤 다음 저장에 반영된다.)</summary>
+    private void SaveWakeSchedulesIfChanged()
+    {
+        if (!_wakeBuilt) return;
+        var signature = WakeSignature();
+        if (signature == _originalWakeSignature) return;
+        if (_wakeItems.Any(i => !TryParseWakeTime(i.Time).valid)) return;
+
+        if (!SettingsService.SaveWakeSchedules(_wakeHiddenEntries.Concat(_wakeItems.Select(i => i.Entry))))
+            return;
+        _originalWakeSignature = signature;
+        (Application.Current.MainWindow as MainWindow)?.NotifyWakeSchedulesChanged();
+    }
+
+    private void WakeEnabledToggle_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshWakeTrustState();
+        _ = EnsureRequiredWakeTrustAsync();
+    }
+
+    /// <summary>켜진 예약 중 설치 경로 신뢰가 아직 안 된 에이전트를 찾아 안내 카드를 갱신한다.</summary>
+    private void RefreshWakeTrustState()
+    {
+        _untrustedWakeAgent = _wakeItems
+            .FirstOrDefault(i => i.Enabled && !WakeTrustService.IsTrusted(i.Id))?.Agent;
+        WakeTrustPanel.Visibility = _untrustedWakeAgent == null ? Visibility.Collapsed : Visibility.Visible;
+        if (_untrustedWakeAgent != null)
+            WakeTrustMessage.Text = $"{_untrustedWakeAgent.DisplayName}: 프로젝트 경로의 신뢰 설정을 자동으로 확인하고 있습니다.\n" +
+                                    WakeTrustService.InstallDirectory;
+    }
+
+    private async Task EnsureRequiredWakeTrustAsync()
+    {
+        if (_wakeTrustCheckInProgress) return;
+        if (Application.Current.MainWindow is not MainWindow main) return;
+        _wakeTrustCheckInProgress = true;
+        try
+        {
+            while (IsLoaded && WakePanel.Visibility == Visibility.Visible)
+            {
+                RefreshWakeTrustState();
+                var agent = _untrustedWakeAgent;
+                if (agent == null) return;
+
+                WakeTrustMessage.Text = $"{agent.DisplayName}: 프로젝트 경로의 신뢰 설정을 자동으로 처리하고 있습니다.\n" +
+                                        WakeTrustService.InstallDirectory;
+                if (!await main.EnsureWakeTrustAsync(agent.Id))
+                {
+                    RefreshWakeTrustState();
+                    WakeTrustMessage.Text = $"{agent.DisplayName} 신뢰 설정을 자동으로 완료하지 못했습니다.";
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            _wakeTrustCheckInProgress = false;
+        }
+    }
+
+    // 시간 칸: 숫자만 입력받아 HH:mm 으로 자동 정리하고, 포커스를 잃을 때 24시간 형식으로 확정한다.
+    private void WakeTimeCombo_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ComboBox combo) return;
+        if (combo.Template.FindName("PART_EditableTextBox", combo) is not TextBox textBox) return;
+        textBox.PreviewTextInput -= WakeTimeTextBox_PreviewTextInput;
+        textBox.PreviewTextInput += WakeTimeTextBox_PreviewTextInput;
+        textBox.TextChanged -= WakeTimeTextBox_AutoFormat;
+        textBox.TextChanged += WakeTimeTextBox_AutoFormat;
+        DataObject.RemovePastingHandler(textBox, WakeTimeTextBox_Pasting);
+        DataObject.AddPastingHandler(textBox, WakeTimeTextBox_Pasting);
+    }
+
+    private static void WakeTimeTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        => e.Handled = !e.Text.All(char.IsDigit);
+
+    private void WakeTimeTextBox_AutoFormat(object sender, TextChangedEventArgs e)
+    {
+        if (_wakeTimeFormatting || sender is not TextBox textBox) return;
+        var digits = new string(textBox.Text.Where(char.IsDigit).ToArray());
+        if (digits.Length > 4) digits = digits[..4];
+        var formatted = digits.Length <= 2 ? digits : $"{digits[..2]}:{digits[2..]}";
+        if (formatted == textBox.Text) return;
+        _wakeTimeFormatting = true;
+        textBox.Text = formatted;
+        textBox.CaretIndex = formatted.Length;
+        _wakeTimeFormatting = false;
+    }
+
+    private static void WakeTimeTextBox_Pasting(object sender, DataObjectPastingEventArgs e)
+    {
+        if (!e.DataObject.GetDataPresent(typeof(string)))
+        {
+            e.CancelCommand();
+            return;
+        }
+
+        var digits = new string(((e.DataObject.GetData(typeof(string)) as string) ?? "")
+            .Where(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+        {
+            e.CancelCommand();
+            return;
+        }
+
+        var data = new DataObject();
+        data.SetData(DataFormats.UnicodeText, digits);
+        e.DataObject = data;
+    }
+
+    private void WakeTimeCombo_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ComboBox combo) return;
+        var text = combo.Text?.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+        var (time, valid) = TryParseWakeTime(text);
+        combo.Text = valid ? $"{time.Hours:D2}:{time.Minutes:D2}" : "23:59";
+    }
+
+    private static (TimeSpan time, bool valid) TryParseWakeTime(string? raw)
+    {
+        var text = (raw ?? "").Trim();
+        if (TimeSpan.TryParse(text, out var time) && time >= TimeSpan.Zero && time < TimeSpan.FromDays(1))
+            return (new TimeSpan(time.Hours, time.Minutes, 0), true);
+
+        var digits = new string(text.Where(char.IsDigit).ToArray());
+        if (digits.Length is 1 or 2 && int.TryParse(digits, out var parsedHour) && parsedHour < 24)
+            return (new TimeSpan(parsedHour, 0, 0), true);
+        if (digits.Length is 3 or 4)
+        {
+            var hour = int.Parse(digits[..^2]);
+            var minute = int.Parse(digits[^2..]);
+            if (hour < 24 && minute < 60) return (new TimeSpan(hour, minute, 0), true);
+        }
+
+        return (TimeSpan.Zero, false);
+    }
+
     // ── 카드형 선택 (라우팅 이벤트가 아니므로 저장을 직접 예약한다) ──
     private void ThemeCard_Click(object sender, MouseButtonEventArgs e)
     {
@@ -1663,6 +1855,7 @@ public partial class SettingsDialog : UserControl
             (Application.Current.MainWindow as MainWindow)?.ApplyProjectColumns(_selectedProjectColumns);
         }
         UpdateAgentEnabledInSettings();
+        SaveWakeSchedulesIfChanged();
 
         // DeepSeek: 토글 OFF로 저장 → 저장된 키 삭제. (ON은 키 입력 영역의 [저장]에서 이미 반영됨)
         if (!_selectedDeepSeekEnabled && _originalDeepSeekEnabled)
@@ -2067,6 +2260,62 @@ public sealed class AgentItem : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
+}
+
+/// <summary>깨우기 예약 한 줄 (에이전트 1개 = 예약 1개). 실제 값은 <see cref="WakeScheduleEntry"/> 에 그대로 쓴다.</summary>
+public sealed class WakeItem : INotifyPropertyChanged
+{
+    private static readonly string[] _timeOptions = BuildTimeOptions();
+
+    public WakeItem(AgentDef agent, WakeScheduleEntry entry)
+    {
+        Agent = agent;
+        Entry = entry;
+    }
+
+    public AgentDef Agent { get; }
+    public WakeScheduleEntry Entry { get; }
+
+    public string Id => Agent.Id;
+    public string DisplayName => Agent.DisplayName;
+    public IReadOnlyList<string> TimeOptions => _timeOptions;
+    public string LastExecutionDisplay => Entry.LastExecutionDisplay;
+
+    public string Time
+    {
+        get => Entry.Time;
+        set
+        {
+            var next = value ?? "";
+            if (Entry.Time == next) return;
+            Entry.Time = next;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool Enabled
+    {
+        get => Entry.Enabled;
+        set
+        {
+            if (Entry.Enabled == value) return;
+            Entry.Enabled = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private static string[] BuildTimeOptions()
+    {
+        var times = new List<string>();
+        for (int hour = 0; hour < 24; hour++)
+            for (int minute = 0; minute < 60; minute += 30)
+                times.Add($"{hour:D2}:{minute:D2}");
+        return times.ToArray();
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([CallerMemberName] string? n = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }
 
 /// <summary>세션 유지기간 프리셋 한 항목. ToString=Label (콤보 SelectionBox 가 DisplayMemberPath 대신 ToString 사용).</summary>

@@ -6033,12 +6033,8 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
-    private void WakeControlBtn_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new WakeSchedulerWindow(this, EnsureWakeTrustAsync);
-        dlg.ShowDialog();
-        if (dlg.Saved) _wakeScheduler.NotifySchedulesChanged();
-    }
+    /// <summary>설정 &gt; 깨우기에서 예약이 바뀌었을 때 스케줄러에 다시 읽도록 알린다.</summary>
+    public void NotifyWakeSchedulesChanged() => _wakeScheduler.NotifySchedulesChanged();
 
     public Task<bool> EnsureWakeTrustAsync(string agentId)
         => EnsureWakeTrustAsync(agentId, CancellationToken.None);
@@ -6435,13 +6431,19 @@ public partial class MainWindow : Window
         if (RootChrome != null) RootChrome.Margin = default;
         if (WindowState == WindowState.Maximized)
         {
-            // 시작 복원·스냅 등 이미 최대화 — WindowState=Maximized→Normal 은 WPF 가 이전 창 크기로
-            // 지연 리사이즈를 큐에 넣으므로 그 *이후*(Background)에도 한 번 더 적용.
+            // 최대화 → 전체화면. WindowState=Maximized→Normal 은 OS/WPF 가 먼저 '복원 크기'(작은 창)로
+            // 되돌리고, 그 뒤 우리가 다시 전체화면 크기로 키운다 → 작아졌다 커지는 2단 변화가
+            // 한 프레임 보이는 깜빡임의 원인. 복원 위치 자체를 목표 rect 로 바꿔 두면 한 번의 전환으로
+            // 목표 크기가 되어 중간 프레임이 없다(복원용 bounds 는 위에서 _preFsBounds 로 이미 캡처했다).
             _fsGuard = true;
-            WindowState = WindowState.Normal;
+            bool ok = RestoreToBoundsInstant(target);
+            if (!ok)
+            {
+                WindowState = WindowState.Normal;   // 폴백: 기존 2단 경로 + Background 재적용
+                Dispatcher.InvokeAsync(() => { if (_inFullScreen) SetBoundsInstant(target); },
+                                       System.Windows.Threading.DispatcherPriority.Background);
+            }
             _fsGuard = false;
-            Dispatcher.InvokeAsync(() => { if (_inFullScreen) SetBoundsInstant(target); },
-                                   System.Windows.Threading.DispatcherPriority.Background);
         }
         // 모서리 설정을 크기 변경 *전*에 적용 — 커진 직후에 바꾸면 DWM 이 프레임을 한 번 더 다시 그린다.
         ApplyCornerPreference();
@@ -6485,6 +6487,40 @@ public partial class MainWindow : Window
     }
 
     private static Rect OverCover(Rect r) => new(r.Left - 1, r.Top - 1, r.Width + 2, r.Height + 2);
+
+    /// <summary>최대화 상태에서 <b>복원 크기를 지정한 rect 로 바꿔가며</b> 일반 상태로 되돌린다.
+    /// SetWindowPlacement 로 rcNormalPosition 을 목표로 덮고 SW_SHOWNORMAL 을 함께 적용하므로,
+    /// 복원 크기로 한 번 줄었다가 다시 커지는 중간 프레임이 생기지 않는다.</summary>
+    private bool RestoreToBoundsInstant(Rect r)
+    {
+        if (_mainHwnd == IntPtr.Zero) return false;
+        var wp = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+        if (!GetWindowPlacement(_mainHwnd, ref wp)) return false;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        wp.rcNormalPosition = new RECT
+        {
+            Left   = (int)Math.Round(r.Left * dpi.DpiScaleX),
+            Top    = (int)Math.Round(r.Top  * dpi.DpiScaleY),
+            Right  = (int)Math.Round((r.Left + r.Width)  * dpi.DpiScaleX),
+            Bottom = (int)Math.Round((r.Top  + r.Height) * dpi.DpiScaleY),
+        };
+        wp.showCmd = SW_SHOWNORMAL;
+        wp.flags = 0;
+        return SetWindowPlacement(_mainHwnd, ref wp);
+    }
+
+    private const int SW_SHOWNORMAL = 1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WINDOWPLACEMENT
+    {
+        public int length, flags, showCmd;
+        public POINT ptMinPosition, ptMaxPosition;
+        public RECT rcNormalPosition;
+    }
+
+    [DllImport("user32.dll")] private static extern bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
+    [DllImport("user32.dll")] private static extern bool SetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
 
     /// <summary>창 위치·크기를 한 번에 적용. Left/Top/Width/Height 를 각각 대입하면 WPF 가 그때마다
     /// 창을 옮기고 늘려(SetWindowPos 다중 호출) 창이 <b>커지는</b> 전환에서 아직 그려지지 않은 영역이

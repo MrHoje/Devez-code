@@ -986,11 +986,6 @@
                                   Data="{StaticResource IconTerminal}"
                                   Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
                         </Button>
-                        <Button x:Name="WakeControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
-                                Click="WakeControlBtn_Click" ToolTip="깨우기" Margin="0,0,2,0">
-                            <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconAlarmClock}"
-                                  Width="15" Height="15" Stroke="{DynamicResource TextMutedBrush}"/>
-                        </Button>
                         <Button x:Name="PluginControlBtn" Style="{StaticResource WinCtrlBtn}" Width="30"
                                 Click="PluginControlBtn_Click" ToolTip="플러그인 컨트롤러" Margin="0,0,2,0">
                             <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPlug}"
