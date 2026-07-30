@@ -1021,6 +1021,9 @@ public partial class MainWindow : Window
             async Task PrepareShellPanelSnapshotAsync()
             {
                 if (ShellTerminalPanel.Visibility != Visibility.Visible) return;
+                // 설정 화면 등으로 이미 숨겨진 상태면 캡처하지 않는다 — 숨겨진 WebView2 의 캡처는
+                // 완료되지 않아 종료 준비가 타임아웃까지 매달린다.
+                if (ShellTerminal.Visibility != Visibility.Visible) return;
                 try
                 {
                     var snap = await ShellTerminal.CaptureSnapshotAsync();
@@ -5972,7 +5975,18 @@ public partial class MainWindow : Window
         SettingsHost.Children.Add(view);
         SettingsHost.Visibility = Visibility.Visible;
         _settingsView = view;
+        ApplyTitleBarForSettings(true);
         SettingsHost.Focus();   // ESC 로 닫기
+    }
+
+    /// <summary>설정 화면 중 상단바 정리 — 앱 이름과 창 컨트롤(최소화/최대화/닫기)만 남기고
+    /// 성능 칩·패널 토글은 숨긴다(설정 화면에서 쓸 수 없는 기능이고, 패널이 열리면 되살아난
+    /// WebView2 HWND 가 오버레이를 뚫는다).</summary>
+    private void ApplyTitleBarForSettings(bool settingsOpen)
+    {
+        var v = settingsOpen ? Visibility.Collapsed : Visibility.Visible;
+        TitleBarChips.Visibility = v;
+        LeftPanelBtn.Visibility  = v;
     }
 
     private Views.SettingsDialog? _settingsView;   // 열려 있는 설정 화면(MDI 오버레이)
@@ -5983,6 +5997,7 @@ public partial class MainWindow : Window
         _settingsView = null;
         SettingsHost.Visibility = Visibility.Collapsed;
         SettingsHost.Children.Clear();
+        ApplyTitleBarForSettings(false);
         ResumeTerminal();
         // 설정의 계정 사용량에서 로그인/재연결했을 수 있으니 즉시 갱신.
         _usageApi.RefreshNow();
@@ -6483,6 +6498,10 @@ public partial class MainWindow : Window
     /// bounds 를 Background 에서 한 번 더 적용하므로, 그 뒤에 reveal 해야 expectWidth 가 최종값이 된다.</summary>
     private async void RunFullScreenTransitionCovered(Action change, bool solidCover = false)
     {
+        // 설정 화면 등 전체 오버레이가 떠 있으면 터미널이 이미 정지·숨김이고 화면에도 안 보인다 —
+        // 커버를 씌울 필요가 없다. 커버를 시도하면 숨겨진 WebView2 캡처를 기다리다 매달려
+        // 최대화/창모드 전환 자체가 먹지 않는다(_fsCoverBusy 고착).
+        if (_overlaySuspended) { change(); return; }
         if (_fsCoverBusy) return; // 전환 중 연타 무시(커버/리빌 상태 꼬임 방지)
         _fsCoverBusy = true;
         try
