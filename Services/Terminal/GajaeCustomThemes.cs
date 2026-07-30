@@ -183,6 +183,37 @@ public static class GajaeCustomThemes
             ["diffAdded"] = "#9AC7B2", ["diffRemoved"] = "#DEA0AB", ["diffContext"] = "#9CA3AF",
             ["addedBg"] = "#16362F", ["removedBg"] = "#3B1F2B",
         },
+        "nord" => new()
+        {
+            ["background"] = "#2E3440", ["currentLine"] = "#3B4252", ["selection"] = "#434C5E",
+            ["backgroundDarker"] = "#272C36", ["foreground"] = "#ECEFF4", ["comment"] = "#B6C0CF",
+            ["primary"] = "#88C0D0", ["secondary"] = "#81A1C1", ["accentPurple"] = "#B48EAD",
+            ["errorRed"] = "#BF616A", ["warningOrange"] = "#D08770", ["successGreen"] = "#A3BE8C",
+            ["infoCyan"] = "#8FBCBB", ["emphasizedYellow"] = "#EBCB8B", ["border"] = "#4C566A",
+            ["diffAdded"] = "#A3BE8C", ["diffRemoved"] = "#D79AA1", ["diffContext"] = "#ADB8C9",
+            ["addedBg"] = "#2E4136", ["removedBg"] = "#4A3440",
+        },
+        "monokai" => new()
+        {
+            ["background"] = "#273136", ["currentLine"] = "#2E3A40", ["selection"] = "#3A4449",
+            ["backgroundDarker"] = "#1E2529", ["foreground"] = "#F2FFFC", ["comment"] = "#AAB6B6",
+            ["primary"] = "#FFD866", ["secondary"] = "#7CD5F1", ["accentPurple"] = "#BAA0F8",
+            ["errorRed"] = "#FF6D7E", ["warningOrange"] = "#FC9867", ["successGreen"] = "#A2E57B",
+            ["infoCyan"] = "#7ED9CD", ["emphasizedYellow"] = "#FFD866", ["border"] = "#4A5559",
+            ["diffAdded"] = "#B4EB97", ["diffRemoved"] = "#FB99A4", ["diffContext"] = "#A3AFAF",
+            ["addedBg"] = "#2B4236", ["removedBg"] = "#483336",
+        },
+        // 강조색(그린)이 successGreen 과 같은 값이다. 헤딩·키워드는 teal(infoCyan/accentPurple 자리)로 분리.
+        "mocha" => new()
+        {
+            ["background"] = "#11111B", ["currentLine"] = "#1E1E2E", ["selection"] = "#262637",
+            ["backgroundDarker"] = "#0B0B12", ["foreground"] = "#CDD6F4", ["comment"] = "#9399B2",
+            ["primary"] = "#A6E3A1", ["secondary"] = "#89B4FA", ["accentPurple"] = "#94E2D5",
+            ["errorRed"] = "#F38BA8", ["warningOrange"] = "#FAB387", ["successGreen"] = "#A6E3A1",
+            ["infoCyan"] = "#94E2D5", ["emphasizedYellow"] = "#F9E2AF", ["border"] = "#3D3F52",
+            ["diffAdded"] = "#A6E3A1", ["diffRemoved"] = "#F18EAB", ["diffContext"] = "#9399B2",
+            ["addedBg"] = "#14211A", ["removedBg"] = "#251722",
+        },
         _ => new() // dark
         {
             ["background"] = "#1F1F1E", ["currentLine"] = "#272727", ["selection"] = "#303030",

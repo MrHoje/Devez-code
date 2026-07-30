@@ -124,7 +124,7 @@
                                 MinWidth="80" Height="38" Padding="16,0"
                                 Style="{StaticResource PrimaryButton}"
                                 FontSize="{DynamicResource Fs13}">
-                            <TextBlock x:Name="OkText" Text="확인" Foreground="White" TextTrimming="None"/>
+                            <TextBlock x:Name="OkText" Text="확인" Foreground="{DynamicResource OnPrimaryBrush}" TextTrimming="None"/>
                         </Button>
                     </StackPanel>
                 </Border>

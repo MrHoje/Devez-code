@@ -75,7 +75,7 @@
                         Style="{StaticResource PrimaryButton}"
                         VerticalAlignment="Center"
                         FontSize="{DynamicResource Fs12}">
-                    <TextBlock Text="삭제" Foreground="White"/>
+                    <TextBlock Text="삭제" Foreground="{DynamicResource OnPrimaryBrush}"/>
                 </Button>
             </Grid>
         </Border>
@@ -228,10 +228,10 @@
                                             <StackPanel Orientation="Horizontal">
                                                 <Path Style="{StaticResource LucideIcon}"
                                                       Data="{StaticResource IconSend}"
-                                                      Width="13" Height="13" Stroke="White"
+                                                      Width="13" Height="13" Stroke="{DynamicResource OnPrimaryBrush}"
                                                       VerticalAlignment="Center"/>
                                                 <TextBlock Text="작업지시" Margin="6,0,0,0"
-                                                           Foreground="White" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource OnPrimaryBrush}" FontWeight="SemiBold"
                                                            FontSize="{DynamicResource Fs12}"
                                                            VerticalAlignment="Center"/>
                                             </StackPanel>
@@ -321,7 +321,7 @@
                                 Background="{DynamicResource PrimaryBrush}"
                                 CornerRadius="9" MinWidth="18" Height="18" Padding="5,0">
                             <TextBlock x:Name="DragGhostBadgeText"
-                                       Foreground="White" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource OnPrimaryBrush}" FontSize="11" FontWeight="SemiBold"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </Grid>

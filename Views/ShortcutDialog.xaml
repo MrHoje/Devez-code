@@ -118,7 +118,7 @@
                         </Button>
                         <Button Click="OkBtn_Click" Width="100" Height="38" Style="{StaticResource PrimaryButton}"
                                 FontSize="{DynamicResource Fs13}">
-                            <TextBlock Text="저장" Foreground="White"/>
+                            <TextBlock Text="저장" Foreground="{DynamicResource OnPrimaryBrush}"/>
                         </Button>
                     </StackPanel>
                 </Border>

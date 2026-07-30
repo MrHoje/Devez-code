@@ -1776,6 +1776,9 @@ public partial class SettingsDialog : UserControl
             (ThemeCard_Gray, ThemeRadioDot_Gray, "gray"),
             (ThemeCard_SoftPink, ThemeRadioDot_SoftPink, "softpink"),
             (ThemeCard_Midnight, ThemeRadioDot_Midnight, "midnight"),
+            (ThemeCard_Nord, ThemeRadioDot_Nord, "nord"),
+            (ThemeCard_Monokai, ThemeRadioDot_Monokai, "monokai"),
+            (ThemeCard_Mocha, ThemeRadioDot_Mocha, "mocha"),
         })
         {
             var selected = _selectedTheme == key;

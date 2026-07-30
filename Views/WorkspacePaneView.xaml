@@ -610,7 +610,7 @@
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <Path x:Name="ReturnBtnIcon" Style="{StaticResource LucideIcon}" Data="{StaticResource IconCornerDownLeft}"
                                           Width="14" Height="14" Margin="0,0,8,0" Stretch="Uniform"
-                                          Stroke="White" StrokeThickness="1.9" VerticalAlignment="Center"/>
+                                          Stroke="{DynamicResource OnPrimaryBrush}" StrokeThickness="1.9" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="ReturnBtnLabel" Text="인앱으로 가져오기" FontSize="{DynamicResource Fs12}"
                                                VerticalAlignment="Center"/>
                                 </StackPanel>

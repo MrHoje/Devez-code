@@ -441,7 +441,7 @@
                             MinWidth="100">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource LucideButtonIcon}" Data="{StaticResource IconSave}"
-                                  Width="13" Height="13" Margin="0,0,6,0" Stroke="White"/>
+                                  Width="13" Height="13" Margin="0,0,6,0" Stroke="{DynamicResource OnPrimaryBrush}"/>
                             <TextBlock Text="저장" FontSize="{DynamicResource Fs12}" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Button>

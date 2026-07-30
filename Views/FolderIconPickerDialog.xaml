@@ -81,7 +81,7 @@
                                 Width="92" Height="34"
                                 Style="{StaticResource PrimaryButton}"
                                 FontSize="{DynamicResource Fs12}">
-                            <TextBlock Text="적용" Foreground="White"/>
+                            <TextBlock Text="적용" Foreground="{DynamicResource OnPrimaryBrush}"/>
                         </Button>
                     </StackPanel>
                 </Border>

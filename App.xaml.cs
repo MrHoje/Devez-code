@@ -17,7 +17,8 @@ public partial class App : Application
 
     /// <summary>현재 적용된 테마. 미리보기 중에는 preview 값으로 바뀐다.</summary>
     public static string CurrentTheme { get; private set; } = "dark";
-    public static bool IsDarkTheme(string theme) => theme is "dark" or "midnight";
+    public static bool IsDarkTheme(string theme) =>
+        theme is "dark" or "midnight" or "nord" or "monokai" or "mocha";
 
     /// <summary>디스크에 확정 저장된 테마(persist=true 로만 갱신). 미리보기(persist=false)는 반영 안 됨.
     /// 프로세스 내부에 고정되는 색(codex OSC 감지, COLORFGBG 폴백)은 미리보기가 새면 취소해도
@@ -34,6 +35,9 @@ public partial class App : Application
             "gray" => "DevezCode Gray",
             "softpink" => "DevezCode Soft Pink",
             "midnight" => "DevezCode Midnight Blue",
+            "nord" => "DevezCode Nord",
+            "monokai" => "DevezCode Monokai Machine",
+            "mocha" => "DevezCode Mocha Deep",
             _      => "DevezCode Minimal",
         };
         return Services.Terminal.WtColorScheme.BuiltIns.TryGetValue(name, out var s)
@@ -546,7 +550,7 @@ public partial class App : Application
 
     private static string LoadSavedTheme()
     {
-        try { if (File.Exists(ThemeFile)) { var t = File.ReadAllText(ThemeFile).Trim(); if (t is "minimal" or "soft" or "dark" or "gray" or "softpink" or "midnight") return t; } }
+        try { if (File.Exists(ThemeFile)) { var t = File.ReadAllText(ThemeFile).Trim(); if (t is "minimal" or "soft" or "dark" or "gray" or "softpink" or "midnight" or "nord" or "monokai" or "mocha") return t; } }
         catch { /* 무시 */ }
         return "dark"; // 기본값
     }
@@ -650,6 +654,101 @@ public partial class App : Application
             markerBlue     = primary;
             markerPurple   = Color.FromRgb(0xa7, 0x8b, 0xfa);
             markerPink     = Color.FromRgb(0xf4, 0x72, 0xb6);
+        }
+        // ── Nord: 폴라나이트 4단 회청색 + 프로스트 시안 강조 ────────────────
+        // 강조색이 밝은 톤이라 그 위 글자는 흰색이 아니라 OnPrimaryBrush(어두운 잉크)를 쓴다.
+        else if (theme == "nord")
+        {
+            bg             = Color.FromRgb(0x2e, 0x34, 0x40);
+            panel          = Color.FromRgb(0x3b, 0x42, 0x52);
+            panelSoft      = Color.FromRgb(0x43, 0x4c, 0x5e);
+            line           = Color.FromRgb(0x4c, 0x56, 0x6a);
+            text           = Color.FromRgb(0xec, 0xef, 0xf4);
+            textMuted      = Color.FromRgb(0xb6, 0xc0, 0xcf);
+            primary        = Color.FromRgb(0x88, 0xc0, 0xd0);
+            primaryHover   = Color.FromRgb(0x9b, 0xce, 0xdc);
+            primaryPressed = Color.FromRgb(0x6f, 0xae, 0xc0);
+            primarySoft    = Color.FromRgb(0x3b, 0x4c, 0x57);
+            bubble         = Color.FromRgb(0x33, 0x3b, 0x49);
+            bubbleBorder   = Color.FromRgb(0x4a, 0x5a, 0x6b);
+            danger         = Color.FromRgb(0xbf, 0x61, 0x6a);
+            checkedBubble  = Color.FromRgb(0x33, 0x3f, 0x33);
+            checkedBorder  = Color.FromRgb(0x5a, 0x7a, 0x52);
+            checkedText    = Color.FromRgb(0xa3, 0xbe, 0x8c);
+            star           = Color.FromRgb(0xeb, 0xcb, 0x8b);
+            sidebarSubText = Color.FromRgb(0xd8, 0xde, 0xe9);
+            today          = Color.FromRgb(0xd0, 0x87, 0x70);
+            markerRed      = Color.FromRgb(0xbf, 0x61, 0x6a);
+            markerOrange   = Color.FromRgb(0xd0, 0x87, 0x70);
+            markerYellow   = Color.FromRgb(0xeb, 0xcb, 0x8b);
+            markerGreen    = Color.FromRgb(0xa3, 0xbe, 0x8c);
+            markerTeal     = Color.FromRgb(0x8f, 0xbc, 0xbb);
+            markerBlue     = Color.FromRgb(0x81, 0xa1, 0xc1);
+            markerPurple   = Color.FromRgb(0xb4, 0x8e, 0xad);
+            markerPink     = Color.FromRgb(0xce, 0x8c, 0xa5);
+        }
+        // ── Monokai Machine: 청록 슬레이트 + 형광 옐로 강조(상태 가시성 최대) ──
+        else if (theme == "monokai")
+        {
+            bg             = Color.FromRgb(0x27, 0x31, 0x36);
+            panel          = Color.FromRgb(0x2e, 0x3a, 0x40);
+            panelSoft      = Color.FromRgb(0x3a, 0x44, 0x49);
+            line           = Color.FromRgb(0x4a, 0x55, 0x59);
+            text           = Color.FromRgb(0xf2, 0xff, 0xfc);
+            textMuted      = Color.FromRgb(0xaa, 0xb6, 0xb6);
+            primary        = Color.FromRgb(0xff, 0xd8, 0x66);
+            primaryHover   = Color.FromRgb(0xff, 0xe2, 0x8a);
+            primaryPressed = Color.FromRgb(0xe8, 0xc2, 0x4f);
+            primarySoft    = Color.FromRgb(0x46, 0x3f, 0x2a);
+            bubble         = Color.FromRgb(0x30, 0x3c, 0x42);
+            bubbleBorder   = Color.FromRgb(0x5a, 0x66, 0x69);
+            danger         = Color.FromRgb(0xff, 0x6d, 0x7e);
+            checkedBubble  = Color.FromRgb(0x2c, 0x3a, 0x2e);
+            checkedBorder  = Color.FromRgb(0x4e, 0x6e, 0x4a);
+            checkedText    = Color.FromRgb(0xa2, 0xe5, 0x7b);
+            star           = Color.FromRgb(0xff, 0xd8, 0x66);
+            sidebarSubText = Color.FromRgb(0xd9, 0xe5, 0xe2);
+            today          = Color.FromRgb(0xfc, 0x98, 0x67);
+            markerRed      = Color.FromRgb(0xff, 0x6d, 0x7e);
+            markerOrange   = Color.FromRgb(0xfc, 0x98, 0x67);
+            markerYellow   = Color.FromRgb(0xff, 0xd8, 0x66);
+            markerGreen    = Color.FromRgb(0xa2, 0xe5, 0x7b);
+            markerTeal     = Color.FromRgb(0x7e, 0xd9, 0xcd);
+            markerBlue     = Color.FromRgb(0x7c, 0xd5, 0xf1);
+            markerPurple   = Color.FromRgb(0xba, 0xa0, 0xf8);
+            markerPink     = Color.FromRgb(0xff, 0x9b, 0xc0);
+        }
+        // ── Mocha Deep: crust 바탕(다크 중 가장 깊음) + 그린 강조 ────────────
+        // 강조색이 초록이라 완료색(Success)과 겹친다 → '실행 중'만 peach 로 분리(SessionAliveBrush).
+        else if (theme == "mocha")
+        {
+            bg             = Color.FromRgb(0x11, 0x11, 0x1b);
+            panel          = Color.FromRgb(0x1e, 0x1e, 0x2e);
+            panelSoft      = Color.FromRgb(0x26, 0x26, 0x37);
+            line           = Color.FromRgb(0x3d, 0x3f, 0x52);
+            text           = Color.FromRgb(0xcd, 0xd6, 0xf4);
+            textMuted      = Color.FromRgb(0x93, 0x99, 0xb2);
+            primary        = Color.FromRgb(0xa6, 0xe3, 0xa1);
+            primaryHover   = Color.FromRgb(0xb8, 0xea, 0xb4);
+            primaryPressed = Color.FromRgb(0x8f, 0xd0, 0x8a);
+            primarySoft    = Color.FromRgb(0x1c, 0x33, 0x23);
+            bubble         = Color.FromRgb(0x17, 0x21, 0x1b);
+            bubbleBorder   = Color.FromRgb(0x33, 0x54, 0x3a);
+            danger         = Color.FromRgb(0xf3, 0x8b, 0xa8);
+            checkedBubble  = Color.FromRgb(0x16, 0x28, 0x1b);
+            checkedBorder  = Color.FromRgb(0x3e, 0x6b, 0x45);
+            checkedText    = Color.FromRgb(0xa6, 0xe3, 0xa1);
+            star           = Color.FromRgb(0xf9, 0xe2, 0xaf);
+            sidebarSubText = Color.FromRgb(0xba, 0xc2, 0xde);
+            today          = Color.FromRgb(0xfa, 0xb3, 0x87);
+            markerRed      = Color.FromRgb(0xf3, 0x8b, 0xa8);
+            markerOrange   = Color.FromRgb(0xfa, 0xb3, 0x87);
+            markerYellow   = Color.FromRgb(0xf9, 0xe2, 0xaf);
+            markerGreen    = Color.FromRgb(0xa6, 0xe3, 0xa1);
+            markerTeal     = Color.FromRgb(0x94, 0xe2, 0xd5);
+            markerBlue     = Color.FromRgb(0x89, 0xb4, 0xfa);
+            markerPurple   = Color.FromRgb(0xcb, 0xa6, 0xf7);
+            markerPink     = Color.FromRgb(0xf5, 0xc2, 0xe7);
         }
         else if (theme == "soft")
         {
@@ -787,18 +886,48 @@ public partial class App : Application
         res["LightFileIconOpacity"] = isDarkTheme ? 0.0 : 1.0;
         res["DarkFileIconOpacity"]  = isDarkTheme ? 1.0 : 0.0;
 
+        // 다크 테마의 hover 배경과 강조 보더는 팔레트마다 다르다. 회색 다크 기준값(#424242/#5A5A5A)을
+        // 남색·회청·청록 바탕에 그대로 쓰면 색이 떠 보이므로 테마별로 잡는다.
+        var darkHover = theme switch
+        {
+            "midnight" => Color.FromRgb(0x26, 0x34, 0x49),
+            "nord"     => Color.FromRgb(0x3f, 0x48, 0x59),
+            "monokai"  => Color.FromRgb(0x35, 0x40, 0x45),
+            "mocha"    => Color.FromRgb(0x24, 0x24, 0x3a),
+            _          => Color.FromRgb(0x42, 0x42, 0x42),
+        };
+        var darkAccentLine = theme switch
+        {
+            "midnight" => Color.FromRgb(0x4b, 0x63, 0x80),
+            "nord"     => Color.FromRgb(0x5d, 0x70, 0x8a),
+            "monokai"  => Color.FromRgb(0x66, 0x75, 0x7a),
+            "mocha"    => Color.FromRgb(0x4a, 0x4d, 0x66),
+            _          => Color.FromRgb(0x5a, 0x5a, 0x5a),
+        };
+
         res["BgBrush"]                = new SolidColorBrush(bg);
         res["PanelBrush"]             = new SolidColorBrush(panel);
         res["PanelSoftBrush"]         = new SolidColorBrush(panelSoft);
-        res["HoverBrush"] = isDarkTheme
-            ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x26, 0x34, 0x49) : Color.FromRgb(0x42, 0x42, 0x42))
-            : new SolidColorBrush(panelSoft);
+        res["HoverBrush"] = new SolidColorBrush(isDarkTheme ? darkHover : panelSoft);
         res["LineBrush"]              = new SolidColorBrush(line);
         res["TextBrush"]              = new SolidColorBrush(text);
         res["TextMutedBrush"]         = new SolidColorBrush(textMuted);
         res["PrimaryBrush"]           = new SolidColorBrush(primary);
-        // 세션 생존 상태는 액션 강조색과 분리한다. Gray에서는 청회색/연회색으로 즉시 구분.
-        var sessionAlive = theme == "gray" ? Color.FromRgb(0x32, 0x6a, 0xa5) : primary;
+        // 강조색 위 글자/아이콘 색. 밝은 강조색(Nord 프로스트·Monokai 옐로·Mocha 그린)에 흰 글자를 얹으면
+        // 대비가 1.4~2.5:1 로 무너지므로, 밝기 임계값을 넘으면 테마 바탕색을 잉크로 쓴다.
+        // 임계 0.62 는 CountBadgeTextBrush 와 동일 — 기존 6개 테마는 전부 흰색 유지(midnight 0.60).
+        double primaryLum = (0.299 * primary.R + 0.587 * primary.G + 0.114 * primary.B) / 255.0;
+        var onPrimary = primaryLum > 0.62 ? bg : Colors.White;
+        res["OnPrimaryColor"]         = onPrimary;
+        res["OnPrimaryBrush"]         = new SolidColorBrush(onPrimary);
+        // 세션 생존 상태는 액션 강조색과 분리한다. Gray에서는 청회색/연회색으로 즉시 구분하고,
+        // Mocha 는 강조색이 초록(=완료색)이라 '실행 중'을 peach 로 떼어 진행/완료를 색으로 가른다.
+        var sessionAlive = theme switch
+        {
+            "gray"  => Color.FromRgb(0x32, 0x6a, 0xa5),
+            "mocha" => Color.FromRgb(0xfa, 0xb3, 0x87),
+            _       => primary,
+        };
         var sessionInactive = theme == "gray" ? Color.FromRgb(0x9c, 0xa3, 0xaf) : Color.FromRgb(0x6b, 0x72, 0x80);
         res["SessionAliveBrush"]      = new SolidColorBrush(sessionAlive);
         res["SessionInactiveBrush"]   = new SolidColorBrush(sessionInactive);
@@ -813,10 +942,10 @@ public partial class App : Application
         res["TabFocusRingBrush"]      = new SolidColorBrush(Color.FromArgb(0x8C, primary.R, primary.G, primary.B));
         res["PrimaryOverlay50Brush"]  = new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
         res["ProjectCardHoverBrush"] = isDarkTheme
-            ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x26, 0x34, 0x49) : Color.FromRgb(0x42, 0x42, 0x42))
+            ? new SolidColorBrush(darkHover)
             : new SolidColorBrush(Color.FromArgb(0x1A, primary.R, primary.G, primary.B));
         res["ProjectCardHoverBorderBrush"] = isDarkTheme
-            ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x4b, 0x63, 0x80) : Color.FromRgb(0x5a, 0x5a, 0x5a))
+            ? new SolidColorBrush(darkAccentLine)
             : new SolidColorBrush(Color.FromArgb(0x80, primary.R, primary.G, primary.B));
         res["PrimaryHoverBrush"]      = new SolidColorBrush(primaryHover);
         res["PrimaryPressedBrush"]    = new SolidColorBrush(primaryPressed);
@@ -824,7 +953,7 @@ public partial class App : Application
         byte tableHlAlpha = isDarkTheme ? (byte)0x80 : (byte)0x20;
         res["TableHighlightBrush"]    = new SolidColorBrush(Color.FromArgb(tableHlAlpha, tableHl.R, tableHl.G, tableHl.B));
         res["TableHighlightLineBrush"] = isDarkTheme
-            ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x4b, 0x63, 0x80) : Color.FromRgb(0x5e, 0x5e, 0x5e))
+            ? new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x5e, 0x5e, 0x5e) : darkAccentLine)
             : new SolidColorBrush(Color.FromArgb(0x55, tableHl.R, tableHl.G, tableHl.B));
         res["PrimarySoftBrush"]       = new SolidColorBrush(primarySoft);
         res["PrimarySoftLighterBrush"] = new SolidColorBrush(Color.FromRgb(
@@ -837,6 +966,7 @@ public partial class App : Application
         res["SessionHoverBrush"] = new SolidColorBrush(
             theme == "dark" ? panelSoft  // 다크: 호버=기본(변화 없음)
             : theme == "midnight" ? Color.FromRgb(0x26, 0x34, 0x49)
+            : theme is "nord" or "monokai" or "mocha" ? darkHover
             : theme == "soft" ? Color.FromRgb(0xea, 0xe5, 0xdc)
             : theme == "gray" ? Color.FromRgb(0xe9, 0xeb, 0xef)
             : theme == "softpink" ? Color.FromRgb(0xfa, 0xe8, 0xef)
@@ -844,24 +974,46 @@ public partial class App : Application
         res["SessionFocusBrush"] = new SolidColorBrush(
             theme == "dark" ? Color.FromRgb(0x5a, 0x5a, 0x5a)
             : theme == "midnight" ? Color.FromRgb(0x1e, 0x3a, 0x5f)
+            // 신규 다크 3종은 강조색 계열의 옅은 배경(primarySoft)을 포커스 표시로 재사용한다.
+            : theme is "nord" or "monokai" or "mocha" ? primarySoft
             : theme == "soft" ? Color.FromRgb(0xdc, 0xea, 0xd4)
             : theme == "gray" ? Color.FromRgb(0xd9, 0xdd, 0xe3)
             : theme == "softpink" ? Color.FromRgb(0xf2, 0xc9, 0xd7)
             : Color.FromRgb(0xd9, 0xe8, 0xfc)); // minimal
         res["DangerBrush"]            = new SolidColorBrush(danger);
-        var successGreen = isDarkTheme
-            ? (theme == "midnight" ? Color.FromRgb(0x34, 0xd3, 0x99) : Color.FromRgb(0x22, 0xc5, 0x5e))
-            : Color.FromRgb(0x15, 0x80, 0x3d);
+        // 완료(성공) 초록은 팔레트 계열을 따른다. Mocha 는 강조색 자체가 초록이라 같은 값을 쓴다.
+        var successGreen = theme switch
+        {
+            "midnight" => Color.FromRgb(0x34, 0xd3, 0x99),
+            "nord"     => Color.FromRgb(0xa3, 0xbe, 0x8c),
+            "monokai"  => Color.FromRgb(0xa2, 0xe5, 0x7b),
+            "mocha"    => Color.FromRgb(0xa6, 0xe3, 0xa1),
+            _          => isDarkTheme ? Color.FromRgb(0x22, 0xc5, 0x5e) : Color.FromRgb(0x15, 0x80, 0x3d),
+        };
         res["SuccessColor"]           = successGreen;
         res["SuccessBrush"]           = new SolidColorBrush(successGreen);
-        var saturday = isDarkTheme
-            ? Color.FromRgb(0x60, 0xa5, 0xfa)
-            : Color.FromRgb(0x25, 0x63, 0xeb);
+        // 성공색을 배경으로 쓰는 버튼(SuccessButton) 위 글자 — 강조색과 같은 밝기 규칙을 적용한다.
+        double successLum = (0.299 * successGreen.R + 0.587 * successGreen.G + 0.114 * successGreen.B) / 255.0;
+        res["OnSuccessBrush"]         = new SolidColorBrush(successLum > 0.62 ? bg : Colors.White);
+        var saturday = theme switch
+        {
+            "nord"    => Color.FromRgb(0x81, 0xa1, 0xc1),
+            "monokai" => Color.FromRgb(0x7c, 0xd5, 0xf1),
+            "mocha"   => Color.FromRgb(0x89, 0xb4, 0xfa),
+            _         => isDarkTheme ? Color.FromRgb(0x60, 0xa5, 0xfa) : Color.FromRgb(0x25, 0x63, 0xeb),
+        };
         res["SaturdayColor"]          = saturday;
         res["SaturdayBrush"]          = new SolidColorBrush(saturday);
         res["SidebarSubTextColor"]    = sidebarSubText;
         res["SidebarSubTextBrush"]    = new SolidColorBrush(sidebarSubText);
-        var railIcon = isDarkTheme ? (theme == "midnight" ? Color.FromRgb(0xcb, 0xd5, 0xe1) : Color.FromRgb(0xc4, 0xc4, 0xc4)) : textMuted;
+        var railIcon = theme switch
+        {
+            "midnight" => Color.FromRgb(0xcb, 0xd5, 0xe1),
+            "nord"     => Color.FromRgb(0xd8, 0xde, 0xe9),
+            "monokai"  => Color.FromRgb(0xc7, 0xd3, 0xd3),
+            "mocha"    => Color.FromRgb(0xba, 0xc2, 0xde),
+            _          => isDarkTheme ? Color.FromRgb(0xc4, 0xc4, 0xc4) : textMuted,
+        };
         res["RailIconColor"]          = railIcon;
         res["RailIconBrush"]          = new SolidColorBrush(railIcon);
         res["CheckedBubbleBrush"]     = new SolidColorBrush(checkedBubble);
@@ -920,6 +1072,48 @@ public partial class App : Application
             codeActiveBg    = Color.FromRgb(0x1e, 0x3a, 0x5f);
             codeActiveText  = Color.FromRgb(0x93, 0xc5, 0xfd);
             codeHover       = Color.FromArgb(0x24, 0x60, 0xa5, 0xfa);
+        }
+        else if (theme == "nord")
+        {
+            codeBg          = bg;
+            codePanel       = Color.FromRgb(0x3b, 0x42, 0x52);
+            codeBorder      = Color.FromRgb(0x4c, 0x56, 0x6a);
+            codeText        = Color.FromRgb(0xec, 0xef, 0xf4);
+            codeMuted       = Color.FromRgb(0xb6, 0xc0, 0xcf);
+            codeLabelBg     = Color.FromRgb(0x33, 0x3b, 0x49);
+            codeLabelBorder = Color.FromRgb(0x4a, 0x5a, 0x6b);
+            codeLabelText   = Color.FromRgb(0x88, 0xc0, 0xd0);
+            codeActiveBg    = Color.FromRgb(0x3b, 0x4c, 0x57);
+            codeActiveText  = Color.FromRgb(0x88, 0xc0, 0xd0);
+            codeHover       = Color.FromArgb(0x24, 0x88, 0xc0, 0xd0);
+        }
+        else if (theme == "monokai")
+        {
+            codeBg          = bg;
+            codePanel       = Color.FromRgb(0x2e, 0x3a, 0x40);
+            codeBorder      = Color.FromRgb(0x4a, 0x55, 0x59);
+            codeText        = Color.FromRgb(0xf2, 0xff, 0xfc);
+            codeMuted       = Color.FromRgb(0xaa, 0xb6, 0xb6);
+            codeLabelBg     = Color.FromRgb(0x32, 0x3e, 0x43);
+            codeLabelBorder = Color.FromRgb(0x5a, 0x66, 0x69);
+            codeLabelText   = Color.FromRgb(0xff, 0xd8, 0x66);
+            codeActiveBg    = Color.FromRgb(0x46, 0x3f, 0x2a);
+            codeActiveText  = Color.FromRgb(0xff, 0xd8, 0x66);
+            codeHover       = Color.FromArgb(0x24, 0xff, 0xd8, 0x66);
+        }
+        else if (theme == "mocha")
+        {
+            codeBg          = bg;
+            codePanel       = Color.FromRgb(0x1e, 0x1e, 0x2e);
+            codeBorder      = Color.FromRgb(0x3d, 0x3f, 0x52);
+            codeText        = Color.FromRgb(0xcd, 0xd6, 0xf4);
+            codeMuted       = Color.FromRgb(0x93, 0x99, 0xb2);
+            codeLabelBg     = Color.FromRgb(0x17, 0x21, 0x1b);
+            codeLabelBorder = Color.FromRgb(0x33, 0x54, 0x3a);
+            codeLabelText   = Color.FromRgb(0xa6, 0xe3, 0xa1);
+            codeActiveBg    = Color.FromRgb(0x1c, 0x33, 0x23);
+            codeActiveText  = Color.FromRgb(0xa6, 0xe3, 0xa1);
+            codeHover       = Color.FromArgb(0x24, 0xa6, 0xe3, 0xa1);
         }
         else if (theme == "soft")
         {

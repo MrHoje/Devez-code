@@ -164,6 +164,34 @@ public sealed class WtColorScheme
             BrightBlack = "#9CA3AF", BrightRed = "#FCA5A5", BrightGreen = "#6EE7B7", BrightYellow = "#FCD34D",
             BrightBlue = "#93C5FD", BrightPurple = "#C4B5FD", BrightCyan = "#67E8F9", BrightWhite = "#FFFFFF",
         },
+        ["DevezCode Nord"] = new()
+        {
+            Name = "DevezCode Nord", Background = "#2E3440", Foreground = "#ECEFF4",
+            CursorColor = "#88C0D0", SelectionBackground = "#434C5E",
+            Black = "#3B4252", Red = "#BF616A", Green = "#A3BE8C", Yellow = "#EBCB8B",
+            Blue = "#81A1C1", Purple = "#B48EAD", Cyan = "#88C0D0", White = "#E5E9F0",
+            BrightBlack = "#4C566A", BrightRed = "#CF7079", BrightGreen = "#B4CC9D", BrightYellow = "#F0D6A0",
+            BrightBlue = "#92B0CE", BrightPurple = "#C39FBC", BrightCyan = "#9FCDD9", BrightWhite = "#ECEFF4",
+        },
+        ["DevezCode Monokai Machine"] = new()
+        {
+            Name = "DevezCode Monokai Machine", Background = "#273136", Foreground = "#F2FFFC",
+            CursorColor = "#FFD866", SelectionBackground = "#3A4449",
+            Black = "#2E3A40", Red = "#FF6D7E", Green = "#A2E57B", Yellow = "#FFD866",
+            Blue = "#7CD5F1", Purple = "#BAA0F8", Cyan = "#7ED9CD", White = "#D9E5E2",
+            BrightBlack = "#4A5559", BrightRed = "#FF8B98", BrightGreen = "#B4EB97", BrightYellow = "#FFE28A",
+            BrightBlue = "#9BDFF5", BrightPurple = "#CBB6FA", BrightCyan = "#9AE3D9", BrightWhite = "#F2FFFC",
+        },
+        ["DevezCode Mocha Deep"] = new()
+        {
+            // 강조색이 초록이라 Cyan/Green 을 구분해 두 색이 뭉개지지 않게 한다.
+            Name = "DevezCode Mocha Deep", Background = "#11111B", Foreground = "#CDD6F4",
+            CursorColor = "#A6E3A1", SelectionBackground = "#262637",
+            Black = "#1E1E2E", Red = "#F38BA8", Green = "#A6E3A1", Yellow = "#F9E2AF",
+            Blue = "#89B4FA", Purple = "#CBA6F7", Cyan = "#94E2D5", White = "#BAC2DE",
+            BrightBlack = "#3D3F52", BrightRed = "#F5A0B8", BrightGreen = "#B8EAB4", BrightYellow = "#FBE9C3",
+            BrightBlue = "#A0C4FB", BrightPurple = "#D7B9F9", BrightCyan = "#A9E9DF", BrightWhite = "#CDD6F4",
+        },
     };
 }
 
