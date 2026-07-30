@@ -187,6 +187,25 @@ catch { /* 직전 값 유지 */ }
 
 마지막 형태처럼 오류를 전부 숨기면 0% 또는 이전 계정 값이 최신처럼 무기한 남는다. HTTP 상태, 파싱 실패, 인증 후보, 성공한 사용률은 토큰 없이 `DiagLog`에 기록한다.
 
+## 초기화권 조회(GET credits) — 실패는 "0개"가 아니다
+
+`wham/usage`(사용량)와 `wham/rate-limit-reset-credits`(초기화권)는 **다른 엔드포인트**다.
+초기화권 조회만 간헐적으로 실패(타임아웃/429/5xx)하는데, 실패를 빈 배열로 바꿔 게시하면
+카드의 초기화권 영역과 `[사용]` 버튼이 `Count > 0` 조건이라 폴링(3분)마다 사라졌다 나타난다
+— "초기화권 조회가 자꾸 실패하는지 보였다 안보였다" 증상의 원인.
+
+- `FetchResetCreditsAsync`는 **실패 시 `null`(정보 없음), 200 응답만 목록**을 돌려준다.
+  200 인데 `credits` 배열이 없으면(응답 형식 변경) 그것도 `null` — 0개로 단정하지 않는다.
+- `ResolveCredits`가 표시값을 정한다. 200은 그대로 채택하고 마지막 성공값으로 기록,
+  실패는 **같은 계정 지문 + 30분 이내**의 마지막 성공값을 이어 쓴다. 이어 쓸 때
+  `ExpiresAt`이 이미 지난 항목은 서버 확인 없이도 사라진 게 확실하므로 제외한다.
+- 계정이 바뀌면(가드 `Reset`과 같은 지점) 이어 쓰기 캐시도 비운다.
+- consume 성공(`reset`/`already_redeemed`) 시 소비한 크레딧을 캐시에서 제거한다
+  (`DropConsumedCredit`, id 로 못 찾으면 만료 최빠름). 안 지우면 소비 직후 조회가 실패할 때
+  이어 쓴 목록이 이미 쓴 초기화권을 남겨 보여준다.
+- 조회 실패는 반드시 `DiagLog`에 남긴다(HTTP 코드/예외 타입). 이전엔 `catch { return empty; }`
+  라서 실패가 조용히 "0개"로 보였다.
+
 ## 초기화권 소비(consume)
 
 - `POST /wham/rate-limit-reset-credits/consume`, body `{credit_id, redeem_request_id}`(snake_case),
@@ -217,7 +236,8 @@ catch { /* 직전 값 유지 */ }
 
 - `Services/UsageApiService.cs`: Claude 인증 선택, 폴링, fallback(+가드 시드), 진단
 - `Services/CodexUsageService.cs`: Codex CLI 인증, 후보별 401 처리, 공급자 초기화 반영,
-  `codex-usage.json` 스냅샷 기록·시드
+  `codex-usage.json` 스냅샷 기록·시드, 초기화권 조회 실패 시 마지막 성공값 이어 쓰기
+  (`FetchResetCreditsAsync`/`ResolveCredits`/`DropConsumedCredit`)
 - `Services/UsageDropGuard.cs`: 이전 윈도우 유효 중의 단발성 큰 급락을 연속 응답으로 확인,
   `Seed`(재시작 기준값)·`Reset`(계정 전환)·`ExpectDrop`(초기화권 소비 후 첫 급락 즉시 채택)
 - `Services/ClaudeCredentialStore.cs`
@@ -239,6 +259,9 @@ catch { /* 직전 값 유지 */ }
 - (Codex) 기대 시간창 만료 후의 급락은 다시 보류되는가(플립 방어 복원)
 - 이전 윈도우의 reset이 경과한 뒤의 낮은 값(정상 롤오버)은 첫 응답에서 즉시 채택되는가
 - 재시작 직후 스냅샷 시드로 첫 가짜 급락이 보류되는가(계정 키 일치·48h 이내일 때)
+- (Codex) 초기화권 조회가 실패한 폴링에서 목록이 사라지지 않고 마지막 성공값이 유지되는가
+- (Codex) 조회 성공이 0개를 돌려주면(실제 소진) 목록이 즉시 비는가
+- (Codex) 소비 직후 조회가 실패해도 이미 쓴 초기화권이 남아 보이지 않는가
 - (Codex) 계정 전환 시 가드가 리셋되어 새 계정 첫 값이 즉시 게시되는가
 - (Codex) 토큰 회전만으로는 시드 생략·가드 리셋이 일어나지 않는가(계정 키가 account ID 기반인가)
 - 이전 계정의 늦은 응답을 폐기하는가

@@ -48,6 +48,14 @@ public sealed class CodexUsageService : IDisposable
     private bool _guardSeeded;
     private string? _guardAccountKey; // 가드 기준값을 만든 계정 키(토큰 회전에도 안정적인 account ID 지문)
 
+    // 초기화권 조회는 사용량과 별개 엔드포인트라 간헐적으로 실패한다(타임아웃/429/5xx).
+    // 실패를 "0개"로 게시하면 카드의 초기화권 영역이 폴링마다 사라졌다 나타난다.
+    // 마지막 성공 목록을 들고 있다가 조회 실패 시 이어서 쓴다(_pollGate 안에서만 접근).
+    private IReadOnlyList<ResetCredit>? _lastCredits;
+    private DateTimeOffset _lastCreditsAt;
+    private string? _lastCreditsAccountKey;
+    private static readonly TimeSpan CreditsCarryOver = TimeSpan.FromMinutes(30);
+
     public event Action<ProviderUsage>? Updated;
 
     public void Start() => _poll = new System.Threading.Timer(
@@ -120,7 +128,12 @@ public sealed class CodexUsageService : IDisposable
             var accountKey = Fingerprint(accountId ?? token);
             // 계정이 바뀌면 이전 계정 기준값으로 새 계정의 정상값을 보류하지 않도록 가드를 비운다.
             if (_guardAccountKey != null && !string.Equals(_guardAccountKey, accountKey, StringComparison.Ordinal))
+            {
                 _dropGuard.Reset();
+                // 이전 계정의 초기화권 목록을 새 계정 화면에 이어 쓰지 않는다.
+                _lastCredits = null;
+                _lastCreditsAccountKey = null;
+            }
             _guardAccountKey = accountKey;
             if (!_guardSeeded)
             {
@@ -177,8 +190,10 @@ public sealed class CodexUsageService : IDisposable
                 return;
             }
 
-            // 초기화권 정보는 별도 엔드포인트 — 실패해도 사용량은 정상 전달
-            var credits = await FetchResetCreditsAsync(token, accountId, _http).ConfigureAwait(false);
+            // 초기화권 정보는 별도 엔드포인트 — 실패해도 사용량은 정상 전달하고,
+            // 목록은 마지막 성공값을 이어 써서 표시가 깜빡이지 않게 한다.
+            var fetchedCredits = await FetchResetCreditsAsync(token, accountId, _http).ConfigureAwait(false);
+            var credits = ResolveCredits(fetchedCredits, accountKey, DateTimeOffset.Now);
             (currentToken, currentAccountId, _, _) = ReadAuth(_rejectedTokens);
             if (!string.Equals(token, currentToken, StringComparison.Ordinal)
                 || !string.Equals(accountId, currentAccountId, StringComparison.Ordinal))
@@ -372,8 +387,52 @@ public sealed class CodexUsageService : IDisposable
         return string.IsNullOrEmpty(planType) ? "OpenAI" : $"OpenAI ({planType})";
     }
 
-    /// <summary>/wham/rate-limit-reset-credits 를 호출해 초기화권 목록을 읽는다. 실패 시 빈 배열.</summary>
-    private static async Task<IReadOnlyList<ResetCredit>> FetchResetCreditsAsync(string token, string? accountId, HttpClient http)
+    /// <summary>조회 결과를 표시용 목록으로 정한다. 성공(200)은 그대로 채택하고 마지막 성공값으로
+    /// 기록한다. 조회 실패(null)는 "0개"가 아니라 정보 없음이므로, 같은 계정의 마지막 성공값이
+    /// 아직 신선하면(30분) 이어 쓴다 — 아니면 빈 목록.</summary>
+    private IReadOnlyList<ResetCredit> ResolveCredits(
+        IReadOnlyList<ResetCredit>? fetched, string accountKey, DateTimeOffset now)
+    {
+        if (fetched != null)
+        {
+            _lastCredits = fetched;
+            _lastCreditsAt = now;
+            _lastCreditsAccountKey = accountKey;
+            return fetched;
+        }
+
+        if (_lastCredits is { Count: > 0 } cached
+            && string.Equals(_lastCreditsAccountKey, accountKey, StringComparison.Ordinal)
+            && now - _lastCreditsAt <= CreditsCarryOver)
+        {
+            // 이어 쓰는 동안 만료 시각이 지난 항목은 서버 확인 없이도 확실히 사라진 것이다.
+            var live = cached.Where(c => c.ExpiresAt == null || c.ExpiresAt > now).ToArray();
+            DiagLog.Write(
+                $"CodexUsage reset-credits 조회 실패 — 마지막 성공값 유지(count={live.Length}, "
+                + $"{(int)(now - _lastCreditsAt).TotalSeconds}s 전)");
+            return live;
+        }
+
+        DiagLog.Write("CodexUsage reset-credits 조회 실패 — 이어 쓸 최근 성공값 없음");
+        return Array.Empty<ResetCredit>();
+    }
+
+    /// <summary>소비한 초기화권을 마지막 성공 목록에서 제거한다. 소비 직후 조회가 실패해도
+    /// 이어 쓴 목록이 이미 쓴 초기화권을 되살리지 않게 한다(_pollGate 안에서 호출).</summary>
+    private void DropConsumedCredit(string? creditId)
+    {
+        if (_lastCredits is not { Count: > 0 } cached) return;
+        // id 로 못 찾으면(캐시가 낡음) 서버 auto-select 와 같은 기준인 만료 최빠름을 지운다.
+        var target = (string.IsNullOrEmpty(creditId)
+            ? null
+            : cached.FirstOrDefault(c => string.Equals(c.Id, creditId, StringComparison.Ordinal)))
+            ?? PickEarliestExpiring(cached);
+        _lastCredits = cached.Where(c => !ReferenceEquals(c, target)).ToArray();
+    }
+
+    /// <summary>/wham/rate-limit-reset-credits 를 호출해 초기화권 목록을 읽는다.
+    /// 조회 실패는 <c>null</c>(정보 없음) — 빈 배열(실제 0개)과 구분해야 표시가 깜빡이지 않는다.</summary>
+    private static async Task<IReadOnlyList<ResetCredit>?> FetchResetCreditsAsync(string token, string? accountId, HttpClient http)
     {
         try
         {
@@ -384,14 +443,22 @@ public sealed class CodexUsageService : IDisposable
             if (accountId != null) req.Headers.TryAddWithoutValidation("ChatGPT-Account-Id", accountId);
 
             using var res = await http.SendAsync(req).ConfigureAwait(false);
-            if (!res.IsSuccessStatusCode) return Array.Empty<ResetCredit>();
+            if (!res.IsSuccessStatusCode)
+            {
+                DiagLog.Write($"CodexUsage reset-credits HTTP {(int)res.StatusCode}");
+                return null;
+            }
 
             await using var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
             var root = doc.RootElement;
 
             if (!root.TryGetProperty("credits", out var arr) || arr.ValueKind != JsonValueKind.Array)
-                return Array.Empty<ResetCredit>();
+            {
+                // 200 인데 목록이 없으면 응답 형식이 바뀐 것 — "0개"로 단정하지 않는다.
+                DiagLog.Write("CodexUsage reset-credits 응답에 credits 배열 없음");
+                return null;
+            }
 
             var list = new List<ResetCredit>(arr.GetArrayLength());
             foreach (var item in arr.EnumerateArray())
@@ -407,9 +474,10 @@ public sealed class CodexUsageService : IDisposable
                 DiagLog.Write("CodexUsage: reset-credits 응답에 id 없음 — 소비 시 auto-select 폴백");
             return list;
         }
-        catch
+        catch (Exception ex)
         {
-            return Array.Empty<ResetCredit>();
+            DiagLog.Write("CodexUsage reset-credits 조회 예외: " + ex.GetType().Name);
+            return null;
         }
     }
 
@@ -467,6 +535,9 @@ public sealed class CodexUsageService : IDisposable
                 // 高사용률 스냅샷으로 가드를 재시드한다.
                 _dropGuard.ExpectDrop(DateTimeOffset.Now + ExpectDropWindow);
                 WriteResetCooldown(Fingerprint(accountId ?? token));
+                // 소비한 초기화권은 이어 쓰기 캐시에서도 지운다. 직후 조회가 실패하면
+                // 옛 목록이 그대로 이어 써져 이미 쓴 초기화권이 남아 보인다.
+                DropConsumedCredit(creditId);
             }
             return outcome;
         }
