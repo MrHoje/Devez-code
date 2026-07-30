@@ -1349,6 +1349,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <!-- 뒤로가기: 보관함 보기일 때만 노출 → 프로젝트 보기로 복귀 -->
@@ -1368,8 +1369,22 @@
                                FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                Foreground="{DynamicResource PrimaryBrush}"/>
                 </StackPanel>
+                <!-- 활성 프로젝트만 보기: 상태 점 + 토글. 보관함 아이콘 왼쪽에 배치 -->
+                <StackPanel x:Name="ActiveProjectFilterRow" Grid.Column="1"
+                            Orientation="Horizontal" VerticalAlignment="Center"
+                            Margin="0,0,8,0">
+                    <!-- 세션 상태 점과 동일한 모양·테마색(여기선 항상 활성 색) -->
+                    <Ellipse Width="8" Height="8" Margin="0,0,7,0"
+                             VerticalAlignment="Center"
+                             Fill="{DynamicResource PrimaryBrush}"/>
+                    <CheckBox x:Name="ActiveProjectFilterSwitch"
+                              VerticalAlignment="Center"
+                              Style="{StaticResource ToggleSwitchSmall}"
+                              Click="ActiveProjectFilterSwitch_Click"
+                              ToolTip="실행 중인 세션이 있는 프로젝트만 표시"/>
+                </StackPanel>
                 <!-- 보관함 열기: 프로젝트 보기에서 보관함으로 슬라이드 전환 -->
-                <Button x:Name="ArchiveToggleBtn" Grid.Column="1"
+                <Button x:Name="ArchiveToggleBtn" Grid.Column="2"
                         Width="24" Height="24" Margin="0,0,4,0"
                         Style="{StaticResource IconButton}"
                         Click="ArchiveToggleBtn_Click"
@@ -1379,7 +1394,7 @@
                           Width="13" Height="13"/>
                 </Button>
                 <!-- 돋보기: 클릭 시 아래 행(SearchRow) 의 Height 를 0→43 으로 애니메이션하며 펼침 -->
-                <Button x:Name="SearchToggleBtn" Grid.Column="2"
+                <Button x:Name="SearchToggleBtn" Grid.Column="3"
                         Width="24" Height="24" Margin="0,0,4,0"
                         Style="{StaticResource IconButton}"
                         Click="SearchToggleBtn_Click"
@@ -1389,7 +1404,7 @@
                           Data="{StaticResource IconSearch}"
                           Width="12" Height="12"/>
                 </Button>
-                <Button x:Name="ToggleExpandAllBtn" Grid.Column="3"
+                <Button x:Name="ToggleExpandAllBtn" Grid.Column="4"
                         Width="24" Height="24"
                         Style="{StaticResource IconButton}"
                         Click="ToggleExpandAll_Click"
@@ -1492,28 +1507,7 @@
             </Border>
         </Border>
 
-        <!-- 실행 중인 세션이 하나라도 있는 프로젝트 카드만 표시. 원본 프로젝트·탭 컬렉션은 변경하지 않는다. -->
-        <Border x:Name="ActiveProjectFilterRow" Grid.Row="2" Height="34"
-                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
-            <Grid Margin="16,0,12,0">
-                <TextBlock Text="활성된 프로젝트만 보기"
-                           VerticalAlignment="Center"
-                           FontSize="{DynamicResource Fs12}"
-                           Foreground="{DynamicResource TextMutedBrush}"/>
-                <StackPanel Orientation="Horizontal"
-                            HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <!-- 세션 상태 점과 동일한 모양·테마색(여기선 항상 활성 색) -->
-                    <Ellipse Width="8" Height="8" Margin="0,0,8,0"
-                             VerticalAlignment="Center"
-                             Fill="{DynamicResource PrimaryBrush}"/>
-                    <CheckBox x:Name="ActiveProjectFilterSwitch"
-                              VerticalAlignment="Center"
-                              Style="{StaticResource ToggleSwitchSmall}"
-                              Click="ActiveProjectFilterSwitch_Click"
-                              ToolTip="실행 중인 세션이 있는 프로젝트만 표시"/>
-                </StackPanel>
-            </Grid>
-        </Border>
+        <!-- Row 2 는 비어 있음(활성 필터 토글은 헤더로 이동). 프로젝트 트리는 Row 3 유지. -->
 
         <!-- Project tree (활성/보관 슬라이드 전환) + floating FAB -->
         <Grid Grid.Row="3" ClipToBounds="True">
