@@ -216,7 +216,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="32"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
                     <!-- Title bar: 메인창 상단바를 그대로 재현(앱 이름 + 창 컨트롤).
@@ -2219,27 +2218,6 @@
                         </ScrollViewer>
                     </Grid>
 
-                    <!-- Footer: 취소 / 저장 (devez 이식) -->
-                    <Border Grid.Row="2"
-                            Background="{DynamicResource PanelSoftBrush}"
-                            BorderBrush="{DynamicResource LineBrush}"
-                            BorderThickness="0,1,0,0">
-                        <Grid Margin="20,14,20,14">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Click="ForceCancelBtn_Click"
-                                        Width="100" Height="38" Margin="0,0,8,0"
-                                        Style="{StaticResource SecondaryButton}"
-                                        FontSize="{DynamicResource Fs13}">
-                                    <TextBlock Text="취소"/>
-                                </Button>
-                                <Button x:Name="SaveBtn" Click="SaveBtn_Click"
-                                        Width="100" Height="38"
-                                        Style="{StaticResource PrimaryButton}"
-                                        FontSize="{DynamicResource Fs13}">
-                                    <TextBlock Text="저장" Foreground="White"/>
-                                </Button>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
+                    <!-- Footer 없음: 옵션은 변경 즉시 저장된다(저장/취소 버튼 폐지). -->
     </Grid>
 </UserControl>

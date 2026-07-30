@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -19,14 +19,15 @@ using DevezCode.Services;
 namespace DevezCode.Views;
 
 /// <summary>설정창 (devez 이식). 오버레이로 사용: 최상위 Grid에 올린 뒤 <see cref="CloseRequested"/> 로 닫는다.
-/// 동작은 devez 와 동일: 변경은 라이브 미리보기로만 반영되고 디스크 저장은 [저장] 버튼에서만 한다.
-/// [취소]·헤더 X·딤 배경은 미리보기를 원래값으로 되돌린다(미저장 변경이 있으면 저장 여부 확인).</summary>
+/// 옵션은 <b>변경 즉시 저장</b>된다(저장/취소 버튼 없음). 컨트롤 변경 이벤트를 루트에서 받아
+/// 짧게 디바운스한 뒤 <see cref="ApplySettings"/> 로 확정한다.
+/// 테마 변경만 예외로, 세션 재시작이 필요하므로 저장은 즉시 하고 재시작 여부는 창을 닫을 때 묻는다.</summary>
 public partial class SettingsDialog : UserControl
 {
     /// <summary>닫기 요청 시 발생.</summary>
     public event EventHandler? CloseRequested;
 
-    // 열림 시점의 저장값(기준). 미저장 변경 판정 + 취소 시 복원에 사용. 저장하면 갱신된다.
+    // 열림 시점의 저장값(기준). 저장 시 실제 변경된 항목만 반영하는 데 사용하고, 저장하면 갱신된다.
     private string _originalTheme;
     private int    _originalFontScale;
     private bool   _originalPreloadAllSessions;
@@ -477,6 +478,7 @@ public partial class SettingsDialog : UserControl
     public SettingsDialog()
     {
         InitializeComponent();
+        InitAutoSave();   // 옵션 변경 → 즉시 저장(디바운스)
         CodexLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         CodexCatIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         GrokLoginIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.GrokIconUri));
@@ -1137,8 +1139,8 @@ public partial class SettingsDialog : UserControl
     /// <summary>MCP 서버 관리 — 별도 오버레이 창으로 열기. 설정창은 닫지 않는다(독립 편집).</summary>
     private void OpenMcpManager_Click(object sender, RoutedEventArgs e)
     {
-        // 변경 중인 다른 설정이 있을 수 있으니 미리보기는 원복 후 떠준다.
-        RevertPreview();
+        // 옵션은 즉시 저장되므로 원복할 미리보기가 없다. 대기 중인 저장만 확정하고 띄운다.
+        FlushAutoSave();
         var dlg = new McpManagerWindow { Owner = Window.GetWindow(this) };
         dlg.ShowDialog();
         // 다시 돌아왔을 때 카테고리는 mcp 그대로 유지
@@ -1412,6 +1414,7 @@ public partial class SettingsDialog : UserControl
         if (sender is not Border b || b.Tag is not string pos) return;
         _notifyPos = pos;
         UpdateNotifyPositionVisual();
+        ScheduleAutoSave();
     }
 
     private void UpdateNotifyPositionVisual()
@@ -1445,7 +1448,7 @@ public partial class SettingsDialog : UserControl
         UpdateShortcutVisual();
         GlobalTabHotkey.BeginCapture(vk =>
         {
-            if (vk != 0x1B) _selectedHkMod = vk; // Esc = 취소, 그 외 = 지정
+            if (vk != 0x1B) { _selectedHkMod = vk; ScheduleAutoSave(); } // Esc = 취소, 그 외 = 지정
             _capturingField = null;
             UpdateShortcutVisual();
         });
@@ -1470,14 +1473,15 @@ public partial class SettingsDialog : UserControl
     }
 
 
-    // ── 미리보기(저장 없이 화면에만 반영) ──────────────────────────
+    // ── 카드형 선택 (라우팅 이벤트가 아니므로 저장을 직접 예약한다) ──
     private void ThemeCard_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is Border b && b.Tag is string key)
         {
             _selectedTheme = key;
-            (Application.Current as App)?.SetTheme(key, persist: false); // 미리보기만
+            (Application.Current as App)?.SetTheme(key, persist: false); // 화면 즉시 반영(저장은 ApplySettings)
             UpdateThemeSelectionVisual();
+            ScheduleAutoSave();
         }
     }
 
@@ -1486,40 +1490,62 @@ public partial class SettingsDialog : UserControl
         if (sender is Border b && b.Tag is string tag && int.TryParse(tag, out var scale))
         {
             _selectedFontScale = scale;
-            (Application.Current as App)?.SetFontScale(scale); // 미리보기만(즉시 반영)
+            (Application.Current as App)?.SetFontScale(scale); // 화면 즉시 반영
             UpdateFontSelectionVisual();
+            ScheduleAutoSave();
         }
     }
 
-    // ── 저장 / 취소 / 닫기 ────────────────────────────────────────
-    private void SaveBtn_Click(object sender, RoutedEventArgs e)
+    // ── 즉시 저장(디바운스) ───────────────────────────────────────
+    // 컨트롤의 변경 이벤트는 버블링되므로 루트에서 한 번만 받아 처리한다(자식 핸들러가 먼저
+    // 실행돼 _selected* 가 이미 갱신된 상태). 카드형 선택(테마/글꼴/알림 위치)과 단축키 캡처는
+    // 라우팅 이벤트가 아니어서 각 핸들러에서 ScheduleAutoSave() 를 직접 호출한다.
+    private System.Windows.Threading.DispatcherTimer? _autoSaveTimer;
+    private bool _autoSaveReady;      // 초기 로딩 중 발생하는 변경 이벤트는 무시
+    private bool _applyingSettings;   // ApplySettings 가 컨트롤 값을 되쓸 때의 재진입 방지
+
+    private void InitAutoSave()
     {
-        var themeChanged = _selectedTheme != _originalTheme;
-        if (_selectedTheme != _originalTheme)
+        AddHandler(System.Windows.Controls.Primitives.ToggleButton.CheckedEvent,
+                   new RoutedEventHandler(AutoSave_Changed), true);
+        AddHandler(System.Windows.Controls.Primitives.ToggleButton.UncheckedEvent,
+                   new RoutedEventHandler(AutoSave_Changed), true);
+        AddHandler(System.Windows.Controls.Primitives.Selector.SelectionChangedEvent,
+                   new SelectionChangedEventHandler(AutoSave_Changed), true);
+        AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
+                   new TextChangedEventHandler(AutoSave_Changed), true);
+        _autoSaveTimer = new System.Windows.Threading.DispatcherTimer
         {
-            var proceed = ConfirmDialog.Show(
-                "테마 변경 적용",
-                "테마 변경을 적용하려면 열려 있는 Claude Code 세션을 다시 시작합니다.\n" +
-                "응답 생성 중인 세션은 중단될 수 있으며, 필요한 경우 요청을 다시 보내야 합니다.\n\n" +
-                "변경사항을 저장하시겠습니까?",
-                okLabel: "저장",
-                iconKey: "IconPalette",
-                wideLayout: true); // 세션 재시작 안내 — 긴 본문이라 넓게 유지
-            if (!proceed) return;
-        }
-
-        ApplySettings();
-        if (themeChanged)
-            (Application.Current.MainWindow as MainWindow)?.ReloadAllSessionsForTheme();
-        CloseRequested?.Invoke(this, EventArgs.Empty);
+            Interval = System.TimeSpan.FromMilliseconds(350),
+        };
+        _autoSaveTimer.Tick += (_, _) => { _autoSaveTimer!.Stop(); ApplySettings(); };
+        // 컨트롤 초기값 주입(ctor·비동기 로딩)이 끝난 뒤부터 저장을 받는다.
+        Loaded += (_, _) => Dispatcher.BeginInvoke(new System.Action(() => _autoSaveReady = true),
+                                                  System.Windows.Threading.DispatcherPriority.Background);
     }
 
-    /// <summary>[취소] 버튼: 확인 없이 미리보기를 되돌리고 닫는다.</summary>
-    private void ForceCancelBtn_Click(object sender, RoutedEventArgs e)
+    private void AutoSave_Changed(object sender, RoutedEventArgs e) => ScheduleAutoSave();
+
+    /// <summary>변경을 잠시 모아 한 번에 저장한다(연속 입력 시 디스크 쓰기 폭주 방지).</summary>
+    private void ScheduleAutoSave()
     {
-        RevertPreview();
-        CloseRequested?.Invoke(this, EventArgs.Empty);
+        if (!_autoSaveReady || _applyingSettings || _autoSaveTimer == null) return;
+        _autoSaveTimer.Stop();
+        _autoSaveTimer.Start();
     }
+
+    /// <summary>대기 중인 저장을 즉시 확정한다(창을 닫기 전 등).</summary>
+    private void FlushAutoSave()
+    {
+        if (_autoSaveTimer is { IsEnabled: true })
+        {
+            _autoSaveTimer.Stop();
+            ApplySettings();
+        }
+    }
+
+    // ── 닫기 ──────────────────────────────────────────────────────
+
 
     /// <summary>헤더 X — devez 처럼 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
     private void CancelBtn_Click(object sender, RoutedEventArgs e) => TryCloseWithConfirm();
@@ -1552,63 +1578,57 @@ public partial class SettingsDialog : UserControl
         OwnerMaxBtn.ToolTip = maximized ? "이전 크기로 복원" : "최대화";
     }
 
-    /// <summary>ESC / 외부에서 호출하는 닫기 — 미저장 변경이 있으면 저장 여부를 묻는다.</summary>
+    /// <summary>ESC / "앱으로 돌아가기" / 외부에서 호출하는 닫기.
+    /// 옵션은 이미 즉시 저장돼 있으므로 저장 여부는 묻지 않고, 테마를 바꿨을 때만
+    /// 세션 재시작 여부를 여기서 묻는다(재시작하지 않아도 저장은 유지된다).</summary>
     public void TryCloseWithConfirm()
     {
-        if (HasUnsavedChanges())
+        FlushAutoSave();   // 디바운스 대기 중인 변경 확정
+
+        if (_themeReloadPending)
         {
-            var save = ConfirmDialog.Show(
-                "저장되지 않은 변경사항",
-                "저장되지 않은 변경사항이 있습니다.\n저장하시겠습니까? (취소 시 변경사항이 사라집니다)",
-                okLabel: "저장", iconKey: "IconSettings");
-            if (save) ApplySettings();
-            else      RevertPreview();
+            _themeReloadPending = false;
+            var restart = ConfirmDialog.Show(
+                "테마 변경 적용",
+                "테마 변경을 열려 있는 세션에 적용하려면 세션을 다시 시작해야 합니다.\n" +
+                "응답 생성 중인 세션은 중단될 수 있으며, 필요한 경우 요청을 다시 보내야 합니다.\n\n" +
+                "지금 다시 시작하시겠습니까? (다시 시작하지 않아도 변경은 저장되며 다음 실행부터 적용됩니다)",
+                okLabel: "다시 시작",
+                iconKey: "IconPalette",
+                wideLayout: true); // 세션 재시작 안내 — 긴 본문이라 넓게 유지
+            if (restart)
+                (Application.Current.MainWindow as MainWindow)?.ReloadAllSessionsForTheme();
         }
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool HasUnsavedChanges()
+    /// <summary>앱을 닫으면서 설정창을 정리하는 경로 — 저장만 확정하고 세션 재시작은 묻지 않는다
+    /// (곧 종료되므로 재시작 안내가 의미 없다).</summary>
+    public void CloseForAppExit()
     {
-        if (_selectedTheme != _originalTheme) return true;
-        if (_selectedFontScale != _originalFontScale) return true;
-        if (_selectedPreloadAllSessions != _originalPreloadAllSessions) return true;
-        if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes) return true;
-        if (_selectedDefaultFontSizePt != _originalDefaultFontSizePt) return true;
-        if (_selectedMarkdownViewportWidth != _originalMarkdownViewportWidth) return true;
-        if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject) return true;
-        if (_selectedPromptForNewSessionName != _originalPromptForNewSessionName) return true;
-        if (_selectedPromptForNewBrowserTabName != _originalPromptForNewBrowserTabName) return true;
-        if (_selectedBrowserHomeUrl != _originalBrowserHomeUrl) return true;
-        if (_selectedTerminalUrlOpenTarget != _originalTerminalUrlOpenTarget) return true;
-        if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop) return true;
-        if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader) return true;
-        if (_selectedDiffGitEnabled != _originalDiffGitEnabled) return true;
-        if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents) return true;
-        if (_selectedUseFullScreen != _originalUseFullScreen) return true;
-        if (_selectedMinimizeOnClose != _originalMinimizeOnClose) return true;
-        if (_selectedProjectColumns != _originalProjectColumns) return true;
-        if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled) return true;
-        if (_selectedNotifyEnabled != _originalNotifyEnabled) return true;
-        if (_selectedShowDirView != _originalShowDirView) return true;
-        if (_selectedShowQueueView != _originalShowQueueView) return true;
-        if (_selectedShowBrowserView != _originalShowBrowserView) return true;
-        if (_selectedShowDiffView != _originalShowDiffView) return true;
-        if (_selectedShowEstimate != _originalShowEstimate) return true;
-        if (_selectedShowRemainingUsage != _originalShowRemainingUsage) return true;
-        if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec) return true;
-        if (_selectedNotifyMonitor != _originalNotifyMonitor) return true;
-        if (_notifyPos != _originalNotifyPos) return true;
-        if (_selectedHkMod != _originalHkMod || _selectedHkPrev != _originalHkPrev || _selectedHkNext != _originalHkNext) return true;
-        var current = new HashSet<string>(
-            _agentItems.Where(a => a.Enabled).Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
-        if (!current.SetEquals(_originalEnabledAgents)) return true;
-        var claude = _agentItems.FirstOrDefault(a => a.IsClaudeCode);
-        return claude != null && claude.RetentionDays != _originalRetentionDays;
+        FlushAutoSave();
+        _themeReloadPending = false;
+        CloseRequested?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>테마가 바뀐 뒤 아직 세션에 반영(재시작)되지 않았음.</summary>
+    private bool _themeReloadPending;
+
 
     /// <summary>현재 UI 값을 디스크에 저장·확정하고 기준값을 갱신한다.</summary>
     private void ApplySettings()
     {
+        if (_applyingSettings) return;
+        _applyingSettings = true;
+        try { ApplySettingsCore(); }
+        finally { _applyingSettings = false; }
+    }
+
+    private void ApplySettingsCore()
+    {
+        // 테마는 저장은 즉시 하되 세션 재시작이 필요하므로, 재시작 여부는 창을 닫을 때 묻는다.
+        if (_selectedTheme != _originalTheme) _themeReloadPending = true;
+
         (Application.Current as App)?.SetTheme(_selectedTheme); // persist
         SettingsService.SaveFontScale(_selectedFontScale);
         SettingsService.SavePreloadAllProjectSessions(_selectedPreloadAllSessions);
@@ -1742,142 +1762,6 @@ public partial class SettingsDialog : UserControl
             ?? ClaudeGlobalSettings.DefaultCleanupPeriodDays;
     }
 
-    /// <summary>미리보기를 열림 시점(저장값)으로 되돌린다.</summary>
-    private void RevertPreview()
-    {
-        if (_selectedTheme != _originalTheme)
-        {
-            _selectedTheme = _originalTheme;
-            (Application.Current as App)?.SetTheme(_originalTheme, persist: false);
-            UpdateThemeSelectionVisual();
-        }
-        if (_selectedFontScale != _originalFontScale)
-        {
-            _selectedFontScale = _originalFontScale;
-            (Application.Current as App)?.SetFontScale(_originalFontScale);
-            UpdateFontSelectionVisual();
-        }
-        if (_selectedPreloadAllSessions != _originalPreloadAllSessions)
-        {
-            _selectedPreloadAllSessions = _originalPreloadAllSessions;
-            PreloadAllSessionsToggle.IsChecked = _selectedPreloadAllSessions;
-        }
-        if (_selectedIdleSessionShutdownMinutes != _originalIdleSessionShutdownMinutes)
-        {
-            _selectedIdleSessionShutdownMinutes = _originalIdleSessionShutdownMinutes;
-            SelectComboByTag(IdleSessionShutdownCombo, _originalIdleSessionShutdownMinutes.ToString());
-        }
-        if (_selectedDefaultFontSizePt != _originalDefaultFontSizePt)
-        {
-            _selectedDefaultFontSizePt = _originalDefaultFontSizePt;
-            SelectComboByTag(DefaultFontSizeCombo, _originalDefaultFontSizePt.ToString());
-        }
-        _selectedMarkdownViewportWidth = _originalMarkdownViewportWidth;
-        SetMarkdownViewportWidthEditor(_selectedMarkdownViewportWidth);
-        if (_selectedAutoLoadLastProject != _originalAutoLoadLastProject)
-        {
-            _selectedAutoLoadLastProject = _originalAutoLoadLastProject;
-            AutoLoadLastProjectToggle.IsChecked = _selectedAutoLoadLastProject;
-        }
-        if (_selectedPromptForNewSessionName != _originalPromptForNewSessionName)
-        {
-            _selectedPromptForNewSessionName = _originalPromptForNewSessionName;
-            PromptForNewSessionNameToggle.IsChecked = _selectedPromptForNewSessionName;
-        }
-        if (_selectedPromptForNewBrowserTabName != _originalPromptForNewBrowserTabName)
-        {
-            _selectedPromptForNewBrowserTabName = _originalPromptForNewBrowserTabName;
-            PromptForNewBrowserTabNameToggle.IsChecked = _selectedPromptForNewBrowserTabName;
-        }
-        if (_selectedBrowserHomeUrl != _originalBrowserHomeUrl)
-        {
-            _selectedBrowserHomeUrl = _originalBrowserHomeUrl;
-            BrowserHomeUrlBox.Text = _originalBrowserHomeUrl;
-        }
-        if (_selectedTerminalUrlOpenTarget != _originalTerminalUrlOpenTarget)
-        {
-            _selectedTerminalUrlOpenTarget = _originalTerminalUrlOpenTarget;
-            SelectComboByTag(TerminalUrlOpenTargetCombo, _originalTerminalUrlOpenTarget.ToString());
-        }
-        if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)
-        {
-            _selectedHiddenSessionInsertionOnTop = _originalHiddenSessionInsertionOnTop;
-            SelectComboByTag(HiddenSessionInsertionCombo, _selectedHiddenSessionInsertionOnTop ? "top" : "bottom");
-        }
-        if (_selectedHideProjectInfoHeader != _originalHideProjectInfoHeader)
-        {
-            _selectedHideProjectInfoHeader = _originalHideProjectInfoHeader;
-            HideProjectInfoHeaderToggle.IsChecked = _selectedHideProjectInfoHeader;
-        }
-        if (_selectedDiffGitEnabled != _originalDiffGitEnabled)
-        {
-            _selectedDiffGitEnabled = _originalDiffGitEnabled;
-            DiffGitEnabledToggle.IsChecked = _selectedDiffGitEnabled;
-        }
-        if (_selectedAutoUpdateAgents != _originalAutoUpdateAgents)
-        {
-            _selectedAutoUpdateAgents = _originalAutoUpdateAgents;
-            AutoUpdateAgentsToggle.IsChecked = _selectedAutoUpdateAgents;
-        }
-        if (_selectedUseFullScreen != _originalUseFullScreen)
-        {
-            _selectedUseFullScreen = _originalUseFullScreen;
-            UseFullScreenToggle.IsChecked = _selectedUseFullScreen;
-        }
-        if (_selectedMinimizeOnClose != _originalMinimizeOnClose)
-        {
-            _selectedMinimizeOnClose = _originalMinimizeOnClose;
-            MinimizeOnCloseToggle.IsChecked = _selectedMinimizeOnClose;
-        }
-        if (_selectedProjectColumns != _originalProjectColumns)
-        {
-            _selectedProjectColumns = _originalProjectColumns; // 라이브 미적용이라 선택값만 복원
-            SelectComboByTag(ProjectColumnsCombo, _originalProjectColumns.ToString());
-        }
-        if (_selectedDeepSeekEnabled != _originalDeepSeekEnabled)
-        {
-            _selectedDeepSeekEnabled = _originalDeepSeekEnabled; // 미적용 — 선택값만 복원(키는 건드리지 않음)
-            DeepSeekEnabledToggle.IsChecked = _originalDeepSeekEnabled;
-            DeepSeekKeyArea.Visibility = Visibility.Collapsed;
-        }
-        if (_selectedNotifyEnabled != _originalNotifyEnabled)
-        {
-            _selectedNotifyEnabled = _originalNotifyEnabled;
-            NotifyEnabledToggle.IsChecked = _originalNotifyEnabled;
-            UpdateNotifyDetailVisibility();
-        }
-        if (_selectedNotifyAutoCloseSec != _originalNotifyAutoCloseSec)
-        {
-            _selectedNotifyAutoCloseSec = _originalNotifyAutoCloseSec;
-            SelectComboByTag(NotifyAutoCloseCombo, _originalNotifyAutoCloseSec.ToString());
-        }
-        if (_selectedNotifyMonitor != _originalNotifyMonitor)
-        {
-            _selectedNotifyMonitor = _originalNotifyMonitor;
-            SelectComboByTag(NotifyMonitorCombo, _originalNotifyMonitor);
-        }
-        if (_notifyPos != _originalNotifyPos)
-        {
-            _notifyPos = _originalNotifyPos;
-            UpdateNotifyPositionVisual();
-        }
-        if (_selectedShowDirView != _originalShowDirView) { _selectedShowDirView = _originalShowDirView; ShowDirViewToggle.IsChecked = _originalShowDirView; }
-        if (_selectedShowQueueView != _originalShowQueueView) { _selectedShowQueueView = _originalShowQueueView; ShowQueueViewToggle.IsChecked = _originalShowQueueView; }
-        if (_selectedShowBrowserView != _originalShowBrowserView) { _selectedShowBrowserView = _originalShowBrowserView; ShowBrowserViewToggle.IsChecked = _originalShowBrowserView; }
-        if (_selectedShowDiffView != _originalShowDiffView) { _selectedShowDiffView = _originalShowDiffView; ShowDiffViewToggle.IsChecked = _originalShowDiffView; }
-        if (_selectedShowEstimate != _originalShowEstimate) { _selectedShowEstimate = _originalShowEstimate; ShowEstimateToggle.IsChecked = _originalShowEstimate; }
-        if (_selectedShowRemainingUsage != _originalShowRemainingUsage) { _selectedShowRemainingUsage = _originalShowRemainingUsage; ShowRemainingUsageToggle.IsChecked = _originalShowRemainingUsage; }
-        // 단축키 미저장 변경 되돌리기 (디스크 저장 안 했으므로 선택값만 복원 + 캡처 중단)
-        CancelShortcutCapture();
-        _selectedHkMod = _originalHkMod; _selectedHkPrev = _originalHkPrev; _selectedHkNext = _originalHkNext;
-        UpdateShortcutVisual();
-        // 에이전트 활성화 상태 되돌리기
-        foreach (var item in _agentItems)
-        {
-            item.Enabled = _originalEnabledAgents.Contains(item.Id);
-            if (item.IsClaudeCode) item.RetentionDays = _originalRetentionDays;
-        }
-    }
 
     private void UpdateThemeSelectionVisual()
     {

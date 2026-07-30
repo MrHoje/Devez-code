@@ -73,11 +73,11 @@ public partial class SettingsWindow : Window
                               ? WindowState.Normal : WindowState.Maximized;
     }
 
-    /// <summary>앱 닫기. 모달인 설정창을 먼저 정리(미저장 변경 확인)한 뒤 메인창을 닫는다.</summary>
+    /// <summary>앱 닫기. 모달인 설정창을 먼저 정리(대기 중 저장 확정)한 뒤 메인창을 닫는다.</summary>
     public void CloseOwner()
     {
         var owner = Owner;
-        SettingsView.TryCloseWithConfirm();          // CloseRequested → 이 창 Close()
+        SettingsView.CloseForAppExit();              // CloseRequested → 이 창 Close()
         if (IsVisible) return;                       // 아직 열려 있으면(예외 상황) 앱은 닫지 않는다
         owner?.Close();
     }
