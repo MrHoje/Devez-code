@@ -167,6 +167,8 @@ public partial class SidebarView : UserControl
         Interval = TimeSpan.FromMilliseconds(180)
     };
     private bool _sidebarSearchDeferredForDrag;
+    private bool _projectFilterRefreshDeferredForDrag;
+    private bool _showActiveProjectsOnly;
 
     private void Projects_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
@@ -184,6 +186,15 @@ public partial class SidebarView : UserControl
         if (e.PropertyName == nameof(ProjectItem.FolderId))
         {
             RefreshProjectGroups();
+            return;
+        }
+
+        if (e.PropertyName == nameof(ProjectItem.HasAliveSession) && _showActiveProjectsOnly)
+        {
+            if (HasActiveDrag)
+                _projectFilterRefreshDeferredForDrag = true;
+            else
+                RefreshProjectGroups();
             return;
         }
 
@@ -244,6 +255,8 @@ public partial class SidebarView : UserControl
         bool Matches(ProjectItem project) =>
             project.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase) ||
             project.Sessions.Any(session => session.Name.Contains(_sidebarSearchQuery, StringComparison.OrdinalIgnoreCase));
+        bool MatchesActiveFilter(ProjectItem project) =>
+            !_showActiveProjectsOnly || project.HasAliveSession;
 
         foreach (var project in _projects.Concat(_archivedProjects))
         {
@@ -265,11 +278,15 @@ public partial class SidebarView : UserControl
             var source = folder.IsArchived ? _archivedProjects : _projects;
             var allProjects = source.Where(project => project.FolderId == folder.Id).ToList();
             var desired = allProjects.Where(project =>
-                !hasQuery || folderMatches || Matches(project)).ToList();
+                (folder.IsArchived || MatchesActiveFilter(project)) &&
+                (!hasQuery || folderMatches || Matches(project))).ToList();
             SyncCollection(folder.Projects, desired);
             folder.ColumnToggleAvailable = _projectColumns == 2;
-            folder.UpdateSummary(allProjects, desired.Count, hasQuery);
-            folder.IsSearchVisible = !hasQuery || folderMatches || desired.Count > 0;
+            folder.UpdateSummary(allProjects, desired.Count,
+                hasQuery || (!folder.IsArchived && _showActiveProjectsOnly));
+            folder.IsSearchVisible =
+                (folder.IsArchived || !_showActiveProjectsOnly || desired.Count > 0) &&
+                (!hasQuery || folderMatches || desired.Count > 0);
         }
 
         var activeFolders = folders.Where(folder => folder.IsActive).ToList();
@@ -287,7 +304,7 @@ public partial class SidebarView : UserControl
         SyncCollection(_activeRootItems, activeRoots.Where(item => item switch
         {
             ProjectFolderItem folder => folder.IsSearchVisible,
-            ProjectItem project => !hasQuery || Matches(project),
+            ProjectItem project => MatchesActiveFilter(project) && (!hasQuery || Matches(project)),
             _ => false,
         }).ToList());
         SyncCollection(_archivedRootItems, archivedRoots.Where(item => item switch
@@ -296,6 +313,11 @@ public partial class SidebarView : UserControl
             ProjectItem project => !hasQuery || Matches(project),
             _ => false,
         }).ToList());
+        if (ActiveFilterEmptyText != null)
+            ActiveFilterEmptyText.Visibility =
+                _showActiveProjectsOnly && !hasQuery && _activeRootItems.Count == 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
         UpdateArchiveEmptyState();
     }
 
@@ -423,6 +445,7 @@ public partial class SidebarView : UserControl
         HeaderTitle.Text = "보관함";
         BackBtn.Visibility = Visibility.Visible;
         ArchiveToggleBtn.Visibility = Visibility.Collapsed;
+        ActiveProjectFilterRow.Visibility = Visibility.Collapsed;
     }
 
     private void CloseArchivePanel()
@@ -441,6 +464,7 @@ public partial class SidebarView : UserControl
         HeaderTitle.Text = "프로젝트";
         BackBtn.Visibility = Visibility.Collapsed;
         ArchiveToggleBtn.Visibility = Visibility.Visible;
+        ActiveProjectFilterRow.Visibility = Visibility.Visible;
     }
 
     private static void SlideTo(System.Windows.Media.TranslateTransform t, double from, double to, Action? done = null)
@@ -609,6 +633,12 @@ public partial class SidebarView : UserControl
     {
         _sidebarSearchQuery = SidebarSearchBox.Text?.Trim() ?? "";
         SearchHighlightQuery = _sidebarSearchQuery;
+        RefreshProjectGroups();
+    }
+
+    private void ActiveProjectFilterSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        _showActiveProjectsOnly = ActiveProjectFilterSwitch.IsChecked == true;
         RefreshProjectGroups();
     }
 
@@ -1838,7 +1868,9 @@ public partial class SidebarView : UserControl
             var draggedProject = _draggedProject;
             var dropFolder = draggedProject == null ? null : _projectFolderDropTarget;
             bool applyDeferredSearch = _sidebarSearchDeferredForDrag;
+            bool applyDeferredProjectFilter = _projectFilterRefreshDeferredForDrag;
             _sidebarSearchDeferredForDrag = false;
+            _projectFilterRefreshDeferredForDrag = false;
             _rootDrag = null;
             _projectDrag = null;
             _tabDrag = null;
@@ -1874,6 +1906,7 @@ public partial class SidebarView : UserControl
             if (tabDrag != null) await tabDrag.FinishAsync(commit);
             if (fileDrag != null) await fileDrag.FinishAsync(commit);
             if (applyDeferredSearch) ApplySidebarSearch();
+            if (applyDeferredProjectFilter) RefreshProjectGroups();
         }
         finally
         {
