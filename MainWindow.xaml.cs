@@ -6611,24 +6611,23 @@ public partial class MainWindow : Window
     }
 
 
-    /// <summary>최대화 시 루트 마진 보정 — <b>현재 비활성</b>.
-    /// WS_CAPTION + WS_THICKFRAME 창은 최대화 시 프레임만큼 화면 밖으로 나가 가장자리가 잘리는데,
-    /// 이 앱은 WmGetMinMaxInfo 에서 최대화 크기·위치를 작업영역에 정확히 맞춰 오버플로 자체를
-    /// 없앴으므로(같은 파일의 "최대화 처리" 주석) 마진 보정이 중복이다. 중복 적용은 최대화 직후
-    /// 콘텐츠 전체를 프레임 두께만큼 안쪽으로 한 번 밀어 전환이 "움찔"하게 보이므로 끈다.
-    /// 되살릴 때는 아래 블록 주석을 해제할 것(가장자리 1~8px 잘림이 재발하면 그 신호다).</summary>
+    /// <summary>WS_CAPTION + WS_THICKFRAME(ResizeMode=CanResize) 창은 최대화 시 표준 방식으로
+    /// 프레임만큼 화면 밖으로 위치해 콘텐츠 가장자리가 잘린다. 최대화 상태에서만 루트에
+    /// 프레임 두께(DPI 보정)만큼 마진을 줘 잘림을 막는다(devez 와 동일한 방식).
+    /// 한때 전환 깜빡임의 후보로 껐던 적이 있으나, 실제 원인은 비가상화 목록의 렌더 지연이었고
+    /// 이 마진을 끄면 최대화 시 가장자리가 잘린다 — 끄지 말 것.</summary>
     private void ApplyMaximizeMargin()
     {
         if (RootChrome == null) return;
-        RootChrome.Margin = default;
-        // if (WindowState == WindowState.Maximized)
-        // {
-        //     var dpi = VisualTreeHelper.GetDpi(this);
-        //     int pad = GetSystemMetrics(SM_CXPADDEDBORDER);
-        //     double x = (GetSystemMetrics(SM_CXFRAME) + pad) / dpi.DpiScaleX;
-        //     double y = (GetSystemMetrics(SM_CYFRAME) + pad) / dpi.DpiScaleY;
-        //     RootChrome.Margin = new Thickness(x, y, x, y);
-        // }
+        if (WindowState == WindowState.Maximized)
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int pad = GetSystemMetrics(SM_CXPADDEDBORDER);
+            double x = (GetSystemMetrics(SM_CXFRAME) + pad) / dpi.DpiScaleX;
+            double y = (GetSystemMetrics(SM_CYFRAME) + pad) / dpi.DpiScaleY;
+            RootChrome.Margin = new Thickness(x, y, x, y);
+        }
+        else RootChrome.Margin = default;
     }
 
     /// <summary>전체화면(작업표시줄 덮기) 설정 적용. 현재 최대화/전체화면 상태면 즉시 전환.</summary>
