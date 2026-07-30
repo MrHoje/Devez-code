@@ -347,6 +347,9 @@ public partial class BrowserHostView : UserControl
     /// <summary>WebView2 를 PNG 스냅샷으로 교체하고 숨긴다. 툴바(WPF)는 유지.</summary>
     public async Task SuspendContentAsync()
     {
+        // 이미 숨긴 상태면 다시 캡처하지 않는다 — 숨겨진(Collapsed) WebView2 의 CapturePreviewAsync 는
+        // 완료되지 않아 호출자가 매달린다(종료 준비 지연의 원인).
+        if (BrowserContent.Visibility != Visibility.Visible) return;
         if (_view?.CoreWebView2 != null)
         {
             try

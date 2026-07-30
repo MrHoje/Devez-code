@@ -59,6 +59,9 @@
                 <!-- 윈도우 컨트롤(오른쪽 고정) -->
                 <StackPanel Orientation="Horizontal" Margin="0,0,4,0" HorizontalAlignment="Right"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                  <!-- 설정 화면이 열리면 통째로 숨기는 묶음(성능 칩 + 패널 토글).
+                       앱 이름과 창 컨트롤만 남겨 창 조작은 계속 되게 한다. -->
+                  <StackPanel x:Name="TitleBarChips" Orientation="Horizontal">
                     <!-- 성능 모니터 칩(CPU/RAM) — 상단 타이틀바. -->
                     <StackPanel x:Name="PerfChipGroup" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,0">
                         <Button x:Name="PerfChipBtn" Click="PerfChipBtn_Click" ToolTip="작업 관리자 열기"
@@ -111,6 +114,7 @@
                     </Button>
                     <Border Width="1" Height="16" Margin="3,0,3,0" VerticalAlignment="Center"
                             Background="{DynamicResource LineBrush}" Opacity="0.5"/>
+                  </StackPanel>
 
                     <!-- 컨트롤 버튼: 글꼴 크기 설정과 무관하게 항상 "크게"(base+2) 기준 고정 -->
                     <Button Style="{StaticResource WinCtrlBtn}" Click="MinBtn_Click">

@@ -1670,28 +1670,11 @@
                                 </StackPanel>
 
                                 <TextBlock Text="앱 전체에 적용되는 색 테마를 선택합니다." FontSize="{DynamicResource Fs12}"
-                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,10"/>
-                                <!-- 테마는 세션(터미널) 색까지 바꾸므로 재시작이 필요하다 — 고르기 전에 미리 알린다.
-                                     Grid + 열 정의로 배치해야 긴 문장이 잘리지 않고 줄바꿈된다
-                                     (가로 StackPanel 안의 TextBlock 은 폭 제한을 못 받아 잘린다). -->
-                                <Border Background="{DynamicResource PanelSoftBrush}"
-                                        BorderBrush="{DynamicResource LineBrush}" BorderThickness="1"
-                                        CornerRadius="8" Padding="12,10" Margin="0,0,0,20">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Path Grid.Column="0" Style="{StaticResource LucideIcon}"
-                                              Data="{StaticResource IconInfo}"
-                                              Width="15" Height="15" Margin="0,0,9,0" VerticalAlignment="Center"
-                                              Stroke="{DynamicResource TextMutedBrush}"/>
-                                        <TextBlock Grid.Column="1" FontSize="{DynamicResource Fs12}" TextWrapping="Wrap"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource TextMutedBrush}"
-                                                   Text="테마 변경 시 실행 중인 세션들이 재시작됩니다."/>
-                                    </Grid>
-                                </Border>
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,4"/>
+                                <!-- 테마는 세션(터미널) 색까지 바꾸므로 재시작이 필요하다 — 고르기 전에 미리 알린다. -->
+                                <TextBlock Text="테마 변경 시 실행 중인 세션들이 재시작됩니다." FontSize="{DynamicResource Fs12}"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,20"/>
 
                                 <!-- 테마 카드 (클릭 시 즉시 적용·저장) -->
                                 <StackPanel Margin="0,16,0,0">

@@ -4164,6 +4164,10 @@ public partial class WorkspacePaneView : UserControl
     public async Task SuspendTerminalOnlyAsync(bool anchorTopLeft = false, bool webCover = false,
         bool stretchCover = false, bool captureSplitWide = false)
     {
+        // 전체 오버레이(설정 화면 등)로 이미 정지·숨김 상태면 아무것도 하지 않는다.
+        // 숨겨진(Collapsed) WebView2 는 CapturePngAsync 가 <b>완료되지 않으므로</b> 여기서 await 하면
+        // 호출자(최대화 커버·패널 토글 커버·종료 준비)가 그대로 매달린다.
+        if (_overlaySuspended) return;
         if (_activeTab is BrowserTabItem browser)
         {
             await browser.Browser.SuspendContentAsync();
@@ -4223,8 +4227,12 @@ public partial class WorkspacePaneView : UserControl
     /// <summary>①스냅샷만 올린다(HWND 유지). 숨길 대상은 기억해 뒀다 CommitShutdownHide 가 처리.</summary>
     public async Task PrepareShutdownSnapshotAsync()
     {
+        // 설정 화면 등 오버레이로 이미 정지·숨김 상태면 준비할 게 없다. 그대로 캡처를 시도하면
+        // 숨겨진 WebView2 의 CapturePngAsync 가 완료되지 않아 종료 준비가 타임아웃까지 지연된다.
+        bool alreadySuspended = _overlaySuspended;
         _overlaySuspended = true; // 종료 오버레이 중 훅발 UpdateEmptyState 가 HWND 를 되살리지 않게(해제 불필요 — 앱 종료)
         _shutdownHide = ShutdownHide.None;
+        if (alreadySuspended) return;
         if (_activeTab is FileTabItem file)
         {
             var snap = await file.Editor.CaptureSnapshotAsync();
@@ -4282,6 +4290,9 @@ public partial class WorkspacePaneView : UserControl
 
     public void ResumeTerminalOnly(bool webCover = false, bool recoverWiden = false)
     {
+        // 전체 오버레이가 떠 있는 동안은 되살리지 않는다(Suspend 를 스킵했으므로 되살릴 것도 없고,
+        // 되살리면 라이브 HWND 가 오버레이를 뚫는다). 해제는 ResumeTerminal 이 담당.
+        if (_overlaySuspended) return;
         if (_activeTab is BrowserTabItem browser)
         {
             UnparkBrowserHost();
