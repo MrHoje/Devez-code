@@ -4098,14 +4098,8 @@ public partial class WorkspacePaneView : UserControl
         // 파일 편집기(WebView2) 처리
         if (_activeTab is FileTabItem file)
     {
-            if (blankCurtain)
-        {
-                // 설정창(modal ShowDialog)이 열린 경우 — 파일 에디터 WebView2를 visible로 유지.
-                // 설정창은 별도 Window이므로 HWND airspace가 없고, 설정창 뒤로 새 테마가
-                // 실시간 반영되어 보인다.
-                return;
-            }
-            // 앱 종료 오버레이("세션 닫는 중") 등: WebView2를 숨기고 스냅샷으로 대체
+            // 설정 화면·종료 오버레이 모두 같은 창 안의 WPF 오버레이다 — airspace 때문에 라이브
+            // WebView2 HWND 를 가릴 수 없으므로, 스냅샷을 깔고 HWND 를 숨긴다(blankCurtain 여부 무관).
             var fileSnap = await file.Editor.CaptureSnapshotAsync();
             if (fileSnap != null)
     {
@@ -4114,8 +4108,9 @@ public partial class WorkspacePaneView : UserControl
                 // 스냅샷이 실제 프레임에 present 된 뒤 HWND(md 에디터)를 숨긴다 — 동시에 바꾸면 HWND 가
                 // 먼저 사라져 빈 배경이 한 프레임 노출되며 종료 오버레이 직전 깜빡인다(SuspendTerminalOnlyAsync 와 동일 기법).
                 await WaitForFramesAsync(2);
-                FileEditorHostContainer.Visibility = Visibility.Collapsed;
             }
+            // 캡처가 실패해도 HWND 는 반드시 숨긴다 — 남겨두면 오버레이를 뚫고 보인다.
+            FileEditorHostContainer.Visibility = Visibility.Collapsed;
             return;
         }
 

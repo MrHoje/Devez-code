@@ -1588,13 +1588,12 @@ public partial class SettingsDialog : UserControl
     /// <summary>테마를 처음 바꾼 시점의 이전 테마(되돌리기 기준).</summary>
     private string? _themeBeforeChange;
 
-    /// <summary>앱을 닫으면서 설정창을 정리하는 경로 — 저장만 확정하고 세션 재시작은 묻지 않는다
-    /// (곧 종료되므로 재시작 안내가 의미 없다).</summary>
-    public void CloseForAppExit()
+    /// <summary>앱 종료 등 외부 사유로 화면이 사라질 때 — 대기 중인 저장만 확정한다.
+    /// (테마 재시작 안내는 곧 종료되므로 띄우지 않는다.)</summary>
+    public void FlushPendingSave()
     {
         FlushAutoSave();
         _themeReloadPending = false;
-        CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>테마가 바뀐 뒤 아직 세션에 반영(재시작)되지 않았음.</summary>

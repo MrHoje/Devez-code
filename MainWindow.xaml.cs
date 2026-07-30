@@ -963,6 +963,10 @@ public partial class MainWindow : Window
     /// 모든 세션을 graceful 종료(claude/codex transcript flush 기회)한 뒤 실제로 닫는다.</summary>
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // 설정 화면이 열린 채 종료되는 경우 — 디바운스 대기 중인 변경만 확정한다(저장 유실 방지).
+        // 오버레이는 닫지 않는다: 닫으면 ResumeTerminal 로 WebView2 가 되살아나 종료 오버레이를 뚫는다.
+        _settingsView?.FlushPendingSave();
+
         // '닫기 버튼으로 최소화' 설정: 실제 종료(ForceQuit·이미 종료 진행 중)가 아니면 종료를 취소하고 최소화만.
         if (!_shuttingDown && !ForceQuit && SettingsService.LoadMinimizeOnClose())
         {
@@ -2290,6 +2294,9 @@ public partial class MainWindow : Window
     /// 즉시 토글의 터미널 reflow 깜빡임(claude 포함)을 감춘다. 세션 없으면 freeze/reveal 모두 no-op.</summary>
     private async void RunPanelToggleCovered(Action change)
     {
+        // 설정 화면(오버레이)이 열려 있는 동안은 패널을 토글하지 않는다 — 되살아난 WebView2 HWND 가
+        // 오버레이를 뚫고 보인다(airspace). 상단바 버튼은 오버레이에 덮이지 않으므로 여기서 막는다.
+        if (_settingsView != null) return;
         if (_panelCoverBusy) return;
         _panelCoverBusy = true;
         try
@@ -2308,6 +2315,7 @@ public partial class MainWindow : Window
 
     private async void ShellTerminalBtn_Click(object sender, RoutedEventArgs e)
     {
+        if (_settingsView != null) return;   // 설정 화면이 열려 있는 동안은 토글 금지(airspace)
         if (_shellPanelBusy) return;
         _shellPanelBusy = true;
         try { await ToggleShellPanelAsync(!_shellPanelOpen); }
@@ -2448,6 +2456,7 @@ public partial class MainWindow : Window
 
     private void RightPanelBtn_Click(object sender, RoutedEventArgs e)
     {
+        if (_settingsView != null) return;   // 설정 화면이 열려 있는 동안은 토글 금지(airspace)
         // 좁은 창: 도킹 대신 오버레이 드로어를 토글한다(자체 스냅샷 정지 경로 사용 — 커버 불필요).
         if (_narrow == true)
         {
@@ -2509,6 +2518,15 @@ public partial class MainWindow : Window
     /// <summary>F1~F4 — 패널 토글 단축키.</summary>
     protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
     {
+        // 설정 화면(오버레이)이 열려 있으면 패널 토글 단축키는 받지 않는다 — 패널이 열리며 되살아난
+        // WebView2 HWND 가 오버레이를 뚫고 보인다(airspace). ESC 는 설정 닫기로 처리된다.
+        if (_settingsView != null
+            && e.Key is System.Windows.Input.Key.F1 or System.Windows.Input.Key.F2
+                      or System.Windows.Input.Key.F3 or System.Windows.Input.Key.F4)
+        {
+            e.Handled = true;
+            return;
+        }
         if (e.Key == System.Windows.Input.Key.Escape && Sidebar.HasSessionMultiSelection)
         {
             Sidebar.ClearSessionMultiSelection();
@@ -5944,25 +5962,40 @@ public partial class MainWindow : Window
     // ── 설정창 / MCP (오버레이) ───────────────────────────────────────
     private async void SettingsBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (_settingsWindow is { IsLoaded: true } open) { open.Activate(); return; }   // 이미 열려 있으면 그 창으로
-        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);   // 터미널을 숨기고 단색 커튼(배경색)만 보이게.
-        // 설정 화면은 이 창의 상단바 아래를 채운다(위치·크기는 SettingsWindow 가 SettingsHostRectDip 에 맞춘다).
-        // 상단바를 계속 쓰려면 이 창이 비활성(모달)이면 안 되므로 Show() 로 띄운다.
-        var dlg = new Views.SettingsWindow { Owner = this };
-        _settingsWindow = dlg;
-        dlg.Closed += (_, _) =>
-        {
-            _settingsWindow = null;
-            ResumeTerminal();
-            // 설정의 계정 사용량에서 로그인/재연결했을 수 있으니 즉시 갱신.
-            _usageApi.RefreshNow();
-            _codex.RefreshNow();
-            _openCodeGo.RefreshNow();
-        };
-        dlg.Show();
+        if (_settingsView != null) { _settingsView.Focus(); return; }   // 이미 열려 있음
+        // 터미널·웹 콘텐츠(WebView2 HWND)를 숨긴다 — 같은 창 안의 오버레이는 airspace 때문에
+        // 라이브 HWND 를 가릴 수 없으므로 반드시 선행돼야 한다.
+        await SuspendTerminalWithSnapshotAsync(blankCurtain: true);
+
+        var view = new Views.SettingsDialog();
+        view.CloseRequested += (_, _) => CloseSettingsOverlay();
+        SettingsHost.Children.Add(view);
+        SettingsHost.Visibility = Visibility.Visible;
+        _settingsView = view;
+        SettingsHost.Focus();   // ESC 로 닫기
     }
 
-    private Views.SettingsWindow? _settingsWindow;   // 열려 있는 설정 화면(비모달) — 중복 오픈 방지
+    private Views.SettingsDialog? _settingsView;   // 열려 있는 설정 화면(MDI 오버레이)
+
+    private void CloseSettingsOverlay()
+    {
+        if (_settingsView == null) return;
+        _settingsView = null;
+        SettingsHost.Visibility = Visibility.Collapsed;
+        SettingsHost.Children.Clear();
+        ResumeTerminal();
+        // 설정의 계정 사용량에서 로그인/재연결했을 수 있으니 즉시 갱신.
+        _usageApi.RefreshNow();
+        _codex.RefreshNow();
+        _openCodeGo.RefreshNow();
+    }
+
+    private void SettingsHost_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || _settingsView == null) return;
+        e.Handled = true;
+        _settingsView.TryCloseWithConfirm();
+    }
 
     private async void McpBtn_Click(object sender, RoutedEventArgs e)
     {
@@ -6221,6 +6254,7 @@ public partial class MainWindow : Window
         _overlaySuspended = true;
         await FileExplorer.SuspendBrowserAsync();
         foreach (var pane in _panes) await pane.SuspendTerminalWithSnapshotAsync(blankCurtain);
+        await SuspendShellPanelAsync();
     }
 
     private void ResumeTerminal()
@@ -6228,6 +6262,33 @@ public partial class MainWindow : Window
         _overlaySuspended = false;
         FileExplorer.ResumeBrowser();
         foreach (var pane in _panes) pane.ResumeTerminal();
+        ResumeShellPanel();
+    }
+
+    /// <summary>하단 셸 터미널 패널(WebView2)도 스냅샷으로 대체하고 HWND 를 숨긴다.
+    /// 설정 화면처럼 같은 창 안의 WPF 오버레이는 라이브 HWND 를 가릴 수 없다(airspace).</summary>
+    private async Task SuspendShellPanelAsync()
+    {
+        if (ShellTerminalPanel.Visibility != Visibility.Visible) return;
+        try
+        {
+            var snap = await ShellTerminal.CaptureSnapshotAsync();
+            if (snap != null)
+            {
+                ShellTerminalSnapshot.Source = snap;
+                ShellTerminalSnapshot.Visibility = Visibility.Visible;
+                await Views.WorkspacePaneView.WaitForFramesAsync(2); // 스냅샷 present 후 숨김(깜빡임 방지)
+            }
+        }
+        catch { /* 캡처 실패 시 숨김만 — best effort */ }
+        ShellTerminal.Visibility = Visibility.Collapsed;
+    }
+
+    private void ResumeShellPanel()
+    {
+        ShellTerminal.Visibility = Visibility.Visible;   // 패널 자체가 닫혀 있으면 부모가 Collapsed 라 무해
+        ShellTerminalSnapshot.Visibility = Visibility.Collapsed;
+        ShellTerminalSnapshot.Source = null;
     }
 
     /// <summary>우측 오버레이 드로어용 — 터미널만 스냅샷 정지(브라우저는 오버레이 본문이라 제외).</summary>
@@ -6480,27 +6541,6 @@ public partial class MainWindow : Window
         }
         else RootChrome.Margin = default;
     }
-
-    /// <summary>창을 덮는 자식 오버레이(설정창)가 맞춰야 할 시각적 콘텐츠 루트.
-    /// 최대화 시 창은 프레임만큼 화면 밖에 있고 ApplyMaximizeMargin 이 이 요소의 마진으로 보정하므로,
-    /// 창 rect 가 아니라 이 요소의 화면 위치·크기를 기준으로 해야 어긋나지 않는다.</summary>
-    public FrameworkElement ChromeRootElement => RootChrome;
-
-    /// <summary>설정 화면이 채울 영역 — 이 창의 <b>상단바 아래</b>, 테두리 안쪽(화면 좌표 DIP).
-    /// 상단바는 그대로 노출해 앱 이름·패널 토글·창 컨트롤이 계속 동작하게 한다.</summary>
-    public Rect SettingsHostRectDip()
-    {
-        var dpi = VisualTreeHelper.GetDpi(this);
-        var chromeOrigin = RootChrome.PointToScreen(new Point(0, 0));
-        var titleBottom  = TitleBarRow.PointToScreen(new Point(0, TitleBarRow.ActualHeight));
-        double left   = chromeOrigin.X / dpi.DpiScaleX;
-        double top    = titleBottom.Y  / dpi.DpiScaleY;
-        double bottom = chromeOrigin.Y / dpi.DpiScaleY + RootChrome.ActualHeight;
-        return new Rect(left, top, RootChrome.ActualWidth, Math.Max(0, bottom - top));
-    }
-
-    /// <summary>둥근 모서리를 쓰지 않는 상태(최대화/전체화면). 자식 오버레이도 같은 기준을 따라야 한다.</summary>
-    public bool IsSquareCornerState => WindowState == WindowState.Maximized || _inFullScreen;
 
     /// <summary>전체화면(작업표시줄 덮기) 설정 적용. 현재 최대화/전체화면 상태면 즉시 전환.</summary>
     public void ApplyFullScreen(bool useFullScreen)
