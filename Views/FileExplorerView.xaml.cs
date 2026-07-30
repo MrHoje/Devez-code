@@ -20,6 +20,7 @@ public partial class FileExplorerView : UserControl
     private readonly Action<string> _themeChangedHandler;
     private readonly DispatcherTimer _fileSearchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _fileRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private readonly HashSet<string> _pendingRefreshDirectories = new(StringComparer.OrdinalIgnoreCase);
     private bool _subscribed;
 
     /// <summary>SCM 파일 클릭 → 중앙 diff 탭 요청.(repo, relPath, staged) MainWindow 가 구독.</summary>
@@ -40,7 +41,7 @@ public partial class FileExplorerView : UserControl
         _fileRefreshDebounceTimer.Tick += (_, _) =>
         {
             _fileRefreshDebounceTimer.Stop();
-            ReloadRootFromWatcher();
+            RefreshPendingDirectories();
         };
         FileSearchBox.KeyDown += (_, e) =>
         {
@@ -331,14 +332,7 @@ public partial class FileExplorerView : UserControl
         Browser.ProjectPath = path;
 
         var roots = new ObservableCollection<FileNode>();
-        try
-        {
-            foreach (var d in Directory.EnumerateDirectories(path).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
-                if (!IsHidden(d)) roots.Add(FileNode.FromDirectory(d));
-            foreach (var f in Directory.EnumerateFiles(path).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
-                if (!IsHidden(f)) roots.Add(new FileNode { Name = Path.GetFileName(f), FullPath = f, IsDirectory = false });
-        }
-        catch { /* 접근 거부 등 */ }
+        FileNode.ReconcileDirectory(roots, path);
         _rootNodes = roots;
         ApplyFileSearchFilter();
         UpdateDirectoryExpandAllVisual();
@@ -506,44 +500,134 @@ public partial class FileExplorerView : UserControl
             _fileWatcher = new FileSystemWatcher(path)
             {
                 IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
+                // 트리에는 파일 내용/수정 시각을 표시하지 않으므로 LastWrite 는 갱신 사유가 아니다.
+                // 구조 변경만 받아 일반 저장 때 펼침 상태와 스크롤이 흔들리지 않게 한다.
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
                 EnableRaisingEvents = true,
             };
-            _fileWatcher.Created += FileWatcher_Changed;
-            _fileWatcher.Deleted += FileWatcher_Changed;
-            _fileWatcher.Changed += FileWatcher_Changed;
-            _fileWatcher.Renamed += FileWatcher_Changed;
+            _fileWatcher.Created += FileWatcher_StructureChanged;
+            _fileWatcher.Deleted += FileWatcher_StructureChanged;
+            _fileWatcher.Renamed += FileWatcher_Renamed;
+            _fileWatcher.Error += FileWatcher_Error;
         }
         catch { _fileWatcher = null; }
     }
 
     private void DisposeFileWatcher()
     {
+        _fileRefreshDebounceTimer.Stop();
+        _pendingRefreshDirectories.Clear();
         if (_fileWatcher == null) return;
         try
         {
             _fileWatcher.EnableRaisingEvents = false;
-            _fileWatcher.Created -= FileWatcher_Changed;
-            _fileWatcher.Deleted -= FileWatcher_Changed;
-            _fileWatcher.Changed -= FileWatcher_Changed;
-            _fileWatcher.Renamed -= FileWatcher_Changed;
+            _fileWatcher.Created -= FileWatcher_StructureChanged;
+            _fileWatcher.Deleted -= FileWatcher_StructureChanged;
+            _fileWatcher.Renamed -= FileWatcher_Renamed;
+            _fileWatcher.Error -= FileWatcher_Error;
             _fileWatcher.Dispose();
         }
         catch { }
         _fileWatcher = null;
     }
 
-    private void FileWatcher_Changed(object sender, FileSystemEventArgs e)
+    private void FileWatcher_StructureChanged(object sender, FileSystemEventArgs e)
     {
-        // .git 내부 변경은 무시 — 우리 RefreshAsync 의 git status 가 .git/index stat 캐시를 갱신하면
-        // watcher 가 재발화해 refresh 무한 루프(리스트 지속 깜빡·스크롤바 churn)가 된다.
         if (IsGitInternal(e.FullPath)) return;
         if (IsHidden(e.FullPath)) return;
+        QueueDirectoryRefresh(Path.GetDirectoryName(e.FullPath));
+    }
+
+    private void FileWatcher_Renamed(object sender, RenamedEventArgs e)
+    {
+        var directories = new List<string?>(2);
+        if (!IsGitInternal(e.OldFullPath)) directories.Add(Path.GetDirectoryName(e.OldFullPath));
+        if (!IsGitInternal(e.FullPath) && !IsHidden(e.FullPath))
+            directories.Add(Path.GetDirectoryName(e.FullPath));
+        QueueDirectoryRefresh(directories.ToArray());
+    }
+
+    private void FileWatcher_Error(object sender, ErrorEventArgs e)
+    {
+        // watcher 버퍼 초과 등으로 개별 이벤트를 놓친 경우에만 전체 로드 상태를 재조정한다.
+        Dispatcher.BeginInvoke(new Action(ReloadRootFromWatcher), DispatcherPriority.Background);
+    }
+
+    private void QueueDirectoryRefresh(params string?[] directories)
+    {
         Dispatcher.BeginInvoke(new Action(() =>
         {
+            foreach (var directory in directories)
+                if (!string.IsNullOrEmpty(directory) && IsInsideRoot(directory))
+                    _pendingRefreshDirectories.Add(directory);
+            if (_pendingRefreshDirectories.Count == 0) return;
             _fileRefreshDebounceTimer.Stop();
             _fileRefreshDebounceTimer.Start();
         }), DispatcherPriority.Background);
+    }
+
+    private bool IsInsideRoot(string path)
+    {
+        if (string.IsNullOrEmpty(_rootPath)) return false;
+        try
+        {
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_rootPath));
+            var candidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+            return string.Equals(root, candidate, StringComparison.OrdinalIgnoreCase)
+                || candidate.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    private void RefreshPendingDirectories()
+    {
+        if (string.IsNullOrEmpty(_rootPath) || !Directory.Exists(_rootPath))
+        {
+            _pendingRefreshDirectories.Clear();
+            ShowDirectory(null);
+            return;
+        }
+
+        var directories = _pendingRefreshDirectories
+            .OrderBy(path => path.Length)
+            .ToList();
+        _pendingRefreshDirectories.Clear();
+        foreach (var directory in directories)
+            RefreshDirectory(directory);
+        if (!string.IsNullOrWhiteSpace(FileSearchBox.Text))
+            ApplyFileSearchFilter();
+        UpdateDirectoryExpandAllVisual();
+    }
+
+    private void RefreshDirectory(string directory)
+    {
+        if (_rootNodes == null || string.IsNullOrEmpty(_rootPath)) return;
+        if (string.Equals(
+                Path.TrimEndingDirectorySeparator(directory),
+                Path.TrimEndingDirectorySeparator(_rootPath),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            FileNode.ReconcileDirectory(_rootNodes, _rootPath);
+            return;
+        }
+
+        FindDirectoryNode(directory)?.Refresh();
+    }
+
+    private FileNode? FindDirectoryNode(string path)
+    {
+        if (_rootNodes == null) return null;
+        var pending = new Stack<FileNode>(_rootNodes.Where(node => node.IsDirectory));
+        while (pending.Count > 0)
+        {
+            var node = pending.Pop();
+            if (string.Equals(node.FullPath, path, StringComparison.OrdinalIgnoreCase))
+                return node;
+            foreach (var child in node.Children)
+                if (child.IsDirectory && !string.IsNullOrEmpty(child.FullPath))
+                    pending.Push(child);
+        }
+        return null;
     }
 
     /// <summary>경로가 .git 디렉터리 내부(또는 .git 자체)인지 — watcher refresh 루프 방지용.</summary>
@@ -556,23 +640,48 @@ public partial class FileExplorerView : UserControl
 
     private void ReloadRootFromWatcher()
     {
-        if (string.IsNullOrEmpty(_rootPath) || !Directory.Exists(_rootPath))
-        {
-            ShowDirectory(null);
-            return;
-        }
-
-        var path = _rootPath;
-        _rootPath = null;
-        ShowDirectory(path);
+        RefreshExpandedTree();
     }
 
     /// <summary>루트 목록을 디스크 상태로 다시 읽는다(루트 레벨 항목 변경 후).</summary>
     private void ReloadRoot()
     {
-        var p = _rootPath;
-        _rootPath = null;          // ShowDirectory 의 동일 경로 early-return 회피
-        ShowDirectory(p);
+        RefreshDirectory(_rootPath ?? "");
+        if (!string.IsNullOrWhiteSpace(FileSearchBox.Text))
+            ApplyFileSearchFilter();
+        UpdateDirectoryExpandAllVisual();
+    }
+
+    /// <summary>watcher 이벤트 유실 시 펼쳐진 폴더는 기존 노드를 보존해 재조정하고, 접힌 폴더는
+    /// 로드 캐시를 비워 다음 펼침 때 디스크에서 다시 읽게 한다.</summary>
+    private void RefreshExpandedTree()
+    {
+        if (string.IsNullOrEmpty(_rootPath) || !Directory.Exists(_rootPath))
+        {
+            ShowDirectory(null);
+            return;
+        }
+        if (_rootNodes == null)
+        {
+            var path = _rootPath;
+            _rootPath = null;
+            ShowDirectory(path);
+            return;
+        }
+
+        FileNode.ReconcileDirectory(_rootNodes, _rootPath);
+        var pending = new Stack<FileNode>(_rootNodes.Where(node => node.IsDirectory));
+        while (pending.Count > 0)
+        {
+            var node = pending.Pop();
+            node.Refresh();
+            foreach (var child in node.Children)
+                if (child.IsDirectory)
+                    pending.Push(child);
+        }
+        if (!string.IsNullOrWhiteSpace(FileSearchBox.Text))
+            ApplyFileSearchFilter();
+        UpdateDirectoryExpandAllVisual();
     }
 
     private static bool IsHidden(string p)
