@@ -5,10 +5,10 @@ using System.Text;
 
 namespace DevezCode.Services.Terminal;
 
-/// <summary>claude code 커스텀 테마 — DevezCode 3개 테마 중 soft/minimal 의 톤에 맞춘 두 개.
-/// <c>~/.claude/themes/devez-soft.json</c>, <c>devez-minimal.json</c> 으로 매 시작 시 번들 내용으로
+/// <summary>claude code 커스텀 테마 — DevezCode 테마 중 dark 를 제외한 5개 팔레트.
+/// <c>~/.claude/themes/devez-*.json</c> 으로 매 시작 시 번들 내용으로
 /// 항상 재생성(statusline.js 와 동일한 관리 방식) — 팔레트를 코드에서 바꾸면 다음 실행에 바로 반영.
-/// 이 두 파일은 우리 전용 슬러그라 사용자가 직접 편집해 커스터마이즈할 대상이 아니다.
+/// 이 파일들은 우리 전용 슬러그라 사용자가 직접 편집해 커스터마이즈할 대상이 아니다.
 /// Per-session 으로 <c>/config theme=custom:devez-soft</c> 같은 형태로 주입해서 사용.
 /// (dark 는 claude 내장 "dark" 와 톤이 같으므로 별도 커스텀 불필요.)</summary>
 public static class ClaudeCustomThemes
@@ -92,10 +92,10 @@ public static class ClaudeCustomThemes
         "selectionBg": "#C2D8B0",
         "diffAdded": "#DEECD6",
         "diffAddedDimmed": "#F2EDE6",
-        "diffAddedWord": "#7BAA68",
+        "diffAddedWord": "#A8C69B",
         "diffRemoved": "#F2D6D6",
         "diffRemovedDimmed": "#F2EDE6",
-        "diffRemovedWord": "#E8A0A0",
+        "diffRemovedWord": "#E4AEB0",
         "rate_limit_fill": "#5C8C4A",
         "rate_limit_empty": "#D8D2C6",
         "briefLabelYou": "#5C8C4A",
@@ -138,12 +138,12 @@ public static class ClaudeCustomThemes
         "bashMessageBackgroundColor": "#F1F5F9",
         "memoryBackgroundColor": "#F1F5F9",
         "selectionBg": "#C5D8F8",
-        "diffAdded": "#DBEAFE",
+        "diffAdded": "#E7F6EB",
         "diffAddedDimmed": "#F8FAFC",
-        "diffAddedWord": "#60A5FA",
-        "diffRemoved": "#FEE2E2",
+        "diffAddedWord": "#9EDDAE",
+        "diffRemoved": "#FCE8E8",
         "diffRemovedDimmed": "#F8FAFC",
-        "diffRemovedWord": "#F87171",
+        "diffRemovedWord": "#F0AAB2",
         "rate_limit_fill": "#2563EB",
         "rate_limit_empty": "#E2E8F0",
         "briefLabelYou": "#2563EB",
@@ -165,8 +165,8 @@ public static class ClaudeCustomThemes
         "planMode": "#4B5563", "autoAccept": "#4B5563", "bashBorder": "#4B5563", "ide": "#5F6774", "fastMode": "#4B5563",
         "userMessageBackground": "#E2E5E9", "userMessageBackgroundHover": "#C7CDD4",
         "messageActionsBackground": "#E5E7EB", "bashMessageBackgroundColor": "#E5E7EB", "memoryBackgroundColor": "#E5E7EB", "selectionBg": "#D9DDE3",
-        "diffAdded": "#E7F6EB", "diffAddedDimmed": "#F3F4F6", "diffAddedWord": "#15803D",
-        "diffRemoved": "#FCE8E8", "diffRemovedDimmed": "#F3F4F6", "diffRemovedWord": "#C2413E",
+        "diffAdded": "#E7F6EB", "diffAddedDimmed": "#F3F4F6", "diffAddedWord": "#9EDDAE",
+        "diffRemoved": "#FCE8E8", "diffRemovedDimmed": "#F3F4F6", "diffRemovedWord": "#F0AAB2",
         "rate_limit_fill": "#4B5563", "rate_limit_empty": "#D1D5DB", "briefLabelYou": "#4B5563", "briefLabelClaude": "#5F6774"
       }
     }
@@ -185,8 +185,8 @@ public static class ClaudeCustomThemes
         "planMode": "#B54A6B", "autoAccept": "#B54A6B", "bashBorder": "#B54A6B", "ide": "#735763", "fastMode": "#B54A6B",
         "userMessageBackground": "#F8DCE6", "userMessageBackgroundHover": "#E8BFCF",
         "messageActionsBackground": "#FCEFF4", "bashMessageBackgroundColor": "#FCEFF4", "memoryBackgroundColor": "#FCEFF4", "selectionBg": "#F2C9D7",
-        "diffAdded": "#E9F5EC", "diffAddedDimmed": "#FFF7FA", "diffAddedWord": "#25723C",
-        "diffRemoved": "#FDE7E7", "diffRemovedDimmed": "#FFF7FA", "diffRemovedWord": "#C2413E",
+        "diffAdded": "#E9F5EC", "diffAddedDimmed": "#FFF7FA", "diffAddedWord": "#9ED8AE",
+        "diffRemoved": "#FDE7E7", "diffRemovedDimmed": "#FFF7FA", "diffRemovedWord": "#F2AFB6",
         "rate_limit_fill": "#B54A6B", "rate_limit_empty": "#EBCFD9", "briefLabelYou": "#B54A6B", "briefLabelClaude": "#735763"
       }
     }
@@ -205,8 +205,8 @@ public static class ClaudeCustomThemes
         "planMode": "#60A5FA", "autoAccept": "#34D399", "bashBorder": "#60A5FA", "ide": "#9CA3AF", "fastMode": "#60A5FA",
         "userMessageBackground": "#1E3A5F", "userMessageBackgroundHover": "#2D4A6B",
         "messageActionsBackground": "#1F2937", "bashMessageBackgroundColor": "#1F2937", "memoryBackgroundColor": "#1F2937", "selectionBg": "#1E3A5F",
-        "diffAdded": "#16362F", "diffAddedDimmed": "#111827", "diffAddedWord": "#34D399",
-        "diffRemoved": "#3B1F2B", "diffRemovedDimmed": "#111827", "diffRemovedWord": "#F87171",
+        "diffAdded": "#16362F", "diffAddedDimmed": "#111827", "diffAddedWord": "#1E5E4C",
+        "diffRemoved": "#3B1F2B", "diffRemovedDimmed": "#111827", "diffRemovedWord": "#7E3345",
         "rate_limit_fill": "#60A5FA", "rate_limit_empty": "#374151", "briefLabelYou": "#93C5FD", "briefLabelClaude": "#CBD5E1"
       }
     }

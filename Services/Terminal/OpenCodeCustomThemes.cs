@@ -4,10 +4,10 @@ using System.Text;
 
 namespace DevezCode.Services.Terminal;
 
-/// <summary>opencode 커스텀 테마 — DevezCode dark/soft/minimal 팔레트를 opencode TUI에 적용.
-/// <c>~/.config/opencode/themes/devez-{dark,soft,minimal}.json</c> 으로 매 시작 시 번들 내용으로
+/// <summary>opencode 커스텀 테마 — DevezCode 6개 팔레트를 opencode TUI에 적용.
+/// <c>~/.config/opencode/themes/devez-*.json</c> 으로 매 시작 시 번들 내용으로
 /// 항상 재생성(statusline.js/ClaudeCustomThemes 와 동일한 관리 방식) — 팔레트를 코드에서 바꾸면
-/// 다음 실행에 바로 반영. 이 세 파일은 우리 전용 슬러그라 사용자가 직접 편집할 대상이 아니다.
+/// 다음 실행에 바로 반영. 이 파일들은 우리 전용 슬러그라 사용자가 직접 편집할 대상이 아니다.
 /// TUI 설정은 AppData에 두고 OPENCODE_TUI_CONFIG로 DevezCode 세션에만 주입한다.</summary>
 public static class OpenCodeCustomThemes
 {
@@ -121,6 +121,13 @@ public static class OpenCodeCustomThemes
         "line":       "#404040",
         "codeBg":     "#272727",
         "codeBorder": "#404040",
+        "diffAddText":    "#A7C8A0",
+        "diffRemText":    "#D8A0A2",
+        "diffAddBg":      "#303A30",
+        "diffRemBg":      "#3A3030",
+        "diffLine":       "#AAAAAA",
+        "diffAddLineBg":  "#293429",
+        "diffRemLineBg":  "#342929",
         "darkStep1":  "#1F1F1E",
         "darkStep2":  "#272727",
         "darkStep3":  "#2F2F2F",
@@ -176,18 +183,18 @@ public static class OpenCodeCustomThemes
         "border":            { "dark": "line",       "light": "lightStep7" },
         "borderActive":      { "dark": "darkStep8",  "light": "lightStep8" },
         "borderSubtle":      { "dark": "line",       "light": "lightStep6" },
-        "diffAdded":         { "dark": "darkGreen",  "light": "lightGreen" },
-        "diffRemoved":       { "dark": "darkRed",    "light": "lightRed" },
-        "diffContext":       { "dark": "darkStep11", "light": "lightStep11" },
-        "diffHunkHeader":    { "dark": "darkStep11", "light": "lightStep11" },
-        "diffHighlightAdded":   { "dark": "darkGreen", "light": "lightGreen" },
-        "diffHighlightRemoved": { "dark": "darkRed",   "light": "lightRed" },
-        "diffAddedBg":           { "dark": "#20303b", "light": "#d5e5d5" },
-        "diffRemovedBg":         { "dark": "#37222c", "light": "#f7d8db" },
+        "diffAdded":         { "dark": "diffAddText", "light": "diffAddText" },
+        "diffRemoved":       { "dark": "diffRemText", "light": "diffRemText" },
+        "diffContext":       { "dark": "diffLine", "light": "diffLine" },
+        "diffHunkHeader":    { "dark": "diffLine", "light": "diffLine" },
+        "diffHighlightAdded":   { "dark": "diffAddText", "light": "diffAddText" },
+        "diffHighlightRemoved": { "dark": "diffRemText", "light": "diffRemText" },
+        "diffAddedBg":           { "dark": "diffAddBg", "light": "diffAddBg" },
+        "diffRemovedBg":         { "dark": "diffRemBg", "light": "diffRemBg" },
         "diffContextBg":         { "dark": "panel",   "light": "lightStep2" },
-        "diffLineNumber":        { "dark": "#8f8f8f", "light": "#595959" },
-        "diffAddedLineNumberBg":   { "dark": "#1b2b34", "light": "#c5d5c5" },
-        "diffRemovedLineNumberBg": { "dark": "#2d1f26", "light": "#e7c8cb" },
+        "diffLineNumber":        { "dark": "diffLine", "light": "diffLine" },
+        "diffAddedLineNumberBg":   { "dark": "diffAddLineBg", "light": "diffAddLineBg" },
+        "diffRemovedLineNumberBg": { "dark": "diffRemLineBg", "light": "diffRemLineBg" },
         "markdownText":         { "dark": "darkStep12", "light": "lightStep12" },
         "markdownHeading":      { "dark": "darkAccent", "light": "lightAccent" },
         "markdownLink":         { "dark": "darkStep9",  "light": "lightStep9" },
@@ -236,8 +243,8 @@ public static class OpenCodeCustomThemes
         "diffRemBg":  "#F2D6D6",
         "codeBg":     "#FAF7F2",
         "codeBorder": "#D8D2C6",
-        "hlAdd":      "#5C8C4A",
-        "hlRem":      "#D95F5F"
+        "diffAddText": "#365F2D",
+        "diffRemText": "#8C3F46"
       },
       "theme": {
         "primary":           { "dark": "primary",  "light": "primary" },
@@ -255,12 +262,12 @@ public static class OpenCodeCustomThemes
         "border":            { "dark": "line",     "light": "line" },
         "borderActive":      { "dark": "primary",  "light": "primary" },
         "borderSubtle":      { "dark": "line",     "light": "line" },
-        "diffAdded":         { "dark": "hlAdd",    "light": "hlAdd" },
-        "diffRemoved":       { "dark": "hlRem",    "light": "hlRem" },
+        "diffAdded":         { "dark": "diffAddText", "light": "diffAddText" },
+        "diffRemoved":       { "dark": "diffRemText", "light": "diffRemText" },
         "diffContext":       { "dark": "muted",    "light": "muted" },
         "diffHunkHeader":    { "dark": "muted",    "light": "muted" },
-        "diffHighlightAdded":   { "dark": "hlAdd", "light": "hlAdd" },
-        "diffHighlightRemoved": { "dark": "hlRem", "light": "hlRem" },
+        "diffHighlightAdded":   { "dark": "diffAddText", "light": "diffAddText" },
+        "diffHighlightRemoved": { "dark": "diffRemText", "light": "diffRemText" },
         "diffAddedBg":          { "dark": "diffAddBg", "light": "diffAddBg" },
         "diffRemovedBg":        { "dark": "diffRemBg", "light": "diffRemBg" },
         "diffContextBg":        { "dark": "panel", "light": "panel" },
@@ -294,6 +301,7 @@ public static class OpenCodeCustomThemes
     }
     """;
 
+    // diff 전경은 primary/error 와 별도 토큰으로 치환해 테마 파생 시 초록/빨강 의미가 변하지 않게 한다.
     private static readonly string GrayThemeJson = SoftThemeJson
         .Replace("Devez Soft", "Devez Gray", StringComparison.Ordinal)
         .Replace("#F2EDE6", "#F3F4F6", StringComparison.Ordinal)
@@ -308,7 +316,9 @@ public static class OpenCodeCustomThemes
         .Replace("#C97C1A", "#A16207", StringComparison.Ordinal)
         .Replace("#4E7A3E", "#15803D", StringComparison.Ordinal)
         .Replace("#DEECD6", "#E7F6EB", StringComparison.Ordinal)
-        .Replace("#F2D6D6", "#FCE8E8", StringComparison.Ordinal);
+        .Replace("#F2D6D6", "#FCE8E8", StringComparison.Ordinal)
+        .Replace("#365F2D", "#355E3B", StringComparison.Ordinal)
+        .Replace("#8C3F46", "#8B3A3A", StringComparison.Ordinal);
 
     private static readonly string SoftPinkThemeJson = SoftThemeJson
         .Replace("Devez Soft", "Devez Soft Pink", StringComparison.Ordinal)
@@ -324,7 +334,9 @@ public static class OpenCodeCustomThemes
         .Replace("#C97C1A", "#9A650B", StringComparison.Ordinal)
         .Replace("#4E7A3E", "#25723C", StringComparison.Ordinal)
         .Replace("#DEECD6", "#E9F5EC", StringComparison.Ordinal)
-        .Replace("#F2D6D6", "#FDE7E7", StringComparison.Ordinal);
+        .Replace("#F2D6D6", "#FDE7E7", StringComparison.Ordinal)
+        .Replace("#365F2D", "#315E42", StringComparison.Ordinal)
+        .Replace("#8C3F46", "#913A46", StringComparison.Ordinal);
 
     private static readonly string MidnightThemeJson = DarkThemeJson
         .Replace("Devez Dark", "Devez Midnight Blue", StringComparison.Ordinal)
@@ -338,6 +350,7 @@ public static class OpenCodeCustomThemes
         .Replace("#fab283", "#60A5FA", StringComparison.OrdinalIgnoreCase)
         .Replace("#ffc09f", "#93C5FD", StringComparison.OrdinalIgnoreCase)
         .Replace("#808080", "#9CA3AF", StringComparison.OrdinalIgnoreCase)
+        .Replace("#AAAAAA", "#9CA3AF", StringComparison.OrdinalIgnoreCase)
         .Replace("#eeeeee", "#E5E7EB", StringComparison.OrdinalIgnoreCase)
         .Replace("#5c9cf5", "#38BDF8", StringComparison.OrdinalIgnoreCase)
         .Replace("#9d7cd8", "#A78BFA", StringComparison.OrdinalIgnoreCase)
@@ -346,10 +359,12 @@ public static class OpenCodeCustomThemes
         .Replace("#7fd88f", "#34D399", StringComparison.OrdinalIgnoreCase)
         .Replace("#56b6c2", "#22D3EE", StringComparison.OrdinalIgnoreCase)
         .Replace("#e5c07b", "#FCD34D", StringComparison.OrdinalIgnoreCase)
-        .Replace("#20303b", "#16362F", StringComparison.OrdinalIgnoreCase)
-        .Replace("#37222c", "#3B1F2B", StringComparison.OrdinalIgnoreCase)
-        .Replace("#1b2b34", "#102E29", StringComparison.OrdinalIgnoreCase)
-        .Replace("#2d1f26", "#321B25", StringComparison.OrdinalIgnoreCase);
+        .Replace("#A7C8A0", "#9AC7B2", StringComparison.OrdinalIgnoreCase)
+        .Replace("#D8A0A2", "#DEA0AB", StringComparison.OrdinalIgnoreCase)
+        .Replace("#303A30", "#16362F", StringComparison.OrdinalIgnoreCase)
+        .Replace("#3A3030", "#3B1F2B", StringComparison.OrdinalIgnoreCase)
+        .Replace("#293429", "#102E29", StringComparison.OrdinalIgnoreCase)
+        .Replace("#342929", "#321B25", StringComparison.OrdinalIgnoreCase);
 
     private const string MinimalThemeJson = """
     {
@@ -368,12 +383,12 @@ public static class OpenCodeCustomThemes
         "error":      "#EF4444",
         "warning":    "#CA8A04",
         "success":    "#15803D",
-        "diffAddBg":  "#DBEAFE",
-        "diffRemBg":  "#FEE2E2",
+        "diffAddBg":  "#E7F6EB",
+        "diffRemBg":  "#FCE8E8",
         "codeBg":     "#FFFFFF",
         "codeBorder": "#E2E8F0",
-        "hlAdd":      "#2563EB",
-        "hlRem":      "#DC2626"
+        "diffAddText": "#355E3B",
+        "diffRemText": "#8B3A3A"
       },
       "theme": {
         "primary":           { "dark": "primary",  "light": "primary" },
@@ -391,12 +406,12 @@ public static class OpenCodeCustomThemes
         "border":            { "dark": "line",     "light": "line" },
         "borderActive":      { "dark": "primary",  "light": "primary" },
         "borderSubtle":      { "dark": "line",     "light": "line" },
-        "diffAdded":         { "dark": "hlAdd",    "light": "hlAdd" },
-        "diffRemoved":       { "dark": "hlRem",    "light": "hlRem" },
+        "diffAdded":         { "dark": "diffAddText", "light": "diffAddText" },
+        "diffRemoved":       { "dark": "diffRemText", "light": "diffRemText" },
         "diffContext":       { "dark": "muted",    "light": "muted" },
         "diffHunkHeader":    { "dark": "muted",    "light": "muted" },
-        "diffHighlightAdded":   { "dark": "hlAdd", "light": "hlAdd" },
-        "diffHighlightRemoved": { "dark": "hlRem", "light": "hlRem" },
+        "diffHighlightAdded":   { "dark": "diffAddText", "light": "diffAddText" },
+        "diffHighlightRemoved": { "dark": "diffRemText", "light": "diffRemText" },
         "diffAddedBg":          { "dark": "diffAddBg", "light": "diffAddBg" },
         "diffRemovedBg":        { "dark": "diffRemBg", "light": "diffRemBg" },
         "diffContextBg":        { "dark": "panel", "light": "panel" },

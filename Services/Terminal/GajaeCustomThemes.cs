@@ -5,7 +5,7 @@ using System.Text;
 
 namespace DevezCode.Services.Terminal;
 
-/// <summary>가재코드(gjc) 커스텀 테마 — DevezCode dark/soft/minimal 팔레트를 gjc TUI 에 적용.
+/// <summary>가재코드(gjc) 커스텀 테마 — DevezCode 6개 팔레트를 gjc TUI 에 적용.
 /// gjc 는 활성 커스텀 테마 파일(<c>~/.gjc/agent/themes/&lt;name&gt;.json</c>)을 감시해 저장 시 라이브 리로드한다.
 /// 그래서 고정 이름 <c>devez</c> 하나를 쓰고, 앱 테마가 바뀔 때마다 그 파일의 팔레트를 덮어써서 즉시 반영.
 /// <c>~/.gjc/agent/config.yml</c> 에서 테마를 <c>devez</c> 로 고정하고,
@@ -130,7 +130,7 @@ public static class GajaeCustomThemes
         return sb.ToString();
     }
 
-    /// <summary>테마별 팔레트(gjc colors 매핑이 참조하는 var 이름들). DevezCode dark/soft/minimal 색상에서 가져옴.</summary>
+    /// <summary>테마별 팔레트(gjc colors 매핑이 참조하는 var 이름들). DevezCode 6개 테마 색상에서 가져옴.</summary>
     private static Dictionary<string, string> Vars(string theme) => theme switch
     {
         "soft" => new()
@@ -140,7 +140,7 @@ public static class GajaeCustomThemes
             ["primary"] = "#5C8C4A", ["secondary"] = "#7BAA68", ["accentPurple"] = "#5C8C4A",
             ["errorRed"] = "#D95F5F", ["warningOrange"] = "#C97C1A", ["successGreen"] = "#4E7A3E",
             ["infoCyan"] = "#4E7A3E", ["emphasizedYellow"] = "#C97C1A", ["border"] = "#D8D2C6",
-            ["diffAdded"] = "#5C8C4A", ["diffRemoved"] = "#D95F5F", ["diffContext"] = "#5A5448",
+            ["diffAdded"] = "#365F2D", ["diffRemoved"] = "#8C3F46", ["diffContext"] = "#5A5448",
             ["addedBg"] = "#DEECD6", ["removedBg"] = "#F2D6D6",
         },
         "minimal" => new()
@@ -150,8 +150,8 @@ public static class GajaeCustomThemes
             ["primary"] = "#2563EB", ["secondary"] = "#60A5FA", ["accentPurple"] = "#2563EB",
             ["errorRed"] = "#EF4444", ["warningOrange"] = "#CA8A04", ["successGreen"] = "#15803D",
             ["infoCyan"] = "#2563EB", ["emphasizedYellow"] = "#CA8A04", ["border"] = "#E2E8F0",
-            ["diffAdded"] = "#2563EB", ["diffRemoved"] = "#DC2626", ["diffContext"] = "#475569",
-            ["addedBg"] = "#DBEAFE", ["removedBg"] = "#FEE2E2",
+            ["diffAdded"] = "#355E3B", ["diffRemoved"] = "#8B3A3A", ["diffContext"] = "#475569",
+            ["addedBg"] = "#E7F6EB", ["removedBg"] = "#FCE8E8",
         },
         "gray" => new()
         {
@@ -160,7 +160,7 @@ public static class GajaeCustomThemes
             ["primary"] = "#4B5563", ["secondary"] = "#326AA5", ["accentPurple"] = "#76558F",
             ["errorRed"] = "#C2413E", ["warningOrange"] = "#A16207", ["successGreen"] = "#15803D",
             ["infoCyan"] = "#0E7490", ["emphasizedYellow"] = "#A16207", ["border"] = "#D1D5DB",
-            ["diffAdded"] = "#15803D", ["diffRemoved"] = "#C2413E", ["diffContext"] = "#5F6774",
+            ["diffAdded"] = "#355E3B", ["diffRemoved"] = "#8B3A3A", ["diffContext"] = "#5F6774",
             ["addedBg"] = "#E7F6EB", ["removedBg"] = "#FCE8E8",
         },
         "softpink" => new()
@@ -170,7 +170,7 @@ public static class GajaeCustomThemes
             ["primary"] = "#B54A6B", ["secondary"] = "#326A9F", ["accentPurple"] = "#84588F",
             ["errorRed"] = "#C2413E", ["warningOrange"] = "#9A650B", ["successGreen"] = "#25723C",
             ["infoCyan"] = "#16758A", ["emphasizedYellow"] = "#9A650B", ["border"] = "#EBCFD9",
-            ["diffAdded"] = "#25723C", ["diffRemoved"] = "#C2413E", ["diffContext"] = "#735763",
+            ["diffAdded"] = "#315E42", ["diffRemoved"] = "#913A46", ["diffContext"] = "#735763",
             ["addedBg"] = "#E9F5EC", ["removedBg"] = "#FDE7E7",
         },
         "midnight" => new()
@@ -180,7 +180,7 @@ public static class GajaeCustomThemes
             ["primary"] = "#60A5FA", ["secondary"] = "#38BDF8", ["accentPurple"] = "#A78BFA",
             ["errorRed"] = "#F87171", ["warningOrange"] = "#FBBF24", ["successGreen"] = "#34D399",
             ["infoCyan"] = "#22D3EE", ["emphasizedYellow"] = "#FCD34D", ["border"] = "#374151",
-            ["diffAdded"] = "#34D399", ["diffRemoved"] = "#F87171", ["diffContext"] = "#9CA3AF",
+            ["diffAdded"] = "#9AC7B2", ["diffRemoved"] = "#DEA0AB", ["diffContext"] = "#9CA3AF",
             ["addedBg"] = "#16362F", ["removedBg"] = "#3B1F2B",
         },
         _ => new() // dark
@@ -190,7 +190,7 @@ public static class GajaeCustomThemes
             ["primary"] = "#FAB283", ["secondary"] = "#5C9CF5", ["accentPurple"] = "#9D7CD8",
             ["errorRed"] = "#E06C75", ["warningOrange"] = "#F5A742", ["successGreen"] = "#7FD88F",
             ["infoCyan"] = "#56B6C2", ["emphasizedYellow"] = "#E5C07B", ["border"] = "#404040",
-            ["diffAdded"] = "#478247", ["diffRemoved"] = "#7C4444", ["diffContext"] = "#A0A0A0",
+            ["diffAdded"] = "#A7C8A0", ["diffRemoved"] = "#D8A0A2", ["diffContext"] = "#AAAAAA",
             ["addedBg"] = "#303A30", ["removedBg"] = "#3A3030",
         },
     };

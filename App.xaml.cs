@@ -788,6 +788,11 @@ public partial class App : Application
         res["TextBrush"]              = new SolidColorBrush(text);
         res["TextMutedBrush"]         = new SolidColorBrush(textMuted);
         res["PrimaryBrush"]           = new SolidColorBrush(primary);
+        // 세션 생존 상태는 액션 강조색과 분리한다. Gray에서는 청회색/연회색으로 즉시 구분.
+        var sessionAlive = theme == "gray" ? Color.FromRgb(0x32, 0x6a, 0xa5) : primary;
+        var sessionInactive = theme == "gray" ? Color.FromRgb(0x9c, 0xa3, 0xaf) : Color.FromRgb(0x6b, 0x72, 0x80);
+        res["SessionAliveBrush"]      = new SolidColorBrush(sessionAlive);
+        res["SessionInactiveBrush"]   = new SolidColorBrush(sessionInactive);
         res["ProjectMarkerRedBrush"]    = new SolidColorBrush(markerRed);
         res["ProjectMarkerOrangeBrush"] = new SolidColorBrush(markerOrange);
         res["ProjectMarkerYellowBrush"] = new SolidColorBrush(markerYellow);

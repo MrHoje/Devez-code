@@ -41,15 +41,15 @@
             <local:ProjectColumnsPanel Columns="{Binding Tag, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
         </ItemsPanelTemplate>
 
-        <!-- 세션 상태 점: 살아있으면 테마 primary(다크=주황), 죽으면 회색 -->
+        <!-- 세션 상태 점: 생존/종료를 전용 상태색으로 분리. Gray는 청회색/연회색. -->
         <Style x:Key="SessionDot" TargetType="Ellipse">
             <Setter Property="Width" Value="8"/>
             <Setter Property="Height" Value="8"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Fill" Value="#6B7280"/>
+            <Setter Property="Fill" Value="{DynamicResource SessionInactiveBrush}"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsAlive}" Value="True">
-                    <Setter Property="Fill" Value="{DynamicResource PrimaryBrush}"/>
+                    <Setter Property="Fill" Value="{DynamicResource SessionAliveBrush}"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -293,7 +293,7 @@
                         <Ellipse x:Name="BusySpinner" Width="12" Height="12" Visibility="Collapsed"
                                  ToolTip="{Binding BusyElapsedToolTip}"
                                  models:SpinnerActivator.Track="True"
-                                 Stroke="{DynamicResource PrimaryBrush}" StrokeThickness="1.6"
+                                 Stroke="{DynamicResource SessionAliveBrush}" StrokeThickness="1.6"
                                  StrokeDashArray="15 100" StrokeDashCap="Round"
                                  RenderTransformOrigin="0.5,0.5">
                             <Ellipse.RenderTransform>
