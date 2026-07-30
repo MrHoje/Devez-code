@@ -669,7 +669,17 @@ public partial class SidebarView : UserControl
     }
 
     private void ProjectScrollChanged(object sender, ScrollChangedEventArgs e)
-        => UpdateProjectScrollVisuals((ScrollViewer)sender);
+    {
+        UpdateProjectScrollVisuals((ScrollViewer)sender);
+        // 드래그 중 목록이 스크롤되면 카드가 그만큼 위로 올라간다 → 캡처 기준도 같이 옮긴다.
+        if (e.VerticalChange != 0) ShiftActiveDragOrigin(-e.VerticalChange);
+    }
+
+    private void ShiftActiveDragOrigin(double dy)
+    {
+        _rootDrag?.ShiftCapturedOrigin(0, dy);
+        _projectDrag?.ShiftCapturedOrigin(0, dy);
+    }
 
     private void UpdateProjectScrollVisuals(ScrollViewer sv)
     {

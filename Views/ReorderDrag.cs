@@ -76,10 +76,24 @@ internal sealed class ReorderDrag<T> where T : class
     private bool _externalDropPreservesReorder;
     private bool _needsReapply;           // 억제 해제(복귀) 직후 1회는 target 동일해도 강제 재적용(소스 자리 빈 채 고정 방지).
 
+    // 드래그 중 목록이 스크롤되면 캡처 좌표가 통째로 밀린다. 호스트가 스크롤량을 알려주면
+    // 캡처 기준(Slot.Left/Top)과 포인터 이력을 같은 만큼 보정해 판정이 어긋나지 않게 한다.
+    private double _originShiftX;
+    private double _originShiftY;
+
     private bool IsGrid => _columns > 1;
-    private double AxisPos(Slot s) => _horizontal ? s.Left : s.Top;
+    private double OriginShift => _horizontal ? _originShiftX : _originShiftY;
+    private double AxisPos(Slot s) => (_horizontal ? s.Left : s.Top) + OriginShift;
     private double AxisSize(Slot s) => _horizontal ? s.Width : s.Height;
-    private int ColumnOf(Slot s) => s.Left + s.Width / 2 >= _gridMidX ? 1 : 0;
+    private int ColumnOf(Slot s) => s.Left + _originShiftX + s.Width / 2 >= _gridMidX ? 1 : 0;
+
+    /// <summary>드래그 중 스크롤 등으로 목록 전체가 이동했을 때 캡처 좌표 기준을 함께 옮긴다.</summary>
+    public void ShiftCapturedOrigin(double dx, double dy)
+    {
+        if (_finished) return;
+        _originShiftX += dx;
+        _originShiftY += dy;
+    }
 
     private ReorderDrag(UIElement coordHost, List<Slot> slots, T source, int sourceIndex,
         DragHelper.IGhost ghost, Func<T, int, int, Task> onCommit, bool exactFollow, bool horizontal,
@@ -532,13 +546,16 @@ internal sealed class ReorderDrag<T> where T : class
         ClearDropIntoTarget();
         var source = _slots[_sourceIndex];
         double pointerPosition = _horizontal ? pointer.X : pointer.Y;
-        double initialPointerPosition = AxisPos(source)
+        // 이동 방향은 목록 콘텐츠 기준으로 판정한다. 그래야 커서가 멈춘 채 오토스크롤만
+        // 진행되는 동안에도 카드가 커서를 지나가는 것을 이동으로 인식한다.
+        double contentPointerPosition = pointerPosition - OriginShift;
+        double initialPointerPosition = AxisPos(source) - OriginShift
             + (_horizontal ? _grabOffsetX : _grabOffsetY);
         double previousPosition = _lastPointerAxisPosition ?? initialPointerPosition;
-        _lastPointerAxisPosition = pointerPosition;
-        int movementDirection = pointerPosition > previousPosition + 0.25
+        _lastPointerAxisPosition = contentPointerPosition;
+        int movementDirection = contentPointerPosition > previousPosition + 0.25
             ? 1
-            : pointerPosition < previousPosition - 0.25 ? -1 : 0;
+            : contentPointerPosition < previousPosition - 0.25 ? -1 : 0;
         var others = _slots
             .Where(slot => !ReferenceEquals(slot, source))
             .ToList();
@@ -646,8 +663,9 @@ internal sealed class ReorderDrag<T> where T : class
         if (_canDropInto == null && !_hitTestSlots) return false;
 
         double axisPosition = _horizontal ? pointer.X : pointer.Y;
-        double? previousAxisPosition = _lastDropZoneAxisPosition;
-        _lastDropZoneAxisPosition = axisPosition;
+        // 이력은 콘텐츠 기준으로 보관하고 비교할 때만 현재 화면 좌표로 되돌린다(스크롤 보정).
+        double? previousAxisPosition = _lastDropZoneAxisPosition + OriginShift;
+        _lastDropZoneAxisPosition = axisPosition - OriginShift;
 
         foreach (var slot in _slots)
         {
@@ -955,9 +973,9 @@ internal sealed class ReorderDrag<T> where T : class
         return false;
     }
 
-    private static Rect CapturedPrimaryBounds(Slot slot) => new(
-        slot.PrimaryLeft,
-        slot.PrimaryTop,
+    private Rect CapturedPrimaryBounds(Slot slot) => new(
+        slot.PrimaryLeft + _originShiftX,
+        slot.PrimaryTop + _originShiftY,
         slot.PrimaryWidth,
         slot.PrimaryHeight);
 
@@ -1059,18 +1077,19 @@ internal sealed class ReorderDrag<T> where T : class
         {
             _targetColumn = newColumn;
             _targetIndex = ComputeCapturedColumnTarget(newColumn, cy);
-            _lastPointerAxisPosition = cy;
+            _lastPointerAxisPosition = cy - _originShiftY;
             _lastTransitionDirection = 0;
             ApplyGridDisplacement();
             return;
         }
 
         var source = _slots[_sourceIndex];
+        double contentCy = cy - _originShiftY;
         double previousPosition = _lastPointerAxisPosition ?? (source.Top + _grabOffsetY);
-        _lastPointerAxisPosition = cy;
-        int movementDirection = cy > previousPosition + 0.25
+        _lastPointerAxisPosition = contentCy;
+        int movementDirection = contentCy > previousPosition + 0.25
             ? 1
-            : cy < previousPosition - 0.25 ? -1 : 0;
+            : contentCy < previousPosition - 0.25 ? -1 : 0;
 
         var targetSlots = _slots
             .Where(slot => !ReferenceEquals(slot, source) && ColumnOf(slot) == newColumn)
@@ -1080,7 +1099,7 @@ internal sealed class ReorderDrag<T> where T : class
         if (movementDirection > 0 && newTarget < targetSlots.Count)
         {
             var target = targetSlots[newTarget];
-            double threshold = target.Top + target.Height / 2 + GridDisplacement(target);
+            double threshold = AxisPos(target) + target.Height / 2 + GridDisplacement(target);
             if (_lastTransitionDirection < 0)
                 threshold += LiveReversalHysteresis;
             if (cy >= threshold)
@@ -1089,7 +1108,7 @@ internal sealed class ReorderDrag<T> where T : class
         else if (movementDirection < 0 && newTarget > 0)
         {
             var target = targetSlots[newTarget - 1];
-            double threshold = target.Top + target.Height / 2 + GridDisplacement(target);
+            double threshold = AxisPos(target) + target.Height / 2 + GridDisplacement(target);
             if (_lastTransitionDirection > 0)
                 threshold -= LiveReversalHysteresis;
             if (cy <= threshold)
@@ -1108,7 +1127,7 @@ internal sealed class ReorderDrag<T> where T : class
         foreach (var slot in _slots)
         {
             if (ReferenceEquals(slot, _slots[_sourceIndex]) || ColumnOf(slot) != column) continue;
-            if (center >= slot.Top + slot.Height / 2) target++;
+            if (center >= AxisPos(slot) + slot.Height / 2) target++;
         }
         return target;
     }
