@@ -374,9 +374,51 @@
         const ln = b.getLine(b.viewportY + i);
         tail += '|r' + i + '="' + (ln ? ln.translateToString(true).slice(0, 40) : 'null') + '"';
       }
-      dlog('buf(' + tag + ') room=' + roomId + ' cur=' + b.cursorX + ',' + b.cursorY
+      dlog('buf(' + tag + ') room=' + roomId + ' type=' + b.type + ' cur=' + b.cursorX + ',' + b.cursorY
         + ' baseY=' + b.baseY + ' viewportY=' + b.viewportY + ' len=' + b.length + ' rows=' + rows + ' ' + tail);
     } catch (e) { dlog('buf(' + tag + ') err ' + e); }
+  }
+  // 화면 전체 점유 맵 — '#'=내용 있는 줄, '.'=빈 줄. "중앙만 텅 빔" 같은 부분 재방출을 한 줄로 판별한다.
+  function dumpMap(roomId, tag) {
+    try {
+      const t = terms[roomId]; if (!t) return;
+      const b = t.term.buffer.active;
+      let map = '', filled = 0;
+      for (let i = 0; i < t.term.rows; i++) {
+        const ln = b.getLine(b.viewportY + i);
+        const has = ln && ln.translateToString(true).trim().length > 0;
+        if (has) filled++;
+        map += has ? '#' : '.';
+      }
+      dlog('map(' + tag + ') room=' + roomId + ' type=' + b.type + ' ' + filled + '/' + t.term.rows
+        + ' grid=' + t.term.cols + 'x' + t.term.rows + ' client=' + t.el.clientWidth + 'x' + t.el.clientHeight + ' [' + map + ']');
+    } catch (e) { dlog('map(' + tag + ') err ' + e); }
+  }
+
+  // ── 극소 박스 가드 ────────────────────────────────────────────────────
+  // 패널 인수(분할 보기/분할 닫기)로 세션이 다른 패널의 WebView 로 옮겨질 때, 새 xterm 은 아직
+  // 레이아웃되지 않은 컨테이너(실측 26px 등)에서 첫 fit 을 한다. FitAddon 은 그런 박스에 2~3 컬럼을
+  // 제안하고, 그 크기가 ConPTY 로 나가면 **살아있는 TUI(claude)가 2컬럼으로 레이아웃을 재계산**한다.
+  // 곧 정상 폭으로 되돌려도 TUI 는 차분 갱신이라 위쪽 전사를 다시 그리지 않는다 → "세션 중앙 텅 빔"이
+  // 고착된다(§6.5 의 '0폭 fit → 2x1 제안 → TUI 붕괴'와 같은 함정, 임계값이 2px 라 26px 를 통과했다).
+  // → 제안 크기가 비정상적으로 작으면 fit 도, ConPTY 로 가는 크기 통보도 하지 않고 폭이 잡힐 때까지 기다린다.
+  const MinSaneCols = 20;
+  const MinSaneRows = 5;
+  function fitProposalSane(entry) {
+    if (!entry) return false;
+    try {
+      if (typeof entry.fit.proposeDimensions === 'function') {
+        const d = entry.fit.proposeDimensions();
+        return !!d && d.cols >= MinSaneCols && d.rows >= MinSaneRows;
+      }
+    } catch (e) { /* 폴백: 픽셀 박스로 판정 */ }
+    return entry.el.clientWidth >= 160 && entry.el.clientHeight >= 80;
+  }
+  /// ConPTY 로 크기를 통보해도 되는 상태인지(그리드가 기본값 80x24 로 남아 있는 채 통보하면 살아있는
+  /// 세션을 그 크기로 줄여버린다).
+  function canPostSize(entry) {
+    return !!entry && !entry.dead && fitProposalSane(entry)
+      && entry.term.cols >= MinSaneCols && entry.term.rows >= MinSaneRows;
   }
 
   // OSC 8 링크 provider와 일반 URL provider가 같은 URL을 잡으면 클릭 1회가 두 번 열릴 수 있다.
@@ -2021,6 +2063,13 @@
     entry.nativeFit = nativeFit;
     fit.fit = function () {
       if (entry.external) { layoutExternalMirror(entry); return; }
+      // 레이아웃 전/극소 박스에서의 fit 은 2~3 컬럼을 만들고 그게 ConPTY 로 새어나가 TUI 를 망친다.
+      // 호출부가 많아 진입점 하나에서 차단한다(폭이 잡히면 refitSoon/RO 가 다시 부른다).
+      if (!fitProposalSane(entry)) {
+        dlog('fit skipped(box) room=' + roomId + ' client=' + el.clientWidth + 'x' + el.clientHeight
+          + ' grid=' + term.cols + 'x' + term.rows);
+        return;
+      }
       return nativeFit();
     };
 
@@ -2257,13 +2306,44 @@
     });
     term.onResize(function (size) {
       if (entry.external) return;
+      // 넓어지는 패널 전환 중이면 ConPTY 에는 알리지 않는다(claude 가 화면을 지우지 않게) — 다음 입력이나
+      // 사용자의 직접 리사이즈에서 해제된다. 유예가 지난 리사이즈는 사용자 조작으로 보고 바로 해제·통보.
       post({ type: 'resize', roomId: roomId, cols: size.cols, rows: size.rows });
+      // 재배선 정착 대기 중이면 재무장 — 로딩 중 늦게 폭이 바뀌어도 '마지막' 폭에서 한 번만 바운스한다.
+      if (entry._reSettleUntil && Date.now() < entry._reSettleUntil) scheduleReattachSettle(roomId);
       // fit 으로 그리드가 바뀌면 스크롤백이 리플로우되며 스크롤이 점프한다. pin 윈도우(인라인 TUI resume)
       // 동안엔 리사이즈 후에도 맨 아래로 고정해 위/아래 튐을 막는다.
       if (Date.now() < _pinBottomUntil)
         requestAnimationFrame(function () { try { term.scrollToBottom(); } catch (e) {} });
     });
     return entry;
+  }
+
+  // 폭이 잡힐 때까지 기다렸다 fit → created 통보. 패널 인수 직후 26px 같은 중간 박스로 ConPTY 를
+  // 리사이즈하지 않기 위한 유예(살아있는 세션이면 그 리사이즈가 TUI 레이아웃을 망친다).
+  const SaneCreateTries = 50;   // 40ms × 50 = 최대 2s 대기
+  function waitSaneThenCreate(roomId, tries) {
+    setTimeout(function () {
+      const e = terms[roomId];
+      if (!e || e.dead || !e.needCreate) return;
+      if (roomId !== activeRoomId) return;            // 다른 방으로 전환 — reveal/다음 show 가 처리
+      if (_fitSuppressed) {                            // 전환 커버 중 — reveal 이 최종 폭에서 생성
+        if ((tries || 0) < SaneCreateTries) waitSaneThenCreate(roomId, (tries || 0) + 1);
+        return;
+      }
+      if (!fitProposalSane(e) && (tries || 0) < SaneCreateTries) {
+        waitSaneThenCreate(roomId, (tries || 0) + 1);
+        return;
+      }
+      e.fit.fit();                                     // 박스가 여전히 극소면 래퍼가 건너뛴다(기본 그리드 유지)
+      e.needCreate = false;
+      dlog('created(deferred) room=' + roomId + ' ' + e.term.cols + 'x' + e.term.rows
+        + ' client=' + e.el.clientWidth + 'x' + e.el.clientHeight + ' tries=' + (tries || 0));
+      post({ type: 'created', roomId: roomId, cols: e.term.cols, rows: e.term.rows });
+      // 재배선이면 C# 이 이 크기로 ConPTY 를 바로 리사이즈하지 않는다(중간 폭 방지). 확정된 크기를
+      // 권위값으로 한 번 더 통보해 그리드↔ConPTY 어긋남을 남기지 않는다(같은 크기면 C# 이 no-op).
+      refitSoon(roomId);
+    }, 40);
   }
 
   function show(roomId, agent, fontSizeOverride, reemit) {
@@ -2295,6 +2375,11 @@
         // 전환 중 — ConPTY 생성을 reveal(최종 폭 확정)로 미룬다. 지금 만들면 중간(전체) 폭으로 만들어져
         // claude 등이 그 폭으로 히스토리를 그렸다가 최종 폭으로 리플로우돼 깨진다(좌측 세션 깨짐의 실제 원인).
         entry.needCreate = true;
+      } else if (!canPostSize(entry)) {
+        // 패널 인수 직후라 컨테이너가 아직 레이아웃 전(26px 등) — 지금 통보하면 그 크기(2컬럼 또는
+        // 기본 80x24)가 ConPTY 로 나가 '살아있는' 세션을 그 폭으로 리사이즈한다. 폭이 잡힐 때까지 미룬다.
+        entry.needCreate = true;
+        waitSaneThenCreate(roomId, 0);
       } else {
         // C#이 이 크기로 ConPTY 세션을 만든다
         post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
@@ -2387,11 +2472,53 @@
     setTimeout(function () {
       const t = terms[roomId];
       if (!t || roomId !== activeRoomId || t.dead || _fitSuppressed) return;
-      if (t.term.cols <= 2 || t.term.rows <= 2) return;
+      if (!canPostSize(t)) return; // 극소 박스에선 바운스도 금지(그 크기가 ConPTY 로 새면 TUI 붕괴)
       dlog('settleBounce room=' + roomId + ' ' + t.term.cols + 'x' + t.term.rows + ' client=' + t.el.clientWidth + 'x' + t.el.clientHeight);
       post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows - 1 });
       post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows });
     }, delay == null ? 450 : delay); // 0 도 유효한 지연(호출부가 이미 대기한 경우)
+  }
+
+  // ── 폭이 넓어지는 전환 = ConPTY 폭 유지(내용 보존) ────────────────────
+  // alt-screen TUI(claude/Ink)는 리사이즈 때 '직전 프레임이 차지했던 줄 수'만큼 지우고 새 프레임을 쓴다.
+  // 폭이 넓어지면 같은 내용이 더 적은 줄을 차지하므로 [지운 영역 > 새 프레임]이 되어 그 차이가 빈 띠로
+  // 남고, 그 위 오래된 출력은 Ink 가 추적하지 않아 잔재로 떠 있는다(분할 닫기 후 좌측 세션이 깨지는 실체).
+  // claude 는 그 영역을 다시 그리지 않는다 — 리사이즈 재방출·rows 바운스·Ctrl+L·입력 모두 무효, /resume
+  // 만 복구된다(실측). 즉 '넓히는 리사이즈를 claude 에게 알리는 순간' 보이던 내용은 사라진다.
+  // → 패널 조작으로 넓어질 때는 ConPTY 폭을 그대로 유지한다(claude 는 폭이 안 변한 줄 안다). xterm 그리드만
+  //   넓어지므로 기존 내용은 왼쪽에 그대로 남고, 오른쪽에 잠시 여백이 생긴다. 사용자가 다음 프롬프트를
+  //   입력하는 순간(term.onData) 유지를 해제하고 실제 폭을 통보한다 — 그때는 새 응답이 화면을 채우므로
+  //   지워질 내용이 없다. 스플리터를 직접 드래그하면(유예 후 리사이즈) 그것도 해제 신호다.
+  // 좁아지는 전환은 새 프레임이 더 높아 지운 영역을 덮으므로 그대로 통보한다(손실 없음).
+  // 재배선(살아있는 세션 + 새 xterm) 정착 바운스 — 이 방은 화면 내용이 '재방출' 로만 채워진다.
+  // 유일한 트리거인 reattach 킥이 폭 확정 전에 오거나 TUI 의 증분 리페인트와 엇갈리면 위쪽 전사가
+  // 빈 채로 굳고, 이후의 무변화 fit·탭 전환은 재방출을 못 만든다(§6.6). → 재배선 후 창(window) 안의
+  // '마지막' 리사이즈로부터 조용해지면 rows 바운스로 깨끗한 전체 재방출을 1회 유도한다.
+  // 폭이 늦게(로딩 중에) 바뀌어도 그때마다 재무장되므로 마지막 폭 기준으로만 한 번 발동한다.
+  const ReattachSettleWindowMs = 6000; // 이 시간 동안 오는 리사이즈는 정착 대기를 재무장
+  const ReattachSettleQuietMs = 400;   // 마지막 리사이즈 후 이만큼 조용하면 = 폭 확정
+  function armReattachSettle(roomId) {
+    const e = terms[roomId]; if (!e) return;
+    e._reSettleUntil = Date.now() + ReattachSettleWindowMs;
+    scheduleReattachSettle(roomId);
+  }
+  function scheduleReattachSettle(roomId) {
+    const e = terms[roomId]; if (!e) return;
+    clearTimeout(e._reSettleTimer);
+    e._reSettleTimer = setTimeout(function () {
+      const t = terms[roomId];
+      if (!t || t.dead || roomId !== activeRoomId) return;
+      // 전환 커버 중이면 폭이 아직 유동적이다(reveal 이 최종 폭에서 fit) — 버리지 말고 다시 대기.
+      if (_fitSuppressed) {
+        if (Date.now() < (t._reSettleUntil || 0)) scheduleReattachSettle(roomId);
+        return;
+      }
+      t._reSettleUntil = 0; // 1회만 — 이후 리사이즈는 그 자체가 재방출을 만든다
+      dlog('reattachSettle bounce room=' + roomId + ' ' + t.term.cols + 'x' + t.term.rows);
+      dumpMap(roomId, 'reattach-before');
+      scheduleSettleBounce(roomId, 0);
+      setTimeout(function () { dumpMap(roomId, 'reattach-after'); }, 700);
+    }, ReattachSettleQuietMs);
   }
 
   // show/재진입 직후 레이아웃이 안정되길 기다려 여러 번 재측정 fit. 활성 방일 때만.
@@ -2408,7 +2535,7 @@
       // 마지막 패스: 그리드가 안 변해 onResize 가 안 떠도 ConPTY 를 현재 그리드 크기로 재동기.
       // 숨겨진 다른 패널의 낡은 방 등이 ConPTY 만 딴 크기로 바꿔놓은 경우(그리드↔ConPTY 어긋남 =
       // TUI 가 좁은 폭으로 그림) 탭을 열 때마다 여기서 자가치유된다. 같은 크기면 C# 이 no-op.
-      if (sync && !t.dead && t.term.cols > 2 && t.term.rows > 1)
+      if (sync && canPostSize(t))
         post({ type: 'resize', roomId: roomId, cols: t.term.cols, rows: t.term.rows });
     }
     requestAnimationFrame(function () { requestAnimationFrame(function () { tryFit(false); }); });
@@ -2432,13 +2559,34 @@
       return;
     }
     const entry = createTerm(roomId, agent, fontSizeOverride);
+    measureHiddenThenCreate(roomId, 0);
+  }
+
+  // 숨겨진 방을 visibility:hidden 으로 잠깐 레이아웃시켜 실제 크기로 fit 한 뒤 created 통보.
+  // 측정이 극소 박스로 나오면(패널이 아직 배치 전) 통보를 미룬다 — 그 크기가 ConPTY 로 나가면
+  // 이미 다른 패널에서 '살아있는' 세션이 그 폭으로 리사이즈돼 TUI 레이아웃이 망가진다.
+  const HiddenCreateTries = 12; // 200ms × 12 = 최대 ~2.4s 후엔 측정 실패로 보고 그대로 진행(콜드 부팅 차단 방지)
+  function measureHiddenThenCreate(roomId, tries) {
+    const entry = terms[roomId];
+    if (!entry || entry.dead) return;
+    let sane = false;
     try {
       entry.el.style.visibility = 'hidden';
       entry.el.style.display = 'block';
-      if (entry.el.clientWidth >= 2 && entry.el.clientHeight >= 2) entry.fit.fit();
+      sane = fitProposalSane(entry);
+      if (sane) entry.fit.fit();
     } catch (e) {}
-    entry.el.style.display = '';    // 측정 불가(0폭)였으면 기본 80x24 폴백 유지
+    entry.el.style.display = '';
     entry.el.style.visibility = '';
+    if (!sane && (tries || 0) < HiddenCreateTries) {
+      entry.needCreate = true;
+      setTimeout(function () { measureHiddenThenCreate(roomId, (tries || 0) + 1); }, 200);
+      return;
+    }
+    if (!terms[roomId] || terms[roomId] !== entry) return; // 그 사이 dispose/재생성
+    entry.needCreate = false;
+    dlog('preload created room=' + roomId + ' ' + entry.term.cols + 'x' + entry.term.rows
+      + ' sane=' + sane + ' tries=' + (tries || 0));
     post({ type: 'created', roomId: roomId, cols: entry.term.cols, rows: entry.term.rows });
   }
 
@@ -2563,6 +2711,28 @@
       case 'pinBottom':
         _pinBottomUntil = Date.now() + (msg.ms || 2000);
         break;
+      case 'altSync': {
+        // 재배선(살아있는 alt-screen 세션에 '새 xterm' 연결 — 분할 보기/패널 이동): claude 가 시작 시 보낸
+        // ?1049h(alt 버퍼 진입)는 옛 xterm 이 이미 소비했고, conhost 는 리사이즈 재방출에 그 전환 시퀀스를
+        // 다시 실어주지 않는다. 그래서 새 xterm 은 normal 버퍼에 머문 채 재방출을 받아 → 스크롤백이 생기고
+        // 폭마다 다르게 리플로우돼, 특정 폭에서 뷰포트가 내용 없는 구간에 머문다(= "세션 중앙 텅 빔",
+        // 스플리터로 폭을 바꾸면 보이고 원래 폭으로 돌아오면 다시 빔). 재방출이 도착하기 전에 alt 버퍼로
+        // 맞춰 놓는다 — 이미 alternate 면 아무것도 하지 않는다(conhost 가 전환을 실어준 환경 대비).
+        const asRoom = msg.roomId;
+        const asEntry = asRoom ? terms[asRoom] : null;
+        if (asEntry && !asEntry.dead) {
+          const btype = asEntry.term.buffer.active.type;
+          if (btype === 'normal') {
+            asEntry.term.write('\x1b[?1049h');
+            dlog('altSync enter room=' + asRoom);
+          } else dlog('altSync skip room=' + asRoom + ' type=' + btype);
+          // 이 방의 화면은 '재방출' 로만 채워진다 — 폭이 확정될 때까지 기다려 전체 재방출 1회 유도.
+          armReattachSettle(asRoom);
+          asEntry._dbgUntil = Date.now() + 6000; asEntry._dbgCount = 0; // 재방출 도착 여부 캡처
+          setTimeout(function () { dumpMap(asRoom, 'altSync+600'); }, 600);
+        }
+        break;
+      }
       case 'xferCover': {
         // 분할 열림/닫힘·프로젝트 전환 직전: 단색 커튼으로 즉시 덮어 이후 리사이즈/전환 깜빡임을 감춘다.
         // 새 세대(_xferGen)를 부여해, 아직 안 끝난 이전 전환의 지연 타이머(fade 등)를 무효화한다.
@@ -2682,23 +2852,33 @@
           const preC = e.term.cols, preR = e.term.rows; // bounce 판단용 — 이 reveal 의 fit 이 크기를 바꿨나
           _fitSuppressed = false;                 // 억제 해제 후 최종 폭에서 한 번만 fit
           try { e.fit.fit(); } catch (err) {}
-          if (e.needCreate) {
+          if (e.needCreate && !canPostSize(e)) {
+            // 커버가 걷힐 시점인데도 박스가 아직 극소다(패널 인수 직후 등) — 이 크기로 통보하면 살아있는
+            // 세션이 2컬럼으로 리사이즈된다. 폭이 잡힐 때까지 유예(waitSaneThenCreate 가 이어받는다).
+            dlog('reveal defer create room=' + room + ' client=' + e.el.clientWidth + 'x' + e.el.clientHeight);
+            waitSaneThenCreate(room, 0);
+          } else if (e.needCreate) {
             // 미뤄둔 ConPTY 생성을 지금(최종 폭)에서 수행 → claude 가 처음부터 최종 폭으로 그려 리플로우 없음.
             e.needCreate = false;
             post({ type: 'created', roomId: room, cols: e.term.cols, rows: e.term.rows });
           } else if (bounce && e.term.cols === preC && e.term.rows === preR
-                     && e.term.cols > 2 && e.term.rows > 2 && !e.dead) {
+                     && canPostSize(e)) {
             // post-hoc 전환(OS 주도 최대화/복원 등): 리사이즈·재방출·TUI 재렌더가 커버 '전'에 무방비로
             // 인터리브됐다(tear 가능). fit 이 무변화면 same-size 킥은 no-op 이라 재방출이 없어 tear 가
             // 고착된다 → rows-1→rows 바운스로 커버 아래서 깨끗한 전체 재방출을 강제. 그 출력을
             // 아래 waiter 가 받아 걷으므로 무깜빡이다. (fit 이 크기를 바꿨으면 그 자체가 재방출 ✓)
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows - 1 });
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
-          } else if (kick && e.term.cols > 2 && e.term.rows > 1) {
+          } else if (kick && canPostSize(e)) {
             // 재배선 세션(분할 보기): ConPTY 를 xterm 현재 크기로 강제 재동기(xterm 미변경 → 스크롤백
             // 리플로우 없음). 늦게 오는 WireSession resize 와의 경쟁에서 이 값이 마지막이 되고 SIGWINCH 로 재렌더.
             post({ type: 'resize', roomId: room, cols: e.term.cols, rows: e.term.rows });
           }
+          // 이 reveal 의 fit 이 '크기를 바꿨다'면(분할 닫기로 절반→전체 등) alt-screen TUI 는 그 리사이즈에
+          // 대해 부분 재렌더만 하고 낡은 프레임 조각을 남길 수 있다 → 화면 중앙에 구멍이 고착된다(무출력
+          // idle 이면 다시 그릴 계기도 없다). fadeNow·2s 폴백은 이미 크기 변화 시 settle 바운스를 하는데
+          // reveal 경로만 빠져 있었다. 커버가 아직 올라와 있는 지금 rows 바운스로 전체 재방출을 1회 강제한다
+          // (rows 는 줄바꿈 reflow 왕복이 없다). 인라인 TUI(codex/gjc)는 컴포저 손상 이력이 있어 제외.
           // 커버 시점에 하단이었다면 리사이즈 reflow 로 viewport 가 위로 밀렸어도 하단 복원 +
           // 이어지는 TUI 재렌더 출력 동안에도 하단 유지(pin) — 전체화면/창모드 전환 스크롤 튐 방지.
           // codex(인라인 TUI)는 리사이즈 후 뷰포트가 애매한 위치에 남기 쉬워 '항상' 하단으로 스냅.
@@ -2758,14 +2938,22 @@
           const e = room ? terms[room] : null;
           if (!e || room !== activeRoomId) {                        // 세션없음/방전환 — 억제 풀고 걷기/보고
             _fitSuppressed = false;
-            if (e && e.needCreate) { e.needCreate = false; try { e.fit.fit(); } catch (err) {} post({ type: 'created', roomId: room, cols: e.term.cols, rows: e.term.rows }); } // 미생성 세션 폴백 생성
+            // 미생성 세션 폴백 생성 — 단, 박스가 극소면(레이아웃 전) 통보를 미룬다(살아있는 세션 축소 방지).
+            if (e && e.needCreate) {
+              try { e.fit.fit(); } catch (err) {}
+              if (canPostSize(e)) { e.needCreate = false; post({ type: 'created', roomId: room, cols: e.term.cols, rows: e.term.rows }); }
+              else waitSaneThenCreate(room, 0);
+            }
             // 억제 중 방이 바뀐 경우: 새 활성 방은 show() 에서 fit 이 억제됐고 refitSoon 타이머도 이미
             // 지났을 수 있다 — 여기서 직접 교정해야 낡은(좁은) 그리드로 남지 않는다.
             const cur = activeRoomId ? terms[activeRoomId] : null;
             if (cur && cur !== e && cur.el.clientWidth >= 2 && cur.el.clientHeight >= 2) {
               const cpc = cur.term.cols, cpr = cur.term.rows;
               fitKeepBottom(cur, activeRoomId); // 교정 fit + scrollTop 재동기(show 의 resync 타이머는 이미 지났을 수 있음)
-              if (cur.needCreate) { cur.needCreate = false; post({ type: 'created', roomId: activeRoomId, cols: cur.term.cols, rows: cur.term.rows }); }
+              if (cur.needCreate) {
+                if (canPostSize(cur)) { cur.needCreate = false; post({ type: 'created', roomId: activeRoomId, cols: cur.term.cols, rows: cur.term.rows }); }
+                else waitSaneThenCreate(activeRoomId, 0);
+              }
               else if (cur.term.cols !== cpc || cur.term.rows !== cpr) scheduleSettleBounce(activeRoomId); // 교정 리사이즈 tear 고착 방지
             }
             if (synced) post({ type: 'revealPrepared' }); else fadeOut();

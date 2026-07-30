@@ -1335,6 +1335,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -1491,8 +1492,24 @@
             </Border>
         </Border>
 
+        <!-- 실행 중인 세션이 하나라도 있는 프로젝트 카드만 표시. 원본 프로젝트·탭 컬렉션은 변경하지 않는다. -->
+        <Border x:Name="ActiveProjectFilterRow" Grid.Row="2" Height="34"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
+            <Grid Margin="16,0,12,0">
+                <TextBlock Text="활성된 프로젝트만 보기"
+                           VerticalAlignment="Center"
+                           FontSize="{DynamicResource Fs12}"
+                           Foreground="{DynamicResource TextMutedBrush}"/>
+                <CheckBox x:Name="ActiveProjectFilterSwitch"
+                          HorizontalAlignment="Right" VerticalAlignment="Center"
+                          Style="{StaticResource ToggleSwitchSmall}"
+                          Click="ActiveProjectFilterSwitch_Click"
+                          ToolTip="실행 중인 세션이 있는 프로젝트만 표시"/>
+            </Grid>
+        </Border>
+
         <!-- Project tree (활성/보관 슬라이드 전환) + floating FAB -->
-        <Grid Grid.Row="2" ClipToBounds="True">
+        <Grid Grid.Row="3" ClipToBounds="True">
             <!-- 활성 프로젝트 패널 -->
             <Grid x:Name="ActivePanel">
                 <Grid.RenderTransform>
@@ -1506,6 +1523,11 @@
                                   ItemTemplateSelector="{StaticResource ProjectRootRowSelector}"
                                   ItemsPanel="{StaticResource ProjectsPanel}"/>
                 </ScrollViewer>
+                <TextBlock x:Name="ActiveFilterEmptyText"
+                           Text="활성된 프로젝트가 없습니다"
+                           HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0"
+                           Visibility="Collapsed"
+                           FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextMutedBrush}"/>
             </Grid>
 
             <!-- 보관함 패널 — 동일 ProjectTemplate 사용(선택/세션실행 전부 동일 동작). 우측에 대기하다 슬라이드 인 -->
@@ -1581,7 +1603,7 @@
         </Grid>
 
         <!-- 업데이트 알림 버튼 -->
-        <Button x:Name="UpdateButton" Grid.Row="3"
+        <Button x:Name="UpdateButton" Grid.Row="4"
                 Margin="12,0,12,10" Height="34" Visibility="Collapsed"
                 Click="UpdateButton_Click" Cursor="Arrow"
                 ToolTip="새 버전을 설치합니다">

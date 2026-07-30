@@ -34,6 +34,51 @@ public sealed class TerminalSession : IDisposable
     /// 시작 신호(alt-screen 등)를 다시 감지할 수 없으므로 호출부가 준비 상태를 직접 복원해야 한다.</summary>
     public bool HasPriorOutput { get { lock (_recentLock) return _recent.Length > 0; } }
 
+    // alt-screen(대체 화면 버퍼) 상태 추적 — 출력의 ?1049/?1047/?47 h·l 을 본다. 재배선(살아있는 세션에
+    // 새 xterm 연결)에서 그 xterm 을 같은 버퍼로 맞추는 데 쓴다: conhost 는 리사이즈 재방출에 버퍼 전환
+    // 시퀀스를 다시 실어주지 않으므로, 새 xterm 이 normal 에 머물면 TUI 화면이 스크롤백에 쌓인다.
+    // ESC 를 반드시 포함한다 — "[?1049h" 만 보면 화면에 그 '문자열'이 표시되는 경우(이스케이프 코드를
+    // 다루는 대화·문서를 띄운 세션)에 상태가 뒤집힌다.
+    private static readonly (string Seq, bool Enter)[] AltScreenSeqs =
+    {
+        ("[?1049h", true), ("[?1049l", false),
+        ("[?1047h", true), ("[?1047l", false),
+        ("[?47h",   true), ("[?47l",   false),
+    };
+    private const int AltScanTailKeep = 9; // 가장 긴 토큰(8자)이 청크 경계에서 쪼개져도 잡히도록
+    private string _altScanTail = "";
+    private volatile bool _inAltScreen;
+
+    /// <summary>이 세션의 앱이 현재 alt-screen 버퍼에 있는지(출력 스트림 기준). 에이전트 종류로
+    /// 추측하지 않는다 — 인라인 TUI(codex/gjc)·평범한 셸·종료된 claude 는 모두 false 다.</summary>
+    public bool InAltScreen => _inAltScreen;
+
+    /// <summary>읽기 루프 스레드 전용. 청크 안에 여러 전환이 있으면 '마지막' 것이 현재 상태다.
+    /// 꼬리+청크 전체를 붙이지 않는다 — 청크는 8KB 라 매 출력마다 복사하면 낭비다. 경계에 걸친
+    /// 토큰만 짧은 윈도우(꼬리+청크 앞 9자)로 따로 보고, 그다음 청크 내부를 본다(뒤쪽이 최종 상태).</summary>
+    private void TrackAltScreen(string text)
+    {
+        if (_altScanTail.Length > 0)
+            ApplyLastAltScreenSeq(_altScanTail + text[..Math.Min(text.Length, AltScanTailKeep)]);
+        ApplyLastAltScreenSeq(text);
+        _altScanTail = text.Length >= AltScanTailKeep
+            ? text[^AltScanTailKeep..]
+            : Tail(_altScanTail + text); // 1~2바이트 청크가 이어져도 토큰이 끊기지 않게 누적
+        static string Tail(string s) => s.Length <= AltScanTailKeep ? s : s[^AltScanTailKeep..];
+    }
+
+    private void ApplyLastAltScreenSeq(string s)
+    {
+        int best = -1;
+        bool bestEnter = false;
+        foreach (var (seq, enter) in AltScreenSeqs)
+        {
+            int i = s.LastIndexOf(seq, StringComparison.Ordinal);
+            if (i > best) { best = i; bestEnter = enter; }
+        }
+        if (best >= 0) _inAltScreen = bestEnter;
+    }
+
     private void AppendRecent(string text)
     {
         lock (_recentLock)
@@ -229,7 +274,7 @@ public sealed class TerminalSession : IDisposable
                         try { using var fs = new FileStream(logPath, FileMode.Append); fs.Write(chunk, 0, n); }
                         catch (Exception) { }
                     }
-                    try { AppendRecent(Encoding.UTF8.GetString(chunk)); } catch { }
+                    try { var text = Encoding.UTF8.GetString(chunk); AppendRecent(text); TrackAltScreen(text); } catch { }
                     OutputReceived?.Invoke(chunk);
                 }
             }

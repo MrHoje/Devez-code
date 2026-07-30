@@ -152,6 +152,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     /// <summary>Grok SGR(CSI ... m)이 ConPTY 출력 청크 경계에서 잘렸을 때 다음 flush까지 보관.</summary>
     private readonly Dictionary<string, byte[]> _grokCsiTails = new();
 
+    /// <summary>재배선 시 이보다 좁은 요청 폭은 '레이아웃 전 측정'으로 보고 ConPTY 리사이즈를 건너뛴다.
+    /// (살아있는 TUI 를 2~3 컬럼으로 리사이즈하면 레이아웃이 재계산돼 되돌려도 복구되지 않는다.)</summary>
+    private const int MinReattachCols = 20;
+
     /// <summary>claude 등 풀스크린 TUI가 떠서(alt-screen 진입) 준비된 방. UI 스레드에서만 접근.</summary>
     private readonly HashSet<string> _ready = new();
     /// <summary>alt-screen 시퀀스 감지용 방별 누적 버퍼 (청크 경계 분할 대비). UI 스레드에서만 접근.</summary>
@@ -919,11 +923,37 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         if (session.HasPriorOutput && !_readyNotified.Contains(roomId))
         {
             DevezCode.Services.DiagLog.Write($"WireSession reattach room={roomId} — ready 복원 + resize kick");
+            // 안전망: 패널 인수 직후 아직 레이아웃 전인 컨테이너에서 측정된 극소 크기(실측 26px → 2컬럼)로
+            // '살아있는' 세션을 리사이즈하면 TUI(claude)가 그 폭으로 레이아웃을 재계산하고, 정상 폭으로
+            // 되돌려도 차분 갱신이라 위쪽 전사가 복구되지 않는다(= 중앙 텅 빔 고착). 웹에서도 막지만
+            // 경로가 여러 개라 여기서 최종 차단한다 — 곧 오는 정상 크기 resize 가 재방출을 만든다.
+            if (cols < MinReattachCols && session.Cols >= MinReattachCols)
+            {
+                DevezCode.Services.DiagLog.Write($"[dbg] reattach resize skipped room={roomId} req={cols}x{rows} keep={session.Cols}x{session.Rows}");
+                _ready.Add(roomId);
+                _readyScan.Remove(roomId);
+                _inlineFirstOutTick.Remove(roomId);
+                _altSeenTick[roomId] = Environment.TickCount;
+                BumpSettle(roomId);
+                if (session.InAltScreen) PostJson(new { type = "altSync", roomId });
+                return;
+            }
             _ready.Add(roomId);
             _readyScan.Remove(roomId);
             _inlineFirstOutTick.Remove(roomId);
             _altSeenTick[roomId] = Environment.TickCount;
             BumpSettle(roomId); // 킥 리페인트 출력이 잠잠해지면(무출력이어도 SettleQuiet 후) 통지
+            // 새 xterm 은 normal 버퍼로 시작하는데, alt-screen TUI(claude 등)가 시작 시 보낸 ?1049h 는
+            // 옛 xterm 이 소비했고 conhost 의 리사이즈 재방출엔 그 전환이 없다 → 재방출이 normal 버퍼에
+            // 쌓여 스크롤백/리플로우가 생기고 특정 폭에서 뷰포트가 빈 구간에 머문다(분할 보기 후 우측
+            // 세션 "중앙 텅 빔"). 재방출(아래 resize 킥)보다 먼저 alt 버퍼로 맞춘다.
+            // 게이트는 '실제 출력에서 추적한 버퍼 상태'다 — 에이전트 종류로 추측하면 인라인 TUI(codex/gjc)·
+            // 하단 셸·종료된 claude 방까지 alt 로 밀어넣어 그 방들의 스크롤백을 망친다.
+            if (session.InAltScreen)
+            {
+                DevezCode.Services.DiagLog.Write($"[dbg] altSync post room={roomId} (session in alt-screen)");
+                PostJson(new { type = "altSync", roomId });
+            }
             // 이 방으로 전환한 새 xterm(다른 패널 등)의 실제 크기가 세션의 마지막 크기와 다르면
             // 그 자체가 진짜 리사이즈 이벤트라 ConPTY 가 자연히 리페인트한다.
             // 크기가 같을 때만 "-1 후 원복" 킥으로 강제 신호를 만든다 — 이 트릭은 ConPTY 내부에서
@@ -931,13 +961,28 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             // 매번 걸면 그 리플로우 왕복 자체가 줄바꿈이 어긋나거나 내용이 잘리는 부작용을 낸다
             // (패널 간 이동을 반복하면 계속 걸려 누적됨 — 사용자 리포트: "이동하면 내용 잘리고
             // 줄바꿈 이상해짐").
+            // 킥은 cols 가 아니라 rows 를 흔든다 — cols 를 깎으면 그 폭으로 한 번 리플로우됐다 되돌아오며
+            // 줄바꿈이 어긋나거나 alt 버퍼의 마지막 열이 잘린다. rows 바운스는 reflow 왕복이 없다.
             if (session.Cols == cols && session.Rows == rows)
             {
-                session.Resize(Math.Max(2, cols - 1), rows);
+                DevezCode.Services.DiagLog.Write($"[dbg] reattach kick(rows) room={roomId} {cols}x{rows}");
+                session.Resize(cols, Math.Max(2, rows - 1));
                 session.Resize(cols, rows);
+            }
+            else if (session.InAltScreen)
+            {
+                // 크기가 다르다 = 새 xterm 의 첫 측정값이다. 이게 '최종 폭'이라는 보장이 없다(패널 인수·분할
+                // 접힘 중이면 중간 폭이다). 살아있는 alt-screen TUI 를 중간 폭으로 리사이즈하면 그 폭으로
+                // 레이아웃을 재계산하고, 최종 폭으로 되돌려도 차분 갱신이라 위쪽 전사를 다시 그리지 않는다
+                // (= 중앙 텅 빔 고착). → 지금은 리사이즈하지 않는다. 웹이 폭을 확정한 뒤 보내는 단 한 번의
+                // resize 가 재방출을 만들고, 폭이 결과적으로 같아 resize 가 안 오면 altSync 로 무장된
+                // 정착 바운스(terminal.html reattachSettle)가 재방출을 만든다.
+                DevezCode.Services.DiagLog.Write($"[dbg] reattach resize deferred room={roomId} req={cols}x{rows} keep={session.Cols}x{session.Rows} (alt-screen)");
             }
             else
             {
+                // 인라인 TUI(codex/gjc)·평범한 셸: 정착 바운스 대상이 아니므로 기존 동작 유지(즉시 재동기).
+                DevezCode.Services.DiagLog.Write($"[dbg] reattach resize room={roomId} {session.Cols}x{session.Rows}->{cols}x{rows}");
                 session.Resize(cols, rows);
             }
         }
