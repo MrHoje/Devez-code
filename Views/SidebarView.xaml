@@ -1369,14 +1369,10 @@
                                FontSize="{DynamicResource Fs13}" FontWeight="SemiBold"
                                Foreground="{DynamicResource PrimaryBrush}"/>
                 </StackPanel>
-                <!-- 활성 프로젝트만 보기: 상태 점 + 토글. 보관함 아이콘 왼쪽에 배치 -->
+                <!-- 활성 프로젝트만 보기 토글. 보관함 아이콘 왼쪽에 배치 -->
                 <StackPanel x:Name="ActiveProjectFilterRow" Grid.Column="1"
                             Orientation="Horizontal" VerticalAlignment="Center"
                             Margin="0,0,8,0">
-                    <!-- 세션 상태 점과 동일한 모양·테마색(여기선 항상 활성 색) -->
-                    <Ellipse Width="8" Height="8" Margin="0,0,7,0"
-                             VerticalAlignment="Center"
-                             Fill="{DynamicResource PrimaryBrush}"/>
                     <CheckBox x:Name="ActiveProjectFilterSwitch"
                               VerticalAlignment="Center"
                               Style="{StaticResource ToggleSwitchSmall}"

@@ -138,7 +138,7 @@
             <!-- ── 3-pane body ─────────────────────────────────────────── -->
             <Grid Grid.Row="2" x:Name="BodyGrid" SizeChanged="BodyGrid_SizeChanged">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="SidebarCol" Width="262" MinWidth="220" SharedSizeGroup="MainSidebar"/>
+                    <ColumnDefinition x:Name="SidebarCol" Width="262" MinWidth="205" SharedSizeGroup="MainSidebar"/>
                     <ColumnDefinition x:Name="SidebarSplitterCol" Width="4" SharedSizeGroup="MainSidebarSplitter"/>
                     <ColumnDefinition x:Name="CenterCol" Width="*" MinWidth="360"/>
                     <ColumnDefinition x:Name="FileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
@@ -775,7 +775,7 @@
                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition x:Name="FooterSidebarCol" Width="Auto" MinWidth="220"/>
+                        <ColumnDefinition x:Name="FooterSidebarCol" Width="Auto" MinWidth="205"/>
                         <ColumnDefinition Width="*"/>
                     <ColumnDefinition x:Name="FooterFileExpSplitterCol" Width="4" SharedSizeGroup="MainFileExpSplitter"/>
                     <ColumnDefinition x:Name="FooterFileExpCol" Width="300" SharedSizeGroup="MainFileExp" MinWidth="0"/>

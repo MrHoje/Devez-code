@@ -2178,8 +2178,8 @@ public partial class MainWindow : Window
     private bool   _leftCollapsed;
     private bool   _rightCollapsed;
     private double _sidebarWidth = 262;
-    // 1열=220: 헤더의 "프로젝트" 타이틀 + 활성필터(점+토글) + 아이콘 3개가 잘리지 않는 폭.
-    private double _sidebarMinWidth = 220;  // 2열=380. ApplyProjectColumns 가 갱신.
+    // 1열=205: 헤더의 "프로젝트" 타이틀 + 활성필터 토글 + 아이콘 3개가 잘리지 않는 폭.
+    private double _sidebarMinWidth = 205;  // 2열=380. ApplyProjectColumns 가 갱신.
     private double _fileExpWidth = 300;
     private double _fileExpMinWidth;       // 탭 버튼 4개가 온전히 보이는 최소 폭(런타임 측정)
 
@@ -2612,7 +2612,7 @@ public partial class MainWindow : Window
     public void ApplyProjectColumns(int cols)
     {
         cols = cols == 2 ? 2 : 1;
-        _sidebarMinWidth = cols == 2 ? 380 : 220;
+        _sidebarMinWidth = cols == 2 ? 380 : 205;
         Sidebar.ApplyProjectColumns(cols);
         if (_leftCollapsed) return; // 접힌 상태에선 폭 0 유지(펼칠 때 _sidebarMinWidth 적용됨)
 
