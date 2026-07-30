@@ -95,7 +95,14 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
     {
-        ("v1.19.7", "2026-07-30", true, new[]
+        ("v1.19.8", "2026-07-30", true, new[]
+        {
+            "실행 중인 세션이 있는 프로젝트만 보여주는 활성 프로젝트 필터를 추가했습니다.",
+            "프로젝트 목록 우클릭 메뉴에서 세션을 분할 화면으로 바로 옮길 수 있습니다.",
+            "프로젝트 드래그 재정렬 시 가장자리 자동 스크롤을 추가하고, 스크롤 중 엉뚱한 위치로 놓이던 문제를 수정했습니다.",
+            "분할 화면을 닫거나 세션을 옮긴 뒤 화면이 비어 보이던 문제와, 파일 트리 펼침 상태가 풀리던 문제를 수정했습니다.",
+        }),
+        ("v1.19.7", "2026-07-30", false, new[]
         {
             "Devez Vibe(dvz) 자동 업데이트 중 새 콘솔 창이 떴다가 사라지던 문제를 수정했습니다.",
             "Devez Vibe 업데이트가 완료되기 전에 \"최신 버전\"으로 잘못 표시되던 문제를 수정했습니다.",
