@@ -559,17 +559,25 @@ public sealed class CodexUsageService : IDisposable
     // 초기화권 소비 후 서버가 옛 사용량을 반환하는 전파 지연을 허용하는 기대 시간창.
     private static readonly TimeSpan ExpectDropWindow = TimeSpan.FromMinutes(5);
 
-    /// <summary>소비 직후 정규 3분 폴링을 기다리지 않도록 짧은 간격으로 재조회한다.
+    /// <summary>소비 직후 정규 3분 폴링을 기다리지 않도록 60초까지 짧은 간격으로 재조회한 뒤,
+    /// 30초 간격으로 서버 반영을 추적한다.
     /// 가드가 초기화(급락 또는 윈도우 교체)를 채택하면 기대가 해제되어 조기 종료되고,
     /// 소비가 실패했으면 기대가 없어 즉시 종료된다.</summary>
     private void StartPostConsumeBurstPoll()
     {
         _ = Task.Run(async () =>
         {
-            foreach (var seconds in new[] { 3, 5, 10, 15, 30, 60, 60, 60 })
+            foreach (var seconds in new[] { 3, 5, 10, 15, 30 })
             {
                 if (!_dropGuard.IsExpectingDrop(DateTimeOffset.Now)) return;
                 await Task.Delay(TimeSpan.FromSeconds(seconds)).ConfigureAwait(false);
+                if (!_dropGuard.IsExpectingDrop(DateTimeOffset.Now)) return;
+                await PollAsync(waitForTurn: true, resetRejected: false).ConfigureAwait(false);
+            }
+
+            while (_dropGuard.IsExpectingDrop(DateTimeOffset.Now))
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
                 if (!_dropGuard.IsExpectingDrop(DateTimeOffset.Now)) return;
                 await PollAsync(waitForTurn: true, resetRejected: false).ConfigureAwait(false);
             }

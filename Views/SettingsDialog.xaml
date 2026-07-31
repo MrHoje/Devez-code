@@ -940,6 +940,11 @@
                                                                    FontSize="{DynamicResource Fs11}"
                                                                    Foreground="{DynamicResource TextMutedBrush}"
                                                                    Margin="0,3,0,0"/>
+                                                        <TextBlock Text="{Binding RequirementNote}"
+                                                                   Visibility="{Binding RequirementNoteVisibility}"
+                                                                   FontSize="{DynamicResource Fs11}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   Margin="0,3,0,0"/>
                                                         <TextBlock FontSize="{DynamicResource Fs11}"
                                                                    Foreground="{DynamicResource TextMutedBrush}"
                                                                    Margin="0,3,0,0">

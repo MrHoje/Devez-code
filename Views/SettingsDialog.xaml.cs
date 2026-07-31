@@ -2001,6 +2001,8 @@ public partial class SettingsDialog : UserControl
 
         _agentItems.Clear();
         var enabledSet = new HashSet<string>(SettingsService.LoadEnabledAgents(), StringComparer.OrdinalIgnoreCase);
+        var codex = AgentRegistry.Find("codex");
+        var codexInstalled = codex != null && AgentRegistry.IsInstalled(codex);
         foreach (var agent in AgentRegistry.All)
         {
             // UI 노출 제외 (codex 등) — 세션 생성 피커와 동일한 정책 유지
@@ -2024,6 +2026,9 @@ public partial class SettingsDialog : UserControl
                 // PreviewNote/PreviewLocked 는 Enabled 보다 먼저 — 잠금 판정이 Enabled setter 안에서 일어난다.
                 PreviewNote = agent.PreviewNote,
                 PreviewLocked = agent.PreviewNote.Length > 0 && !enabledSet.Contains(agent.Id),
+                RequirementNote = agent.Id == "devezvibe" && !codexInstalled
+                    ? "Codex가 설치되어 있지 않습니다. Devez Vibe를 사용하려면 Codex를 설치하세요."
+                    : "",
                 Enabled = installed && enabledSet.Contains(agent.Id),
                 IsClaudeCode = agent.Id == "claude",
                 RetentionDays = agent.Id == "claude"
@@ -2155,6 +2160,18 @@ public partial class SettingsDialog : UserControl
         }
         // 미설치면 토글 강제 off (IsEnabled 가 false 이므로 켤 수 없음)
         if (!installed) item.Enabled = false;
+        UpdateDevezVibeCodexRequirement();
+    }
+
+    private void UpdateDevezVibeCodexRequirement()
+    {
+        var devezVibe = _agentItems.FirstOrDefault(a => a.Id.Equals("devezvibe", StringComparison.OrdinalIgnoreCase));
+        var codex = AgentRegistry.Find("codex");
+        if (devezVibe == null || codex == null) return;
+
+        devezVibe.RequirementNote = AgentRegistry.IsInstalled(codex)
+            ? ""
+            : "Codex가 설치되어 있지 않습니다. Devez Vibe를 사용하려면 Codex를 설치하세요.";
     }
 }
 
@@ -2196,6 +2213,21 @@ public sealed class AgentItem : INotifyPropertyChanged
     public string PreviewNote { get; set; } = "";
     public Visibility PreviewNoteVisibility
         => string.IsNullOrEmpty(PreviewNote) ? Visibility.Collapsed : Visibility.Visible;
+
+    private string _requirementNote = "";
+    public string RequirementNote
+    {
+        get => _requirementNote;
+        set
+        {
+            if (_requirementNote == value) return;
+            _requirementNote = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(RequirementNoteVisibility));
+        }
+    }
+    public Visibility RequirementNoteVisibility
+        => string.IsNullOrEmpty(RequirementNote) ? Visibility.Collapsed : Visibility.Visible;
 
     /// <summary>준비 중 에이전트의 켜기 잠금. 이미 켜진 채로 목록에 들어온 항목은 잠그지 않는다 —
     /// 한 번 연 사람이 껐다 켤 때마다 다시 열 번을 누르게 하지는 않는다.

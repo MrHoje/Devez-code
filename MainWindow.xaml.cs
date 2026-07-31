@@ -1392,7 +1392,7 @@ public partial class MainWindow : Window
         {
             // 24시간 미만은 시/분 단위로 남은 시간을 표시한다.
             var text = span.TotalHours >= 1
-                ? $"{(int)span.TotalHours}시간 {span.Minutes}분 후 만료"
+                ? $"{(int)span.TotalHours}시간 {span.Minutes}분"
                 : $"{Math.Max(1, span.Minutes)}분 후 만료";
             return (text, true);
         }
