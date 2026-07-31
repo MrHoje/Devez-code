@@ -1,8 +1,8 @@
 # Devez 공통 디자인 시스템
 
 > 대상: `devez-code`, `devez`, `eGhisDevWPF`
-> 문서 버전: 1.8
-> 기준일: 2026-07-24
+> 문서 버전: 1.9
+> 기준일: 2026-07-31
 > 주 대상 기술: WPF/XAML
 > 목적: 새 프로젝트에서 같은 색, 밀도, 컨트롤, 라운드, 아이콘, 보더, 상태 표현을 바로 재현한다.
 
@@ -22,7 +22,7 @@
 10. 클릭 가능한 앱 컨트롤 커서는 `Arrow`다. 실제 웹 링크만 `Hand`를 허용한다.
 11. 일반 업무·내비게이션 앱은 `devez`형 프레임, 터미널·편집기 중심 앱은 `devez-code`형 프레임을 고른다.
 12. 프레임을 섞지 않는다. `44 header + side rail` 또는 `32 header + 32 footer`를 하나의 셸 계약으로 적용한다.
-13. 설정창은 `970×830`, header `48`, category rail `205`, footer action `100×38` 표준을 쓴다.
+13. 설정은 프레임 A에선 별도 창(`970×830`, header `48`), 프레임 B에선 메인창 MDI 오버레이(자체 헤더·푸터 없음, 즉시 저장)로 연다. §10.7 참조.
 14. desktop notification popup은 폭 `340`, radius `12`, edge margin `6`, stack gap `8`을 쓴다.
 
 가장 안전한 시작점:
@@ -331,7 +331,7 @@ TwoWay 또는 OneWayToSource 바인딩은 읽기 전용 속성에서 작동하�
 | rail | 너비 `44` |
 | rail 버튼 | `32×32` |
 | 기본 좌측 패널 | 약 `260`, `devez-code` 정밀값 `262` |
-| 좌측 패널 최소 | `190` |
+| 좌측 패널 최소 | `220` (`devez-code` 현행; 구버전 `190`을 복사하지 않는다) |
 | 중앙 작업영역 최소 | `360` |
 | 우측 보조 패널 | 약 `300` |
 | splitter 채널 | `4` |
@@ -618,9 +618,10 @@ copy-ready Rail 버튼 template:
 | root rows | `32`, `Auto(현재 0)`, `*`, `Auto=32` |
 | `WindowChrome.CaptionHeight` | `32` |
 | root outer border | `1`, `LineBrush` |
-| sidebar | 기본 `262`, 최소 `190` |
+| sidebar | 기본 `262`, 최소 `220` |
 | sidebar splitter | `4` |
 | 중앙 작업영역 | `*`, 최소 `360` |
+| 중앙 세로 최소(하단 패널 열림 시) | `220` |
 | 우측 보조 패널 | 기본 `300`, 최소 `0` |
 | 우측 splitter | `4` |
 | footer | `32`, 상단 border `1` |
@@ -660,6 +661,17 @@ right margin 4 + [40 min][40 max][40 close] = 124 DIP
 - 우측 보조 패널과 splitter의 footer column은 `SharedSizeGroup`으로 body column과 묶는다.
 - sidebar footer column은 접기·펼치기와 splitter 완료 시 body sidebar 폭을 코드로 동기화한다. 상태 문자열 자체는 `Grid.ColumnSpan`으로 넓게 흘려 sidebar 폭 변화에 밀리지 않게 한다.
 - 상태 항목이 많아질 때 높이를 키우지 않는다. 낮은 우선순위 provider를 숨기거나 overflow popup으로 보낸다.
+
+#### 하단 shell 터미널 패널
+
+중앙 작업영역 아래에 접을 수 있는 shell 터미널(에이전트 미연결 pwsh) 패널을 둘 수 있다.
+
+- 중앙 grid의 rows는 `*`(본문, `MinHeight=220`), `Auto`(splitter), `0↔높이`(패널)이다.
+- 닫힘 = 행 높이 `0` + 패널 `Collapsed`. HwndHost 포함이므로 `Hidden`을 쓰지 않는다(§13.2 규칙).
+- 토글은 footer의 전용 버튼이 담당하고, 열림·닫힘은 즉시 전환한다(WebView2 포함 패널의 리사이즈 animation 금지 원칙).
+- 가로 splitter는 `GridSplitterHorizontal` 스타일에 `Height=6`을 준다. 스타일의 상하 `-1` margin이 `2px`를 깎아 실질 채널이 사이드 splitter와 같은 `4px`가 된다.
+- 패널 surface는 `BgBrush`, 보더는 `LineBrush` `1,1,1,0`. 열림 시 위쪽 본문 패널의 하단 `1px` 보더를 코드로 함께 켜 더블라인 채널을 만들고, 닫히면 끈다.
+- splitter에도 `AllowDrop`을 줘 파일 드래그가 splitter 위를 지날 때 고스트가 깜빡이지 않게 한다.
 
 #### Drag, edge snap, double-click
 
@@ -1315,6 +1327,7 @@ Selected tab:
 - overflow 때만 좌/우 `22×22` navigation button과 edge fade를 표시한다.
 - selected tab은 선택·재정렬·scroll·theme 변경 후 항상 viewport 안으로 보정한다.
 - drag 중 feet와 seam을 별도로 숨기거나 이동하고, 종료 시 복원한다.
+- 탭은 같은 bar 안 재정렬 외에 다른 분할 패널·문서 그룹으로도 드래그 이동할 수 있다. 이동 경로의 splitter에는 `AllowDrop`을 줘 통과 중 드래그 고스트가 깜빡이지 않게 한다.
 
 devez 채팅방 탭 변형(같은 패턴의 밀도 차이):
 
@@ -1361,7 +1374,13 @@ Splitter:
 - 즉 구조는 `[사이드 패널+자기 보더 1] [투명 splitter 4] [중앙]`이며, 선을 splitter 열이나 중앙 콘텐츠에 중복으로 넣지 않는다.
 - 패널이 접혀 폭 `0`이 되면 보더도 함께 사라지므로 별도 처리 없이 채널이 닫힌다.
 
-### 8.15 추가 form primitive
+트랙패드 정밀 휠 스크롤(`PrecisionWheelScroll`):
+
+- WPF 기본 `ScrollViewer`는 `120` 미만의 트랙패드 미세 델타도 한 번의 휠 틱(3줄)으로 확대한다. 목록형 `ScrollViewer`에는 attached behavior로 작은 델타를 누적해 `120`(detent) 단위가 찼을 때만 줄 스크롤을 실행한다.
+- 일반 마우스의 `120` 단위 입력은 기존 WPF 경로를 그대로 쓴다. 델타 방향이 바뀌거나 마지막 입력 후 `180ms`가 지나면 누적을 리셋한다.
+- `Ctrl`/`Shift` 수정키가 눌린 휠(줌·가로 스크롤)은 개입하지 않고 누적도 버린다.
+- 스크롤 불가(`ScrollableHeight≈0`)이거나 이미 맨 위/맨 아래 경계면 이벤트를 소비하지 않고 부모로 통과시킨다(중첩 스크롤 지원).
+- 터미널·WebView2 내부 스크롤에는 적용하지 않는다. WPF 쪽 목록에만 건다.
 
 공통 스타일 조사에서 존재하지만 개별 section에서 빠지기 쉬운 컨트롤이다.
 
@@ -1555,7 +1574,7 @@ WPF 기본 `System.Windows.MessageBox`는 OS가 그리는 별도 UI라 Devez 테
 - 앱이 정상 로드된 뒤에는 native `MessageBox.Show`를 사용하지 않는다.
 - native MessageBox를 XAML style로 꾸미려 하지 않는다. 테마가 필요하면 `ConfirmDialog`로 옮긴다.
 - 예외 처리기에서 `ConfirmDialog` 생성 자체가 다시 실패할 위험이 있거나 `Application.Current`가 준비되지 않은 경우만 native MessageBox를 fallback으로 허용한다.
-- 현재 `devez-code/Views/WakeSchedulerWindow.xaml.cs`의 native MessageBox 2건은 정상 로드 후 사용되는 **알려진 이탈**이다. 새 코드가 따라 하지 않는다.
+- 과거 `WakeSchedulerWindow.xaml.cs`의 native MessageBox 2건은 깨우기 기능이 설정창 탭으로 이식되며 파일과 함께 제거됐다(이탈 해소). 현재 `devez-code`에 정상 로드 후 native MessageBox 사용처는 없다.
 - owner가 살아 있으면 반드시 지정하고 `ShowDialog()`로 modal 수명을 보장한다.
 
 #### 기본 외형
@@ -1643,7 +1662,7 @@ WPF 기본 `System.Windows.MessageBox`는 OS가 그리는 별도 UI라 Devez 테
 
 업데이트 전용 `ShowUpdate`:
 
-- 폭은 `560` 고정이다.
+- 폭은 `autoWidth`(`SizeToContent=WidthAndHeight`, `360~700`)로 노트 길이에 맞춘다. §10.8과 같은 규칙이다.
 - 높이는 내용에 맞추되 `MaxHeight=430`이다.
 - 긴 업데이트 노트는 body만 scroll한다.
 - 취소 문구는 `나중에`다.
@@ -1706,7 +1725,7 @@ WPF 기본 `System.Windows.MessageBox`는 OS가 그리는 별도 UI라 Devez 테
 
 현재 `ConfirmDialog` public API에는 `iconKey`, `danger`, `wideLayout` 매개변수가 있지만 v1.8 기준 XAML/code에서 실제 시각 요소에 연결되지 않는다.
 
-- `autoWidth`: 실제 연결된 옵션이다. `SizeToContent=WidthAndHeight`, `MinWidth=360`, `MaxWidth=660`을 적용한다.
+- `autoWidth`: 실제 연결된 옵션이다. `SizeToContent=WidthAndHeight`, `MinWidth=360`, `MaxWidth=700`을 적용한다.
 - `iconKey`: body에 아이콘 column이나 `Path`가 없다. 동일 외형 재현 시 아이콘을 임의로 추가하지 않는다.
 - `danger`: 현재 Primary는 계속 `PrimaryButton`이다. 문서의 Danger primary는 디자인 목표이며 현재 구현 gap이다.
 - `wideLayout`: 현재 layout 분기를 만들지 않는다.
@@ -1793,7 +1812,7 @@ private void ApplyRoundedClip()
 | 종류 | 구현 | 용도 | 닫힘 |
 |---|---|---|---|
 | modal dialog | `Window.ShowDialog()` | 확인, 입력, 삭제, 중요 선택 | 액션·X·ESC |
-| settings window | borderless `Window` + content control | 여러 범주의 지속 설정 | 저장·취소·X·ESC |
+| settings shell | borderless `Window` 또는 메인창 MDI 오버레이(§10.7) | 여러 범주의 지속 설정 | 변형 A: 저장·취소·X·ESC / 변형 B: 돌아가기·ESC |
 | anchored popup | WPF `Popup` | ComboBox 목록, 작은 picker, 짧은 보조 메뉴 | 바깥 클릭·선택·ESC |
 | desktop notification | `Window`, `Topmost`, no taskbar | 앱 밖에서도 보여야 하는 알림 | 자동 시간·본문·X |
 | in-app toast | root overlay/adornment | 저장 성공, 짧은 오류 | 자동 시간 |
@@ -1904,11 +1923,21 @@ stack animation 변형:
 - 기존 popup 재정렬은 top position `220ms`, `CubicEase/EaseOut`.
 - 종료는 두 변형 모두 `180ms` fade를 유지한다.
 
-### 10.7 공통 설정창
+### 10.7 설정 셸 — 두 변형
 
-세 프로젝트에 공통으로 존재하는 `일반`, `알림`, `테마`, `저장/취소` 흐름을 하나의 settings shell로 고정한다. 제품별 category 내용만 추가한다.
+`일반` → `알림` → `테마/글꼴` 카테고리 순서와 category rail 구조는 공통이지만, 셸과 저장 모델은 두 변형으로 나뉜다.
 
-#### Window chrome
+| 구분 | 변형 A — 별도 설정 창 | 변형 B — 메인창 MDI 오버레이 |
+|---|---|---|
+| 채택 | `devez`, `eGhisDevWPF` | `devez-code` (v1.9 현행) |
+| 셸 | borderless `Window` `970×830` | 메인창 상단바 아래를 덮는 오버레이 `Grid` |
+| 헤더/푸터 | header `48` + footer `저장/취소` | 자체 헤더·푸터 없음 |
+| 저장 모델 | 저장/취소 트랜잭션 + live preview | 변경 즉시 저장 |
+| 닫기 | 저장·취소·X·ESC | category rail 맨 위 `앱으로 돌아가기` · ESC |
+
+선택 규칙: 설정이 대부분 즉시 적용 가능한 로컬 옵션이면 변형 B, 저장 전 검증·일괄 반영이 필요한 폼형 설정이면 변형 A를 쓴다. WebView2/터미널이 중앙에 상주하는 프레임 B 앱은 별도 창 대신 변형 B를 우선한다.
+
+#### 변형 A — Window chrome
 
 | 항목 | 표준 |
 |---|---:|
@@ -1924,7 +1953,7 @@ stack animation 변형:
 | open motion | opacity `0→1`, `220ms`, `CubicEase/EaseOut` |
 | close key | `Escape` |
 
-세 프로젝트 값이 `1010×775`, `970×830`, `900×710`으로 모두 달라 전체 우선순위에 따라 `devez-code`의 `970×830`을 표준으로 채택한다. category rail 폭도 `devez` 기존 구현은 `170`이지만 표준은 `devez-code`의 `205`다. 작은 화면에서는 고정 크기를 억지로 유지하지 말고 working area 안에서 최대 `calc(100%-32)`로 줄인 뒤 content scroll을 사용한다.
+변형 A의 `970×830`과 category rail `205`는 v1.8까지 존재하던 `devez-code` 설정 창에서 채택한 표준값이다. 그 창 자체는 변형 B로 대체돼 사라졌지만, 새로 별도 설정 창을 만들 때는 이 값을 계속 쓴다(`devez` 기존 구현은 `1010×775`/rail `170`이므로 복사하지 않는다). 작은 화면에서는 고정 크기를 억지로 유지하지 말고 working area 안에서 최대 `calc(100%-32)`로 줄인 뒤 content scroll을 사용한다.
 
 설정창은 shadow layer와 content layer를 분리한다.
 
@@ -1953,7 +1982,7 @@ stack animation 변형:
 
 `SettingsView`에는 section 10.2의 `RectangleGeometry(13)` clip을 `Loaded + SizeChanged`에 적용한다.
 
-#### Settings layout
+#### 변형 A — Settings layout
 
 ```text
 ┌──────────────────── header 48 ────────────────────┐
@@ -2040,16 +2069,15 @@ content:
 규칙:
 
 - preview 안의 fixed HEX는 실제 테마 견본을 그리는 목적에 한해 허용한다. settings chrome과 label에는 의미 brush를 쓴다.
-- card를 누르면 앱 전체에 즉시 live preview하지만 디스크에는 저장하지 않는다.
-- `저장`에서 선택 theme와 font scale을 persist하고 original snapshot을 갱신한다.
-- `취소`에서 열기 시점의 theme/font/가시성으로 되돌린다.
+- 변형 A: card를 누르면 앱 전체에 즉시 live preview하지만 디스크에는 저장하지 않는다. `저장`에서 theme과 font scale을 persist하고 original snapshot을 갱신하며, `취소`에서 열기 시점 상태로 되돌린다.
+- 변형 B: card 클릭이 곧 적용·저장이다. 별도 저장 버튼과 원복 경로를 만들지 않는다.
 - theme 변경으로 terminal/WebView 재시작이 필요하면 실제 활성 세션이 있을 때만 저장 확인을 띄운다.
 - frozen brush, cached seam, WebView theme payload처럼 `DynamicResource`만으로 갱신되지 않는 소비자를 theme changed event에서 다시 만든다.
 - 글꼴 크기 card는 `120×56`, radius `10`, border `2`, gap `10`; `작게/크게` 두 단계가 기본이다.
 
-#### Save, cancel, X, ESC
+#### 변형 A — Save, cancel, X, ESC
 
-공통 transaction:
+변형 A의 transaction:
 
 ```text
 open
@@ -2070,6 +2098,32 @@ open
 - live preview 값을 비교할 때 UI control 값이 아니라 original snapshot과 편집 model을 비교한다.
 - settings window의 X가 content의 revert/confirm 경로를 우회해 바로 `Window.Close()`하지 않게 한다.
 - owner가 WebView2를 포함하면 settings를 띄우기 전에 section 5.7의 snapshot + `Collapsed` 흐름을 적용하고 닫힐 때 복원한다.
+
+#### 변형 B — `devez-code` MDI 오버레이
+
+`devez-code`는 v1.9부터 설정을 별도 창이 아니라 메인창 안 오버레이로 연다. `MainWindow.xaml`의 `SettingsHost`와 `Views/SettingsDialog.xaml`(UserControl)이 정본이다.
+
+호스팅:
+
+- 호스트는 root grid의 `Grid`(상단바를 제외한 Row 1~3 전체, `Panel.ZIndex=200`)이며 배경은 불투명 `BgBrush`다. 불투명이므로 아래 UI 클릭이 자연 차단되고 별도 dim 스크림이 없다.
+- 상단바(Row 0)는 남긴다. 앱 이름·최소화·최대화·드래그·Windows 스냅은 메인창 원래 동작이다.
+- 설정이 열리는 동안 상단바를 정리한다: 성능 칩·패널 토글은 숨기고, 창 닫기 버튼은 비활성화한다. 패널 토글이 살아 있으면 되살아난 WebView2 HWND가 오버레이를 뚫는다(airspace).
+- 열기 전에 반드시 터미널·WebView2를 snapshot + `Collapsed`로 숨긴다(§13.2). 같은 창 안의 오버레이는 라이브 HWND를 가릴 수 없으므로 이 순서가 선행돼야 한다.
+- 닫히면 터미널을 복원하고, 설정에서 로그인/재연결했을 수 있는 provider 사용량을 즉시 갱신한다.
+
+레이아웃:
+
+- 자체 헤더·푸터가 없다. 닫힘 진입점은 category rail 맨 위의 `앱으로 돌아가기` 항목과 `ESC`다.
+- `ESC`는 바로 닫지 않고 confirm 경로(`TryCloseWithConfirm`)로 들어간다. MCP JSON처럼 명시 저장이 필요한 편집이 pending이면 저장 여부를 먼저 묻는다.
+- category rail 폭 `240`, `PanelSoftBrush` + 오른쪽 `LineBrush 1`, inner margin `10,16,10,16`. 항목 규격(패딩·radius·selected 표현)은 변형 A와 같다.
+- 콘텐츠는 단일 세로 `ScrollViewer`(`PanelBrush`)이고, 내부 content는 `MaxWidth=1040`으로 제한해 중앙 정렬한다(Stretch + MaxWidth 조합 — 좁은 창에서는 그대로 폭을 채운다). 카테고리 패널 margin은 `28,32,28,20`.
+
+저장 모델:
+
+- 옵션은 변경 즉시 저장한다. `저장`/`취소` footer가 없다.
+- 테마·글꼴 카드도 클릭 시 즉시 적용·저장이다. live preview 후 원복이라는 변형 A 개념이 없다.
+- 재시작이 필요한 옵션은 변경 시점에 바로 안내한다. 트랜잭션이 없으므로 "저장 시 안내"가 불가능하다.
+- 예외적으로 명시 저장이 필요한 편집(예: MCP 서버 JSON)만 해당 섹션 안에 자체 저장 버튼을 두고, 닫기 confirm 경로에 참여시킨다.
 
 ### 10.8 업데이트 버튼·노트 팝업·진행률
 
@@ -2107,6 +2161,19 @@ open
 - 긴급 업데이트는 타이틀바 아래 `DangerBrush` 상단 배너로 별도 고정 노출한다: ZIndex `101`, padding `20,12`, `IconDownload` `18×18` White, X 닫기 후 1분 뒤 재표시.
 
 공통 계약(두 구현 모두 유지): 노트 팝업의 primary 클릭 → 같은 surface 안 진행률 전환, 다운로드 중 모든 닫기 경로 차단·버튼 숨김, cancel 라벨은 `나중에`, 진행 label은 `다운로드 중…` + 우측 %, fill 색은 `PrimaryBrush`.
+
+### 10.9 파일 드롭 선택 오버레이
+
+외부 파일을 작업영역에 드래그하면 놓을 위치(에디터로 열기 / 세션에 첨부)를 고르는 오버레이를 띄운다. `devez-code`의 `Views/WorkspacePaneView.xaml` `FileDropOverlay`가 정본이다.
+
+- 오버레이는 창 전체가 아니라 **해당 워크스페이스 패널(중앙 작업영역) 안에만** 띄운다. 분할 상태에서는 파일이 들어온 패널만 덮는다.
+- surface는 `PanelBrush` opacity `0.97`, `Panel.ZIndex=1000`, 커서 `Arrow`.
+- 표시 전에 패널 안 터미널·브라우저·WebView 편집기를 `Collapsed` 처리해 HwndHost airspace를 제거한다(§13.2).
+- 콘텐츠는 중앙 정렬: 안내 제목 `Fs15` SemiBold(`파일을 놓을 위치를 선택하세요`), 아래 `16`.
+- 드롭존은 좌우 2개, 높이 `250`, 사이 gap `12`, `MaxWidth=620`. 각 존은 radius `14`, border `1.5`, 배경 `PanelSoftBrush`, 아이콘 `34` `PrimaryBrush`, 제목 `Fs16` SemiBold(위 `18`), 설명 `Fs12` muted(위 `7`).
+- hover/drag-over 존은 `PrimaryBrush` 보더로 강조한다. 선택 카드 규칙(§8.8 좌측 카드)과 같은 보더-강조 채널이다.
+- 드롭존 밖에서 놓거나 드래그가 패널을 벗어나면 오버레이를 닫고 아무것도 하지 않는다.
+- 드래그 경로의 splitter에는 `AllowDrop`을 줘 통과 중 드래그 고스트가 깜빡이지 않게 한다.
 
 ## 11. 로딩, 빈 상태, 알림
 
@@ -2440,7 +2507,8 @@ Resources/
 - [ ] ConfirmDialog 기본 폭 490, 본문 줄 수별 높이 260/325/360, 장문 최대 폭 640 확인
 - [ ] ConfirmDialog body `Fs13` / line height 22 / 좌우 28 / scroll 확인
 - [ ] ConfirmDialog footer action 높이 38 / 최소 폭 80 / 간격 8 확인
-- [ ] settings header 48 / category 205 / footer action 100×38 확인
+- [ ] settings 변형 A: header 48 / category 205 / footer action 100×38 확인
+- [ ] settings 변형 B: 오버레이가 상단바 아래만 덮고 category 240 / content MaxWidth 1040 확인
 - [ ] theme card 150×150 / radius 10 / border 2 확인
 - [ ] desktop notification width 340 / radius 12 / close 22×22 확인
 - [ ] 100%, 125%, 150% DPI 확인
@@ -2461,7 +2529,8 @@ Resources/
 - [ ] right-click selection 선행
 - [ ] popup이 화면 밖으로 나가지 않는지 확인
 - [ ] popup이 닫힌 뒤 anchor/owner focus 복귀
-- [ ] settings theme live preview 후 저장은 유지, 취소는 원복
+- [ ] settings 변형 A: theme live preview 후 저장은 유지, 취소는 원복
+- [ ] settings 변형 B: 옵션·테마 변경 즉시 저장, 설정 중 상단바 닫기 비활성·패널 토글 숨김, 닫힌 뒤 터미널 복원
 - [ ] settings X/ESC가 미저장 확인 경로를 우회하지 않음
 - [ ] 업데이트 노트 팝업이 같은 팝업 안에서 진행률로 전환되고 다운로드 중 닫기 차단
 - [ ] desktop notification이 입력 focus를 빼앗지 않음
@@ -2487,17 +2556,18 @@ Resources/
 - `App.xaml.cs`의 `SetTheme`
 - `MainWindow.xaml`
 - `MainWindow.xaml.cs`의 window chrome, maximize/fullscreen, footer 상태 처리
+- `MainWindow.xaml`의 `SettingsHost` + `MainWindow.xaml.cs`의 설정 오버레이 열기/닫기·상단바 정리: 설정 변형 B 정본
+- `MainWindow.xaml`의 `ShellPanelRow`/`ShellTerminalPanel`: 하단 shell 터미널 패널
+- `Behaviors/PrecisionWheelScroll.cs`: 트랙패드 정밀 휠 스크롤
+- `Views/WorkspacePaneView.xaml`의 `FileDropOverlay`: 파일 드롭 선택 오버레이
 - `Views/SidebarView.xaml`의 `ProjectCard`: 좌측 selected 보더-only 규칙
 - `Views/FileExplorerView.xaml`의 `TreeViewItem`: 우측 selected 배경-only 규칙
-- `Views/SettingsWindow.xaml`
-- `Views/SettingsWindow.xaml.cs`
 - `Views/SettingsDialog.xaml`
 - `Views/SettingsDialog.xaml.cs`
 - `Views/NotificationPopup.xaml`
 - `Views/NotificationPopup.xaml.cs`
 - `Views/ConfirmDialog.xaml`: 제품 MessageBox 정본 geometry와 template
 - `Views/ConfirmDialog.xaml.cs`: `Alert`, `Show`, `ShowThreeWay`, `AlertWithLink`, `ShowUpdate`, 크기·Owner·키보드 계약
-- `Views/WakeSchedulerWindow.xaml.cs`: 정상 로드 후 native MessageBox를 쓰는 알려진 이탈
 - `Views/SidebarView.xaml`의 `UpdateButton`: 사이드바 업데이트 버튼
 - `Services/UpdateService.cs`
 - `Models/SpinnerSync.cs`
@@ -2554,7 +2624,7 @@ Resources/
 
 | 프로젝트 | 브랜치 | commit |
 |---|---|---|
-| devez-code | `main` | `6e838bcdfc7a` |
+| devez-code | `main` | `05b6d0a11c14` |
 | devez | `master` | `c2405608658c` |
 | eGhisDevWPF | `main` | `647326f8b9d4` |
 
