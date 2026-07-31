@@ -663,6 +663,10 @@ public sealed class TerminalHostView : ContentControl, IDisposable
                 case "diag": // 웹 레이어 진단 로그 → diag.log (codex 팝업 스윕 등)
                     DevezCode.Services.DiagLog.Write("[web] " + (root.TryGetProperty("msg", out var dm) ? dm.GetString() : ""));
                     break;
+                case "imeProbe": // IME 조합창 "모니터 좌상단" 고착 수사 — 웹 DOM 상태 + Win32 IME 상태 한 줄
+                    DevezCode.Services.DiagLog.Write("[web] " + (root.TryGetProperty("msg", out var pm) ? pm.GetString() : "")
+                        + " " + DescribeWin32ImeState());
+                    break;
                 case "restart":
                 {
                     var roomId = root.GetProperty("roomId").GetString()!;
@@ -1667,6 +1671,99 @@ public sealed class TerminalHostView : ContentControl, IDisposable
         };
         t.SetApartmentState(System.Threading.ApartmentState.STA);
         t.Start();
+    }
+
+    // ── IME "모니터 좌상단 조합창" 고착 수사용 Win32 계측 ──────────────────────
+    // 증상: 한글 조합 미리보기가 터미널이 아니라 모니터 (0,0)에 뜸 = Windows 가 캐럿 위치를
+    // 못 받아 기본 IME 조합창을 화면 원점에 그리는 OS 레벨 폴백. DOM 은 정상으로 보이므로
+    // (조합 이벤트는 유입) Win32 층을 함께 찍어야 healthy/stale 시그니처가 갈린다.
+    // 판독법: .knowledge/ime-모니터좌상단-조합창-고착.md
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct W32Rect { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct W32Point { public int X, Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public int cbSize;
+        public uint flags;
+        public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret;
+        public W32Rect rcCaret;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CompositionForm { public int dwStyle; public W32Point ptCurrentPos; public W32Rect rcArea; }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetGUIThreadInfo(uint idThread, ref GuiThreadInfo lpgui);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out W32Rect lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("imm32.dll")]
+    private static extern IntPtr ImmGetContext(IntPtr hWnd);
+
+    [DllImport("imm32.dll")]
+    private static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
+
+    [DllImport("imm32.dll")]
+    private static extern bool ImmGetCompositionWindow(IntPtr hIMC, ref CompositionForm lpCompForm);
+
+    [DllImport("imm32.dll")]
+    private static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
+
+    private static string Win32ClassName(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return "null";
+        var sb = new System.Text.StringBuilder(128);
+        return GetClassName(hWnd, sb, 128) > 0 ? sb.ToString() : "?";
+    }
+
+    /// <summary>조합 시작 시점의 Win32 IME 상태 스냅샷 문자열.
+    /// focus/active/caret: 포그라운드 스레드의 각 HWND 클래스명(healthy 는 Chromium 계열이어야 함).
+    /// imc: 포커스 HWND 의 IME 컨텍스트 존재(타 프로세스 HWND 면 0 이 정상 — 값 자체보다 변화가 단서).
+    /// imeWnd: 기본 IME 창의 가시성·화면 좌표 — "vis@0,0" 이면 모니터 좌상단 조합창 확진.</summary>
+    private static string DescribeWin32ImeState()
+    {
+        try
+        {
+            var gti = new GuiThreadInfo { cbSize = Marshal.SizeOf<GuiThreadInfo>() };
+            if (!GetGUIThreadInfo(0, ref gti)) return "win32[gti-fail]";
+            var sb = new System.Text.StringBuilder(160);
+            sb.Append("win32[focus=").Append(Win32ClassName(gti.hwndFocus));
+            sb.Append(" active=").Append(Win32ClassName(gti.hwndActive));
+            sb.Append(" caret=").Append(Win32ClassName(gti.hwndCaret))
+              .Append('@').Append(gti.rcCaret.Left).Append(',').Append(gti.rcCaret.Top);
+            var imc = gti.hwndFocus != IntPtr.Zero ? ImmGetContext(gti.hwndFocus) : IntPtr.Zero;
+            sb.Append(" imc=").Append(imc != IntPtr.Zero ? 1 : 0);
+            if (imc != IntPtr.Zero)
+            {
+                var cf = new CompositionForm();
+                if (ImmGetCompositionWindow(imc, ref cf))
+                    sb.Append(" compForm=").Append(cf.dwStyle)
+                      .Append('@').Append(cf.ptCurrentPos.X).Append(',').Append(cf.ptCurrentPos.Y);
+                ImmReleaseContext(gti.hwndFocus, imc);
+            }
+            var imeWnd = gti.hwndFocus != IntPtr.Zero ? ImmGetDefaultIMEWnd(gti.hwndFocus) : IntPtr.Zero;
+            if (imeWnd != IntPtr.Zero)
+            {
+                sb.Append(" imeWnd=").Append(IsWindowVisible(imeWnd) ? "vis" : "hid");
+                if (GetWindowRect(imeWnd, out var r)) sb.Append('@').Append(r.Left).Append(',').Append(r.Top);
+            }
+            else sb.Append(" imeWnd=none");
+            sb.Append(']');
+            return sb.ToString();
+        }
+        catch (Exception e) { return "win32[err " + e.Message + "]"; }
     }
 
     [DllImport("user32.dll", SetLastError = true)]

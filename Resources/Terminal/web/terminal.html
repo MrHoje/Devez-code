@@ -2003,8 +2003,33 @@
       } catch (e) { try { imeDiag('state err ' + (e && e.message)); } catch (e2) {} }
     }
 
+    // [모니터 좌상단 조합창 수사] 조합 미리보기가 터미널 안이 아니라 "모니터 (0,0)"에 뜨는
+    // 간헐 고착은 DOM 층이 아니라 Win32 IME 컨텍스트 층의 문제로 추정된다 — 조합 이벤트는
+    // 정상 유입되고(글자는 들어감), 터미널 밖(WPF) 클릭 = 실제 HWND 포커스 이동만이 해결.
+    // DOM 상태를 실어 보내면 C#(case 'imeProbe')이 Win32 포커스/기본 IME 창 위치·가시성을
+    // 같은 줄에 덧붙여 diag.log 에 남긴다. 판독법: .knowledge/ime-모니터좌상단-조합창-고착.md
+    let lastImeProbeAt = 0;
+    function sendImeProbe() {
+      const now = Date.now();
+      if (now - lastImeProbeAt < 2000) return; // 음절마다 발화하므로 스로틀(연속 타이핑이면 2초마다 1줄)
+      lastImeProbeAt = now;
+      try {
+        const sr = (el.querySelector('.xterm-screen') || el).getBoundingClientRect();
+        const tr = ta.getBoundingClientRect();
+        const vEl = el.querySelector('.composition-view');
+        const vr = vEl ? vEl.getBoundingClientRect() : null;
+        post({ type: 'imeProbe', msg: '[ime ' + agent + ' ' + roomId + '] probe' +
+          ' focus=' + (document.hasFocus() ? 1 : 0) +
+          ' act=' + (document.activeElement === ta ? 1 : 0) +
+          ' ta=' + Math.round(tr.left - sr.left) + ',' + Math.round(tr.top - sr.top) +
+          ' view=' + (vEl ? (vEl.classList.contains('active') ? 'on' : 'off') + ':' +
+                      Math.round(vr.left - sr.left) + ',' + Math.round(vr.top - sr.top) : 'none') });
+      } catch (e) {}
+    }
+
     function beginComposition() {
       isImeComposing = true;
+      sendImeProbe();
       frozenImeCaret = null;              // 새 조합 — 앵커를 새로 잡는다(직전 동결분 폐기)
       if (pinsLogicalCaret) hideHwCursor(); // B형: 조합 동안 블록커서 깜빡임 제거(A형과 동일 UX)
       if (pendingResponseReset) armStaleCompositionReset();
