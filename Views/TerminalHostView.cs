@@ -441,12 +441,23 @@ public sealed class TerminalHostView : ContentControl, IDisposable
             PostJson(new { type = "imeAbort", roomId = _activeRoomId });
     }
 
-    public void FocusTerminal()
+    /// <summary>프로그램적 포커스 전달 — 사용자가 터미널 표면을 직접 클릭하는 경우와 달리
+    /// Win32 포커스가 WPF 쪽에 있다가 코드로 WebView2 에 넘어가는 경로다. "IME 조합창이
+    /// 모니터 좌상단에 뜨는" 고착이 이 경로(새 세션 모달 닫힘·완료기록 카드 클릭 등)에서
+    /// 자주 발생한다는 제보에 따라 호출자와 250ms 후 Win32 안착 상태를 diag 에 남긴다.
+    /// 판독: .knowledge/ime-모니터좌상단-조합창-고착.md</summary>
+    public void FocusTerminal([System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
         if (_pageReady && _activeRoomId != null)
         {
+            DevezCode.Services.DiagLog.Write($"[ime focus-path] from={caller} room={_activeRoomId}");
             _webView?.Focus();
             PostJson(new { type = "focus", roomId = _activeRoomId });
+            // 포커스가 실제로 어디에 안착했는지(Chromium HWND vs WPF 본체) 잠시 뒤 스냅샷.
+            // 프로그램적 전달이 IME 컨텍스트 재부착에 실패하는지 조합 없이도 관측하기 위함.
+            var room = _activeRoomId;
+            _ = System.Threading.Tasks.Task.Delay(250).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
+                DevezCode.Services.DiagLog.Write($"[ime focus-path] settle room={room} " + DescribeWin32ImeState())));
         }
         else
         {

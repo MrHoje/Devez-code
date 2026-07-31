@@ -15,6 +15,28 @@
 2. **터미널 밖(WPF 영역) 클릭 → 세션 재포커스만 해결** — 웹 레이어 안의 `ta.blur()→focus()`
    (resetImeNow)로는 안 풀리고, **실제 Win32 HWND 포커스 이동**이 있어야 풀린다.
 
+## 트리거 (사용자 제보 + 구조적 예측)
+
+**제보된 빈발 경로 (2026-08-01)**: ① 단축키(Ctrl+Shift+T/D)로 새 세션 생성 직후 ② 완료기록 카드 클릭 직후.
+
+**공통 구조**: 둘 다 Win32 포커스가 WPF 쪽에 있다가 `FocusTerminal()`(TerminalHostView.cs)의
+`_webView.Focus()` 로 **프로그램적으로** WebView2 에 넘어가는 경로다. 증상이 없는 평소 경우는
+사용자가 터미널 표면을 **직접 클릭**해 Win32 포커스가 Chromium HWND 에 네이티브로 안착한다.
+→ 가설: 프로그램적 전달에서 Windows IME 컨텍스트가 Chromium HWND 에 재부착되지 못하고
+WPF 쪽에 남는다(새 세션 모달은 이름 입력 **WPF TextBox 에 한글 IME 가 활성**인 채 닫히므로 최악 조건).
+
+**같은 구조라 함께 의심되는 경로** (전부 `FocusTerminal()` 경유 — 재현 시 확인할 것):
+
+- 탭바(WPF)를 마우스로 클릭해 세션 전환
+- 사이드바/프로젝트 트리에서 세션 선택
+- 설정·MCP·확인 등 WPF 다이얼로그를 닫은 직후
+- 세션 이름 변경 등 **WPF 텍스트 입력 컨트롤에 한글 입력 후** 터미널 복귀 (고위험)
+- QuickOpen·파일 에디터 탭에서 터미널로 복귀
+- MDI 오버레이 열림(ShellTerminal.FocusTerminal)
+
+반면 웹 레이어 안에서만 도는 전환(Ctrl+Tab 등, 포커스가 WebView2 HWND 를 떠나지 않음)은
+상대적으로 안전할 것으로 예측.
+
 ## 해석 (가설)
 
 - 모니터 (0,0)은 **Windows 가 기본 IME 조합창을 그리는 폴백 위치**다. 앱(Chromium)이 캐럿
@@ -32,6 +54,10 @@
   발화, **2초 스로틀**. DOM 상태(`focus`/`act`/`ta` 상대좌표/`view` 상태·좌표)를 실어 보냄.
 - **C#**: `case "imeProbe"` → `DescribeWin32ImeState()` (TerminalHostView.cs, grep: `DescribeWin32ImeState`)
   — `GetGUIThreadInfo`/`ImmGetDefaultIMEWnd` 등으로 Win32 층 스냅샷을 덧붙임.
+- **C# 포커스 경로**: `FocusTerminal()` 호출마다 `[ime focus-path] from=<호출자>` +
+  250ms 뒤 `[ime focus-path] settle ... win32[...]` — 프로그램적 포커스 전달 후 Win32 포커스가
+  실제 어디에 안착했는지(Chromium HWND vs WPF 본체)를 **조합 없이도** 관측. 제보된 트리거
+  (새 세션·완료기록 카드)와 probe 라인의 시간 상관을 이 로그로 잇는다.
 
 ### diag.log 라인 포맷
 
