@@ -516,6 +516,22 @@
                             </MenuItem.Icon>
                         </MenuItem>
                         <Separator/>
+                        <MenuItem Header="새 문서 그룹 만들기" Tag="{Binding}" CommandParameter="DocumentGroupCreate"
+                                  Click="DocumentGroupCreate_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolderPlus}"
+                                      Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="문서 그룹에 추가" Tag="{Binding}"
+                                  CommandParameter="DocumentGroupAdd"
+                                  Style="{StaticResource SubMenuHeaderItem}"
+                                  SubmenuOpened="DocumentGroupAdd_SubmenuOpened">
+                            <MenuItem Header="추가할 그룹 없음" IsEnabled="False"/>
+                        </MenuItem>
+                        <MenuItem Header="그룹에서 빼기" Tag="{Binding}" CommandParameter="DocumentGroupRemove"
+                                  Click="DocumentGroupRemoveDocument_Click"/>
+                        <Separator/>
                         <MenuItem Header="문서 닫기" Tag="{Binding}" Click="OpenDocClose_Click">
                             <MenuItem.Icon>
                                 <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
@@ -548,6 +564,80 @@
                 <!-- 활성(보고 있는) 문서: 세션과 동일하게 배경 하이라이트 -->
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
                     <Setter TargetName="DocRow" Property="Background" Value="{DynamicResource SessionFocusBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 프로젝트 카드 전용 문서 그룹. 실제 중앙 탭은 Documents 순서로 그대로 유지한다. -->
+        <DataTemplate x:Key="DocumentGroupTemplate" DataType="{x:Type models:DocumentGroupItem}">
+            <StackPanel>
+                <Border x:Name="DocumentGroupRow" Style="{StaticResource SessionCard}"
+                        MouseLeftButtonUp="DocumentGroup_Click"
+                        PreviewMouseLeftButtonDown="SessionRow_PreviewMouseLeftButtonDown"
+                    Cursor="Arrow">
+                    <Border.ContextMenu>
+                        <ContextMenu Opened="DocumentGroupMenu_Opened">
+                            <MenuItem Header="위쪽 파일 모두 그룹에 넣기" Tag="{Binding}"
+                                      CommandParameter="Before" Click="DocumentGroupAddSide_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArrowUp}"
+                                          Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="아래쪽 파일 모두 그룹에 넣기" Tag="{Binding}"
+                                      CommandParameter="After" Click="DocumentGroupAddSide_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconArrowDown}"
+                                          Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator/>
+                            <MenuItem Header="이름 변경" Tag="{Binding}" Click="DocumentGroupRename_Click">
+                                <MenuItem.Icon>
+                                    <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPencil}"
+                                          Width="12" Height="12" Stroke="{DynamicResource TextMutedBrush}"/>
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="그룹 해제" Tag="{Binding}" Click="DocumentGroupRemove_Click"/>
+                        </ContextMenu>
+                    </Border.ContextMenu>
+                    <Grid Margin="10,5,10,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Path x:Name="DocumentGroupCollapsedIcon" Grid.Column="0"
+                              Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronRight}"
+                              Width="12" Height="12" Margin="0,0,7,0" VerticalAlignment="Center"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                        <Path x:Name="DocumentGroupExpandedIcon" Grid.Column="0"
+                              Style="{StaticResource LucideIcon}" Data="{StaticResource IconChevronDown}"
+                              Width="12" Height="12" Margin="0,0,7,0" VerticalAlignment="Center"
+                              Stroke="{DynamicResource TextMutedBrush}" Visibility="Collapsed"/>
+                        <Path Grid.Column="1" Style="{StaticResource LucideIcon}" Data="{StaticResource IconFolder}"
+                              Width="14" Height="14" Margin="0,0,9,0" VerticalAlignment="Center"
+                              Stroke="{DynamicResource TextMutedBrush}"/>
+                        <TextBlock Grid.Column="2" Text="{Binding Title}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" FontSize="{DynamicResource Fs12}"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                        <TextBlock Grid.Column="3" Text="{Binding DocumentCountText}" Margin="8,0,0,0"
+                                   VerticalAlignment="Center" FontSize="{DynamicResource Fs11}"
+                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                    </Grid>
+                </Border>
+                <ItemsControl x:Name="DocumentGroupDocuments" Margin="18,0,0,0"
+                              ItemsSource="{Binding Documents}"
+                              ItemTemplate="{StaticResource FileDocTemplate}"/>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsExpanded}" Value="False">
+                    <Setter TargetName="DocumentGroupDocuments" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                    <Setter TargetName="DocumentGroupCollapsedIcon" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="DocumentGroupExpandedIcon" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
@@ -612,7 +702,8 @@
         <models:TabRowTemplateSelector x:Key="TabRowSelector"
                                        SessionTemplate="{StaticResource SessionTemplate}"
                                        FileTemplate="{StaticResource FileDocTemplate}"
-                                       BrowserTemplate="{StaticResource BrowserTabTemplate}"/>
+                                       BrowserTemplate="{StaticResource BrowserTabTemplate}"
+                                       DocumentGroupTemplate="{StaticResource DocumentGroupTemplate}"/>
 
         <!-- ── 프로젝트(상위 항목) 템플릿 — 카드 헤더(아이콘·이름·chevron·⋯) + 세션 row 리스트 ── -->
         <DataTemplate x:Key="ProjectTemplate" DataType="{x:Type models:ProjectItem}">

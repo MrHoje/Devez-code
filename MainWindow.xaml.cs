@@ -1130,6 +1130,8 @@ public partial class MainWindow : Window
                 if (cur != i && cur >= 0) proj.Tabs.Move(cur, i);
             }
         }
+        foreach (var proj in _projects)
+            proj.RestorePendingDocumentGroups();
     }
 
     // ── 성능 모니터 (헤더 CPU/RAM 칩, devez 이식) ──────────────────────

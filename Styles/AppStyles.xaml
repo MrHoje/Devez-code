@@ -52,6 +52,7 @@
     <!-- 탭 선택 포커스 링: 채팅 버블 하이라이트처럼 은은한 반투명 primary 테두리 -->
     <SolidColorBrush x:Key="TabFocusRingBrush" Color="{DynamicResource PrimaryColor}" Opacity="0.55"/>
     <SolidColorBrush x:Key="PrimarySoftBrush"  Color="{DynamicResource PrimarySoftColor}"/>
+    <SolidColorBrush x:Key="DocumentGroupAlternateBrush" Color="#ede9fe"/>
     <SolidColorBrush x:Key="BubbleBrush"       Color="{DynamicResource BubbleColor}"/>
     <SolidColorBrush x:Key="BubbleBorderBrush" Color="{DynamicResource BubbleBorderColor}"/>
     <SolidColorBrush x:Key="DangerBrush"        Color="{DynamicResource DangerColor}"/>

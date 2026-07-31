@@ -209,7 +209,6 @@
                                     MinWidth="131" MaxWidth="248"
                                     CornerRadius="9,9,0,0"
                                     BorderThickness="1,1,1,0"
-                                    BorderBrush="{DynamicResource LineBrush}"
                                     Cursor="Arrow"
                                     PreviewMouseLeftButtonDown="Tab_PreviewMouseLeftButtonDown"
                                     MouseLeftButtonUp="Tab_Click"
@@ -217,7 +216,18 @@
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
                                         <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDocumentGrouped}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding UsesAlternateDocumentGroupColor}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource DocumentGroupAlternateBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding StartsDocumentGroup}" Value="True">
+                                                <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                                <Setter Property="BorderThickness" Value="2,1,1,0"/>
+                                            </DataTrigger>
                                             <DataTrigger Value="True">
                                                 <DataTrigger.Binding>
                                                     <MultiBinding Converter="{x:Static models:TabActiveConverter.Instance}">
@@ -227,6 +237,13 @@
                                                 </DataTrigger.Binding>
                                                 <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
                                             </DataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding StartsDocumentGroup}" Value="True"/>
+                                                    <Condition Binding="{Binding UsesAlternateDocumentGroupColor}" Value="True"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource ProjectMarkerPurpleBrush}"/>
+                                            </MultiDataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>

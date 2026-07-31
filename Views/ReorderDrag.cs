@@ -531,13 +531,13 @@ internal sealed class ReorderDrag<T> where T : class
             }
             return;
         }
-        ClearReorderPreview();
         ClearDropIntoTarget();
         var cursor = _horizontal ? pointer.X : pointer.Y;
         var grabOffset = _horizontal ? _grabOffsetX : _grabOffsetY;
         // 커서 raw 대신 드래그 중인 카드의 중심을 기준점으로 사용 — 위/아래 대칭 판정.
         var draggedCenter = cursor - grabOffset + AxisSize(_slots[_sourceIndex]) / 2;
         var newTarget = ComputeTargetIndex(draggedCenter);
+        SetReorderPreviewForTargetIndex(newTarget);
         if (!_needsReapply && newTarget == _targetIndex) return;
         _needsReapply = false;
         _targetIndex = newTarget;

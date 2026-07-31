@@ -23,7 +23,7 @@ public abstract class NotifyBase : INotifyPropertyChanged
 }
 
 /// <summary>중앙 탭 종류. 탭 아이콘·콘텐츠 분기에 사용.</summary>
-public enum TabKind { Session, File, Browser }
+public enum TabKind { Session, File, Browser, DocumentGroup }
 
 /// <summary>분할(2분할) 시 이 프로젝트가 어느 패널에 떠 있는지. 사이드바 카드의 패널 배지 표시에 사용.
 /// None=어느 패널에도 없음(또는 비분할), Left=좌 패널(PaneA), Right=우 패널(PaneB).</summary>
@@ -380,6 +380,30 @@ public sealed class FileTabItem : TabItemBase
     private bool _isActive;
     public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
 
+    private bool _isDocumentGrouped;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsDocumentGrouped
+    {
+        get => _isDocumentGrouped;
+        internal set => Set(ref _isDocumentGrouped, value);
+    }
+
+    private bool _usesAlternateDocumentGroupColor;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool UsesAlternateDocumentGroupColor
+    {
+        get => _usesAlternateDocumentGroupColor;
+        internal set => Set(ref _usesAlternateDocumentGroupColor, value);
+    }
+
+    private bool _startsDocumentGroup;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool StartsDocumentGroup
+    {
+        get => _startsDocumentGroup;
+        internal set => Set(ref _startsDocumentGroup, value);
+    }
+
     /// <summary>탭마다 1개의 파일 편집기 인스턴스. 콘텐츠 호스트에 그대로 붙여 렌더한다.</summary>
     public IFileTabEditor Editor { get; init; } = new FileEditorView();
 
@@ -387,6 +411,63 @@ public sealed class FileTabItem : TabItemBase
     public event EventHandler? CloseRequested;
 
     internal void RaiseCloseRequested() => CloseRequested?.Invoke(this, EventArgs.Empty);
+}
+
+/// <summary>프로젝트 카드에서 열린 문서를 묶어 보여주는 폴더형 그룹.
+/// 중앙 탭 컬렉션에는 들어가지 않고, Documents 가 가리키는 실제 파일 탭만 이동한다.</summary>
+public sealed class DocumentGroupItem : TabItemBase
+{
+    public override TabKind Kind => TabKind.DocumentGroup;
+    public override string Title => Name;
+
+    private string _name = "문서 그룹";
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? "문서 그룹" : value.Trim();
+            if (!Set(ref _name, normalized)) return;
+            OnPropertyChanged(nameof(Title));
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private bool _isExpanded = true;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (!Set(ref _isExpanded, value)) return;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public ObservableCollection<FileTabItem> Documents { get; } = new();
+    public int DocumentCount => Documents.Count;
+    public string DocumentCountText => $"{DocumentCount}개";
+
+    public event EventHandler? Changed;
+
+    public DocumentGroupItem()
+    {
+        Documents.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(DocumentCount));
+            OnPropertyChanged(nameof(DocumentCountText));
+            Changed?.Invoke(this, EventArgs.Empty);
+        };
+    }
+}
+
+/// <summary>파일 탭 복원 전까지 문서 그룹 정보를 임시 보관하는 workspace 로드 스냅샷.</summary>
+public sealed class DocumentGroupSnapshot
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "문서 그룹";
+    public bool IsExpanded { get; set; } = true;
+    public List<string> FilePaths { get; set; } = new();
 }
 
 /// <summary>중앙 영역에 표시하는 WebView2 브라우저 탭. 탭 ID를 키로 방문 기록을 로컬 저장한다.</summary>
@@ -690,6 +771,9 @@ public sealed class ProjectItem : NotifyBase
     /// 사이드바는 Sessions(동기 뷰)로 세션만 골라 렌더한다.</summary>
     public ObservableCollection<TabItemBase> Tabs { get; } = new();
 
+    /// <summary>프로젝트 카드에서 열린 문서들을 폴더처럼 묶는 그룹. 실제 탭은 Tabs 에 그대로 유지된다.</summary>
+    public ObservableCollection<DocumentGroupItem> DocumentGroups { get; } = new();
+
     /// <summary>재시작 복원용 — workspace.json 에서 읽은 "직전에 열려 있던 파일 탭 경로" 목록.
     /// 모델엔 임시 보관만 하고(직렬화 대상 아님), 시작 시 WorkspacePaneView.RestoreFileTabs 가
     /// 한 번 소비해 실제 FileTabItem 으로 만든다.</summary>
@@ -698,6 +782,9 @@ public sealed class ProjectItem : NotifyBase
     /// <summary>재시작 복원용 — 저장 시점의 전체 탭 순서(세션+문서+브라우저, "S:id"/"F:path"/"B:id"). 시작 시
     /// 세션+파일+브라우저 탭이 모두 복원된 뒤 이 순서로 Tabs 를 1회 재배열한다(문서가 끝으로 몰려 끼임 순서를 잃는 것 방지).</summary>
     public List<string> PendingTabOrder { get; set; } = new();
+
+    /// <summary>파일 탭이 생성된 뒤 DocumentGroups 로 복원할 임시 상태.</summary>
+    public List<DocumentGroupSnapshot> PendingDocumentGroups { get; set; } = new();
 
     /// <summary>이 프로젝트에서 마지막으로 활성화했던 탭 참조. 형식: "S:&lt;세션ID&gt;", "F:&lt;파일경로&gt;", "B:&lt;브라우저ID&gt;".
     /// 프로젝트를 다시 선택할 때 이 탭을 복원한다(없거나 못 찾으면 기본 우선순위로 폴백). workspace.json 에 영속.</summary>
@@ -946,12 +1033,23 @@ public sealed class ProjectItem : NotifyBase
         };
 
         Files.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFiles));
+        DocumentGroups.CollectionChanged += (_, e) =>
+        {
+            if (e.OldItems != null)
+                foreach (DocumentGroupItem group in e.OldItems) group.Changed -= DocumentGroup_Changed;
+            if (e.NewItems != null)
+                foreach (DocumentGroupItem group in e.NewItems) group.Changed += DocumentGroup_Changed;
+            SyncDocumentGroupMembership();
+            RefreshSidebarGroups();
+        };
 
         // 탭 추가/제거/이동 → 비분할이면 단일 목록(LeftItems=전체 탭) 자동 갱신.
         // 분할(IsSplitView) 중이면 그룹 내용은 MainWindow(RefreshCardGroups)가 라이브로 주입하지만,
         // '삭제'만은 즉시 반영한다 — 안 그러면 탭 헤더에선 지워져도 카드엔 남는다(새로고침 누락).
         Tabs.CollectionChanged += (_, e) =>
         {
+            NormalizeDocumentGroupsAfterTabsChanged(e);
+            SyncDocumentGroupMembership();
             if (!IsSplitView) { RefreshSidebarGroups(); return; }
             if (e.Action is NotifyCollectionChangedAction.Remove or NotifyCollectionChangedAction.Reset)
             {
@@ -961,6 +1059,298 @@ public sealed class ProjectItem : NotifyBase
             }
             RefreshSidebarGroups();
         };
+        RefreshSidebarGroups();
+    }
+
+    private bool _movingDocumentGroup;
+
+    private void DocumentGroup_Changed(object? sender, EventArgs e)
+    {
+        SyncDocumentGroupMembership();
+        RefreshSidebarGroups();
+    }
+
+    private void SyncDocumentGroupMembership()
+    {
+        var orderedGroups = DocumentGroups
+            .Select(group => new
+            {
+                Group = group,
+                FirstTabIndex = group.Documents
+                    .Select(Tabs.IndexOf)
+                    .Where(index => index >= 0)
+                    .DefaultIfEmpty(int.MaxValue)
+                    .Min(),
+            })
+            .OrderBy(item => item.FirstTabIndex)
+            .ToList();
+        var groupColors = orderedGroups
+            .Select((item, index) => new { item.Group, Alternate = index % 2 == 1 })
+            .ToDictionary(item => item.Group, item => item.Alternate);
+        var groupStarts = orderedGroups
+            .Select(item => item.Group.Documents
+                .Where(Tabs.Contains)
+                .OrderBy(Tabs.IndexOf)
+                .FirstOrDefault())
+            .Where(file => file != null)
+            .ToHashSet();
+
+        foreach (var file in Tabs.OfType<FileTabItem>())
+        {
+            var group = DocumentGroupOf(file);
+            file.IsDocumentGrouped = group != null;
+            file.UsesAlternateDocumentGroupColor =
+                group != null && groupColors.GetValueOrDefault(group);
+            file.StartsDocumentGroup = groupStarts.Contains(file);
+        }
+    }
+
+    private void NormalizeDocumentGroupsAfterTabsChanged(NotifyCollectionChangedEventArgs e)
+    {
+        foreach (var group in DocumentGroups.ToList())
+        {
+            foreach (var file in group.Documents.Where(file => !Tabs.Contains(file)).ToList())
+                group.Documents.Remove(file);
+            if (group.Documents.Count == 0)
+                DocumentGroups.Remove(group);
+            else
+                ReorderGroupDocuments(group);
+        }
+
+        if (_movingDocumentGroup || e.Action != NotifyCollectionChangedAction.Move) return;
+
+        var moved = e.NewItems?.OfType<TabItemBase>().FirstOrDefault();
+        if (moved is FileTabItem { IsDiff: false } movedDocument)
+        {
+            int movedIndex = Tabs.IndexOf(movedDocument);
+            var targetGroup = DocumentGroups
+                .Where(group => !group.Documents.Contains(movedDocument))
+                .Select(group => new
+                {
+                    Group = group,
+                    Indexes = group.Documents
+                        .Select(Tabs.IndexOf)
+                        .Where(index => index >= 0)
+                        .Order()
+                        .ToList(),
+                })
+                .FirstOrDefault(candidate =>
+                    candidate.Indexes.Count >= 2
+                    && movedIndex > candidate.Indexes[0]
+                    && movedIndex < candidate.Indexes[^1])
+                ?.Group;
+
+            if (targetGroup != null)
+            {
+                var previousGroup = DocumentGroupOf(movedDocument);
+                previousGroup?.Documents.Remove(movedDocument);
+                if (previousGroup?.Documents.Count == 0)
+                    DocumentGroups.Remove(previousGroup);
+
+                targetGroup.Documents.Add(movedDocument);
+                ReorderGroupDocuments(targetGroup);
+            }
+        }
+
+        foreach (var group in DocumentGroups.ToList())
+        {
+            var indexes = group.Documents.Select(Tabs.IndexOf).Where(index => index >= 0).Order().ToList();
+            bool contiguous = indexes.Count < 2 || indexes[^1] - indexes[0] + 1 == indexes.Count;
+            if (contiguous) continue;
+
+            if (moved is FileTabItem movedFile && group.Documents.Contains(movedFile))
+                group.Documents.Remove(movedFile);
+            else
+                DocumentGroups.Remove(group);
+        }
+    }
+
+    private void ReorderGroupDocuments(DocumentGroupItem group)
+    {
+        var ordered = group.Documents.OrderBy(Tabs.IndexOf).ToList();
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            int current = group.Documents.IndexOf(ordered[i]);
+            if (current != i) group.Documents.Move(current, i);
+        }
+    }
+
+    public DocumentGroupItem? DocumentGroupOf(FileTabItem file)
+        => DocumentGroups.FirstOrDefault(group => group.Documents.Contains(file));
+
+    public bool CanAddDocumentToGroup(DocumentGroupItem group, FileTabItem file)
+    {
+        if (file.IsDiff || !DocumentGroups.Contains(group) || !Tabs.Contains(file)
+            || group.Documents.Contains(file))
+            return false;
+        return true;
+    }
+
+    public DocumentGroupItem? CreateDocumentGroup(FileTabItem file, string name)
+    {
+        if (file.IsDiff || !Tabs.Contains(file)) return null;
+        RemoveDocumentFromGroup(file);
+        var group = new DocumentGroupItem { Name = name };
+        group.Documents.Add(file);
+        DocumentGroups.Add(group);
+        return group;
+    }
+
+    public bool AddDocumentToGroup(DocumentGroupItem group, FileTabItem file)
+    {
+        if (!CanAddDocumentToGroup(group, file)) return false;
+
+        RemoveDocumentFromGroup(file);
+        var members = group.Documents.Where(Tabs.Contains).OrderBy(Tabs.IndexOf).ToList();
+        if (members.Count > 0)
+        {
+            var desired = Tabs.Where(tab => !ReferenceEquals(tab, file)).ToList();
+            int anchor = desired.IndexOf(members[^1]);
+            if (anchor >= 0)
+            {
+                desired.Insert(anchor + 1, file);
+                ApplyDocumentGroupTabOrder(desired);
+            }
+        }
+        group.Documents.Add(file);
+        ReorderGroupDocuments(group);
+        RefreshSidebarGroups();
+        return true;
+    }
+
+    private List<FileTabItem> DocumentGroupSideCandidates(DocumentGroupItem group, bool before)
+    {
+        if (!DocumentGroups.Contains(group)) return new();
+        var members = group.Documents.Where(Tabs.Contains).OrderBy(Tabs.IndexOf).ToList();
+        if (members.Count == 0) return new();
+
+        int boundary = before ? Tabs.IndexOf(members[0]) : Tabs.IndexOf(members[^1]);
+        return Tabs.OfType<FileTabItem>()
+            .Where(file => !file.IsDiff
+                           && !group.Documents.Contains(file)
+                           && (before ? Tabs.IndexOf(file) < boundary : Tabs.IndexOf(file) > boundary))
+            .OrderBy(Tabs.IndexOf)
+            .ToList();
+    }
+
+    public int CountDocumentsOnGroupSide(DocumentGroupItem group, bool before)
+        => DocumentGroupSideCandidates(group, before).Count;
+
+    public int AddDocumentsOnGroupSide(DocumentGroupItem group, bool before)
+    {
+        if (!DocumentGroups.Contains(group)) return 0;
+        var members = group.Documents.Where(Tabs.Contains).OrderBy(Tabs.IndexOf).ToList();
+        var candidates = DocumentGroupSideCandidates(group, before);
+        if (members.Count == 0 || candidates.Count == 0) return 0;
+
+        var moving = members.Concat(candidates).Cast<TabItemBase>().ToHashSet();
+        int groupAnchor = Tabs.IndexOf(members[0]);
+        int insertAt = Tabs.Take(groupAnchor).Count(tab => !moving.Contains(tab));
+        var block = (before ? candidates.Concat(members) : members.Concat(candidates))
+            .Cast<TabItemBase>()
+            .ToList();
+        var desired = Tabs.Where(tab => !moving.Contains(tab)).ToList();
+        desired.InsertRange(insertAt, block);
+
+        foreach (var file in candidates)
+            DocumentGroupOf(file)?.Documents.Remove(file);
+        foreach (var emptyGroup in DocumentGroups
+                     .Where(item => !ReferenceEquals(item, group) && item.Documents.Count == 0)
+                     .ToList())
+            DocumentGroups.Remove(emptyGroup);
+        foreach (var file in candidates)
+            group.Documents.Add(file);
+
+        ApplyDocumentGroupTabOrder(desired);
+        return candidates.Count;
+    }
+
+    public bool RemoveDocumentFromGroup(FileTabItem file)
+    {
+        var group = DocumentGroupOf(file);
+        if (group == null) return false;
+        group.Documents.Remove(file);
+        if (group.Documents.Count == 0) DocumentGroups.Remove(group);
+        RefreshSidebarGroups();
+        return true;
+    }
+
+    public bool RemoveDocumentGroup(DocumentGroupItem group)
+    {
+        if (!DocumentGroups.Contains(group)) return false;
+        DocumentGroups.Remove(group);
+        return true;
+    }
+
+    public bool MoveDocumentGroupRelativeToItem(DocumentGroupItem group, TabItemBase target, bool after)
+    {
+        if (!DocumentGroups.Contains(group) || ReferenceEquals(group, target)) return false;
+
+        var members = group.Documents.Where(Tabs.Contains).OrderBy(Tabs.IndexOf).Cast<TabItemBase>().ToList();
+        if (members.Count == 0) return false;
+        var memberSet = members.ToHashSet();
+
+        List<TabItemBase> targetBlock = target switch
+        {
+            DocumentGroupItem targetGroup when DocumentGroups.Contains(targetGroup) =>
+                targetGroup.Documents.Where(Tabs.Contains).OrderBy(Tabs.IndexOf).Cast<TabItemBase>().ToList(),
+            SessionItem session when SessionParentOf(session) == null =>
+                GetSessionSubtree(session).Where(Tabs.Contains).Cast<TabItemBase>().ToList(),
+            _ when Tabs.Contains(target) => new List<TabItemBase> { target },
+            _ => new List<TabItemBase>(),
+        };
+        if (targetBlock.Count == 0 || targetBlock.Any(memberSet.Contains)) return false;
+
+        var desired = Tabs.Where(tab => !memberSet.Contains(tab)).ToList();
+        var targetIndexes = targetBlock.Select(tab => desired.IndexOf(tab)).Where(index => index >= 0).ToList();
+        if (targetIndexes.Count == 0) return false;
+        int insertAt = after ? targetIndexes.Max() + 1 : targetIndexes.Min();
+        desired.InsertRange(insertAt, members);
+        if (Tabs.SequenceEqual(desired)) return false;
+
+        ApplyDocumentGroupTabOrder(desired);
+        return true;
+    }
+
+    private void ApplyDocumentGroupTabOrder(IReadOnlyList<TabItemBase> desired)
+    {
+        _movingDocumentGroup = true;
+        try { SyncObservable(Tabs, desired); }
+        finally { _movingDocumentGroup = false; }
+        foreach (var group in DocumentGroups) ReorderGroupDocuments(group);
+        RefreshSidebarGroups();
+    }
+
+    public void RestorePendingDocumentGroups()
+    {
+        var pending = PendingDocumentGroups;
+        PendingDocumentGroups = new();
+        if (pending.Count == 0) return;
+
+        var filesByPath = Tabs.OfType<FileTabItem>()
+            .Where(file => !file.IsDiff)
+            .GroupBy(file => file.FilePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var claimed = new HashSet<FileTabItem>();
+        foreach (var snapshot in pending)
+        {
+            var files = snapshot.FilePaths
+                .Where(filesByPath.ContainsKey)
+                .Select(path => filesByPath[path])
+                .Where(claimed.Add)
+                .OrderBy(Tabs.IndexOf)
+                .ToList();
+            if (files.Count == 0) continue;
+
+            var group = new DocumentGroupItem
+            {
+                Id = string.IsNullOrWhiteSpace(snapshot.Id) ? Guid.NewGuid().ToString("N") : snapshot.Id,
+                Name = snapshot.Name,
+                IsExpanded = snapshot.IsExpanded,
+            };
+            foreach (var file in files) group.Documents.Add(file);
+            DocumentGroups.Add(group);
+        }
         RefreshSidebarGroups();
     }
 
@@ -1470,6 +1860,16 @@ public sealed class ProjectItem : NotifyBase
                 StringComparer.Ordinal);
         var result = new List<TabItemBase>();
         var emitted = new HashSet<SessionItem>();
+        var groupedDocuments = DocumentGroups
+            .Where(group => group.Documents.Count > 0)
+            .SelectMany(group => group.Documents.Select(file => (file, group)))
+            .ToDictionary(pair => pair.file, pair => pair.group);
+        var groupAnchor = DocumentGroups
+            .Where(group => group.Documents.Count > 0)
+            .ToDictionary(
+                group => group,
+                group => group.Documents.Where(Tabs.Contains).OrderBy(Tabs.IndexOf).FirstOrDefault());
+        var emittedGroups = new HashSet<DocumentGroupItem>();
 
         void Emit(SessionItem session)
         {
@@ -1481,6 +1881,12 @@ public sealed class ProjectItem : NotifyBase
 
         foreach (var item in source)
         {
+            if (item is FileTabItem file && groupedDocuments.TryGetValue(file, out var group))
+            {
+                if (ReferenceEquals(groupAnchor[group], file) && emittedGroups.Add(group))
+                    result.Add(group);
+                continue;
+            }
             if (item is not SessionItem session) { result.Add(item); continue; }
             if (!sessionSet.Contains(session)) continue;
             if (!string.IsNullOrEmpty(session.ParentSessionId) &&
