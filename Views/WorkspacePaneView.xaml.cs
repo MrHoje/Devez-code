@@ -149,6 +149,8 @@ public partial class WorkspacePaneView : UserControl
         // Explorer 파일이 WebView2 터미널에 들어오면 HWND를 숨기고 패널 전체 드롭 선택 화면으로 전환.
         _terminal.ExternalFileDragEntered += ShowFileDropOverlay;
         _terminal.ExternalFileDropReceived += DismissFileDropOverlay;
+        _fileDropOverlayCursorTimer.Tick += (_, _) => CheckFileDropOverlayCursor();
+        Unloaded += (_, _) => _fileDropOverlayCursorTimer.Stop();
         // synced reveal 준비 완료 → 셸로 전달(셸이 좌우를 모아 동시에 fade)
         _terminal.RevealPrepared += () => RevealPrepared?.Invoke(this);
         // 콜드 세션: web 로딩 커버가 켜진 것(ACK)을 확인한 뒤에만 터미널 HWND 를 unpark 한다.
@@ -199,64 +201,49 @@ public partial class WorkspacePaneView : UserControl
 
     private void Pane_PreviewInteract(object sender, MouseButtonEventArgs e) => FocusRequested?.Invoke(this);
 
-    /// <summary>패널 안(헤더·탭바·콘텐츠 영역)에서 받은 외부 파일 드래그 — 창 전체 드롭 선택 화면을 띄운다.
-    /// 보통은 창 레벨 PreviewDragOver 가 먼저 처리하므로 이 핸들러는 보조 경로다.</summary>
-    private void FileOpenHeader_PreviewDragOver(object sender, DragEventArgs e) => HandlePaneFileDragOver(e);
-    private void FileOpenHeader_PreviewDrop(object sender, DragEventArgs e) => HandlePaneFileDrop(e);
-    private void PaneContent_PreviewDragOver(object sender, DragEventArgs e) => HandlePaneFileDragOver(e);
-    private void PaneContent_PreviewDrop(object sender, DragEventArgs e) => HandlePaneFileDrop(e);
+    /// <summary>
+    /// 외부 Explorer 파일을 프로젝트 정보 바·탭 바·세션 타이틀 바에 드롭하면
+    /// 터미널 입력으로 넘기지 않고 현재 패널의 파일 탭으로 연다.
+    /// </summary>
+    private void FileOpenHeader_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        bool canDrop = _activeProject != null && GetDroppedFiles(e).Length > 0;
+        e.Effects = canDrop ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+        if (canDrop) ShowFileDropOverlay();
+    }
 
-    private void HandlePaneFileDragOver(DragEventArgs e)
+    private void FileOpenHeader_PreviewDrop(object sender, DragEventArgs e)
     {
         var files = GetDroppedFiles(e);
-        if (files.Length == 0) return;
-        e.Effects = DragDropEffects.None; // 드롭 가능 구역(세션·뷰어 콘텐츠) 밖은 금지 커서 고정
         e.Handled = true;
-        // 세션/파일 뷰어가 표시 중일 때만 드롭 선택 화면 — 빈 화면·헤더는 금지 커서만.
-        if (_activeTab is not (SessionItem or FileTabItem)) return;
-        if (!CanOpenDroppedFiles(files) && !_terminal.CanInsertFilePaths) return;
-        ShowFileDropOverlay();
+        HideFileDropOverlay();
+        if (_activeProject == null || files.Length == 0) return;
+
+        FocusRequested?.Invoke(this);
+        foreach (var path in files)
+            OpenFileAsTab(path);
     }
 
-    /// <summary>드래그 좌표(화면 기준)가 이 패널의 콘텐츠 영역 안이고, 세션 또는 파일 뷰어가 표시 중인지.
-    /// 창(MainWindow)이 드롭 허용 구역을 판정할 때 쓴다.</summary>
-    public bool IsContentDropArea(Point screenPoint)
+    /// <summary>패널 콘텐츠 영역(빈 화면·파일 에디터·외부 세션 커버) 위 외부 파일 드래그 — 세션과 동일하게
+    /// 패널 전체 드롭 선택 화면으로 전환한다. 터미널·브라우저·md 편집기는 WebView2(별도 HWND)라 여기로
+    /// 오지 않는다(터미널/md 는 웹에서 fileDragEnter 통지, 브라우저는 웹 기본 동작 유지).
+    /// 오버레이가 뜨면 콘텐츠 호스트들이 Collapsed 되어 이후 드래그는 오버레이 존들이 받는다.</summary>
+    private void PaneContent_PreviewDragOver(object sender, DragEventArgs e)
     {
-        if (_activeTab is not (SessionItem or FileTabItem)) return false;
-        if (!IsLoaded || !IsVisible) return false;
-        if (PaneContentArea.ActualWidth <= 0 || PaneContentArea.ActualHeight <= 0) return false;
-        try
-        {
-            var p = PaneContentArea.PointFromScreen(screenPoint);
-            return p.X >= 0 && p.Y >= 0 &&
-                   p.X <= PaneContentArea.ActualWidth && p.Y <= PaneContentArea.ActualHeight;
-        }
-        catch (InvalidOperationException) { return false; }
+        var files = GetDroppedFiles(e);
+        e.Effects = DragDropEffects.None; // 존(열기/첨부)에서만 드롭 — 세션과 동일
+        e.Handled = true;
+        // 프로젝트 미선택(완전히 빈 패널)이어도 드롭 경로가 등록된 프로젝트 하위면 그 프로젝트로 열 수 있다.
+        if (files.Length > 0 && (_activeProject != null || ResolveProjectForPaths(files) != null))
+            ShowFileDropOverlay();
     }
 
-    /// <summary>드롭 대상이 되도록 이 패널을 포커스 패널로 올린다(창 오버레이 표시 직전).</summary>
-    public void RequestDropFocus() => FocusRequested?.Invoke(this);
-
-    private void HandlePaneFileDrop(DragEventArgs e)
+    private void PaneContent_PreviewDrop(object sender, DragEventArgs e)
     {
         e.Effects = DragDropEffects.None;
         e.Handled = true;
-        DismissFileDropOverlay();
-    }
-
-    /// <summary>이 패널에서 드롭 파일들을 파일 탭으로 열 수 있는지(활성 프로젝트가 있거나, 경로로 추론 가능).
-    /// 파일 탭은 프로젝트 소유 컬렉션이라 프로젝트를 못 정하면 열 수 없다.</summary>
-    public bool CanOpenDroppedFiles(IReadOnlyList<string> files)
-        => files.Count > 0 && (_activeProject != null || ResolveProjectForPaths(files) != null);
-
-    /// <summary>창 오버레이의 '파일 열기' 존에서 호출 — 프로젝트를 확보하고 각 파일을 탭으로 연다.</summary>
-    public void OpenDroppedFiles(string[] files)
-    {
-        if (files.Length == 0) return;
-        FocusRequested?.Invoke(this);
-        if (!EnsureProjectForPaths(files)) return;
-        foreach (var path in files)
-            OpenFileAsTab(path);
+        HideFileDropOverlay();
     }
 
     /// <summary>드롭된 경로들을 담고 있는 등록 프로젝트(가장 깊게 일치하는 것). 없으면 null.
@@ -311,36 +298,183 @@ public partial class WorkspacePaneView : UserControl
         }
     }
 
-    /// <summary>창 전체 드롭 오버레이가 떠 있는 동안 true — UpdateEmptyState 가 웹 호스트를 되살리지 못하게 한다.</summary>
     private bool _fileDropOverlayActive;
-
-    /// <summary>드롭 선택 화면 요청(터미널·md 편집기의 웹 fileDragEnter 신호, 헤더 드래그) — 실제 오버레이는
-    /// 창(MainWindow)이 그린다. 패널별 오버레이는 스플리터를 지날 때 드롭 타겟 HWND 가 바뀌어
-    /// 커서 고스트가 반짝였다.</summary>
-    public void ShowFileDropOverlay()
+    private Border? _highlightedFileDropZone;
+    private readonly System.Windows.Threading.DispatcherTimer _fileDropOverlayCursorTimer = new()
     {
-        FocusRequested?.Invoke(this); // 드롭 대상은 포커스 패널이므로 먼저 이 패널로 포커스를 옮긴다
-        (Application.Current.MainWindow as MainWindow)?.ShowWindowFileDropOverlay(this);
+        Interval = TimeSpan.FromMilliseconds(60)
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorPoint
+    {
+        public int X;
+        public int Y;
     }
 
-    public void DismissFileDropOverlay() => (Application.Current.MainWindow as MainWindow)?.DismissWindowFileDropOverlay();
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out CursorPoint point);
 
-    /// <summary>창 오버레이 표시 전 호출 — WPF 오버레이는 WebView2 HWND 위에 그려지지 않으므로(airspace)
-    /// 이 패널의 콘텐츠 호스트 3개를 감춘다. 플래그로 UpdateEmptyState 의 되살림도 막는다.</summary>
-    public void HideContentForDropOverlay()
+    /// <summary>
+    /// 현재 패널 전체를 파일 드롭 선택 화면으로 전환한다.
+    /// HwndHost(WebView2) 위에는 WPF가 그려지지 않으므로 세 콘텐츠 호스트를 Collapsed 처리한다.
+    /// </summary>
+    public void ShowFileDropOverlay()
     {
+        // 프로젝트 미선택(빈 패널)도 허용한다 — 드롭 시 경로로 프로젝트를 추론해 연다(EnsureProjectForPaths).
+        if (_fileDropOverlayActive) return;
+
         _fileDropOverlayActive = true;
+        // 파일 탭 활성 중엔 _activeSession 이 null 이라 터미널의 활성 방으로 판단한다(마지막 세션에 첨부).
+        AddFileDropZone.IsEnabled = _activeSession is { IsExternal: false } session
+            ? TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }
+            : _activeSession == null && _terminal.CanInsertFilePaths;
+        FileDropOverlay.Visibility = Visibility.Visible;
+
         TerminalHostContainer.Visibility = Visibility.Collapsed;
         FileEditorHostContainer.Visibility = Visibility.Collapsed;
         BrowserHostContainer.Visibility = Visibility.Collapsed;
+        _fileDropOverlayCursorTimer.Start();
+        FocusRequested?.Invoke(this);
     }
 
-    /// <summary>창 오버레이가 걷힌 뒤 콘텐츠 호스트 복원(활성 탭 종류에 맞게 UpdateEmptyState 가 처리).</summary>
-    public void RestoreContentAfterDropOverlay()
+    private void HideFileDropOverlay(bool restoreContent = true)
     {
         if (!_fileDropOverlayActive) return;
+        _fileDropOverlayCursorTimer.Stop();
+        SetHighlightedFileDropZone(null);
         _fileDropOverlayActive = false;
-        UpdateEmptyState();
+        FileDropOverlay.Visibility = Visibility.Collapsed;
+        if (restoreContent) UpdateEmptyState();
+    }
+
+    public void DismissFileDropOverlay() => HideFileDropOverlay();
+
+    private void CheckFileDropOverlayCursor()
+    {
+        if (!_fileDropOverlayActive)
+        {
+            _fileDropOverlayCursorTimer.Stop();
+            return;
+        }
+
+        if (!IsLoaded || !IsVisible || ActualWidth <= 0 || ActualHeight <= 0)
+        {
+            HideFileDropOverlay();
+            return;
+        }
+
+        if (!GetCursorPos(out var cursor)) return;
+
+        Point local;
+        try
+        {
+            local = PointFromScreen(new Point(cursor.X, cursor.Y));
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        // 패널 사이/좌우의 스플리터(4~6px) 위를 지날 때 오버레이가 닫혔다 다시 열리며 깜빡이지 않도록
+        // 스플리터 폭보다 넉넉한 여유를 둔다(반대 패널로 완전히 넘어가면 여유를 벗어나 정상적으로 닫힘).
+        const double tolerance = 12;
+        if (local.X < -tolerance || local.Y < -tolerance ||
+            local.X > ActualWidth + tolerance || local.Y > ActualHeight + tolerance)
+        {
+            HideFileDropOverlay();
+            return;
+        }
+
+        Border? hoveredZone = IsCursorInside(OpenFileDropZone, cursor)
+            ? OpenFileDropZone
+            : IsCursorInside(AddFileDropZone, cursor) && AddFileDropZone.IsEnabled
+                ? AddFileDropZone
+                : null;
+        SetHighlightedFileDropZone(hoveredZone);
+    }
+
+    private static bool IsCursorInside(FrameworkElement element, CursorPoint cursor)
+    {
+        try
+        {
+            var point = element.PointFromScreen(new Point(cursor.X, cursor.Y));
+            return point.X >= 0 && point.Y >= 0 &&
+                   point.X <= element.ActualWidth && point.Y <= element.ActualHeight;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private void SetHighlightedFileDropZone(Border? zone)
+    {
+        if (ReferenceEquals(_highlightedFileDropZone, zone)) return;
+
+        if (_highlightedFileDropZone != null)
+        {
+            _highlightedFileDropZone.SetResourceReference(
+                Border.BackgroundProperty, "PanelSoftBrush");
+            _highlightedFileDropZone.SetResourceReference(
+                Border.BorderBrushProperty, "LineBrush");
+        }
+
+        _highlightedFileDropZone = zone;
+        if (zone == null) return;
+
+        zone.SetResourceReference(Border.BackgroundProperty, "ProjectCardHoverBrush");
+        zone.SetResourceReference(Border.BorderBrushProperty, "ProjectCardHoverBorderBrush");
+    }
+
+    private void FileDropOverlay_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.Handled) return;
+        SetHighlightedFileDropZone(null);
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void FileDropOverlay_Drop(object sender, DragEventArgs e)
+    {
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+        HideFileDropOverlay();
+    }
+
+    private void FileDropZone_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        bool canDrop = sender is FrameworkElement { IsEnabled: true } &&
+                       GetDroppedFiles(e).Length > 0;
+        SetHighlightedFileDropZone(canDrop ? sender as Border : null);
+        e.Effects = canDrop ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void FileDropZone_PreviewDrop(object sender, DragEventArgs e)
+    {
+        var files = GetDroppedFiles(e);
+        var action = (sender as FrameworkElement)?.Tag as string;
+        bool enabled = sender is FrameworkElement { IsEnabled: true };
+        e.Handled = true;
+
+        if (!enabled || files.Length == 0)
+        {
+            HideFileDropOverlay();
+            return;
+        }
+
+        HideFileDropOverlay();
+        if (string.Equals(action, "Add", StringComparison.Ordinal))
+        {
+            _terminal.InsertFilePaths(files);
+            return;
+        }
+
+        if (!EnsureProjectForPaths(files)) return; // 빈 패널이면 경로로 프로젝트를 골라 활성화
+        foreach (var path in files)
+            OpenFileAsTab(path);
     }
 
     /// <summary>분할 시 이 패널이 우측(PaneB)인지. 좌/우 위치 스왑 추적에 쓰인다.</summary>
@@ -1568,7 +1702,7 @@ public partial class WorkspacePaneView : UserControl
             };
             md.ExternalFileDropReceived += () =>
             {
-                if (ReferenceEquals(_activeTab, tab)) DismissFileDropOverlay();
+                if (ReferenceEquals(_activeTab, tab)) HideFileDropOverlay();
             };
         }
     }
