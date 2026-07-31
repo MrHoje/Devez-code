@@ -1096,6 +1096,14 @@
                     </StackPanel>
                 </Border>
             </Grid>
+
+            <!-- 세션 자동화 브라우저 주차장: 화면에 안 보이는 브라우저 탭들의 WebView2 를 여기에 담아
+                 살려 둔다. 0×0 이 아니라 '실제 크기 + 화면 밖(Margin)' 이어야 페이지가 정상 레이아웃으로
+                 렌더돼 텍스트 추출/클릭이 동작한다(터미널 파킹과 동일 기법). 사용자가 그 탭을 열면
+                 WorkspacePaneView 가 여기서 꺼내 BrowserHostContainer 로 옮긴다. -->
+            <Grid x:Name="AutomationBrowserPark" Panel.ZIndex="-1" IsHitTestVisible="False"
+                  Width="1280" Height="860" HorizontalAlignment="Left" VerticalAlignment="Top"
+                  Margin="-100000,0,100000,0"/>
         </Grid>
     </Border>
 </Window>

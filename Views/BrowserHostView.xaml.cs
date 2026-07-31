@@ -1,4 +1,6 @@
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -393,6 +395,183 @@ public partial class BrowserHostView : UserControl
     }
 
     public bool IsStarted => _initStarted;
+
+    // ── 세션 자동화(MCP 브라우저 도구) API ──────────────────────────
+    // 화면에 띄우지 않은(파킹된) 탭에서도 동작해야 하므로 모두 EnsureCoreAsync 로 초기화를 기다린다.
+    // 실패는 예외로 올려 브리지가 에이전트에게 사유를 그대로 전달한다.
+
+    private async Task<CoreWebView2> RequireCoreAsync()
+        => await EnsureCoreAsync() ?? throw new InvalidOperationException(
+            "WebView2 를 시작할 수 없습니다(런타임 미설치 가능).");
+
+    /// <summary>URL(또는 검색어)로 이동하고 탐색 완료까지 대기. 반환값=최종 URL.</summary>
+    public async Task<string> AutomationNavigateAsync(string urlOrQuery, int timeoutMs = 30000)
+    {
+        var core = await RequireCoreAsync();
+        var target = ToNavigationTarget(urlOrQuery.Trim());
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnCompleted(object? _, CoreWebView2NavigationCompletedEventArgs e) => tcs.TrySetResult(e.IsSuccess);
+        core.NavigationCompleted += OnCompleted;
+        try
+        {
+            _pendingCause = NavCause.User;
+            core.Navigate(target);
+            await WaitOrTimeoutAsync(tcs.Task, timeoutMs, "페이지 로드");
+        }
+        finally { core.NavigationCompleted -= OnCompleted; }
+        return core.Source;
+    }
+
+    public async Task<string> AutomationCurrentUrlAsync()
+        => (await RequireCoreAsync()).Source;
+
+    public async Task<string> AutomationTitleAsync()
+        => (await RequireCoreAsync()).DocumentTitle;
+
+    /// <summary>본문 텍스트 추출(script/style/nav 노이즈 제외). maxChars 초과분은 잘라낸다.</summary>
+    public async Task<string> AutomationReadTextAsync(int maxChars = 20000)
+    {
+        var text = await AutomationEvalAsync("""
+            (() => {
+              const t = (document.body ? document.body.innerText : '') || '';
+              return t.replace(/\n{3,}/g, '\n\n').trim();
+            })()
+            """);
+        return maxChars > 0 && text.Length > maxChars ? text[..maxChars] + "\n…(잘림)" : text;
+    }
+
+    /// <summary>페이지의 링크 목록을 "텍스트 | URL" 줄로 반환(중복/빈 텍스트 제외).</summary>
+    public async Task<string> AutomationLinksAsync(int max = 50)
+    {
+        var js = $$"""
+            (() => {
+              const seen = new Set(); const out = [];
+              for (const a of document.querySelectorAll('a[href]')) {
+                const href = a.href; const text = (a.innerText || a.textContent || '').trim().replace(/\s+/g, ' ');
+                if (!href || !text || href.startsWith('javascript:')) continue;
+                if (seen.has(href)) continue;
+                seen.add(href); out.push(text + ' | ' + href);
+                if (out.length >= {{Math.Max(1, max)}}) break;
+              }
+              return out.join('\n');
+            })()
+            """;
+        return await AutomationEvalAsync(js);
+    }
+
+    /// <summary>CSS 선택자 또는 화면에 보이는 텍스트로 클릭. 대상을 못 찾으면 예외.</summary>
+    public async Task<string> AutomationClickAsync(string selectorOrText)
+    {
+        var arg = JsonSerializer.Serialize(selectorOrText);
+        var js = $$"""
+            (() => {
+              const q = {{arg}};
+              let el = null;
+              try { el = document.querySelector(q); } catch (_) {}
+              if (!el) {
+                const cands = document.querySelectorAll('a,button,[role=button],input[type=submit],input[type=button],summary');
+                const norm = s => (s || '').trim().replace(/\s+/g, ' ');
+                el = [...cands].find(c => norm(c.innerText || c.value) === norm(q))
+                  || [...cands].find(c => norm(c.innerText || c.value).includes(norm(q)));
+              }
+              if (!el) return 'NOTFOUND';
+              el.scrollIntoView({ block: 'center' });
+              el.click();
+              return 'OK';
+            })()
+            """;
+        var r = await AutomationEvalAsync(js);
+        if (r == "NOTFOUND") throw new InvalidOperationException($"클릭 대상을 찾지 못했습니다: {selectorOrText}");
+        return "clicked";
+    }
+
+    /// <summary>입력 요소에 값을 넣고 input/change 이벤트를 발생시킨다(React 등 프레임워크 반영).</summary>
+    public async Task<string> AutomationFillAsync(string selector, string value, bool submit)
+    {
+        var js = $$"""
+            (() => {
+              const el = document.querySelector({{JsonSerializer.Serialize(selector)}});
+              if (!el) return 'NOTFOUND';
+              el.focus();
+              const v = {{JsonSerializer.Serialize(value)}};
+              if ('value' in el) el.value = v; else el.textContent = v;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              if ({{(submit ? "true" : "false")}}) {
+                const f = el.form;
+                if (f) f.requestSubmit ? f.requestSubmit() : f.submit();
+                else el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+              }
+              return 'OK';
+            })()
+            """;
+        var r = await AutomationEvalAsync(js);
+        if (r == "NOTFOUND") throw new InvalidOperationException($"입력 대상을 찾지 못했습니다: {selector}");
+        return "filled";
+    }
+
+    /// <summary>지정 텍스트가 본문에 나타날 때까지 폴링 대기(SPA/지연 로딩 대응).</summary>
+    public async Task<string> AutomationWaitForTextAsync(string text, int timeoutMs = 15000)
+    {
+        var js = $"(document.body ? document.body.innerText : '').includes({JsonSerializer.Serialize(text)}) ? '1' : '0'";
+        var deadline = Environment.TickCount64 + Math.Max(500, timeoutMs);
+        while (Environment.TickCount64 < deadline)
+        {
+            if (await AutomationEvalAsync(js) == "1") return "found";
+            await Task.Delay(300);
+        }
+        throw new TimeoutException($"'{text}' 가 {timeoutMs}ms 안에 나타나지 않았습니다.");
+    }
+
+    /// <summary>임의 JS 실행. 결과는 문자열로 정규화(객체는 JSON 문자열).</summary>
+    public async Task<string> AutomationEvalAsync(string script)
+    {
+        var core = await RequireCoreAsync();
+        var raw = await core.ExecuteScriptAsync(script);
+        if (string.IsNullOrEmpty(raw) || raw == "null") return "";
+        try
+        {
+            var node = JsonNode.Parse(raw);
+            return node is JsonValue v && v.TryGetValue<string>(out var s) ? s : node?.ToJsonString() ?? "";
+        }
+        catch { return raw; }
+    }
+
+    /// <summary>현재 화면 PNG 캡처(base64 로 브리지가 전달).</summary>
+    public async Task<byte[]> AutomationCaptureAsync()
+    {
+        var core = await RequireCoreAsync();
+        using var ms = new MemoryStream();
+        await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+        return ms.ToArray();
+    }
+
+    public async Task<string> AutomationBackAsync()
+    {
+        var core = await RequireCoreAsync();
+        if (_index <= 0) throw new InvalidOperationException("뒤로 갈 기록이 없습니다.");
+        _index--;
+        NavigateInternal(_history[_index], NavCause.History);
+        PersistHistory();
+        SyncToolbar();
+        await Task.Delay(200);
+        return core.Source;
+    }
+
+    public async Task<string> AutomationReloadAsync()
+    {
+        var core = await RequireCoreAsync();
+        core.Reload();
+        await Task.Delay(200);
+        return core.Source;
+    }
+
+    private static async Task WaitOrTimeoutAsync(Task task, int timeoutMs, string what)
+    {
+        var done = await Task.WhenAny(task, Task.Delay(Math.Max(1000, timeoutMs)));
+        if (done != task) throw new TimeoutException($"{what} 가 {timeoutMs}ms 안에 끝나지 않았습니다.");
+        await task;
+    }
 
     /// <summary>앱 종료 시 — WebView2 + 이벤트 해제(Edge 렌더러 프로세스 잔류 방지).</summary>
     public void DisposeAll()

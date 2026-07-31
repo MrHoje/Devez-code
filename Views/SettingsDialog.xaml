@@ -833,6 +833,21 @@
                                                   Checked="PromptForNewBrowserTabNameToggle_Changed" Unchecked="PromptForNewBrowserTabNameToggle_Changed"/>
                                     </Grid>
                                 </Border>
+
+                                <Border Padding="0" CornerRadius="0" BorderThickness="0" Background="Transparent" Margin="0,16,0,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="세션이 내장 브라우저 사용" FontSize="{DynamicResource Fs13}" Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock Text="켜면 세션(에이전트)이 MCP 도구로 자기 전용 브라우저 탭을 열어 검색·페이지 이동·본문 읽기를 할 수 있습니다. 탭은 백그라운드로 유지되며, 지시할 때만 동작합니다. (에이전트 재시작 후 적용)"
+                                                       FontSize="{DynamicResource Fs11}" TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextMutedBrush}" Margin="0,3,12,0"/>
+                                        </StackPanel>
+                                        <CheckBox x:Name="BrowserMcpToggle" Grid.Column="1"
+                                                  Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                                  Checked="BrowserMcpToggle_Changed" Unchecked="BrowserMcpToggle_Changed"/>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
 
                             <!-- 에이전트 패널 (설치된 CLI + 활성화 토글) -->
