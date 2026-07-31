@@ -2428,6 +2428,24 @@ public partial class MainWindow : Window
             _focusedPane.OpenFileAsTab(path);
     }
 
+    /// <summary>스플리터(패널 사이 4~6px 채널) 위 외부 파일 드래그를 삼킨다. 드래그를 처리하지 않으면
+    /// 스플리터를 지날 때만 OS 기본 드래그 피드백이 끼어들어 파일 고스트가 번쩍인다(드롭 자체는 불가).
+    /// 이 구간에서도 패널 드롭 오버레이는 유지된다(WorkspacePaneView 커서 판정 여유 12px).</summary>
+    private void Splitter_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void Splitter_PreviewDrop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+        _focusedPane.DismissFileDropOverlay();
+    }
+
     private static string[] GetTitleBarDroppedFiles(DragEventArgs e)
     {
         try

@@ -225,23 +225,58 @@ public partial class WorkspacePaneView : UserControl
             OpenFileAsTab(path);
     }
 
-    /// <summary>파일 에디터 탭(md·이미지·코드·PDF·diff) 위 외부 파일 드래그 — 세션과 동일하게 패널 전체
-    /// 드롭 선택 화면으로 전환한다. WebView2 기반 에디터는 AllowExternalDrop=false 로 OLE Drop 을 거부해
-    /// 이 WPF 이벤트로 fall-through 된다. 브라우저 탭은 여기 걸리지 않으므로 웹 기본 동작이 유지된다.
-    /// 오버레이가 뜨면 이 컨테이너가 Collapsed 되어 이후 드래그는 오버레이 존들이 받는다.</summary>
-    private void FileEditorHost_PreviewDragOver(object sender, DragEventArgs e)
+    /// <summary>패널 콘텐츠 영역(빈 화면·파일 에디터·외부 세션 커버) 위 외부 파일 드래그 — 세션과 동일하게
+    /// 패널 전체 드롭 선택 화면으로 전환한다. 터미널·브라우저·md 편집기는 WebView2(별도 HWND)라 여기로
+    /// 오지 않는다(터미널/md 는 웹에서 fileDragEnter 통지, 브라우저는 웹 기본 동작 유지).
+    /// 오버레이가 뜨면 콘텐츠 호스트들이 Collapsed 되어 이후 드래그는 오버레이 존들이 받는다.</summary>
+    private void PaneContent_PreviewDragOver(object sender, DragEventArgs e)
     {
-        bool canDrop = _activeProject != null && GetDroppedFiles(e).Length > 0;
+        var files = GetDroppedFiles(e);
         e.Effects = DragDropEffects.None; // 존(열기/첨부)에서만 드롭 — 세션과 동일
         e.Handled = true;
-        if (canDrop) ShowFileDropOverlay();
+        // 프로젝트 미선택(완전히 빈 패널)이어도 드롭 경로가 등록된 프로젝트 하위면 그 프로젝트로 열 수 있다.
+        if (files.Length > 0 && (_activeProject != null || ResolveProjectForPaths(files) != null))
+            ShowFileDropOverlay();
     }
 
-    private void FileEditorHost_PreviewDrop(object sender, DragEventArgs e)
+    private void PaneContent_PreviewDrop(object sender, DragEventArgs e)
     {
         e.Effects = DragDropEffects.None;
         e.Handled = true;
         HideFileDropOverlay();
+    }
+
+    /// <summary>드롭된 경로들을 담고 있는 등록 프로젝트(가장 깊게 일치하는 것). 없으면 null.
+    /// 프로젝트를 아직 안 띄운 빈 패널에 파일을 떨어뜨렸을 때 어느 프로젝트로 열지 판단한다.</summary>
+    private ProjectItem? ResolveProjectForPaths(IReadOnlyList<string> files)
+    {
+        ProjectItem? best = null;
+        foreach (var proj in AllProjects)
+        {
+            if (string.IsNullOrWhiteSpace(proj.Path)) continue;
+            var root = proj.Path.TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+            if (!files.Any(f => f.StartsWith(root, StringComparison.OrdinalIgnoreCase))) continue;
+            if (best == null || proj.Path.Length > best.Path.Length) best = proj;
+        }
+        return best;
+    }
+
+    /// <summary>파일을 열 프로젝트를 확보한다 — 이미 활성 프로젝트가 있으면 그대로, 없으면 경로로 추론해 활성화.
+    /// 어느 프로젝트에도 속하지 않으면 안내하고 false.</summary>
+    private bool EnsureProjectForPaths(string[] files)
+    {
+        if (_activeProject != null) return true;
+        var proj = ResolveProjectForPaths(files);
+        if (proj == null)
+        {
+            ConfirmDialog.Alert("파일 열기",
+                "이 파일이 속한 프로젝트가 없습니다.\n프로젝트를 먼저 추가한 뒤 다시 시도하세요.",
+                iconKey: "IconTriangleAlert");
+            return false;
+        }
+        SetActiveProject(proj);
+        ApplyProjectInfoHeaderVisibility(); // 프로젝트가 생겼으니 메타바(#·경로) 노출 조건 재평가
+        return true;
     }
 
     private static string[] GetDroppedFiles(DragEventArgs e)
@@ -287,7 +322,8 @@ public partial class WorkspacePaneView : UserControl
     /// </summary>
     public void ShowFileDropOverlay()
     {
-        if (_activeProject == null || _fileDropOverlayActive) return;
+        // 프로젝트 미선택(빈 패널)도 허용한다 — 드롭 시 경로로 프로젝트를 추론해 연다(EnsureProjectForPaths).
+        if (_fileDropOverlayActive) return;
 
         _fileDropOverlayActive = true;
         // 파일 탭 활성 중엔 _activeSession 이 null 이라 터미널의 활성 방으로 판단한다(마지막 세션에 첨부).
@@ -341,7 +377,9 @@ public partial class WorkspacePaneView : UserControl
             return;
         }
 
-        const double tolerance = 2;
+        // 패널 사이/좌우의 스플리터(4~6px) 위를 지날 때 오버레이가 닫혔다 다시 열리며 깜빡이지 않도록
+        // 스플리터 폭보다 넉넉한 여유를 둔다(반대 패널로 완전히 넘어가면 여유를 벗어나 정상적으로 닫힘).
+        const double tolerance = 12;
         if (local.X < -tolerance || local.Y < -tolerance ||
             local.X > ActualWidth + tolerance || local.Y > ActualHeight + tolerance)
         {
@@ -434,6 +472,7 @@ public partial class WorkspacePaneView : UserControl
             return;
         }
 
+        if (!EnsureProjectForPaths(files)) return; // 빈 패널이면 경로로 프로젝트를 골라 활성화
         foreach (var path in files)
             OpenFileAsTab(path);
     }

@@ -163,6 +163,9 @@
                 <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                               DragDelta="SidebarSplitter_DragDelta"
+                              AllowDrop="True"
+                              PreviewDragOver="Splitter_PreviewDragOver"
+                              PreviewDrop="Splitter_PreviewDrop"
                               DragCompleted="SidebarSplitter_DragCompleted"/>
 
                 <!-- Center: 워크스페이스 패널 A | (분할 시) 스플리터 + 패널 B -->
@@ -184,6 +187,9 @@
                                   HorizontalAlignment="Stretch" Visibility="Collapsed"
                                   ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                                   DragDelta="PaneSplitter_DragDelta"
+                                  AllowDrop="True"
+                                  PreviewDragOver="Splitter_PreviewDragOver"
+                                  PreviewDrop="Splitter_PreviewDrop"
                                   DragCompleted="PaneSplitter_DragCompleted"/>
                     <views:WorkspacePaneView x:Name="PaneB" Grid.Column="2" Visibility="Collapsed"
                                              BorderBrush="{DynamicResource LineBrush}"/>
@@ -199,7 +205,10 @@
                                   Style="{StaticResource GridSplitterHorizontal}"
                                   HorizontalAlignment="Stretch" Visibility="Collapsed"
                                   ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
-                                  DragCompleted="ShellPanelSplitter_DragCompleted"/>
+                                  DragCompleted="ShellPanelSplitter_DragCompleted"
+                                  AllowDrop="True"
+                                  PreviewDragOver="Splitter_PreviewDragOver"
+                                  PreviewDrop="Splitter_PreviewDrop"/>
                     <Border x:Name="ShellTerminalPanel" Grid.Row="2" Grid.ColumnSpan="3" Visibility="Collapsed"
                             Background="{DynamicResource BgBrush}"
                             BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,1,1,0">
@@ -215,6 +224,9 @@
                 <GridSplitter x:Name="FileExpSplitter" Grid.Column="3" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                               DragDelta="FileExpSplitter_DragDelta"
+                              AllowDrop="True"
+                              PreviewDragOver="Splitter_PreviewDragOver"
+                              PreviewDrop="Splitter_PreviewDrop"
                               DragCompleted="FileExpSplitter_DragCompleted"/>
 
                 <!-- Right: file explorer (좌측 보더로 채널 형성).
@@ -226,6 +238,9 @@
                 <GridSplitter x:Name="SessionHistorySplitter" Grid.Column="5" HorizontalAlignment="Stretch"
                               ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                               DragStarted="SessionHistorySplitter_DragStarted"
+                              AllowDrop="True"
+                              PreviewDragOver="Splitter_PreviewDragOver"
+                              PreviewDrop="Splitter_PreviewDrop"
                               DragDelta="SessionHistorySplitter_DragDelta"
                               DragCompleted="SessionHistorySplitter_DragCompleted"/>
 
