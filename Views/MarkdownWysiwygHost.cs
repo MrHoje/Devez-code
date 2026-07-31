@@ -21,6 +21,10 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
     public event Action? EditorReady;
     /// <summary>에디터 표면 클릭/포커스 — 분할 시 이 패널을 포커스 패널로 지정하는 데 사용.</summary>
     public event Action? Interacted;
+    /// <summary>외부(탐색기) 파일이 에디터 위로 드래그돼 들어옴 — 패널이 드롭 선택 화면으로 전환한다.</summary>
+    public event Action? ExternalFileDragEntered;
+    /// <summary>오버레이가 뜨기 전 웹 표면에 그대로 드롭됨 — 패널이 오버레이를 정리한다.</summary>
+    public event Action? ExternalFileDropReceived;
     /// <summary>WebView2 초기화 실패 또는 pageReady 무응답(타임아웃) — 호스트(MarkdownFileEditorView)가
     /// 이걸 받아 로딩 스피너를 내리고 에러를 보여줘야 한다. 안 그러면 스피너가 영원히 돈다(무한 스피너 버그).</summary>
     public event Action<string>? InitFailed;
@@ -66,14 +70,14 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
             // 투명을 지원 못 함) → md 에디터가 열릴 때 한 번 까매졌다 뜨는 원인. 테마 배경색으로 맞춰
             // 페인트 전 구간이 주변(커튼/패널 배경)과 동일하게 보이도록 한다. 테마 변경 시 ApplyTheme 이 갱신.
             _webView = new WebView2 { DefaultBackgroundColor = CurrentBgColor() };
-            // 외부 파일 드래그는 자식 HWND 가 OLE Drop 을 거부해 부모 HwndSource 로 fall-through →
-            // 패널의 WPF PreviewDragOver(FileEditorHostContainer)가 받아 세션과 동일한 드롭 선택 화면을 띄운다.
-            _webView.AllowExternalDrop = false;
-            _webView.AllowDrop = true;
             Content = _webView;
 
             var env = await SharedEnvironment.Value;
             await _webView.EnsureCoreWebView2Async(env);
+
+            // 외부 파일 드래그는 웹(bridge.js)에서 dragenter 를 감지해 fileDragEnter 로 알린다(터미널과 동일).
+            // WebView2 는 별도 HWND 라 WPF 부모의 DragOver 로 전달되지 않으므로 OS 드롭은 계속 웹이 받는다.
+            _webView.AllowExternalDrop = true;
 
             var core = _webView.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = true;
@@ -155,6 +159,12 @@ public sealed class MarkdownWysiwygHost : ContentControl, IDisposable
                     break;
                 case "interact":
                     Interacted?.Invoke();
+                    break;
+                case "fileDragEnter":
+                    ExternalFileDragEntered?.Invoke();
+                    break;
+                case "fileDrop":
+                    ExternalFileDropReceived?.Invoke();
                     break;
                 case "runHtml":
                     if (root.TryGetProperty("html", out var html))

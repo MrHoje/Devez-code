@@ -12,6 +12,9 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
     public event EventHandler? CloseRequested;
     public event EventHandler? DirtyChanged;
     public event EventHandler? Interacted;
+    /// <summary>외부 파일이 md 편집 표면 위로 드래그돼 들어옴/그대로 드롭됨 — 패널이 드롭 선택 화면을 띄우거나 닫는다.</summary>
+    public event Action? ExternalFileDragEntered;
+    public event Action? ExternalFileDropReceived;
 
     private string? _path;
     private string _currentMarkdown = "";
@@ -36,6 +39,8 @@ public partial class MarkdownFileEditorView : UserControl, IFileTabEditor, IDisp
         MdHost.EditorReady += OnEditorReady;
         MdHost.InitFailed += OnInitFailed;
         MdHost.Interacted += () => Interacted?.Invoke(this, EventArgs.Empty);
+        MdHost.ExternalFileDragEntered += () => ExternalFileDragEntered?.Invoke();
+        MdHost.ExternalFileDropReceived += () => ExternalFileDropReceived?.Invoke();
         MdHost.SetViewportWidth(SettingsService.LoadMarkdownViewportWidth());
         SettingsService.MarkdownViewportWidthChanged += OnMarkdownViewportWidthChanged;
         App.ThemeChanged += OnThemeChanged;

@@ -1653,6 +1653,19 @@ public partial class WorkspacePaneView : UserControl
         {
             if (ReferenceEquals(_activeTab, tab)) FocusRequested?.Invoke(this);
         };
+        // md 편집기는 WebView2(별도 HWND)라 WPF DragOver 가 안 온다 — 웹에서 알려주는 드래그 진입으로
+        // 세션과 동일한 드롭 선택 화면을 띄운다(에디터는 패널 간 공유 인스턴스라 표시 중인 패널만 반응).
+        if (tab.Editor is MarkdownFileEditorView md)
+        {
+            md.ExternalFileDragEntered += () =>
+            {
+                if (ReferenceEquals(_activeTab, tab)) ShowFileDropOverlay();
+            };
+            md.ExternalFileDropReceived += () =>
+            {
+                if (ReferenceEquals(_activeTab, tab)) HideFileDropOverlay();
+            };
+        }
     }
     private readonly HashSet<IFileTabEditor> _interactHooked = new();
 

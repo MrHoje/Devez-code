@@ -7,6 +7,32 @@
   // WPF PreviewMouseDown 이 경계를 못 넘어오므로 터미널과 동일하게 직접 통지한다.
   document.addEventListener('pointerdown', function () { post({ type: 'interact' }); }, true);
 
+  // 외부 파일 드래그 → 호스트에 통지해 세션과 동일한 패널 드롭 선택 화면(열기/첨부)을 띄운다.
+  // WebView2 는 별도 HWND 라 WPF 부모의 DragOver 가 오지 않으므로 터미널(terminal.html)과 같은 방식으로
+  // 웹에서 직접 알린다. 페이지 자체 드롭(Toast UI 이미지 삽입 등)은 막는다 — 오버레이가 처리한다.
+  var lastFileDragEnterPost = 0;
+  function hasExternalFiles(e) {
+    return !!e.dataTransfer && Array.prototype.some.call(e.dataTransfer.items || [],
+      function (item) { return item.kind === 'file'; });
+  }
+  function notifyFileDrag(e) {
+    if (!hasExternalFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    var now = Date.now();
+    if (now - lastFileDragEnterPost < 250) return;
+    lastFileDragEnterPost = now;
+    post({ type: 'fileDragEnter' });
+  }
+  document.addEventListener('dragenter', notifyFileDrag, { capture: true });
+  document.addEventListener('dragover', notifyFileDrag, { capture: true });
+  document.addEventListener('drop', function (e) {
+    if (!hasExternalFiles(e)) return;
+    e.preventDefault();     // 오버레이가 뜨기 전에 놓인 경우 — 문서에 삽입되지 않게 삼킨다
+    e.stopPropagation();
+    post({ type: 'fileDrop' });
+  }, { capture: true });
+
   // 정규화 기준선 — setMarkdown(clean) 직후 editor.getMarkdown() 값.
   // Toast UI가 마크다운을 재정렬하므로 원본 파일 텍스트가 아니라 이 기준선과 비교해야
   // 포커스/주입만으로 dirty 오판이 나지 않는다.

@@ -59,14 +59,16 @@ public sealed class MonacoHost : ContentControl, IDisposable
             // 투명을 지원 못 함) → diff 에디터가 열릴 때 한 번 까매졌다 뜨는 원인. 테마 배경색으로 맞춰
             // 페인트 전 구간이 주변(커튼/패널 배경)과 동일하게 보이도록 한다. 테마 변경 시 ApplyTheme 이 갱신.
             _webView = new WebView2 { DefaultBackgroundColor = CurrentBgColor() };
-            // 외부 파일 드래그는 자식 HWND 가 OLE Drop 을 거부해 부모 HwndSource 로 fall-through →
-            // 패널의 WPF PreviewDragOver(FileEditorHostContainer)가 받아 세션과 동일한 드롭 선택 화면을 띄운다.
-            _webView.AllowExternalDrop = false;
-            _webView.AllowDrop = true;
             Content = _webView;
 
             var env = await SharedEnvironment.Value;
             await _webView.EnsureCoreWebView2Async(env);
+
+            // 외부 파일 드래그를 패널의 WPF PreviewDragOver(FileEditorHostContainer)로 넘긴다 —
+            // AllowExternalDrop=false 로 자식 HWND 가 OLE Drop 을 거부해 부모 HwndSource 로 fall-through 하고,
+            // AllowDrop=false 로 WebView2 가 WPF DragOver 를 흡수하지 않게 한다(둘 다 필요).
+            _webView.AllowExternalDrop = false;
+            _webView.AllowDrop = false;
 
             var core = _webView.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = true;
