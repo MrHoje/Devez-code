@@ -19,7 +19,7 @@
     </shell:WindowChrome.WindowChrome>
 
     <Border x:Name="RootChrome" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
-        <Grid x:Name="RootGrid" Grid.IsSharedSizeScope="True">
+        <Grid x:Name="RootGrid" Grid.IsSharedSizeScope="True" AllowDrop="True">
             <Grid.RowDefinitions>
                 <RowDefinition Height="32"/>
                 <RowDefinition Height="Auto"/>
@@ -1064,6 +1064,107 @@
             <Grid x:Name="SettingsHost" Grid.Row="1" Grid.RowSpan="3" Panel.ZIndex="200"
                   Visibility="Collapsed" Background="{DynamicResource BgBrush}"
                   Focusable="True" KeyDown="SettingsHost_KeyDown"/>
+
+            <!-- 외부 파일 드롭 선택 화면(창 전체). 패널별 오버레이가 아니라 창 전체를 덮어야
+                 스플리터·사이드바를 지날 때 드롭 타겟 HWND 가 바뀌지 않는다(커서 고스트 반짝임 방지).
+                 표시 전에 모든 WebView2 호스트(터미널·에디터·브라우저·하단 셸)를 Collapsed 처리해
+                 airspace 를 제거한다. -->
+            <Grid x:Name="WindowFileDropOverlay" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="250"
+                  Visibility="Collapsed" AllowDrop="True" Cursor="Arrow"
+                  DragOver="WindowFileDrop_DragOver"
+                  Drop="WindowFileDrop_Drop">
+                <Border Background="{DynamicResource PanelBrush}" Opacity="0.97"/>
+
+                <StackPanel MaxWidth="620" Margin="20"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="파일을 놓을 위치를 선택하세요"
+                               Margin="0,0,0,16"
+                               HorizontalAlignment="Center"
+                               FontSize="{DynamicResource Fs15}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}"
+                               IsHitTestVisible="False"/>
+
+                    <Grid Height="250" Width="580">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border x:Name="WindowOpenFileDropZone" Grid.Column="0"
+                                Tag="Open" AllowDrop="True" Cursor="Arrow"
+                                Padding="12" CornerRadius="14"
+                                BorderThickness="1.5"
+                                SnapsToDevicePixels="False"
+                                UseLayoutRounding="False"
+                                RenderOptions.EdgeMode="Unspecified"
+                                PreviewDragOver="WindowFileDropZone_PreviewDragOver"
+                                PreviewDrop="WindowFileDropZone_PreviewDrop">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.38"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconFileText}"
+                                      Width="34" Height="34" Stretch="Uniform"
+                                      Stroke="{DynamicResource PrimaryBrush}"
+                                      HorizontalAlignment="Center"/>
+                                <TextBlock Text="파일 열기" Margin="0,18,0,0"
+                                           FontSize="{DynamicResource Fs16}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextAlignment="Center" TextWrapping="Wrap"/>
+                                <TextBlock Text="에디터 탭으로 엽니다" Margin="0,7,0,0"
+                                           FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           TextAlignment="Center" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="WindowAddFileDropZone" Grid.Column="2"
+                                Tag="Add" AllowDrop="True" Cursor="Arrow"
+                                Padding="12" CornerRadius="14"
+                                BorderThickness="1.5"
+                                SnapsToDevicePixels="False"
+                                UseLayoutRounding="False"
+                                RenderOptions.EdgeMode="Unspecified"
+                                PreviewDragOver="WindowFileDropZone_PreviewDragOver"
+                                PreviewDrop="WindowFileDropZone_PreviewDrop">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{DynamicResource PanelSoftBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.38"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconPaperclip}"
+                                      Width="34" Height="34" Stretch="Uniform"
+                                      Stroke="{DynamicResource PrimaryBrush}"
+                                      HorizontalAlignment="Center"/>
+                                <TextBlock Text="파일 추가" Margin="0,18,0,0"
+                                           FontSize="{DynamicResource Fs16}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           TextAlignment="Center" TextWrapping="Wrap"/>
+                                <TextBlock Text="현재 세션에 경로를 입력합니다" Margin="0,7,0,0"
+                                           FontSize="{DynamicResource Fs12}"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           TextAlignment="Center" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Grid>
 
             <!-- 종료 중 오버레이 — 열린 세션을 graceful 종료하는 동안 표시 -->
             <Grid x:Name="ShutdownOverlay" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="300"
