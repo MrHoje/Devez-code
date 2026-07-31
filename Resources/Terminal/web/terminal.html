@@ -22,6 +22,8 @@
   .term-container.agent-gajae { padding-bottom: 14px; padding-right: 1px; }
   .term-container.active { display: block; }
   .term-container .xterm { height: 100%; }
+  /* Alt 로 xterm 이 column-select 상태를 표시해도, 세션에서는 텍스트 선택 커서를 유지한다. */
+  .term-container .xterm.column-select.focus { cursor: default; }
   /* 스크롤바 숨김 (휠 스크롤은 동작) */
   .xterm .xterm-viewport { scrollbar-width: none; }
   .xterm .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
@@ -2372,6 +2374,7 @@
       fontFamily: cfg.fontFamily + ", Cascadia Mono, Consolas, 'D2Coding', 'NanumGothicCoding', 'Malgun Gothic', monospace",
       fontSize: fontSizeOverride || cfg.fontSize,
       cursorBlink: true,
+      altClickMovesCursor: false,
       allowProposedApi: true,
       scrollback: 5000,
       // ConPTY 백엔드 명시 → Windows 줄바꿈/와이드(CJK) 문자 휴리스틱 적용
