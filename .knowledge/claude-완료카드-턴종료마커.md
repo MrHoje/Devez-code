@@ -44,7 +44,8 @@
 
 ## 함정 / 잔여
 
-- **훅 스크립트는 앱 재시작해야 재배포**(`EnsureSessionHookAssets` 가 WriteAllText). 빌드만으론 미반영.
+- **훅 스크립트는 앱 재시작해야 재배포**(`EnsureSessionHookAssets` 가 `ScriptFile.WritePs1`(BOM 포함
+  UTF-8)로 기록). 빌드만으론 미반영.
 - reconcile 이 정정한 idle(Stop 훅 자체가 유실된 극히 드문 경우)은 마커가 없어 카드 누락 — 의도된 트레이드오프
   (그 상황은 스피너도 이미 고장). diag.log 스킵 라인으로 판별 가능.
 - **스피너 flap 자체는 안 고침**(카드/알림만 차단). substart 에서 main 플래그 재생성으로 막을 수 있으나

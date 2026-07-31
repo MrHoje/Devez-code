@@ -57,11 +57,15 @@ if (string.IsNullOrWhiteSpace(NameBox.Text))
 `ef4444` = `DangerBrush`. 리소스가 있으면 `TryFindResource("DangerBrush")`, 없으면
 `Color.FromRgb(0xef, 0x44, 0x44)` 하드코딩.
 
-## 현재 적용 현황 (2026-06-24)
+## 현재 적용 현황 (2026-07-31)
 - `PromptDialog` — 빈값 시 흔들기 ✅
 - `ShortcutDialog` — 경로 빈값/미존재 시 흔들기 ✅
 - `ClaudeCodeRoomDialog` — 이름 빈값/디렉토리 미존재 시 흔들기 ✅ (Alert → 흔들기 전환)
 - `McpManagerDialog` — 리스트 일괄 검증이라 단일 입력 흔들기 미적용, `Alert("저장 실패", ...)` 유지
+- `ProjectAddDialog` — **미해당**(카드 선택형, 텍스트 입력 없음 → 검증 실패 케이스 자체가 없음)
+
+ShakeWindow 3중 코드 복제(PromptDialog/ShortcutDialog/ClaudeCodeRoomDialog)는 **의도적으로 유지 중**
+(공용 헬퍼 미도입 — 각 팝업이 독립이라 복제 비용 < 추상화 비용 판단).
 
 ## 주의
 - `RenderTransform` 누락이 제일 흔한 실수. 흔들기 안 되면 여기부터 확인.

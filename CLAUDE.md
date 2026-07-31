@@ -66,6 +66,7 @@ Start-Process "bin\DevezCode.exe"
 | 버튼·카드 등 클릭 가능 컨트롤 추가 (커서=Arrow, Hand 금지) | `.knowledge/컨트롤추가규칙.md` |
 | 새 AI CLI 에이전트 추가, 에이전트별 분기 수정(세션 추적/복원·재진입·종료·포크·테마·상태표시·사용량·MCP·클리너) | `.knowledge/에이전트추가규칙.md` |
 | 터미널 입력/마우스/클립보드/IME/스크롤 등 커스텀 동작 | `.knowledge/터미널커스텀동작.md` |
+| WPF 쪽(터미널 밖) 트랙패드/휠 스크롤이 뚝뚝 끊김·정밀 델타 처리, ScrollViewer 휠 동작 커스텀 | `.knowledge/wpf-정밀휠스크롤-전역.md` |
 | `.ps1`/`.cmd` 스크립트를 코드로 생성, 한글 사용자명(`C:\Users\김이영`) PC에서만 업데이트·훅·세션추적 실패 | `.knowledge/생성스크립트-인코딩-한글경로.md` |
 | 세션 내 텍스트 검색 요청, 터미널 스크롤백이 비어 보임, 에이전트별 스크롤/검색 동작 차이 | `.knowledge/claude-대체화면-세션내검색-불가.md` |
 | 탭바에 탭 추가/생성, 드래그 재정렬, 선택 탭 하단 밑줄(seam)·그라데이션 등 탭바 UI 수정 | `.knowledge/탭바-생성-규칙.md`, `.knowledge/탭바-SelectedTabSeam-밑줄-그라데이션.md` |

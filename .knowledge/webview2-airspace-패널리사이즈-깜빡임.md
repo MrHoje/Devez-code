@@ -41,6 +41,15 @@
   근접할 때까지 대기(전체→절반 전환의 중간 전체폭은 건너뜀) → `_fitSuppressed` 해제 → **최종 폭에서 한 번만 fit** +
   ConPTY 재동기 → `opacity 0.14s` 크로스페이드로 커버 걷음.
 - **안전장치**: reveal 이 안 와도 2s 뒤 자동 커버 해제. `_xferGen`(세대) 검사로 빠른 재전환 시 낡은 타이머 폐기.
+- **`RevealAfterTransition(roomId, kick, expectWidth, bounce, recoverWiden)`** 파라미터(`TerminalHostView.cs`):
+
+  | 파라미터 | 의미 |
+  |---|---|
+  | `roomId` | fit 대상(활성 세션). 없으면 커튼만 걷음 |
+  | `kick` | fit 후 ConPTY 재동기 킥 |
+  | `expectWidth` | C# 이 `UpdateLayout()` 으로 확정한 최종 폭(px) — JS 는 `clientWidth` 가 근접할 때까지 대기(중간 전체폭 plateau 건너뜀) |
+  | `bounce` | post-hoc 전환(리사이즈가 커버 '전'에 이미 발생 — OS 주도 최대화/복원 등)용. fit 무변화 시 same-size 킥이 no-op 이라 tear 가 고착될 수 있어, rows-1→rows 바운스로 커버 아래서 깨끗한 전체 재방출을 강제 |
+  | `recoverWiden` | 분할 닫기 최종폭 재렌더 뒤 내부 빈 줄을 분할 전 전체폭 셀 스냅샷으로 복원 — `분할패널-탭격리-파트너-포커스.md` §6.7 참조 |
 - **핵심**: 리플로우(re-fit)가 **커버 아래**서 일어나 안 보이고, HWND 를 애초에 숨기지 않으니 Collapsed→Visible
   재합성 플래시도 없다. → 리사이즈 경로 특유의 reveal 깜빡임이 사라진다.
 
@@ -64,7 +73,8 @@ HwndHost 는 `Visibility.Hidden` 에서 **레이아웃 슬롯을 남기며 네�
 
 ### 흰색 클리어 방지
 리사이즈 중 WebView2 가 흰색으로 클리어했다 다시 그린다 →
-`webView.DefaultBackgroundColor = #0C0C0C`(터미널 배경)로 흰 플래시 차단(`TerminalHostView` 초기화).
+`webView.DefaultBackgroundColor = TerminalBgColor()`(하드코딩 대신 **현재 터미널 테마 배경색** 동적)로 흰 플래시 차단
+(`TerminalHostView` 초기화 + 테마 전환 시 재적용). 라이트 테마 등에서도 clear 프레임이 실제 배경과 동일해 안 튄다.
 
 ## 왜 어떤 경로는 안 깜빡이고 어떤 건 깜빡였나
 | 경로 | 터미널 리사이즈? | 정지 방식 | 결과 |
@@ -95,8 +105,9 @@ reveal 직전 `CenterSplit` 을 `RenderTargetBitmap` 으로 캡처해 picker 패
 않으므로**(Collapsed→Visible 재합성 플래시 없음) resume 도 깔끔하다. 위 "webCover 경로" 구현 참조.
 - 정지: `CoverForTransitionImage(png)` 로 캡처 이미지 커버 + `_fitSuppressed`.
 - 재개: `RevealAfterTransition(expectWidth)` 로 최종 폭 대기 → 1회 fit → 크로스페이드.
-- 좌우 동시(synced) 재개: 각 패널이 `RevealPreparedSynced`(폭 안정·fit·재동기까지만) 를 보고하면 셸이
-  양쪽 준비를 모아 `FadeNow`(`fadeNow`)로 동시에 커버를 걷는다 → 좌우가 정확히 같은 순간에 뜬다.
+- 좌우 동시(synced) 재개: 각 패널이 `PrepareRevealSynced`(폭 안정·fit·재동기까지만 하고 커튼 유지)를 수행하고
+  `RevealPrepared` 이벤트로 준비를 보고하면, 셸이 양쪽 준비를 모아 각 패널 `FadeRevealNow()`(내부 `FadeNow()` →
+  JS `fadeNow`)로 동시에 커버를 걷는다 → 좌우가 정확히 같은 순간에 뜬다.
 
 ### 결론 — 정적 최상위 WPF 커버로는 왜 못 막았나 (windowed WebView2 swap chain)
 windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합성**한다(DWM 의 창 z-order 합성을
@@ -115,7 +126,7 @@ windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합
 ## 적용 현황 (2026-07-03)
 - **좌/우/사용량/세션완료기록 토글**: `FreezeWorkspaceTerminalsAsync()`(각 패널 `SuspendTerminalOnlyAsync(anchorTopLeft:true, webCover:true)`)
   → 애니메이션 → `UnfreezeWorkspaceTerminals()`(`ResumeTerminalOnly(webCover:true)`). **무플래시 크로스페이드.**
-  (사용량 = `_usageAnimCancel`, 세션완료기록 = `_sessionHistoryAnimCancel`/`SessionHistoryCol`.)
+  (사용량/세션완료기록 패널은 `MainWindow.xaml` 의 `UsageCol`/`SessionHistoryCol` 컬럼 토글이 리사이즈 트리거.)
 - **분할 펼침**(`AnimateSplitOpenAsync`): PaneA·PaneB 둘 다 `webCover:true` suspend → 애니메이션 → `webCover:true` resume. 무플래시.
 - **분할 접힘**(`AnimateSplitCloseAsync`): 넓어져 살아남는 PaneA 는 `webCover:true`(무플래시 크로스페이드),
   사라지는 PaneB 는 스냅샷+Collapsed(`webCover` 없음) — 어차피 hide 되므로 collapse 경로 유지.
@@ -127,10 +138,24 @@ windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합
   적용: MaxBtn/캡션 더블클릭 토글, 시스템 최대화 요청(`OnStateChangedForFullScreen`). 토글 조건은
   await 뒤 change 시점에 재확인, 연타는 `_fsCoverBusy` 로 무시. **미적용(의도)**: 시작 복원(터미널
   미생성), 전체화면 캡션 드래그 축소(커버 대기가 드래그 반응성을 해침 — 여기 잔여 플래시는 허용).
-- **설정/MCP 창, 우측 드로어**: `SuspendTerminalWithSnapshotAsync(blankCurtain:false)`(스냅샷+Collapsed). 리사이즈 없어 원래부터 매끄러움.
+- **설정(MDI 오버레이)**: 설정은 커밋 3644f61 로 별도 Window(`SettingsWindow`) → 같은 창 안 **MDI 오버레이**
+  (`MainWindow.xaml` `SettingsHost` Grid, ZIndex=200)로 전환됐다. 열기 전 `SuspendTerminalWithSnapshotAsync(blankCurtain: true)`
+  (단색 커튼+Collapsed) — airspace 때문에 오버레이가 라이브 HWND 를 못 덮으므로 반드시 선행.
+- **MCP 창들, 우측 드로어**: `SuspendTerminalWithSnapshotAsync()`(기본 `blankCurtain:false` = 스냅샷+Collapsed).
+  리사이즈 없어 원래부터 매끄러움.
 - **종료("세션 닫는 중" 오버레이)**: 2단계 배치(`PrepareShutdownSnapshotAsync` → 모든 패널 스냅샷 present 대기(`WaitForFramesAsync`)
   → `CommitShutdownHide` 로 **모든 HWND 를 같은 프레임에 일괄 숨김**) → 렌더 프레임 flush → `ShutdownOverlay` 표시.
   (패널별 순차 캡처→hide 는 HWND 가 서로 다른 프레임에 사라져 팝이 여러 번 어긋났다 — 그래서 준비/커밋 분리.)
+
+## heal-cover — xfer-cover 와 별개의 커버 레이어 (공백 자가치유용)
+`terminal.html` 에는 `#xfer-cover`(z-index 45) 외에 **`#heal-cover`(z-index 46)** 라는 별도 커버가 있다
+(grep: `ensureHealCover`). 공백 자가치유(blankAudit)가 스크롤 버스트로 화면을 다시 그리는 동안 현재 화면
+캡처로 덮어 무깜빡을 만든다. 흐름: JS `healCover` 요청 → C# 이 `CapturePngAsync()` 로 캡처해 `healCoverImg`
+응답(`TerminalHostView.cs` — `case "healCover"` 로 grep) → JS 가 이미지로 덮은 채 버스트 진행.
+- **왜 별개인가**: 코드 주석대로 "xfer-cover 의 전환 상태기계(gen/suppress)와 분리해 서로의 표시 상태를
+  오염시키지 않는다". xfer-cover 를 재사용하면 전환 세대(`_xferGen`)/억제 플래그가 치유 경로와 얽힌다.
+- 이 레이어도 아래 "커버를 올리는 모든 경로에는 대칭 해제가 있어야 한다" 교훈의 적용 대상이다 —
+  치유 종료·실패·중단 어느 경로로 끝나든 heal-cover 가 반드시 내려가야 한다.
 
 ## 주의
 - 새 오버레이/패널을 터미널 위에 띄울 땐:
@@ -149,4 +174,4 @@ windowed 모드 WebView2 는 **자체 GPU swap chain 으로 화면에 직접 합
   보장되는지 확인할 것 — `fadeNow` 가 이를 빠뜨려 패널 fit 이 영구 잠겼던 버그는
   `분할패널-탭격리-파트너-포커스.md` §6.5 참조.
 - webCover 경로는 `expectWidth`(최종 폭)를 정확히 넘겨야 중간 전체폭 plateau 를 건너뛴다 — resume 전 `UpdateLayout()` 로 폭을 확정할 것.
-- 좌우를 각자 뜨게 두면 시점이 어긋나 보인다 — 동시 표시가 필요하면 synced(`RevealPreparedSynced` + `FadeNow`) 경로를 쓸 것.
+- 좌우를 각자 뜨게 두면 시점이 어긋나 보인다 — 동시 표시가 필요하면 synced(`PrepareRevealSynced` → `RevealPrepared` 이벤트 → `FadeRevealNow`) 경로를 쓸 것.

@@ -118,7 +118,7 @@ f = min(0.45, 4px / seamWidth)
 ## 연관: 탭 발(Feet) Paths — 모서리 틈새 채움
 
 `SelectedTabSeam`은 직사각형이라 탭 좌우 라운드 코너(9px) 아래의  
-삼각형 틈새는 덮지 못한다. 이 틈새는 `TabFootLeftFill/RighFill` Path가 채운다.
+삼각형 틈새는 덮지 못한다. 이 틈새는 `TabFootLeftFill`/`TabFootRightFill` Path가 채운다.
 
 ```
   ╭──────────╮
@@ -144,12 +144,12 @@ Seam이 border 위에 덮여 feet 영역까지 border가 안 보이게 함.
 
 | 상황 | 호출 |
 |------|------|
-| 탭 전환 (`ActivateSession` / `ActivateFileTab`) | → `UpdateSelectedTabSeam()` |
-| 탭 닫아서 마지막 탭 사라짐 | `SelectedTabSeam.Visibility = Collapsed` 직접 |
+| 탭 전환 | `EnsureSelectedTabVisible()`(활성 탭 스크롤 보정) 안에서 `UpdateSelectedTabSeam()` — `ActivateSession`/`ActivateFileTab`이 직접 부르지 않는다 |
+| 탭 닫아서 마지막 탭 사라짐 | `ClearActiveSession()` → `UpdateSelectedTabSeam()` (활성 탭 없음 → 내부에서 Collapsed 처리) |
 | TabScroller 스크롤 | `ScrollChanged` → `UpdateSelectedTabSeam()` |
 | 테마 변경 | `OnThemeChanged_UpdateSeam` → `UpdateSelectedTabSeam()` |
 | 외부 탭 재배열 (사이드바 드래그) | `RefreshSelectedTabSeam()` → `Dispatcher.InvokeAsync(Loaded)`로 지연 호출 |
-| 탭 드래그 시작 | `SetupDragSeam` → seam `Visibility = Collapsed` |
+| 탭 드래그 시작 | `SetupDragSeam` — **선택 탭을 드래그**(또는 selectedRoot 없음)하면 seam `Visibility = Collapsed`, **비선택 탭 드래그**면 `RenderTransform = GetOrCreateTranslate(selectedRoot)`로 seam이 선택 탭을 따라감. 상세는 `탭바-생성-규칙.md` §8.9 |
 
 ---
 
