@@ -225,6 +225,25 @@ public partial class WorkspacePaneView : UserControl
             OpenFileAsTab(path);
     }
 
+    /// <summary>파일 에디터 탭(md·이미지·코드·PDF·diff) 위 외부 파일 드래그 — 세션과 동일하게 패널 전체
+    /// 드롭 선택 화면으로 전환한다. WebView2 기반 에디터는 AllowExternalDrop=false 로 OLE Drop 을 거부해
+    /// 이 WPF 이벤트로 fall-through 된다. 브라우저 탭은 여기 걸리지 않으므로 웹 기본 동작이 유지된다.
+    /// 오버레이가 뜨면 이 컨테이너가 Collapsed 되어 이후 드래그는 오버레이 존들이 받는다.</summary>
+    private void FileEditorHost_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        bool canDrop = _activeProject != null && GetDroppedFiles(e).Length > 0;
+        e.Effects = DragDropEffects.None; // 존(열기/첨부)에서만 드롭 — 세션과 동일
+        e.Handled = true;
+        if (canDrop) ShowFileDropOverlay();
+    }
+
+    private void FileEditorHost_PreviewDrop(object sender, DragEventArgs e)
+    {
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
+        HideFileDropOverlay();
+    }
+
     private static string[] GetDroppedFiles(DragEventArgs e)
     {
         try
@@ -271,8 +290,10 @@ public partial class WorkspacePaneView : UserControl
         if (_activeProject == null || _fileDropOverlayActive) return;
 
         _fileDropOverlayActive = true;
+        // 파일 탭 활성 중엔 _activeSession 이 null 이라 터미널의 활성 방으로 판단한다(마지막 세션에 첨부).
         AddFileDropZone.IsEnabled = _activeSession is { IsExternal: false } session
-            && TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true };
+            ? TerminalSessionManager.Instance.Get(session.Id) is { IsAlive: true }
+            : _activeSession == null && _terminal.CanInsertFilePaths;
         FileDropOverlay.Visibility = Visibility.Visible;
 
         TerminalHostContainer.Visibility = Visibility.Collapsed;

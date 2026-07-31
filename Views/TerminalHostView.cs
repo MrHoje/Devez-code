@@ -2170,6 +2170,14 @@ public sealed class TerminalHostView : ContentControl, IDisposable
     private bool _disposed;
 
     // ── 외부 드래그 앤 드롭 (탐색기/바탕화면 → 활성 세션 터미널로 @경로 입력) ──────────
+    /// <summary>InsertFilePaths 가 실제로 먹힐 수 있는 상태인지(살아있는 비-외부 방 표시 중).
+    /// 파일 탭이 활성이면 패널의 _activeSession 은 null 이지만 터미널의 활성 방은 유지되므로,
+    /// 파일 에디터 위 드롭 오버레이의 '첨부' 존 활성화 판단에 쓴다.</summary>
+    public bool CanInsertFilePaths =>
+        !string.IsNullOrEmpty(_activeRoomId) &&
+        !_externalPreviewRooms.Contains(_activeRoomId) &&
+        TerminalSessionManager.Instance.Get(_activeRoomId) is { IsAlive: true };
+
     public void InsertFilePaths(IEnumerable<string> paths)
     {
         var room = _activeRoomId;

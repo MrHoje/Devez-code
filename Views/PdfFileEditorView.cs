@@ -52,6 +52,10 @@ public sealed class PdfFileEditorView : UserControl, IFileTabEditor
         try
         {
             _webView = new WebView2 { DefaultBackgroundColor = CurrentBackgroundColor() };
+            // 외부 파일 드래그는 자식 HWND 가 OLE Drop 을 거부해 부모 HwndSource 로 fall-through →
+            // 패널의 WPF PreviewDragOver(FileEditorHostContainer)가 받아 세션과 동일한 드롭 선택 화면을 띄운다.
+            _webView.AllowExternalDrop = false;
+            _webView.AllowDrop = true;
             Content = _webView;
             await _webView.EnsureCoreWebView2Async();
 

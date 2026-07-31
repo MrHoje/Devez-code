@@ -208,9 +208,22 @@ public partial class BrowserHostView : UserControl
     }
 
     /// <summary>처음 표시될 때 WebView2 를 초기화하고 마지막/홈 URL 을 연다(1회만).</summary>
-    public async void EnsureStarted()
+    public void EnsureStarted() => _ = EnsureStartedAsync();
+
+    /// <summary>EnsureStarted 의 await 가능 버전. 여러 번 호출해도 첫 초기화 Task 를 공유한다.
+    /// 세션 자동화(MCP)가 탭을 화면에 띄우지 않고 조작할 때 초기화 완료를 기다리기 위해 필요.</summary>
+    public Task EnsureStartedAsync() => _initTask ??= StartCoreAsync();
+    private Task? _initTask;
+
+    /// <summary>CoreWebView2 가 준비될 때까지 기다린 뒤 반환. 초기화 실패 시 null.</summary>
+    public async Task<CoreWebView2?> EnsureCoreAsync()
     {
-        if (_initStarted) return;
+        await EnsureStartedAsync();
+        return _view?.CoreWebView2;
+    }
+
+    private async Task StartCoreAsync()
+    {
         _initStarted = true;
         try
         {

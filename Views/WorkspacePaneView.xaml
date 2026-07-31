@@ -554,7 +554,10 @@
              ClipToBounds: 분할 애니메이션 중 좌상단 고정된 스냅샷이 패널 밖으로 넘치지 않게 잘라낸다. -->
         <Grid Grid.Row="3" ClipToBounds="True">
             <ContentControl x:Name="TerminalHostContainer"/>
-            <ContentControl x:Name="FileEditorHostContainer" Visibility="Collapsed"/>
+            <ContentControl x:Name="FileEditorHostContainer" Visibility="Collapsed"
+                            AllowDrop="True"
+                            PreviewDragOver="FileEditorHost_PreviewDragOver"
+                            PreviewDrop="FileEditorHost_PreviewDrop"/>
             <ContentControl x:Name="BrowserHostContainer" Visibility="Collapsed"/>
             <Image x:Name="TerminalSnapshot" Stretch="Fill" Visibility="Collapsed"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
