@@ -124,7 +124,7 @@
                         <Path x:Name="MaxBtnIcon" Style="{StaticResource LucideButtonIcon}"
                               Data="{StaticResource IconWinMaximize}" Width="11" Height="11" StrokeThickness="1.4"/>
                     </Button>
-                    <Button Style="{StaticResource WinCloseBtn}" Click="CloseBtn_Click">
+                    <Button x:Name="CloseBtn" Style="{StaticResource WinCloseBtn}" Click="CloseBtn_Click">
                         <TextBlock Text="&#x2715;" FontSize="13"/>
                         <Button.ContextMenu>
                             <ContextMenu>
@@ -1058,7 +1058,7 @@
 
             <!-- 설정 화면 호스트 (MDI 오버레이).
                  상단바(Row 0)는 그대로 남기고 그 아래(Row 1~3)만 덮는다 → 앱 이름·패널 토글·
-                 최소화/최대화/닫기·드래그가 전부 메인창 원래 동작이고, 별도 창이 아니므로
+                 최소화/최대화·드래그는 메인창 원래 동작이고, 닫기는 설정 중 비활성화한다.
                  Windows 스냅(dock)·모니터 이동에서도 위치가 어긋나지 않는다.
                  배경이 불투명하므로 아래 UI 클릭도 차단된다. -->
             <Grid x:Name="SettingsHost" Grid.Row="1" Grid.RowSpan="3" Panel.ZIndex="200"

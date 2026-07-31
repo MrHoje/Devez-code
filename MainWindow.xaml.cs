@@ -95,6 +95,7 @@ public partial class MainWindow : Window
     private readonly GrokHookService _grokHook = new();
     private readonly KimiHookService _kimiHook = new();
     private readonly DevezVibeStateService _devezVibeState = new();
+    private readonly HashSet<string> _devezVibeLoadingRooms = new(StringComparer.Ordinal);
     // antigravity(agy) — hooks.json 훅(busy/waiting/conversation_id) + transcript_full.jsonl 폴링
     // (빠른 idle 확정 + lastmsg). ask_question/ask_permission 은 waiting(❗)으로 분리한다.
     private readonly AntigravityHookService _antigravityHook = new();
@@ -616,19 +617,25 @@ public partial class MainWindow : Window
                 s.LastMessage = msg;
                 foreach (var pane in _panes) pane.NotifySessionStateChanged(s);
             });
-        _devezVibeState.BusyChanged += (roomId, busy) =>
+        _devezVibeState.BusyChanged += (roomId, busy, loading) =>
             Dispatcher.InvokeAsync(() =>
             {
                 var s = FindOwnedSession(roomId, "devezvibe", "busy");
                 if (s == null) return;
                 MarkSessionActivity(roomId);
                 bool was = s?.IsBusy ?? false;
+                bool wasLoading = _devezVibeLoadingRooms.Contains(roomId);
+                if (loading) _devezVibeLoadingRooms.Add(roomId);
+                else _devezVibeLoadingRooms.Remove(roomId);
                 if (s != null)
                 {
                     s.IsBusy = busy;
                     if (!busy) s.IsWaitingChoice = false;
                 }
-                NotifyIfSessionFinished(s, was, busy, () => _devezVibeState.IsRoomBusy(roomId));
+                // transcript 복원 완료의 loading→idle 은 응답 완료가 아니다.
+                // loading→running 은 실제 턴 시작이므로 이후 running→idle 완료는 정상 기록한다.
+                if (loading || !wasLoading)
+                    NotifyIfSessionFinished(s, was, busy, () => _devezVibeState.IsRoomBusy(roomId));
                 UpdateSessionBusyDisplay();
                 if (!busy) foreach (var pane in _panes) pane.NotifyModelEffortChanged(roomId);
             });
@@ -6042,7 +6049,7 @@ public partial class MainWindow : Window
         SettingsHost.Focus();   // ESC 로 닫기
     }
 
-    /// <summary>설정 화면 중 상단바 정리 — 앱 이름과 창 컨트롤(최소화/최대화/닫기)만 남기고
+    /// <summary>설정 화면 중 상단바 정리 — 앱 이름과 창 컨트롤만 남기고 닫기 버튼은 비활성화하며
     /// 성능 칩·패널 토글은 숨긴다(설정 화면에서 쓸 수 없는 기능이고, 패널이 열리면 되살아난
     /// WebView2 HWND 가 오버레이를 뚫는다).</summary>
     private void ApplyTitleBarForSettings(bool settingsOpen)
@@ -6050,6 +6057,7 @@ public partial class MainWindow : Window
         var v = settingsOpen ? Visibility.Collapsed : Visibility.Visible;
         TitleBarChips.Visibility = v;
         LeftPanelBtn.Visibility  = v;
+        CloseBtn.IsEnabled = !settingsOpen;
     }
 
     private Views.SettingsDialog? _settingsView;   // 열려 있는 설정 화면(MDI 오버레이)
@@ -7126,7 +7134,11 @@ public partial class MainWindow : Window
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     }
 
-    private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();
+    private void CloseBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_settingsView != null) return;
+        Close();
+    }
 
     /// <summary>'닫기 버튼으로 최소화'가 켜져 있어도 강제로 실제 종료. (닫기 버튼 우클릭 메뉴)</summary>
     private void QuitApp_Click(object sender, RoutedEventArgs e) { ForceQuit = true; Close(); }

@@ -32,6 +32,7 @@
                     <RowDefinition Height="48"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- Header -->
@@ -68,20 +69,6 @@
                                TextWrapping="Wrap"
                                LineStackingStrategy="BlockLineHeight"
                                LineHeight="22"/>
-                    <!-- 업데이트 진행률 (ShowUpdate 에서 '업데이트' 클릭 후 표시) -->
-                    <StackPanel x:Name="ProgressArea" Visibility="Collapsed" Margin="0,18,0,0">
-                        <Grid Margin="0,0,0,6">
-                            <TextBlock Text="다운로드 중…" FontSize="{DynamicResource Fs12}"
-                                       Foreground="{DynamicResource TextMutedBrush}"/>
-                            <TextBlock x:Name="ProgressPercent" HorizontalAlignment="Right"
-                                       FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
-                        </Grid>
-                        <Border x:Name="ProgressTrack" Height="6" CornerRadius="3" Background="{DynamicResource LineBrush}">
-                            <Border x:Name="ProgressFill" HorizontalAlignment="Left" Width="0" Height="6"
-                                    CornerRadius="3" Background="{DynamicResource PrimaryBrush}"/>
-                        </Border>
-                    </StackPanel>
-
                     <StackPanel x:Name="ConfirmInputPanel" Visibility="Collapsed" Margin="0,14,0,0">
                         <TextBlock x:Name="ConfirmHintText"
                                    FontSize="{DynamicResource Fs12}"
@@ -108,8 +95,22 @@
                 </StackPanel>
                 </ScrollViewer>
 
+                <!-- 업데이트 진행률: 본문 스크롤과 분리해 다운로드 중 항상 노출 -->
+                <StackPanel x:Name="ProgressArea" Grid.Row="2" Visibility="Collapsed" Margin="28,18,28,16">
+                    <Grid Margin="0,0,0,6">
+                        <TextBlock Text="다운로드 중…" FontSize="{DynamicResource Fs12}"
+                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                        <TextBlock x:Name="ProgressPercent" HorizontalAlignment="Right"
+                                   FontSize="{DynamicResource Fs12}" Foreground="{DynamicResource TextBrush}"/>
+                    </Grid>
+                    <Border x:Name="ProgressTrack" Height="6" CornerRadius="3" Background="{DynamicResource LineBrush}">
+                        <Border x:Name="ProgressFill" HorizontalAlignment="Left" Width="0" Height="6"
+                                CornerRadius="3" Background="{DynamicResource PrimaryBrush}"/>
+                    </Border>
+                </StackPanel>
+
                 <!-- Footer -->
-                <Border Grid.Row="2"
+                <Border Grid.Row="3"
                         Background="{DynamicResource PanelSoftBrush}"
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="0,1,0,0"

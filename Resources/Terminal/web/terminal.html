@@ -2446,14 +2446,22 @@
     // 원격/소프트웨어 렌더링(enableWebgl=false)에선 SwiftShader 로 오히려 느려져 비활성화한다.
     // GPU 컨텍스트 로스(드라이버 리셋/탭 과다) 시 dispose → xterm 기본 DOM 렌더러로 자동 폴백.
     // 소수 배율(125/150% 등)에선 WebGL 커서 렌더 버그가 있어 DOM 렌더러를 쓴다(위 disposeWebglIfFractional 참고).
-    if (cfg.enableWebgl && !fractionalDpr() && typeof WebglNS !== 'undefined') {
+    if (cfg.enableWebgl && !fractionalDpr(agent) && typeof WebglNS !== 'undefined') {
       try {
         const webgl = new WebglNS.WebglAddon();
-        webgl.onContextLoss(function () { try { webgl.dispose(); } catch (e) {} entry.webgl = null; });
+        webgl.onContextLoss(function () {
+          try { webgl.dispose(); } catch (e) {}
+          entry.webgl = null;
+          dlog('webgl contextLoss room=' + roomId + ' agent=' + agent + ' -> DOM');
+        });
         term.loadAddon(webgl);
         entry.webgl = webgl;
       } catch (e) { /* WebGL 미지원 환경 → DOM 렌더러 유지 */ }
     }
+    // 렌더러 결정 결과를 남긴다(DevTools 비활성이라 diag.log 가 유일한 관측 창구).
+    dlog('renderer room=' + roomId + ' agent=' + agent + ' engine=' + (use6 ? 'xterm6' : 'xterm5')
+       + ' renderer=' + (entry.webgl ? 'WebGL' : 'DOM') + ' dpr=' + window.devicePixelRatio
+       + ' enableWebgl=' + !!cfg.enableWebgl);
 
     // ── URL/경로 링크: URL은 기본 브라우저, 파일은 Ctrl+클릭 시 에디터 탭, 폴더는 Explorer ──
     try {
@@ -2981,12 +2989,25 @@
   // 렌더러가 셀 픽셀 위치를 잘못 반올림해 커서가 입력 위치에서 사라지고 텍스트 위에 얇은
   // 가로선으로 깜빡이는 아티팩트가 생긴다(특히 전체화면). DOM 렌더러는 소수 배율을 정상
   // 처리하므로, 이 경우 WebGL 을 dispose 해 DOM 렌더러로 폴백한다.
-  function fractionalDpr() { return !Number.isInteger(window.devicePixelRatio); }
+  // devezvibe 는 컴포저/메시지 카드의 세로 바(▌·│)를 행마다 다시 찍는데, DOM 렌더러는 그것을
+  // 폰트 글리프로 그려 행 사이가 벌어진다(3줄 바가 조각조각 끊겨 보임 — 2026-07-31 실측).
+  // WebGL 렌더러는 block/box-drawing 을 customGlyphs 로 셀 크기에 맞춰 직접 그려 이음새가 없다.
+  // → 아래 등록된 에이전트는 소수 배율에서도 WebGL 을 유지한다(실측으로 세로선 복구 확인).
+  // ⚠ 이 에이전트들은 B형(hw커서형, 입력 캐럿 = xterm 커서)이라 WebGL 커서 아티팩트
+  //   (커서 소실 + 텍스트 위 가로선 깜빡임)에 노출될 수 있다. 그 증상이 보이면 해당 id 를 뺀다.
+  const WEBGL_FRACTIONAL_ALLOW = { devezvibe: true };
+
+  function fractionalDpr(agent) {
+    if (agent && WEBGL_FRACTIONAL_ALLOW[agent]) return false; // 세로선 이음새 우선 — WebGL 유지
+    return !Number.isInteger(window.devicePixelRatio);
+  }
 
   function disposeWebglIfFractional(entry) {
-    if (entry && entry.webgl && fractionalDpr()) {
+    if (entry && entry.webgl && fractionalDpr(entry.agent)) {
       try { entry.webgl.dispose(); } catch (e) {}
       entry.webgl = null; // → 이후 xterm 기본 DOM 렌더러
+      dlog('webgl disposed(fractional) room=' + entry.roomId + ' agent=' + entry.agent
+         + ' dpr=' + window.devicePixelRatio);
     }
   }
 

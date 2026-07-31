@@ -1818,6 +1818,12 @@
                             <Setter TargetName="Bd" Property="BorderBrush" Value="#b91c1c"/>
                             <Setter Property="Foreground" Value="White"/>
                         </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Background" Value="Transparent"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                            <Setter Property="Opacity" Value="0.35"/>
+                        </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>

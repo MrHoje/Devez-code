@@ -29,8 +29,8 @@ public sealed class DevezVibeStateService : IDisposable
 
     /// <summary>(roomId, message) — 마지막 user prompt (1줄 요약, 200자).</summary>
     public event Action<string, string>? MessageChanged;
-    /// <summary>(roomId, busy) — busy=true 면 턴 진행 중 (스피너).</summary>
-    public event Action<string, bool>? BusyChanged;
+    /// <summary>(roomId, busy, loading) — busy=true 면 스피너 표시, loading=true 면 resume 복원 중.</summary>
+    public event Action<string, bool, bool>? BusyChanged;
     /// <summary>(roomId, waiting) — 승인/질문/MCP 응답 대기 중(❗).</summary>
     public event Action<string, bool>? WaitingChoiceChanged;
     /// <summary>(roomId, threadId) — dvz thread ID 갱신. TerminalSessionManager 가 다음 -r 에 사용.</summary>
@@ -141,7 +141,9 @@ public sealed class DevezVibeStateService : IDisposable
         if (status == null) return;
         // rename 직전의 빈 파일을 idle 로 오인 방지 — 짧게 뒤 재확인, 그래도 비면 idle 확정(stuck-ON 방지).
         if (string.IsNullOrWhiteSpace(status)) { _ = ReEmitBusyAfterSettleAsync(path, room); return; }
-        BusyChanged?.Invoke(room, status.Equals("running", StringComparison.OrdinalIgnoreCase));
+        bool loading = status.Equals("loading", StringComparison.OrdinalIgnoreCase);
+        bool busy = loading || status.Equals("running", StringComparison.OrdinalIgnoreCase);
+        BusyChanged?.Invoke(room, busy, loading);
     }
 
     private async System.Threading.Tasks.Task ReEmitBusyAfterSettleAsync(string path, string room)
@@ -150,9 +152,11 @@ public sealed class DevezVibeStateService : IDisposable
         {
             await System.Threading.Tasks.Task.Delay(120).ConfigureAwait(false);
             var status = TryRead(path);
-            bool busy = !string.IsNullOrWhiteSpace(status)
-                && status!.Equals("running", StringComparison.OrdinalIgnoreCase);
-            BusyChanged?.Invoke(room, busy);
+            bool loading = !string.IsNullOrWhiteSpace(status)
+                && status!.Equals("loading", StringComparison.OrdinalIgnoreCase);
+            bool busy = loading || (!string.IsNullOrWhiteSpace(status)
+                && status!.Equals("running", StringComparison.OrdinalIgnoreCase));
+            BusyChanged?.Invoke(room, busy, loading);
         }
         catch { /* best effort */ }
     }
@@ -165,7 +169,8 @@ public sealed class DevezVibeStateService : IDisposable
         {
             var status = TryRead(Path.Combine(BusyDir, Sanitize(roomId) + ".txt"));
             return !string.IsNullOrWhiteSpace(status)
-                && status.Equals("running", StringComparison.OrdinalIgnoreCase);
+                && (status.Equals("running", StringComparison.OrdinalIgnoreCase)
+                    || status.Equals("loading", StringComparison.OrdinalIgnoreCase));
         }
         catch { return false; }
     }

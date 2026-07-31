@@ -1647,7 +1647,7 @@ WPF 기본 `System.Windows.MessageBox`는 OS가 그리는 별도 UI라 Devez 테
 - 높이는 내용에 맞추되 `MaxHeight=430`이다.
 - 긴 업데이트 노트는 body만 scroll한다.
 - 취소 문구는 `나중에`다.
-- primary를 누르면 창을 닫지 않고 같은 body에서 진행률로 전환한다.
+- primary를 누르면 창을 닫지 않고 본문 스크롤과 분리된 고정 영역에 진행률을 표시한다.
 
 #### 액션 구성
 
@@ -1695,7 +1695,7 @@ WPF 기본 `System.Windows.MessageBox`는 OS가 그리는 별도 UI라 Devez 테
 
 - 업데이트를 시작하면 footer button group과 header X를 숨긴다.
 - 확인문자 영역이 있으면 숨긴다.
-- body에서 `ProgressArea`를 표시한다.
+- body `ScrollViewer` 아래의 고정 영역에서 `ProgressArea`를 표시해 긴 노트가 스크롤되어도 항상 보이게 한다.
 - label은 왼쪽 `다운로드 중…`, percentage는 오른쪽이다.
 - track/fill은 높이 `6`, radius `3`이다.
 - track은 `LineBrush`, fill은 `PrimaryBrush`다.
