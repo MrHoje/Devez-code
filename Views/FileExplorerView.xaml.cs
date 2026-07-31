@@ -229,9 +229,8 @@ public partial class FileExplorerView : UserControl
         if (idx == 1) Browser.EnsureStarted();       // 최초 진입 시 WebView2 초기화
         if (idx == 2) _ = ScmView.RefreshAsync();  // 진입할 때마다 최신 변경 내역 로드
 
-        // 큐·브라우저 모드에서는 44px 헤더(row 1) 를 접어서 콘텐츠가 탭 바로 아래에 이어지게 한다.
-        // (탭 자체가 각각 '작업 큐'·'브라우저' 제목 역할 → 중복 헤더 불필요)
-        HeaderBar.Visibility = idx is 1 or 3 ? Visibility.Collapsed : Visibility.Visible;
+        // 큐·브라우저·소스 제어는 자체 헤더를 가지므로 공용 경로 헤더를 접는다.
+        HeaderBar.Visibility = idx is 1 or 2 or 3 ? Visibility.Collapsed : Visibility.Visible;
 
         // 파일 검색 박스는 탐색기(Directory) 모드에서만 의미가 있으므로 그때만 표시.
         FileSearchRow.Visibility = idx == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -243,7 +242,7 @@ public partial class FileExplorerView : UserControl
         PathText.Text = idx switch
         {
             1 => "브라우저",
-            2 => "Diff",
+            2 => "소스 제어",
             _ => _rootPath ?? "파일 탐색기",
         };
 
