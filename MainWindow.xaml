@@ -1065,14 +1065,17 @@
                   Visibility="Collapsed" Background="{DynamicResource BgBrush}"
                   Focusable="True" KeyDown="SettingsHost_KeyDown"/>
 
-            <!-- 외부 파일 드롭 선택 화면(창 전체). 패널별 오버레이가 아니라 창 전체를 덮어야
-                 스플리터·사이드바를 지날 때 드롭 타겟 HWND 가 바뀌지 않는다(커서 고스트 반짝임 방지).
-                 표시 전에 모든 WebView2 호스트(터미널·에디터·브라우저·하단 셸)를 Collapsed 처리해
-                 airspace 를 제거한다. -->
+            <!-- 외부 파일 드롭 선택 화면.
+                 루트는 창 전체를 '투명하게' 덮는다 — 드래그 시작부터 끝까지 드롭 타겟이 WPF 창 하나로
+                 유지돼야 스플리터를 지날 때 HWND 가 바뀌며 커서 고스트가 반짝이지 않는다.
+                 실제 화면(카드)은 드롭 대상 중앙 패널 영역에만 그린다(코드에서 Margin/크기 지정). -->
             <Grid x:Name="WindowFileDropOverlay" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="250"
                   Visibility="Collapsed" AllowDrop="True" Cursor="Arrow"
+                  Background="Transparent"
                   DragOver="WindowFileDrop_DragOver"
                   Drop="WindowFileDrop_Drop">
+                <Grid x:Name="DropOverlayCard" HorizontalAlignment="Left" VerticalAlignment="Top"
+                      ClipToBounds="True">
                 <Border Background="{DynamicResource PanelBrush}" Opacity="0.97"/>
 
                 <StackPanel MaxWidth="620" Margin="20"
@@ -1084,7 +1087,7 @@
                                Foreground="{DynamicResource TextBrush}"
                                IsHitTestVisible="False"/>
 
-                    <Grid Height="250" Width="580">
+                    <Grid Height="250">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="12"/>
@@ -1164,6 +1167,7 @@
                         </Border>
                     </Grid>
                 </StackPanel>
+                </Grid>
             </Grid>
 
             <!-- 종료 중 오버레이 — 열린 세션을 graceful 종료하는 동안 표시 -->

@@ -320,7 +320,7 @@ public partial class WorkspacePaneView : UserControl
     public void ShowFileDropOverlay()
     {
         FocusRequested?.Invoke(this); // 드롭 대상은 포커스 패널이므로 먼저 이 패널로 포커스를 옮긴다
-        (Application.Current.MainWindow as MainWindow)?.ShowWindowFileDropOverlay();
+        (Application.Current.MainWindow as MainWindow)?.ShowWindowFileDropOverlay(this);
     }
 
     public void DismissFileDropOverlay() => (Application.Current.MainWindow as MainWindow)?.DismissWindowFileDropOverlay();

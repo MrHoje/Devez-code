@@ -2444,7 +2444,7 @@ public partial class MainWindow : Window
     // 창 전체를 한 오버레이로 덮어 드래그 시작부터 끝까지 같은 WPF 드롭 타겟이 유지되게 한다.
 
     private bool _windowDropOverlayActive;
-    private bool _shellPanelHiddenForDrop;
+    private WorkspacePaneView? _dropTargetPane;   // 오버레이 카드가 덮고 있는 패널(드롭 대상)
     private Border? _highlightedWindowDropZone;
     private readonly System.Windows.Threading.DispatcherTimer _windowDropCursorTimer = new()
     {
@@ -2477,7 +2477,7 @@ public partial class MainWindow : Window
             bool canAttach = pane.Terminal.CanInsertFilePaths;
             if (!canOpen && !canAttach) return;
             pane.RequestDropFocus();                            // 드롭 대상 = 포커스 패널
-            ShowWindowFileDropOverlay(canOpen, canAttach);
+            ShowWindowFileDropOverlay(pane, canOpen, canAttach);
         }), handledEventsToo: true);
     }
 
@@ -2493,28 +2493,39 @@ public partial class MainWindow : Window
         return null;
     }
 
-    /// <summary>창 전체 드롭 선택 화면 표시. 웹(터미널·md) 신호 경로에서는 파일 목록을 알 수 없어
-    /// 인자 없이 호출한다 — 그 경로는 세션/에디터가 있는 상태라 열기는 항상 가능하다.</summary>
-    public void ShowWindowFileDropOverlay(bool canOpen = true, bool? canAttach = null)
+    /// <summary>드롭 선택 화면 표시 — 화면(카드)은 대상 중앙 패널 영역만 덮는다. 웹(터미널·md) 신호
+    /// 경로에서는 파일 목록을 알 수 없어 pane 만 넘기고, 그 경로는 세션/에디터가 있는 상태라 열기는 가능하다.</summary>
+    public void ShowWindowFileDropOverlay(WorkspacePaneView pane, bool canOpen = true, bool? canAttach = null)
     {
         if (_windowDropOverlayActive) return;
         _windowDropOverlayActive = true;
+        _dropTargetPane = pane;
 
+        LayoutDropOverlayCard(pane);
         WindowOpenFileDropZone.IsEnabled = canOpen;
-        WindowAddFileDropZone.IsEnabled = canAttach ?? _focusedPane.Terminal.CanInsertFilePaths;
+        WindowAddFileDropZone.IsEnabled = canAttach ?? pane.Terminal.CanInsertFilePaths;
         WindowFileDropOverlay.Visibility = Visibility.Visible;
 
-        // airspace: WPF 오버레이는 WebView2 HWND 위에 그려지지 않으므로 모든 웹 호스트를 감춘다.
-        PaneA.HideContentForDropOverlay();
-        if (PaneB.Visibility == Visibility.Visible) PaneB.HideContentForDropOverlay();
-        if (ShellTerminalPanel.Visibility == Visibility.Visible)
-        {
-            ShellTerminalPanel.Visibility = Visibility.Collapsed;
-            _shellPanelHiddenForDrop = true;
-        }
+        // airspace: WPF 카드는 WebView2 HWND 위에 그려지지 않으므로 대상 패널의 웹 호스트만 감춘다
+        // (다른 패널·하단 셸은 카드 밖이라 그대로 둔다 — 오버레이 루트는 투명이라 가리지 않는다).
+        pane.HideContentForDropOverlay();
 
         _windowDropCursorTimer.Start();
-        DragDiag.Log($"window drop overlay show canOpen={canOpen} canAttach={WindowAddFileDropZone.IsEnabled}");
+        DragDiag.Log($"drop overlay show pane={(ReferenceEquals(pane, PaneA) ? "A" : "B")}" +
+                     $" canOpen={canOpen} canAttach={WindowAddFileDropZone.IsEnabled}");
+    }
+
+    /// <summary>카드를 대상 패널과 같은 사각형에 맞춘다(중앙 패널 영역만 덮기).</summary>
+    private void LayoutDropOverlayCard(WorkspacePaneView pane)
+    {
+        try
+        {
+            var origin = RootGrid.PointFromScreen(pane.PointToScreen(new Point(0, 0)));
+            DropOverlayCard.Margin = new Thickness(origin.X, origin.Y, 0, 0);
+            DropOverlayCard.Width = pane.ActualWidth;
+            DropOverlayCard.Height = pane.ActualHeight;
+        }
+        catch (InvalidOperationException) { }
     }
 
     public void DismissWindowFileDropOverlay() => HideWindowFileDropOverlay();
@@ -2527,29 +2538,28 @@ public partial class MainWindow : Window
         SetHighlightedWindowDropZone(null);
         WindowFileDropOverlay.Visibility = Visibility.Collapsed;
 
-        if (_shellPanelHiddenForDrop)
-        {
-            ShellTerminalPanel.Visibility = Visibility.Visible;
-            _shellPanelHiddenForDrop = false;
-        }
-        PaneA.RestoreContentAfterDropOverlay();
-        PaneB.RestoreContentAfterDropOverlay();   // 분할 해제 중이라도 플래그는 반드시 해제
-        DragDiag.Log("window drop overlay hide");
+        _dropTargetPane?.RestoreContentAfterDropOverlay();
+        _dropTargetPane = null;
+        DragDiag.Log("drop overlay hide");
     }
 
-    /// <summary>드래그가 창 밖으로 나가면(드롭 없이 취소·다른 창에 드롭) DragLeave 가 오지 않는 경우가
-    /// 있어 커서 위치로 직접 판정해 오버레이를 걷는다(패널 오버레이 때와 같은 방식, 이제 창 기준).</summary>
+    /// <summary>드래그가 대상 패널 밖으로 나가면(또는 창 밖으로) 커서 위치로 직접 판정해 오버레이를 걷는다
+    /// — 드롭 없이 취소되면 DragLeave 가 오지 않는 경우가 있다.</summary>
     private void CheckWindowDropCursor()
     {
-        if (!_windowDropOverlayActive) { _windowDropCursorTimer.Stop(); return; }
+        if (!_windowDropOverlayActive || _dropTargetPane == null) { _windowDropCursorTimer.Stop(); return; }
+        LayoutDropOverlayCard(_dropTargetPane); // 드래그 중 레이아웃이 바뀌어도 카드가 패널에 붙어 있게
         if (!GetCursorPos(out var cursor)) return;
 
         Point local;
-        try { local = RootGrid.PointFromScreen(new Point(cursor.X, cursor.Y)); }
+        try { local = _dropTargetPane.PointFromScreen(new Point(cursor.X, cursor.Y)); }
         catch (InvalidOperationException) { return; }
 
-        if (local.X < 0 || local.Y < 0 ||
-            local.X > RootGrid.ActualWidth || local.Y > RootGrid.ActualHeight)
+        // 패널 경계의 스플리터(4~6px) 위에서 닫혔다 열리며 깜빡이지 않게 여유를 둔다.
+        const double tolerance = 12;
+        if (local.X < -tolerance || local.Y < -tolerance ||
+            local.X > _dropTargetPane.ActualWidth + tolerance ||
+            local.Y > _dropTargetPane.ActualHeight + tolerance)
         {
             HideWindowFileDropOverlay();
             return;
@@ -2619,16 +2629,17 @@ public partial class MainWindow : Window
         var files = GetTitleBarDroppedFiles(e);
         var action = (sender as FrameworkElement)?.Tag as string;
         bool enabled = sender is FrameworkElement { IsEnabled: true };
+        var target = _dropTargetPane ?? _focusedPane;
         e.Handled = true;
         HideWindowFileDropOverlay();
         if (!enabled || files.Length == 0) return;
 
         if (string.Equals(action, "Add", StringComparison.Ordinal))
         {
-            _focusedPane.Terminal.InsertFilePaths(files);
+            target.Terminal.InsertFilePaths(files);
             return;
         }
-        _focusedPane.OpenDroppedFiles(files);
+        target.OpenDroppedFiles(files);
     }
 
     private void Splitter_PreviewDrop(object sender, DragEventArgs e)
