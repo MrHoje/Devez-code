@@ -37,8 +37,6 @@ public partial class SettingsDialog : UserControl
     private bool   _originalAutoLoadLastProject;
     private bool   _originalPromptForNewSessionName;
     private bool   _originalPromptForNewBrowserTabName;
-    private bool   _originalBrowserMcp;
-    private bool   _selectedBrowserMcp;
     private string _originalBrowserHomeUrl = "";
     private TerminalUrlOpenTarget _originalTerminalUrlOpenTarget;
     private bool   _originalHiddenSessionInsertionOnTop;
@@ -523,9 +521,6 @@ public partial class SettingsDialog : UserControl
         _originalPromptForNewBrowserTabName = SettingsService.LoadPromptForNewBrowserTabName();
         _selectedPromptForNewBrowserTabName = _originalPromptForNewBrowserTabName;
         PromptForNewBrowserTabNameToggle.IsChecked = _selectedPromptForNewBrowserTabName;
-        _originalBrowserMcp = SettingsService.LoadBrowserMcpEnabled();
-        _selectedBrowserMcp = _originalBrowserMcp;
-        BrowserMcpToggle.IsChecked = _selectedBrowserMcp;
         _originalBrowserHomeUrl = SettingsService.LoadBrowserHomeUrl();
         _selectedBrowserHomeUrl = _originalBrowserHomeUrl;
         BrowserHomeUrlBox.Text = _selectedBrowserHomeUrl;
@@ -959,11 +954,6 @@ public partial class SettingsDialog : UserControl
 
     private void BrowserHomeUrlBox_TextChanged(object sender, TextChangedEventArgs e)
         => _selectedBrowserHomeUrl = BrowserHomeUrlBox.Text;
-
-    private void BrowserMcpToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        _selectedBrowserMcp = BrowserMcpToggle.IsChecked == true;
-    }
 
     private void TerminalUrlOpenTargetCombo_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -1849,14 +1839,6 @@ public partial class SettingsDialog : UserControl
         SettingsService.SaveAutoLoadLastProject(_selectedAutoLoadLastProject);
         SettingsService.SavePromptForNewSessionName(_selectedPromptForNewSessionName);
         SettingsService.SavePromptForNewBrowserTabName(_selectedPromptForNewBrowserTabName);
-        if (_selectedBrowserMcp != _originalBrowserMcp)
-        {
-            SettingsService.SaveBrowserMcpEnabled(_selectedBrowserMcp);
-            _originalBrowserMcp = _selectedBrowserMcp;
-            // 각 에이전트 설정 파일에 devez-browser MCP 서버를 등록/제거. 이미 떠 있는 세션은
-            // 재시작해야 반영된다(에이전트가 시작 시 mcpServers 를 읽음).
-            BrowserMcpInstaller.Sync();
-        }
         SettingsService.SaveBrowserHomeUrl(_selectedBrowserHomeUrl);
         SettingsService.SaveTerminalUrlOpenTarget(_selectedTerminalUrlOpenTarget);
         if (_selectedHiddenSessionInsertionOnTop != _originalHiddenSessionInsertionOnTop)

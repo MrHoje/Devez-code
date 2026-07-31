@@ -198,11 +198,6 @@ public partial class App : Application
         // 세션 열기 지연 진단 — UI 스레드 정지 감지 + 구간 로그 (%AppData%\DevezCode\diag.log)
         DevezCode.Services.DiagLog.StartUiStallDetector();
 
-        // 세션→내장 브라우저 조작 브리지. 파이프 이름/토큰을 프로세스 환경변수로 심어야 이후 생성되는
-        // 모든 세션 자식 프로세스가 상속받으므로 세션 생성보다 먼저 시작한다.
-        DevezCode.Services.BrowserBridgeServer.Instance.Start();
-        DevezCode.Services.BrowserMcpInstaller.Sync();
-
         // ConPTY 자식(node 기반 claude/codex 등)이 색 지원을 간헐적으로 0(무색)으로 오판해 화면
         // 전체가 흰 글자로 렌더되던 문제 방지. node 의 supports-color 는 stdout.isTTY===false 면
         // WT_SESSION 이 있어도 색 레벨 0 을 반환하는데, ConPTY 초기화 타이밍에 따라 isTTY 가
@@ -541,7 +536,6 @@ public partial class App : Application
         try { System.Threading.Tasks.Task.Run(() => TerminalSessionManager.Instance.GracefulShutdownAllAsync(2500)).Wait(10000); }
         catch { /* best-effort */ }
         try { DevezCode.Services.SessionUsageService.Save(); } catch { /* 토큰 집계 영속 best-effort */ }
-        try { DevezCode.Services.BrowserBridgeServer.Instance.Stop(); } catch { /* 브리지 정리 best-effort */ }
         try { TerminalSessionManager.Instance.DisposeAll(); } catch { /* 종료 정리 best-effort */ }
 #if !DEBUG
         try { _singleInstanceMutex?.ReleaseMutex(); } catch { /* 소유 안 한 경우 무시 */ }

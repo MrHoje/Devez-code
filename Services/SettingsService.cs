@@ -148,9 +148,6 @@ public static class SettingsService
         public bool PromptForNewSessionName { get; set; } = false;
         // 새 브라우저 탭을 만들 때 이름 입력 팝업을 바로 표시할지 여부. 기본 false = 자동 생성 이름 사용.
         public bool PromptForNewBrowserTabName { get; set; } = false;
-        // 세션(에이전트)이 MCP 도구로 내장 브라우저를 조작할 수 있게 할지. 켜면 각 에이전트 설정에
-        // devez-browser MCP 서버를 등록한다. 기본 false = 세션은 브라우저에 접근 못 함.
-        public bool BrowserMcpEnabled { get; set; } = false;
         // 브라우저 기록이 없는 새 탭의 첫 주소. 잘못된 구버전 값은 LoadBrowserHomeUrl에서 Google로 보정한다.
         public string BrowserHomeUrl { get; set; } = "https://www.google.com";
         // URL 링크 열기 방식. 기본은 대상 프로젝트의 인앱 브라우저 새 탭.
@@ -942,9 +939,6 @@ public static class SettingsService
 
     public static bool LoadPromptForNewBrowserTabName() => Current.PromptForNewBrowserTabName;
     public static void SavePromptForNewBrowserTabName(bool v) { Current.PromptForNewBrowserTabName = v; Save(); }
-
-    public static bool LoadBrowserMcpEnabled() => Current.BrowserMcpEnabled;
-    public static void SaveBrowserMcpEnabled(bool v) { Current.BrowserMcpEnabled = v; Save(); }
 
     public static string LoadBrowserHomeUrl()
         => NormalizeBrowserHomeUrl(Current.BrowserHomeUrl);
