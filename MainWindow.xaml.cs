@@ -260,6 +260,7 @@ public partial class MainWindow : Window
         Sidebar.SessionSelected        += OpenSessionFromSidebar;
         Sidebar.OpenDocSelected        += OpenDocFromSidebar;
         Sidebar.OpenDocCloseRequested  += CloseDocFromSidebar;
+        Sidebar.OpenDocCloseOthersRequested += CloseOtherDocsFromSidebar;
         Sidebar.SplitMovePresentationProvider = GetSidebarSplitMovePresentation;
         Sidebar.SplitMoveRequested += MoveSidebarTabAcrossSplit;
         Sidebar.BrowserTabSelected     += OpenBrowserFromSidebar;
@@ -5076,6 +5077,20 @@ public partial class MainWindow : Window
     {
         var pane = _panes.FirstOrDefault(p => p.ShowsTab(doc)) ?? _focusedPane;
         pane.CloseFileTab(doc);
+        RefreshCardGroups();
+    }
+
+    /// <summary>사이드바 카드 문서 우클릭 "다른 파일 모두 닫기" — 메인 파일 탭 메뉴와 동일하게
+    /// 우클릭한 문서는 유지하고 같은 프로젝트의 나머지 파일 에디터에 닫기를 요청한다.</summary>
+    private void CloseOtherDocsFromSidebar(FileTabItem doc)
+    {
+        var parent = _projects.Concat(_archivedProjects)
+            .FirstOrDefault(project => project.Tabs.Contains(doc));
+        if (parent == null) return;
+
+        foreach (var other in parent.Tabs.OfType<FileTabItem>().ToList())
+            if (!ReferenceEquals(other, doc))
+                other.Editor.RequestClose();
         RefreshCardGroups();
     }
 

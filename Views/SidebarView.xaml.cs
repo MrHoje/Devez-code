@@ -92,6 +92,8 @@ public partial class SidebarView : UserControl
     public event Action<FileTabItem>? OpenDocSelected;
     /// <summary>카드 문서 우클릭 "문서 닫기" — 해당 파일 탭을 닫는다(MainWindow 위임).</summary>
     public event Action<FileTabItem>? OpenDocCloseRequested;
+    /// <summary>카드 문서 우클릭 "다른 파일 모두 닫기" — 우클릭한 파일 외 같은 프로젝트 문서를 닫는다.</summary>
+    public event Action<FileTabItem>? OpenDocCloseOthersRequested;
     public Func<TabItemBase, (string Header, string IconKey)>? SplitMovePresentationProvider { get; set; }
     public event Action<TabItemBase>? SplitMoveRequested;
     /// <summary>카드의 웹 브라우저 탭 클릭/닫기 요청.</summary>
@@ -1296,6 +1298,11 @@ public partial class SidebarView : UserControl
     private void OpenDocClose_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf<FileTabItem>(sender) is { } f) OpenDocCloseRequested?.Invoke(f);
+    }
+
+    private void OpenDocCloseOthers_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<FileTabItem>(sender) is { } f) OpenDocCloseOthersRequested?.Invoke(f);
     }
 
     private void BrowserTab_Click(object sender, MouseButtonEventArgs e)

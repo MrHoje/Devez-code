@@ -522,6 +522,12 @@
                                       Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="다른 파일 모두 닫기" Tag="{Binding}" Click="OpenDocCloseOthers_Click">
+                            <MenuItem.Icon>
+                                <Path Style="{StaticResource LucideIcon}" Data="{StaticResource IconX}"
+                                      Width="11" Height="11" Stroke="{DynamicResource TextMutedBrush}"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
                     </ContextMenu>
                 </Border.ContextMenu>
                 <Grid Margin="10,5,10,5">
