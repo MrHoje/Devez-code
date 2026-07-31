@@ -324,6 +324,14 @@ public sealed class SessionCompletionRecord : NotifyBase
     private bool _isChecked;
     public bool IsChecked { get => _isChecked; set => Set(ref _isChecked, value); }
 
+    private bool _isFirstInHistory;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsFirstInHistory { get => _isFirstInHistory; set => Set(ref _isFirstInHistory, value); }
+
+    private bool _isLastInHistory;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsLastInHistory { get => _isLastInHistory; set => Set(ref _isLastInHistory, value); }
+
     /// <summary>이 기록의 프로젝트가 더 이상 존재하지 않는지(삭제됨). 파생 상태 — 직렬화 대상 아님.
     /// true 면 프로젝트명에 취소선(strikeout)을 그린다.</summary>
     private bool _projectMissing;

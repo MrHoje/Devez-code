@@ -2095,7 +2095,7 @@
     </ControlTemplate>
 
     <Style x:Key="VirtualizedCardList" TargetType="ItemsControl">
-        <Setter Property="Padding" Value="8,8,8,8"/>
+        <Setter Property="Padding" Value="8,0,8,0"/>
         <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
         <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
         <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel"/>

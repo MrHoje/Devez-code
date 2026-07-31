@@ -180,6 +180,7 @@ public partial class MainWindow : Window
         CodexFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.CodexIconUri));
         KimiFooterIcon.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(App.KimiIconUri)); // 테마별(시작 시점 테마 반영)
         RestoreWindowPlacement();   // 마지막 창 위치/크기/최대화 복원 (없으면 CenterScreen 유지)
+        _sessionDoneRecords.CollectionChanged += (_, _) => UpdateSessionHistoryEdgeFlags();
         SessionHistoryList.ItemsSource = _sessionDoneRecords;
         WaitingList.ItemsSource = _waitingSessions;
         // 영속된 완료 기록 복원 (설정에 저장된 최신순 목록).
@@ -4621,8 +4622,19 @@ public partial class MainWindow : Window
                     _waitingSessions.Insert(0, t);
 
         bool any = _waitingSessions.Count > 0;
+        WaitingCardsHost.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
         WaitingList.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
         WaitingSeparator.Visibility = (any && _sessionDoneRecords.Count > 0) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateSessionHistoryEdgeFlags()
+    {
+        int last = _sessionDoneRecords.Count - 1;
+        for (int i = 0; i <= last; i++)
+        {
+            _sessionDoneRecords[i].IsFirstInHistory = i == 0;
+            _sessionDoneRecords[i].IsLastInHistory = i == last;
+        }
     }
 
     private void SessionHistoryScrollChanged(object sender, ScrollChangedEventArgs e)

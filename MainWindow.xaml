@@ -345,7 +345,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <StackPanel Grid.Row="0" Margin="8,8,8,0">
+                            <StackPanel x:Name="WaitingCardsHost" Grid.Row="0"
+                                        Margin="8,8,8,0" Visibility="Collapsed">
                                 <!-- ── 응답 대기(선택지) 세션 카드 — 항상 완료기록 위. 내용은 내가 보낸 프롬프트(LastMessage). ── -->
                                 <ItemsControl x:Name="WaitingList" Visibility="Collapsed">
                                     <ItemsControl.ItemTemplate>
@@ -429,7 +430,27 @@
                                           ScrollViewer.ScrollChanged="SessionHistoryScrollChanged">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:SessionCompletionRecord}">
-                                            <Grid Margin="0,3,0,3">
+                                            <Grid>
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Margin" Value="0,3,0,3"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFirstInHistory}" Value="True">
+                                                                <Setter Property="Margin" Value="0,11,0,3"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsLastInHistory}" Value="True">
+                                                                <Setter Property="Margin" Value="0,3,0,8"/>
+                                                            </DataTrigger>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsFirstInHistory}" Value="True"/>
+                                                                    <Condition Binding="{Binding IsLastInHistory}" Value="True"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Margin" Value="0,11,0,8"/>
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Grid.Style>
                                             <Border x:Name="SessionHistoryCard" CornerRadius="10" Padding="12,11,12,9"
                                                     Cursor="Arrow" MouseLeftButtonUp="SessionHistoryItem_Click"
                                                     BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
