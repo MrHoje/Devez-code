@@ -96,7 +96,13 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.21.3", "2026-07-31", true, new[]
+          ("v1.21.4", "2026-07-31", true, new[]
+          {
+              "설정 화면이 열려 있는 동안에는 닫기 버튼을 비활성화해 실수로 앱이 종료되지 않도록 했습니다.",
+              "업데이트 안내 창에서 노트가 길어도 다운로드 진행률이 가려지지 않고 항상 보이도록 고정했습니다.",
+              "Devez Vibe 세션을 불러오는 중에도 스피너가 표시되고, 복원만으로 응답 완료 기록이 잘못 쌓이던 문제를 수정했습니다.",
+          }),
+          ("v1.21.3", "2026-07-31", false, new[]
           {
               "프로젝트 문서 그룹과 탭을 드래그로 서로 옮길 수 있습니다.",
               "파일 에디터 탭과 마크다운 뷰어, 빈 패널에도 외부 파일을 드래그해 열 수 있습니다.",
