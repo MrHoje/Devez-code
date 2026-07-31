@@ -95,8 +95,13 @@ public partial class SettingsDialog : UserControl
 
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
-    {
-        ("v1.21.1", "2026-07-31", true, new[]
+      {
+          ("v1.21.2", "2026-07-31", true, new[]
+          {
+              "프로젝트 문서 메뉴에서 현재 문서를 제외한 파일을 한 번에 닫을 수 있습니다.",
+              "Codex 사용량 갱신과 Devez Vibe의 Codex 설치 안내를 개선했습니다.",
+          }),
+          ("v1.21.1", "2026-07-31", false, new[]
         {
             "그레이, 소프트 핑크 테마에서 Claude Code 상태줄 색상이 앱 테마와 어울리도록 보정했습니다.",
         }),
