@@ -409,17 +409,39 @@ public partial class BrowserHostView : UserControl
     {
         var core = await RequireCoreAsync();
         var target = ToNavigationTarget(urlOrQuery.Trim());
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnCompleted(object? _, CoreWebView2NavigationCompletedEventArgs e) => tcs.TrySetResult(e.IsSuccess);
-        core.NavigationCompleted += OnCompleted;
-        try
+        await NavigateAndWaitAsync(core, () =>
         {
             _pendingCause = NavCause.User;
             core.Navigate(target);
+        }, timeoutMs);
+        return core.Source;
+    }
+
+    /// <summary>탐색을 실행하고 <b>그 탐색</b>의 완료만 기다린다.
+    /// <para>NavigationId 로 매칭하지 않으면 초기화 중 시작된 홈 URL 탐색의 완료 이벤트가 대기를 먼저
+    /// 깨워, 로드가 끝나기 전에 about:blank 를 돌려주게 된다(실측 버그).</para></summary>
+    private static async Task NavigateAndWaitAsync(CoreWebView2 core, Action navigate, int timeoutMs)
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ulong? navId = null;
+        void OnStarting(object? _, CoreWebView2NavigationStartingEventArgs e) => navId ??= e.NavigationId;
+        void OnCompleted(object? _, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (navId != null && e.NavigationId == navId) tcs.TrySetResult(e.IsSuccess);
+        }
+
+        core.NavigationStarting += OnStarting;
+        core.NavigationCompleted += OnCompleted;
+        try
+        {
+            navigate();
             await WaitOrTimeoutAsync(tcs.Task, timeoutMs, "페이지 로드");
         }
-        finally { core.NavigationCompleted -= OnCompleted; }
-        return core.Source;
+        finally
+        {
+            core.NavigationStarting -= OnStarting;
+            core.NavigationCompleted -= OnCompleted;
+        }
     }
 
     public async Task<string> AutomationCurrentUrlAsync()
@@ -459,8 +481,10 @@ public partial class BrowserHostView : UserControl
         return await AutomationEvalAsync(js);
     }
 
-    /// <summary>CSS 선택자 또는 화면에 보이는 텍스트로 클릭. 대상을 못 찾으면 예외.</summary>
-    public async Task<string> AutomationClickAsync(string selectorOrText)
+    /// <summary>CSS 선택자 또는 화면에 보이는 텍스트로 클릭. 대상이 아직 없으면 timeoutMs 까지 폴링한다.
+    /// <para>React 같은 프레임워크는 입력 반영 뒤 다음 렌더에서야 전송 버튼을 그리므로, 즉시 조회하면
+    /// 대상을 못 찾는다(실측). 그래서 클릭은 '한 번 찾고 실패'가 아니라 짧게 기다린다.</para></summary>
+    public async Task<string> AutomationClickAsync(string selectorOrText, int timeoutMs = 3000)
     {
         var arg = JsonSerializer.Serialize(selectorOrText);
         var js = $$"""
@@ -480,33 +504,142 @@ public partial class BrowserHostView : UserControl
               return 'OK';
             })()
             """;
-        var r = await AutomationEvalAsync(js);
-        if (r == "NOTFOUND") throw new InvalidOperationException($"클릭 대상을 찾지 못했습니다: {selectorOrText}");
-        return "clicked";
+        var deadline = Environment.TickCount64 + Math.Max(0, timeoutMs);
+        while (true)
+        {
+            if (await AutomationEvalAsync(js) != "NOTFOUND") return "clicked";
+            if (Environment.TickCount64 >= deadline)
+                throw new InvalidOperationException(
+                    $"클릭 대상을 찾지 못했습니다: {selectorOrText} " +
+                    "(아직 렌더 전이면 browser_wait_selector 로 먼저 기다리세요)");
+            await Task.Delay(200);
+        }
     }
 
-    /// <summary>입력 요소에 값을 넣고 input/change 이벤트를 발생시킨다(React 등 프레임워크 반영).</summary>
+    /// <summary>CSS 선택자가 나타날 때까지 대기. 입력 후 버튼이 생기길 기다리는 용도.</summary>
+    public async Task<string> AutomationWaitForSelectorAsync(string selector, int timeoutMs = 10000)
+    {
+        var js = $"document.querySelector({JsonSerializer.Serialize(selector)}) ? '1' : '0'";
+        var deadline = Environment.TickCount64 + Math.Max(500, timeoutMs);
+        while (Environment.TickCount64 < deadline)
+        {
+            if (await AutomationEvalAsync(js) == "1") return "found";
+            await Task.Delay(200);
+        }
+        throw new TimeoutException($"'{selector}' 가 {timeoutMs}ms 안에 나타나지 않았습니다.");
+    }
+
+    /// <summary>키 입력을 CDP(Input.dispatchKeyEvent)로 보낸다.
+    /// <para>JS 로 만든 KeyboardEvent 는 untrusted 라 프레임워크/에디터가 무시하는 경우가 있다.
+    /// CDP 는 브라우저 입력 파이프라인을 그대로 타므로 React 채팅창 Enter 전송 등에서 안정적이다.</para></summary>
+    public async Task<string> AutomationPressKeyAsync(string key, bool ctrl = false, bool shift = false, bool alt = false)
+    {
+        var core = await RequireCoreAsync();
+        var (code, vk, text) = ResolveKey(key);
+        int modifiers = (alt ? 1 : 0) | (ctrl ? 2 : 0) | (shift ? 8 : 0);
+
+        var payload = new JsonObject
+        {
+            ["key"] = key,
+            ["code"] = code,
+            ["windowsVirtualKeyCode"] = vk,
+            ["nativeVirtualKeyCode"] = vk,
+            ["modifiers"] = modifiers,
+        };
+        // text 가 있는 키(문자·Enter)는 keyDown 에 실어야 실제 입력으로 처리된다.
+        if (text != null && modifiers is 0 or 8) payload["text"] = text;
+
+        async Task Dispatch(string type)
+        {
+            var p = (JsonObject)payload.DeepClone();
+            p["type"] = type;
+            await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", p.ToJsonString());
+        }
+
+        await Dispatch("keyDown");
+        await Dispatch("keyUp");
+        return "pressed " + key;
+    }
+
+    /// <summary>키 이름 → (code, Windows 가상키코드, 입력 텍스트). 모르는 키는 문자 1글자로 취급.</summary>
+    private static (string Code, int Vk, string? Text) ResolveKey(string key) => key switch
+    {
+        "Enter" => ("Enter", 13, "\r"),
+        "Tab" => ("Tab", 9, "\t"),
+        "Escape" => ("Escape", 27, null),
+        "Backspace" => ("Backspace", 8, null),
+        "Delete" => ("Delete", 46, null),
+        "ArrowUp" => ("ArrowUp", 38, null),
+        "ArrowDown" => ("ArrowDown", 40, null),
+        "ArrowLeft" => ("ArrowLeft", 37, null),
+        "ArrowRight" => ("ArrowRight", 39, null),
+        "Home" => ("Home", 36, null),
+        "End" => ("End", 35, null),
+        "PageUp" => ("PageUp", 33, null),
+        "PageDown" => ("PageDown", 34, null),
+        " " => ("Space", 32, " "),
+        _ when key.Length == 1 => (
+            char.IsLetter(key[0]) ? "Key" + char.ToUpperInvariant(key[0])
+            : char.IsDigit(key[0]) ? "Digit" + key
+            : "",
+            char.ToUpperInvariant(key[0]),
+            key),
+        _ => throw new ArgumentException($"지원하지 않는 키: {key}"),
+    };
+
+    /// <summary>입력 요소에 값을 넣는다.
+    /// <para>값 주입은 CDP <c>Input.insertText</c>(신뢰된 입력)로 한다 — React 처럼 value 를 제어하는
+    /// 프레임워크는 JS 로 <c>el.value = ...</c> 만 하면 다음 렌더에서 되돌리므로 그대로는 안 먹힌다.
+    /// insertText 가 통하지 않는 요소(구형 위젯 등)만 JS 대입으로 폴백한다.</para>
+    /// <para>submit=true 는 폼 submit 대신 Enter 키(CDP)를 보낸다. 채팅 입력창처럼 폼이 없는 UI 가 많다.
+    /// 다만 전송 <b>버튼</b>을 눌러야 하는 UI 라면 이 호출과 클릭을 반드시 나눠서 하라 — 입력 직후 같은
+    /// 호출 안에서 버튼을 찾으면 아직 렌더 전이라 못 찾는다.</para></summary>
     public async Task<string> AutomationFillAsync(string selector, string value, bool submit)
     {
-        var js = $$"""
+        var core = await RequireCoreAsync();
+        var sel = JsonSerializer.Serialize(selector);
+
+        // 포커스 + 기존 내용 전체 선택 → insertText 가 덮어쓰도록.
+        var focused = await AutomationEvalAsync($$"""
             (() => {
-              const el = document.querySelector({{JsonSerializer.Serialize(selector)}});
+              const el = document.querySelector({{sel}});
               if (!el) return 'NOTFOUND';
+              el.scrollIntoView({ block: 'center' });
               el.focus();
-              const v = {{JsonSerializer.Serialize(value)}};
-              if ('value' in el) el.value = v; else el.textContent = v;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              if ({{(submit ? "true" : "false")}}) {
-                const f = el.form;
-                if (f) f.requestSubmit ? f.requestSubmit() : f.submit();
-                else el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-              }
+              if (el.select) el.select();
+              else if (el.isContentEditable) document.getSelection().selectAllChildren(el);
               return 'OK';
             })()
-            """;
-        var r = await AutomationEvalAsync(js);
-        if (r == "NOTFOUND") throw new InvalidOperationException($"입력 대상을 찾지 못했습니다: {selector}");
+            """);
+        if (focused == "NOTFOUND") throw new InvalidOperationException($"입력 대상을 찾지 못했습니다: {selector}");
+
+        await core.CallDevToolsProtocolMethodAsync("Input.insertText",
+            new JsonObject { ["text"] = value }.ToJsonString());
+
+        // insertText 가 반영 안 된 경우(비표준 위젯)만 JS 대입 + 이벤트 발생으로 폴백.
+        var current = await AutomationEvalAsync($$"""
+            (() => {
+              const el = document.querySelector({{sel}});
+              if (!el) return '';
+              return ('value' in el ? el.value : el.textContent) || '';
+            })()
+            """);
+        if (current != value)
+        {
+            await AutomationEvalAsync($$"""
+                (() => {
+                  const el = document.querySelector({{sel}});
+                  if (!el) return 'NOTFOUND';
+                  const v = {{JsonSerializer.Serialize(value)}};
+                  if ('value' in el) el.value = v; else el.textContent = v;
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                  return 'OK';
+                })()
+                """);
+        }
+
+        if (submit) await AutomationPressKeyAsync("Enter");
         return "filled";
     }
 
@@ -551,18 +684,16 @@ public partial class BrowserHostView : UserControl
         var core = await RequireCoreAsync();
         if (_index <= 0) throw new InvalidOperationException("뒤로 갈 기록이 없습니다.");
         _index--;
-        NavigateInternal(_history[_index], NavCause.History);
+        await NavigateAndWaitAsync(core, () => NavigateInternal(_history[_index], NavCause.History), 30000);
         PersistHistory();
         SyncToolbar();
-        await Task.Delay(200);
         return core.Source;
     }
 
     public async Task<string> AutomationReloadAsync()
     {
         var core = await RequireCoreAsync();
-        core.Reload();
-        await Task.Delay(200);
+        await NavigateAndWaitAsync(core, core.Reload, 30000);
         return core.Source;
     }
 
