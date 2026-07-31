@@ -827,6 +827,11 @@ public partial class App : Application
             ? new SolidColorBrush(theme == "midnight" ? Color.FromRgb(0x4b, 0x63, 0x80) : Color.FromRgb(0x5e, 0x5e, 0x5e))
             : new SolidColorBrush(Color.FromArgb(0x55, tableHl.R, tableHl.G, tableHl.B));
         res["PrimarySoftBrush"]       = new SolidColorBrush(primarySoft);
+        double documentGroupMix = isDarkTheme ? 0.36 : 0.24;
+        res["DocumentGroupAlternateBrush"] = new SolidColorBrush(Color.FromRgb(
+            (byte)(panelSoft.R + (markerPurple.R - panelSoft.R) * documentGroupMix),
+            (byte)(panelSoft.G + (markerPurple.G - panelSoft.G) * documentGroupMix),
+            (byte)(panelSoft.B + (markerPurple.B - panelSoft.B) * documentGroupMix)));
         res["PrimarySoftLighterBrush"] = new SolidColorBrush(Color.FromRgb(
             (byte)(primarySoft.R + (bg.R - primarySoft.R) * 0.5),
             (byte)(primarySoft.G + (bg.G - primarySoft.G) * 0.5),

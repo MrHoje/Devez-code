@@ -3049,6 +3049,8 @@ public partial class WorkspacePaneView : UserControl
     private double _dragGhostWidth;
     private readonly List<FrameworkElement> _hiddenTabFeet = new();
     private bool _tabDragHidSeam;
+    private DocumentGroupItem? _tabGroupInsertPreview;
+    private readonly List<Border> _tabGroupPreviewBorders = new();
 
     private void Tab_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -3064,6 +3066,7 @@ public partial class WorkspacePaneView : UserControl
             // 커서가 반대 패널이면 그쪽에 삽입 프리뷰(밀기) → 이 패널은 압축(빈자리 메움).
             var screen = TabsHost.PointToScreen(e.GetPosition(TabsHost));
             bool cross = TabDragHoverMoved?.Invoke(this, screen, _dragGhostWidth) == true;
+            if (cross) ClearTabGroupInsertPreview();
             _tabDrag.SuppressDisplacement(cross); // 먼저 상태 전환
             _tabDrag.Update(e);                    // 그 다음 갱신 — 복귀 시 커서 기준으로 즉시 재계산(원래자리 빈 채 안 남음)
             return;
@@ -3088,6 +3091,7 @@ public partial class WorkspacePaneView : UserControl
             // 커서가 반대 패널 위면 그쪽으로 이동(내부 재정렬 취소), 아니면 이 패널 내부 재정렬 커밋.
             bool crossed = TryCommitCrossDrop?.Invoke(this, td.Source, screen) == true;
             await td.FinishAsync(commit: !crossed);
+            ClearTabGroupInsertPreview();
         }
         SetPanesTabDragActive?.Invoke(false); // 드래그 종료 → 양쪽 + 버튼 복원
     }
@@ -3128,7 +3132,9 @@ public partial class WorkspacePaneView : UserControl
                 }
                 return Task.CompletedTask;
             },
-            exactFollow: true, horizontal: true, ghostSource: sourceBorder);
+            exactFollow: true, horizontal: true, ghostSource: sourceBorder,
+            reorderPreviewChanged: (target, _, after) =>
+                SetTabGroupInsertPreview(FindTabGroupInsertPreview(s, target, after)));
         if (_tabDrag != null)
         {
             _tabDidDrag = true;
@@ -3141,6 +3147,73 @@ public partial class WorkspacePaneView : UserControl
         {
             _pendingTab = null;
         }
+    }
+
+    private DocumentGroupItem? FindTabGroupInsertPreview(
+        TabItemBase source,
+        TabItemBase? target,
+        bool after)
+    {
+        if (_activeProject == null
+            || source is not FileTabItem { IsDiff: false } sourceFile
+            || target == null)
+            return null;
+
+        var remainingTabs = VisibleTabsInOrder()
+            .Where(tab => !ReferenceEquals(tab, source))
+            .ToList();
+        int targetIndex = remainingTabs.IndexOf(target);
+        if (targetIndex < 0) return null;
+
+        int insertIndex = targetIndex + (after ? 1 : 0);
+        foreach (var group in _activeProject.DocumentGroups)
+        {
+            var memberIndexes = group.Documents
+                .Select(file => remainingTabs.IndexOf(file))
+                .Where(index => index >= 0)
+                .Order()
+                .ToList();
+            if (memberIndexes.Count == 0) continue;
+
+            bool sourceAlreadyGrouped = group.Documents.Contains(sourceFile);
+            bool staysInGroup = sourceAlreadyGrouped
+                ? insertIndex >= memberIndexes[0] && insertIndex <= memberIndexes[^1] + 1
+                : memberIndexes.Count >= 2
+                    && insertIndex > memberIndexes[0]
+                    && insertIndex <= memberIndexes[^1];
+            if (staysInGroup) return group;
+        }
+        return null;
+    }
+
+    private void SetTabGroupInsertPreview(DocumentGroupItem? group)
+    {
+        if (ReferenceEquals(_tabGroupInsertPreview, group)) return;
+        ClearTabGroupInsertPreview();
+        if (group == null) return;
+
+        _tabGroupInsertPreview = group;
+        foreach (var file in group.Documents)
+        {
+            if (TabsHost.ItemContainerGenerator.ContainerFromItem(file) is not FrameworkElement container
+                || FindTabBorder(container) is not Border border)
+                continue;
+
+            border.SetResourceReference(Border.BackgroundProperty, "PrimarySoftBrush");
+            border.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
+            _tabGroupPreviewBorders.Add(border);
+        }
+    }
+
+    private void ClearTabGroupInsertPreview()
+    {
+        foreach (var border in _tabGroupPreviewBorders)
+        {
+            border.ClearValue(Border.BackgroundProperty);
+            border.ClearValue(Border.BorderBrushProperty);
+        }
+        _tabGroupPreviewBorders.Clear();
+        _tabGroupInsertPreview = null;
     }
 
     /// <summary>탭 드래그 동안 이 패널의 + 버튼을 숨긴다(양쪽 패널에 셸이 적용). 종료 시 원복.</summary>

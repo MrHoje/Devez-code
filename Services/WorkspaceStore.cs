@@ -11,6 +11,7 @@ public static class WorkspaceStore
     private sealed class SessionDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Agent { get; set; } public bool Hidden { get; set; } public bool Locked { get; set; } public bool External { get; set; } public string? ParentId { get; set; } public bool ChildrenExpanded { get; set; } = true; }
     private sealed class BrowserDto { public string Id { get; set; } = ""; public string Name { get; set; } = "웹 브라우저"; }
     private sealed class ShortcutDto { public string Path { get; set; } = ""; public string Name { get; set; } = ""; public bool RunAsAdmin { get; set; } }
+    private sealed class DocumentGroupDto { public string Id { get; set; } = ""; public string Name { get; set; } = "문서 그룹"; public bool IsExpanded { get; set; } = true; public List<string> FilePaths { get; set; } = new(); }
     private sealed class ProjectFolderDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string? Icon { get; set; } public int? RootOrder { get; set; } public bool IsExpanded { get; set; } = true; public string? ArchivedAt { get; set; } public bool TwoColumn { get; set; } = true; public int Column { get; set; } }
     private sealed class ProjectDto
     {
@@ -38,6 +39,8 @@ public static class WorkspaceStore
         public List<string> OpenFiles { get; set; } = new();
         // 저장 시점 전체 탭 순서(세션+문서+브라우저, "S:<id>"/"F:<path>"/"B:<id>"). 복원 시 이 순서로 Tabs 재배열.
         public List<string> TabOrder { get; set; } = new();
+        // 프로젝트 카드의 문서 그룹. 실제 탭 순서와 별도로 저장한다.
+        public List<DocumentGroupDto> DocumentGroups { get; set; } = new();
         // 마지막으로 활성화했던 탭 참조("S:<세션ID>"/"F:<파일경로>"/"B:<브라우저ID>"). 프로젝트 재선택 시 복원.
         public string? LastActiveTab { get; set; }
         // 이 프로젝트를 메인 패널에 열 때 분할을 함께 켤지 + 분할 파트너. 재시작/재선택 시 복원.
@@ -175,6 +178,13 @@ public static class WorkspaceStore
                     proj.AddShortcut(f.Path, f.Name, f.RunAsAdmin);
                 proj.PendingOpenFiles = p.OpenFiles ?? new();   // 시작 시 RestoreFileTabs 가 1회 소비
                 proj.PendingTabOrder = p.TabOrder ?? new();     // 세션+파일 복원 후 이 순서로 Tabs 재배열
+                proj.PendingDocumentGroups = (p.DocumentGroups ?? new()).Select(group => new DocumentGroupSnapshot
+                {
+                    Id = group.Id,
+                    Name = group.Name,
+                    IsExpanded = group.IsExpanded,
+                    FilePaths = group.FilePaths ?? new(),
+                }).ToList();
                 proj.LastActiveTabRef = p.LastActiveTab;
                 proj.SplitEnabled = p.SplitEnabled;
                 proj.SplitPartnerProjectPath = p.SplitPartnerProjectPath;
@@ -244,6 +254,13 @@ public static class WorkspaceStore
             BrowserTabItem b => "B:" + b.Id,
             _ => "",
         }).Where(r => r.Length > 0).ToList(),
+        DocumentGroups = p.DocumentGroups.Select(group => new DocumentGroupDto
+        {
+            Id = group.Id,
+            Name = group.Name,
+            IsExpanded = group.IsExpanded,
+            FilePaths = group.Documents.Where(file => !file.IsDiff).Select(file => file.FilePath).ToList(),
+        }).Where(group => group.FilePaths.Count > 0).ToList(),
         LastActiveTab = p.LastActiveTabRef,
         SplitEnabled = p.SplitEnabled,
         SplitPartnerProjectPath = p.SplitPartnerProjectPath,

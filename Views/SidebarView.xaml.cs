@@ -1305,6 +1305,116 @@ public partial class SidebarView : UserControl
         if (ItemOf<FileTabItem>(sender) is { } f) OpenDocCloseOthersRequested?.Invoke(f);
     }
 
+    private ProjectItem? ProjectForDocument(FileTabItem file)
+        => CurrentProjects.FirstOrDefault(project => project.Tabs.Contains(file));
+
+    private ProjectItem? ProjectForDocumentGroup(DocumentGroupItem group)
+        => CurrentProjects.FirstOrDefault(project => project.DocumentGroups.Contains(group));
+
+    private void DocumentGroupCreate_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<FileTabItem>(sender) is not { } file
+            || ProjectForDocument(file) is not { } project)
+            return;
+
+        var name = PromptDialog.Show("문서 그룹 만들기", "그룹 이름을 입력하세요.", "문서 그룹", maxLength: 60);
+        if (name == null || project.CreateDocumentGroup(file, name) == null) return;
+        SessionsReordered?.Invoke(project);
+    }
+
+    private sealed record DocumentGroupAddTarget(
+        ProjectItem Project,
+        DocumentGroupItem Group,
+        FileTabItem File);
+
+    private void DocumentGroupAddMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: DocumentGroupAddTarget target }
+            || !target.Project.AddDocumentToGroup(target.Group, target.File))
+            return;
+        e.Handled = true;
+        SessionsReordered?.Invoke(target.Project);
+    }
+
+    private void DocumentGroupAdd_SubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: FileTabItem file } addItem)
+            PopulateDocumentGroupItems(addItem, file);
+    }
+
+    private void DocumentGroupMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu menu) return;
+        var group = menu.DataContext as DocumentGroupItem
+                    ?? (menu.PlacementTarget as FrameworkElement)?.DataContext as DocumentGroupItem;
+        var project = group == null ? null : ProjectForDocumentGroup(group);
+        foreach (var item in menu.Items.OfType<MenuItem>())
+        {
+            bool? before = item.CommandParameter switch
+            {
+                "Before" => true,
+                "After" => false,
+                _ => null,
+            };
+            if (before.HasValue)
+                item.IsEnabled = project != null
+                                 && project.CountDocumentsOnGroupSide(group!, before.Value) > 0;
+        }
+    }
+
+    private void DocumentGroupAddSide_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<DocumentGroupItem>(sender) is not { } group
+            || ProjectForDocumentGroup(group) is not { } project)
+            return;
+        bool before = sender is MenuItem { CommandParameter: "Before" };
+        if (project.AddDocumentsOnGroupSide(group, before) == 0) return;
+        SessionsReordered?.Invoke(project);
+    }
+
+    private void DocumentGroupRemoveDocument_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<FileTabItem>(sender) is not { } file
+            || ProjectForDocument(file) is not { } project
+            || !project.RemoveDocumentFromGroup(file))
+            return;
+        SessionsReordered?.Invoke(project);
+    }
+
+    private void DocumentGroup_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is FrameworkElement { DataContext: FileTabItem }
+            or FrameworkContentElement { DataContext: FileTabItem })
+            return;
+        if (_didDrag) { _didDrag = false; return; }
+        if (sender is not FrameworkElement { DataContext: DocumentGroupItem group }
+            || ProjectForDocumentGroup(group) is not { } project)
+            return;
+        group.IsExpanded = !group.IsExpanded;
+        SessionsReordered?.Invoke(project);
+    }
+
+    private void DocumentGroupRename_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<DocumentGroupItem>(sender) is not { } group
+            || ProjectForDocumentGroup(group) is not { } project)
+            return;
+        var name = PromptDialog.Show("문서 그룹 이름 변경", "새 이름을 입력하세요.",
+            group.Name, maxLength: 60);
+        if (name == null || StringComparer.Ordinal.Equals(name, group.Name)) return;
+        group.Name = name;
+        SessionsReordered?.Invoke(project);
+    }
+
+    private void DocumentGroupRemove_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf<DocumentGroupItem>(sender) is not { } group
+            || ProjectForDocumentGroup(group) is not { } project
+            || !project.RemoveDocumentGroup(group))
+            return;
+        SessionsReordered?.Invoke(project);
+    }
+
     private void BrowserTab_Click(object sender, MouseButtonEventArgs e)
     {
         if (_didDrag) { _didDrag = false; return; }
@@ -1578,6 +1688,53 @@ public partial class SidebarView : UserControl
         var target = cm.DataContext as TabItemBase
                      ?? (cm.PlacementTarget as FrameworkElement)?.DataContext as TabItemBase;
         if (target != null) UpdateSplitMoveMenu(cm, target, true);
+        if (target is FileTabItem file) UpdateDocumentGroupMenu(cm, file);
+    }
+
+    private void UpdateDocumentGroupMenu(ContextMenu menu, FileTabItem file)
+    {
+        var project = ProjectForDocument(file);
+        var currentGroup = project?.DocumentGroupOf(file);
+        var createItem = menu.Items.OfType<MenuItem>()
+            .FirstOrDefault(item => Equals(item.CommandParameter, "DocumentGroupCreate"));
+        var addItem = menu.Items.OfType<MenuItem>()
+            .FirstOrDefault(item => Equals(item.CommandParameter, "DocumentGroupAdd"));
+        var removeItem = menu.Items.OfType<MenuItem>()
+            .FirstOrDefault(item => Equals(item.CommandParameter, "DocumentGroupRemove"));
+
+        var groupVisibility = file.IsDiff ? Visibility.Collapsed : Visibility.Visible;
+        if (createItem != null) createItem.Visibility = groupVisibility;
+        if (removeItem != null)
+            removeItem.Visibility = currentGroup != null && !file.IsDiff
+                ? Visibility.Visible : Visibility.Collapsed;
+        if (addItem == null) return;
+
+        addItem.Visibility = groupVisibility;
+        PopulateDocumentGroupItems(addItem, file);
+    }
+
+    private void PopulateDocumentGroupItems(MenuItem addItem, FileTabItem file)
+    {
+        var project = ProjectForDocument(file);
+        var currentGroup = project?.DocumentGroupOf(file);
+        addItem.Items.Clear();
+        var groups = project?.DocumentGroups
+                         .Where(group => !ReferenceEquals(group, currentGroup)
+                                         && project.CanAddDocumentToGroup(group, file))
+                         .ToList()
+                     ?? new List<DocumentGroupItem>();
+        foreach (var group in groups)
+        {
+            var groupItem = new MenuItem
+            {
+                Header = group.Name,
+                Tag = new DocumentGroupAddTarget(project!, group, file),
+            };
+            groupItem.Click += DocumentGroupAddMenu_Click;
+            addItem.Items.Add(groupItem);
+        }
+        if (groups.Count == 0)
+            addItem.Items.Add(new MenuItem { Header = "추가할 그룹 없음", IsEnabled = false });
     }
 
     private void UpdateSplitMoveMenu(ContextMenu menu, TabItemBase target, bool visible)
@@ -2742,6 +2899,12 @@ public partial class SidebarView : UserControl
 
     private void TryStartTabDrag(TabItemBase s)
     {
+        if (s is DocumentGroupItem documentGroup)
+        {
+            TryStartDocumentGroupDrag(documentGroup);
+            return;
+        }
+
         var project = CurrentProjects.FirstOrDefault(pr => pr.Tabs.Contains(s));
         if (project == null) return;
         if (GetProjectContainer(project) is not DependencyObject pc) return;
@@ -2805,14 +2968,22 @@ public partial class SidebarView : UserControl
                && source is SessionItem { ParentSessionId: null } child
                && target is SessionItem parent
                && project.CanSetSessionParent(child, parent);
+        bool CanDropIntoTarget(TabItemBase source, TabItemBase target)
+            => CanDropIntoSession(source, target)
+               || (!siblingsOnly
+                   && source is FileTabItem file
+                   && target is DocumentGroupItem documentGroup
+                   && project.CanAddDocumentToGroup(documentGroup, file));
 
-        // 자식 편입은 대상 행 우측 화살표(핫스팟) 위에서만 허용한다. 행의 나머지 영역은 순서 이동.
+        // 세션 자식 편입은 우측 화살표만, 문서 그룹 편입은 그룹 항목 전체를 드롭 영역으로 사용한다.
         var dropHandles = new Dictionary<TabItemBase, FrameworkElement?>();
-        FrameworkElement? ChildDropHandle(TabItemBase item)
+        FrameworkElement? DropIntoHandle(TabItemBase item)
         {
             if (dropHandles.TryGetValue(item, out var cached)) return cached;
             var container = rows.FirstOrDefault(row => ReferenceEquals(row.Item, item)).Element;
-            var handle = container == null
+            var handle = item is DocumentGroupItem
+                ? container
+                : container == null
                 ? null
                 : FindVisualChildren<FrameworkElement>(container)
                     .FirstOrDefault(element => element.Name == "SessionChildDropHandle");
@@ -2856,12 +3027,18 @@ public partial class SidebarView : UserControl
                     SessionsReordered?.Invoke(project);
                 return Task.CompletedTask;
             }, exactFollow: true,
-            canDropInto: CanDropIntoSession,
+            canDropInto: CanDropIntoTarget,
             dropIntoHitTest: (target, pointer) =>
-                IsPointerOverChildDropHandle(ChildDropHandle(target), pointer),
+                IsPointerOverChildDropHandle(DropIntoHandle(target), pointer),
             dropIntoPreviewChanged: SetSessionChildDropPreview,
             onDropInto: (source, target) =>
             {
+                if (source is FileTabItem file && target is DocumentGroupItem documentGroup
+                    && project.AddDocumentToGroup(documentGroup, file))
+                {
+                    SessionsReordered?.Invoke(project);
+                    return Task.CompletedTask;
+                }
                 if (source is SessionItem child && target is SessionItem parent
                     && project.SetSessionParent(child, parent))
                     SessionsReordered?.Invoke(project);
@@ -2877,6 +3054,57 @@ public partial class SidebarView : UserControl
         else
         {
             ClearSessionChildDropHints();
+        }
+        _pendingTab = null;
+    }
+
+    private void TryStartDocumentGroupDrag(DocumentGroupItem source)
+    {
+        var project = CurrentProjects.FirstOrDefault(item => item.DocumentGroups.Contains(source));
+        if (project == null || GetProjectContainer(project) is not DependencyObject projectContainer) return;
+
+        ItemsControl? host = null;
+        foreach (var itemsControl in FindVisualChildren<ItemsControl>(projectContainer))
+        {
+            if (itemsControl.ItemContainerGenerator.ContainerFromItem(source) is FrameworkElement)
+            {
+                host = itemsControl;
+                break;
+            }
+        }
+        if (host == null) return;
+
+        var rows = new List<(TabItemBase Item, FrameworkElement Element)>();
+        foreach (var item in host.Items.OfType<TabItemBase>())
+        {
+            if (host.ItemContainerGenerator.ContainerFromItem(item) is not FrameworkElement element
+                || !element.IsVisible || element.ActualHeight <= 0.5)
+                continue;
+            rows.Add((item, element));
+        }
+        if (rows.Count < 2) return;
+
+        var sourceRow = rows.FirstOrDefault(row => ReferenceEquals(row.Item, source));
+        if (sourceRow.Element == null) return;
+        var items = rows.Select(row => row.Item).ToList();
+        _tabDrag = ReorderDrag<TabItemBase>.TryStart(this, rows, source, sourceRow.Element,
+            (item, hostTarget, _) =>
+            {
+                if (item is not DocumentGroupItem group) return Task.CompletedTask;
+                int targetIndex = Math.Clamp(hostTarget, 0, items.Count - 1);
+                int sourceIndex = items.IndexOf(item);
+                if (project.MoveDocumentGroupRelativeToItem(
+                        group,
+                        items[targetIndex],
+                        after: sourceIndex < targetIndex))
+                    SessionsReordered?.Invoke(project);
+                return Task.CompletedTask;
+            }, exactFollow: true, hitTestSlots: true);
+
+        if (_tabDrag != null)
+        {
+            _didDrag = true;
+            CaptureMouse();
         }
         _pendingTab = null;
     }
@@ -2940,11 +3168,19 @@ public partial class SidebarView : UserControl
             _sessionChildDropHintActive = null;
         }
 
-        if (target is not SessionItem session || container == null) return;
-        session.IsChildDropHintActive = true;
-        _sessionChildDropHintActive = session;
-        _sessionChildDropTarget = FindVisualChildren<Border>(container)
-            .FirstOrDefault(border => border.Name == "SessionRow");
+        if (container == null) return;
+        if (target is SessionItem session)
+        {
+            session.IsChildDropHintActive = true;
+            _sessionChildDropHintActive = session;
+            _sessionChildDropTarget = FindVisualChildren<Border>(container)
+                .FirstOrDefault(border => border.Name == "SessionRow");
+        }
+        else if (target is DocumentGroupItem)
+        {
+            _sessionChildDropTarget = FindVisualChildren<Border>(container)
+                .FirstOrDefault(border => border.Name == "DocumentGroupRow");
+        }
         _sessionChildDropTarget?.SetResourceReference(Border.BorderBrushProperty, "PrimaryBrush");
     }
 

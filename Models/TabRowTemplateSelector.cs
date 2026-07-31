@@ -9,12 +9,14 @@ public sealed class TabRowTemplateSelector : DataTemplateSelector
     public DataTemplate? SessionTemplate { get; set; }
     public DataTemplate? FileTemplate { get; set; }
     public DataTemplate? BrowserTemplate { get; set; }
+    public DataTemplate? DocumentGroupTemplate { get; set; }
 
     public override DataTemplate? SelectTemplate(object item, DependencyObject container) => item switch
     {
         SessionItem => SessionTemplate,
         FileTabItem => FileTemplate,
         BrowserTabItem => BrowserTemplate,
+        DocumentGroupItem => DocumentGroupTemplate,
         _ => base.SelectTemplate(item, container),
     };
 }
