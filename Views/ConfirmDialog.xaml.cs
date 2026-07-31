@@ -51,10 +51,10 @@ public partial class ConfirmDialog : Window
         }
         if (autoWidth)
         {
-            // 업데이트 노트 전용: 텍스트 길이에 따라 폭을 자동 조절(상한 660), 짧으면 360.
+            // 업데이트 노트 전용: 텍스트 길이에 따라 폭을 자동 조절(상한 700), 짧으면 360.
             SizeToContent = SizeToContent.WidthAndHeight;
             MinWidth = 360;
-            MaxWidth = 660;
+            MaxWidth = 700;
         }
         else if (confirmText == null)
         {
@@ -118,10 +118,11 @@ public partial class ConfirmDialog : Window
                                        confirmText: null, wideLayout: false, autoWidth: true);
         dialog._download = download;
         dialog.CancelBtn.Content = "나중에"; // devez 정합: 업데이트 팝업의 취소는 '나중에'
-        // devez 정합: 고정폭(560), 노트 약 10줄까지 높이 자동 확장. 초과분은 본문 ScrollViewer가 스크롤한다.
-        dialog.SizeToContent = SizeToContent.Height;
+        // 내용에 맞춰 폭을 줄이되 최대 700까지만 넓힌다. 약 10줄까지 높이 자동 확장한다.
+        dialog.SizeToContent = SizeToContent.WidthAndHeight;
         dialog.MaxHeight = 430;
-        dialog.Width = dialog.MinWidth = dialog.MaxWidth = 560;
+        dialog.MinWidth = 360;
+        dialog.MaxWidth = 700;
 
         ApplyOwner(dialog);
 

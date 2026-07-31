@@ -2086,7 +2086,7 @@ open
 #### 노트 팝업
 
 - 표준 다이얼로그 셸(§10)을 재사용한다: content radius `14`, header `48`, footer 액션 `38`, close `40×32`.
-- 고정폭 `560`, `SizeToContent=Height`, `MaxHeight=430`. 노트 약 10줄까지 높이가 자동 확장되고 초과분은 본문 `ScrollViewer`가 스크롤한다.
+- 콘텐츠 자동폭 `360~700`, `SizeToContent=WidthAndHeight`, `MaxHeight=430`. 짧은 노트는 폭을 줄이고 긴 노트는 최대 `700`까지 넓힌다. 노트 약 10줄까지 높이가 자동 확장되고 초과분은 본문 `ScrollViewer`가 스크롤한다.
 - 릴리스 노트는 현재 버전 이후 누적분을 모두 보여준다.
 - 액션은 왼쪽 `나중에`(Secondary), 오른쪽 `업데이트`(Primary). header 아이콘은 `IconDownload`.
 

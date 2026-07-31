@@ -2901,7 +2901,8 @@ public partial class MainWindow : Window
         _testUpdateMode = true;
         var testReleases = new[]
         {
-            new UpdateReleaseNote("9.9.9", string.Join("\n", Enumerable.Range(1, 3).Select(i => $"업데이트 노트 테스트 {i:00}"))),
+            new UpdateReleaseNote("9.9.9", string.Join("\n", Enumerable.Range(1, 18).Select(i =>
+                $"업데이트 노트 테스트 {i:00} · 최대 너비와 긴 릴리스 노트의 스크롤 표시 상태를 확인합니다."))),
         };
         _pendingUpdate = new UpdateInfo(
             Version: "9.9.9",
