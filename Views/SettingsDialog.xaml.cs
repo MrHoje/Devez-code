@@ -96,7 +96,12 @@ public partial class SettingsDialog : UserControl
     // ── 업데이트 내역(Changelog) 데이터 — devez 정합. 최신 5개만 유지, 새 버전 추가 시 가장 오래된 항목 제거. ──
     private static readonly (string Version, string Date, bool IsLatest, string[] Notes)[] _changelog =
       {
-          ("v1.21.2", "2026-07-31", true, new[]
+          ("v1.21.3", "2026-07-31", true, new[]
+          {
+              "프로젝트 문서 그룹과 탭을 드래그로 서로 옮길 수 있습니다.",
+              "파일 에디터 탭과 마크다운 뷰어, 빈 패널에도 외부 파일을 드래그해 열 수 있습니다.",
+          }),
+          ("v1.21.2", "2026-07-31", false, new[]
           {
               "프로젝트 문서 메뉴에서 현재 문서를 제외한 파일을 한 번에 닫을 수 있습니다.",
               "Codex 사용량 갱신과 Devez Vibe의 Codex 설치 안내를 개선했습니다.",
